@@ -42,7 +42,7 @@ impl CompiledScanner {
                 // kimi-wave1 finding 5.LOW: a single decoded chunk that
                 // exceeds `max_decode_bytes` slips past the outer guard
                 // (which only checked the *input* chunk size). Skip
-                // anything that grew past the configured ceiling — the
+                // anything that grew past the configured ceiling - the
                 // input was already a decode bomb if we got here.
                 if decoded_chunk.data.len() > self.config.max_decode_bytes {
                     tracing::debug!(
@@ -64,7 +64,7 @@ impl CompiledScanner {
                     // and `KEYHOG_BACKEND=gpu` would otherwise force
                     // every decoded chunk through that path. On a
                     // 64 MiB chunk that decodes into 1 000 sub-chunks
-                    // that's a 50-second tax — exactly the wall-clock
+                    // that's a 50-second tax - exactly the wall-clock
                     // delta keyhog used to show vs SIMD on messy
                     // corpora. Force a CPU backend here regardless of
                     // env override.
@@ -126,7 +126,7 @@ impl CompiledScanner {
                 // the line's offset; value_match.start() is offset within
                 // `line`. Used below to give reassembled findings a REAL
                 // source-file position instead of the synthetic
-                // dummy_chunk offset (which used to read ~19 — the length
+                // dummy_chunk offset (which used to read ~19 - the length
                 // of the `reassembled_key = "` prefix). Synthetic offsets
                 // broke the chunk-boundary recall invariant (proptest
                 // gpu_proptest_invariants P3): identical credentials got
@@ -167,7 +167,7 @@ impl CompiledScanner {
                         metadata: chunk.metadata.clone(),
                     };
 
-                    // Tiny synthesized chunk — NEVER dispatch through
+                    // Tiny synthesized chunk - NEVER dispatch through
                     // GPU even if `KEYHOG_BACKEND=gpu` is set; the
                     // per-dispatch overhead (~10-100 ms) is orders of
                     // magnitude larger than scanning ~50 bytes on the
@@ -235,7 +235,7 @@ impl CompiledScanner {
         // a literal AC prefix, and if Y's prefix was not matched in
         // this chunk, Y's regex (which starts with that prefix) can't
         // match either. The expansion forced full-text regex passes on
-        // patterns that were guaranteed to return no matches — the
+        // patterns that were guaranteed to return no matches - the
         // dominant cost of the per-detector regex pass on chunks that
         // trigger multiple AC patterns of multi-pattern detectors.
         let mut expanded = triggered_patterns.to_vec();
@@ -256,11 +256,11 @@ impl CompiledScanner {
                 // restores compiled state from disk with a mismatched
                 // shape (or a bug in the compiler tears the invariant)
                 // we'd panic on the indexed access. .get() turns that
-                // into a benign skip — we lose the same-prefix expansion
+                // into a benign skip - we lose the same-prefix expansion
                 // for this pattern rather than crashing the scan.
                 if let Some(siblings) = self.same_prefix_patterns.get(pat_idx) {
                     for &other_idx in siblings {
-                        // Same defensive bound on the expanded write —
+                        // Same defensive bound on the expanded write -
                         // a stale sibling index past the bitmask end
                         // would otherwise panic via bounds-checked
                         // slice index. We compute the bucket up front
@@ -335,7 +335,7 @@ impl CompiledScanner {
             return;
         }
 
-        // Borrow rather than clone — `ml_pending` is alive for the duration
+        // Borrow rather than clone - `ml_pending` is alive for the duration
         // of the call, so `&str` references stay valid through ML scoring.
         // On a wide scan with hundreds of pending matches this drops 2N
         // owned-string allocations per batch.
@@ -356,7 +356,7 @@ impl CompiledScanner {
             // ML-blended confidence multiplier so a real credential in
             // a `// TODO: rotate this …` comment surfaces with the
             // same weight as one on a bare assignment line. TestCode
-            // and Documentation contexts stay penalised regardless —
+            // and Documentation contexts stay penalised regardless -
             // both produce orders-of-magnitude more EXAMPLE noise
             // than real leaks.
             let context_penalty_applies = match pending.code_context {

@@ -1,4 +1,4 @@
-//! Migrated from `src/spec.rs` — repeated downgrade never increases severity.
+//! Migrated from `src/spec.rs` - repeated downgrade never increases severity.
 
 use keyhog_core::Severity;
 

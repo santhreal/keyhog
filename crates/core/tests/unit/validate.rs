@@ -11,8 +11,7 @@ fn detector_with_pattern(regex: &str) -> DetectorSpec {
         keywords: vec!["token".into()],
         patterns: vec![PatternSpec {
             regex: regex.into(),
-            description: None,
-            group: None,
+            ..Default::default()
         }],
         verify: None,
         companions: Vec::new(),
@@ -84,7 +83,7 @@ fn rejects_invalid_companion_regexes() {
 #[test]
 fn rejects_broad_companion_character_class() {
     // Wide search radius (>5 lines) STILL rejects pure character classes
-    // — without a textual anchor the search becomes too permissive.
+    // - without a textual anchor the search becomes too permissive.
     let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
     detector.companions.push(CompanionSpec {
         name: "secret".into(),
@@ -102,7 +101,7 @@ fn rejects_broad_companion_character_class() {
 
 #[test]
 fn warns_but_accepts_companion_character_class_with_tight_radius() {
-    // within_lines ≤ TIGHT_COMPANION_RADIUS (5) — positional anchor
+    // within_lines ≤ TIGHT_COMPANION_RADIUS (5) - positional anchor
     // substitutes for textual context. Should warn, not reject.
     let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
     detector.companions.push(CompanionSpec {

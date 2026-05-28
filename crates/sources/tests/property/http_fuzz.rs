@@ -5,7 +5,7 @@
 //! every Slack source pull. A bug in the proxy-resolution precedence
 //! (`--proxy` flag > `KEYHOG_PROXY` env > reqwest auto-detect > off)
 //! silently bypasses the operator's MITM proxy and leaks the scan
-//! target straight to upstream. Same for `insecure_tls` — flipping it
+//! target straight to upstream. Same for `insecure_tls` - flipping it
 //! on by accident downgrades every TLS connection.
 //!
 //! These tests pin the policy itself, not just one happy-path call.
@@ -26,7 +26,7 @@ static ENV_PROXY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ── strategies ──────────────────────────────────────────────────────
 
-/// A proxy URL the operator might plausibly pass — covers `http://`,
+/// A proxy URL the operator might plausibly pass - covers `http://`,
 /// `https://`, `socks5://`, plus the `off`/`none`/`""` disable
 /// sentinels.
 fn any_proxy_url() -> impl Strategy<Value = String> {
@@ -114,7 +114,7 @@ proptest! {
         with_env_proxy(Some(&env), || {
             let cfg = HttpClientConfig::default();
             // Empty env strings count as "no env" (matches our
-            // documented behavior — operators sometimes export an
+            // documented behavior - operators sometimes export an
             // empty var to "clear" a parent shell's setting).
             if env.is_empty() {
                 prop_assert_eq!(cfg.effective_proxy(), None);
@@ -125,7 +125,7 @@ proptest! {
         })?;
     }
 
-    /// Empty env var must NOT trigger the proxy path — reqwest's
+    /// Empty env var must NOT trigger the proxy path - reqwest's
     /// own fallback (HTTPS_PROXY etc.) should take over instead.
     #[test]
     fn empty_env_var_is_treated_as_unset(noise in any::<u8>()) {
@@ -157,11 +157,11 @@ proptest! {
         }
     }
 
-    /// Building with no proxy + no env var must always succeed —
+    /// Building with no proxy + no env var must always succeed -
     /// that's the default offline-safe path and any failure here
     /// would brick every scan run. The proptest input `insecure`
     /// must be reflected in the resulting clients' effective_*
-    /// signals — without these assertions a regression where the
+    /// signals - without these assertions a regression where the
     /// flag was silently dropped would still see the test pass.
     #[test]
     fn default_builder_always_succeeds(insecure in any::<bool>()) {
@@ -171,7 +171,7 @@ proptest! {
             let r#async = async_client_builder(&cfg);
             prop_assert!(blocking.is_ok(), "blocking builder must succeed for insecure_tls={insecure}");
             prop_assert!(r#async.is_ok(), "async builder must succeed for insecure_tls={insecure}");
-            // Build the actual clients (not just the builders) — a
+            // Build the actual clients (not just the builders) - a
             // broken cfg propagation would compile but fail at the
             // build() step on real validation.
             prop_assert!(blocking.unwrap().build().is_ok(),
@@ -179,7 +179,7 @@ proptest! {
             prop_assert!(r#async.unwrap().build().is_ok(),
                 "async builder must produce a usable client");
             // The insecure flag must round-trip through the cfg
-            // accessor — regression check on accessor wiring.
+            // accessor - regression check on accessor wiring.
             prop_assert_eq!(cfg.effective_insecure_tls(), insecure);
             Ok(())
         })?;
@@ -203,7 +203,7 @@ proptest! {
         }
     }
 
-    /// Explicit `insecure_tls: true` is sticky — env var can't
+    /// Explicit `insecure_tls: true` is sticky - env var can't
     /// disable it. Belt-and-suspenders against a config-loader
     /// race where the CLI flag is overridden by env defaults.
     #[test]
@@ -246,7 +246,7 @@ proptest! {
 
     /// Proxy disable sentinels (`off`, `none`, empty) must round-trip
     /// through `effective_proxy` verbatim so builders can call
-    /// `.no_proxy()` — a regression would silently inherit env proxies.
+    /// `.no_proxy()` - a regression would silently inherit env proxies.
     #[test]
     fn proxy_disable_sentinels_are_preserved(flag in prop_oneof![
         Just("off".to_string()),
@@ -265,7 +265,7 @@ proptest! {
     }
 
     /// Custom timeout must propagate to builder construction without
-    /// panicking — callers (Slack/S3/web) rely on per-source overrides.
+    /// panicking - callers (Slack/S3/web) rely on per-source overrides.
     #[test]
     fn custom_timeout_builder_succeeds(secs in 1u64..120) {
         let cfg = HttpClientConfig {

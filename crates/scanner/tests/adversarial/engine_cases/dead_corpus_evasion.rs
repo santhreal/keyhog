@@ -6,7 +6,7 @@
 //! **negative twin** (same transport shape, known-example fake must not surface).
 //!
 //! CLAUDE.md anti-rigging rule: every positive names an expected credential
-//! substring — a function returning `Vec::new()` fails.
+//! substring - a function returning `Vec::new()` fails.
 
 use super::corpus_support::{
     corpus_fixture_path, has_credential, has_detector, production_scanner, scan_corpus, scan_text,
@@ -64,7 +64,7 @@ fn assert_any_service(matches: &[keyhog_core::RawMatch], fixture: &str, services
 }
 
 // ---------------------------------------------------------------------------
-// url_encoded.txt — percent-encoded credential fragments
+// url_encoded.txt - percent-encoded credential fragments
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -83,7 +83,7 @@ fn evasion_url_encoded_negative_twin_suppresses_example_aws() {
 }
 
 // ---------------------------------------------------------------------------
-// base64_wrapped.json — base64-wrapped OpenAI project key
+// base64_wrapped.json - base64-wrapped OpenAI project key
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -95,14 +95,14 @@ fn evasion_base64_wrapped_detects_openai_proj_key() {
 
 #[test]
 fn evasion_base64_wrapped_negative_twin_suppresses_example_aws() {
-    // Base64 of AKIAIOSFODNN7EXAMPLE — same wrap shape, known dummy must not fire.
+    // Base64 of AKIAIOSFODNN7EXAMPLE - same wrap shape, known dummy must not fire.
     let twin = r#"{"config": "QUtJQUlPU0ZPRE5ON0VYQU1QTEU="}"#;
     let matches = scan_text(twin, "evasion/base64_wrapped_negative.json");
     assert_not_detected(&matches, "base64_wrapped negative twin", FAKE_AWS_EXAMPLE);
 }
 
 // ---------------------------------------------------------------------------
-// split_across_lines.py — string concatenation reassembly
+// split_across_lines.py - string concatenation reassembly
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -128,7 +128,7 @@ aws_key = aws_a + aws_b
 }
 
 // ---------------------------------------------------------------------------
-// multiline_json.json — secrets embedded in JSON values
+// multiline_json.json - secrets embedded in JSON values
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -150,7 +150,7 @@ fn evasion_multiline_json_negative_twin_suppresses_example_github() {
 }
 
 // ---------------------------------------------------------------------------
-// hex_encoded.js — hex-encoded OpenAI project key
+// hex_encoded.js - hex-encoded OpenAI project key
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -169,7 +169,7 @@ fn evasion_hex_encoded_negative_twin_suppresses_example_aws() {
 }
 
 // ---------------------------------------------------------------------------
-// variable_indirection.rb — prefix/suffix variable concatenation
+// variable_indirection.rb - prefix/suffix variable concatenation
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -195,7 +195,7 @@ github_token = prefix + suffix
 }
 
 // ---------------------------------------------------------------------------
-// embedded_in_binary.txt — credentials embedded in binary-like noise
+// embedded_in_binary.txt - credentials embedded in binary-like noise
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -222,7 +222,7 @@ fn evasion_embedded_in_binary_negative_twin_suppresses_example_credentials() {
 }
 
 // ---------------------------------------------------------------------------
-// reversed_strings.py — reversed credential literals (decode feature)
+// reversed_strings.py - reversed credential literals (decode feature)
 // ---------------------------------------------------------------------------
 
 #[test]

@@ -1,15 +1,15 @@
-//! Backend-robustness sweep — adversarial inputs and stress shapes
+//! Backend-robustness sweep - adversarial inputs and stress shapes
 //! that must NEVER panic / OOM / silently drop matches on any backend.
 //!
 //! Each test runs on all 4 backends. Where the GPU adapter is absent
 //! the test silently skips (the helper falls back to SIMD when GPU
 //! init fails). The point is to catch crashes that ONLY surface on
-//! one backend — e.g. a NUL byte that crashes the GPU shader's
+//! one backend - e.g. a NUL byte that crashes the GPU shader's
 //! C-string buffer handling but not the CPU path.
 //!
 //! Coverage axes:
 //!   * Embedded NUL bytes (GPU shader buffer hazard).
-//!   * Long single-line input (no newlines — the line-offset table
+//!   * Long single-line input (no newlines - the line-offset table
 //!     degenerates to one entry).
 //!   * Empty input (1-byte chunks, zero-byte chunks).
 //!   * Deeply-nested unicode (combining marks, RTL, ZWJ sequences).
@@ -66,7 +66,7 @@ fn r1_embedded_nul_bytes_no_panic_on_any_backend() {
         "nul.bin",
     )];
     for backend in ALL_BACKENDS {
-        // Just must not panic. We don't assert findings — different
+        // Just must not panic. We don't assert findings - different
         // backends legitimately treat NUL differently (the GPU shader
         // may terminate on NUL); the contract is "no crash."
         let _ = scanner.scan_chunks_with_backend(&chunks, *backend);
@@ -119,7 +119,7 @@ fn r4_one_byte_input_no_panic() {
 #[test]
 fn r5_unicode_storm_no_panic() {
     let scanner = scanner();
-    // ZWJ sequences, RTL overrides, combining marks — UTF-8
+    // ZWJ sequences, RTL overrides, combining marks - UTF-8
     // boundary hazards that have historically crashed naive byte-
     // indexing in the GPU shader.
     let storm = "\u{202E}AKIAQYLPMN5HFIQR7XYA\u{202C}é\u{0301}é\u{0301}é\u{0301}🦀🚀\u{200D}🌈\
@@ -153,7 +153,7 @@ fn r6_many_tiny_chunks_no_panic() {
 
 #[test]
 fn r7_concurrent_scans_from_multiple_threads_no_data_race() {
-    // CompiledScanner must be Send + Sync — multi-thread callers
+    // CompiledScanner must be Send + Sync - multi-thread callers
     // (file walkers, async handlers) rely on this. Crash, panic, or
     // findings drift across runs is a hard fail.
     let scanner = scanner().clone();
@@ -187,12 +187,12 @@ fn r7_concurrent_scans_from_multiple_threads_no_data_race() {
         .collect();
 
     // All threads must report the same count for the same (backend, scan)
-    // index slot — non-stable output is a data race symptom.
+    // index slot - non-stable output is a data race symptom.
     let first = &all_counts[0];
     for (idx, counts) in all_counts.iter().enumerate() {
         assert_eq!(
             counts, first,
-            "thread {idx} reported {counts:?}, thread 0 reported {first:?} — data race"
+            "thread {idx} reported {counts:?}, thread 0 reported {first:?} - data race"
         );
     }
 }

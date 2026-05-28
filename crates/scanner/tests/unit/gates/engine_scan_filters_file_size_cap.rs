@@ -7,6 +7,6 @@ fn engine_scan_filters_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "engine::scan_filters: {lines} lines exceeds 500-line cap — split module"
+        "engine::scan_filters: {lines} lines exceeds 500-line cap - split module"
     );
 }

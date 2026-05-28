@@ -10,6 +10,6 @@ fn engine_fallback_entropy_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "engine::fallback_entropy: {lines} lines exceeds 500-line cap — split module"
+        "engine::fallback_entropy: {lines} lines exceeds 500-line cap - split module"
     );
 }

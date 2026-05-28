@@ -1,7 +1,7 @@
 //! JWT structural validation.
 //!
 //! A bare JWT regex (three base64url segments separated by dots) catches an
-//! enormous number of false positives — Etag headers, hash digests, opaque
+//! enormous number of false positives - Etag headers, hash digests, opaque
 //! session IDs, tracking pixels, etc. This module decodes the header +
 //! payload and validates the JWT shape (`alg`/`typ`/`exp`) so we can:
 //!
@@ -11,7 +11,7 @@
 //!      malformed header).
 //!   3. Surface metadata: `alg`, `iss`, `sub`, `aud`, `exp` as evidence in
 //!      the finding output, helping responders rotate the right credential.
-//!   4. Flag `alg=none` JWTs as a SECURITY ANOMALY — these are unsigned,
+//!   4. Flag `alg=none` JWTs as a SECURITY ANOMALY - these are unsigned,
 //!      forgeable, and almost always indicate a misconfiguration or active
 //!      attack.
 
@@ -30,13 +30,13 @@ pub struct JwtAnalysis {
     pub alg: String,
     /// Header `typ` field when present (typically `JWT` or `at+jwt`).
     pub typ: Option<String>,
-    /// Header `kid` field — useful for key-rotation forensics.
+    /// Header `kid` field - useful for key-rotation forensics.
     pub kid: Option<String>,
-    /// Payload `iss` claim — surfaces the issuer service.
+    /// Payload `iss` claim - surfaces the issuer service.
     pub iss: Option<String>,
-    /// Payload `sub` claim — subject (user/service identifier).
+    /// Payload `sub` claim - subject (user/service identifier).
     pub sub: Option<String>,
-    /// Payload `aud` claim — single audience or comma-joined list.
+    /// Payload `aud` claim - single audience or comma-joined list.
     pub aud: Option<String>,
     /// Payload `exp` claim, if numeric.
     pub exp: Option<i64>,
@@ -50,7 +50,7 @@ pub struct JwtAnalysis {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum JwtAnomaly {
-    /// `alg = "none"` — unsigned token. Should never appear in production
+    /// `alg = "none"` - unsigned token. Should never appear in production
     /// credentials; almost always a misconfiguration or active forgery
     /// attack. RFC 7519 §6 calls this out as risky.
     AlgNone,
@@ -77,7 +77,7 @@ pub fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<String, 
             JwtAnomaly::AlgNone => {
                 out.insert(
                     "jwt.alg_none".to_string(),
-                    "true (unsigned token — RFC 7519 §6 risk)".to_string(),
+                    "true (unsigned token: RFC 7519 §6 risk)".to_string(),
                 );
             }
             JwtAnomaly::UnknownAlg(alg) => {
@@ -95,8 +95,9 @@ pub fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<String, 
 }
 
 /// Returns `true` when `s` looks like a JWT (three base64url segments).
-/// Cheap shape check — does NOT decode.
+/// Cheap shape check - does NOT decode.
 pub fn looks_like_jwt(s: &str) -> bool {
+    let s = s.trim();
     const MAX_JWT_SEGMENT_LEN: usize = 16 * 1024; // 16KB limit per segment
 
     let mut parts = s.split('.');
@@ -125,11 +126,12 @@ pub fn looks_like_jwt(s: &str) -> bool {
 /// Full structural analysis. Returns `None` if `s` is not a parseable JWT
 /// (missing dots, non-base64url header/payload, malformed JSON inside).
 ///
-/// Signature verification is intentionally NOT performed — that requires
+/// Signature verification is intentionally NOT performed - that requires
 /// the issuer's public key, which we don't have. Structural validation is
 /// the high-recall layer; the verifier crate handles cryptographic checks
 /// for services that expose them.
 pub fn analyze(s: &str) -> Option<JwtAnalysis> {
+    let s = s.trim();
     if !looks_like_jwt(s) {
         return None;
     }
@@ -163,12 +165,18 @@ pub fn analyze(s: &str) -> Option<JwtAnalysis> {
         }
     }
 
-    let expired = payload.exp.map(|exp| {
+    let exp_val = payload.exp.take();
+    let exp = exp_val.and_then(|v| match v {
+        serde_json::Value::Number(n) => n.as_i64(),
+        _ => None,
+    });
+
+    let expired = exp.map(|exp_val| {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        let is_expired = now >= exp;
+        let is_expired = now >= exp_val;
         if is_expired {
             anomalies.push(JwtAnomaly::Expired);
         }
@@ -182,7 +190,7 @@ pub fn analyze(s: &str) -> Option<JwtAnalysis> {
         iss,
         sub,
         aud,
-        exp: payload.exp,
+        exp,
         expired,
         anomalies,
     })
@@ -238,7 +246,7 @@ struct JwtPayload {
     sub: Option<String>,
     #[serde(default)]
     aud: serde_json::Value,
-    exp: Option<i64>,
+    exp: Option<serde_json::Value>,
 }
 
 impl JwtPayload {
@@ -301,7 +309,7 @@ mod tests {
     fn analyze_flags_alg_none() {
         // Header `{"alg":"none","typ":"JWT"}` base64url, payload `{}`. The
         // signature segment must be non-empty for `looks_like_jwt` to accept
-        // the shape — `alg=none` JWTs in the wild typically still emit a
+        // the shape - `alg=none` JWTs in the wild typically still emit a
         // dummy signature segment for transport compatibility, even though
         // it carries no cryptographic meaning. We mirror that here.
         let none_jwt = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.e30.AAAA";

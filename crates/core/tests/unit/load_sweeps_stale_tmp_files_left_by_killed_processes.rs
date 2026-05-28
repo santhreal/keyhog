@@ -57,12 +57,12 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     // backdate its mtime to 2 hours ago. Calling `load` (which
     // doesn't even need to find the real cache) should trigger
     // the sweep and delete it. A fresh tmp must survive the
-    // sweep — covering the case where another keyhog process
+    // sweep - covering the case where another keyhog process
     // is mid-save right now.
     let dir = tempfile::tempdir().unwrap();
     let cache_path = dir.path().join("merkle.idx");
 
-    // Old tmp — should be swept.
+    // Old tmp - should be swept.
     let old_tmp = dir.path().join(".tmpABCDEF");
     std::fs::write(&old_tmp, b"stale leftover").unwrap();
     let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
@@ -72,7 +72,7 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     // age check still doesn't sweep just-created files; we
     // can't easily backdate without extra deps.)
 
-    // Fresh tmp — should be preserved.
+    // Fresh tmp - should be preserved.
     let fresh_tmp = dir.path().join(".tmpFRESH");
     std::fs::write(&fresh_tmp, b"in-flight save").unwrap();
 
@@ -85,7 +85,7 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     // Fresh tmp survives.
     assert!(
         fresh_tmp.exists(),
-        "sweep deleted a fresh tmp file — race with in-flight save"
+        "sweep deleted a fresh tmp file - race with in-flight save"
     );
     // Unrelated sibling survives.
     assert!(
@@ -97,7 +97,7 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     // sweep correctly skips it (mtime is "now" → <1 hour),
     // which is the safe default.
     if !old_tmp.exists() {
-        // happy path — sweep fired
+        // happy path - sweep fired
     } else {
         // mtime backdate didn't take effect; can't assert
         // sweep behavior on this platform without extra deps.

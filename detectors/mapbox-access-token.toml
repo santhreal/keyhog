@@ -13,7 +13,7 @@ keywords = ["pk.eyJ", "sk.eyJ"]
 [[detector.patterns]]
 regex = 'pk\.eyJ[0-9A-Za-z_-]{60,128}\.[0-9A-Za-z_-]{20,64}'
 description = "Mapbox public access token"
-# `pk.eyJ` tokens are explicitly the publishable variant — Mapbox
+# `pk.eyJ` tokens are explicitly the publishable variant - Mapbox
 # shows them next to the API docs as "Default public token" and
 # expects them in browser/mobile bundles. URL-restriction + scope
 # settings on the token page are the security boundary, not the

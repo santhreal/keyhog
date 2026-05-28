@@ -1,6 +1,6 @@
 [package]
 name = "keyhog-scanner"
-description = "keyhog-scanner — high-performance SIMD-accelerated secret detection engine"
+description = "keyhog-scanner: high-performance SIMD-accelerated secret detection engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -113,3 +113,7 @@ harness = false
 [[bench]]
 name = "adversarial"
 harness = false
+
+[[test]]
+name = "prefilter_robustness_proptest"
+path = "tests/property/prefilter_robustness_proptest.rs"

@@ -4,7 +4,7 @@
 //! `.keyhogignore`. Each `[[suppress]]` table compiles into a vyre
 //! `RuleFormula` evaluated per-finding via vyre's CPU evaluator
 //! (`vyre_libs::rule::evaluate_formula`). Findings whose rules
-//! evaluate to `true` are dropped from the report — same semantics
+//! evaluate to `true` are dropped from the report - same semantics
 //! as the line-based allowlist, just composable.
 //!
 //! Schema (one or more `[[suppress]]` tables):
@@ -46,7 +46,7 @@ use vyre_libs::rule::{evaluate_formula, RuleCondition, RuleEvaluationContext, Ru
 
 use crate::{Severity, VerifiedFinding};
 
-/// Parsed `.keyhogignore.toml` — a list of `[[suppress]]` rules,
+/// Parsed `.keyhogignore.toml` - a list of `[[suppress]]` rules,
 /// each compiled into a `RuleFormula`.
 #[derive(Debug, Default)]
 pub struct RuleSuppressor {
@@ -61,9 +61,9 @@ struct SuppressEntry {
     detector: Option<String>,
     /// Service exact match (e.g. `"stripe"`).
     service: Option<String>,
-    /// Severity equals — case-insensitive (info / low / medium / high / critical).
+    /// Severity equals - case-insensitive (info / low / medium / high / critical).
     severity: Option<String>,
-    /// Severity ≤ — finding's severity must be at most this rank.
+    /// Severity ≤ - finding's severity must be at most this rank.
     severity_lte: Option<String>,
     /// File path exact match.
     path_eq: Option<String>,
@@ -116,7 +116,7 @@ impl<'a> FindingContext<'a> {
 }
 
 impl RuleSuppressor {
-    /// Build an empty suppressor — matches no findings.
+    /// Build an empty suppressor - matches no findings.
     pub fn empty() -> Self {
         Self::default()
     }
@@ -176,6 +176,7 @@ impl RuleSuppressor {
         self.rules.len()
     }
 
+    /// Returns true when no suppression rules are configured.
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
@@ -251,7 +252,7 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     // The `if conditions.is_empty() { return Err(...) }` guard ~9
     // lines above proves non-empty here, but a future refactor that
     // tightens the guard (or drops it) shouldn't panic the rule
-    // compiler — fall through to the same error path so the user
+    // compiler - fall through to the same error path so the user
     // gets the parsable "no conditions" message instead of a
     // backtrace.
     let Some(first) = iter.next() else {

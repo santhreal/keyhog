@@ -10,7 +10,7 @@
 //! secret was caught.
 //!
 //! When the directory is empty, the runner passes vacuously. The
-//! hard gate is one file = one binding truth test — every entry
+//! hard gate is one file = one binding truth test - every entry
 //! becomes a hard-fail the moment it's added, so the runner
 //! grows teeth incrementally as the CVE corpus is populated.
 //!
@@ -84,7 +84,7 @@ fn every_cve_replay_entry_must_fire() {
     let entries = load_entries();
     if entries.is_empty() {
         eprintln!(
-            "CVE replay corpus is empty — vacuous pass. Populate \
+            "CVE replay corpus is empty - vacuous pass. Populate \
              crates/scanner/tests/cve_replay/*.toml with public leaks \
              (see README in that directory) to gate recall on known shapes."
         );

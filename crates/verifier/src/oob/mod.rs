@@ -2,7 +2,7 @@
 //!
 //! ## Why this exists
 //!
-//! The classical verifier asks: "does the API return 200?" — a clever per-
+//! The classical verifier asks: "does the API return 200?" - a clever per-
 //! service heuristic answer that tells us the credential parses. For
 //! webhook- and callback-shaped credentials (Slack incoming webhooks, Discord
 //! webhooks, generic alerting endpoints, mailers) "200 OK" is necessary but
@@ -12,7 +12,7 @@
 //! OOB verification closes the gap. We mint a unique per-finding subdomain
 //! pointed at an interactsh collector, embed it in the verification probe,
 //! send the probe, and wait for the service to call back. If the callback
-//! arrives, the credential is **provably exfil-capable** — the service
+//! arrives, the credential is **provably exfil-capable** - the service
 //! actually fetched our collector with attacker-controlled traffic.
 //!
 //! ## Trust model
@@ -20,7 +20,7 @@
 //! - The OOB client is opt-in (`--verify-oob`). Default scans never make
 //!   a single OOB request.
 //! - Public collectors (oast.fun, oast.pro, …) see only the correlation IDs
-//!   we mint and the IPs of the services calling back — never the credential
+//!   we mint and the IPs of the services calling back - never the credential
 //!   itself. The credential is sent **to the legitimate service**, not to
 //!   the collector.
 //! - Self-host (`projectdiscovery/interactsh-server`) for sensitive scans.

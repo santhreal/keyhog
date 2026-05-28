@@ -7,6 +7,6 @@ fn ml_weights_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "ml_weights: {lines} lines exceeds 500-line cap — split module"
+        "ml_weights: {lines} lines exceeds 500-line cap - split module"
     );
 }

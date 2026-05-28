@@ -11,6 +11,7 @@ fn scan_does_not_cross_chunk_boundary() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

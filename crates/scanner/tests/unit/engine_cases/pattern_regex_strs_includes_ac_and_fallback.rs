@@ -11,6 +11,7 @@ fn pattern_regex_strs_includes_ac_and_fallback() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

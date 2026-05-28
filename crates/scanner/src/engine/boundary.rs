@@ -13,7 +13,7 @@
 //! The boundary buffer is bounded (`MAX_BOUNDARY` bytes per side) so the
 //! cost is independent of chunk size: at most ~2 KiB of data per pair of
 //! adjacent chunks. With N chunks per file, that's `(N-1) * 2 KiB` of
-//! boundary data — negligible next to the per-chunk scan cost.
+//! boundary data - negligible next to the per-chunk scan cost.
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 
@@ -33,7 +33,7 @@ const MAX_BOUNDARY: usize = 1024;
 ///
 /// "Adjacent" means: same `(source_type, path)` and `b.base_offset`
 /// equals `a.base_offset + a.data.len()` exactly (gapless, no overlap).
-/// Overlapping chunks are intentionally skipped — the overlap region
+/// Overlapping chunks are intentionally skipped - the overlap region
 /// already gives the in-chunk scan everything it needs to catch secrets
 /// up to `overlap` bytes long, and any secret longer than that would
 /// also be visible inside the right-hand chunk on its own.
@@ -135,7 +135,7 @@ fn scan_one_pair(
     //
     // kimi-engine audit: caller-supplied chunk metadata sets
     // `base_offset`. A malformed source that reports `base_offset`
-    // near `usize::MAX` would overflow the additions below — debug
+    // near `usize::MAX` would overflow the additions below - debug
     // panic, release wrap to a bogus offset that misattributes the
     // finding. checked_add + early return keeps the scan moving and
     // simply skips the (impossible-on-real-input) boundary case.
@@ -161,7 +161,7 @@ fn scan_one_pair(
     };
 
     for m in boundary_matches {
-        // Keep only matches that genuinely straddle the seam — i.e. the
+        // Keep only matches that genuinely straddle the seam - i.e. the
         // match starts in A's tail (file_offset < seam) and ends in
         // B's head (file_offset + len > seam). Anything fully on one
         // side is already covered by that chunk's own scan.
@@ -216,6 +216,7 @@ mod tests {
                 regex: r"STRADDLE_[A-Z0-9]{20}".into(),
                 description: None,
                 group: None,
+                client_safe: false,
             }],
             companions: Vec::new(),
             verify: None,
@@ -254,7 +255,7 @@ mod tests {
     #[test]
     fn boundary_skips_chunks_with_overlap() {
         // Overlap means the in-chunk scan already covers the seam.
-        // Boundary helper must not fire here — that would double-count.
+        // Boundary helper must not fire here - that would double-count.
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
         let secret = "STRADDLE_A1CDEFGH2JKLMNOPQ8ST";
         let pad = "x".repeat(100);
@@ -279,7 +280,7 @@ mod tests {
 
     #[test]
     fn boundary_skips_chunks_with_gap() {
-        // Missing data between chunks — can't reassemble what isn't there.
+        // Missing data between chunks - can't reassemble what isn't there.
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
         let chunks = vec![
             make_chunk("padding".into(), 0, "file.txt"),
@@ -347,7 +348,7 @@ mod tests {
 
     #[test]
     fn boundary_handles_single_chunk() {
-        // No pairs to consider — must return cleanly without panicking.
+        // No pairs to consider - must return cleanly without panicking.
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
         let chunks = vec![make_chunk("alone".into(), 0, "file.txt")];
         let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new()];

@@ -7,6 +7,6 @@ fn s3_auth_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "s3::auth: {lines} lines exceeds 500-line cap — split module"
+        "s3::auth: {lines} lines exceeds 500-line cap - split module"
     );
 }

@@ -4,7 +4,7 @@
 //! normal CI. When enabled, it plants a credential read from one of the
 //! recognized env-var pairs into a temp file, runs `keyhog scan
 //! --verify --no-daemon` against that file, and asserts the binary
-//! exits with code 10 — the `EXIT_LIVE_CREDENTIALS` contract from
+//! exits with code 10 - the `EXIT_LIVE_CREDENTIALS` contract from
 //! `crates/cli/src/orchestrator.rs:45`.
 //!
 //! Why this exists: every other test in the tree uses synthesized
@@ -96,7 +96,7 @@ fn collect_live_credentials() -> Vec<LiveCredential> {
 fn live_verify_smoke_real_credentials_yield_exit_10() {
     if !live_verify_enabled() {
         eprintln!(
-            "live_verify_smoke: skipped — set KEYHOG_LIVE_VERIFY=1 and \
+            "live_verify_smoke: skipped - set KEYHOG_LIVE_VERIFY=1 and \
              at least one of KEYHOG_LIVE_AWS_ACCESS_KEY_ID/SECRET, \
              KEYHOG_LIVE_GITHUB_PAT to run the live-verify smoke."
         );
@@ -106,7 +106,7 @@ fn live_verify_smoke_real_credentials_yield_exit_10() {
     let creds = collect_live_credentials();
     if creds.is_empty() {
         // The opt-in env var was set but no credentials were supplied.
-        // That's a user error — surface it loudly so the CI run that
+        // That's a user error - surface it loudly so the CI run that
         // enabled the gate doesn't silently pass without proving anything.
         panic!(
             "KEYHOG_LIVE_VERIFY=1 but no credentials supplied. Set at \
@@ -136,7 +136,7 @@ fn live_verify_smoke_real_credentials_yield_exit_10() {
 
         // The hard contract: a real, live credential must produce
         // exit 10. Exit 1 means the detector fired but the verifier
-        // classified it as Dead / Unverifiable / Unknown — that is
+        // classified it as Dead / Unverifiable / Unknown - that is
         // a regression in the verifier's auth-signing or response-
         // parsing path, NOT a configuration issue, because the
         // developer is telling us with KEYHOG_LIVE_VERIFY=1 that
@@ -146,7 +146,7 @@ fn live_verify_smoke_real_credentials_yield_exit_10() {
             Some(EXIT_LIVE_CREDENTIALS),
             "{label}: expected exit {expected} (EXIT_LIVE_CREDENTIALS) \
              but got {code:?}. The verifier's network roundtrip for \
-             this credential class is broken — investigate {verifier_module}.\n\
+             this credential class is broken - investigate {verifier_module}.\n\
              stdout:\n{stdout}\nstderr:\n{stderr}",
             label = cred.label,
             expected = EXIT_LIVE_CREDENTIALS,

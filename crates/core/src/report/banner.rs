@@ -1,7 +1,7 @@
 //! Braille-dot keyhole banner with true-color gradient rendering.
 //!
 //! Renders a high-resolution keyhole icon using Unicode braille characters
-//! (U+2800..U+28FF), which provide 2×4 pixel resolution per character cell —
+//! (U+2800..U+28FF), which provide 2×4 pixel resolution per character cell -
 //! 8× the resolution of traditional ASCII block art. Combined with ANSI
 //! true-color (24-bit) gradient coloring, the result is a smooth, distinctive
 //! visual that looks like an actual graphic rendered inside the terminal.
@@ -33,21 +33,21 @@ const KEYHOLE_COLS: usize = 20;
 /// so this produces a 10-char × 6-row braille image.
 const KEYHOLE_GRID: &[&str] = &[
     //  01234567890123456789
-    "      ########      ", // 0  — circle top
+    "      ########      ", // 0  - circle top
     "    ############    ", // 1
     "   ##############   ", // 2
-    "  ################  ", // 3  — circle widest
+    "  ################  ", // 3  - circle widest
     "  ################  ", // 4
-    "  ####  ####  ####  ", // 5  — inner circle void (the "hole" part of keyhole)
+    "  ####  ####  ####  ", // 5  - inner circle void (the "hole" part of keyhole)
     "  ####        ####  ", // 6
     "  ####        ####  ", // 7
     "  ####  ####  ####  ", // 8
     "  ################  ", // 9
     "  ################  ", // 10
     "   ##############   ", // 11
-    "    ####    ####    ", // 12 — transition to shaft
+    "    ####    ####    ", // 12 - transition to shaft
     "     ####  ####     ", // 13
-    "      ########      ", // 14 — shaft top
+    "      ########      ", // 14 - shaft top
     "      ########      ", // 15
     "       ######       ", // 16
     "       ######       ", // 17
@@ -55,7 +55,7 @@ const KEYHOLE_GRID: &[&str] = &[
     "       ######       ", // 19
     "       ######       ", // 20
     "       ######       ", // 21
-    "      ########      ", // 22 — shaft bottom flare
+    "      ########      ", // 22 - shaft bottom flare
     "      ########      ", // 23
 ];
 

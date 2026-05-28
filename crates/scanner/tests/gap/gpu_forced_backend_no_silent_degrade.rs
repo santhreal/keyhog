@@ -33,7 +33,7 @@ fn gpu_backend_warm_reports_availability() {
 
     if !gpu_ready {
         panic!(
-            "KH-GAP-002: KEYHOG_BACKEND=gpu set but warm_backend(Gpu) returned false — \
+            "KH-GAP-002: KEYHOG_BACKEND=gpu set but warm_backend(Gpu) returned false - \
              silent CPU fallback is forbidden without explicit error"
         );
     }

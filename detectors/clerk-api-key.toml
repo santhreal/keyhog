@@ -13,7 +13,7 @@ keywords = ["pk_", "clerk"]
 [[detector.patterns]]
 regex = 'pk_(?:live|test)_[a-zA-Z0-9]{32}'
 description = "Clerk publishable API key (pk_live_ or pk_test_)"
-# `pk_*` keys are the publishable variant — they ship in the
+# `pk_*` keys are the publishable variant - they ship in the
 # browser bundle with <ClerkProvider>. Server-side auth uses the
 # Clerk secret key (separate detector).
 client_safe = true

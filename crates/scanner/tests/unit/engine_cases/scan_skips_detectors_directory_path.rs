@@ -11,6 +11,7 @@ fn scan_skips_detectors_directory_path() {
             regex: "secret".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

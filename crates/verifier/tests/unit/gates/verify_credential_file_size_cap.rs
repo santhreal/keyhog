@@ -7,6 +7,6 @@ fn verify_credential_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "verify::credential: {lines} lines exceeds 500-line cap — split module"
+        "verify::credential: {lines} lines exceeds 500-line cap - split module"
     );
 }

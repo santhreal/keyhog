@@ -10,8 +10,7 @@ async fn main() -> Result<(), keyhog_verifier::VerifyError> {
         severity: Severity::High,
         patterns: vec![PatternSpec {
             regex: "demo_[A-Z0-9]{8}".into(),
-            description: None,
-            group: None,
+            ..Default::default()
         }],
         companions: Vec::new(),
         verify: None,

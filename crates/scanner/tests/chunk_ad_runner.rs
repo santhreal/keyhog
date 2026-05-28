@@ -134,7 +134,7 @@ fn chunk_contracts_pass_positives_and_negatives() {
             if !any_credential_contains(&matches, &p.credential) {
                 let creds: Vec<_> = matches.iter().map(|m| m.credential.as_ref()).collect();
                 failures.push(format!(
-                    "{}: positive MISSED — credential {:?} not in {:?} ({})",
+                    "{}: positive MISSED - credential {:?} not in {:?} ({})",
                     c.detector_id,
                     p.credential,
                     creds,
@@ -156,7 +156,7 @@ fn chunk_contracts_pass_positives_and_negatives() {
                     .map(|m| m.credential.as_ref())
                     .collect();
                 failures.push(format!(
-                    "{}: false positive on negative — {:?} ({}) saw {:?}",
+                    "{}: false positive on negative - {:?} ({}) saw {:?}",
                     c.detector_id,
                     n.text,
                     path.display(),

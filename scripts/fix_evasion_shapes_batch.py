@@ -130,7 +130,7 @@ def patch_contract(path: Path, pattern: str, new_text: str, new_cred: str) -> bo
     old_text = unquote_toml(m.group(2))
     if old_text == new_text:
         return False
-    reason = f"Adversarial {pattern} envelope — credential must still surface under this detector."
+    reason = f"Adversarial {pattern} envelope - credential must still surface under this detector."
     repl = (
         m.group(1)
         + toml_str(new_text)

@@ -7,6 +7,6 @@ fn github_org_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "github_org: {lines} lines exceeds 500-line cap — split module"
+        "github_org: {lines} lines exceeds 500-line cap - split module"
     );
 }

@@ -127,7 +127,7 @@ def main() -> int:
         if evasion_text == new_text:
             continue
 
-        reason = f"Adversarial {pattern} envelope — credential must still surface under this detector."
+        reason = f"Adversarial {pattern} envelope - credential must still surface under this detector."
         repl = (
             em.group(1)
             + toml_str(new_text)

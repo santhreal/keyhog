@@ -1,6 +1,11 @@
 //! Detector specification: TOML-based pattern definitions with regex, keywords,
 //! verification endpoints, and companion patterns.
 
+// Debt bucket: 55 public items, each landed before the crate floor raised
+// `missing_docs` to `warn`. Each is part of the public TOML schema and would
+// benefit from a doc line; remove this allow once they all carry one.
+#![allow(missing_docs)]
+
 mod load;
 mod validate;
 
@@ -46,7 +51,7 @@ pub struct DetectorSpec {
 }
 
 /// A regex pattern with optional capture group and description.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PatternSpec {
     /// Regular expression string (Rust flavor).
     pub regex: String,
@@ -58,11 +63,13 @@ pub struct PatternSpec {
     /// finding to `Severity::ClientSafe` (regardless of the detector's
     /// nominal severity). Used by services that intentionally ship
     /// public-facing keys in client bundles:
+    ///
     ///   - Sentry DSN (the `https://<key>@` URL is meant for the browser)
     ///   - Stripe `pk_live_` / `pk_test_` (publishable, sk_ is secret)
     ///   - Mapbox `pk.` (public, `sk.` is secret)
     ///   - Firebase Web API key, Google Maps browser key
     ///   - PostHog / Mixpanel / Algolia search / Datadog browser RUM
+    ///
     /// Per-pattern (not per-detector) so detectors that fire on both
     /// the public *and* the secret prefix can tag only the public one.
     #[serde(default)]
@@ -111,7 +118,7 @@ pub struct VerifySpec {
     #[serde(default)]
     pub steps: Vec<StepSpec>,
     /// Domain allowlist for the verify URL after interpolation. If non-empty,
-    /// the resolved host of the (interpolated) URL — and of every step's URL —
+    /// the resolved host of the (interpolated) URL - and of every step's URL -
     /// MUST equal one of these entries (or be a subdomain of one). When empty,
     /// the verifier falls back to a hardcoded service allowlist if the
     /// `service` field maps to a known provider; otherwise the verifier
@@ -130,7 +137,7 @@ pub struct VerifySpec {
     /// every probe still has to actually fetch our collector to confirm it
     /// will deliver attacker-controlled traffic.
     ///
-    /// Gated behind the runtime `--verify-oob` flag — never default. When the
+    /// Gated behind the runtime `--verify-oob` flag - never default. When the
     /// flag is off, `oob` is ignored and verification falls back to the
     /// HTTP success criteria alone.
     pub oob: Option<OobSpec>,
@@ -165,7 +172,7 @@ pub struct OobSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OobProtocol {
-    /// Any DNS resolution against `{{interactsh}}.host`. Cheapest signal —
+    /// Any DNS resolution against `{{interactsh}}.host`. Cheapest signal -
     /// many services resolve a webhook URL even before fetching it.
     Dns,
     /// HTTP or HTTPS request to the interactsh URL. The strongest signal;
@@ -174,7 +181,7 @@ pub enum OobProtocol {
     /// SMTP delivery attempt to `<random>@{{interactsh.host}}`. For mail
     /// detectors (Mailgun, SendGrid, …) where exfil = sending mail.
     Smtp,
-    /// Any of the above. Use sparingly — a chatty CDN doing DNS prefetch
+    /// Any of the above. Use sparingly - a chatty CDN doing DNS prefetch
     /// can cause false positives.
     Any,
 }

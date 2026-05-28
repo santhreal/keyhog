@@ -7,6 +7,6 @@ fn oob_session_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "oob::session: {lines} lines exceeds 500-line cap — split module"
+        "oob::session: {lines} lines exceeds 500-line cap - split module"
     );
 }

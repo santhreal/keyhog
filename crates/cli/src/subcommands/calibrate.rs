@@ -1,4 +1,4 @@
-//! `keyhog calibrate` — show or update per-detector Beta(α, β) counters.
+//! `keyhog calibrate` - show or update per-detector Beta(α, β) counters.
 //!
 //! Tier-B moat innovation #4 from audits/legendary-2026-04-26.
 

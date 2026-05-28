@@ -22,9 +22,9 @@ use std::sync::LazyLock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ChecksumResult {
-    /// Checksum matches — token is/was real.
+    /// Checksum matches - token is/was real.
     Valid,
-    /// Checksum fails — likely false positive.
+    /// Checksum fails - likely false positive.
     Invalid,
     /// Token format doesn't have a checksum (or this validator can't verify it).
     NotApplicable,

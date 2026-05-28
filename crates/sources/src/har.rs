@@ -11,10 +11,10 @@
 //!
 //! This module is the parser. For each entry we emit:
 //!
-//! - one chunk per request — concatenates the method, URL, headers,
+//! - one chunk per request - concatenates the method, URL, headers,
 //!   query string, and POST body into one searchable text blob tagged
 //!   `wire:har:request` with the URL as the path metadata.
-//! - one chunk per response — concatenates the status, headers, and
+//! - one chunk per response - concatenates the status, headers, and
 //!   body text, tagged `wire:har:response`.
 //!
 //! Two chunks per entry means a finding's `source_type` immediately
@@ -25,7 +25,7 @@
 //! Defenses:
 //! - Refuse to parse anything larger than `max_size` (per-file cap).
 //! - Refuse to parse beyond 4× `max_size` of expanded request+response
-//!   bodies — defeats a malicious HAR that decompresses to gigabytes.
+//!   bodies - defeats a malicious HAR that decompresses to gigabytes.
 //! - Tolerate broken JSON (a partial export from a crashed browser):
 //!   `serde_json` returns Err and we fall through to scanning the raw
 //!   bytes as plain text. Better to grep the malformed JSON than to
@@ -42,7 +42,7 @@ use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 /// entry was rejected (size cap / empty bodies).
 ///
 /// `path_str` is the display path used as the `ChunkMetadata.path`
-/// prefix for each emitted chunk — typically the path the user passed
+/// prefix for each emitted chunk - typically the path the user passed
 /// to `keyhog scan`. The per-entry URL is appended with `#`.
 pub fn try_expand_har(
     bytes: &[u8],
@@ -143,7 +143,7 @@ fn trim_bom_and_whitespace(bytes: &[u8]) -> &[u8] {
 }
 
 fn contains_har_marker(bytes: &[u8]) -> bool {
-    // Look for both `"log"` and `"entries"` within the first 1 KiB —
+    // Look for both `"log"` and `"entries"` within the first 1 KiB -
     // every HAR has them near the top. False positives are fine; the
     // JSON parser will reject and we fall through.
     let head = &bytes[..bytes.len().min(2048)];

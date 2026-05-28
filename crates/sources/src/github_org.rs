@@ -225,9 +225,9 @@ fn collect_org_chunks(
                 // filesystem-join or process-spawn happens. A hostile
                 // GitHub API response (compromised endpoint, GHE proxy)
                 // could return `name = "../../etc/passwd"` (path
-                // traversal — kimi-5 finding #2) or
+                // traversal - kimi-5 finding #2) or
                 // `clone_url = "ext::sh -c whoami"` (git URL-scheme
-                // RCE — kimi-5 finding #1). We refuse anything that
+                // RCE - kimi-5 finding #1). We refuse anything that
                 // is not a single safe path component and an https://
                 // clone URL.
                 validate_repo_name(&repo.name)?;
@@ -253,7 +253,7 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
         HeaderValue::from_static("application/vnd.github+json"),
     );
     // USER_AGENT is set by `blocking_client_builder` (`keyhog/<version>
-    // (github-org)`). We intentionally don'"'"'t set it in default_headers —
+    // (github-org)`). We intentionally don'"'"'t set it in default_headers -
     // reqwest's user_agent() takes precedence anyway and the duplicate
     // header would confuse GitHub'"'"'s rate-limiting which keys off UA.
     headers.insert(

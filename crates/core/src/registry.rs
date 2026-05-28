@@ -1,6 +1,10 @@
 //! Global registry for pluggable components (Sources, Verifiers).
 //! This allows adding new features in a single file without modifying the core.
 
+// Debt bucket: 10 items predating the crate floor raising `missing_docs` to
+// `warn`. Remove this allow once each registry item carries a doc line.
+#![allow(missing_docs)]
+
 use crate::{DedupedMatch, Source, VerificationResult};
 use parking_lot::RwLock;
 use std::collections::HashMap;

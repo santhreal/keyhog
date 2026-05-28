@@ -185,7 +185,7 @@ fn has_var_ref_concatenation(text: &str) -> bool {
 fn has_var_ref_concat_line(line: &str) -> bool {
     // Cheap precheck: var-ref concatenation REQUIRES at least one `+`
     // separator between two identifiers. Lines without one cannot
-    // possibly match — skip the regex entirely. Without this, the
+    // possibly match - skip the regex entirely. Without this, the
     // `(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}` repeated-group bound forces
     // the regex crate's NFA to evaluate every starting position on
     // identifier-dense source lines, which on Apple Silicon

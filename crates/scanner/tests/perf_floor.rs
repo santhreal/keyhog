@@ -4,8 +4,8 @@
 //! source-code fixture stays AT OR ABOVE a hard MiB/s floor. The
 //! floor is intentionally conservative (well below current steady-
 //! state numbers) so that ordinary noise doesn't redden the gate,
-//! but a 2× slowdown — the kind of regression a real algorithm
-//! change would introduce — will reliably fail this.
+//! but a 2× slowdown - the kind of regression a real algorithm
+//! change would introduce - will reliably fail this.
 //!
 //! Why a test, not a criterion bench: criterion benches run on
 //! demand and aren't part of CI's `cargo test`. A floor test runs
@@ -15,7 +15,7 @@
 //! perf trends; this file is the throughput TRIPWIRE.
 //!
 //! Fixture shape: 4 MiB of pseudo-Go-source with NO planted
-//! credentials — the test measures the fast-path (alphabet screen +
+//! credentials - the test measures the fast-path (alphabet screen +
 //! bigram bloom + AC pre-filter early-reject) throughput on benign
 //! code, which is what 99%+ of a real repository looks like. A
 //! credential-dense workload would primarily measure ML scoring +
@@ -135,7 +135,7 @@ fn scanner_throughput_above_floor() {
         "throughput regression: got {:.1} MiB/s, floor is {:.1} MiB/s. \
          The scanner has slowed substantially vs the steady-state \
          single-thread baseline. Investigate the most recent algorithmic \
-         change — likely culprits: new regex with catastrophic \
+         change - likely culprits: new regex with catastrophic \
          backtracking, a per-byte cost added to the AC pre-filter, or \
          a suppression heuristic that now walks the full credential on \
          every hit.",
@@ -145,13 +145,13 @@ fn scanner_throughput_above_floor() {
 
     // Also assert: scanner found 0 findings on the benign fixture.
     // If THIS regresses (the benign fixture starts firing detectors)
-    // the perf number above is no longer measuring the fast-path —
+    // the perf number above is no longer measuring the fast-path -
     // it's measuring the slow regex + ML scoring path, which is the
     // wrong gate. Catch the test going stale before it lies.
     assert_eq!(
         matches.len(),
         0,
-        "perf_floor fixture started firing {} detector(s) — the fixture \
+        "perf_floor fixture started firing {} detector(s) - the fixture \
          has drifted out of the benign-code shape and is now measuring \
          the slow regex+ML path. Regenerate the fixture or tighten the \
          text so the alphabet-screen + bigram-bloom fast-path rejects \

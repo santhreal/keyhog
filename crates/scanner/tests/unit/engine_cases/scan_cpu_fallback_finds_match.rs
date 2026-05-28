@@ -11,6 +11,7 @@ fn scan_cpu_fallback_finds_match() {
             regex: "tok".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

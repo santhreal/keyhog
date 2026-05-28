@@ -15,7 +15,7 @@ regex = "(?:mixpanel|MIXPANEL|mp)[_.]?(?:token|TOKEN|project[_.]?token)[=:\\s\"'
 description = "Mixpanel project token with context anchor"
 group = 1
 # Mixpanel project tokens are shipped client-side via `mixpanel.init`
-# — the token IS the project's public identifier for browser/mobile
+# - the token IS the project's public identifier for browser/mobile
 # tracking. Server-side API access uses the Service Account (not this
 # token). `--hide-client-safe` drops these.
 client_safe = true

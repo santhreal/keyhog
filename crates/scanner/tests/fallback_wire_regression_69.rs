@@ -1,10 +1,10 @@
-//! Regression gate for #69 — every fallback-bucket detector (asana-pat
+//! Regression gate for #69 - every fallback-bucket detector (asana-pat
 //! and ~3100 similar prefix-less / unicode-rejected detectors) was
 //! silently dead because the SIMD/GPU hot path never called
 //! `scan_fallback_patterns`. Fix: the call now runs after
 //! `extract_confirmed_patterns` in both `scan_prepared_with_triggered`
 //! and `scan_prepared_with_pattern_hits`. This test asserts the wire
-//! is alive — if a future refactor drops the call again, this
+//! is alive - if a future refactor drops the call again, this
 //! catches it.
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;

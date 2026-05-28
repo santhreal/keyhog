@@ -1,7 +1,7 @@
 //! Static-string interner backed by vyre's CHD perfect hash.
 //!
 //! Built once at scanner construction from the universe of metadata
-//! strings that are stable across a scan run — every detector's
+//! strings that are stable across a scan run - every detector's
 //! `id`, `name`, `service`, plus the small set of `source_type`
 //! literals every source backend uses (`filesystem`, `git`,
 //! `git/history`, `stdin`, `s3`, `docker`, `web`, `github`, `slack`).
@@ -17,7 +17,7 @@
 //!  - Worst-case `O(1)`: two hash evaluations + one verify hash +
 //!    two array loads. No probing, no collision handling.
 //!  - Lower memory than a `HashMap` because there's no slot
-//!    overhead — just three arrays plus the arena.
+//!    overhead - just three arrays plus the arena.
 
 use std::sync::Arc;
 
@@ -98,7 +98,7 @@ impl StaticInterner {
         // set when their hash collides with an inserted key's slot
         // (the verify step inside `lookup` guards against this for
         // *exact* misses, but a slot-equality false positive can
-        // still happen if the verify hashes collide — astronomically
+        // still happen if the verify hashes collide - astronomically
         // unlikely with a 64-bit verify hash, but keep the bounds
         // check for correctness).
         let arc = self.arena.get(idx)?;
@@ -168,7 +168,7 @@ mod tests {
         let a = intern.lookup("hello-detector").unwrap();
         let b = intern.lookup("hello-detector").unwrap();
         // The Arc itself should be cloned from the same slot, not
-        // re-allocated — pointer-equality is the cheap proof.
+        // re-allocated - pointer-equality is the cheap proof.
         assert!(Arc::ptr_eq(&a, &b));
     }
 

@@ -10,16 +10,19 @@ use std::path::{Path, PathBuf};
 /// for general-purpose pools and protects against `--threads 9999999`
 /// misconfiguration that would either OOM-on-spawn or thrash the
 /// scheduler on a 4-core box.
-const MAX_THREADS_CAP: usize = 256;
+/// Hard ceiling on the worker thread count. Requested values above this are
+/// clamped (and logged) by [`sanitise_thread_count`]; spawning thousands of
+/// threads thrashes the OS scheduler without speeding the scan up.
+pub const MAX_THREADS_CAP: usize = 256;
 
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Resolution order: --threads CLI arg > KEYHOG_THREADS env > physical core
     // count. Physical (not logical) is the right default for CPU-bound regex
-    // — SMT/Hyperthreading siblings share execution units, so 2× the threads
+    // - SMT/Hyperthreading siblings share execution units, so 2× the threads
     // yields ~1.1× the throughput while doubling cache pressure.
     //
     // Each source is sanitised through `sanitise_thread_count`, which:
-    //   * rejects 0 (rayon would silently use its own default — confusing)
+    //   * rejects 0 (rayon would silently use its own default - confusing)
     //   * caps at `MAX_THREADS_CAP` (avoids spawn failures + scheduler thrash)
     // Both paths log a warning so an operator who fat-fingered the value
     // sees what was actually used.
@@ -146,7 +149,13 @@ pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>
         }
         let loaded = load_detectors(path)?;
         require_non_empty_detectors(&loaded, path)?;
-        let _ = keyhog_core::save_detector_cache(&loaded, &cache_path);
+        if let Err(error) = keyhog_core::save_detector_cache(&loaded, &cache_path) {
+            tracing::warn!(
+                cache_path = %cache_path.display(),
+                %error,
+                "detector cache write failed; subsequent runs will re-parse TOML from disk"
+            );
+        }
         return Ok(loaded);
     }
     load_detectors_embedded_or_fail(path)
@@ -170,7 +179,7 @@ pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> 
 /// directory, a directory full of malformed TOMLs that all get
 /// quality-gate rejected, or a typo'd `--detectors` path that
 /// happens to be a directory. Without this gate the scan runs
-/// against zero patterns, finds nothing, and exits SUCCESS — the
+/// against zero patterns, finds nothing, and exits SUCCESS - the
 /// user (or their CI) reads "no findings" and assumes the code
 /// is clean. That's the definition of a silent-data-loss bug.
 ///
@@ -187,7 +196,7 @@ pub(crate) fn require_non_empty_detectors(
              Fix: verify the directory contains valid `*.toml` detector \
              specs (run `keyhog detectors list --detectors {}` to see \
              which TOMLs were rejected, if any). Refusing to scan with \
-             no detectors loaded — that would silently report `no \
+             no detectors loaded - that would silently report `no \
              findings` regardless of what's in the source.",
             detectors_path.display(),
             detectors_path.display(),
@@ -203,7 +212,7 @@ pub(crate) fn require_non_empty_detectors(
 /// `scan_system`, `detectors`) can each call this one helper instead of
 /// shipping divergent copies. Pre-2026-05-24 each subcommand had its
 /// own load+fallback wrapper and the copies had drifted on error
-/// messages and on the fallback-to-embedded branch — kimi-dedup rows #4-6.
+/// messages and on the fallback-to-embedded branch - kimi-dedup rows #4-6.
 pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
     if path.exists() && path.is_dir() {
         let loaded = load_detectors(path).context("loading detectors from directory")?;
@@ -231,7 +240,7 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
         }
         if detectors.is_empty() {
             anyhow::bail!(
-                "no detectors loaded from embedded data — every embedded TOML \
+                "no detectors loaded from embedded data - every embedded TOML \
                  failed to parse. Fix: pass `--detectors <DIR>` to load from a \
                  directory of TOMLs, or rebuild keyhog from source so the \
                  build.rs detector-embedding step re-runs."
@@ -296,35 +305,3 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     config
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sanitise_thread_count_rejects_zero() {
-        assert_eq!(sanitise_thread_count(0, 8, "test"), 8);
-        // physical_cores=0 is itself pathological (probe failure);
-        // the .max(1) floor keeps us at least single-threaded.
-        assert_eq!(sanitise_thread_count(0, 0, "test"), 1);
-    }
-
-    #[test]
-    fn sanitise_thread_count_caps_pathological_values() {
-        assert_eq!(sanitise_thread_count(999_999, 8, "test"), MAX_THREADS_CAP);
-        assert_eq!(
-            sanitise_thread_count(MAX_THREADS_CAP + 1, 8, "test"),
-            MAX_THREADS_CAP
-        );
-    }
-
-    #[test]
-    fn sanitise_thread_count_passes_through_sane_values() {
-        assert_eq!(sanitise_thread_count(1, 8, "test"), 1);
-        assert_eq!(sanitise_thread_count(8, 8, "test"), 8);
-        assert_eq!(sanitise_thread_count(64, 8, "test"), 64);
-        assert_eq!(
-            sanitise_thread_count(MAX_THREADS_CAP, 8, "test"),
-            MAX_THREADS_CAP
-        );
-    }
-}

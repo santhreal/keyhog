@@ -49,7 +49,7 @@ that file in place.
 
 ### Accepted (rationale-documented)
 
-#### RUSTSEC-2023-0071 — `rsa 0.9.7` Marvin attack
+#### RUSTSEC-2023-0071 - `rsa 0.9.7` Marvin attack
 
 **Risk:** PKCS#1 v1.5 RSA decryption is timing-sidechannel-vulnerable
 (Marvin attack); an attacker with a decryption oracle can recover a key.
@@ -65,7 +65,7 @@ generate a keypair, share the public half with the InteractSh server,
 and decrypt server-pushed payloads locally. There is no remote
 decryption oracle exposed by keyhog.
 
-#### RUSTSEC-2026-0002 — `lru 0.12.5` IterMut Stacked Borrows violation
+#### RUSTSEC-2026-0002 - `lru 0.12.5` IterMut Stacked Borrows violation
 
 **Risk:** `LruCache::iter_mut()` invalidates an internal pointer
 (detectable by Miri's Stacked Borrows checker).
@@ -75,7 +75,7 @@ uses `lru::LruCache::get_or_insert_mut()` and `cluster.iter_mut()` on
 its own `Vec<SecretFragment>`, not on `LruCache::iter_mut()`. The
 unsound API isn't called.
 
-#### RUSTSEC-2026-0097 — `rand 0.8.5` unsound with custom logger
+#### RUSTSEC-2026-0097 - `rand 0.8.5` unsound with custom logger
 
 **Risk:** `rand::rng()` interaction with custom `tracing` logger has a
 data race when the global rng is replaced.
@@ -84,7 +84,7 @@ data race when the global rng is replaced.
 is pulled transitively via `num-bigint-dig` → `rsa`; both use only the
 default `OsRng` seed path. Our tracing logger does not call into rand.
 
-#### RUSTSEC-2024-0436 — `paste 1.0.15` unmaintained
+#### RUSTSEC-2024-0436 - `paste 1.0.15` unmaintained
 
 **Risk:** crate is unmaintained; future advisories will not get fixes.
 
@@ -95,17 +95,17 @@ suitable replacement appears in our transitive dep tree.
 
 ### Resolved in v0.5.3
 
-#### RUSTSEC-2025-0140 — `gix-date 0.9.4` non-utf8 String construction
+#### RUSTSEC-2025-0140 - `gix-date 0.9.4` non-utf8 String construction
 
 **Risk:** A malicious commit with a non-UTF-8 timestamp string could
 have triggered UB through `TimeBuf::as_str`.
 
 **Resolution:** Bumped `gix` from `=0.70.0` to `0.77.0` (which pulls
-`gix-date 0.12.0`+). The bump is API-clean — all five git-using
+`gix-date 0.12.0`+). The bump is API-clean - all five git-using
 sources tests pass without source changes. See commits under
 "security: bump gix".
 
-#### RUSTSEC-2025-0021 — `gix-features 0.40.0` SHA-1 collision attacks
+#### RUSTSEC-2025-0021 - `gix-features 0.40.0` SHA-1 collision attacks
 
 **Risk:** `gix-features 0.40.0` did not detect SHA-1 collisions in
 git objects (Severity 6.8 / medium).

@@ -1,4 +1,4 @@
-//! `keyhog daemon {start,stop,status}` — manage a long-lived
+//! `keyhog daemon {start,stop,status}` - manage a long-lived
 //! scanner process that amortizes the ~3 s `CompiledScanner::compile`
 //! cold start across many client invocations (pre-commit hooks, IDE
 //! save handlers, CI per-commit pipelines).

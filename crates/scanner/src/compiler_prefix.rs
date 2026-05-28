@@ -80,7 +80,7 @@ fn strip_leading_inline_flags(pattern: &str) -> &str {
     if !pattern.starts_with("(?") {
         return pattern;
     }
-    // (?i), (?m), (?s), (?x), (?im), (?ims), (?imsx) etc. — flags only, no ':'
+    // (?i), (?m), (?s), (?x), (?im), (?ims), (?imsx) etc. - flags only, no ':'
     let bytes = pattern.as_bytes();
     if bytes.len() < 4 || bytes[0] != b'(' || bytes[1] != b'?' {
         return pattern;
@@ -90,7 +90,7 @@ fn strip_leading_inline_flags(pattern: &str) -> &str {
         i += 1;
     }
     if i < bytes.len() && bytes[i] == b')' {
-        // (?flags) — strip the entire inline flag group
+        // (?flags) - strip the entire inline flag group
         &pattern[i + 1..]
     } else {
         pattern
@@ -208,8 +208,8 @@ fn extract_group_alternatives(s: &str) -> Option<Vec<String>> {
                     'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '.' | ':' | '=' | ' ' => {
                         lit.push(ch);
                     }
-                    '\\' => break, // escaped char — stop
-                    _ => break,    // metachar — stop
+                    '\\' => break, // escaped char - stop
+                    _ => break,    // metachar - stop
                 }
             }
             if lit.is_empty() {
@@ -255,7 +255,7 @@ pub const MIN_INNER_LITERAL_CHARS: usize = 4;
 /// Repetitions and assertions break the run conservatively: even though
 /// `\babc\b` always contains "abc", we also allow that the surrounding
 /// regex might never match, in which case we'd be promoting chunks for
-/// nothing — the regex confirmation still has to succeed, but the AC's
+/// nothing - the regex confirmation still has to succeed, but the AC's
 /// job is to skip work, not generate it.
 ///
 /// Examples:
@@ -271,7 +271,7 @@ pub fn extract_inner_literals(pattern: &str) -> Vec<String> {
     let mut out = Vec::new();
     walk_ast(&ast, &mut out);
     out.retain(|s| s.len() >= MIN_INNER_LITERAL_CHARS);
-    // Dedup while preserving order — alternation branches commonly produce
+    // Dedup while preserving order - alternation branches commonly produce
     // duplicates when patterns share prefixes (e.g. `(KEY|key)` lowered to
     // canonical literals).
     let mut seen = std::collections::HashSet::new();
@@ -285,7 +285,7 @@ fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
         Ast::Concat(concat) => {
             // Collect runs of consecutive `Literal` nodes; flush a run when
             // a non-literal node breaks it. The `Literal::c` field is the
-            // character — for `\.` it's `.`, for `\\` it's `\`, etc.
+            // character - for `\.` it's `.`, for `\\` it's `\`, etc.
             let mut run = String::new();
             for inner in concat.asts.iter() {
                 match inner {
@@ -310,7 +310,7 @@ fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
                 walk_ast(branch, out);
             }
         }
-        // Single literal at the top level — wrap into a one-char run; the
+        // Single literal at the top level - wrap into a one-char run; the
         // caller's filter rejects it for length but the case is rare anyway.
         Ast::Literal(lit) => {
             let s = lit.c.to_string();
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn inner_literal_below_threshold_dropped() {
-        // `wx` is only 2 chars — below MIN_INNER_LITERAL_CHARS.
+        // `wx` is only 2 chars - below MIN_INNER_LITERAL_CHARS.
         assert!(extract_inner_literals(r"wx[a-f0-9]{16}").is_empty());
     }
 
@@ -367,7 +367,7 @@ mod tests {
     fn inner_literal_handles_escaped_dot() {
         // `https?://[^/]+\.lambda-url\.[a-z0-9-]+\.on\.aws/...`
         // The contiguous-literal extractor flushes on each character class
-        // and assertion, so the longest run is `.lambda-url.` (no — that's
+        // and assertion, so the longest run is `.lambda-url.` (no - that's
         // broken by `\.`-then-`-`-then-class). Actual longest: `.lambda-url`.
         let lits = extract_inner_literals(r"https?://[^/]+\.lambda-url\.[a-z]+\.on\.aws/path");
         // Verify we extract SOMETHING substantive for this real-world AWS pattern.

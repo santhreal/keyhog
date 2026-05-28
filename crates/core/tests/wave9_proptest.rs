@@ -3,12 +3,16 @@ use keyhog_core::dedup_matches;
 use keyhog_core::{Credential, DedupScope, Severity};
 use keyhog_core::{MatchLocation, RawMatch};
 use proptest::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
 fn loc() -> MatchLocation {
+    static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+    let n = CALL_COUNT.fetch_add(1, AtomicOrdering::Relaxed);
     MatchLocation {
         source: "fs".into(),
         file_path: Some("f".into()),
-        line: Some(1),
-        offset: 0,
+        line: Some(1 + n),
+        offset: n * 16,
         commit: None,
         author: None,
         date: None,

@@ -14,6 +14,7 @@ fn scan_empty_chunk_produces_no_matches() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

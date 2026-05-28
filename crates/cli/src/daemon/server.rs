@@ -28,7 +28,7 @@ pub fn default_socket_path() -> PathBuf {
     // `dirs::cache_dir()` returns ~/.cache on Linux, ~/Library/Caches on
     // macOS, %LOCALAPPDATA% on Windows. Fall back to the OS temp dir
     // when that lookup fails (e.g. inside a Docker container with no
-    // HOME set) — `std::env::temp_dir()` is /tmp on Unix and
+    // HOME set) - `std::env::temp_dir()` is /tmp on Unix and
     // %TEMP% on Windows, never the hardcoded `/tmp` we used before
     // (which would silently mkdir `C:\tmp` on Windows).
     let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
@@ -106,7 +106,7 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
 
     // Remove a stale socket file from a previous crashed instance.
     // If the file exists AND a daemon is still listening on it, the
-    // bind below will fail loudly — we don't unlink blindly.
+    // bind below will fail loudly - we don't unlink blindly.
     if socket_path.exists() {
         match std::os::unix::net::UnixStream::connect(&socket_path) {
             Ok(_) => anyhow::bail!(
@@ -133,7 +133,7 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
         .with_context(|| format!("daemon: binding Unix socket at {}", socket_path.display()))?;
 
     // 0600 = user-only. Without this the socket inherits the umask
-    // default which on most distros is 0644 — a co-tenant user on
+    // default which on most distros is 0644 - a co-tenant user on
     // the same box could connect and request scans, exposing every
     // credential the scanner finds via its responses.
     set_socket_mode_user_only(&socket_path)?;
@@ -249,7 +249,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     let scanner = state.scanner.clone();
     let chunk_path = path.clone();
     let drain_lock = state.telemetry_drain.clone();
-    // Hand the actual scan to a blocking thread — `scanner.scan` is
+    // Hand the actual scan to a blocking thread - `scanner.scan` is
     // CPU-heavy and not async-aware. Without `spawn_blocking` a
     // large scan would stall the tokio reactor and block every
     // other connection's framing reads.
@@ -267,7 +267,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
         // merge per-scan counts into its own process-local counters
         // (telemetry lives in a OnceLock and doesn't cross the IPC
         // boundary on its own). The lock serializes count+drain+reset
-        // across concurrent daemon connections — see ServerState
+        // across concurrent daemon connections - see ServerState
         // .telemetry_drain for the race scenario.
         let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner());
         let engine_example_suppressions =

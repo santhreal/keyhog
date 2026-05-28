@@ -7,6 +7,6 @@ fn decode_util_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "decode::util: {lines} lines exceeds 500-line cap — split module"
+        "decode::util: {lines} lines exceeds 500-line cap - split module"
     );
 }

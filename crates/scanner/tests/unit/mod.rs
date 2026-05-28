@@ -20,6 +20,7 @@ pub mod gates;
 pub mod gpu_cases;
 pub mod hw_probe;
 pub mod hw_probe_cases;
+pub mod is_sequential_placeholder_robustness;
 pub mod ml_scorer;
 pub mod multiline;
 pub mod pipeline;

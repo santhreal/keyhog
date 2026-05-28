@@ -78,14 +78,14 @@ pub(super) fn collect_structural_fragments(
     //   `aws_key = aws_prefix + aws_suffix`
     // by resolving each identifier on the RHS to its earlier literal value.
     // This catches splits whose variable names share no common prefix
-    // (audit gap: 2-fragment AWS reassembly — release-2026-04-26).
+    // (audit gap: 2-fragment AWS reassembly - release-2026-04-26).
     //
     // We deliberately use a synthetic high `line_number` so these entries
     // don't merge with original-text line ranges in `line_window_offsets`
     // (which iterates ALL mappings and would otherwise pick a window that
     // spans both the original RHS line and the appended joined region).
     // Findings on these entries lose precise line attribution but still
-    // surface the secret — better than the previous behavior of missing it
+    // surface the secret - better than the previous behavior of missing it
     // entirely.
     const SYNTHETIC_BASE_LINE: usize = 1_000_000_000;
     for (offset_idx, (_index, joined)) in lines

@@ -16,7 +16,7 @@ description = "AWS access key ID"
 
 # NOT marked `required`: a leaked AKIA on its own is still a reportable
 # finding. When the secret isn't co-located, verification correctly
-# downgrades to "unverified" but the match still surfaces — partial leaks
+# downgrades to "unverified" but the match still surfaces - partial leaks
 # are exactly what an attacker pivots on.
 [[detector.companions]]
 regex = "(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET(?:[_-]?KEY)?|aws[_-]?secret(?:[_-]?key)?)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"

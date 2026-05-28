@@ -7,6 +7,6 @@ fn verify_request_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "verify::request: {lines} lines exceeds 500-line cap — split module"
+        "verify::request: {lines} lines exceeds 500-line cap - split module"
     );
 }

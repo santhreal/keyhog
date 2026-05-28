@@ -1,4 +1,4 @@
-//! Superseded by binary_read_is_capped — kept as alias gate for unbounded read regression.
+//! Superseded by binary_read_is_capped - kept as alias gate for unbounded read regression.
 
 #[test]
 fn binary_mod_has_no_unbounded_fs_read() {

@@ -1,4 +1,4 @@
-//! KH-GAP-006: Santh exit codes — 2 user error, 3 system error.
+//! KH-GAP-006: Santh exit codes - 2 user error, 3 system error.
 
 #[test]
 fn system_errors_use_exit_code_three() {

@@ -1,4 +1,4 @@
-//! Migrated from `src/spec.rs` — Info severity cannot downgrade further.
+//! Migrated from `src/spec.rs` - Info severity cannot downgrade further.
 
 use keyhog_core::Severity;
 

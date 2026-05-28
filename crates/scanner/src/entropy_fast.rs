@@ -16,7 +16,7 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
     // loops that avoid data hazards by keeping counts in separate
     // arrays. True SIMD vectorization (e.g. `vpgatherdd` for the
     // histogram, `vpermd` for the bucket reduce) is open and not
-    // yet implemented — the AVX-512 path below IS true SIMD; this
+    // yet implemented - the AVX-512 path below IS true SIMD; this
     // fallback path is scalar-with-ILP.
     #[cfg(target_arch = "x86_64")]
     // SAFETY: We verify AVX2/SSE2 support via is_x86_feature_detected! before calling specialized paths.

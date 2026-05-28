@@ -13,7 +13,7 @@ pub fn infer_context(lines: &[&str], line_idx: usize, file_path: Option<&str>) -
 }
 
 /// Detect example/placeholder credentials using ONLY algorithmic heuristics.
-/// No hardcoded credential lists — every suppression is based on a structural
+/// No hardcoded credential lists - every suppression is based on a structural
 /// property that generalizes to all credentials of that shape.
 pub fn is_known_example_credential(credential: &str) -> bool {
     let upper = credential.to_uppercase();
@@ -57,7 +57,7 @@ fn is_empty_input_hash(credential: &str) -> bool {
     }
 }
 
-fn is_sequential_placeholder(credential: &str) -> bool {
+pub fn is_sequential_placeholder(credential: &str) -> bool {
     // Strip ALL known service prefixes before checking for sequential/placeholder patterns.
     // Single source of truth: crate::confidence::KNOWN_PREFIXES.
     // Missing a prefix here = false positive (placeholder not suppressed).
@@ -65,7 +65,7 @@ fn is_sequential_placeholder(credential: &str) -> bool {
         .iter()
         .find_map(|prefix| credential.strip_prefix(prefix))
         .unwrap_or(credential);
-    if body.len() < 16 {
+    if body.len() < 8 {
         return false;
     }
 
@@ -77,7 +77,7 @@ fn is_sequential_placeholder(credential: &str) -> bool {
         let pair = &bytes[..2];
         if bytes
             .chunks(2)
-            .all(|chunk| chunk == pair || chunk.len() < 2)
+            .all(|chunk| chunk == pair || (chunk.len() < 2 && chunk[0] == pair[0]))
         {
             return true;
         }

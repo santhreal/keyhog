@@ -16,7 +16,7 @@ description = "Twilio auth token (32 hex chars with TWILIO_AUTH_TOKEN context)"
 group = 1
 
 [[detector.patterns]]
-# Bare `authToken: "..."` / `auth_token = "..."` shape — the Twilio Node /
+# Bare `authToken: "..."` / `auth_token = "..."` shape - the Twilio Node /
 # Python / Ruby SDK quickstart shape. Safe because the required
 # accountSid companion (AC + 32 hex) is itself a Twilio-specific
 # fingerprint, so this pattern can't fire on a generic authToken from

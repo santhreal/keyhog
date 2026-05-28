@@ -6,7 +6,7 @@
 //! Adding a new TOML adds a new contract; every existing TOML must
 //! stay green or the test suite fails.
 //!
-//! The runner is the same shape for every detector — the per-rule
+//! The runner is the same shape for every detector - the per-rule
 //! TOML is the only thing the contributor edits. That's the
 //! lego-block move: build the harness once, instantiate per
 //! detector by writing data, not code.
@@ -168,7 +168,7 @@ fn every_contract_passes_positives_negatives_evasions() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — at least one detector must ship a contract"
+        "tests/contracts/ has no *.toml - at least one detector must ship a contract"
     );
 
     let mut failures: Vec<String> = Vec::new();
@@ -180,7 +180,7 @@ fn every_contract_passes_positives_negatives_evasions() {
             // reassembly state across every scan() (see
             // engine/mod.rs:747-760). Tests that reuse one scanner
             // across independent fixtures see cross-fixture state
-            // leak — e.g. braintree's `sandbox_7b3e5d8c_…` positive
+            // leak - e.g. braintree's `sandbox_7b3e5d8c_…` positive
             // surfacing later as a finding on blur-api-key's
             // evasion text. Clear before every scan so each fixture
             // is isolated; cache order is filesystem-dependent and
@@ -191,7 +191,7 @@ fn every_contract_passes_positives_negatives_evasions() {
             if !any_credential_contains(&matches, &p.credential) {
                 let creds = finding_creds(&matches);
                 failures.push(format!(
-                    "{}: positive MISSED — text {:?} should have surfaced credential containing {:?} ({}); \
+                    "{}: positive MISSED - text {:?} should have surfaced credential containing {:?} ({}); \
                      scanner saw {:?}",
                     label,
                     p.text,
@@ -206,8 +206,8 @@ fn every_contract_passes_positives_negatives_evasions() {
             scanner.clear_fragment_cache();
             let chunk = make_chunk(&n.text);
             let matches = scanner.scan(&chunk);
-            // We don't gate on "zero findings" — a fixture line may
-            // also exercise a different detector — we gate on
+            // We don't gate on "zero findings" - a fixture line may
+            // also exercise a different detector - we gate on
             // "this detector did not fire on this text."
             let detector_fired = matches.iter().any(|m| m.detector_id.as_ref() == label);
             if detector_fired {
@@ -217,7 +217,7 @@ fn every_contract_passes_positives_negatives_evasions() {
                     .map(|m| m.credential.as_ref())
                     .collect();
                 failures.push(format!(
-                    "{}: false positive on negative — text {:?} should NOT have fired \
+                    "{}: false positive on negative - text {:?} should NOT have fired \
                      ({}); scanner saw {} matches under this detector: {:?}",
                     label,
                     n.text,
@@ -235,7 +235,7 @@ fn every_contract_passes_positives_negatives_evasions() {
             if !any_credential_contains(&matches, &e.credential) {
                 let creds = finding_creds(&matches);
                 failures.push(format!(
-                    "{}: evasion DROPPED — adversarial text {:?} should still surface \
+                    "{}: evasion DROPPED - adversarial text {:?} should still surface \
                      credential containing {:?} ({}); scanner saw {:?}",
                     label,
                     e.text,
@@ -253,7 +253,7 @@ fn every_contract_passes_positives_negatives_evasions() {
             if !any_credential_contains(&matches, &r.credential) {
                 let creds = finding_creds(&matches);
                 failures.push(format!(
-                    "{}: cve_replay MISSED — leaked sample {:?} should fire on credential \
+                    "{}: cve_replay MISSED - leaked sample {:?} should fire on credential \
                      containing {:?} ({}); scanner saw {:?}",
                     label,
                     r.text,
@@ -363,7 +363,7 @@ fn every_contract_scale_gate_holds() {
         // the fast-path), so the contract gates on "this
         // credential string is surfaced under SOME detector,"
         // not "the labelled detector fired." That's what the end
-        // user actually cares about — the credential is in the
+        // user actually cares about - the credential is in the
         // report.
         let surfaced = matches
             .iter()
@@ -371,7 +371,7 @@ fn every_contract_scale_gate_holds() {
             .count();
         if surfaced < scale.min_findings {
             failures.push(format!(
-                "{}: scale MISSED — {} surfaced < {} required ({}); raw finding count = {}",
+                "{}: scale MISSED - {} surfaced < {} required ({}); raw finding count = {}",
                 c.detector_id,
                 surfaced,
                 scale.min_findings,
@@ -381,7 +381,7 @@ fn every_contract_scale_gate_holds() {
         }
         if elapsed > scale.max_seconds {
             failures.push(format!(
-                "{}: scale budget exceeded — {:.3}s > budget {:.3}s ({})",
+                "{}: scale budget exceeded - {:.3}s > budget {:.3}s ({})",
                 c.detector_id,
                 elapsed,
                 scale.max_seconds,
@@ -408,7 +408,7 @@ fn every_contract_readme_claim_present() {
     let readme = match std::fs::read_to_string(&readme_path) {
         Ok(t) => t,
         Err(e) => {
-            // SKIP — running from an export without the root README.
+            // SKIP - running from an export without the root README.
             eprintln!("SKIP: README.md not at {}: {e}", readme_path.display());
             return;
         }
@@ -441,10 +441,10 @@ fn contracts_cover_at_least_one_detector() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "contracts/ directory has no TOMLs — the per-rule contract is the legendary bar; \
+        "contracts/ directory has no TOMLs - the per-rule contract is the legendary bar; \
          ship at least one"
     );
-    // Also assert each loaded contract has *some* test material —
+    // Also assert each loaded contract has *some* test material -
     // an empty TOML is a useless contract.
     for (path, c) in &contracts {
         let total = c.positive.len() + c.negative.len() + c.evasion.len() + c.cve_replay.len();

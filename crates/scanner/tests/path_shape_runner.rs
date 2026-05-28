@@ -18,7 +18,7 @@
 //! when the same text lives at `src/main.rs` is broken on the most
 //! common shape; same secret at `examples/` should not fire by
 //! design. This runner tests BOTH halves of that contract per
-//! positive — a soft regression on either side surfaces here.
+//! positive - a soft regression on either side surfaces here.
 //!
 //! Surface gained
 //! --------------
@@ -100,7 +100,7 @@ fn scanner() -> CompiledScanner {
 
 /// File paths an operator commits real secrets to. A detector that
 /// misses the canonical positive at any of these paths is broken on
-/// a real-world shape — there is no plausible reason a credential at
+/// a real-world shape - there is no plausible reason a credential at
 /// `src/main.rs` should fire one wrapper but not another.
 const PRODUCTION_PATHS: &[&str] = &[
     "src/main.rs",
@@ -113,7 +113,7 @@ const PRODUCTION_PATHS: &[&str] = &[
 /// File paths that match keyhog's path-based suppression heuristics
 /// (see `should_suppress_known_example_credential_with_source` in
 /// `crates/scanner/src/pipeline.rs`). The detector MAY fire here OR
-/// MAY suppress — we don't gate on either outcome, we just record
+/// MAY suppress - we don't gate on either outcome, we just record
 /// the rate so a future regression that flips suppression off
 /// becomes visible in the log without breaking CI.
 const SUPPRESSED_PATHS: &[&str] = &[
@@ -156,7 +156,7 @@ fn every_positive_fires_at_production_paths_and_records_suppressed_rate() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — the path-shape runner has \
+        "tests/contracts/ has no *.toml - the path-shape runner has \
          nothing to drive"
     );
 

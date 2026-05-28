@@ -11,6 +11,7 @@ fn warm_backend_cpu_always_true() {
             regex: "x".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

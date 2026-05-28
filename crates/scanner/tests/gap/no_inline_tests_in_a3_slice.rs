@@ -36,7 +36,7 @@ fn no_inline_tests_in_a3_slice() {
 
     assert!(
         offenders.is_empty(),
-        "{} A3-slice src files still contain #[cfg(test)] — migrate to tests/unit/:\n  - {}",
+        "{} A3-slice src files still contain #[cfg(test)] - migrate to tests/unit/:\n  - {}",
         offenders.len(),
         offenders
             .iter()

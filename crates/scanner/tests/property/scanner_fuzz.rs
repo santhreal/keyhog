@@ -14,7 +14,7 @@
 //! item 6 "property tests"). The previous 256-case budget was a
 //! smoke test, not a contract. Bumping the budget by 40× turned up
 //! the AC kernel scale bug (task #56) within the first run on a
-//! 1 GiB corpus — proptest is a cheap surface for these kinds of
+//! 1 GiB corpus - proptest is a cheap surface for these kinds of
 //! coverage gaps when the case count is real.
 //!
 //! Why not 100k: per-case build of `CompiledScanner` is the
@@ -41,6 +41,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
                 regex: r#"key\s*=\s*([A-Za-z0-9_-]{8,40})"#.into(),
                 description: None,
                 group: Some(1),
+                client_safe: false,
             }],
             companions: vec![],
             verify: None,
@@ -55,6 +56,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
                 regex: r"AKIA[0-9A-Z]{16}".into(),
                 description: None,
                 group: None,
+                client_safe: false,
             }],
             companions: vec![],
             verify: None,
@@ -64,7 +66,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
 }
 
 fn make_chunk(bytes: Vec<u8>) -> Chunk {
-    // SensitiveString requires valid UTF-8 — lossy-decode any random
+    // SensitiveString requires valid UTF-8 - lossy-decode any random
     // byte slice to a String. The actual scanner production path does
     // the same (lossy decode in the filesystem source) so the fuzz
     // exercises the same input shape.
@@ -90,7 +92,7 @@ fn make_text_chunk(text: String) -> Chunk {
 
 /// True when ANY surfaced finding's credential string contains the
 /// planted AKIA token. Intentionally agnostic of which detector
-/// fired — cross-detector dedup (the `dedup_cross_detector` pass)
+/// fired - cross-detector dedup (the `dedup_cross_detector` pass)
 /// can collapse an aws-access-key finding into a longer
 /// general-key-value match that overlaps it, and the contract from
 /// the user's perspective is "the credential surfaced", not "the
@@ -109,7 +111,7 @@ proptest! {
     // because each one is its own end-to-end scan.
     #![proptest_config(ProptestConfig {
         cases: 10_000,
-        // Long shrink budget is wasted on this kind of fuzz — a
+        // Long shrink budget is wasted on this kind of fuzz - a
         // panic on a 12 KiB random input shrinks to … a 12 KiB
         // random input, basically. Capping the budget keeps a
         // pathological shrink loop from stretching CI.
@@ -129,7 +131,7 @@ proptest! {
         let _ = scanner.scan(&chunk);
     }
 
-    /// Random ASCII (printable-ish range) — exercises the regex path
+    /// Random ASCII (printable-ish range) - exercises the regex path
     /// hard since most matches will be plausibly secret-shaped.
     #[test]
     fn scanner_does_not_panic_on_random_ascii(
@@ -180,9 +182,9 @@ proptest! {
 
     /// Strong correctness gate: an AWS-shaped key planted anywhere
     /// in an arbitrary text payload MUST be surfaced (under SOME
-    /// detector — cross-detector dedup is allowed to relabel).
-    /// This is the real product contract — "if the secret is
-    /// there, keyhog finds it" — and it survives:
+    /// detector - cross-detector dedup is allowed to relabel).
+    /// This is the real product contract - "if the secret is
+    /// there, keyhog finds it" - and it survives:
     ///   * arbitrary plaintext before/after,
     ///   * arbitrary whitespace runs,
     ///   * the planted key landing at offset 0 or end-of-buffer.
@@ -192,7 +194,7 @@ proptest! {
     /// We check `credential` for the literal token, not the
     /// detector_id, because cross-detector dedup can fold the
     /// aws-access-key finding into an overlapping fuzz-grouped
-    /// match — the credential string is what the end user sees in
+    /// match - the credential string is what the end user sees in
     /// the report.
     #[test]
     fn aws_key_is_always_found_regardless_of_surroundings(
@@ -218,7 +220,7 @@ proptest! {
     /// Idempotency: scanning the same input twice produces the same
     /// finding set. Fragment cache / dedup / ML-pending state must
     /// not leak across calls. The check normalises by the (detector,
-    /// credential, offset) triple — ordering can differ across runs
+    /// credential, offset) triple - ordering can differ across runs
     /// (rayon nondeterminism) without violating the contract.
     #[test]
     fn scan_is_idempotent_across_repeat_calls(
@@ -238,7 +240,7 @@ proptest! {
         let second = key(scanner.scan(&chunk));
         prop_assert_eq!(
             first, second,
-            "scanner not idempotent — two scans of the same input differ"
+            "scanner not idempotent - two scans of the same input differ"
         );
     }
 

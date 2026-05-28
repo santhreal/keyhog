@@ -1,18 +1,18 @@
-//! Multi-secret runner — multiple credentials on one line/file.
+//! Multi-secret runner - multiple credentials on one line/file.
 //!
 //! A `.env` with 8 service credentials, a CI YAML with `env:` for
 //! every service the team uses, a debug dump that prints every key
-//! the worker holds — all real shapes. A detector that fires on the
+//! the worker holds - all real shapes. A detector that fires on the
 //! first credential but misses the next two (because it stops at
 //! the first match per-line, or its span/window happened to cover
 //! only the first) silently drops 50–80% of recall on these files.
 //!
 //! Two scenarios this runner covers:
 //!
-//! 1. **N positives on N lines** — each contract's first positive
+//! 1. **N positives on N lines** - each contract's first positive
 //!    is concatenated with the first positive of N other contracts,
 //!    one per line. Asserts the scanner finds ALL N credentials.
-//! 2. **N positives in one paragraph** — same N positives, but
+//! 2. **N positives in one paragraph** - same N positives, but
 //!    joined with `; ` separators on a single line. Asserts the
 //!    scanner finds ALL N credentials within one line.
 //!
@@ -136,7 +136,7 @@ fn n_secrets_in_one_fixture_all_fire() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — multi-secret runner has nothing to drive"
+        "tests/contracts/ has no *.toml - multi-secret runner has nothing to drive"
     );
 
     // Pre-extract the first positive of every contract that has at

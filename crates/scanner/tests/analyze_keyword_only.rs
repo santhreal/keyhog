@@ -60,7 +60,7 @@ fn analyze_keyword_only_detectors() {
 
     assert!(
         results.len() <= 500,
-        "{} keyword-only detectors flagged as too-short or too-generic (cap 500 — \
+        "{} keyword-only detectors flagged as too-short or too-generic (cap 500 - \
          add literal anchors or tighten keywords)",
         results.len()
     );

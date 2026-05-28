@@ -1,5 +1,5 @@
 /*
- * KeyHog docs theme — clean, minimal, B&W. Not too serious.
+ * KeyHog docs theme - clean, minimal, B&W. Not too serious.
  *
  * Loaded by mdBook on top of the default light theme. Overrides
  * colors, typography, and the chrome that makes the default mdBook
@@ -25,7 +25,7 @@
     --accent-link: #0a0a0a;
     --accent-link-hover: #555555;
 
-    /* Type. System font stack — fast, native feel. Mono for code. */
+    /* Type. System font stack - fast, native feel. Mono for code. */
     --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
                  "Helvetica Neue", Helvetica, Arial, sans-serif;
     --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Monaco",
@@ -105,7 +105,7 @@ body, html {
     margin-top: 2rem;
 }
 
-/* Links — black with a thin underline. Hover lightens the underline,
+/* Links - black with a thin underline. Hover lightens the underline,
  * doesn't change the text. Avoids the typical bright-blue-everywhere
  * look. */
 .content a:link,
@@ -123,7 +123,7 @@ body, html {
     text-decoration-color: var(--ink);
 }
 
-/* Inline code — slightly off-white background, no border. */
+/* Inline code - slightly off-white background, no border. */
 .content code {
     background: var(--grey-0);
     color: var(--ink);
@@ -133,7 +133,7 @@ body, html {
     font-family: var(--font-mono);
 }
 
-/* Code blocks — no syntax highlighting color riot. Mono + grey only. */
+/* Code blocks - no syntax highlighting color riot. Mono + grey only. */
 .content pre {
     background: var(--paper);
     border: 1px solid var(--rule);
@@ -151,7 +151,7 @@ body, html {
     color: var(--ink);
 }
 
-/* Override the default syntax highlighting palette — everything stays
+/* Override the default syntax highlighting palette - everything stays
  * in grey-scale. Comments lighter, strings italic, keywords bold. */
 .hljs {
     background: transparent !important;
@@ -177,7 +177,7 @@ body, html {
     font-weight: 500;
 }
 
-/* Sidebar — minimal, sans-serif, no bullets, no clutter. */
+/* Sidebar - minimal, sans-serif, no bullets, no clutter. */
 .sidebar {
     background: var(--sidebar-bg);
     border-right: 1px solid var(--rule);
@@ -213,7 +213,7 @@ body, html {
     background: var(--rule);
 }
 
-/* Top nav — flatten the icon row. */
+/* Top nav - flatten the icon row. */
 .menu-title {
     font-weight: 600;
     color: var(--ink);
@@ -231,7 +231,7 @@ body, html {
     color: var(--icons-hover);
 }
 
-/* Tables — borderless inside, single rule above and below. */
+/* Tables - borderless inside, single rule above and below. */
 .content table {
     border-collapse: collapse;
     margin: 1.5em 0;
@@ -260,7 +260,7 @@ body, html {
     border-bottom: 1px solid var(--rule);
 }
 
-/* Blockquotes — left rule, no italics, just inset prose. */
+/* Blockquotes - left rule, no italics, just inset prose. */
 .content blockquote {
     border-left: 3px solid var(--ink);
     padding: 0.6em 1em;
@@ -276,7 +276,7 @@ body, html {
     margin-bottom: 0;
 }
 
-/* Horizontal rule — almost invisible. */
+/* Horizontal rule - almost invisible. */
 .content hr {
     border: none;
     border-top: 1px solid var(--rule);
@@ -308,7 +308,7 @@ mark {
     border-radius: 2px;
 }
 
-/* Print — clean white with full-bleed text. */
+/* Print - clean white with full-bleed text. */
 @media print {
     .sidebar, #menu-bar, .nav-chapters { display: none; }
     .page-wrapper { margin-left: 0; }

@@ -30,7 +30,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 # Companion captures the full `https?://<host>.instructure.com` URL, so we
-# don't prepend a scheme — doing so produced `https://https://...` and
+# don't prepend a scheme - doing so produced `https://https://...` and
 # every verification 400'd. The runtime allowlist below catches any future
 # regex drift that would let a non-Instructure host slip in.
 url = "{{companion.canvas_domain}}/api/v1/users/self"

@@ -10,6 +10,6 @@ fn test_fixture_suppressions_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "test_fixture_suppressions: {lines} lines exceeds 500-line cap — split module"
+        "test_fixture_suppressions: {lines} lines exceeds 500-line cap - split module"
     );
 }

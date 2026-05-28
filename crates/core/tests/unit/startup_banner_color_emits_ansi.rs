@@ -1,4 +1,4 @@
-//! Migrated from `src/banner.rs` — color mode emits ANSI escape sequences.
+//! Migrated from `src/banner.rs` - color mode emits ANSI escape sequences.
 
 use keyhog_core::banner::print_banner;
 

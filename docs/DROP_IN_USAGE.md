@@ -6,11 +6,11 @@ works. No additional setup required beyond `cargo install keyhog`.
 
 If you only need one section, jump to:
 
-- [Pre-commit hook (git)](#pre-commit-hook-git) — block secrets before they're committed
-- [Pre-push hook (git)](#pre-push-hook-git) — block secrets before they leave the laptop
-- [pre-commit framework](#pre-commit-framework) — `pre-commit` Python tool
-- [Husky / lefthook](#husky--lefthook) — JavaScript ecosystem hooks
-- [GitHub Actions](#github-actions) — PR + push CI
+- [Pre-commit hook (git)](#pre-commit-hook-git) - block secrets before they're committed
+- [Pre-push hook (git)](#pre-push-hook-git) - block secrets before they leave the laptop
+- [pre-commit framework](#pre-commit-framework) - `pre-commit` Python tool
+- [Husky / lefthook](#husky--lefthook) - JavaScript ecosystem hooks
+- [GitHub Actions](#github-actions) - PR + push CI
 - [GitLab CI](#gitlab-ci)
 - [CircleCI](#circleci)
 - [Drone CI](#drone-ci)
@@ -85,7 +85,7 @@ tool, add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.33
+    rev: v0.5.34
     hooks:
       - id: keyhog
         name: keyhog secret scan (staged)
@@ -117,7 +117,7 @@ pre-commit:
   commands:
     keyhog:
       run: keyhog scan --git-staged --min-confidence 0.5 --fast --format text
-      fail_text: "secrets detected — see output above"
+      fail_text: "secrets detected - see output above"
 ```
 
 ## GitHub Actions
@@ -347,7 +347,7 @@ use keyhog_core::{load_detectors_from_str, Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Built-in embedded detectors — no disk I/O. Each entry is
+    // Built-in embedded detectors - no disk I/O. Each entry is
     // (filename, toml_text); parse them all into a flat Vec<DetectorSpec>.
     let mut specs = Vec::new();
     for (_name, toml_text) in keyhog_core::embedded_detector_tomls() {
@@ -375,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 For directory-tree / git / docker walking, drive `keyhog-sources`
-or shell out to the CLI — `CompiledScanner` is one chunk at a time
+or shell out to the CLI - `CompiledScanner` is one chunk at a time
 by design.
 
 For finer-grained control of individual detector features:
@@ -457,7 +457,7 @@ For per-file/per-line allowlists, the moving parts live in two
 separate files (the parser is flat, not the nested `[allowlist]` /
 `[performance]` tables an earlier version of this doc advertised):
 
-`.keyhog.toml` at the repo root — flat key/value, every field
+`.keyhog.toml` at the repo root - flat key/value, every field
 mirrors a CLI flag:
 
 ```toml
@@ -467,7 +467,7 @@ threads         = 8
 exclude_paths   = ["vendor/**", "node_modules/**", "**/*.lock"]
 ```
 
-`.keyhogignore` (or `.keyhogignore.toml`) alongside it — gitignore-
+`.keyhogignore` (or `.keyhogignore.toml`) alongside it - gitignore-
 style path globs plus `detector:<id>` and `hash:<sha256>` entries:
 
 ```
@@ -484,10 +484,10 @@ See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
 
 ## Exit codes
 
-- `0` — no findings above `--min-confidence`
-- `1` — one or more findings at or above `--min-confidence`
-- `2` — scan error (path missing, IO failure, parse error)
-- `64` — argument parse error (matches `EX_USAGE`)
+- `0` - no findings above `--min-confidence`
+- `1` - one or more findings at or above `--min-confidence`
+- `2` - scan error (path missing, IO failure, parse error)
+- `64` - argument parse error (matches `EX_USAGE`)
 
 CI gates should look for `exit 1` to mean "block the build" and treat
 `exit 2` as an infrastructure problem to surface to the on-call.
@@ -497,10 +497,10 @@ CI gates should look for `exit 1` to mean "block the build" and treat
 ## Performance flags for tight CI budgets
 
 ```bash
-# Skip ML + decode + entropy + multiline — pre-commit speed
+# Skip ML + decode + entropy + multiline - pre-commit speed
 keyhog scan . --fast --min-confidence 0.5
 
-# Maximum detection depth — release/security gate
+# Maximum detection depth - release/security gate
 keyhog scan . --deep --min-confidence 0.3
 
 # Pin worker count to host CPU
@@ -521,7 +521,7 @@ catches multi-line and decoded secrets the fast path skips.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `error: GPU requested but not available` | `--backend gpu` on a non-GPU host | Drop the flag — `auto` falls back to SIMD |
+| `error: GPU requested but not available` | `--backend gpu` on a non-GPU host | Drop the flag - `auto` falls back to SIMD |
 | Findings count drops vs prior run | `.keyhog-baseline.json` is up-to-date or `.keyhog.toml` widened | `git diff .keyhog-baseline.json .keyhog.toml` |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
 | SARIF upload rejects file | `min_confidence` too low; thousands of findings | Raise to ≥0.3 for SARIF specifically |

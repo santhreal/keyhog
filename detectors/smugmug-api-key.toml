@@ -31,7 +31,7 @@ name = "smugmug-oauth-secret"
 # `.` in `SMUG.MUG` matches the empty separator that `SMUGMUG` already
 # covers, which the validator caught as `has_quantified_overlapping_
 # alternation`. Collapse to a single case-insensitive branch with an
-# explicit optional separator — same set of accepted spellings, no
+# explicit optional separator - same set of accepted spellings, no
 # alternation overlap, and the literal anchors `oauth`/`secret` keep
 # false-positive rate bounded.
 regex = '(?i:smug[._-]?mug)?[._-]?(?:oauth)?[._-]?secret[=:\s""]+[a-zA-Z0-9]{16,48}'

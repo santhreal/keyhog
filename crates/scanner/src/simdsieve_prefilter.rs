@@ -46,7 +46,7 @@ pub const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
 ];
 
 /// Pre-formatted `Hot Pattern: <name>` display name per hot pattern.
-/// Same rationale as HOT_PATTERN_DETECTOR_IDS — kills the per-match
+/// Same rationale as HOT_PATTERN_DETECTOR_IDS - kills the per-match
 /// `format!()` allocation that the perf kimi audit called out.
 pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
     "Hot Pattern: github_pat",

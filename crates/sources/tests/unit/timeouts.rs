@@ -1,4 +1,4 @@
-//! Micro gate for `sources/timeouts.rs` — shared HTTP/subprocess budgets.
+//! Micro gate for `sources/timeouts.rs` - shared HTTP/subprocess budgets.
 
 #[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]

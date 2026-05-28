@@ -1,5 +1,5 @@
 //! KH-GAP-004: Inline `#[cfg(test)]` modules in `src/` violate the
-//! Santh folder contract — all micro gates live under `tests/unit/`.
+//! Santh folder contract - all micro gates live under `tests/unit/`.
 
 use std::path::{Path, PathBuf};
 
@@ -36,7 +36,7 @@ fn no_inline_tests_in_src() {
 
     assert!(
         offenders.is_empty(),
-        "{} scanner/src files still contain #[cfg(test)] — migrate to tests/unit/:\n  - {}",
+        "{} scanner/src files still contain #[cfg(test)] - migrate to tests/unit/:\n  - {}",
         offenders.len(),
         offenders
             .iter()

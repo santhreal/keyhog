@@ -95,6 +95,28 @@ keyhog watch src/                 # watch the source tree
 keyhog watch                      # watch the current directory
 ```
 
+## `keyhog tui [PATH]`
+
+Interactive ratatui dashboard. Streams findings in a severity-colored
+list while a status panel reports files scanned, throughput, GPU
+backend, and pattern count. `q` or `Esc` to quit; any keypress exits
+once the scan completes.
+
+```sh
+keyhog tui .                          # live dashboard on CWD
+keyhog tui demo --throttle-ms 200     # paced scan for demo recordings
+keyhog tui --feed-depth 500 .         # keep more findings in the feed
+keyhog tui --max-files 20 src/        # short fixed-duration loops
+```
+
+| Flag                   | Default | Effect                                           |
+|------------------------|---------|--------------------------------------------------|
+| `--max-files N`        | 0       | Stop after scanning N files. 0 = unlimited.      |
+| `--feed-depth N`       | 200     | Rolling window of recent findings shown.         |
+| `--throttle-ms MS`     | 0       | Sleep MS between files; demo / recording knob.   |
+
+Exit code matches `keyhog scan`: 0 clean, 1 findings present.
+
 ## `keyhog hook <install|uninstall>`
 
 Manages the git pre-commit hook. See

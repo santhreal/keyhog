@@ -7,6 +7,6 @@ fn registry_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "registry: {lines} lines exceeds 500-line cap — split module"
+        "registry: {lines} lines exceeds 500-line cap - split module"
     );
 }

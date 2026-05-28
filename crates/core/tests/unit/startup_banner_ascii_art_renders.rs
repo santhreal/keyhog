@@ -1,4 +1,4 @@
-//! Migrated from `src/banner.rs` — ASCII art mode emits braille dots.
+//! Migrated from `src/banner.rs` - ASCII art mode emits braille dots.
 
 use keyhog_core::banner::print_banner;
 

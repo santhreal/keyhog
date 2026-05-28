@@ -170,11 +170,32 @@ setup_colors
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
-# detect_linux_cuda: yes / missing-lib / missing-tools / no-gpu
+# detect_linux_cuda: yes / driver-only / no-gpu
+#
+# "yes" requires THREE signals, in order of strictness:
+#   1. nvidia-smi reports at least one GPU,
+#   2. libcuda.so is loadable (in ldconfig or a well-known path),
+#   3. the host has a CUDA TOOLKIT installed (nvcc OR /usr/local/cuda
+#      OR $CUDA_HOME) - this is the new gate.
+#
+# Why the third gate: the WGPU build already runs the same vyre AC /
+# RulePipeline dispatch on the same NVIDIA card via the wgpu vulkan
+# backend. The CUDA variant only wins on truly large scans (>1 GiB)
+# and ONLY when the user actively maintains a CUDA install. A driver-
+# only host (libcuda.so present but no toolkit) is signalling "I run
+# CUDA apps as a consumer, not a developer with the toolkit on PATH" -
+# WGPU is the better default there because the binary is smaller, has
+# no runtime libcuda lookup, and the dispatch latency penalty against
+# native CUDA is in the single-digit-percent range for typical repo
+# scans. See task #57.
+#
+# Earlier versions of this script auto-picked CUDA whenever libcuda
+# was loadable, which gave a strictly heavier install for the median
+# user with no offsetting throughput win on typical workloads.
 detect_linux_cuda() {
     if ! command -v nvidia-smi >/dev/null 2>&1; then
         if [ -d /proc/driver/nvidia ]; then
-            printf 'missing-tools\n'
+            printf 'driver-only\n'
             return
         fi
         printf 'no-gpu\n'
@@ -184,18 +205,43 @@ detect_linux_cuda() {
         printf 'no-gpu\n'
         return
     fi
+
+    # Gate 2: libcuda.so loadable?
+    libcuda_present=0
     if ldconfig -p 2>/dev/null | grep -q "libcuda\.so"; then
+        libcuda_present=1
+    else
+        for p in /usr/lib/x86_64-linux-gnu/libcuda.so /usr/lib64/libcuda.so \
+                 /usr/local/cuda/lib64/libcuda.so /opt/cuda/lib64/libcuda.so; do
+            if [ -e "$p" ]; then
+                libcuda_present=1
+                break
+            fi
+        done
+    fi
+    if [ "$libcuda_present" -eq 0 ]; then
+        printf 'driver-only\n'
+        return
+    fi
+
+    # Gate 3: CUDA toolkit installed? nvcc on PATH OR CUDA_HOME set
+    # OR /usr/local/cuda exists OR /opt/cuda exists. Any one suffices.
+    if command -v nvcc >/dev/null 2>&1; then
         printf 'yes\n'
         return
     fi
-    for p in /usr/lib/x86_64-linux-gnu/libcuda.so /usr/lib64/libcuda.so \
-             /usr/local/cuda/lib64/libcuda.so /opt/cuda/lib64/libcuda.so; do
-        if [ -e "$p" ]; then
-            printf 'yes\n'
-            return
-        fi
-    done
-    printf 'missing-lib\n'
+    if [ -n "${CUDA_HOME:-}" ] && [ -d "$CUDA_HOME" ]; then
+        printf 'yes\n'
+        return
+    fi
+    if [ -d /usr/local/cuda ] || [ -d /opt/cuda ]; then
+        printf 'yes\n'
+        return
+    fi
+
+    # Driver + libcuda but no toolkit: signal driver-only so the auto
+    # path stays on WGPU. User can still --variant=cuda if they want.
+    printf 'driver-only\n'
 }
 
 gpu_name() {
@@ -235,19 +281,21 @@ resolve_asset() {
                     NVIDIA*) ;;
                     *) label="NVIDIA $label" ;;
                 esac
-                GPU_NOTE="${label} with libcuda.so detected. Picking the CUDA build (significantly faster than WGPU on large scans)."
+                GPU_NOTE="${label} with CUDA toolkit detected (nvcc / CUDA_HOME / /usr/local/cuda). Picking the CUDA build for the small native-dispatch perf win on large scans. Pass --variant=cpu to keep the default WGPU build instead."
                 ;;
-              missing-lib)
+              driver-only)
                 ASSET="keyhog-linux-x86_64"
-                GPU_NOTE="NVIDIA GPU detected but libcuda.so not loadable. Picking the default WGPU build. For the faster CUDA path, install the NVIDIA driver + CUDA userland and rerun this with --repair."
-                ;;
-              missing-tools)
-                ASSET="keyhog-linux-x86_64"
-                GPU_NOTE="NVIDIA driver present but nvidia-smi missing. Picking default WGPU build. Install nvidia-utils + libcuda1 to enable the CUDA path."
+                gpu=$(gpu_name)
+                label="${gpu:-NVIDIA GPU}"
+                case "$label" in
+                    NVIDIA*) ;;
+                    *) label="NVIDIA $label" ;;
+                esac
+                GPU_NOTE="${label} detected. Picking the default WGPU build - it already runs the same vyre AC/RulePipeline on your GPU via vulkan, with a smaller binary and no libcuda dependency. If you have the full CUDA toolkit installed and want the native-dispatch variant, rerun with --variant=cuda."
                 ;;
               *)
                 ASSET="keyhog-linux-x86_64"
-                GPU_NOTE="No NVIDIA GPU detected. Picking default build with WGPU GPU fallback (any compatible adapter) + SIMD on the CPU path."
+                GPU_NOTE="No NVIDIA GPU detected. Picking default build: WGPU GPU dispatch on any compatible adapter + SIMD on the CPU path."
                 ;;
             esac
             ;;

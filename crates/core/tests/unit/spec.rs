@@ -63,7 +63,7 @@ fn valid_detector() -> DetectorSpec {
         patterns: vec![PatternSpec {
             regex: "demo_[A-Z0-9]{8}".into(),
             description: Some("demo".into()),
-            group: None,
+            ..Default::default()
         }],
         companions: Vec::new(),
         verify: None,
@@ -100,6 +100,7 @@ fn pattern_spec_with_group() {
         regex: "API_KEY=(.*)".to_string(),
         description: Some("capture group test".to_string()),
         group: Some(1),
+        ..Default::default()
     };
     assert_eq!(pattern.group, Some(1));
 }
@@ -112,7 +113,7 @@ fn detector_spec_no_longer_derives_default() {
 
 #[test]
 fn companion_regexes_are_validated() {
-    // within_lines = 12 (> TIGHT_COMPANION_RADIUS = 5) — pure character
+    // within_lines = 12 (> TIGHT_COMPANION_RADIUS = 5) - pure character
     // class with this much radius needs a textual anchor.
     let mut detector = valid_detector();
     detector.companions.push(CompanionSpec {

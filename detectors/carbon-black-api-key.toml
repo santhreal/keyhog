@@ -33,7 +33,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 # `{{companion.org_key}}` substitutes the matched org key. Earlier this used
-# single-brace `{org_key}` which the interpolator never resolved — every
+# single-brace `{org_key}` which the interpolator never resolved - every
 # verify hit a literal `{org_key}` segment in the URL path.
 url = "https://defense.conferdeploy.net/appservices/v6/orgs/{{companion.org_key}}/devices"
 allowed_domains = ["conferdeploy.net"]

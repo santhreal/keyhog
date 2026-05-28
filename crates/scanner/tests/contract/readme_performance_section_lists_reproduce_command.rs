@@ -22,6 +22,6 @@ fn readme_performance_section_lists_reproduce_command() {
         readme.contains("cargo bench --bench scan_throughput")
             || readme.contains("leaderboard.py"),
         "README Performance section must cite `cargo bench --bench scan_throughput` or \
-         secretbench leaderboard — table alone is not reproducible in CI"
+         secretbench leaderboard - table alone is not reproducible in CI"
     );
 }

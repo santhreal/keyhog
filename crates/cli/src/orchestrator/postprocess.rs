@@ -6,6 +6,64 @@ use anyhow::{Context, Result};
 use keyhog_core::DedupedMatch;
 use keyhog_core::{dedup_matches, RawMatch, VerificationResult, VerifiedFinding};
 
+/// Detect whether a given file path lives inside keyhog's own source repository.
+///
+/// The segment-based suppression below (detectors/tests/fixtures/benches) is
+/// intended ONLY for keyhog-developer self-scans where those dirs hold
+/// intentional test secrets that shouldn't be reported. Applied unconditionally,
+/// it silently drops real leaks from any user repo whose tree contains a
+/// `tests/` or `fixtures/` directory: and that is "every repo with tests."
+///
+/// The marker is keyhog's own root `Cargo.toml`: it lists `crates/scanner` plus
+/// `crates/cli` as workspace members and contains the literal `"keyhog` (from
+/// the embedded crate names). We resolve the keyhog repo root ONCE per process
+/// by walking up from the binary's CWD, then for each finding check whether
+/// its file path is a descendant of that root. A finding scanned from
+/// `/tmp/some-other-project/` stays unsuppressed even if the user happens to
+/// be running `keyhog` while CWD is inside the keyhog repo.
+fn keyhog_repo_root() -> Option<&'static std::path::Path> {
+    static CACHED: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            let mut dir = std::env::current_dir().ok()?;
+            loop {
+                let cargo = dir.join("Cargo.toml");
+                if cargo.is_file() {
+                    // Read just the first 4 KiB. Keyhog's root Cargo.toml
+                    // declares `members = ["crates/core", "crates/scanner", ...]`
+                    // in the first dozen lines. Anything bigger is almost
+                    // certainly not the keyhog manifest.
+                    if let Ok(text) = std::fs::read_to_string(&cargo) {
+                        let head: String = text.chars().take(4096).collect();
+                        if head.contains("crates/scanner")
+                            && head.contains("crates/cli")
+                            && head.contains("\"keyhog")
+                        {
+                            return std::fs::canonicalize(&dir).ok().or(Some(dir));
+                        }
+                    }
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+            None
+        })
+        .as_deref()
+}
+
+/// True when the given finding's file path is a descendant of keyhog's
+/// own source tree. Returns false when the path can't be canonicalized
+/// or no keyhog repo root was found.
+fn finding_inside_keyhog_repo(file_path: &str) -> bool {
+    let Some(root) = keyhog_repo_root() else {
+        return false;
+    };
+    let canonical = std::fs::canonicalize(file_path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(file_path));
+    canonical.starts_with(root)
+}
+
 impl ScanOrchestrator {
     pub(crate) fn filter_and_resolve(
         &self,
@@ -30,17 +88,43 @@ impl ScanOrchestrator {
                     return false;
                 }
 
-                if let Some(file_path) = m.location.file_path.as_deref() {
-                    let mut segs = file_path.split(['/', '\\']);
-                    let suppressed = segs.any(|seg| {
-                        seg.eq_ignore_ascii_case("keyhog")
-                            || seg.eq_ignore_ascii_case("detectors")
-                            || seg.eq_ignore_ascii_case("tests")
-                            || seg.eq_ignore_ascii_case("fixtures")
-                            || seg.eq_ignore_ascii_case("benches")
-                    });
-                    if suppressed {
-                        return false;
+                // Self-scan test-data path suppression. Three gates must
+                // be true to suppress:
+                //   1. `--no-suppress-test-fixtures` was NOT passed
+                //      (it explicitly opts out of bundled suppression,
+                //      and a user auditing the suppression list wants
+                //      to see segment-filtered findings too).
+                //   2. The finding's file path lives inside keyhog's
+                //      own source repo (root Cargo.toml marker check).
+                //   3. The path has a segment matching a test-data
+                //      marker (detectors/tests/fixtures/benches).
+                //
+                // Without the path-scoping gate, every user with a
+                // `tests/` directory in their tree would have findings
+                // silently dropped, even when scanning a totally
+                // unrelated project. The CWD-only check landed earlier
+                // was the right idea but the wrong dimension: scoping
+                // on FINDING path (not CWD) means a developer who runs
+                // keyhog from inside its own repo against an external
+                // target still gets real findings from that target.
+                //
+                // The previous iteration also matched any segment literally
+                // equal to "keyhog", which dropped findings from any folder
+                // named keyhog/ (forks, docs paths, Reddit demo trees).
+                if !self.args.no_suppress_test_fixtures {
+                    if let Some(file_path) = m.location.file_path.as_deref() {
+                        if finding_inside_keyhog_repo(file_path) {
+                            let mut segs = file_path.split(['/', '\\']);
+                            let suppressed = segs.any(|seg| {
+                                seg.eq_ignore_ascii_case("detectors")
+                                    || seg.eq_ignore_ascii_case("tests")
+                                    || seg.eq_ignore_ascii_case("fixtures")
+                                    || seg.eq_ignore_ascii_case("benches")
+                            });
+                            if suppressed {
+                                return false;
+                            }
+                        }
                     }
                 }
 
@@ -182,7 +266,7 @@ impl ScanOrchestrator {
                 tracing::warn!(
                     error = %e,
                     server = %self.args.oob_server,
-                    "OOB verification disabled — collector handshake failed; continuing with HTTP-only verification"
+                    "OOB verification disabled: collector handshake failed; continuing with HTTP-only verification"
                 );
             }
         }

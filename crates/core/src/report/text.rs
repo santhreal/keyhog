@@ -417,7 +417,7 @@ fn format_location(location: &MatchLocation) -> String {
 
 /// Strip the Windows extended-length path prefix `\\?\` from a
 /// display string. Paths that start with `\\?\` come from
-/// canonicalize() on Windows and look like `\\?\C:\Users\...` —
+/// canonicalize() on Windows and look like `\\?\C:\Users\...` -
 /// technically valid but ugly in CLI output. The prefix is purely
 /// a Win32 escape hatch for >260-char paths; for display, stripping
 /// it gives the user the path they actually typed.

@@ -7,6 +7,6 @@ fn safe_bin_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "safe_bin: {lines} lines exceeds 500-line cap — split module"
+        "safe_bin: {lines} lines exceeds 500-line cap - split module"
     );
 }

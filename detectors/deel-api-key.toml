@@ -3,7 +3,7 @@
 # random base62 (mixed-case alphanumeric, no underscores, no hyphens).
 # Earlier `[a-zA-Z0-9_-]{30,}` matched Java JNI mangled macro names like
 # `org_sqlite_jni_capi_CApi_SQLITE_UTF16` (every Java-bindings header in
-# existence). Real Deel keys never contain `_` after the prefix — they're
+# existence). Real Deel keys never contain `_` after the prefix - they're
 # opaque base62 strings. Dropping `_` and `-` from the suffix alphabet kills
 # the JNI FP class entirely while still matching real keys.
 # Verify: GET /rest/v2/me with Bearer token returns 200 if valid

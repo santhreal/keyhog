@@ -40,8 +40,7 @@ pub fn make_detector() -> DetectorSpec {
         severity: Severity::Medium,
         patterns: vec![PatternSpec {
             regex: r"STATIC_SECRET_[0-9]+".into(),
-            description: None,
-            group: None,
+            ..Default::default()
         }],
         companions: Vec::new(),
         verify: None,

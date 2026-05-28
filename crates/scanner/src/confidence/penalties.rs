@@ -16,7 +16,7 @@ use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
 /// Sanitize a confidence value so a NaN or infinity entering the
 /// pipeline can never reach the final finding.
 ///
-/// kimi-confidence audit: `f64::clamp` does NOT sanitize NaN — calling
+/// kimi-confidence audit: `f64::clamp` does NOT sanitize NaN - calling
 /// `f64::NAN.clamp(0.0, 1.0)` returns NaN. The GPU-backed ML scorer
 /// reads raw f32 from a staging buffer and casts to f64 without range
 /// validation; a driver bug, shader miscompile, or adversarial weights
@@ -24,7 +24,7 @@ use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
 /// every `score *= multiplier; score.clamp(0.0, 1.0)` chain and end
 /// up serialized into the SARIF output as `confidence: NaN`.
 ///
-/// Treat NaN as the "no signal" sentinel — return the minimum confidence
+/// Treat NaN as the "no signal" sentinel - return the minimum confidence
 /// (which is what the heuristic-only path would have produced if ML had
 /// returned `None`). Treat +/-Inf the same way the original clamp would
 /// have, since clamp handles infinities correctly.
@@ -115,7 +115,7 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str) -> f64 {
 ///
 /// Reads the persisted Beta(α, β) counters at process startup (lazy via
 /// `OnceLock`) and multiplies the score by the posterior mean. Fresh /
-/// uncalibrated detectors return 0.5 (uniform prior) — we DON'T penalize
+/// uncalibrated detectors return 0.5 (uniform prior) - we DON'T penalize
 /// uncalibrated detectors below 0.5 because the prior is symmetric, so
 /// 0.5 × score keeps the previous behavior approximately stable until
 /// observations accumulate. Detectors with a long clean record (posterior
@@ -145,7 +145,7 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
         return finalize_confidence(score);
     };
     // Only apply when the detector has actual observations beyond the
-    // Beta(1, 1) prior — otherwise the multiplier is exactly 0.5 and would
+    // Beta(1, 1) prior - otherwise the multiplier is exactly 0.5 and would
     // halve every uncalibrated finding's confidence, which is too
     // aggressive on a fresh install. Once a detector accumulates real
     // history, the multiplier diverges from 0.5 and meaningfully shapes
@@ -161,12 +161,12 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
 /// Apply path-based confidence penalties for matches in test, example, or dummy directories.
 pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
     // Even when there's no path to inspect, the score must still pass
-    // through the NaN-safety barrier — a NaN entering this function
+    // through the NaN-safety barrier - a NaN entering this function
     // would otherwise propagate verbatim into the final finding.
     let Some(path) = path else {
         return finalize_confidence(score);
     };
-    // Per-segment ASCII-case-insensitive compare — no full-path
+    // Per-segment ASCII-case-insensitive compare - no full-path
     // lowercase allocation per match.
     let is_test_like = path.split(['/', '\\']).any(|component| {
         component.eq_ignore_ascii_case("test")
@@ -189,7 +189,7 @@ mod tests {
     /// kimi-confidence regression: NaN entering any penalty function
     /// must be sanitized rather than propagated. `f64::clamp` leaves
     /// NaN alone, which is why we have the dedicated `finalize_confidence`
-    /// barrier — these tests pin that contract.
+    /// barrier - these tests pin that contract.
     #[test]
     fn finalize_confidence_replaces_nan_with_minimum() {
         let out = finalize_confidence(f64::NAN);
@@ -237,7 +237,7 @@ mod tests {
         assert!(!out.is_nan());
         let out_no_path = apply_path_confidence_penalties(f64::NAN, None);
         // Even the no-path early-return runs through finalize_confidence
-        // now — the previous flow passed NaN through verbatim when no
+        // now - the previous flow passed NaN through verbatim when no
         // path was provided.
         assert!(
             !out_no_path.is_nan(),

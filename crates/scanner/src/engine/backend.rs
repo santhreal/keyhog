@@ -19,7 +19,7 @@ static GPU_DEGRADATION_WARNED: OnceLock<()> = OnceLock::new();
 
 pub(crate) struct PreparedChunk<'a> {
     /// Borrowed handle on the caller's chunk. Was `Chunk` (owned)
-    /// historically — every consumer reads `prepared.chunk.foo` via
+    /// historically - every consumer reads `prepared.chunk.foo` via
     /// auto-deref, never moves out, and the caller already owns the
     /// chunk for the call's duration. Borrowing drops one full
     /// ChunkMetadata clone per chunk (5+ String allocations on
@@ -121,7 +121,7 @@ impl CompiledScanner {
             // CLI orchestrator with --threads / KEYHOG_THREADS / physical
             // core count. Hyperscan + AC scans are CPU-bound and trivially
             // independent per-chunk, so par_iter() saturates cores cleanly
-            // — was previously a serial iter().map() that pinned to one
+            // - was previously a serial iter().map() that pinned to one
             // worker even on 32-core boxes.
             use rayon::prelude::*;
             let mut results: Vec<Vec<RawMatch>> = chunks
@@ -130,7 +130,7 @@ impl CompiledScanner {
                 .collect();
             // Cross-chunk window-boundary reassembly. Without this, a
             // secret straddling the seam between two adjacent gapless
-            // chunks from the same file is invisible — both halves are
+            // chunks from the same file is invisible - both halves are
             // too short to match the regex on their own. The GPU paths
             // below call `scan_chunk_boundaries` after their batch
             // dispatch (see `scan_coalesced_megascan`/`scan_coalesced_gpu`);
@@ -223,7 +223,7 @@ impl CompiledScanner {
     /// Like [`scan_prepared_with_triggered`], but extraction is anchored
     /// at the byte positions the GPU literal-set engine reported. Each
     /// hit produces at most one regex confirmation pass restricted to a
-    /// small window around the literal — avoiding the
+    /// small window around the literal - avoiding the
     /// triggered-bitmap → full-chunk-rescan path that turned the GPU
     /// path into a 60× regression vs SIMD on dense corpora
     /// (320k literal hits × 2000 distinct patterns × 64 MiB chunk =
@@ -231,7 +231,7 @@ impl CompiledScanner {
     ///
     /// When the multiline / unicode preprocessor altered the chunk
     /// text the raw-chunk offsets the GPU returned no longer line up
-    /// with `prepared.preprocessed.text` — in that case the
+    /// with `prepared.preprocessed.text` - in that case the
     /// implementation transparently falls back to the legacy
     /// triggered-bitmap path so correctness is preserved.
     pub(crate) fn scan_prepared_with_pattern_hits(
@@ -256,7 +256,7 @@ impl CompiledScanner {
         // or unicode normalization changed the text length, raw-chunk
         // offsets no longer map 1:1 to preprocessed-text offsets and
         // anchored extraction would emit matches at the wrong column.
-        // For small drift (~hundreds of bytes on a 64 MiB chunk —
+        // For small drift (~hundreds of bytes on a 64 MiB chunk -
         // typical for Rust/Go/Python source after multiline string
         // reassembly), we still run the cheap-filter against
         // `chunk.data` (which IS the GPU's coordinate system) and let
@@ -271,17 +271,17 @@ impl CompiledScanner {
             .data
             .len()
             .abs_diff(prepared.preprocessed.text.len());
-        // ~10 KiB drift bound — covers heavy multiline reassembly on
+        // ~10 KiB drift bound - covers heavy multiline reassembly on
         // a 64 MiB file (vendor/vyre source drifts ~0.0005% of the
         // chunk).
         const MAX_TOLERATED_DRIFT: usize = 10 * 1024;
         let drift_tolerable = offset_drift <= MAX_TOLERATED_DRIFT;
         let scan_text = if prepared.preprocessed.text.len() == prepared.chunk.data.len() {
-            // Strict offset parity — scan the preprocessed text (the
+            // Strict offset parity - scan the preprocessed text (the
             // same one extract_confirmed_patterns will walk later).
             prepared.preprocessed.text.as_str()
         } else {
-            // Drift present — the cheap-filter needs to scan the
+            // Drift present - the cheap-filter needs to scan the
             // chunk.data coordinate system the GPU returned, so the
             // literal-hit positions land inside the right window.
             // Extraction still uses preprocessed.text downstream,
@@ -307,7 +307,7 @@ impl CompiledScanner {
                 // Cheap per-pattern pre-filter to shrink the bitmap
                 // before the (still whole-chunk) regex extraction
                 // pass. The GPU literal-set matches *prefixes* with
-                // weaker discrimination than Hyperscan's NFA match —
+                // weaker discrimination than Hyperscan's NFA match -
                 // on a 64 MiB random alphanumeric blob ~2 k distinct
                 // detector prefixes fire spuriously and feed
                 // `extract_confirmed_patterns` ~128 GB of redundant
@@ -320,7 +320,7 @@ impl CompiledScanner {
                 const PRE_MARGIN: u32 = 128;
                 const POST_MARGIN: u32 = 1024;
                 // A pattern's *first* literal hit may sit at a
-                // position where the full regex doesn't match yet —
+                // position where the full regex doesn't match yet -
                 // e.g. `z85` appearing in random alphanumerics at
                 // mid-line vs at end-of-line where the regex
                 // `(?:z85)[=:\s]+[…]{20,}` actually fires. Earlier
@@ -359,7 +359,7 @@ impl CompiledScanner {
                     let window = &text[snap_start..snap_end];
 
                     // The GPU AC DFA folds patterns that share a literal
-                    // prefix into one trie node — only one pid is emitted
+                    // prefix into one trie node - only one pid is emitted
                     // per literal hit. If that one's regex doesn't match,
                     // siblings (via same_prefix_patterns) never get
                     // checked. Task #56 reproducer: keyhog has both
@@ -368,7 +368,7 @@ impl CompiledScanner {
                     // first pid, and its regex doesn't match the
                     // stackblitz token. So we check `pid` AND every
                     // `same_prefix_patterns[pid]` sibling against this
-                    // hit's window — the first sibling whose regex
+                    // hit's window - the first sibling whose regex
                     // matches gets confirmed (its own bit), and the
                     // downstream `expand_triggered_patterns` then fans
                     // out to the rest of the sibling set. Correctness:
@@ -474,7 +474,7 @@ impl CompiledScanner {
         }
 
         // Patterns without a usable literal prefix live in `self.fallback`
-        // and never enter the cheap-filter trigger bitmap — task #69
+        // and never enter the cheap-filter trigger bitmap - task #69
         // caught asana-pat, mailchimp pattern 3, and likely a long tail
         // of similar prefix-less detectors silently failing here. Run
         // the keyword-AC-gated fallback sweep on every chunk; the AC
@@ -566,7 +566,7 @@ impl CompiledScanner {
         // Fallback patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
         // bitmap, so they would never extract via the path above.
-        // Task #69 — these detectors were silently dead in EVERY hot
+        // Task #69 - these detectors were silently dead in EVERY hot
         // code path that builds a triggered bitmap. The keyword-AC
         // pre-filter inside `scan_fallback_patterns` keeps cost
         // bounded to detectors whose ≥4-char keyword appears in the
@@ -605,7 +605,7 @@ impl CompiledScanner {
     ) -> Vec<u64> {
         match backend {
             // MegaScan currently reuses the literal-set trigger
-            // collection — its own regex-NFA trigger pass is open and
+            // collection - its own regex-NFA trigger pass is open and
             // unfinished. The trigger bitmask shape is identical to
             // the literal-set output so upstream consumers don't
             // branch; the gap is precision, not correctness (extra
@@ -620,14 +620,18 @@ impl CompiledScanner {
     fn collect_triggered_patterns_gpu(&self, text: &str) -> Vec<u64> {
         if let Some(matcher) = self.gpu_matcher() {
             let Some(backend) = self.gpu_backend.as_ref() else {
+                super::gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu);
                 return self.collect_triggered_patterns_simd(text);
             };
             match matcher.scan(&**backend, text.as_bytes(), 10000) {
                 Ok(matches) => return self.triggered_patterns_from_gpu_matches(&matches),
                 Err(error) => {
                     tracing::debug!("gpu scan failed: {error}");
+                    super::gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu);
                 }
             }
+        } else {
+            super::gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu);
         }
         self.collect_triggered_patterns_simd(text)
     }
@@ -716,7 +720,11 @@ fn warn_on_gpu_degradation(
     fallback: ScanBackend,
     scanner: &CompiledScanner,
 ) {
-    let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
+    // gpu::env_no_gpu() picks up KEYHOG_NO_GPU plus the CI auto-
+    // detection (CI=true and a dozen platform markers). On CI the
+    // probe was guaranteed to fail and the warning we'd emit here
+    // would be noise on every scan.
+    let no_gpu = crate::gpu::env_no_gpu();
     let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
 
     let reason = if scanner.gpu_literals.is_none() && scanner.gpu_backend.is_none() {

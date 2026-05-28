@@ -4,7 +4,7 @@ use super::support::*;
 fn known_prefix_credential_always_detected_despite_low_confidence_context() {
     use keyhog_core::Severity;
 
-    // Stripe secret key in a comment context — normally heavily suppressed.
+    // Stripe secret key in a comment context - normally heavily suppressed.
     let stripe_credential = concat!("sk_li", "ve_51H7xKjGf0a1b2c3d4e5f6g7h");
     let detector = DetectorSpec {
         id: "stripe-secret-key".into(),
@@ -15,6 +15,7 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
             regex: r"sk_live_[a-zA-Z0-9]{24}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,
@@ -22,7 +23,7 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
 
-    // Place inside a comment block — a context that normally suppresses low-confidence matches.
+    // Place inside a comment block - a context that normally suppresses low-confidence matches.
     let chunk = make_chunk(&format!(
         "// TODO: remove before deploy\n// STRIPE_KEY={}\n",
         stripe_credential
@@ -106,6 +107,7 @@ fn known_prefix_survives_ml_and_context_penalties() {
             regex: r"ghp_[a-zA-Z0-9]{36}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,

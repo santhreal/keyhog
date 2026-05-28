@@ -112,7 +112,7 @@ impl SlackSource {
 
         // Concurrent per-channel history fetch. Slack's tier-2 rate limit is
         // 20+ requests/minute; cap parallelism at 8 to leave headroom for the
-        // burst budget. Was sequential — see audits/legendary-2026-04-26.
+        // burst budget. Was sequential - see audits/legendary-2026-04-26.
         use rayon::prelude::*;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(8)
@@ -178,9 +178,17 @@ impl SlackSource {
             .map_err(|e| SourceError::Other(e.to_string()))?;
 
         if !resp.ok {
+            // `resp.error` is omitted by some Slack API responses (rate
+            // limits return only HTTP status + headers; non-OK 200s with
+            // {"ok": false} sometimes lack the field). Map None to a
+            // descriptive marker rather than "" so the operator sees the
+            // shape of the failure ("invalid_auth" / "missing field" /
+            // "channel_not_found" are common values; "<no error field>"
+            // distinguishes a malformed response from one with an actual
+            // error code).
+            let error_code = resp.error.as_deref().unwrap_or("<no error field>");
             return Err(SourceError::Other(format!(
-                "Slack API error: {}",
-                resp.error.unwrap_or_default()
+                "Slack API error: {error_code}"
             )));
         }
         Ok(resp.data.channels)
@@ -204,9 +212,17 @@ impl SlackSource {
             .map_err(|e| SourceError::Other(e.to_string()))?;
 
         if !resp.ok {
+            // `resp.error` is omitted by some Slack API responses (rate
+            // limits return only HTTP status + headers; non-OK 200s with
+            // {"ok": false} sometimes lack the field). Map None to a
+            // descriptive marker rather than "" so the operator sees the
+            // shape of the failure ("invalid_auth" / "missing field" /
+            // "channel_not_found" are common values; "<no error field>"
+            // distinguishes a malformed response from one with an actual
+            // error code).
+            let error_code = resp.error.as_deref().unwrap_or("<no error field>");
             return Err(SourceError::Other(format!(
-                "Slack API error: {}",
-                resp.error.unwrap_or_default()
+                "Slack API error: {error_code}"
             )));
         }
         Ok(resp.data.messages)

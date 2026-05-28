@@ -11,7 +11,7 @@ mod source;
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back
 /// to `Command::new("git")`, which would let a hostile $PATH substitute
-/// the git binary at runtime — keyhog feeds git the repo path and
+/// the git binary at runtime - keyhog feeds git the repo path and
 /// receives blob bytes that go through scanning, so a substituted git
 /// could exfil credentials directly.
 pub(crate) fn git_bin() -> Result<PathBuf, SourceError> {

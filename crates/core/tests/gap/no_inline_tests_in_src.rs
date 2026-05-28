@@ -37,7 +37,7 @@ fn no_inline_tests_in_src() {
 
     assert!(
         offenders.is_empty(),
-        "{} core/src files still contain #[cfg(test)] — migrate to tests/unit/:\n  - {}",
+        "{} core/src files still contain #[cfg(test)] - migrate to tests/unit/:\n  - {}",
         offenders.len(),
         offenders
             .iter()

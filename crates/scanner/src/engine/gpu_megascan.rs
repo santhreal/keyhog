@@ -8,31 +8,41 @@ impl CompiledScanner {
         use crate::hw_probe::ScanBackend;
 
         let Some(pipeline) = self.rule_pipeline() else {
+            super::gpu_forced::deny_silent_megascan_degrade(
+                "regex pipeline compile rejected the detector set",
+            );
             tracing::debug!(
                 "MegaScan: regex pipeline unavailable, dispatching via literal-set GPU"
             );
             return self.scan_coalesced_gpu(chunks);
         };
         let Some(backend) = self.gpu_backend.as_ref() else {
+            super::gpu_forced::deny_silent_megascan_degrade(
+                "no GPU backend acquired at compile time",
+            );
             return self.scan_coalesced_gpu(chunks);
         };
 
         let (entries, buffer) = super::gpu_coalesce::coalesce_chunks(chunks);
 
-        // Pipeline was pre-built for at most super::rule_pipeline::MEGASCAN_INPUT_LEN bytes;
+        // Pipeline was pre-built for at most `megascan_input_len()` bytes;
         // bigger batches can't dispatch. Auto-degrade rather than
         // truncate (truncation = silent false negatives).
-        if buffer.len() > super::rule_pipeline::MEGASCAN_INPUT_LEN {
+        let input_cap = super::rule_pipeline::megascan_input_len();
+        if buffer.len() > input_cap {
+            super::gpu_forced::deny_silent_megascan_degrade(
+                "coalesced batch exceeds RulePipeline input_len cap",
+            );
             tracing::debug!(
                 buffer_bytes = buffer.len(),
-                input_len = super::rule_pipeline::MEGASCAN_INPUT_LEN,
+                input_len = input_cap,
                 "MegaScan: batch exceeds RulePipeline input_len cap, falling back to literal-set GPU"
             );
             return self.scan_coalesced_gpu(chunks);
         }
 
         #[cfg(target_os = "linux")]
-        // SAFETY: same contract as scan_coalesced_gpu — `buffer` is a
+        // SAFETY: same contract as scan_coalesced_gpu - `buffer` is a
         // live owned Vec describing a valid range; madvise is advisory.
         unsafe {
             libc::madvise(
@@ -55,7 +65,10 @@ impl CompiledScanner {
             Err(error) => {
                 tracing::error!(
                     %error,
-                    "MegaScan dispatch failed — falling back to literal-set GPU"
+                    "MegaScan dispatch failed: falling back to literal-set GPU"
+                );
+                super::gpu_forced::deny_silent_megascan_degrade(
+                    "MegaScan dispatch returned an error at runtime",
                 );
                 return self.scan_coalesced_gpu(chunks);
             }
@@ -74,7 +87,10 @@ impl CompiledScanner {
         if raw_matches.len() > cap as usize {
             tracing::warn!(
                 cap,
-                "MegaScan exceeded cap — truncation possible; dispatching via literal-set GPU"
+                "MegaScan exceeded cap: truncation possible; dispatching via literal-set GPU"
+            );
+            super::gpu_forced::deny_silent_megascan_degrade(
+                "match count exceeded MegaScan dispatch cap (truncation risk)",
             );
             return self.scan_coalesced_gpu(chunks);
         }

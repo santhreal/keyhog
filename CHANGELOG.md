@@ -2,7 +2,165 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## v0.5.34 - 2026-05-27 - Multi-TB perf: adaptive GPU dispatch + shard batching, monolith splits, more silent fallbacks surfaced
+
+### Multi-TB scanning: RAM-adaptive GPU shard batching
+
+`gpu_literal_phase1` slices each coalesced batch into ~2-MiB wgpu
+shards (the WebGPU 65 535-workgroups-per-dimension cap), then
+batches `MAX_SHARDS_PER_GPU_BATCH` of them into a single command
+encoder. The cap was a fixed 64; it now adapts to host RAM:
+
+| Host RAM       | Shards / batch | 1-GiB-scan sequential batches |
+|----------------|----------------|-------------------------------|
+| < 16 GiB       | 64             | >= 8                          |
+| 16-32 GiB      | 128            | 4                             |
+| >= 32 GiB      | 256            | 2                             |
+
+The 96-GiB-RAM RTX-5090 workstation case drops from 8 sequential
+batched dispatches to 2 on a 1-GiB scan, cutting GPU pipeline-drain
+stalls roughly 4x. The 64-shard floor stays the safe default for
+small hosts where 256 shards x ~2 MiB host-side packing memory
+would press against the orchestrator's RAM budget.
+
+### Multi-TB scanning: VRAM-adaptive GPU dispatch
+
+`MEGASCAN_INPUT_LEN` was a fixed 256 MiB constant; the new
+`megascan_input_len()` sizes the pre-compiled `RulePipeline` input cap
+to host VRAM:
+
+| VRAM detected     | Input length | Adapter examples                 |
+|-------------------|--------------|----------------------------------|
+| >= 24 GiB         | 1 GiB        | RTX 4090 / 5090, A100 / H100     |
+| 12 - 23 GiB       | 512 MiB      | RTX 3090, RTX 4080, M-Max        |
+| 8 - 11 GiB        | 256 MiB      | RTX 3080, RTX 4070, M-Pro        |
+|  < 8 GiB / Unknown| 128 MiB      | iGPU, software, no-GPU CI runner |
+
+On a 5090 host that means 4x larger GPU dispatches and roughly 75%
+fewer per-dispatch launches across a multi-TB scan. The orchestrator's
+`BATCH_BYTES_BUDGET` tracks the same value with a `RAM / 8` safety
+clamp so peak resident memory (`pipeline_depth x batch_bytes_budget`)
+never crosses 1/8 of system RAM regardless of detected VRAM. The legacy
+`MEGASCAN_INPUT_LEN = 256 MiB` constant is preserved as a backwards-
+compatible alias.
+
+### No more silent fallbacks (continued)
+
+* S3 source: text-content-type objects that fail UTF-8 decode now
+  log a `warn` with the valid-up-to byte offset; previously
+  `return Ok(None)` silently dropped the chunk.
+* Git history walk: tree-entry, blob-header, blob-read failures
+  log at `debug` instead of silently `continue;`. UTF-8 decode
+  failures on git blobs stay silent (legitimate binary blob).
+* GPU MoE confidence: staging-buffer `recv` and `map_async` errors
+  now `warn` before falling back to CPU MoE; previously the double
+  `.ok()?.ok()?` swallowed both failures silently.
+
+### Internal refactors (no user-visible change)
+
+* `crates/scanner/src/pipeline/postprocess/suppression.rs`
+  (1368 lines) split into 7 focused submodules (`api`, `decision`,
+  `decode`, `doc_markers`, `path_filter`, `shape`, `mod`). All under
+  the 500-line cap.
+* `crates/sources/src/filesystem/read.rs` (1054 lines) split into
+  6 focused submodules (`raw`, `bytes`, `window`, `decode`, `tests`,
+  `mod`). All under the cap.
+* `crates/scanner/src/hw_probe.rs` (978 lines) split into 7 focused
+  submodules (`thresholds`, `tier`, `select`, `banner`, `platform`,
+  `tests`, `mod`). All under the cap.
+* `alphabet_filter.rs` SIMD entry points now carry proper `# Safety`
+  docs (caller-must-have-AVX2 / SSE2 / NEON), satisfying
+  `-D clippy::missing_safety_doc` after they were promoted to `pub`
+  for the prefilter-robustness proptest.
+
+### New `keyhog tui` subcommand
+
+Interactive ratatui + crossterm dashboard. Severity-colored finding feed,
+current-file banner, files-done / bytes / throughput / findings stats,
+GPU backend + pattern-count panel. `q` / `Esc` / Ctrl-C / any-key-after-
+complete all exit cleanly. New `--throttle-ms` flag paces the worker so
+demo recordings actually capture findings streaming in. Gated behind a
+default-on `tui` feature so portable builds (no-default-features +
+`portable`) skip the ratatui + crossterm dependency closure.
+
+`keyhog tui` is the surface the README / docs demo now records (vhs);
+the demo target moved from `keyhog explain` to `keyhog tui demo`.
+
+### Critical bugfix: orchestrator self-scan suppression no longer hides user findings
+
+The orchestrator post-scan filter dropped every finding whose path
+segment was literally "keyhog" (case-insensitive), plus a flat
+`tests/` / `fixtures/` / `benches/` / `detectors/` segment match.
+That was originally a self-scan helper for keyhog developers, but
+applied unconditionally it hid findings from anyone with:
+
+* A repo or folder named `keyhog/` (forks, vendored copies,
+  this-demo-recording-tree, Reddit posters' demo dirs).
+* A `tests/` directory in their tree, regardless of what was
+  being scanned.
+
+The fix is two-step: drop the "keyhog" segment match outright, and
+gate the remaining `tests/` / `fixtures/` / `benches/` / `detectors/`
+match on a marker check that the file path is a descendant of
+keyhog's own source repo root (detected once per process via a root
+`Cargo.toml` scan for `crates/scanner` + `crates/cli` + the `keyhog`
+package name). `--no-suppress-test-fixtures` now also disables the
+segment filter so audits see both suppression layers' contents.
+
+### Hardening: more silent GPU fallbacks now emit one-shot warnings
+
+* MegaScan rule-pipeline compile reject (was `tracing::debug!`).
+* MegaScan runtime dispatch error.
+* MegaScan match-count exceeding cap.
+* MegaScan batch exceeding `MEGASCAN_INPUT_LEN`.
+* No GPU backend handle on MegaScan dispatch.
+* `warm_backend` MegaScan path: now checks rule_pipeline readiness
+  (was only checking `gpu_stack_usable`).
+* Trigger-pattern GPU collection error / missing matcher / missing
+  backend.
+* `verifier`: OOB-required spec without an active OOB session
+  (was a silent degrade to HTTP-only).
+* `sources/git`: HEAD blob walk failure (silently downgraded every
+  finding's severity to `git/history`).
+* `subcommands/tui::worker`: file-read failure (was
+  `unwrap_or_default()`; now logs at debug and skips with accurate
+  files-done counter).
+
+All GPU degrade paths respect `KEYHOG_REQUIRE_GPU=1` (hard-fail) and
+`KEYHOG_NO_GPU=1` (silence the warning).
+
+### Performance: hot-path env-var caches
+
+`KEYHOG_BACKEND` (in `select_backend`), `KEYHOG_GPU_KERNEL` (in the
+literal-set path), and `KEYHOG_NO_GPU` / `KEYHOG_REQUIRE_GPU` (in
+the GPU degrade helpers) are now cached at process start instead of
+re-syscalling per chunk. Measured ~3% scan-throughput win on Apple
+Silicon against the 30k-file linux-clone corpus.
+
+### Dedup: shared modules consolidate cross-file copies
+
+* New `engine::gpu_postprocess` with `fold_overlapping_same_pid_inplace`
+  + `attribute_matches_to_chunks` (5 unit tests). Replaces two
+  byte-identical phase-1 tails in `gpu_ac_phase1` + `gpu_literal_phase1`.
+* New `cli::format` with `format_bytes` (4 unit tests). Replaces two
+  near-identical copies in `scan_system` + `tui::render` that had
+  drifted (one capped at GiB, the other handled TiB).
+* Engine `scan.rs` split into `scan` / `extract` / `process` modules
+  (was 835 LOC; now 291 / 393 / 191, all under the 500-line cap).
+* TUI subcommand split into `tui/{mod, render, worker}.rs` (was 644
+  LOC; now 236 / 318 / 123).
+* Orchestrator `explicit_backend_override` collapsed into a thin
+  re-export of `scanner::hw_probe::forced_backend_from_env` so the
+  alias table (`gpu` / `literal-set` / `mega-scan` / `regex-nfa` / etc.)
+  lives in one place.
+
+### Smaller fixes
+
+* `PatternSpec::default()` + `Chunk::from(String|&str)` so the test
+  suite compiles without 35 per-site explicit field fills.
+* `engine::coalesce_chunks` re-exported as a `pub` API so the
+  scanner property-test fixtures build.
+* Stale unused-imports cleanup in `scan.rs` after the module split.
 
 ## v0.5.33 - 2026-05-27 - WGPU AC kernel actually works (use_subgroup_coalesce=false everywhere)
 
@@ -184,11 +342,11 @@ Silicon M4 Pro: `vyre_ac_kernel PASS (backend=wgpu)`.
 
 ### Repo hygiene
 
-- **Bazel scaffolding untracked.** The 8 in-tree Bazel files (`.bazelrc`, `.bazelversion`, root + 5 per-crate `BUILD.bazel`, `MODULE.bazel`, `MODULE.bazel.lock`) were a 2026-05-21-throttle-driven PoC that never finished — every per-crate BUILD was a comment-only stub and `MODULE.bazel` was pinned to keyhog `0.5.7` while we ship 0.5.29 via cargo. Per the STANDARD prod-repo-doc-bleed rule, advertising a Bazel surface that doesn't build anything is a stub-not-evasion lie. Files stay on disk for the day Bazel becomes load-bearing; `.gitignore` catches future Bazel scratch.
+- **Bazel scaffolding untracked.** The 8 in-tree Bazel files (`.bazelrc`, `.bazelversion`, root + 5 per-crate `BUILD.bazel`, `MODULE.bazel`, `MODULE.bazel.lock`) were a 2026-05-21-throttle-driven PoC that never finished - every per-crate BUILD was a comment-only stub and `MODULE.bazel` was pinned to keyhog `0.5.7` while we ship 0.5.29 via cargo. Per the STANDARD prod-repo-doc-bleed rule, advertising a Bazel surface that doesn't build anything is a stub-not-evasion lie. Files stay on disk for the day Bazel becomes load-bearing; `.gitignore` catches future Bazel scratch.
 
 ### Detector tagging (client-safe)
 
-- `clerk-api-key`: publishable `pk_live_*` / `pk_test_*` — same shape as `clerk-frontend-api-key` from v0.5.28. Total client-safe-tagged patterns now: 9 across 8 detectors.
+- `clerk-api-key`: publishable `pk_live_*` / `pk_test_*` - same shape as `clerk-frontend-api-key` from v0.5.28. Total client-safe-tagged patterns now: 9 across 8 detectors.
 
 ## v0.5.28 - 2026-05-27 - KEYHOG_NO_GPU short-circuit + bare `-` stdin + more client-safe tags
 
@@ -222,7 +380,7 @@ Total client-safe-tagged detectors now: 7 (Sentry DSN both patterns, Mapbox `pk.
 
 ### Reporter changes
 
-- Text format: new `CLIENT-SAFE` 11-char label rendered in dim cyan (`2;36`) with a public-by-design remediation action ("Public by design (client bundle key) — verify scope restrictions."). All severities right-justified to 11 chars so bordered boxes line up regardless of which tier fires.
+- Text format: new `CLIENT-SAFE` 11-char label rendered in dim cyan (`2;36`) with a public-by-design remediation action ("Public by design (client bundle key) - verify scope restrictions."). All severities right-justified to 11 chars so bordered boxes line up regardless of which tier fires.
 - SARIF: `ClientSafe` → SARIF `note` level (same as `Info` / `Low`).
 - Rule-filter / `.keyhogignore` severity-name: `client-safe` (kebab-case, matches the new serde `rename_all`).
 
@@ -268,14 +426,14 @@ Total client-safe-tagged detectors now: 7 (Sentry DSN both patterns, Mapbox `pk.
 - **README banner pattern count** - `README_PATTERN_COUNT = 1646` → `1647` (one pattern added by the weatherapi third regex + one restored by the intercom fix).
 - **Clippy 1.95** - ten new lints (`doc_lazy_continuation`, `manual_range_contains`, `manual_pattern_char_comparison`, `manual_contains`, `manual_char_is_ascii`) on pre-existing code in `suppression.rs`. Idiom-only modernizations, no behavior change.
 
-## v0.5.24 — 2026-05-26 — dogfood non-PEM 27 → 22 (138 → 22 vs v0.5.21 baseline = −84%) via UUID-substring + email + blockchain-address-keyword + `$` sigil + base64 hot-pattern wiring
+## v0.5.24 - 2026-05-26 - dogfood non-PEM 27 → 22 (138 → 22 vs v0.5.21 baseline = −84%) via UUID-substring + email + blockchain-address-keyword + `$` sigil + base64 hot-pattern wiring
 
 ### Precision
 
-- **`contains_uuid_v4_substring`** — captured values that wrap a UUID v4 / RFC-4122 (`TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d` in bat-go docker-compose.reputation.yml). The entropy detector grabs the whole env-var assignment; the high-entropy payload is just the UUID, which is a public identifier, not a credential.
-- **`looks_like_email_address`** — `noreply@gogs.localhost` (gogs TestInit.golden.ini:89 `USER=…` captured because of nearby `PASSWORD=` line). Email addresses are public identifiers, never credentials. Tightened local + domain alphabet checks keep real `user:password` DSN strings outside the rejection set.
-- **Blockchain / network-address keyword context** in entropy fallback. Lines like `SOLANA_BAT_MINT_ADDRS=EPeU…1Tpz`, `OWNER_PUBKEY=…`, `CONTRACT_ADDRESS=0x…`, `WALLET=…` name a PUBLIC blockchain or network identifier — not a credential. Skip the entropy emit when the env-var key contains any of `_ADDR`, `_ADDRS`, `_ADDRESS`, `_WALLET`, `_MINT_ADDR`, `_PUBKEY`, `_PUBLIC_KEY`, `_CONTRACT`, `_OWNER`, `_ACCOUNT_ID`, `_PEER_ID`, `_NODE_ID`.
-- **Leading `$` sigil rejection** — GraphQL variable references (`$api_key` in shopify-cli mutation), shell variable expansions (`$API_KEY`), template placeholders (`${SECRET}`). Real credentials never start with `$`.
+- **`contains_uuid_v4_substring`** - captured values that wrap a UUID v4 / RFC-4122 (`TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d` in bat-go docker-compose.reputation.yml). The entropy detector grabs the whole env-var assignment; the high-entropy payload is just the UUID, which is a public identifier, not a credential.
+- **`looks_like_email_address`** - `noreply@gogs.localhost` (gogs TestInit.golden.ini:89 `USER=…` captured because of nearby `PASSWORD=` line). Email addresses are public identifiers, never credentials. Tightened local + domain alphabet checks keep real `user:password` DSN strings outside the rejection set.
+- **Blockchain / network-address keyword context** in entropy fallback. Lines like `SOLANA_BAT_MINT_ADDRS=EPeU…1Tpz`, `OWNER_PUBKEY=…`, `CONTRACT_ADDRESS=0x…`, `WALLET=…` name a PUBLIC blockchain or network identifier - not a credential. Skip the entropy emit when the env-var key contains any of `_ADDR`, `_ADDRS`, `_ADDRESS`, `_WALLET`, `_MINT_ADDR`, `_PUBKEY`, `_PUBLIC_KEY`, `_CONTRACT`, `_OWNER`, `_ACCOUNT_ID`, `_PEER_ID`, `_NODE_ID`.
+- **Leading `$` sigil rejection** - GraphQL variable references (`$api_key` in shopify-cli mutation), shell variable expansions (`$API_KEY`), template placeholders (`${SECRET}`). Real credentials never start with `$`.
 - **`base64_string.txt` / `base64_*` filename pattern + hot-pattern path wiring**. `metasploitable3/.../base64_string.txt` is a 600 KiB pure-base64 PNG flag file. Random byte sequences in the base64 stream coincidentally match the AWS Session Token `ASIA[A-Z0-9]{16}` literal-prefix hot pattern. The base64 decoder still produces its own `filesystem/base64` chunk; only raw text-mode hits on these files are suppressed. Wired in BOTH `should_suppress_named_detector_finding` and the hot-pattern fast path.
 
 ### Per-detector dogfood deltas vs v0.5.23
@@ -291,25 +449,25 @@ Total client-safe-tagged detectors now: 7 (Sentry DSN both patterns, Mapbox `pk.
 ### Residual 22 findings
 
 All ~21 are TRUE POSITIVES that the engine should keep firing on:
-- 6 alist OAuth client secrets committed to source (real public OAuth secrets in cloud-storage driver bindings — known leak by design).
-- 4 metasploitable3 chef users.rb passwords (`Dark_syD3`, `@dm1n1str8r`, `mesah_p@ssw0rd`, `Dark_syD3`-class) — CTF/vulnerable-app credentials intentionally weak but ARE real credentials.
+- 6 alist OAuth client secrets committed to source (real public OAuth secrets in cloud-storage driver bindings - known leak by design).
+- 4 metasploitable3 chef users.rb passwords (`Dark_syD3`, `@dm1n1str8r`, `mesah_p@ssw0rd`, `Dark_syD3`-class) - CTF/vulnerable-app credentials intentionally weak but ARE real credentials.
 - 4 metasploitable3 / govwa generic-secret CTF passwords (`govwaP@ss`, `D@rjeel1ng`, `but_master:`, `admin1234`).
-- 2 gogs golden test fixtures (`PASSWORD=12345678`, `PASSWORD=87654321`) — sequential-digit test passwords; engine correctly flags them.
+- 2 gogs golden test fixtures (`PASSWORD=12345678`, `PASSWORD=87654321`) - sequential-digit test passwords; engine correctly flags them.
 - 1 metasploitable3 Autounattend.xml Microsoft Windows public-key token (real public ID, ambiguous).
 - 1 railsgoat seeds.rb CTF password (`motoXXX1445`).
 - 1 claude-code Datadog public client token (real, intentional public Datadog logging key).
 - 1 shopify-api-ruby test JWT (shipping label JWT in a test response fixture).
 - 1 openssl SSH private-key in test data (real PEM in `test/recipes/`).
 
-The only remaining **true** FP is **`saltstack-credentials` on `railsgoat/config/initializers/constants.rb`** — engine offset bug (defect #80) emits a finding with no regex match; needs deeper investigation.
+The only remaining **true** FP is **`saltstack-credentials` on `railsgoat/config/initializers/constants.rb`** - engine offset bug (defect #80) emits a finding with no regex match; needs deeper investigation.
 
-## v0.5.23 — 2026-05-26 — dogfood non-PK 63 → 27 (−57%, 138 → 27 vs v0.5.21 baseline = −80%) via shape-filter unification + Rails-vendored detection + .b64 file skip + URI type-annotation suppression
+## v0.5.23 - 2026-05-26 - dogfood non-PK 63 → 27 (−57%, 138 → 27 vs v0.5.21 baseline = −80%) via shape-filter unification + Rails-vendored detection + .b64 file skip + URI type-annotation suppression
 
 ### Precision
 
-- **All shape filters now apply to every detector**, not just `generic-*`/`entropy-*`. `looks_like_pure_identifier`, `looks_like_word_separated_identifier`, `looks_like_scheme_prefixed_uri`, `looks_like_punctuation_decorated_identifier`, `looks_like_url_or_path_segment` no longer gate on detector_id. Service detectors like `cryptocompare-api-key` were firing on `SetMultipartFormData` Go method names because their regex used `Authorization[=:\s"']+([a-zA-Z0-9]{20,})` and the named-detector path bypassed shape gates. Real credentials have digits / long random suffixes / mixed alphabet — every filter has internal guards (`!has_digit`, `max_word_len ≤ 10`) that keep real keys outside the rejection set.
+- **All shape filters now apply to every detector**, not just `generic-*`/`entropy-*`. `looks_like_pure_identifier`, `looks_like_word_separated_identifier`, `looks_like_scheme_prefixed_uri`, `looks_like_punctuation_decorated_identifier`, `looks_like_url_or_path_segment` no longer gate on detector_id. Service detectors like `cryptocompare-api-key` were firing on `SetMultipartFormData` Go method names because their regex used `Authorization[=:\s"']+([a-zA-Z0-9]{20,})` and the named-detector path bypassed shape gates. Real credentials have digits / long random suffixes / mixed alphabet - every filter has internal guards (`!has_digit`, `max_word_len ≤ 10`) that keep real keys outside the rejection set.
 
-- **`looks_like_punctuation_decorated_identifier` fixed for PEM blocks**. The `b'-'` leading-sigil reject was too eager — `-----BEGIN ... PRIVATE KEY-----` starts with 5 dashes and was being suppressed alongside `--api-secret` CLI flags. Tightened to `bytes.starts_with(b"--") && bytes[2] != b'-'` so PEM markers (3+ dashes) survive but `--` CLI flags still reject.
+- **`looks_like_punctuation_decorated_identifier` fixed for PEM blocks**. The `b'-'` leading-sigil reject was too eager - `-----BEGIN ... PRIVATE KEY-----` starts with 5 dashes and was being suppressed alongside `--api-secret` CLI flags. Tightened to `bytes.starts_with(b"--") && bytes[2] != b'-'` so PEM markers (3+ dashes) survive but `--` CLI flags still reject.
 
 - **`.b64` / `.base64` raw-file skip**. Files explicitly marked as base64-encoded blobs (`metasploitable3/resources/flags/jack_of_diamonds.b64` is a base64-encoded PNG) hold alphabet-coincidence matches inside the base64 stream (`AIza…`, `sk-…`, `ASIA…`). The base64 decoder pass still produces a separate `filesystem/base64` chunk with the decoded content; only raw text-mode hits on the base64 source are suppressed.
 
@@ -332,25 +490,25 @@ The only remaining **true** FP is **`saltstack-credentials` on `railsgoat/config
   TOTAL non-PK           138 → 27   (−80% vs v0.5.21 baseline)
   private-key recall       782 unchanged (PEM filter regression caught + fixed)
 
-## v0.5.22 — 2026-05-26 — 22-repo dogfood drops non-PK findings 138 → 63 (−54%) via 8 new suppression filters + short-prefix anchor sweep
+## v0.5.22 - 2026-05-26 - 22-repo dogfood drops non-PK findings 138 → 63 (−54%) via 8 new suppression filters + short-prefix anchor sweep
 
 ### Precision (all 22-repo dogfood-driven)
 
-- **`looks_like_word_separated_identifier`** — digit-bearing snake_case / kebab-case identifiers (`s3_secret_access_key`, `d2i_PKCS7_bio`, `sqlite3_int`, `curlx_memdup0`, `X-Shopify-Access-Token`, `Shopify-Storefront-Private-Token`). Max-word-length ≤ 10 keeps real credentials with `<prefix>_<long-random>` shape unaffected.
-- **`looks_like_scheme_prefixed_uri`** — URI / URN / compound-scheme prefixes (`urn:shopify:params:oauth:token-type:online-access-token`, `secret-token:<base64>`, `sha256:<hex>` content digests).
-- **`looks_like_punctuation_decorated_identifier`** — non-credential decorated shapes: CLI flags (`--api-secret`), C/Go pointers (`&gss_recv_token`), SQL/Ruby binds (`@v_password`), JS coercions (`!!apiKeyOrOAuthToken`), UI labels (`Password:`), TS non-null (`token!`), Unix paths (`/etc/passwd:/etc/passwd:ro`).
-- **`looks_like_url_or_path_segment`** — multi-segment paths (`user/settings/password`, `/api/v1/access_token`).
-- **`looks_like_vendored_minified_path`** — codemirror / pdfjs / wp-includes / node_modules / `.min.js` / `.bundle.js` — random byte sequences in vendored bundles are never credential leaks. Applied to BOTH named-detector and hot-pattern paths.
-- **`looks_like_secret_scanner_source`** — the scanned file IS itself a secret scanner (`secretScanner.ts`, `trufflehog/`, `gitleaks/`). Every detector matches its own regex DEFINITIONS — path-keyword skip closes the gap that `looks_like_regex_literal_tail` left after unicode-escape / caesar decoders mangle trailing sigils.
-- **`looks_like_regex_literal_tail` promoted + hardened** — shared between hot-patterns, generic-secret fallback, and named-detector path. Added `)/g,`, `)/gi,`, `)/i,`, `)/m,` suffixes for JS object-literal patterns (`{ key: /pat/g, … }`).
+- **`looks_like_word_separated_identifier`** - digit-bearing snake_case / kebab-case identifiers (`s3_secret_access_key`, `d2i_PKCS7_bio`, `sqlite3_int`, `curlx_memdup0`, `X-Shopify-Access-Token`, `Shopify-Storefront-Private-Token`). Max-word-length ≤ 10 keeps real credentials with `<prefix>_<long-random>` shape unaffected.
+- **`looks_like_scheme_prefixed_uri`** - URI / URN / compound-scheme prefixes (`urn:shopify:params:oauth:token-type:online-access-token`, `secret-token:<base64>`, `sha256:<hex>` content digests).
+- **`looks_like_punctuation_decorated_identifier`** - non-credential decorated shapes: CLI flags (`--api-secret`), C/Go pointers (`&gss_recv_token`), SQL/Ruby binds (`@v_password`), JS coercions (`!!apiKeyOrOAuthToken`), UI labels (`Password:`), TS non-null (`token!`), Unix paths (`/etc/passwd:/etc/passwd:ro`).
+- **`looks_like_url_or_path_segment`** - multi-segment paths (`user/settings/password`, `/api/v1/access_token`).
+- **`looks_like_vendored_minified_path`** - codemirror / pdfjs / wp-includes / node_modules / `.min.js` / `.bundle.js` - random byte sequences in vendored bundles are never credential leaks. Applied to BOTH named-detector and hot-pattern paths.
+- **`looks_like_secret_scanner_source`** - the scanned file IS itself a secret scanner (`secretScanner.ts`, `trufflehog/`, `gitleaks/`). Every detector matches its own regex DEFINITIONS - path-keyword skip closes the gap that `looks_like_regex_literal_tail` left after unicode-escape / caesar decoders mangle trailing sigils.
+- **`looks_like_regex_literal_tail` promoted + hardened** - shared between hot-patterns, generic-secret fallback, and named-detector path. Added `)/g,`, `)/gi,`, `)/i,`, `)/m,` suffixes for JS object-literal patterns (`{ key: /pat/g, … }`).
 - **Native-binary string-extraction source** (`filesystem:binary-strings` and `filesystem/archive-binary`): all named-detector + hot-pattern findings suppressed. Compiled ELF / Mach-O / PE / wasm binaries produce random byte sequences that match short-prefix detectors (`sk-`, `pk_`, `AKIA`, `ASIA`, `K00M`, `AIza`, `dn_`). Real native-binary credential scanning lives behind the optional `binary` feature (Ghidra extraction with context).
-- **`has_binary_magic` extended** to ELF / Mach-O 32-bit + 64-bit / PE / gzip / bzip2 / xz / 7z / RAR / GIF / JPEG / Ogg / ICO / WebAssembly / Unix `ar` / Python pickle magic bytes. Previously only PDF / ZIP / PNG / OLE — a 2.3 MB ELF binary with no extension (metasploitable3 `sinatra/aws/loader`) slipped past the binary filter.
-- **Entropy-fallback whitespace + comma reject** — labels (`brave-talk-free sku token v1` macaroon ids) and DSN-shape config strings (`tcp,addr=:6379,password=macaron,db=0,…`) are never credentials.
+- **`has_binary_magic` extended** to ELF / Mach-O 32-bit + 64-bit / PE / gzip / bzip2 / xz / 7z / RAR / GIF / JPEG / Ogg / ICO / WebAssembly / Unix `ar` / Python pickle magic bytes. Previously only PDF / ZIP / PNG / OLE - a 2.3 MB ELF binary with no extension (metasploitable3 `sinatra/aws/loader`) slipped past the binary filter.
+- **Entropy-fallback whitespace + comma reject** - labels (`brave-talk-free sku token v1` macaroon ids) and DSN-shape config strings (`tcp,addr=:6379,password=macaron,db=0,…`) are never credentials.
 
 ### Detector tightening
 
 - **`z85-encoded-secret`**: dropped generic `encoded` keyword anchor. Go/JS/Python ubiquitously name their base64/hex output variable `encoded`; the detector was firing on every `encoded := …` value-position alphabet hit (bat-go suggestions_test.go, claude-code yoloClassifier.ts, gogs internal/tool/tool.go).
-- **`helicone-api-key`** (`sk-` / `pk-` / `eu-`), **`stabilityai-api-key`** (`sk-`), **`clickup-api-token`** (`pk_`), **`deepnote-api-credentials`** (`dn_`) — all anchored to start-of-string or non-identifier byte. Pre-fix: `dn_` matched any 3 alpha-numeric continuation chars (e.g. `idn_curlx_convert_wchar_to_UTF8` in curl/lib/idn.c), `sk-` matched random ELF rodata.
+- **`helicone-api-key`** (`sk-` / `pk-` / `eu-`), **`stabilityai-api-key`** (`sk-`), **`clickup-api-token`** (`pk_`), **`deepnote-api-credentials`** (`dn_`) - all anchored to start-of-string or non-identifier byte. Pre-fix: `dn_` matched any 3 alpha-numeric continuation chars (e.g. `idn_curlx_convert_wchar_to_UTF8` in curl/lib/idn.c), `sk-` matched random ELF rodata.
 
 ### Per-detector dogfood deltas vs v0.5.21 baseline
 
@@ -373,7 +531,7 @@ suppression + adversarial twin proves real credentials still fire).
 Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
 `concat!()` for GitHub push-protection.
 
-## v0.5.21 — 2026-05-26 — regex-literal suppression + fallback identifier sharing + bandwidth promiscuous-pattern fix
+## v0.5.21 - 2026-05-26 - regex-literal suppression + fallback identifier sharing + bandwidth promiscuous-pattern fix
 
 ### Precision
 
@@ -382,10 +540,10 @@ Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
   code (claude-code's `teamMemorySync/secretScanner.ts`,
   `components/Feedback.tsx`, every trufflehog / gitleaks
   competitor) emit hot-pattern findings on their own regex
-  DEFINITIONS — `AKIA[A-Z0-9]{16,17})/g`, `ASIA[A-Z0-9]{16})\b`,
+  DEFINITIONS - `AKIA[A-Z0-9]{16,17})/g`, `ASIA[A-Z0-9]{16})\b`,
   `xoxb-[0-9-]*`. Real tokens never end in regex sigils (no service
   uses `)/g` or `})\b` in its token alphabet). Tail check is O(1)
-  across 20 known sigil suffixes — kills 4+ FPs in claude-code's
+  across 20 known sigil suffixes - kills 4+ FPs in claude-code's
   src/components/Feedback.tsx + utils/teamMemorySync/secretScanner.ts.
 
 - **`looks_like_pure_identifier` now wired into fallback_generic**.
@@ -394,7 +552,7 @@ Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
   but the generic-secret fallback emitted matches directly. Same
   pattern as the entropy-fallback fix in v0.5.19. `Get-Location`
   (PowerShell verb-noun, 12 chars, 1 hyphen, no digit) was the
-  remaining FP shape this catches — claude-code's
+  remaining FP shape this catches - claude-code's
   `utils/powershell/parser.ts` line 1343
   (`pwd: 'Get-Location'`).
 
@@ -402,14 +560,14 @@ Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
   pattern.** Those tokens are generic OAuth2 terminology, not
   Bandwidth-specific. alist's drivers/pikpak/util.go,
   drivers/thunder/driver.go, drivers/pcloud/util.go all have
-  `ClientSecret = "..."` for Xunlei/PikPak/PCloud OAuth flows —
+  `ClientSecret = "..."` for Xunlei/PikPak/PCloud OAuth flows -
   the captured values ARE leaked client secrets, but for entirely
   different services. The generic-secret fallback catches the same
   values via its `client[_-]?secret` keyword alternation, so recall
   is preserved at correct service attribution. **7 → 0 mis-attributed
   bandwidth-api-key findings.**
 
-## v0.5.20 — 2026-05-26 — hot-pattern correctness + identifier filter extension + service-detector tightening
+## v0.5.20 - 2026-05-26 - hot-pattern correctness + identifier filter extension + service-detector tightening
 
 ### Critical correctness
 
@@ -445,7 +603,7 @@ Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
   shared crate-internal).
 
 - **blockcypher-api-token: dropped the global `token=<hex>` pattern.**
-  Was `token[=:\s\"']+([a-f0-9]{24,32})` — fired on every
+  Was `token[=:\s\"']+([a-f0-9]{24,32})` - fired on every
   `Authorization: token <hex>` line in any REST-API test fixture (41
   Shopify API test SHAs in v0.5.19 dogfood). Replaced with host-scoped
   pattern requiring `api.blockcypher.com` in the URL. **41 → 0 FPs.**
@@ -473,7 +631,7 @@ Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
 Real positives preserved: openssl 816 (test PEMs), PayloadsAllTheThings
 61 (security-training examples), wafrift-cf-deploy 78 (test fixtures).
 
-## v0.5.19 — 2026-05-26 — entropy-fallback FP sweep (gogs 149 → 27, -82%; entropy total -79%)
+## v0.5.19 - 2026-05-26 - entropy-fallback FP sweep (gogs 149 → 27, -82%; entropy total -79%)
 
 ### Precision
 
@@ -509,7 +667,7 @@ Real positives preserved: openssl 816 (test PEMs), PayloadsAllTheThings
   and wired the entropy fallback through it. Previously the
   `_password = getParameter(…)` and German "Benutzername" cases were
   suppressed via the named path but the entropy fallback emitted them
-  directly — same shape, different code path. Now both share one
+  directly - same shape, different code path. Now both share one
   identifier-shape contract (snake_case≥2_no-digit, CamelCase no-digit,
   pure-alphabetic word 8..=32).
 
@@ -528,12 +686,12 @@ Per-target highlights: gogs 149 → 27 (-82%), brave-talk 5 → 0,
 orb-firmware 13 → 1 (-92%), malachite 10 → 1 (-90%), webgoat 5 → 2,
 bat-ledger 14 → 9, bat-go 29 → 21. Twelve targets in the 23-target
 sweep now report 0 findings (brave-talk, colly, constellation, diffvg,
-mpc-lib, nitriding-daemon, orb-relay-messages, qtrap, spill, _self —
-keyhog scanning itself — plus the existing two). openssl's 816 are
+mpc-lib, nitriding-daemon, orb-relay-messages, qtrap, spill, _self -
+keyhog scanning itself - plus the existing two). openssl's 816 are
 test-PEM private-key findings (true positives in fixtures, not FPs);
 PayloadsAllTheThings's 61 are intentional security-training examples.
 
-## v0.5.18 — 2026-05-26 — dogfood FP sweep (12-target deep scan, 160 → 83 findings, ~48% FP reduction)
+## v0.5.18 - 2026-05-26 - dogfood FP sweep (12-target deep scan, 160 → 83 findings, ~48% FP reduction)
 
 ### Precision
 
@@ -541,7 +699,7 @@ PayloadsAllTheThings's 61 are intentional security-training examples.
   `org_[a-zA-Z0-9_-]{30,}` which fired on every `org_sqlite_jni_capi_CApi_*`
   macro in `javah`-generated C headers (41 FPs in sqlite alone, applies
   to every Java-bindings library shipping JNI). Tightened to
-  `org_[a-zA-Z0-9]{30,}` — real Deel org tokens are opaque base62 with
+  `org_[a-zA-Z0-9]{30,}` - real Deel org tokens are opaque base62 with
   no underscores or hyphens. Same fix for the `organization_` variant.
 - **generic-secret captured C++ / Rust scope resolution.** The bridge
   regex consumed one `:`; the second stayed in-value because `:` is in
@@ -612,13 +770,13 @@ Detector-level deltas: deel-api-key 35→0 (-100%), generic-secret 61→22
 (-64%), generic-password 4→0 (-100%), entropy-api-key 27→27 (filename
 filter wave 2 still pending wider rollout).
 
-## v0.5.17 — 2026-05-26 — SSRF redirect closure + --insecure honor + oob hygiene
+## v0.5.17 - 2026-05-26 - SSRF redirect closure + --insecure honor + oob hygiene
 
 ### Security
 
 - **SSRF redirect bypass in DNS-pinned client closed.** The per-request
   client rebuild in `verify::request::resolved_client_for_url` was
-  `Client::builder().timeout().resolve_to_addrs().build()` — silently
+  `Client::builder().timeout().resolve_to_addrs().build()` - silently
   inheriting reqwest's default `Policy::limited(10)` instead of the
   engine's `Policy::none()`. An attacker-controlled verification target
   could return `302 Location: http://internal-target/` and the pinned
@@ -680,24 +838,24 @@ filter wave 2 still pending wider rollout).
 
 - **`InteractshClient::for_test` returns `Result` instead of panicking.**
   The helper formerly carried
-  `RsaPrivateKey::new(...).expect("test RSA key generates")` — a
+  `RsaPrivateKey::new(...).expect("test RSA key generates")` - a
   panic-in-production path the no-unwrap gate caught. Returns
   `Result<Self, InteractshError>` now (mapped to `KeyGen`); test
   callers wrap with `.unwrap()` at the test boundary. Source: gate
   `oob_client_no_unwrap_expect`.
 - **`oob::client` split: `decrypt_entry` moved to `oob::decrypt`.**
-  File hit 516 lines (over the 500 modularity cap). Natural seam —
+  File hit 516 lines (over the 500 modularity cap). Natural seam -
   client owns RSA state + HTTP I/O, decrypt owns AES-256-CFB per-entry
   decode. No behaviour change. Source: gate
   `oob_client_file_size_cap`.
 - **README exit codes match `--help`.** Documented codes 3
   (detectors --audit failure), 4 (backend --self-test failure), 10
-  (live findings under `--verify`), and 11 (scanner panic) — README
+  (live findings under `--verify`), and 11 (scanner panic) - README
   previously listed only 0/1/2.
 - **Hash-digest gate is no longer always-on for named detectors.**
   Service-anchored detectors (`ALCHEMY_API_KEY=<32hex>`,
   `HEROKU_API_KEY=<uuid>`, `DATADOG_API_KEY=<32hex>`) now bypass
-  both the hash-digest and UUID-shape gates — the regex anchor
+  both the hash-digest and UUID-shape gates - the regex anchor
   is positive evidence the value is a credential, not a hash.
   Generic / entropy / private-key paths stay gated. Fixed 21
   contracts that were failing their scale gate because their
@@ -712,7 +870,7 @@ filter wave 2 still pending wider rollout).
   downstream detector. Detector file kept (vs deleted) so the
   embedded count stays stable.
 - **Case-insensitive variants** added to azure-subscription-key,
-  cloudflare-api-token, heroku-api-key, honeybadger-api-key —
+  cloudflare-api-token, heroku-api-key, honeybadger-api-key -
   camelCase and kebab-case env-var forms now match. New
   `aws-secret-access-key` detector matches the 40-char body in
   SCREAMING_SNAKE, camelCase, INI / properties, and kebab-case
@@ -777,13 +935,13 @@ filter wave 2 still pending wider rollout).
   hash-digest gate as always-on; the Unreleased
   bypass-on-anchor fix is being measured next.
 
-## v0.5.16 — 2026-05-23 — JsonDecoder wired into decode registry
+## v0.5.16 - 2026-05-23 - JsonDecoder wired into decode registry
 
 ### Fixed
 
 **JsonDecoder is now in the decode-through pipeline.** It had a
 splice-aware implementation in `crates/scanner/src/decode/json.rs`
-since v0.5.15 but was never registered in `get_decoders()` — pure
+since v0.5.15 but was never registered in `get_decoders()` - pure
 dead code. Credentials stored as JSON-encoded fields (the most
 common shape after `.env`) silently went unsurfaced.
 
@@ -799,12 +957,12 @@ The runner is now strict-by-default
 (`KEYHOG_ADVERSARIAL_STRICT=0` to opt out) so any future
 regression that loses a single variant turns CI red.
 
-## v0.5.15 — 2026-05-23 — decode-through splice: base64/hex recall 30% → 93%
+## v0.5.15 - 2026-05-23 - decode-through splice: base64/hex recall 30% → 93%
 
 ### Fixed
 
 **Decode-through pipeline preserves companion context now.** Decoded
-chunks used to be bare bytes with no surrounding text — every
+chunks used to be bare bytes with no surrounding text - every
 detector anchored on a companion keyword (`aws_secret = …`,
 `Authorization: Bearer …`, `api_key: …`) lost its anchor as soon
 as the credential was recovered from an encoded blob.
@@ -827,12 +985,12 @@ at 256 KiB parent so multi-MB chunks don't blow allocation.
 
 ### Added
 
-- **`keyhog scan --proxy <URL>`** — route every outbound HTTP
+- **`keyhog scan --proxy <URL>`** - route every outbound HTTP
   request through an HTTP/HTTPS/SOCKS5 proxy. Falls back to
   `KEYHOG_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`
   env. `--proxy off` disables proxying including env inheritance
   (air-gapped scans).
-- **`keyhog scan --insecure`** — skip TLS verification for every
+- **`keyhog scan --insecure`** - skip TLS verification for every
   outbound request. Needed when scanning through Burp / mitmproxy
   CAs with self-signed certificates. Env: `KEYHOG_INSECURE_TLS=1`.
 - **Shared `keyhog_sources::http` policy module.** Single source
@@ -841,17 +999,17 @@ at 256 KiB parent so multi-MB chunks don't blow allocation.
 - **40 000-case proptest suite** for the HTTP-client policy and
   SARIF dedup contracts (`crates/sources/tests/property/http_fuzz.rs`,
   `crates/core/tests/property/sarif_dedup.rs`).
-- **5 500-case adversarial wrapper-explosion runner** — re-embeds
+- **5 500-case adversarial wrapper-explosion runner** - re-embeds
   every contract positive in 8 real-world formats and asserts the
   detector fires.
-- **6 500-case path-shape runner** — replays every positive at 5
+- **6 500-case path-shape runner** - replays every positive at 5
   production paths and 4 suppressed-shape paths.
 - **5 070-case encoding-explosion runner** with split decode-hit
   vs incidental-hit metrics. Floors pinned so a regression
   below 88% base64 / 92% hex / 75% url-percent trips the gate.
-- **`tests/live_verify.rs`** — env-gated live-verify smoke
+- **`tests/live_verify.rs`** - env-gated live-verify smoke
   against real AWS/GitHub creds (`KEYHOG_LIVE_VERIFY=1`).
-- **`tools/diff_bench/`** — single-shot runner that drives
+- **`tools/diff_bench/`** - single-shot runner that drives
   keyhog + trufflehog + gitleaks across one labeled corpus
   (positives synthesized at CI runtime to dodge push-protection)
   and emits `differential_results.json` with per-scanner
@@ -859,7 +1017,7 @@ at 256 KiB parent so multi-MB chunks don't blow allocation.
   `.github/workflows/differential-bench.yml` runs nightly + on
   workflow_dispatch.
 
-## v0.5.14 — 2026-05-23 — macOS x86_64 + Windows release binaries
+## v0.5.14 - 2026-05-23 - macOS x86_64 + Windows release binaries
 
 ### Added
 
@@ -867,8 +1025,8 @@ at 256 KiB parent so multi-MB chunks don't blow allocation.
 
 - `keyhog-linux-x86_64` (default features, dynamic Hyperscan)
 - `keyhog-macos-aarch64` (Apple Silicon, `portable` features)
-- `keyhog-macos-x86_64` (Intel mac, `portable` features) — **new**
-- `keyhog-windows-x86_64.exe` (MSVC, `portable` features) — **new**
+- `keyhog-macos-x86_64` (Intel mac, `portable` features) - **new**
+- `keyhog-windows-x86_64.exe` (MSVC, `portable` features) - **new**
 
 The Windows + Intel-mac variants share the existing `portable`
 feature subset (every detector data feature, every git / web /
@@ -878,7 +1036,7 @@ so it compiles to a stub on Windows hosts without disabling the
 rest of the binary surface. v0.5.13 only shipped the prior two
 assets because the matrix change landed after the tag was cut.
 
-## v0.5.13 — 2026-05-23 — SARIF dedup so GitHub Code Scanning accepts uploads
+## v0.5.13 - 2026-05-23 - SARIF dedup so GitHub Code Scanning accepts uploads
 
 ### Fixed
 
@@ -890,12 +1048,12 @@ silently losing every finding on the upload. The dedup runs on a
 `(file_path, line, offset)` key before serialization, so each
 related location appears at most once.
 
-This is what unblocks the fleet-wide `keyhog.yml` CI rollout —
+This is what unblocks the fleet-wide `keyhog.yml` CI rollout -
 prior to this fix every repo that produced a finding lost its
 SARIF, leaving the Code Scanning tab empty even when the run was
 "green".
 
-## v0.5.12 — 2026-05-23 — dedup 9 more dup-primary detectors
+## v0.5.12 - 2026-05-23 - dedup 9 more dup-primary detectors
 
 ### Fixed
 
@@ -911,11 +1069,11 @@ without the id-half nearby.
 - veracode-api-credentials (veracode_api_secret)
 - zscaler-api-key (zscaler_client_secret)
 - zuora-api-credentials (zuora_client_secret)
-- cloudflare-zero-trust-service-token (client_secret) — positives
+- cloudflare-zero-trust-service-token (client_secret) - positives
   use the Client-Id shape, so dedup is safe even with main contract.
 
 belvo, crisp, env0, exoscale, checkmarx, crowdstrike, fastspring,
-fedex still have the dup-shape — their main contracts have a
+fedex still have the dup-shape - their main contracts have a
 secret-only positive that fires by design, so dedup would regress
 recall and isn't a safe local sweep.
 
@@ -924,7 +1082,7 @@ recall and isn't a safe local sweep.
 - **Pattern count 1674 → 1665** across README + e2e_binary +
   readme_claims gate.
 
-## v0.5.11 — 2026-05-23 — dedup carbon-black + databricks
+## v0.5.11 - 2026-05-23 - dedup carbon-black + databricks
 
 ### Fixed
 
@@ -937,14 +1095,14 @@ recall and isn't a safe local sweep.
 
 Same SURPLUS shape as the v0.5.9/v0.5.10 sweeps. These two had
 existing main contracts whose positives did NOT depend on the
-dropped primary firing alone — verified before edit.
+dropped primary firing alone - verified before edit.
 
 ### Changed
 
 - **Pattern count 1676 → 1674** across README + e2e_binary +
   readme_claims gate.
 
-## v0.5.10 — 2026-05-23 — detector dedup sweep + binary/crates alignment
+## v0.5.10 - 2026-05-23 - detector dedup sweep + binary/crates alignment
 
 ### Fixed
 
@@ -955,7 +1113,7 @@ dropped primary firing alone — verified before edit.
   companion" half as a duplicate primary regex; companion-only
   text would fire the detector. Same SURPLUS shape closed in
   v0.5.9 for ringcentral/booking-com/vanta/trulioo/appdynamics/
-  avalara/akoya — sweeping the rest of the corpus that has no
+  avalara/akoya - sweeping the rest of the corpus that has no
   main contracts yet so existing positives can't regress.
 - **Test-target clippy lints** in gpu_ac_recall_bug_56,
   cve_replay_runner, companion_contracts_runner, property/scanner_fuzz.
@@ -969,7 +1127,7 @@ dropped primary firing alone — verified before edit.
   tag commit before CI dedup landed; crates.io was never published
   at 0.5.9 (CI test red on the pattern-count drift).
 
-## v0.5.9 — 2026-05-23 — companion contracts gate + LFS coverage
+## v0.5.9 - 2026-05-23 - companion contracts gate + LFS coverage
 
 ### Fixed
 
@@ -992,7 +1150,7 @@ dropped primary firing alone — verified before edit.
   example-credential filter suppressed; swapped to realistic
   hex so the gate tests the engine behavior, not the
   example-credential filter.
-- **rustfmt** — `scan_gpu.rs` + `engine/mod.rs` re-joined now-short
+- **rustfmt** - `scan_gpu.rs` + `engine/mod.rs` re-joined now-short
   calls after the `matching` → `scan` module migration.
 
 ### Changed
@@ -1002,7 +1160,7 @@ dropped primary firing alone — verified before edit.
   fixtures with Twilio-shaped strings would otherwise trip
   GitHub push-protection.
 
-## v0.5.8 — 2026-05-23 — daemon wire-v2, GitHub Action, contracts gate
+## v0.5.8 - 2026-05-23 - daemon wire-v2, GitHub Action, contracts gate
 
 ### Added
 
@@ -1015,20 +1173,20 @@ dropped primary firing alone — verified before edit.
   failed with `cargo: command not found` or a hyperscan-sys
   linker error. SARIF output auto-uploads to code-scanning when
   `format: sarif`. README example was also pointing at a
-  nonexistent `keyhog/keyhog-action@v1` repo — fixed to the
+  nonexistent `keyhog/keyhog-action@v1` repo - fixed to the
   bundled action path.
-- **`.github/workflows/release.yml`** — tag-driven binary build
+- **`.github/workflows/release.yml`** - tag-driven binary build
   + upload. Pushing a `v*` tag now compiles `keyhog` for
   `keyhog-linux-x86_64` (default features incl. Hyperscan via
   apt) and `keyhog-macos-aarch64` (feature subset, no
   Hyperscan), then attaches the artifacts to the release. The
   composite action prefers these prebuilt binaries over a
   cold cargo build whenever the host triple matches.
-- **`KEYHOG_DOGFOOD=1`** — daemon-side dogfood capture. Set when
+- **`KEYHOG_DOGFOOD=1`** - daemon-side dogfood capture. Set when
   starting the daemon (`KEYHOG_DOGFOOD=1 keyhog daemon start`) to
   enable per-scan event capture inside the daemon; the events
   cross the wire to the client and flow into `--dogfood` output.
-  Per-request toggling is not wired — env-var gating keeps one
+  Per-request toggling is not wired - env-var gating keeps one
   client's debug session from bleeding into another client's
   payload on a shared daemon, which a per-request flag would
   break without additional isolation work.
@@ -1053,7 +1211,7 @@ dropped primary firing alone — verified before edit.
 - **`--max-file-size` skip summary.** Files dropped by the size cap
   now emit a per-file WARN AND an end-of-scan summary line
   ("N file(s) skipped: exceeded --max-file-size"). Walker's silent
-  filter was the only behavior before — a user looking at a
+  filter was the only behavior before - a user looking at a
   smaller-than-expected scan had no signal about which files were
   dropped.
 - **Live progress ticker.** Long scans paint a self-overwriting
@@ -1079,7 +1237,7 @@ dropped primary firing alone — verified before edit.
   reassembly cache accumulated. CI's filesystem-iteration order put
   braintree's `sandbox_…` positive ahead of blur-api-key's evasion
   and the sandbox credential surfaced as the only finding on
-  `"blur key = \"Kp4Q…\""` — a non-deterministic failure invisible
+  `"blur key = \"Kp4Q…\""` - a non-deterministic failure invisible
   locally. Fix: clear the cache before every scan in
   `contracts_runner.rs` (5 sites) and `companion_contracts_runner.rs`
   (3 sites) per the documented test-isolation API in
@@ -1087,12 +1245,12 @@ dropped primary firing alone — verified before edit.
 - **`blur-api-key` regex required uppercase `KEY`** while the
   contract evasion uses lowercase `key`. Prepended `(?i)` and
   lower-cased the literals; the contract evasion now hits the
-  intended case-variant path. Tests assert truth, not shape —
+  intended case-variant path. Tests assert truth, not shape -
   weakening the test would have masked the engine gap.
 - **Daemon-mode `--dogfood` was inert.** Engine-side telemetry
   (`record_example_suppression` calls from
   `pipeline.rs::should_suppress_known_example_credential_*`) fired
-  inside the daemon process — the client never saw any of it, so
+  inside the daemon process - the client never saw any of it, so
   `keyhog scan --dogfood demo-secret.env` against a daemon silently
   dropped every suppression event and the reporter counter stayed
   at 0. Wire protocol bumped 1 → 2: `Response::ScanResults` now
@@ -1103,13 +1261,13 @@ dropped primary firing alone — verified before edit.
   client merges the values into its own `OnceLock<Telemetry>` via
   two new public helpers (`add_example_suppressions(n)`,
   `append_events(iter)`). Verified locally: `--no-daemon` AND a
-  fresh daemon both emit "No real secrets — but 6 example/test
+  fresh daemon both emit "No real secrets - but 6 example/test
   keys suppressed. Pass --dogfood to see them."
 - **`demo-secret.env` summary regressed to the clean-repo
   message.** The v0.5.7 fix wired `TextReporter` to read the
   suppression count, but the orchestrator's
   `test_fixture_suppressions.suppresses()` branch ran *before*
-  any telemetry write — `AKIAIOSFODNN7EXAMPLE` matched the
+  any telemetry write - `AKIAIOSFODNN7EXAMPLE` matched the
   bundled substring suppression list and returned `false` without
   incrementing the counter, so the reporter still saw 0 and
   printed "Your code is clean." Now bumps
@@ -1172,7 +1330,7 @@ dropped primary firing alone — verified before edit.
 
 - **CUDA driver is opt-in.** The `cuda` feature was on by default,
   which made `cargo build` fail on any host without
-  `libcuda.so` / `libnvrtc.so` / `libcudart.so` — including macOS,
+  `libcuda.so` / `libnvrtc.so` / `libcudart.so` - including macOS,
   most CI runners, and any Linux box without an NVIDIA driver
   stack. The default scanner build now uses `wgpu` (Vulkan on
   Linux, Metal on macOS) for GPU dispatch. CUDA users opt in with
@@ -1182,7 +1340,7 @@ dropped primary firing alone — verified before edit.
   Renamed from `publish-0.5.6.sh` (which would silently emit "All
   v0.5.6 crates published" even when publishing v0.5.7). The new
   script `awk`s `[workspace.package].version` and uses that
-  everywhere — no per-release rename or message edit.
+  everywhere - no per-release rename or message edit.
 - **LayeredPipelineCache short-circuits compile on warm hits.** The
   prior `rule_pipeline_cached` always called
   `build_rule_pipeline` upfront to keep typed-error semantics for
@@ -1197,7 +1355,7 @@ dropped primary firing alone — verified before edit.
 - **Mega-scan compile-failure WARN demoted to debug.** Falling back
   to the literal-set GPU dispatch when vyre's byte-NFA frontend
   can't represent every pattern (e.g. pattern 990 in the bundled
-  detector corpus uses lookaround) is the designed degradation —
+  detector corpus uses lookaround) is the designed degradation -
   the user can't fix it, and one WARN per `--backend mega-scan`
   invocation creates noise without signal.
 
@@ -1211,7 +1369,7 @@ documented as a public Stripe docs example (suppressed by
 `test_fixture_suppressions::bundled()` and listed in
 `baseline.toml`).
 
-## v0.5.7 — 2026-05-17
+## v0.5.7 - 2026-05-17
 
 ### Fixed
 
@@ -1219,27 +1377,27 @@ documented as a public Stripe docs example (suppressed by
   every match was suppressed as an EXAMPLE/test key.** The 0.5.6
   bump wired example-suppression telemetry into the orchestrator,
   but the user-facing summary is owned by `TextReporter::finish()`
-  in `keyhog-core`, not the orchestrator — so the misleading
+  in `keyhog-core`, not the orchestrator - so the misleading
   banner still printed. `TextReporter` now takes the suppression
   count via `set_example_suppressions(n)` and prints "No real
-  secrets — but N example/test key(s) suppressed. Pass --dogfood
+  secrets - but N example/test key(s) suppressed. Pass --dogfood
   to see them." instead. Verified end-to-end against
   `demo-secret.env`. Regression tests pin all three states.
 
-## v0.5.6 — 2026-05-17
+## v0.5.6 - 2026-05-17
 
-### Added — dogfooding-driven UX
+### Added - dogfooding-driven UX
 
-- **`--dogfood`** — opt-in JSON trace on stderr after the scan. Each
+- **`--dogfood`** - opt-in JSON trace on stderr after the scan. Each
   example/test/placeholder credential that was matched and then
   suppressed gets a redacted-prefix event with the algorithmic reason
   (`contains_EXAMPLE_token`, `algorithmic_placeholder`). Closes the
   "did the scanner miss this, or silence it?" question without a debug
-  rebuild. Full credentials are never emitted — `--dogfood` is a
+  rebuild. Full credentials are never emitted - `--dogfood` is a
   decision tracer, not a credential exfil channel.
 - **Honest scan summary when only example keys were found.** Previously,
   scanning `demo-secret.env` (which holds `AKIAIOSFODNN7EXAMPLE`)
-  printed *"No secrets found. Your code is clean."* — identical to a
+  printed *"No secrets found. Your code is clean."* - identical to a
   genuinely clean repo. Now the summary distinguishes:
   - 0 findings, 0 suppressed → "0 secrets in 0.12s. You are secure!"
   - 0 findings, N suppressed → "0 real secrets, N example/test key(s) suppressed (pass --dogfood to see them)."
@@ -1250,14 +1408,14 @@ documented as a public Stripe docs example (suppressed by
   optional event log. Engines call `record_example_suppression(...)`
   from the existing `should_suppress_known_example_credential_*` paths;
   the orchestrator drains events at the end of `run()`. Zero new
-  state threaded through engine boundaries — single `OnceLock`
+  state threaded through engine boundaries - single `OnceLock`
   process-local container with a `reset()` for tests.
 - Two regression tests pinning the demo-secret.env case + the dogfood
   redaction contract. Telemetry-touching tests serialise behind a
   module-local `Mutex` so `cargo test`'s parallel runner doesn't let
   them step on each other.
 
-## v0.5.5 — 2026-05-09
+## v0.5.5 - 2026-05-09
 
 GPU foundations + vyre composition pass. The session wires keyhog
 deeper into vyre as a primitive consumer and contributes new
@@ -1286,7 +1444,7 @@ into the global buffer's coordinate space. Eliminated the silent
 `dispatch group size > 65535` error that the prior single-dispatch
 path hit on every 100 MiB+ batch. Recall on the realistic
 benchmark fixture now matches CPU/SIMD within rounding (303,554
-vs 302,168 vs 304,128) — earlier `121× speedup` numbers were
+vs 302,168 vs 304,128) - earlier `121× speedup` numbers were
 lying because the dispatch errored mid-batch and only ~1% of
 true hits came back.
 
@@ -1306,12 +1464,12 @@ the same per-chunk per-pattern trigger bitmask the literal-set
 GPU path produces. Routed in `scan_coalesced_megakernel` behind
 the env opt-in. Defaults OFF: vyre's `BatchDispatcher` is
 optimised for "many files × few rules" but keyhog's corpus is
-"few files × 6000+ rules" — modelling each literal as its own
+"few files × 6000+ rules" - modelling each literal as its own
 `BatchRuleProgram` allocates `chunks × rules ≈ 600,000` work
 items per dispatch, which keeps the persistent kernel sleeping
 in S-state on RTX 5090. Real megakernel win needs vyre-side
 multi-pattern hit reporting (one DFA covering many literals,
-`HitRecord` gains a per-pattern field) — wiring then collapses
+`HitRecord` gains a per-pattern field) - wiring then collapses
 to a one-line swap.
 
 Cross-platform compile fix in vendored vyre-runtime: `GpuStream<'a>`
@@ -1322,19 +1480,19 @@ Windows / macOS builds now pull vyre-runtime cleanly.
 **Vyre rule engine wired for declarative `.keyhogignore.toml`.**
 
 Upstream vyre additions (general-purpose, lives in vyre-libs):
-- `vyre_libs::rule::cpu_eval` — pure-CPU evaluator for
+- `vyre_libs::rule::cpu_eval` - pure-CPU evaluator for
   `RuleCondition` / `RuleFormula` trees. Mirror of the GPU
   lowering. Useful for any consumer that wants per-record rule
   evaluation without dispatching a backend program. 11 unit tests.
-- `vyre_libs::rule::ast::RuleCondition::FieldInSet` — new variant
+- `vyre_libs::rule::ast::RuleCondition::FieldInSet` - new variant
   for "context field's value is in this set". Distinct from
   `SetMembership` (which compares a static value, not a field
   lookup). Required for expressing "detector_id is one of …"
   without resorting to regex alternation. Builder lowering errors
-  with an actionable Fix: message — only the CPU evaluator can
+  with an actionable Fix: message - only the CPU evaluator can
   resolve field lookups today.
 - vyre `smallvec` workspace pin bumped 1.14.0 → 1.15.1 so consumers
-  carrying gix (which requires ^1.15.1) can share the type — keyhog
+  carrying gix (which requires ^1.15.1) can share the type - keyhog
   needed this to put `SmallVec<[Arc<str>; 4]>` on the wire between
   core and vyre.
 
@@ -1347,7 +1505,7 @@ path_ends_with / path_regex / credential_hash). Multiple
 parse to prevent accidental suppress-everything. Unknown fields
 rejected via serde `deny_unknown_fields`. Wired into
 `orchestrator.rs::run` after `finalize()` returns
-`VerifiedFinding`s — predicates need the resolved fields that
+`VerifiedFinding`s - predicates need the resolved fields that
 `dedup_cross_detector` populates. Malformed
 `.keyhogignore.toml` is non-fatal: warn + load zero rules; legacy
 `.keyhogignore` still applies. 11 keyhog rule_filter tests pass.
@@ -1371,7 +1529,7 @@ cc, harness, macros) with the public surface of each. Lists every
 vyre-libs and vyre-primitives module by name with what keyhog
 could conceivably wire from each.
 
-## v0.5.4 — 2026-05-08
+## v0.5.4 - 2026-05-08
 
 Roadmap-clearing pass plus the first crates.io publish for every
 workspace crate. The README's "Roadmap" section drops four items and
@@ -1384,7 +1542,7 @@ catching secrets that physically straddle the 64 MiB scan-window
 boundary. Wired into `scan_coalesced` after Phase 2 in both the SIMD
 and no-SIMD paths. Bounded to 1 KiB per side (2 KiB per pair), so
 cost is independent of chunk size: a 64 GiB file sliced into 1000
-chunks pays ~2 MiB of total boundary work — negligible next to the
+chunks pays ~2 MiB of total boundary work - negligible next to the
 per-chunk regex pass. Six unit tests + the previously-`#[ignore]`-
 marked `test_window_boundary_detection` integration test now pass;
 the test itself was rewritten to use an AKIA-shaped secret (the
@@ -1395,18 +1553,18 @@ reassembly).
 **`keyhog detectors --audit` and `keyhog detectors --fix`
 (roadmap #4).** `detectors --audit` runs every detector through
 `keyhog_core::validate_detector`, prints issues grouped by detector
-ID, and exits with code 3 when any `Error`-severity issue surfaces —
+ID, and exits with code 3 when any `Error`-severity issue surfaces -
 drop it into CI to gate detector PRs. `detectors --fix` scans the
 on-disk TOML corpus for the one validator finding that's safe to
-repair mechanically — single-brace template references (`{shop}`)
-inside `[detector.verify*]` blocks — and rewrites them to the
+repair mechanically - single-brace template references (`{shop}`)
+inside `[detector.verify*]` blocks - and rewrites them to the
 double-brace form (`{{shop}}`) the interpolator actually honours.
 Rewrites are scoped to verify blocks only (regex quantifiers like
 `[A-Z]{4,6}` in pattern blocks stay untouched), atomic-written via
 NamedTempFile, and re-validated post-rewrite so a corrupted result
 backs off rather than overwriting the original. `--dry-run` previews
 without writing. The 888-detector embedded corpus shows zero errors
-today (the v0.4.x detector cleanup wave already cleared them) — the
+today (the v0.4.x detector cleanup wave already cleared them) - the
 subcommand is the regression net for the next batch of contributions.
 Seven unit tests cover the rewriter's edge cases.
 
@@ -1416,7 +1574,7 @@ produces it, instead of waiting for dedup + verification before
 printing anything. Format is grep-friendly:
 `[stream] CRITICAL aws/aws-access-key  src/foo.rs:42  AKIA...XYZ_a`.
 The full report (text/json/sarif/jsonl) still lands on stdout/`--output`
-at the end — the stream is purely a UX hint that the scanner is
+at the end - the stream is purely a UX hint that the scanner is
 making progress on long-running runs (large monorepos, scan-system,
 GitHub-org walks). Implemented inside the existing scanner thread via
 `io::LineWriter` so per-line writes land atomically across rayon
@@ -1429,7 +1587,7 @@ interval) so the CLI's `--verify-rate <RPS>` flag can take effect
 after the global limiter has lazily initialised. Default stays at
 5 rps; existing per-service overrides via `update_limit` are
 preserved. `--verify-batch` adds per-service serialisation
-(`max_concurrent_per_service = 1`) on top of the rate cap — use it
+(`max_concurrent_per_service = 1`) on top of the rate cap - use it
 for repos with hundreds of fixture findings where bursting an
 upstream auth endpoint would get the scan IP throttled. Three new
 unit tests cover the rps→nanos clamp behaviour and the atomic update
@@ -1443,7 +1601,7 @@ path.
 - `crates/cli/src/scan_runtime.rs` was a 0-byte dead module with no
   references anywhere in the workspace. Deleted.
 - Workspace `license` field downgraded from `MIT OR Apache-2.0` to
-  `MIT` — the only license file shipped in the repo is the MIT one.
+  `MIT` - the only license file shipped in the repo is the MIT one.
   Honesty over ecosystem convention.
 - `cargo clippy --workspace --all-targets` now clean (was 4 warnings:
   unused-mut in `dedup.rs`, items-after-test-module in
@@ -1465,28 +1623,28 @@ audited end-to-end across all five crates; package contents verified
 via `cargo package --list` for each crate before publish (no stray
 fixtures, no .work-linux.bundle, no target tree). Path-dep version
 pins on the four library crates bumped in lockstep with the
-workspace version (`=0.5.4` everywhere) — the `=` pin guarantees a
+workspace version (`=0.5.4` everywhere) - the `=` pin guarantees a
 downstream `cargo install keyhog 0.5.4` resolves to a self-consistent
 set.
 
-## v0.5.3 — 2026-05-07
+## v0.5.3 - 2026-05-07
 
-I/O perfection pass — five staged perf + correctness landings on the
+I/O perfection pass - five staged perf + correctness landings on the
 filesystem source path, plus one latent-bug fix surfaced by the new
 test coverage.
 
-**Stage A — content cache (perf + correctness).** Merkle index schema
+**Stage A - content cache (perf + correctness).** Merkle index schema
 v2: each entry now carries `(mtime_ns, size, BLAKE3)` and the file
 gets a top-level `spec_hash` derived from the canonical detector set.
 `metadata_unchanged(path, mtime, size)` short-circuits the file read
-entirely when stat metadata matches a stored entry — the dominant
+entirely when stat metadata matches a stored entry - the dominant
 cost on cold-cache disk for `--incremental` re-runs.
 `load_with_spec(path, expected_spec_hash)` invalidates the cache the
 moment any detector regex, group, or companion changes, fixing a
 latent correctness bug where an added detector would silently miss
 unchanged files forever.
 
-**Stage B — mmap big-file scan.** Replaced the read+seek loop in
+**Stage B - mmap big-file scan.** Replaced the read+seek loop in
 FilesystemSource's >64 MiB path with a single mmap + zero-copy slice
 into `window_size`-byte windows with `window_overlap` shared bytes
 between neighbours. Drops the 64 MiB heap working buffer and the
@@ -1494,7 +1652,7 @@ per-window `seek+re-read` overlap round-trip; `madvise(SEQUENTIAL)`
 drives kernel readahead. Falls back cleanly to the buffered loop
 when mmap is refused (locked writer, exotic filesystem).
 
-**Stage C — I/O ↔ scan pipeline.** `scan_sources` spawns the scanner
+**Stage C - I/O ↔ scan pipeline.** `scan_sources` spawns the scanner
 in a dedicated thread holding `Arc<CompiledScanner>`. The producer
 (main thread) iterates sources and builds batches; the scanner pulls
 completed batches off a `sync_channel(1)` and runs `scan_coalesced`.
@@ -1503,7 +1661,7 @@ I/O, so total wall time approaches `max(read, scan)` instead of
 `read + scan`. Channel capacity 1 keeps memory bounded to one
 in-flight batch.
 
-**Stage D — mmap compressed reads.** ziftsieve only takes a
+**Stage D - mmap compressed reads.** ziftsieve only takes a
 contiguous `&[u8]` so streaming decompression isn't on the menu, but
 mmap'ing the compressed file lets us hand it the whole input without
 a corresponding heap allocation. A 1 GiB `.zst` previously manifested
@@ -1511,7 +1669,7 @@ as a 1 GiB `Vec<u8>` before decompression began. New `FileBytes` enum
 (`Mmap` | `Owned`) with size-cap gating; falls back to `fs::read`
 only on mmap refusal.
 
-**Stage E — per-platform mmap threshold.** Lowered to 64 KiB on Unix
+**Stage E - per-platform mmap threshold.** Lowered to 64 KiB on Unix
 where `mmap` setup is sub-microsecond and avoids the page cache →
 userland buffer copy. Held at 1 MiB on Windows where `MapViewOfFile`
 carries section-object + security-token costs that buffered
@@ -1519,7 +1677,7 @@ carries section-object + security-token costs that buffered
 
 **Latent bug fixed alongside Stage D.** `gz` and `zst` were in
 `SKIP_EXTENSIONS`, so the `extract_compressed_chunks` dispatch arm in
-the FilesystemSource iterator was actually unreachable — compressed
+the FilesystemSource iterator was actually unreachable - compressed
 files were silently being skipped on every scan. Removed those
 entries (the gz/zst handler now actually runs).
 
@@ -1536,7 +1694,7 @@ from the scanner (unused since the v0.5.2 perf trim). Tightened the
 `Arc` import gate in `crates/sources/src/lib.rs` so docker-only
 builds no longer warn about unused imports.
 
-## v0.5.2 — 2026-05-06
+## v0.5.2 - 2026-05-06
 
 Reconciliation pass against the parallel `Legendary Hardening` line
 (v0.3.0 → v0.4.0 → v0.5.0) that lived only on the work-linux clone
@@ -1548,7 +1706,7 @@ was missing from this branch:
 
 - `SensitiveString` migration, `MADV_DONTDUMP` zero-leak buffers,
   proximity-aware multiline reassembly, hardened ratelimiter, AC
-  prefilter for `has_secret_keyword_fast` — already present here,
+  prefilter for `has_secret_keyword_fast` - already present here,
   fmt-clean, with the no-default-features feature gates the v0.6.x
   pass added.
 - The 6 secret-laden boundary-test fixtures (`test.txt`,
@@ -1561,9 +1719,9 @@ was missing from this branch:
 
 Net new: version bump only. No code regressions, no losses.
 
-vendor/vyre is untouched — separate project with its own versioning.
+vendor/vyre is untouched - separate project with its own versioning.
 
-## v0.6.1 — 2026-05-06
+## v0.6.1 - 2026-05-06
 
 Perfection pass on top of v0.6.0.
 
@@ -1597,7 +1755,7 @@ Perfection pass on top of v0.6.0.
 - `cargo fmt --check` clean.
 - 596/596 tests pass under both feature configurations.
 
-## v0.6.0 — 2026-05-06
+## v0.6.0 - 2026-05-06
 
 Out-of-band callback verification + broad robustness/detector fixes.
 
@@ -1659,7 +1817,7 @@ Out-of-band callback verification + broad robustness/detector fixes.
 - Self-suppression list rewritten with `concat!()` to keep example
   credentials out of the repo's literal string table.
 
-## v0.3.0 — 2026-05-01
+## v0.3.0 - 2026-05-01
 
 The "legendary" wave: 18 Tier-A perf wins + 12 Tier-B moat innovations from the
 2026-04-26 deep audits, plus a perfection pass that hardened GPU/CPU
@@ -1675,7 +1833,7 @@ auto-routing across every supported OS. Build is green, scanner test suite
   taking absolute priority and physical-core count as the auto fallback
   (`3c4924c`).
 - Per-OS wgpu adapter preference replaces `Backends::all()`: Windows → DX12 +
-  Vulkan, macOS/iOS → Metal, Linux/BSD → Vulkan + GL — each platform gets its
+  Vulkan, macOS/iOS → Metal, Linux/BSD → Vulkan + GL - each platform gets its
   first-class native API (`ba0e3fc`).
 - Public `hw_probe::thresholds` module exposes the routing crossovers
   (GPU_MIN_BYTES=64 MiB, GPU_PATTERN_BREAKEVEN=2000, GPU_BYTES_BREAKEVEN_SOLO=
@@ -1700,81 +1858,81 @@ auto-routing across every supported OS. Build is green, scanner test suite
 - Verifier gained `danger_allow_http` opt-in flag to support HTTP test
   mocks while keeping production HTTPS-only (`0da1f94`).
 
-### Performance — CPU saturation
+### Performance - CPU saturation
 
 - `scan_chunks_with_backend_internal` now uses `rayon::par_iter` on the
-  non-GPU paths — was serial, pinned to a single core even on 32-core
+  non-GPU paths - was serial, pinned to a single core even on 32-core
   boxes (`a693ba2`).
 - `scan_coalesced` parallelizes its `#[cfg(not(feature = "simd"))]` and
   Hyperscan-init-failure fallbacks; multi-core builds without Hyperscan now
   saturate cores (`27caaf9`).
 - `[profile.release]` pinned: opt-level=3 + lto=fat + codegen-units=1 +
-  panic=abort + strip — was using cargo defaults; the new profile yields
+  panic=abort + strip - was using cargo defaults; the new profile yields
   ~10-20% throughput on hot paths via cross-crate inlining (`3c4924c`).
 - `[profile.release-fast]` (thin LTO, 16 codegen-units) for sub-minute CI
   builds; `[profile.bench]` keeps line-tables for flamegraph attribution.
 
-### Performance — Tier-A perf wins (~constant-factor allocations on the hot path)
+### Performance - Tier-A perf wins (~constant-factor allocations on the hot path)
 
-- Cow-borrowed `normalize_homoglyphs` and `prepare_chunk` — ASCII fast path no
+- Cow-borrowed `normalize_homoglyphs` and `prepare_chunk` - ASCII fast path no
   longer clones (`7e7cd55`).
 - `post_process_matches` dedup keys are `Arc<str>`, not `String` (`7e7cd55`).
-- Thread-local trigger-bitmask pool — drops ~2.4M allocs on a 100k-file scan
+- Thread-local trigger-bitmask pool - drops ~2.4M allocs on a 100k-file scan
   (`7e7cd55`).
 - Phase-1 returns `Option<Vec<u64>>` so empty chunks never allocate (`7e7cd55`).
 - `BTreeMap` dedup → `indexmap::IndexMap` for O(1) deterministic ordering
   (`d3b6721`).
-- Streaming SARIF reporter — peak memory drops from O(N findings) to O(rules)
+- Streaming SARIF reporter - peak memory drops from O(N findings) to O(rules)
   (`3a15fd0`).
-- Batched-streaming orchestrator — 4096 chunks / 256 MiB per batch caps peak
+- Batched-streaming orchestrator - 4096 chunks / 256 MiB per batch caps peak
   memory on giant scans (`a6c88b2`).
 - Sharded `DashMap` for verifier `VerificationCache`, `RateLimiter`, and
   in-flight map (no more global RwLock contention) (`d3b6721`).
 - Concurrent rayon-parallel S3 / GitHub-org / Slack source backends
   (8–16 in-flight) (`d3b6721`).
-- Shared `Arc<Regex>` compile cache via `shared_regex()` — same regex across
+- Shared `Arc<Regex>` compile cache via `shared_regex()` - same regex across
   detectors compiles once (`a38e79c`).
 - Pre-built `index_set` once on `Baseline::load` via `OnceLock` (`d3b6721`).
-- Bigram bloom prefilter (Layer 0.5) — gates chunks ≥64 bytes before
+- Bigram bloom prefilter (Layer 0.5) - gates chunks ≥64 bytes before
   Hyperscan (`3a15fd0`).
 - Dropped io_uring single-op path (latency regression, kept the multi-op
   batch path) (`d3b6721`).
-- Decode-bomb time budget — per-chunk wall-clock ceiling on `decode_chunk`
+- Decode-bomb time budget - per-chunk wall-clock ceiling on `decode_chunk`
   (`20d3ef8`).
 - Probabilistic gate filled in: distinct-bigram density via FNV-512 (`20d3ef8`).
 
-### Innovations — Tier-B moat features
+### Innovations - Tier-B moat features
 
-- **Bayesian Beta(α,β) confidence calibration** — per-detector posterior
+- **Bayesian Beta(α,β) confidence calibration** - per-detector posterior
   updated from observed TP/FP, multiplier wired into the live scoring path,
   CLI surface (`keyhog calibrate --tp/--fp/--show`) (`34deeb0`, `d5d447e`).
-- **Incremental scan** via persisted BLAKE3 Merkle index — unchanged files
+- **Incremental scan** via persisted BLAKE3 Merkle index - unchanged files
   skip the scanner entirely on CI re-runs (`57c4cc8`).
-- **Cross-detector dedup at emit** — one secret matched by N detectors
+- **Cross-detector dedup at emit** - one secret matched by N detectors
   collapses to one finding with N ranked service guesses (`eab71b2`).
-- **Diff-aware severity** — git source pre-walks HEAD's tree, tags chunks
+- **Diff-aware severity** - git source pre-walks HEAD's tree, tags chunks
   `git/head` vs `git/history`, and the latter's findings drop one severity
   tier (`410dc0e`).
-- **JWT structural validation** — header.payload decode with `alg`/`typ`/`exp`
+- **JWT structural validation** - header.payload decode with `alg`/`typ`/`exp`
   inspection and `alg=none` anomaly detection (`43092b6`).
-- **CWE-798 + OWASP A07:2021 SARIF taxa** — compliance-grade reporting
+- **CWE-798 + OWASP A07:2021 SARIF taxa** - compliance-grade reporting
   (`5462625`).
 - **SARIF v2.2 fixes[]** with deletedRegion/insertedContent and env-var-name
   auto-fix suggestions (`650e599`).
-- **Allowlist governance metadata** — `; reason="…" ; expires=YYYY-MM-DD ;
+- **Allowlist governance metadata** - `; reason="…" ; expires=YYYY-MM-DD ;
   approved_by="…"` per entry, expired entries auto-drop (`32ff3a8`).
-- **`keyhog explain <detector-id>`** — full spec dump, regex breakdown, and
+- **`keyhog explain <detector-id>`** - full spec dump, regex breakdown, and
   rotation-guide URLs for major providers (`f56f97e`).
-- **`keyhog diff <before.json> <after.json>`** — NEW / RESOLVED / UNCHANGED
+- **`keyhog diff <before.json> <after.json>`** - NEW / RESOLVED / UNCHANGED
   set diff for CI regression detection (`52d7242`).
-- **`keyhog watch <path>`** — daemon mode with notify-based file watcher,
+- **`keyhog watch <path>`** - daemon mode with notify-based file watcher,
   compile-once-scan-many on saves; sub-100ms re-scan (`56c61d6`).
-- **`keyhog calibrate`** — α/β counter management with posterior-mean bar
+- **`keyhog calibrate`** - α/β counter management with posterior-mean bar
   visualization (`34deeb0`).
-- **`keyhog detectors --search <query> --verbose`** — case-insensitive
+- **`keyhog detectors --search <query> --verbose`** - case-insensitive
   filter against id/name/service/keywords; verbose dumps full spec
   (`5951a14`).
-- **`keyhog completion <shell>`** — bash, zsh, fish, powershell, elvish
+- **`keyhog completion <shell>`** - bash, zsh, fish, powershell, elvish
   (`8ab105f`).
 
 ### Adversarial coverage
@@ -1783,14 +1941,14 @@ auto-routing across every supported OS. Build is green, scanner test suite
 - Caesar / ROT-N decoder for ROT13'd configs (`c462e9c`).
 - Hex `_` separator stripping (firmware dumps, embedded configs use
   `A1_B2_C3_…`) (`2980284`).
-- Comment-suffix disclaimer suppression — `// not a real key`,
+- Comment-suffix disclaimer suppression - `// not a real key`,
   `# fake credential`, etc. (`2980284`).
 - Cross-detector dedup also handles 2-fragment AWS reassembly with
   no-shared-prefix var names (`3327b39`).
 
 ### Architecture
 
-- GPU auto-routing — runtime probe selects GPU vs CPU based on adapter type,
+- GPU auto-routing - runtime probe selects GPU vs CPU based on adapter type,
   workload size, and pattern count; mandatory build-time presence (no more
   feature gate) (`7feb723`).
 - Filesystem source: per-archive-entry uncompressed-size cap; ziftsieve
@@ -1822,12 +1980,12 @@ auto-routing across every supported OS. Build is green, scanner test suite
 - 859 valid detectors after the gate; ~30 still flagged for pure-character-
   class companions (tracked separately).
 
-## v0.2.1 — 2026-04-04
+## v0.2.1 - 2026-04-04
 
 Maintenance release: production-readiness fixes, dependency updates, agent
 sweeps. See `git log v0.2.0..v0.2.1` for the commit list.
 
-## v0.2.0 — 2026-03-30
+## v0.2.0 - 2026-03-30
 
 > The fastest, most accurate secret scanner.
 
@@ -1846,7 +2004,7 @@ First "legendary bar" release. Highlights:
 - Verifier framework with TOML-defined live verification per detector.
 - SARIF v2.1.0 + JSON + JSONL + plain-text reporters.
 
-## v0.1.0 — 2026-03-26
+## v0.1.0 - 2026-03-26
 
 - First public release of the KeyHog workspace.
 - Production-readiness cleanup for docs, examples, README guidance, and

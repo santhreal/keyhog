@@ -9,16 +9,18 @@
 //! Mathematical model:
 //!     each detector has a Beta(α, β) prior over P(true positive | match).
 //!     α counts confirmed TPs, β counts confirmed FPs (both incremented from
-//!     a starting prior of α=1, β=1 — uniform Beta(1, 1)).
+//!     a starting prior of α=1, β=1 - uniform Beta(1, 1)).
 //!     posterior mean = α / (α + β)  ∈ [0, 1].
 //!
 //! Storage: JSON at `$XDG_CACHE_HOME/keyhog/calibration.json` with a schema
 //! version field. Load returns an empty store on miss / corrupted JSON /
-//! schema mismatch — never poison the cache from a damaged artifact.
+//! schema mismatch - never poison the cache from a damaged artifact.
 //!
 //! This module ships the DATA layer only. Live integration into the
 //! scanner's confidence-scoring path is a separate change that needs
 //! per-detector lookup at `apply_post_ml_penalties` time.
+
+#![allow(missing_docs)]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -57,7 +59,7 @@ impl BetaCounters {
     /// on. Useful for "trust the recent history" UI gates.
     ///
     /// kimi-confidence audit: the previous form was
-    /// `alpha.saturating_sub(1) + beta.saturating_sub(1)` — the `+`
+    /// `alpha.saturating_sub(1) + beta.saturating_sub(1)` - the `+`
     /// was a plain add and would panic in debug / wrap to 0 in release
     /// once both counters reached ~`u32::MAX / 2`. Use `saturating_add`
     /// so the result clamps at `u32::MAX` instead of wrapping. That's
@@ -83,7 +85,7 @@ const SCHEMA_VERSION: u32 = 1;
 /// Process-wide calibration store. Concurrent updates are serialized via
 /// a single `RwLock` because update events are rare (one per `keyhog
 /// calibrate` invocation or per verifier outcome) and the locked region is
-/// constant-time. We deliberately don't shard via DashMap — the persisted
+/// constant-time. We deliberately don't shard via DashMap - the persisted
 /// artifact is small enough that contention is a non-issue.
 #[derive(Debug, Default)]
 pub struct Calibration {
@@ -98,7 +100,15 @@ impl Calibration {
     pub fn load(path: &Path) -> Self {
         let bytes = match std::fs::read(path) {
             Ok(b) => b,
-            Err(_) => return Self::empty(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::empty(),
+            Err(e) => {
+                tracing::warn!(
+                    cache = %path.display(),
+                    error = %e,
+                    "calibration file read failed; treating as cold start"
+                );
+                return Self::empty();
+            }
         };
         let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
             Ok(d) => d,
@@ -136,7 +146,7 @@ impl Calibration {
         let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
         std::fs::create_dir_all(parent)?;
         // Same atomic-write-via-NamedTempFile pattern used by
-        // `merkle_index::save` — see that file's note for rationale.
+        // `merkle_index::save` - see that file's note for rationale.
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
         std::io::Write::write_all(&mut tmp, &serialized)?;
         tmp.as_file().sync_all()?;

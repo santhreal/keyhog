@@ -1,4 +1,4 @@
-//! Routing decision matrix — parametric tests over every documented
+//! Routing decision matrix - parametric tests over every documented
 //! [`select_backend`] cell. Auto-generates ~200 cells from data tables
 //! covering:
 //!
@@ -15,7 +15,7 @@
 //! or the tier table can't silently flip prod routing.
 //!
 //! Every cell that goes through `KEYHOG_BACKEND` must serialize on
-//! [`ENV_LOCK`] — the env var is process-global so concurrent tests
+//! [`ENV_LOCK`] - the env var is process-global so concurrent tests
 //! would race and produce non-deterministic results. The lock-guard
 //! pattern matches the prior `hw_probe` env-touching tests.
 
@@ -89,7 +89,7 @@ fn with_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
 // ────────────────────────────────────────────────────────────────────
 
 /// `KEYHOG_BACKEND=gpu` must force `Gpu` even when no GPU is detected
-/// at all — the override is a contract for benchmarks and CI assertions,
+/// at all - the override is a contract for benchmarks and CI assertions,
 /// not a "best-effort" hint. The default routing rules cannot override it.
 #[test]
 fn env_override_gpu_forces_gpu_regardless_of_hardware() {
@@ -455,7 +455,7 @@ fn software_gpu_adapters_rejected_even_above_thresholds() {
         );
         with_env(None, || {
             // Even at 1 GiB + 100k patterns, a software adapter must
-            // NEVER be picked — emulated GPU is slower than CPU.
+            // NEVER be picked - emulated GPU is slower than CPU.
             assert_eq!(
                 select_backend(&caps, 1 << 30, 100_000),
                 ScanBackend::SimdCpu,
@@ -519,12 +519,12 @@ fn avx512_alone_picks_simd_cpu() {
 // CELL 7: GpuTier classification invariants
 // ────────────────────────────────────────────────────────────────────
 
-/// Empty strings and weird inputs must classify as Low — never panic,
+/// Empty strings and weird inputs must classify as Low - never panic,
 /// never elevate to High by accident.
 #[test]
 fn classify_gpu_tier_edge_cases_are_low() {
     for name in ["", " ", "\n", "RTX", "4090", "M1"] {
-        // "M1" alone matches `m1 max`/`m1 ultra` via substring? No — those
+        // "M1" alone matches `m1 max`/`m1 ultra` via substring? No - those
         // require the "max"/"ultra" tail. "Apple M1" matches Mid.
         let tier = classify_gpu_tier(Some(name));
         assert!(

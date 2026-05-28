@@ -42,6 +42,7 @@ pub fn token_detector() -> DetectorSpec {
             regex: "TESTKEY_[a-zA-Z0-9]{20}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,

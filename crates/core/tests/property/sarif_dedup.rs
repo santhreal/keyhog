@@ -4,21 +4,21 @@
 //! array contains duplicate items, with the validation message
 //! `relatedLocations contains duplicate item`. When that rejection
 //! fires, the WHOLE finding set is dropped from the Code Scanning
-//! tab — not just the offending entry — so the UI silently shows
+//! tab - not just the offending entry - so the UI silently shows
 //! "no findings" while the workflow log says "scan completed".
 //!
 //! v0.5.13 added a dedup pass (commit 5007b82) keyed on
 //! `(file_path, line, offset)`. These properties pin its contract:
 //!
-//! 1. **Idempotence** — running the dedup twice yields the same set.
-//! 2. **Subset preservation** — the deduped set is a subset of the
+//! 1. **Idempotence** - running the dedup twice yields the same set.
+//! 2. **Subset preservation** - the deduped set is a subset of the
 //!    input (we never invent locations).
-//! 3. **No-loss for unique inputs** — every uniquely-keyed input
+//! 3. **No-loss for unique inputs** - every uniquely-keyed input
 //!    survives.
-//! 4. **Stable ordering** — first occurrence wins; second + later
+//! 4. **Stable ordering** - first occurrence wins; second + later
 //!    copies are dropped. (Matches the dedup's `HashSet::insert`
 //!    behavior, which is what the SARIF spec orders by source-order.)
-//! 5. **Survives the JSON round-trip** — serializing the deduped
+//! 5. **Survives the JSON round-trip** - serializing the deduped
 //!    finding to SARIF JSON and reading it back must still satisfy
 //!    the dedup invariant.
 //!
@@ -35,7 +35,7 @@ const CASES: u32 = 10_000;
 // ── strategies ──────────────────────────────────────────────────────
 
 /// A `MatchLocation` whose `(file_path, line, offset)` falls in a
-/// small alphabet — small enough that duplicates will surface
+/// small alphabet - small enough that duplicates will surface
 /// naturally inside a randomly-sized vec without contrived shrinking.
 fn any_location() -> impl Strategy<Value = MatchLocation> {
     (
@@ -54,7 +54,7 @@ fn any_location() -> impl Strategy<Value = MatchLocation> {
         })
 }
 
-/// 0–8 additional locations — small enough that duplicates appear
+/// 0–8 additional locations - small enough that duplicates appear
 /// roughly half the time given the strategy above.
 fn additional_locations() -> impl Strategy<Value = Vec<MatchLocation>> {
     prop::collection::vec(any_location(), 0..8)
@@ -99,7 +99,7 @@ fn render_to_sarif(finding: &VerifiedFinding) -> Vec<u8> {
 }
 
 /// Pull the `relatedLocations` array out of the rendered SARIF as a
-/// vec of `(uri, startLine, charOffset)` triples — that's the key
+/// vec of `(uri, startLine, charOffset)` triples - that's the key
 /// we dedup on. Returns an empty vec when the SARIF document had no
 /// `relatedLocations` field (which is also a valid post-dedup state).
 fn extract_related_keys(sarif: &[u8]) -> Vec<(String, Option<u64>, u64)> {
@@ -141,7 +141,7 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: CASES, .. ProptestConfig::default() })]
 
     /// The rendered SARIF must NEVER contain duplicate
-    /// (uri, line, offset) triples in `relatedLocations` — that's
+    /// (uri, line, offset) triples in `relatedLocations` - that's
     /// the exact violation GitHub Code Scanning rejects on.
     #[test]
     fn rendered_sarif_has_no_duplicate_related_locations(
@@ -200,7 +200,7 @@ proptest! {
             prop_assert!(
                 input_keys.contains(k),
                 "rendered SARIF contains a related location {:?} that was \
-                 not in the input — dedup must never invent entries",
+                 not in the input - dedup must never invent entries",
                 k
             );
         }
@@ -233,7 +233,7 @@ proptest! {
         prop_assert_eq!(
             rendered_keys,
             input_unique,
-            "rendered SARIF dropped a unique input key — dedup is over-zealous"
+            "rendered SARIF dropped a unique input key - dedup is over-zealous"
         );
     }
 }

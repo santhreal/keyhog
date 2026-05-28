@@ -1,4 +1,4 @@
-//! Migrated from `src/lib.rs` — redacted output must not contain the full secret.
+//! Migrated from `src/lib.rs` - redacted output must not contain the full secret.
 
 use keyhog_core::redact;
 

@@ -1,21 +1,18 @@
+use super::scan_filters::*;
 use super::*;
-use crate::context;
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
-use std::collections::HashMap;
-
-use super::scan_filters::*;
 
 // The trigger-buffer pool is only used in the Hyperscan-prefilter
 // scratch path of `scan_coalesced` (gated `#[cfg(feature = "simd")]`).
 // Without `simd`, both the pool and the helper become dead code,
-// so gate them too — otherwise `cargo build --no-default-features`
+// so gate them too - otherwise `cargo build --no-default-features`
 // (the no-Hyperscan Windows build) emits dead-code warnings.
 //
 // Note: a previous attempt extended this pool to the per-chunk
 // `collect_triggered_patterns_*` builders. That regressed the
 // long-lines bench by ~12% because those builders return
-// `Vec<u64>` to their callers — the pool can't save the
+// `Vec<u64>` to their callers - the pool can't save the
 // allocation, only adds the thread_local + RefCell overhead.
 // The pool's win is reuse of buffers that stay inside the pool.
 #[cfg(feature = "simd")]
@@ -46,7 +43,9 @@ fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) 
 /// Extracted so both `extract_grouped_matches` and
 /// `extract_plain_matches` share the same lazy `OnceCell` init
 /// closure body (Rust can't `impl FnOnce<>` to share inline).
-fn compute_pattern_signals(detector: &DetectorSpec, chunk: &Chunk) -> (bool, bool) {
+/// `pub(super)` so the extract submodule (`engine/extract.rs`) can call
+/// it after the scan.rs / extract.rs / process.rs split.
+pub(super) fn compute_pattern_signals(detector: &DetectorSpec, chunk: &Chunk) -> (bool, bool) {
     let kw = detector
         .keywords
         .iter()
@@ -75,7 +74,7 @@ impl CompiledScanner {
 
         #[cfg(not(feature = "simd"))]
         {
-            // Parallel CPU dispatch — same reasoning as scan_chunks_with_backend:
+            // Parallel CPU dispatch - same reasoning as scan_chunks_with_backend:
             // the per-chunk scan is independent and CPU-bound.
             let mut results: Vec<Vec<keyhog_core::RawMatch>> =
                 chunks.par_iter().map(|c| self.scan(c)).collect();
@@ -86,7 +85,7 @@ impl CompiledScanner {
         #[cfg(feature = "simd")]
         {
             let Some(scanner) = &self.simd_prefilter else {
-                // Hyperscan failed to initialize at compile time — fall back
+                // Hyperscan failed to initialize at compile time - fall back
                 // to per-chunk parallel SimdCpu (or whichever backend the
                 // scanner picks). Was serial; now uses rayon.
                 return chunks.par_iter().map(|c| self.scan(c)).collect();
@@ -96,7 +95,7 @@ impl CompiledScanner {
 
             // Phase 1: Parallel HS scan on RAW bytes. No prepare, no Arc, no alloc
             // for non-hit files. Thread-local scratch + a per-worker bitmask
-            // POOL eliminate the per-chunk `vec![0u64; …]` alloc — we still
+            // POOL eliminate the per-chunk `vec![0u64; …]` alloc - we still
             // need owned Vecs in the result so phase 2 can consume them, but
             // empty-result chunks return `None` and skip the alloc entirely.
             let words_needed = ac_len.div_ceil(64);
@@ -170,7 +169,7 @@ impl CompiledScanner {
                     // scan_prepared_with_triggered; this no-hit branch
                     // historically only ran scan_generic_assignments, so
                     // any chunk WITHOUT a literal-prefix HS hit silently
-                    // dropped every fallback detector — including
+                    // dropped every fallback detector - including
                     // standalone-on-a-line k8s bootstrap tokens. Fix:
                     // for chunks that plausibly carry a secret (have a
                     // generic-assignment-keyword OR an explicit secret-
@@ -185,7 +184,7 @@ impl CompiledScanner {
                     // re-Hyperscan cost doesn't regress monorepo scans
                     // (gitlabhq: 64k mostly-source files would otherwise
                     // pay 64k * ~150µs per-chunk fallback walks). The
-                    // gate is intentionally permissive — `token`,
+                    // gate is intentionally permissive - `token`,
                     // `password`, `secret`, `api_key` cover every config
                     // file shape that planted-credential corpora use.
                     //
@@ -268,7 +267,7 @@ impl CompiledScanner {
             }
         }
         for candidate in reassembled_candidates {
-            // candidate is Zeroizing<String> — scrubbed when this
+            // candidate is Zeroizing<String> - scrubbed when this
             // iteration ends.
             let entropy = crate::pipeline::match_entropy(candidate.as_bytes());
             if entropy < 3.0 || candidate.len() < 16 {
@@ -282,554 +281,12 @@ impl CompiledScanner {
                 data: dummy_data.into(),
                 metadata: chunk.metadata.clone(),
             };
-            // Tiny synthesized chunk; skip GPU unconditionally —
+            // Tiny synthesized chunk; skip GPU unconditionally -
             // per-dispatch overhead dwarfs the work. Matches the
             // scan_cross_chunk_fragments rationale.
             let backend = crate::hw_probe::ScanBackend::SimdCpu;
             let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, None);
             matches.append(&mut reassembled_matches);
-        }
-    }
-
-    pub(crate) fn extract_matches(
-        &self,
-        entry: &CompiledPattern,
-        preprocessed: &ScannerPreprocessedText,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
-        // Per-pattern deadline. Inner regex loops can produce many
-        // matches on adversarial inputs (false_prefix_storm); without
-        // a deadline-check inside those loops, --timeout is a lie for
-        // those chunks. Threaded down to the inner loops below.
-        deadline: Option<std::time::Instant>,
-    ) {
-        self.extract_matches_inner(
-            entry,
-            preprocessed,
-            line_offsets,
-            code_lines,
-            documentation_lines,
-            chunk,
-            scan_state,
-            base_line,
-            base_offset,
-            None,
-            deadline,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn extract_matches_inner(
-        &self,
-        entry: &CompiledPattern,
-        preprocessed: &ScannerPreprocessedText,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
-        cursor_range: Option<(usize, usize)>,
-        deadline: Option<std::time::Instant>,
-    ) {
-        // Resilient lookup: a malformed `entry.detector_index` would otherwise
-        // panic mid-scan and abort the whole rayon worker. The compiler should
-        // never produce out-of-range indices, but this is the kind of
-        // invariant whose violation should degrade one finding gracefully
-        // rather than crash an entire repository scan.
-        let Some(detector) = self.detectors.get(entry.detector_index) else {
-            tracing::warn!(
-                detector_index = entry.detector_index,
-                detectors_len = self.detectors.len(),
-                "extract_matches: detector_index out of range; skipping pattern"
-            );
-            return;
-        };
-
-        if let Some(group) = entry.group {
-            self.extract_grouped_matches(
-                entry,
-                detector,
-                group,
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                base_line,
-                base_offset,
-                cursor_range,
-                deadline,
-            );
-            return;
-        }
-        self.extract_plain_matches(
-            entry,
-            detector,
-            preprocessed,
-            line_offsets,
-            code_lines,
-            documentation_lines,
-            chunk,
-            scan_state,
-            base_line,
-            base_offset,
-            cursor_range,
-            deadline,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn extract_grouped_matches(
-        &self,
-        entry: &CompiledPattern,
-        detector: &DetectorSpec,
-        group: usize,
-        preprocessed: &ScannerPreprocessedText,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
-        cursor_range: Option<(usize, usize)>,
-        deadline: Option<std::time::Instant>,
-    ) {
-        let search_text = &preprocessed.text;
-        // Lazy per-pattern dedup of two signals that are constant
-        // across this pattern's matches but expensive to compute:
-        //   `keyword_nearby` = `O(K × |chunk|)` substring scans.
-        //   `sensitive_file` = Aho-Corasick scan over the file path.
-        // Computing eagerly at `extract_matches` level regressed the
-        // entropy_noise bench by -36% — many patterns trigger via
-        // AC but produce zero matches, paying for compute they
-        // never use. The OnceCell here keeps: zero-match patterns
-        // pay nothing; first-match populates; subsequent matches
-        // reuse the cached value.
-        let signals = std::cell::OnceCell::<(bool, bool)>::new();
-        // Reuse one CaptureLocations buffer across every iter tick instead of
-        // allocating a fresh `Captures` per match. For a 100k-file scan
-        // hitting 10k matches across a handful of hot patterns, that's tens
-        // of thousands of avoided allocations per scan.
-        let mut locs = entry.regex.capture_locations();
-        let groups_total = locs.len();
-        let bytes_total = search_text.len();
-        // GPU-anchored path: caller restricts the scan to a small
-        // window around a literal hit. `cursor_end` is the upper
-        // bound for match *starts* — a regex match whose start lies
-        // past `cursor_end` is treated as "no match" for window
-        // termination. We still let a match *end* past `cursor_end`
-        // because credentials are typically longer than the literal
-        // prefix that anchored them.
-        let (mut cursor, cursor_end) = match cursor_range {
-            Some((start, end)) => (start.min(bytes_total), end.min(bytes_total)),
-            None => (0usize, bytes_total),
-        };
-        while cursor < cursor_end && cursor > 0 && !search_text.is_char_boundary(cursor) {
-            cursor -= 1;
-        }
-        // Inner-loop deadline check counter. Same `is_multiple_of(64)`
-        // cadence as `scan_fallback_patterns` — frequent enough that
-        // a hung pattern aborts within a few ms, infrequent enough
-        // that the `Instant::now()` syscall isn't a hot-path tax.
-        // Without this, a single regex producing 100k+ matches on an
-        // adversarial chunk (false_prefix_storm, regex catastrophic
-        // backtracking) would run unboundedly even with --timeout.
-        //
-        // kimi-engine audit: when deadline is None (--timeout unset)
-        // the above guard never fires and a regex matching every byte
-        // on a 64 MiB chunk would loop ~64M times. The deadline path
-        // is the operator's defense; this hard cap is the per-pattern
-        // budget. 1M iterations per pattern is ~6 orders of magnitude
-        // above any legitimate detector's per-chunk match count.
-        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
-        let mut match_count: usize = 0;
-        while cursor <= cursor_end {
-            if match_count >= MAX_INNER_LOOP_ITERS {
-                break;
-            }
-            if let Some(deadline) = deadline {
-                if match_count.is_multiple_of(64)
-                    && match_count > 0
-                    && std::time::Instant::now() >= deadline
-                {
-                    break;
-                }
-            }
-            match_count += 1;
-            let Some(whole) = entry.regex.captures_read_at(&mut locs, search_text, cursor) else {
-                break;
-            };
-            let full_start = whole.start();
-            let full_end = whole.end();
-            // Anchored-window termination: a regex match whose
-            // *start* is past the caller's window means we've walked
-            // off the literal hit that brought us here. Stop instead
-            // of paying for the full-chunk scan we were trying to
-            // avoid.
-            if full_start > cursor_end {
-                break;
-            }
-            // Advance the cursor up front so any `continue` below keeps the
-            // loop progressing. Zero-width matches bump by one byte (and
-            // align onto a UTF-8 boundary) to avoid an infinite loop.
-            let mut next = if full_end == cursor {
-                full_end + 1
-            } else {
-                full_end
-            };
-            while next < bytes_total && !search_text.is_char_boundary(next) {
-                next += 1;
-            }
-            cursor = next;
-
-            // Skip zero-width matches without surfacing them. The previous
-            // `captures_iter`-based implementation never emitted these — its
-            // internal iter advanced past them silently — so any downstream
-            // logic (entropy, ML scoring, dedup) was never asked to grade
-            // an empty credential. Replicating that semantics avoids a
-            // behavior change disguised as a perf optimization.
-            if full_end == full_start {
-                continue;
-            }
-
-            // Resolve the configured capture group, falling back to the full
-            // match when the group didn't participate (e.g. a top-level
-            // alternation where one branch lacks the inner group).
-            let credential_range = locs.get(group).unwrap_or((full_start, full_end));
-            let mut credential = &search_text[credential_range.0..credential_range.1];
-
-            // Variable-name heuristic: if the captured group looks like a
-            // variable name rather than a secret, scan the other groups for
-            // a value-shaped candidate. Same semantics as before, just
-            // reading from CaptureLocations directly.
-            if looks_like_variable_name(credential) && groups_total > 2 {
-                for g in 1..groups_total {
-                    if g == group {
-                        continue;
-                    }
-                    if let Some((s, e)) = locs.get(g) {
-                        let candidate_str = &search_text[s..e];
-                        if !looks_like_variable_name(candidate_str) && candidate_str.len() >= 8 {
-                            credential = candidate_str;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            let &(keyword_nearby, sensitive_file) =
-                signals.get_or_init(|| compute_pattern_signals(detector, chunk));
-            self.process_match(
-                entry,
-                detector,
-                search_text,
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                credential,
-                full_start,
-                full_end,
-                base_line,
-                base_offset,
-                keyword_nearby,
-                sensitive_file,
-            );
-        }
-    }
-
-    #[allow(clippy::too_many_arguments, clippy::explicit_counter_loop)]
-    fn extract_plain_matches(
-        &self,
-        entry: &CompiledPattern,
-        detector: &DetectorSpec,
-        preprocessed: &ScannerPreprocessedText,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
-        cursor_range: Option<(usize, usize)>,
-        deadline: Option<std::time::Instant>,
-    ) {
-        let search_text = &preprocessed.text;
-        // Same lazy-on-first-match dedup as `extract_grouped_matches`;
-        // see that function's doc-comment for the rationale.
-        let signals = std::cell::OnceCell::<(bool, bool)>::new();
-        let bytes_total = search_text.len();
-        // GPU-anchored path: same contract as `extract_grouped_matches`.
-        // None ⇒ legacy whole-text scan. Some((start, end)) ⇒ run
-        // anchored at `start`, stop once a match starts past `end`.
-        let (range_start, range_end) = match cursor_range {
-            Some((start, end)) => (start.min(bytes_total), end.min(bytes_total)),
-            None => (0usize, bytes_total),
-        };
-        // Inner-loop deadline counter — same `is_multiple_of(64)`
-        // cadence as the grouped path so --timeout aborts cleanly
-        // even on patterns that fire 100k+ matches per chunk.
-        // `match_count` is named for readability (it represents an
-        // iteration index used for deadline gating, not a generic
-        // enumerator); the function-level `clippy::explicit_counter_loop`
-        // allow keeps that clearer naming.
-        //
-        // kimi-engine audit: same hard cap as `extract_grouped_matches`.
-        // When deadline is None the previous logic had no bound — a
-        // pattern matching every byte on a 64 MiB chunk looped ~64M
-        // times. 1M iterations per pattern is a generous floor still
-        // 6 orders of magnitude above any legitimate detector count.
-        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
-        let mut match_count: usize = 0;
-        // `find_iter` doesn't take a start position; walk it manually
-        // via `find_at` so the anchored-window path stays cheap. The
-        // legacy path (range_start=0, range_end=bytes_total) behaves
-        // identically to the prior `find_iter` loop.
-        let mut cursor = range_start;
-        while cursor <= range_end {
-            if match_count >= MAX_INNER_LOOP_ITERS {
-                break;
-            }
-            if let Some(deadline) = deadline {
-                if match_count.is_multiple_of(64)
-                    && match_count > 0
-                    && std::time::Instant::now() >= deadline
-                {
-                    break;
-                }
-            }
-            let Some(matched) = entry.regex.find_at(search_text, cursor) else {
-                break;
-            };
-            if matched.start() > range_end {
-                break;
-            }
-            // Advance cursor before any early-continue so zero-width
-            // matches don't loop forever.
-            let mut next = if matched.end() == cursor {
-                matched.end() + 1
-            } else {
-                matched.end()
-            };
-            while next < bytes_total && !search_text.is_char_boundary(next) {
-                next += 1;
-            }
-            cursor = next;
-            match_count += 1;
-            // Skip zero-width matches without surfacing them — same
-            // semantics as `extract_grouped_matches` (see the longer
-            // comment there). Without this guard, a regex whose
-            // outermost shape matches zero bytes (lookahead-only,
-            // empty alternation branch) emits an empty-credential
-            // finding on every iteration; downstream scoring would
-            // then be asked to grade `""`.
-            if matched.end() == matched.start() {
-                continue;
-            }
-            let &(keyword_nearby, sensitive_file) =
-                signals.get_or_init(|| compute_pattern_signals(detector, chunk));
-            self.process_match(
-                entry,
-                detector,
-                search_text,
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                matched.as_str(),
-                matched.start(),
-                matched.end(),
-                base_line,
-                base_offset,
-                keyword_nearby,
-                sensitive_file,
-            );
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn process_match(
-        &self,
-        entry: &CompiledPattern,
-        detector: &DetectorSpec,
-        data: &str,
-        preprocessed: &ScannerPreprocessedText,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        credential: &str,
-        match_start: usize,
-        match_end: usize,
-        base_line: usize,
-        base_offset: usize,
-        keyword_nearby: bool,
-        sensitive_file: bool,
-    ) {
-        let (credential, match_end) =
-            extend_known_prefix_credential(data, credential, match_start, match_end);
-        let line = match_line_number(preprocessed, line_offsets, match_start);
-        if is_within_hex_context(data, match_start, match_end) {
-            return;
-        }
-        // Probabilistic gate: fast rejection of obvious non-secrets (UUIDs, low-diversity
-        // strings) BEFORE the expensive false-positive context check and ML scoring.
-        // Only applied to generic detectors — specific detectors with known prefixes
-        // already have high confidence from the prefix match.
-        if detector.id.starts_with("generic-")
-            && crate::confidence::known_prefix_confidence_floor(credential).is_none()
-            && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
-        {
-            return;
-        }
-        if context::is_false_positive_context(
-            code_lines,
-            line.saturating_sub(PREVIOUS_LINE_DISTANCE),
-            chunk.metadata.path.as_deref(),
-        ) || context::is_false_positive_match_context(
-            data,
-            match_start,
-            chunk.metadata.path.as_deref(),
-        ) {
-            return;
-        }
-
-        let inferred_context = context::infer_context_with_documentation(
-            code_lines,
-            line.saturating_sub(PREVIOUS_LINE_DISTANCE),
-            chunk.metadata.path.as_deref(),
-            documentation_lines,
-        );
-        if crate::pipeline::should_suppress_named_detector_finding(
-            credential,
-            chunk.metadata.path.as_deref(),
-            inferred_context,
-            Some(chunk.metadata.source_type.as_str()),
-            detector.id.as_ref(),
-        ) {
-            return;
-        }
-
-        // `match_companions` returns `None` when a `required = true`
-        // companion isn't found within the search radius — that is a
-        // hard skip signal, not "no companions found." The previous
-        // `.unwrap_or_default()` swallowed it and let the match fire
-        // anyway, silently nullifying the `required` field on every
-        // detector that uses it (notably `twilio-auth-token`).
-        let companions = if self.companions.is_empty() {
-            HashMap::new()
-        } else {
-            match self.match_companions(entry, preprocessed, line) {
-                Some(c) => c,
-                None => return,
-            }
-        };
-        let entropy = match_entropy(credential.as_bytes());
-
-        if detector.id.starts_with("generic-") && detector.id != "generic-private-key" {
-            // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
-            // have lower entropy than random strings. A blanket 3.5 floor misses them.
-            let entropy_floor = generic_entropy_floor(detector.id.as_str(), credential.len());
-            if entropy < entropy_floor {
-                return;
-            }
-            let camel_transitions = credential
-                .as_bytes()
-                .windows(2)
-                .filter(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
-                .count();
-            if camel_transitions >= 2 && !credential.chars().any(|ch| ch.is_ascii_digit()) {
-                return;
-            }
-        }
-
-        // Checksum validation: tokens with embedded checksums (GitHub, npm, Slack,
-        // Stripe, GitLab, PyPI) can be verified without network requests.
-        // Valid checksum → floor confidence at 0.9 (confirmed real token format).
-        // Invalid checksum → cap confidence at 0.1 (confirmed false positive).
-        let checksum_result = crate::checksum::validate_checksum(credential);
-        if checksum_result == crate::checksum::ChecksumResult::Invalid {
-            // Checksum failed — this is NOT a real token. Skip expensive ML scoring.
-            return;
-        }
-
-        let Some(score_result) = self.match_confidence(
-            entry,
-            chunk,
-            credential,
-            data,
-            line,
-            entropy,
-            !companions.is_empty(),
-            inferred_context,
-            keyword_nearby,
-            sensitive_file,
-            scan_state,
-        ) else {
-            return;
-        };
-
-        match score_result {
-            MlScoreResult::Final(mut confidence) => {
-                // Boost confidence for checksum-validated tokens
-                if checksum_result == crate::checksum::ChecksumResult::Valid {
-                    confidence = confidence.max(0.9);
-                }
-                let raw_match = build_raw_match(
-                    detector,
-                    chunk,
-                    credential,
-                    companions,
-                    match_start + base_offset,
-                    line + base_line,
-                    entropy,
-                    confidence,
-                    scan_state,
-                    entry.client_safe,
-                );
-                scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
-            }
-            #[cfg(feature = "ml")]
-            MlScoreResult::Pending {
-                heuristic_conf,
-                code_context,
-                credential: pending_credential,
-                ml_context,
-            } => {
-                let raw_match = build_raw_match(
-                    detector,
-                    chunk,
-                    credential,
-                    companions,
-                    match_start + base_offset,
-                    line + base_line,
-                    entropy,
-                    heuristic_conf,
-                    scan_state,
-                    entry.client_safe,
-                );
-                scan_state.ml_pending.push(crate::types::MlPendingMatch {
-                    raw_match,
-                    heuristic_conf,
-                    code_context,
-                    credential: pending_credential,
-                    ml_context,
-                });
-            }
         }
     }
 }

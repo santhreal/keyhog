@@ -2,7 +2,7 @@
 //!
 //! Some scanners pre-tokenise input on newlines and apply a hard
 //! per-line ceiling (8 KB, 16 KB, 64 KB) to bound regex work on
-//! pathological one-line files — minified JS, base64-encoded blobs
+//! pathological one-line files - minified JS, base64-encoded blobs
 //! dumped without wrapping, single-line k8s ConfigMap output. A
 //! credential past that boundary silently never reaches the engine.
 //!
@@ -137,7 +137,7 @@ fn every_positive_survives_long_line_offsets() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — line-length runner has nothing to drive"
+        "tests/contracts/ has no *.toml - line-length runner has nothing to drive"
     );
 
     let mut per_offset: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
@@ -178,7 +178,7 @@ fn every_positive_survives_long_line_offsets() {
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) — flat across \
+        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) - flat across \
          offsets = legendary; a step-down = a window-cap regression\n"
     ));
     eprintln!("{summary}");
@@ -192,7 +192,7 @@ fn every_positive_survives_long_line_offsets() {
     // means even the small rungs regressed.
     if strict && overall < 60.0 {
         panic!(
-            "line-length overall recall {overall:.1}% dropped below 60% floor — \
+            "line-length overall recall {overall:.1}% dropped below 60% floor - \
              a per-line/window-size cap regression likely landed"
         );
     }

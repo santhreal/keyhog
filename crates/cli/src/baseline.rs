@@ -4,7 +4,7 @@
 //! scanning an existing repository does not produce overwhelming noise.
 //! A finding is suppressed if its `(detector_id, credential_hash)` pair
 //! exists in the baseline. File path and line number are stored for
-//! reference only — secrets may move between lines.
+//! reference only - secrets may move between lines.
 
 use anyhow::{Context, Result};
 use keyhog_core::VerifiedFinding;
@@ -170,7 +170,7 @@ impl Baseline {
     /// Returns `true` if the given finding matches an entry in the baseline.
     /// Matching is based solely on `(detector_id, credential_hash)`.
     ///
-    /// O(N) — for hot paths (e.g. filtering a large finding set against a
+    /// O(N) - for hot paths (e.g. filtering a large finding set against a
     /// baseline) prefer `contains_set` + `index_set` to amortize lookups.
     pub fn contains(&self, finding: &VerifiedFinding) -> bool {
         let hash = format!("sha256:{}", finding.credential_hash);

@@ -51,7 +51,7 @@ pub fn is_private_url(url_str: &str) -> bool {
                 // glibc's getaddrinfo + several musl-based resolvers
                 // accept all four. Blocking only the decimal form
                 // (the pre-fix behavior) left an SSRF bypass via the
-                // hex variant — VRF-001 from the kimi review. The
+                // hex variant - VRF-001 from the kimi review. The
                 // explicit `0x`-prefixed `from_str_radix(16)` covers
                 // that gap; the leading-zero radix-8 parse covers the
                 // octal variant for completeness.

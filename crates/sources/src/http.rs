@@ -11,7 +11,7 @@
 //! `.no_proxy()`) and *others* don't, with no good signal as to why.
 //! Worse, adding `--proxy` to one site without the others would mean
 //! the verifier silently bypasses the proxy that the scan sources are
-//! routed through — so leaked-then-verified findings still leak the
+//! routed through - so leaked-then-verified findings still leak the
 //! credential straight to the upstream API.
 //!
 //! [`HttpClientConfig`] is the single point of policy and
@@ -28,7 +28,7 @@
 //!   disable proxying entirely (e.g. an air-gapped scan that must not
 //!   leak), set `--proxy off` or `KEYHOG_PROXY=off`.
 //! * **TLS verification.** On by default. `--insecure` (or
-//!   `KEYHOG_INSECURE_TLS=1`) accepts any certificate — needed for
+//!   `KEYHOG_INSECURE_TLS=1`) accepts any certificate - needed for
 //!   Burp / mitmproxy interception where the proxy MITMs HTTPS with a
 //!   self-signed CA.
 //! * **Body-bomb defenses.** Auto-decompression OFF (the per-site
@@ -45,7 +45,7 @@ pub struct HttpClientConfig {
     /// Explicit proxy URL. Overrides env-var detection. Accepts
     /// `http://`, `https://`, `socks5://` schemes (forwarded to
     /// reqwest unchanged). The literal string `"off"` disables
-    /// proxying entirely — including env-var inheritance.
+    /// proxying entirely - including env-var inheritance.
     pub proxy: Option<String>,
     /// Accept invalid / self-signed TLS certs (Burp CA, mitmproxy CA).
     /// Off by default.

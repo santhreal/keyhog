@@ -4,13 +4,13 @@
 //! Background: the GPU literal-set kernel walks every detector pattern
 //! per input byte (O(N × L) per byte where N=3164, L≈10). The
 //! `RulePipeline` byte-NFA does O(state-count) per byte regardless of
-//! pattern count, but cannot fit all 3164 patterns into one NFA — vyre
+//! pattern count, but cannot fit all 3164 patterns into one NFA - vyre
 //! caps a single compiled set at 1024 states. The fix is to bin
 //! patterns into shards that EACH fit the cap and dispatch them in
 //! parallel. This probe measures bin packing so we know how many
 //! shards to expect (≈ work per dispatch and total scheduling cost).
 //!
-//! Strategy: O(N) — compile each pattern in isolation via the
+//! Strategy: O(N) - compile each pattern in isolation via the
 //! cap-tracking `compile_regex_set` to learn its per-pattern state
 //! contribution, then greedy bin-pack against the 1024-state cap.
 //! No disk-cache writes; no quadratic blow-up.
@@ -164,7 +164,7 @@ fn shard_distribution_under_state_cap() {
             ),
             Err(e) => {
                 eprintln!("  first-shard verify FAILED: {e:?}");
-                eprintln!("  binning was too aggressive — singleton sum underestimates real cost");
+                eprintln!("  binning was too aggressive - singleton sum underestimates real cost");
             }
         }
     }

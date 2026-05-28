@@ -14,7 +14,7 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 const MAX_GIT_TOTAL_BYTES: usize = 256 * 1024 * 1024;
 
 /// Maximum size of a single git blob. Larger objects (binaries, vendor bundles)
-/// are skipped entirely — secrets almost never appear in 10+ MiB files.
+/// are skipped entirely - secrets almost never appear in 10+ MiB files.
 const MAX_GIT_BLOB_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Maximum number of chunks the git source can produce.
@@ -100,7 +100,7 @@ fn stream_git_blobs(
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
 
-    // Get commit hashes from ALL refs — branches, tags, dangling commits.
+    // Get commit hashes from ALL refs - branches, tags, dangling commits.
     // The previous version walked HEAD ancestry only, silently missing
     // secrets in feature branches, deleted-but-tagged history, and merge-only
     // commits. See audit release-2026-04-26 sources/git/source.rs:104.
@@ -130,17 +130,37 @@ fn stream_git_blobs(
 
     // Open the gix repo ONCE and reuse it for every commit. The previous
     // version called `gix::open(&repo_owned)` per-commit which on a 10k-commit
-    // repo opened the repo 10k times — fd churn + IO amplification.
+    // repo opened the repo 10k times - fd churn + IO amplification.
     let repo_owned = repo_path.to_path_buf();
     let repo_handle = gix::open(&repo_owned)
         .map_err(|e| SourceError::Io(std::io::Error::other(format!("gix open: {e}"))))?;
     // Snapshot every blob OID reachable from HEAD's tree. Used to label
     // emitted chunks as "git/head" (live in HEAD) vs "git/history"
     // (only present in older commits). The downstream scorer downgrades
-    // the severity of `git/history` findings — a credential a developer
+    // the severity of `git/history` findings - a credential a developer
     // already removed from HEAD is still a leak, but less urgent than
     // one currently grep-able from main. Cheap: one tree walk at most.
-    let head_blobs = collect_head_blob_set(&repo_handle).unwrap_or_default();
+    // If the HEAD blob walk fails (corrupt object, unborn HEAD, partial
+    // clone without the tree objects) we fall back to an empty set,
+    // which labels every chunk as `git/history`. The downstream scorer
+    // downgrades that bucket, so a silent failure here would
+    // systematically deflate severity for findings that are actually
+    // live in HEAD. Surface the missing set so the operator sees the
+    // cause and can fall back to `keyhog scan --git-staged` or
+    // `--git-diff` instead.
+    let head_blobs = match collect_head_blob_set(&repo_handle) {
+        Some(set) => set,
+        None => {
+            tracing::warn!(
+                "git: HEAD blob walk produced no set; all findings will be \
+                 labelled git/history (lower severity). The scan continues \
+                 but you may underweight live-in-HEAD leaks. Common causes: \
+                 unborn HEAD, partial clone without tree objects, \
+                 corrupt ref."
+            );
+            HashSet::new()
+        }
+    };
     let mut current_tree_blobs: VecDeque<Chunk> = VecDeque::new();
     let mut seen_blobs: HashSet<gix::ObjectId> = HashSet::new();
     let mut total_bytes = 0usize;
@@ -240,7 +260,10 @@ fn collect_tree_blobs_to_vec(
         }
         let entry = match entry_ref {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(error) => {
+                tracing::debug!(?commit_id, %error, "git tree entry read failed; skipping");
+                continue;
+            }
         };
 
         let oid = entry.oid().to_owned();
@@ -286,7 +309,10 @@ fn collect_tree_blobs_to_vec(
 
         let header = match repo.find_header(oid) {
             Ok(header) => header,
-            Err(_) => continue,
+            Err(error) => {
+                tracing::debug!(?oid, %error, "git blob header read failed; skipping");
+                continue;
+            }
         };
         if header.kind() != Kind::Blob || header.size() > MAX_GIT_BLOB_BYTES {
             continue;
@@ -294,7 +320,10 @@ fn collect_tree_blobs_to_vec(
 
         let obj = match repo.find_object(oid) {
             Ok(o) => o,
-            Err(_) => continue,
+            Err(error) => {
+                tracing::debug!(?oid, %error, "git blob read failed; skipping");
+                continue;
+            }
         };
 
         let file_text = match std::str::from_utf8(&obj.data) {
@@ -327,7 +356,7 @@ fn collect_tree_blobs_to_vec(
 ///
 /// Returns an empty set if HEAD doesn't resolve (detached, empty repo, or
 /// transient I/O error). The caller's behavior in that case: every blob is
-/// labeled `git/history` since we cannot prove it sits in HEAD — safer than
+/// labeled `git/history` since we cannot prove it sits in HEAD - safer than
 /// the inverse, which would suppress severity downgrades for genuine
 /// historical leaks.
 fn collect_head_blob_set(repo: &gix::Repository) -> Option<HashSet<gix::ObjectId>> {

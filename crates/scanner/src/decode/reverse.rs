@@ -4,7 +4,7 @@ use keyhog_core::Chunk;
 
 /// Match secrets that have been reversed character-by-character to dodge a
 /// naïve byte-substring scan. Cheap evasion the adversarial corpus
-/// (release-2026-04-26) hits multiple times — `RNK1ESEMURKWESFEDBA46AIKA`
+/// (release-2026-04-26) hits multiple times - `RNK1ESEMURKWESFEDBA46AIKA`
 /// is exactly the AWS access-key-id `AKIA64ABDEFSEWKRUMSEK1NR` reversed.
 ///
 /// The reverse decoder runs *after* the other decoders fail to match. It only
@@ -50,7 +50,7 @@ fn reverse_str(s: &str) -> String {
 ///    from `confidence::KNOWN_PREFIXES`. Without this, plain prose like
 ///    `ABCDEFGHIJKLMNOPQRSTUVWXYZ` reverses to `ZYXWVUTSRQPONMLKJIHGFEDCBA`,
 ///    passes the alphanumeric-run gate, and gets emitted as a decoy chunk
-///    on every chunk that contains a long alphanumeric word — pure noise
+///    on every chunk that contains a long alphanumeric word - pure noise
 ///    that hammers the dedup layer. Kimi-decode audit finding #4.
 fn looks_reversible(candidate: &str) -> bool {
     let bytes = candidate.as_bytes();
@@ -99,7 +99,7 @@ mod tests {
     fn looks_reversible_accepts_aws_key_reversal() {
         // The original adversarial fixture: reversed AWS access-key-id.
         // Reversing it produces a string starting with AKIA, which is
-        // a KNOWN_PREFIXES entry — the gate fires.
+        // a KNOWN_PREFIXES entry - the gate fires.
         assert!(looks_reversible("ELPMAXE7NNDOFSOIAIKA"));
     }
 

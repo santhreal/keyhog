@@ -1,4 +1,4 @@
-//! Unicode-confusable runner — homoglyph evasion coverage.
+//! Unicode-confusable runner - homoglyph evasion coverage.
 //!
 //! A real adversary who wants their credential leak to slip past a
 //! secret scanner can replace ASCII characters in the surrounding
@@ -10,13 +10,13 @@
 //! `аpі_kеу` and any companion-anchored detector misses.
 //!
 //! This runner mutates ONLY the companion-context portion of every
-//! contract positive — never the credential itself — and asserts
+//! contract positive - never the credential itself - and asserts
 //! the detector still surfaces the credential.
 //!
 //! Result is one of two outcomes:
 //!
 //! 1. Detector fires on the credential alone (no companion
-//!    requirement). Recall stays at 100% — confirms the
+//!    requirement). Recall stays at 100% - confirms the
 //!    detector is shape-robust.
 //! 2. Detector requires companion context and the homoglyph
 //!    swap breaks it. We log the per-detector miss so the
@@ -108,7 +108,7 @@ fn scanner() -> CompiledScanner {
 /// auth/bearer/access).
 fn confusable_for(c: char) -> Option<char> {
     Some(match c {
-        // Cyrillic look-alikes — the canonical attack class.
+        // Cyrillic look-alikes - the canonical attack class.
         'a' => '\u{0430}',
         'c' => '\u{0441}',
         'e' => '\u{0435}',
@@ -148,7 +148,7 @@ fn apply_confusable(s: &str, swap_every: usize) -> String {
 }
 
 /// Apply confusable swaps to only the companion-context portion of
-/// the positive text — never the credential bytes. Locates the
+/// the positive text - never the credential bytes. Locates the
 /// credential by `find` and swaps everything BEFORE / AFTER.
 fn swap_companion(text: &str, credential: &str, swap_every: usize) -> String {
     let Some(pos) = text.find(credential) else {
@@ -171,8 +171,8 @@ fn make_chunk(text: &str) -> Chunk {
 }
 
 const SWAP_DENSITIES: &[(usize, &str)] = &[
-    // (swap_every, label) — every Nth char gets confused.
-    (0, "none"),       // control — should match contracts_runner
+    // (swap_every, label) - every Nth char gets confused.
+    (0, "none"),       // control - should match contracts_runner
     (1, "every-char"), // strongest evasion: swap every confusable-eligible char
     (2, "every-2nd"),  // every other char swapped
     (4, "every-4th"),  // light dusting
@@ -184,7 +184,7 @@ fn every_positive_swept_through_unicode_confusables() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — unicode runner has nothing to drive"
+        "tests/contracts/ has no *.toml - unicode runner has nothing to drive"
     );
 
     let mut per_density: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
@@ -217,14 +217,14 @@ fn every_positive_swept_through_unicode_confusables() {
     }
     eprintln!("{summary}");
 
-    // The 'none' density is the control — it MUST hit 100% (it's
+    // The 'none' density is the control - it MUST hit 100% (it's
     // identical to the contracts_runner positive path). If this
     // falls below 99%, the runner itself is broken.
     let none_runs_hits = per_density.get("none").copied().unwrap_or((0, 0));
     let none_pct = (none_runs_hits.1 as f64 / none_runs_hits.0.max(1) as f64) * 100.0;
     assert!(
         none_pct >= 99.0,
-        "unicode-confusable control (no swap) dropped below 99%: {none_pct:.1}% — \
+        "unicode-confusable control (no swap) dropped below 99%: {none_pct:.1}% - \
          runner is broken or contracts changed"
     );
 
@@ -237,7 +237,7 @@ fn every_positive_swept_through_unicode_confusables() {
         if pct < 30.0 {
             panic!(
                 "every-char unicode confusable recall {pct:.1}% dropped below 30% \
-                 floor — detector companion-context heuristic regressed"
+                 floor - detector companion-context heuristic regressed"
             );
         }
     }

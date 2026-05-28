@@ -29,7 +29,7 @@ By default, output is human-readable:
 
 ```text
 $ keyhog scan .
-keyhog v0.5.33 │ 891 detectors │ 1647 patterns │ avx-512 + hyperscan
+keyhog v0.5.34 │ 891 detectors │ 1647 patterns │ avx-512 + hyperscan
 
 src/config/staging.env:14:12  HIGH  stripe-secret-key
                               sk_live_4eC39H…Tcd3Hc (redacted, last 6)
@@ -110,6 +110,22 @@ Common patterns the default walk **already** skips: `.git/`,
 `node_modules/`, `__pycache__/`, `vendor/`, `dist/`, `build/`, `out/`,
 `.min.js`, `.min.css`, `.bak`, `.swp`. To see the full list, look at
 `is_default_excluded` in `crates/sources/src/filesystem.rs`.
+
+## Interactive TUI dashboard
+
+For an interactive scan with a live finding feed, current-file
+banner, and stats panel showing throughput and backend choice:
+
+```sh
+keyhog tui .                       # scan CWD with live dashboard
+keyhog tui src/ --throttle-ms 200  # paced scan, good for demos/recordings
+keyhog tui . --feed-depth 500      # keep last 500 findings in feed
+```
+
+The TUI builds on the same scanner core; `q` or `Esc` quits, and a
+non-zero exit code is returned when any findings are surfaced. Useful
+for sitting next to a developer demoing keyhog, or recording a vhs
+GIF for a README or talk.
 
 ## Going further
 

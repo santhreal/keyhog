@@ -1,4 +1,4 @@
-//! Reproducer for task #56 — GPU AC kernel drops the
+//! Reproducer for task #56 - GPU AC kernel drops the
 //! `stackblitz-credentials` finding at offset 1801032 of
 //! `big_with_secrets.txt` while CPU SIMD and GPU literal-set both
 //! find it. The original observation comes from
@@ -44,7 +44,7 @@ fn bench_corpus_path() -> PathBuf {
 /// Offset of the `sb_4bZ39EnIvgTAxogqQ1wam7az` credential in
 /// `big_with_secrets.txt`. The corpus is deterministically built by
 /// `.internal/bench/build_corpora.sh` and this offset is stable
-/// across rebuilds — the planted-secrets section is appended last,
+/// across rebuilds - the planted-secrets section is appended last,
 /// after a fixed-size source-tree prefix.
 const STACKBLITZ_OFFSET: usize = 1_801_032;
 const STACKBLITZ_TOKEN: &str = "sb_4bZ39EnIvgTAxogqQ1wam7az";
@@ -105,7 +105,7 @@ fn baseline_simd_finds_stackblitz_token() {
     assert!(
         s.contains(STACKBLITZ_TOKEN),
         "fixture window does not contain {STACKBLITZ_TOKEN}; \
-         corpus drift — rebuild via .internal/bench/build_corpora.sh"
+         corpus drift - rebuild via .internal/bench/build_corpora.sh"
     );
 
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
@@ -130,7 +130,7 @@ fn baseline_simd_finds_stackblitz_token() {
 }
 
 /// Narrow repro: 64 KiB window around the missed offset. This
-/// passed on first introduction — the AC kernel handles the
+/// passed on first introduction - the AC kernel handles the
 /// secret in isolation; the bug only manifests on the full-corpus
 /// dispatch path below.
 #[test]
@@ -151,7 +151,7 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     };
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
-    // Skip when no GPU adapter is available — we can't claim AC
+    // Skip when no GPU adapter is available - we can't claim AC
     // kernel parity if the kernel can't even run. The skip is loud
     // (eprintln) so a no-GPU machine doesn't fake-pass.
     let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
@@ -160,7 +160,7 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     };
 
     let chunks = [make_chunk(window)];
-    // Direct call to the AC dispatch path — independent of the
+    // Direct call to the AC dispatch path - independent of the
     // env-var routing in scan_chunks_with_backend. If
     // scan_coalesced_gpu_ac falls back internally (e.g. matcher
     // unavailable), we still get a result; finds_stackblitz then
@@ -246,7 +246,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
     let mut report = Vec::new();
     for &size in &sizes {
         // Center the window on the planted offset so the token lives
-        // at window-local offset ≈ size/2 — never at a shard boundary
+        // at window-local offset ≈ size/2 - never at a shard boundary
         // unless the window itself crosses one.
         let win_start = needle_off.saturating_sub(size / 2);
         let win_end = (win_start + size).min(bytes.len());
@@ -308,12 +308,12 @@ fn bisect_gpu_ac_recall_by_window_size() {
 
 /// Full-corpus repro: ingests the entire 64 MiB bench corpus as a
 /// single `Chunk` (mirrors how `keyhog scan big_with_secrets.txt`
-/// chunks it — the default `window_size` is 64 MiB, so a 64-MiB
+/// chunks it - the default `window_size` is 64 MiB, so a 64-MiB
 /// file is a single chunk by design). This is the dispatch shape
 /// the bench harness measures, so reproducing it in-process gives
 /// a focused unit-of-debug independent of the CLI wrapper.
 ///
-/// Expected current behaviour: this test will FAIL — it's the
+/// Expected current behaviour: this test will FAIL - it's the
 /// regression gate for task #56. When the kernel is fixed and the
 /// scoreboard's gpu-ac/big_with_secrets cell's expected count
 /// moves from 14 to 15, this test starts passing.
@@ -371,7 +371,7 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
     // SAFETY: single-threaded integration test; process-wide env
     // var write is safe (Rust 2024 marked set_var unsafe to
     // signal the multi-threading hazard, which doesn't apply
-    // here — cargo runs each integration test binary in its own
+    // here - cargo runs each integration test binary in its own
     // process).
     unsafe {
         std::env::set_var("KEYHOG_GPU_KERNEL", "ac");
@@ -381,9 +381,9 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
     let routed_has_stackblitz = finds_stackblitz(&routed_flat);
 
     // Diagnostic emit so the test failure narrows the surface
-    // (not just "missed it" — *which* path missed it).
+    // (not just "missed it" - *which* path missed it).
     eprintln!(
-        "diagnostic — direct: {} matches, finds_stackblitz={}; \
+        "diagnostic - direct: {} matches, finds_stackblitz={}; \
          routed: {} matches, finds_stackblitz={}",
         direct_flat.len(),
         direct_has_stackblitz,

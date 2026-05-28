@@ -15,7 +15,7 @@ regex = "(?:BANDWIDTH|bandwidth)[_\\s]*(?:API[_\\s]*)?(?:USER|USERNAME|TOKEN|PAS
 description = "Bandwidth API credential with context anchor"
 group = 1
 
-# Removed the bare `(?:ClientID|ClientSecret)` pattern — `ClientID` /
+# Removed the bare `(?:ClientID|ClientSecret)` pattern - `ClientID` /
 # `ClientSecret` are generic OAuth2 terminology, not Bandwidth-specific.
 # alist's drivers/pikpak/util.go, drivers/thunder/driver.go,
 # drivers/pcloud/util.go all have `ClientSecret = "..."` for Xunlei /

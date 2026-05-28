@@ -12,11 +12,13 @@ fn compiled_scanner_pattern_count() {
                 regex: "x".into(),
                 description: None,
                 group: None,
+                client_safe: false,
             },
             PatternSpec {
                 regex: "y".into(),
                 description: None,
                 group: None,
+                client_safe: false,
             },
         ],
         companions: vec![],

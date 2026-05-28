@@ -43,7 +43,7 @@ fn all_weights() -> &'static [f32] {
     PARSED.get_or_init(|| {
         // Model integrity: the size assertion below guarantees the weights file matches
         // the expected architecture. We intentionally do NOT use a SHA-256 checksum
-        // because it breaks the retrain→deploy workflow — every retrain produces new
+        // because it breaks the retrain→deploy workflow - every retrain produces new
         // weights with a different hash. The size check catches corruption and
         // architecture mismatches without blocking model updates.
         assert_eq!(

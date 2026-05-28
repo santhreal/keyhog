@@ -16,7 +16,7 @@ fn max_file_size_cap_skips_oversized_files() {
     let dir = tempfile::tempdir().unwrap();
 
     // A small file (under cap) and a "large" file (over cap). We only
-    // need to cross the cap, not allocate gigabytes — set the cap low.
+    // need to cross the cap, not allocate gigabytes - set the cap low.
     fs::write(
         dir.path().join("small.py"),
         "API_KEY = 'short_token_under_cap'",
@@ -25,7 +25,7 @@ fn max_file_size_cap_skips_oversized_files() {
     let large_content = "TOKEN = '".to_string() + &"x".repeat(2048) + "'";
     fs::write(dir.path().join("large.py"), &large_content).unwrap();
 
-    // Cap at 256 bytes — the large file is well over, the small one is
+    // Cap at 256 bytes - the large file is well over, the small one is
     // safely under.
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(256);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
@@ -49,12 +49,12 @@ fn max_file_size_cap_skips_oversized_files() {
 
 #[test]
 fn max_file_size_cap_zero_means_unlimited_or_skip_all() {
-    // 0 is a sentinel — either treat as unlimited (current contract) or
+    // 0 is a sentinel - either treat as unlimited (current contract) or
     // skip every file. Pin whatever the current behavior is so a future
     // change is intentional, not silent.
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.py"), "TOKEN = 'abc'").unwrap();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
-    // Either 0 or 1 is acceptable. Don't pin which — pin that no panic.
+    // Either 0 or 1 is acceptable. Don't pin which - pin that no panic.
     let _ = source.chunks().collect::<Vec<_>>();
 }

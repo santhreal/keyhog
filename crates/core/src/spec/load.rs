@@ -56,7 +56,7 @@ pub fn save_detector_cache(
         version: DETECTOR_CACHE_VERSION,
         detectors: detectors.to_vec(),
     })?;
-    // Atomic rename via NamedTempFile — same pattern as merkle index
+    // Atomic rename via NamedTempFile - same pattern as merkle index
     // and baseline. A mid-write crash used to leave a corrupt
     // `.keyhog-cache.json` that the next run would `tracing::warn!`
     // on and silently fall back to TOML-load (unbounded slowdown).
@@ -263,7 +263,7 @@ fn log_load_summary(state: &DetectorLoadState) {
         tracing::warn!("detector load issue: {error}");
     }
     if state.gate_rejected > 0 {
-        // Demoted from `warn!` — the per-detector causes are already
+        // Demoted from `warn!` - the per-detector causes are already
         // logged at debug, and the aggregate fires on every CLI run
         // that auto-discovers a `detectors/` directory (i.e. anyone
         // running `keyhog` from the repo root). The user's output
@@ -291,14 +291,14 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
         Err(error) => {
             // Bumped from `debug!` to `warn!`. A user with a broken
             // permission/typoed-path detector deserves to see the
-            // reason at default log level — not "all detectors
+            // reason at default log level - not "all detectors
             // appeared to load" silently. The path is included so
             // operators can grep for it.
             let message = format!("failed to read {}: {}", path.display(), error);
             tracing::warn!(
                 detector_path = %path.display(),
                 error = %error,
-                "skipping detector — fix the file's permissions or path \
+                "skipping detector - fix the file's permissions or path \
                  (run `keyhog detectors list` for the full skip list)"
             );
             return ReadDetectorOutcome::Skipped { message };
@@ -318,7 +318,7 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
             tracing::warn!(
                 detector_path = %path.display(),
                 error = %error,
-                "skipping detector — TOML parse failed, fix the syntax \
+                "skipping detector - TOML parse failed, fix the syntax \
                  in the file at the indicated line/column"
             );
             ReadDetectorOutcome::Skipped { message }
@@ -336,11 +336,11 @@ fn should_reject_detector(
     for issue in validate_detector(spec) {
         match issue {
             QualityIssue::Warning(warning) => {
-                tracing::debug!("quality: {} — {}", spec.id, warning);
+                tracing::debug!("quality: {} - {}", spec.id, warning);
                 *total_warnings += 1;
             }
             QualityIssue::Error(error) => {
-                // Demoted from `warn!` — these errors fire on roughly
+                // Demoted from `warn!` - these errors fire on roughly
                 // a dozen embedded detectors at every CLI invocation
                 // (`scan`, `detectors`, `backend`, `--version` all
                 // load detectors), which made every command print 12+
@@ -348,7 +348,7 @@ fn should_reject_detector(
                 // templating before any actual output. The detectors
                 // still load and scan correctly; the validator just
                 // can't auto-verify them. Operators don't need this
-                // on their terminal — the keyhog dev who wrote the
+                // on their terminal - the keyhog dev who wrote the
                 // validator does, via `RUST_LOG=keyhog_core=debug`.
                 tracing::debug!(
                     "detector quality issue (still loaded, verify path may degrade): {}: {}",

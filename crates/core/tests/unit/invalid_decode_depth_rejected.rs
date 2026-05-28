@@ -1,4 +1,4 @@
-//! Migrated from `src/config.rs` — decode depth above cap is rejected.
+//! Migrated from `src/config.rs` - decode depth above cap is rejected.
 
 use keyhog_core::{ScanConfig, MAX_DECODE_DEPTH_LIMIT};
 

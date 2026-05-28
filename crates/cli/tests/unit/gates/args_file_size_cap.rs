@@ -7,6 +7,6 @@ fn args_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "args: {lines} lines exceeds 500-line cap — split module"
+        "args: {lines} lines exceeds 500-line cap - split module"
     );
 }

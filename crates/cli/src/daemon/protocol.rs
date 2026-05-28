@@ -2,7 +2,7 @@
 //!
 //! Both ends frame messages as `<u32 BE length><JSON body>`.
 //! Length-prefix framing keeps the parse one allocation per message
-//! and means a malformed client can't desync the server — the next
+//! and means a malformed client can't desync the server - the next
 //! read either lands on the next length header or the connection
 //! dies. JSON body is `serde_json` because it's already in the
 //! dependency graph (the CLI's `--format json` reporter uses it) and
@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// History:
 ///
-/// * v1 — initial daemon protocol. `ScanResults { matches }` only.
-/// * v2 — `ScanResults` carries `engine_example_suppressions` and
+/// * v1 - initial daemon protocol. `ScanResults { matches }` only.
+/// * v2 - `ScanResults` carries `engine_example_suppressions` and
 ///   `dogfood_events` so `--dogfood` and the suppressed-example
 ///   reporter summary work in daemon mode (without the bump the
 ///   client's telemetry counter stayed at 0 because telemetry lives
@@ -54,7 +54,7 @@ pub enum Request {
     },
     /// Liveness + cheap status (uptime, scans served, detector count).
     Health,
-    /// Graceful shutdown — daemon flushes in-flight scans, drops the
+    /// Graceful shutdown - daemon flushes in-flight scans, drops the
     /// socket, exits. The client side is `keyhog daemon stop`.
     Shutdown,
 }
@@ -69,7 +69,7 @@ pub enum Response {
         uptime_secs: u64,
     },
     /// Returned for `ScanText` and `ScanPath`. `matches` are the
-    /// scanner's `RawMatch` outputs — same wire shape as
+    /// scanner's `RawMatch` outputs - same wire shape as
     /// `keyhog scan --format json`, so client code can hand them to
     /// the existing reporter without translation.
     ///

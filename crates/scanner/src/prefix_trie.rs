@@ -8,8 +8,8 @@
 /// Given N literal prefixes from detectors, we need to know:
 /// "for prefix P, which other prefixes are superstrings of P?"
 ///
-/// Naive: O(N²) — compare all pairs.
-/// Trie: O(N * L) where L is average prefix length — insert all prefixes,
+/// Naive: O(N²) - compare all pairs.
+/// Trie: O(N * L) where L is average prefix length - insert all prefixes,
 /// then for each prefix, all descendants in the trie are superstrings.
 use std::collections::HashMap;
 

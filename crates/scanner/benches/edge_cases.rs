@@ -29,11 +29,13 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
                 regex: "sk-proj-[a-zA-Z0-9_-]{40,}".into(),
                 description: Some("OpenAI project key".into()),
                 group: None,
+                client_safe: false,
             },
             PatternSpec {
                 regex: "sk-[a-zA-Z0-9]{48}".into(),
                 description: Some("OpenAI legacy key".into()),
                 group: None,
+                client_safe: false,
             },
         ],
         companions: Vec::new(),

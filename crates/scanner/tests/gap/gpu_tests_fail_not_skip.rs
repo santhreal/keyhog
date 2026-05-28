@@ -17,7 +17,7 @@ fn gpu_parity_sources_do_not_use_bare_skip_return() {
         let src = std::fs::read_to_string(&path).expect("read test source");
         assert!(
             !src.contains("eprintln!(\"SKIP:"),
-            "{name} must not SKIP-as-pass — use KEYHOG_REQUIRE_GPU gate or hard fail"
+            "{name} must not SKIP-as-pass - use KEYHOG_REQUIRE_GPU gate or hard fail"
         );
     }
 }

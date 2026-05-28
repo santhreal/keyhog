@@ -18,7 +18,7 @@ pub(crate) fn load_allowlist(scan_path: Option<&Path>) -> keyhog_core::allowlist
 /// Load the declarative `.keyhogignore.toml` rule suppressor (vyre
 /// rule engine via CPU evaluator) alongside the legacy line-based
 /// allowlist. Returns an empty suppressor when the file is missing
-/// or fails to parse — a malformed rules file shouldn't stop the
+/// or fails to parse - a malformed rules file shouldn't stop the
 /// scan; the parse error is surfaced via `tracing::warn!` so the
 /// operator still notices.
 pub(crate) fn load_rule_suppressor(scan_path: Option<&Path>) -> keyhog_core::RuleSuppressor {
@@ -50,11 +50,31 @@ pub(crate) fn load_rule_suppressor(scan_path: Option<&Path>) -> keyhog_core::Rul
 }
 
 pub(crate) fn allowlist_root(path: &Path) -> PathBuf {
+    // FS-based when we can: a real directory IS the root; a real file
+    // delegates to its parent (with "." as the bare-filename fallback).
     if path.is_dir() {
-        path.to_path_buf()
-    } else {
-        path.parent()
+        return path.to_path_buf();
+    }
+    if path.is_file() {
+        return path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
             .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."))
+            .unwrap_or_else(|| PathBuf::from("."));
+    }
+    // Non-existent path. Shape heuristic:
+    //   * has a file extension AND has a parent  -> treat as file
+    //   * no parent (bare filename like file.rs) -> "."
+    //   * has parent and no extension            -> treat as directory
+    // The extension test catches the common case (`scan /tmp/x.txt`,
+    // `scan src/main.rs`) without an FS round trip, while still
+    // letting an extensionless target like `/tmp/project` anchor at
+    // itself even when the dir hasn't been created yet.
+    let has_extension = path.extension().is_some();
+    let parent_opt = path.parent().filter(|p| !p.as_os_str().is_empty());
+    match (has_extension, parent_opt) {
+        (true, Some(parent)) => parent.to_path_buf(),
+        (false, Some(_)) => path.to_path_buf(),
+        (_, None) => PathBuf::from("."),
     }
 }

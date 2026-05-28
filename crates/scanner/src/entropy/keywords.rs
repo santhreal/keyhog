@@ -250,8 +250,8 @@ fn passes_strict_secret_checks(value: &str) -> bool {
     // PascalCase identifiers like `BulkUpdateApiKeyResponse`,
     // `convertSearchHitToVersionedApiKeyDoc`, `targetVersionedDocs`
     // (149 FPs in one ApiKeyService.java alone). These pass every
-    // other check — high entropy, mixed case, decent length, no
-    // placeholder words — but they're clearly source-code symbols,
+    // other check - high entropy, mixed case, decent length, no
+    // placeholder words - but they're clearly source-code symbols,
     // not credentials. Reject strings that look like programming-
     // language identifiers: only letters/underscore, no digits, and
     // a camelCase / PascalCase shape (at least one internal
@@ -268,7 +268,7 @@ fn passes_strict_secret_checks(value: &str) -> bool {
 /// than a credential? Identifiers in mainstream languages are all
 /// `[A-Za-z_]` (no digits) with camelCase / PascalCase / snake_case
 /// shape. Real API keys almost always include at least one digit (the
-/// few that don't are short — `<8` chars — and rejected upstream by
+/// few that don't are short - `<8` chars - and rejected upstream by
 /// length gates).
 fn looks_like_program_identifier(value: &str) -> bool {
     // Letters + underscore only. Any digit, hyphen, slash, or special
@@ -279,11 +279,11 @@ fn looks_like_program_identifier(value: &str) -> bool {
     {
         return false;
     }
-    // snake_case (lowercase + underscore segments) — `my_long_helper_name`.
+    // snake_case (lowercase + underscore segments) - `my_long_helper_name`.
     if value.contains('_') && value.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_') {
         return true;
     }
-    // camelCase / PascalCase — at least one internal lower→Upper
+    // camelCase / PascalCase - at least one internal lower→Upper
     // boundary. `BulkUpdateApiKeyResponse` has many; `Foo` has none.
     let bytes = value.as_bytes();
     let mut transitions = 0usize;
@@ -378,7 +378,7 @@ mod identifier_rejection_tests {
 
     #[test]
     fn all_caps_constant_not_flagged_as_identifier() {
-        // CONSTANT_NAME — could legitimately also be a secret. Don't
+        // CONSTANT_NAME - could legitimately also be a secret. Don't
         // reject via this filter; let other gates judge.
         assert!(!looks_like_program_identifier("ALLOWED_HOSTS"));
     }
@@ -386,7 +386,7 @@ mod identifier_rejection_tests {
     #[test]
     fn real_secret_with_digits_not_flagged() {
         // AWS access keys, GitHub PATs, Slack tokens all contain digits
-        // — the identifier check must not reject them.
+        // - the identifier check must not reject them.
         assert!(!looks_like_program_identifier(concat!(
             "AK",
             "IAIOSFODNN7EXAMPLE"
@@ -399,7 +399,7 @@ mod identifier_rejection_tests {
     #[test]
     fn short_pascal_word_not_an_identifier_pattern() {
         // Single-segment PascalCase like `Foo` has no internal lower→Upper
-        // boundary — it might be an env-var, accept it.
+        // boundary - it might be an env-var, accept it.
         assert!(!looks_like_program_identifier("Foo"));
         assert!(!looks_like_program_identifier("Bar"));
     }

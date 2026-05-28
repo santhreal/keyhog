@@ -120,7 +120,7 @@ fn deep_recursive_symlinks_do_not_crash() {
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
-    // The symlink chain contains zero regular files — only directories
+    // The symlink chain contains zero regular files - only directories
     // and the symlinks pointing at them. The walker must return zero
     // chunks AND must not crash. Previous assertion `is_empty() || len() < 100`
     // accepted any chunk count ≤ 99, hiding a future regression where
@@ -150,7 +150,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
-    // Use plain .txt extensions — codewalk's default skip-list /
+    // Use plain .txt extensions - codewalk's default skip-list /
     // hidden-file rules can swallow `.env` files on some
     // configurations, masking what we're actually testing.
     fs::write(
@@ -200,7 +200,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
     );
     assert!(
         !combined.contains("AKIAIOSFODNN7HIDDEN"),
-        "the locked file was somehow read — chmod 000 didn't take effect, \
+        "the locked file was somehow read - chmod 000 didn't take effect, \
          test isn't actually exercising the permission-error path"
     );
 }
@@ -209,7 +209,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
 #[cfg(unix)]
 fn symlink_loop_terminates_within_time_bound() {
     // Hostile-input robustness: a self-referential symlink must
-    // not just "eventually" terminate (existing test) — it must
+    // not just "eventually" terminate (existing test) - it must
     // terminate in BOUNDED time. Without an explicit time cap an
     // attacker could DoS keyhog with a 1M-deep symlink chain even
     // if the walker eventually breaks the cycle. The walker is
@@ -310,7 +310,7 @@ fn default_excludes_skip_build_and_dependency_dirs() {
 fn merkle_skip_avoids_reading_unchanged_files() {
     // Pre-populate the index with the live (mtime, size) of a file. On
     // the next walk, the metadata fast-path must skip the file BEFORE
-    // it is read — observable as zero emitted chunks plus a non-zero
+    // it is read - observable as zero emitted chunks plus a non-zero
     // skip counter.
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("env.txt");
@@ -332,7 +332,7 @@ fn merkle_skip_avoids_reading_unchanged_files() {
 
 #[test]
 fn merkle_skip_does_not_fire_when_size_drifts() {
-    // Same path, same mtime, different recorded size — must NOT skip.
+    // Same path, same mtime, different recorded size - must NOT skip.
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("env.txt");
     fs::write(&p, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").unwrap();
@@ -383,13 +383,13 @@ fn windowed_path_emits_multiple_chunks_with_overlap() {
 fn windowed_path_finds_secret_in_overlap_region() {
     // Correctness invariant of the overlap parameter: a secret whose
     // bytes lie wholly within the overlap region must appear FULLY in
-    // both windows. This is what the overlap exists for — a secret
+    // both windows. This is what the overlap exists for - a secret
     // happening to straddle the cut won't be split such that neither
     // window has the complete byte sequence. The contract is "fits
     // in overlap → present in both"; secrets larger than overlap can
     // still fail to be fully contained on the trailing side, which
     // is a documented limitation, not a bug. (For our 4 KiB prod
-    // overlap that means secrets up to 4 KiB are safe — far longer
+    // overlap that means secrets up to 4 KiB are safe - far longer
     // than any real credential.)
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("secret.log");
@@ -428,7 +428,7 @@ fn windowed_path_finds_post_cut_secret_in_second_window_only() {
     let p = dir.path().join("secret.log");
     let mut content = vec![b'.'; 200];
     let secret = concat!("AK", "IAIOSFODNN7EXAMPLE").as_bytes(); // 20 bytes
-                                                                 // Place at offset 120 so it sits PAST the cut at 128 — only fully
+                                                                 // Place at offset 120 so it sits PAST the cut at 128 - only fully
                                                                  // contained in window 1 (96..200). Window 0 has the first 8 bytes
                                                                  // only and won't substring-match the full credential.
     content[120..120 + secret.len()].copy_from_slice(secret);
@@ -453,7 +453,7 @@ fn windowed_path_single_chunk_for_file_at_exactly_window_size() {
     // Edge case: file size == window_size triggers the windowed path
     // gate (`file_size > window_size`) only when strictly greater. At
     // exactly window_size we should fall through to the regular
-    // mmap/buffered read path — verify ONE chunk, NOT windowed.
+    // mmap/buffered read path - verify ONE chunk, NOT windowed.
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("edge.log");
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(128).collect();
@@ -518,7 +518,7 @@ fn windowed_path_offsets_strictly_monotonic() {
 
 #[test]
 fn medium_file_between_unix_and_windows_thresholds_round_trips() {
-    // 200 KiB — sits above the 64 KiB Unix mmap threshold and below
+    // 200 KiB - sits above the 64 KiB Unix mmap threshold and below
     // the 1 MiB Windows threshold. On Unix this exercises the mmap
     // path; on Windows it exercises the buffered path. Either way
     // the chunk content must equal the file content byte-for-byte
@@ -553,7 +553,7 @@ fn compressed_gz_file_yields_decompressed_chunk() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("payload.gz");
     // Plant a recognisable plaintext marker that we can grep for in
-    // the emitted chunk's data — proves decompression actually ran.
+    // the emitted chunk's data - proves decompression actually ran.
     let plaintext = b"COMPRESSED_PAYLOAD_MARKER_98765 inside the gz stream";
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(plaintext).unwrap();
@@ -585,7 +585,7 @@ fn compressed_gz_file_yields_decompressed_chunk() {
 fn compressed_path_skips_corrupt_or_oversize_inputs_without_panic() {
     // A non-gz file with a `.gz` extension must NOT crash the source.
     // Either we get an empty chunk list (ziftsieve refuses to decode)
-    // or a fallback path takes over — never a panic.
+    // or a fallback path takes over - never a panic.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("garbage.gz");
     fs::write(&path, b"this is not a real gzip stream at all").unwrap();

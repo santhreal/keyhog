@@ -75,7 +75,7 @@ impl CompiledScanner {
             // from the same `line_offsets` table). The earlier
             // `line_offsets[entropy_match.line - 1] + entropy_match.offset`
             // double-counted that base, producing offsets ~2× the file
-            // size for findings late in the file — defect #80, 130+
+            // size for findings late in the file - defect #80, 130+
             // corrupted finding offsets across the dogfood corpora. Use
             // the value directly. `_line_offsets` retained as a
             // parameter for the windowed/multiline paths that still need
@@ -112,7 +112,7 @@ impl CompiledScanner {
             // k8s/yaml `name:` metadata fields, NOT credentials.
             // The entropy fallback was firing on these as
             // `entropy-api-key` because `key` matched a keyword
-            // anchor near the value — but the value itself is an
+            // anchor near the value - but the value itself is an
             // identifier, not a high-entropy random string.
             if entropy_path_looks_like_kebab_identifier(&entropy_match.value) {
                 continue;
@@ -123,7 +123,7 @@ impl CompiledScanner {
             // `.json`, `.properties`, `.pem`, `.key`, `.crt`, `.cer`,
             // `.pfx`, `.p12`, `.keystore`, `.truststore`) are
             // file/keystore references next to a `KEYSTORE_FILENAME:`
-            // / `TRUSTSTORE_FILENAME:` keyword anchor — NOT
+            // / `TRUSTSTORE_FILENAME:` keyword anchor - NOT
             // credentials. Bat-go's docker-compose.yml had 4+
             // entropy-api-key FPs on `kafka.broker1.keystore.jks`
             // /`kafka.broker1.truststore.jks`.
@@ -137,7 +137,7 @@ impl CompiledScanner {
             // but the entropy fallback emits matches directly so it
             // needs its own gate. Without this, WebGoat's German i18n
             // .properties file fires `entropy-password` on
-            // `Benutzername` (12 letters, no digit — clearly a
+            // `Benutzername` (12 letters, no digit - clearly a
             // dictionary word, not a credential).
             if crate::pipeline::looks_like_pure_identifier(&entropy_match.value) {
                 continue;
@@ -280,7 +280,7 @@ impl CompiledScanner {
             // and GitHub context interpolations. Named detectors
             // (github-pat, aws-akia, slack-token, …) still fire here
             // because their keyword anchors give independent positive
-            // evidence — entropy-fallback's "lots of varied bytes" is
+            // evidence - entropy-fallback's "lots of varied bytes" is
             // not enough signal in this context. 25+ FPs across bat-go,
             // bat-ledger, brave-talk, malachite, orb-firmware dogfood.
             if entropy_path_is_ci_workflow_file(chunk.metadata.path.as_deref()) {
@@ -303,7 +303,7 @@ impl CompiledScanner {
             // Shell-expansion / template-literal shapes: values starting
             // with `$(`, `${`, `$ECR`, `$RUN`, `$VAR`, `\"${`, or `[{ \"`
             // are shell command substitutions, env-var refs, or JSON
-            // matrix bodies — not credentials. Workflow files generate
+            // matrix bodies - not credentials. Workflow files generate
             // these in volume.
             if entropy_match.value.starts_with("$(")
                 || entropy_match.value.starts_with("${")
@@ -421,7 +421,7 @@ fn entropy_path_looks_like_kebab_identifier(value: &str) -> bool {
 /// Covers GitHub Actions, GitLab CI, CircleCI, Azure Pipelines,
 /// Bitbucket Pipelines, Travis, Jenkins(file). Real secrets in these
 /// files live behind `${{ secrets.* }}` (or equivalent) references,
-/// not raw values — what entropy-* fires on is action versions, step
+/// not raw values - what entropy-* fires on is action versions, step
 /// names, bash subshell expressions, and template interpolations.
 /// Named detectors (github-pat, aws-akia, slack-token, …) continue
 /// to fire because they require service-specific keyword anchors;
@@ -475,7 +475,7 @@ fn entropy_path_is_i18n_file(path: Option<&str>) -> bool {
     // `C:\foo\locale\bar.po` (Windows). Backslash variants are not
     // present in any of our internal fixtures, but the moment a
     // Windows user runs `keyhog scan` against an i18n tree the path
-    // gate has to recognize the same shape — otherwise we'd surface
+    // gate has to recognize the same shape - otherwise we'd surface
     // entropy-* FPs on every translation file there.
     p.contains("/locale/")
         || p.contains("\\locale\\")

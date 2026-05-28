@@ -3,6 +3,7 @@
 mod backend;
 mod boundary;
 mod compile;
+mod extract;
 mod fallback;
 mod fallback_entropy;
 mod fallback_generic;
@@ -15,8 +16,10 @@ mod gpu_lazy;
 mod gpu_literal_phase1;
 mod gpu_megascan;
 mod gpu_phase2;
+mod gpu_postprocess;
 mod gpu_scan_wrappers;
 mod hot_patterns;
+mod process;
 mod rule_pipeline;
 mod scan;
 mod scan_filters;
@@ -25,9 +28,11 @@ pub mod segment_attribution;
 mod windowed;
 
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
+pub use gpu_coalesce::coalesce_chunks;
 pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use rule_pipeline::{
-    build_rule_pipeline, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH, MEGASCAN_INPUT_LEN,
+    build_rule_pipeline, megascan_input_len, rule_pipeline_cached,
+    AC_GPU_MAX_MATCHES_PER_DISPATCH, MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
 };
 pub use windowed::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
@@ -47,12 +52,12 @@ pub use vyre_libs::scan::LiteralMatch;
 
 /// Read `KEYHOG_PER_CHUNK_TIMEOUT_MS` and turn it into a per-chunk
 /// deadline `Instant`. Returns `None` when the env var is unset or
-/// malformed — the historical "scan until done" behavior.
+/// malformed - the historical "scan until done" behavior.
 ///
 /// Wired into the public `scan` / `scan_with_backend` entry points
 /// so a hostile or pathological input (e.g. the Apple Silicon
 /// regex-DFA construction stall surfaced during cross-platform
-/// dogfood — a single 171-byte line with `var token = identifier.Flag(...)`
+/// dogfood - a single 171-byte line with `var token = identifier.Flag(...)`
 /// shape spends minutes inside the multiline preprocessor) bails
 /// after the configured budget instead of hanging the entire
 /// `keyhog scan <repo>` run. The CLI orchestrator path runs scans
@@ -176,8 +181,14 @@ impl CompiledScanner {
         let ready = match backend {
             crate::hw_probe::ScanBackend::Gpu => self.gpu_stack_usable(),
             crate::hw_probe::ScanBackend::MegaScan => {
-                let _ = self.rule_pipeline();
-                self.gpu_stack_usable()
+                let pipeline_ready = self.rule_pipeline().is_some();
+                let stack_ready = self.gpu_stack_usable();
+                if !pipeline_ready && stack_ready {
+                    gpu_forced::deny_silent_megascan_degrade(
+                        "regex pipeline compile rejected the detector set",
+                    );
+                }
+                pipeline_ready && stack_ready
             }
             crate::hw_probe::ScanBackend::SimdCpu | crate::hw_probe::ScanBackend::CpuFallback => {
                 true

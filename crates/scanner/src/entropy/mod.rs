@@ -35,7 +35,7 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
         static CACHE: RefCell<HashMap<u64, f64>> = RefCell::new(HashMap::with_capacity(256));
     }
 
-    // Fast hash for cache key — FNV-1a, same as decode pipeline
+    // Fast hash for cache key - FNV-1a, same as decode pipeline
     let mut hash: u64 = 0xcbf29ce484222325;
     for &byte in data {
         hash ^= u64::from(byte);
@@ -49,7 +49,7 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
         }
         let entropy = shannon_entropy_uncached(data);
         if cache.len() >= MAX_CACHE_ENTRIES {
-            cache.clear(); // simple eviction — bounded memory
+            cache.clear(); // simple eviction - bounded memory
         }
         cache.insert(hash, entropy);
         entropy
@@ -104,7 +104,7 @@ pub struct EntropyMatch {
 /// True if the file at `path` is worth running entropy scanning on.
 pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> bool {
     let Some(path) = path else { return true };
-    // ASCII case-insensitive byte comparison — no whole-path lowercase
+    // ASCII case-insensitive byte comparison - no whole-path lowercase
     // allocation per call. Hot path on every chunk during a scan.
     let bytes = path.as_bytes();
     let ends_ci = |suffix: &[u8]| -> bool {
@@ -124,7 +124,7 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
         return true;
     }
 
-    // Last segment after `/` or `\` — index into bytes, no alloc.
+    // Last segment after `/` or `\` - index into bytes, no alloc.
     let last_sep = bytes
         .iter()
         .rposition(|&b| b == b'/' || b == b'\\')
@@ -181,7 +181,7 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
 
     // Filename-prefix match: `.env-staging`, `.env.production` should count
     // as a secret file. But `secrets.rs`, `credentials.py`, `apikeys.go`
-    // are source code ABOUT credentials, not credential files — the
+    // are source code ABOUT credentials, not credential files - the
     // surrounding code uses `secret` / `credential` / `apikey` as
     // identifiers, and the entropy fallback was misclassifying every
     // identifier-shaped value on those lines as `entropy-api-key`.

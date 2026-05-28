@@ -1,4 +1,4 @@
-//! `keyhog completion <shell>` — print a shell completion script to stdout.
+//! `keyhog completion <shell>` - print a shell completion script to stdout.
 //!
 //! Standard tooling for any clap-based CLI. Pipe to a shell-specific
 //! location:

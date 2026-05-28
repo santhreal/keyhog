@@ -29,7 +29,7 @@ fn no_contract_readme_claim_stale_889() {
 
     assert!(
         stale.is_empty(),
-        "{}/{} contracts still pin stale readme_claim {:?} — first 20: {:?}",
+        "{}/{} contracts still pin stale readme_claim {:?} - first 20: {:?}",
         stale.len(),
         stale.len(),
         STALE,

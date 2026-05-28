@@ -17,7 +17,7 @@ fn snake_case_identifier_with_digits_suppressed() {
         None,
         "generic-secret",
     ));
-    // openssl apps/ts.c:683 — `token = d2i_PKCS7_bio(in_bio, NULL)`
+    // openssl apps/ts.c:683 - `token = d2i_PKCS7_bio(in_bio, NULL)`
     assert!(should_suppress_named_detector_finding(
         "d2i_PKCS7_bio",
         Some("openssl/apps/ts.c"),
@@ -25,7 +25,7 @@ fn snake_case_identifier_with_digits_suppressed() {
         None,
         "generic-secret",
     ));
-    // sqlite ext/fts5/fts5_test_tok.c — `sqlite3_malloc64`
+    // sqlite ext/fts5/fts5_test_tok.c - `sqlite3_malloc64`
     assert!(should_suppress_named_detector_finding(
         "sqlite3_malloc64",
         Some("sqlite/ext/fts5/fts5_test_tok.c"),
@@ -33,7 +33,7 @@ fn snake_case_identifier_with_digits_suppressed() {
         None,
         "generic-secret",
     ));
-    // curl lib/vauth/ntlm_sspi.c:204 — `input_token = curlx_memdup0(...)`
+    // curl lib/vauth/ntlm_sspi.c:204 - `input_token = curlx_memdup0(...)`
     assert!(should_suppress_named_detector_finding(
         "curlx_memdup0",
         Some("curl/lib/vauth/ntlm_sspi.c"),

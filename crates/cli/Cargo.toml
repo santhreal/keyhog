@@ -1,6 +1,6 @@
 [package]
 name = "keyhog"
-description = "keyhog — detects leaked credentials in source trees, git history, and cloud storage"
+description = "keyhog: detects leaked credentials in source trees, git history, and cloud storage"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -35,6 +35,7 @@ default = [
     "s3",                       # S3 bucket scanning
     "docker",                   # Docker image scanning
     "verify",                   # Live credential verification
+    "tui",                      # `keyhog tui` live-scan dashboard
 ]
 # Unused Cargo flag — use `keyhog scan --fast` at runtime for pre-commit speed.
 fast = []
@@ -72,6 +73,10 @@ verify = ["keyhog-verifier/live"]
 gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
 cuda = ["keyhog-scanner/cuda"]         # CUDA backend (NVIDIA-only, libcuda.so required)
+# Interactive TUI scan dashboard. Pulled in by default; can be turned
+# off in size-constrained builds via `--no-default-features`. Adds
+# ratatui + crossterm to the dependency closure.
+tui = ["dep:ratatui", "dep:crossterm"]
 
 [dependencies]
 keyhog-core = { workspace = true }
@@ -96,6 +101,12 @@ notify = { workspace = true }
 # calibration. A mid-write crash on `--update-baseline` would
 # otherwise leave a corrupt JSON the next run can't parse.
 tempfile = { workspace = true }
+# Pulled in by the `keyhog tui` subcommand for the live-scan demo.
+# Both gated behind the `tui` feature so portable builds (Windows,
+# macOS via `--no-default-features --features portable`) still build
+# without paying the dep cost.
+ratatui = { workspace = true, optional = true }
+crossterm = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # Used only by `reset_sigpipe()` in main.rs to restore the default

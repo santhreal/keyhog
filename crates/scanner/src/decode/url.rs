@@ -72,7 +72,7 @@ impl Decoder for QuotedPrintableDecoder {
                     .into_iter()
                     // Real Quoted-Printable encodes a non-ASCII byte as `=XX`
                     // (hex). A plain trailing `=` (`token=`) or a string of
-                    // `=` signs is NOT QP — the decoder used to copy it
+                    // `=` signs is NOT QP - the decoder used to copy it
                     // through unchanged and re-scan, wasting one full
                     // scan pass per `key=value`-shaped line. Require at
                     // least one well-formed `=XX` sequence with hex chars
@@ -200,7 +200,7 @@ fn url_decode(input: &str) -> Result<String, ()> {
     // kimi-decode audit: bail before doing any work when there is no
     // valid `%XX` percent-escape in the candidate. The previous flow
     // copied trailing bare `%` or `%X` (one-char-short) unchanged and
-    // returned the identical string — wasted decode work that the
+    // returned the identical string - wasted decode work that the
     // `seen` dedup later dropped. Refuse the candidate earlier.
     if !contains_percent_escape(input) {
         return Err(());

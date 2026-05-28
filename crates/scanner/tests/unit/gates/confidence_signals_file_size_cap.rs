@@ -7,6 +7,6 @@ fn confidence_signals_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "confidence::signals: {lines} lines exceeds 500-line cap — split module"
+        "confidence::signals: {lines} lines exceeds 500-line cap - split module"
     );
 }

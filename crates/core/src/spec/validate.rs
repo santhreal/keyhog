@@ -8,7 +8,7 @@ const MAX_REGEX_PATTERN_LEN: usize = 4096;
 // MAX_REGEX_AST_NODES / MAX_REGEX_ALTERNATION_BRANCHES /
 // MAX_REGEX_REPEAT_BOUND were originally defined here too but are the
 // canonical constants in `validate_regex.rs` (which is where they're
-// actually consumed). Duplicates here had no consumers — clippy
+// actually consumed). Duplicates here had no consumers - clippy
 // `dead_code` flagged them. Re-imports happen via the `use
 // validate_regex::validate_regex_complexity;` below.
 
@@ -42,8 +42,7 @@ pub enum QualityIssue {
 ///     severity: Severity::High,
 ///     patterns: vec![PatternSpec {
 ///         regex: "demo_[A-Z0-9]{8}".into(),
-///         description: None,
-///         group: None,
+///         ..Default::default()
 ///     }],
 ///     companions: Vec::new(),
 ///     verify: None,
@@ -78,7 +77,7 @@ fn validate_regexes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
 fn validate_keywords(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if spec.keywords.is_empty() {
         issues.push(QualityIssue::Warning(
-            "no keywords defined — pattern may produce false positives".into(),
+            "no keywords defined - pattern may produce false positives".into(),
         ));
     }
 }
@@ -91,13 +90,13 @@ fn validate_pattern_specificity(spec: &DetectorSpec, issues: &mut Vec<QualityIss
 
         if is_pure_charclass && !has_group {
             issues.push(QualityIssue::Error(format!(
-                "pattern {} is a pure character class ({}) — too broad without context anchoring. \
+                "pattern {} is a pure character class ({}) - too broad without context anchoring. \
                  Use a capture group or add a literal prefix.",
                 i, pat.regex
             )));
         } else if !has_prefix && !has_group && spec.keywords.is_empty() {
             issues.push(QualityIssue::Warning(format!(
-                "pattern {} has no literal prefix and no capture group — may false-positive",
+                "pattern {} has no literal prefix and no capture group - may false-positive",
                 i
             )));
         }
@@ -116,7 +115,7 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         // A "pure character class" companion (e.g. `[A-Z0-9]{10}` for an
         // Algolia application_id) is acceptable when `within_lines` is small:
         // the positional constraint is itself the contextual anchor. Reject
-        // only when the companion permits a wide search radius — at that
+        // only when the companion permits a wide search radius - at that
         // point the lack of textual context really does over-fire.
         if is_pure_character_class(&companion.regex) {
             if companion.within_lines <= TIGHT_COMPANION_RADIUS {
@@ -128,13 +127,13 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             } else {
                 issues.push(QualityIssue::Error(format!(
                     "companion {} regex '{}' is a pure character class with within_lines={} \
-                     (> {}) — the wide search radius needs a literal context anchor",
+                     (> {}) - the wide search radius needs a literal context anchor",
                     i, companion.regex, companion.within_lines, TIGHT_COMPANION_RADIUS
                 )));
             }
         } else if !has_substantial_literal(&companion.regex, 3) {
             issues.push(QualityIssue::Warning(format!(
-                "companion {} regex '{}' is too broad — may produce false positives. \
+                "companion {} regex '{}' is too broad - may produce false positives. \
                  Add a context anchor like 'KEY_NAME='.",
                 i, companion.regex
             )));
@@ -221,7 +220,7 @@ fn is_escaped_literal(ch: char) -> bool {
 
 fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if let Some(ref verify) = spec.verify {
-        // verify.service defaults to the detector's service — empty is fine
+        // verify.service defaults to the detector's service - empty is fine
         if !verify.steps.is_empty() {
             for step in &verify.steps {
                 validate_url(&step.url, issues);
@@ -242,7 +241,7 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
 
 /// Reserved synthetic companion-map keys used by the OOB interpolator. A
 /// detector that names a companion `__keyhog_oob_*` would either be
-/// shadowed by the OOB injector or shadow it — either way, the verify
+/// shadowed by the OOB injector or shadow it - either way, the verify
 /// templates would resolve to surprising values. Reject the names so a
 /// future detector author gets a clear error instead of a debugging
 /// nightmare.
@@ -303,14 +302,14 @@ fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
         (true, false) => issues.push(QualityIssue::Error(
             "verify.oob is set but no `{{interactsh}}` / `{{interactsh.host}}` / \
              `{{interactsh.url}}` / `{{interactsh.id}}` token appears in any verify \
-             template — the OOB callback URL has nowhere to land, so the wait_for \
+             template - the OOB callback URL has nowhere to land, so the wait_for \
              would always time out. Either embed an interactsh token in the body, \
-             URL, or a header — or remove the [detector.verify.oob] block."
+             URL, or a header - or remove the [detector.verify.oob] block."
                 .into(),
         )),
         (false, true) => issues.push(QualityIssue::Error(
             "an `{{interactsh*}}` token is referenced in a verify template but no \
-             [detector.verify.oob] block is set — the token will resolve to an empty \
+             [detector.verify.oob] block is set - the token will resolve to an empty \
              string at runtime and ship a malformed request to the service. Either \
              add a [detector.verify.oob] block or remove the token."
                 .into(),
@@ -339,14 +338,14 @@ fn check_url_exfil_risk(url: &str, allowed_domains: &[String], issues: &mut Vec<
         after_scheme.starts_with("{{") || after_scheme.starts_with("{") || trimmed == "{{match}}";
     if host_starts_with_template && allowed_domains.is_empty() {
         issues.push(QualityIssue::Error(
-            "verify URL host is templated and no `allowed_domains` is set — \
+            "verify URL host is templated and no `allowed_domains` is set - \
              attacker-controlled interpolation could exfil credentials. \
              Either hardcode the authoritative host in the URL or set \
              `allowed_domains` explicitly. See kimi-wave3 §1."
                 .into(),
         ));
     }
-    // Single-brace `{name}` is a common author error — interpolate.rs
+    // Single-brace `{name}` is a common author error - interpolate.rs
     // only handles `{{...}}`, so `{name}` lands in the URL literally.
     if url.contains('{') && !url.contains("{{") {
         issues.push(QualityIssue::Error(

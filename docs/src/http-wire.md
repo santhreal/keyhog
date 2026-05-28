@@ -21,7 +21,7 @@ few flags and sources. This page is the map.
 | Scan a source-map exposed by Webpack      | `keyhog scan --url https://app.example.com/static/main.js.map` |
 | Scan a HAR export from DevTools           | `keyhog scan capture.har`  (see [HAR auto-expansion](#har-auto-expansion))   |
 | Scan a single curl response               | `curl -s https://api/... \| keyhog scan --stdin`             |
-| Scan a saved Burp / mitmproxy capture     | `keyhog scan dump.txt`  *(treats as text — no protocol parsing)* |
+| Scan a saved Burp / mitmproxy capture     | `keyhog scan dump.txt`  *(treats as text - no protocol parsing)* |
 | Route every fetch through Burp            | `keyhog scan --url https://... --proxy http://burp:8080 --insecure` |
 | Scan in an air-gapped network             | `keyhog scan --url https://... --proxy off`                  |
 
@@ -63,13 +63,13 @@ is the `file_path`.
 - Cloud metadata endpoints (`169.254.169.254`, the GCP / Azure /
   AWS / DigitalOcean / Hetzner variants).
 
-This isn't a CLI flag — it's hardcoded so a user can't accidentally
+This isn't a CLI flag - it's hardcoded so a user can't accidentally
 turn an `--url` invocation into a metadata-service IAM exfil.
 
 ## Proxy and TLS
 
-Everything outbound — `--url`, `--github-org`, `--s3-bucket`,
-`--verify`'s API calls — runs through one HTTP client builder.
+Everything outbound - `--url`, `--github-org`, `--s3-bucket`,
+`--verify`'s API calls - runs through one HTTP client builder.
 Policy:
 
 | Source                       | Effect                                            |
@@ -108,7 +108,7 @@ keyhog scan capture.har --format json | \
   jq '.[] | select(.location.source == "wire:har:request")'
 ```
 
-filters down to outbound credentials only — the bug-bounty
+filters down to outbound credentials only - the bug-bounty
 "what did I send" view. Swap `request` for `response` to see what
 the upstream reflected back at you.
 
@@ -146,13 +146,13 @@ convention; added in v0.5.28).
 scan the path. Use `--source-type wire` when you want findings
 tagged with a meaningful source instead of the default `stdin`.
 
-## Headers, bodies, URL params — where the secret sits
+## Headers, bodies, URL params - where the secret sits
 
 KeyHog is content-blind: it greps the raw bytes. That means a
 `Bearer ghp_…` in an HTTP header gets the same finding as a
 `"token": "ghp_…"` in a JSON body or a `?token=ghp_…` in the URL.
 
-For an HTTP capture this is usually what you want — the location
+For an HTTP capture this is usually what you want - the location
 column in the finding gives the byte offset within the capture, and
 the surrounding context (line ±2) is enough to tell whether it was
 a header or a body.
@@ -162,7 +162,7 @@ What KeyHog does **not** do today:
 - Parse the HTTP wire format and emit `header:Authorization`
   vs `body:json:$.token` provenance fields.
 - Distinguish a secret in a request from a secret in the response
-  (one is being sent OUT, one is being sent IN — different threat
+  (one is being sent OUT, one is being sent IN - different threat
   model).
 
 Those land in the roadmap below.
@@ -194,7 +194,7 @@ queued for a later release, with their issue links:
    tokens passed over upgraded connections (Slack, Discord,
    collaborative editors).
 
-No promises on timeline — track via
+No promises on timeline - track via
 [github.com/santhsecurity/keyhog/issues](https://github.com/santhsecurity/keyhog/issues).
 
 ## Why this matters for bug bounties

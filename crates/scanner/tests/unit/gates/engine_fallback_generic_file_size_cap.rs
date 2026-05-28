@@ -10,6 +10,6 @@ fn engine_fallback_generic_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "engine::fallback_generic: {lines} lines exceeds 500-line cap — split module"
+        "engine::fallback_generic: {lines} lines exceeds 500-line cap - split module"
     );
 }

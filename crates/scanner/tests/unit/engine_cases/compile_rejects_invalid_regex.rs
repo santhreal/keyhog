@@ -11,6 +11,7 @@ fn compile_rejects_invalid_regex() {
             regex: "(unclosed".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

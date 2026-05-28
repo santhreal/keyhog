@@ -1,4 +1,4 @@
-//! Compound-encoding runner — tests N-layer nested encodings.
+//! Compound-encoding runner - tests N-layer nested encodings.
 //!
 //! Real-world secrets routinely pass through multiple encoding layers
 //! before they show up in git: a Kubernetes `Secret` base64-encodes
@@ -14,7 +14,7 @@
 //! support up to 4 layers (the default). The single-layer runner
 //! showed 93% recall after the splice fix; with N-layer composition
 //! we get to ask: *does each successive layer hold up?* A 70%
-//! single-layer detector at three layers compounds to ~34% — knowing
+//! single-layer detector at three layers compounds to ~34% - knowing
 //! the multi-layer rate is the only way to know what real-world
 //! recall looks like.
 //!
@@ -185,7 +185,7 @@ fn every_positive_swept_through_two_layer_encodings() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — compound runner has nothing to drive"
+        "tests/contracts/ has no *.toml - compound runner has nothing to drive"
     );
 
     // Per (outer, inner): (runs, decode_hits)
@@ -197,7 +197,7 @@ fn every_positive_swept_through_two_layer_encodings() {
         for p in &c.positive {
             for inner in Layer::ALL {
                 for outer in Layer::ALL {
-                    // Skip self-pairs — base64(base64(x)) is covered
+                    // Skip self-pairs - base64(base64(x)) is covered
                     // by the decode pipeline's recursion against the
                     // single-layer corpus already, and adds noise
                     // here without new signal.

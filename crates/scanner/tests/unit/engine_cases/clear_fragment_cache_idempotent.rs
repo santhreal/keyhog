@@ -11,6 +11,7 @@ fn clear_fragment_cache_idempotent() {
             regex: "x".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

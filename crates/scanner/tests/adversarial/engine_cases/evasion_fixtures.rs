@@ -8,7 +8,7 @@
 //! Each test loads the embedded detector corpus, scans a fixture, and asserts
 //! at least one expected detector fires on a known leaked credential string in
 //! the fixture. CLAUDE.md anti-rigging rule: each test names a specific
-//! detector ID + expected substring of the matched credential — a function
+//! detector ID + expected substring of the matched credential - a function
 //! returning `Vec::new()` will fail.
 
 use super::corpus_support::{production_scanner, scan_corpus};
@@ -48,7 +48,7 @@ fn evasion_base64_wrapped_decodes() {
     let matches = scan_fixture("base64_wrapped.json");
     assert!(
         !matches.is_empty(),
-        "base64_wrapped.json: zero findings — decode-through pipeline failing on YAML/JSON multiline base64"
+        "base64_wrapped.json: zero findings - decode-through pipeline failing on YAML/JSON multiline base64"
     );
 }
 
@@ -57,7 +57,7 @@ fn evasion_split_across_lines_reassembles_at_all() {
     let matches = scan_fixture("split_across_lines.py");
     // The fixture splits OpenAI, Slack, and AWS credentials across multiple
     // assignments via concatenation. The reassembly path must produce SOME
-    // `:reassembled` finding — zero would mean the entire reassembly pipeline
+    // `:reassembled` finding - zero would mean the entire reassembly pipeline
     // is dead. (The AWS-specific gap is asserted by the test below.)
     let any_reassembled = matches
         .iter()
@@ -139,7 +139,7 @@ fn evasion_multiline_json_reassembles() {
     let matches = scan_fixture("multiline_json.json");
     assert!(
         !matches.is_empty(),
-        "multiline_json.json: zero findings — multiline JSON reassembly failing"
+        "multiline_json.json: zero findings - multiline JSON reassembly failing"
     );
 }
 
@@ -150,7 +150,7 @@ fn evasion_hex_encoded_decodes() {
     let matches = scan_fixture("hex_encoded.js");
     assert!(
         !matches.is_empty(),
-        "hex_encoded.js: zero findings — hex decode-through path is dead"
+        "hex_encoded.js: zero findings - hex decode-through path is dead"
     );
 }
 
@@ -158,12 +158,12 @@ fn evasion_hex_encoded_decodes() {
 fn evasion_variable_indirection_chain() {
     let matches = scan_fixture("variable_indirection.rb");
     // This tests indirection (var = "...prefix"; secret = var + "...rest").
-    // We don't claim full taint analysis here — just assert the literal
+    // We don't claim full taint analysis here - just assert the literal
     // fragments themselves trip generic-secret/keyword detectors. Zero findings
     // would mean the engine cannot even see the literal halves.
     assert!(
         !matches.is_empty(),
-        "variable_indirection.rb: zero findings — literal halves invisible to engine"
+        "variable_indirection.rb: zero findings - literal halves invisible to engine"
     );
 }
 
@@ -172,7 +172,7 @@ fn evasion_embedded_in_binary_extracts_strings() {
     let matches = scan_fixture("embedded_in_binary.txt");
     assert!(
         !matches.is_empty(),
-        "embedded_in_binary.txt: zero findings — printable-string extraction broken"
+        "embedded_in_binary.txt: zero findings - printable-string extraction broken"
     );
 }
 
@@ -183,15 +183,15 @@ fn evasion_embedded_in_binary_extracts_strings() {
 fn evasion_reversed_strings_finds_forward_literals() {
     // The reversed_strings.py fixture contains both reversed credentials
     // and forward literal halves. Three guarantees:
-    //   1. At least ONE finding fires — engine sees forward literals.
+    //   1. At least ONE finding fires - engine sees forward literals.
     //   2. The ReverseDecoder catches the reversed AKIA test key whose
-    //      reversal contains "EXAMPLE" — suppression rule was relaxed
+    //      reversal contains "EXAMPLE" - suppression rule was relaxed
     //      for evasion-decoder-origin credentials so an attacker can't
     //      hide a real leak by reversing an EXAMPLE-suffixed value.
     let matches = scan_fixture("reversed_strings.py");
     assert!(
         !matches.is_empty(),
-        "reversed_strings.py: zero findings — engine cannot even see the forward literal halves"
+        "reversed_strings.py: zero findings - engine cannot even see the forward literal halves"
     );
     let any_aws_or_github = matches.iter().any(|m| {
         m.detector_id.as_ref().contains("aws")
@@ -207,6 +207,6 @@ fn evasion_reversed_strings_finds_forward_literals() {
     );
 }
 
-// `jwt_everywhere.txt` not shipped with the repo yet — when the fixture is
+// `jwt_everywhere.txt` not shipped with the repo yet - when the fixture is
 // added, drop this comment and add a regression test asserting the JWT
 // detector fires on it.

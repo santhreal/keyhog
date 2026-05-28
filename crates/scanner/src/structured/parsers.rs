@@ -42,7 +42,10 @@ pub fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_yaml::Value = match serde_yaml::from_str(text) {
         Ok(v) => v,
-        Err(_) => return pairs,
+        Err(error) => {
+            tracing::debug!(target: "keyhog::structured", %error, "k8s secret YAML parse failed");
+            return pairs;
+        }
     };
 
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("data") {
@@ -89,13 +92,16 @@ pub fn parse_docker_compose(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_yaml::Value = match serde_yaml::from_str(text) {
         Ok(v) => v,
-        Err(_) => return pairs,
+        Err(error) => {
+            tracing::debug!(target: "keyhog::structured", %error, "docker-compose YAML parse failed");
+            return pairs;
+        }
     };
     find_environment_pairs(&value, text, &mut pairs, 0);
     pairs
 }
 
-/// Cap recursion depth on adversarial YAML — same threat as
+/// Cap recursion depth on adversarial YAML - same threat as
 /// [`MAX_TFSTATE_DEPTH`] for JSON. Real docker-compose schemas nest
 /// ~6 levels deep (`services.<name>.environment.<list>`); 256 leaves
 /// the policy permissive but guards against a malicious YAML that
@@ -156,7 +162,7 @@ fn extract_environment_block(
                 if let Some(s) = item.as_str() {
                     if let Some((key, val)) = s.split_once('=') {
                         // A leading `=` (e.g. `=secretvalue`) produces an
-                        // empty key — that's malformed compose and the empty
+                        // empty key - that's malformed compose and the empty
                         // context would be useless downstream. Skip in line
                         // with the k8s parser's empty-key policy.
                         if key.is_empty() {
@@ -181,14 +187,17 @@ pub fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
-        Err(_) => return pairs,
+        Err(error) => {
+            tracing::debug!(target: "keyhog::structured", %error, "tfstate JSON parse failed");
+            return pairs;
+        }
     };
     extract_tfstate_values(&value, text, &mut pairs, 0);
     pairs
 }
 
 /// Cap recursion depth on adversarial JSON. A 2 MiB document of
-/// nothing but `[[[...]]]` can nest >500k levels deep — beyond the
+/// nothing but `[[[...]]]` can nest >500k levels deep - beyond the
 /// 8 MiB default stack of most Linux threads. 256 is enough for any
 /// real Terraform statefile (the deepest natural nesting in the
 /// schema is ~12 levels) but bails before stack overflow.
@@ -239,7 +248,10 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
-        Err(_) => return pairs,
+        Err(error) => {
+            tracing::debug!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed");
+            return pairs;
+        }
     };
     let cells = match value.get("cells") {
         Some(serde_json::Value::Array(arr)) => arr,
@@ -267,8 +279,8 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                 let joined = parts.join("");
                 // The joined source contains literal `\n` characters, but
                 // the on-disk JSON encodes them as the escape sequence
-                // `\\n`. Searching for the joined whole — or even a
-                // single fragment that still ends in `\n` — therefore
+                // `\\n`. Searching for the joined whole - or even a
+                // single fragment that still ends in `\n` - therefore
                 // never matches, collapsing line attribution to 1 for
                 // every multi-string cell. Anchor on the first non-empty
                 // fragment with trailing newlines stripped: the leading
@@ -343,7 +355,7 @@ mod tests {
     /// Regression: a docker-compose `environment:` sequence entry like
     /// `=secretvalue` (leading `=`) used to produce an ExtractedPair
     /// with an empty `context`. That's malformed compose and the empty
-    /// context would be useless downstream — must be skipped, matching
+    /// context would be useless downstream - must be skipped, matching
     /// the k8s parser's empty-key policy.
     #[test]
     fn docker_compose_sequence_skips_empty_key_with_leading_equals() {
@@ -357,7 +369,7 @@ services:
 ";
         let pairs = parse_docker_compose(text);
         // Three entries in the YAML, but the one with the empty key
-        // must be dropped — so we expect FOO and BAZ only.
+        // must be dropped - so we expect FOO and BAZ only.
         let contexts: Vec<_> = pairs.iter().map(|p| p.context.as_str()).collect();
         assert!(contexts.contains(&"FOO"));
         assert!(contexts.contains(&"BAZ"));
@@ -373,7 +385,7 @@ services:
     }
 
     /// Docker-compose sequence form `FOO=` (empty value, non-empty key)
-    /// MUST still be preserved — env vars are legitimately allowed to
+    /// MUST still be preserved - env vars are legitimately allowed to
     /// be set to empty.
     #[test]
     fn docker_compose_sequence_preserves_empty_value_with_present_key() {
@@ -473,7 +485,7 @@ data:
         assert!(pairs.is_empty());
     }
 
-    /// Same guard for the docker-compose path — a YAML mapping nested
+    /// Same guard for the docker-compose path - a YAML mapping nested
     /// thousands of levels deep must bail rather than stack-overflow.
     #[test]
     fn docker_compose_deeply_nested_yaml_does_not_overflow() {

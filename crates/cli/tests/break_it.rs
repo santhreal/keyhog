@@ -110,7 +110,7 @@ fn test_1mb_parse_min_confidence() {
     large_str.push_str(&"1".repeat(1024 * 1024));
     // 1 MB fractional string parses to a value extremely close to (but not
     // equal to) 0.111…, and must stay strictly inside (0, 1). Assert the
-    // returned value instead of merely "didn't error" — the previous
+    // returned value instead of merely "didn't error" - the previous
     // assertion would still pass if parse_min_confidence returned NaN or
     // any other in-range nonsense.
     let parsed = parse_min_confidence(&large_str).expect("1MB 0.111… must parse");

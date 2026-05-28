@@ -1,4 +1,4 @@
-//! Bigram-bloom prefilter — Layer 0.5 between alphabet screening and AC/HS.
+//! Bigram-bloom prefilter - Layer 0.5 between alphabet screening and AC/HS.
 //!
 //! `AlphabetMask` (Layer 0) tells us which BYTES appear in the chunk; it can't
 //! tell us about adjacencies. A 1 MB Java source file likely contains
@@ -6,15 +6,15 @@
 //! `gh` followed by `p_` (which the GitHub PAT prefix `ghp_` requires).
 //!
 //! This module builds two 4096-bit (512-byte) bloom filters at compile time:
-//!   * `LITERAL_BIGRAM_BLOOM` — the union of bigrams across all detector
+//!   * `LITERAL_BIGRAM_BLOOM` - the union of bigrams across all detector
 //!     literal prefixes plus an extension by one ASCII byte (so a 4-char
 //!     prefix `ghp_` contributes 5 bigrams: `gh`, `hp`, `p_`, `_x` for every
 //!     plausible follower).
-//!   * `MAYBE_HAS_LITERAL_PREFIX(chunk)` — true if the chunk's bigrams hit
+//!   * `MAYBE_HAS_LITERAL_PREFIX(chunk)` - true if the chunk's bigrams hit
 //!     the literal bloom anywhere; false (skip the chunk) when there is zero
 //!     overlap.
 //!
-//! Cost: ~1 ns per byte on AVX2, ~2 ns per byte on scalar — strictly cheaper
+//! Cost: ~1 ns per byte on AVX2, ~2 ns per byte on scalar - strictly cheaper
 //! than `AlphabetMask::from_bytes`. False-positive rate at the prefilter
 //! level is empirically <1% on real source code (most Java files share
 //! plenty of `gh`/`sk`/`xo` bigrams unrelated to secrets), so the win is
@@ -56,6 +56,9 @@ impl BigramBloom {
         let mut bloom = Self::empty();
         for literal in literals {
             let bytes = literal.as_bytes();
+            if bytes.is_empty() {
+                continue;
+            }
             if bytes.len() < 2 {
                 // 1-byte literal: every bigram starting with that byte is
                 // possible; we set the byte's full row to true. This is
@@ -97,7 +100,7 @@ impl BigramBloom {
         false
     }
 
-    /// Population count — useful for diagnostics and to detect a near-full
+    /// Population count - useful for diagnostics and to detect a near-full
     /// bloom (where `maybe_overlaps` would always return true and the
     /// prefilter is providing zero value).
     pub fn popcount(&self) -> u32 {
@@ -146,7 +149,7 @@ mod tests {
         // ghp's first bytes except `g`, `h`, `p`. We deliberately use
         // a subset that omits all four.
         // This test exists primarily to prove the function returns SOME
-        // chunks as skip-eligible — regardless, on real corpora the
+        // chunks as skip-eligible - regardless, on real corpora the
         // FP rate is low single digits.
         let _ = only_unrelated;
     }
@@ -156,6 +159,12 @@ mod tests {
         let bloom = BigramBloom::empty();
         assert!(bloom.maybe_overlaps(b""));
         assert!(bloom.maybe_overlaps(b"a"));
+    }
+
+    #[test]
+    fn empty_literal_prefix_does_not_panic() {
+        let bloom = BigramBloom::from_literal_prefixes(&["".to_string(), "a".to_string()]);
+        assert!(bloom.maybe_overlaps(b"abc"));
     }
 
     #[test]

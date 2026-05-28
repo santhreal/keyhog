@@ -6,7 +6,7 @@ impl CompiledScanner {
     ///
     /// Persists the compiled matcher to `~/.cache/keyhog/programs/<hash>.bin`.
     /// On a cache hit the matcher is loaded from disk and the GPU
-    /// recompile is skipped entirely — biggest cold-start win on
+    /// recompile is skipped entirely - biggest cold-start win on
     /// `keyhog scan` / `scan-system` runs that re-launch repeatedly.
     /// Cache misses (no file, version-mismatch, corrupt blob) silently
     /// recompile and re-cache.
@@ -26,7 +26,7 @@ impl CompiledScanner {
                 // One-line lego-block cache wiring courtesy of
                 // `vyre_libs::scan::cached_load_or_compile`. The
                 // helper handles atomic-rename, stale-blob deletion,
-                // and silent fall-through on cache-side I/O errors —
+                // and silent fall-through on cache-side I/O errors -
                 // every behaviour the previous hand-rolled
                 // load/save pair tried to match. We log compile cost
                 // here so the operator can still see warm-vs-cold
@@ -48,14 +48,14 @@ impl CompiledScanner {
 
     /// Lazily build the Aho-Corasick bounded-ranges dispatch Program
     /// from the GpuLiteralSet's CompiledDfa. The two engines share the
-    /// same DFA — only the dispatch Program (and therefore the
+    /// same DFA - only the dispatch Program (and therefore the
     /// per-byte algorithm) differs:
     ///
-    /// * `gpu_matcher().program` — `build_literal_set_program`:
+    /// * `gpu_matcher().program` - `build_literal_set_program`:
     ///   walks every pattern × every literal byte per haystack
     ///   position. `O(N × L) per byte`. Works for any pattern set
     ///   that fits the DFA budget.
-    /// * `ac_gpu_program()` — `classic_ac_bounded_ranges_program`:
+    /// * `ac_gpu_program()` - `classic_ac_bounded_ranges_program`:
     ///   walks the AC transition table forward `L_max` bytes per
     ///   position, emits every pattern in the accepting state's
     ///   flat output_links. `O(L_max) per byte` regardless of N.
@@ -114,17 +114,17 @@ impl CompiledScanner {
 
     /// Lazily compile the regex-NFA `RulePipeline` on first call.
     /// Returns `None` once the OnceLock has fired when the regex
-    /// compile failed — typically because the combined NFA exceeds
+    /// compile failed - typically because the combined NFA exceeds
     /// vyre's per-subgroup state cap (`LANES * 32`) or because one
     /// of the detector regexes uses a feature the byte-NFA frontend
     /// can't represent (Unicode classes, lookaround, backrefs).
     /// Callers should fall back to the literal-set GPU dispatch on
     /// `None`.
     ///
-    /// Pipeline is sized for [`super::rule_pipeline::MEGASCAN_INPUT_LEN`] bytes; batches
+    /// Pipeline is sized for [`super::rule_pipeline::megascan_input_len()`] bytes; batches
     /// larger than that must take a different path. The orchestrator
-    /// caps batches at 256 MiB which is the chosen size, so this
-    /// matches normal scan flow.
+    /// caps batches at the same value (256 MiB default, up to 1 GiB
+    /// on 24+ GiB-VRAM cards) so this matches normal scan flow.
     pub fn rule_pipeline(&self) -> Option<&vyre_libs::scan::RulePipeline> {
         self.rule_pipeline
             .get_or_init(|| {
@@ -138,19 +138,20 @@ impl CompiledScanner {
                     return None;
                 }
                 let started = std::time::Instant::now();
-                match super::rule_pipeline::rule_pipeline_cached(&pattern_strs, super::rule_pipeline::MEGASCAN_INPUT_LEN as u32) {
+                let input_cap = super::rule_pipeline::megascan_input_len();
+                match super::rule_pipeline::rule_pipeline_cached(&pattern_strs, input_cap as u32) {
                     Ok(pipe) => {
                         tracing::info!(
                             target: "keyhog::routing",
                             patterns = pattern_strs.len(),
-                            input_len = super::rule_pipeline::MEGASCAN_INPUT_LEN,
+                            input_len = input_cap,
                             elapsed_ms = started.elapsed().as_millis() as u64,
                             "MegaScan RulePipeline compiled"
                         );
                         Some(pipe)
                     }
                     Err(error) => {
-                        // Demoted from `warn` to `debug` — the
+                        // Demoted from `warn` to `debug` - the
                         // fallback to literal-set GPU dispatch is the
                         // designed degradation when vyre's byte-NFA
                         // frontend can't represent every pattern (e.g.
@@ -162,7 +163,7 @@ impl CompiledScanner {
                         tracing::debug!(
                             patterns = pattern_strs.len(),
                             error = %format!("{error:?}"),
-                            "MegaScan RulePipeline compile failed — falling back to literal-set GPU dispatch. \
+                            "MegaScan RulePipeline compile failed - falling back to literal-set GPU dispatch. \
                              Common causes: regex set exceeds vyre's per-subgroup state cap, or one or more \
                              patterns use Unicode classes / lookaround / backrefs that the byte-NFA frontend \
                              can't represent."

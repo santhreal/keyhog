@@ -55,7 +55,7 @@ impl ProbabilisticGate {
         // length. We require distinct_bigrams >= length / 4 (very lax) AND
         // distinct_bigrams >= 8 (absolute floor for short candidates).
         // These bounds reject 32-hex SHAs (which have ~28 distinct bigrams
-        // on 32 chars) very rarely — they pass — while killing pure-base64
+        // on 32 chars) very rarely - they pass - while killing pure-base64
         // UUID-without-dashes pads.
         //
         // We compute distinct bigrams via a 64-byte (512-bit) bitset over
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn realistic_secret_passes() {
-        // GitHub PAT shape — varied bigrams, length 40.
+        // GitHub PAT shape - varied bigrams, length 40.
         assert!(ProbabilisticGate::looks_promising(concat!(
             "gh",
             "p_aBcD1234EFgh5678ijklMNop9012qrSTuvWX"
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn short_input_passes_through() {
-        // <16 bytes — gating returns true regardless.
+        // <16 bytes - gating returns true regardless.
         assert!(ProbabilisticGate::looks_promising("ghp_short"));
     }
 

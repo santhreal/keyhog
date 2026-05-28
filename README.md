@@ -29,7 +29,7 @@ present:
 Backend selection is automatic. On startup:
 
 ```
-KeyHog v0.5.33 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
+KeyHog v0.5.34 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
 ```
 
 📘 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/)
@@ -56,18 +56,23 @@ cd keyhog && cargo build --release -p keyhog
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.
 
-The installer auto-detects host state and picks the fastest variant:
-on Linux with an NVIDIA GPU plus loadable `libcuda.so` you get the
-dedicated `keyhog-linux-x86_64-cuda` build (significantly faster than
-WGPU on large scans), everywhere else you get the default WGPU + SIMD
-binary. Apple Silicon hosts get an explicit "Metal GPU acceleration
-coming soon" note. Each download is SHA256-verified against the
-release-side checksum file before install.
+The installer auto-detects host state and picks a sensible default:
+**WGPU + SIMD everywhere**, including on Linux NVIDIA hosts - WGPU runs
+the same vyre AC / RulePipeline dispatch on the GPU via the vulkan
+backend, with a smaller binary and no `libcuda.so` runtime dependency.
+The dedicated `keyhog-linux-x86_64-cuda` variant is only auto-picked
+when the full CUDA toolkit is present (nvcc on PATH, `$CUDA_HOME` set,
+or `/usr/local/cuda` exists) - the signal that you actively run a CUDA
+development setup, not just an NVIDIA driver. Apple Silicon hosts get
+an explicit "Metal GPU acceleration coming soon" note. Each download
+is SHA256-verified against the release-side checksum file before
+install.
 
-Override the variant with `KEYHOG_VARIANT=cuda` (force CUDA, requires
-libcuda.so) or `KEYHOG_VARIANT=cpu` (force the default WGPU + SIMD
-build). Pin a version with `KEYHOG_VERSION=v0.5.33`. Change the
-install dir with `KEYHOG_INSTALL=/usr/local/bin`.
+Override the variant with `KEYHOG_VARIANT=cuda` (force the native CUDA
+build, requires `libcuda.so` at runtime) or `KEYHOG_VARIANT=cpu` (force
+the default WGPU + SIMD build, skip GPU detection entirely). Pin a
+version with `KEYHOG_VERSION=v0.5.34`. Change the install dir with
+`KEYHOG_INSTALL=/usr/local/bin`.
 
 Three diagnostic modes ship with the same script:
 ```bash
@@ -99,6 +104,13 @@ keyhog scan --docker-image registry/app:v1             # Docker image layers
 keyhog scan --s3-bucket logs-prod --s3-prefix /        # S3 objects (--s3-endpoint for non-AWS)
 keyhog scan --github-org acme --github-token "$GH_PAT" # every repo in a GitHub org (PAT required)
 keyhog scan-system --space 50G                         # walk every drive, every git history
+```
+
+Interactive dashboard:
+
+```bash
+keyhog tui demo                       # live finding feed + GPU panel + stats
+keyhog tui . --throttle-ms 200        # paced scan, useful for recordings/demos
 ```
 
 Filter, format, gate:
@@ -208,7 +220,7 @@ your own fixtures.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.33
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
   with:
     path: .
     severity: high       # info | low | medium | high | critical
@@ -236,7 +248,7 @@ Or via the `pre-commit` framework:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.33
+    rev: v0.5.34
     hooks:
       - id: keyhog
 ```
@@ -443,3 +455,18 @@ Thanks to these projects and their contributors.
 MIT. Use commercially, embed, fork, sell a hosted version. The
 detector TOMLs are also MIT . adding one is a 5-line PR with zero
 legal friction.
+
+---
+
+## Star history
+
+If keyhog has saved you from leaking a credential, a star is the
+cheapest way to tell the next person it exists.
+
+<a href="https://star-history.com/#santhsecurity/keyhog&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=santhsecurity/keyhog&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=santhsecurity/keyhog&type=Date" />
+    <img alt="Star history of santhsecurity/keyhog" src="https://api.star-history.com/svg?repos=santhsecurity/keyhog&type=Date" />
+  </picture>
+</a>

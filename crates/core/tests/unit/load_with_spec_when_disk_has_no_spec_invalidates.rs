@@ -8,7 +8,7 @@ fn sample_hash(s: &[u8]) -> [u8; 32] {
 }
 #[test]
 fn load_with_spec_when_disk_has_no_spec_invalidates() {
-    // Old save() (no spec) must NOT satisfy a load_with_spec gate —
+    // Old save() (no spec) must NOT satisfy a load_with_spec gate -
     // missing means "we don't know which detector set wrote this,"
     // so treat as cold-start under the strict path.
     let dir = tempfile::tempdir().unwrap();

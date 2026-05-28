@@ -125,7 +125,7 @@ fn main() {
         let Some(eva) = c.evasion.first() else {
             continue;
         };
-        // Match against positive credential — evasion field may drift from surfaced value.
+        // Match against positive credential - evasion field may drift from surfaced value.
         let target_cred = &pos.credential;
         if surfaces(&scanner, &eva.text, target_cred) {
             continue;

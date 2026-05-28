@@ -38,7 +38,7 @@ regex = "AzureWebJobsStorage[=:\\s\"']+[^\"']*AccountKey=([A-Za-z0-9+/]{86}={1,2
 description = "Azure WebJobs storage AccountKey"
 group = 1
 
-# NOTE: no `[detector.verify]` block — Azure Shared Key auth requires
+# NOTE: no `[detector.verify]` block - Azure Shared Key auth requires
 # HMAC-SHA256 of a canonicalized request signed with the key. That sign
 # algorithm isn't an `AuthSpec::Bearer|Basic|Query|AwsV4|Header|Script`
 # variant; until a dedicated `AuthSpec::AzureSharedKey` lands, this

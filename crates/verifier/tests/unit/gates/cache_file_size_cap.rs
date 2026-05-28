@@ -7,6 +7,6 @@ fn cache_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "cache: {lines} lines exceeds 500-line cap — split module"
+        "cache: {lines} lines exceeds 500-line cap - split module"
     );
 }

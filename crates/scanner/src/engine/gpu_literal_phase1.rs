@@ -17,9 +17,18 @@ impl CompiledScanner {
         // GPU code path for both CUDA and WGPU. KEYHOG_GPU_KERNEL=
         // literal-set forces the broken path for diagnostic /
         // bisection use; the default is now AC for every GPU backend.
-        let kernel_env = std::env::var("KEYHOG_GPU_KERNEL").ok();
-        let force_literal_set =
-            matches!(kernel_env.as_deref(), Some("literal-set") | Some("literal_set"));
+        // Cache the env-var lookup. `scan_coalesced_gpu_phase1` is called
+        // per batched chunk group; reading env::var on the hot path costs
+        // ~200 ns per call which adds up to milliseconds across 1k+
+        // chunks. The diagnostic override is process-static so caching
+        // once is exact.
+        static FORCE_LITERAL_SET: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let force_literal_set = *FORCE_LITERAL_SET.get_or_init(|| {
+            matches!(
+                std::env::var("KEYHOG_GPU_KERNEL").ok().as_deref(),
+                Some("literal-set") | Some("literal_set")
+            )
+        });
         if !force_literal_set {
             return self.scan_coalesced_gpu_ac_phase1(chunks);
         }
@@ -43,7 +52,7 @@ impl CompiledScanner {
         // byte-identical to the input on 4-aligned slices (see
         // `vyre_foundation::byte_pack::pack_haystack_u32`). On a 1 GiB
         // scan with 2 MiB shards that's 512 shards x 2x = ~4 GiB of
-        // throwaway allocations — load-bearing on the 25s gap GPU
+        // throwaway allocations - load-bearing on the 25s gap GPU
         // currently loses to SIMD at scale. Padding the source buffer
         // once and slicing each shard collapses that to zero alloc per
         // shard. Padding bytes are NUL, which no detector literal can
@@ -56,7 +65,7 @@ impl CompiledScanner {
         #[cfg(target_os = "linux")]
         // SAFETY: `buffer` is a live `Vec<u8>` whose `as_ptr()` and
         // `len()` describe a valid memory range owned by this scope.
-        // `madvise` is advisory — the kernel may ignore it on
+        // `madvise` is advisory - the kernel may ignore it on
         // non-page-aligned ranges; we treat the call as best-effort
         // and don't check the return value.
         unsafe {
@@ -92,12 +101,13 @@ impl CompiledScanner {
         // dimension (WebGPU spec). Vyre's GpuLiteralSet uses
         // workgroup_size_x = 32, so a single dispatch can handle at
         // most 65535 × 32 = 2,097,120 input bytes. For coalesced
-        // batches larger than this (which is now typical with the
-        // tier-aware 2 MiB activation threshold + the orchestrator's
-        // 256 MiB BATCH_BYTES_BUDGET), shard the buffer into
-        // 2-MiB-or-less pieces, dispatch each, and merge the matches
-        // with a `start` offset added to put them back into the
-        // global buffer's coordinate space.
+        // batches larger than this (always true with the tier-aware
+        // 2 MiB activation threshold + the orchestrator's adaptive
+        // `batch_bytes_budget` - 256 MiB default, up to 1 GiB on
+        // 24-GiB-VRAM cards), shard the buffer into 2-MiB-or-less
+        // pieces, dispatch each, and merge the matches with a
+        // `start` offset added to put them back into the global
+        // buffer's coordinate space.
         //
         // Shard size: 65535 (max workgroups per dim) × 32 (vyre's
         // workgroup_size_x) = 2,097,120 bytes. Exactly 2 MiB =
@@ -107,7 +117,9 @@ impl CompiledScanner {
         //
         // Extra dispatches add ~100 µs each on a high-tier GPU; for
         // a 256 MiB batch that's ~12 ms of overhead vs SIMD's ~70 s
-        // — still a 5800× win.
+        // (a 5800× win). On a 1 GiB batch (5090-class adapter) the
+        // shard count rises 4× but the GPU-vs-SIMD ratio widens
+        // because per-shard dispatch is amortized over more bytes.
         // Dynamic per-vyre-workgroup: each shard covers
         // (max_workgroups_per_dim × workgroup_size_x) bytes.
         // wgpu caps workgroups per dimension at 65 535; vyre's
@@ -125,7 +137,7 @@ impl CompiledScanner {
         // The shard boundary itself is wgpu's `dispatch_workgroups`
         // limit (65 535 workgroups per dimension × 32-byte workgroup
         // size). The previous flow dispatched these one-by-one with
-        // `matcher.scan` — each call records its own encoder,
+        // `matcher.scan` - each call records its own encoder,
         // submits, and `device.poll(Wait)`s. On a 1 GiB batch with
         // 512 shards that adds up to ~50 ms × 512 = 25 s of pure
         // host-side dispatch overhead, *not* GPU compute.
@@ -133,7 +145,7 @@ impl CompiledScanner {
         // `WgpuBackend::dispatch_borrowed_batch` records *all* shard
         // dispatches into one command encoder, single submit, single
         // poll. For 512 shards the wait collapses from ~25 s to
-        // a single GPU drain — close to the actual compute time.
+        // a single GPU drain - close to the actual compute time.
         let mut shard_ranges: Vec<(usize, usize)> = Vec::new();
         let mut shard_start = 0usize;
         while shard_start < buffer.len() {
@@ -168,7 +180,7 @@ impl CompiledScanner {
 
         // Per-shard tiny bytes (shard_len scalar + the two atomic
         // counters + dispatch config). The haystack input is the
-        // 4-byte-aligned source buffer sliced in place — no Vec<u8>
+        // 4-byte-aligned source buffer sliced in place - no Vec<u8>
         // packing allocation per shard (see the buffer padding above
         // for the rationale).
         struct ShardOwned {
@@ -199,7 +211,7 @@ impl CompiledScanner {
         // `GpuLiteralSet::scan` because the buffer-decl order is the
         // contract between host inputs and GPU kernel binding. The
         // haystack slot is now a direct slice into the padded source
-        // buffer — no per-shard packing allocation.
+        // buffer - no per-shard packing allocation.
         let shard_input_arrays: Vec<[&[u8]; 8]> = shard_owned
             .iter()
             .zip(shard_ranges.iter())
@@ -218,22 +230,47 @@ impl CompiledScanner {
             .collect();
 
         // vyre's wgpu readback ring is sized at DEFAULT_RING_SLOTS
-        // (lifted to 2048 in vendor/vyre — see
+        // (lifted to 2048 in vendor/vyre - see
         // `runtime/readback_ring.rs` for the rationale). Each
-        // GpuLiteralSet dispatch produces 2 readback buffers,
-        // and we pre-pack each shard's haystack into a Vec<u8>
-        // of ~shard_size before issuing the batch. Capping at
-        // 64 shards/batch keeps the transient host-side packing
-        // memory bounded to ~128 MiB even on multi-GiB scans,
-        // and leaves the 2048-slot ring deeply under-subscribed
-        // so back-to-back batches don't ever stall on slot
-        // collection. A 1 GiB scan now issues 8 sequential
-        // batched dispatches (vs 512 sequential individual ones
-        // pre-fix), which is the practical sweet spot.
-        const MAX_SHARDS_PER_GPU_BATCH: usize = 64;
+        // GpuLiteralSet dispatch produces 2 readback buffers, so
+        // a batch of N shards burns 2N slots from the 2048-slot
+        // ring. The other constraint is host-side memory: each
+        // shard's haystack is borrowed (no copy), but its
+        // per-dispatch config + atomic counters still allocate
+        // ~24 bytes per shard. The real cost is the input-arrays
+        // Vec<[&[u8]; 8]> at ~64 bytes per entry.
+        //
+        // Adaptive batch cap: a bigger batch flattens the
+        // command-encoder cost across more shards and shortens
+        // the wall-clock for a multi-GiB scan, but climbs
+        // the ring-slot occupancy. 64 was the original safe
+        // value for small hosts; 256 still leaves the 2048-slot
+        // ring deeply under-subscribed and matches the workload
+        // a 24 GiB-VRAM card actually wants.
+        //
+        //   total RAM   shards/batch   1-GiB-scan sequential batches
+        //   < 16 GiB        64           ≥ 8
+        //   16-32 GiB      128             4
+        //   ≥ 32 GiB       256             2
+        //
+        // The 96-GiB-RAM RTX-5090 workstation case drops from
+        // 8 sequential batched dispatches to 2, cutting GPU
+        // pipeline-drain stalls roughly 4x on a 1-GiB batch.
+        let max_shards_per_gpu_batch: usize = {
+            let total_ram_mb = crate::hw_probe::probe_hardware()
+                .total_memory_mb
+                .unwrap_or(0);
+            if total_ram_mb >= 32 * 1024 {
+                256
+            } else if total_ram_mb >= 16 * 1024 {
+                128
+            } else {
+                64
+            }
+        };
         let mut matches: Vec<vyre_libs::scan::LiteralMatch> = Vec::new();
-        for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
-            let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
+        for sub_start in (0..shard_count).step_by(max_shards_per_gpu_batch) {
+            let sub_end = (sub_start + max_shards_per_gpu_batch).min(shard_count);
             let sub_inputs: Vec<&[&[u8]]> = (sub_start..sub_end)
                 .map(|i| &shard_input_arrays[i][..])
                 .collect();
@@ -294,7 +331,7 @@ impl CompiledScanner {
                         cap = shard_cap,
                         count,
                         shard_index = i,
-                        "GPU shard exceeded its cap — truncation possible; falling back to CPU"
+                        "GPU shard exceeded its cap: truncation possible; falling back to CPU"
                     );
                     return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
                 }
@@ -323,86 +360,20 @@ impl CompiledScanner {
             elapsed_ms,
             "vyre GPU batched scan completed"
         );
-        // (Sharded path handles per-shard truncation above; no
-        // whole-buffer truncation check needed here.)
-        // Per-pid region dedup via the shared vyre primitive instead of
-        // re-implementing span coalescing here. `dedup_regions_inplace`
-        // sorts by `(pid, start, end)` and folds same-pid overlapping
-        // spans, eliminating the redundant downstream trigger-bitmask
-        // bumps that duplicate `(pid, start, end)` triples used to
-        // cause. We then re-sort by `start` for the chunk-attribution
-        // walk that follows.
-        // Per-pid region dedup: sort by (pattern_id, start, end) and fold
-        // overlapping same-pid spans in-place. Avoids the intermediate
-        // Vec<RegionTriple> → Vec<LiteralMatch> round-trip that doubled
-        // the allocation cost of this path.
-        {
-            matches.sort_unstable_by(|a, b| {
-                a.pattern_id
-                    .cmp(&b.pattern_id)
-                    .then(a.start.cmp(&b.start))
-                    .then(a.end.cmp(&b.end))
-            });
-            // Fold overlapping same-pid spans
-            let mut write = 0;
-            for read in 1..matches.len() {
-                if matches[read].pattern_id == matches[write].pattern_id
-                    && matches[read].start <= matches[write].end
-                {
-                    // Extend the current region
-                    if matches[read].end > matches[write].end {
-                        matches[write] = vyre_libs::scan::LiteralMatch::new(
-                            matches[write].pattern_id,
-                            matches[write].start,
-                            matches[read].end,
-                        );
-                    }
-                } else {
-                    write += 1;
-                    matches[write] = matches[read];
-                }
-            }
-            if !matches.is_empty() {
-                matches.truncate(write + 1);
-            }
-        }
-        matches.sort_unstable_by_key(|matched| matched.start);
-
+        // Per-pid dedup + chunk attribution lives in `gpu_postprocess`,
+        // shared with the AC kernel phase-1 path. The downstream
+        // `scan_prepared_with_pattern_hits` consumer requires matches
+        // anchored to chunk-local `(pid, local_start, local_end)`
+        // triples sorted by start so the regex confirmation step runs
+        // anchored at each hit rather than re-sweeping each chunk.
+        super::gpu_postprocess::fold_overlapping_same_pid_inplace(&mut matches);
         let total_patterns = self.ac_map.len() + self.fallback.len();
-        // Per-chunk hit list (pattern_id, chunk-local-start, chunk-local-end).
-        // Replaces the per-chunk bitmap so the downstream regex
-        // confirmation can run *anchored* at each hit instead of
-        // sweeping the entire chunk for every triggered pattern. See
-        // `scan_prepared_with_pattern_hits` for the rationale.
-        let mut per_chunk_hits: Vec<Vec<(u32, u32, u32)>> =
-            chunks.iter().map(|_| Vec::new()).collect();
-
-        let mut cursor = 0usize;
-        for matched in &matches {
-            let global_start = matched.start as usize;
-            let global_end = matched.end as usize;
-            while cursor < entries.len() {
-                let (_, offset, len) = entries[cursor];
-                if global_start < offset + len {
-                    break;
-                }
-                cursor += 1;
-            }
-            if cursor >= entries.len() {
-                break;
-            }
-
-            let (chunk_index, offset, len) = entries[cursor];
-            if global_start < offset || global_end > offset + len {
-                continue;
-            }
-            let pattern_index = matched.pattern_id as usize;
-            if pattern_index < total_patterns {
-                let local_start = (global_start - offset) as u32;
-                let local_end = (global_end - offset) as u32;
-                per_chunk_hits[chunk_index].push((matched.pattern_id, local_start, local_end));
-            }
-        }
+        let per_chunk_hits = super::gpu_postprocess::attribute_matches_to_chunks(
+            &matches,
+            &entries,
+            total_patterns,
+            chunks.len(),
+        );
 
         GpuPhase1Output::Hits(per_chunk_hits)
     }

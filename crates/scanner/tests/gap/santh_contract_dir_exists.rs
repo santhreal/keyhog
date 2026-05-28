@@ -7,6 +7,6 @@ fn contract_directory_exists() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/contract");
     assert!(
         dir.is_dir(),
-        "KH-GAP-012: missing tests/contract/ — external surface tests belong here per STANDARD.md"
+        "KH-GAP-012: missing tests/contract/ - external surface tests belong here per STANDARD.md"
     );
 }

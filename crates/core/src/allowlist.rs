@@ -5,10 +5,10 @@
 ///
 /// Users can create a `.keyhogignore` file to suppress known FPs.
 /// Format (one per line):
-///   - `hash:<sha256>` — ignore a specific credential by hash
-///   - `detector:<id>` — ignore all findings from a detector
-///   - `path:<glob>` — ignore files matching a glob pattern
-///   - `# comment` — comments
+///   - `hash:<sha256>` - ignore a specific credential by hash
+///   - `detector:<id>` - ignore all findings from a detector
+///   - `path:<glob>` - ignore files matching a glob pattern
+///   - `# comment` - comments
 ///   - blank lines are skipped
 use std::collections::HashSet;
 use std::path::Component;
@@ -104,7 +104,7 @@ impl Allowlist {
             let metadata = parts.next().unwrap_or("");
             let parsed_meta = parse_inline_metadata(metadata);
 
-            // Drop entries whose `expires` is past — keeps `.keyhogignore`
+            // Drop entries whose `expires` is past - keeps `.keyhogignore`
             // self-cleaning for short-lived approvals (Tier-B #18 governance).
             if let Some(exp) = parsed_meta.expires.as_deref() {
                 if exp < today.as_str() {
@@ -164,7 +164,7 @@ impl Allowlist {
                 // match an explicit `hash:` / `detector:` / `path:` prefix
                 // and isn't a bare hash is interpreted as a path glob,
                 // matching `.gitignore` UX (`*.log`, `node_modules/`,
-                // `vendor/**/*.json`). kimi-1 dogfood #129 — the prior
+                // `vendor/**/*.json`). kimi-1 dogfood #129 - the prior
                 // behavior emitted a warning and silently dropped the
                 // line, which is the worst of both worlds: every
                 // `.gitignore` users copied over was dead.
@@ -266,7 +266,7 @@ impl Allowlist {
         // Only compare against the parsed-hex form. Earlier versions also
         // hashed the raw input as a fallback, which silently encouraged users
         // to put plaintext credentials in `.keyhogignore` (the file is often
-        // committed by accident — see audit release-2026-04-26). The
+        // committed by accident - see audit release-2026-04-26). The
         // `hash:` parser already rejects non-64-hex inputs at load time, so
         // every legitimate suppressing entry passes through `parse_sha256_hex`
         // here.

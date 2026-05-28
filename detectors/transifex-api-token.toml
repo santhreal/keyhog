@@ -17,7 +17,7 @@ group = 1
 
 [[detector.patterns]]
 # `[\s\S]` rather than `.` so the domain anchor can be on a separate
-# line from the credential — the canonical curl/comment shape is
+# line from the credential - the canonical curl/comment shape is
 # `# https://www.transifex.com/api/3/\nAuthorization: Bearer <tok>`,
 # which `.*` (no `s` flag in Hyperscan) would not span. Lazy `*?` so
 # we don't accidentally swallow trailing tokens on the same chunk.

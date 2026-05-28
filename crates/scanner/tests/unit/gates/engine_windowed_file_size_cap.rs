@@ -7,6 +7,6 @@ fn engine_windowed_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "engine::windowed: {lines} lines exceeds 500-line cap — split module"
+        "engine::windowed: {lines} lines exceeds 500-line cap - split module"
     );
 }

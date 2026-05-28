@@ -15,5 +15,5 @@ fn s3_source_empty_bucket_still_named_s3() {
 #[cfg(not(feature = "s3"))]
 #[test]
 fn s3_gate_skipped_without_feature() {
-    // s3 feature disabled in default test build — gate lives behind feature flag.
+    // s3 feature disabled in default test build - gate lives behind feature flag.
 }

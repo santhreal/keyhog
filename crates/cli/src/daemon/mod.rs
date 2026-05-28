@@ -10,15 +10,15 @@
 //! repeat-scan latency from ~3 s + scan to sub-ms IPC + scan.
 //!
 //! Surface:
-//! - `keyhog daemon start` — bind the socket, compile the scanner,
+//! - `keyhog daemon start` - bind the socket, compile the scanner,
 //!   accept connections forever (until `daemon stop`).
-//! - `keyhog daemon stop` — send `Shutdown` to the running daemon,
+//! - `keyhog daemon stop` - send `Shutdown` to the running daemon,
 //!   wait for the socket to disappear.
-//! - `keyhog daemon status` — connect, request `Health`, print
+//! - `keyhog daemon status` - connect, request `Health`, print
 //!   uptime + scans-served + active-scan count.
-//! - `keyhog scan ... --daemon` — force the scan through a running
+//! - `keyhog scan ... --daemon` - force the scan through a running
 //!   daemon; errors if no daemon is up.
-//! - `keyhog scan ... --no-daemon` — force in-process scan even when
+//! - `keyhog scan ... --no-daemon` - force in-process scan even when
 //!   a daemon is up.
 
 pub mod client;

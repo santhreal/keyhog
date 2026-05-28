@@ -43,7 +43,7 @@ const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 /// Strip userinfo (`user:password@`) from a URL before logging.
 ///
 /// Operators sometimes pass a URL with embedded credentials to scan a
-/// private endpoint — `https://user:SECRET_TOKEN@host/path`. Without
+/// private endpoint - `https://user:SECRET_TOKEN@host/path`. Without
 /// redaction, every tracing::warn!/info! call below would ship that
 /// token straight into the operator's logging pipeline (Splunk,
 /// Datadog, journald), defeating the whole point of running a secret
@@ -80,7 +80,7 @@ fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
 ///   - hostname aliases (localhost, *.local, *.internal, *.localdomain)
 ///   - the metadata.google.internal alias
 ///
-/// This is a STRING-level pre-filter — it doesn't resolve DNS. Hosts
+/// This is a STRING-level pre-filter - it doesn't resolve DNS. Hosts
 /// that look public but resolve to private IPs aren't caught here;
 /// that requires a custom resolver with post-connect re-check, which
 /// reqwest doesn't currently expose. The check matches the same shape
@@ -119,7 +119,7 @@ fn is_disallowed_ipv4(ip: std::net::Ipv4Addr) -> bool {
 }
 
 fn is_disallowed_ipv6(ip: std::net::Ipv6Addr) -> bool {
-    // An IPv4-mapped IPv6 (`::ffff:a.b.c.d`) routes to the v4 address —
+    // An IPv4-mapped IPv6 (`::ffff:a.b.c.d`) routes to the v4 address -
     // `Ipv6Addr::is_loopback` only matches the literal `::1`, so
     // `[::ffff:127.0.0.1]` would otherwise sneak past the loopback gate
     // and let the WebSource exfil to a local service. Unwrap the inner
@@ -279,7 +279,7 @@ mod redact_url_tests {
 
     #[test]
     fn does_not_confuse_path_at_with_userinfo() {
-        // The `@` is in the path, NOT the authority — must NOT redact.
+        // The `@` is in the path, NOT the authority - must NOT redact.
         let url = "https://example.com/orgs/foo/users/@me";
         assert_eq!(redact_url(url), url);
     }
@@ -352,7 +352,7 @@ impl WebSource {
     /// Uses `reqwest::blocking` directly; the blocking client internally manages
     /// its own background runtime, so no dedicated thread wrapper is required.
     fn fetch_all(&self) -> Vec<Result<Chunk, SourceError>> {
-        // Auto-decompression DISABLED — without this, reqwest expands gzip
+        // Auto-decompression DISABLED - without this, reqwest expands gzip
         // bodies to completion before we can check size, opening a gzip-bomb
         // DoS. Decompression is opt-in per call where we explicitly want it.
         let client = match crate::http::blocking_client_builder(&self.http) {
@@ -403,7 +403,7 @@ fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk,
         let safe_url = redact_url(url);
         return vec![Err(SourceError::Other(format!(
             "refusing to fetch {safe_url}: host resolves to a private / \
-             loopback / link-local / metadata-service address — \
+             loopback / link-local / metadata-service address - \
              WebSource only fetches public URLs"
         )))];
     }
@@ -584,7 +584,7 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
 ///
 /// Pre-flight Content-Length and streamed cap-aware copy. The previous
 /// version called `.text()` (which auto-decompresses gzip/deflate to
-/// completion) before checking the size — a 1 MB gzip bomb expanding to
+/// completion) before checking the size - a 1 MB gzip bomb expanding to
 /// 1+ GB would OOM before this check fired. See `audit release-2026-04-26
 /// web.rs:287-301`.
 fn read_text_response(resp: reqwest::blocking::Response) -> Result<String, SourceError> {

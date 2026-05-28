@@ -7,6 +7,6 @@ fn simd_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "simd: {lines} lines exceeds 500-line cap — split module"
+        "simd: {lines} lines exceeds 500-line cap - split module"
     );
 }

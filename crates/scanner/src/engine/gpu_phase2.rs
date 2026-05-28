@@ -18,7 +18,7 @@ impl CompiledScanner {
                 // calls `post_process_matches` after the in-chunk scan,
                 // which decode-recurses (base64/hex/url) and reassembles
                 // cross-chunk-fragment secrets. The GPU path previously
-                // skipped this — the gpu_parity test catches the
+                // skipped this - the gpu_parity test catches the
                 // missed StackBlitz finding extracted from the
                 // base64-decoded sub-chunk of the stripe-aws fixture.
                 // A prior comment here claimed SIMD's `scan_coalesced`

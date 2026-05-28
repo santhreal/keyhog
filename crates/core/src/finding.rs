@@ -1,6 +1,10 @@
 //! Scanner findings: the output type for detected secrets with location,
 //! confidence, detector metadata, and optional verification status.
 
+// Debt bucket: 16 public items predating the crate floor raising `missing_docs`
+// to `warn`. Public output schema; remove once each carries a doc line.
+#![allow(missing_docs)]
+
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -14,7 +18,7 @@ use crate::Severity;
 /// be `NaN` (sanitized at construction time). This keeps the manual `Eq` impl
 /// reflexive, which downstream code relies on for `HashMap`/`BTreeMap` keys.
 ///
-/// Manual `Debug` impl redacts the `credential` field — the previous
+/// Manual `Debug` impl redacts the `credential` field - the previous
 /// derive-`Debug` was a CRITICAL leak vector (any `{:?}` print, panic
 /// handler, or `tracing::error!(?match)` would expose plaintext). See
 /// audit kimi-wave1 finding 1.1.
@@ -178,7 +182,7 @@ pub struct MatchLocation {
     pub date: Option<Arc<str>>,
 }
 
-/// A finding after verification — the final output.
+/// A finding after verification - the final output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifiedFinding {
     /// Stable detector identifier.

@@ -40,7 +40,7 @@ fn save_merges_with_existing_disk_entries() {
     idx_b.save_with_spec(&cache_path, &spec).unwrap();
 
     // Reload with the same spec. BOTH /a/file AND /b/file must
-    // be present — process A's entry survived process B's save.
+    // be present - process A's entry survived process B's save.
     let loaded = MerkleIndex::load_with_spec(&cache_path, &spec);
     assert_eq!(loaded.len(), 2);
     assert!(loaded.metadata_unchanged(Path::new("/a/file"), 100, 10));

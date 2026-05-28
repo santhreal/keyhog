@@ -441,7 +441,7 @@ async fn test_verify_max_inflight_keys() {
 /// `VerifyConfig.proxy = Some("http://127.0.0.1:<port>")`, register a
 /// detector with `verify.url = "http://target.invalid/"`. The verifier
 /// must send its first request bytes to the proxy listener (we don't
-/// implement a real HTTP CONNECT — we just record that SOMETHING hit
+/// implement a real HTTP CONNECT - we just record that SOMETHING hit
 /// the proxy port) rather than failing to resolve `target.invalid`.
 #[tokio::test]
 async fn verifier_routes_through_configured_proxy() {
@@ -456,7 +456,7 @@ async fn verifier_routes_through_configured_proxy() {
         while let Ok((mut stream, _)) = listener.accept().await {
             proxy_hit_clone.store(true, Ordering::SeqCst);
             // Read whatever the client sends, then drop. We don't act as
-            // a real proxy — landing a connection on this port from the
+            // a real proxy - landing a connection on this port from the
             // verifier is the only thing the test needs to observe.
             let mut buf = [0u8; 256];
             let _ = stream.read(&mut buf).await;
@@ -473,7 +473,7 @@ async fn verifier_routes_through_configured_proxy() {
         companions: vec![],
         keywords: vec![],
         verify: Some(VerifySpec {
-            // Use a hostname that will NEVER resolve — if the proxy
+            // Use a hostname that will NEVER resolve - if the proxy
             // isn't wired through, reqwest would try to DNS-lookup
             // `target.invalid`, fail, and `proxy_hit` stays false.
             // With the proxy configured, reqwest CONNECTs to the proxy
@@ -500,7 +500,7 @@ async fn verifier_routes_through_configured_proxy() {
             timeout: Duration::from_secs(2),
             // danger_allow_http needed because the proxy URL itself is HTTP.
             danger_allow_http: true,
-            // The proxy is on 127.0.0.1 (loopback) — allow it through SSRF.
+            // The proxy is on 127.0.0.1 (loopback) - allow it through SSRF.
             danger_allow_private_ips: true,
             proxy: Some(format!("http://127.0.0.1:{proxy_port}")),
             ..Default::default()
@@ -531,11 +531,11 @@ async fn verifier_routes_through_configured_proxy() {
 
     let _ = tokio::time::timeout(Duration::from_secs(5), engine.verify_all(vec![group]))
         .await
-        .expect("verify_all did not complete within 5s — likely deadlock or proxy-resolve hang");
+        .expect("verify_all did not complete within 5s - likely deadlock or proxy-resolve hang");
 
     assert!(
         proxy_hit.load(Ordering::SeqCst),
-        "verifier did not route through the configured proxy — `VerifyConfig.proxy` \
+        "verifier did not route through the configured proxy - `VerifyConfig.proxy` \
          is not reaching the reqwest client. Macro-wiring regression: --proxy \
          silently affects WebSource only, not the verifier."
     );
@@ -543,7 +543,7 @@ async fn verifier_routes_through_configured_proxy() {
 
 /// Companion: prove `insecure_tls = false` (default) refuses to send to a
 /// self-signed-cert proxy / target. The previous build hardcoded
-/// `danger_accept_invalid_certs(false)` with no escape — there was no way
+/// `danger_accept_invalid_certs(false)` with no escape - there was no way
 /// to turn it on. Now `VerifyConfig.insecure_tls = true` should flip it.
 ///
 /// This test only proves the CONFIG plumbs through to reqwest by asserting

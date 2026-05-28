@@ -251,7 +251,7 @@ fn keyword_context(
         "-secret",
     ];
 
-    // ASCII case-insensitive substring search — avoids the
+    // ASCII case-insensitive substring search - avoids the
     // per-call `keyword_line.to_lowercase()` and per-keyword
     // `keyword.to_lowercase()` allocations the previous flow did
     // on every entropy candidate. Mirrors `is_keyword_assignment_line`

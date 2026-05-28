@@ -1,4 +1,4 @@
-//! Comment-embed runner — credentials inside source-code comments.
+//! Comment-embed runner - credentials inside source-code comments.
 //!
 //! `# api_key = "ghp_…"` in a Python file, `// AWS_SECRET="…"` in
 //! a JS file, `/* token=… */` in a Rust block comment, `<!-- … -->`
@@ -11,8 +11,8 @@
 //!
 //! Runner wraps every contract positive in 7 single-line + block-
 //! comment styles, asserts the credential surfaces, and reports the
-//! per-style hit rate. The rate is the moral question — comment
-//! suppression is intentional design in some scanners — but the
+//! per-style hit rate. The rate is the moral question - comment
+//! suppression is intentional design in some scanners - but the
 //! NUMBER must not drift silently.
 //!
 //! Surface
@@ -180,7 +180,7 @@ fn every_positive_swept_through_comment_styles() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — comment runner has nothing to drive"
+        "tests/contracts/ has no *.toml - comment runner has nothing to drive"
     );
 
     let mut per_style: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();

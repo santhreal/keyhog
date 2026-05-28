@@ -16,6 +16,35 @@ use super::CompiledScanner;
 /// per process, not once per scan or once per chunk.
 static RUNTIME_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
+/// Same one-shot guard, scoped to the MegaScan rule-pipeline degrade
+/// path. The two paths fail for different reasons (literal-set: bad
+/// gpu_backend / matcher; MegaScan: regex compile reject) so we want
+/// each to surface independently rather than have one silence the
+/// other.
+static MEGASCAN_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Read KEYHOG_NO_GPU / KEYHOG_REQUIRE_GPU exactly once per process.
+/// Both `deny_silent_gpu_degrade` and `deny_silent_megascan_degrade`
+/// can be invoked per chunk on multi-thousand-chunk scans; un-cached
+/// `std::env::var` is a 200ns+ syscall per call. The values are
+/// process-global and can't change mid-run anyway, so a OnceLock is
+/// exact.
+///
+/// The `no_gpu` flag is true when EITHER the user set
+/// `KEYHOG_NO_GPU=1` OR we auto-detected a CI runner (see
+/// `crate::gpu::env_no_gpu`). The degrade-warning paths consume this
+/// to suppress the "GPU dispatch failed" message that CI runs would
+/// otherwise emit on every scan - on a CI runner there is no GPU,
+/// the CPU path is the right path, and no warning is needed.
+fn cached_gpu_env_flags() -> (bool, bool) {
+    static FLAGS: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+    *FLAGS.get_or_init(|| {
+        let no_gpu = crate::gpu::env_no_gpu();
+        let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+        (no_gpu, require_gpu)
+    })
+}
+
 /// Error message when env forces GPU/MegaScan but the scanner cannot dispatch.
 #[must_use]
 pub fn gpu_forced_unavailable_message(
@@ -33,7 +62,7 @@ pub fn gpu_forced_unavailable_message(
         return None;
     }
     Some(format!(
-        "KEYHOG_BACKEND={} but GPU stack unavailable (gpu_literals={}, gpu_backend={}, gpu_matcher={}) — \
+        "KEYHOG_BACKEND={} but GPU stack unavailable (gpu_literals={}, gpu_backend={}, gpu_matcher={}) - \
          silent CPU fallback is forbidden; unset KEYHOG_BACKEND or install a compatible GPU adapter",
         forced.label(),
         scanner.gpu_literals.is_some(),
@@ -55,8 +84,7 @@ pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) 
     if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
         return;
     }
-    let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
-    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+    let (no_gpu, require_gpu) = cached_gpu_env_flags();
     if require_gpu {
         eprintln!(
             "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU dispatch failed at runtime \
@@ -77,6 +105,37 @@ ones in this process degrade to CPU/SIMD. Often a transient driver issue or a \
 program the GPU lowering pipeline rejects (check the preceding tracing::error \
 line for the underlying message). Set KEYHOG_NO_GPU=1 to silence, or \
 KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+        );
+    }
+}
+
+/// Signal the MegaScan degrade-to-literal-set path. The literal-set
+/// fallback is still a legitimate degradation (same recall, slower on
+/// large pattern sets) but the user asked for the regex-NFA pipeline
+/// explicitly. We respect KEYHOG_REQUIRE_GPU (hard-fail) and emit a
+/// one-shot stderr warning otherwise. KEYHOG_NO_GPU silences it.
+///
+/// `reason` is a human-readable cause string passed by the caller
+/// (regex pipeline compile failed, batch over `MEGASCAN_INPUT_LEN`,
+/// no GPU backend handle). It surfaces in the warning so the operator
+/// can see *why* MegaScan dispatched as literal-set.
+pub fn deny_silent_megascan_degrade(reason: &str) {
+    let (no_gpu, require_gpu) = cached_gpu_env_flags();
+    if require_gpu {
+        eprintln!(
+            "keyhog: KEYHOG_REQUIRE_GPU=1 but MegaScan rule-pipeline dispatch failed ({reason}). \
+Refusing to silently fall back to literal-set."
+        );
+        std::process::exit(2);
+    }
+    if no_gpu {
+        return;
+    }
+    if MEGASCAN_DEGRADE_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: MegaScan rule-pipeline unavailable ({reason}); this scan and any \
+subsequent ones in this process degrade to the literal-set GPU dispatch. \
+Set KEYHOG_NO_GPU=1 to silence, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
         );
     }
 }

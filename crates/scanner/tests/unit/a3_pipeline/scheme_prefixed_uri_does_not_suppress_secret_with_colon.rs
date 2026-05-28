@@ -16,7 +16,7 @@ fn long_random_secret_with_one_colon_not_suppressed() {
         None,
         "generic-secret",
     ));
-    // GitHub PAT with `_` separators but long random suffix — must fire.
+    // GitHub PAT with `_` separators but long random suffix - must fire.
     // `ghp_<36 chars>` form: `ghp` is a 3-char scheme-like prefix but has
     // NO `:`, so the URI gate doesn't trip.
     //

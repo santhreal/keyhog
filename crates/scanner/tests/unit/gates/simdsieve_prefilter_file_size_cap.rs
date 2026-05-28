@@ -7,6 +7,6 @@ fn simdsieve_prefilter_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "simdsieve_prefilter: {lines} lines exceeds 500-line cap — split module"
+        "simdsieve_prefilter: {lines} lines exceeds 500-line cap - split module"
     );
 }

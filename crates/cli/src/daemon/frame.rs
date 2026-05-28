@@ -101,7 +101,7 @@ where
     R: AsyncReadExt + Unpin,
 {
     let mut len_bytes = [0u8; 4];
-    // EOF on the first byte means the peer closed cleanly — propagate
+    // EOF on the first byte means the peer closed cleanly - propagate
     // as None so the caller's loop exits without an error.
     match reader.read_exact(&mut len_bytes).await {
         Ok(_) => {}

@@ -67,7 +67,7 @@ fn git_history_source_collects_added_files_commit_by_commit() {
     assert!(chunks
         .iter()
         .any(|chunk| chunk.metadata.path.as_deref() == Some("second.txt")));
-    // Don't just assert .is_some() — those would still pass if the
+    // Don't just assert .is_some() - those would still pass if the
     // walker emitted empty strings or static placeholders. Pin the
     // ACTUAL git-commit shape: 40-char hex SHA, the test-config
     // author "Test User <test@example.com>", and a non-empty date

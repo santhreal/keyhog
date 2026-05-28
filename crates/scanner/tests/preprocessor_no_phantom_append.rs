@@ -15,7 +15,7 @@
 //!      the original `KEY=value` AND the synthetic `KEY: value`. Pre-fix,
 //!      dedup kept the original as primary and added the synthetic as
 //!      `additional_locations[0]` with `offset = original_end + synth_offset`
-//!      — which lands PAST the source file's EOF. Fix in core/dedup.rs:
+//!      - which lands PAST the source file's EOF. Fix in core/dedup.rs:
 //!      drop additional_locations that share (file, line, source, commit)
 //!      with the primary.
 //!
@@ -116,7 +116,7 @@ fn single_line_env_secret_no_offsets_past_eof_across_dedup() {
     // all carry offsets within the source file. The structured-preprocessor
     // appends synthetic lines past EOF on every value it extracts; if a
     // detector's regex matches the synthetic alias, the offset lands at
-    // ~file_len + small_delta — outside any reader that opens the file
+    // ~file_len + small_delta - outside any reader that opens the file
     // and seeks to it. #16 regression.
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
@@ -180,7 +180,7 @@ fn dedup_suppresses_same_file_same_line_additional_location() {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("/tmp/test.env")),
             line: Some(1),
-            offset: 80, // past EOF — synthetic preprocessor alias
+            offset: 80, // past EOF - synthetic preprocessor alias
             commit: None,
             author: None,
             date: None,

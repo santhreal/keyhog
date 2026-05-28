@@ -16,7 +16,7 @@ description = "Clickatell API Key with context anchor"
 group = 1
 
 # Defect #75: the original `Authorization[=:\s"\' ]+([a-zA-Z0-9_-]{20,})`
-# was completely service-agnostic — anything in an HTTP Authorization
+# was completely service-agnostic - anything in an HTTP Authorization
 # header anywhere in any source tree would match (Rails Ruby files
 # triggered it on `Authorization: 'ALLOWED_HOSTS_IN_DEVELOPMENT'`-shaped
 # config). A Clickatell token has no distinguishing shape from any

@@ -746,16 +746,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = {_toml_str(neg_text1)}
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body - suppression gate matches PLACEHOLDER prefix."
 
 [[negative]]
 text = {_toml_str(neg_text2)}
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body - suppression gate strips it."
 
 [[evasion]]
 text = {_toml_str(evasion_text)}
 credential = {_toml_str(surfaced_credential)}
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope - credential must still surface under this detector."
 
 [perf]
 fixture_bytes = 4096

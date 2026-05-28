@@ -7,7 +7,7 @@ pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -
     let matched = &data[match_start..match_end];
     // Cheap rejects FIRST. The earlier flow always walked the
     // matched-string to count hex digits before checking the length
-    // floor — wasted work for the (very common) sub-16-byte AC
+    // floor - wasted work for the (very common) sub-16-byte AC
     // matches that can't possibly meet the threshold. Reordering
     // skips the count entirely on those.
     if matched.len() < MIN_HEX_MATCH_LEN {
@@ -24,7 +24,7 @@ pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -
 
 /// Returns true as soon as `n` ASCII hex digits have been seen in `s`.
 /// Walking the full string just to compare a count to a threshold is
-/// wasted — for matches with no hex shape at all we exit after a
+/// wasted - for matches with no hex shape at all we exit after a
 /// handful of bytes; for hex-heavy matches the threshold is cleared
 /// long before the end of the credential.
 fn has_at_least_n_hex_digits(s: &str, n: usize) -> bool {

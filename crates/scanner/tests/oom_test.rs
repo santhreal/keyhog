@@ -33,7 +33,7 @@ fn test_large_chunk_skip() {
     );
     assert!(
         elapsed < std::time::Duration::from_secs(10),
-        "skip-gate must short-circuit; got {elapsed:?} (expected < 10s — \
+        "skip-gate must short-circuit; got {elapsed:?} (expected < 10s - \
          if this fails the 512MB scan_windowed gate has regressed and the \
          scanner is doing real work on a 513MB chunk)"
     );

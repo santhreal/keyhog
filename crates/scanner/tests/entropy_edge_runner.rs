@@ -1,10 +1,10 @@
-//! Entropy-edge runner — credential entropy near detector thresholds.
+//! Entropy-edge runner - credential entropy near detector thresholds.
 //!
 //! Most detectors couple a regex to an entropy floor (`>= 4.5 bits`
 //! is the common default; some are tighter at 5.0). Real secrets land
 //! anywhere from 3.5 (very short prefixes + numeric padding) to 6.0
 //! (full base64). The risk is a real credential whose entropy sits
-//! at, say, 4.4 — the regex matches, but the entropy gate drops it.
+//! at, say, 4.4 - the regex matches, but the entropy gate drops it.
 //! This runner perturbs each contract positive's credential body by
 //! injecting low-entropy filler (repeated `aaa`) or high-entropy
 //! noise and records the hit-rate decay curve.
@@ -155,7 +155,7 @@ fn every_positive_swept_through_entropy_rungs() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — entropy-edge runner has nothing to drive"
+        "tests/contracts/ has no *.toml - entropy-edge runner has nothing to drive"
     );
 
     let mut per_rung: BTreeMap<String, (usize, usize)> = BTreeMap::new();
@@ -216,7 +216,7 @@ fn every_positive_swept_through_entropy_rungs() {
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) — \
+        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) - \
          a sharp boundary between rungs pins the entropy floor\n"
     ));
     eprintln!("{summary}");
@@ -227,7 +227,7 @@ fn every_positive_swept_through_entropy_rungs() {
     if strict && original_hits == 0 {
         panic!(
             "entropy-edge: 0/{original_runs} original-credential controls \
-             surfaced — scanner is broken upstream of the entropy gate"
+             surfaced - scanner is broken upstream of the entropy gate"
         );
     }
 }

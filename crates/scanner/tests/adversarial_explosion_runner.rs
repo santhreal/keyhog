@@ -2,7 +2,7 @@
 //!
 //! Takes every positive from every `tests/contracts/*.toml` and
 //! re-embeds the positive's full text inside N structured-format
-//! wrappers — `.env`, JSON, YAML, Dockerfile `ENV`, shell `export`,
+//! wrappers - `.env`, JSON, YAML, Dockerfile `ENV`, shell `export`,
 //! INI, GitHub Actions `env:`, Kubernetes `Secret` manifest. Each
 //! wrapper preserves the original credential bytes verbatim; the
 //! detector must still surface the same `credential` value.
@@ -11,7 +11,7 @@
 //! ---------------
 //! `contracts_runner.rs` proves each detector's *canonical* positive
 //! fires. That's a 1-D corpus: text matters, format doesn't. Real
-//! secrets land inside formats every day — operators stash AWS creds
+//! secrets land inside formats every day - operators stash AWS creds
 //! in `.env`, GitHub Actions, Kubernetes Secret manifests, Helm
 //! values, Terraform `tfvars`, JSON config, YAML CI files. A detector
 //! that fires on the bare text but misses the same text inside a JSON
@@ -21,7 +21,7 @@
 //! ------------
 //! 348 contracts × ~2 positives × 8 wrappers = roughly **5 500
 //! variant assertions** per run, all driven from the existing
-//! contract corpus — no new fixture data, no per-detector
+//! contract corpus - no new fixture data, no per-detector
 //! contributor work, just N more places the engine has to fire.
 //!
 //! Failure model
@@ -39,7 +39,7 @@
 //! string near the value) to fire. Wrapping only the bare credential
 //! would strip that context and produce systematic false negatives
 //! that aren't really detector bugs. By wrapping the full positive
-//! text — companion + secret in one blob — we keep the context the
+//! text - companion + secret in one blob - we keep the context the
 //! detector contracted to need while still testing the
 //! format-portability claim.
 
@@ -50,7 +50,7 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
 
-// ── manifest types — kept in sync with contracts_runner.rs ──────────
+// ── manifest types - kept in sync with contracts_runner.rs ──────────
 
 #[derive(Debug, Deserialize)]
 struct Contract {
@@ -103,7 +103,7 @@ fn load_contracts() -> Vec<(PathBuf, Contract)> {
             continue;
         };
         let Ok(contract) = toml::from_str::<Contract>(&text) else {
-            // Skip malformed contracts — contracts_runner.rs already
+            // Skip malformed contracts - contracts_runner.rs already
             // owns the strict-parse gate; we don't want to fail twice
             // on the same malformed TOML.
             continue;
@@ -125,7 +125,7 @@ fn scanner() -> CompiledScanner {
 ///
 /// Each variant is a real-world format an operator commits secrets
 /// into. The wrapper functions embed the *raw* positive text without
-/// touching the credential bytes — they just surround it with the
+/// touching the credential bytes - they just surround it with the
 /// format's delimiters / keys / quoting.
 #[derive(Debug, Clone, Copy)]
 enum Wrapper {
@@ -232,7 +232,7 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — the explosion runner has \
+        "tests/contracts/ has no *.toml - the explosion runner has \
          nothing to drive"
     );
 
@@ -313,7 +313,7 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
     } else if cases_run > 0 {
         eprintln!(
             "adversarial-explosion: all {cases_run} variants fired the expected \
-             detector — the corpus is wrapper-tight."
+             detector - the corpus is wrapper-tight."
         );
     }
 }

@@ -1,4 +1,4 @@
-//! FILE_GATE micro tests — one happy + error (+ boundary/adversarial) per scanner src file.
+//! FILE_GATE micro tests - one happy + error (+ boundary/adversarial) per scanner src file.
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
@@ -52,6 +52,7 @@ fn demo_detector(regex: &str, keyword: &str) -> DetectorSpec {
             regex: regex.into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,
@@ -447,7 +448,7 @@ fn decode_impl_error() {
     );
 }
 
-// ── engine/* — see tests/unit/engine.rs, engine_backend.rs, segment_attribution.rs
+// ── engine/* - see tests/unit/engine.rs, engine_backend.rs, segment_attribution.rs
 // ── crates/scanner/src/engine/backend.rs ──────────────────────────────
 #[test]
 fn engine_backend_happy() {
@@ -463,6 +464,7 @@ fn engine_backend_happy() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,
@@ -495,6 +497,7 @@ fn engine_backend_error() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

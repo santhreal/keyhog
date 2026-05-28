@@ -13,7 +13,7 @@ fn binary_mod_uses_bounded_read_or_mmap() {
         "KH-GAP-010: binary source must document bounded read (mmap or explicit cap)"
     );
 
-    // Current implementation loads full file — this gate fails until streaming lands.
+    // Current implementation loads full file - this gate fails until streaming lands.
     assert!(
         !src.contains("std::fs::read("),
         "KH-GAP-010: replace std::fs::read with bounded/mmap path for large binaries"

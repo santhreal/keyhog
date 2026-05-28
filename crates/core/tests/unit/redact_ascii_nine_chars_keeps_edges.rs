@@ -1,4 +1,4 @@
-//! Migrated from `src/lib.rs` — ASCII redaction keeps first/last four chars.
+//! Migrated from `src/lib.rs` - ASCII redaction keeps first/last four chars.
 
 use keyhog_core::redact;
 

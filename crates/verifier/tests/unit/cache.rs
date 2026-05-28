@@ -32,7 +32,7 @@ fn cache_ttl_expiry() {
 #[test]
 fn evict_expired() {
     let cache = VerificationCache::new(Duration::from_millis(1));
-    // Insert TWO entries — one we let expire, one we insert AFTER the
+    // Insert TWO entries - one we let expire, one we insert AFTER the
     // sleep so it's still fresh when evict_expired runs. Pre-fix the
     // assertion was just `is_empty()`, which would still pass on a
     // bug that removed every entry regardless of TTL.

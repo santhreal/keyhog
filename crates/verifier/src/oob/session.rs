@@ -124,7 +124,7 @@ pub struct OobSession {
     /// id → all observed interactions for that id.
     ///
     /// One callback URL typically triggers a DNS lookup AND an HTTP request
-    /// (DNS first, then HTTP to the resolved IP) — both arrive at interactsh
+    /// (DNS first, then HTTP to the resolved IP) - both arrive at interactsh
     /// with the same `unique_id` but different protocols. The previous
     /// first-write-wins storage discarded the second one, which silently
     /// turned `OobProtocol::Http` detectors into FNs whenever DNS happened
@@ -142,7 +142,7 @@ pub struct OobSession {
 
 impl OobSession {
     /// Boot the session: register with the collector and spawn the poller.
-    /// Errors here are surface-level — caller logs and continues with OOB
+    /// Errors here are surface-level - caller logs and continues with OOB
     /// disabled rather than aborting the scan.
     pub async fn start(
         http: Client,
@@ -184,7 +184,7 @@ impl OobSession {
     }
 
     /// Park until an interaction arrives for `unique_id`, or `timeout`
-    /// elapses, or shutdown — whichever comes first.
+    /// elapses, or shutdown - whichever comes first.
     pub async fn wait_for(
         &self,
         unique_id: &str,
@@ -228,8 +228,8 @@ impl OobSession {
         // re-peeking observations so the sequence per loop iteration is:
         //
         //   1. Build a fresh notified future, enable() it (registers waiter).
-        //   2. Re-peek observations — catches anything stored before step 1.
-        //   3. await the notified future — catches anything stored after
+        //   2. Re-peek observations - catches anything stored before step 1.
+        //   3. await the notified future - catches anything stored after
         //      step 1 (because the waiter is already registered).
         //
         // The future is recreated at the top of each iteration so that
@@ -239,7 +239,7 @@ impl OobSession {
         loop {
             // Bail early if the session is shutting down. Without this check
             // a parked wait_for would sleep the full timeout (default 30 s)
-            // after the engine's Drop fired — the shutdown path wakes
+            // after the engine's Drop fired - the shutdown path wakes
             // every parked waiter, but they need to re-check shutdown to
             // exit the loop instead of falling back into the next await.
             if self.shutdown.load(Ordering::Acquire) {
@@ -310,7 +310,7 @@ impl OobSession {
         self.wake_all_waiters();
         if let Some(h) = self.poller_handle.lock().take() {
             h.abort();
-            // No `.await` — the JoinHandle is dropped; the abort signal is
+            // No `.await` - the JoinHandle is dropped; the abort signal is
             // delivered asynchronously by the runtime.
         }
     }
@@ -448,7 +448,7 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
                     // the request URL, which for the interactsh poll is
                     // `https://oast.fun/poll?id=<corr>&secret=<session-secret>`.
                     // Logging the raw error therefore writes the interactsh
-                    // session secret to tracing — possession of that secret
+                    // session secret to tracing - possession of that secret
                     // lets anyone poll the collector for this scan's OOB
                     // interactions. Redact to error kind only; the operator
                     // doesn't need the URL to diagnose connectivity issues.
