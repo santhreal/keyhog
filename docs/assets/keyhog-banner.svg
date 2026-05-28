@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 414" width="720" height="414" role="img" aria-label="keyhog">
+  <rect x="0" y="0" width="720" height="414" rx="14" ry="14" fill="#000000" />
   <g text-anchor="middle">
     <text x="360" y="34" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11" fill="#5b6273" letter-spacing="3">github.com  /  santhsecurity  /  keyhog</text>
     <g font-family="'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace" fill="#ffd60a" font-size="28" xml:space="preserve">
@@ -10,7 +11,7 @@
       <text x="360" y="268">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
     </g>
     <!-- 'keyhog' as JetBrains Mono Medium paths so the wordmark renders identically everywhere. -->
-    <g fill="#ffd60a" transform="translate(259.20,370)">
+    <g fill="#ffffff" transform="translate(259.20,370)">
       <g transform="translate(0.000,0) scale(0.056000,-0.056000)"><path d="M93 0V730H192V326H293L441 550H553L380 287L562 0H448L294 241H192V0Z"/></g>
       <g transform="translate(33.600,0) scale(0.056000,-0.056000)"><path d="M300 -10Q201 -10 140.5 49.0Q80 108 80 210V340Q80 442 140.5 501.0Q201 560 300 560Q366 560 415.5 533.5Q465 507 492.5 459.5Q520 412 520 349V250H177V202Q177 142 210.0 108.0Q243 74 300 74Q348 74 379.0 92.0Q410 110 416 142H515Q505 72 446.0 31.0Q387 -10 300 -10ZM177 349V323H423V349Q423 412 391.0 446.0Q359 480 300 480Q241 480 209.0 446.0Q177 412 177 349Z"/></g>
       <g transform="translate(67.200,0) scale(0.056000,-0.056000)"><path d="M175 -180 255 33 50 550H155L279 225Q287 204 295.0 180.0Q303 156 306 138Q309 156 316.0 180.0Q323 204 331 225L446 550H551L278 -180Z"/></g>
