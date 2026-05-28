@@ -2,25 +2,24 @@
 
 ![vyre architecture](docs/architecture.svg)
 
-**Vyre is the abstraction layer GPUs never got.**
+**Vyre is a practical abstraction layer for GPU-executed sequential logic.**
 
-CPUs evolved a natural stack of abstractions over fifty years. You write Python without knowing SIMD. You write C without knowing TLB shootdowns. You write a web server without knowing cache coherency protocols. Each layer genuinely forgets the one below it.
+CPUs evolved with abstraction layers that hide low-level concerns. Vyre applies the same idea to sequential workloads on GPUs.
 
-GPUs never got that stack. CUDA looks like C but leaks warps, divergence, shared memory banks, and barrier semantics everywhere. WGSL is slightly prettier assembly. Triton is tiled assembly. There is no layer where you can say "I need a stack" or "I need a hashmap" and the hardware details are genuinely hidden.
+Vyre provides reusable workgroup primitives—stacks, queues, hash maps, state machines, typed arenas, string interners, dominator helpers, union-find, and fixed-point engines—as composable building blocks with explicit contracts.
 
-Vyre is that missing stratum. It provides workgroup-local stacks, queues, hashmaps, state machines, typed arenas, string interners, dominator trees, union-find structures, visitor walks, and fixed-point dataflow engines as first-class primitives. Each primitive lowers to the shader a hand-optimizer would write, and the conformance gate rejects any backend that diverges by even one bit.
-
-A Python developer uses `numpy.dot` without knowing SIMD. A vyre consumer calls `vyre::compile(program)` without knowing lowering, WGSL, GPU dispatch, or conformance. Each layer is sealed, composable, and never refactored. Adding capability is always additive: new file, new trait impl, new backend. Never modifying an existing frozen contract.
+A consumer should call `vyre::compile(program)` and focus on logic, not backend quirks. Lowering, dispatch, and conformance gates are part of the platform contract.
 
 ## The 10-second pitch
 
-Every GPU framework handles the embarrassingly parallel case. That problem is solved. Vyre ships what nobody else does: compiler-grade sequential logic on GPU, with workgroup-local coordination and a machine-verified conformance gate. Think MLIR composability, plus property-based verification over bounded witness domains with counterexample extraction, plus SQLite engineering discipline.
+Every GPU framework handles the embarrassingly parallel case. Vyre focuses on compiler-grade sequential logic on GPU, with workgroup-local coordination and a conformance gate. It combines compositional lowering constraints, property-based verification over bounded witness domains, and counterexample evidence.
 
-Vyre unblocks the workloads every other GPU stack punts to CPU: lexers, parsers, borrow checkers, type solvers, regex engines, and fixed-point dataflow analyzers. You compose ops. Vyre parity tests prove that the backend reproduces the reference bit-for-bit.
+Vyre targets workloads where sequential structure matters: lexers, parsers, borrow checkers, type solvers, regex engines, and fixed-point dataflow analyzers.
+You compose ops and verify behavior through explicit parity checks.
 
-Vyre is not another GPU IR competing with SPIR-V. SPIR-V is a compilation target. Vyre is a semantic contract system that compiles to SPIR-V, WGSL, Metal, or DXIL as a backend detail. Vyre is not an ML framework; ML kernels are one of the simpler things it expresses. Vyre is not a replacement for CUDA or wgpu; it is the layer above them that makes their hand-tuned code surface addressable from high-level IR without losing performance. Vyre is not a language; humans write Rust, and vyre absorbs the mechanical GPU-specific concerns.
+Vyre is not a replacement for SPIR-V, CUDA, wgpu, or DXIL; it is an execution-contract layer that can target one or more of them.
 
-Vyre must become the standard for expressing GPU computation. Not by decree, but by being so correct, so composable, and so well-tested that building a GPU project without vyre is obviously more expensive than building with it. The ecosystem compounds. Every contributed operation makes vyre more valuable. Every backend makes adoption easier. Every parity suite proves the ecosystem works. Forking is suicide; contributing is the only rational strategy.
+Vyre grows by adding verified capability, not by rewriting working systems.
 
 ## The vyre crates
 
@@ -39,6 +38,22 @@ Vyre must become the standard for expressing GPU computation. Not by decree, but
 | `vyre-driver-spirv` | SPIR-V emitter — reuses naga IR to emit SPIR-V for Vulkan-compute runners outside wgpu | end user |
 | `vyre-libs` | Category A composition ecosystem — `math`, `nn`, `matching`, `hash`, `decode`, `parsing`, `security` modules as pure vyre IR over `vyre-intrinsics` + `vyre-primitives` (no shader source) | end user |
 | `xtask` | Workspace task runner (release, publish, audit helpers) invoked via `cargo xtask …` | maintainer |
+
+## Crate map (current / planned)
+
+| Crate / area | Status | Notes |
+| --- | --- | --- |
+| `vyre-core` (root contract), `vyre-foundation`, `vyre-spec` | stable | language model, wire format, contracts |
+| `vyre-driver`, `vyre-reference`, `vyre-runtime` | stable | runtime routing and execution |
+| `vyre-primitives`, `vyre-intrinsics`, `vyre-libs` | stable | shared substrate + domain composition |
+| `vyre-driver-wgpu`, `vyre-driver-megakernel`, `vyre-driver-spirv`, `vyre-driver-reference` | stable | backend outputs and kernels |
+| `vyre-emit-ptx`, `vyre-emit-naga`, `vyre-emit-spirv` | stable | codegen adapters |
+| `vyre-lower`, `vyre-harness`, `vyre-macros`, `vyre-lints` | stable | compiler pipeline helpers |
+| `vyre-bench`, `vyre-aot`, `vyre-frontend-c`, `vyre-cc` | beta | scoped feature work; APIs are additive |
+| `vyre-driver-cuda`, `weir` | in planning | research or downstream coordination work |
+| `vyre-driver-dxil`, `vyre-driver-metal` | planned | target work in progress |
+
+Planned work is tracked in `docs/targets.md` and each item is labeled there by status.
 
 ## The five-tier rule — where every op lives
 
@@ -86,8 +101,9 @@ Every significant surface in vyre has a canonical doc. When onboarding:
 | **Composition chain — how ops stay auditable** | `docs/region-chain.md` |
 | **Source parsers — where frontends live** | `docs/parsing-and-frontends.md` + **`docs/PARSING_EXECUTION_PLAN.md`** (phases, tests) |
 | Documentation precedence | `docs/DOCUMENTATION_GOVERNANCE.md` |
-| Current release gate | `audits/LEGENDARY_GATE.md` |
-| Historical plans | `docs/V7_LEGENDARY_PLAN.md`, `.internals/audits/from-docs-audits/MASTER_PLAN*.md` |
+| Docs index with freshness | `docs/INDEX.md` |
+| Current release gate | `RELEASE.md` |
+| Historical plans | `docs/ROADMAP.md`, `.internals/audits/from-docs-audits/MASTER_PLAN*.md` |
 | **Ops catalog — full surface at 0.6** | `docs/ops-catalog.md` |
 | **Santh-wide Cat‑A building blocks + testing program (roadmap)** | `docs/OP_MASTER_PLAN_BUILDING_BLOCKS_AND_QA.md` |
 | **Execution status + op inventory refresh** | `docs/EXECUTION_STATUS.md`, `docs/generated/OP_INVENTORY.md` |
@@ -106,7 +122,7 @@ Every significant surface in vyre has a canonical doc. When onboarding:
 | Persistent megakernel + `io_uring` NVMe streaming (Linux) | `vyre-runtime/README.md` |
 | Testing standard + 6 category skills | `.internals/skills/testing/SKILL.md` |
 | Per-crate test contract | `<crate>/tests/SKILL.md` |
-| In-flight legendary-bar gap contracts | `contracts/legendary.md` |
+| In-flight gap contracts | `contracts/` (release and conformance gaps) |
 | Benchmark baselines | `benches/RESULTS.md` + `docs/BENCHMARKS.md` |
 | Public-API snapshots (diff gate) | `<crate>/PUBLIC_API.md` |
 
@@ -172,7 +188,7 @@ let outputs = backend.dispatch_borrowed(&program, inputs, &Default::default())
     .expect("dispatch failed");
 ```
 
-The wire format provides lossless binary transport: `program.to_wire()` serializes, `Program::from_wire()` reconstructs, and round-trip equality is invariant I4. The former general-purpose bytecode VM was removed in v0.4.0-alpha.2. The NFA-scan micro-interpreter was removed in v0.5.0 — every detection primitive (string scanning, taint flow, AST motif, decode chain, binary structural, neural suspicion filter, exploit-graph reconstruction, …) composes from vyre ops. No interpreter surface remains anywhere in core. Surgec's full detection engine (scan, taint, decode, parse, fixpoint, graph, neural) composes in vyre IR. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture, [docs/wire-format.md](docs/wire-format.md) for the wire format, and [docs/inventory-contract.md](docs/inventory-contract.md) for the extension model.
+The wire format provides lossless binary transport: `program.to_wire()` serializes, `Program::from_wire()` reconstructs, and round-trip equality is invariant I4. The former general-purpose bytecode VM was removed in v0.4.0-alpha.2. The NFA-scan micro-interpreter was removed in v0.5.0 — every detection primitive (string scanning, taint flow, AST motif, decode chain, binary structural, neural suspicion filter, exploit-graph reconstruction, …) composes from vyre ops. No interpreter surface remains anywhere in core. End-to-end security-style pipelines (scan, taint, decode, parse, fixpoint, graph, neural) compose in vyre IR. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture, [docs/wire-format.md](docs/wire-format.md) for the wire format, and [docs/inventory-contract.md](docs/inventory-contract.md) for the extension model.
 
 ## Standard library
 
@@ -305,25 +321,30 @@ Community knowledge that does not require Rust can be expressed as TOML rules. D
 
 ## Who uses vyre
 
-- **Santh security tools.** `surgec` compiles SURGE / CISB-style detectors into vyre programs and drives evaluation. `keyhog` runs regex engines, entropy detectors, and hash verifiers on GPU. `gossan` performs fingerprint matching, tech-stack detection, and DNS graph walks as workgroup-coordinated sequential logic. Every detector ships with a conform certificate.
+- **Internal security tooling.** Pipelines compose regex, entropy, graph, and parser workflows into vyre IR and drive evaluation under the same conformance rules. `gossan` contributes fingerprint matching, tech-stack detection, and DNS graph walks with this stack.
+- **First external consumer:** [keyhog](https://github.com/santhsecurity/keyhog) — GPU-backed regex, entropy, and hash detectors.
+- **Research compilers** build toward language-tooling workloads without shader-level codegen.
 
 Before vyre, these tools ran CPU-bound for the sequential parts of their pipelines. Every one of them was blocked by the same missing abstraction: workgroup-coordinated primitives without hand-written shader code. Vyre unblocks all of them simultaneously. Exhaustive text and binary scanning at internet scale becomes feasible because the primitives are proven correct and the backend is certified before deployment. A detector that passes `certify()` cannot silently produce the wrong answer on one vendor's driver while working on another.
 
 - **Research compilers.** Teams building lexers, parsers, borrow checkers, and type solvers emit vyre IR instead of hand-writing WGSL. The compiler author never reasons about warps, thread IDs, barriers, or memory coherence; vyre's primitives absorb those concerns. The Rust lexer demo already carries workgroup-shaped token state through stack, interner, and arena primitives. The parser demo parses a Rust subset into a typed arena with recursive-descent and visitor-walk primitives.
 
-The final-boss milestone is a minimal Rust compiler expressed entirely as a vyre program: lexer, parser, resolver, trait solver, borrow checker, MIR builder, and codegen, all composed from vyre ops, all certified before execution. Not cross-compile. Not emit GPU backend code from CPU. The compiler author writes sequential logic; vyre absorbs every concurrency primitive they do not know how to reason about.
+One long-horizon target is a minimal Rust compiler expressed entirely as a vyre program: lexer, parser, resolver, trait solver, borrow checker, MIR builder, and codegen, all composed from vyre ops and certified before execution. The goal is not to hide every concurrency detail forever; it is to make those details testable and reviewable.
 
 When that runs, it proves the thesis: GPU compute can have the same abstraction bargain CPUs have. You can write a compiler without knowing what a warp is.
 
 - **GPU-first applications.** Any workload that needs zero-overhead abstraction on GPU with a machine-verified semantic contract. Video enhancement pipelines validate workgroup coordination at production scale. Scientific simulators rely on strict IEEE 754 determinism. Rule-evaluation engines lower to the same IR and run through the same gate, regardless of backend vendor.
-
-`flare-native` is the in-house consumer that validates vyre's workgroup-coordination primitives at production scale for video enhancement. It is not a compiler workload, but it exercises the same stack, queue, and barrier primitives that compilers need. If it works for video frames at 4K60, it works for token streams at millions of lines per second.
 
 If NVIDIA wanted to add a CUDA backend tomorrow, they could: an engineer reads the spec, implements one trait (`VyreBackend`), runs the conformance suite, gets a certificate. No communication with the vyre maintainers needed. If AMD wants to do the same independently, they can. Both backends produce identical bytes for every input, not because they coordinated, but because the spec is unambiguous and the conformance suite is the arbiter. This is the Linux property applied to GPU compute: the substrate has more leverage than the vendor. The cost of not being on vyre is higher than the cost of contributing to it.
 
 ## Contributing
 
 Review boundaries are strict. Maintainers own law declarations, reference semantics, certificate format, and the gates. Contributors can propose changes there, but review will be stricter. Append-only paths such as corpora, regressions, and golden evidence should grow, not shrink. The project standard is simple: no stubs, no fake returns, no decorative laws, no swallowed errors, no dead code, and no contribution that only makes the suite quieter without making it truer.
+
+Welcome contribution path:
+- Start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- Open `docs/INDEX.md` first for current documentation status.
+- Use `cargo xtask` parity and conformance docs before touching release-gate changes.
 
 ## Links
 
