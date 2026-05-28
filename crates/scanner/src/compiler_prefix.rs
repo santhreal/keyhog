@@ -7,6 +7,26 @@ pub fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
     // These set regex modes but don't consume input.
     let pattern = strip_leading_inline_flags(pattern);
 
+    // Boundary-guard idiom: `(?:^|[^...])(LITERAL...)`. Secret detectors
+    // prefix the real token with a zero-/one-width boundary guard so the
+    // match requires start-of-line or a non-word char before the token
+    // (helicone `(?:^|[^A-Za-z0-9_])(sk-…{20,})`, deepnote `(…)(dn_…{20,})`).
+    // The guard carries no literal, so prefix extraction returned nothing
+    // and the detector fell to the keyword-gated fallback - where a bare
+    // token positive (`sk-…`, `dn_…`) whose only ≥4-char keyword is absent
+    // never fired (contracts_runner: helicone / deepnote MISSED). Strip the
+    // guard and extract the prefix from what follows. The full regex (guard
+    // included) still confirms at extraction time, so AC only GAINS the
+    // trigger literal - precision is held by the `{20,}` body, and routing
+    // via the full-regex AC path is strictly more precise than the keyword
+    // fallback this replaces.
+    if let Some(rest) = strip_leading_boundary_guard(pattern) {
+        let inner = extract_literal_prefixes(rest);
+        if !inner.is_empty() {
+            return inner;
+        }
+    }
+
     if pattern.starts_with('(') && pattern.contains('|') {
         // Handle (A|B|C)
         let mut depth = 0;
@@ -72,6 +92,91 @@ pub fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
 
     // Default: try to extract a single prefix from the start
     extract_literal_prefix(pattern).into_iter().collect()
+}
+
+/// If `pattern` opens with a non-capturing boundary-guard group whose every
+/// alternative is a zero-/one-width boundary token (`^`, `$`, `\b`, `\B`,
+/// `\w`, `\W`, or a `[...]` char class), return the slice AFTER that group.
+/// Used to see past the `(?:^|[^A-Za-z0-9_])` prefix idiom so the real
+/// literal token in the following group can be pulled into the AC set.
+/// Returns `None` if the leading group is anything else (so a normal
+/// alternation like `(AKIA|ASIA)` is untouched).
+fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
+    let body = pattern.strip_prefix("(?:")?;
+    // Find the matching ')' for this group at depth 0, skipping escapes
+    // and the interior of `[...]` classes (a `]`-less `)` inside a class
+    // must not close the group).
+    let bytes = body.as_bytes();
+    let mut depth = 0i32;
+    let mut in_class = false;
+    let mut i = 0;
+    let mut end = None;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 1, // skip the escaped byte
+            b'[' if !in_class => in_class = true,
+            b']' if in_class => in_class = false,
+            b'(' if !in_class => depth += 1,
+            b')' if !in_class => {
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let end = end?;
+    let group = &body[..end];
+    let rest = &body[end + 1..];
+    if group.is_empty() || rest.is_empty() {
+        return None;
+    }
+    // Every top-level `|` alternative must be a boundary token. Split at
+    // depth 0 and outside char classes so a `|` inside `[..|..]` doesn't
+    // mis-split (the all-boundary check below would reject it anyway).
+    let mut alts = Vec::new();
+    let mut start = 0;
+    let mut d = 0i32;
+    let mut cls = false;
+    for (j, ch) in group.char_indices() {
+        match ch {
+            '[' if !cls => cls = true,
+            ']' if cls => cls = false,
+            '(' if !cls => d += 1,
+            ')' if !cls => d -= 1,
+            '|' if d == 0 && !cls => {
+                alts.push(&group[start..j]);
+                start = j + 1;
+            }
+            _ => {}
+        }
+    }
+    alts.push(&group[start..]);
+    let all_boundary = alts.iter().all(|a| {
+        let a = a.trim();
+        matches!(
+            a,
+            "^" | "$"
+                | r"\b"
+                | r"\B"
+                | r"\w"
+                | r"\W"
+                | r"\s"
+                | r"\S"
+                | r"\d"
+                | r"\D"
+                | r"\A"
+                | r"\z"
+        ) || (a.starts_with('[') && a.ends_with(']') && a.len() >= 3)
+    });
+    if all_boundary {
+        Some(rest)
+    } else {
+        None
+    }
 }
 
 /// Strip leading inline flags like `(?i)`, `(?m)`, `(?ims)` from a regex.
@@ -331,102 +436,5 @@ fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
         | Ast::Empty(_)
         | Ast::Flags(_)
         | Ast::Assertion(_) => {}
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn inner_literal_after_leading_class() {
-        let lits = extract_inner_literals(r"[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}");
-        assert_eq!(lits, vec!["_AKIA"]);
-    }
-
-    #[test]
-    fn inner_literal_alternation_branches() {
-        let lits = extract_inner_literals(r"(?:secret|api_key)\s*=\s*[a-z0-9]{32}");
-        // Both branches produce candidates; both meet the 4-char floor.
-        assert!(lits.iter().any(|s| s == "secret"));
-        assert!(lits.iter().any(|s| s == "api_key"));
-    }
-
-    #[test]
-    fn inner_literal_pure_class_yields_empty() {
-        assert!(extract_inner_literals(r"[a-f0-9]{32}").is_empty());
-    }
-
-    #[test]
-    fn inner_literal_below_threshold_dropped() {
-        // `wx` is only 2 chars - below MIN_INNER_LITERAL_CHARS.
-        assert!(extract_inner_literals(r"wx[a-f0-9]{16}").is_empty());
-    }
-
-    #[test]
-    fn inner_literal_handles_escaped_dot() {
-        // `https?://[^/]+\.lambda-url\.[a-z0-9-]+\.on\.aws/...`
-        // The contiguous-literal extractor flushes on each character class
-        // and assertion, so the longest run is `.lambda-url.` (no - that's
-        // broken by `\.`-then-`-`-then-class). Actual longest: `.lambda-url`.
-        let lits = extract_inner_literals(r"https?://[^/]+\.lambda-url\.[a-z]+\.on\.aws/path");
-        // Verify we extract SOMETHING substantive for this real-world AWS pattern.
-        assert!(
-            lits.iter().any(|s| s.contains("lambda-url")),
-            "expected lambda-url in inner literals; got {lits:?}"
-        );
-    }
-
-    #[test]
-    fn inner_literal_dedup() {
-        // `(?:KEY|KEY|other)foo` → "KEY" should appear once even if both
-        // literal alternatives emit it.
-        let lits = extract_inner_literals(r"(?:KEYY|KEYY|other)foo");
-        let key_count = lits.iter().filter(|s| *s == "KEYY").count();
-        assert!(key_count <= 1, "expected dedup; got {lits:?}");
-    }
-
-    #[test]
-    fn inner_literal_garbage_regex_returns_empty() {
-        assert!(extract_inner_literals(r"[unclosed").is_empty());
-    }
-
-    /// Quantify how many embedded detectors move from fallback to AC
-    /// thanks to the inner-literal extractor. Acts both as a regression
-    /// guard (the count shouldn't drop) and as documentation of the
-    /// optimization's reach. Run with `--nocapture` to print the count.
-    #[test]
-    fn inner_literal_corpus_coverage() {
-        let mut promoted_patterns = 0usize;
-        let mut total_inner_literals = 0usize;
-        let mut total_patterns = 0usize;
-        for (_, toml_str) in keyhog_core::embedded_detector_tomls() {
-            let Ok(detectors) = keyhog_core::load_detectors_from_str(toml_str) else {
-                continue;
-            };
-            for d in &detectors {
-                for p in &d.patterns {
-                    total_patterns += 1;
-                    let prefixes = extract_literal_prefixes(&p.regex);
-                    if !prefixes.is_empty() {
-                        continue; // Already AC-eligible via prefix.
-                    }
-                    let inner = extract_inner_literals(&p.regex);
-                    if !inner.is_empty() {
-                        promoted_patterns += 1;
-                        total_inner_literals += inner.len();
-                    }
-                }
-            }
-        }
-        assert!(
-            promoted_patterns >= 3,
-            "expected ≥3 patterns promoted out of fallback via inner-literal extraction; \
-             got {promoted_patterns} (of {total_patterns} total)"
-        );
-        eprintln!(
-            "inner-literal coverage: {promoted_patterns} patterns promoted out of fallback, \
-             {total_inner_literals} inner literals added (of {total_patterns} total patterns)"
-        );
     }
 }

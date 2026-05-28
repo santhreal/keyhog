@@ -314,40 +314,47 @@ pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
     false
 }
 
-/// True if `value` is a non-credential punctuation/prefix shape:
+/// True if `value` is a pure *syntactic* punctuation marker that is NEVER
+/// the body of a real credential, regardless of which detector matched:
 ///   * leading `--` (CLI flag) - `--api-secret`, `--api-key`
-///   * leading `&` (C/Go pointer reference) - `&gss_recv_token`, `&password`
-///   * leading `@` (SQL/Ruby variable) - `@v_password`, `@api_key`
-///   * leading `!` (JS/TS truthy coercion) - `!!apiKeyOrOAuthToken`
+///   * leading `&`/`@`/`$` FOLLOWED BY a bare identifier - `&password`
+///     (C pointer), `@api_key` (attribute), `$API_KEY` (shell/GraphQL var)
 ///   * trailing `:` after pure-alpha - `Password:`, `Username:`
-///   * trailing `!` after pure-alpha (TS non-null assertion) - `privateAccessToken!`
 ///
-/// Real credentials don't start or end with these tokens.
-pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
+/// These are grammar tokens, not secret bytes, so the filter is safe to
+/// apply universally (Tier A). Shapes that CAN appear as a credential body
+/// (`/`-led base64, `!`-led / `!`-trailed secrets, sigil-led high-symbol
+/// values) live in [`looks_like_credential_colliding_punctuation`] and must
+/// be Tier-B gated.
+pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
     let bytes = value.as_bytes();
-    // Leading sigils that real credentials never start with.
     //   `--` - CLI flag (`--api-secret`). A SINGLE leading `-` is allowed
     //          for tokens like `xoxb-…`, and `-----` (5+ dashes) is a PEM
     //          block marker which is a legitimate private-key TP - only
     //          reject `--X` where `X` is NOT another dash.
-    //   `&` - C/Go pointer reference (`&password`, `&gss_recv_token`)
-    //   `@` - SQL/Ruby/Rust attribute (`@v_password`, `@api_key`, `@deprecated`)
-    //   `!` - JS truthy coercion (`!!apiKeyOrOAuthToken`)
-    //   `/` - Unix absolute path (`/etc/passwd:/etc/passwd:ro` docker mount).
-    //   `$` - GraphQL variable reference (`apiKey: $api_key`), shell var
-    //          expansion (`$API_KEY`), template placeholder (`${SECRET}`).
     let starts_with_double_dash = bytes.starts_with(b"--") && bytes.len() >= 3 && bytes[2] != b'-';
-    if starts_with_double_dash
-        || bytes[0] == b'&'
-        || bytes[0] == b'@'
-        || bytes[0] == b'!'
-        || bytes[0] == b'/'
-        || bytes[0] == b'$'
-    {
+    if starts_with_double_dash {
         return true;
+    }
+    // Leading `&`/`@`/`$` is a grammar marker ONLY when what follows is a bare
+    // identifier: `&password` (C pointer), `@api_key` (attribute), `$API_KEY`
+    // (shell/GraphQL var). When the remainder carries credential symbols
+    // (`%`, `!`, `+`, `-`, `=`, …) it is a real secret body that merely starts
+    // with the sigil - e.g. tower's `@gAdtFo%B!tcnSl+A-Rt5x…`. Requiring a
+    // pure-identifier tail keeps the FP suppression while letting anchored
+    // secrets through.
+    if matches!(bytes[0], b'&' | b'@' | b'$') {
+        let rest = &bytes[1..];
+        let pure_ident_tail = !rest.is_empty()
+            && rest
+                .iter()
+                .all(|&b| b.is_ascii_alphanumeric() || b == b'_');
+        if pure_ident_tail {
+            return true;
+        }
     }
     let last = bytes[bytes.len() - 1];
     // Trailing `:` after a value of pure-alpha + colon shape.
@@ -360,6 +367,32 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
             return true;
         }
     }
+    false
+}
+
+/// True if `value` carries punctuation that *looks* like decoration but can
+/// equally be a legitimate credential body:
+///   * leading `/` - Unix path (`/etc/passwd:…`) OR base64 body (`/ZM9…`,
+///                    `/7j3…`). LINE channel tokens + paloalto keys start `/`.
+///   * leading `!` - JS truthy coercion (`!!token`) OR a session secret that
+///                    legitimately starts `!` (keystonejs `!t1c!_…`).
+///   * trailing `!` - TS non-null assertion (`token!`) OR a password ending
+///                    `!` (`SnowFlakePass123!`, `SourceTreePass1234!`).
+///
+/// For an *unanchored* generic/entropy match these are FP signals, so this is
+/// applied Tier-B only. A named, service-anchored detector (e.g. the regex
+/// already matched `snowflake.password=<value>`) has proven the bytes are the
+/// credential, so this filter must NOT fire there - doing so silently killed
+/// snowflake / sourcetree / paloalto / line / keystonejs / tower positives.
+pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    if bytes[0] == b'!' || bytes[0] == b'/' {
+        return true;
+    }
+    let last = bytes[bytes.len() - 1];
     // Trailing `!` (TypeScript non-null assertion on a variable name).
     if last == b'!' && bytes.len() >= 4 {
         let prefix = &bytes[..bytes.len() - 1];
@@ -373,4 +406,14 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
         }
     }
     false
+}
+
+/// Combined Tier-A + body-collision punctuation filter. Retained for the
+/// generic/entropy fallback callers ([`fallback_generic`], [`fallback_entropy`]),
+/// which are unanchored by construction and so want the full (stricter) set.
+/// Named-detector suppression must use the split functions so the body-
+/// collision half stays Tier-B gated.
+pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
+    looks_like_syntactic_punctuation_marker(value)
+        || looks_like_credential_colliding_punctuation(value)
 }
