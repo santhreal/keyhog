@@ -1,15 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 424" width="720" height="424" role="img" aria-label="keyhog">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 396" width="720" height="396" role="img" aria-label="keyhog">
   <g text-anchor="middle">
-    <text x="360" y="42" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11" fill="#5b6273" letter-spacing="3">github.com  /  santhsecurity  /  keyhog</text>
+    <text x="360" y="34" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11" fill="#5b6273" letter-spacing="3">github.com  /  santhsecurity  /  keyhog</text>
     <g font-family="'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace" fill="#ffd60a" font-size="28" xml:space="preserve">
-      <text x="360" y="120">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀</text>
-      <text x="360" y="154">⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀</text>
-      <text x="360" y="188">⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀</text>
-      <text x="360" y="222">⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀</text>
-      <text x="360" y="256">⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀</text>
-      <text x="360" y="290">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
+      <text x="360" y="98">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀</text>
+      <text x="360" y="132">⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀</text>
+      <text x="360" y="166">⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀</text>
+      <text x="360" y="200">⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀</text>
+      <text x="360" y="234">⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀</text>
+      <text x="360" y="268">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
     </g>
-    <text x="360" y="372" font-family="'JetBrains Mono', 'JetBrainsMono-Bold', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, 'DejaVu Sans Mono', Consolas, monospace" font-size="56" font-weight="700" letter-spacing="-1" fill="#ffd60a">keyhog</text>
-    <text x="360" y="412" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" fill="#9aa0b4" letter-spacing="2">v0.5.35  ·  secret scanner  ·  891 detectors  ·  gpu</text>
+    <!-- 'keyhog' as JetBrains Mono Medium paths so the wordmark renders identically everywhere. -->
+    <g fill="#ffd60a" transform="translate(259.20,346)">
+      <g transform="translate(0.000,0) scale(0.056000,-0.056000)"><path d="M93 0V730H192V326H293L441 550H553L380 287L562 0H448L294 241H192V0Z"/></g>
+      <g transform="translate(33.600,0) scale(0.056000,-0.056000)"><path d="M300 -10Q201 -10 140.5 49.0Q80 108 80 210V340Q80 442 140.5 501.0Q201 560 300 560Q366 560 415.5 533.5Q465 507 492.5 459.5Q520 412 520 349V250H177V202Q177 142 210.0 108.0Q243 74 300 74Q348 74 379.0 92.0Q410 110 416 142H515Q505 72 446.0 31.0Q387 -10 300 -10ZM177 349V323H423V349Q423 412 391.0 446.0Q359 480 300 480Q241 480 209.0 446.0Q177 412 177 349Z"/></g>
+      <g transform="translate(67.200,0) scale(0.056000,-0.056000)"><path d="M175 -180 255 33 50 550H155L279 225Q287 204 295.0 180.0Q303 156 306 138Q309 156 316.0 180.0Q323 204 331 225L446 550H551L278 -180Z"/></g>
+      <g transform="translate(100.800,0) scale(0.056000,-0.056000)"><path d="M88 0V730H187V550L186 445H187Q194 499 232.5 529.5Q271 560 334 560Q416 560 465.0 508.0Q514 456 514 368V0H415V353Q415 412 385.0 444.0Q355 476 303 476Q249 476 218.0 442.5Q187 409 187 349V0Z"/></g>
+      <g transform="translate(134.400,0) scale(0.056000,-0.056000)"><path d="M300 -8Q199 -8 139.5 50.0Q80 108 80 212V338Q80 442 139.5 500.0Q199 558 300 558Q401 558 460.5 500.0Q520 442 520 338V212Q520 108 460.5 50.0Q401 -8 300 -8ZM300 79Q356 79 388.5 110.5Q421 142 421 203V347Q421 408 388.5 439.5Q356 471 300 471Q244 471 211.5 439.5Q179 408 179 347V203Q179 142 211.5 110.5Q244 79 300 79Z"/></g>
+      <g transform="translate(168.000,0) scale(0.056000,-0.056000)"><path d="M159 -180V-92H314Q359 -92 386.0 -66.5Q413 -41 413 3V49L415 144H414Q404 93 365.5 65.0Q327 37 267 37Q182 37 133.0 91.5Q84 146 84 241V354Q84 449 133.0 504.5Q182 560 267 560Q325 560 363.5 532.0Q402 504 413 455H414V550H511V2Q511 -82 458.0 -131.0Q405 -180 314 -180ZM298 120Q351 120 382.0 153.0Q413 186 413 246V349Q413 408 382.0 441.0Q351 474 298 474Q243 474 213.0 442.5Q183 411 183 357V237Q183 183 213.0 151.5Q243 120 298 120Z"/></g>
+    </g>
+    <text x="360" y="380" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" fill="#9aa0b4" letter-spacing="2">v0.5.35  ·  secret scanner  ·  891 detectors  ·  gpu</text>
   </g>
 </svg>
