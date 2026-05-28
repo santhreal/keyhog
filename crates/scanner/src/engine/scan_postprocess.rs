@@ -86,6 +86,25 @@ impl CompiledScanner {
                     {
                         continue;
                     }
+                    // Reverse-decoder example guard: a credential surfaced from a
+                    // `/reverse` chunk whose REVERSED form carries a documentation
+                    // marker (`…ELPMAXE…` is `EXAMPLE` reversed) is a reversed
+                    // placeholder, not a hidden real secret. The forward checks
+                    // miss it because the marker bytes are themselves reversed,
+                    // and `is_known_example_credential` only matches a *trailing*
+                    // EXAMPLE - reversal moves the marker mid-string. Without this,
+                    // reversing a negative fixture that embeds EXAMPLE/PLACEHOLDER
+                    // surfaces a false positive (smartsheet contract negative).
+                    if decoded_chunk.metadata.source_type.contains("/reverse") {
+                        let rev = crate::decode::reverse::reverse_str(&m.credential).to_uppercase();
+                        if rev.contains("EXAMPLE")
+                            || rev.contains("PLACEHOLDER")
+                            || rev.contains("SAMPLE")
+                            || rev.contains("YOUR_")
+                        {
+                            continue;
+                        }
+                    }
                     let key = (Arc::clone(&m.detector_id), Arc::clone(&m.credential));
                     if seen.insert(key) {
                         matches.push(m);
