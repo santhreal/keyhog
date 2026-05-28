@@ -65,6 +65,10 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Backend(BackendArgs),
 
+    /// 🩺 Health-check the install: host, PATH, detector corpus, scan self-test
+    #[command(verbatim_doc_comment)]
+    Doctor(DoctorArgs),
+
     /// 🛰  Recursive system-wide scan: every mounted drive, every git history
     #[command(verbatim_doc_comment)]
     ScanSystem(ScanSystemArgs),
@@ -233,6 +237,12 @@ pub struct BackendArgs {
     #[arg(long)]
     pub self_test: bool,
 }
+
+/// Arguments for `keyhog doctor`. The health check is fully automatic; no
+/// flags are needed today. The struct exists so the command can grow options
+/// (e.g. `--json`) without a breaking signature change.
+#[derive(Parser)]
+pub struct DoctorArgs {}
 
 #[derive(Parser)]
 pub struct WatchArgs {

@@ -702,3 +702,38 @@ fn daemon_wire_scan_path_finds_planted_secret() {
         "daemon wire path must return aws finding; got {arr:?}"
     );
 }
+
+#[test]
+fn doctor_reports_corpus_and_passes_scan_self_test() {
+    // `keyhog doctor` is the install health check. On a healthy host it must
+    // exit 0, report the real embedded detector corpus (not 0), and PASS the
+    // end-to-end scan self-test (plant -> scan -> match). Asserting the
+    // displayed count equals the binary's own embedded count proves the
+    // report reflects reality, not a hardcoded banner number.
+    let output = Command::new(binary())
+        .arg("doctor")
+        .env("KEYHOG_NO_GPU", "1")
+        .output()
+        .expect("run keyhog doctor");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "doctor must exit 0 on a healthy host (PATH warning is non-fatal); stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("self-test"),
+        "doctor must run a self-test section; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("PASS"),
+        "the scan-engine self-test must PASS; got:\n{stdout}"
+    );
+    let corpus = keyhog_core::embedded_detector_count();
+    assert!(corpus > 0, "binary must embed a detector corpus");
+    assert!(
+        stdout.contains(&corpus.to_string()),
+        "doctor must display the real embedded corpus count ({corpus}); got:\n{stdout}"
+    );
+}

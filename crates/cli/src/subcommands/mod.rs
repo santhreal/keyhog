@@ -9,6 +9,7 @@ pub mod completion;
 pub mod daemon;
 pub mod detectors;
 pub mod diff;
+pub mod doctor;
 pub mod explain;
 pub mod hook;
 pub mod scan;
