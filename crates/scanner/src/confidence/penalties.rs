@@ -120,7 +120,15 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         return score;
     }
     let mut adjusted = score;
-    if contains_placeholder_word(credential) {
+    // Placeholder check on both the surface form AND the decoded form:
+    // a docs sample that arrives base64-wrapped (e.g.
+    // QUtJQUVYQU1QTEVFWEFNUExFMTI= = AKIAEXAMPLEEXAMPLE12) is still a
+    // sample. The decode-through composition closes the 9 residual
+    // docs-example-marker FPs on the SecretBench mirror that the
+    // surface-form check missed.
+    if contains_placeholder_word(credential)
+        || crate::decode_structure::decoded_contains_placeholder(credential)
+    {
         adjusted *= 0.05;
     }
     if is_named {
@@ -151,6 +159,19 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         // detector (skipped here) and effectively never on a real generic
         // secret. This is keyhog's decode-through advantage feeding scoring.
         if crate::decode_structure::is_encoded_binary(credential) {
+            adjusted *= 0.02;
+        }
+        // Uniform random-base64 blob (60+ chars, all-base64 alphabet, has
+        // `+`/`/` or padding). The 60-char floor + `+`/`/` requirement clears
+        // every well-known service-anchored shape (AWS, GitHub, Stripe, npm,
+        // Slack, JWT) so this fires only on the unanchored-random-base64
+        // class - the SecretBench mirror v27 had 56 base64-protobuf FPs all
+        // matching this shape via generic-secret / generic-password. Slammed
+        // hard (×0.02 like decode_structure) because there is no legitimate
+        // service that publishes a 60+ char raw-base64 secret WITHOUT a
+        // service-specific prefix; if it has one, a named detector would have
+        // matched it instead of generic-*.
+        if crate::decode_structure::looks_like_uniform_base64_blob(credential) {
             adjusted *= 0.02;
         }
     }

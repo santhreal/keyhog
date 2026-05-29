@@ -352,6 +352,25 @@ impl CompiledScanner {
                 ) {
                     continue;
                 }
+                // Decoded-form placeholder check: a docs sample that arrives
+                // base64-wrapped (e.g. QUtJQUVYQU1QTEVFWEFNUExFMTI= which
+                // decodes to AKIAEXAMPLEEXAMPLE12) is still a sample. The
+                // surface-form gate above doesn't see through the base64;
+                // this decode-through gate does. Mirror v27 had 9
+                // docs-example-marker FPs all surviving here via this exact
+                // shape; the ml_pending path's penalty has the same check
+                // but generic-secret emits directly via push_match and
+                // bypasses it.
+                if crate::decode_structure::decoded_contains_placeholder(value) {
+                    continue;
+                }
+                // Decode-through binary suppression: a generic high-entropy
+                // candidate that base64/hex-decodes to identifiable binary
+                // bytes (PNG / gzip / ELF / protobuf-wire) is embedded data,
+                // not a credential.
+                if crate::decode_structure::is_encoded_binary(value) {
+                    continue;
+                }
 
                 // Context suppression: test files get lower confidence
                 let context = crate::context::infer_context(
