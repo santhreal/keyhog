@@ -74,6 +74,9 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 # File system
 codewalk = "=0.2.5"
 base64 = "=0.22.1"
+# Pure-Rust, verify-only minisign: used by `keyhog update` to verify the
+# signature of a downloaded release binary before self-replacing.
+minisign-verify = "=0.2.4"
 unicode-normalization = "=0.1.25"
 tempfile = "=3.27.0"
 memmap2 = "=0.9.10"

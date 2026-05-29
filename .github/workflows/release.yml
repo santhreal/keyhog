@@ -176,3 +176,62 @@ jobs:
             "${{ matrix.asset }}.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+  # Sign every uploaded binary with the keyhog minisign secret key. Runs once
+  # on a single runner after all build arms finish, so the signing secret is
+  # exposed to exactly one job. `keyhog update` verifies these `.minisig`
+  # files against the embedded public key (installer::RELEASE_PUBLIC_KEY)
+  # before self-replacing.
+  sign:
+    name: Sign release assets
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # gh release upload to attach the .minisig files
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF##refs/tags/}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install rsign2
+        shell: bash
+        run: cargo install rsign2 --version 0.6.6 --locked
+
+      - name: Sign binaries and upload signatures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYHOG_MINISIGN_SECRET_KEY: ${{ secrets.KEYHOG_MINISIGN_SECRET_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEYHOG_MINISIGN_SECRET_KEY:-}" ]]; then
+            echo "ERROR: KEYHOG_MINISIGN_SECRET_KEY secret is not configured; cannot sign." >&2
+            echo "Set it with: gh secret set KEYHOG_MINISIGN_SECRET_KEY --repo $GITHUB_REPOSITORY" >&2
+            exit 1
+          fi
+          tag="${{ steps.tag.outputs.tag }}"
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          # Pull the just-uploaded binaries (and their .sha256 siblings).
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'keyhog-*' --dir .
+          # The stored secret is base64 of the minisign .key file.
+          printf '%s' "$KEYHOG_MINISIGN_SECRET_KEY" | base64 -d > sec.key
+          trap 'shred -u sec.key 2>/dev/null || rm -f sec.key' EXIT
+          shopt -s nullglob
+          for f in keyhog-*; do
+            case "$f" in
+              *.sha256|*.minisig) continue ;;
+            esac
+            rsign sign -W -s sec.key -x "$f.minisig" "$f" </dev/null
+            gh release upload "$tag" "$f.minisig" --repo "$GITHUB_REPOSITORY" --clobber
+            echo "signed + uploaded $f.minisig"
+          done
