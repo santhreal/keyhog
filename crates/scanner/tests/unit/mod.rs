@@ -33,6 +33,7 @@ pub mod confidence_path_penalty_preserves_production_path;
 pub mod confidence_penalties;
 pub mod confidence_post_ml_placeholder_exact_factor;
 pub mod confidence_prefix_floor_jwt_eyj;
+pub mod confidence_prefix_floor_skipped_for_placeholder;
 pub mod confidence_prefix_floor_slack_xoxb;
 pub mod confidence_prefixes;
 pub mod confidence_sensitive_file_weight_ten_percent;
