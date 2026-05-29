@@ -1,0 +1,8 @@
+Release notes for the widget service.
+
+This file deliberately contains no credentials. It exercises the
+zero-findings / exit-0 path of the scanner so a regression that starts
+emitting false positives on ordinary prose is caught by the release gate.
+
+The quick brown fox jumps over the lazy dog. Configuration lives in
+config.yaml; see the deployment runbook for rollout steps.

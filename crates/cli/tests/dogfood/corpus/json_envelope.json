@@ -1,0 +1,8 @@
+{
+  "service": "internal-deploy",
+  "config": {
+    "region": "us-east-1",
+    "credentials": { "secret": "AKIAQYLPMN5HFIQR7XYA" }
+  },
+  "github": { "token": "ghp_016C7f8a9B0c1D2e3F4g5H6i7J8k9L0m1N2o" }
+}

@@ -1,6 +1,7 @@
 pub mod adversarial;
 pub mod concurrent;
 pub mod contract;
+pub mod dogfood;
 pub mod e2e;
 pub mod gap;
 pub mod gate;

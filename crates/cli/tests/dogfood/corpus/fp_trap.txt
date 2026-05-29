@@ -1,0 +1,10 @@
+# False-positive trap: every line below LOOKS credential-ish but is a
+# placeholder, example, or env-var reference. A correct scanner emits
+# ZERO findings here. Regressions that relax suppression light this up.
+AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY_HERE
+AWS_SECRET_ACCESS_KEY=<your-secret-access-key>
+API_TOKEN=${API_TOKEN}
+github_token = "ghp_example_token_replace_me"
+password = "changeme"
+stripe_key = "sk_test_EXAMPLE"
+slack_webhook = "https://hooks.slack.com/services/XXXX/YYYY/ZZZZ"

@@ -1,0 +1,6 @@
+description = "Ordinary prose with no secrets: zero findings, exit 0"
+corpus = ["clean.txt"]
+args = ["scan", "--format", "json", "{corpus}/clean.txt"]
+exit_code = 0
+max_ms = 20000
+expect_total = 0
