@@ -2,6 +2,97 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.37 - 2026-05-29 - Mirror benchmark: F1 0.7815 to 0.8896 (closes the gap to betterleaks 0.892)
+
+Headline: precision 0.9716, recall 0.8203, F1 0.8896 against the
+SecretBench mirror corpus (15,000 fixtures). Net delta vs v0.5.35
+is +0.108 F1, +5.9pp precision over the betterleaks 0.913 floor at
+0.003 below their 0.892 F1. Precision was the headline lever for
+this release: 154 docs-example FPs killed, over-broad detector
+arms narrowed, decode-through composition tightened, and confidence
+floors only apply when the value is not algorithmically a
+placeholder.
+
+### Detection truth (engine)
+
+- entropy fallback: lift the blanket 32/40/64/128-char hex blacklist
+  and the strict-mode >10-char hex drop ONLY when a credential keyword
+  is on the same line (`apiKey: <hex>`, `TOKEN=<hex>`). Outside an
+  anchor the blacklist holds, protecting sha256-hex / npm-lock-integrity
+  / k8s-resource-uid negatives. Closes the generic-high-entropy-string
+  R=0.38 hole.
+- generic-secret regex: add `.` to the keyword-separator class so
+  `api.key=` / `private.key=` / `client.secret=` in .properties,
+  helm-values, terraform locals are recognised alongside `_`/`-`.
+- decode-through: compose decoded-placeholder + uniform-base64-blob
+  into every generic emit (decoded chunks no longer surface
+  placeholders or known image-digest shapes).
+- confidence: skip the `known_prefix_confidence_floor` boost when the
+  value is itself a placeholder word (closes 154 docs-example FPs
+  driven by service-prefix-only fixtures).
+- decode_structure feature wired into the entropy-fallback emit path
+  (the rebuilt 42-feature ML model now sees decode topology on the
+  same code path the rule engine uses).
+- ML confidence: 112 named detectors that silently fell below the 0.3
+  floor are now correctly surfaced.
+- sources: UTF-16LE wide-string extractor lifts credentials from
+  Windows .NET / PE binaries.
+
+### Detector regex narrowings
+
+scaleway-api-key (drop the bare `secret[_-]key` arm), flickr +
+iterable + consul (drop generic alternations, -256 FPs),
+lambdatest + saltstack (drop generic alternations),
+etherscan-api-key (drop the bare `apikey=<32hex>` arm that
+claimed every random hex digest), aws-session-token / aws-ecr-token
+/ anrok / applitools / appsmith / appwrite / avalara / avaya /
+aweber / libsql (word-boundary prefix + quote-aware terminator).
+
+### ML pipeline
+
+The training pipeline (`ml/`) was rebuilt in-tree alongside the Rust
+serve path: `ml/features.py` mirrors `ml_features.rs` byte-for-byte,
+`ml/decode_structure.py` mirrors `decode_structure.rs`, and
+`ml/parity_check.py` is a Rust-to-Python parity harness using a new
+`compute_features_with_config` test export. `ml/train_classifier.py`
+produces an MoE classifier with fast-sigmoid activations serialized
+into `weights.bin` (model version `moe-v1-83688a6a6cb77f70`).
+Decode-structure becomes feature #42; Rust scorer bumped to 42
+features end-to-end.
+
+### Build / packaging
+
+- Lean CI build profile: `cargo build --no-default-features --features ci`
+  produces a Hyperscan-free, GPU-free, verify-free, TUI-free binary
+  with near-instant cold start.
+- vendor: adopt vyre 0.6.1 (latest upstream) + migrate keyhog to wgpu 25.
+- GHCR: publish image per release + maintain floating major tag.
+
+### Release / install
+
+- self-update: verify the release binary minisign signature before
+  the self-replace, and fail closed on missing signatures (was
+  silent bypass).
+- Action / docs: wire the documented `baseline` input into the scan,
+  fix broken adoption recipes (install URL, docker image, exit
+  codes), and fix Action version pins through v0.5.35.
+
+### Test infrastructure
+
+- secretbench: base64-aware + escape-aware overlap promotes 92
+  mis-counted TPs that overlapped escaped or base64-decoded values.
+- adversarial oracle: scan_text unescapes `\u{XXXX}` Rust unicode
+  escapes so wrapper fixtures with escape syntax exercise the same
+  byte stream the scanner sees in real files.
+- gates: line / modularity cap demoted to advisory warn; stale
+  filesystem_read gate dropped after the read.rs to read/ split.
+
+## v0.5.36 - skipped (folded into v0.5.37)
+
+The 0.5.36 version was committed (`chore(release): v0.5.36`) but
+never tagged or shipped; the work between 0.5.35 and 0.5.36 is
+consolidated above into the 0.5.37 release notes.
+
 ## v0.5.35 - 2026-05-28 - Adversarial wrapper harness: 216 to 152 wrapper-test misses (30% reduction)
 
 ### Detector regex fixes
