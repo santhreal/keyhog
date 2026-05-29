@@ -26,12 +26,13 @@ repos:
         # Require the binary to be built
         require_serial: true
 
-  # Alternative: Direct repository hook (when published)
-  # Uncomment and modify when KeyHog is published to a Git repository
-  # - repo: https://github.com/your-org/keyhog
-  #   rev: v0.1.0
+  # Alternative: pull the hook straight from the published keyhog repo.
+  # Requires keyhog already on PATH (the hook uses language: system; install
+  # via the one-line installer in the README first).
+  # - repo: https://github.com/santhsecurity/keyhog
+  #   rev: v0.5.35
   #   hooks:
-  #     - id: keyhog-secret-scan
+  #     - id: keyhog
   #       args: ['--min-confidence', '0.5']
 
   # Standard pre-commit hooks
