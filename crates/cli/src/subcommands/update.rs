@@ -6,14 +6,9 @@
 
 use crate::args::UpdateArgs;
 use crate::installer;
+use crate::style::Palette;
 use anyhow::Result;
 use std::process::ExitCode;
-
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const DIM: &str = "\x1b[2m";
-const BOLD: &str = "\x1b[1m";
-const RESET: &str = "\x1b[0m";
 
 /// `--check` exit code when a newer release is available (0 = up-to-date).
 /// Distinct so a cron/CI poller can branch on "update available" without
@@ -21,6 +16,14 @@ const RESET: &str = "\x1b[0m";
 const EXIT_UPDATE_AVAILABLE: u8 = 10;
 
 pub async fn run(args: UpdateArgs) -> Result<ExitCode> {
+    let Palette {
+        green,
+        yellow,
+        dim,
+        bold,
+        reset,
+        ..
+    } = Palette::for_stdout();
     let current = env!("CARGO_PKG_VERSION");
     let client = installer::http_client()?;
     let release = installer::resolve_release(&client, args.version.as_deref()).await?;
@@ -32,7 +35,7 @@ pub async fn run(args: UpdateArgs) -> Result<ExitCode> {
     let want_cuda = args.variant.as_deref() == Some("cuda");
     let asset = installer::select_asset(&release, want_cuda)?;
 
-    println!("{BOLD}keyhog update{RESET}");
+    println!("{bold}keyhog update{reset}");
     println!("  current        v{current}");
     println!("  latest         {latest}");
     println!("  asset          {}", asset.name);
@@ -41,13 +44,13 @@ pub async fn run(args: UpdateArgs) -> Result<ExitCode> {
     // A pinned --version always proceeds (downgrade/pin is intentional);
     // otherwise only act when latest is strictly newer.
     if args.version.is_none() && !newer {
-        println!("\n{GREEN}{BOLD}✓ already on the latest release.{RESET}");
+        println!("\n{green}{bold}✓ already on the latest release.{reset}");
         return Ok(ExitCode::SUCCESS);
     }
 
     if args.check {
         println!(
-            "\n{YELLOW}{BOLD}update available:{RESET} v{current} → {latest}  {DIM}(run `keyhog update`){RESET}"
+            "\n{yellow}{bold}update available:{reset} v{current} → {latest}  {dim}(run `keyhog update`){reset}"
         );
         return Ok(ExitCode::from(EXIT_UPDATE_AVAILABLE));
     }
@@ -58,7 +61,7 @@ pub async fn run(args: UpdateArgs) -> Result<ExitCode> {
     installer::install_binary(&exe, &bytes)?;
 
     println!(
-        "\n{GREEN}{BOLD}✓ updated v{current} → {latest}{RESET}  {DIM}{}{RESET}",
+        "\n{green}{bold}✓ updated v{current} → {latest}{reset}  {dim}{}{reset}",
         exe.display()
     );
     Ok(ExitCode::SUCCESS)

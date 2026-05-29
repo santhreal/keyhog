@@ -12,16 +12,10 @@
 
 use crate::args::DoctorArgs;
 use crate::installer::scan_engine_self_test;
+use crate::style::Palette;
 use anyhow::Result;
 use keyhog_scanner::hw_probe::probe_hardware;
 use std::process::ExitCode;
-
-const GREEN: &str = "\x1b[32m";
-const RED: &str = "\x1b[31m";
-const YELLOW: &str = "\x1b[33m";
-const DIM: &str = "\x1b[2m";
-const BOLD: &str = "\x1b[1m";
-const RESET: &str = "\x1b[0m";
 
 /// Exit code when the scan-engine self-test fails - distinct from scan-side
 /// codes so a post-install gate can fail closed on a broken binary.
@@ -30,8 +24,16 @@ const EXIT_DOCTOR_UNHEALTHY: u8 = 4;
 pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     let mut healthy = true;
     let mut warned = false;
+    let Palette {
+        green,
+        red,
+        yellow,
+        dim,
+        bold,
+        reset,
+    } = Palette::for_stdout();
 
-    println!("{BOLD}keyhog doctor{RESET}  v{}", env!("CARGO_PKG_VERSION"));
+    println!("{bold}keyhog doctor{reset}  v{}", env!("CARGO_PKG_VERSION"));
 
     // ── Host ──────────────────────────────────────────────────────────
     let hw = probe_hardware();
@@ -44,7 +46,7 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     } else {
         "scalar"
     };
-    println!("\n{BOLD}host{RESET}");
+    println!("\n{bold}host{reset}");
     println!(
         "  os/arch        {} / {}",
         std::env::consts::OS,
@@ -56,24 +58,24 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     );
     println!("  simd           {simd}");
     let gpu = if !hw.gpu_available {
-        format!("{DIM}not detected (CPU/SIMD path){RESET}")
+        format!("{dim}not detected (CPU/SIMD path){reset}")
     } else if hw.gpu_is_software {
-        format!("{YELLOW}software renderer (disabled for scans){RESET}")
+        format!("{yellow}software renderer (disabled for scans){reset}")
     } else {
-        format!("{GREEN}{}{RESET}", hw.gpu_name.as_deref().unwrap_or("yes"))
+        format!("{green}{}{reset}", hw.gpu_name.as_deref().unwrap_or("yes"))
     };
     println!("  gpu            {gpu}");
     println!(
         "  hyperscan      {}",
         if hw.hyperscan_available {
-            format!("{GREEN}compiled-in{RESET}")
+            format!("{green}compiled-in{reset}")
         } else {
-            format!("{DIM}absent (regex fallback){RESET}")
+            format!("{dim}absent (regex fallback){reset}")
         }
     );
 
     // ── Install ───────────────────────────────────────────────────────
-    println!("\n{BOLD}install{RESET}");
+    println!("\n{bold}install{reset}");
     match std::env::current_exe() {
         Ok(exe) => {
             println!("  binary         {}", exe.display());
@@ -82,11 +84,11 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
                     .map(|p| std::env::split_paths(&p).any(|d| d == dir))
                     .unwrap_or(false);
                 if on_path {
-                    println!("  on PATH        {GREEN}yes{RESET}");
+                    println!("  on PATH        {green}yes{reset}");
                 } else {
                     warned = true;
                     println!(
-                        "  on PATH        {YELLOW}no{RESET}  {DIM}add: export PATH=\"{}:$PATH\"{RESET}",
+                        "  on PATH        {yellow}no{reset}  {dim}add: export PATH=\"{}:$PATH\"{reset}",
                         dir.display()
                     );
                 }
@@ -94,19 +96,19 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         }
         Err(e) => {
             warned = true;
-            println!("  binary         {YELLOW}unknown ({e}){RESET}");
+            println!("  binary         {yellow}unknown ({e}){reset}");
         }
     }
     println!("  version        v{}", env!("CARGO_PKG_VERSION"));
 
     // ── Detector corpus ───────────────────────────────────────────────
-    println!("\n{BOLD}detectors{RESET}");
+    println!("\n{bold}detectors{reset}");
     let embedded = keyhog_core::embedded_detector_count();
     if embedded > 0 {
-        println!("  embedded       {GREEN}{embedded}{RESET} service detectors");
+        println!("  embedded       {green}{embedded}{reset} service detectors");
     } else {
         healthy = false;
-        println!("  embedded       {RED}0 - corpus missing from binary{RESET}");
+        println!("  embedded       {red}0 - corpus missing from binary{reset}");
     }
 
     // ── End-to-end self-test ──────────────────────────────────────────
@@ -114,31 +116,31 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // secret round-trips through compile -> scan -> extract -> report.
     // Proves the scan pipeline is functional on this build/host without
     // the ~3s full-corpus compile or example-suppression interference.
-    println!("\n{BOLD}self-test{RESET}");
+    println!("\n{bold}self-test{reset}");
     match scan_engine_self_test() {
         Ok(true) => println!(
-            "  scan engine    {GREEN}PASS{RESET}  {DIM}planted secret detected end-to-end{RESET}"
+            "  scan engine    {green}PASS{reset}  {dim}planted secret detected end-to-end{reset}"
         ),
         Ok(false) => {
             healthy = false;
-            println!("  scan engine    {RED}FAIL{RESET}  planted secret was NOT detected");
+            println!("  scan engine    {red}FAIL{reset}  planted secret was NOT detected");
         }
         Err(e) => {
             healthy = false;
-            println!("  scan engine    {RED}FAIL{RESET}  {e}");
+            println!("  scan engine    {red}FAIL{reset}  {e}");
         }
     }
 
     // ── Summary ───────────────────────────────────────────────────────
     println!();
     if healthy && !warned {
-        println!("{GREEN}{BOLD}✓ keyhog is healthy.{RESET}");
+        println!("{green}{bold}✓ keyhog is healthy.{reset}");
         Ok(ExitCode::SUCCESS)
     } else if healthy {
-        println!("{YELLOW}{BOLD}keyhog works, with warnings above.{RESET}");
+        println!("{yellow}{bold}keyhog works, with warnings above.{reset}");
         Ok(ExitCode::SUCCESS)
     } else {
-        eprintln!("{RED}{BOLD}✗ keyhog is unhealthy - see failures above.{RESET}");
+        eprintln!("{red}{bold}✗ keyhog is unhealthy - see failures above.{reset}");
         Ok(ExitCode::from(EXIT_DOCTOR_UNHEALTHY))
     }
 }
