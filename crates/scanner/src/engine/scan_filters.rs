@@ -109,6 +109,40 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
+/// Single-pass scan for a contiguous run of base62 (alphanumeric) bytes
+/// of length >= `MIN_ENTROPY_RUN`. The keyword-gated fallback drop in
+/// `scan_coalesced` (no-HS-hit branch) historically required the chunk
+/// to contain a generic-assignment / secret keyword before routing
+/// through `scan_inner` — chunks of pure entropy with NO keyword anchor
+/// (the `generic-high-entropy-string` corpus shape) silently bailed,
+/// pinning that category's recall at 0.36 on the SecretBench mirror.
+///
+/// `MIN_ENTROPY_RUN` is set to 32 chars so the gate stays cheap and
+/// rarely trips on natural code: function/class names cap around 24
+/// chars, UUIDs are 36 chars *with dashes* (longest base62 run = 12),
+/// and the longest English word is 28 chars. Real secrets at this
+/// threshold are credentials (32-char hex APIs, 40-char base62 tokens,
+/// 64-char SHA hex, base64 blobs). Hash/UUID-shaped FPs are still
+/// suppressed downstream by `looks_like_hash_digest` /
+/// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it
+/// just admits the chunk to the entropy fallback for inspection.
+#[cfg(feature = "simd")]
+pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
+    const MIN_ENTROPY_RUN: usize = 32;
+    let mut run = 0usize;
+    for &b in data {
+        if b.is_ascii_alphanumeric() {
+            run += 1;
+            if run >= MIN_ENTROPY_RUN {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
 /// Per-detector minimum entropy threshold for generic detectors.
 ///
 /// Different secret formats have inherently different entropy profiles:

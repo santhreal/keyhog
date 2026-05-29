@@ -193,9 +193,23 @@ impl CompiledScanner {
                     // (>32 KB) are almost never config and the per-file
                     // fallback walk on Go/Java/Python framework code is
                     // dead work.
+                    // Third gate (added 2026-05-29): chunks containing a
+                    // contiguous base62 run >= 32 chars - the
+                    // generic-high-entropy-string corpus shape (a bare
+                    // entropy token with NO keyword anchor). Without
+                    // this, that category sat at recall 0.36 on the
+                    // SecretBench mirror; the entropy fallback never
+                    // saw the chunk because no keyword admitted it.
+                    // Hash/UUID FPs are still suppressed downstream by
+                    // looks_like_hash_digest / is_uuid_v4_shape, so the
+                    // wider gate trades pipeline cost for recall, not
+                    // FPs. Cost cap stays at 32 KB so monorepo scans
+                    // (gitlabhq, etc.) don't pay per-chunk fallback
+                    // walks on >32 KB source files.
                     if chunk.data.len() <= 32 * 1024
                         && (has_generic_assignment_keyword(chunk.data.as_bytes())
-                            || has_secret_keyword_fast(chunk.data.as_bytes()))
+                            || has_secret_keyword_fast(chunk.data.as_bytes())
+                            || has_high_entropy_run_fast(chunk.data.as_bytes()))
                     {
                         let mut matches = self.scan_inner(chunk, ScanBackend::SimdCpu, None);
                         // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing
