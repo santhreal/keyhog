@@ -31,7 +31,7 @@ present:
 Backend selection is automatic. On startup:
 
 ```
-keyhog v0.5.35 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
+keyhog v0.5.36 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
 ```
 
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
@@ -70,7 +70,7 @@ install.
 Override the variant with `KEYHOG_VARIANT=cuda` (force the native CUDA
 build, requires `libcuda.so` at runtime) or `KEYHOG_VARIANT=cpu` (force
 the default WGPU + SIMD build, skip GPU detection entirely). Pin a
-version with `KEYHOG_VERSION=v0.5.34`. Change the install dir with
+version with `KEYHOG_VERSION=v0.5.36`. Change the install dir with
 `KEYHOG_INSTALL=/usr/local/bin`.
 
 Three diagnostic modes ship with the same script:
@@ -242,7 +242,7 @@ your own fixtures.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.36
   with:
     path: .
     severity: high       # info | low | medium | high | critical
@@ -275,7 +275,7 @@ Or via the `pre-commit` framework:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.34
+    rev: v0.5.36
     hooks:
       - id: keyhog
 ```
