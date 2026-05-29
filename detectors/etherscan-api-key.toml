@@ -15,10 +15,16 @@ regex = "(?:ETHERSCAN|etherscan)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[
 description = "Etherscan API key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "apikey[=:\\s\\\"']+([a-f0-9]{32})"
-description = "Etherscan API key in apikey parameter"
-group = 1
+# The bare `apikey=<32hex>` pattern was deliberately removed (2026-05-29).
+# It was attributing every random 32-char hex string in any `apikey=` /
+# `apikey:` assignment to Etherscan, mis-claiming git commit shas, sha256
+# prefixes, sha1 digests, and generic 32-hex API keys from 113 unrelated
+# services. SecretBench mirror v22: 226 FPs (27.5% of all FPs in the
+# corpus) all traced to this single pattern. Etherscan keys carry no
+# distinctive prefix - the ONLY way to attribute one is the surrounding
+# `etherscan` keyword, which pattern #1 above already requires. The
+# remaining pattern catches every shape the contract enforces
+# (ETHERSCAN_API_KEY=, etherscan.api.key:, ETHERSCAN-API-KEY=).
 
 [detector.verify]
 method = "GET"
