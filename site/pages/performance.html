@@ -115,10 +115,11 @@ emits a Markdown table.</p>
 <h2>Profiling tips</h2>
 
 <ul>
-  <li><strong><code>KEYHOG_LOG=debug</code></strong> dumps per-phase
-  timing on stderr.</li>
-  <li><strong><code>keyhog scan . --bench</code></strong> prints
-  per-detector hit counts and time spent in each phase.</li>
+  <li><strong><code>RUST_LOG=keyhog=debug</code></strong> dumps per-phase
+  routing + timing detail on stderr.</li>
+  <li><strong><code>keyhog scan --benchmark</code></strong> runs the
+  built-in backend benchmark corpus and prints throughput per backend,
+  then exits (no path argument needed).</li>
   <li><strong><code>perf record</code> / <code>cargo flamegraph</code></strong>
   work cleanly — keyhog is a pure Rust binary with no async runtime, so
   stack traces are clean.</li>

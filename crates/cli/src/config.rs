@@ -1,6 +1,7 @@
 //! Configuration file handling for the KeyHog CLI.
 
 use crate::args::ScanArgs;
+use crate::value_parsers::{parse_dedup_scope, parse_output_format, parse_severity_filter};
 use std::path::PathBuf;
 
 /// On-disk `.keyhog.toml` configuration file that mirrors CLI arguments.
@@ -54,9 +55,10 @@ pub struct ConfigFile {
     pub exclude_paths: Option<Vec<String>>,
     /// Maximum file size to scan (can be string like '1MB' or bytes).
     pub max_file_size: Option<String>,
-    /// Per-regex lazy-DFA cache size limit, e.g. "256KB" / "1MB" (default
-    /// 1 MiB). Bounds per-worker scan memory (≈ active_detectors × this ×
-    /// threads). The `--regex-dfa-limit` CLI flag overrides this.
+    /// Per-regex lazy-DFA cache CEILING, e.g. "256KB" / "1MB" (default 1 MiB).
+    /// Worst-case bound for pathological patterns, not a general memory lever
+    /// (typical detectors stay under it). The `--regex-dfa-limit` CLI flag
+    /// overrides this.
     pub regex_dfa_limit: Option<String>,
     /// ML weight for confidence scoring, 0.0-1.0 (default: 0.6).
     pub ml_weight: Option<f64>,
@@ -69,17 +71,21 @@ pub struct ConfigFile {
     /// Keywords indicating a placeholder value (e.g. "change_me", "todo").
     pub placeholder_keywords: Option<Vec<String>>,
 
-    // ─── Documented nested sections (Issue #5) ──────────────────────
-    // The README documents `[scan]`, `[allowlist]`, `[detector.X]`, and
-    // `[lockdown]` nested tables. Pre-fix these were silently ignored -
-    // a user copying the README example believed lockdown enforcement
-    // was active when it never reached the runtime. The structs below
-    // PARSE those sections so config-load no longer drops them on the
-    // floor. Wiring into ScanArgs happens in `apply_config_file` per
-    // section; fields not yet wired emit a deprecation hint at load
-    // time so the user sees which lines are recognized-but-inactive
-    // instead of recognized-and-effective. New fields here should ship
-    // with both a parser entry AND the wire-up in apply_config_file.
+    // ─── Documented nested sections ─────────────────────────────────
+    // The README documents `[scan]`, `[detector.X]`, and `[lockdown]`
+    // nested tables; all three are now WIRED in `apply_config_file`
+    // (`[scan]` -> the flat scalar args, `[detector.X] enabled` -> the
+    // disabled-detector set, `[lockdown] require` -> ConfigOutcome). They
+    // were previously parsed-and-silently-ignored - a user copying the
+    // README believed e.g. lockdown enforcement was active when it never
+    // reached the runtime.
+    //
+    // `[allowlist]` is still parse-only: its governance flags
+    // (require_reason / require_approved_by / max_expires_days) need the
+    // allowlist evaluator to enforce them, which is not yet built, so the
+    // README no longer presents it as active. Suppression itself works via
+    // `.keyhogignore`. New nested fields must ship with BOTH a parser entry
+    // here AND the wire-up in apply_config_file - never parse-only.
     /// `[scan]` - runtime scan policy. Mirrors top-level scalar fields.
     pub scan: Option<ScanSection>,
     /// `[allowlist]` - `.keyhogignore` discovery + governance metadata.
@@ -234,29 +240,17 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     }
 
     if let Some(ref format_str) = config.format {
-        // Shorthand: we only override if user didn't set --format (which defaults to Text)
-        // This is a bit tricky with clap default_value, but we can check if it's the default.
+        // Only override if the user didn't set --format (defaults to Text).
         if matches!(args.format, crate::args::OutputFormat::Text) {
-            match format_str.to_lowercase().as_str() {
-                "json" => args.format = crate::args::OutputFormat::Json,
-                "jsonl" => args.format = crate::args::OutputFormat::Jsonl,
-                "sarif" => args.format = crate::args::OutputFormat::Sarif,
-                "text" => args.format = crate::args::OutputFormat::Text,
-                _ => {}
+            if let Some(fmt) = parse_output_format(format_str) {
+                args.format = fmt;
             }
         }
     }
 
     if let Some(ref severity_str) = config.severity {
         if args.severity.is_none() {
-            match severity_str.to_lowercase().as_str() {
-                "info" => args.severity = Some(crate::args::SeverityFilter::Info),
-                "low" => args.severity = Some(crate::args::SeverityFilter::Low),
-                "medium" => args.severity = Some(crate::args::SeverityFilter::Medium),
-                "high" => args.severity = Some(crate::args::SeverityFilter::High),
-                "critical" => args.severity = Some(crate::args::SeverityFilter::Critical),
-                _ => {}
-            }
+            args.severity = parse_severity_filter(severity_str);
         }
     }
 
@@ -299,11 +293,8 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     if let Some(ref dedup_str) = config.dedup {
         // credential is the clap default
         if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
-            match dedup_str.to_lowercase().as_str() {
-                "credential" => args.dedup = crate::args::CliDedupScope::Credential,
-                "file" => args.dedup = crate::args::CliDedupScope::File,
-                "none" => args.dedup = crate::args::CliDedupScope::None,
-                _ => {}
+            if let Some(scope) = parse_dedup_scope(dedup_str) {
+                args.dedup = scope;
             }
         }
     }
@@ -417,6 +408,41 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     }
     if let Some(keywords) = config.placeholder_keywords {
         args.placeholder_keywords = keywords;
+    }
+
+    // `[scan]` nested table - the surface the README documents as canonical.
+    // Mirrors the flat top-level scalars and fills only fields still at their
+    // default (so the flat form wins if both are present, and a `[scan]`-only
+    // config now actually takes effect instead of being silently dropped).
+    if let Some(scan) = config.scan {
+        if args.severity.is_none() {
+            if let Some(ref s) = scan.severity {
+                args.severity = parse_severity_filter(s);
+            }
+        }
+        if args.min_confidence.is_none() {
+            args.min_confidence = scan.min_confidence;
+        }
+        if matches!(args.format, crate::args::OutputFormat::Text) {
+            if let Some(ref f) = scan.format {
+                if let Some(fmt) = parse_output_format(f) {
+                    args.format = fmt;
+                }
+            }
+        }
+        if args.exclude_paths.is_none() {
+            args.exclude_paths = scan.exclude;
+        }
+        if args.threads.is_none() {
+            args.threads = scan.threads;
+        }
+        if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
+            if let Some(ref d) = scan.dedup {
+                if let Some(scope) = parse_dedup_scope(d) {
+                    args.dedup = scope;
+                }
+            }
+        }
     }
 
     // `[lockdown] require = true` -> the caller refuses to run unless

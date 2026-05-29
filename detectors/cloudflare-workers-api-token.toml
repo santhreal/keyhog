@@ -10,9 +10,17 @@ service = "cloudflare"
 severity = "critical"
 keywords = ["cloudflare", "workers", "CLOUDFLARE_WORKERS"]
 
+# `WORKERS` is MANDATORY here (no trailing `?`). When it was optional this
+# pattern collapsed to `cloudflare...api...token=` and matched plain
+# `cloudflare_api_token=` shapes - which are owned by the generic
+# `cloudflare-api-token` detector - so every Workers-less Cloudflare token
+# reported twice under two detector names. Requiring the `workers` keyword
+# makes this detector fire only on genuinely Workers-scoped tokens; the
+# bare `cloudflare_api_token=` shape now belongs solely to
+# `cloudflare-api-token`.
 [[detector.patterns]]
-regex = "(?:CLOUDFLARE|cloudflare)[._\\-\\s]*(?:WORKERS|workers)?[._\\-\\s]*(?:API|api)?[._\\-\\s]*(?:TOKEN|token)[=:\\s\"'\\']+([a-zA-Z0-9_-]{40})"
-description = "Cloudflare Workers API token with context anchor"
+regex = "(?:CLOUDFLARE|cloudflare)[._\\-\\s]*(?:WORKERS|workers)[._\\-\\s]*(?:API|api)?[._\\-\\s]*(?:TOKEN|token)[=:\\s\"'\\']+([a-zA-Z0-9_-]{40})"
+description = "Cloudflare Workers API token with workers-scoped context anchor"
 group = 1
 
 [[detector.patterns]]

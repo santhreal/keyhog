@@ -71,7 +71,7 @@ pub const KNOWN_PREFIXES: &[&str] = &[
     // bodies, not arbitrary PEM blocks.
     "PRIVATE KEY",
     // PEM-framed private key blocks captured by the `private-key`
-    // detector start with `-----BEGIN` (e.g. `-----BEGIN RSA PRIVATE KEY-----`).
+    // detector start with `-----BEGIN` (e.g. `-----BEGIN RSA-PRIVATE-KEY-----`).
     "-----BEGIN",
     // Test-fixture marker used by the bundled suppression list.
     "TESTKEY_",

@@ -97,8 +97,8 @@ unsupported argument).</p>
 
 <pre><code><span class="prompt">$</span> keyhog scan . --severity high            <span class="c"># medium+ ignored</span>
 <span class="prompt">$</span> keyhog scan . --min-confidence 0.7       <span class="c"># raise the ML floor</span>
-<span class="prompt">$</span> keyhog scan . --detector aws-access-key  <span class="c"># single detector</span>
-<span class="prompt">$</span> keyhog scan . --exclude '**/test/**'     <span class="c"># skip test trees</span></code></pre>
+<span class="prompt">$</span> keyhog scan . --exclude-paths '**/test/**' <span class="c"># skip test trees</span>
+<span class="prompt">$</span> keyhog scan . --fast                     <span class="c"># pattern-only, fastest</span></code></pre>
 
 <p>Severity is one of <code>info · low · medium · high · critical</code>.
 Combine flags freely — they AND together.</p>
@@ -151,14 +151,14 @@ Security Dashboard, or any SARIF-aware tool.</p>
 <span class="c"># Pipe through stdin</span>
 <span class="prompt">$</span> cat config.yaml | keyhog scan --stdin
 
-<span class="c"># Scan a Docker image</span>
-<span class="prompt">$</span> keyhog scan --image registry.example/app:v1.2.3
+<span class="c"># Scan a Docker image (unpacks `docker image save`)</span>
+<span class="prompt">$</span> keyhog scan --docker-image registry.example/app:v1.2.3
 
-<span class="c"># Scan an S3 bucket</span>
-<span class="prompt">$</span> keyhog scan --s3 s3://logs-prod/
+<span class="c"># Scan an S3 bucket (bucket name; --s3-prefix to narrow)</span>
+<span class="prompt">$</span> keyhog scan --s3-bucket logs-prod
 
 <span class="c"># Scan an entire GitHub org</span>
-<span class="prompt">$</span> keyhog scan --github-org santhsecurity --token "$GITHUB_TOKEN"</code></pre>
+<span class="prompt">$</span> keyhog scan --github-org santhsecurity --github-token "$GITHUB_TOKEN"</code></pre>
 
 <h2>Live verification</h2>
 

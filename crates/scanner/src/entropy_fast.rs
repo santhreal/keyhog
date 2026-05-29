@@ -88,8 +88,14 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
 
     for chunk in chunks {
         // Fast-path null check to speed up binary scanning
-        if chunk[0] == 0 && chunk[1] == 0 && chunk[2] == 0 && chunk[3] == 0
-            && chunk[4] == 0 && chunk[5] == 0 && chunk[6] == 0 && chunk[7] == 0
+        if chunk[0] == 0
+            && chunk[1] == 0
+            && chunk[2] == 0
+            && chunk[3] == 0
+            && chunk[4] == 0
+            && chunk[5] == 0
+            && chunk[6] == 0
+            && chunk[7] == 0
         {
             active_len -= 8;
             continue;

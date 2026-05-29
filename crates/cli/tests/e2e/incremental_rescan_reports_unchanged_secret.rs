@@ -42,8 +42,8 @@ fn incremental_rescan_still_reports_secret_in_unchanged_file() {
         String::from_utf8_lossy(&second.stdout)
     );
     assert!(
-        String::from_utf8_lossy(&second.stdout).contains("github_pat"),
-        "run 2 must still surface the github_pat finding"
+        String::from_utf8_lossy(&second.stdout).contains("github-classic-pat"),
+        "run 2 must still surface the github-classic-pat finding"
     );
 }
 

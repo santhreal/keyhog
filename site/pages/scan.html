@@ -100,7 +100,7 @@ be combined in one invocation; findings stream as they fire.</p>
 
 <pre><code><span class="prompt">$</span> keyhog scan . --verify              <span class="c"># live-verify all eligible findings</span>
 <span class="prompt">$</span> keyhog scan . --verify --severity high <span class="c"># only verify high+critical</span>
-<span class="prompt">$</span> keyhog scan . --verify --verify-timeout 5s</code></pre>
+<span class="prompt">$</span> keyhog scan . --verify --verify-rate 2   <span class="c"># cap verify calls/sec per service</span></code></pre>
 
 <p>Each verifiable detector ships a verifier (GitHub PATs hit
 <code>GET /user</code>, AWS keys hit STS GetCallerIdentity, Slack hits

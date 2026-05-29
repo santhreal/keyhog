@@ -164,3 +164,41 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
         Ok(bytes_f as usize)
     }
 }
+
+/// Parse a severity string into the CLI filter enum. Shared by the flat
+/// top-level `severity` field and the `[scan]` nested table in `.keyhog.toml`
+/// so both surfaces accept identical spellings (one source of truth).
+pub fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
+    use crate::args::SeverityFilter as S;
+    match s.to_lowercase().as_str() {
+        "info" => Some(S::Info),
+        "low" => Some(S::Low),
+        "medium" => Some(S::Medium),
+        "high" => Some(S::High),
+        "critical" => Some(S::Critical),
+        _ => None,
+    }
+}
+
+/// Parse an output-format string. Shared by the flat `format` field and `[scan]`.
+pub fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
+    use crate::args::OutputFormat as F;
+    match s.to_lowercase().as_str() {
+        "json" => Some(F::Json),
+        "jsonl" => Some(F::Jsonl),
+        "sarif" => Some(F::Sarif),
+        "text" => Some(F::Text),
+        _ => None,
+    }
+}
+
+/// Parse a dedup-scope string. Shared by the flat `dedup` field and `[scan]`.
+pub fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
+    use crate::args::CliDedupScope as D;
+    match s.to_lowercase().as_str() {
+        "credential" => Some(D::Credential),
+        "file" => Some(D::File),
+        "none" => Some(D::None),
+        _ => None,
+    }
+}

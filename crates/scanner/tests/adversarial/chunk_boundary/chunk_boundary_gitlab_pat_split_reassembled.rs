@@ -13,7 +13,7 @@ fn chunk_boundary_gitlab_pat_split_reassembled() {
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
-    let secret = "glpat-abcdefghijklmnopqrst";
+    let secret = "glpat-x7Bd9Kf2Lm4Qp8Rt6Vw3";
     let split = 10;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -43,8 +43,11 @@ fn chunk_boundary_gitlab_pat_split_reassembled() {
 
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
     let found = results.iter().flatten().any(|m| {
-        m.detector_id.as_ref() == "gitlab-pat"
-            && m.credential.as_ref() == "glpat-abcdefghijklmnopqrst"
+        m.detector_id.as_ref() == "gitlab-personal-access-token"
+            && m.credential.as_ref() == "glpat-x7Bd9Kf2Lm4Qp8Rt6Vw3"
     });
-    assert!(found, "gitlab-pat split across chunk seam must reassemble");
+    assert!(
+        found,
+        "gitlab-personal-access-token split across chunk seam must reassemble"
+    );
 }

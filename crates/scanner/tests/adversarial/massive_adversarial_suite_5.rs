@@ -253,10 +253,7 @@ fn adv5_anyscale_key_normal_must_fire() {
 
 #[test]
 fn adv5_anyscale_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "anyscale-api-key",
-        "secrez_a1b2c3d4e5f6g7h8i9j0k1l2m3",
-    );
+    assert_detector_silent("anyscale-api-key", "secrez_a1b2c3d4e5f6g7h8i9j0k1l2m3");
 }
 
 #[test]

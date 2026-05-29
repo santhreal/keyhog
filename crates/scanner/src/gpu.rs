@@ -45,10 +45,11 @@ pub fn batch_ml_inference(
 
     #[cfg(feature = "ml")]
     {
+        use rayon::prelude::*;
         // Auto-route: try GPU batch first, fall back to CPU MoE on failure or
         // when the batch is below the GPU crossover threshold.
         let features: Vec<[f32; 41]> = candidates
-            .iter()
+            .par_iter()
             .map(|(text, ctx)| {
                 crate::ml_scorer::compute_features_with_config(
                     text,
@@ -66,7 +67,7 @@ pub fn batch_ml_inference(
         }
 
         candidates
-            .iter()
+            .par_iter()
             .map(|(text, ctx)| {
                 crate::ml_scorer::score_with_config(
                     text,
@@ -121,45 +122,52 @@ pub struct VyreGpuSelfTest {
     pub coalesced_matches: usize,
 }
 
+static GPU_SELF_TEST_CACHE: std::sync::OnceLock<std::result::Result<GpuSelfTest, String>> =
+    std::sync::OnceLock::new();
+
 /// Force a GPU compute dispatch and validate the returned scores.
 ///
 /// This is stricter than [`gpu_available`]: it proves that a non-fallback wgpu
 /// adapter initialized and that the MoE compute shader can run at least one
 /// production-sized batch.
 pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
-    const SELF_TEST_BATCH: usize = 64;
+    GPU_SELF_TEST_CACHE
+        .get_or_init(|| {
+            const SELF_TEST_BATCH: usize = 64;
 
-    let gpu = backend::get_gpu().ok_or_else(|| {
-        "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
-            .to_string()
-    })?;
+            let gpu = backend::get_gpu().ok_or_else(|| {
+                "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
+                    .to_string()
+            })?;
 
-    let features = [[0.0_f32; 41]; SELF_TEST_BATCH];
-    let scores = backend::batch_score_features(&features)
-        .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
+            let features = [[0.0_f32; 41]; SELF_TEST_BATCH];
+            let scores = backend::batch_score_features(&features)
+                .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
 
-    if scores.len() != SELF_TEST_BATCH {
-        return Err(format!(
-            "GPU dispatch returned {} scores for {SELF_TEST_BATCH} inputs",
-            scores.len()
-        ));
-    }
+            if scores.len() != SELF_TEST_BATCH {
+                return Err(format!(
+                    "GPU dispatch returned {} scores for {SELF_TEST_BATCH} inputs",
+                    scores.len()
+                ));
+            }
 
-    if let Some((index, score)) = scores
-        .iter()
-        .enumerate()
-        .find(|(_, score)| !score.is_finite() || !(0.0..=1.0).contains(*score))
-    {
-        return Err(format!(
-            "GPU dispatch returned invalid score {score} at index {index}"
-        ));
-    }
+            if let Some((index, score)) = scores
+                .iter()
+                .enumerate()
+                .find(|(_, score)| !score.is_finite() || !(0.0..=1.0).contains(*score))
+            {
+                return Err(format!(
+                    "GPU dispatch returned invalid score {score} at index {index}"
+                ));
+            }
 
-    Ok(GpuSelfTest {
-        adapter_name: gpu.gpu_name().to_string(),
-        vram_mb: gpu.vram_mb(),
-        scores: scores.len(),
-    })
+            Ok(GpuSelfTest {
+                adapter_name: gpu.gpu_name().to_string(),
+                vram_mb: gpu.vram_mb(),
+                scores: scores.len(),
+            })
+        })
+        .clone()
 }
 
 /// Force the vyre GPU scanner and coalesced scanner paths.

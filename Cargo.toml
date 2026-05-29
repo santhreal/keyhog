@@ -28,7 +28,13 @@ authors = ["Santh Project <security@santh.dev>"]
 keyhog-core = { version = "=0.5.36", path = "crates/core" }
 keyhog-scanner = { version = "=0.5.36", path = "crates/scanner", default-features = false }
 keyhog-verifier = { version = "=0.5.36", path = "crates/verifier" }
-keyhog-sources = { version = "=0.5.36", path = "crates/sources" }
+# default-features = false so consumers opt into source backends per profile.
+# Cargo ignores a member's `default-features = false` unless the workspace entry
+# also sets it (warns "default-features is ignored ... could become a hard error"),
+# so the lean `ci` profile could not actually shed git/web/gix until this was set
+# here. The cli re-enables git/web/github/s3/docker in its full/default/portable
+# profiles; `ci` enables none (filesystem + stdin only).
+keyhog-sources = { version = "=0.5.36", path = "crates/sources", default-features = false }
 
 # Serialization
 serde = { version = "=1.0.228", features = ["derive"] }

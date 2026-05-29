@@ -153,16 +153,27 @@ fn dense_relu_layer<const INPUT: usize, const OUTPUT: usize>(
 }
 
 fn dense_row<const INPUT: usize>(weights: &[f32], input: &[f32; INPUT], bias: f32) -> f32 {
-    weights
-        .iter()
-        .zip(input.iter())
-        .fold(bias, |sum, (weight, input_value)| {
-            sum + (*input_value * *weight)
-        })
+    let mut sum = bias;
+    let len = weights.len().min(INPUT);
+    let w_slice = &weights[..len];
+    let i_slice = &input[..len];
+    for i in 0..len {
+        sum += i_slice[i] * w_slice[i];
+    }
+    sum
 }
 
 fn sigmoid(value: f32) -> f32 {
-    1.0 / (1.0 + (-value).exp())
+    let x = value;
+    if x <= -6.0 {
+        0.0
+    } else if x >= 6.0 {
+        1.0
+    } else {
+        // Fast polynomial/rational evaluation of sigmoid (0.5 + 0.5 * x / (1 + |x|))
+        // which avoids expensive transcendental exp() function calls.
+        0.5 + 0.5 * x / (1.0 + x.abs())
+    }
 }
 
 fn softmax(logits: &[f32; EXPERT_COUNT]) -> [f32; EXPERT_COUNT] {

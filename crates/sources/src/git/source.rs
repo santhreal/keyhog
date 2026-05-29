@@ -163,6 +163,7 @@ fn stream_git_blobs(
     };
     let mut current_tree_blobs: VecDeque<Chunk> = VecDeque::new();
     let mut seen_blobs: HashSet<gix::ObjectId> = HashSet::new();
+    let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
     let mut done = false;
@@ -205,6 +206,10 @@ fn stream_git_blobs(
             let Ok(id) = gix::ObjectId::from_hex(commit_id.as_bytes()) else {
                 continue;
             };
+            // Cache visited Git commit OIDs in a fast set to avoid traversing duplicate merge commits (KH-56)
+            if !seen_commits.insert(id) {
+                continue;
+            }
             let Ok(obj) = repo.find_object(id) else {
                 continue;
             };
@@ -215,22 +220,61 @@ fn stream_git_blobs(
                 continue;
             };
 
-            let mut chunks = Vec::new();
-            collect_tree_blobs_to_vec(
-                repo,
-                &tree,
-                commit_id,
-                author,
-                &head_blobs,
-                &mut seen_blobs,
-                &mut chunks,
-                &mut total_bytes,
-                &mut chunk_count,
-                b"",
-            );
+            let mut blob_metadata = Vec::new();
+            collect_tree_blobs_metadata(repo, &tree, &mut seen_blobs, &mut blob_metadata, b"");
 
-            if !chunks.is_empty() {
-                current_tree_blobs.extend(chunks);
+            if !blob_metadata.is_empty() {
+                let repo_cloned = repo.clone();
+                let commit_id_str = commit_id.to_string();
+                let author_str = author.to_string();
+                let head_blobs_ref = &head_blobs;
+
+                // Serial blob decompression. This was `into_par_iter()` (KH-58),
+                // but `gix::Repository` (gix 0.77) holds RefCell-backed object/
+                // pack caches: it is `Send` but NOT `Sync`, so sharing one across
+                // Rayon worker threads does not compile. A fresh
+                // `cargo build -p keyhog-sources --features git` failed with 7
+                // `RefCell<…> cannot be shared between threads safely` errors -
+                // which is why clean CI builds went red while cached local builds
+                // still passed. Correct re-parallelization needs a per-thread
+                // `gix::open(git_dir)` via `map_init` (each worker owns its own
+                // Repository); tracked as a follow-up. Serial is correct and
+                // keeps git history scanning working.
+                let chunks: Vec<Chunk> = blob_metadata
+                    .into_iter()
+                    .filter_map(|(oid, filepath)| {
+                        // Reject blobs larger than max_file_size immediately by reading only the Git object header metadata (KH-66)
+                        let header = repo_cloned.find_header(oid).ok()?;
+                        if header.kind() != Kind::Blob || header.size() > MAX_GIT_BLOB_BYTES {
+                            return None;
+                        }
+                        let obj = repo_cloned.find_object(oid).ok()?;
+                        let file_text = std::str::from_utf8(&obj.data).ok()?.to_string();
+                        let path = String::from_utf8_lossy(&filepath).to_string();
+                        let in_head = head_blobs_ref.contains(&oid);
+                        Some(Chunk {
+                            data: file_text.into(),
+                            metadata: ChunkMetadata {
+                                base_offset: 0,
+                                source_type: if in_head { "git/head" } else { "git/history" }
+                                    .into(),
+                                path: Some(path),
+                                commit: Some(commit_id_str.clone()),
+                                author: Some(author_str.clone()),
+                                date: None,
+                                mtime_ns: None,
+                                size_bytes: Some(header.size()),
+                            },
+                        })
+                    })
+                    .collect();
+
+                for chunk in chunks {
+                    total_bytes = total_bytes.saturating_add(chunk.data.len());
+                    chunk_count += 1;
+                    current_tree_blobs.push_back(chunk);
+                }
+
                 if let Some(chunk) = current_tree_blobs.pop_front() {
                     return Some(Ok(chunk));
                 }
@@ -239,32 +283,34 @@ fn stream_git_blobs(
     }))
 }
 
-fn collect_tree_blobs_to_vec(
+fn collect_tree_blobs_metadata(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
-    commit_id: &str,
-    author: &str,
-    head_blobs: &HashSet<gix::ObjectId>,
     seen_blobs: &mut HashSet<gix::ObjectId>,
-    chunks: &mut Vec<Chunk>,
-    total_bytes: &mut usize,
-    chunk_count: &mut usize,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
 ) {
-    if *total_bytes >= MAX_GIT_TOTAL_BYTES || *chunk_count >= MAX_GIT_CHUNKS {
-        return;
-    }
     for entry_ref in tree.iter() {
-        if *total_bytes >= MAX_GIT_TOTAL_BYTES || *chunk_count >= MAX_GIT_CHUNKS {
-            return;
-        }
         let entry = match entry_ref {
             Ok(e) => e,
             Err(error) => {
-                tracing::debug!(?commit_id, %error, "git tree entry read failed; skipping");
+                tracing::debug!(%error, "git tree entry read failed; skipping");
                 continue;
             }
         };
+
+        // Skip Git trees containing only excluded paths without reading individual blob OIDs (KH-59)
+        let name = entry.filename();
+        if name == b"node_modules"
+            || name == b"target"
+            || name == b".git"
+            || name == b"__pycache__"
+            || name == b"dist"
+            || name == b"build"
+            || name == b"vendor"
+        {
+            continue;
+        }
 
         let oid = entry.oid().to_owned();
 
@@ -282,16 +328,11 @@ fn collect_tree_blobs_to_vec(
         if mode.is_tree() {
             if let Ok(obj) = repo.find_object(oid) {
                 if let Ok(subtree) = obj.try_into_tree() {
-                    collect_tree_blobs_to_vec(
+                    collect_tree_blobs_metadata(
                         repo,
                         &subtree,
-                        commit_id,
-                        author,
-                        head_blobs,
                         seen_blobs,
-                        chunks,
-                        total_bytes,
-                        chunk_count,
+                        blob_metadata,
                         &filepath,
                     );
                 }
@@ -303,52 +344,9 @@ fn collect_tree_blobs_to_vec(
             continue;
         }
 
-        if !seen_blobs.insert(oid) {
-            continue;
+        if seen_blobs.insert(oid) {
+            blob_metadata.push((oid, filepath));
         }
-
-        let header = match repo.find_header(oid) {
-            Ok(header) => header,
-            Err(error) => {
-                tracing::debug!(?oid, %error, "git blob header read failed; skipping");
-                continue;
-            }
-        };
-        if header.kind() != Kind::Blob || header.size() > MAX_GIT_BLOB_BYTES {
-            continue;
-        }
-
-        let obj = match repo.find_object(oid) {
-            Ok(o) => o,
-            Err(error) => {
-                tracing::debug!(?oid, %error, "git blob read failed; skipping");
-                continue;
-            }
-        };
-
-        let file_text = match std::str::from_utf8(&obj.data) {
-            Ok(text) => text.to_string(),
-            Err(_) => continue,
-        };
-
-        let path = String::from_utf8_lossy(&filepath).to_string();
-        *total_bytes = total_bytes.saturating_add(file_text.len());
-        *chunk_count += 1;
-
-        let in_head = head_blobs.contains(&oid);
-        chunks.push(Chunk {
-            data: file_text.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                source_type: if in_head { "git/head" } else { "git/history" }.into(),
-                path: Some(path),
-                commit: Some(commit_id.to_string()),
-                author: Some(author.to_string()),
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-            },
-        });
     }
 }
 

@@ -3,8 +3,8 @@
 //! Exclusively validates SSRF bogon checks, loopback evasion variations, DNS caches,
 //! and verifier cache lookups.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use keyhog_verifier::ssrf::{is_private_ip_addr_fast, is_private_url};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 // =========================================================================
 // 1. SSRF BOGON AND LOOPBACK IP ADDRESS FAST CHECKS

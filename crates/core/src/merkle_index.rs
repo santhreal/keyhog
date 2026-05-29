@@ -41,7 +41,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::merkle_spec_hash::{hex_encode, hex_to_array};
@@ -109,7 +109,7 @@ struct CacheEntry {
 /// concurrent updates rarely contend.
 #[derive(Debug)]
 pub struct MerkleIndex {
-    shards: Vec<Mutex<HashMap<PathBuf, CacheEntry>>>,
+    shards: Vec<RwLock<HashMap<PathBuf, CacheEntry>>>,
 }
 
 impl MerkleIndex {
@@ -117,7 +117,7 @@ impl MerkleIndex {
     pub fn empty() -> Self {
         Self {
             shards: (0..MERKLE_SHARDS)
-                .map(|_| Mutex::new(HashMap::new()))
+                .map(|_| RwLock::new(HashMap::new()))
                 .collect(),
         }
     }
@@ -213,7 +213,7 @@ impl MerkleIndex {
         let idx = Self::empty();
         for (p, e) in entries {
             let i = shard_index(&p);
-            idx.shards[i].lock().insert(p, e);
+            idx.shards[i].write().insert(p, e);
         }
         idx
     }
@@ -265,11 +265,11 @@ impl MerkleIndex {
             None => Self::load(path),
         };
         for shard in &on_disk_now.shards {
-            merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
+            merged.extend(shard.read().iter().map(|(p, e)| (p.clone(), *e)));
         }
         // In-memory entries layer on top - last-write-wins by path.
         for shard in &self.shards {
-            merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
+            merged.extend(shard.read().iter().map(|(p, e)| (p.clone(), *e)));
         }
         let entries: HashMap<String, EntryV2> = merged
             .iter()
@@ -320,7 +320,7 @@ impl MerkleIndex {
     pub fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
         let i = shard_index(path);
         self.shards[i]
-            .lock()
+            .read()
             .get(path)
             .is_some_and(|prev| &prev.hash == content_hash)
     }
@@ -333,7 +333,7 @@ impl MerkleIndex {
     pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
         let i = shard_index(path);
         self.shards[i]
-            .lock()
+            .read()
             .get(path)
             .is_some_and(|prev| prev.mtime_ns == mtime_ns && prev.size == size)
     }
@@ -345,7 +345,7 @@ impl MerkleIndex {
     pub fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
         let i = shard_index(path);
         self.shards[i]
-            .lock()
+            .read()
             .get(path)
             .map(|e| (e.mtime_ns, e.size, e.hash))
     }
@@ -370,7 +370,7 @@ impl MerkleIndex {
         content_hash: [u8; 32],
     ) {
         let i = shard_index(&path);
-        self.shards[i].lock().insert(
+        self.shards[i].write().insert(
             path,
             CacheEntry {
                 mtime_ns,
@@ -392,17 +392,17 @@ impl MerkleIndex {
     /// finding, no secret value ever touches the on-disk index.
     pub fn forget(&self, path: &Path) {
         let i = shard_index(path);
-        self.shards[i].lock().remove(path);
+        self.shards[i].write().remove(path);
     }
 
     /// Number of indexed entries.
     pub fn len(&self) -> usize {
-        self.shards.iter().map(|s| s.lock().len()).sum()
+        self.shards.iter().map(|s| s.read().len()).sum()
     }
 
     /// Returns true if no cached entries are present across any shard.
     pub fn is_empty(&self) -> bool {
-        self.shards.iter().all(|s| s.lock().is_empty())
+        self.shards.iter().all(|s| s.read().is_empty())
     }
 }
 

@@ -6,9 +6,9 @@ max_ms = 20000
 expect_total = 2
 
 [[expect]]
-detector_id = "hot-aws_key"
+detector_id = "aws-access-key"
 line = 5
 
 [[expect]]
-detector_id = "hot-github_pat"
+detector_id = "github-classic-pat"
 line = 7

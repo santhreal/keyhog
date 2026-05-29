@@ -64,13 +64,17 @@ fn scan_finds_planted_aws_key_and_returns_exit_1() {
     let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let arr = findings.as_array().expect("findings JSON is an array");
     assert!(!arr.is_empty(), "expected at least one finding");
-    let aws = arr
-        .iter()
-        .find(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("hot-aws_key"));
-    assert!(
-        aws.is_some(),
-        "expected aws-access-key finding; got: {arr:?}",
-    );
+    // An AKIA key is caught by the simdsieve fast path (`hot-aws_key`) when it
+    // engages, otherwise by the named `aws-access-key` detector. Both are a
+    // correct AWS detection - assert on either so the test does not break on a
+    // backend/size-dependent fast-path engagement decision.
+    let aws = arr.iter().find(|f| {
+        matches!(
+            f.get("detector_id").and_then(|v| v.as_str()),
+            Some("aws-access-key" | "hot-aws_key")
+        )
+    });
+    assert!(aws.is_some(), "expected an AWS key finding; got: {arr:?}");
 }
 
 #[test]
@@ -697,9 +701,11 @@ fn daemon_wire_scan_path_finds_planted_secret() {
         serde_json::from_slice(&scan.stdout).expect("daemon stdout is JSON");
     let arr = findings.as_array().expect("array");
     assert!(
-        arr.iter()
-            .any(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("hot-aws_key")),
-        "daemon wire path must return aws finding; got {arr:?}"
+        arr.iter().any(|f| matches!(
+            f.get("detector_id").and_then(|v| v.as_str()),
+            Some("aws-access-key" | "hot-aws_key")
+        )),
+        "daemon wire path must return an AWS finding; got {arr:?}"
     );
 }
 
@@ -814,5 +820,70 @@ fn uninstall_dry_run_does_not_remove_the_binary() {
         bin.exists(),
         "dry-run uninstall MUST NOT delete the binary at {}",
         bin.display()
+    );
+}
+
+/// Write `content` + a `.keyhog.toml` of `config` into a temp dir, scan the
+/// dir, return (stdout, stderr, exit-code). Exercises the real config-load
+/// path (`.keyhog.toml` discovery + `apply_config_file`).
+fn scan_dir_with_config(
+    content: &str,
+    config: &str,
+    extra: &[&str],
+) -> (String, String, Option<i32>) {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join("planted.txt"), content).expect("write fixture");
+    std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
+    let output = Command::new(binary())
+        .args(["scan", "--no-daemon", "--format", "json"])
+        .args(extra)
+        .arg(dir.path())
+        .output()
+        .expect("spawn keyhog scan");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        output.status.code(),
+    )
+}
+
+#[test]
+fn config_detector_disable_drops_findings() {
+    // `[detector.<id>] enabled = false` must actually drop the detector. This
+    // README-documented toggle was parsed and SILENTLY IGNORED before being
+    // wired, so a user disabling a noisy detector kept seeing it fire. The
+    // hot-pattern fast path (`hot-aws_key`) shadows the TOML `aws-access-key`
+    // detector, so both must be disabled to fully silence the AWS key.
+    let aws = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
+    let (_o, _e, before) = scan_dir_with_config(aws, "", &[]);
+    assert_eq!(before, Some(1), "baseline: the AWS key must be found");
+    let (out, _e, code) = scan_dir_with_config(
+        aws,
+        "[detector.hot-aws_key]\nenabled = false\n[detector.aws-access-key]\nenabled = false\n",
+        &[],
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "disabling the AWS detectors via .keyhog.toml must yield zero findings; stdout={out}"
+    );
+}
+
+#[test]
+fn config_lockdown_require_refuses_without_flag() {
+    // `[lockdown] require = true` is a fail-closed security control: refuse to
+    // run unless --lockdown is passed (README: "refuse to run without
+    // --lockdown"). It was parsed and silently ignored, so a repo that believed
+    // it mandated lockdown ran unprotected. The refusal must be explicit.
+    let (_o, err, code) =
+        scan_dir_with_config("ordinary content\n", "[lockdown]\nrequire = true\n", &[]);
+    assert_ne!(
+        code,
+        Some(0),
+        "a repo whose .keyhog.toml requires lockdown must NOT run without --lockdown"
+    );
+    assert!(
+        err.to_lowercase().contains("lockdown"),
+        "the refusal must name lockdown so the operator knows why; stderr={err}"
     );
 }

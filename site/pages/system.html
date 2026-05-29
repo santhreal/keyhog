@@ -74,8 +74,10 @@ status.</p>
   <code>autofs</code>. The triage scan is for persistent storage.</li>
   <li><strong>Skips files above <code>--max-file-size</code></strong>
   (default 10 MB). Override for video / disk-image scanning.</li>
-  <li><strong>Skips known-binary types</strong> (images, archives,
-  compiled binaries) unless <code>--scan-binary</code> is passed.</li>
+  <li><strong>Skips known-binary types</strong> (images, archives).
+  Native-binary string extraction requires a build with the
+  <code>binary</code> feature (Ghidra); container images are scanned via
+  <code>--docker-image</code>.</li>
 </ul>
 
 <h2>Always-on hardening applies</h2>
@@ -99,8 +101,9 @@ directories. Run under <code>sudo</code> for true machine-wide coverage:</p>
 
 <p>keyhog never writes anywhere except the output path you specify and the
 on-disk cache under <code>~/.cache/keyhog/</code> (which
-<code>--lockdown</code> refuses to populate). Inspect the cache layout
-with <code>keyhog cache info</code>.</p>
+<code>--lockdown</code> refuses to populate, and
+<code>KEYHOG_CACHE_DIR</code> relocates). Inspect it directly - it is a plain
+directory.</p>
 
 <h2>Use cases</h2>
 

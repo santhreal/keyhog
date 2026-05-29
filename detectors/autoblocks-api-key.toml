@@ -11,7 +11,11 @@ severity = "high"
 keywords = ["AB-", "AUTOBLOCKS_V2_API_KEY", "AUTOBLOCKS_API_KEY", "autoblocks"]
 
 [[detector.patterns]]
-regex = "AB-[a-zA-Z0-9_-]{20,}"
+# (?-i): the AB- prefix is uppercase (canonical positive AB-Kp4Qx7Rm2Sn5...).
+# keyhog's default case-insensitive compile matched lowercase `ab-...`
+# identifiers (config keys, doc slugs, manpage tokens) - 25 FPs on a stock
+# /usr/share + /usr/include scan. Dogfood 2026-05-29.
+regex = "(?-i)AB-[a-zA-Z0-9_-]{20,}"
 description = "Autoblocks API key (AB- prefix)"
 
 [[detector.patterns]]

@@ -13,7 +13,7 @@ fn chunk_boundary_google_api_key_split_reassembled() {
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
-    let secret = "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZabcd";
+    let secret = "AIzaSyD8x2Kf9Lm3Qp7Rt5Vw1Yz4Bc6Nh0Jk7Pq";
     let split = 14;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -44,7 +44,7 @@ fn chunk_boundary_google_api_key_split_reassembled() {
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "google-api-key"
-            && m.credential.as_ref() == "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZabcd"
+            && m.credential.as_ref() == "AIzaSyD8x2Kf9Lm3Qp7Rt5Vw1Yz4Bc6Nh0Jk7Pq"
     });
     assert!(
         found,

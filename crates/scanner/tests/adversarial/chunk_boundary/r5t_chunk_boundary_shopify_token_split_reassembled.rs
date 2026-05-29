@@ -12,7 +12,7 @@ fn r5t_chunk_boundary_shopify_token_split_reassembled() {
     d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
-    let secret = "shpat_0123456789abcdef0123456789abcdef";
+    let secret = "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";
     let split = 14;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -39,11 +39,15 @@ fn r5t_chunk_boundary_shopify_token_split_reassembled() {
         },
     };
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
+    // `shpat_` is the Shopify ADMIN API token shape, owned by
+    // `shopify-admin-api-token`. (The generic `shopify-access-token` detector
+    // owns only the `shpca_` custom-app shape - it no longer double-claims
+    // `shpat_`.)
     let found = results.iter().flatten().any(|m| {
-        m.detector_id.as_ref() == "shopify-access-token" && m.credential.as_ref() == secret
+        m.detector_id.as_ref() == "shopify-admin-api-token" && m.credential.as_ref() == secret
     });
     assert!(
         found,
-        "shopify-access-token split across chunk seam must reassemble"
+        "shopify-admin-api-token split across chunk seam must reassemble"
     );
 }

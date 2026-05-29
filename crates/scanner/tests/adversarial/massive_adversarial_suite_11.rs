@@ -15,27 +15,46 @@ use oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv11_avalara_normal_must_fire() {
-    assert_detector_fires("avalara-api-credentials", "avalara_license_key = \"abcde1234567890a\"", "abcde1234567890a");
+    assert_detector_fires(
+        "avalara-api-credentials",
+        "avalara_license_key = \"abcde1234567890a\"",
+        "abcde1234567890a",
+    );
 }
 
 #[test]
 fn adv11_avalara_wrong_prefix_must_silent() {
-    assert_detector_silent("avalara-api-credentials", "bvalara_license_key = \"abcde1234567890a\"");
+    assert_detector_silent(
+        "avalara-api-credentials",
+        "bvalara_license_key = \"abcde1234567890a\"",
+    );
 }
 
 #[test]
 fn adv11_avalara_evade_zwsp_must_fire() {
-    assert_detector_fires("avalara-api-credentials", "avalara\u{200B}_license_key = \"abcde1234567890a\"", "abcde1234567890a");
+    assert_detector_fires(
+        "avalara-api-credentials",
+        "avalara\u{200B}_license_key = \"abcde1234567890a\"",
+        "abcde1234567890a",
+    );
 }
 
 #[test]
 fn adv11_avalara_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("avalara-api-credentials", "avalara_license_key = \"abcde12345\u{00AD}67890a\"", "abcde1234567890a");
+    assert_detector_fires(
+        "avalara-api-credentials",
+        "avalara_license_key = \"abcde12345\u{00AD}67890a\"",
+        "abcde1234567890a",
+    );
 }
 
 #[test]
 fn adv11_avalara_evade_homoglyph_must_fire() {
-    assert_detector_fires("avalara-api-credentials", "av\u{0430}lara_license_key = \"abcde1234567890a\"", "abcde1234567890a");
+    assert_detector_fires(
+        "avalara-api-credentials",
+        "av\u{0430}lara_license_key = \"abcde1234567890a\"",
+        "abcde1234567890a",
+    );
 }
 
 // =========================================================================
@@ -44,27 +63,46 @@ fn adv11_avalara_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_avaya_normal_must_fire() {
-    assert_detector_fires("avaya-api-credentials", "avaya_apikey = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "avaya-api-credentials",
+        "avaya_apikey = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_avaya_wrong_prefix_must_silent() {
-    assert_detector_silent("avaya-api-credentials", "navaya_apikey = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "avaya-api-credentials",
+        "navaya_apikey = \"abcde1234567890abcde\"",
+    );
 }
 
 #[test]
 fn adv11_avaya_evade_zwsp_must_fire() {
-    assert_detector_fires("avaya-api-credentials", "avaya\u{200B}_apikey = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "avaya-api-credentials",
+        "avaya\u{200B}_apikey = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_avaya_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("avaya-api-credentials", "avaya_apikey = \"abcde12345\u{00AD}67890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "avaya-api-credentials",
+        "avaya_apikey = \"abcde12345\u{00AD}67890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_avaya_evade_homoglyph_must_fire() {
-    assert_detector_fires("avaya-api-credentials", "av\u{0430}ya_apikey = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "avaya-api-credentials",
+        "av\u{0430}ya_apikey = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 // =========================================================================
@@ -73,27 +111,46 @@ fn adv11_avaya_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_aweber_normal_must_fire() {
-    assert_detector_fires("aweber-api-credentials", "aweber_token = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aweber-api-credentials",
+        "aweber_token = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_aweber_wrong_prefix_must_silent() {
-    assert_detector_silent("aweber-api-credentials", "baweber_token = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "aweber-api-credentials",
+        "baweber_token = \"abcde1234567890abcde\"",
+    );
 }
 
 #[test]
 fn adv11_aweber_evade_zwsp_must_fire() {
-    assert_detector_fires("aweber-api-credentials", "aweber\u{200B}_token = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aweber-api-credentials",
+        "aweber\u{200B}_token = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_aweber_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aweber-api-credentials", "aweber_token = \"abcde12345\u{00AD}67890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aweber-api-credentials",
+        "aweber_token = \"abcde12345\u{00AD}67890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_aweber_evade_homoglyph_must_fire() {
-    assert_detector_fires("aweber-api-credentials", "aw\u{0435}ber_token = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aweber-api-credentials",
+        "aw\u{0435}ber_token = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 // =========================================================================
@@ -102,27 +159,46 @@ fn adv11_aweber_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_codecommit_normal_must_fire() {
-    assert_detector_fires("aws-codecommit-credentials", "codecommit-username = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-codecommit-credentials",
+        "codecommit-username = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_codecommit_wrong_prefix_must_silent() {
-    assert_detector_silent("aws-codecommit-credentials", "modecommit-username = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "aws-codecommit-credentials",
+        "modecommit-username = \"abcde1234567890abcde\"",
+    );
 }
 
 #[test]
 fn adv11_codecommit_evade_zwsp_must_fire() {
-    assert_detector_fires("aws-codecommit-credentials", "codecommit\u{200B}-username = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-codecommit-credentials",
+        "codecommit\u{200B}-username = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_codecommit_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aws-codecommit-credentials", "codecommit-username = \"abcde12345\u{00AD}67890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-codecommit-credentials",
+        "codecommit-username = \"abcde12345\u{00AD}67890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_codecommit_evade_homoglyph_must_fire() {
-    assert_detector_fires("aws-codecommit-credentials", "codecomm\u{0456}t-username = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-codecommit-credentials",
+        "codecomm\u{0456}t-username = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 // =========================================================================
@@ -131,27 +207,46 @@ fn adv11_codecommit_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_cognito_normal_must_fire() {
-    assert_detector_fires("aws-cognito-client-secret", "COGNITO_CLIENT_SECRET = \"abcde1234567890abcde1234567890abcde12345\"", "abcde1234567890abcde1234567890abcde12345");
+    assert_detector_fires(
+        "aws-cognito-client-secret",
+        "COGNITO_CLIENT_SECRET = \"abcde1234567890abcde1234567890abcde12345\"",
+        "abcde1234567890abcde1234567890abcde12345",
+    );
 }
 
 #[test]
 fn adv11_cognito_wrong_prefix_must_silent() {
-    assert_detector_silent("aws-cognito-client-secret", "MOGNITO_CLIENT_SECRET = \"abcde1234567890abcde1234567890abcde12345\"");
+    assert_detector_silent(
+        "aws-cognito-client-secret",
+        "MOGNITO_CLIENT_SECRET = \"abcde1234567890abcde1234567890abcde12345\"",
+    );
 }
 
 #[test]
 fn adv11_cognito_evade_zwsp_must_fire() {
-    assert_detector_fires("aws-cognito-client-secret", "COGNITO\u{200B}_CLIENT_SECRET = \"abcde1234567890abcde1234567890abcde12345\"", "abcde1234567890abcde1234567890abcde12345");
+    assert_detector_fires(
+        "aws-cognito-client-secret",
+        "COGNITO\u{200B}_CLIENT_SECRET = \"abcde1234567890abcde1234567890abcde12345\"",
+        "abcde1234567890abcde1234567890abcde12345",
+    );
 }
 
 #[test]
 fn adv11_cognito_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aws-cognito-client-secret", "COGNITO_CLIENT_SECRET = \"abcde1234567890abcde1\u{00AD}234567890abcde12345\"", "abcde1234567890abcde1234567890abcde12345");
+    assert_detector_fires(
+        "aws-cognito-client-secret",
+        "COGNITO_CLIENT_SECRET = \"abcde1234567890abcde1\u{00AD}234567890abcde12345\"",
+        "abcde1234567890abcde1234567890abcde12345",
+    );
 }
 
 #[test]
 fn adv11_cognito_evade_homoglyph_must_fire() {
-    assert_detector_fires("aws-cognito-client-secret", "c\u{043E}gnito_client_secret = \"abcde1234567890abcde1234567890abcde12345\"", "abcde1234567890abcde1234567890abcde12345");
+    assert_detector_fires(
+        "aws-cognito-client-secret",
+        "c\u{043E}gnito_client_secret = \"abcde1234567890abcde1234567890abcde12345\"",
+        "abcde1234567890abcde1234567890abcde12345",
+    );
 }
 
 // =========================================================================
@@ -189,27 +284,46 @@ fn adv11_ecr_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_lambda_normal_must_fire() {
-    assert_detector_fires("aws-lambda-function-url-secret", "lambda_url_token = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-lambda-function-url-secret",
+        "lambda_url_token = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_lambda_wrong_prefix_must_silent() {
-    assert_detector_silent("aws-lambda-function-url-secret", "lamba_url_token = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "aws-lambda-function-url-secret",
+        "lamba_url_token = \"abcde1234567890abcde\"",
+    );
 }
 
 #[test]
 fn adv11_lambda_evade_zwsp_must_fire() {
-    assert_detector_fires("aws-lambda-function-url-secret", "lambda_url\u{200B}_token = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-lambda-function-url-secret",
+        "lambda_url\u{200B}_token = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_lambda_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aws-lambda-function-url-secret", "lambda_url_token = \"abcde12345\u{00AD}67890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-lambda-function-url-secret",
+        "lambda_url_token = \"abcde12345\u{00AD}67890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv11_lambda_evade_homoglyph_must_fire() {
-    assert_detector_fires("aws-lambda-function-url-secret", "lambd\u{0430}_url_token = \"abcde1234567890abcde\"", "abcde1234567890abcde");
+    assert_detector_fires(
+        "aws-lambda-function-url-secret",
+        "lambd\u{0430}_url_token = \"abcde1234567890abcde\"",
+        "abcde1234567890abcde",
+    );
 }
 
 // =========================================================================
@@ -218,27 +332,46 @@ fn adv11_lambda_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_secretsmanager_normal_must_fire() {
-    assert_detector_fires("aws-secrets-manager-arn", "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12", "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12");
+    assert_detector_fires(
+        "aws-secrets-manager-arn",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+    );
 }
 
 #[test]
 fn adv11_secretsmanager_wrong_prefix_must_silent() {
-    assert_detector_silent("aws-secrets-manager-arn", "brn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12");
+    assert_detector_silent(
+        "aws-secrets-manager-arn",
+        "brn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+    );
 }
 
 #[test]
 fn adv11_secretsmanager_evade_zwsp_must_fire() {
-    assert_detector_fires("aws-secrets-manager-arn", "arn:aws\u{200B}:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12", "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12");
+    assert_detector_fires(
+        "aws-secrets-manager-arn",
+        "arn:aws\u{200B}:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+    );
 }
 
 #[test]
 fn adv11_secretsmanager_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aws-secrets-manager-arn", "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret\u{00AD}-ab12", "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12");
+    assert_detector_fires(
+        "aws-secrets-manager-arn",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret\u{00AD}-ab12",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+    );
 }
 
 #[test]
 fn adv11_secretsmanager_evade_homoglyph_must_fire() {
-    assert_detector_fires("aws-secrets-manager-arn", "arn:aws:secretsmanag\u{0435}r:us-east-1:123456789012:secret:MyTestSecret-ab12", "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12");
+    assert_detector_fires(
+        "aws-secrets-manager-arn",
+        "arn:aws:secretsmanag\u{0435}r:us-east-1:123456789012:secret:MyTestSecret-ab12",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:MyTestSecret-ab12",
+    );
 }
 
 // =========================================================================
@@ -247,27 +380,46 @@ fn adv11_secretsmanager_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_ses_normal_must_fire() {
-    assert_detector_fires("aws-ses-smtp-credentials", "SES_SMTP_USERNAME = \"AKIA1234567890ABCDEF\"", "AKIA1234567890ABCDEF");
+    assert_detector_fires(
+        "aws-ses-smtp-credentials",
+        "SES_SMTP_USERNAME = \"AKIA1234567890ABCDEF\"",
+        "AKIA1234567890ABCDEF",
+    );
 }
 
 #[test]
 fn adv11_ses_wrong_prefix_must_silent() {
-    assert_detector_silent("aws-ses-smtp-credentials", "SES_SMTP_USERNAME = \"BKIA1234567890ABCDEF\"");
+    assert_detector_silent(
+        "aws-ses-smtp-credentials",
+        "SES_SMTP_USERNAME = \"BKIA1234567890ABCDEF\"",
+    );
 }
 
 #[test]
 fn adv11_ses_evade_zwsp_must_fire() {
-    assert_detector_fires("aws-ses-smtp-credentials", "SES_SMTP\u{200B}_USERNAME = \"AKIA1234567890ABCDEF\"", "AKIA1234567890ABCDEF");
+    assert_detector_fires(
+        "aws-ses-smtp-credentials",
+        "SES_SMTP\u{200B}_USERNAME = \"AKIA1234567890ABCDEF\"",
+        "AKIA1234567890ABCDEF",
+    );
 }
 
 #[test]
 fn adv11_ses_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aws-ses-smtp-credentials", "SES_SMTP_USERNAME = \"AKIA123456\u{00AD}7890ABCDEF\"", "AKIA1234567890ABCDEF");
+    assert_detector_fires(
+        "aws-ses-smtp-credentials",
+        "SES_SMTP_USERNAME = \"AKIA123456\u{00AD}7890ABCDEF\"",
+        "AKIA1234567890ABCDEF",
+    );
 }
 
 #[test]
 fn adv11_ses_evade_homoglyph_must_fire() {
-    assert_detector_fires("aws-ses-smtp-credentials", "ses_smtp_usern\u{0430}me = \"AKIA1234567890ABCDEF\"", "AKIA1234567890ABCDEF");
+    assert_detector_fires(
+        "aws-ses-smtp-credentials",
+        "ses_smtp_usern\u{0430}me = \"AKIA1234567890ABCDEF\"",
+        "AKIA1234567890ABCDEF",
+    );
 }
 
 // =========================================================================

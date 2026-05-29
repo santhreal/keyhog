@@ -97,9 +97,21 @@ pub(crate) mod backend {
                     }
                     path
                 } else {
+                    // Persistent per-user cache so the ~1.7 s Hyperscan compile
+                    // is paid once per (machine, pattern-set, hyperscan version,
+                    // CPU features) - NOT once per reboot. The previous default
+                    // lived under /tmp, which most distros mount on tmpfs or
+                    // sweep on boot, so every reboot discarded the compiled DB
+                    // and the next scan ate the full cold-start again.
+                    // ~/.cache/keyhog (XDG_CACHE_HOME) survives reboots. Falls
+                    // back to the /tmp dir only when no home/cache directory is
+                    // resolvable (minimal containers, locked-down sandboxes).
                     // SAFETY: see geteuid() above - trivial syscall.
                     let uid = unsafe { libc::geteuid() };
-                    PathBuf::from(format!("/tmp/keyhog-cache-{}", uid))
+                    match dirs::cache_dir() {
+                        Some(cache) => cache.join("keyhog"),
+                        None => PathBuf::from(format!("/tmp/keyhog-cache-{}", uid)),
+                    }
                 };
 
                 if dir.exists() {

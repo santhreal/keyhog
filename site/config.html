@@ -75,76 +75,65 @@
 
 <ol>
   <li>Compiled-in defaults.</li>
-  <li>System config: <code>/etc/keyhog/config.toml</code>.</li>
-  <li>User config: <code>~/.config/keyhog/config.toml</code>.</li>
-  <li>Repo config: <code>.keyhog.toml</code> walking up from the scanned path.</li>
+  <li>Repo config: the nearest <code>.keyhog.toml</code> found by walking up
+    from the scanned path (or an explicit <code>--config &lt;path&gt;</code>).</li>
   <li>Environment variables (<code>KEYHOG_*</code>).</li>
   <li>CLI flags.</li>
 </ol>
 
 <h2>.keyhog.toml — full reference</h2>
 
-<pre><code><span class="c"># Scan defaults</span>
+<pre><code><span class="c"># Scan defaults — flat top-level keys are the canonical form. Every key</span>
+<span class="c"># mirrors a `keyhog scan` flag; the CLI flag overrides it.</span>
+detectors        = <span class="s">"detectors"</span>     <span class="c"># detector TOML directory (env: KEYHOG_DETECTORS)</span>
+severity         = <span class="s">"high"</span>          <span class="c"># info | low | medium | high | critical</span>
+min_confidence   = 0.5                <span class="c"># 0.0 - 1.0</span>
+format           = <span class="s">"text"</span>          <span class="c"># text | json | jsonl | sarif</span>
+fast             = false              <span class="c"># pattern-only, fastest</span>
+deep             = false              <span class="c"># every feature, max recall</span>
+threads          = 0                  <span class="c"># omit for auto (one per physical core)</span>
+dedup            = <span class="s">"credential"</span>    <span class="c"># credential | file | none</span>
+show_secrets     = false
+exclude_paths    = [<span class="s">"**/test/fixtures/**"</span>, <span class="s">"vendor/"</span>]
+max_file_size    = <span class="s">"100M"</span>          <span class="c"># skip files larger than this</span>
+regex_dfa_limit  = <span class="s">"1M"</span>            <span class="c"># per-regex DFA cache ceiling</span>
+no_decode        = false
+no_entropy       = false
+no_ml            = false
+no_unicode_norm  = false
+
+<span class="c"># Verification (flat keys)</span>
+verify  = false               <span class="c"># same as --verify; must be opted into</span>
+timeout = 5                   <span class="c"># per-verify-call timeout, seconds</span>
+rate    = 5                   <span class="c"># max verify calls/sec per service</span>
+
+<span class="c"># Equivalent nested form. The [scan] table mirrors a subset of the flat</span>
+<span class="c"># keys; set either shape (the flat key wins if both are present).</span>
 <span class="k">[scan]</span>
-severity        = <span class="s">"high"</span>          <span class="c"># info | low | medium | high | critical</span>
+severity        = <span class="s">"high"</span>
 min_confidence  = 0.5
-max_file_size   = <span class="s">"10M"</span>          <span class="c"># K / M / G suffixes</span>
-respect_gitignore = true
-exclude = [
-  <span class="s">"**/test/fixtures/**"</span>,
-  <span class="s">"**/*.snap"</span>,
-  <span class="s">"vendor/"</span>,
-]
-include = []                  <span class="c"># empty = include everything; otherwise allowlist</span>
+format          = <span class="s">"text"</span>
+exclude         = [<span class="s">"vendor/"</span>]
+threads         = 0
+dedup           = <span class="s">"credential"</span>
 
-<span class="c"># Output defaults</span>
-<span class="k">[output]</span>
-format     = <span class="s">"text"</span>             <span class="c"># text | json | jsonl | sarif</span>
-color      = <span class="s">"auto"</span>             <span class="c"># auto | always | never</span>
-show_secrets = false
-quiet      = false
+<span class="c"># Per-detector overrides, keyed by the id from `keyhog detectors`</span>
+<span class="c"># (the fast-path ids are prefixed `hot-`, e.g. hot-aws_key).</span>
+<span class="k">[detector.generic-api-key]</span>
+enabled        = false        <span class="c"># turn off a noisy detector</span>
 
-<span class="c"># Backend routing — usually leave as auto</span>
-<span class="k">[backend]</span>
-choice  = <span class="s">"auto"</span>                <span class="c"># auto | gpu | simd | cpu | mega-scan</span>
-threads = 0                   <span class="c"># 0 = auto-detect (1 per core)</span>
-
-<span class="c"># Detector overrides — disable or down-tune specific detectors</span>
 <span class="k">[detector.aws-access-key]</span>
-enabled   = true
-severity  = <span class="s">"critical"</span>          <span class="c"># override the shipped severity</span>
 min_confidence = 0.6          <span class="c"># per-detector confidence floor</span>
 
-<span class="k">[detector.generic-api-key]</span>
-enabled = false               <span class="c"># turn off a noisy detector globally</span>
-
-<span class="c"># Allowlists — repo-wide governance metadata</span>
-<span class="k">[allowlist]</span>
-file      = <span class="s">".keyhogignore"</span>
-require_reason       = true   <span class="c"># reject ignore entries without a reason</span>
-require_approved_by  = true
-max_expires_days     = 180    <span class="c"># reject expires &gt; 180 days out</span>
-
-<span class="c"># Verification</span>
-<span class="k">[verify]</span>
-enabled         = false       <span class="c"># --verify must be passed explicitly</span>
-timeout_secs    = 5
-parallel        = 8
-allowed_services = [<span class="s">"github"</span>, <span class="s">"aws"</span>, <span class="s">"stripe"</span>]   <span class="c"># empty = all</span>
-
-<span class="c"># Incremental cache</span>
-<span class="k">[incremental]</span>
-enabled = true
-cache_path = <span class="s">"~/.cache/keyhog/merkle.idx"</span>
-
-<span class="c"># Daemon</span>
-<span class="k">[daemon]</span>
-socket_path = <span class="s">"$XDG_RUNTIME_DIR/keyhog.sock"</span>
-auto_connect = true           <span class="c"># --daemon attempted by default if socket exists</span>
-
-<span class="c"># Lockdown enforcement — fail closed if the env can't honor lockdown</span>
+<span class="c"># Lockdown: fail closed if the repo mandates hardening</span>
 <span class="k">[lockdown]</span>
-require = false               <span class="c"># true = refuse to run without --lockdown</span></code></pre>
+require = true                <span class="c"># refuse to run unless --lockdown is passed</span></code></pre>
+
+<p>Suppress <em>specific findings</em> (rather than whole detectors) with a
+<code>.keyhogignore</code> file, by credential hash, path glob, or
+<code>detector:</code> id - with optional inline
+<code>; reason="..."; expires=YYYY-MM-DD; approved_by="..."</code> metadata
+(expired entries are dropped automatically). See the Allowlists page.</p>
 
 <h2>Environment variables</h2>
 
@@ -152,31 +141,31 @@ require = false               <span class="c"># true = refuse to run without --l
 <table>
   <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td><code>KEYHOG_BACKEND</code></td><td>Force a backend (<code>gpu|simd|cpu|mega-scan</code>)</td></tr>
+    <tr><td><code>KEYHOG_BACKEND</code></td><td>Force a backend (<code>gpu|simd|cpu|auto</code>)</td></tr>
+    <tr><td><code>KEYHOG_DETECTORS</code></td><td>Override the detector TOML directory</td></tr>
     <tr><td><code>KEYHOG_THREADS</code></td><td>Pin rayon worker count</td></tr>
-    <tr><td><code>KEYHOG_CONFIG</code></td><td>Override config file search</td></tr>
     <tr><td><code>KEYHOG_CACHE_DIR</code></td><td>Override <code>~/.cache/keyhog/</code></td></tr>
-    <tr><td><code>KEYHOG_NO_COLOR</code> / <code>NO_COLOR</code></td><td>Disable ANSI output</td></tr>
-    <tr><td><code>KEYHOG_DAEMON_SOCKET</code></td><td>Override daemon socket path</td></tr>
-    <tr><td><code>KEYHOG_LOG</code></td><td><code>env_logger</code> filter (<code>trace|debug|info|warn|error</code>)</td></tr>
-    <tr><td><code>KEYHOG_LOCKDOWN_REQUIRE</code></td><td>Refuse to run without <code>--lockdown</code> (same as <code>[lockdown] require</code>)</td></tr>
+    <tr><td><code>KEYHOG_NO_GPU</code></td><td>Skip GPU init — run as if no adapter existed</td></tr>
+    <tr><td><code>KEYHOG_PER_CHUNK_TIMEOUT_MS</code></td><td>Per-chunk scan deadline (ms)</td></tr>
+    <tr><td><code>KEYHOG_PROXY</code></td><td>Proxy for verifier / network traffic (<code>off</code> to disable)</td></tr>
+    <tr><td><code>KEYHOG_INSECURE_TLS</code></td><td>Accept self-signed TLS certs (lab only; same as <code>--insecure</code>)</td></tr>
+    <tr><td><code>NO_COLOR</code></td><td>Disable ANSI output</td></tr>
+    <tr><td><code>RUST_LOG</code></td><td>Log filter, e.g. <code>RUST_LOG=keyhog=debug</code></td></tr>
   </tbody>
 </table>
 </div>
 
-<h2>Verify your config</h2>
+<h2>Verify your config loaded</h2>
 
-<pre><code><span class="prompt">$</span> keyhog config print
-<span class="a">[scan]</span>
-<span class="a">severity = "high"                  ← .keyhog.toml:2</span>
-<span class="a">min_confidence = 0.5               ← .keyhog.toml:3</span>
-<span class="a">max_file_size = "10M"              ← compiled default</span>
-<span class="a">[output]</span>
-<span class="a">format = "sarif"                   ← env KEYHOG_FORMAT</span>
-<span class="a">...</span></code></pre>
+<p>There is no separate config-dump command. To confirm which
+<code>.keyhog.toml</code> was picked up and that it parsed, run a scan with
+debug logging:</p>
 
-<p>Each merged value is annotated with where it came from — perfect for
-"why is the severity floor wrong?" debugging.</p>
+<pre><code><span class="prompt">$</span> RUST_LOG=keyhog=debug keyhog scan . 2&gt;&amp;1 | grep keyhog.toml
+<span class="a">loaded .keyhog.toml path=/repo/.keyhog.toml</span></code></pre>
+
+<p>A malformed config prints a <code>WARNING: Failed to parse .keyhog.toml</code>
+to stderr and is skipped rather than applied silently.</p>
 
 <h2>Project conventions</h2>
 

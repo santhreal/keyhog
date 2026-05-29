@@ -12,7 +12,11 @@ severity = "critical"
 keywords = ["co_", "cohere", "COHERE_API_KEY", "cohere_api_key"]
 
 [[detector.patterns]]
-regex = 'co_[a-zA-Z0-9_-]{30,}'
+# (?-i): co_ is lowercase (canonical positive co_K3p7QxR4mN9sBv2Ta5...).
+# Underscores stay in the body because Cohere's documented format permits
+# them; the lowercase snake_case identifier FPs (co_Dingo_Alt_Default_...)
+# are handled by the engine's named-detector pure-identifier gate, not here.
+regex = '(?-i)co_[a-zA-Z0-9_-]{30,}'
 description = "Cohere API key (co_)"
 
 [[detector.patterns]]

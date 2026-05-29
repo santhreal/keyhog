@@ -5,7 +5,7 @@ exit_code = 1
 max_ms = 20000
 
 [[expect]]
-detector_id = "hot-aws_key"
+detector_id = "aws-access-key"
 line = 6
 
-forbid = ["github-pat", "hot-github_pat"]
+forbid = ["github-pat", "github-classic-pat"]

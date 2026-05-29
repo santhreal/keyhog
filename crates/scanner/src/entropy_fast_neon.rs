@@ -29,7 +29,7 @@ pub fn shannon_entropy_neon(data: &[u8]) -> f64 {
         while i < end32 {
             let v0 = vld1q_u8(ptr.add(i));
             let v1 = vld1q_u8(ptr.add(i + 16));
-            
+
             // Fast null check using Neon ORR and MAX reduction
             if vmaxvq_u8(vorrq_u8(v0, v1)) == 0 {
                 active_len -= 32;

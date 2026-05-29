@@ -164,6 +164,14 @@ impl CompiledScanner {
             static_intern_strings,
         ));
 
+        // Precise-regex validators for the simdsieve hot fast-path. Built here
+        // (before `detectors` is moved into the struct) so the fast path can
+        // reject literal-prefix candidates the detector's own regex would not
+        // match - see `build_hot_pattern_validators`.
+        #[cfg(feature = "simdsieve")]
+        let hot_pattern_validators =
+            crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors);
+
         Ok(Self {
             ac,
             gpu_backend,
@@ -191,6 +199,8 @@ impl CompiledScanner {
             simd_prefilter,
             #[cfg(feature = "simd")]
             hs_index_map,
+            #[cfg(feature = "simdsieve")]
+            hot_pattern_validators,
             config: ScannerConfig::default(),
             alphabet_screen,
             bigram_bloom,

@@ -130,3 +130,57 @@ fn baseline_matching_ignores_file_path_and_line() {
 
     assert!(baseline.contains(&moved_finding));
 }
+
+// ── Moved from src/baseline.rs (#[cfg(test)]) per the no_inline_tests_in_src
+//    gate. findings-report-vs-baseline detection + actionable load error.
+use keyhog::baseline::{looks_like_findings_report, BASELINE_VERSION};
+use std::io::Write;
+
+#[test]
+fn findings_report_array_is_recognized() {
+    // `scan --format json` emits a top-level ARRAY of findings.
+    assert!(looks_like_findings_report(
+        r#"[{"detector_id":"hot-github_pat","line":1}]"#
+    ));
+}
+
+#[test]
+fn findings_report_object_without_baseline_keys_is_recognized() {
+    // An object lacking version+entries is not a baseline.
+    assert!(looks_like_findings_report(r#"{"results":[],"summary":{}}"#));
+}
+
+#[test]
+fn real_baseline_is_not_flagged_as_findings_report() {
+    assert!(!looks_like_findings_report(
+        r#"{"version":1,"created":"now","entries":[]}"#
+    ));
+}
+
+#[test]
+fn load_of_scan_report_gives_actionable_error_not_serde_noise() {
+    // Regression: feeding a `scan --format json` report to `diff` used to
+    // surface "invalid type: map, expected u32", which reads like file
+    // corruption. It must instead name the right command.
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    write!(tmp, r#"[{{"detector_id":"hot-github_pat","line":1}}]"#).unwrap();
+    let err = Baseline::load(tmp.path()).expect_err("a findings array is not a baseline");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("--create-baseline"),
+        "error must point at `--create-baseline`, got: {msg}"
+    );
+    assert!(
+        !msg.contains("expected u32"),
+        "raw serde noise must be suppressed, got: {msg}"
+    );
+}
+
+#[test]
+fn load_of_valid_baseline_roundtrips() {
+    let b = Baseline::empty();
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    write!(tmp, "{}", serde_json::to_string(&b).unwrap()).unwrap();
+    let loaded = Baseline::load(tmp.path()).expect("valid baseline loads");
+    assert_eq!(loaded.version, BASELINE_VERSION);
+}

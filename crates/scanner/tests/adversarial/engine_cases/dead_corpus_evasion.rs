@@ -15,7 +15,8 @@ use super::corpus_support::{
 use keyhog_core::{Chunk, ChunkMetadata};
 
 /// OpenAI project key planted across evasion fixtures.
-pub const OPENAI_PROJ_KEY: &str = "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+pub const OPENAI_PROJ_KEY: &str =
+    "sk-proj-abcDEF123_def-456GHI789jkl-MNO012pqr-STU345vwx-YZA678bcd_efghi";
 
 /// Known-example credentials the engine must suppress (negative twins).
 pub const FAKE_AWS_EXAMPLE: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
