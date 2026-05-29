@@ -1,6 +1,7 @@
 use keyhog::installer::{
     asset_name, is_newer, looks_like_native_executable, parse_semver, reap_stale_binaries,
-    replace_running_binary, scan_engine_self_test, verify_release_signature,
+    replace_running_binary, scan_engine_self_test, verify_release_signature, Asset,
+    download_verified_asset, http_client,
 };
 
 #[test]
@@ -184,4 +185,43 @@ fn reap_only_touches_this_binarys_stashes() {
     assert!(!mine.exists(), "matching stash must be reaped");
     assert!(other.exists(), "unrelated files must be left alone");
     assert!(exe.exists(), "the live binary must never be reaped");
+}
+
+
+// Supply-chain: a missing `.minisig` must FAIL CLOSED. A forged 404 on the
+// signature URL (active MITM / compromised CDN serving a tampered binary)
+// otherwise bypassed the entire minisign gate. Linux-gated because the served
+// asset must pass `looks_like_native_executable` (ELF magic) to reach the
+// signature-fetch branch; the CI test/integration jobs run on linux.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn unsigned_release_download_fails_closed() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mut elf = vec![0x7F, b'E', b'L', b'F'];
+    elf.extend_from_slice(&[0u8; 64]);
+    let asset_path = "/download/keyhog-linux-x86_64";
+    let body = elf.clone();
+    server.mock(|when, then| {
+        when.method(GET).path(asset_path);
+        then.status(200).body(body);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path(format!("{asset_path}.minisig"));
+        then.status(404).body("Not Found");
+    });
+    let asset = Asset {
+        name: "keyhog-linux-x86_64".to_string(),
+        browser_download_url: format!("{}{}", server.base_url(), asset_path),
+    };
+    let res = download_verified_asset(&http_client().unwrap(), &asset).await;
+    assert!(
+        res.is_err(),
+        "a missing .minisig must fail closed (refuse), not install on HTTPS-only trust"
+    );
+    let msg = format!("{:#}", res.unwrap_err());
+    assert!(
+        msg.contains(".minisig") || msg.to_lowercase().contains("signature"),
+        "error must name the missing signature as the reason: {msg}"
+    );
 }
