@@ -339,7 +339,7 @@ fn adv16_buildkite_api_evade_soft_hyphen_must_fire() {
 fn adv16_buildkite_api_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "buildkite-api-access-token",
-        "bk\u{0457}a_00000000000000000000000000000000",
+        "bku\u{0430}_00000000000000000000000000000000",
         "bkua_00000000000000000000000000000000",
     );
 }
@@ -387,7 +387,7 @@ fn adv16_bunnycdn_evade_soft_hyphen_must_fire() {
 fn adv16_bunnycdn_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "bunnycdn-api-key",
-        "b\u{0457}nny_key = \"00000000-0000-0000-0000-000000000000\"",
+        "bunn\u{0443}_key = \"00000000-0000-0000-0000-000000000000\"",
         "00000000-0000-0000-0000-000000000000",
     );
 }
@@ -448,8 +448,8 @@ fn adv16_calendly_evade_homoglyph_must_fire() {
 fn adv16_calendly_webhook_normal_must_fire() {
     assert_detector_fires(
         "calendly-webhook-signing-key",
-        "calendly_signing_key = \"abcde12345\"",
-        "abcde12345",
+        "calendly signing_key abcde123456",
+        "abcde123456",
     );
 }
 
@@ -457,7 +457,7 @@ fn adv16_calendly_webhook_normal_must_fire() {
 fn adv16_calendly_webhook_wrong_prefix_must_silent() {
     assert_detector_silent(
         "calendly-webhook-signing-key",
-        "falendly_signing_key = \"abcde12345\"",
+        "falendly signing_key abcde123456",
     );
 }
 
@@ -465,8 +465,8 @@ fn adv16_calendly_webhook_wrong_prefix_must_silent() {
 fn adv16_calendly_webhook_evade_zwsp_must_fire() {
     assert_detector_fires(
         "calendly-webhook-signing-key",
-        "calendly\u{200B}_signing_key = \"abcde12345\"",
-        "abcde12345",
+        "calendly\u{200B} signing_key abcde123456",
+        "abcde123456",
     );
 }
 
@@ -474,8 +474,8 @@ fn adv16_calendly_webhook_evade_zwsp_must_fire() {
 fn adv16_calendly_webhook_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "calendly-webhook-signing-key",
-        "calendly_signing_key = \"abcde\u{00AD}12345\"",
-        "abcde12345",
+        "calendly signing_key abcde\u{00AD}123456",
+        "abcde123456",
     );
 }
 
@@ -483,7 +483,9 @@ fn adv16_calendly_webhook_evade_soft_hyphen_must_fire() {
 fn adv16_calendly_webhook_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "calendly-webhook-signing-key",
-        "cal\u{0435}ndly_signing_key = \"abcde12345\"",
-        "abcde12345",
+        "cal\u{0435}ndly signing_key abcde123456",
+        "abcde123456",
     );
 }
+
+
