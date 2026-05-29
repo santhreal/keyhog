@@ -146,8 +146,11 @@ jobs:
           fetch-depth: 0          # full history for --git-diff / --git-history
       - name: Install keyhog
         run: |
-          curl -fsSL https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64.tar.gz \
-            | tar -xz -C /usr/local/bin
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64 \
+            -o "$HOME/.local/bin/keyhog"
+          chmod +x "$HOME/.local/bin/keyhog"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Scan working tree
         run: keyhog scan . --format sarif -o keyhog.sarif --min-confidence 0.3
       - name: Upload SARIF
@@ -262,7 +265,10 @@ Scan a repo from a one-shot container without installing anything on
 the host:
 
 ```bash
-docker run --rm -v "$PWD":/src ghcr.io/santhsecurity/keyhog:latest \
+# No published registry image yet - build once from the repo (the Dockerfile
+# ships in the repo root), then run the scan:
+docker build -t keyhog:local https://github.com/santhsecurity/keyhog.git
+docker run --rm -v "$PWD":/src keyhog:local \
   scan /src --format text --min-confidence 0.3
 ```
 
@@ -271,7 +277,7 @@ docker run --rm -v "$PWD":/src ghcr.io/santhsecurity/keyhog:latest \
 ```yaml
 services:
   keyhog:
-    image: ghcr.io/santhsecurity/keyhog:latest
+    build: https://github.com/santhsecurity/keyhog.git
     volumes:
       - ./:/src:ro
     command: scan /src --format json --min-confidence 0.3
@@ -495,10 +501,11 @@ See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
 
 ## Exit codes
 
-- `0` - no findings above `--min-confidence`
-- `1` - one or more findings at or above `--min-confidence`
-- `2` - scan error (path missing, IO failure, parse error)
-- `64` - argument parse error (matches `EX_USAGE`)
+- `0` - no findings
+- `1` - findings at or above `--severity` / `--min-confidence`
+- `2` - runtime error (bad flag, missing/unreadable path, config error)
+- `10` - live credentials confirmed (only under `--verify`)
+- `11` - scanner thread panicked mid-scan (state unreliable)
 
 CI gates should look for `exit 1` to mean "block the build" and treat
 `exit 2` as an infrastructure problem to surface to the on-call.
