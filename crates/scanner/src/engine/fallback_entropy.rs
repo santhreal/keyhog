@@ -360,6 +360,15 @@ impl CompiledScanner {
             if crate::decode_structure::is_encoded_binary(&entropy_match.value) {
                 continue;
             }
+            // Same gate for the decoded-form placeholder check: a
+            // base64-wrapped docs sample (e.g.
+            // QUtJQUVYQU1QTEVFWEFNUExFMTI= = AKIAEXAMPLEEXAMPLE12) gets
+            // through the surface-form `should_suppress_known_example_…`
+            // call above because the base64 hides the EXAMPLE marker.
+            // Keep parity with the generic-secret emit path.
+            if crate::decode_structure::decoded_contains_placeholder(&entropy_match.value) {
+                continue;
+            }
 
             let detector_id = scan_state.intern_metadata(detector_id_value);
             let detector_name = scan_state.intern_metadata(detector_name_value);

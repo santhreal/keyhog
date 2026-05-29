@@ -6,7 +6,10 @@
 //! generic-detector confidence penalty never suppresses a real credential.
 
 use base64::Engine;
-use keyhog_scanner::decode_structure::{analyze, is_encoded_binary, DecodeStructure};
+use keyhog_scanner::decode_structure::{
+    analyze, decoded_contains_placeholder, is_encoded_binary, looks_like_uniform_base64_blob,
+    DecodeStructure,
+};
 
 fn b64(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -106,4 +109,79 @@ fn non_encoded_text_is_not_decodable() {
     let a = analyze("this is a normal sentence with spaces!!");
     assert!(!a.decodable);
     assert!(!a.is_binary_payload());
+}
+
+// ---- decoded_contains_placeholder -------------------------------------
+
+#[test]
+fn base64_wrapping_aws_example_credential_is_caught() {
+    // base64("AKIAEXAMPLEEXAMPLE12") = "QUtJQUVYQU1QTEVFWEFNUExFMTI="
+    assert!(decoded_contains_placeholder(
+        "QUtJQUVYQU1QTEVFWEFNUExFMTI="
+    ));
+}
+
+#[test]
+fn base64_wrapping_stripe_placeholder_is_caught() {
+    // base64("sk_live_PLACEHOLDER_NOT_A_REAL_KEY")
+    let s = base64::engine::general_purpose::STANDARD.encode("sk_live_PLACEHOLDER_NOT_A_REAL_KEY");
+    assert!(decoded_contains_placeholder(&s));
+}
+
+#[test]
+fn base64_of_real_random_secret_passes() {
+    // base64 of a random-looking 24-byte secret must NOT be flagged.
+    let s = base64::engine::general_purpose::STANDARD
+        .encode(b"random_24_byte_secret_aBc");
+    assert!(!decoded_contains_placeholder(&s));
+}
+
+#[test]
+fn short_credentials_skip_decode() {
+    // Below MIN_DECODE_LEN - should return false without attempting decode.
+    assert!(!decoded_contains_placeholder("short"));
+    assert!(!decoded_contains_placeholder("AKIA"));
+}
+
+// ---- looks_like_uniform_base64_blob -----------------------------------
+
+#[test]
+fn pure_base64_blob_60_plus_chars_with_punct_matches() {
+    // 64-char base64-ish with `+/` and padding - the random-base64-protobuf
+    // corpus shape.
+    let s = "ABCDEFghij+/klmn0123abcdefghijklmnop+/qrstuvwxyz0123456789ABCD==";
+    assert_eq!(s.len(), 64);
+    assert!(looks_like_uniform_base64_blob(s));
+}
+
+#[test]
+fn aws_secret_access_key_shape_passes() {
+    // 40 base62 chars - AWS spec - no `+/` or padding. Must NOT match
+    // (would be a recall loss on real AWS secrets).
+    let s = "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY12";
+    assert_eq!(s.len(), 40);
+    assert!(!looks_like_uniform_base64_blob(s));
+}
+
+#[test]
+fn github_pat_shape_passes() {
+    // ghp_<base62> - has `_` which is outside the std base64 alphabet.
+    // Must NOT match.
+    let s = "ghp_AbCdEf1234567890ZyXwVu9876543210QqRr";
+    assert!(!looks_like_uniform_base64_blob(s));
+}
+
+#[test]
+fn jwt_shape_passes() {
+    // JWT has `.` separators - outside base64 alphabet.
+    let s = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.AbCdEf";
+    assert!(!looks_like_uniform_base64_blob(s));
+}
+
+#[test]
+fn short_base64_below_60_chars_passes() {
+    // 40-char pure base64 - too short to flag (might be a legit OAuth bearer).
+    let s = "ABCDEFGHIJKLMNOPQRSTUVWX/+abcdefghijklmn"; // 40 chars
+    assert_eq!(s.len(), 40);
+    assert!(!looks_like_uniform_base64_blob(s));
 }
