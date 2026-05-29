@@ -61,6 +61,21 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | `findings` | Number of findings at or above `severity`. |
 | `report`   | Path to the produced report file. |
 
+## What it costs your CI
+
+| Resource | Value |
+| --- | --- |
+| Prebuilt binary download | ~20 MB once, cached after via `actions/cache` |
+| Cold-start (Hyperscan compile + ML weights load) | ~2 s the first run, ~500 ms warm (Hyperscan DB cached in `~/.cache/keyhog`) |
+| Per-file scan throughput | ~500 MB/s on hosted runners (AVX-512 SIMD + Hyperscan) |
+| Wall-clock for a 5k-file repo | typically under 10 s end-to-end |
+| Runtime dependencies | `libhyperscan5` (auto-installed via apt on Ubuntu runners); none on macOS/Windows |
+| Toolchains required | none for the prebuilt path; Rust only for the source-build fallback |
+| GPU | not required on hosted runners (auto-disabled; SIMD + Hyperscan path is the default everywhere) |
+
+No Python, no JVM, no Docker daemon. Single static binary plus the
+auto-installed Hyperscan shared library on Linux.
+
 ## Platforms
 
 | OS | arch | Prebuilt binary | Source-build fallback |
@@ -68,7 +83,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | Linux | x86_64 | yes (full features) | yes |
 | macOS | aarch64 | yes (no Hyperscan) | yes (`portable` feature) |
 | macOS | x86_64 | no | yes (`portable` feature) |
-| Windows | * | no | manual — see DROP_IN_USAGE.md |
+| Windows | * | no | manual, see DROP_IN_USAGE.md |
 
 The action tries the prebuilt binary first and only falls back to a
 source build when the release asset is missing. macOS builds (both
