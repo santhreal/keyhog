@@ -345,6 +345,17 @@ impl ScanOrchestrator {
             );
         }
         if let (Some(idx), Some(path)) = (merkle.as_ref(), incremental_path.as_deref()) {
+            // Incremental-mode safety: never persist a file that produced a
+            // finding. Otherwise an unchanged secret-bearing file would be
+            // skipped on the next run and the secret would silently vanish from
+            // the report (exit 0) - the exact "missed detection forever" this
+            // index must not cause. Dropping the entry forces a re-scan + re-
+            // report next time; clean files stay cached so the speedup holds.
+            for m in &findings {
+                if let Some(fp) = m.location.file_path.as_deref() {
+                    idx.forget(std::path::Path::new(fp));
+                }
+            }
             let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
             if let Err(e) = idx.save_with_spec(path, &spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");
