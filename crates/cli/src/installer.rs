@@ -10,9 +10,9 @@
 //! Trust model: every release binary is signed with the keyhog minisign
 //! secret key in the `sign` job of `.github/workflows/release.yml`, and
 //! `download_verified_asset` verifies the downloaded binary against the
-//! embedded [`RELEASE_PUBLIC_KEY`] before self-replacing. A release cut
-//! before signing existed (no `.minisig` asset) falls back to HTTPS-only
-//! trust with a loud warning rather than refusing to update.
+//! embedded [`RELEASE_PUBLIC_KEY`] before self-replacing. A missing `.minisig`
+//! fails CLOSED (refuse to install) since a forged 404 would otherwise bypass
+//! the whole gate; `KEYHOG_ALLOW_UNSIGNED_UPDATE=1` is the explicit opt-out.
 
 use anyhow::{anyhow, Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
@@ -243,12 +243,28 @@ pub async fn download_verified_asset(client: &reqwest::Client, asset: &Asset) ->
         .await
         .context("download release signature")?;
     if sig_resp.status() == reqwest::StatusCode::NOT_FOUND {
-        eprintln!(
-            "warning: release asset {} is unsigned (no .minisig); falling back to \
-             HTTPS-only trust. Re-run update once a signed release is available.",
+        // Fail CLOSED. A missing .minisig is indistinguishable from an active
+        // attacker who serves a tampered binary and returns 404 for its
+        // signature - the old "warn and install anyway" path silently bypassed
+        // the entire minisign gate on a forged 404. Every release is signed by
+        // the `sign` job, so a 404 here is a downgrade attack or a broken
+        // release; refuse either way. `KEYHOG_ALLOW_UNSIGNED_UPDATE=1` is the
+        // explicit, loud opt-out for intentionally installing a pre-signing
+        // release.
+        if std::env::var("KEYHOG_ALLOW_UNSIGNED_UPDATE").as_deref() == Ok("1") {
+            eprintln!(
+                "warning: release asset {} is unsigned (no .minisig) and \
+                 KEYHOG_ALLOW_UNSIGNED_UPDATE=1 is set - installing on HTTPS-only trust.",
+                asset.name
+            );
+            return Ok(bytes.to_vec());
+        }
+        return Err(anyhow!(
+            "release asset {} has no .minisig signature - refusing to install. A missing \
+             signature can mean a tampered download intercepted the signature fetch. Set \
+             KEYHOG_ALLOW_UNSIGNED_UPDATE=1 to override for a known pre-signing release.",
             asset.name
-        );
-        return Ok(bytes.to_vec());
+        ));
     }
     let sig_text = sig_resp
         .error_for_status()
