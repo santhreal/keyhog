@@ -7,9 +7,12 @@
 //! GitHub-release resolution, asset selection, version comparison, executable
 //! sanity check, atomic self-replace, and end-to-end scan self-test.
 //!
-//! Trust model today: HTTPS to GitHub releases (the same model as the
-//! `curl | sh` installer). minisign signature verification is a structured
-//! follow-up - `download_verified_asset` is the seam it slots into.
+//! Trust model: every release binary is signed with the keyhog minisign
+//! secret key in the `sign` job of `.github/workflows/release.yml`, and
+//! `download_verified_asset` verifies the downloaded binary against the
+//! embedded [`RELEASE_PUBLIC_KEY`] before self-replacing. A release cut
+//! before signing existed (no `.minisig` asset) falls back to HTTPS-only
+//! trust with a loud warning rather than refusing to update.
 
 use anyhow::{anyhow, Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
@@ -18,6 +21,25 @@ use serde::Deserialize;
 use std::path::Path;
 
 pub const REPO: &str = "santhsecurity/keyhog";
+
+/// minisign public key for keyhog release artifacts (key ID `DD4915EBE99F9CCF`).
+/// The matching secret signs each release binary in CI. Rotating the key means
+/// updating this constant and re-signing; clients keep trusting the old key
+/// until they update to a build carrying the new one.
+pub const RELEASE_PUBLIC_KEY: &str = "RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go";
+
+/// Verify `data` against `signature` (the full body of a `.minisig` file)
+/// using the embedded release public key. Errors on a malformed key, a
+/// malformed signature, or a signature that does not match the data.
+pub fn verify_release_signature(data: &[u8], signature: &str) -> Result<()> {
+    use minisign_verify::{PublicKey, Signature};
+    let pk = PublicKey::from_base64(RELEASE_PUBLIC_KEY)
+        .map_err(|e| anyhow!("embedded release public key is invalid: {e}"))?;
+    let sig =
+        Signature::decode(signature).map_err(|e| anyhow!("release signature is malformed: {e}"))?;
+    pk.verify(data, &sig, false)
+        .map_err(|e| anyhow!("release signature verification failed: {e}"))
+}
 
 #[derive(Deserialize)]
 pub struct Release {
@@ -166,9 +188,9 @@ pub fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset> {
         })
 }
 
-/// Download an asset over HTTPS and confirm it's a native executable for this
-/// platform before handing the bytes back. The single seam where minisign
-/// signature verification will slot in.
+/// Download an asset over HTTPS, confirm it's a native executable for this
+/// platform, and verify its minisign signature against the embedded release
+/// public key before handing the bytes back.
 pub async fn download_verified_asset(client: &reqwest::Client, asset: &Asset) -> Result<Vec<u8>> {
     let bytes = client
         .get(&asset.browser_download_url)
@@ -188,6 +210,33 @@ pub async fn download_verified_asset(client: &reqwest::Client, asset: &Asset) ->
             bytes.len()
         ));
     }
+
+    // Signature: the release `sign` job uploads `<asset>.minisig` alongside
+    // each binary. Fetch and verify it. A 404 means the release predates
+    // signing; warn and fall back to HTTPS-only trust rather than blocking
+    // the update. A present-but-bad signature is a hard failure: refuse.
+    let sig_url = format!("{}.minisig", asset.browser_download_url);
+    let sig_resp = client
+        .get(&sig_url)
+        .send()
+        .await
+        .context("download release signature")?;
+    if sig_resp.status() == reqwest::StatusCode::NOT_FOUND {
+        eprintln!(
+            "warning: release asset {} is unsigned (no .minisig); falling back to \
+             HTTPS-only trust. Re-run update once a signed release is available.",
+            asset.name
+        );
+        return Ok(bytes.to_vec());
+    }
+    let sig_text = sig_resp
+        .error_for_status()
+        .context("download release signature (HTTP status)")?
+        .text()
+        .await
+        .context("read release signature body")?;
+    verify_release_signature(&bytes, &sig_text)
+        .with_context(|| format!("verifying release asset {}", asset.name))?;
     Ok(bytes.to_vec())
 }
 

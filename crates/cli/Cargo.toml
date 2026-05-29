@@ -107,6 +107,9 @@ tempfile = { workspace = true }
 # verification client. The atomic running-binary swap uses a same-dir
 # rename (Unix lets you replace a running exe's file) - no extra crate.
 reqwest = { workspace = true }
+# Verify-only minisign: `keyhog update` checks the release binary's
+# signature against the embedded public key before self-replacing.
+minisign-verify = { workspace = true }
 # Pulled in by the `keyhog tui` subcommand for the live-scan demo.
 # Both gated behind the `tui` feature so portable builds (Windows,
 # macOS via `--no-default-features --features portable`) still build

@@ -109,9 +109,11 @@ keyhog uninstall             # remove the binary (dry run; pass --yes to actuall
 end-to-end self-test - it plants a synthetic secret and confirms the
 binary detects it - so it is the authoritative "will keyhog work here?"
 check (the installer runs it automatically after install). `update` and
-`repair` download the raw release binary over HTTPS and atomically swap
-the running binary in place; on a healthy host `keyhog update` is the
-one-command upgrade path.
+`repair` download the release binary over HTTPS, verify its minisign
+signature against keyhog's embedded public key, and atomically swap the
+running binary in place; a tampered or unsigned-mismatched binary is
+refused. On a healthy host `keyhog update` is the one-command upgrade
+path.
 
 ## Quickstart
 
