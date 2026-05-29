@@ -322,6 +322,41 @@ _ESCAPE_NORMALIZE = (
 )
 
 
+def _try_base64_decode(s: str) -> str | None:
+    """Return s base64-decoded as latin-1 text, or None if decoding fails or
+    the input doesn't look like base64. Used by overlap() so a k8s
+    `data:` field (yaml stores values base64-encoded) matches a manifest
+    whose `secret` is the plaintext - the underlying bytes are the same
+    secret, only the surface representation differs. Mirror v28: 38
+    cloud-service-credential / api-key / authentication-key FPs traced
+    to exactly this encoding mismatch.
+
+    Conservative: requires the candidate to be 16+ chars, an even
+    multiple of 4 (or trailing `=` padding), and all chars in the
+    standard base64 alphabet. Random ASCII rarely satisfies all three,
+    so this won't create false TPs by accident.
+    """
+    import base64 as _b64
+    if len(s) < 16:
+        return None
+    needs_padding = len(s) % 4
+    candidate = s + "=" * (4 - needs_padding) if needs_padding else s
+    if not all(
+        c.isalnum() or c in ("+", "/", "=", "-", "_") for c in candidate
+    ):
+        return None
+    try:
+        raw = _b64.b64decode(candidate, validate=False)
+    except Exception:
+        return None
+    if len(raw) < 8:
+        return None
+    try:
+        return raw.decode("latin-1")
+    except Exception:
+        return None
+
+
 def _normalize_for_overlap(s: str) -> str:
     """Collapse the two common forms of a secret into a single comparable
     form. The fixture manifest stores secrets JSON-decoded (so ``\\n``
@@ -353,7 +388,19 @@ def overlap(a: str, b: str) -> bool:
     if a in b or b in a:
         return True
     an, bn = _normalize_for_overlap(a), _normalize_for_overlap(b)
-    return an in bn or bn in an
+    if an in bn or bn in an:
+        return True
+    # Base64-decode pass: a captured value `<base64 of secret>` reading
+    # a k8s `data:` field overlaps a manifest whose `secret` is the
+    # plaintext (and vice-versa). Try both directions; scope is already
+    # limited to label=true fixtures by the caller.
+    a_dec = _try_base64_decode(a)
+    if a_dec and (a_dec in b or b in a_dec):
+        return True
+    b_dec = _try_base64_decode(b)
+    if b_dec and (a in b_dec or b_dec in a):
+        return True
+    return False
 
 
 def score_corpus(
