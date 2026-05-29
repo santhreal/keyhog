@@ -33,6 +33,8 @@ pub mod ml_scorer;
 pub mod multiline;
 /// Match resolution and deduplication.
 pub mod resolution;
+/// Scanner configuration and state.
+pub mod scanner_config;
 /// Static-string interner backed by vyre's CHD perfect hash.
 /// Used by `CompiledScanner` to pre-intern detector metadata strings
 /// so the per-scan `ScanState` interner is hit only by dynamic
@@ -40,8 +42,6 @@ pub mod resolution;
 pub mod static_intern;
 /// Shared types for the scanner engine.
 pub mod types;
-/// Scanner configuration and state.
-pub mod scanner_config;
 
 // Internal modules.
 /// SIMD-accelerated alphabet pre-filtering.
@@ -55,10 +55,10 @@ pub mod bigram_bloom;
 pub(crate) mod entropy_avx512;
 /// Fast scalar entropy calculation.
 pub mod entropy_fast;
-#[cfg(target_arch = "x86_64")]
-pub(crate) mod entropy_fast_x86;
 #[cfg(target_arch = "aarch64")]
 pub(crate) mod entropy_fast_neon;
+#[cfg(target_arch = "x86_64")]
+pub(crate) mod entropy_fast_x86;
 /// JWT structural validation and anomaly detection.
 pub mod jwt;
 // `fragment_cache` lives under `multiline/` (its only call sites are there);
@@ -194,9 +194,8 @@ pub mod testing {
 
     pub mod shape {
         pub use crate::suppression::shape::{
-            looks_like_syntactic_punctuation_marker,
             looks_like_credential_colliding_punctuation,
-            looks_like_punctuation_decorated_identifier,
+            looks_like_punctuation_decorated_identifier, looks_like_syntactic_punctuation_marker,
         };
     }
 

@@ -67,25 +67,7 @@ pub fn build_same_prefix_patterns(literals: &[String]) -> Vec<Vec<usize>> {
 }
 
 pub fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
-    let mut map = vec![Vec::new(); literals.len()];
-    // Sort indices by literal length (shortest first) for efficient prefix matching.
-    let mut sorted: Vec<(usize, &str)> = literals
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (i, s.as_str()))
-        .collect();
-    sorted.sort_by_key(|(_, s)| s.len());
-    // For each longer string, check if any shorter string is its prefix.
-    for a in 0..sorted.len() {
-        for b in (a + 1)..sorted.len() {
-            let (j, short) = sorted[a];
-            let (i, long) = sorted[b];
-            if short != long && long.starts_with(short) {
-                map[j].push(i);
-            }
-        }
-    }
-    map
+    crate::prefix_trie::build_propagation_table(literals)
 }
 
 pub fn build_fallback_keyword_ac(
@@ -204,16 +186,34 @@ pub fn compile_detector_pattern(
 
 pub fn compile_pattern(
     detector_index: usize,
-    _pattern_index: usize,
+    pattern_index: usize,
     spec: &PatternSpec,
-    _detector_id: &str,
+    detector_id: &str,
 ) -> Result<CompiledPattern> {
-    // The regex is NOT built here - it is deferred to first use via
+    // Eagerly validate regex SYNTAX so a malformed detector pattern (e.g.
+    // `(unclosed`) is rejected at compile time rather than silently degrading
+    // to a never-matching rule on first use - a silently-accepted bad regex
+    // is a dead detector. The cheap `regex_syntax` parse runs for every
+    // pattern but builds NO NFA/DFA, so the lazy-compile win below is
+    // preserved; `regex_syntax` is the same front end the `regex` crate uses,
+    // so a parse error here is a build error there.
+    if regex_syntax::Parser::new().parse(&spec.regex).is_err() {
+        // Re-run through the `regex` crate only on the rare invalid pattern to
+        // obtain the canonical `regex::Error` for the structured error; the
+        // matcher-build cost here is irrelevant since we're erroring out.
+        let source = regex::Regex::new(&spec.regex)
+            .err()
+            .unwrap_or_else(|| regex::Error::Syntax(spec.regex.clone()));
+        return Err(ScanError::RegexCompile {
+            detector_id: detector_id.to_string(),
+            index: pattern_index,
+            source,
+        });
+    }
+    // The matcher is NOT built here - it is deferred to first use via
     // `LazyRegex` (see types.rs). Building the whole corpus up front cost
     // ~450ms-2.3s per invocation; deferral lets a scan compile only the
-    // patterns the Aho-Corasick prefilter actually selects. `_pattern_index`
-    // / `_detector_id` are retained in the signature for call-site stability
-    // and for the structured error a compile failure now logs at first use.
+    // patterns the Aho-Corasick prefilter actually selects.
     Ok(CompiledPattern {
         detector_index,
         regex: LazyRegex::detector(spec.regex.as_str()),
@@ -222,9 +222,8 @@ pub fn compile_pattern(
     })
 }
 
-static REGEX_CACHE: std::sync::OnceLock<
-    parking_lot::RwLock<std::collections::HashMap<String, std::sync::Arc<Regex>>>,
-> = std::sync::OnceLock::new();
+static REGEX_CACHE: std::sync::OnceLock<dashmap::DashMap<String, std::sync::Arc<Regex>>> =
+    std::sync::OnceLock::new();
 
 pub fn shared_regex_compile(
     pattern: &str,
@@ -244,12 +243,10 @@ pub fn warm_shared_regex_cache(
         std::result::Result<std::sync::Arc<Regex>, regex::Error>,
     )>,
 ) {
-    let cache =
-        REGEX_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
-    let mut w = cache.write();
+    let cache = REGEX_CACHE.get_or_init(dashmap::DashMap::new);
     for (pattern, res) in compiled {
         if let Ok(arc) = res {
-            w.insert(pattern, arc);
+            cache.insert(pattern, arc);
         }
     }
 }
@@ -261,21 +258,21 @@ pub fn warm_shared_regex_cache(
 /// compile time and resident memory proportionally - see audits/legendary-
 /// 2026-04-26 sources_verifier_detectors_legendary.md.
 ///
-/// The cache is process-wide via a `parking_lot::RwLock<HashMap<...>>`.
-/// Lookup is lock-free and extremely high-performance during the main parallel compile.
+/// The cache is process-wide via a `dashmap::DashMap<...>` which is lock-free
+/// and extremely high-performance during the main parallel compile.
 pub(crate) fn shared_regex(
     pattern: &str,
 ) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
-    let cache =
-        REGEX_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
-    if let Some(hit) = cache.read().get(pattern) {
-        return Ok(std::sync::Arc::clone(hit));
+    let cache = REGEX_CACHE.get_or_init(dashmap::DashMap::new);
+    if let Some(hit) = cache.get(pattern) {
+        return Ok(std::sync::Arc::clone(hit.value()));
     }
     let arc = shared_regex_compile(pattern)?;
-    cache
-        .write()
-        .insert(pattern.to_string(), std::sync::Arc::clone(&arc));
-    Ok(arc)
+    Ok(cache
+        .entry(pattern.to_string())
+        .or_insert(arc)
+        .value()
+        .clone())
 }
 
 pub fn compile_companion(spec: &CompanionSpec, detector_id: &str) -> Result<CompiledCompanion> {

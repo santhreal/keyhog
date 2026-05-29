@@ -1,6 +1,6 @@
 use keyhog::installer::{
-    asset_name, is_newer, looks_like_native_executable, parse_semver, scan_engine_self_test,
-    verify_release_signature,
+    asset_name, is_newer, looks_like_native_executable, parse_semver, reap_stale_binaries,
+    replace_running_binary, scan_engine_self_test, verify_release_signature,
 };
 
 #[test]
@@ -109,4 +109,79 @@ fn release_signature_rejects_tampered_payload() {
 fn release_signature_rejects_malformed_signature() {
     assert!(verify_release_signature(FIXTURE_DATA, "not a minisig file").is_err());
     assert!(verify_release_signature(FIXTURE_DATA, "").is_err());
+}
+
+// ── Moved from src/installer.rs (#[cfg(test)] mod rename_away_tests) per the
+//    no_inline_tests_in_src gate. Cross-platform rename-away self-replace that
+//    backs `keyhog update`/`repair` on Windows; same std::fs::rename semantics
+//    on every OS, so the Linux host exercises the exact Windows code path.
+
+#[test]
+fn replace_success_installs_new_and_returns_stash() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    std::fs::write(&exe, b"OLD-WORKING-BINARY").unwrap();
+
+    let stash = replace_running_binary(&exe, b"NEW-GOOD-BINARY", |_| true)
+        .expect("replace should succeed when verify passes");
+
+    assert_eq!(std::fs::read(&exe).unwrap(), b"NEW-GOOD-BINARY");
+    let stash = stash.expect("a prior binary existed, so a stash is returned");
+    // The caller reaps the stash; until then it holds the old bytes.
+    assert_eq!(std::fs::read(&stash).unwrap(), b"OLD-WORKING-BINARY");
+    reap_stale_binaries(&exe);
+    assert!(!stash.exists(), "reap must remove the stash");
+}
+
+#[test]
+fn replace_failure_rolls_back_byte_for_byte() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    // Arbitrary bytes incl. NULs/high bytes: rollback must be exact.
+    let original: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
+    std::fs::write(&exe, &original).unwrap();
+
+    let err = replace_running_binary(&exe, b"NEW-BROKEN-BINARY", |_| false)
+        .expect_err("replace must fail when verify rejects the new binary");
+    assert!(format!("{err}").contains("rolled back"));
+    assert_eq!(
+        std::fs::read(&exe).unwrap(),
+        original,
+        "rollback must restore the original binary byte-for-byte"
+    );
+    // No stash left orphaned beside the exe after a rollback.
+    reap_stale_binaries(&exe);
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().contains("keyhog-old"))
+        .collect();
+    assert!(leftovers.is_empty(), "rollback must not leave a stash");
+}
+
+#[test]
+fn fresh_install_failure_removes_broken_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    // No prior binary: a failed verify must not leave a broken executable.
+    let err = replace_running_binary(&exe, b"BROKEN", |_| false)
+        .expect_err("fresh install must fail when verify rejects it");
+    assert!(format!("{err}").contains("no prior binary"));
+    assert!(!exe.exists(), "broken fresh install must be removed");
+}
+
+#[test]
+fn reap_only_touches_this_binarys_stashes() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("keyhog");
+    std::fs::write(&exe, b"bin").unwrap();
+    let mine = dir.path().join(".keyhog.keyhog-old-99999");
+    let other = dir.path().join("unrelated.txt");
+    std::fs::write(&mine, b"old").unwrap();
+    std::fs::write(&other, b"keep").unwrap();
+
+    reap_stale_binaries(&exe);
+    assert!(!mine.exists(), "matching stash must be reaped");
+    assert!(other.exists(), "unrelated files must be left alone");
+    assert!(exe.exists(), "the live binary must never be reaped");
 }

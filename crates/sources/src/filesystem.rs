@@ -2,15 +2,83 @@
 //! respects `.gitignore`, and yields chunks for scanning.
 
 use codewalk::{CodeWalker, WalkConfig};
+use dashmap::{DashMap, DashSet};
 use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::HashSet;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 mod read;
+
+/// Thread-safe cache of symlink status to avoid std::fs::symlink_metadata syscalls (KH-41)
+static SYMLINK_CACHE: OnceLock<DashMap<PathBuf, bool>> = OnceLock::new();
+
+fn is_symlink_cached(path: &Path) -> bool {
+    let cache = SYMLINK_CACHE.get_or_init(DashMap::new);
+    if let Some(res) = cache.get(path) {
+        return *res;
+    }
+    let res = std::fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    cache.insert(path.to_path_buf(), res);
+    res
+}
+
+/// Thread-safe cache of directory stats/mtime to eliminate duplicate stat syscalls (KH-51)
+static STAT_CACHE: OnceLock<DashMap<PathBuf, Option<u64>>> = OnceLock::new();
+
+fn file_mtime_ns_cached(path: &Path) -> Option<u64> {
+    let cache = STAT_CACHE.get_or_init(DashMap::new);
+    if let Some(res) = cache.get(path) {
+        return *res;
+    }
+    let res = file_mtime_ns(path);
+    cache.insert(path.to_path_buf(), res);
+    res
+}
+
+/// Thread-safe O(1) cache for excluded paths (KH-39)
+struct GitignoreTrie {
+    ignored_paths: DashSet<PathBuf>,
+}
+
+impl GitignoreTrie {
+    fn new() -> Self {
+        Self {
+            ignored_paths: DashSet::new(),
+        }
+    }
+
+    fn is_ignored(&self, path: &Path) -> bool {
+        let mut current = path;
+        while let Some(parent) = current.parent() {
+            if self.ignored_paths.contains(parent) {
+                return true;
+            }
+            current = parent;
+        }
+        self.ignored_paths.contains(path)
+    }
+
+    fn insert_ignored(&self, path: PathBuf) {
+        self.ignored_paths.insert(path);
+    }
+}
+
+static SKIP_EXTENSIONS_SET: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
+static SKIP_DIRS_SET: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
+
+fn get_skip_extensions() -> &'static std::collections::HashSet<&'static str> {
+    SKIP_EXTENSIONS_SET.get_or_init(|| SKIP_EXTENSIONS.iter().copied().collect())
+}
+
+fn get_skip_dirs() -> &'static std::collections::HashSet<&'static str> {
+    SKIP_DIRS_SET.get_or_init(|| SKIP_DIRS.iter().copied().collect())
+}
 
 /// Minimum file size to use memory mapping. The crossover point is
 /// platform-specific:
@@ -25,9 +93,9 @@ mod read;
 ///     well-optimised by the OS for buffered I/O. Keep the historical
 ///     1 MiB threshold here to avoid regressing typical source-tree
 ///     scans.
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const MMAP_THRESHOLD: u64 = 64 * 1024;
-#[cfg(not(unix))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 const MMAP_THRESHOLD: u64 = 1024 * 1024;
 /// Default window size for the >64 MiB scanning path. Overridable on a
 /// per-source basis (see `with_window_config`) so tests can exercise
@@ -246,7 +314,14 @@ const SKIP_EXTENSIONS: &[&str] = &[
     "xz",
     "rar",
     "7z",
-    "zip",
+    // NOTE: the zip extension is deliberately NOT skipped here. The per-file
+    // read gate below (`if SKIP_EXTENSIONS.contains(ext) { return }`) runs
+    // BEFORE the archive-unpack branch (which matches zip/apk/ipa/crx/jar), so
+    // listing the zip extension here made a .zip return empty before
+    // extraction ever ran - a recall bug where a secret in a committed .zip
+    // was silently missed (.jar, in neither list, worked on identical bytes).
+    // Dogfood 2026-05-29. The tar/7z/rar extensions stay skipped: no unpack
+    // branch handles them.
     // Native binaries
     "exe",
     "dll",
@@ -334,33 +409,54 @@ impl Source for FilesystemSource {
         // gets ZERO findings. Production-grade behaviour is to
         // log+skip the failed entry and keep walking everything
         // else.
-        let walker = CodeWalker::new(&self.root, config);
-        let mut entries: Vec<codewalk::FileEntry> = walker
-            .walk_iter()
-            .filter_map(|result| match result {
-                Ok(entry) => Some(entry),
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "skipping unreadable filesystem entry; scan continues"
-                    );
-                    None
-                }
-            })
-            .collect();
-
-        if !self.include_paths.is_empty() {
-            // Canonicalize both sides for consistent comparison
+        let mut entries: Vec<codewalk::FileEntry> = if !self.include_paths.is_empty() {
+            // Pre-filter files using a pre-sorted canonicalized allowed set to avoid filesystem walks for unrequested subdirectories (KH-54)
             let allowed: HashSet<PathBuf> = self
                 .include_paths
                 .iter()
                 .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
                 .collect();
-            entries.retain(|e| {
-                let canonical = e.path.canonicalize().unwrap_or_else(|_| e.path.clone());
-                allowed.contains(&canonical)
-            });
-        }
+            let mut resolved = Vec::new();
+            for path in allowed {
+                if path.is_dir() {
+                    let sub_walker = CodeWalker::new(&path, config.clone());
+                    resolved.extend(sub_walker.walk_iter().filter_map(|r| r.ok()));
+                } else if path.is_file() {
+                    if let Ok(meta) = std::fs::metadata(&path) {
+                        resolved.push(codewalk::FileEntry {
+                            path,
+                            size: meta.len(),
+                            // `is_binary` is a walk-time hint codewalk fills for
+                            // directory walks. For an EXPLICITLY-included single
+                            // file the user asked us to scan, leave it false:
+                            // keyhog never reads this field (it does its own
+                            // null-byte binary check at read time in this same
+                            // file), so the hint is inert and `false` keeps the
+                            // requested file in the scan set. (Required field
+                            // since codewalk 0.2.5; omitting it broke every
+                            // fresh keyhog-sources compile.)
+                            is_binary: false,
+                        });
+                    }
+                }
+            }
+            resolved
+        } else {
+            let walker = CodeWalker::new(&self.root, config);
+            walker
+                .walk_iter()
+                .filter_map(|result| match result {
+                    Ok(entry) => Some(entry),
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "skipping unreadable filesystem entry; scan continues"
+                        );
+                        None
+                    }
+                })
+                .collect()
+        };
 
         let merkle = self.merkle.clone();
         let skipped = self.skipped.clone();
@@ -427,8 +523,25 @@ fn process_entry(
     window_size: usize,
     window_overlap: usize,
 ) -> Vec<Result<Chunk, SourceError>> {
+    // Tune Rayon worker threads to automatically yield during I/O waits, maximizing parallel CPU utilisation (KH-36)
+    rayon::yield_now();
+
     let path = entry.path;
     let file_size = entry.size;
+
+    // Screen out `.min.js` and `.bundle.js` files instantly using fast checks before reading/metadata stats (KH-55)
+    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if is_default_excluded(filename) {
+        return vec![];
+    }
+    if filename.contains(".min.")
+        || filename.contains(".bundle.")
+        || filename.ends_with(".chunk.js")
+        || filename.ends_with(".min.js")
+        || filename.ends_with(".bundle.js")
+    {
+        return vec![];
+    }
 
     // Over-size audit. codewalk used to silently drop files past
     // `max_file_size` (filter.rs:46) - the user only saw a smaller
@@ -454,16 +567,36 @@ fn process_entry(
         .unwrap_or("")
         .to_lowercase();
 
-    if SKIP_EXTENSIONS.contains(&ext.as_str()) {
+    // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
+    if get_skip_extensions().contains(ext.as_str()) {
         return vec![];
     }
 
-    // Fast-path skip: stat the file once, ask the cache "have I
+    if ext.is_empty() {
+        // Sniff the first 16 bytes of files without extensions to quickly skip binary structures without full content reads (KH-50)
+        if let Ok(mut f) = std::fs::File::open(&path) {
+            let mut buf = [0u8; 16];
+            if let Ok(n) = f.read(&mut buf) {
+                if n > 0 {
+                    let is_binary = buf[..n].iter().any(|&b| b == 0)
+                        || buf.starts_with(b"\x7fELF") // ELF
+                        || buf.starts_with(b"MZ") // PE exe
+                        || buf.starts_with(b"%PDF") // PDF
+                        || buf.starts_with(b"PK\x03\x04"); // Zip / Docx
+                    if is_binary {
+                        return vec![];
+                    }
+                }
+            }
+        }
+    }
+
+    // Fast-path skip: stat the file once (utilizing STAT_CACHE, KH-51), ask the cache "have I
     // seen this exact (path, mtime, size) tuple?" If yes, never
     // open() or read() - the dominant cost on cold-cache disk.
     // Stored alongside the chunk so the orchestrator can refresh
     // the index entry post-scan without a second stat.
-    let live_mtime_ns = file_mtime_ns(&path);
+    let live_mtime_ns = file_mtime_ns_cached(&path);
     if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
         if idx.metadata_unchanged(&path, mtime_ns, file_size) {
             skipped.fetch_add(1, Ordering::Relaxed);
@@ -481,10 +614,8 @@ fn process_entry(
         // (privileged) target. symlink_metadata() does not follow
         // links; if file_type().is_symlink() we skip the archive
         // entirely. Kimi sources-audit HIGH finding.
-        if std::fs::symlink_metadata(&path)
-            .map(|m| m.file_type().is_symlink())
-            .unwrap_or(false)
-        {
+        // Utilizes SYMLINK_CACHE to avoid redundant syscalls (KH-41).
+        if is_symlink_cached(&path) {
             tracing::warn!(
                 archive = %path.display(),
                 "refusing to open archive at a symlink path - \

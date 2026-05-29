@@ -12,7 +12,10 @@ fn r5t_chunk_boundary_cloudflare_token_split_reassembled() {
     d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
-    let secret = "cf_abcdefghijklmnopqrstuvwxyz1234567890ABCD";
+    // Context-required detector: the `cloudflare_api_token=` anchor and the
+    // 40-char value straddle the seam together. The credential is the
+    // captured value group, not the full `key=value` string.
+    let secret = "cloudflare_api_token=Xy7Kp2Lm9Qr4Tv6Wz1Bn8Ch5Df3Gj0Hs4iU2oPqR";
     let split = 12;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -40,7 +43,8 @@ fn r5t_chunk_boundary_cloudflare_token_split_reassembled() {
     };
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
     let found = results.iter().flatten().any(|m| {
-        m.detector_id.as_ref() == "cloudflare-api-token" && m.credential.as_ref() == secret
+        m.detector_id.as_ref() == "cloudflare-api-token"
+            && m.credential.as_ref() == "Xy7Kp2Lm9Qr4Tv6Wz1Bn8Ch5Df3Gj0Hs4iU2oPqR"
     });
     assert!(
         found,

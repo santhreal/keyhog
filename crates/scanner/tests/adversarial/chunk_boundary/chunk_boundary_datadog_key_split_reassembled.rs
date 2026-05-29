@@ -12,7 +12,9 @@ fn chunk_boundary_datadog_key_split_reassembled() {
     d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
-    let secret = "dd00000000000000000000000000000000";
+    // Context-required detector: the `DD_API_KEY=` anchor and the 32-hex
+    // value straddle the seam together (a bare 32-hex is not a Datadog key).
+    let secret = "DD_API_KEY=a3f8d2e1b9c7460af1e8d3c5b2a9f04e";
     let split = 10;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();

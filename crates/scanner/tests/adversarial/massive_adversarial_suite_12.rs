@@ -15,27 +15,46 @@ use oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv12_blobsas_normal_must_fire() {
-    assert_detector_fires("azure-blob-sas-token", "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&sig=abcde1234567890abcde\"", "?sv=2021-08-06&sig=abcde1234567890abcde");
+    assert_detector_fires(
+        "azure-blob-sas-token",
+        "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&sig=abcde1234567890abcde\"",
+        "?sv=2021-08-06&sig=abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv12_blobsas_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-blob-sas-token", "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&pig=abcde1234567890abcde\"");
+    assert_detector_silent(
+        "azure-blob-sas-token",
+        "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&pig=abcde1234567890abcde\"",
+    );
 }
 
 #[test]
 fn adv12_blobsas_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-blob-sas-token", "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&s\u{200B}ig=abcde1234567890abcde\"", "?sv=2021-08-06&sig=abcde1234567890abcde");
+    assert_detector_fires(
+        "azure-blob-sas-token",
+        "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&s\u{200B}ig=abcde1234567890abcde\"",
+        "?sv=2021-08-06&sig=abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv12_blobsas_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-blob-sas-token", "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&sig=abcde12345\u{00AD}67890abcde\"", "?sv=2021-08-06&sig=abcde1234567890abcde");
+    assert_detector_fires(
+        "azure-blob-sas-token",
+        "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&sig=abcde12345\u{00AD}67890abcde\"",
+        "?sv=2021-08-06&sig=abcde1234567890abcde",
+    );
 }
 
 #[test]
 fn adv12_blobsas_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-blob-sas-token", "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&s\u{0457}g=abcde1234567890abcde\"", "?sv=2021-08-06&sig=abcde1234567890abcde");
+    assert_detector_fires(
+        "azure-blob-sas-token",
+        "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&s\u{0457}g=abcde1234567890abcde\"",
+        "?sv=2021-08-06&sig=abcde1234567890abcde",
+    );
 }
 
 // =========================================================================
@@ -73,27 +92,46 @@ fn adv12_acr_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_devops_normal_must_fire() {
-    assert_detector_fires("azure-devops-pat", "azure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"", "abcde1234567890abcde123456789012abcde12345678901234");
+    assert_detector_fires(
+        "azure-devops-pat",
+        "azure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+        "abcde1234567890abcde123456789012abcde12345678901234",
+    );
 }
 
 #[test]
 fn adv12_devops_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-devops-pat", "mzure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
+    assert_detector_silent(
+        "azure-devops-pat",
+        "mzure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+    );
 }
 
 #[test]
 fn adv12_devops_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-devops-pat", "azure\u{200B}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"", "abcde1234567890abcde123456789012abcde12345678901234");
+    assert_detector_fires(
+        "azure-devops-pat",
+        "azure\u{200B}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+        "abcde1234567890abcde123456789012abcde12345678901234",
+    );
 }
 
 #[test]
 fn adv12_devops_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-devops-pat", "azure_devops = \"abcde1234567890abcde123456789012abcde12345\u{00AD}678901234\"", "abcde1234567890abcde123456789012abcde12345678901234");
+    assert_detector_fires(
+        "azure-devops-pat",
+        "azure_devops = \"abcde1234567890abcde123456789012abcde12345\u{00AD}678901234\"",
+        "abcde1234567890abcde123456789012abcde12345678901234",
+    );
 }
 
 #[test]
 fn adv12_devops_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-devops-pat", "azur\u{0435}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"", "abcde1234567890abcde123456789012abcde12345678901234");
+    assert_detector_fires(
+        "azure-devops-pat",
+        "azur\u{0435}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+        "abcde1234567890abcde123456789012abcde12345678901234",
+    );
 }
 
 // =========================================================================
@@ -102,27 +140,46 @@ fn adv12_devops_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_functions_normal_must_fire() {
-    assert_detector_fires("azure-functions-key", "azure_key = \"abcde1234567890abcde123456789012abcde12345\"", "abcde1234567890abcde123456789012abcde12345");
+    assert_detector_fires(
+        "azure-functions-key",
+        "azure_key = \"0000000000000000000000000000000000000000\"",
+        "0000000000000000000000000000000000000000",
+    );
 }
 
 #[test]
 fn adv12_functions_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-functions-key", "bzure_key = \"abcde1234567890abcde123456789012abcde12345\"");
+    assert_detector_silent(
+        "azure-functions-key",
+        "bzure_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv12_functions_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-functions-key", "azure\u{200B}_key = \"abcde1234567890abcde123456789012abcde12345\"", "abcde1234567890abcde123456789012abcde12345");
+    assert_detector_fires(
+        "azure-functions-key",
+        "azure\u{200B}_key = \"0000000000000000000000000000000000000000\"",
+        "0000000000000000000000000000000000000000",
+    );
 }
 
 #[test]
 fn adv12_functions_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-functions-key", "azure_key = \"abcde1234567890abcde1\u{00AD}23456789012abcde12345\"", "abcde1234567890abcde123456789012abcde12345");
+    assert_detector_fires(
+        "azure-functions-key",
+        "azure_key = \"00000000000000000000\u{00AD}00000000000000000000\"",
+        "0000000000000000000000000000000000000000",
+    );
 }
 
 #[test]
 fn adv12_functions_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-functions-key", "az\u{0457}re_key = \"abcde1234567890abcde123456789012abcde12345\"", "abcde1234567890abcde123456789012abcde12345");
+    assert_detector_fires(
+        "azure-functions-key",
+        "az\u{0457}re_key = \"0000000000000000000000000000000000000000\"",
+        "0000000000000000000000000000000000000000",
+    );
 }
 
 // =========================================================================
@@ -131,27 +188,46 @@ fn adv12_functions_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_gov_normal_must_fire() {
-    assert_detector_fires("azure-government-credentials", "AZURE_GOVERNMENT_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"", "12345678-abcd-1234-abcd-1234567890ab");
+    assert_detector_fires(
+        "azure-government-credentials",
+        "AZURE_GOVERNMENT_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"",
+        "12345678-abcd-1234-abcd-1234567890ab",
+    );
 }
 
 #[test]
 fn adv12_gov_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-government-credentials", "BZURE_GOVERNMENT_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"");
+    assert_detector_silent(
+        "azure-government-credentials",
+        "BZURE_GOVERNMENT_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"",
+    );
 }
 
 #[test]
 fn adv12_gov_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-government-credentials", "AZURE_GOVERNMENT\u{200B}_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"", "12345678-abcd-1234-abcd-1234567890ab");
+    assert_detector_fires(
+        "azure-government-credentials",
+        "AZURE_GOVERNMENT\u{200B}_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"",
+        "12345678-abcd-1234-abcd-1234567890ab",
+    );
 }
 
 #[test]
 fn adv12_gov_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-government-credentials", "AZURE_GOVERNMENT_CLIENT_ID = \"12345678-abcd-1234-abcd-12345678\u{00AD}90ab\"", "12345678-abcd-1234-abcd-1234567890ab");
+    assert_detector_fires(
+        "azure-government-credentials",
+        "AZURE_GOVERNMENT_CLIENT_ID = \"12345678-abcd-1234-abcd-12345678\u{00AD}90ab\"",
+        "12345678-abcd-1234-abcd-1234567890ab",
+    );
 }
 
 #[test]
 fn adv12_gov_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-government-credentials", "AZURE_GOVERNM\u{0415}NT_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"", "12345678-abcd-1234-abcd-1234567890ab");
+    assert_detector_fires(
+        "azure-government-credentials",
+        "AZURE_GOVERNM\u{0415}NT_CLIENT_ID = \"12345678-abcd-1234-abcd-1234567890ab\"",
+        "12345678-abcd-1234-abcd-1234567890ab",
+    );
 }
 
 // =========================================================================
@@ -160,27 +236,27 @@ fn adv12_gov_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_iothub_normal_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=");
+    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 #[test]
 fn adv12_iothub_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-iot-connection-string", "GastName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=");
+    assert_detector_silent("azure-iot-connection-string", "GastName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 #[test]
 fn adv12_iothub_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName\u{200B}=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=");
+    assert_detector_fires("azure-iot-connection-string", "HostName\u{200B}=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 #[test]
 fn adv12_iothub_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1\u{00AD}234567890abcde12345678=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=");
+    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAA\u{00AD}AAAAAAAAAAAAAAAAAAAAAA=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 #[test]
 fn adv12_iothub_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=", "abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=abcde1234567890abcde1234567890abcde12345678=");
+    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 // =========================================================================
@@ -189,27 +265,46 @@ fn adv12_iothub_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_keyvault_normal_must_fire() {
-    assert_detector_fires("azure-key-vault-credentials", "https://myvault-name.vault.azure.net/", "https://myvault-name.vault.azure.net/");
+    assert_detector_fires(
+        "azure-key-vault-credentials",
+        "https://myvault-name.vault.azure.net/",
+        "https://myvault-name.vault.azure.net/",
+    );
 }
 
 #[test]
 fn adv12_keyvault_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-key-vault-credentials", "https://myvault-name.vault.azure.org/");
+    assert_detector_silent(
+        "azure-key-vault-credentials",
+        "https://myvault-name.vault.azure.org/",
+    );
 }
 
 #[test]
 fn adv12_keyvault_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-key-vault-credentials", "https://myvault-name.vault\u{200B}.azure.net/", "https://myvault-name.vault.azure.net/");
+    assert_detector_fires(
+        "azure-key-vault-credentials",
+        "https://myvault-name.vault\u{200B}.azure.net/",
+        "https://myvault-name.vault.azure.net/",
+    );
 }
 
 #[test]
 fn adv12_keyvault_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-key-vault-credentials", "https://myvault\u{00AD}-name.vault.azure.net/", "https://myvault-name.vault.azure.net/");
+    assert_detector_fires(
+        "azure-key-vault-credentials",
+        "https://myvault\u{00AD}-name.vault.azure.net/",
+        "https://myvault-name.vault.azure.net/",
+    );
 }
 
 #[test]
 fn adv12_keyvault_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-key-vault-credentials", "https://myvault-name.va\u{0457}lt.azure.net/", "https://myvault-name.vault.azure.net/");
+    assert_detector_fires(
+        "azure-key-vault-credentials",
+        "https://myvault-name.va\u{0457}lt.azure.net/",
+        "https://myvault-name.vault.azure.net/",
+    );
 }
 
 // =========================================================================
@@ -218,27 +313,46 @@ fn adv12_keyvault_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_openai_normal_must_fire() {
-    assert_detector_fires("azure-openai-api-key", "AZURE_OPENAI_API_KEY = \"abcde1234567890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-openai-api-key",
+        "AZURE_OPENAI_API_KEY = \"abcde1234567890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 #[test]
 fn adv12_openai_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-openai-api-key", "MURE_OPENAI_API_KEY = \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "azure-openai-api-key",
+        "MURE_OPENAI_API_KEY = \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 #[test]
 fn adv12_openai_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-openai-api-key", "AZURE_OPENAI\u{200B}_API_KEY = \"abcde1234567890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-openai-api-key",
+        "AZURE_OPENAI\u{200B}_API_KEY = \"abcde1234567890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 #[test]
 fn adv12_openai_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-openai-api-key", "AZURE_OPENAI_API_KEY = \"abcde12345\u{00AD}67890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-openai-api-key",
+        "AZURE_OPENAI_API_KEY = \"abcde12345\u{00AD}67890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 #[test]
 fn adv12_openai_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-openai-api-key", "az\u{0457}re_openai_api_key = \"abcde1234567890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-openai-api-key",
+        "az\u{0457}re_openai_api_key = \"abcde1234567890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 // =========================================================================
@@ -276,25 +390,44 @@ fn adv12_storage_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_subscription_normal_must_fire() {
-    assert_detector_fires("azure-subscription-key", "azure_subscription_key = \"abcde1234567890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-subscription-key",
+        "azure_subscription_key = \"abcde1234567890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 #[test]
 fn adv12_subscription_wrong_prefix_must_silent() {
-    assert_detector_silent("azure-subscription-key", "azure_unsubscription_key = \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "azure-subscription-key",
+        "azure_unsubscription_key = \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 #[test]
 fn adv12_subscription_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-subscription-key", "azure_subscription\u{200B}_key = \"abcde1234567890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-subscription-key",
+        "azure_subscription\u{200B}_key = \"abcde1234567890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 #[test]
 fn adv12_subscription_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-subscription-key", "azure_subscription_key = \"abcde12345\u{00AD}67890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-subscription-key",
+        "azure_subscription_key = \"abcde12345\u{00AD}67890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }
 
 #[test]
 fn adv12_subscription_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-subscription-key", "az\u{0457}re_subscription_key = \"abcde1234567890abcde123456789012\"", "abcde1234567890abcde123456789012");
+    assert_detector_fires(
+        "azure-subscription-key",
+        "az\u{0457}re_subscription_key = \"abcde1234567890abcde123456789012\"",
+        "abcde1234567890abcde123456789012",
+    );
 }

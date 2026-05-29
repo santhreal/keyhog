@@ -137,7 +137,7 @@ fn scan_json_is_valid_array_with_detector_id() {
     // on an `AKIA…` key and shadows the TOML `aws-access-key` detector; assert
     // the id that actually fires, not the corpus twin.
     assert!(
-        arr.iter().any(|f| f["detector_id"] == "hot-aws_key"),
+        arr.iter().any(|f| f["detector_id"] == "aws-access-key"),
         "got: {so}"
     );
 }
@@ -242,10 +242,7 @@ fn scan_deep_mode_finds_aws_key() {
     let (_d, p) = tmp_with("c.env", AWS);
     let (so, _se, code) = out(&["scan", "--no-daemon", "--deep", "--format", "json", &p]);
     assert_eq!(code, Some(1));
-    assert!(
-        so.contains("AKIA"),
-        "deep mode missed the AWS key: {so}"
-    );
+    assert!(so.contains("AKIA"), "deep mode missed the AWS key: {so}");
 }
 
 #[test]

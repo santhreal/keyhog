@@ -75,7 +75,7 @@ hooks and IDE save handlers are the killer use cases.</p>
 
 <span class="k">[Service]</span>
 <span class="k">Type</span>=exec
-<span class="k">ExecStart</span>=/usr/local/bin/keyhog daemon start --foreground
+<span class="k">ExecStart</span>=/usr/local/bin/keyhog daemon start
 <span class="k">Restart</span>=on-failure
 <span class="k">RestartSec</span>=5
 
@@ -94,7 +94,7 @@ hooks and IDE save handlers are the killer use cases.</p>
   &lt;key&gt;ProgramArguments&lt;/key&gt;
   &lt;array&gt;
     &lt;string&gt;/opt/homebrew/bin/keyhog&lt;/string&gt;
-    &lt;string&gt;daemon&lt;/string&gt;&lt;string&gt;start&lt;/string&gt;&lt;string&gt;--foreground&lt;/string&gt;
+    &lt;string&gt;daemon&lt;/string&gt;&lt;string&gt;start&lt;/string&gt;
   &lt;/array&gt;
   &lt;key&gt;KeepAlive&lt;/key&gt;&lt;true/&gt;
   &lt;key&gt;RunAtLoad&lt;/key&gt;&lt;true/&gt;

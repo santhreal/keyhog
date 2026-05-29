@@ -63,6 +63,23 @@ full = [
     "verify",
     "binary",
 ]
+# Maximally-light CI / embeddable profile. Use as:
+#   cargo install --no-default-features --features ci
+# Drops every heavy axis a CI run never needs: NO Hyperscan (`simd` - kills the
+# ~1.7s cold-start; the AC+regex path is faster for keyhog's <2K patterns anyway),
+# NO GPU/vyre drivers, NO live verification, NO TUI, NO Ghidra, and NO git/web/
+# cloud source backends (the always-on filesystem + stdin path covers
+# `keyhog scan .` / `keyhog scan --stdin`, which is how CI scans a checked-out
+# tree). Keeps the full 891-detector corpus + ML + entropy + decode-through +
+# multiline + token efficiency. Instant start, smallest binary - the profile CI
+# integrations should use. Git-history / cloud scanning is opt-in on top
+# (`--features ci,git`) or via the fuller `portable` profile.
+ci = [
+    "keyhog-scanner/ml",
+    "keyhog-scanner/entropy",
+    "keyhog-scanner/decode",
+    "keyhog-scanner/multiline",
+]
 git = ["keyhog-sources/git"]
 github = ["keyhog-sources/github"]
 s3 = ["keyhog-sources/s3"]
@@ -82,7 +99,7 @@ tui = ["dep:ratatui", "dep:crossterm"]
 keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }
 keyhog-verifier = { workspace = true, optional = true }
-keyhog-sources = { workspace = true }
+keyhog-sources = { workspace = true, default-features = false }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 tokio = { workspace = true }
@@ -127,7 +144,7 @@ libc = { workspace = true }
 [dev-dependencies]
 keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }
-keyhog-sources = { workspace = true }
+keyhog-sources = { workspace = true, default-features = false }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 regex = { workspace = true }

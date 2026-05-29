@@ -17,7 +17,9 @@ fn uuid_like(seed: u64) -> String {
     let mut s = seed;
     let mut hex = String::new();
     while hex.len() < 32 {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         hex.push_str(&format!("{:08x}", (s >> 32) as u32));
     }
     format!(
@@ -34,7 +36,9 @@ fn hex64(seed: u64) -> String {
     let mut s = seed;
     let mut hex = String::new();
     while hex.len() < 64 {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         hex.push_str(&format!("{:08x}", (s >> 32) as u32));
     }
     hex[..64].to_string()

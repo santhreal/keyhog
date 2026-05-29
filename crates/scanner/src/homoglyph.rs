@@ -27,8 +27,10 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
         m.insert('s', vec!['ѕ', 'ｓ']);
         m.insert('t', vec!['т', 'τ', 'ｔ']);
         m.insert('u', vec!['υ', 'ｕ']);
+        m.insert('l', vec!['і', 'І', 'ι', 'Ι', 'ｌ', 'Ο', 'ο', 'о', 'O', 'o']);
         m.insert('x', vec!['х', 'χ', 'ｘ']);
         m.insert('y', vec!['у', 'ｙ']);
+        m.insert('L', vec!['Ｌ']);
 
         m.insert('A', vec!['А', 'Α', 'Ａ']);
         m.insert('B', vec!['В', 'Β', 'Ｂ']);

@@ -22,11 +22,17 @@ before matching, calibrates confidence per detector via Bayesian
 Beta(α,β) feedback, and routes every scan to the fastest hardware backend
 present:
 
-| Backend | When | How |
+| Layer / Backend | When | How |
 |---|---|---|
+| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for the 8 highest-value secret prefixes (AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`) at up to **50 GB/s**, before the regex backend runs |
 | `gpu-zero-copy` | discrete GPU + ≥256 MiB scan | vyre AC automaton on GPU via WGPU (cross-platform) or optional CUDA backend |
 | `simd-regex` | AVX-512 / AVX2 / NEON + Hyperscan | parallel multi-pattern NFA at ~500 MB/s |
 | `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
+
+The `simdsieve` prefilter is a performance layer, not a separate detector: a
+hit surfaces under its **canonical detector id** (`aws-access-key`,
+`github-classic-pat`, `slack-bot-token`, …) - identical on every platform and
+build, whether the fast path or the full regex engine made the find.
 
 Backend selection is automatic. On startup:
 
@@ -254,6 +260,28 @@ Auto-downloads a prebuilt binary; falls back to `cargo build` when no
 release asset matches the host triple. SARIF carries CWE-798 + OWASP
 A07:2021 taxa on every finding.
 
+### CI never needs a GPU
+
+**keyhog runs pure CPU/SIMD in CI - no GPU, no drivers, no CUDA toolkit.**
+keyhog auto-detects hosted CI runners (`CI=true` plus a dozen
+provider-specific markers) and skips every GPU init path, routing all
+work through the SIMD/CPU engine. There is nothing to configure: the
+GPU is for interactive desktop scans on machines that have one, never a
+requirement. Detection results are identical on CPU and GPU - the GPU
+only changes throughput, never which secrets are found.
+
+Self-hosted runner with a real GPU and want to use it? Set
+`KEYHOG_NO_GPU=0` to opt back in.
+
+Building keyhog from source in CI (rather than the prebuilt binary)?
+Use the `portable` feature - every detection feature, no system-library
+build deps (skips the Hyperscan/Ghidra build step):
+
+```yaml
+- run: cargo install --git https://github.com/santhsecurity/keyhog keyhog --no-default-features --features portable
+- run: keyhog scan . --format sarif --severity high > keyhog.sarif
+```
+
 Other CIs (GitLab, CircleCI, Drone, BuildKite, Jenkins), pre-commit
 recipes, Husky / lefthook, and the full SARIF schema:
 [`site/ci.html`](./site/ci.html) and [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
@@ -387,22 +415,21 @@ severity = "high"
 min_confidence = 0.5
 exclude = ["**/test/fixtures/**", "vendor/"]
 
-[allowlist]
-file = ".keyhogignore"
-require_reason = true
-require_approved_by = true
-max_expires_days = 180
-
 [detector.generic-api-key]
-enabled = false                # noisy detector? turn it off
+enabled = false                # noisy detector? turn it off (hot-* fast-path
+                               # ids like `hot-aws_key` are disabled the same way)
 
 [lockdown]
-require = true                 # refuse to run without --lockdown
+require = true                 # refuse to run unless --lockdown is passed
 ```
 
 Precedence (later overrides earlier): compiled defaults → system →
 user → repo → env → CLI flags. Full reference:
 [`site/config.html`](./site/config.html).
+
+Suppress specific findings (not whole detectors) with a `.keyhogignore`
+file by hash, path glob, or detector id - see
+[suppressions](./docs/src/suppressions.md).
 
 Allowlist a known leak with a hash, path glob, or detector id . plus
 optional `reason` / `expires` / `approved_by` governance metadata:

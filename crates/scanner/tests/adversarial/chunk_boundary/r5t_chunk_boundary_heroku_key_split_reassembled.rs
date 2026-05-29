@@ -12,7 +12,13 @@ fn r5t_chunk_boundary_heroku_key_split_reassembled() {
     d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
-    let secret = "01234567-89ab-cdef-0123-456789abcdef";
+    // Context-required detector: the `HEROKU_API_KEY=` anchor and the UUID
+    // value straddle the seam together (a bare UUID is not a Heroku key).
+    // The credential is the captured UUID group.
+    let secret = "HEROKU_API_KEY=a3f8d2e1-b9c7-460a-f1e8-d3c5b2a9f04e";
+    // The detector captures group 1 (the bare UUID), not the whole
+    // `KEY=value` anchor string.
+    let credential = "a3f8d2e1-b9c7-460a-f1e8-d3c5b2a9f04e";
     let split = 10;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();
@@ -42,7 +48,7 @@ fn r5t_chunk_boundary_heroku_key_split_reassembled() {
     let found = results
         .iter()
         .flatten()
-        .any(|m| m.detector_id.as_ref() == "heroku-api-key" && m.credential.as_ref() == secret);
+        .any(|m| m.detector_id.as_ref() == "heroku-api-key" && m.credential.as_ref() == credential);
     assert!(
         found,
         "heroku-api-key split across chunk seam must reassemble"

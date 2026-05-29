@@ -54,17 +54,20 @@ keyhog:
     - apt-get update -qq && apt-get install -y curl libhyperscan-dev
     - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
   script:
-    - ~/.local/bin/keyhog scan . --format sarif > keyhog.sarif
+    # Exits non-zero on findings, which fails the job and gates the MR.
+    - ~/.local/bin/keyhog scan . --format sarif --output keyhog.sarif
   artifacts:
-    when: always
-    reports:
-      sast: keyhog.sarif
+    when: always           # keep the report even when the scan fails the job
     paths:
       - keyhog.sarif
 ```
 
-GitLab consumes SARIF as a `sast` report and surfaces findings in
-the merge request security dashboard.
+The job's exit status gates the merge request (keyhog exits non-zero on
+findings) and the SARIF is kept as a downloadable artifact. Note: GitLab's
+`artifacts:reports:sast` expects GitLab's own SAST JSON schema, **not** SARIF,
+so to surface findings in the MR security dashboard you must convert the SARIF
+to that format (e.g. a SARIF-to-GitLab-SAST converter step) - pointing
+`reports:sast` directly at a SARIF file does not work.
 
 ## CircleCI
 
@@ -85,7 +88,7 @@ jobs:
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       - run:
           name: Scan repo
-          command: keyhog scan .
+          command: keyhog scan . --format sarif --output keyhog.sarif
       - store_artifacts:
           path: keyhog.sarif
           destination: keyhog.sarif
@@ -119,7 +122,7 @@ The install scripts pull the latest release by default. For
 reproducible CI, pin a specific version:
 
 ```sh
-curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.34 sh
+curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.36 sh
 ```
 
 Update the pin via a Renovate / Dependabot config or just bump it
@@ -132,13 +135,19 @@ it across runs:
 
 ```yaml
       - name: Cache keyhog
+        id: cache-keyhog
         uses: actions/cache@v4
         with:
           path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.34
+          key: keyhog-${{ runner.os }}-v0.5.36
+      - name: Install keyhog
+        if: steps.cache-keyhog.outputs.cache-hit != 'true'
+        run: curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | KEYHOG_VERSION=v0.5.36 sh
 ```
 
-Bump the cache key when you bump the pinned version.
+The `if: cache-hit != 'true'` guard is what makes the cache pay off - without
+it the install step re-downloads on every run and the cache does nothing. Bump
+both the cache key and the pinned `KEYHOG_VERSION` together when you upgrade.
 
 ## Scan history once per release, not per PR
 

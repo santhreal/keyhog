@@ -2,5 +2,14 @@
   name: KeyHog Secret Scanner
   entry: keyhog scan --fast --git-staged
   language: rust
+  # `keyhog --git-staged` self-discovers the staged blobs and scans their
+  # STAGED content (not the working tree). The pre-commit framework otherwise
+  # appends the changed filenames as positional args, and `keyhog scan` takes
+  # only ONE positional [PATH] - a second filename aborts with clap exit 2
+  # ("unexpected argument"), failing EVERY commit. Suppress the filename pass.
+  pass_filenames: false
+  # Re-run once for the whole commit, not per-file: --git-staged already
+  # covers the entire staged set in a single invocation.
+  require_serial: true
   types: [text]
   stages: [pre-commit]

@@ -167,3 +167,17 @@ Do **not** open a public issue for a security report. Use GitHub's
 private advisory flow at
 [/security/advisories/new](https://github.com/santhsecurity/keyhog/security/advisories/new)
 or email **security@santh.dev**.
+
+## Contributors
+
+keyhog is built by the Santh team and sharpened by community
+contributions. Every merged PR earns a line here - thank you to
+everyone who has sent a fix, a detector, or a test:
+
+- [@Eraminel01](https://github.com/Eraminel01) (Edyard) - corrected the
+  Anthropic API key detector shape
+  ([#7](https://github.com/santhsecurity/keyhog/pull/7)).
+
+New contributors: add yourself to this list in the same PR as your
+change. One line, newest last: `[@handle](profile) - what you
+improved ([#PR](link)).`

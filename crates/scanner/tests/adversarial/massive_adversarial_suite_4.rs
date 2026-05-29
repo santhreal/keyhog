@@ -3,12 +3,12 @@
 //! Exclusively validates deduplication logic, scope rules, cross-detector
 //! folding, confidence aggregation, companion merging, and location equivalence.
 
+use keyhog_core::{
+    dedup_cross_detector, dedup_matches, redact, DedupScope, DedupedMatch, MatchLocation, RawMatch,
+    Severity,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-use keyhog_core::{
-    dedup_cross_detector, dedup_matches, redact, DedupScope, DedupedMatch, MatchLocation,
-    RawMatch, Severity,
-};
 
 // Helper to build a RawMatch
 fn make_raw_match(
@@ -49,8 +49,26 @@ fn make_raw_match(
 
 #[test]
 fn adv4_dedup_scope_none_keeps_all_distinct() {
-    let m1 = make_raw_match("aws", "AKIA1", "a.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
-    let m2 = make_raw_match("aws", "AKIA1", "a.txt", 2, 20, Severity::High, Some(0.8), HashMap::new());
+    let m1 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        2,
+        20,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
     let res = dedup_matches(vec![m1, m2], &DedupScope::None);
     assert_eq!(res.len(), 2);
 }
@@ -61,8 +79,26 @@ fn adv4_dedup_scope_none_keeps_all_distinct() {
 
 #[test]
 fn adv4_dedup_scope_file_groups_same_file() {
-    let m1 = make_raw_match("aws", "AKIA1", "a.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
-    let m2 = make_raw_match("aws", "AKIA1", "a.txt", 2, 20, Severity::High, Some(0.8), HashMap::new());
+    let m1 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        2,
+        20,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
     let res = dedup_matches(vec![m1, m2], &DedupScope::File);
     assert_eq!(res.len(), 1);
     assert_eq!(res[0].additional_locations.len(), 1);
@@ -70,8 +106,26 @@ fn adv4_dedup_scope_file_groups_same_file() {
 
 #[test]
 fn adv4_dedup_scope_file_separates_different_files() {
-    let m1 = make_raw_match("aws", "AKIA1", "a.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
-    let m2 = make_raw_match("aws", "AKIA1", "b.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
+    let m1 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "b.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
     let res = dedup_matches(vec![m1, m2], &DedupScope::File);
     assert_eq!(res.len(), 2);
 }
@@ -82,8 +136,26 @@ fn adv4_dedup_scope_file_separates_different_files() {
 
 #[test]
 fn adv4_dedup_scope_credential_groups_across_files() {
-    let m1 = make_raw_match("aws", "AKIA1", "a.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
-    let m2 = make_raw_match("aws", "AKIA1", "b.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
+    let m1 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "b.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
     let res = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     assert_eq!(res.len(), 1);
     assert_eq!(res[0].additional_locations.len(), 1);
@@ -95,8 +167,26 @@ fn adv4_dedup_scope_credential_groups_across_files() {
 
 #[test]
 fn adv4_cross_detector_priority_highest_confidence_wins() {
-    let m1 = make_raw_match("aws-low-conf", "SECRET123", "a.txt", 1, 10, Severity::High, Some(0.4), HashMap::new());
-    let m2 = make_raw_match("aws-high-conf", "SECRET123", "a.txt", 1, 10, Severity::High, Some(0.9), HashMap::new());
+    let m1 = make_raw_match(
+        "aws-low-conf",
+        "SECRET123",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.4),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws-high-conf",
+        "SECRET123",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.9),
+        HashMap::new(),
+    );
     let deduped = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     let res = dedup_cross_detector(deduped);
     assert_eq!(res.len(), 1);
@@ -105,8 +195,26 @@ fn adv4_cross_detector_priority_highest_confidence_wins() {
 
 #[test]
 fn adv4_cross_detector_priority_highest_severity_wins_on_equal_confidence() {
-    let m1 = make_raw_match("aws-med-sev", "SECRET123", "a.txt", 1, 10, Severity::Medium, Some(0.8), HashMap::new());
-    let m2 = make_raw_match("aws-critical-sev", "SECRET123", "a.txt", 1, 10, Severity::Critical, Some(0.8), HashMap::new());
+    let m1 = make_raw_match(
+        "aws-med-sev",
+        "SECRET123",
+        "a.txt",
+        1,
+        10,
+        Severity::Medium,
+        Some(0.8),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws-critical-sev",
+        "SECRET123",
+        "a.txt",
+        1,
+        10,
+        Severity::Critical,
+        Some(0.8),
+        HashMap::new(),
+    );
     let deduped = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     let res = dedup_cross_detector(deduped);
     assert_eq!(res.len(), 1);
@@ -115,8 +223,26 @@ fn adv4_cross_detector_priority_highest_severity_wins_on_equal_confidence() {
 
 #[test]
 fn adv4_cross_detector_priority_lexicographic_tiebreak() {
-    let m1 = make_raw_match("aws-b-detector", "SECRET123", "a.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
-    let m2 = make_raw_match("aws-a-detector", "SECRET123", "a.txt", 1, 10, Severity::High, Some(0.8), HashMap::new());
+    let m1 = make_raw_match(
+        "aws-b-detector",
+        "SECRET123",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
+    let m2 = make_raw_match(
+        "aws-a-detector",
+        "SECRET123",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        HashMap::new(),
+    );
     let deduped = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     let res = dedup_cross_detector(deduped);
     assert_eq!(res.len(), 1);
@@ -134,8 +260,26 @@ fn adv4_companion_merging_keeps_distinct_values_delimited() {
     let mut c2 = HashMap::new();
     c2.insert("org".to_string(), "org-2".to_string());
 
-    let m1 = make_raw_match("aws", "AKIA1", "a.txt", 1, 10, Severity::High, Some(0.8), c1);
-    let m2 = make_raw_match("aws", "AKIA1", "a.txt", 2, 20, Severity::High, Some(0.8), c2);
+    let m1 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        1,
+        10,
+        Severity::High,
+        Some(0.8),
+        c1,
+    );
+    let m2 = make_raw_match(
+        "aws",
+        "AKIA1",
+        "a.txt",
+        2,
+        20,
+        Severity::High,
+        Some(0.8),
+        c2,
+    );
 
     let res = dedup_matches(vec![m1, m2], &DedupScope::File);
     assert_eq!(res.len(), 1);

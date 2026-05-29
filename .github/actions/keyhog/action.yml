@@ -33,6 +33,14 @@ inputs:
       Set to "false" to keep the job green and rely on the uploaded SARIF
       surfacing in code-scanning instead.
     default: 'true'
+  baseline:
+    description: |
+      Path to a keyhog baseline file (produced by
+      `keyhog scan --format json --output baseline.json` and committed to the
+      repo). Findings already present in the baseline are suppressed, so the
+      job blocks only NEW secrets. This is the standard way to adopt keyhog in
+      a repo that already has findings, without a noisy failing first run.
+    default: ''
 
 outputs:
   findings:
@@ -200,11 +208,19 @@ runs:
         echo "findings=$findings" >> "$GITHUB_OUTPUT"
         echo "::notice title=KeyHog::Found $findings finding(s) at or above '${{ inputs.severity }}' severity."
 
-        # Exit only if keyhog crashed (exit > 1) — exit 1 typically means
-        # "findings reported", which we handle in the next step.
-        if [[ $keyhog_exit -gt 1 ]]; then
-          echo "::error title=KeyHog::Scanner crashed with exit code $keyhog_exit"
-          exit $keyhog_exit
+        # 0 = clean, 1 = findings, 10 = LIVE credentials confirmed under
+        # --verify - all "the scan ran, here is the result", handled by the
+        # findings / fail-on-findings logic in the next step. Anything else
+        # (2 user error, 3 system error, 11 scanner panic) is a genuine
+        # failure. Without the `!= 10` guard a --verify run that CONFIRMS a
+        # live leak would be mislabeled "Scanner crashed" and skip the findings
+        # path - the worst outcome reported as a tooling bug.
+        if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
+          echo "::error title=KeyHog::keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
+          exit "$keyhog_exit"
+        fi
+        if [[ "$keyhog_exit" == "10" ]]; then
+          echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
         fi
 
     - name: Check report exists before SARIF upload

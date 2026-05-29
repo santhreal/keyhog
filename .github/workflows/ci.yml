@@ -83,6 +83,13 @@ jobs:
       - name: E2E binary tests
         run: cargo test -p keyhog --test e2e_binary --profile release-fast
 
+      # SARIF -> GitHub code-scanning compliance (repo-relative URIs +
+      # partialFingerprints). Structural validity isn't enough; these are the
+      # requirements that decide whether alerts annotate the PR and dedup
+      # across runs. Drives the real binary from a repo root like the Action.
+      - name: SARIF code-scanning compliance
+        run: cargo test -p keyhog --test sarif_github_compliance --profile release-fast
+
       # Per-detector contract gate lives in strict-runners (with the
       # adversarial/encoding/path multipliers under KEYHOG_*_STRICT=1).
 
@@ -242,6 +249,8 @@ jobs:
         run: bash tests/install/edge_cases.sh
       - name: Docs CLI-claim gate (no hallucinated flags in docs/site)
         run: bash tests/docs/cli_claims_check.sh
+      - name: Integration entry-point gate (pre-commit hook + Action)
+        run: bash tests/integration/entrypoints_check.sh
 
   fmt:
     name: Format

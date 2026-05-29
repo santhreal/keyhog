@@ -326,7 +326,7 @@ pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
 /// apply universally (Tier A). Shapes that CAN legitimately appear as a
 /// credential body (`/`-led base64, `!`-led / `!`-trailed secrets) live in
 /// [`looks_like_credential_colliding_punctuation`] and must be Tier-B gated.
-pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
+pub fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
@@ -383,7 +383,7 @@ pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
 /// already matched `snowflake.password=<value>`) has proven the bytes are the
 /// credential, so this filter must NOT fire there - doing so silently killed
 /// snowflake / sourcetree / paloalto / line / keystonejs / tower positives.
-pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
+pub fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
@@ -402,69 +402,7 @@ pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
 /// which are unanchored by construction and so want the full (stricter) set.
 /// Named-detector suppression must use the split functions so the body-
 /// collision half stays Tier-B gated.
-pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
+pub fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     looks_like_syntactic_punctuation_marker(value)
         || looks_like_credential_colliding_punctuation(value)
-}
-
-#[cfg(test)]
-mod punctuation_tier_tests {
-    use super::*;
-
-    #[test]
-    fn tier_a_markers_are_syntactic_only() {
-        // Grammar tokens that are never a credential body - suppressed for any
-        // detector.
-        assert!(looks_like_syntactic_punctuation_marker("--api-secret"));
-        assert!(looks_like_syntactic_punctuation_marker("&password"));
-        assert!(looks_like_syntactic_punctuation_marker("@api_key"));
-        assert!(looks_like_syntactic_punctuation_marker("$API_KEY"));
-        assert!(looks_like_syntactic_punctuation_marker("Password:"));
-        // NOT markers: real credential bodies that merely start with a sigil
-        // (tower's `@gAdtFo%B!...` has a non-identifier tail) or carry edge
-        // punctuation handled by the Tier-B set.
-        assert!(!looks_like_syntactic_punctuation_marker(
-            "@gAdtFo%B!tcnSl+A"
-        ));
-        assert!(!looks_like_syntactic_punctuation_marker(
-            "SnowFlakePass123!"
-        ));
-        assert!(!looks_like_syntactic_punctuation_marker("/7j3M6glXEI5gvG5"));
-    }
-
-    #[test]
-    fn tier_b_collision_is_leading_slash_or_bang_only() {
-        // `/`-led base64 (paloalto/line) and `!`-led secrets (keystonejs) are
-        // FP-shaped for unanchored generic matches.
-        assert!(looks_like_credential_colliding_punctuation(
-            "/7j3M6glXEI5gvG5"
-        ));
-        assert!(looks_like_credential_colliding_punctuation(
-            "!t1c!_Axt_7ARTF"
-        ));
-        // A *trailing* `!` is deliberately NOT collision (a password ending `!`
-        // is common); this is what lets snowflake/sourcetree surface in a JSON
-        // envelope via the generic detector.
-        assert!(!looks_like_credential_colliding_punctuation(
-            "SnowFlakePass123!"
-        ));
-        assert!(!looks_like_credential_colliding_punctuation(
-            "SourceTreePass1234!"
-        ));
-        // A plain token isn't decoration.
-        assert!(!looks_like_credential_colliding_punctuation(
-            "Vk9Bn3Lp7Qm2Rs5"
-        ));
-    }
-
-    #[test]
-    fn anchored_password_ending_in_bang_is_not_suppressed_by_either_tier() {
-        // The named-detector path applies only the Tier-A marker; the combined
-        // (fallback) filter applies both. A real password ending `!` must pass
-        // BOTH so snowflake.password=SnowFlakePass123! surfaces.
-        let v = "SnowFlakePass123!";
-        assert!(!looks_like_syntactic_punctuation_marker(v));
-        assert!(!looks_like_credential_colliding_punctuation(v));
-        assert!(!looks_like_punctuation_decorated_identifier(v));
-    }
 }

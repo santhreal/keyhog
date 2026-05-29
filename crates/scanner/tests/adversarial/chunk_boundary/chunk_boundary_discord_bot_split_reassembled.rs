@@ -12,7 +12,7 @@ fn chunk_boundary_discord_bot_split_reassembled() {
     d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
-    let secret = "MTAxMjM0NTY3ODkw.AbCdEf.GhIjKlMnOpQrStUvWxYz0123456789";
+    let secret = "MTA8xK2pLm9Qr4Tv6Wz1Bn8.x7Df3Gj.aE4iU2oP5sR8tW1yZ6bC9dF3gH0";
     let split = 15;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();

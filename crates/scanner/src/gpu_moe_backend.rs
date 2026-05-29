@@ -322,7 +322,10 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     // device was lost or the wait timed out, so the map callback below would
     // never fire — surface it and fall back to CPU MoE rather than block.
     if let Err(error) = device.poll(wgpu::PollType::Wait) {
-        tracing::warn!(?error, "GPU MoE device.poll() failed; falling back to CPU MoE for this scan");
+        tracing::warn!(
+            ?error,
+            "GPU MoE device.poll() failed; falling back to CPU MoE for this scan"
+        );
         return None;
     }
 

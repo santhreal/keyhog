@@ -33,6 +33,9 @@ pub struct VerificationCache {
     inserts: AtomicUsize,
     max_entries: usize,
     ttl: Duration,
+    /// Concurrent FIFO queue for fast eviction of the oldest entries
+    /// without locking all DashMap shards.
+    queue: parking_lot::Mutex<std::collections::VecDeque<CacheKey>>,
 }
 
 #[derive(Hash, Eq, PartialEq, Clone)]
@@ -90,6 +93,7 @@ impl VerificationCache {
             inserts: AtomicUsize::new(0),
             max_entries: max_entries.max(1),
             ttl,
+            queue: parking_lot::Mutex::new(std::collections::VecDeque::new()),
         }
     }
 
@@ -182,6 +186,7 @@ impl VerificationCache {
             self.evict_expired();
         }
 
+        let key_clone = key.clone();
         self.entries.insert(
             key,
             CacheEntry {
@@ -190,6 +195,7 @@ impl VerificationCache {
                 expires_at: Instant::now() + self.ttl,
             },
         );
+        self.queue.lock().push_back(key_clone);
 
         if self.entries.len() > self.max_entries {
             self.evict_one_oldest();
@@ -244,15 +250,11 @@ impl VerificationCache {
     }
 
     fn evict_one_oldest(&self) {
-        // Find the oldest expiry across all shards. Cloning the key is fine
-        // since CacheKey is small fixed-size hashes + Arc<str>.
-        let oldest_key = self
-            .entries
-            .iter()
-            .min_by_key(|entry| entry.value().expires_at)
-            .map(|entry| entry.key().clone());
-        if let Some(key) = oldest_key {
-            self.entries.remove(&key);
+        let mut queue = self.queue.lock();
+        while let Some(key) = queue.pop_front() {
+            if self.entries.remove(&key).is_some() {
+                break;
+            }
         }
     }
 }

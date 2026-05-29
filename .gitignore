@@ -64,3 +64,7 @@ plan.md
 PLAN.md
 plans/
 .audits/
+
+# Runtime vyre JIT/PTX + pipeline caches written next to the binary during scans.
+.cache/
+NUL

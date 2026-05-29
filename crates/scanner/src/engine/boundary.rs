@@ -172,13 +172,26 @@ fn scan_one_pair(
         }
 
         // Defensive dedup: if the per-chunk scan already produced an
-        // identical (offset, credential_hash) pair (e.g. an overlap
-        // case slipped through), don't double-count.
+        // identical (offset, detector_id, credential_hash) triple (e.g.
+        // an overlap case slipped through), don't double-count.
+        //
+        // The key MUST include detector_id. Two distinct detectors can
+        // legitimately match the same bytes at the same offset (e.g. a
+        // generic `shopify-access-token` and the specific
+        // `shopify-admin-api-token` both claim `shpat_<32hex>`). The
+        // plain per-chunk scan reports BOTH; a (offset, hash)-only key
+        // would push the first boundary match then suppress every other
+        // detector's match of the same span as "already seen", making
+        // the boundary path drop findings the in-chunk path keeps.
+        // Order-dependent and silent. detector_id in the key restores
+        // parity with the in-chunk scan.
         let already_seen = per_chunk_results[ai]
             .iter()
             .chain(per_chunk_results[bi].iter())
             .any(|x| {
-                x.location.offset == m.location.offset && x.credential_hash == m.credential_hash
+                x.location.offset == m.location.offset
+                    && x.detector_id == m.detector_id
+                    && x.credential_hash == m.credential_hash
             });
         if already_seen {
             continue;

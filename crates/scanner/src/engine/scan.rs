@@ -235,7 +235,9 @@ impl CompiledScanner {
     ) -> Vec<RawMatch> {
         // KH-116: Record scan metrics atomically
         crate::telemetry::record_file_scanned(chunk.data.len());
-        if backend == crate::hw_probe::ScanBackend::Gpu || backend == crate::hw_probe::ScanBackend::MegaScan {
+        if backend == crate::hw_probe::ScanBackend::Gpu
+            || backend == crate::hw_probe::ScanBackend::MegaScan
+        {
             crate::telemetry::record_gpu_dispatch();
         }
         let prepared = self.prepare_chunk(chunk);
