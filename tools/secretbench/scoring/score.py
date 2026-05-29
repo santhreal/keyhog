@@ -314,16 +314,46 @@ SCANNERS = {
 # ── attribution ───────────────────────────────────────────────────
 
 
+_ESCAPE_NORMALIZE = (
+    ("\\n", "\n"),
+    ("\\r", "\r"),
+    ("\\t", "\t"),
+    ("\\\\", "\\"),
+)
+
+
+def _normalize_for_overlap(s: str) -> str:
+    """Collapse the two common forms of a secret into a single comparable
+    form. The fixture manifest stores secrets JSON-decoded (so ``\\n``
+    is a 1-char newline). The scanner reads the raw bytes of the file
+    a fixture lives in - when that file is JSON/YAML, a multi-line
+    secret arrives as the 2-char escape sequence ``\\n``. Without this
+    normalization, every multi-line credential (PEM private keys,
+    multi-line service-account JSON, copy-pasted shell snippets) scores
+    as an FP even when the captured value byte-matches the truth after
+    decoding. Mirror v22: 45 false-FPs across cryptographic-private-key
+    positives traced to exactly this mismatch."""
+    for esc, raw in _ESCAPE_NORMALIZE:
+        s = s.replace(esc, raw)
+    return s
+
+
 def overlap(a: str, b: str) -> bool:
     """SecretBench paper's containment rule: either side contains
     the other. Keeps the metric robust to scanner-specific
     redaction (e.g. `**...XX` partial-redact), token re-wrapping
     (e.g. trufflehog adding `Bearer ` to OAuth tokens), and the
     common case where one scanner reports just the secret body
-    while another reports key=value together."""
+    while another reports key=value together. Escape sequences in
+    both sides are normalized so a PEM key reported with literal
+    ``\\n`` overlaps the same key stored with actual newlines in the
+    manifest."""
     if not a or not b:
         return False
-    return a in b or b in a
+    if a in b or b in a:
+        return True
+    an, bn = _normalize_for_overlap(a), _normalize_for_overlap(b)
+    return an in bn or bn in an
 
 
 def score_corpus(
