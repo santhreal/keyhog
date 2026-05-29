@@ -20,35 +20,6 @@ pub(super) fn should_suppress_inner(
     skip_b64_decode_recheck: bool,
     bypass_shape_gates: bool,
 ) -> bool {
-    should_suppress_inner_with_anchor(
-        credential,
-        path,
-        context,
-        source_type,
-        skip_b64_decode_recheck,
-        bypass_shape_gates,
-        false,
-    )
-}
-
-/// Inner suppression cascade with explicit credential-anchor signal.
-///
-/// `is_credential_anchor=true` means the caller has positive evidence the
-/// candidate is a credential (a `password=`/`token:`/`api_key=` keyword is
-/// directly attached to the value): the pure-hash-digest and UUID-v4 shape
-/// gates are SKIPPED because they would otherwise drop md5/sha1/sha256 / UUID
-/// secrets planted in those slots. All other gates (placeholders, masks,
-/// repetitions, paths, doc markers) still apply - those filter shapes that
-/// real credentials never have regardless of context.
-pub(super) fn should_suppress_inner_with_anchor(
-    credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-    source_type: Option<&str>,
-    skip_b64_decode_recheck: bool,
-    bypass_shape_gates: bool,
-    is_credential_anchor: bool,
-) -> bool {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
     let upper = credential.to_uppercase();
@@ -195,13 +166,10 @@ pub(super) fn should_suppress_inner_with_anchor(
     // Bench v19 confirmed both gates close the FP regression without
     // losing recall; the contracts_runner test caught the earlier
     // UUID over-suppression that prompted the split.
-    // Hash-digest + UUID gates also bypass when the caller signals a
-    // direct credential-keyword anchor: `TOKEN=<32-hex>` plants the hex
-    // AS the credential, not as a git SHA / image digest.
-    if !bypass_shape_gates && !is_credential_anchor && looks_like_hash_digest(credential) {
+    if !bypass_shape_gates && looks_like_hash_digest(credential) {
         return true;
     }
-    if !bypass_shape_gates && !is_credential_anchor && is_uuid_v4_shape(credential) {
+    if !bypass_shape_gates && is_uuid_v4_shape(credential) {
         return true;
     }
 

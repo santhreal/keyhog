@@ -2,7 +2,7 @@
 //! per finding; they apply the path / shape pre-checks unique to each
 //! call site, then delegate the rest to [`super::decision::should_suppress_inner`].
 
-use super::decision::{should_suppress_inner, should_suppress_inner_with_anchor};
+use super::decision::should_suppress_inner;
 use super::path_filter::{looks_like_secret_scanner_source, looks_like_vendored_minified_path};
 use super::shape::{
     contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
@@ -38,27 +38,6 @@ pub fn should_suppress_known_example_credential_with_source(
     source_type: Option<&str>,
 ) -> bool {
     should_suppress_inner(credential, path, context, source_type, false, false)
-}
-
-/// Variant for the generic-secret / entropy-fallback emit path when the
-/// surrounding line carries a direct credential-keyword anchor
-/// (`TOKEN=<value>`, `api_key: <value>`). The keyword is positive evidence
-/// the captured value IS the credential, so the pure-hash-digest and UUID-v4
-/// shape gates - both of which fire on 32/40/64/128-char hex - are SKIPPED.
-/// All other gates (placeholders, doc markers, RFC7519 JWT specimen,
-/// repetitive masks, path filters, instructional patterns) still run.
-///
-/// Use ONLY from the generic / entropy paths whose own anchor logic guarantees
-/// a credential keyword is on the same line as the candidate. The full
-/// keyword-anchored emit path is the +60 TP / +0.025 F1 lever on the mirror
-/// benchmark's generic-high-entropy-string bucket (R 0.38 → R ~0.7).
-pub fn should_suppress_known_example_credential_with_anchor(
-    credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-    source_type: Option<&str>,
-) -> bool {
-    should_suppress_inner_with_anchor(credential, path, context, source_type, false, false, true)
 }
 
 /// Variant for named-detector findings that have already matched a
