@@ -122,7 +122,7 @@ The install scripts pull the latest release by default. For
 reproducible CI, pin a specific version:
 
 ```sh
-curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.36 sh
+curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.37 sh
 ```
 
 Update the pin via a Renovate / Dependabot config or just bump it
@@ -139,10 +139,10 @@ it across runs:
         uses: actions/cache@v4
         with:
           path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.36
+          key: keyhog-${{ runner.os }}-v0.5.37
       - name: Install keyhog
         if: steps.cache-keyhog.outputs.cache-hit != 'true'
-        run: curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | KEYHOG_VERSION=v0.5.36 sh
+        run: curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | KEYHOG_VERSION=v0.5.37 sh
 ```
 
 The `if: cache-hit != 'true'` guard is what makes the cache pay off - without
