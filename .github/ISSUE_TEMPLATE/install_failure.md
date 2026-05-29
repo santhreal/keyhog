@@ -9,7 +9,7 @@ labels: ["install", "needs-triage"]
 
 - [ ] `install.sh` (Linux / macOS)
 - [ ] `install.ps1` (Windows)
-- [ ] `cargo install keyhog`
+- [ ] `cargo install --git https://github.com/santhsecurity/keyhog`
 - [ ] Pre-built tarball from a release page
 - [ ] GitHub Action (`santhsecurity/keyhog/.github/actions/keyhog@…`)
 
