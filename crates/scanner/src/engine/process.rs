@@ -171,6 +171,7 @@ impl CompiledScanner {
                     entry.client_safe,
                 );
                 scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+                crate::telemetry::record_match_found();
             }
             #[cfg(feature = "ml")]
             super::MlScoreResult::Pending {
@@ -195,9 +196,10 @@ impl CompiledScanner {
                     raw_match,
                     heuristic_conf,
                     code_context,
-                    credential: pending_credential,
-                    ml_context,
+                    credential: pending_credential.into_owned(),
+                    ml_context: ml_context.into_owned(),
                 });
+                crate::telemetry::record_match_found();
             }
         }
     }

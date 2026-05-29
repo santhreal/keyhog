@@ -49,6 +49,26 @@ struct Telemetry {
     events: Mutex<Vec<DogfoodEvent>>,
 }
 
+// Global lock-free telemetry counters (KH-116)
+static FILES_SCANNED: AtomicUsize = AtomicUsize::new(0);
+static BYTES_SCANNED: AtomicUsize = AtomicUsize::new(0);
+static SKIPPED_FILES: AtomicUsize = AtomicUsize::new(0);
+static TOTAL_MATCHES: AtomicUsize = AtomicUsize::new(0);
+static GPU_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
+
+// Global static dogfood capability flag for fast opt-in checking (KH-120)
+static DOGFOOD_ENABLED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+pub struct TelemetrySnapshot {
+    pub files_scanned: usize,
+    pub bytes_scanned: usize,
+    pub skipped_files: usize,
+    pub total_matches: usize,
+    pub gpu_dispatches: usize,
+    pub example_suppressions: usize,
+}
+
 fn cell() -> &'static Telemetry {
     static CELL: OnceLock<Telemetry> = OnceLock::new();
     CELL.get_or_init(Telemetry::default)
@@ -56,11 +76,12 @@ fn cell() -> &'static Telemetry {
 
 /// Enable dogfood event capture for the current process. Idempotent.
 pub fn enable_dogfood() {
+    DOGFOOD_ENABLED.store(true, Ordering::Relaxed);
     cell().dogfood_enabled.store(true, Ordering::Relaxed);
 }
 
 pub fn is_dogfood_enabled() -> bool {
-    cell().dogfood_enabled.load(Ordering::Relaxed)
+    DOGFOOD_ENABLED.load(Ordering::Relaxed)
 }
 
 /// Record one example/placeholder suppression. Always increments the
@@ -73,16 +94,20 @@ pub fn record_example_suppression(
 ) {
     let t = cell();
     t.example_suppressions.fetch_add(1, Ordering::Relaxed);
-    if t.dogfood_enabled.load(Ordering::Relaxed) {
-        let redacted = redact_credential(credential);
-        if let Ok(mut events) = t.events.lock() {
-            events.push(DogfoodEvent::ExampleSuppressed {
-                detector: detector.to_string(),
-                path: path.map(str::to_string),
-                credential_redacted: redacted,
-                reason: Cow::Borrowed(reason),
-            });
-        }
+    
+    // KH-120: Wrap dogfood logging events behind static capability flags to eliminate overhead during silent scans.
+    if !is_dogfood_enabled() {
+        return;
+    }
+    
+    let redacted = redact_credential(credential);
+    if let Ok(mut events) = t.events.lock() {
+        events.push(DogfoodEvent::ExampleSuppressed {
+            detector: detector.to_string(),
+            path: path.map(str::to_string),
+            credential_redacted: redacted,
+            reason: Cow::Borrowed(reason),
+        });
     }
 }
 
@@ -129,12 +154,48 @@ pub fn drain_events() -> Vec<DogfoodEvent> {
     }
 }
 
+// Telemetry recording helpers (KH-116)
+pub fn record_file_scanned(bytes: usize) {
+    FILES_SCANNED.fetch_add(1, Ordering::Relaxed);
+    BYTES_SCANNED.fetch_add(bytes, Ordering::Relaxed);
+}
+
+pub fn record_file_skipped() {
+    SKIPPED_FILES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn record_match_found() {
+    TOTAL_MATCHES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn record_gpu_dispatch() {
+    GPU_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+}
+
+// KH-122: Expose telemetry counters through static memory structures to avoid allocation during sweeps
+pub fn get_telemetry_snapshot() -> TelemetrySnapshot {
+    TelemetrySnapshot {
+        files_scanned: FILES_SCANNED.load(Ordering::Relaxed),
+        bytes_scanned: BYTES_SCANNED.load(Ordering::Relaxed),
+        skipped_files: SKIPPED_FILES.load(Ordering::Relaxed),
+        total_matches: TOTAL_MATCHES.load(Ordering::Relaxed),
+        gpu_dispatches: GPU_DISPATCHES.load(Ordering::Relaxed),
+        example_suppressions: example_suppression_count(),
+    }
+}
+
 /// Reset all state. For tests only.
 #[doc(hidden)]
 pub fn reset() {
     let t = cell();
+    DOGFOOD_ENABLED.store(false, Ordering::Relaxed);
     t.dogfood_enabled.store(false, Ordering::Relaxed);
     t.example_suppressions.store(0, Ordering::Relaxed);
+    FILES_SCANNED.store(0, Ordering::Relaxed);
+    BYTES_SCANNED.store(0, Ordering::Relaxed);
+    SKIPPED_FILES.store(0, Ordering::Relaxed);
+    TOTAL_MATCHES.store(0, Ordering::Relaxed);
+    GPU_DISPATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
     }
