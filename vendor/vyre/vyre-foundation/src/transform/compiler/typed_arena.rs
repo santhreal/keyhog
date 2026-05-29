@@ -1,4 +1,4 @@
-//! Typed arena — a bounded workgroup-local bump allocator.
+//! Typed arena  -  a bounded workgroup-local bump allocator.
 //!
 //! The typed arena is the memory primitive that makes GPU recursive descent
 //! and tree building possible.  It allocates offsets from a fixed workgroup-SRAM
@@ -280,7 +280,7 @@ mod ir_program_tests {
 
     #[test]
     fn alloc_program_different_sizes_produce_different_wire() {
-        // Byte-identical-wire stability: the IR is deterministic —
+        // Byte-identical-wire stability: the IR is deterministic  -
         // two builds with different size_words produce different
         // canonical bytes (the atomic_add argument differs).
         let a = alloc_program("arena", "out", 4).to_wire().unwrap();

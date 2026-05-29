@@ -29,3 +29,6 @@ pub mod visit;
 /// Given a forward `Program` + output/input buffer names, emits a backward
 /// `Program` computing gradients via the chain rule.
 pub mod autodiff;
+
+/// Collective communication rewrites shared by reference and GPU backends.
+pub mod collectives;

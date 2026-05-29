@@ -1,6 +1,6 @@
 [package]
 name = "vyre-emit-ptx"
-version = "0.4.2"
+version = "0.6.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "PTX text emitter for vyre KernelDescriptor. Produces NVRTC-compatible CUDA assembly."
@@ -30,3 +30,4 @@ nvrtc = []
 [dev-dependencies]
 vyre-emit-naga = { workspace = true }
 cudarc = { workspace = true }
+proptest.workspace = true

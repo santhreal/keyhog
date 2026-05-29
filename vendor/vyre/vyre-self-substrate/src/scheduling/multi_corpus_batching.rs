@@ -130,7 +130,7 @@ mod tests {
             item(12, other, 50),
             item(11, shared, 300),
         ])
-        .expect("valid corpus should batch");
+        .expect("Fix: valid corpus should batch");
 
         assert_eq!(plan.resident_upload_groups, 2);
         assert_eq!(plan.avoided_upload_groups, 1);

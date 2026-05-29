@@ -183,6 +183,13 @@ pub(crate) fn collect_node_accesses(node: &Node, accesses: &mut NodeAccesses) {
         Node::Region { body, .. } => {
             collect_node_sequence_accesses(body, accesses);
         }
+        Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+            accesses.read_buffers.insert(buffer.clone());
+        }
+        Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+            accesses.read_buffers.insert(input.clone());
+            accesses.read_buffers.insert(output.clone());
+        }
         Node::Trap { .. }
         | Node::Resume { .. }
         | Node::Return

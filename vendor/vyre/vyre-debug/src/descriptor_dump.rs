@@ -18,8 +18,13 @@ impl Default for DescriptorDumpOptions {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DescriptorDump {
     pub text: String,
+    #[serde(
+        serialize_with = "crate::path_map_serde::serialize_usize",
+        deserialize_with = "crate::path_map_serde::deserialize_usize"
+    )]
     pub op_counts_by_path: BTreeMap<Vec<usize>, usize>,
 }
 

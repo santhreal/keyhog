@@ -16,7 +16,7 @@
 //! # Why two traits, not one
 //!
 //! - [`MatchScan`] is dyn-safe (no associated types, no `Sized`). Consumers
-//!   can store `Box<dyn MatchScan>` to swap engines at runtime — a secret-scanning consumer's
+//!   can store `Box<dyn MatchScan>` to swap engines at runtime  -  scanner
 //!   backend selection becomes a runtime
 //!   trait-object swap instead of a hardcoded match arm.
 //! - [`MatchEngineCache`] keeps typed errors (each engine's own
@@ -29,17 +29,20 @@
 //! # Cache wiring rule (Torvalds-style: do it once)
 //!
 //! [`cached_load_or_compile`] is the only blessed way to wire a cache.
-//! Consumers (secret-scanning consumer, frontend) should never re-implement the load/compile
+//! Consumers should never re-implement the load/compile
 //! /save dance. If a new engine needs special cache invalidation logic
-//! (e.g. dropping the cache on certain ABI bumps), extend this helper —
+//! (e.g. dropping the cache on certain ABI bumps), extend this helper  -
 //! don't fork it.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use vyre::VyreBackend;
 use vyre_foundation::match_result::Match;
-use vyre_primitives::hash::fnv1a::{FNV1A64_OFFSET, FNV1A64_PRIME};
+use vyre_primitives::hash::fnv1a::{fnv1a64_initial_state, fnv1a64_update_byte};
+
+static CACHE_TMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Diagnostic-bearing wrapper around a scan result.
 ///
@@ -49,7 +52,7 @@ use vyre_primitives::hash::fnv1a::{FNV1A64_OFFSET, FNV1A64_PRIME};
 /// (telemetry pipelines, watch-mode dashboards, perf benches) a
 /// single struct to read instead of parsing engine-specific output.
 ///
-/// `ScanResult::matches` is the primary payload — consumers that
+/// `ScanResult::matches` is the primary payload  -  consumers that
 /// don't care about diagnostics can `result.matches` and ignore the
 /// rest. The struct is `Clone` so it can be passed across thread
 /// boundaries and `Default` so tests can fabricate empties.
@@ -154,20 +157,25 @@ pub trait MatchEngineCache: Sized {
     ///
     /// # Errors
     /// Engine-specific framing error. The cache helper treats every
-    /// `WireError` as "stale, drop and recompile" — that's the
+    /// `WireError` as "stale, drop and recompile"  -  that's the
     /// designed-in semantics.
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::WireError>;
 }
 
 /// Resolve the cache file path for `cache_key` under `cache_dir`.
 /// Creates `cache_dir` (and any missing parents) on first use. Returns
-/// `None` when the directory could not be created — consumers should
+/// `None` when the directory could not be created  -  consumers should
 /// fall through to a non-cached compile in that case.
 pub fn cache_path(cache_dir: &Path, cache_key: &str) -> Option<PathBuf> {
     if !cache_dir.exists() && std::fs::create_dir_all(cache_dir).is_err() {
         return None;
     }
     Some(cache_dir.join(format!("{cache_key}.bin")))
+}
+
+fn cache_tmp_path(path: &Path) -> PathBuf {
+    let sequence = CACHE_TMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    path.with_extension(format!("tmp.{}.{}", std::process::id(), sequence))
 }
 
 /// Generic load-or-compile-and-save for any [`MatchEngineCache`].
@@ -179,8 +187,8 @@ pub fn cache_path(cache_dir: &Path, cache_key: &str) -> Option<PathBuf> {
 ///     return the loaded engine. On framing error, delete the stale
 ///     blob and fall through.
 ///   - Cache miss / stale: call `compile`, `to_bytes`, atomically
-///     write to a `.tmp.<pid>` sibling, rename onto the final path.
-///   - Any save-side error is logged at `tracing::debug` and ignored —
+///     write to a `.tmp.<pid>.<sequence>` sibling, rename onto the final path.
+///   - Any save-side error is logged at `tracing::debug` and ignored  -
 ///     a failed cache write must never break the scan path.
 ///
 /// `compile` is `FnOnce` so consumers can move expensive captures
@@ -202,9 +210,10 @@ where
                 // recompile. Cache-side errors must be visible because a
                 // permanently broken cache distorts benchmark evidence.
                 if let Err(error) = std::fs::remove_file(&path) {
-                    eprintln!(
-                        "failed to remove corrupt matching cache {}: {error}",
-                        path.display()
+                    tracing::debug!(
+                        path = %path.display(),
+                        error = %error,
+                        "failed to remove corrupt matching cache"
                     );
                 }
             }
@@ -213,26 +222,30 @@ where
 
     let engine = compile();
     if let Ok(bytes) = engine.to_bytes() {
-        let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+        let tmp = cache_tmp_path(&path);
         match std::fs::write(&tmp, &bytes) {
             Ok(()) => {
                 if let Err(error) = std::fs::rename(&tmp, &path) {
-                    eprintln!(
-                        "failed to publish matching cache {}: {error}",
-                        path.display()
+                    tracing::debug!(
+                        path = %path.display(),
+                        tmp = %tmp.display(),
+                        error = %error,
+                        "failed to publish matching cache"
                     );
                     if let Err(cleanup_error) = std::fs::remove_file(&tmp) {
-                        eprintln!(
-                            "failed to remove matching cache temp file {}: {cleanup_error}",
-                            tmp.display()
+                        tracing::debug!(
+                            tmp = %tmp.display(),
+                            error = %cleanup_error,
+                            "failed to remove matching cache temp file"
                         );
                     }
                 }
             }
             Err(error) => {
-                eprintln!(
-                    "failed to write matching cache temp file {}: {error}",
-                    tmp.display()
+                tracing::debug!(
+                    tmp = %tmp.display(),
+                    error = %error,
+                    "failed to write matching cache temp file"
                 );
             }
         }
@@ -262,7 +275,7 @@ impl MatchScan for GpuLiteralSet {
         // Use vyre's FNV-1a primitive instead of std::DefaultHasher.
         // DefaultHasher's SipHash seed is randomized per process, so
         // cache files written by one run would never match keys
-        // generated by the next — silently breaking the cache. FNV-1a
+        // generated by the next  -  silently breaking the cache. FNV-1a
         // is deterministic, fast, and we don't need cryptographic
         // collision resistance for an identity hash.
         let h = fnv1a64_word_slices([
@@ -308,7 +321,7 @@ mod direct_gpu_impls {
         }
 
         fn cache_key(&self) -> String {
-            // Direct scanner is a thin wrapper over a literal-set —
+            // Direct scanner is a thin wrapper over a literal-set  -
             // delegate so caches don't fork.
             format!("direct-gpu-{}", self.literal_set_cache_key())
         }
@@ -335,7 +348,7 @@ mod rule_pipeline_impls {
         }
 
         fn cache_key(&self) -> String {
-            // Deterministic hash via vyre's FNV-1a primitive — see the
+            // Deterministic hash via vyre's FNV-1a primitive  -  see the
             // `GpuLiteralSet::cache_key` implementation for why
             // `DefaultHasher` is the wrong choice here (per-process
             // SipHash seed defeats persistent caching).
@@ -352,7 +365,10 @@ mod rule_pipeline_impls {
     impl MatchEngineCache for RulePipeline {
         type WireError = PipelineWireError;
         const WIRE_MAGIC: [u8; 4] = *b"VRPL";
-        const WIRE_VERSION: u32 = 2;
+        // Tracks `mega_scan::PIPELINE_WIRE_VERSION` (V4 adds the
+        // per-workgroup max-scan-bytes uniform buffer to the encoded
+        // Program; V3 added the runtime-haystack-len buffer).
+        const WIRE_VERSION: u32 = 4;
 
         fn to_bytes(&self) -> Result<Vec<u8>, Self::WireError> {
             RulePipeline::to_bytes(self)
@@ -365,12 +381,11 @@ mod rule_pipeline_impls {
 }
 
 fn fnv1a64_word_slices<const N: usize>(slices: [&[u32]; N]) -> u64 {
-    let mut h = FNV1A64_OFFSET;
+    let mut h = fnv1a64_initial_state();
     for words in slices {
         for &word in words {
             for byte in word.to_le_bytes() {
-                h ^= u64::from(byte);
-                h = h.wrapping_mul(FNV1A64_PRIME);
+                h = fnv1a64_update_byte(h, byte);
             }
         }
     }
@@ -429,6 +444,21 @@ mod tests {
             GpuLiteralSet::compile(&[b"AKIA".as_slice()])
         });
         assert_eq!(second_compiles, 0);
+    }
+
+    #[test]
+    fn cache_tmp_paths_do_not_collide_within_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = cache_path(dir.path(), "same-key").unwrap();
+        let first = cache_tmp_path(&path);
+        let second = cache_tmp_path(&path);
+
+        assert_ne!(
+            first, second,
+            "Fix: concurrent cache writers in one process need distinct temp files."
+        );
+        assert_eq!(first.parent(), path.parent());
+        assert_eq!(second.parent(), path.parent());
     }
 
     #[test]

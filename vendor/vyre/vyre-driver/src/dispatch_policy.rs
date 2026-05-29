@@ -8,7 +8,7 @@
 //! one-shot bundle: pass `DispatchPolicyInputs`, get back a
 //! `DispatchPolicyVerdict` with every sub-decision already made.
 //!
-//! Pure composition — no new logic, just sequential calls into the
+//! Pure composition  -  no new logic, just sequential calls into the
 //! per-substrate decide_* functions. Each verdict carries the
 //! sub-substrate's typed result so callers can match exhaustively.
 
@@ -27,7 +27,7 @@ use crate::trace_jit_policy::{decide_trace_jit_speculation, TraceJitDecision, Tr
 /// Input bundle for a single dispatch-policy invocation.
 ///
 /// Two arms (`arm_a`, `arm_b`) are needed for D2 / D3 even when
-/// only one is real — pass an empty `ArmBindingSummary::default()`
+/// only one is real  -  pass an empty `ArmBindingSummary::default()`
 /// for the absent slot. The `copy_dst_slot` is `None` when no H2D
 /// copy is queued for this batch.
 #[derive(Debug, Clone)]
@@ -321,7 +321,7 @@ mod tests {
             v.trace_jit,
             crate::observability::record_substrate_audit_event_for_test,
         );
-        let log = crate::observability::DriverObservability::snapshot().to_audit_log();
+        let log = crate::observability::snapshot_for_test().to_audit_log();
         assert!(log.contains("persistent_kernel queue_batch"));
         assert!(log.contains("command_reuse record_and_replay"));
         assert!(log.contains("bindless descriptor_array"));

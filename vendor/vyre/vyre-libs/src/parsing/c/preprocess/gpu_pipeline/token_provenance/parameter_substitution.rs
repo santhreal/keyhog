@@ -15,12 +15,16 @@ pub(crate) fn record_missing_parameter_substitution_provenance(
     macro_events_start: usize,
     token_provenance_events: &mut Vec<TokenProvenanceEvent>,
 ) -> Result<(), String> {
-    token_provenance_events.reserve(arg_spans.len());
-    let mut recorded_arg_spans = SpanDedupe::from_iter(
+    reserve_token_provenance_events(
+        token_provenance_events,
+        arg_spans.len(),
+        "function parameter substitution provenance",
+    )?;
+    let mut recorded_arg_spans = SpanDedupe::try_from_iter(
         token_provenance_events[macro_events_start..]
             .iter()
             .map(|event| (event.spelling_start as usize, event.spelling_len as usize)),
-    );
+    )?;
     for idx in 0..replacement_tokens.tok_types.len() {
         if replacement_tokens.tok_types[idx] == 0 {
             continue;
@@ -37,7 +41,7 @@ pub(crate) fn record_missing_parameter_substitution_provenance(
         let Some((arg_start, arg_len)) = param_argument_span(token, params, arg_spans) else {
             continue;
         };
-        if !recorded_arg_spans.insert((arg_start, arg_len)) {
+        if !recorded_arg_spans.insert((arg_start, arg_len))? {
             continue;
         }
         token_provenance_events.push(TokenProvenanceEvent {

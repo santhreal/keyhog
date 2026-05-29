@@ -1,3 +1,6 @@
+use super::sparse_programs::{
+    sparse_token_block_compact_program, sparse_token_type_block_compact_program,
+};
 use super::{
     mark_raw_sparse_lexer_outputs, raw_sparse_lexer_readbacks, RAW_SPARSE_LEXER_ABI_BUFFERS,
 };
@@ -49,4 +52,35 @@ fn raw_sparse_lexer_abi_live_out_buffers_are_not_host_inputs() {
         .count();
     assert_eq!(readback_count, 3);
     assert_eq!(input_count, 1);
+}
+
+#[test]
+fn raw_sparse_compaction_programs_emit_one_packed_output_buffer() {
+    let full = sparse_token_block_compact_program(
+        "block_totals_scanned",
+        "sparse_types",
+        "sparse_starts",
+        "sparse_lens",
+        "out_tok_triplets_and_count",
+        64,
+        1,
+    );
+    let type_only = sparse_token_type_block_compact_program(
+        "block_totals_scanned",
+        "sparse_types",
+        "out_tok_types_and_count",
+        64,
+        1,
+    );
+    for program in [full, type_only] {
+        let outputs = program
+            .buffers
+            .iter()
+            .filter(|buffer| buffer.is_output)
+            .count();
+        assert_eq!(
+            outputs, 1,
+            "raw syntax compaction must preserve the single-output backend ABI"
+        );
+    }
 }

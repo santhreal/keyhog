@@ -26,17 +26,20 @@ mod gpu_char_constant_scan_tests;
 pub mod gpu_comment_strip_mask;
 #[cfg(test)]
 mod gpu_comment_strip_mask_tests;
+#[cfg(test)]
+mod gpu_conditional_value_tests;
 /// GPU `#define` row parser. Phase 17b.6: per `TOK_PREPROC` token of
 /// kind `TOK_PP_DEFINE`, extracts macro name + optional arg-list +
 /// replacement body byte spans. Per-thread, fully parallel.
 pub mod gpu_define_parse;
 #[cfg(test)]
 mod gpu_define_parse_tests;
-/// GPU directive-metadata kernel — replaces the CPU
+/// GPU directive-metadata kernel  -  replaces the CPU
 /// `reference_c_preprocessor_directive_metadata` for production paths.
 /// Phase 17a: directive kind classification. Phase 17b will add the
 /// shunting-yard conditional evaluator in the same module.
 pub mod gpu_directive_metadata;
+mod gpu_directive_parse_shared;
 /// GPU `#if` / `#elif` expression evaluator. Phase 17b.4: per-thread
 /// iterative shunting-yard parser using fixed-depth value/operator
 /// stacks. Composes the literal scan, char-constant scan, and
@@ -44,15 +47,11 @@ pub mod gpu_directive_metadata;
 pub mod gpu_if_expression;
 /// ABI helpers for the GPU `#if` / `#elif` expression evaluator.
 pub mod gpu_if_expression_abi;
-#[cfg(test)]
-mod gpu_if_expression_tests;
 /// GPU `#ifdef` / `#ifndef` evaluator. Phase 17b.1 of the directive
 /// metadata pipeline. Composes with `gpu_directive_metadata` (which
 /// runs first to populate `directive_kinds`) and runs second to fill
 /// the `ifdef`/`ifndef` rows of `directive_values`.
 pub mod gpu_ifdef_value;
-#[cfg(test)]
-mod gpu_ifdef_value_tests;
 /// GPU `#include` row parser. Phase 17b.7: per `TOK_PREPROC` token of
 /// kind `TOK_PP_INCLUDE` / `TOK_PP_INCLUDE_NEXT`, extracts the path
 /// byte span and `<…>` vs `"…"` flag. Per-thread, fully parallel.
@@ -67,6 +66,7 @@ pub mod gpu_int_literal_scan;
 /// vyre-frontend-c) so the unit/roundtrip tests don't have to drag in
 /// the wgpu/vyre-debug dev-dep stack.
 pub mod gpu_pipeline;
+mod gpu_source_bytes;
 /// GPU `#undef` row parser. Per `TOK_PREPROC` token of kind
 /// `TOK_PP_UNDEF`, extracts the macro-name byte span. Per-thread,
 /// fully parallel. Replaces the previous workaround of routing
@@ -482,6 +482,7 @@ pub fn reference_c_preprocessor_directive_metadata(
     Ok((directive_kinds, directive_values))
 }
 
+
 fn conditional_directive_value(
     row: &[u8],
     directive: CPreprocessorDirective,
@@ -510,6 +511,7 @@ fn conditional_directive_value(
 }
 
 mod expr_parser;
+pub use expr_parser::is_reserved_preprocessor_identifier;
 use expr_parser::PreprocessorExprParser;
 
 pub(super) fn first_payload_ident(payload: &[u8]) -> Option<&[u8]> {
@@ -589,3 +591,4 @@ mod tests {
         );
     }
 }
+

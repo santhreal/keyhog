@@ -76,6 +76,7 @@ fn precompute_vast_scopes_with_scratch(
         scratch.stack_scratch.as_slice(),
     ];
     let scope_inputs: &[&[u8]] = if use_global_stack { &inputs2 } else { &inputs1 };
+    scratch.outputs.clear();
     super::dispatch_borrowed_stage_cached_into(
         backend,
         scope_key,
@@ -93,7 +94,15 @@ fn precompute_vast_scopes_with_scratch(
         cfg,
         &mut scratch.outputs,
     )
-    .map_err(|error| format!("c11_precompute_vast_scopes dispatch failed: {error}"))?;
+    .map_err(|error| {
+        format!(
+            "c11_precompute_vast_scopes dispatch failed for vast_count={} input_bytes={} global_stack={} scratch_bytes={}: {error}",
+            vast_count.max(1),
+            hashed_vast_blob.len(),
+            use_global_stack,
+            scratch.stack_scratch.len()
+        )
+    })?;
     super::buffers::drop_suppressed_readbacks(&mut scratch.outputs);
     log("dispatch c11_precompute_vast_scopes");
     if scratch.outputs.len() != 1 {

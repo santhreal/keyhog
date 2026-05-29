@@ -1,4 +1,4 @@
-//! Release workload matrix for the Vyre/Weir release plan.
+//! Release workload matrix for the Vyre release plan.
 //!
 //! The release plan requires at least twelve proof workload families and at
 //! at least ten formerly CPU-only workload families with 100x targets where the
@@ -154,7 +154,7 @@ const RELEASE_WORKLOADS: &[ReleaseWorkloadFamily] = &[
         title: "Alias-aware reaching-definition predicates",
         release_plan_workload: 7,
         required: true,
-        any_terms: &["release.alias_reaching_def", "weir.reaching_def.bitset"],
+        any_terms: &["release.alias_reaching_def", "dataflow.reaching_def.bitset"],
         all_terms: &["alias"],
         bench_target_id: "release.workload.alias_reaching_def",
         dispatch_policy: "specialized-dataflow-kernel",
@@ -167,7 +167,7 @@ const RELEASE_WORKLOADS: &[ReleaseWorkloadFamily] = &[
         title: "IFDS reachability and witness predicates",
         release_plan_workload: 8,
         required: true,
-        any_terms: &["release.ifds_witness", "weir.ifds"],
+        any_terms: &["release.ifds_witness", "dataflow.ifds"],
         all_terms: &["ifds", "witness"],
         bench_target_id: "release.workload.ifds_witness",
         dispatch_policy: "specialized-dataflow-kernel",
@@ -234,6 +234,45 @@ const RELEASE_WORKLOADS: &[ReleaseWorkloadFamily] = &[
         dispatch_policy: "specialized-graph-kernel",
         non_megakernel_justification: Some(
             "architectural: callgraph reachability is frontier graph traversal with convergence state, not independent rule-condition slot evaluation",
+        ),
+    },
+    ReleaseWorkloadFamily {
+        id: "compound-fused-filter",
+        title: "Compound resident literal/dataflow/score filtering",
+        release_plan_workload: 14,
+        required: false,
+        any_terms: &["compound.pipeline.fused_filter", "compound"],
+        all_terms: &["resident", "dataflow"],
+        bench_target_id: "release.workload.compound_fused_filter",
+        dispatch_policy: "resident-fused-kernel",
+        non_megakernel_justification: Some(
+            "architectural: compound filtering fuses independent matching, dataflow, score, and taint-class predicates into one resident pass without condition-slot queue orchestration",
+        ),
+    },
+    ReleaseWorkloadFamily {
+        id: "adaptive-routing",
+        title: "GPU-resident adaptive workload routing",
+        release_plan_workload: 15,
+        required: false,
+        any_terms: &["runtime.adaptive_routing", "adaptive-routing"],
+        all_terms: &["resident", "scheduler"],
+        bench_target_id: "release.workload.adaptive_routing",
+        dispatch_policy: "resident-routing-kernel",
+        non_megakernel_justification: Some(
+            "architectural: adaptive routing is GPU-side scheduling metadata generation rather than execution of a queued rule opcode stream",
+        ),
+    },
+    ReleaseWorkloadFamily {
+        id: "quantized-linear",
+        title: "Fused grouped INT4 linear inference",
+        release_plan_workload: 16,
+        required: false,
+        any_terms: &["nn.linear_4bit_affine_grouped", "quantized"],
+        all_terms: &["resident", "inference"],
+        bench_target_id: "release.workload.quantized_linear",
+        dispatch_policy: "resident-fused-kernel",
+        non_megakernel_justification: Some(
+            "architectural: grouped INT4 linear fuses packed weight decode, scale/zero-point sidecars, and accumulation in one inference kernel instead of queueing scalar condition opcodes",
         ),
     },
 ];
@@ -473,6 +512,7 @@ fn render_release_matrix(matrix: &ReleaseWorkloadMatrix, format: &str) -> anyhow
     Ok(out)
 }
 
+
 pub fn enforce_release_matrix(matrix: &ReleaseWorkloadMatrix) -> anyhow::Result<()> {
     if matrix.blockers.is_empty() {
         return Ok(());
@@ -639,3 +679,4 @@ fn collect_cpu_sota_contracts(
         );
     }
 }
+

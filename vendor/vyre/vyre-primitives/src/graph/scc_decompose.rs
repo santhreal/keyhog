@@ -1,4 +1,4 @@
-//! `scc_decompose` — Forward-Backward strongly-connected-component
+//! `scc_decompose`  -  Forward-Backward strongly-connected-component
 //! decomposition over `super::program_graph::ProgramGraph`.
 //!
 //! For each pivot node `v`, the set of nodes simultaneously forward-
@@ -26,7 +26,7 @@ pub const OP_ID: &str = "vyre-primitives::graph::scc_decompose";
 ///
 /// AUDIT_2026-04-24 F-SCC-01: the IR consumes `component_out` as a
 /// ReadWrite buffer and only *writes* to slots where both bitsets
-/// are set — it never reads the prior value. Callers MUST pre-load
+/// are set  -  it never reads the prior value. Callers MUST pre-load
 /// `component_out` with the initial component assignment before
 /// dispatch (typically `vec![u32::MAX; node_count]` for "unassigned"
 /// on the first pivot, or the running component vector on
@@ -121,7 +121,7 @@ pub fn scc_decompose(
 /// pivots. For the first pivot pass callers typically pass
 /// `&vec![u32::MAX; node_count]`; subsequent passes feed back the
 /// previous return value so this pivot's hits only overwrite
-/// unassigned slots (or any slot — the scc_decompose composition
+/// unassigned slots (or any slot  -  the scc_decompose composition
 /// walks pivots in descending reach order so re-stamping is safe).
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -181,7 +181,7 @@ mod regression_tests {
     use super::*;
 
     /// PHASE7_GRAPH HIGH regression: two pivots stamping the same
-    /// node — the first pivot's assignment must survive. Prior
+    /// node  -  the first pivot's assignment must survive. Prior
     /// scc_decompose blindly overwrote, so the order of dispatch
     /// determined the outcome.
     #[test]
@@ -229,13 +229,13 @@ inventory::submit! {
         // AUDIT_2026-04-24 F-SCC-02: fixture differentiates forward
         // from backward so the intersection actually filters. Nodes
         // 0..=2 are forward-reachable from pivot 0; nodes 0, 2, 3
-        // reach pivot 0 backward. Intersection = {0, 2} — node 1 is
+        // reach pivot 0 backward. Intersection = {0, 2}  -  node 1 is
         // forward-only, node 3 is backward-only, neither gets
         // stamped. Prior fixture fed identical bitsets and therefore
         // never exercised the AND gate.
         || scc_decompose(4, "fwd", "bwd", "comp", 0),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0b0111]),                           // forward = {0,1,2}
                 to_bytes(&[0b1101]),                           // backward = {0,2,3}
@@ -243,7 +243,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             // forward ∩ backward = 0b0101 → nodes 0 and 2 stamped.
             vec![vec![to_bytes(&[0, u32::MAX, 0, u32::MAX])]]
         }),
@@ -269,7 +269,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Adversarial fixtures — empty/single/self-loop/disconnected/multi-word.
+    // Adversarial fixtures  -  empty/single/self-loop/disconnected/multi-word.
     // ------------------------------------------------------------------
 
     #[test]

@@ -101,7 +101,7 @@ fn classify_index(
 ) -> AccessPattern {
     let producer = producers.get(&index_operand_id).copied();
     let Some(producer) = producer else {
-        // Not a body-local result — could be a literal pool ref. Look
+        // Not a body-local result  -  could be a literal pool ref. Look
         // it up there.
         return classify_pool_operand(body, index_operand_id);
     };
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn positive_load_at_tid_plus_constant_is_coalesced() {
-        // load(buf, tid + 16) — still coalesced unit stride
+        // load(buf, tid + 16)  -  still coalesced unit stride
         let k = one_buffer_kernel(
             vec![
                 op(KernelOpKind::LocalInvocationId, vec![], Some(0)),
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn strided_4_detected_as_stride_4() {
-        // load(buf, 4 * tid) — stride 4
+        // load(buf, 4 * tid)  -  stride 4
         let k = one_buffer_kernel(
             vec![
                 op(KernelOpKind::LocalInvocationId, vec![], Some(0)),
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn strided_with_tid_on_left_of_mul_also_detected() {
-        // load(buf, tid * 4) — same as 4 * tid
+        // load(buf, tid * 4)  -  same as 4 * tid
         let k = one_buffer_kernel(
             vec![
                 op(KernelOpKind::LocalInvocationId, vec![], Some(0)),
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn negative_load_index_from_unrelated_op_is_scattered() {
-        // load(buf, sub(tid, tid)) — not a recognized pattern
+        // load(buf, sub(tid, tid))  -  not a recognized pattern
         let k = one_buffer_kernel(
             vec![
                 op(KernelOpKind::LocalInvocationId, vec![], Some(0)),
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn negative_load_index_from_indirect_load_is_scattered() {
-        // load(buf, load(idx_buf, tid)) — indirect addressing
+        // load(buf, load(idx_buf, tid))  -  indirect addressing
         let k = KernelDescriptor {
             id: "k".into(),
             bindings: BindingLayout {
@@ -448,6 +448,7 @@ mod tests {
                     BindingSlot {
                         slot: 0,
                         element_type: DataType::U32,
+
                         element_count: None,
                         memory_class: MemoryClass::Global,
                         visibility: BindingVisibility::ReadOnly,
@@ -619,3 +620,4 @@ mod tests {
         // assert removed
     }
 }
+

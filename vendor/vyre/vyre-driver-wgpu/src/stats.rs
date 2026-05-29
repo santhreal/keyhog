@@ -1,6 +1,6 @@
 //! Runtime observability snapshot for the wgpu backend.
 //!
-//! Extracted from `lib.rs` per audit item #78 — the stats type is
+//! Extracted from `lib.rs` per audit item #78  -  the stats type is
 //! lock-free observability data that has no business living inside
 //! the backend trait-impl module. Re-exported through
 //! `crate::WgpuBackendStats` so existing call sites do not change.
@@ -59,7 +59,7 @@ impl WgpuBackend {
         )
     }
 
-    /// Observability snapshot — pipeline cache size, buffer-pool
+    /// Observability snapshot  -  pipeline cache size, buffer-pool
     /// stats, and adapter identity. SRE-friendly: consumers feed the
     /// returned numbers into prometheus / OpenTelemetry / Datadog
     /// pipelines for dashboards and alerting.

@@ -10,11 +10,11 @@
 //!
 //! Precedence (high → low):
 //!
-//! 1. `VYRE_BACKEND=<id>` — if set and the backend is registered,
+//! 1. `VYRE_BACKEND=<id>`  -  if set and the backend is registered,
 //!    wins only when the backend is registered, executable, and GPU-backed.
-//! 2. `cuda` — when an NVIDIA/CUDA backend is linked, registered, and executable.
-//! 3. `wgpu` — portable GPU backend after CUDA.
-//! 4. `spirv` — when the SPIR-V backend is registered.
+//! 2. `cuda`  -  when an NVIDIA/CUDA backend is linked, registered, and executable.
+//! 3. `wgpu`  -  portable GPU backend after CUDA.
+//! 4. `spirv`  -  when the SPIR-V backend is registered.
 //!
 //! `BackendRouter::pick()` returns the selected backend id on success,
 //! or a structured `BackendError` when no executable backend is linked.
@@ -33,7 +33,7 @@ pub enum Override<'a> {
     FromEnv,
     /// Use the explicit override regardless of environment.
     Explicit(&'a str),
-    /// No override — router runs on precedence alone.
+    /// No override  -  router runs on precedence alone.
     None,
 }
 
@@ -89,7 +89,7 @@ impl BackendRouter {
         self.pick_with_override(program, Override::FromEnv)
     }
 
-    /// Pick with an explicit override source — the testable form of
+    /// Pick with an explicit override source  -  the testable form of
     /// [`pick`](Self::pick).
     ///
     /// # Errors
@@ -146,7 +146,7 @@ impl BackendRouter {
     }
 
     /// Enumerate every registered backend in precedence order. Inventory-driven
-    /// per V7-EXT-021 — backends without a submitted `BackendPrecedence`
+    /// per V7-EXT-021  -  backends without a submitted `BackendPrecedence`
     /// trail every backend that has one (rank `u32::MAX`).
     #[must_use]
     pub fn enumerate_by_precedence() -> Vec<&'static BackendRegistration> {
@@ -165,7 +165,7 @@ mod tests {
 
     fn noop_program() -> Program {
         // Programs built without any buffers / nodes are valid for
-        // the router's purposes — we don't dispatch, we just pick.
+        // the router's purposes  -  we don't dispatch, we just pick.
         Program::wrapped(Vec::new(), [1, 1, 1], Vec::new())
     }
 

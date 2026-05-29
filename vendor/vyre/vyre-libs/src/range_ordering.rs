@@ -1,15 +1,15 @@
-//! Byte-range ordering predicates — substrate-neutral coordination helpers.
+//! Byte-range ordering predicates  -  substrate-neutral coordination helpers.
 //!
 //! CRITIQUE_VISION_ALIGNMENT_2026-04-23 V5: these helpers generate IR
 //! that decides `∃ (a ∈ A, b ∈ B)` relations between two tagged byte-range
 //! streams (A "ends before" B starts, A "contains" B, etc.). None of it
-//! knows about security, rules, malware, or any other domain — it is
+//! knows about security, rules, malware, or any other domain  -  it is
 //! generic coordination between enumerated byte ranges. Previously it
 //! lived inside `vyre-libs::security::topology`, which gravitationally
 //! pulled the security dialect into every source-query dialect compile path even when
 //! the author's program had nothing to do with security.
 //!
-//! Callers: `frontend::emit` for `Before`/`After` predicates;
+//! Callers: `downstream analyzer::emit` for `Before`/`After` predicates;
 //! any future dialect that enumerates `(tag, start, end)` ranges and
 //! asks relational questions about them.
 //!
@@ -46,10 +46,10 @@ fn packed_load(buffer: &str, id: Expr, index: Expr) -> Expr {
 /// buffers: `counts[tag]` (how many ranges carry that tag), and
 /// `offsets[tag * MAX_CACHED_POSITIONS + i]` + `lengths[tag * MAX_CACHED_POSITIONS + i]`.
 ///
-/// AUDIT: PHASE5_ASTWALK match_order quadratic — replaced nested O(N²)
+/// AUDIT: PHASE5_ASTWALK match_order quadratic  -  replaced nested O(N²)
 /// loops with a sweep-line O(N) pass.  The hit positions for each tag
 /// are guaranteed to be sorted by ascending offset by the host scanner
-/// (see `frontend::scan::collector::select_hits_for_dispatch`).  Because
+/// (see `downstream analyzer::scan::collector::select_hits_for_dispatch`).  Because
 /// the inputs are sorted, the predicate `∃ a ∈ A, ∃ b ∈ B : a_end <=
 /// b_start` is equivalent to `min_a_end <= max_b_start`.  We compute
 /// `min_a_end` with a single linear scan over A and read `max_b_start`

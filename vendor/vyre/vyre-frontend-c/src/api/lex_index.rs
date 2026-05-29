@@ -224,11 +224,11 @@ mod tests {
         let starts = pack_words(&[0u32, 4, 5]);
         let lens = pack_words(&[3u32, 1, 1]);
         let lex = build_vyrecob1_lex_section(Path::new("x.c"), &types, &starts, &lens, 3)
-            .expect("lex fixture must serialize");
+            .expect("Fix: lex fixture must serialize");
         let object = serialize_vyrecob2(&[(SectionTag::Lex, lex.as_slice())])
-            .expect("object fixture must serialize");
+            .expect("Fix: object fixture must serialize");
 
-        let decoded = decode_object_lex_index(&object).expect("lex fixture must decode");
+        let decoded = decode_object_lex_index(&object).expect("Fix: lex fixture must decode");
         assert_eq!(decoded.source_path, "x.c");
         assert_eq!(decoded.tokens.len(), 3);
         assert_eq!(decoded.tokens[0].kind, 107);
@@ -244,7 +244,7 @@ mod tests {
         lex.extend_from_slice(&0u32.to_le_bytes());
         lex.extend_from_slice(&0u32.to_le_bytes());
         let object = serialize_vyrecob2(&[(SectionTag::Lex, lex.as_slice())])
-            .expect("object fixture must serialize");
+            .expect("Fix: object fixture must serialize");
         let err = decode_object_lex_index(&object).expect_err("empty path must not decode");
         assert!(
             err.contains("source path is empty"),
@@ -258,9 +258,9 @@ mod tests {
         let starts = pack_words(&[u32::MAX]);
         let lens = pack_words(&[1u32]);
         let lex = build_vyrecob1_lex_section(Path::new("x.c"), &types, &starts, &lens, 1)
-            .expect("lex fixture must serialize");
+            .expect("Fix: lex fixture must serialize");
         let object = serialize_vyrecob2(&[(SectionTag::Lex, lex.as_slice())])
-            .expect("object fixture must serialize");
+            .expect("Fix: object fixture must serialize");
         let err = decode_object_lex_index(&object).expect_err("overflowing token must not decode");
         assert!(
             err.contains("span overflows u32"),
@@ -274,9 +274,9 @@ mod tests {
         let starts = pack_words(&[10u32, 9]);
         let lens = pack_words(&[2u32, 1]);
         let lex = build_vyrecob1_lex_section(Path::new("x.c"), &types, &starts, &lens, 2)
-            .expect("lex fixture must serialize");
+            .expect("Fix: lex fixture must serialize");
         let object = serialize_vyrecob2(&[(SectionTag::Lex, lex.as_slice())])
-            .expect("object fixture must serialize");
+            .expect("Fix: object fixture must serialize");
         let err = decode_object_lex_index(&object).expect_err("overlap must not decode");
         assert!(
             err.contains("monotonic non-overlapping"),
@@ -284,10 +284,5 @@ mod tests {
         );
     }
 
-    fn pack_words(words: &[u32]) -> Vec<u8> {
-        words
-            .iter()
-            .flat_map(|word| word.to_le_bytes())
-            .collect::<Vec<_>>()
-    }
+    use vyre_primitives::wire::pack_u32_slice as pack_words;
 }

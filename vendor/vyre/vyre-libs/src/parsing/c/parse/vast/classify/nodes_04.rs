@@ -1,4 +1,5 @@
 use super::*;
+use super::super::decl_context_common;
 
 pub(super) fn extend(
     out: &mut Vec<Node>,
@@ -16,40 +17,31 @@ pub(super) fn extend(
                 Expr::var("decl_ctx_scan_start"),
                 t.clone(),
                 vec![
-                    Node::let_bind(
+                    decl_context_common::bind_vast_node_base(
                         "decl_ctx_base",
-                        Expr::mul(Expr::var("decl_ctx_scan"), Expr::u32(VAST_NODE_STRIDE_U32)),
+                        Expr::var("decl_ctx_scan"),
                     ),
-                    Node::let_bind(
+                    decl_context_common::bind_vast_node_kind(
                         "decl_ctx_kind",
-                        Expr::load(vast_nodes, Expr::var("decl_ctx_base")),
+                        vast_nodes,
+                        "decl_ctx_base",
                     ),
-                    Node::let_bind(
+                    decl_context_common::bind_vast_node_field(
                         "decl_ctx_typedef_flags",
-                        Expr::load(
-                            vast_nodes,
-                            Expr::add(
-                                Expr::var("decl_ctx_base"),
-                                Expr::u32(VAST_TYPEDEF_FLAGS_FIELD),
-                            ),
-                        ),
+                        vast_nodes,
+                        "decl_ctx_base",
+                        VAST_TYPEDEF_FLAGS_FIELD,
                     ),
-                    Node::let_bind(
+                    decl_context_common::bind_vast_node_field(
                         "decl_ctx_symbol_hash",
-                        Expr::load(
-                            vast_nodes,
-                            Expr::add(
-                                Expr::var("decl_ctx_base"),
-                                Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
-                            ),
-                        ),
+                        vast_nodes,
+                        "decl_ctx_base",
+                        VAST_TYPEDEF_SYMBOL_FIELD,
                     ),
-                    Node::let_bind(
+                    decl_context_common::bind_vast_node_parent(
                         "decl_ctx_parent",
-                        Expr::load(
-                            vast_nodes,
-                            Expr::add(Expr::var("decl_ctx_base"), Expr::u32(1)),
-                        ),
+                        vast_nodes,
+                        "decl_ctx_base",
                     ),
                     Node::if_then(
                         Expr::eq(Expr::var("decl_ctx_parent"), Expr::var("cur_parent")),
@@ -143,16 +135,14 @@ pub(super) fn extend(
                     Node::if_then(
                         Expr::var("decl_ctx_attr_after_reset"),
                         vec![
-                            Node::let_bind(
+                            decl_context_common::bind_vast_node_base(
                                 "decl_ctx_attr_base",
-                                Expr::mul(
-                                    Expr::var("decl_ctx_attr_scan"),
-                                    Expr::u32(VAST_NODE_STRIDE_U32),
-                                ),
+                                Expr::var("decl_ctx_attr_scan"),
                             ),
-                            Node::let_bind(
+                            decl_context_common::bind_vast_node_kind(
                                 "decl_ctx_attr_kind",
-                                Expr::load(vast_nodes, Expr::var("decl_ctx_attr_base")),
+                                vast_nodes,
+                                "decl_ctx_attr_base",
                             ),
                             Node::if_then(
                                 any_token_eq(
@@ -160,15 +150,10 @@ pub(super) fn extend(
                                     &[TOK_IDENTIFIER, TOK_CONST],
                                 ),
                                 vec![
-                                    Node::let_bind(
+                                    decl_context_common::bind_vast_node_parent(
                                         "decl_ctx_attr_parent",
-                                        Expr::load(
-                                            vast_nodes,
-                                            Expr::add(
-                                                Expr::var("decl_ctx_attr_base"),
-                                                Expr::u32(1),
-                                            ),
-                                        ),
+                                        vast_nodes,
+                                        "decl_ctx_attr_base",
                                     ),
                                     Node::let_bind(
                                         "decl_ctx_attr_parent_valid",
@@ -179,20 +164,17 @@ pub(super) fn extend(
                                     ),
                                     Node::let_bind(
                                         "decl_ctx_attr_parent_base",
-                                        Expr::mul(
-                                            Expr::select(
-                                                Expr::var("decl_ctx_attr_parent_valid"),
-                                                Expr::var("decl_ctx_attr_parent"),
-                                                t.clone(),
-                                            ),
-                                            Expr::u32(VAST_NODE_STRIDE_U32),
-                                        ),
+                                        decl_context_common::vast_node_base(Expr::select(
+                                            Expr::var("decl_ctx_attr_parent_valid"),
+                                            Expr::var("decl_ctx_attr_parent"),
+                                            t.clone(),
+                                        )),
                                     ),
                                     Node::let_bind(
                                         "decl_ctx_attr_parent_kind",
                                         Expr::select(
                                             Expr::var("decl_ctx_attr_parent_valid"),
-                                            Expr::load(
+                                            decl_context_common::load_vast_node_kind(
                                                 vast_nodes,
                                                 Expr::var("decl_ctx_attr_parent_base"),
                                             ),
@@ -203,12 +185,9 @@ pub(super) fn extend(
                                         "decl_ctx_attr_parent_parent",
                                         Expr::select(
                                             Expr::var("decl_ctx_attr_parent_valid"),
-                                            Expr::load(
+                                            decl_context_common::load_vast_node_parent(
                                                 vast_nodes,
-                                                Expr::add(
-                                                    Expr::var("decl_ctx_attr_parent_base"),
-                                                    Expr::u32(1),
-                                                ),
+                                                Expr::var("decl_ctx_attr_parent_base"),
                                             ),
                                             Expr::u32(SENTINEL),
                                         ),
@@ -222,20 +201,17 @@ pub(super) fn extend(
                                     ),
                                     Node::let_bind(
                                         "decl_ctx_attr_parent_parent_base",
-                                        Expr::mul(
-                                            Expr::select(
-                                                Expr::var("decl_ctx_attr_parent_parent_valid"),
-                                                Expr::var("decl_ctx_attr_parent_parent"),
-                                                t.clone(),
-                                            ),
-                                            Expr::u32(VAST_NODE_STRIDE_U32),
-                                        ),
+                                        decl_context_common::vast_node_base(Expr::select(
+                                            Expr::var("decl_ctx_attr_parent_parent_valid"),
+                                            Expr::var("decl_ctx_attr_parent_parent"),
+                                            t.clone(),
+                                        )),
                                     ),
                                     Node::let_bind(
                                         "decl_ctx_attr_parent_parent_kind",
                                         Expr::select(
                                             Expr::var("decl_ctx_attr_parent_parent_valid"),
-                                            Expr::load(
+                                            decl_context_common::load_vast_node_kind(
                                                 vast_nodes,
                                                 Expr::var("decl_ctx_attr_parent_parent_base"),
                                             ),
@@ -246,12 +222,9 @@ pub(super) fn extend(
                                         "decl_ctx_attr_grandparent",
                                         Expr::select(
                                             Expr::var("decl_ctx_attr_parent_parent_valid"),
-                                            Expr::load(
+                                            decl_context_common::load_vast_node_parent(
                                                 vast_nodes,
-                                                Expr::add(
-                                                    Expr::var("decl_ctx_attr_parent_parent_base"),
-                                                    Expr::u32(1),
-                                                ),
+                                                Expr::var("decl_ctx_attr_parent_parent_base"),
                                             ),
                                             Expr::u32(SENTINEL),
                                         ),
@@ -269,22 +242,14 @@ pub(super) fn extend(
                                             Expr::u32(0),
                                         ),
                                         vec![
-                                            Node::let_bind(
+                                            decl_context_common::bind_vast_node_base(
                                                 "decl_ctx_attr_prev_base",
-                                                Expr::mul(
-                                                    Expr::var("decl_ctx_attr_prev_scan"),
-                                                    Expr::u32(VAST_NODE_STRIDE_U32),
-                                                ),
+                                                Expr::var("decl_ctx_attr_prev_scan"),
                                             ),
-                                            Node::let_bind(
+                                            decl_context_common::bind_vast_node_parent(
                                                 "decl_ctx_attr_prev_parent",
-                                                Expr::load(
-                                                    vast_nodes,
-                                                    Expr::add(
-                                                        Expr::var("decl_ctx_attr_prev_base"),
-                                                        Expr::u32(1),
-                                                    ),
-                                                ),
+                                                vast_nodes,
+                                                "decl_ctx_attr_prev_base",
                                             ),
                                             Node::if_then(
                                                 Expr::eq(
@@ -293,7 +258,7 @@ pub(super) fn extend(
                                                 ),
                                                 vec![Node::assign(
                                                     "decl_ctx_attr_prefix_kind",
-                                                    Expr::load(
+                                                    decl_context_common::load_vast_node_kind(
                                                         vast_nodes,
                                                         Expr::var("decl_ctx_attr_prev_base"),
                                                     ),
@@ -301,15 +266,11 @@ pub(super) fn extend(
                                             ),
                                         ],
                                     ),
-                                    Node::let_bind(
+                                    decl_context_common::bind_vast_node_field(
                                         "decl_ctx_attr_symbol",
-                                        Expr::load(
-                                            vast_nodes,
-                                            Expr::add(
-                                                Expr::var("decl_ctx_attr_base"),
-                                                Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
-                                            ),
-                                        ),
+                                        vast_nodes,
+                                        "decl_ctx_attr_base",
+                                        VAST_TYPEDEF_SYMBOL_FIELD,
                                     ),
                                     Node::let_bind(
                                         "decl_ctx_attr_specific_kind",

@@ -63,12 +63,25 @@ impl std::error::Error for PreEmitError {}
 /// Returns [`PreEmitError`] when call inlining fails.
 pub fn prepare_program_for_emit(program: &Program) -> Result<Program, PreEmitError> {
     let pruned = vyre_foundation::optimizer::pre_lowering::optimize(program.clone());
+    let pruned = lower_single_rank_collectives_for_emit(pruned)?;
     let inlined = vyre_foundation::ir::inline_calls(&pruned).map_err(|error| {
         PreEmitError::new(format!(
             "call inlining failed before descriptor lowering: {error}. Fix: register every Expr::Call target with the active dialect resolver or eliminate the call before backend emission."
         ))
     })?;
-    Ok(vyre_foundation::optimizer::pre_lowering::optimize(inlined))
+    lower_single_rank_collectives_for_emit(vyre_foundation::optimizer::pre_lowering::optimize(
+        inlined,
+    ))
+}
+
+fn lower_single_rank_collectives_for_emit(program: Program) -> Result<Program, PreEmitError> {
+    match vyre_foundation::transform::collectives::lower_single_rank_collectives(&program) {
+        Ok(Some(lowered)) => Ok(lowered),
+        Ok(None) => Ok(program),
+        Err(error) => Err(PreEmitError::new(format!(
+            "single-rank collective lowering failed before descriptor lowering: {error}. Fix: route true multi-rank collectives through a backend transport path or lower them before pre-emit."
+        ))),
+    }
 }
 
 /// Run the complete canonical pre-emit pipeline.
@@ -121,7 +134,9 @@ fn format_verify_failure(error: &VerifyFailure) -> String {
 mod tests {
     use super::*;
     use crate::{KernelBody, KernelOpKind};
-    use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node};
+    use vyre_foundation::ir::{
+        BufferAccess, BufferDecl, CollectiveOp, CommGroup, DataType, Expr, Ident, Node,
+    };
 
     #[test]
     fn lower_for_emit_runs_program_and_descriptor_pipeline() {
@@ -137,7 +152,7 @@ mod tests {
             }],
         );
 
-        let lowered = lower_for_emit(&program).expect("pre-emit lowering must pass");
+        let lowered = lower_for_emit(&program).expect("Fix: pre-emit lowering must pass");
 
         assert_eq!(lowered.program.workgroup_size(), [64, 1, 1]);
         assert_eq!(lowered.descriptor.dispatch.workgroup_size, [64, 1, 1]);
@@ -154,6 +169,51 @@ mod tests {
 
         assert!(error.message().contains("KernelDescriptor"));
         assert!(error.message().contains("Fix:"));
+    }
+
+    #[test]
+    fn lower_for_emit_lowers_world_allgather_before_descriptor_lowering() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::read("input", 0, DataType::U32).with_count(4),
+                BufferDecl::output("out", 1, DataType::U32).with_count(4),
+            ],
+            [64, 1, 1],
+            vec![Node::AllGather {
+                input: "input".into(),
+                output: "out".into(),
+                group: CommGroup::WORLD,
+            }],
+        );
+
+        let lowered = lower_for_emit(&program).expect(
+            "Fix: canonical pre-emit must lower WORLD AllGather before descriptor lowering.",
+        );
+
+        assert!(!lowered.program.stats().distributed_collectives());
+        assert!(crate::verify::verify(&lowered.descriptor).is_ok());
+    }
+
+    #[test]
+    fn lower_for_emit_rejects_transport_collectives_before_descriptor_lowering() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::read("input", 0, DataType::U32).with_count(4),
+                BufferDecl::output("out", 1, DataType::U32).with_count(4),
+            ],
+            [64, 1, 1],
+            vec![Node::ReduceScatter {
+                input: "input".into(),
+                output: "out".into(),
+                op: CollectiveOp::Sum,
+                group: CommGroup(7),
+            }],
+        );
+
+        let error = lower_for_emit(&program)
+            .expect_err("Fix: canonical pre-emit must reject collectives that need transport.");
+
+        assert!(error.message().contains("Multi-rank collective transport"));
     }
 
     #[test]
@@ -249,7 +309,7 @@ mod tests {
             ],
         );
 
-        let lowered = lower_for_emit(&program).expect("pre-emit lowering must pass");
+        let lowered = lower_for_emit(&program).expect("Fix: pre-emit lowering must pass");
 
         assert!(
             body_has_s1_end_from_copy(&lowered.descriptor.body),

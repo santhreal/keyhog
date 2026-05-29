@@ -1,4 +1,4 @@
-//! `persistent_fixpoint` — single-dispatch convergence on the GPU.
+//! `persistent_fixpoint`  -  single-dispatch convergence on the GPU.
 //!
 //! Where [`bitset_fixpoint`](super::bitset_fixpoint::bitset_fixpoint)
 //! ships only the comparison + flag half of the loop and leaves the
@@ -8,40 +8,39 @@
 //! check inside the kernel. The host issues ONE dispatch and reads
 //! the final state; convergence happens entirely on device.
 //!
-//! This is the substrate primitive that replaces every "host iterates
-//! to fixpoint" docstring in `downstream_dataflow::points_to`, `downstream_dataflow::summary`,
-//! `downstream_dataflow::loop_sum`, and the `lower_binary_graph_predicate` 8-hop
-//! unrolled BFS. Each consumer composes their own transfer body once;
-//! `persistent_fixpoint` provides the convergence harness.
+//! This is the substrate primitive that replaces host-driven
+//! fixpoint loops in dataflow, graph reachability, and iterative
+//! bitset analyses. Higher-level crates supply their transfer body
+//! once; `persistent_fixpoint` provides the convergence harness.
 //!
 //! ## Composition contract
 //!
 //! Caller supplies:
 //!
-//! - `transfer_body` — `Vec<Node>` reading from `current`, writing to
+//! - `transfer_body`  -  `Vec<Node>` reading from `current`, writing to
 //!   `next`. Free to consume + dispatch any number of nested
 //!   primitives (csr_forward_traverse, bitset_or, bitset_and, …).
-//! - `current` / `next` — ping-pong bitset names (caller-managed).
-//! - `changed` — convergence flag name (1-word atomic ReadWrite).
-//! - `words` — bitset element count in 32-bit words.
-//! - `max_iterations` — hard cap. The kernel breaks out after this
+//! - `current` / `next`  -  ping-pong bitset names (caller-managed).
+//! - `changed`  -  convergence flag name (1-word atomic ReadWrite).
+//! - `words`  -  bitset element count in 32-bit words.
+//! - `max_iterations`  -  hard cap. The kernel breaks out after this
 //!   many iterations even if `changed` is still set, so a buggy
 //!   transfer body cannot wedge the dispatcher.
 //!
 //! Caller receives a [`Program`] that, when dispatched once, runs the
 //! transfer body until `changed[0] == 0` for two consecutive
 //! iterations or `max_iterations` is reached. Output is in `current`
-//! after the dispatch returns — `next` and `changed` are scratch.
+//! after the dispatch returns  -  `next` and `changed` are scratch.
 //!
 //! ## LEGO discipline
 //!
 //! This primitive composes:
 //!
-//! - `Node::Loop` (vyre-foundation, IR primitive) — the convergence
+//! - `Node::Loop` (vyre-foundation, IR primitive)  -  the convergence
 //!   loop body.
-//! - `bitset_fixpoint::bitset_fixpoint` step (re-used) — comparison +
+//! - `bitset_fixpoint::bitset_fixpoint` step (re-used)  -  comparison +
 //!   flag-set inside the loop body.
-//! - Standard ping-pong via `Node::store(current, t, next[t])` —
+//! - Standard ping-pong via `Node::store(current, t, next[t])`  -
 //!   in-place buffer swap on the GPU.
 //!
 //! Soundness: matches the host-driven loop exactly (proven by the
@@ -61,7 +60,7 @@ pub const OP_ID: &str = "vyre-primitives::fixpoint::persistent_fixpoint";
 /// One dispatch from the host. The kernel:
 ///
 /// 1. Zeros `changed[0]`.
-/// 2. Runs `transfer_body` (caller-supplied — reads `current`, writes `next`).
+/// 2. Runs `transfer_body` (caller-supplied  -  reads `current`, writes `next`).
 /// 3. For every word `w`, sets `changed[0]=1` iff `current[w] != next[w]`.
 /// 4. Copies `next[w]` into `current[w]`.
 /// 5. Reads `changed[0]`. If 0, break the outer loop.
@@ -70,7 +69,7 @@ pub const OP_ID: &str = "vyre-primitives::fixpoint::persistent_fixpoint";
 /// `changed` is a 1-word atomic ReadWrite buffer. `current` and
 /// `next` are word-bitset ReadWrite buffers of length `words`.
 ///
-/// The transfer body MUST NOT touch `changed` — the wrapper owns the
+/// The transfer body MUST NOT touch `changed`  -  the wrapper owns the
 /// convergence flag exclusively.
 ///
 /// # Parameters
@@ -175,12 +174,15 @@ where
 {
     let mut current = Vec::new();
     let mut next = Vec::new();
-    let iters = cpu_ref_into(
+    let iters = try_cpu_ref_into(
         seed,
         max_iterations,
         &mut transfer_step,
         &mut current,
         &mut next,
+    )
+    .expect(
+        "Fix: caller must size scratch for node_count; use try_cpu_ref on hostile layouts",
     );
     (current, iters)
 }
@@ -200,18 +202,47 @@ pub fn cpu_ref_into<F>(
 where
     F: FnMut(&[u32], &mut [u32]),
 {
+    try_cpu_ref_into(seed, max_iterations, transfer_step, current, next)
+        .expect(
+            "Fix: caller must size scratch for node_count; use try_cpu_ref_into on hostile layouts",
+        )
+}
+
+/// Fallible CPU oracle using caller-owned ping-pong buffers.
+///
+/// The output buffers are not mutated until both have enough capacity
+/// for the seed length.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into<F>(
+    seed: &[u32],
+    max_iterations: u32,
+    transfer_step: &mut F,
+    current: &mut Vec<u32>,
+    next: &mut Vec<u32>,
+) -> Result<u32, String>
+where
+    F: FnMut(&[u32], &mut [u32]),
+{
+    let additional_current = seed.len().saturating_sub(current.capacity());
+    let additional_next = seed.len().saturating_sub(next.capacity());
+    current
+        .try_reserve_exact(additional_current)
+        .map_err(|err| format!("failed to reserve current fixpoint buffer: {err}"))?;
+    next.try_reserve_exact(additional_next)
+        .map_err(|err| format!("failed to reserve next fixpoint buffer: {err}"))?;
     current.clear();
     current.extend_from_slice(seed);
+    next.clear();
     next.resize(seed.len(), 0);
     for iter in 0..max_iterations {
         next.fill(0);
         transfer_step(current, next);
         if next == current {
-            return iter;
+            return Ok(iter + 1);
         }
         std::mem::swap(current, next);
     }
-    max_iterations
+    Ok(max_iterations)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -233,11 +264,11 @@ inventory::submit! {
             )
         },
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[7]), to_bytes(&[0]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[7]), to_bytes(&[7]), to_bytes(&[0])]]
         }),
     )
@@ -253,7 +284,7 @@ mod tests {
         let seed = vec![0b1010, 0b0101];
         let (out, iters) = cpu_ref(&seed, 100, |cur, next| next.copy_from_slice(cur));
         assert_eq!(out, seed);
-        assert_eq!(iters, 0);
+        assert_eq!(iters, 1);
     }
 
     #[test]
@@ -296,6 +327,29 @@ mod tests {
         assert!(current.as_ptr() == current_ptr || current.as_ptr() == next_ptr);
         assert!(next.as_ptr() == current_ptr || next.as_ptr() == next_ptr);
         assert_ne!(current.as_ptr(), next.as_ptr());
+    }
+
+    #[test]
+    fn try_cpu_ref_into_reuses_buffers_and_clears_stale_tail() {
+        let mut current = Vec::with_capacity(8);
+        let mut next = Vec::with_capacity(8);
+        current.extend([u32::MAX; 8]);
+        next.extend([u32::MAX; 8]);
+        let current_ptr = current.as_ptr();
+        let next_ptr = next.as_ptr();
+
+        let mut transfer = |cur: &[u32], out: &mut [u32]| out.copy_from_slice(cur);
+        let iters = try_cpu_ref_into(&[1, 2], 4, &mut transfer, &mut current, &mut next).unwrap();
+        assert_eq!(iters, 1);
+        assert_eq!(current, vec![1, 2]);
+        assert_eq!(next, vec![1, 2]);
+        assert!(current.as_ptr() == current_ptr || current.as_ptr() == next_ptr);
+        assert!(next.as_ptr() == current_ptr || next.as_ptr() == next_ptr);
+
+        let iters = try_cpu_ref_into(&[], 4, &mut transfer, &mut current, &mut next).unwrap();
+        assert_eq!(iters, 1);
+        assert!(current.is_empty());
+        assert!(next.is_empty());
     }
 
     #[test]

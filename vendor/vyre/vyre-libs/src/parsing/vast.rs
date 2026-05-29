@@ -1,4 +1,4 @@
-//! Packed AST (VAST) — see `vyre-foundation::vast` and workspace
+//! Packed AST (VAST)  -  see `vyre-foundation::vast` and workspace
 //! `docs/parsing-and-frontends.md`.
 
 pub use vyre_foundation::vast::{

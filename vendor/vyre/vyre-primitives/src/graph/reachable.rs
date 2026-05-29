@@ -1,7 +1,7 @@
-//! Transitive reachability over an edge list — CPU reference + Tier-2.5
+//! Transitive reachability over an edge list  -  CPU reference + Tier-2.5
 //! GPU Program builder.
 //!
-//! Consumed by frontend `flows_to` taint analysis and graph analyses
+//! Consumed by taint analysis (`flows_to`) and graph analyses
 //! that need "is B reachable from A given these edges?"
 //!
 //! AUDIT_2026-04-24 F-REACH-02 (RESOLVED): `reachable_program` now
@@ -50,14 +50,41 @@ impl std::fmt::Display for UnknownNode {
 
 impl std::error::Error for UnknownNode {}
 
+/// Error returned by [`try_reachable`] for malformed graph input or allocation
+/// failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReachableError {
+    /// The edge list referenced a node outside `0..node_count`.
+    UnknownNode(UnknownNode),
+    /// Scratch allocation failed before traversal could complete.
+    Allocation(String),
+}
+
+impl std::fmt::Display for ReachableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownNode(error) => error.fmt(f),
+            Self::Allocation(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for ReachableError {}
+
+impl From<UnknownNode> for ReachableError {
+    fn from(error: UnknownNode) -> Self {
+        Self::UnknownNode(error)
+    }
+}
+
 /// CPU reference: returns the set of nodes reachable from any element
 /// of `sources` following the directed edges. `edges` is a slice of
-/// `(from, to)` u32 pairs — a BFS/DFS walks `from → to`.
+/// `(from, to)` u32 pairs  -  a BFS/DFS walks `from → to`.
 ///
 /// AUDIT_2026-04-24 F-REACH-01: prior version silently dropped
 /// edges whose `from` or `to` exceeded `node_count`, masking
 /// upstream bugs that produce malformed edge lists. Now returns
-/// [`UnknownNode`] so the violation is visible at the call site —
+/// [`UnknownNode`] so the violation is visible at the call site  -
 /// consistent with how `toposort` surfaces the same shape of
 /// failure.
 pub fn reachable(
@@ -65,35 +92,100 @@ pub fn reachable(
     edges: &[(u32, u32)],
     sources: &[u32],
 ) -> Result<HashSet<u32>, UnknownNode> {
+    match try_reachable(node_count, edges, sources) {
+        Ok(result) => Ok(result),
+        Err(ReachableError::UnknownNode(error)) => Err(error),
+        Err(ReachableError::Allocation(message)) => {
+            panic!("reachable CPU oracle allocation failed. {message}")
+        }
+    }
+}
+
+/// Fallible CPU reference for transitive reachability.
+///
+/// Unlike [`reachable`], this surfaces allocation failure as a typed error, so
+/// hostile graph dimensions cannot abort the process through infallible vector
+/// growth.
+pub fn try_reachable(
+    node_count: u32,
+    edges: &[(u32, u32)],
+    sources: &[u32],
+) -> Result<HashSet<u32>, ReachableError> {
     const NONE: usize = usize::MAX;
 
     let n = node_count as usize;
-    let mut head = vec![NONE; n];
-    let mut to_nodes = Vec::with_capacity(edges.len());
-    let mut next_edges = Vec::with_capacity(edges.len());
     for (index, &(from, to)) in edges.iter().enumerate() {
         if (from as usize) >= n {
-            return Err(UnknownNode {
+            return Err(ReachableError::UnknownNode(UnknownNode {
                 index,
                 node: from,
                 node_count,
-            });
+            }));
         }
         if (to as usize) >= n {
-            return Err(UnknownNode {
+            return Err(ReachableError::UnknownNode(UnknownNode {
                 index,
                 node: to,
                 node_count,
-            });
+            }));
         }
+    }
+    let mut head: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items(
+        &mut head,
+        n,
+        "reachable CPU oracle",
+        "adjacency heads",
+    )
+    .map_err(ReachableError::Allocation)?;
+    head.resize(n, NONE);
+    let mut to_nodes: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items(
+        &mut to_nodes,
+        edges.len(),
+        "reachable CPU oracle",
+        "adjacency destinations",
+    )
+    .map_err(ReachableError::Allocation)?;
+    let mut next_edges: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items(
+        &mut next_edges,
+        edges.len(),
+        "reachable CPU oracle",
+        "adjacency next links",
+    )
+    .map_err(ReachableError::Allocation)?;
+    for &(from, to) in edges {
         let edge_index = to_nodes.len();
         to_nodes.push(to);
         next_edges.push(head[from as usize]);
         head[from as usize] = edge_index;
     }
-    let mut visited = vec![false; n];
-    let mut out_of_range_sources = Vec::new();
-    let mut stack = Vec::with_capacity(sources.len());
+    let mut visited: Vec<bool> = Vec::new();
+    crate::graph::scratch::reserve_graph_items(
+        &mut visited,
+        n,
+        "reachable CPU oracle",
+        "visited bitmap",
+    )
+    .map_err(ReachableError::Allocation)?;
+    visited.resize(n, false);
+    let mut out_of_range_sources: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items(
+        &mut out_of_range_sources,
+        sources.len(),
+        "reachable CPU oracle",
+        "out-of-range source list",
+    )
+    .map_err(ReachableError::Allocation)?;
+    let mut stack: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items(
+        &mut stack,
+        sources.len(),
+        "reachable CPU oracle",
+        "DFS stack",
+    )
+    .map_err(ReachableError::Allocation)?;
     stack.extend_from_slice(sources);
     while let Some(v) = stack.pop() {
         let idx = v as usize;
@@ -114,13 +206,17 @@ pub fn reachable(
             edge = next_edges[edge];
         }
     }
-    let mut result = HashSet::with_capacity(
-        visited
-            .iter()
-            .filter(|&&is_visited| is_visited)
-            .count()
-            .saturating_add(out_of_range_sources.len()),
-    );
+    let result_capacity = visited
+        .iter()
+        .filter(|&&is_visited| is_visited)
+        .count()
+        .saturating_add(out_of_range_sources.len());
+    let mut result = HashSet::new();
+    result.try_reserve(result_capacity).map_err(|error| {
+        ReachableError::Allocation(format!(
+            "Fix: reachable CPU oracle could not reserve {result_capacity} result nodes: {error}"
+        ))
+    })?;
     for (idx, is_visited) in visited.into_iter().enumerate() {
         if is_visited {
             result.insert(idx as u32);
@@ -177,8 +273,31 @@ pub fn reachable_program(
     let frontier_a = "reach_frontier_a";
     let frontier_b = "reach_frontier_b";
 
-    let mut arms: Vec<Program> =
-        Vec::with_capacity((max_iters as usize).saturating_mul(2).saturating_add(1));
+    let Some(iter_arms) = (max_iters as usize).checked_mul(2) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            reach_out,
+            DataType::U32,
+            "Fix: reachable_program max_iters*2 overflows usize.".to_string(),
+        );
+    };
+    let Some(arm_count) = iter_arms.checked_add(1) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            reach_out,
+            DataType::U32,
+            "Fix: reachable_program arm count overflows usize.".to_string(),
+        );
+    };
+    let mut arms: Vec<Program> = Vec::new();
+    if let Err(error) = arms.try_reserve(arm_count) {
+        return crate::invalid_output_program(
+            OP_ID,
+            reach_out,
+            DataType::U32,
+            format!("Fix: reachable_program could not reserve {arm_count} fused arms: {error}"),
+        );
+    }
 
     // Seed reach_out with the initial sources so the final result
     // includes the source set itself.
@@ -214,6 +333,26 @@ mod tests {
 
     fn hs(items: &[u32]) -> HashSet<u32> {
         items.iter().copied().collect()
+    }
+
+    #[test]
+    fn generated_try_reachable_matches_legacy_reachable() {
+        for node_count in 1u32..=64 {
+            for seed in 0u32..64 {
+                let edges: Vec<(u32, u32)> = (0..node_count)
+                    .filter_map(|node| {
+                        let step = (seed % 7) + 1;
+                        let dst = node.saturating_add(step);
+                        (dst < node_count).then_some((node, dst))
+                    })
+                    .collect();
+                let sources = [seed % node_count, node_count + seed];
+                let fallible = try_reachable(node_count, &edges, &sources).unwrap();
+                let legacy = reachable(node_count, &edges, &sources).unwrap();
+                assert_eq!(fallible, legacy);
+                assert!(fallible.contains(&(node_count + seed)));
+            }
+        }
     }
 
     #[test]

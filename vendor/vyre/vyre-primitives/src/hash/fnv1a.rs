@@ -2,7 +2,7 @@
 //!
 //! FNV-1a is a non-cryptographic hash with a tight inner loop:
 //! `h = (h XOR byte) * prime`. Used everywhere a fast non-secure
-//! fingerprint is good enough — dialect-id interning, pipeline-cache
+//! fingerprint is good enough  -  dialect-id interning, pipeline-cache
 //! sharding, per-op id hashing.
 //!
 //! Both widths (32, 64) share the structure; only the magic constants
@@ -22,19 +22,49 @@ pub const FNV1A64_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// CPU reference: FNV-1a 32-bit over a byte slice.
 #[must_use]
 pub fn fnv1a32(bytes: &[u8]) -> u32 {
-    let mut h = FNV1A32_OFFSET;
-    for &byte in bytes {
-        h ^= u32::from(byte);
-        h = h.wrapping_mul(FNV1A32_PRIME);
+    fnv1a32_const(bytes)
+}
+
+/// CPU reference: FNV-1a32 over packed u32 lanes, hashing only the low byte
+/// from each lane.
+#[must_use]
+pub fn fnv1a32_packed_u32_low8(words: &[u32]) -> u32 {
+    let mut h = fnv1a32_initial_state();
+    for &word in words {
+        h = fnv1a32_update_byte(h, (word & 0xFF) as u8);
     }
     h
+}
+
+/// Const-evaluable FNV-1a32 over a byte slice.
+#[must_use]
+pub const fn fnv1a32_const(bytes: &[u8]) -> u32 {
+    let mut h = fnv1a32_initial_state();
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        h = fnv1a32_update_byte(h, bytes[idx]);
+        idx += 1;
+    }
+    h
+}
+
+/// Initial FNV-1a32 CPU state.
+#[must_use]
+pub const fn fnv1a32_initial_state() -> u32 {
+    FNV1A32_OFFSET
+}
+
+/// Canonical FNV-1a32 CPU single-byte update.
+#[must_use]
+pub const fn fnv1a32_update_byte(hash: u32, byte: u8) -> u32 {
+    (hash ^ byte as u32).wrapping_mul(FNV1A32_PRIME)
 }
 
 use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-/// Stable op id — the Tier 3 wrapper registers under this id.
+/// Stable op id  -  the Tier 3 wrapper registers under this id.
 pub const FNV1A32_OP_ID: &str = "vyre-primitives::hash::fnv1a32";
 /// Stable op id for the 64-bit widening-multiply builder.
 pub const FNV1A64_OP_ID: &str = "vyre-primitives::hash::fnv1a64";
@@ -43,7 +73,7 @@ const FNV1A64_PRIME_HI: u32 = 0x0000_0100;
 const FNV1A64_OFFSET_LO: u32 = 0x8422_2325;
 const FNV1A64_OFFSET_HI: u32 = 0xCBF2_9CE4;
 
-/// GPU IR builder: FNV-1a 32-bit serial walk over `input[0..n]` — each
+/// GPU IR builder: FNV-1a 32-bit serial walk over `input[0..n]`  -  each
 /// input word contributes its low 8 bits as the next byte. Output is
 /// one u32 hash at `out[0]`. Single invocation (invocation 0 does the
 /// whole walk); callers needing parallel throughput compose this with
@@ -61,6 +91,61 @@ pub fn fnv1a32_program_dyn(input: &str, out: &str) -> Program {
     fnv1a32_program_bounded(input, out, Expr::buf_len(input), None)
 }
 
+/// Initial FNV-1a32 state expression for fused IR compositions.
+#[must_use]
+pub fn fnv1a32_initial_expr() -> Expr {
+    Expr::u32(FNV1A32_OFFSET)
+}
+
+/// Canonical FNV-1a32 single-byte update expression.
+///
+/// `byte` is masked to its low 8 bits, matching the public program builder's
+/// one-byte-per-u32-slot contract.
+#[must_use]
+pub fn fnv1a32_update_byte_expr(hash: Expr, byte: Expr) -> Expr {
+    Expr::mul(
+        Expr::bitxor(hash, Expr::bitand(byte, Expr::u32(0xFF))),
+        Expr::u32(FNV1A32_PRIME),
+    )
+}
+
+/// FNV-1a32-style whole-word mix expression for structural fingerprints.
+///
+/// This is not the byte-stream hash used by [`fnv1a32_program`]; it preserves
+/// legacy structural-hash behavior where each encoded arena field is mixed as
+/// one u32 payload. Centralizing it keeps every structural-hash user on the
+/// same constants and update shape.
+#[must_use]
+pub fn fnv1a32_mix_word_expr(hash: Expr, word: Expr) -> Expr {
+    Expr::mul(Expr::bitxor(hash, word), Expr::u32(FNV1A32_PRIME))
+}
+
+/// FNV-prime structural mix used by legacy packed-AST hash tables.
+///
+/// This preserves the historical `hash = (hash * prime) XOR word` order used
+/// by packed-AST CSE kernels. It is intentionally separate from
+/// [`fnv1a32_mix_word_expr`], whose order is FNV-1a-style
+/// `(hash XOR word) * prime`.
+#[must_use]
+pub const fn fnv1a32_mul_xor_word_state(hash: u32, word: u32) -> u32 {
+    hash.wrapping_mul(FNV1A32_PRIME) ^ word
+}
+
+/// IR expression form of [`fnv1a32_mul_xor_word_state`].
+#[must_use]
+pub fn fnv1a32_mul_xor_word_expr(hash: Expr, word: Expr) -> Expr {
+    Expr::bitxor(Expr::mul(hash, Expr::u32(FNV1A32_PRIME)), word)
+}
+
+/// Canonical FNV-1a32 single-byte update node for fused IR compositions.
+#[must_use]
+pub fn fnv1a32_update_byte_node(hash_var: &str, byte: Expr) -> Node {
+    Node::assign(
+        hash_var,
+        fnv1a32_update_byte_expr(Expr::var(hash_var), byte),
+    )
+}
+
 fn fnv1a32_program_bounded(
     input: &str,
     out: &str,
@@ -73,19 +158,15 @@ fn fnv1a32_program_bounded(
         body: Arc::new(vec![Node::if_then(
             Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
             vec![
-                Node::let_bind("h", Expr::u32(FNV1A32_OFFSET)),
+                Node::let_bind("h", fnv1a32_initial_expr()),
                 Node::loop_for(
                     "i",
                     Expr::u32(0),
                     loop_bound,
-                    vec![
-                        Node::let_bind(
-                            "byte",
-                            Expr::bitand(Expr::load(input, Expr::var("i")), Expr::u32(0xFF)),
-                        ),
-                        Node::assign("h", Expr::bitxor(Expr::var("h"), Expr::var("byte"))),
-                        Node::assign("h", Expr::mul(Expr::var("h"), Expr::u32(FNV1A32_PRIME))),
-                    ],
+                    vec![fnv1a32_update_byte_node(
+                        "h",
+                        Expr::load(input, Expr::var("i")),
+                    )],
                 ),
                 Node::store(out, Expr::u32(0), Expr::var("h")),
             ],
@@ -107,6 +188,25 @@ fn fnv1a32_program_bounded(
         [1, 1, 1],
         body,
     )
+}
+
+#[cfg(test)]
+mod fnv1a32_ir_tests {
+    use super::*;
+
+    #[test]
+    fn static_program_emits_single_mask_per_input_slot() {
+        let program = fnv1a32_program("input", "out", 3);
+        let rendered = format!("{:?}", program.entry());
+        assert!(
+            !rendered.contains("byte"),
+            "Fix: FNV-1a32 IR must not materialize a redundant byte temporary before the shared update helper."
+        );
+        assert!(
+            rendered.contains("255") || rendered.contains("0xFF"),
+            "Fix: FNV-1a32 IR must still mask packed u32 input lanes to low bytes."
+        );
+    }
 }
 
 /// GPU IR builder: FNV-1a 64-bit serial walk over `input[0..n]`.
@@ -231,12 +331,23 @@ fn fnv1a64_program_bounded(
 /// CPU reference: FNV-1a 64-bit over a byte slice.
 #[must_use]
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut h = FNV1A64_OFFSET;
+    let mut h = fnv1a64_initial_state();
     for &byte in bytes {
-        h ^= u64::from(byte);
-        h = h.wrapping_mul(FNV1A64_PRIME);
+        h = fnv1a64_update_byte(h, byte);
     }
     h
+}
+
+/// Initial FNV-1a64 CPU state.
+#[must_use]
+pub const fn fnv1a64_initial_state() -> u64 {
+    FNV1A64_OFFSET
+}
+
+/// Canonical FNV-1a64 CPU single-byte update.
+#[must_use]
+pub const fn fnv1a64_update_byte(hash: u64, byte: u8) -> u64 {
+    (hash ^ byte as u64).wrapping_mul(FNV1A64_PRIME)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -245,14 +356,14 @@ inventory::submit! {
         FNV1A32_OP_ID,
         || fnv1a32_program("input", "out", 1),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0x61]), // input: one word, low byte = 'a'
                 to_bytes(&[0]),    // output
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0xe40c_292c])]] // canonical FNV-1a32("a")
         }),
     )
@@ -264,14 +375,14 @@ inventory::submit! {
         FNV1A64_OP_ID,
         || fnv1a64_program("input", "out"),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0x61]),   // input: one word, low byte = 'a'
                 to_bytes(&[0, 0]),   // output: two words for fnv1a64 hash
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0x8601_ec8c, 0xaf63_dc4c])]] // canonical FNV-1a64("a") little-endian halves
         }),
     )
@@ -295,6 +406,14 @@ mod tests {
     }
 
     #[test]
+    fn fnv1a32_packed_u32_low8_matches_byte_hasher_and_masks_high_bits() {
+        assert_eq!(
+            fnv1a32_packed_u32_low8(&[0xFFFF_FF61, 0xCAFE_0062, 0x8000_0063]),
+            fnv1a32(b"abc")
+        );
+    }
+
+    #[test]
     fn gpu_builder_matches_cpu_ref() {
         use vyre_foundation::ir::model::expr::Ident;
         let program = fnv1a32_program("src", "out", 5);
@@ -307,6 +426,16 @@ mod tests {
         }
         // Buffer count sanity.
         assert_eq!(program.buffers().len(), 2);
+    }
+
+    #[test]
+    fn fnv1a32_update_helper_masks_high_input_bits() {
+        let node = fnv1a32_update_byte_node("h", Expr::u32(0xFFFF_FF61));
+        let rendered = format!("{node:?}");
+        assert!(
+            rendered.contains("255") || rendered.contains("0xFF"),
+            "Fix: shared FNV-1a32 update helper must mask high input bits: {rendered}"
+        );
     }
 
     #[test]
@@ -334,10 +463,32 @@ mod tests {
     #[test]
     fn fnv1a64_matches_fnv1a32_structure() {
         // Sanity: different widths of the same input MUST NOT produce
-        // matching low-32 bits — the prime differs, so structure does too.
+        // matching low-32 bits  -  the prime differs, so structure does too.
         let bytes = b"vyre fingerprint";
         let h32 = fnv1a32(bytes);
         let h64 = fnv1a64(bytes);
         assert_ne!(h32 as u64, h64 & 0xffff_ffff);
+    }
+}
+
+#[cfg(test)]
+mod fnv1a_state_helper_tests {
+    use super::*;
+
+    #[test]
+    fn cpu_state_helpers_match_slice_hashers() {
+        let bytes = b"vyre-fnv-single-source";
+
+        let mut h32 = fnv1a32_initial_state();
+        for &byte in bytes {
+            h32 = fnv1a32_update_byte(h32, byte);
+        }
+        assert_eq!(h32, fnv1a32(bytes));
+
+        let mut h64 = fnv1a64_initial_state();
+        for &byte in bytes {
+            h64 = fnv1a64_update_byte(h64, byte);
+        }
+        assert_eq!(h64, fnv1a64(bytes));
     }
 }

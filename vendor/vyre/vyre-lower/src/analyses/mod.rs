@@ -14,12 +14,14 @@
 pub mod access_kind;
 pub mod alias_facts;
 pub mod bank_conflict;
+pub mod candidate_plan;
 pub mod coalesce;
 pub mod common_subexpr;
 pub mod const_buffer_promote;
 pub mod dead_op;
 pub mod def_use;
 pub mod layout_aos_to_soa;
+pub(crate) mod load_counts;
 pub mod op_histogram;
 pub mod reaching_def_facts;
 pub mod shared_mem_promote;

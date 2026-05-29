@@ -201,6 +201,43 @@ pub(crate) fn step_nodes_frame<'a>(
                 "reference dispatch reached Resume `{tag}` without a replay runtime. Fix: lower Resume through a runtime-owned replay path before reference execution."
             )));
         }
+        Node::AllReduce { buffer, group, .. } => {
+            return Err(Error::interp(format!(
+                "hashmap reference interpreter reached AllReduce on buffer `{buffer}` for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+                group.as_u32()
+            )));
+        }
+        Node::AllGather {
+            input,
+            output,
+            group,
+        } => {
+            return Err(Error::interp(format!(
+                "hashmap reference interpreter reached AllGather `{input}` -> `{output}` for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+                group.as_u32()
+            )));
+        }
+        Node::ReduceScatter {
+            input,
+            output,
+            group,
+            ..
+        } => {
+            return Err(Error::interp(format!(
+                "hashmap reference interpreter reached ReduceScatter `{input}` -> `{output}` for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+                group.as_u32()
+            )));
+        }
+        Node::Broadcast {
+            buffer,
+            root,
+            group,
+        } => {
+            return Err(Error::interp(format!(
+                "hashmap reference interpreter reached Broadcast on buffer `{buffer}` from root {root} for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+                group.as_u32()
+            )));
+        }
         Node::Region { body, .. } => {
             invocation.locals.push_scope();
             invocation.frames.push(Frame::Nodes {
@@ -416,6 +453,7 @@ fn eval_async_store(
     })
 }
 
+
 fn eval_byte_count(
     expr: &Expr,
     label: &str,
@@ -513,3 +551,4 @@ fn resolve_call(
     invocation.op_cache.insert(call_expr, resolved);
     Ok(resolved)
 }
+

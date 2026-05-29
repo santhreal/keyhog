@@ -24,12 +24,17 @@ pub fn opt_lower_elf(ssa_nodes: &str, target_object_bytes: &str, num_nodes: Expr
         Expr::LitU32(n) => *n,
         _ => 1,
     };
+    let visible_object_words = TEXT_SECTION_WORD_OFFSET
+        .saturating_add(node_count)
+        .saturating_add(5)
+        .min(4096);
+    let visible_object_bytes = (visible_object_words as usize) * 4;
 
     let loop_body = vec![
         Node::let_bind("encoded_word", Expr::load(ssa_nodes, t.clone())),
         Node::let_bind(
             "write_offset",
-            Expr::atomic_add("tmp_elf_offsets", Expr::u32(0), Expr::u32(1)),
+            Expr::add(Expr::u32(TEXT_SECTION_WORD_OFFSET), t.clone()),
         ),
         Node::store(
             target_object_bytes,
@@ -48,12 +53,8 @@ pub fn opt_lower_elf(ssa_nodes: &str, target_object_bytes: &str, num_nodes: Expr
                 BufferAccess::ReadWrite,
                 DataType::U32,
             )
-            .with_count(4096),
-            // Section-offset scratch lives in ReadWrite storage (not
-            // workgroup memory) because we atomic-add into it. Workgroup
-            // atomics aren't portable across the backends we certify.
-            BufferDecl::storage("tmp_elf_offsets", 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(16),
+            .with_count(4096)
+            .with_output_byte_range(0..visible_object_bytes),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(
@@ -232,14 +233,8 @@ pub fn opt_lower_elf(ssa_nodes: &str, target_object_bytes: &str, num_nodes: Expr
                                 Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 4),
                                 Expr::u32(0),
                             ),
-                            Node::store(
-                                "tmp_elf_offsets",
-                                Expr::u32(0),
-                                Expr::u32(TEXT_SECTION_WORD_OFFSET),
-                            ),
                         ],
                     ),
-                    Node::barrier(),
                     Node::if_then(Expr::lt(t.clone(), num_nodes), loop_body),
                 ],
             )],
@@ -251,18 +246,18 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: ELF_LOWERING_OP_ID,
         build: || opt_lower_elf("ssa", "obj", Expr::u32(4)),
-        // Small deterministic fixture: 4 encoded words, a 4096-word object
-        // buffer, and 16-word section-offset scratch.
+        // Small deterministic fixture: 4 encoded words and a 4096-word object buffer.
         test_inputs: Some(|| vec![vec![
-            [0xC0DE_0001u32, 0xC0DE_0002, 0xC0DE_0003, 0xC0DE_0004]
-                .into_iter()
-                .flat_map(|word| word.to_le_bytes())
-                .collect::<Vec<u8>>(),
+            vyre_primitives::wire::pack_u32_slice(&[
+                0xC0DE_0001u32,
+                0xC0DE_0002,
+                0xC0DE_0003,
+                0xC0DE_0004,
+            ]),
             vec![0u8; 4_096 * 4],
-            vec![0u8; 16 * 4],
         ]]),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             let mut obj = vec![0u32; 4096];
             obj[0] = 0x464C_457F;
             obj[1] = 0x0001_0102;
@@ -291,9 +286,8 @@ inventory::submit! {
             obj[69] = 0x2E00_7478;
             obj[70] = 0x7473_6873;
             obj[71] = 0x6261_7472;
-            let mut offsets = vec![0u32; 16];
-            offsets[0] = TEXT_SECTION_WORD_OFFSET + 4;
-            vec![vec![to_bytes(&obj), to_bytes(&offsets)]]
+            obj.truncate((TEXT_SECTION_WORD_OFFSET + 4 + 5) as usize);
+            vec![vec![to_bytes(&obj)]]
         }),
         category: Some("compiler"),
     }

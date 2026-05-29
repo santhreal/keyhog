@@ -388,7 +388,13 @@ fn fuse_nodes_with_counts(
                 replacements.flush_all(&mut fused);
                 fused.push(Node::async_wait(tag));
             }
-            Node::Trap { .. } | Node::Resume { .. } | Node::Opaque(_) => {
+            Node::Trap { .. }
+            | Node::Resume { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. }
+            | Node::Opaque(_) => {
                 replacements.flush_all(&mut fused);
                 fused.push(node.clone());
             }
@@ -448,6 +454,7 @@ fn fuse_control_flow_node(
         _ => node.clone(),
     }
 }
+
 
 fn is_control_flow_boundary(node: &Node) -> bool {
     matches!(
@@ -573,7 +580,7 @@ fn substitute_expr(expr: &Expr, replacements: &PendingReplacements) -> Expr {
 /// dedicated `let` binding, so they are excluded.
 fn is_fusable_expr(expr: &Expr) -> bool {
     match expr {
-        // Non-trivial pure expressions — these benefit from inlining.
+        // Non-trivial pure expressions  -  these benefit from inlining.
         Expr::Load { index, .. } => is_pure_expr(index),
         Expr::BinOp { left, right, .. } => is_pure_expr(left) && is_pure_expr(right),
         Expr::UnOp { operand, .. } => is_pure_expr(operand),
@@ -584,14 +591,14 @@ fn is_fusable_expr(expr: &Expr) -> bool {
         } => is_pure_expr(cond) && is_pure_expr(true_val) && is_pure_expr(false_val),
         Expr::Cast { value, .. } => is_pure_expr(value),
         Expr::Fma { a, b, c } => is_pure_expr(a) && is_pure_expr(b) && is_pure_expr(c),
-        // Side-effectful or opaque — never fusable.
+        // Side-effectful or opaque  -  never fusable.
         Expr::Call { .. }
         | Expr::Atomic { .. }
         | Expr::Opaque(_)
         | Expr::SubgroupBallot { .. }
         | Expr::SubgroupShuffle { .. }
         | Expr::SubgroupAdd { .. }
-        // Trivial leaves — not worth a dedicated let binding.
+        // Trivial leaves  -  not worth a dedicated let binding.
         | Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -825,3 +832,4 @@ fn push_expr_children<'a>(expr: &'a Expr, stack: &mut SmallVec<[&'a Expr; 16]>) 
 mod tests {
     include!("fusion_tests.rs");
 }
+

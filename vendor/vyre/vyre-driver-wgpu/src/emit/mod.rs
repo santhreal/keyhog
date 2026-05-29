@@ -6,6 +6,9 @@
 
 pub(crate) mod descriptor_gate;
 
+use crate::descriptor_mapping::{
+    descriptor_bind_group, descriptor_buffer_access, descriptor_memory_kind,
+};
 use crate::WgpuBackend;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use std::sync::Arc;
@@ -205,7 +208,7 @@ fn dump_kdesc_if_requested(
     {
         let path = std::path::Path::new(&dir);
         if let Err(error) = std::fs::create_dir_all(path) {
-            eprintln!(
+            tracing::warn!(
                 "Fix: failed to create WGPU descriptor dump directory `{}`: {error}",
                 path.display()
             );
@@ -215,15 +218,19 @@ fn dump_kdesc_if_requested(
 
         let kdesc_path = path.join(format!("{id}.kdesc.bin"));
         match std::fs::File::create(&kdesc_path) {
-            Ok(file) => {
-                if let Err(error) = bincode::serialize_into(file, descriptor) {
-                    eprintln!(
+            Ok(mut file) => {
+                if let Err(error) = bincode::serde::encode_into_std_write(
+                    descriptor,
+                    &mut file,
+                    bincode::config::standard(),
+                ) {
+                    tracing::warn!(
                         "Fix: failed to serialize WGPU KernelDescriptor dump `{}`: {error}",
                         kdesc_path.display()
                     );
                 }
             }
-            Err(error) => eprintln!(
+            Err(error) => tracing::warn!(
                 "Fix: failed to create WGPU KernelDescriptor dump `{}`: {error}",
                 kdesc_path.display()
             ),
@@ -235,13 +242,13 @@ fn dump_kdesc_if_requested(
                 Ok(mut file) => {
                     use std::io::Write;
                     if let Err(error) = write!(file, "{m:#?}") {
-                        eprintln!(
+                        tracing::warn!(
                             "Fix: failed to write WGPU Naga module dump `{}`: {error}",
                             module_path.display()
                         );
                     }
                 }
-                Err(error) => eprintln!(
+                Err(error) => tracing::warn!(
                     "Fix: failed to create WGPU Naga module dump `{}`: {error}",
                     module_path.display()
                 ),
@@ -288,24 +295,24 @@ fn write_wgsl(module: &naga::Module) -> Result<String, LoweringError> {
                 tracing::trace!(
                     target: "vyre_driver_wgpu::naga",
                     function_expressions = ?func.1.expressions,
-                    "naga validation failed — function expressions",
+                    "naga validation failed  -  function expressions",
                 );
             }
             if let Some(ep) = module.entry_points.first() {
                 tracing::trace!(
                     target: "vyre_driver_wgpu::naga",
                     entrypoint_expressions = ?ep.function.expressions,
-                    "naga validation failed — entrypoint expressions",
+                    "naga validation failed  -  entrypoint expressions",
                 );
                 tracing::trace!(
                     target: "vyre_driver_wgpu::naga",
                     entrypoint_locals = ?ep.function.local_variables,
-                    "naga validation failed — entrypoint local variables",
+                    "naga validation failed  -  entrypoint local variables",
                 );
                 tracing::trace!(
                     target: "vyre_driver_wgpu::naga",
                     entrypoint_body = ?ep.function.body,
-                    "naga validation failed — entrypoint body",
+                    "naga validation failed  -  entrypoint body",
                 );
             }
             return Err(LoweringError::validation(e));
@@ -318,7 +325,7 @@ fn write_wgsl(module: &naga::Module) -> Result<String, LoweringError> {
     // are finite. At 1000+ fused arms WGSL source can exceed the
     // ceiling. Fail-fast at write_wgsl with a clear diagnostic
     // naming the byte count, instead of opaque pipeline-creation
-    // failure downstream. The 32 MiB cap below is the safe floor —
+    // failure downstream. The 32 MiB cap below is the safe floor  -
     // most adapters allow 256 MiB but Metal-on-iOS is the strictest.
     // Production adapters report their limit via wgpu::Limits; if the
     // FusionPlan partitioning harness is wired (Task #65 callers),
@@ -337,7 +344,7 @@ fn write_wgsl(module: &naga::Module) -> Result<String, LoweringError> {
 fn binding_assignments(descriptor: &vyre_lower::KernelDescriptor) -> Vec<WgpuBindingAssignment> {
     let mut assignments = Vec::with_capacity(descriptor.bindings.slots.len());
     for slot in &descriptor.bindings.slots {
-        let Some(group) = descriptor_bind_group(slot) else {
+        let Some(group) = descriptor_bind_group(slot.memory_class) else {
             continue;
         };
         assignments.push(WgpuBindingAssignment {
@@ -350,36 +357,6 @@ fn binding_assignments(descriptor: &vyre_lower::KernelDescriptor) -> Vec<WgpuBin
         });
     }
     assignments
-}
-
-fn descriptor_bind_group(slot: &vyre_lower::BindingSlot) -> Option<u32> {
-    match slot.memory_class {
-        vyre_lower::MemoryClass::Shared | vyre_lower::MemoryClass::Scratch => None,
-        vyre_lower::MemoryClass::Uniform => Some(1),
-        vyre_lower::MemoryClass::Global | vyre_lower::MemoryClass::Constant => Some(0),
-    }
-}
-
-fn descriptor_memory_kind(
-    memory_class: vyre_lower::MemoryClass,
-) -> vyre_foundation::ir::MemoryKind {
-    match memory_class {
-        vyre_lower::MemoryClass::Shared => vyre_foundation::ir::MemoryKind::Shared,
-        vyre_lower::MemoryClass::Constant => vyre_foundation::ir::MemoryKind::Readonly,
-        vyre_lower::MemoryClass::Uniform => vyre_foundation::ir::MemoryKind::Uniform,
-        vyre_lower::MemoryClass::Global => vyre_foundation::ir::MemoryKind::Global,
-        vyre_lower::MemoryClass::Scratch => vyre_foundation::ir::MemoryKind::Local,
-    }
-}
-
-fn descriptor_buffer_access(
-    visibility: vyre_lower::BindingVisibility,
-) -> vyre_foundation::ir::BufferAccess {
-    match visibility {
-        vyre_lower::BindingVisibility::ReadOnly => vyre_foundation::ir::BufferAccess::ReadOnly,
-        vyre_lower::BindingVisibility::WriteOnly => vyre_foundation::ir::BufferAccess::WriteOnly,
-        vyre_lower::BindingVisibility::ReadWrite => vyre_foundation::ir::BufferAccess::ReadWrite,
-    }
 }
 
 fn static_workgroups(
@@ -447,7 +424,7 @@ mod tests {
             &config,
             &crate::runtime::device::EnabledFeatures::default(),
         )
-        .expect("wgpu lowering must use descriptor Naga emission");
+        .expect("Fix: wgpu lowering must use descriptor Naga emission");
 
         assert_eq!(lowered.workgroup_size, [32, 1, 1]);
         assert_eq!(lowered.dispatch_geometry.workgroups, [2, 1, 1]);
@@ -471,6 +448,7 @@ mod tests {
                         visibility: vyre_lower::BindingVisibility::ReadWrite,
                         name: "scratch".to_owned(),
                     },
+
                     vyre_lower::BindingSlot {
                         slot: 1,
                         element_type: DataType::U32,
@@ -528,3 +506,4 @@ mod tests {
         assert_eq!(static_workgroups(&descriptor, [16, 1, 1]), [16, 1, 1]);
     }
 }
+

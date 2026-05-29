@@ -1,13 +1,19 @@
 use super::MacroDef;
 use rustc_hash::FxHashMap as HashMap;
 
-pub(super) fn fast_kernel_config_if_truth(row_bytes: &[u8], macros: &[MacroDef]) -> Option<bool> {
-    let expr = trim_ascii(strip_if_directive_keyword(row_bytes)?);
+pub(super) fn fast_kernel_config_if_truth(
+    row_bytes: &[u8],
+    macros: &[MacroDef],
+) -> Result<Option<bool>, String> {
+    let Some(expr) = strip_if_directive_keyword(row_bytes) else {
+        return Ok(None);
+    };
+    let expr = trim_ascii(expr);
     if expr.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let truth_table = MacroTruthTable::new(macros);
-    fast_kernel_config_if_truth_inner(expr, &truth_table)
+    let truth_table = MacroTruthTable::try_new(macros)?;
+    Ok(fast_kernel_config_if_truth_inner(expr, &truth_table))
 }
 
 fn fast_kernel_config_if_truth_inner(
@@ -56,16 +62,38 @@ fn fast_kernel_config_if_truth_inner(
 
 struct MacroTruthTable<'a> {
     bodies: HashMap<&'a [u8], &'a [u8]>,
+    module_bodies: HashMap<&'a [u8], &'a [u8]>,
 }
 
 impl<'a> MacroTruthTable<'a> {
-    fn new(macros: &'a [MacroDef]) -> Self {
+    fn try_new(macros: &'a [MacroDef]) -> Result<Self, String> {
         let mut bodies = HashMap::default();
-        bodies.reserve(macros.len());
+        let module_count = macros
+            .iter()
+            .filter(|mac| mac.name.ends_with(b"_MODULE"))
+            .count();
+        let mut module_bodies = HashMap::default();
+        bodies.try_reserve(macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} conditional macro truth entries: {error:?}. Fix: shard conditional evaluation before GPU preprocessing.",
+                macros.len()
+            )
+        })?;
+        module_bodies.try_reserve(module_count).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {module_count} conditional module truth entries: {error:?}. Fix: shard conditional evaluation before GPU preprocessing.",
+            )
+        })?;
         for mac in macros {
             bodies.insert(mac.name.as_slice(), mac.body.as_slice());
+            if let Some(module_base) = mac.name.strip_suffix(b"_MODULE") {
+                module_bodies.insert(module_base, mac.body.as_slice());
+            }
         }
-        Self { bodies }
+        Ok(Self {
+            bodies,
+            module_bodies,
+        })
     }
 
     fn is_defined(&self, name: &[u8]) -> bool {
@@ -79,10 +107,9 @@ impl<'a> MacroTruthTable<'a> {
     }
 
     fn module_truth(&self, name: &[u8]) -> bool {
-        let mut module_name = Vec::with_capacity(name.len() + b"_MODULE".len());
-        module_name.extend_from_slice(name);
-        module_name.extend_from_slice(b"_MODULE");
-        self.macro_truth(&module_name)
+        self.module_bodies
+            .get(name)
+            .is_some_and(|body| macro_body_truth(body))
     }
 }
 
@@ -255,19 +282,44 @@ mod tests {
             fast_kernel_config_if_truth(
                 b"#if IS_ENABLED(CONFIG_ON) && !defined(CONFIG_OFF)",
                 &macros
-            ),
+            )
+            .expect("Fix: conditional_eval truth tables must fit fixed storage; reject oversized macro expansions - truth table should fit"),
             Some(true)
         );
         assert_eq!(
             fast_kernel_config_if_truth(
                 b"#if IS_ENABLED(CONFIG_ZERO) || IS_MODULE(CONFIG_MOD)",
                 &macros
-            ),
+            )
+            .expect("Fix: conditional_eval truth tables must fit fixed storage; reject oversized macro expansions - truth table should fit"),
             Some(true)
         );
         assert_eq!(
-            fast_kernel_config_if_truth(b"#elif (CONFIG_ON) && (defined(CONFIG_ZERO))", &macros),
+            fast_kernel_config_if_truth(b"#elif (CONFIG_ON) && (defined(CONFIG_ZERO))", &macros)
+                .expect("Fix: conditional_eval truth tables must fit fixed storage; reject oversized macro expansions - truth table should fit"),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn generated_module_truth_uses_preindexed_suffix_aliases_for_8192_macros() {
+        let macros: Vec<MacroDef> = (0..8192)
+            .map(|index| {
+                let name = format!("CONFIG_GENERATED_{index}_MODULE");
+                let body = if index % 7 == 0 { b"0" } else { b"1" };
+                object_macro(name.as_bytes(), body)
+            })
+            .collect();
+        let table = MacroTruthTable::try_new(&macros)
+            .expect("Fix: generated module truth table should reserve.");
+
+        for index in 0..8192 {
+            let name = format!("CONFIG_GENERATED_{index}");
+            assert_eq!(table.module_truth(name.as_bytes()), index % 7 != 0);
+        }
+        assert!(
+            !table.module_truth(b"CONFIG_GENERATED_MISSING"),
+            "Fix: missing module aliases must fail closed."
         );
     }
 }

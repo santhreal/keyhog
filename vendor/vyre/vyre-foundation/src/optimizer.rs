@@ -14,12 +14,14 @@ use std::sync::{Arc, LazyLock};
 /// did not declare `RefusalReason::CostIncrease`.
 pub mod cost;
 pub mod ctx;
+/// Derived pass-order artifact for optimizer release validation.
+pub mod derived_order;
 /// Differential compilation via wire-content-hash Merkle. Per-Node + per-Region
 /// content hashes derived from the canonical wire encoding let backends maintain
 /// `<subtree_hash, CompiledArtifact>` caches that survive deep IR rewrites where
 /// most subtrees are unchanged.
 pub mod diff_compile;
-/// Effect lattice — composition-aware refusal for fusion + dispatch.
+/// Effect lattice  -  composition-aware refusal for fusion + dispatch.
 /// Lifts `SideEffectClass` declarations into the lattice
 /// `Pure ⊑ ReadAtomic ⊑ ReadWriteAtomic(Ordering) ⊑ Synchronized(Scope) ⊑ Diverging`
 /// and exposes `compose(producer, consumer)` returning either the combined effect
@@ -49,12 +51,12 @@ pub mod eqsat;
 /// parallel and feed discovered equivalences back through
 /// `apply_equivalences` to the CPU EGraph.
 pub mod eqsat_gpu;
-/// Tier-B TOML rule database — load equivalence rules from
+/// Tier-B TOML rule database  -  load equivalence rules from
 /// community-contributable `*.toml` files (ROADMAP A6).
 pub mod eqsat_toml;
 /// Hash-consed Expr arena. Side-table substrate that
 /// collapses structurally-equal `Expr` subtrees into shared 32-bit
-/// `ExprId`s. Additive — does not change the IR shape; passes opt in
+/// `ExprId`s. Additive  -  does not change the IR shape; passes opt in
 /// via `ExprArena::intern` and operate on `ExprId`s.
 pub mod expr_arena;
 /// Program-level analysis built on the [`expr_arena`] substrate.
@@ -88,7 +90,9 @@ pub mod pass_order;
 /// Benchmark/hot-path-driven pass selection.
 pub mod pass_selection;
 pub mod passes;
-/// Pre-lowering optimization pipeline — stable composed `optimize(program)`
+/// Backend-neutral planar rewrite batching used by optimizer passes.
+pub mod planar_batch;
+/// Pre-lowering optimization pipeline  -  stable composed `optimize(program)`
 /// entry every backend calls before lowering. Replaces the old
 /// `transform::optimize` facade after audit cleanup T7 (2026-05-01).
 pub mod pre_lowering;
@@ -101,7 +105,7 @@ pub mod program_soa;
 mod rewrite;
 /// SMT-LIB proof obligations for proof-carrying rewrites.
 pub mod rewrite_proof;
-/// N3 — registry of shipped rewrite proof obligations consumed by the
+/// N3  -  registry of shipped rewrite proof obligations consumed by the
 /// `vyre xtask verify-rewrite-proofs` runner and the
 /// `vyre-rewrite-proofs` GitHub Actions workflow.
 pub mod rewrite_proof_registry;
@@ -110,6 +114,10 @@ mod scheduler;
 mod tests;
 
 pub use ctx::{scheduling_error_to_diagnostic, AdapterCaps, AnalysisCache, PassCtx};
+pub use derived_order::{
+    derive_pass_order, derive_registered_pass_order, DerivedPassEdge, DerivedPassEdgeKind,
+    DerivedPassNode, DerivedPassOrder,
+};
 pub use fusion_cert::FusionCertificate;
 pub use pass_explain::{
     explain_optimizer_report, explain_optimizer_report_with_catalog, CatalogLookupStatus,
@@ -122,10 +130,14 @@ pub use pass_selection::{
     registered_passes_for_profile_and_program, select_pass_metadata_for_program,
     PassSelectionDecision, PassSelectionReason,
 };
+pub use planar_batch::{
+    default_planar_rewrite_batch_threshold, planar_rewrite_schedule_mask, RewriteBatch,
+    RewriteBatchCandidates, RewriteBatchItem, RewriteBatchPlan, RewriteCandidate,
+};
 // ProgramPassKind is now a newtype over `Box<dyn ProgramPass>`; built-in passes are
 // auto-discovered via `inventory::iter::<ProgramPassRegistration>` (the same
 // mechanism external passes already use). The hand-maintained import
-// block was removed in audit cleanup A4 (2026-04-30) — adding a new
+// block was removed in audit cleanup A4 (2026-04-30)  -  adding a new
 // pass no longer requires editing this file.
 pub use scheduler::{
     schedule_passes, OptimizerRunReport, PassRunDecision, PassRunMetric, PassScheduler,
@@ -269,7 +281,7 @@ pub struct PassResult {
 
 /// Why a pass declined to apply a transformation it would otherwise have run.
 ///
-/// Refusal is the principled alternative to "silently emit the same program back" — it lets
+/// Refusal is the principled alternative to "silently emit the same program back"  -  it lets
 /// the scheduler tell the user *why* a transformation was skipped (cost would go up, effect
 /// lattice forbids the fusion, the wire contract would be broken). Cost-certificate-bounded
 /// fusion, effect-lattice fusion, and divergence-aware barrier insertion all produce these.
@@ -277,7 +289,7 @@ pub struct PassResult {
 #[non_exhaustive]
 pub enum RefusalReason {
     /// The pass's cost certificate predicts the rewrite would increase total cost beyond the
-    /// declared monotone-down budget. The scheduler treats this as a hard refusal — it must
+    /// declared monotone-down budget. The scheduler treats this as a hard refusal  -  it must
     /// not run the rewrite, even if `analyze` returned `RUN`.
     CostIncrease {
         /// Predicted cost delta (post − pre); positive means cost goes up.
@@ -296,7 +308,7 @@ pub enum RefusalReason {
         /// Concrete fix the user can apply (insert barrier, refuse to fuse, etc.).
         suggested_fix: &'static str,
     },
-    /// The pass would break the wire contract — `op_id` drift, Region-chain break, or any
+    /// The pass would break the wire contract  -  `op_id` drift, Region-chain break, or any
     /// invariant the scheduler enforces by construction. The scheduler converts this into a
     /// hard error (the pass is buggy), not a soft refusal.
     WireContractViolation {
@@ -391,7 +403,7 @@ pub trait ProgramPass: private::Sealed + Send + Sync {
     /// Static metadata for scheduling and diagnostics.
     fn metadata(&self) -> PassMetadata;
 
-    /// Analyses this pass leaves valid after running. Default empty — passes that prove
+    /// Analyses this pass leaves valid after running. Default empty  -  passes that prove
     /// they preserve a named analysis (dominators, def-use chains, points-to, region-chain
     /// integrity, etc.) override this so the scheduler can skip recomputation on the next
     /// pass that requires the same analysis. The scheduler treats any analysis NOT in this
@@ -415,11 +427,59 @@ pub trait ProgramPass: private::Sealed + Send + Sync {
     /// Transform a program.
     fn transform(&self, program: Program) -> PassResult;
 
+    /// Whether this pass implements candidate-granular planar batching.
+    ///
+    /// The default is false so legacy passes keep exact behavior. Passes that
+    /// override [`ProgramPass::rewrite_candidates`] and
+    /// [`ProgramPass::apply_rewrite_batch`] return true; the scheduler then
+    /// calls [`ProgramPass::batch_apply`] instead of forcing one rewrite per
+    /// pass invocation.
+    fn supports_planar_batching(&self) -> bool {
+        false
+    }
+
+    /// Candidate rewrites available for planar batching.
+    fn rewrite_candidates(&self, _program: &Program) -> RewriteBatchCandidates {
+        RewriteBatchCandidates::empty()
+    }
+
+    /// Apply one selected disjoint rewrite wave.
+    fn apply_rewrite_batch(&self, program: Program, _batch: &RewriteBatch) -> PassResult {
+        self.transform(program)
+    }
+
+    /// Batch-aware transform entry point used by the scheduler.
+    fn batch_apply(&self, program: Program) -> PassResult {
+        if !self.supports_planar_batching() {
+            return self.transform(program);
+        }
+        let candidates = self.rewrite_candidates(&program);
+        if candidates.is_empty() {
+            return PassResult::unchanged(program);
+        }
+        if !candidates.should_batch() {
+            return self.transform(program);
+        }
+        let plan = candidates.plan();
+        if !plan.has_batches() {
+            return PassResult::unchanged(program);
+        }
+
+        let mut changed = false;
+        let mut program = program;
+        for batch in plan.batches() {
+            let result = self.apply_rewrite_batch(program, batch);
+            changed |= result.changed;
+            program = result.program;
+        }
+        PassResult { program, changed }
+    }
+
     /// Refusal-aware transform. Default delegates to [`ProgramPass::transform`] and wraps the result
     /// in `Ok`. Passes that want to refuse a rewrite (cost certificate predicts cost up,
     /// effect lattice forbids the fusion, etc.) override this and return
     /// [`Err(RefusalReason)`]. The scheduler treats refusals as a no-op rewrite plus a
-    /// telemetry record naming the reason — never silently miscompiles.
+    /// telemetry record naming the reason  -  never silently miscompiles.
     ///
     /// # Errors
     ///
@@ -429,18 +489,43 @@ pub trait ProgramPass: private::Sealed + Send + Sync {
         Ok(self.transform(program))
     }
 
+    /// Refusal-aware batch transform. Passes with typed refusal contracts
+    /// override this when their batched application can be rejected before
+    /// touching the IR.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RefusalReason`] when a batched rewrite would violate cost,
+    /// effect, or wire-contract constraints.
+    fn try_batch_apply(&self, program: Program) -> Result<PassResult, RefusalReason> {
+        self.try_transform(program)
+    }
+
+    /// Effects this pass is explicitly allowed to introduce.
+    ///
+    /// The scheduler's effects-handler gate treats every pass as a handler
+    /// from `pre_effect_row -> post_effect_row`: effects may be discharged
+    /// (removed) by optimization, but newly introduced effects are rejected
+    /// unless the pass declares them here. Defaulting to empty keeps existing
+    /// passes conservative and prevents backend release paths from silently
+    /// adding writes, atomics, barriers, traps, async loads, or nested GPU
+    /// dispatch.
+    fn allowed_effect_additions(&self) -> crate::lower::effects::ProgramEffects {
+        crate::lower::effects::ProgramEffects::empty()
+    }
+
     /// Fingerprint the pass-visible program state.
     fn fingerprint(&self, program: &Program) -> u64;
 }
 
-/// Optimizer pass container — a thin newtype over a trait object.
+/// Optimizer pass container  -  a thin newtype over a trait object.
 ///
 /// Audit cleanup A4 (2026-04-30) collapsed the previous 19-typed-variant
 /// enum into this newtype: every built-in pass now goes through
 /// `inventory::submit!`-based autodiscovery (the same path external
 /// passes always used), so adding a new pass no longer requires
 /// touching `optimizer.rs`. The cost is one indirect call per pass
-/// invocation — negligible against the actual rewrite work.
+/// invocation  -  negligible against the actual rewrite work.
 pub struct ProgramPassKind(Box<dyn ProgramPass>);
 
 impl ProgramPassKind {
@@ -452,7 +537,7 @@ impl ProgramPassKind {
         Self(Box::new(pass))
     }
 
-    /// Wrap a pre-boxed pass — used by the inventory iterator.
+    /// Wrap a pre-boxed pass  -  used by the inventory iterator.
     #[must_use]
     #[inline]
     pub fn from_boxed(pass: Box<dyn ProgramPass>) -> Self {
@@ -487,6 +572,13 @@ impl ProgramPassKind {
         self.0.transform(program)
     }
 
+    /// Batch-aware transform.
+    #[must_use]
+    #[inline]
+    pub fn batch_apply(&self, program: Program) -> PassResult {
+        self.0.batch_apply(program)
+    }
+
     /// Refusal-aware transform.
     ///
     /// # Errors
@@ -496,11 +588,27 @@ impl ProgramPassKind {
         self.0.try_transform(program)
     }
 
+    /// Refusal-aware batch transform.
+    ///
+    /// # Errors
+    /// Returns the [`RefusalReason`] reported by the underlying pass.
+    #[inline]
+    pub fn try_batch_apply(&self, program: Program) -> Result<PassResult, RefusalReason> {
+        self.0.try_batch_apply(program)
+    }
+
     /// Analyses preserved by this pass after running. See [`ProgramPass::preserves`].
     #[must_use]
     #[inline]
     pub fn preserves(&self) -> &'static [&'static str] {
         self.0.preserves()
+    }
+
+    /// Effects the wrapped pass may introduce under the effects-handler gate.
+    #[must_use]
+    #[inline]
+    pub fn allowed_effect_additions(&self) -> crate::lower::effects::ProgramEffects {
+        self.0.allowed_effect_additions()
     }
 }
 
@@ -594,7 +702,7 @@ pub enum OptimizerError {
 /// Return pass instances from the global registry.
 ///
 /// Built-in and external passes alike are discovered via the
-/// `inventory::iter::<ProgramPassRegistration>` mechanism — adding a new pass
+/// `inventory::iter::<ProgramPassRegistration>` mechanism  -  adding a new pass
 /// requires no edit to this function. Order is determined by the
 /// scheduler's dependency graph (`schedule_passes`).
 ///
@@ -705,7 +813,7 @@ pub fn optimize_with_hot_path_hints(
 ) -> Result<Program, OptimizerError> {
     let passes =
         pass_selection::registered_passes_for_profile_and_program(profile, &program, hints)?;
-    PassScheduler::with_passes(passes).run(program)
+    PassScheduler::try_with_passes(passes)?.run(program)
 }
 
 /// 32-byte BLAKE3 fingerprint of a Program for content-addressed pipeline
@@ -748,220 +856,5 @@ fn requirements_satisfied(metadata: PassMetadata, available: &FxHashSet<&'static
 }
 
 #[cfg(test)]
-mod optimizer_framework_tests {
-    use super::*;
-    use crate::ir::{BufferDecl, DataType, Expr, Node, Program};
+mod framework_tests;
 
-    fn trivial_program() -> Program {
-        Program::wrapped(
-            vec![
-                BufferDecl::read("input", 0, DataType::U32).with_count(4),
-                BufferDecl::output("out", 1, DataType::U32).with_count(1),
-            ],
-            [1, 1, 1],
-            vec![Node::store(
-                "out",
-                Expr::u32(0),
-                Expr::load("input", Expr::u32(0)),
-            )],
-        )
-    }
-
-    const _: () = assert!(PassAnalysis::RUN.should_run);
-    const _: () = assert!(!PassAnalysis::SKIP.should_run);
-
-    #[test]
-    fn pass_result_unchanged_reports_no_change() {
-        let p = trivial_program();
-        let result = PassResult::unchanged(p);
-        assert!(!result.changed);
-    }
-
-    #[test]
-    fn pass_result_from_programs_identical() {
-        let p = trivial_program();
-        let result = PassResult::from_programs(&p, p.clone());
-        assert!(!result.changed);
-    }
-
-    #[test]
-    fn pass_metadata_construction() {
-        let meta = PassMetadata::new("test_pass", &["dead_buffer_elim"], &["fusion"]);
-        assert_eq!(meta.name, "test_pass");
-        assert_eq!(meta.requires.len(), 1);
-        assert_eq!(meta.invalidates.len(), 1);
-    }
-
-    #[test]
-    fn optimizer_error_max_iterations_display() {
-        let err = OptimizerError::MaxIterations {
-            max_iterations: 100,
-            last_pass: "const_fold",
-        };
-        let msg = err.to_string();
-        assert!(msg.contains("100"));
-        assert!(msg.contains("const_fold"));
-    }
-
-    #[test]
-    fn optimizer_error_unsatisfied_requirement_display() {
-        let err = OptimizerError::UnsatisfiedRequirement {
-            pass: "fusion",
-            missing: "dead_buffer_elim",
-        };
-        let msg = err.to_string();
-        assert!(msg.contains("fusion"));
-        assert!(msg.contains("dead_buffer_elim"));
-    }
-
-    #[test]
-    fn fingerprint_is_deterministic() {
-        let p = trivial_program();
-        let a = fingerprint_program(&p);
-        let b = fingerprint_program(&p);
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn fingerprint_different_programs_differ() {
-        let p1 = trivial_program();
-        let p2 = Program::wrapped(
-            vec![
-                BufferDecl::read("input", 0, DataType::U32).with_count(4),
-                BufferDecl::output("out", 1, DataType::U32).with_count(1),
-            ],
-            [1, 1, 1],
-            vec![Node::store("out", Expr::u32(0), Expr::u32(42))],
-        );
-        assert_ne!(fingerprint_program(&p1), fingerprint_program(&p2));
-    }
-
-    #[test]
-    fn requirements_satisfied_empty_requires() {
-        let meta = PassMetadata::new("trivial", &[], &[]);
-        let available = FxHashSet::default();
-        assert!(requirements_satisfied(meta, &available));
-    }
-
-    #[test]
-    fn requirements_satisfied_missing_dep() {
-        let meta = PassMetadata::new("needs_stuff", &["missing"], &[]);
-        let available = FxHashSet::default();
-        assert!(!requirements_satisfied(meta, &available));
-    }
-
-    // The `is_builtin_pass` predicate was removed in audit cleanup A4
-    // (2026-04-30) along with the hand-maintained built-in pass list —
-    // built-ins now flow through the same `inventory::iter` path as
-    // external passes, so de-duping is no longer needed. The two tests
-    // that asserted the predicate's coverage were removed with it.
-
-    #[test]
-    fn refusal_reason_kind_tags_are_stable() {
-        let cost = RefusalReason::CostIncrease {
-            delta: 17,
-            detail: "fusion would add 12 atomic ops",
-        };
-        assert_eq!(cost.kind(), "cost_increase");
-
-        let effect = RefusalReason::EffectLatticeViolation {
-            producer: "vyre-libs::dataflow::reaching",
-            consumer: "vyre-primitives::reduce::scan",
-            suggested_fix: "insert MemoryOrdering::GridSync between arms",
-        };
-        assert_eq!(effect.kind(), "effect_lattice_violation");
-
-        let wire = RefusalReason::WireContractViolation {
-            detail: "op_id drift detected: vyre-primitives::math::add became vyre::add",
-        };
-        assert_eq!(wire.kind(), "wire_contract_violation");
-
-        let other = RefusalReason::Other {
-            detail: "user-provided refusal",
-        };
-        assert_eq!(other.kind(), "other");
-    }
-
-    #[test]
-    fn refusal_reason_display_includes_payload() {
-        let cost = RefusalReason::CostIncrease {
-            delta: 42,
-            detail: "extra atomics",
-        };
-        let msg = cost.to_string();
-        assert!(msg.contains("cost_increase"));
-        assert!(msg.contains("42"));
-        assert!(msg.contains("extra atomics"));
-
-        let effect = RefusalReason::EffectLatticeViolation {
-            producer: "p",
-            consumer: "c",
-            suggested_fix: "barrier",
-        };
-        let msg = effect.to_string();
-        assert!(msg.contains("p"));
-        assert!(msg.contains("c"));
-        assert!(msg.contains("barrier"));
-    }
-
-    #[test]
-    fn try_transform_default_delegates_to_transform_for_every_builtin() {
-        let p = trivial_program();
-        let passes = registered_passes().expect(
-            "Fix: registered_passes should succeed; restore this invariant before continuing.",
-        );
-        for pass in passes {
-            // Every built-in pass uses the default `try_transform` impl which wraps
-            // `transform` in `Ok`. None of them refuse today; the wiring is in place
-            // so additional passes (effect-lattice fusion, cost-bounded fusion) can return
-            // a typed RefusalReason without breaking the scheduler.
-            let result = pass.try_transform(p.clone());
-            assert!(
-                result.is_ok(),
-                "built-in pass `{}` unexpectedly returned a refusal",
-                pass.metadata().name
-            );
-        }
-    }
-
-    #[test]
-    fn preserves_default_is_empty_for_every_builtin() {
-        let passes = registered_passes().expect(
-            "Fix: registered_passes should succeed; restore this invariant before continuing.",
-        );
-        for pass in passes {
-            // Built-ins don't yet declare any preserved analyses. When passes opt into
-            // preserve-set declarations the scheduler can skip recomputing those analyses.
-            assert!(
-                pass.preserves().is_empty(),
-                "built-in pass `{}` declared a preserves[] entry but the scheduler doesn't \
-                 yet honor it; either wire the scheduler or remove the declaration",
-                pass.metadata().name
-            );
-        }
-    }
-
-    #[test]
-    fn registered_passes_includes_builtins() {
-        let passes = registered_passes().expect(
-            "Fix: registered_passes should succeed; restore this invariant before continuing.",
-        );
-        assert!(passes.len() >= 19, "at least 19 builtin passes");
-        // Verify all builtin passes are present
-        let names: Vec<_> = passes.iter().map(|p| p.metadata().name).collect();
-        assert!(names.contains(&"autotune"));
-        assert!(names.contains(&"buffer_decl_sort"));
-        assert!(names.contains(&"canonicalize"));
-        assert!(names.contains(&"const_fold"));
-        assert!(names.contains(&"loop_redundant_bound_check_elide"));
-        assert!(names.contains(&"loop_trip_zero_eliminate"));
-        assert!(names.contains(&"if_constant_branch_eliminate"));
-        assert!(names.contains(&"empty_block_collapse"));
-        assert!(names.contains(&"noop_assign_eliminate"));
-        assert!(names.contains(&"region_promote_singleton_block"));
-        assert!(names.contains(&"decode_scan_fuse"));
-        assert!(names.contains(&"loop_unroll"));
-        assert!(names.contains(&"vectorization"));
-        assert!(names.contains(&"dead_buffer_elim"));
-    }
-}

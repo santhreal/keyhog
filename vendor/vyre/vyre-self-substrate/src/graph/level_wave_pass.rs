@@ -1,6 +1,6 @@
 //! Interprocedural callee-before-caller pass dispatch via #74 level_wave (#74 self-consumer).
 //!
-//! Closes the recursion thesis for #74 — `level_wave_program` ships to
+//! Closes the recursion thesis for #74  -  `level_wave_program` ships to
 //! user dialects (whole-schema migrations, BFS layering, breadth-first
 //! graph rewrites) AND drives vyre's interprocedural pass dispatch
 //! when callees must finish before callers start.
@@ -22,7 +22,7 @@
 //! 2. Caller hands `step_body` (the per-function rewrite/analysis body)
 //!    plus the depth array to `build_callee_before_caller_program`.
 //! 3. Returned Program runs the body for every function at depth `d`,
-//!    barriers, then advances to depth `d+1` — all in one dispatch.
+//!    barriers, then advances to depth `d+1`  -  all in one dispatch.
 //! ```
 //!
 //! P-DRIVER-10: every interprocedural callee-before-caller pass should
@@ -64,7 +64,7 @@ mod tests {
     fn builds_nonempty_program() {
         let body = vec![Node::barrier()];
         let program = build_callee_before_caller_program(body, "depths", 4, 16);
-        assert!(!program.entry().is_empty());
+        assert_ne!(program.entry().len(), 0);
     }
 
     #[test]

@@ -134,10 +134,20 @@ pub fn output_binding_layout(output: &BufferDecl) -> Result<OutputBindingLayout,
             "program output element count exceeds usize. Fix: split the dispatch into smaller output buffers.",
         )
     })?;
-    let element_size = element_size_bytes(&output.element)?;
-    let full_size = count.checked_mul(element_size).ok_or_else(|| {
+    output.element.validate_layout().map_err(|error| {
+        BackendError::new(format!(
+            "program output `{}` has malformed data-type layout metadata: {error}",
+            output.name()
+        ))
+    })?;
+    let full_size = output.element.packed_size_bytes(count).map_err(|error| {
+        BackendError::new(format!(
+            "program output `{}` byte size could not be computed: {error}",
+            output.name()
+        ))
+    })?.ok_or_else(|| {
         BackendError::new(
-            "program output byte size overflows usize. Fix: split the dispatch into smaller output buffers.",
+            "program output element type has no fixed packed byte size. Fix: validate the Program and flatten variable-size outputs before backend pipeline compilation.",
         )
     })?;
     let layout = output_layout(output, full_size)?;
@@ -186,16 +196,11 @@ fn reserve_output_layout_slots(
     outputs: &mut Vec<OutputBindingLayout>,
     capacity: usize,
 ) -> Result<(), BackendError> {
-    if outputs.capacity() >= capacity {
-        return Ok(());
-    }
-    outputs
-        .try_reserve_exact(capacity - outputs.capacity())
-        .map_err(|error| {
-            BackendError::new(format!(
-                "output binding layout planning could not reserve {capacity} output slot(s): {error}. Fix: split the Program output set or reuse caller-owned output layout scratch."
-            ))
-        })
+    crate::allocation::try_reserve_vec_to_capacity(outputs, capacity).map_err(|error| {
+        BackendError::new(format!(
+            "output binding layout planning could not reserve {capacity} output slot(s): {error}. Fix: split the Program output set or reuse caller-owned output layout scratch."
+        ))
+    })
 }
 
 fn reserved_output_layout_slots(capacity: usize) -> Result<Vec<OutputBindingLayout>, BackendError> {
@@ -215,6 +220,7 @@ fn align_up_to_u32_word(value: usize) -> Result<usize, BackendError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vyre_foundation::ir::{BufferDecl, DataType};
 
     #[test]
     fn output_layout_planning_uses_fallible_modular_reservation_and_alignment() {
@@ -222,12 +228,12 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("output-layout source must contain production section before tests");
+            .expect("Fix: output-layout source must contain production section before tests");
 
         assert!(
             production.contains("fn reserve_output_layout_slots")
                 && production.contains("fn align_up_to_u32_word")
-                && production.contains("try_reserve_exact"),
+                && production.contains("try_reserve_vec_to_capacity"),
             "Fix: output layout planning must keep reservation and alignment as modular fallible helpers."
         );
         assert!(
@@ -246,6 +252,40 @@ mod tests {
         assert!(
             error.to_string().contains("Fix:"),
             "alignment overflow must be actionable: {error}"
+        );
+    }
+
+    #[test]
+    fn output_layout_uses_packed_size_for_subbyte_elements() {
+        let output = BufferDecl::output("packed_i4", 0, DataType::I4).with_count(3);
+        let layout = output_binding_layout(&output)
+            .expect("Fix: packed I4 output layout should use packed byte sizing");
+
+        assert_eq!(layout.layout.full_size, 2);
+        assert_eq!(layout.layout.read_size, 2);
+        assert_eq!(layout.word_count, 1);
+    }
+
+    #[test]
+    fn output_layout_rejects_malformed_data_type_layouts() {
+        let output = BufferDecl::output(
+            "bad_bsr",
+            0,
+            DataType::SparseBsr {
+                element: Box::new(DataType::F32),
+                block_rows: 0,
+                block_cols: 4,
+            },
+        )
+        .with_count(1);
+
+        let error = output_binding_layout(&output)
+            .expect_err("zero-height BSR blocks must not enter output planning");
+        assert!(
+            error
+                .to_string()
+                .contains("SparseBsr block_rows must be > 0"),
+            "Fix: malformed output data-type layout diagnostics must remain actionable: {error}"
         );
     }
 }

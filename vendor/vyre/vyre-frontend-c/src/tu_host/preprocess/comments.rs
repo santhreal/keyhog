@@ -1,4 +1,3 @@
-use super::*;
 pub(in crate::tu_host) fn strip_directive_comments(line: &str) -> String {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());

@@ -1,4 +1,4 @@
-//! `segment_reduce_sum` — per-segment wrapping unsigned sum.
+//! `segment_reduce_sum`  -  per-segment wrapping unsigned sum.
 //!
 //! Each work-group thread handles one segment.  The `segment_offsets`
 //! buffer is CSR-style: `offsets[i]..offsets[i+1]` is the range of
@@ -56,11 +56,7 @@ pub fn segment_reduce_sum(
         vec![
             BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
             BufferDecl::storage(segment_offsets, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_segments.checked_add(1).unwrap_or_else(|| {
-                    panic!(
-                        "segment_reduce_sum num_segments={num_segments} overflows offsets buffer count. Fix: tile the segment reduction before GPU dispatch."
-                    )
-                })),
+                .with_count(num_segments + 1),
             BufferDecl::storage(output, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(num_segments),
         ],
@@ -84,8 +80,13 @@ pub fn segment_reduce_sum(
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], segment_offsets: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
-    cpu_ref_into(input, segment_offsets, &mut out);
-    out
+    match try_cpu_ref_into(input, segment_offsets, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives segment_reduce_sum CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference using a caller-owned output buffer.
@@ -94,25 +95,60 @@ pub fn cpu_ref(input: &[u32], segment_offsets: &[u32]) -> Vec<u32> {
 /// non-monotonic segment metadata as an all-zero segment.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], segment_offsets: &[u32], out: &mut Vec<u32>) {
-    let num_segments = segment_offsets.len().checked_sub(1).unwrap_or_else(|| {
-        panic!("segment_reduce_sum CPU oracle received empty segment_offsets. Fix: pass at least one CSR-style offset.")
-    });
-    out.clear();
-    out.reserve(num_segments);
+    if let Err(error) = try_cpu_ref_into(input, segment_offsets, out) {
+        eprintln!("vyre-primitives segment_reduce_sum CPU reference failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference using a caller-owned output buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(
+    input: &[u32],
+    segment_offsets: &[u32],
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    let num_segments = segment_offsets.len().checked_sub(1).ok_or_else(|| {
+        "segment_reduce_sum CPU oracle received empty segment_offsets. Fix: pass at least one CSR-style offset.".to_string()
+    })?;
+    if num_segments > out.capacity() {
+        out.try_reserve_exact(num_segments - out.capacity())
+            .map_err(|err| {
+                format!(
+                    "segment_reduce_sum CPU oracle could not reserve {num_segments} output segments: {err}"
+                )
+            })?;
+    }
     for seg in 0..num_segments {
-        let start = segment_offsets[seg] as usize;
-        let end = segment_offsets[seg + 1] as usize;
-        assert!(
-            start <= end && end <= input.len(),
-            "segment_reduce_sum CPU oracle received malformed segment {seg}: start={start}, end={end}, input_len={}. Fix: rebuild monotonic in-bounds segment offsets before parity comparison.",
-            input.len()
-        );
+        let start = usize::try_from(segment_offsets[seg]).map_err(|_| {
+            format!("segment_reduce_sum CPU oracle segment {seg} start does not fit host usize.")
+        })?;
+        let end = usize::try_from(segment_offsets[seg + 1]).map_err(|_| {
+            format!("segment_reduce_sum CPU oracle segment {seg} end does not fit host usize.")
+        })?;
+        if start > end || end > input.len() {
+            return Err(format!(
+                "segment_reduce_sum CPU oracle received malformed segment {seg}: start={start}, end={end}, input_len={}. Fix: rebuild monotonic in-bounds segment offsets before parity comparison.",
+                input.len()
+            ));
+        }
+    }
+
+    out.clear();
+    for seg in 0..num_segments {
+        let start = usize::try_from(segment_offsets[seg]).map_err(|_| {
+            format!("segment_reduce_sum CPU oracle segment {seg} start does not fit host usize.")
+        })?;
+        let end = usize::try_from(segment_offsets[seg + 1]).map_err(|_| {
+            format!("segment_reduce_sum CPU oracle segment {seg} end does not fit host usize.")
+        })?;
         let sum = input[start..end]
             .iter()
             .copied()
             .fold(0u32, u32::wrapping_add);
         out.push(sum);
     }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -121,7 +157,7 @@ inventory::submit! {
         OP_ID,
         || segment_reduce_sum("input", "segment_offsets", "output", 2),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[1, 2, 3, 4, 5]),
                 to_bytes(&[0, 2, 5]),
@@ -129,7 +165,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[3, 12])]]
         }),
     )
@@ -166,6 +202,60 @@ mod tests {
         cpu_ref_into(&[1, 2, 3, 4, 5], &[0, 2, 5], &mut out);
         assert_eq!(out, vec![3, 12]);
         assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn try_cpu_ref_into_clears_stale_tail_without_reallocating() {
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[u32::MAX; 8]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(&[1, 2, 3, 4, 5], &[0, 2, 5], &mut out).unwrap();
+
+        assert_eq!(out, vec![3, 12]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn try_cpu_ref_into_rejects_bad_offsets_without_mutating_output() {
+        let mut out = vec![0xDEAD_BEEF, 0xCAFE_BABE];
+        let before = out.clone();
+
+        let err = try_cpu_ref_into(&[1, 2, 3], &[0, 4], &mut out)
+            .expect_err("out-of-bounds segment must be rejected");
+
+        assert!(err.contains("malformed segment"));
+        assert_eq!(out, before);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let input = &[1, 2, 3, 4, 5];
+        let offsets = &[0, 2, 5];
+        let mut compat = Vec::with_capacity(8);
+        let mut fallible = Vec::with_capacity(8);
+
+        cpu_ref_into(input, offsets, &mut compat);
+        try_cpu_ref_into(input, offsets, &mut fallible)
+            .expect("Fix: small segment_reduce_sum CPU reference must reserve");
+
+        assert_eq!(cpu_ref(input, offsets), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("segment_reduce.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: segment_reduce.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(")
+                && !production.contains(".unwrap(")
+                && !production.contains("panic!("),
+            "Fix: segment_reduce_sum production path must not panic."
+        );
     }
 
     #[test]

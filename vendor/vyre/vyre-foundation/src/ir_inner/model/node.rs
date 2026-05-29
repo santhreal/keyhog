@@ -1,4 +1,4 @@
-// Statement nodes — execute effects.
+// Statement nodes  -  execute effects.
 //
 // Statements modify state: bind variables, write to buffers, branch, loop.
 // A program's entry point is a sequence of statements.
@@ -49,7 +49,7 @@ pub trait NodeExtension: fmt::Debug + Send + Sync + 'static {
     ///
     /// Extension authors are recommended (but not required, for API
     /// compatibility) to use [`crate::opaque_payload::LeBytesWriter`] when
-    /// building payloads — it makes the right endianness the only choice at
+    /// building payloads  -  it makes the right endianness the only choice at
     /// the type level.
     fn wire_payload(&self) -> Vec<u8> {
         Vec::new()
@@ -62,7 +62,7 @@ mod impl_node;
 ///
 /// Wire-format encode/decode keys on these names to route an encoded node
 /// back to its variant. Adding a new `Node` variant REQUIRES extending this
-/// function with a matching arm — the wire decoder depends on round-tripping
+/// function with a matching arm  -  the wire decoder depends on round-tripping
 /// the exact name this function returns.
 #[must_use]
 pub fn node_op_id(node: &Node) -> &'static str {
@@ -82,6 +82,10 @@ pub fn node_op_id(node: &Node) -> &'static str {
         Node::AsyncWait { .. } => "vyre.node.async_wait",
         Node::Trap { .. } => "vyre.node.trap",
         Node::Resume { .. } => "vyre.node.resume",
+        Node::AllReduce { .. } => "vyre.node.all_reduce",
+        Node::AllGather { .. } => "vyre.node.all_gather",
+        Node::ReduceScatter { .. } => "vyre.node.reduce_scatter",
+        Node::Broadcast { .. } => "vyre.node.broadcast",
         Node::Opaque(extension) => extension.extension_kind(),
     }
 }

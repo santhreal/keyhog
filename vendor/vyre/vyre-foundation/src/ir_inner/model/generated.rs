@@ -2,11 +2,11 @@
 
 use crate::ir_inner::model::expr::{ExprNode, GeneratorRef, Ident};
 use crate::ir_inner::model::node::NodeExtension;
-use crate::ir_inner::model::types::{AtomicOp, BinOp, DataType, UnOp};
+use crate::ir_inner::model::types::{AtomicOp, BinOp, CollectiveOp, CommGroup, DataType, UnOp};
 use std::sync::Arc;
 
 vyre_macros::vyre_ast_registry! {
-    /// Statement nodes — execute effects.
+    /// Statement nodes  -  execute effects.
     Node {
         Let { name: Ident, value: Expr },
         Assign { name: Ident, value: Expr },
@@ -19,6 +19,10 @@ vyre_macros::vyre_ast_registry! {
         AsyncWait { tag: Ident },
         Trap { address: Box<Expr>, tag: Ident },
         Resume { tag: Ident },
+        AllReduce { buffer: Ident, op: CollectiveOp, group: CommGroup },
+        AllGather { input: Ident, output: Ident, group: CommGroup },
+        ReduceScatter { input: Ident, output: Ident, op: CollectiveOp, group: CommGroup },
+        Broadcast { buffer: Ident, root: u32, group: CommGroup },
         Return,
         Barrier { ordering: crate::memory_model::MemoryOrdering },
         Block(Vec<Node>),
@@ -26,7 +30,7 @@ vyre_macros::vyre_ast_registry! {
         Opaque(Arc<dyn NodeExtension>),
     }
 
-    /// Expression nodes — produce values.
+    /// Expression nodes  -  produce values.
     Expr {
         LitU32(u32),
         LitI32(i32),

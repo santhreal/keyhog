@@ -18,11 +18,11 @@ use crate::region::wrap_anonymous;
 /// Build a Program that computes a single-token MoE layer forward pass.
 ///
 /// Shapes:
-///   `x: [in_dim]` — input token
-///   `w_router: [in_dim, num_experts]` — router weights
-///   `b_router: [num_experts]` — router bias
-///   `expert_outputs: [k, out_dim]` — pre-computed expert outputs (from VyreOffload)
-///   `out: [out_dim]` — final weighted sum output
+///   `x: [in_dim]`  -  input token
+///   `w_router: [in_dim, num_experts]`  -  router weights
+///   `b_router: [num_experts]`  -  router bias
+///   `expert_outputs: [k, out_dim]`  -  pre-computed expert outputs (from VyreOffload)
+///   `out: [out_dim]`  -  final weighted sum output
 ///
 /// The `expert_outputs` buffer is expected to be populated by the runtime
 /// after loading the k selected experts. This kernel only does the
@@ -123,22 +123,10 @@ pub fn moe_layer_route_and_accumulate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
+    use crate::test_support::byte_pack::u32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn u32_bytes(values: &[u32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn moe_layer_accumulate_simple() {
@@ -194,29 +182,28 @@ mod tests {
 
     #[test]
     fn moe_layer_zero_dim_errors() {
-        assert!(moe_layer_route_and_accumulate(
-            "x", "wr", "br", "ei", "ew", "eo", "out", 0, 4, 2, 2,
-        )
-        .is_err());
-        assert!(moe_layer_route_and_accumulate(
-            "x", "wr", "br", "ei", "ew", "eo", "out", 2, 0, 2, 2,
-        )
-        .is_err());
-        assert!(moe_layer_route_and_accumulate(
-            "x", "wr", "br", "ei", "ew", "eo", "out", 2, 4, 0, 2,
-        )
-        .is_err());
-        assert!(moe_layer_route_and_accumulate(
-            "x", "wr", "br", "ei", "ew", "eo", "out", 2, 4, 2, 0,
-        )
-        .is_err());
+        for (batch, hidden, k, experts) in [(0, 4, 2, 2), (2, 0, 2, 2), (2, 4, 0, 2), (2, 4, 2, 0)]
+        {
+            let err = moe_layer_route_and_accumulate(
+                "x", "wr", "br", "ei", "ew", "eo", "out", batch, hidden, k, experts,
+            )
+            .expect_err("zero dim must error");
+            assert!(
+                err.contains("moe_layer") && err.contains("> 0"),
+                "moe_layer zero-dim ({batch},{hidden},{k},{experts}): {err}"
+            );
+        }
     }
 
     #[test]
     fn moe_layer_k_greater_than_num_experts_errors() {
-        assert!(moe_layer_route_and_accumulate(
+        let err = moe_layer_route_and_accumulate(
             "x", "wr", "br", "ei", "ew", "eo", "out", 2, 4, 2, 5,
         )
-        .is_err());
+        .expect_err("k > num_experts");
+        assert!(
+            err.contains("k cannot exceed num_experts"),
+            "moe_layer k/experts error: {err}"
+        );
     }
 }

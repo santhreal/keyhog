@@ -1,4 +1,4 @@
-//! [`LayeredPipelineCache`] — composite store that reads from every
+//! [`LayeredPipelineCache`]  -  composite store that reads from every
 //! backend in order and writes only to the first.
 
 use std::io;
@@ -18,7 +18,7 @@ pub struct LayeredPipelineCache {
 impl LayeredPipelineCache {
     /// Construct from an ordered list (fastest-first). Lookups
     /// consult every layer in order; writes land in the first layer
-    /// only — downstream layers are expected to be populated
+    /// only  -  downstream layers are expected to be populated
     /// independently (e.g., from a pre-compiled blob bundle).
     #[must_use]
     pub fn new(layers: Vec<Arc<dyn PipelineCacheStore>>) -> Self {

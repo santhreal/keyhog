@@ -43,7 +43,7 @@ mod tests {
             }],
         );
 
-        let descriptor = validate_and_analyze(&program).expect("descriptor gate must pass");
+        let descriptor = validate_and_analyze(&program).expect("Fix: descriptor gate must pass");
 
         assert_eq!(descriptor.dispatch.workgroup_size, [64, 1, 1]);
         assert_eq!(descriptor.bindings.slots.len(), 1);

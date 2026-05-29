@@ -5,10 +5,10 @@
 //! Vyre separates optimizations into two layers with clear separation of
 //! concerns:
 //!
-//! ## Layer 1 — IR-Level Passes (`vyre-foundation/src/optimizer/passes/`)
+//! ## Layer 1  -  IR-Level Passes (`vyre-foundation/src/optimizer/passes/`)
 //!
 //! Pure mathematical rewrites that transform `Expr → Expr` in the IR.
-//! Backend-agnostic — every backend benefits equally.
+//! Backend-agnostic  -  every backend benefits equally.
 //!
 //! | Pass | Example | Lives In |
 //! |------|---------|----------|
@@ -19,10 +19,10 @@
 //! | Exact division | `(x*6)/3` → `x * inv(3)` | `strength_reduce/` |
 //! | Lemire remainder | `x % 7` → `lowbits(x*M)*7>>32` | `strength_reduce/` |
 //!
-//! ## Layer 2 — Backend Lowering Strategies (this module)
+//! ## Layer 2  -  Backend Lowering Strategies (this module)
 //!
 //! Target-dependent emission decisions. These don't change WHAT the program
-//! computes — they change HOW it's emitted for a specific chip/API.
+//! computes  -  they change HOW it's emitted for a specific chip/API.
 //!
 //! | Strategy | Backend | Effect |
 //! |----------|---------|--------|
@@ -43,8 +43,8 @@
 //!
 //! > Runtime performance is sacred. No avoidable runtime overhead, ever.
 //!
-//! Layer 1 runs at compile time — zero cost.
-//! Layer 2 runs at kernel compile time (once for the megakernel) — amortized to zero.
+//! Layer 1 runs at compile time  -  zero cost.
+//! Layer 2 runs at kernel compile time (once for the megakernel)  -  amortized to zero.
 //! At GPU runtime, only the optimal native instructions execute.
 
 use vyre_foundation::ir::{BinOp, Expr};
@@ -62,7 +62,7 @@ use vyre_foundation::validate::BackendCapabilities;
 pub enum LoweredExpr {
     /// Rewritten as a Vyre IR expression (most strategies do this).
     Expr(Expr),
-    /// The strategy handled emission directly — the lowering pipeline
+    /// The strategy handled emission directly  -  the lowering pipeline
     /// should not process this expression further.
     Emitted,
 }

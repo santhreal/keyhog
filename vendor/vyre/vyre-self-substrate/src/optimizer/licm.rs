@@ -2,7 +2,7 @@
 //!
 //! Walks the IR; for each `Node::Loop { var: i, body, .. }`, scans
 //! the body for `Node::Let { name, value }` Lets whose `value` Expr
-//! is **loop-invariant** — it doesn't reference `Var(i)`. Such Lets
+//! is **loop-invariant**  -  it doesn't reference `Var(i)`. Such Lets
 //! get hoisted to a fresh sibling immediately before the Loop in
 //! the parent scope, so the body re-using `Var(name)` sees the
 //! same binding evaluated once instead of every iteration.
@@ -32,7 +32,7 @@ use vyre_foundation::ir::{BufferAccess, Expr, Ident, Node, Program};
 /// hoisted to sibling positions immediately before their enclosing
 /// Loop.
 pub fn apply_licm(program: &Program) -> Program {
-    // Names of buffers declared `ReadOnly` — Loads from these can
+    // Names of buffers declared `ReadOnly`  -  Loads from these can
     // be hoisted because no Store inside the program writes to them.
     let read_only: FxHashSet<Ident> = program
         .buffers()
@@ -123,10 +123,10 @@ fn split_invariants(
     let mut kept: Vec<Node> = Vec::new();
     let mut hoisted_names: FxHashSet<Ident> = FxHashSet::default();
     // Names bound inside this loop body that we did NOT hoist.
-    // A Let referencing one of these is not invariant — hoisting it
+    // A Let referencing one of these is not invariant  -  hoisting it
     // would put it above the loop where the dependency is undefined.
     let mut local_unhoisted: FxHashSet<Ident> = FxHashSet::default();
-    // `false` once we encounter a side-effecting Node — anything
+    // `false` once we encounter a side-effecting Node  -  anything
     // after that point cannot be reordered above the Loop without
     // changing observable behaviour.
     let mut still_safe = true;
@@ -138,7 +138,7 @@ fn split_invariants(
         match node {
             Node::Let { name, value } => {
                 if name == iter_var {
-                    // Shadowing the iter var — keep in place.
+                    // Shadowing the iter var  -  keep in place.
                     kept.push(node.clone());
                     local_unhoisted.insert(name.clone());
                     continue;
@@ -152,7 +152,7 @@ fn split_invariants(
                 }
             }
             // Side-effecting Nodes block further hoisting in this
-            // scope — they could observe state that a hoisted Let
+            // scope  -  they could observe state that a hoisted Let
             // would otherwise read after.
             Node::Store { .. }
             | Node::Assign { .. }
@@ -235,7 +235,7 @@ fn expr_is_invariant(
             read_only.contains(buffer)
                 && expr_is_invariant(index, iter_var, hoisted, local_unhoisted, read_only)
         }
-        // Unsupported variants — be conservative.
+        // Unsupported variants  -  be conservative.
         _ => false,
     }
 }

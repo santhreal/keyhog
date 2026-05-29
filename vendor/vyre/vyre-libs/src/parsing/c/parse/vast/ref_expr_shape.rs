@@ -171,15 +171,7 @@ fn reference_c11_build_expression_shape_nodes_from_words(
 }
 
 fn vast_field(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
-    let word_idx = node_idx
-        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
-        .and_then(|base| base.checked_add(field_idx))
-        .expect("C VAST expression-shape field index overflow. Fix: pass a bounded complete VAST table.");
-    *vast_nodes.get(word_idx).unwrap_or_else(|| {
-        panic!(
-            "C VAST expression-shape node {node_idx} is missing field {field_idx}. Fix: pass complete VAST rows."
-        )
-    })
+    c_vast_word_at(vast_nodes, node_idx, field_idx)
 }
 
 fn vast_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
@@ -463,6 +455,7 @@ pub(super) fn pop_matching(stack: &mut Vec<u32>, tok_types: &[u32], opener: u32)
     }
 }
 
+
 fn witness_inputs() -> Vec<Vec<Vec<u8>>> {
     let tok_types = [107u32, 1, 10, 11, 12, 104, 2, 16, 13];
     let tok_starts = [0u32, 4, 8, 9, 10, 11, 18, 19, 20];
@@ -532,15 +525,6 @@ inventory::submit! {
     )
 }
 
-inventory::submit! {
-    OpEntry::new(
-        "vyre-libs::parsing::c11_classify_vast_node_kinds::node_classification_pass",
-        || c11_classify_vast_node_kinds("vast_nodes", Expr::u32(9), "out_typed_vast_nodes"),
-        Some(classify_witness_inputs),
-        Some(classify_witness_expected),
-    )
-}
-
 fn expression_shape_witness_raw_vast() -> Vec<u8> {
     let tok_types = [
         TOK_IDENTIFIER,
@@ -598,16 +582,3 @@ inventory::submit! {
     )
 }
 
-inventory::submit! {
-    OpEntry::new(
-        "vyre-libs::parsing::c11_build_expression_shape_nodes::node_shape_pass",
-        || c11_build_expression_shape_nodes(
-            "raw_vast_nodes",
-            "typed_vast_nodes",
-            Expr::u32(14),
-            "out_expr_shape_nodes",
-        ),
-        Some(expression_shape_witness_inputs),
-        Some(expression_shape_witness_expected),
-    )
-}

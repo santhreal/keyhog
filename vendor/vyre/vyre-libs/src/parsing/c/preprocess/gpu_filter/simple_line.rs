@@ -1,37 +1,42 @@
 use super::super::scan::{inclusive_prefix_scan_u32_into, PrefixScanScratch};
-use super::host::read_output_u32;
+use super::compact::{compact_comment_filtered_bytes, CommentCompactScratch};
 use super::line_programs::{
     simple_line_comment_masks_program, simple_line_comment_starts_program,
     simple_line_newline_flags_program,
 };
-use super::program_helpers::byte_compact_program;
+use super::scratch::{write_fill_bytes, write_zero_bytes};
 use super::FilteredBytes;
 use crate::parsing::c::preprocess::gpu_pipeline::GpuDispatcher;
 
 #[derive(Default)]
 pub(super) struct SimpleLineScratch {
     zero_words: Vec<u8>,
-    scalar_zero: Vec<u8>,
     scalar_ff: Vec<u8>,
     newline_flags_out: Vec<Vec<u8>>,
     newline_scan: Vec<u8>,
     row_comment_out: Vec<Vec<u8>>,
     masks_out: Vec<Vec<u8>>,
-    offsets_bytes: Vec<u8>,
-    compact_init: Vec<u8>,
-    compact_out: Vec<Vec<u8>>,
+    compact: CommentCompactScratch,
 }
 
 impl SimpleLineScratch {
-    fn prepare(&mut self, n_bucket: u32, byte_buf_pad: usize) {
-        self.zero_words.clear();
-        self.zero_words.resize(n_bucket as usize * 4, 0);
-        self.scalar_zero.clear();
-        self.scalar_zero.resize(4, 0);
-        self.scalar_ff.clear();
-        self.scalar_ff.resize(n_bucket as usize * 4, 0xFF);
-        self.compact_init.clear();
-        self.compact_init.resize(byte_buf_pad, 0);
+    fn prepare(&mut self, n_bucket: u32, byte_buf_pad: usize) -> Result<(), String> {
+        let word_bytes = (n_bucket as usize).checked_mul(4).ok_or_else(|| {
+            "simple line comments scratch byte size overflowed usize. Fix: reduce batch size."
+                .to_string()
+        })?;
+        write_zero_bytes(
+            &mut self.zero_words,
+            word_bytes,
+            "simple line comments zero words",
+        )?;
+        write_fill_bytes(
+            &mut self.scalar_ff,
+            word_bytes,
+            0xFF,
+            "simple line comments scalar ff",
+        )?;
+        self.compact.prepare(byte_buf_pad)
     }
 }
 
@@ -45,7 +50,7 @@ pub(super) fn gpu_filter_simple_line_comments(
     scratch: &mut SimpleLineScratch,
     scan_scratch: &mut PrefixScanScratch,
 ) -> Result<FilteredBytes, String> {
-    scratch.prepare(n_bucket, byte_buf_pad);
+    scratch.prepare(n_bucket, byte_buf_pad)?;
     let newline_flags_prog = simple_line_newline_flags_program(n_bucket);
     dispatcher
         .dispatch_borrowed_into(
@@ -111,45 +116,15 @@ pub(super) fn gpu_filter_simple_line_comments(
             scratch.masks_out.len()
         ));
     }
-    inclusive_prefix_scan_u32_into(
+    compact_comment_filtered_bytes(
         dispatcher,
-        &scratch.masks_out[0],
+        "simple line comments",
+        raw,
+        splice_input,
+        scratch.masks_out[0].as_slice(),
+        scratch.masks_out[1].as_slice(),
         n_bucket,
+        &mut scratch.compact,
         scan_scratch,
-        &mut scratch.offsets_bytes,
     )
-    .map_err(|e| format!("simple line comments prefix scan: {e}"))?;
-
-    dispatcher
-        .dispatch_borrowed_into(
-            &byte_compact_program(n_bucket),
-            &[
-                splice_input,
-                scratch.masks_out[0].as_slice(),
-                scratch.masks_out[1].as_slice(),
-                scratch.offsets_bytes.as_slice(),
-                scratch.compact_init.as_slice(),
-                scratch.scalar_zero.as_slice(),
-            ],
-            &mut scratch.compact_out,
-        )
-        .map_err(|e| format!("simple line comments byte_compact: {e}"))?;
-    if scratch.compact_out.len() != 2 {
-        return Err(format!(
-            "simple line comments byte_compact: expected exactly 2 outputs, got {}. Fix: backend must return compacted/live_count and no extras.",
-            scratch.compact_out.len()
-        ));
-    }
-    let compacted_buf = scratch
-        .compact_out
-        .first()
-        .ok_or_else(|| "simple line comments byte_compact: missing compacted output".to_string())?;
-    let live_buf = scratch.compact_out.get(1).ok_or_else(|| {
-        "simple line comments byte_compact: missing live_count output".to_string()
-    })?;
-    let live = read_output_u32(&live_buf, "simple line comments byte_compact live_count")? as usize;
-    let byte_len = live.min(raw.len()).min(compacted_buf.len());
-    Ok(FilteredBytes {
-        bytes: compacted_buf[..byte_len].to_vec(),
-    })
 }

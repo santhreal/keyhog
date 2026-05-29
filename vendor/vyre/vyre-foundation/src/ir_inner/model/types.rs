@@ -20,10 +20,11 @@
 //!
 //! # Wire Contract
 //!
-//! `DataType::Bool` values occupy exactly one byte (`u8`) in every stable
-//! wire-facing payload. `0` means false and `1` means true; producers must
-//! not pack multiple booleans into bitsets under the `Bool` type. Packed-bit
-//! encodings belong in explicit integer buffers such as `Vec<u32>`.
+//! `DataType::Bool` buffer elements occupy one canonical 32-bit word in stable
+//! storage payloads. `0` means false and any non-zero word means true; producers
+//! must not pack multiple booleans into bitsets under the `Bool` type. The wire
+//! type tag is one byte, but the value payload follows the 32-bit scalar ABI.
+//! Packed-bit encodings belong in explicit integer buffers such as `Vec<u32>`.
 
 /// Re-export of frozen IR types from `vyre-spec`.
 ///
@@ -32,4 +33,6 @@
 /// conventions, and operation signatures. Because they live in the spec
 /// crate, frontends and backends can depend on them without pulling in
 /// the full compiler.
-pub use vyre_spec::{AtomicOp, BinOp, BufferAccess, Convention, DataType, OpSignature, UnOp};
+pub use vyre_spec::{
+    AtomicOp, BinOp, BufferAccess, CollectiveOp, CommGroup, Convention, DataType, OpSignature, UnOp,
+};

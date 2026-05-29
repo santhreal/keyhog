@@ -12,7 +12,7 @@
 //! its question as a positive claim.
 //!
 //! Runs in optimizer hot paths (per buffer per pass invocation). All
-//! query functions are O(predicate-tree-depth) — typically constant
+//! query functions are O(predicate-tree-depth)  -  typically constant
 //! for the leaf variants and O(1) per And-node.
 
 use crate::ir_inner::model::program::ShapePredicate;

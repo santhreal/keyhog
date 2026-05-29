@@ -8,7 +8,7 @@ interpreter. Both must produce byte-identical `expected_accepts`
 streams.
 
 The `patterns` list may include non-ASCII strings. Each pattern's
-accept id is `1-indexed by order in the list` — pattern index `i`
+accept id is `1-indexed by order in the list`  -  pattern index `i`
 produces `accept = i + 1` when its state is entered.
 """
 

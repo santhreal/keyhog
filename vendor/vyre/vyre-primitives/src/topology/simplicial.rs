@@ -3,10 +3,10 @@
 //! Simplicial NNs (Bodnar-Frasca 2021, Yang-Sala 2023) generalize GNNs
 //! from edges to higher-order simplices (triangles, tetrahedra). The
 //! boundary operator ∂ is the substrate: for a triangle (i, j, k),
-//! `∂ = (j, k) - (i, k) + (i, j)` — alternating-sign sum of faces.
+//! `∂ = (j, k) - (i, k) + (i, j)`  -  alternating-sign sum of faces.
 //!
 //! This file ships the **2-simplex (triangle) message aggregation
-//! step** primitive — given an edge-feature buffer and a list of
+//! step** primitive  -  given an edge-feature buffer and a list of
 //! triangles, compute per-triangle messages by summing alternating-
 //! sign face features. Composes with `level_wave_program` for a
 //! full simplicial-complex pass.
@@ -30,13 +30,13 @@ pub const OP_ID: &str = "vyre-primitives::topology::simplicial_triangle_message"
 /// Emit the per-triangle message Program.
 ///
 /// Inputs:
-/// - `edge_features`: `n_edges * d` u32 (16.16) — per-edge `d`-dim
+/// - `edge_features`: `n_edges * d` u32 (16.16)  -  per-edge `d`-dim
 ///   feature vector.
-/// - `triangle_edges`: `n_triangles * 3` u32 — for each triangle, the
+/// - `triangle_edges`: `n_triangles * 3` u32  -  for each triangle, the
 ///   three edge indices `(e_jk, e_ik, e_ij)` in canonical order.
 ///
 /// Output:
-/// - `triangle_messages`: `n_triangles * d` u32 — per-triangle message
+/// - `triangle_messages`: `n_triangles * d` u32  -  per-triangle message
 ///   computed as `∂(triangle) = e_jk - e_ik + e_ij`.
 #[must_use]
 pub fn simplicial_triangle_message(

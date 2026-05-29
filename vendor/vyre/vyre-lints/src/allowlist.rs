@@ -77,9 +77,14 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn missing_allowlist_file_errors() {
     fn missing_allowlist_file_errors() {
         let r = load(Path::new("/nonexistent/path/allowlist.toml"));
-        assert!(r.is_err());
+        let r = load(Path::new("/nonexistent/path/allowlist.toml"));
+        assert!(matches!(r, Err(_)));
+        assert!(matches!(r, Err(_)));
+    }
     }
 
     #[test]
@@ -88,6 +93,6 @@ mod tests {
         let path = dir.path().join("allowlist.toml");
         std::fs::write(&path, "not valid toml at all = = =").unwrap();
         let r = load(&path);
-        assert!(r.is_err());
+        assert!(matches!(r, Err(_)));
     }
 }

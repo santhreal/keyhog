@@ -1,4 +1,4 @@
-//! ROADMAP L3 — parallel parse across file corpus.
+//! ROADMAP L3  -  parallel parse across file corpus.
 //!
 //! Fan out `ParsedSourceLru::get_or_parse` across all available cores via
 //! `rayon::par_iter`.  Corpus-wide deduplication still happens because each
@@ -19,7 +19,7 @@
 //!   `get_or_parse` once per unique key.
 
 use rayon::prelude::*;
-// SourceHash is a 32-byte digest — FxHash on byte arrays is materially
+// SourceHash is a 32-byte digest  -  FxHash on byte arrays is materially
 // faster than std SipHash, and these tables are pure-internal scratch
 // (no adversarial-input concern; the hash is already a content digest).
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -32,9 +32,9 @@ use super::source_cache::{ParsedSourceLru, SourceHash};
 ///
 /// # Type parameters
 ///
-/// * `T` — parsed artifact; must be `Send + Sync` so it can cross thread
+/// * `T`  -  parsed artifact; must be `Send + Sync` so it can cross thread
 ///   boundaries inside `Arc<T>`.
-/// * `F` — parse function; must be `Sync` because it is called from
+/// * `F`  -  parse function; must be `Sync` because it is called from
 ///   multiple rayon workers concurrently.
 ///
 /// # Example
@@ -62,13 +62,13 @@ where
     T: Send + Sync,
     F: Fn(&[u8]) -> T + Sync,
 {
-    // Phase 1 — compute all content hashes in parallel (no locking).
+    // Phase 1  -  compute all content hashes in parallel (no locking).
     let keys: Vec<SourceHash> = sources
         .par_iter()
         .map(|(content, extra)| SourceHash::of(content, extra))
         .collect();
 
-    // Phase 2 — sequentially identify the first index of each unique key.
+    // Phase 2  -  sequentially identify the first index of each unique key.
     // This is O(N) and allocation-light; it guarantees that even on a
     // cold cache the expensive `parse` closure runs once per unique source.
     let mut unique_indices = Vec::with_capacity(keys.len());
@@ -79,7 +79,7 @@ where
         }
     }
 
-    // Phase 3 — parse each unique source in parallel via get_or_parse.
+    // Phase 3  -  parse each unique source in parallel via get_or_parse.
     let unique_parsed: Vec<(SourceHash, Arc<T>)> = unique_indices
         .into_par_iter()
         .map(|idx| {
@@ -89,7 +89,7 @@ where
         })
         .collect();
 
-    // Phase 4 — build lookup and map back to input order.
+    // Phase 4  -  build lookup and map back to input order.
     let lookup: HashMap<SourceHash, Arc<T>> = unique_parsed.into_iter().collect();
     keys.into_iter()
         .enumerate()

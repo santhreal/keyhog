@@ -3,13 +3,15 @@
 //! Pairs any [`MatchScan`] engine with the canonical reference
 //! [`post_process::try_reference_post_process`] output.
 //!
-//! The pipeline is intentionally `Pipeline<E>` rather than a trait —
+//! The pipeline is intentionally `Pipeline<E>` rather than a trait  -
 //! every consumer wants the *same* post-processing semantics, so
 //! parameterising over the engine while pinning the post-processor
 //! preserves byte-for-byte cross-consumer equivalence.
 
 use crate::scan::engine::MatchScan;
-use crate::scan::post_process::{try_reference_post_process, PostProcessError, PostProcessedMatch};
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::scan::post_process::try_reference_post_process;
+use crate::scan::post_process::{PostProcessError, PostProcessedMatch};
 use vyre::{BackendError, VyreBackend};
 use vyre_foundation::match_result::Match;
 
@@ -23,7 +25,7 @@ pub type PostProcessFn = fn(&[Match], &[u8]) -> Result<Vec<PostProcessedMatch>, 
 /// inject a custom one.
 pub struct Pipeline<E> {
     /// Underlying scan engine. Anything that implements `MatchScan`
-    /// composes — `GpuLiteralSet`, `RulePipeline`, future custom
+    /// composes  -  `GpuLiteralSet`, `RulePipeline`, future custom
     /// scanners.
     pub engine: E,
     /// Post-processing function. Defaults to `try_reference_post_process`.
@@ -33,6 +35,7 @@ pub struct Pipeline<E> {
 impl<E: MatchScan> Pipeline<E> {
     /// Wrap an engine with the default reference post-processor.
     #[must_use]
+    #[cfg(any(test, feature = "cpu-parity"))]
     pub const fn new(engine: E) -> Self {
         Self {
             engine,
@@ -41,9 +44,8 @@ impl<E: MatchScan> Pipeline<E> {
     }
 
     /// Wrap an engine with a caller-supplied post-processor. Use when
-    /// downstream consumers need different scoring (e.g. a downstream frontend's
-    /// taint-flow reduction, or a benchmark harness that wants
-    /// passthrough).
+    /// downstream consumers need different scoring, such as taint-flow
+    /// reduction or benchmark passthrough.
     #[must_use]
     pub const fn with_post_process(engine: E, post_process: PostProcessFn) -> Self {
         Self {
@@ -54,6 +56,7 @@ impl<E: MatchScan> Pipeline<E> {
 
     /// Reference oracle one-shot: scan + post-process.
     #[must_use]
+    #[cfg(any(test, feature = "cpu-parity"))]
     pub fn reference_scan_processed(&self, haystack: &[u8]) -> Vec<PostProcessedMatch> {
         let raw = self.engine.reference_scan(haystack);
         (self.post_process)(&raw, haystack).unwrap_or_else(|error| {
@@ -67,6 +70,7 @@ impl<E: MatchScan> Pipeline<E> {
     ///
     /// Returns a [`PostProcessError`] when a scan engine reports a match range
     /// outside the scanned haystack.
+    #[cfg(any(test, feature = "cpu-parity"))]
     pub fn try_reference_scan_processed(
         &self,
         haystack: &[u8],

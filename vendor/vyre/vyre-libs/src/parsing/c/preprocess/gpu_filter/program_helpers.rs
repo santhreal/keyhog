@@ -1,11 +1,81 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-pub(super) fn packed_byte_load(buffer: &str, addr: Expr) -> Expr {
-    let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-    let byte_in_word = Expr::rem(addr, Expr::u32(4));
-    let word = Expr::cast(DataType::U32, Expr::load(buffer, word_idx));
-    let shift = Expr::mul(byte_in_word, Expr::u32(8));
-    Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
+// `packed_byte_load` was a third copy of `crate::scan::builders::load_packed_byte_expr`
+// with a redundant `Expr::cast(DataType::U32, …)` wrapper around the
+// load (the source buffer is already declared as `DataType::U32`).
+// All call sites in this file now route through the canonical
+// scan::builders primitive - single source of truth for packed-byte
+// extract across vyre-libs.
+pub(super) use crate::scan::builders::load_packed_byte_expr as packed_byte_load;
+
+pub(super) const GPU_FILTER_WORKGROUP: [u32; 3] = [256, 1, 1];
+
+pub(super) fn packed_byte_load_or_zero(
+    buffer: &'static str,
+    addr: Expr,
+    real_len_buffer: &'static str,
+) -> Expr {
+    Expr::select(
+        Expr::lt(addr.clone(), Expr::load(real_len_buffer, Expr::u32(0))),
+        packed_byte_load(buffer, addr),
+        Expr::u32(0),
+    )
+}
+
+pub(super) fn byte_eq(byte: Expr, expected: u8) -> Expr {
+    Expr::eq(byte, Expr::u32(expected as u32))
+}
+
+pub(super) fn store_comment_mask(i: Expr, comment_mask: Expr) -> Node {
+    Node::store("comment_mask_out", i, comment_mask)
+}
+
+pub(super) fn store_final_keep_from_comment_mask(i: Expr, comment_mask: Expr) -> Node {
+    Node::store(
+        "final_keep",
+        i,
+        Expr::select(
+            Expr::ne(comment_mask, Expr::u32(1)),
+            Expr::u32(1),
+            Expr::u32(0),
+        ),
+    )
+}
+
+pub(super) fn clear_comment_mask_and_final_keep(i: Expr) -> Vec<Node> {
+    vec![
+        store_comment_mask(i.clone(), Expr::u32(0)),
+        Node::store("final_keep", i, Expr::u32(0)),
+    ]
+}
+
+pub(super) fn packed_bytes_input_buffer(name: &str, binding: u32, n: u32) -> BufferDecl {
+    BufferDecl::storage(name, binding, BufferAccess::ReadOnly, DataType::U32)
+        .with_count(n.div_ceil(4).max(1))
+}
+
+pub(super) fn u32_read_buffer(name: &str, binding: u32, n: u32) -> BufferDecl {
+    u32_storage_buffer(name, binding, BufferAccess::ReadOnly, n.max(1))
+}
+
+pub(super) fn u32_rw_buffer(name: &str, binding: u32, n: u32) -> BufferDecl {
+    u32_storage_buffer(name, binding, BufferAccess::ReadWrite, n.max(1))
+}
+
+pub(super) fn singleton_u32_read_buffer(name: &str, binding: u32) -> BufferDecl {
+    u32_storage_buffer(name, binding, BufferAccess::ReadOnly, 1)
+}
+
+fn u32_storage_buffer(name: &str, binding: u32, access: BufferAccess, count: u32) -> BufferDecl {
+    BufferDecl::storage(name, binding, access, DataType::U32).with_count(count)
+}
+
+pub(super) fn wrap_gpu_filter_program(
+    entry_op_id: &'static str,
+    buffers: Vec<BufferDecl>,
+    body: Vec<Node>,
+) -> Program {
+    Program::wrapped(buffers, GPU_FILTER_WORKGROUP, body).with_entry_op_id(entry_op_id)
 }
 
 /// Element-wise keep-mask merge over line-splice and comment metadata.
@@ -120,7 +190,6 @@ pub(super) fn byte_compact_program(n: u32) -> Program {
                     Expr::eq(Expr::var(format!("m_{k}")), Expr::u32(1)),
                     vec![
                         Node::let_bind(format!("cm_{k}"), Expr::load("comment_mask", i.clone())),
-                        Node::let_bind(format!("in_word_{k}"), Expr::u32(0)),
                         Node::let_bind(format!("in_byte_{k}"), Expr::u32(0)),
                         Node::if_then_else(
                             Expr::eq(Expr::var(format!("cm_{k}")), Expr::u32(2)),
@@ -128,28 +197,10 @@ pub(super) fn byte_compact_program(n: u32) -> Program {
                                 &format!("in_byte_{k}"),
                                 Expr::u32(b' ' as u32),
                             )],
-                            vec![
-                                Node::assign(
-                                    &format!("in_word_{k}"),
-                                    Expr::cast(
-                                        DataType::U32,
-                                        Expr::load("bytes_in", Expr::div(i.clone(), Expr::u32(4))),
-                                    ),
-                                ),
-                                Node::assign(
-                                    &format!("in_byte_{k}"),
-                                    Expr::bitand(
-                                        Expr::shr(
-                                            Expr::var(format!("in_word_{k}")),
-                                            Expr::mul(
-                                                Expr::rem(i.clone(), Expr::u32(4)),
-                                                Expr::u32(8),
-                                            ),
-                                        ),
-                                        Expr::u32(0xFF),
-                                    ),
-                                ),
-                            ],
+                            vec![Node::assign(
+                                &format!("in_byte_{k}"),
+                                packed_byte_load("bytes_in", i.clone()),
+                            )],
                         ),
                         Node::let_bind(
                             format!("out_pos_{k}"),

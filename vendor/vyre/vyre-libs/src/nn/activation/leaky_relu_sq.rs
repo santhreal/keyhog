@@ -1,14 +1,18 @@
 //! LeakyReLU²: `y = leaky_relu(x, α=0.5)² = max(α·x, x)²`.
 //!
-//! Category A composition — element-wise `leaky_relu` (alpha=0.5)
+//! Category A composition  -  element-wise `leaky_relu` (alpha=0.5)
 //! followed by squaring (`mul self`). Used in the Parameter Golf
 //! recipe as the MLP activation: hidden = leaky_relu_sq(linear(x)).
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-
-use crate::region::wrap_anonymous;
+use vyre::ir::{Expr, Program};
 
 const OP_ID: &str = "vyre-libs::nn::leaky_relu_sq";
+
+fn leaky_relu_sq_expr(x: Expr) -> Expr {
+    let half_x = Expr::mul(Expr::f32(0.5), x.clone());
+    let leaky = Expr::max(half_x, x);
+    Expr::mul(leaky.clone(), leaky)
+}
 
 /// Build a Program that applies `leaky_relu(x, 0.5)²` element-wise.
 ///
@@ -19,36 +23,7 @@ const OP_ID: &str = "vyre-libs::nn::leaky_relu_sq";
 ///   `out   = leaky * leaky`
 #[must_use]
 pub fn leaky_relu_sq(input: &str, output: &str, n: u32) -> Program {
-    let i = Expr::var("i");
-    let x = Expr::load(input, i.clone());
-
-    // leaky_relu(x, 0.5): max(0.5 * x, x)
-    let half_x = Expr::mul(Expr::f32(0.5), x.clone());
-    let leaky = Expr::max(half_x, x);
-
-    // square
-    let squared = Expr::mul(leaky.clone(), leaky);
-
-    let body = vec![
-        Node::let_bind("i", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(i.clone(), Expr::buf_len(input)),
-            vec![Node::Store {
-                buffer: output.into(),
-                index: i,
-                value: squared,
-            }],
-        ),
-    ];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::F32).with_count(n),
-            BufferDecl::output(output, 1, DataType::F32).with_count(n),
-        ],
-        [64, 1, 1],
-        vec![wrap_anonymous(OP_ID, body)],
-    )
+    super::unary::f32_unary_activation_program(OP_ID, input, output, n, leaky_relu_sq_expr)
 }
 
 inventory::submit! {
@@ -56,7 +31,7 @@ inventory::submit! {
         id: OP_ID,
         build: || leaky_relu_sq("input", "output", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[0.0_f32, 2.0, -4.0, 1.0]),
             ]]
@@ -71,7 +46,7 @@ inventory::submit! {
                 let leaky = (0.5 * x).max(*x);
                 leaky * leaky
             }).collect();
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -81,18 +56,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     fn leaky_relu_sq_ref(x: f32) -> f32 {
         let leaky = (0.5 * x).max(x);
@@ -179,6 +145,34 @@ mod tests {
             (out[0] - expected).abs() <= 1.0e-6,
             "leaky_relu_sq(subnormal) mismatch"
         );
+    }
+
+    #[test]
+    fn generated_leaky_relu_sq_matches_scalar_reference() {
+        let input = (0..2048u32)
+            .map(|i| ((i as f32) * 0.031).cos() * 8.0 - 4.0)
+            .collect::<Vec<_>>();
+        let program = leaky_relu_sq("input", "output", input.len() as u32);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&input)),
+                Value::from(vec![0u8; input.len() * core::mem::size_of::<f32>()]),
+            ],
+        )
+        .expect("Fix: generated leaky_relu_sq corpus must execute");
+        let out = decode_f32(&outputs[0].to_bytes());
+        for (index, (actual, expected)) in out
+            .iter()
+            .copied()
+            .zip(input.iter().copied().map(leaky_relu_sq_ref))
+            .enumerate()
+        {
+            assert!(
+                (actual - expected).abs() <= 1.0e-5,
+                "generated leaky_relu_sq mismatch at {index}: {actual} != {expected}"
+            );
+        }
     }
 
     #[test]

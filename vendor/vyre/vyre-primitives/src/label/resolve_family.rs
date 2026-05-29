@@ -1,13 +1,14 @@
-//! `resolve_family` — `node_tags[v] & family_mask != 0` → NodeSet bit v.
+//! `resolve_family`  -  `node_tags[v] & family_mask != 0` → NodeSet bit v.
 //!
 //! One invocation per node. Reads the per-node tag bitmap, ANDs it
 //! against the compile-time family mask, atomically-ORs the result
 //! bit into `nodeset_out[v / 32]`.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::nodeset_filter::{nodeset_filter_cpu_ref, nodeset_filter_cpu_ref_into};
+use crate::nodeset_filter::{nodeset_filter_program, NodeSetFilter};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::label::resolve_family";
@@ -21,44 +22,12 @@ pub fn resolve_family(
     node_count: u32,
     family_mask: u32,
 ) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-    let words = node_count.div_ceil(32);
-    let body = vec![
-        Node::let_bind("tag", Expr::load(node_tags, t.clone())),
-        Node::if_then(
-            Expr::ne(
-                Expr::bitand(Expr::var("tag"), Expr::u32(family_mask)),
-                Expr::u32(0),
-            ),
-            vec![
-                Node::let_bind("word_idx", Expr::shr(t.clone(), Expr::u32(5))),
-                Node::let_bind(
-                    "bit",
-                    Expr::shl(Expr::u32(1), Expr::bitand(t.clone(), Expr::u32(31))),
-                ),
-                Node::let_bind(
-                    "_",
-                    Expr::atomic_or(nodeset_out, Expr::var("word_idx"), Expr::var("bit")),
-                ),
-            ],
-        ),
-    ];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(node_tags, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(node_count),
-            BufferDecl::storage(nodeset_out, 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(words),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(node_count)),
-                body,
-            )]),
-        }],
+    nodeset_filter_program(
+        OP_ID,
+        node_tags,
+        nodeset_out,
+        node_count,
+        NodeSetFilter::Intersects(family_mask),
     )
 }
 
@@ -67,24 +36,13 @@ pub fn resolve_family(
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(node_tags: &[u32], family_mask: u32) -> Vec<u32> {
-    let mut out = Vec::new();
-    cpu_ref_into(node_tags, family_mask, &mut out);
-    out
+    nodeset_filter_cpu_ref(node_tags, NodeSetFilter::Intersects(family_mask))
 }
 
 /// CPU reference using a caller-owned nodeset bitset.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(node_tags: &[u32], family_mask: u32, out: &mut Vec<u32>) {
-    let words = node_tags.len().div_ceil(32);
-    out.clear();
-    out.resize(words, 0);
-    for (v, tag) in node_tags.iter().enumerate() {
-        if (tag & family_mask) != 0 {
-            let word = v / 32;
-            let bit = 1u32 << (v % 32);
-            out[word] |= bit;
-        }
-    }
+    nodeset_filter_cpu_ref_into(node_tags, NodeSetFilter::Intersects(family_mask), out);
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -93,13 +51,13 @@ inventory::submit! {
         OP_ID,
         || resolve_family("tags", "nodeset", 4, 0b0010),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            // node_tags: 0x01, 0x02, 0x06, 0x04 — family mask 0x02
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            // node_tags: 0x01, 0x02, 0x06, 0x04  -  family mask 0x02
             // hits nodes 1 and 2 (0x02 and 0x06 both have bit 1).
             vec![vec![to_bytes(&[0x01, 0x02, 0x06, 0x04]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0b0110])]]
         }),
     )
@@ -128,23 +86,12 @@ mod tests {
         assert_eq!(out.as_ptr(), ptr);
     }
 
-    /// GPU parity tests for resolve_family — exercise every word boundary
+    /// GPU parity tests for resolve_family  -  exercise every word boundary
     /// to expose the word-1+ atomic_or write bug.
     mod gpu_tests {
         use super::*;
         use vyre_driver::DispatchConfig;
         use vyre_driver_cuda::CudaBackend;
-
-        fn u32_bytes(values: &[u32]) -> Vec<u8> {
-            values.iter().flat_map(|v| v.to_le_bytes()).collect()
-        }
-
-        fn bytes_to_u32(bytes: &[u8]) -> Vec<u32> {
-            bytes
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect()
-        }
 
         fn run_gpu_resolve_family_with_backend(
             backend: &CudaBackend,
@@ -157,7 +104,10 @@ mod tests {
             let outputs = backend
                 .dispatch(
                     &program,
-                    &[u32_bytes(node_tags), u32_bytes(&vec![0u32; words])],
+                    &[
+                        crate::wire::pack_u32_slice(node_tags),
+                        crate::wire::pack_u32_slice(&vec![0u32; words]),
+                    ],
                     &DispatchConfig::default(),
                 )
                 .expect(
@@ -170,7 +120,7 @@ mod tests {
                 "Fix: resolve_family must return exactly one output buffer, got {}.",
                 outputs.len()
             );
-            let result = bytes_to_u32(&outputs[0]);
+            let result = crate::wire::decode_u32_le_bytes_all(&outputs[0]);
             assert_eq!(
                 result.len(),
                 words,

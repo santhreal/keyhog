@@ -1,6 +1,6 @@
 //! Region-tree loop topology via #15 vietoris_rips (#15 self-consumer).
 //!
-//! Closes the recursion thesis for #15 — vietoris_rips edge filtering
+//! Closes the recursion thesis for #15  -  vietoris_rips edge filtering
 //! ships to user dialects (cosmology, biological networks, mesh
 //! topology) AND extracts vyre's loop-nest topological signatures
 //! for fusion-vs-fission scheduling.
@@ -10,7 +10,7 @@
 //! Vyre's optimizer chooses between **loop fusion** (merge two
 //! adjacent loops into one) and **loop fission** (split one loop
 //! into two), driven by data-locality + register-pressure heuristics.
-//! These heuristics are local — they don't see the full topology of
+//! These heuristics are local  -  they don't see the full topology of
 //! a loop nest. Persistent homology DOES see it: the H₁ persistence
 //! diagram of the Region-tree filtration encodes how nested loops
 //! merge as the "scale" parameter ε grows.
@@ -21,7 +21,7 @@
 //! locality-coherent loops worth fissioning.
 //!
 //! Vietoris-Rips edge filtering at scale ε is the first step of the
-//! persistent homology computation — extract the 1-skeleton of the
+//! persistent homology computation  -  extract the 1-skeleton of the
 //! filtration, then count cycles per ε.
 //!
 //! # Algorithm
@@ -49,6 +49,8 @@
 use crate::dispatch_buffers::{
     ceil_div_u32, checked_square_cells, decode_u32_output_exact, u32_slice_to_le_bytes,
 };
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 #[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::topology::vietoris_rips::extract_edges_cpu;
@@ -95,6 +97,7 @@ pub fn reference_region_loop_skeleton_into(
         for j in (i + 1)..n_us {
             if dist_matrix[i * n_us + j] <= epsilon {
                 out[i * n_us + j] = 1;
+                out[j * n_us + i] = 1;
             }
         }
     }
@@ -206,15 +209,29 @@ pub fn reference_loop_filtration_edge_counts_into(
     out: &mut Vec<u32>,
 ) {
     out.clear();
-    out.reserve(epsilons.len());
+    reserve_vec_capacity_or_panic(out, epsilons.len(), "loop filtration edge-count output");
     for &eps in epsilons {
         reference_region_loop_skeleton_into(dist_matrix, eps, n, &mut scratch.mask);
-        out.push(scratch.mask.iter().filter(|&&v| v != 0).count() as u32);
+        out.push(count_upper_triangle_edges(&scratch.mask, n));
     }
 }
 
-/// Sweep over `epsilons` and return `(b0, b1)` — connected components
-/// and independent-cycle count — at each scale.
+#[cfg(any(test, feature = "cpu-parity"))]
+fn count_upper_triangle_edges(mask: &[u32], n: u32) -> u32 {
+    let n_us = n as usize;
+    let mut edges = 0u32;
+    for i in 0..n_us {
+        for j in (i + 1)..n_us {
+            if mask[i * n_us + j] != 0 {
+                edges = edges.saturating_add(1);
+            }
+        }
+    }
+    edges
+}
+
+/// Sweep over `epsilons` and return `(b0, b1)`  -  connected components
+/// and independent-cycle count  -  at each scale.
 ///
 /// `b1` rises every time a new loop closes in the 1-skeleton; that
 /// jump is exactly an H₁ persistent feature being born. The optimizer
@@ -246,7 +263,7 @@ pub fn reference_loop_filtration_betti_into(
     out: &mut Vec<(u32, u32)>,
 ) {
     out.clear();
-    out.reserve(epsilons.len());
+    reserve_vec_capacity_or_panic(out, epsilons.len(), "loop filtration Betti output");
     for &eps in epsilons {
         reference_region_loop_skeleton_into(dist_matrix, eps, n, &mut scratch.mask);
         let (b0, b1, _edges) =
@@ -255,7 +272,7 @@ pub fn reference_loop_filtration_betti_into(
     }
 }
 
-/// Find every ε at which a new H₁ feature is born — i.e. an ε where
+/// Find every ε at which a new H₁ feature is born  -  i.e. an ε where
 /// the cycle count `b1` strictly increases over the previous ε.
 /// Returns the sequence of `(epsilon, b1_after)` pairs.
 ///
@@ -386,8 +403,8 @@ mod fixed_via_tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 2);
-            let dist = read_u32s(&inputs[0]);
-            let epsilon = read_u32s(&inputs[1])[0];
+            let dist = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let epsilon = crate::hardware::dispatch_buffers::read_u32s(&inputs[1])[0];
             let n = integer_sqrt(dist.len());
             let mut mask = vec![0u32; dist.len()];
             for i in 0..n {
@@ -416,13 +433,6 @@ mod fixed_via_tests {
         assert!(matches!(err, DispatchError::BadInputs(_)));
     }
 
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
-
     fn integer_sqrt(n: usize) -> usize {
         let mut root = 0usize;
         while root * root < n {
@@ -438,6 +448,7 @@ mod tests {
     use vyre_primitives::topology::betti_persistence::betti_persistence_cpu;
 
     #[test]
+
     fn empty_skeleton_below_threshold() {
         // 2 nodes at distance 1.0; ε = 0.5 yields no edges.
         let dist = vec![0.0, 1.0, 1.0, 0.0];
@@ -451,7 +462,7 @@ mod tests {
         let dist = vec![0.0, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5, 0.5, 0.0];
         let mask = reference_region_loop_skeleton(&dist, 0.6, 3);
         // 3 edges in upper triangle: (0,1), (0,2), (1,2).
-        let count: u32 = mask.iter().filter(|&&v| v != 0).count() as u32;
+        let count = count_upper_triangle_edges(&mask, 3);
         assert_eq!(count, 3);
     }
 
@@ -614,3 +625,4 @@ mod tests {
         assert!(births.is_empty());
     }
 }
+

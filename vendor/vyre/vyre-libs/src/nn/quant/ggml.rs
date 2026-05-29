@@ -29,8 +29,8 @@ pub const Q4_K_BLOCKS_PER_SUPER: u32 = 8;
 /// Dequantize Q4_K weights.
 ///
 /// Buffer layout (per super-block):
-///   - bytes 0..1:   scale_min_low (u16) — low 6 bits of 8 scales + 8 mins
-///   - bytes 2..3:   scale_min_high (u16) — high bits
+///   - bytes 0..1:   scale_min_low (u16)  -  low 6 bits of 8 scales + 8 mins
+///   - bytes 2..3:   scale_min_high (u16)  -  high bits
 ///   - bytes 4..11:  8 scales (6-bit each, packed)
 ///   - bytes 12..19: 8 mins (6-bit each, packed)
 ///   - bytes 20..147: 256 nibbles (128 bytes) = 8 blocks * 32 weights * 4 bits
@@ -523,24 +523,13 @@ pub fn q2_k_linear(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
+    use crate::test_support::byte_pack::u32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn u32_bytes(values: &[u32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn q4_k_unpack_simple() {
@@ -633,3 +622,4 @@ mod tests {
         assert_eq!(out[1], 1.0);
     }
 }
+

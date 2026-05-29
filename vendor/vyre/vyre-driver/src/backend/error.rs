@@ -108,7 +108,7 @@ pub enum BackendError {
     /// GPU kernel-source compilation failed.
     ///
     /// "Shader" in the variant name is historical and generalised
-    /// — the code applies to any kernel-source compile failure across
+    ///  -  the code applies to any kernel-source compile failure across
     /// backends. A 2.0 rename to
     /// `KernelCompileFailed` is tracked in the semver-policy doc.
     #[error(

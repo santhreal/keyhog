@@ -3,29 +3,10 @@ use vyre_reference::value::Value;
 use super::relu::linear_relu;
 use super::rms_norm::{rms_norm_linear, try_rms_norm_linear};
 use super::tiled::{linear_tiled, linear_tiled_reference};
+use crate::test_support::byte_pack::{decode_f32 as bytes_to_f32, f32_bytes as to_f32_bytes};
 use vyre::Program;
 
 const TOLERANCE_ULP: u32 = 2;
-
-fn to_f32_bytes(words: &[f32]) -> Vec<u8> {
-    words
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect::<Vec<u8>>()
-}
-
-fn bytes_to_f32(values: &[u8]) -> Vec<f32> {
-    values
-            .chunks_exact(4)
-            .map(|chunk| {
-                f32::from_le_bytes(
-                    chunk
-                        .try_into()
-                        .expect("Fix: f32 output chunk is always 4 bytes; restore this invariant before continuing."),
-                )
-            })
-            .collect()
-}
 
 fn ordered_bits(value: f32) -> u32 {
     let bits = value.to_bits();

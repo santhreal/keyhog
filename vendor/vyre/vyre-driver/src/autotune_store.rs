@@ -55,7 +55,7 @@ pub struct AutotuneRecord {
     /// Output-tile shape the tuner chose, or `[0, 0, 0]` when the
     /// kernel is not tile-shaped.
     pub tile: [u32; 3],
-    /// When the record was first written, in `YYYY-MM-DD`. Optional —
+    /// When the record was first written, in `YYYY-MM-DD`. Optional  -
     /// older TOML files may omit it.
     #[serde(default)]
     pub recorded_at: String,
@@ -392,7 +392,7 @@ mod tests {
         // The file must be parseable (not torn) regardless of which
         // writer won. Without the lock this race produced corrupt TOML
         // ~30% of the time on a warm 5090 box.
-        let loaded = AutotuneStore::load(&path).expect("file must be valid TOML");
+        let loaded = AutotuneStore::load(&path).expect("Fix: file must be valid TOML");
         assert_eq!(loaded.len(), 1, "exactly one writer's record must persist");
     }
 

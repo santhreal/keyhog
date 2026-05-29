@@ -2,12 +2,7 @@
 use super::*;
 use vyre_reference::value::Value;
 
-fn pack_u32_words(words: &[u32]) -> Vec<u8> {
-    words
-        .iter()
-        .flat_map(|word| word.to_le_bytes())
-        .collect::<Vec<_>>()
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_u32_words;
 
 fn pack_source_bytes(source: &[u8]) -> Vec<u8> {
     let mut packed = Vec::with_capacity(source.len().div_ceil(4).max(1) * 4);
@@ -41,7 +36,8 @@ fn eval_one_if(source: &[u8]) -> u32 {
     let outputs = vyre_reference::reference_eval(&program, &inputs)
         .expect("Fix: GPU #if expression reference evaluation must run.");
     let raw = outputs[0].to_bytes();
-    u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+    vyre_primitives::wire::read_u32_le_word(&raw, 0, "gpu-if-expression test output")
+        .expect("Fix: GPU #if expression output must contain one u32.")
 }
 
 #[test]
@@ -78,7 +74,7 @@ fn macro_value_buffer_is_runtime_sized() {
         .buffers()
         .iter()
         .find(|buffer| buffer.name() == "macro_values")
-        .expect("macro_values buffer must exist");
+        .expect("Fix: macro_values buffer must exist");
     assert_eq!(
         buffer.count, 0,
         "macro_values must be runtime-sized so one #if evaluator program serves all macro-table sizes"

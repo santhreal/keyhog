@@ -49,7 +49,7 @@ pub(super) fn parse_c11_source_with_backend(
     // KB of preprocessed source on one GPU thread (~550 ms median). When the
     // same translation unit is parsed twice (warm path / multi-pass parser /
     // bench loop), the lex outputs are deterministic in `(backend_id, source)`
-    // — cache them so the second call skips the lex dispatch entirely.
+    //  -  cache them so the second call skips the lex dispatch entirely.
     let cache_key = lexer_cache_key(backend.id(), source);
     let cached = lexer_output_cache()
         .lock()
@@ -108,15 +108,21 @@ pub(super) fn parse_c11_source_with_backend(
     let mut promoted_types = None;
     let types_for_decode = if keyword_promoted {
         log("skip c_keyword; lexer promoted keywords");
-        unpromoted_types
-            .as_ref()
-            .expect("cached promoted token types must remain available")
-            .as_slice()
+        let Some(types) = unpromoted_types.as_ref() else {
+            return Err(
+                "parser-sema keyword cache lost promoted token types before decode. Fix: preserve cached lexer output ownership until decode completes."
+                    .to_string(),
+            );
+        };
+        types.as_slice()
     } else {
-        let mut keyword_types = unpromoted_types
-            .take()
-            .expect("unpromoted token types must be available before keyword promotion")
-            .into_owned();
+        let Some(types) = unpromoted_types.take() else {
+            return Err(
+                "parser-sema keyword promotion lost unpromoted token types. Fix: keep lexer output ownership until c_keyword promotion consumes it."
+                    .to_string(),
+            );
+        };
+        let mut keyword_types = types.into_owned();
         promote_c11_keywords(
             backend,
             source,
@@ -133,10 +139,13 @@ pub(super) fn parse_c11_source_with_backend(
             |stage| log(stage),
         )?;
         promoted_types = Some(keyword_types);
-        promoted_types
-            .as_ref()
-            .expect("promoted keyword token types must be initialized")
-            .as_slice()
+        let Some(types) = promoted_types.as_ref() else {
+            return Err(
+                "parser-sema keyword promotion returned without promoted token types. Fix: c_keyword must produce a complete token type column before decode."
+                    .to_string(),
+            );
+        };
+        types.as_slice()
     };
 
     let decoded = decode_c11_tokens(
@@ -151,13 +160,13 @@ pub(super) fn parse_c11_source_with_backend(
     if cache_miss {
         let cached_types = if let Some(promoted_types) = promoted_types.take() {
             std::sync::Arc::<[u8]>::from(promoted_types)
+        } else if let Some(unpromoted_types) = unpromoted_types.take() {
+            std::sync::Arc::<[u8]>::from(unpromoted_types.into_owned())
         } else {
-            std::sync::Arc::<[u8]>::from(
-                unpromoted_types
-                    .take()
-                    .expect("already-promoted token types must be available for cache insertion")
-                    .into_owned(),
-            )
+            return Err(
+                "parser-sema cache insertion lost token types after decode. Fix: preserve the token type column until warm-cache materialization completes."
+                    .to_string(),
+            );
         };
         let cache_entry = CachedLexerOutputs {
             types: cached_types,

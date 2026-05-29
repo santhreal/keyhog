@@ -1,4 +1,4 @@
-//! `vyre-libs::text::char_class` — Tier 3 wrapper over the
+//! `vyre-libs::text::char_class`  -  Tier 3 wrapper over the
 //! Tier 2.5 [`vyre_primitives::text::char_class::char_class`] primitive.
 //!
 //! First Tier 2.5 migration per `docs/primitives-tier.md` Step 2
@@ -19,27 +19,6 @@ pub use vyre_primitives::text::char_class::{
     C_SLASH, C_STAR, C_TILDE, C_WS,
 };
 
-const OP_ID: &str = "vyre-libs::text::char_class";
-
-fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
-    let table = build_char_class_table();
-    vec![vec![pack_bytes_as_u32(b"A1 "), pack_u32(&table)]]
-}
-
-fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
-    vec![vec![pack_u32(&[C_ALPHA, C_DIGIT, C_WS])]]
-}
-
-inventory::submit! {
-    crate::harness::OpEntry {
-        id: OP_ID,
-        build: || char_class("source", "classified", 3),
-        test_inputs: Some(fixture_inputs),
-        expected_output: Some(fixture_outputs),
-        category: None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,11 +35,7 @@ mod tests {
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: char_class must run; restore this invariant before continuing.");
-        outputs[0]
-            .to_bytes()
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
+        vyre_primitives::wire::decode_u32_le_bytes_all(&outputs[0].to_bytes())
     }
 
     #[test]

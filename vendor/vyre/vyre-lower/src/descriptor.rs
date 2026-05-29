@@ -13,7 +13,7 @@
 //!   carries the same op identity.
 //! - **SSA-shaped**: every value-producing op assigns a unique 32-bit
 //!   `result` id. Operands reference earlier results by id. No named
-//!   variables at this layer — the lowering pass converts vyre IR's
+//!   variables at this layer  -  the lowering pass converts vyre IR's
 //!   named bindings (`Node::Let`, `Node::Assign`, `Expr::Var`) into
 //!   id references.
 //! - **Structured control flow only**: `StructuredIfThen`,
@@ -158,7 +158,7 @@ impl std::hash::Hash for LiteralValue {
             }
             // Hash f32 by its bit pattern so NaN-with-different-payloads
             // hash distinctly. Equality uses bit pattern too via PartialEq
-            // on the `==` of f32 — note this means two NaNs are not equal,
+            // on the `==` of f32  -  note this means two NaNs are not equal,
             // which is correct for caching purposes (they CAN be different
             // NaNs).
             Self::F32(v) => {
@@ -213,7 +213,7 @@ pub enum MatrixMmaLayout {
 pub struct KernelOp {
     pub kind: KernelOpKind,
     /// Operand ids into the same `KernelBody.ops` (or the literal pool
-    /// for `Literal*` kinds — see the per-kind documentation).
+    /// for `Literal*` kinds  -  see the per-kind documentation).
     pub operands: Vec<u32>,
     /// Result id this op assigns. `None` for ops with no value
     /// (stores, barriers, returns, structured-control-flow markers).
@@ -253,7 +253,7 @@ impl KernelOp {
 
 /// Lowered op kinds. Closed enum but covers the entire vyre IR
 /// surface. Adding a new vyre IR variant requires a matching variant
-/// here AND emit rules in every `vyre-emit-*` crate — that's the cost
+/// here AND emit rules in every `vyre-emit-*` crate  -  that's the cost
 /// of substrate parity.
 ///
 /// Operand semantics are documented per variant. Reading a kind without
@@ -280,7 +280,7 @@ pub enum KernelOpKind {
 
     // ---------- Builtins ----------
     /// `LocalInvocationId.x/y/z`. Operand 0 = axis (0/1/2) as a small
-    /// inline literal (NOT a literal-pool reference — emit picks the
+    /// inline literal (NOT a literal-pool reference  -  emit picks the
     /// builtin directly).
     LocalInvocationId,
     /// `GlobalInvocationId.x/y/z`.
@@ -314,7 +314,7 @@ pub enum KernelOpKind {
     /// value; (b) in the parent body AFTER the loop so post-loop
     /// readers observe the loop's final value. Without this op,
     /// `Node::Assign` inside a loop body would have no observable
-    /// effect on subsequent iterations — name resolution would always
+    /// effect on subsequent iterations  -  name resolution would always
     /// pick the pre-loop SSA, which is baked at lowering time.
     LoopCarrier { name: Name },
 
@@ -402,7 +402,7 @@ pub enum KernelOpKind {
     /// [lo_op_id, hi_op_id, body_index]. The loop variable name is
     /// embedded on the op (preserved for debug, not for codegen).
     StructuredForLoop { loop_var: Name },
-    /// Inline statement block — explicit grouping; semantically a
+    /// Inline statement block  -  explicit grouping; semantically a
     /// no-op (body is flattened during emit). Operand 0 = body_index.
     StructuredBlock,
     /// Function/kernel return. Operands: empty. Result: None.
@@ -461,6 +461,7 @@ pub enum KernelOpKind {
 
 /// Heap-allocated payload for [`KernelOpKind::OpaqueExpr`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+
 pub struct OpaqueExprData {
     pub extension_id: u32,
     pub extension_kind: String,
@@ -628,7 +629,7 @@ impl KernelDescriptor {
 
     /// Total number of bodies (the parent counts as 1, plus each
     /// nested child recursively). Useful for "how nested is this
-    /// kernel?" telemetry — a kernel with one big flat body has
+    /// kernel?" telemetry  -  a kernel with one big flat body has
     /// `body_count() == 1`; one with deep control flow has more.
     #[must_use]
     pub fn body_count(&self) -> usize {
@@ -673,13 +674,13 @@ impl KernelDescriptor {
 
     /// True iff the descriptor has no ops at all (no parent ops AND
     /// no ops in any child body). The dispatch geometry and bindings
-    /// can still be populated — this only asks about op content.
+    /// can still be populated  -  this only asks about op content.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.total_ops() == 0
     }
 
-    /// True iff the descriptor is pure — no side-effecting ops anywhere.
+    /// True iff the descriptor is pure  -  no side-effecting ops anywhere.
     /// Inverse of `has_side_effects`. Pure kernels can be safely
     /// cached by descriptor identity since they produce no observable
     /// output (the only "result" is whatever value-flow the consumer
@@ -701,7 +702,7 @@ impl KernelDescriptor {
 
     /// Find the first op anywhere in the descriptor whose `result`
     /// matches `id`. Per-body id space means an id may be reused
-    /// across child bodies — this returns the FIRST match in DFS
+    /// across child bodies  -  this returns the FIRST match in DFS
     /// pre-order. For a given body's view, callers should iterate
     /// `body.ops` directly.
     #[must_use]
@@ -733,7 +734,7 @@ impl KernelDescriptor {
     /// True iff the descriptor has at least one side-effecting op
     /// (Store*, Atomic, AsyncStore, Barrier, Trap, Resume, Return,
     /// Call, Opaque*). A pure descriptor with no side effects produces
-    /// no observable output — the emitter is free to drop it entirely.
+    /// no observable output  -  the emitter is free to drop it entirely.
     #[must_use]
     pub fn has_side_effects(&self) -> bool {
         fn walk(b: &KernelBody) -> bool {
@@ -780,7 +781,7 @@ impl<'a> Iterator for KernelOpsIter<'a> {
                 *idx += 1;
                 return Some(op);
             }
-            // Body exhausted — push children and pop self.
+            // Body exhausted  -  push children and pop self.
             let body = *body;
             self.stack.pop();
             for child in body.child_bodies.iter().rev() {
@@ -911,10 +912,10 @@ mod desc_helper_tests {
             literals: vec![],
         };
         let d = build(vec![], vec![child]);
-        // Path [0]: first child of parent — empty body with one grandchild.
+        // Path [0]: first child of parent  -  empty body with one grandchild.
         let b = d.body_at(&[0]).unwrap();
         assert!(b.ops.is_empty());
-        // Path [0, 0]: grandchild — has the Literal with result 99.
+        // Path [0, 0]: grandchild  -  has the Literal with result 99.
         let b = d.body_at(&[0, 0]).unwrap();
         assert_eq!(b.ops[0].result, Some(99));
     }
@@ -1004,6 +1005,7 @@ mod desc_helper_tests {
             vec![],
         );
         assert!(!d.is_empty());
+        assert_eq!(d.total_ops(), 1);
     }
 
     #[test]
@@ -1019,6 +1021,7 @@ mod desc_helper_tests {
         };
         let d = build(vec![], vec![child]);
         assert!(!d.is_empty());
+        assert_eq!(d.total_ops(), 1);
     }
 
     #[test]
@@ -1213,7 +1216,7 @@ mod desc_helper_tests {
             ],
             vec![],
         );
-        let op = d.find_op_by_id(42).expect("found");
+        let op = d.find_op_by_id(42).expect("Fix: found");
         assert_eq!(op.result, Some(42));
         assert!(d.find_op_by_id(99).is_none());
     }
@@ -1273,6 +1276,7 @@ mod desc_helper_tests {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -1352,7 +1356,7 @@ mod tests {
         let json = serde_json::to_string(&op).unwrap();
         let parsed: KernelOp = serde_json::from_str(&json).unwrap();
         assert_eq!(op, parsed);
-        // Confirm the variant survives — serde_json round-trip preserves it.
+        // Confirm the variant survives  -  serde_json round-trip preserves it.
         match parsed.kind {
             KernelOpKind::BinOpKind(BinOp::SaturatingAdd) => {}
             other => panic!("lost BinOp variant: {other:?}"),
@@ -1587,3 +1591,4 @@ mod tests {
         assert_eq!(d.workgroup_size, [64, 4, 2]);
     }
 }
+

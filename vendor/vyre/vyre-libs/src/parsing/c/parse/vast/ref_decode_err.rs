@@ -130,10 +130,7 @@ fn try_u32_words_from_bytes(bytes: &[u8]) -> Result<Vec<u32>, CReferenceDecodeEr
     if bytes.len() % 4 != 0 {
         return Err(CReferenceDecodeError::MisalignedBytes { len: bytes.len() });
     }
-    Ok(bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect())
+    Ok(vyre_primitives::wire::decode_u32_le_bytes_all(bytes))
 }
 
 pub(super) fn try_vast_words_from_bytes(bytes: &[u8]) -> Result<Vec<u32>, CReferenceDecodeError> {

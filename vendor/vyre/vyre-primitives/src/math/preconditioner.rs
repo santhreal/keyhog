@@ -1,4 +1,4 @@
-//! Information-geometric preconditioner primitives — Newton-Schulz
+//! Information-geometric preconditioner primitives  -  Newton-Schulz
 //! matrix inverse-square-root (Shampoo / Sophia core kernel).
 //!
 //! KFAC (Martens 2015), Shampoo (Gupta 2018), Sophia (Liu 2024)
@@ -22,7 +22,7 @@
 //! |---|---|
 //! | future `vyre-libs::optim::shampoo` | Shampoo / Sophia preconditioned SGD |
 //! | future `vyre-libs::optim::kfac` | K-FAC natural gradient |
-//! | future `vyre-libs::math::matrix_function` | general matrix-function family (sqrt, inv-sqrt, log, exp via QSVT — composes with #34) |
+//! | future `vyre-libs::math::matrix_function` | general matrix-function family (sqrt, inv-sqrt, log, exp via QSVT  -  composes with #34) |
 //!
 //! Self-consumer is currently weak; revisit once optimizer-aware
 //! dispatch scheduling lands (#22 megakernel auto-scheduler may use
@@ -70,7 +70,7 @@ pub const POLY5_F32_OP_ID: &str = "vyre-primitives::math::newton_schulz_poly5_f3
 /// Computation per cell `(i, j)`:
 ///   `y_next[i,j] = 0.5 · (3 · y_curr[i,j] - Σ_k y_curr[i,k] · zy[k,j])`
 ///
-/// Wait — `Y · (3·I - Z·Y)` involves another matmul. Decomposing:
+/// Wait  -  `Y · (3·I - Z·Y)` involves another matmul. Decomposing:
 ///   `Y · (3·I - Z·Y) = 3·Y - Y·Z·Y`
 ///
 /// The caller pre-computes `YZY = Y·Z·Y` via TWO `semiring_gemm`s
@@ -172,10 +172,7 @@ pub fn newton_schulz_poly5_f32(mat: &str, output: &str, rows: u32, cols: u32) ->
 
 #[cfg(feature = "inventory-registry")]
 fn fixture_f32(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_bits().to_le_bytes())
-        .collect()
+    crate::wire::pack_f32_slice(values)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -216,23 +213,42 @@ inventory::submit! {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn newton_schulz_y_step_cpu(y_curr: &[f64], yzy: &[f64]) -> Vec<f64> {
     let mut out = Vec::new();
-    newton_schulz_y_step_cpu_into(y_curr, yzy, &mut out);
+    try_newton_schulz_y_step_cpu_into(y_curr, yzy, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
     out
 }
 
 /// CPU reference: one Newton-Schulz Y step into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn newton_schulz_y_step_cpu_into(y_curr: &[f64], yzy: &[f64], out: &mut Vec<f64>) {
+    try_newton_schulz_y_step_cpu_into(y_curr, yzy, out).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference: one Newton-Schulz Y step into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_newton_schulz_y_step_cpu_into(
+    y_curr: &[f64],
+    yzy: &[f64],
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let n = y_curr.len().min(yzy.len());
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "Newton-Schulz preconditioner CPU oracle",
+            "newton_schulz_y_step output",
+        )?;
+    }
     out.clear();
-    out.reserve(n);
     for (&y, &yzy_v) in y_curr.iter().zip(yzy.iter()).take(n) {
         out.push(0.5 * (3.0 * y - yzy_v));
     }
+    Ok(())
 }
 
 /// Helper: f64 matrix-matrix multiply (for the CPU reference test
-/// driver below). Not an op — testing convenience.
+/// driver below). Not an op  -  testing convenience.
 #[cfg(test)]
 fn matmul_dense(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
     let mut c = Vec::new();
@@ -295,7 +311,7 @@ impl NewtonSchulzScratch {
 ///   Return Z_∞ / sqrt(c) as M^{-1/2}.
 /// ```
 ///
-/// Convergence is quadratic — ~10 iterations gives ~30 digits of
+/// Convergence is quadratic  -  ~10 iterations gives ~30 digits of
 /// accuracy when the spectrum is close to 1.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -315,7 +331,7 @@ pub fn newton_schulz_inverse_sqrt_cpu_into(
     out: &mut Vec<f64>,
     scratch: &mut NewtonSchulzScratch,
 ) {
-    // Frobenius norm bounds the spectral radius — safe choice of c.
+    // Frobenius norm bounds the spectral radius  -  safe choice of c.
     let frob_sq: f64 = m.iter().map(|&v| v * v).sum();
     let c = frob_sq.sqrt();
     out.clear();
@@ -406,13 +422,22 @@ mod tests {
         let yzy = vec![0.25, 0.125];
         let expected = newton_schulz_y_step_cpu(&y, &yzy);
         let mut out = Vec::with_capacity(expected.len());
+        out.extend_from_slice(&[99.0, 98.0]);
 
         newton_schulz_y_step_cpu_into(&y, &yzy, &mut out);
         let ptr = out.as_ptr();
+        let capacity = out.capacity();
         newton_schulz_y_step_cpu_into(&y, &yzy, &mut out);
 
         assert_eq!(out, expected);
         assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        try_newton_schulz_y_step_cpu_into(&[1.0], &[0.5], &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Newton-Schulz Y-step should truncate stale output");
+        assert_eq!(out, vec![1.25]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
     }
 
     #[test]
@@ -423,6 +448,7 @@ mod tests {
 
     #[test]
     fn cpu_inverse_sqrt_recovers_identity_inverse() {
+
         // M = I → M^{-1/2} = I.
         let m = vec![1.0, 0.0, 0.0, 1.0];
         let result = newton_schulz_inverse_sqrt_cpu(&m, 2, 12);
@@ -506,3 +532,4 @@ mod tests {
         assert!(p.stats().trap());
     }
 }
+

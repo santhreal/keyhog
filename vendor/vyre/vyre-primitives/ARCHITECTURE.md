@@ -1,8 +1,8 @@
-# vyre-primitives — architecture
+# vyre-primitives  -  architecture
 
 The lowest tier of compositional ops. Each primitive is a
 single-file `fn(...) -> Program` that lowers via existing
-`vyre::ir` constructors only — no hardware emission, no
+`vyre::ir` constructors only  -  no hardware emission, no
 self-substrate.
 
 This crate is the substrate `vyre-libs` and downstream predicate
@@ -54,7 +54,7 @@ Predicate scaffolding helpers used by downstream predicate
 registries.
 
 ### `geom/`
-Geometric / spatial primitives — bounding box test, point-in-
+Geometric / spatial primitives  -  bounding box test, point-in-
 range. Used by domains like graphics + spatial indexing
 downstream.
 
@@ -77,7 +77,7 @@ String-search primitives (utf8 decode, character classification).
 Mathematical optimizers (gradient step, projected gradient).
 
 ### `topology/`
-Topology-aware partitioning helpers — the substrate the megakernel
+Topology-aware partitioning helpers  -  the substrate the megakernel
 scaling layer reaches into.
 
 ### `vfs/`
@@ -98,9 +98,9 @@ the canonical conform-suite probe set.
 
 ## Public types
 
-- **`bitset::bitset_words(node_count: u32) → u32`** — the
+- **`bitset::bitset_words(node_count: u32) → u32`**  -  the
   word-count helper every consumer uses for sizing.
-- **`graph::program_graph::ProgramGraphShape`** — `(node_count,
+- **`graph::program_graph::ProgramGraphShape`**  -  `(node_count,
   edge_count)` shape carried through every graph-touching
   primitive.
 - **(per-primitive)** Each ships a constructor + a `cpu_ref(...)`

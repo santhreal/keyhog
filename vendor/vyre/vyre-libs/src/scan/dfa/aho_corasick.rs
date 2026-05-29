@@ -24,9 +24,9 @@ use crate::region::wrap_anonymous;
 /// accepting state of a pre-built DFA. Buffers:
 ///
 /// - `haystack`: ReadOnly, `u32` per byte.
-/// - `transitions`: ReadOnly, `u32` — `state * 256 + byte → next`.
-/// - `accept`: ReadOnly, `u32` — accept table indexed by state.
-/// - `matches`: ReadWrite, `u32` — one slot per haystack byte, set
+/// - `transitions`: ReadOnly, `u32`  -  `state * 256 + byte → next`.
+/// - `accept`: ReadOnly, `u32`  -  accept table indexed by state.
+/// - `matches`: ReadWrite, `u32`  -  one slot per haystack byte, set
 ///   to `accept[state]` (pattern_id + 1) when the automaton accepts
 ///   at that offset.
 #[must_use]
@@ -189,7 +189,7 @@ mod tests {
         let program =
             aho_corasick_bounded("haystack", "transitions", "accept", "matches", 64, 8, 4);
         let (from, to) = first_loop_bounds(program.entry())
-            .expect("bounded Aho-Corasick must emit one DFA-walk loop");
+            .expect("Fix: bounded Aho-Corasick must emit one DFA-walk loop");
         assert!(
             matches!(from, Expr::Var(name) if name.as_ref() == "scan_start"),
             "bounded Aho-Corasick must start from the max-pattern suffix window"

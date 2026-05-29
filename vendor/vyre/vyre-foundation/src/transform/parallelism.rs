@@ -132,6 +132,10 @@ fn collect_node_access(root: &Node, access: &mut AccessSet) {
                 access.serial_boundary = true;
             }
             Node::Resume { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. }
             | Node::Return
             | Node::Barrier { .. }
             | Node::AsyncLoad { .. }

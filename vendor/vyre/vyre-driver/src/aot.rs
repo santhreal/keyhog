@@ -50,6 +50,24 @@ pub struct AotLauncherFiles {
     pub files: BTreeMap<PathBuf, String>,
 }
 
+impl AotLauncherFiles {
+    /// Build launcher files from a fixed backend emission list.
+    ///
+    /// Backends should emit files in a deterministic order and delegate the
+    /// final path-keyed container construction here instead of open-coding
+    /// per-backend map assembly.
+    #[must_use]
+    pub fn from_entries(
+        dependencies: Vec<LauncherDependency>,
+        entries: impl IntoIterator<Item = (PathBuf, String)>,
+    ) -> Self {
+        Self {
+            dependencies,
+            files: entries.into_iter().collect(),
+        }
+    }
+}
+
 /// One backend-owned launcher source emitter.
 pub struct AotLauncherEmitter {
     /// Stable target identifier.
@@ -139,4 +157,31 @@ pub fn emit_aot_launcher_target(
         backend: target.to_string(),
         compiler_message,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launcher_files_constructor_centralizes_path_keyed_container_assembly() {
+        let files = AotLauncherFiles::from_entries(
+            vec![LauncherDependency {
+                name: "libc",
+                spec: "\"0.2\"",
+            }],
+            [
+                (PathBuf::from("src/main.rs"), String::from("fn main() {}")),
+                (PathBuf::from("src/cuda_ffi.rs"), String::from("mod ffi {}")),
+            ],
+        );
+
+        assert_eq!(files.dependencies.len(), 1);
+        assert_eq!(files.files.len(), 2);
+        assert_eq!(
+            files.files[&PathBuf::from("src/main.rs")],
+            "fn main() {}",
+            "Fix: launcher file construction must preserve emitted file contents while centralizing the map-shaped public API."
+        );
+    }
 }

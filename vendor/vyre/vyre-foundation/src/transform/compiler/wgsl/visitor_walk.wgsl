@@ -1,7 +1,7 @@
-// Visitor walk — bounded post-order tree traversal primitive.
+// Visitor walk  -  bounded post-order tree traversal primitive.
 //
 // Op id: vyre_foundation::transform::compiler::visitor_walk.
-// Soundness: Exact — explicit-stack iterative post-order walk over
+// Soundness: Exact  -  explicit-stack iterative post-order walk over
 // a CSR child table; the GPU pop order matches the CPU reference
 // byte-for-byte so conform can prove identical post_order output.
 //

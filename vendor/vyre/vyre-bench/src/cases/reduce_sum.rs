@@ -52,9 +52,9 @@ impl BenchCase for ReduceSumBench {
         let size = 1_000_000;
         let prog = Program::wrapped(
             vec![
-                BufferDecl::storage("out", 0, BufferAccess::ReadWrite, DataType::U32).with_count(1),
-                BufferDecl::storage("a", 1, BufferAccess::ReadOnly, DataType::U32)
+                BufferDecl::storage("a", 0, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(size as u32),
+                BufferDecl::output("out", 1, DataType::U32).with_count(1),
             ],
             [256, 1, 1],
             vec![
@@ -85,7 +85,7 @@ impl BenchCase for ReduceSumBench {
             a_bytes[i * 4..i * 4 + 4].copy_from_slice(&a_val.to_le_bytes());
         }
 
-        let inputs = vec![vec![0u8; 4], a_bytes];
+        let inputs = vec![a_bytes];
         let timed = ctx
             .dispatch_timed(prog, &inputs, &ctx.dispatch_config)
             .map_err(|e| BenchError::BackendFailed(e.to_string()))?;
@@ -95,7 +95,7 @@ impl BenchCase for ReduceSumBench {
 
         let baseline_start = std::time::Instant::now();
         let baseline_outputs = vec![crate::cases::cpu_baselines::reduce_sum_u32_bytes(
-            &inputs[1],
+            &inputs[0],
         )];
         let baseline_wall = baseline_start.elapsed().as_nanos() as u64;
 
@@ -113,7 +113,7 @@ impl BenchCase for ReduceSumBench {
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(baseline_wall),
-                input_bytes: Some(inputs[1].len() as u64),
+                input_bytes: Some(inputs[0].len() as u64),
                 output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
                 custom: vec![MetricPoint {
                     name: "flop_count".to_string(),

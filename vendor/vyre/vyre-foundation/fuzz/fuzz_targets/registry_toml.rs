@@ -1,8 +1,8 @@
 #![no_main]
-//! P1 inventory #98 — fuzz target for registry TOML loading.
+//! P1 inventory #98  -  fuzz target for registry TOML loading.
 //!
-//! Random bytes shaped like TOML — including syntactically invalid,
-//! structurally-fine-but-semantically-wrong, and oversize files — must
+//! Random bytes shaped like TOML  -  including syntactically invalid,
+//! structurally-fine-but-semantically-wrong, and oversize files  -  must
 //! never panic the registry loader. Every error path must produce a
 //! structured `Err` with a `Fix:` hint so the operator can act.
 
@@ -17,7 +17,7 @@ fuzz_target!(|data: &[u8]| {
     }
     let Ok(s) = std::str::from_utf8(data) else { return; };
     // The TOML decoder is the moral equivalent of the registry loader's
-    // first stage. A panic here is a real finding — every invalid TOML
+    // first stage. A panic here is a real finding  -  every invalid TOML
     // must surface as a structured `Err`.
     drop(toml::from_str::<toml::Value>(s));
 });

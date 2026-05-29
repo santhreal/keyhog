@@ -267,12 +267,12 @@ pub fn format_validated_cuda_megakernel_speedup_evidence_csv(
     let proof = validate_cuda_megakernel_speedup_gate(samples, required_speedup_x)?;
     let capacity = megakernel_speedup_evidence_csv_capacity(samples.len())?;
     let mut csv = String::new();
-    csv.try_reserve_exact(capacity).map_err(|error| {
-        CudaMegakernelSpeedupGateError::EvidenceCsvReserveFailed {
+    vyre_foundation::allocation::try_reserve_string_to_capacity(&mut csv, capacity).map_err(
+        |error| CudaMegakernelSpeedupGateError::EvidenceCsvReserveFailed {
             requested: capacity,
             message: error.to_string(),
-        }
-    })?;
+        },
+    )?;
     csv.push_str(MEGAKERNEL_SPEEDUP_EVIDENCE_CSV_HEADER);
     csv.push('\n');
     for sample in samples {
@@ -456,6 +456,7 @@ pub fn validate_cuda_megakernel_speedup_evidence_csv(
     })
 }
 
+
 fn accumulate_cuda_megakernel_speedup_sample(
     sample: CudaMegakernelSpeedupSample,
     index: usize,
@@ -606,7 +607,7 @@ mod tests {
             ],
             100.0,
         )
-        .expect("unpolluted 100x samples should pass release gate");
+        .expect("Fix: unpolluted 100x samples should pass release gate");
 
         assert_eq!(proof.sample_count, 2);
         assert_eq!(proof.total_repetitions, 192);
@@ -623,7 +624,7 @@ mod tests {
         );
 
         let proof = validate_cuda_megakernel_speedup_evidence_csv(&csv, 100.0)
-            .expect("release evidence CSV should validate");
+            .expect("Fix: release evidence CSV should validate");
 
         assert_eq!(proof.sample_count, 2);
         assert_eq!(proof.total_repetitions, 192);
@@ -638,9 +639,9 @@ mod tests {
             sample(2_500_000.0, 20_000.0, 128),
         ];
         let (proof, csv) = format_validated_cuda_megakernel_speedup_evidence_csv(&samples, 100.0)
-            .expect("validated release samples should format as verifier CSV");
+            .expect("Fix: validated release samples should format as verifier CSV");
         let reparsed = validate_cuda_megakernel_speedup_evidence_csv(&csv, 100.0)
-            .expect("formatted release CSV should roundtrip through the verifier");
+            .expect("Fix: formatted release CSV should roundtrip through the verifier");
 
         assert_eq!(proof, reparsed);
         assert!(csv.starts_with(MEGAKERNEL_SPEEDUP_EVIDENCE_CSV_HEADER));
@@ -650,7 +651,7 @@ mod tests {
     #[test]
     fn speedup_gate_csv_capacity_planning_is_checked() {
         let capacity = megakernel_speedup_evidence_csv_capacity(2)
-            .expect("two release samples should have bounded CSV capacity");
+            .expect("Fix: two release samples should have bounded CSV capacity");
         assert_eq!(
             capacity,
             MEGAKERNEL_SPEEDUP_EVIDENCE_CSV_HEADER.len() + 1 + 256
@@ -870,3 +871,4 @@ mod tests {
         }
     }
 }
+

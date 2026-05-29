@@ -16,7 +16,7 @@
 //!
 //! The speculative path runs the confirmer on *every* tile,
 //! assuming the pre-filter would pass, and commits only the tiles
-//! whose pre-filter actually passed. Rollback is free — a tile
+//! whose pre-filter actually passed. Rollback is free  -  a tile
 //! that shouldn't have produced output writes nothing, because the
 //! commit is gated on the pre-filter bit.
 //!
@@ -53,7 +53,7 @@ pub struct SpeculationReport {
     /// Lanes whose confirmer output survived the commit gate.
     pub committed_tiles: u32,
     /// Lanes the confirmer ran on that the pre-filter rejected
-    /// (work thrown away — the "cost" side of the trade).
+    /// (work thrown away  -  the "cost" side of the trade).
     pub rolled_back_tiles: u32,
 }
 
@@ -67,7 +67,7 @@ impl SpeculationReport {
         }
     }
 
-    /// Empty report — no tiles touched yet. Equivalent to
+    /// Empty report  -  no tiles touched yet. Equivalent to
     /// [`Self::default`].
     #[must_use]
     pub fn empty() -> Self {
@@ -86,11 +86,13 @@ impl SpeculationReport {
     #[must_use]
     pub fn commit_rate_ppm(&self) -> u32 {
         let total = self.attempted_tiles();
-        if total == 0 {
-            return 0;
-        }
-        let num = u64::from(self.committed_tiles) * 1_000_000;
-        (num / total) as u32
+        crate::numeric::ratio_parts_per_million_u64(
+            u64::from(self.committed_tiles),
+            total,
+            0,
+            "speculation commit-rate",
+            "driver",
+        )
     }
 
     /// Commit rate as a whole-percent, floored.
@@ -131,7 +133,7 @@ pub enum SpeculationMode {
 /// staying quiet on a single anomalous dispatch.
 const EMA_SHIFT: u32 = 2;
 
-/// Online speculator — decides dispatch by dispatch whether to run
+/// Online speculator  -  decides dispatch by dispatch whether to run
 /// the fused speculative kernel or the non-speculative two-stage GPU path.
 ///
 /// The EMA is stored in ppm so we never leave integer math.
@@ -189,13 +191,13 @@ impl AdaptiveSpeculator {
     ///
     /// EMA: `new = old + (obs - old) / 4`, implemented on u32 with
     /// signed intermediate to avoid wrap. A report with zero
-    /// attempted tiles is ignored — it carries no signal.
+    /// attempted tiles is ignored  -  it carries no signal.
     pub fn record(&self, report: SpeculationReport) {
         if report.attempted_tiles() == 0 {
             return;
         }
         let observation = report.commit_rate_ppm();
-        // EMA update — single fetch_update so concurrent callers
+        // EMA update  -  single fetch_update so concurrent callers
         // cannot lose samples.
         self.ema_commit_rate_ppm
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |old| {
@@ -254,7 +256,7 @@ pub fn parse_counter_tail(output_bytes: &[u8]) -> Option<SpeculationReport> {
     ))
 }
 
-/// Encode a counter tail — used by CPU-reference kernels and
+/// Encode a counter tail  -  used by CPU-reference kernels and
 /// tests. Keeps the host + device endianness consistent.
 #[must_use]
 pub fn encode_counter_tail(report: SpeculationReport) -> [u8; COUNTER_TAIL_BYTES] {
@@ -475,6 +477,7 @@ where
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use std::collections::HashSet;
@@ -602,7 +605,7 @@ mod tests {
         assert_eq!(
             store
                 .get(&decision.autotune_key)
-                .expect("winning speculative record must be stored")
+                .expect("Fix: winning speculative record must be stored")
                 .unroll,
             4
         );
@@ -639,7 +642,7 @@ mod tests {
         assert_eq!(
             store
                 .get(&decision.autotune_key)
-                .expect("winning conservative record must be stored")
+                .expect("Fix: winning conservative record must be stored")
                 .unroll,
             2
         );
@@ -743,7 +746,7 @@ mod tests {
     #[test]
     fn adaptive_speculator_hysteresis_avoids_flap_near_threshold() {
         let s = AdaptiveSpeculator::new(20);
-        // Hover right at 20% — inside the ±5% deadband.
+        // Hover right at 20%  -  inside the ±5% deadband.
         for _ in 0..50 {
             s.record(SpeculationReport::from_counts(20, 80));
         }
@@ -843,3 +846,4 @@ mod tests {
         assert_eq!(outcome.outputs, vec![b"confirmed".to_vec()]);
     }
 }
+

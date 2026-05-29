@@ -7,8 +7,6 @@
 pub(crate) const EMPTY_MACRO_SLOT: u32 = u32::MAX;
 pub(crate) const MACRO_TABLE_SLOTS: u32 = 4_096;
 pub(crate) const MACRO_TABLE_MASK: u32 = MACRO_TABLE_SLOTS - 1;
-pub(crate) const FNV1A32_OFFSET: u32 = 0x811c_9dc5;
-pub(crate) const FNV1A32_PRIME: u32 = 0x0100_0193;
 
 /// Object-like C macro table kind for `opt_named_macro_expansion`.
 pub const C_MACRO_KIND_OBJECT_LIKE: u32 = 0;

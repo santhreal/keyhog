@@ -9,7 +9,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use vyre_lints::{run_production_cpu_fallbacks, run_raw_ir_in_libs, Violation};
+use vyre_lints::{
+    run_consumer_coupling, run_gpu_skip_guards, run_module_forks, run_production_cpu_fallbacks,
+    run_raw_ir_in_libs, Violation,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -53,9 +56,36 @@ struct Cli {
     check_production_cpu_fallbacks: bool,
 
     /// Override production roots scanned by `--check-production-cpu-fallbacks`.
-    /// Defaults to the main production crates, excluding reference/conform crates.
+    /// Defaults to Vyre-owned production crates, excluding reference/conform crates.
+    /// External consumers can be scanned by passing this flag repeatedly.
     #[arg(long)]
     production_root: Vec<PathBuf>,
+
+    /// Run the consumer-name coupling guard over platform docs/comments.
+    #[arg(long)]
+    check_consumer_coupling: bool,
+
+    /// Override roots scanned by `--check-consumer-coupling`.
+    /// Defaults to current docs plus platform source crates.
+    #[arg(long)]
+    consumer_root: Vec<PathBuf>,
+
+    /// Run the same-name module fork scanner over selected authority roots.
+    #[arg(long)]
+    check_module_forks: bool,
+
+    /// Override roots scanned by `--check-module-forks`.
+    /// Defaults to graph authority roots where fork drift has historically appeared.
+    #[arg(long)]
+    module_fork_root: Vec<PathBuf>,
+
+    /// Run the GPU skip guard over CUDA/WGPU/runtime validation paths.
+    #[arg(long)]
+    check_gpu_skip_guards: bool,
+
+    /// Override roots scanned by `--check-gpu-skip-guards`.
+    #[arg(long)]
+    gpu_skip_root: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
@@ -77,6 +107,18 @@ fn main() -> Result<()> {
 
     if cli.check_production_cpu_fallbacks {
         return run_production_cpu_fallbacks_cli(&cli);
+    }
+
+    if cli.check_consumer_coupling {
+        return run_consumer_coupling_cli(&cli);
+    }
+
+    if cli.check_module_forks {
+        return run_module_forks_cli(&cli);
+    }
+
+    if cli.check_gpu_skip_guards {
+        return run_gpu_skip_guards_cli(&cli);
     }
 
     let lib_root = cli
@@ -106,6 +148,88 @@ fn main() -> Result<()> {
     }
 }
 
+fn run_consumer_coupling_cli(cli: &Cli) -> Result<()> {
+    let roots = if cli.consumer_root.is_empty() {
+        default_consumer_coupling_roots(&cli.workspace_root)
+    } else {
+        cli.consumer_root.clone()
+    };
+    for root in &roots {
+        if !root.exists() {
+            anyhow::bail!(
+                "consumer coupling root not found: {}. Fix: update the platform doc/comment guard roots instead of silently shrinking scan coverage.",
+                root.display()
+            );
+        }
+    }
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|root| root.as_path()).collect();
+    let violations =
+        run_consumer_coupling(&root_refs).context("running consumer-name coupling guard")?;
+    match cli.format {
+        Format::Text => emit_text(&violations),
+        Format::Json => emit_json(&violations)?,
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn run_module_forks_cli(cli: &Cli) -> Result<()> {
+    let roots = if cli.module_fork_root.is_empty() {
+        default_module_fork_roots(&cli.workspace_root)
+    } else {
+        cli.module_fork_root.clone()
+    };
+    for root in &roots {
+        if !root.exists() {
+            anyhow::bail!(
+                "module fork root not found: {}. Fix: update the duplicate-module scan roots instead of silently shrinking scan coverage.",
+                root.display()
+            );
+        }
+    }
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|root| root.as_path()).collect();
+    let violations = run_module_forks(&root_refs).context("running same-name module fork scanner")?;
+    match cli.format {
+        Format::Text => emit_text(&violations),
+        Format::Json => emit_json(&violations)?,
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn run_gpu_skip_guards_cli(cli: &Cli) -> Result<()> {
+    let roots = if cli.gpu_skip_root.is_empty() {
+        default_gpu_skip_roots(&cli.workspace_root)
+    } else {
+        cli.gpu_skip_root.clone()
+    };
+    for root in &roots {
+        if !root.exists() {
+            anyhow::bail!(
+                "GPU skip guard root not found: {}. Fix: update CUDA/WGPU validation roots instead of silently shrinking scan coverage.",
+                root.display()
+            );
+        }
+    }
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|root| root.as_path()).collect();
+    let violations = run_gpu_skip_guards(&root_refs).context("running GPU skip guard")?;
+    match cli.format {
+        Format::Text => emit_text(&violations),
+        Format::Json => emit_json(&violations)?,
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
 fn run_drift(
     allowlist: &std::path::Path,
     budget_days: i64,
@@ -126,7 +250,7 @@ fn run_drift(
         return Ok(());
     }
     println!(
-        "vyre-lints drift: {} stale entry(ies) — every entry should land its migration ticket within {budget_days} days.",
+        "vyre-lints drift: {} stale entry(ies)  -  every entry should land its migration ticket within {budget_days} days.",
         findings.len()
     );
     for f in &findings {
@@ -175,8 +299,49 @@ fn default_production_roots(workspace_root: &std::path::Path) -> Vec<PathBuf> {
         "vyre-lower/src",
         "vyre-runtime/src",
         "vyre-self-substrate/src",
-        "../../../dataflow/weir/src",
-        "../../../../tools/vyrec/src",
+    ]
+    .into_iter()
+    .map(|root| workspace_root.join(root))
+    .collect()
+}
+
+fn default_consumer_coupling_roots(workspace_root: &std::path::Path) -> Vec<PathBuf> {
+    [
+        "docs",
+        "vyre-core/src",
+        "vyre-driver/src",
+        "vyre-driver-cuda/src",
+        "vyre-driver-wgpu/src",
+        "vyre-foundation/src",
+        "vyre-libs/src",
+        "vyre-lower/src",
+        "vyre-primitives/src",
+        "vyre-runtime/src",
+        "vyre-self-substrate/src",
+    ]
+    .into_iter()
+    .map(|root| workspace_root.join(root))
+    .collect()
+}
+
+fn default_module_fork_roots(workspace_root: &std::path::Path) -> Vec<PathBuf> {
+    [
+        "vyre-primitives/src/graph",
+        "vyre-self-substrate/src/graph",
+        "vyre-libs/src/graph",
+    ]
+    .into_iter()
+    .map(|root| workspace_root.join(root))
+    .collect()
+}
+
+fn default_gpu_skip_roots(workspace_root: &std::path::Path) -> Vec<PathBuf> {
+    [
+        "vyre-driver-cuda/src",
+        "vyre-driver-cuda/tests",
+        "vyre-driver-wgpu/src",
+        "vyre-driver-wgpu/tests",
+        "vyre-runtime/src",
     ]
     .into_iter()
     .map(|root| workspace_root.join(root))
@@ -235,6 +400,9 @@ fn emit_json(violations: &[Violation]) -> Result<()> {
             vyre_lints::ViolationKind::RawNodeConstruction => "raw_node_construction",
             vyre_lints::ViolationKind::RawExprConstruction => "raw_expr_construction",
             vyre_lints::ViolationKind::ProductionCpuFallback => "production_cpu_fallback",
+            vyre_lints::ViolationKind::ConsumerCoupling => "consumer_coupling",
+            vyre_lints::ViolationKind::ModuleFork => "module_fork",
+            vyre_lints::ViolationKind::GpuSkipGuard => "gpu_skip_guard",
         };
         if i > 0 {
             out.push_str(",\n");

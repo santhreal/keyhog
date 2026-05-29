@@ -7,7 +7,7 @@ use crate::parsing::python::parse::calls::python312_extract_calls;
 use crate::parsing::python::parse::structure::{
     python312_extract_imports, python312_extract_structure,
 };
-use crate::parsing::source_cache::ParsedSourceLru;
+use crate::parsing::source_cache::{source_len_u32_nonzero, ParsedSourceLru};
 use vyre::ir::Program;
 
 /// Cached Python pipeline stage bundle for one source shape.
@@ -33,7 +33,7 @@ pub fn get_or_build_python312_pipeline(
     extra: &[u8],
 ) -> Arc<Python312PipelinePrograms> {
     cache.get_or_parse(source, extra, |bytes| {
-        let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX).max(1);
+        let len = source_len_u32_nonzero(bytes);
         Python312PipelinePrograms {
             lex: python312_lexer(
                 "haystack",

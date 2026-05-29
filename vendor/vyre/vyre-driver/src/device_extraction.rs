@@ -152,16 +152,25 @@ fn extraction_bias_bps(device: ExtractionDevice<'_>, hints: NodeHints) -> u32 {
 }
 
 fn scale_bps(lhs_bps: u32, rhs_bps: u32) -> u32 {
-    let scaled = (u64::from(lhs_bps) * u64::from(rhs_bps)) / 10_000u64;
-    u32::try_from(scaled).unwrap_or(u32::MAX)
+    crate::numeric::compose_basis_points_u32(
+        lhs_bps,
+        rhs_bps,
+        "device extraction bias composition",
+        "driver",
+    )
 }
 
 fn apply_context_bias(cost: u64, bps: u32) -> u64 {
     if bps >= 10_000 {
         return cost;
     }
-    let scaled = (u128::from(cost) * u128::from(bps)) / 10_000u128;
-    u64::try_from(scaled).unwrap_or(u64::MAX).max(1)
+    crate::numeric::scale_u64_by_basis_points_floor_min(
+        cost,
+        bps,
+        1,
+        "device extraction context bias",
+        "driver",
+    )
 }
 
 #[cfg(test)]
@@ -237,7 +246,7 @@ mod tests {
             base_cost,
             hints,
         )
-        .expect("equivalent toy graph must extract");
+        .expect("Fix: equivalent toy graph must extract");
 
         assert_eq!(extracted.backend, "portable");
         assert_eq!(extracted.node, Toy::Scalar);
@@ -258,7 +267,7 @@ mod tests {
             base_cost,
             hints,
         )
-        .expect("equivalent toy graph must extract");
+        .expect("Fix: equivalent toy graph must extract");
 
         assert_eq!(extracted.backend, "native");
         assert_eq!(extracted.node, Toy::TensorCore);
@@ -307,7 +316,7 @@ mod tests {
             base_cost,
             hints,
         )
-        .expect("equivalent toy graph must extract");
+        .expect("Fix: equivalent toy graph must extract");
 
         assert_eq!(extracted.node, Toy::Specialized);
         assert_eq!(extracted.cost, 4);
@@ -331,7 +340,7 @@ mod tests {
             base_cost,
             hints,
         )
-        .expect("equivalent toy graph must extract");
+        .expect("Fix: equivalent toy graph must extract");
 
         assert_eq!(extracted.node, Toy::Specialized);
         assert_eq!(extracted.cost, 4);

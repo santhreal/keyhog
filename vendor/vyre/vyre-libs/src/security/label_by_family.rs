@@ -1,4 +1,4 @@
-//! `label_by_family` — Tier-3 shim over
+//! `label_by_family`  -  Tier-3 shim over
 //! [`vyre_primitives::label::resolve_family`].
 
 use vyre::ir::Program;
@@ -30,14 +30,14 @@ inventory::submit! {
         id: OP_ID,
         build: || label_by_family("node_tags", "out", 4, 0b0010),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0x01, 0x02, 0x06, 0x04]),
                 to_bytes(&[0]),
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0b0110])]]
         }),
         category: Some("security"),
@@ -66,7 +66,7 @@ mod tests {
             .buffers()
             .iter()
             .find(|b| b.name() == "out")
-            .expect("out buffer");
+            .expect("Fix: out buffer");
         // bitset_words(4) = 1
         assert_eq!(out_buf.count, 1);
     }
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn label_by_family_empty_tags_returns_empty_nodeset() {
         let p = label_by_family("node_tags", "out", 4, 0b0010);
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![to_bytes(&[0, 0, 0, 0]), to_bytes(&[0])];
         let values: Vec<vyre_reference::value::Value> = inputs
             .into_iter()
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn label_by_family_zero_mask_matches_nothing() {
         let p = label_by_family("node_tags", "out", 4, 0);
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![to_bytes(&[0xFF, 0xFF, 0xFF, 0xFF]), to_bytes(&[0])];
         let values: Vec<vyre_reference::value::Value> = inputs
             .into_iter()
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn label_by_family_universal_mask_matches_all_nonzero() {
         let p = label_by_family("node_tags", "out", 4, 0xFFFFFFFF);
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![to_bytes(&[0x01, 0x02, 0x04, 0x08]), to_bytes(&[0])];
         let values: Vec<vyre_reference::value::Value> = inputs
             .into_iter()
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn label_by_family_max_node_count_does_not_panic() {
         let p = label_by_family("node_tags", "out", 32, 0b0001);
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![to_bytes(&[0xFFFFFFFF; 32]), to_bytes(&[0; 1])];
         let values: Vec<vyre_reference::value::Value> = inputs
             .into_iter()
@@ -155,7 +155,7 @@ mod tests {
             let words = node_count.div_ceil(32);
             let expected = vyre_primitives::label::resolve_family::cpu_ref(&tags, mask);
             let p = label_by_family("node_tags", "out", node_count, mask);
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             let inputs = vec![
                 to_bytes(&tags),
                 to_bytes(&vec![0u32; words as usize]),
@@ -163,11 +163,8 @@ mod tests {
             let values: Vec<vyre_reference::value::Value> =
                 inputs.into_iter().map(vyre_reference::value::Value::from).collect();
             let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
-            let gpu_words: Vec<u32> = outputs[0]
-                .to_bytes()
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-                .collect();
+            let gpu_words: Vec<u32> =
+                vyre_primitives::wire::decode_u32_le_bytes_all(&outputs[0].to_bytes());
             prop_assert_eq!(gpu_words, expected);
         }
     }

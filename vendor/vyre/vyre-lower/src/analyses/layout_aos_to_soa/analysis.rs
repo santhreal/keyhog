@@ -3,7 +3,8 @@
 //! flag it as a layout-transform candidate.
 
 use super::plan::{LayoutCandidate, LayoutTransformPlan};
-use crate::{KernelBody, KernelDescriptor, KernelOpKind};
+use crate::analyses::load_counts::count_global_loads_by_slot;
+use crate::KernelDescriptor;
 use rustc_hash::FxHashMap;
 use vyre_foundation::ir::DataType;
 
@@ -18,7 +19,7 @@ pub fn analyze(desc: &KernelDescriptor) -> LayoutTransformPlan {
 
     let mut load_counts: FxHashMap<u32, u32> =
         FxHashMap::with_capacity_and_hasher(compound.len(), Default::default());
-    count_loads(&desc.body, &compound, &mut load_counts);
+    count_global_loads_by_slot(&desc.body, &|slot| compound.contains_key(&slot), &mut load_counts);
 
     let mut candidates = Vec::new();
     for (slot, count) in load_counts {
@@ -54,36 +55,6 @@ fn compound_lane_count(dtype: &DataType) -> Option<u32> {
         }
         DataType::Array { .. } => Some(2), // Array is the AoS shape itself; conservative split count.
         _ => None,
-    }
-}
-
-fn count_loads(
-    body: &KernelBody,
-    eligible: &FxHashMap<u32, u32>,
-    counts: &mut FxHashMap<u32, u32>,
-) {
-    for op in &body.ops {
-        if matches!(op.kind, KernelOpKind::LoadGlobal) {
-            if let Some(slot) = op.operands.first() {
-                if eligible.contains_key(slot) {
-                    *counts.entry(*slot).or_insert(0) += 1;
-                }
-            }
-        }
-        match &op.kind {
-            KernelOpKind::StructuredIfThen
-            | KernelOpKind::StructuredIfThenElse
-            | KernelOpKind::StructuredForLoop { .. }
-            | KernelOpKind::StructuredBlock
-            | KernelOpKind::Region { .. } => {
-                if let Some(child_id) = op.operands.last() {
-                    if let Some(child) = body.child_bodies.get(*child_id as usize) {
-                        count_loads(child, eligible, counts);
-                    }
-                }
-            }
-            _ => {}
-        }
     }
 }
 
@@ -232,6 +203,50 @@ mod tests {
             },
         };
         assert!(analyze(&desc).candidates.is_empty());
+    }
+
+    #[test]
+    fn structured_if_else_counts_both_load_branches() {
+        let desc = KernelDescriptor {
+            id: "k".into(),
+            bindings: BindingLayout {
+                slots: vec![vec4_binding(0)],
+            },
+            dispatch: Dispatch::new(32, 1, 1),
+            body: KernelBody {
+                ops: vec![KernelOp {
+                    kind: KernelOpKind::StructuredIfThenElse,
+                    operands: vec![99, 0, 1],
+                    result: None,
+                }],
+                child_bodies: vec![
+                    KernelBody {
+                        ops: vec![KernelOp {
+                            kind: KernelOpKind::LoadGlobal,
+                            operands: vec![0, 0],
+                            result: Some(1),
+                        }],
+                        child_bodies: vec![],
+                        literals: vec![],
+                    },
+                    KernelBody {
+                        ops: vec![KernelOp {
+                            kind: KernelOpKind::LoadGlobal,
+                            operands: vec![0, 0],
+                            result: Some(2),
+                        }],
+                        child_bodies: vec![],
+                        literals: vec![],
+                    },
+                ],
+                literals: vec![],
+            },
+        };
+
+        let plan = analyze(&desc);
+
+        assert_eq!(plan.candidates.len(), 1);
+        assert_eq!(plan.candidates[0].load_count, 2);
     }
 
     #[test]

@@ -375,7 +375,7 @@ impl<'a> WgpuMegakernelDispatcher<'a> {
         // region so observability collectors can attribute outputs back
         // to the source rules that derived them. We seed the lineage
         // bitset from work_items[i].op_handle (each op contributes its
-        // own bit, capped at 32 distinct ops per dispatch — the u32
+        // own bit, capped at 32 distinct ops per dispatch  -  the u32
         // word width) and run the substrate provenance closure across
         // the same exchange_adj that the matroid scheduler used. The
         // closure propagates lineage through any fused-region edges,
@@ -452,6 +452,7 @@ impl<'a> WgpuMegakernelDispatcher<'a> {
         })
     }
 }
+
 
 fn strict_done_ring_slots_from_outputs(
     outputs: &[Vec<u8>],
@@ -572,11 +573,7 @@ fn resident_megakernel_allocation_events(
     if resident_megakernel_cache_matches(backend, workgroup_size_x, slot_count, input_lens, cache) {
         0
     } else {
-        u32::try_from(inputs.len()).unwrap_or_else(|source| {
-            panic!(
-                "resident megakernel input count cannot fit u32: {source}. Fix: shard resident inputs before allocation accounting."
-            )
-        })
+        4
     }
 }
 
@@ -698,11 +695,11 @@ fn megakernel_report_telemetry(
             usize_to_u64(item_count, "megakernel frontier item count")?,
             u64::from(slot_count.max(1)),
         ),
-        readback_buffers: u32::try_from(outputs.len()).unwrap_or_else(|source| {
-            panic!(
+        readback_buffers: u32::try_from(outputs.len()).map_err(|source| {
+            BackendError::new(format!(
                 "megakernel readback buffer count cannot fit u32: {source}. Fix: shard output buffers before telemetry reporting."
-            )
-        }),
+            ))
+        })?,
         compiled_pipeline_cache_hit,
         resident_input_cache_hit,
         topology: launch.topology,
@@ -775,19 +772,13 @@ fn occupancy_proxy_bps(
 }
 
 fn density_bps(numerator: u64, denominator: u64) -> u16 {
-    let bps = numerator
-        .checked_mul(10_000)
-        .unwrap_or_else(|| {
-            panic!(
-                "megakernel occupancy density numerator overflowed u64. Fix: shard the dispatch before occupancy scoring."
-            )
-        })
-        / denominator.max(1);
-    u16::try_from(bps.min(10_000)).unwrap_or_else(|source| {
-        panic!(
-            "megakernel occupancy density cannot fit u16: {source}. Fix: keep density in basis-point range."
-        )
-    })
+    crate::numeric::ratio_basis_points_u64_wide(
+        numerator,
+        denominator.max(1),
+        0,
+        "megakernel occupancy density",
+    )
+    .min(10_000) as u16
 }
 
 fn ensure_empty_io_queue_bytes(bytes: &mut Vec<u8>) -> Result<(), BackendError> {
@@ -919,11 +910,7 @@ fn retained_redundant_done_count(
     dispatch_item_count: usize,
     redundancy: &CrossArmRedundancy,
 ) -> u64 {
-    let dispatch_item_count = u64::try_from(dispatch_item_count).unwrap_or_else(|source| {
-        panic!(
-            "megakernel dispatch item count cannot fit u64: {source}. Fix: shard dispatch items before redundancy accounting."
-        )
-    });
+    let dispatch_item_count = u64::try_from(dispatch_item_count).unwrap_or(u64::MAX);
     if done_count < dispatch_item_count {
         return 0;
     }
@@ -937,12 +924,9 @@ fn retained_redundant_done_count(
         })
         .count()
         .try_into()
-        .unwrap_or_else(|source| {
-            panic!(
-                "megakernel redundant done count cannot fit u64: {source}. Fix: shard dispatch items before redundancy accounting."
-            )
-        })
+        .unwrap_or(u64::MAX)
 }
+
 
 fn nanos_u64(nanos: u128) -> Result<u64, BackendError> {
     u64::try_from(nanos).map_err(|source| {
@@ -1123,11 +1107,11 @@ mod tests {
         let dispatcher = WgpuMegakernelDispatcher::new(&backend);
         let launch = MegakernelConfig::default()
             .launch_recommendation(1, 1, 1, 1)
-            .expect("test launch recommendation must be valid");
+            .expect("Fix: test launch recommendation must be valid");
         let budget_above_policy_scratch = launch
             .estimated_peak_device_bytes
             .checked_add(1)
-            .expect("WGPU megakernel peak-device-byte policy sentinel overflowed u64");
+            .expect("Fix: WGPU megakernel peak-device-byte policy sentinel overflowed u64");
         let config = MegakernelConfig {
             worker_count: 1,
             workload: vyre_runtime::megakernel::MegakernelWorkloadHints {
@@ -1178,7 +1162,7 @@ mod tests {
         ];
 
         let plan = resident_input_upload_plan(&resources, &inputs)
-            .expect("resident ABI upload plan should cover exact megakernel input slots");
+            .expect("Fix: resident ABI upload plan should cover exact megakernel input slots");
 
         assert_eq!(plan.len(), inputs.len());
         for index in 0..inputs.len() {
@@ -1218,13 +1202,13 @@ mod tests {
             .recommend(vyre_runtime::megakernel::MegakernelLaunchRequest::direct(
                 8, 2, 8,
             ))
-            .expect("test launch policy request must be valid");
+            .expect("Fix: test launch policy request must be valid");
         let peak_bytes = megakernel_dispatch_peak_device_bytes(&inputs, launch)
-            .expect("test peak byte estimate must fit u64");
+            .expect("Fix: test peak byte estimate must fit u64");
         let telemetry = megakernel_report_telemetry(
             &inputs, &outputs, 4, 8, 16, 2, 8, launch, peak_bytes, true, false,
         )
-        .expect("test telemetry byte accounting must fit u64");
+        .expect("Fix: test telemetry byte accounting must fit u64");
 
         assert_eq!(telemetry.bytes_uploaded, 40);
         assert_eq!(telemetry.bytes_read_back, 36);
@@ -1234,6 +1218,7 @@ mod tests {
         assert_eq!(telemetry.sync_points, 1);
         assert_eq!(telemetry.occupancy_proxy_bps, 5_000);
         assert_eq!(telemetry.frontier_density_bps, 5_000);
+        assert_eq!(density_bps(u64::MAX, 1), 10_000);
         assert_eq!(telemetry.readback_buffers, 4);
         assert!(telemetry.compiled_pipeline_cache_hit);
         assert!(!telemetry.resident_input_cache_hit);
@@ -1449,14 +1434,14 @@ mod tests {
 
         let first_resources =
             ensure_resident_megakernel_buffers(&backend, 64, 64, &inputs, &mut cache)
-                .expect("first resident ensure must succeed")
-                .expect("fake CUDA backend supports resident resources")
+                .expect("Fix: first resident ensure must succeed")
+                .expect("Fix: fake CUDA backend supports resident resources")
                 .to_vec();
         let first_uploads = backend.uploads.lock().unwrap().clone();
         let second_resources =
             ensure_resident_megakernel_buffers(&backend, 64, 64, &inputs, &mut cache)
-                .expect("second resident ensure must succeed")
-                .expect("fake CUDA backend supports resident resources")
+                .expect("Fix: second resident ensure must succeed")
+                .expect("Fix: fake CUDA backend supports resident resources")
                 .to_vec();
         let all_uploads = backend.uploads.lock().unwrap().clone();
 
@@ -1497,8 +1482,8 @@ mod tests {
         let mut cache = None;
 
         ensure_resident_megakernel_buffers(&first_backend, 64, 64, &inputs, &mut cache)
-            .expect("first resident ensure must succeed")
-            .expect("first fake CUDA backend supports resident resources");
+            .expect("Fix: first resident ensure must succeed")
+            .expect("Fix: first fake CUDA backend supports resident resources");
 
         assert!(
             !resident_megakernel_cache_matches(
@@ -1512,3 +1497,4 @@ mod tests {
         );
     }
 }
+

@@ -64,6 +64,7 @@ fn prehash_vast_identifiers_with_scratch(
             packed_haystack as u64,
         ],
     );
+    scratch.outputs.clear();
     super::dispatch_borrowed_stage_cached_into(
         backend,
         prehash_key,

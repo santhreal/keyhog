@@ -3,17 +3,28 @@
 use std::sync::{Arc, Mutex};
 
 use smallvec::SmallVec;
+use vyre_driver::accounting::checked_add_usize_lazy;
 use vyre_driver::binding::BindingRole;
-use vyre_driver::{backend::private, BackendError, DispatchConfig};
+use vyre_driver::input_identity::{domain_separated_exact_input_key, ExactInputKey};
+use vyre_driver::{backend::private, BackendError, DispatchConfig, LaunchPlan};
 use vyre_foundation::ir::Program;
 
 use crate::backend::allocations::DeviceAllocation;
+use crate::backend::module_cache::PtxSourceCacheKey;
 use crate::backend::{CachedCudaGraph, CudaBackend, CudaDispatchPlan, ModuleCacheKey};
 use crate::device::CudaDeviceCaps;
 
 mod compiled_dispatch;
+mod materialized_cache;
 mod static_params;
 
+#[cfg(test)]
+pub(crate) use materialized_cache::{
+    materialized_input_key, MAX_MATERIALIZED_OUTPUT_CACHE_BYTES_PER_PIPELINE,
+};
+pub(crate) use materialized_cache::{
+    MaterializedPipelineOutputCache, MaterializedPipelineOutputCacheEntry,
+};
 use static_params::upload_static_launch_params;
 
 /// CUDA pipeline with PTX already lowered and loaded into the backend cache.
@@ -26,6 +37,7 @@ pub(crate) struct CudaCompiledPipeline {
     prepared: CudaDispatchPlan,
     compiled_config: DispatchConfig,
     graph_cache: Mutex<SmallVec<[CachedCudaGraph; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>>,
+    materialized_output_cache: Mutex<MaterializedPipelineOutputCache>,
     static_params: DeviceAllocation,
     id: String,
 }
@@ -34,6 +46,37 @@ pub(crate) const MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE: usize = 32;
 const CUDA_GRAPH_REPLAY_SMS_PER_LANE: usize = 8;
 const CUDA_GRAPH_REPLAY_MIN_CONCURRENT_LANES: usize = 2;
 const CUDA_GRAPH_REPLAY_VRAM_FRACTION_DENOMINATOR: u64 = 64;
+const CUDA_COMPILED_PIPELINE_ID_DOMAIN: &[u8] = b"vyre.cuda.pipeline.compiled.v1";
+
+fn cuda_compiled_pipeline_identity_key(
+    ptx_source_key: &[u8; 32],
+    module_key: &[u8; 32],
+    launch: &LaunchPlan,
+) -> Result<ExactInputKey, BackendError> {
+    let element_count = launch.element_count.to_le_bytes();
+    let workgroup_x = launch.workgroup[0].to_le_bytes();
+    let workgroup_y = launch.workgroup[1].to_le_bytes();
+    let workgroup_z = launch.workgroup[2].to_le_bytes();
+    let grid_x = launch.grid[0].to_le_bytes();
+    let grid_y = launch.grid[1].to_le_bytes();
+    let grid_z = launch.grid[2].to_le_bytes();
+    domain_separated_exact_input_key(
+        CUDA_COMPILED_PIPELINE_ID_DOMAIN,
+        0,
+        0,
+        &[
+            ptx_source_key.as_slice(),
+            module_key.as_slice(),
+            element_count.as_slice(),
+            workgroup_x.as_slice(),
+            workgroup_y.as_slice(),
+            workgroup_z.as_slice(),
+            grid_x.as_slice(),
+            grid_y.as_slice(),
+            grid_z.as_slice(),
+        ],
+    )
+}
 
 impl CudaCompiledPipeline {
     /// Construct a compiled CUDA pipeline.
@@ -41,56 +84,35 @@ impl CudaCompiledPipeline {
         backend: CudaBackend,
         program: Arc<Program>,
         ptx_src: Arc<str>,
+        ptx_source_key: PtxSourceCacheKey,
         module_key: ModuleCacheKey,
         config: &DispatchConfig,
         prepared: CudaDispatchPlan,
     ) -> Result<Self, BackendError> {
-        let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+        let _profiler_range =
+            crate::profiler::cuda_profiler_range(crate::profiler::CUDA_PIPELINE_COMPILE_RANGE);
+        let trace = crate::instrumentation::cuda_stage_trace_enabled();
         let started = std::time::Instant::now();
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-pipeline] start entry={}",
                 program.entry_op_id.as_deref().unwrap_or("<anonymous>")
             );
         }
-        let mut hasher = blake3::Hasher::new();
-        let normalized_digest = vyre_driver::pipeline::try_normalized_program_cache_digest(
-            &program,
-        )
-        .map_err(|error| {
-            BackendError::new(format!(
-                "CUDA compiled-pipeline cache digest failed: {error}"
-            ))
-        })?;
-        hasher.update(&normalized_digest);
-        for lane in vyre_driver::program_vsa_fingerprint_words(&program) {
-            hasher.update(&lane.to_le_bytes());
-        }
-        vyre_driver::pipeline::update_dispatch_policy_cache_hash(&mut hasher, config);
-        hasher.update(ptx_src.as_bytes());
-        hasher.update(&backend.ptx_target_sm().to_le_bytes());
-        let warp_size = backend.warp_size().ok_or_else(|| BackendError::InvalidProgram {
-            fix: "Fix: CUDA compiled-pipeline cache key requires a probed hardware warp size; repair CUDA capability probing before compiling pipelines.".to_string(),
-        })?;
-        hasher.update(&warp_size.to_le_bytes());
-        hasher.update(&prepared.launch.element_count.to_le_bytes());
-        for value in prepared.launch.workgroup {
-            hasher.update(&value.to_le_bytes());
-        }
-        for value in prepared.launch.grid {
-            hasher.update(&value.to_le_bytes());
-        }
-        hasher.update(&backend.pipeline_feature_flags().bits().to_le_bytes());
-        let digest = hasher.finalize();
+        let digest = cuda_compiled_pipeline_identity_key(
+            ptx_source_key.as_bytes(),
+            &module_key.0,
+            &prepared.launch,
+        )?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-pipeline] +{}ms digest ready",
                 started.elapsed().as_millis()
             );
         }
         let static_params = upload_static_launch_params(&backend, &prepared.launch.param_words)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-pipeline] +{}ms static params ready bytes={}",
                 started.elapsed().as_millis(),
                 static_params.byte_len
@@ -104,9 +126,90 @@ impl CudaCompiledPipeline {
             prepared,
             compiled_config: config.clone(),
             graph_cache: Mutex::new(SmallVec::new()),
+            materialized_output_cache: Mutex::new(MaterializedPipelineOutputCache::default()),
             static_params,
-            id: format!("cuda:{}", digest.to_hex()),
+            id: format!("cuda:{}", blake3::Hash::from(digest).to_hex()),
         })
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn generated_key(seed: u32, salt: u32) -> [u8; 32] {
+        let mut out = [0_u8; 32];
+        let mut state = seed ^ salt ^ 0xC0DA_CAFE;
+        for (index, byte) in out.iter_mut().enumerate() {
+            state = state
+                .wrapping_mul(1_664_525)
+                .wrapping_add(1_013_904_223)
+                .rotate_left((index as u32) & 15);
+            *byte = (state >> ((index & 3) * 8)) as u8;
+        }
+        out
+    }
+
+    fn generated_launch(seed: u32) -> LaunchPlan {
+        LaunchPlan {
+            element_count: 1 + (seed % 4096),
+            workgroup: [
+                32 + (seed % 8) * 32,
+                1 + (seed.rotate_left(3) % 4),
+                1 + (seed.rotate_left(5) % 2),
+            ],
+            grid: [
+                1 + (seed % 1024),
+                1 + (seed.rotate_left(7) % 16),
+                1 + (seed.rotate_left(11) % 8),
+            ],
+            param_words: Vec::new(),
+            max_binding_alignment: std::mem::size_of::<u64>(),
+        }
+    }
+
+    #[test]
+    fn cuda_compiled_pipeline_identity_uses_shared_domain_separated_contract() {
+        for seed in 0_u32..2048 {
+            let ptx_key = generated_key(seed, 0x5054_5820);
+            let module_key = generated_key(seed, 0x4D4F_4420);
+            let launch = generated_launch(seed);
+
+            let key = cuda_compiled_pipeline_identity_key(&ptx_key, &module_key, &launch)
+                .expect("Fix: generated CUDA compiled pipeline key must fit");
+            let changed_ptx = cuda_compiled_pipeline_identity_key(
+                &generated_key(seed ^ 1, 0x5054_5820),
+                &module_key,
+                &launch,
+            )
+            .expect("Fix: generated CUDA compiled pipeline PTX variant must fit");
+            let changed_module = cuda_compiled_pipeline_identity_key(
+                &ptx_key,
+                &generated_key(seed ^ 1, 0x4D4F_4420),
+                &launch,
+            )
+            .expect("Fix: generated CUDA compiled pipeline module variant must fit");
+            let mut changed_launch = launch.clone();
+            changed_launch.grid[0] = changed_launch.grid[0].wrapping_add(1);
+            let changed_launch_key =
+                cuda_compiled_pipeline_identity_key(&ptx_key, &module_key, &changed_launch)
+                    .expect("Fix: generated CUDA compiled pipeline launch variant must fit");
+
+            assert_ne!(key, changed_ptx);
+            assert_ne!(key, changed_module);
+            assert_ne!(key, changed_launch_key);
+        }
+    }
+
+    #[test]
+    fn cuda_compiled_pipeline_source_does_not_fork_blake3_tuple_hashing() {
+        let source = include_str!("pipeline.rs");
+        assert!(
+            source.contains("domain_separated_exact_input_key")
+                && source.contains("cuda_compiled_pipeline_identity_key")
+                && !source.contains(&["blake", "3::Hasher::new()"].concat()),
+            "Fix: CUDA compiled pipeline identity must use the shared domain-separated exact-input key instead of local BLAKE3 tuple hashing."
+        );
     }
 }
 
@@ -120,31 +223,8 @@ impl Drop for CudaCompiledPipeline {
 
 impl private::Sealed for CudaCompiledPipeline {}
 
-fn borrowed_input_shape_matches(left: &[&[u8]], right: &[&[u8]]) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right.iter())
-            .all(|(left, right)| left.len() == right.len())
-}
-
-fn same_launch_shape(compiled: &DispatchConfig, runtime: &DispatchConfig) -> bool {
-    compiled.profile == runtime.profile
-        && compiled.ulp_budget == runtime.ulp_budget
-        && compiled.max_output_bytes == runtime.max_output_bytes
-        && compiled.workgroup_override == runtime.workgroup_override
-        && compiled.grid_override == runtime.grid_override
-        && compiled.fixpoint_iterations == runtime.fixpoint_iterations
-        && compiled.speculation == runtime.speculation
-        && compiled.persistent_thread == runtime.persistent_thread
-        && compiled.cooperative == runtime.cooperative
-}
-
 fn cuda_graph_replay_enabled() -> bool {
-    !matches!(
-        std::env::var("VYRE_CUDA_GRAPH_REPLAY").as_deref(),
-        Ok("0" | "false" | "FALSE" | "off" | "OFF")
-    )
+    crate::instrumentation::cuda_graph_replay_enabled()
 }
 
 pub(crate) fn cuda_graph_lane_count_for_batch(
@@ -238,8 +318,10 @@ fn cuda_graph_shape_cached_bytes(
 }
 
 fn add_shape_bytes(total: usize, component: usize) -> Result<usize, BackendError> {
-    total.checked_add(component).ok_or_else(|| BackendError::InvalidProgram {
+    checked_add_usize_lazy(total, component, || {
+        BackendError::InvalidProgram {
         fix: "Fix: CUDA graph replay cached shape byte count overflowed; split the replay batch before graph-cache lane planning.".to_string(),
+    }
     })
 }
 

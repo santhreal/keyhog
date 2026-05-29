@@ -5,8 +5,7 @@ use super::*;
 /// embedded `VYRECOB2` payload. This is the stable API for security/static
 /// analysis tools that consume the C frontend output.
 pub fn decode_object_semantic_graph(object_bytes: &[u8]) -> Result<CObjectSemanticGraph, String> {
-    let container = parse_embedded_vyrecob2(object_bytes)?;
-    decode_object_semantic_graph_from_container(&container)
+    decode_embedded_object(object_bytes, decode_object_semantic_graph_from_container)
 }
 
 pub(crate) fn decode_object_semantic_graph_from_container(
@@ -139,9 +138,7 @@ pub(super) fn validate_semantic_pg_edges(
 
 /// Read and decode semantic ProgramGraph sections from a compiled object path.
 pub fn decode_object_semantic_graph_file(path: &Path) -> Result<CObjectSemanticGraph, String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("vyre-frontend-c: read object {}: {error}", path.display()))?;
-    decode_object_semantic_graph(&bytes)
+    read_object_file(path, decode_object_semantic_graph)
 }
 
 pub(super) fn decode_c_ast_semantic_pg_nodes(

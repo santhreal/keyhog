@@ -1,7 +1,7 @@
-// Typed arena — bounded workgroup-local bump allocator.
+// Typed arena  -  bounded workgroup-local bump allocator.
 //
 // Op id: vyre_foundation::transform::compiler::typed_arena.
-// Soundness: Exact — atomic_fetch_add returns the pre-increment
+// Soundness: Exact  -  atomic_fetch_add returns the pre-increment
 // cursor; the bounds check uses the pre-increment cursor + size so
 // the overflow sentinel fires byte-identically to the CPU
 // reference.

@@ -1,4 +1,4 @@
-//! Walk a prepared `Program` collecting unique [`TrapTag`] entries —
+//! Walk a prepared `Program` collecting unique [`TrapTag`] entries  -
 //! one per distinct `Node::Trap` tag in source order. The substrate
 //! handles every other Node variant trivially.
 

@@ -2,11 +2,12 @@ use super::macro_values::macro_integer_values_with_builtin_prefix;
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::c::preprocess::expansion::{
     C_MACRO_KIND_FUNCTION_LIKE, C_MACRO_KIND_OBJECT_LIKE, C_MACRO_REPLACEMENT_LITERAL,
-    EMPTY_MACRO_SLOT, FNV1A32_OFFSET, FNV1A32_PRIME, MACRO_TABLE_MASK, MACRO_TABLE_SLOTS,
+    EMPTY_MACRO_SLOT, MACRO_TABLE_MASK, MACRO_TABLE_SLOTS,
 };
 use crate::parsing::c::preprocess::gpu_pipeline::buffers::{checked_gpu_u32, pack_u32_words};
 use crate::parsing::c::preprocess::gpu_pipeline::MacroDef;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use vyre_primitives::hash::fnv1a::fnv1a32 as primitive_fnv1a32;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -35,7 +36,12 @@ pub(crate) struct PackedMacroTable {
 impl PackedMacroTable {
     pub(crate) fn from_definitions(macros: &[MacroDef]) -> Result<Self, String> {
         let mut seen_names = HashSet::default();
-        seen_names.reserve(macros.len());
+        seen_names.try_reserve(macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} macro table dedupe slots: {error:?}. Fix: shard macro table packing before GPU preprocessing.",
+                macros.len()
+            )
+        })?;
         for mac in macros {
             if mac.name.is_empty() {
                 return Err(
@@ -51,8 +57,18 @@ impl PackedMacroTable {
             }
         }
         let mut names = Vec::new();
-        let mut offsets = Vec::with_capacity(macros.len() + 1);
-        let values = macro_integer_values_with_builtin_prefix(macros);
+        let offset_slots = macros.len().checked_add(1).ok_or_else(|| {
+            "vyre-libs::gpu_pipeline: macro table offset slot count overflows usize. Fix: shard macro table packing before GPU preprocessing.".to_string()
+        })?;
+        let mut offsets = Vec::new();
+        reserve_macro_table_vec(&mut offsets, offset_slots, "macro table offsets")?;
+        let total_name_bytes = macros.iter().try_fold(0usize, |total, mac| {
+            total.checked_add(mac.name.len()).ok_or_else(|| {
+                "vyre-libs::gpu_pipeline: macro table name bytes overflow usize. Fix: shard macro table packing before GPU preprocessing.".to_string()
+            })
+        })?;
+        reserve_macro_table_vec(&mut names, total_name_bytes, "macro table name bytes")?;
+        let values = macro_integer_values_with_builtin_prefix(macros)?;
         offsets.push(0);
         for mac in macros {
             names.extend_from_slice(&mac.name);
@@ -64,11 +80,13 @@ impl PackedMacroTable {
         let names_len =
             checked_gpu_u32("live conditional macro-name table byte length", names.len())?;
         let count = checked_gpu_u32("live conditional macro definition count", macros.len())?;
-        let names_target = (names.len().div_ceil(4) * 4).max(4);
-        let mut names_padded = vec![0u8; names_target];
+        let names_target = padded_macro_table_byte_len(names.len(), "macro table names")?;
+        let mut names_padded = Vec::new();
+        reserve_macro_table_vec(&mut names_padded, names_target, "macro table padded names")?;
+        names_padded.resize(names_target, 0);
         names_padded[..names.len()].copy_from_slice(&names);
-        let offsets_le = pack_u32_words(&offsets, offsets.len());
-        let values_le = pack_u32_words(&values, values.len().max(1));
+        let offsets_le = pack_u32_words(&offsets, offsets.len())?;
+        let values_le = pack_u32_words(&values, values.len().max(1))?;
         let expansion = PackedExpansionMacroTable::from_definitions(macros)?;
         Ok(Self {
             names_padded,
@@ -77,42 +95,42 @@ impl PackedMacroTable {
             expansion_name_hashes_le: pack_u32_words(
                 &expansion.name_hashes,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_name_starts_le: pack_u32_words(
                 &expansion.name_starts,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_name_lens_le: pack_u32_words(
                 &expansion.name_lens,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_name_words_le: pack_u32_words(
                 &expansion.name_words,
                 expansion.name_words.len().max(1),
-            ),
-            expansion_vals_le: pack_u32_words(&expansion.vals, MACRO_TABLE_SLOTS as usize),
-            expansion_sizes_le: pack_u32_words(&expansion.sizes, MACRO_TABLE_SLOTS as usize),
-            expansion_kinds_le: pack_u32_words(&expansion.kinds, MACRO_TABLE_SLOTS as usize),
+            )?,
+            expansion_vals_le: pack_u32_words(&expansion.vals, MACRO_TABLE_SLOTS as usize)?,
+            expansion_sizes_le: pack_u32_words(&expansion.sizes, MACRO_TABLE_SLOTS as usize)?,
+            expansion_kinds_le: pack_u32_words(&expansion.kinds, MACRO_TABLE_SLOTS as usize)?,
             expansion_param_counts_le: pack_u32_words(
                 &expansion.param_counts,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_replacement_params_le: pack_u32_words(
                 &expansion.replacement_params,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_replacement_starts_le: pack_u32_words(
                 &expansion.replacement_starts,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_replacement_lens_le: pack_u32_words(
                 &expansion.replacement_lens,
                 MACRO_TABLE_SLOTS as usize,
-            ),
+            )?,
             expansion_replacement_words_le: pack_u32_words(
                 &expansion.replacement_words,
                 expansion.replacement_source_len.max(1) as usize,
-            ),
+            )?,
             expansion_replacement_source_len: expansion.replacement_source_len,
             expansion_max_replacement_tokens: expansion.max_replacement_tokens,
             names_len,
@@ -144,6 +162,42 @@ impl PackedMacroTable {
     }
 }
 
+fn reserve_macro_table_vec<T>(
+    out: &mut Vec<T>,
+    additional: usize,
+    label: &'static str,
+) -> Result<(), String> {
+    out.try_reserve_exact(additional).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {additional} {label}: {error:?}. Fix: shard macro table packing before GPU preprocessing."
+        )
+    })
+}
+
+fn filled_macro_table_vec<T: Clone>(
+    len: usize,
+    value: T,
+    label: &'static str,
+) -> Result<Vec<T>, String> {
+    let mut out = Vec::new();
+    reserve_macro_table_vec(&mut out, len, label)?;
+    out.resize(len, value);
+    Ok(out)
+}
+
+fn padded_macro_table_byte_len(byte_len: usize, label: &'static str) -> Result<usize, String> {
+    byte_len
+        .checked_add(3)
+        .and_then(|value| value.checked_div(4))
+        .and_then(|words| words.checked_mul(4))
+        .map(|bytes| bytes.max(4))
+        .ok_or_else(|| {
+            format!(
+                "vyre-libs::gpu_pipeline: {label} byte length {byte_len} overflows u32 padding. Fix: shard macro table packing before GPU preprocessing."
+            )
+        })
+}
+
 struct PackedExpansionMacroTable {
     name_hashes: Vec<u32>,
     name_starts: Vec<u32>,
@@ -164,31 +218,70 @@ struct PackedExpansionMacroTable {
 impl PackedExpansionMacroTable {
     fn from_definitions(macros: &[MacroDef]) -> Result<Self, String> {
         let slots = MACRO_TABLE_SLOTS as usize;
+        let name_word_slots = macros
+            .iter()
+            .try_fold(0usize, |total, mac| {
+                total.checked_add(mac.name.len()).ok_or_else(|| {
+                    "vyre-libs::gpu_pipeline: macro expansion name table length overflowed usize. Fix: shard macro table packing before GPU preprocessing.".to_string()
+                })
+            })?
+            .max(1);
+        let replacement_word_slots = macros
+            .iter()
+            .try_fold(0usize, |total, mac| {
+                total.checked_add(mac.body.len()).ok_or_else(|| {
+                    "vyre-libs::gpu_pipeline: macro expansion replacement table length overflowed usize. Fix: shard macro table packing before GPU preprocessing.".to_string()
+                })
+            })?
+            .max(1);
         let mut table = Self {
-            name_hashes: vec![EMPTY_MACRO_SLOT; slots],
-            name_starts: vec![0; slots],
-            name_lens: vec![0; slots],
-            name_words: vec![
-                0;
-                macros
-                    .iter()
-                    .map(|mac| mac.name.len())
-                    .sum::<usize>()
-                    .max(1)
-            ],
-            vals: vec![EMPTY_MACRO_SLOT; slots],
-            sizes: vec![0; slots],
-            kinds: vec![C_MACRO_KIND_OBJECT_LIKE; slots],
-            param_counts: vec![0; slots],
-            replacement_params: vec![C_MACRO_REPLACEMENT_LITERAL; slots],
-            replacement_starts: vec![0; slots],
-            replacement_lens: vec![0; slots],
-            replacement_words: Vec::new(),
+            name_hashes: filled_macro_table_vec(
+                slots,
+                EMPTY_MACRO_SLOT,
+                "macro expansion name hash slots",
+            )?,
+            name_starts: filled_macro_table_vec(slots, 0, "macro expansion name starts")?,
+            name_lens: filled_macro_table_vec(slots, 0, "macro expansion name lengths")?,
+            name_words: filled_macro_table_vec(name_word_slots, 0, "macro expansion name words")?,
+            vals: filled_macro_table_vec(slots, EMPTY_MACRO_SLOT, "macro expansion value slots")?,
+            sizes: filled_macro_table_vec(slots, 0, "macro expansion sizes")?,
+            kinds: filled_macro_table_vec(
+                slots,
+                C_MACRO_KIND_OBJECT_LIKE,
+                "macro expansion kinds",
+            )?,
+            param_counts: filled_macro_table_vec(slots, 0, "macro expansion parameter counts")?,
+            replacement_params: filled_macro_table_vec(
+                slots,
+                C_MACRO_REPLACEMENT_LITERAL,
+                "macro expansion replacement parameters",
+            )?,
+            replacement_starts: filled_macro_table_vec(
+                slots,
+                0,
+                "macro expansion replacement starts",
+            )?,
+            replacement_lens: filled_macro_table_vec(slots, 0, "macro expansion replacement lens")?,
+            replacement_words: {
+                let mut words = Vec::new();
+                reserve_macro_table_vec(
+                    &mut words,
+                    replacement_word_slots,
+                    "macro expansion replacement words",
+                )?;
+                words
+            },
             replacement_source_len: 0,
             max_replacement_tokens: 0,
         };
-        let mut occupied_slots = vec![false; slots];
-        let mut pending = Vec::with_capacity(macros.len());
+        let mut occupied_slots =
+            filled_macro_table_vec(slots, false, "macro expansion occupancy slots")?;
+        let mut pending = Vec::new();
+        reserve_macro_table_vec(
+            &mut pending,
+            macros.len(),
+            "pending macro expansion definitions",
+        )?;
         let mut name_cursor = 0usize;
         for mac in macros {
             if mac.name.is_empty() {
@@ -309,11 +402,7 @@ fn next_replacement_span(
 }
 
 fn fnv1a32(bytes: &[u8]) -> Result<u32, String> {
-    let mut hash = FNV1A32_OFFSET;
-    for byte in bytes {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(FNV1A32_PRIME);
-    }
+    let hash = primitive_fnv1a32(bytes);
     if hash == EMPTY_MACRO_SLOT {
         return Err(
             "vyre-libs::gpu_pipeline: macro name hashed to the empty-slot sentinel. Fix: add sentinel remapping to both host packing and GPU lookup."
@@ -373,6 +462,7 @@ fn macro_params(args: &[u8]) -> Result<Vec<&[u8]>, String> {
     }
     Ok(params)
 }
+
 
 fn replacement_tokens(body: &[u8], params: &[&[u8]]) -> Result<Vec<ReplacementToken>, String> {
     let param_indexes = parameter_indexes(params)?;
@@ -503,7 +593,12 @@ fn replacement_operator(body: &[u8], start: usize) -> Option<(u32, usize)> {
 
 fn parameter_indexes<'a>(params: &'a [&'a [u8]]) -> Result<HashMap<&'a [u8], u32>, String> {
     let mut indexes = HashMap::default();
-    indexes.reserve(params.len());
+    indexes.try_reserve(params.len()).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {} macro parameter index slots: {error:?}. Fix: reject or shard oversized function-like macros before GPU preprocessing.",
+            params.len()
+        )
+    })?;
     for (idx, param) in params.iter().enumerate() {
         indexes.insert(
             *param,
@@ -626,7 +721,7 @@ mod tests {
             object_macro(left, b"1"),
             object_macro(right, b"2"),
         ])
-        .expect("u32 macro hash collisions must remain representable because GPU lookup compares candidate bytes after hash match");
+        .expect("Fix: u32 macro hash collisions must remain representable because GPU lookup compares candidate bytes after hash match");
         let slots = table
             .name_hashes
             .iter()
@@ -653,7 +748,7 @@ mod tests {
     fn macro_expansion_name_pool_grows_past_legacy_16k_cap() {
         let long_name = vec![b'A'; 16_384 + 257];
         let table = PackedMacroTable::from_definitions(&[object_macro(&long_name, b"1")])
-            .expect("macro-name pool must size to the live translation-unit macros");
+            .expect("Fix: macro-name pool must size to the live translation-unit macros");
 
         assert!(
             table.expansion_name_words_le.len() > 16_384 * 4,
@@ -661,3 +756,4 @@ mod tests {
         );
     }
 }
+

@@ -1,9 +1,9 @@
-//! `dead_store_elim` — drop `Node::Store` whose value is overwritten
+//! `dead_store_elim`  -  drop `Node::Store` whose value is overwritten
 //! by a subsequent sibling `Node::Store` to the same `(buffer, index)`
 //! before any intervening side-effect could observe the first write.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::dead_store_elim`.
-//! Soundness: `Exact` — when no `Load` against the same buffer, no
+//! Soundness: `Exact`  -  when no `Load` against the same buffer, no
 //! `Atomic` against the same buffer, no `Store` to a different lane of
 //! the same buffer, no `AsyncLoad`/`AsyncStore` referencing the same
 //! buffer, no `IndirectDispatch`, no `Trap`/`Resume`, no nested
@@ -42,7 +42,7 @@
 //!   - stores to overlapping but not equal indices (no alias model
 //!     yet);
 //!   - stores where the value of the first one is later read via
-//!     `Load(buffer, *)` — `expr_touches_buffer` keeps the first
+//!     `Load(buffer, *)`  -  `expr_touches_buffer` keeps the first
 //!     store alive when any node between the two reads from `buffer`.
 
 use crate::ir::{AtomicOp, Expr, Ident, Node, Program};
@@ -201,6 +201,15 @@ fn node_observes_buffer(node: &Node, buffer: &Ident) -> bool {
         }
         Node::Block(body) => any_node_observes_buffer(body, buffer),
         Node::Region { body, .. } => any_node_observes_buffer(body.as_ref(), buffer),
+        Node::AllReduce {
+            buffer: collective, ..
+        }
+        | Node::Broadcast {
+            buffer: collective, ..
+        } => collective == buffer,
+        Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+            input == buffer || output == buffer
+        }
         Node::Barrier { .. }
         | Node::AsyncWait { .. }
         | Node::Resume { .. }
@@ -307,7 +316,7 @@ fn expr_structurally_eq(left: &Expr, right: &Expr) -> bool {
 }
 
 /// Whether the program has any sibling pair of stores to the same
-/// buffer — cheap analysis used by the pass scheduler to skip programs
+/// buffer  -  cheap analysis used by the pass scheduler to skip programs
 /// where DSE has nothing to do.
 fn has_redundant_store_pair(node: &Node) -> bool {
     let body: &[Node] = match node {
@@ -439,6 +448,7 @@ mod tests {
         // the buffer post-barrier). Conservative: keep the first store.
         let entry = vec![
             Node::store("buf", Expr::u32(0), Expr::u32(1)),
+
             Node::barrier(),
             Node::store("buf", Expr::u32(0), Expr::u32(2)),
         ];
@@ -492,7 +502,7 @@ mod tests {
     #[test]
     fn keeps_stores_separated_by_nested_if() {
         // The intervening `If` could read from `buf` in either branch
-        // — we conservatively keep the first store.
+        //  -  we conservatively keep the first store.
         let entry = vec![
             Node::store("buf", Expr::u32(0), Expr::u32(1)),
             Node::if_then(Expr::var("c"), vec![Node::Return]),
@@ -502,7 +512,7 @@ mod tests {
         let result = DeadStoreElim::transform(program);
         assert!(
             !result.changed,
-            "nested If between stores is opaque under conservative DSE — keep the first"
+            "nested If between stores is opaque under conservative DSE  -  keep the first"
         );
     }
 
@@ -547,3 +557,4 @@ mod tests {
         );
     }
 }
+

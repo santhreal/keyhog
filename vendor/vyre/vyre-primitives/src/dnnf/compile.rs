@@ -1,7 +1,7 @@
 //! d-DNNF compiler: CNF → d-DNNF DAG via Shannon decomposition.
 //!
 //! Pure-CPU. Bounded by the compiler's max-depth parameter (so
-//! pathological CNFs cannot diverge — the user's optimizer caller
+//! pathological CNFs cannot diverge  -  the user's optimizer caller
 //! can choose a depth budget rather than blocking on an SAT-hard
 //! input).
 
@@ -55,7 +55,7 @@ impl DnnfDag {
 ///
 /// `max_depth` bounds recursion; depth-exhausted branches return
 /// the conservative `True` gate (the compiler's caller should
-/// retry with a higher budget when this happens — see
+/// retry with a higher budget when this happens  -  see
 /// `knowledge_compile_pass_precondition` for the budget heuristic).
 #[must_use]
 pub fn compile_dnnf(clauses: &[Vec<(u32, bool)>], num_vars: u32, max_depth: u32) -> DnnfDag {
@@ -102,7 +102,7 @@ fn compile_recursive(
     remaining_depth: u32,
 ) -> u32 {
     if clauses.is_empty() {
-        // Satisfied — smooth over the free remaining variables so
+        // Satisfied  -  smooth over the free remaining variables so
         // model counting on the DAG yields 2^(num_vars - var).
         return smoothed_true(dag, num_vars, var);
     }
@@ -115,7 +115,7 @@ fn compile_recursive(
     if var >= num_vars || remaining_depth == 0 {
         // Out of variables / depth: compose remaining clauses as one
         // big AND of OR(literal-list). For depth-exhausted branches
-        // this is a conservative under-approximation — caller can
+        // this is a conservative under-approximation  -  caller can
         // re-compile with more depth budget if needed.
         let mut clause_ids = Vec::with_capacity(clauses.len());
         for clause in clauses {
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn compile_single_literal() {
         // Formula: (x0). One satisfying assignment (x0=true) when
-        // num_vars=1, two of four when num_vars > 1 — the compiler
+        // num_vars=1, two of four when num_vars > 1  -  the compiler
         // ships the variable-relative count.
         let dag = compile_dnnf(&[alloc::vec![(0u32, true)]], 1, 4);
         assert_eq!(model_count(&dag), 1);
@@ -295,11 +295,11 @@ mod tests {
         assert_eq!(dag_count, bf, "d-DNNF count must match brute force");
     }
 
-    /// Adversarial: deep formula must not run forever — the depth
+    /// Adversarial: deep formula must not run forever  -  the depth
     /// budget terminates compilation even on multi-variable inputs.
     #[test]
     fn depth_budget_terminates() {
-        // (x0 ∨ x1) ∧ (x2 ∨ x3) ∧ (x4 ∨ x5) — 6 vars, depth budget 2
+        // (x0 ∨ x1) ∧ (x2 ∨ x3) ∧ (x4 ∨ x5)  -  6 vars, depth budget 2
         // forces the compiler to fall back to the conservative
         // CNF-as-AND/OR encoding rather than full Shannon split.
         let clauses = alloc::vec![
@@ -308,8 +308,8 @@ mod tests {
             alloc::vec![(4, true), (5, true)],
         ];
         let dag = compile_dnnf(&clauses, 6, 2);
-        // Just need to terminate AND produce a valid DAG.
-        assert!(!dag.gates.is_empty());
+        assert_eq!(dag.num_vars, 6);
+        assert!(dag.gates.len() >= 1, "depth budget must emit at least one gate");
     }
 
     /// model_count handles all 2^k assignments via smoothed-True

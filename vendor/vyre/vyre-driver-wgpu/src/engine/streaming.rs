@@ -14,7 +14,7 @@
 //! while the GPU owns phase progression and execution.
 //!
 //! Worker-pool channel: `crossbeam-channel`. `std::sync::mpsc::Receiver` is
-//! single-consumer — wrapping it in `Arc<Mutex<_>>` to let N workers drain
+//! single-consumer  -  wrapping it in `Arc<Mutex<_>>` to let N workers drain
 //! the same queue serialises wakeups on the mutex (the audit called this
 //! "Mutex<mpsc::Receiver> locking every recv"). crossbeam-channel is
 //! multi-producer multi-consumer natively, so N workers do N independent

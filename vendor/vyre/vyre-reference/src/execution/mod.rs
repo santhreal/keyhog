@@ -9,6 +9,7 @@ pub mod expr;
 pub(crate) mod expr_cast;
 pub(crate) mod hashmap;
 pub mod node;
+pub(crate) mod node_tree;
 pub mod sequential;
 pub(crate) mod typed_ops;
 
@@ -27,7 +28,7 @@ use crate::value::Value;
 /// entry is empty), we do **not** auto-wrap: those programs must still use
 /// `Program::wrapped` explicitly, matching `region_gate` negative tests.
 pub(crate) fn program_for_interpreter(program: &Program) -> Result<Cow<'_, Program>, vyre::Error> {
-    if let Some(message) = program.top_level_region_violation() {
+    let normalized = if let Some(message) = program.top_level_region_violation() {
         if program.entry().is_empty() {
             return Err(vyre::Error::interp(format!(
                 "reference interpreter requires a top-level Region-wrapped Program: {message}"
@@ -38,9 +39,17 @@ pub(crate) fn program_for_interpreter(program: &Program) -> Result<Cow<'_, Progr
                 "reference interpreter requires a top-level Region-wrapped Program: {message}"
             )));
         }
-        return Ok(Cow::Owned(program.clone().reconcile_runnable_top_level()));
+        Cow::Owned(program.clone().reconcile_runnable_top_level())
+    } else {
+        Cow::Borrowed(program)
+    };
+    match vyre_foundation::transform::collectives::lower_single_rank_collectives(
+        normalized.as_ref(),
+    ) {
+        Ok(Some(lowered)) => Ok(Cow::Owned(lowered)),
+        Ok(None) => Ok(normalized),
+        Err(error) => Err(vyre::Error::interp(error.to_string())),
     }
-    Ok(Cow::Borrowed(program))
 }
 
 /// Execute a vyre IR program on the pure Rust reference interpreter.
@@ -72,10 +81,12 @@ pub fn run_storage_graph(
     nodes: &[(NodeId, NodeStorage)],
     outputs: &[NodeId],
 ) -> Result<Vec<IrValue>, vyre::Error> {
-    let graph = nodes
-        .iter()
-        .map(|(id, node)| (*id, node))
-        .collect::<FxHashMap<_, _>>();
+    let mut graph = FxHashMap::with_capacity_and_hasher(nodes.len(), Default::default());
+    for (id, node) in nodes {
+        if graph.insert(*id, node).is_some() {
+            return Err(duplicate_node_error(*id));
+        }
+    }
     let mut ctx = InterpCtx::default();
     let mut states = FxHashMap::with_capacity_and_hasher(graph.len(), Default::default());
 
@@ -134,6 +145,13 @@ fn missing_node_error(id: NodeId) -> vyre::Error {
 fn cycle_error(id: NodeId) -> vyre::Error {
     vyre::Error::interp(format!(
         "graph contains a dependency cycle at node {}. Fix: submit an acyclic dataflow graph.",
+        id.0
+    ))
+}
+
+fn duplicate_node_error(id: NodeId) -> vyre::Error {
+    vyre::Error::interp(format!(
+        "graph contains duplicate node {}. Fix: submit exactly one storage record for each NodeId before reference execution.",
         id.0
     ))
 }

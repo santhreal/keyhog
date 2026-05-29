@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn diagnostic_comparison_accepts_all_required_fields() {
         let proof = validate_diagnostic_comparison(&records())
-            .expect("complete diagnostic comparison should pass");
+            .expect("Fix: complete diagnostic comparison should pass");
 
         assert_eq!(proof.field_count, 4);
     }
@@ -259,7 +259,7 @@ mod tests {
             include_str!("../../../vyre-frontend-c/tests/clang_diagnostics_oracle.rs"),
             include_str!("../../../vyre-frontend-c/tests/support/clang_diagnostics.rs"),
         )
-        .expect("committed clang diagnostic oracle sources should pass");
+        .expect("Fix: committed clang diagnostic oracle sources should pass");
 
         assert!(proof.assertion_marker_count >= 10);
     }

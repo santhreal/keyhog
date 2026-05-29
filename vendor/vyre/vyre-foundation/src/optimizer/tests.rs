@@ -68,7 +68,7 @@ proptest! {
 
 #[test]
 fn fingerprint_program_distinguishes_trivially_different_programs() {
-    // MOD-008 — adding a node must change the fingerprint. This is a
+    // MOD-008  -  adding a node must change the fingerprint. This is a
     // negative-result guarantee: blake3 collision probability is
     // vanishingly low, so any match here is a real bug (wire-format
     // bug or fingerprint shortcut).

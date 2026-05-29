@@ -32,7 +32,12 @@ pub(super) fn macro_use_statement_ranges(
         return Ok(None);
     }
     let mut macro_lookup = HashMap::default();
-    macro_lookup.reserve(macros.len());
+    macro_lookup.try_reserve(macros.len()).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {} macro-use lookup entries: {error:?}. Fix: shard macro segment detection before GPU preprocessing.",
+            macros.len()
+        )
+    })?;
     for mac in macros {
         macro_lookup.insert(mac.name.as_slice(), mac);
     }
@@ -281,34 +286,112 @@ impl LiveMacroLookup {
         self.prescan_indexes.clear();
     }
 
-    fn refresh(&mut self, macros: &[MacroDef]) {
+    fn refresh(&mut self, macros: &[MacroDef]) -> Result<(), String> {
         let macro_ptr = macros.as_ptr() as usize;
         if self.macro_len == macros.len() && self.macro_ptr == macro_ptr {
             self.used_flags.clear();
+            self.used_flags.try_reserve_exact(macros.len()).map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} cached live macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                    macros.len()
+                )
+            })?;
             self.used_flags.resize(macros.len(), false);
             self.used_indexes.clear();
+            self.used_indexes.try_reserve_exact(macros.len()).map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} cached live macro indexes: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                    macros.len()
+                )
+            })?;
             self.function_flags.clear();
+            self.function_flags
+                .try_reserve_exact(macros.len())
+                .map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve {} cached function macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                        macros.len()
+                    )
+                })?;
             self.function_flags.resize(macros.len(), false);
             self.prescan_flags.clear();
+            self.prescan_flags
+                .try_reserve_exact(macros.len())
+                .map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve {} cached prescan macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                        macros.len()
+                    )
+                })?;
             self.prescan_flags.resize(macros.len(), false);
             self.prescan_indexes.clear();
-            return;
+            self.prescan_indexes
+                .try_reserve_exact(macros.len())
+                .map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve {} cached prescan macro indexes: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                        macros.len()
+                    )
+                })?;
+            return Ok(());
         }
         self.macro_len = macros.len();
         self.macro_ptr = macro_ptr;
         self.by_name.clear();
-        self.by_name.reserve(macros.len());
+        self.by_name.try_reserve(macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} live macro lookup entries: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                macros.len()
+            )
+        })?;
         for (idx, mac) in macros.iter().enumerate() {
             self.by_name.insert(mac.name.clone(), idx);
         }
         self.used_flags.clear();
+        self.used_flags.try_reserve_exact(macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} live macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                macros.len()
+            )
+        })?;
         self.used_flags.resize(macros.len(), false);
         self.used_indexes.clear();
+        self.used_indexes.try_reserve_exact(macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} live macro indexes: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                macros.len()
+            )
+        })?;
         self.function_flags.clear();
+        self.function_flags
+            .try_reserve_exact(macros.len())
+            .map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} function macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                    macros.len()
+                )
+            })?;
         self.function_flags.resize(macros.len(), false);
         self.prescan_flags.clear();
+        self.prescan_flags
+            .try_reserve_exact(macros.len())
+            .map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} prescan macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                    macros.len()
+                )
+            })?;
         self.prescan_flags.resize(macros.len(), false);
         self.prescan_indexes.clear();
+        self.prescan_indexes
+            .try_reserve_exact(macros.len())
+            .map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} prescan macro indexes: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                    macros.len()
+                )
+            })?;
+        Ok(())
     }
 
     fn live_macro_defs_for_segment(
@@ -316,7 +399,7 @@ impl LiveMacroLookup {
         macros: &[MacroDef],
         classified: &ClassifiedTokens,
     ) -> Result<Vec<MacroDef>, String> {
-        self.refresh(macros);
+        self.refresh(macros)?;
         for (token_index, token_kind) in classified.tok_types.iter().enumerate() {
             if *token_kind != TOK_IDENTIFIER {
                 continue;
@@ -361,7 +444,7 @@ impl LiveMacroLookup {
         if macros.is_empty() {
             return Ok(false);
         }
-        self.refresh(macros);
+        self.refresh(macros)?;
         for (token_index, token_kind) in classified.tok_types.iter().enumerate() {
             if *token_kind != TOK_IDENTIFIER {
                 continue;
@@ -398,19 +481,43 @@ impl LiveMacroLookup {
         classified: &ClassifiedTokens,
         segment_macros: &[MacroDef],
         macros: &[MacroDef],
-    ) -> Option<Vec<MacroDef>> {
+    ) -> Result<Option<Vec<MacroDef>>, String> {
         if !segment_macros.iter().any(|mac| mac.is_function_like) {
-            return None;
+            return Ok(None);
         }
         let macro_ptr = macros.as_ptr() as usize;
         if self.macro_len != macros.len() || self.macro_ptr != macro_ptr {
-            self.refresh(macros);
+            self.refresh(macros)?;
         } else {
             self.function_flags.clear();
+            self.function_flags
+                .try_reserve_exact(macros.len())
+                .map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve {} cached function macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                        macros.len()
+                    )
+                })?;
             self.function_flags.resize(macros.len(), false);
             self.prescan_flags.clear();
+            self.prescan_flags
+                .try_reserve_exact(macros.len())
+                .map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve {} cached prescan macro flags: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                        macros.len()
+                    )
+                })?;
             self.prescan_flags.resize(macros.len(), false);
             self.prescan_indexes.clear();
+            self.prescan_indexes
+                .try_reserve_exact(macros.len())
+                .map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve {} cached prescan macro indexes: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                        macros.len()
+                    )
+                })?;
         }
         for mac in segment_macros.iter().filter(|mac| mac.is_function_like) {
             if let Some(index) = self.by_name.get(mac.name.as_slice()).copied() {
@@ -423,19 +530,25 @@ impl LiveMacroLookup {
             {
                 continue;
             }
-            let name = token_bytes(classified, idx)?;
+            let Some(name) = token_bytes(classified, idx) else {
+                return Ok(None);
+            };
             let Some(call_macro_index) = self.by_name.get(name).copied() else {
                 continue;
             };
             if !self.function_flags[call_macro_index] {
                 continue;
             }
-            let close = matching_call_close(classified, idx + 1)?;
+            let Some(close) = matching_call_close(classified, idx + 1) else {
+                return Ok(None);
+            };
             for arg_idx in idx + 2..close {
                 if classified.tok_types[arg_idx] != TOK_IDENTIFIER {
                     continue;
                 }
-                let arg_name = token_bytes(classified, arg_idx)?;
+                let Some(arg_name) = token_bytes(classified, arg_idx) else {
+                    return Ok(None);
+                };
                 let Some(arg_macro_index) = self.by_name.get(arg_name).copied() else {
                     continue;
                 };
@@ -447,13 +560,21 @@ impl LiveMacroLookup {
             }
         }
         if self.prescan_indexes.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let mut prescan = Vec::with_capacity(self.prescan_indexes.len());
+        let mut prescan = Vec::new();
+        prescan
+            .try_reserve_exact(self.prescan_indexes.len())
+            .map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} function-argument prescan macro definitions: {error:?}. Fix: shard macro expansion before GPU preprocessing.",
+                    self.prescan_indexes.len()
+                )
+            })?;
         for &macro_index in &self.prescan_indexes {
             prescan.push(macros[macro_index].clone());
         }
-        Some(prescan)
+        Ok(Some(prescan))
     }
 }
 
@@ -473,6 +594,7 @@ pub(super) fn has_live_macro_for_segment_excluding(
 ) -> Result<bool, String> {
     lookup.has_live_macro_for_segment_excluding(macros, classified, excluded_names)
 }
+
 
 fn next_non_ws_byte(source: &[u8], mut pos: usize) -> Option<u8> {
     loop {
@@ -562,8 +684,8 @@ mod tests {
         let macros = vec![macro_def(b"FOO", false), macro_def(b"BAR", true)];
 
         let ranges = macro_use_statement_ranges(&classified, &macros)
-            .expect("macro use range discovery must not fail on valid token columns")
-            .expect("macro use range discovery must shard mixed macro/plain source");
+            .expect("Fix: macro use range discovery must not fail on valid token columns")
+            .expect("Fix: macro use range discovery must shard mixed macro/plain source");
 
         assert_eq!(ranges, vec![(0, 16), (16, 24)]);
     }
@@ -582,7 +704,7 @@ mod tests {
         let mut lookup = LiveMacroLookup::default();
 
         let live = live_macro_defs_for_segment(&macros, &classified, &mut lookup)
-            .expect("valid token spans must prefilter macro uses");
+            .expect("Fix: valid token spans must prefilter macro uses");
         let live = live
             .iter()
             .map(|mac| (mac.name.as_slice(), mac.is_function_like))
@@ -608,7 +730,7 @@ mod tests {
         let mut lookup = LiveMacroLookup::default();
 
         let live = live_macro_defs_for_segment(&macros, &classified, &mut lookup)
-            .expect("valid token spans must prefilter bare function-like mentions");
+            .expect("Fix: valid token spans must prefilter bare function-like mentions");
         let live = live
             .iter()
             .map(|mac| (mac.name.as_slice(), mac.is_function_like))
@@ -631,7 +753,7 @@ mod tests {
         let mut lookup = LiveMacroLookup::default();
 
         let live = live_macro_defs_for_segment(&macros, &classified, &mut lookup)
-            .expect("comment-separated function-like macro invocation must prefilter");
+            .expect("Fix: comment-separated function-like macro invocation must prefilter");
 
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].name, b"FN");
@@ -649,10 +771,11 @@ mod tests {
         };
 
         let segment = classified_segment(&classified, 0, 4)
-            .expect("token metadata past the segment end must not be scanned");
+            .expect("Fix: token metadata past the segment end must not be scanned");
 
         assert_eq!(segment.tok_types, vec![TOK_IDENTIFIER, TOK_SEMICOLON]);
         assert_eq!(segment.tok_starts, vec![0, 3]);
         assert_eq!(segment.tok_lens, vec![3, 1]);
     }
 }
+

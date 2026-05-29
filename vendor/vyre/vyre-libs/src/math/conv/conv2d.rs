@@ -129,28 +129,22 @@ inventory::submit! {
             })
         },
         test_inputs: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             // 4x4 input = identity matrix; 3x3 box kernel
-            let input = f32_bytes(&[
+            let input = crate::test_support::byte_pack::f32_bytes(&[
                 1.0, 0.0, 0.0, 0.0,
                 0.0, 1.0, 0.0, 0.0,
                 0.0, 0.0, 1.0, 0.0,
                 0.0, 0.0, 0.0, 1.0,
             ]);
-            let kernel = f32_bytes(&[1.0; 9]);
+            let kernel = crate::test_support::byte_pack::f32_bytes(&[1.0; 9]);
             vec![vec![input, kernel]]
         }),
         expected_output: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             // box-kernel convolution of identity matrix with
             // zero-padding: each output pixel is the sum of the 3x3
             // window around it, where the window is intersected
             // with the input bounds. Computed via the naive
-            // reference in the test below — this is just the
+            // reference in the test below  -  this is just the
             // canonical fixture output for the inventory entry.
             // For 4x4 identity with 3x3 box kernel:
             // out[y, x] = number of 1.0 entries in the 3x3 window
@@ -160,7 +154,7 @@ inventory::submit! {
             //  [2, 3, 2, 1],
             //  [1, 2, 3, 2],
             //  [0, 1, 2, 2]]
-            vec![vec![f32_bytes(&[
+            vec![vec![crate::test_support::byte_pack::f32_bytes(&[
                 2.0, 2.0, 1.0, 0.0,
                 2.0, 3.0, 2.0, 1.0,
                 1.0, 2.0, 3.0, 2.0,
@@ -174,11 +168,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
 
     fn decode(bytes: &[u8]) -> Vec<f32> {
         bytes
@@ -211,7 +202,7 @@ mod tests {
     }
 
     fn run(h: u32, w: u32, input: &[f32], kernel: &[f32]) -> Vec<f32> {
-        let prog = conv2d_3x3_direct("input", "kernel", "output", h, w).expect("build");
+        let prog = conv2d_3x3_direct("input", "kernel", "output", h, w).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -281,7 +272,7 @@ mod tests {
     // Adversarial fixtures exposing real gaps
     // ------------------------------------------------------------------
 
-    /// 1x1 image with identity kernel — only the center tap hits.
+    /// 1x1 image with identity kernel  -  only the center tap hits.
     #[test]
     fn conv2d_1x1_image() {
         let input = vec![5.0_f32];
@@ -325,10 +316,11 @@ mod tests {
 
     #[test]
     fn conv2d_zero_dimensions_should_error() {
-        let prog = conv2d_3x3_direct("input", "kernel", "output", 0, 0);
+        let err = conv2d_3x3_direct("input", "kernel", "output", 0, 0)
+            .expect_err("0x0 conv2d must error instead of returning empty program");
         assert!(
-            prog.is_err(),
-            "0x0 conv2d must error instead of returning empty program"
+            err.contains("non-zero height and width"),
+            "0x0 conv2d error must name the dimension contract: {err}"
         );
     }
 }

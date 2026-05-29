@@ -1,6 +1,6 @@
 //! GPU-computed box shadow with signed-distance-field falloff.
 //!
-//! Category A composition — pure IR. Private SDF helper (single caller,
+//! Category A composition  -  pure IR. Private SDF helper (single caller,
 //! not promoted to Tier 2.5 per LEGO-BLOCK-RULE).
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -9,7 +9,7 @@ const OP_ID: &str = "vyre-libs::visual::box_shadow";
 
 /// Build a Program that renders a box shadow into `output`.
 ///
-/// - `output`: `[u32; width * height]` — shadow mask (packed RGBA)
+/// - `output`: `[u32; width * height]`  -  shadow mask (packed RGBA)
 /// - Shadow rect, blur, color, and corner radius baked into IR as constants.
 #[must_use]
 pub fn box_shadow(
@@ -126,20 +126,15 @@ pub fn box_shadow(
                         // Modulate shadow alpha by falloff.
                         // final_a = s_a * final_falloff / 256
                         Node::let_bind(
+                            "final_a_unclamped",
+                            super::wide_mul_shr_u32(Expr::u32(s_a), Expr::var("final_falloff"), 8),
+                        ),
+                        Node::let_bind(
                             "final_a",
                             Expr::select(
-                                Expr::gt(
-                                    Expr::shr(
-                                        Expr::mul(Expr::u32(s_a), Expr::var("final_falloff")),
-                                        Expr::u32(8),
-                                    ),
-                                    Expr::u32(255),
-                                ),
+                                Expr::gt(Expr::var("final_a_unclamped"), Expr::u32(255)),
                                 Expr::u32(255),
-                                Expr::shr(
-                                    Expr::mul(Expr::u32(s_a), Expr::var("final_falloff")),
-                                    Expr::u32(8),
-                                ),
+                                Expr::var("final_a_unclamped"),
                             ),
                         ),
                         // Pack output pixel.

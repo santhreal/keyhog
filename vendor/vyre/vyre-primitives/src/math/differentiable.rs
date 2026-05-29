@@ -1,15 +1,15 @@
-//! Differentiable algorithm primitives — smoothed argmax + softmax.
+//! Differentiable algorithm primitives  -  smoothed argmax + softmax.
 //!
-//! The breakthrough wasn't auto-diff — it was realizing that **classical
+//! The breakthrough wasn't auto-diff  -  it was realizing that **classical
 //! algorithms become NN building blocks once you smooth their argmaxes**
 //! (Mensch-Blondel 2018, Berthet 2020, Petersen 2022). Every smoothed
 //! classical algorithm is a primitive that participates in end-to-end
 //! gradient flow.
 //!
 //! This file ships:
-//! - [`crate::math::differentiable::softmax_step`] — `out[i] = exp(x[i] - max) / Σ exp(x[j] - max)`
+//! - [`crate::math::differentiable::softmax_step`]  -  `out[i] = exp(x[i] - max) / Σ exp(x[j] - max)`
 //!   numerically stable, fixed-point.
-//! - `differentiable_argmax` — uses softmax with high temperature
+//! - `differentiable_argmax`  -  uses softmax with high temperature
 //!   for sharp argmax-like behavior. Forward and gradient agree on
 //!   the soft assignment.
 //!
@@ -48,7 +48,7 @@ pub const OP_ID: &str = "vyre-primitives::math::softmax_step";
 /// - `x`: length-n u32 buffer (16.16 fixed-point logits, post-temperature scaling).
 /// - `pre_exp`: caller-supplied length-n u32 buffer of `exp(x[i] - max)`
 ///   in 16.16 fixed-point. This file does not embed an exp evaluator
-///   on GPU — the caller composes a separate exp Program (or uses a
+///   on GPU  -  the caller composes a separate exp Program (or uses a
 ///   precomputed lookup) before calling this.
 ///
 /// Output:
@@ -131,19 +131,32 @@ pub fn softmax_step(pre_exp: &str, out: &str, n: u32) -> Program {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn softmax_cpu(x: &[f64]) -> Vec<f64> {
     let mut out = Vec::new();
-    softmax_cpu_into(x, &mut out);
+    try_softmax_cpu_into(x, &mut out).unwrap_or_else(|error| panic!("{error}"));
     out
 }
 
 /// CPU reference: softmax in f64 using caller-owned output.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn softmax_cpu_into(x: &[f64], out: &mut Vec<f64>) {
+    try_softmax_cpu_into(x, out).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference: softmax in f64 using caller-owned output.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_softmax_cpu_into(x: &[f64], out: &mut Vec<f64>) -> Result<(), String> {
+    if x.len() > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            x.len() - out.len(),
+            "differentiable math CPU oracle",
+            "softmax_cpu output",
+        )?;
+    }
     out.clear();
     if x.is_empty() {
-        return;
+        return Ok(());
     }
     let max = x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    out.reserve(x.len());
     let mut sum = 0.0;
     for &value in x {
         let exp = (value - max).exp();
@@ -153,6 +166,7 @@ pub fn softmax_cpu_into(x: &[f64], out: &mut Vec<f64>) {
     for value in out.iter_mut() {
         *value /= sum;
     }
+    Ok(())
 }
 
 /// CPU reference: differentiable argmax via temperature-scaled softmax.
@@ -164,7 +178,8 @@ pub fn softmax_cpu_into(x: &[f64], out: &mut Vec<f64>) {
 pub fn differentiable_argmax_cpu(x: &[f64], temperature: f64) -> Vec<f64> {
     let mut scaled = Vec::new();
     let mut out = Vec::new();
-    differentiable_argmax_cpu_into(x, temperature, &mut scaled, &mut out);
+    try_differentiable_argmax_cpu_into(x, temperature, &mut scaled, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
     out
 }
 
@@ -176,14 +191,33 @@ pub fn differentiable_argmax_cpu_into(
     scaled: &mut Vec<f64>,
     out: &mut Vec<f64>,
 ) {
-    scaled.clear();
-    out.clear();
-    if temperature <= 0.0 || !temperature.is_finite() {
-        return;
+    try_differentiable_argmax_cpu_into(x, temperature, scaled, out)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference: differentiable argmax using caller-owned scratch and output.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_differentiable_argmax_cpu_into(
+    x: &[f64],
+    temperature: f64,
+    scaled: &mut Vec<f64>,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    if x.len() > scaled.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            scaled,
+            x.len() - scaled.len(),
+            "differentiable math CPU oracle",
+            "differentiable_argmax_cpu scaled logits",
+        )?;
     }
-    scaled.reserve(x.len());
+    scaled.clear();
+    if temperature <= 0.0 || !temperature.is_finite() {
+        out.clear();
+        return Ok(());
+    }
     scaled.extend(x.iter().map(|&v| v / temperature));
-    softmax_cpu_into(scaled, out);
+    try_softmax_cpu_into(scaled, out)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -193,8 +227,15 @@ inventory::submit! {
         || {
             softmax_step("pre_exp", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[1; 4]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[16_384; 4])]]
+        }),
     )
 }
 
@@ -243,6 +284,27 @@ mod tests {
     }
 
     #[test]
+    fn cpu_softmax_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let capacity = out.capacity();
+
+        try_softmax_cpu_into(&[1.0, 1.0], &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - softmax CPU oracle should reuse caller-owned output");
+
+        assert_eq!(out.len(), 2);
+        assert!(approx_eq(out[0], 0.5));
+        assert!(approx_eq(out[1], 0.5));
+        assert_eq!(out.capacity(), capacity);
+
+        try_softmax_cpu_into(&[1.0], &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - softmax CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![1.0]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
     fn cpu_diff_argmax_low_temp_concentrates() {
         // Low temperature → soft argmax should concentrate on the max.
         let x = vec![1.0, 5.0, 2.0];
@@ -276,13 +338,23 @@ mod tests {
         let x = vec![1.0, 5.0, 2.0];
         let mut scaled = Vec::with_capacity(8);
         let mut out = Vec::with_capacity(8);
+        scaled.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        out.extend_from_slice(&[89.0, 88.0, 87.0, 86.0]);
         let scaled_ptr = scaled.as_ptr();
         let out_ptr = out.as_ptr();
         differentiable_argmax_cpu_into(&x, 1000.0, &mut scaled, &mut out);
         assert_eq!(scaled.as_ptr(), scaled_ptr);
         assert_eq!(out.as_ptr(), out_ptr);
+        assert_eq!(scaled.len(), x.len());
+        assert_eq!(out.len(), x.len());
         let s: f64 = out.iter().sum();
         assert!(approx_eq(s, 1.0));
+
+        differentiable_argmax_cpu_into(&x[..1], 1000.0, &mut scaled, &mut out);
+        assert_eq!(scaled.len(), 1);
+        assert_eq!(out, vec![1.0]);
+        assert_eq!(scaled.as_ptr(), scaled_ptr);
+        assert_eq!(out.as_ptr(), out_ptr);
     }
 
     #[test]

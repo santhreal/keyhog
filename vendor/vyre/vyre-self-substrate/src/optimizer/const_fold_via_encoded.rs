@@ -15,7 +15,7 @@
 //!
 //! No host-reference escape in production. Tests parity vs the existing
 //! `vyre-foundation` const-fold pass via `CpuOracleDispatcher`-style
-//! tests (extension follow-up — for V1 we run through the real
+//! tests (extension follow-up  -  for V1 we run through the real
 //! `WgpuBackend` in the driver-wgpu integration test crate).
 
 use std::sync::Arc;
@@ -123,8 +123,8 @@ fn run_const_fold_kernel_with_scratch_into(
     //   1: arena_arg0 (RO)
     //   2: arena_arg1 (RO)
     //   3: arena_arg2 (RO)
-    //   4: arena_depths (RO) — per-Expr depth
-    //   5: current_level (RO) — single u32, varied per dispatch
+    //   4: arena_depths (RO)  -  per-Expr depth
+    //   5: current_level (RO)  -  single u32, varied per dispatch
     //   6: foldable (RW; init zeros, persists across levels)
     //   7: value (RW; init zeros, persists across levels)
     ensure_input_slots(&mut scratch.inputs, 8);
@@ -188,7 +188,7 @@ const WORKGROUP_X: u32 = 256;
 /// Constraints:
 ///   - `expr_count` may be larger than `WORKGROUP_X`; the kernel
 ///     strides via an inner Loop. Single-workgroup means workgroup-
-///     scope barriers (SeqCst) are sufficient — no GridSync needed.
+///     scope barriers (SeqCst) are sufficient  -  no GridSync needed.
 ///   - `max_depth_iter_cap` is the static upper bound on the outer
 ///     Loop in the IR. The actual depth is read from `max_depth_buf`
 ///     at runtime; the kernel breaks out early when `level >
@@ -215,7 +215,7 @@ pub fn build_const_fold_program_fused(expr_count: u32, max_depth_iter_cap: u32) 
     ];
 
     // Number of stride chunks needed to cover all exprs with WORKGROUP_X
-    // threads. Static upper bound — the kernel re-checks `i < expr_count`
+    // threads. Static upper bound  -  the kernel re-checks `i < expr_count`
     // each iteration so over-shoot is safe.
     let chunk_cap = (expr_count + WORKGROUP_X - 1) / WORKGROUP_X;
 
@@ -261,7 +261,7 @@ pub fn build_const_fold_program_fused(expr_count: u32, max_depth_iter_cap: u32) 
             ),
             // Workgroup-scope barrier: stores from this level visible
             // to reads at level+1. Single-workgroup design means this
-            // is sufficient — no GridSync needed.
+            // is sufficient  -  no GridSync needed.
             Node::Barrier {
                 ordering: vyre_foundation::MemoryOrdering::SeqCst,
             },
@@ -448,7 +448,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // Shr (tag 0x0A) — logical shift right.
+                // Shr (tag 0x0A)  -  logical shift right.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x0A)),
                     vec![
@@ -460,7 +460,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // Div (tag 0x04) — fold only if `rv != 0`. Folding
+                // Div (tag 0x04)  -  fold only if `rv != 0`. Folding
                 // a division by zero would crash the compiler at
                 // emit time; the host-side rewriter still emits the
                 // original Div which lets the program's own runtime
@@ -479,7 +479,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // Mod (tag 0x05) — same divide-by-zero guard.
+                // Mod (tag 0x05)  -  same divide-by-zero guard.
                 Node::if_then(
                     Expr::and(
                         Expr::eq(Expr::var("op"), Expr::u32(0x05)),
@@ -494,7 +494,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // Min (tag 0x15) — `lv if lv < rv else rv`. Folded
+                // Min (tag 0x15)  -  `lv if lv < rv else rv`. Folded
                 // via a Select gated on Lt; works for u32 directly.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x15)),
@@ -511,7 +511,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // Max (tag 0x16) — symmetric.
+                // Max (tag 0x16)  -  symmetric.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x16)),
                     vec![
@@ -527,7 +527,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // AbsDiff (tag 0x14) — `|lv - rv|` for u32 = if lv >
+                // AbsDiff (tag 0x14)  -  `|lv - rv|` for u32 = if lv >
                 // rv then lv-rv else rv-lv. Always non-negative.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x14)),
@@ -544,7 +544,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // SaturatingAdd (0x17) — clamps to u32::MAX when the
+                // SaturatingAdd (0x17)  -  clamps to u32::MAX when the
                 // unsaturated sum would overflow. Detect overflow by
                 // checking if the wrapped sum is less than either
                 // operand (carry happened).
@@ -564,7 +564,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // SaturatingSub (0x18) — clamps to 0 when rv > lv.
+                // SaturatingSub (0x18)  -  clamps to 0 when rv > lv.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x18)),
                     vec![
@@ -580,7 +580,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // WrappingAdd (0x20) — same as `Add` for u32 since
+                // WrappingAdd (0x20)  -  same as `Add` for u32 since
                 // backend Add already wraps. Fold straight through.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x20)),
@@ -593,7 +593,7 @@ fn bin_op_body() -> Vec<Node> {
                         Node::store("foldable", Expr::var("i"), Expr::u32(1)),
                     ],
                 ),
-                // WrappingSub (0x21) — same as `Sub` for u32.
+                // WrappingSub (0x21)  -  same as `Sub` for u32.
                 Node::if_then(
                     Expr::eq(Expr::var("op"), Expr::u32(0x21)),
                     vec![
@@ -779,6 +779,7 @@ fn bin_op_body() -> Vec<Node> {
     ]
 }
 
+
 fn rewrite_program_with_folded_values(
     program: Program,
     arena: &ExprArenaEncoding,
@@ -925,7 +926,7 @@ fn rewrite_node(
         | Node::AsyncWait { .. }
         | Node::Resume { .. }
         | Node::Opaque(_) => node.clone(),
-        // Future variants — leave untouched.
+        // Future variants  -  leave untouched.
         _ => node.clone(),
     }
 }
@@ -1096,7 +1097,7 @@ mod tests {
         let foldable_ptr = foldable.as_ptr();
         let value_ptr = value.as_ptr();
         run_const_fold_kernel_into(&one_expr_arena(), &dispatcher, &mut foldable, &mut value)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
         assert_eq!(foldable, vec![1]);
         assert_eq!(value, vec![7]);
         assert_eq!(foldable.as_ptr(), foldable_ptr);
@@ -1120,7 +1121,7 @@ mod tests {
             &mut foldable,
             &mut value,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let foldable_capacity = foldable.capacity();
@@ -1133,7 +1134,7 @@ mod tests {
             &mut foldable,
             &mut value,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
@@ -1181,3 +1182,4 @@ mod tests {
         );
     }
 }
+

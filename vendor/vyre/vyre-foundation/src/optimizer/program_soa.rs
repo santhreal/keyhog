@@ -1,4 +1,4 @@
-//! ROADMAP A2 — columnar / SoA fact view of a `Program` that hot
+//! ROADMAP A2  -  columnar / SoA fact view of a `Program` that hot
 //! optimizer passes can opt into.
 //!
 //! This is the *additive* shape of the same A1 contract. The
@@ -26,7 +26,7 @@
 //! IR is laid out as struct-of-arrays. The cache footprint of one
 //! column is dramatically smaller than a tree walk that touches
 //! every Node enum tag, every Box pointer, every Arc indirection,
-//! and every recursive child sequence — and the SoA columns are
+//! and every recursive child sequence  -  and the SoA columns are
 //! contiguous, so a SIMD-aware scan is straightforward.
 //!
 //! ## What this module is NOT
@@ -87,6 +87,14 @@ pub enum NodeKind {
     Block,
     /// `Node::Region { generator, source_region, body }`.
     Region,
+    /// `Node::AllReduce { .. }`.
+    AllReduce,
+    /// `Node::AllGather { .. }`.
+    AllGather,
+    /// `Node::ReduceScatter { .. }`.
+    ReduceScatter,
+    /// `Node::Broadcast { .. }`.
+    Broadcast,
     /// `Node::Opaque(extension)`.
     Opaque,
 }
@@ -101,23 +109,23 @@ pub enum BufferRefKind {
     /// `Node::Store { buffer, .. }`, `Node::AsyncStore.destination`,
     /// or any write-side reference.
     Write,
-    /// `Expr::Atomic { buffer, op, .. }` — both a read and a write
+    /// `Expr::Atomic { buffer, op, .. }`  -  both a read and a write
     /// in one operation, with explicit memory ordering.
     Atomic(AtomicOp),
-    /// `Node::AsyncLoad.destination` — the destination of an async
+    /// `Node::AsyncLoad.destination`  -  the destination of an async
     /// copy is treated as a write target.
     AsyncDestination,
-    /// `Node::AsyncLoad.source` / `Node::AsyncStore.source` — async
+    /// `Node::AsyncLoad.source` / `Node::AsyncStore.source`  -  async
     /// copy sources are read targets.
     AsyncSource,
-    /// `Node::IndirectDispatch.count_buffer` — read-side reference
+    /// `Node::IndirectDispatch.count_buffer`  -  read-side reference
     /// to a dispatch-grid buffer.
     IndirectCount,
 }
 
-/// One row per `Node::Region` observed during the build walk —
+/// One row per `Node::Region` observed during the build walk  -
 /// the diagnostic / source-correlation metadata that the
-/// `Region` enum variant inlines. ROADMAP A3 — passes that don't
+/// `Region` enum variant inlines. ROADMAP A3  -  passes that don't
 /// care about source provenance can ignore this column entirely;
 /// passes that do care (diagnostics, region-inlining, region
 /// identity tracking) iterate the column once.
@@ -125,11 +133,11 @@ pub enum BufferRefKind {
 pub struct RegionMeta {
     /// `NodeIndex` of the `Node::Region` within the `SoA` fact table.
     pub node: NodeIndex,
-    /// `Region.generator` — the op id / pass / extension that
+    /// `Region.generator`  -  the op id / pass / extension that
     /// produced this region, used by diagnostics to attribute
     /// errors back to their source.
     pub generator: Ident,
-    /// `Region.source_region` — the optional generator ref that
+    /// `Region.source_region`  -  the optional generator ref that
     /// links a derived region back to the original source span.
     pub source_region: Option<GeneratorRef>,
 }
@@ -185,7 +193,7 @@ thread_local! {
     /// program's stable fingerprint collapses 6+ redundant rebuilds
     /// per scheduler iteration into a single build.
     ///
-    /// Rc rather than Arc — the cache slot only ever hands references
+    /// Rc rather than Arc  -  the cache slot only ever hands references
     /// back to the same thread that owns it, so we don't need cross-
     /// thread synchronization for the cached payload.
     static FACTS_CACHE: std::cell::RefCell<Option<([u8; 32], std::rc::Rc<ProgramFacts>)>> =
@@ -230,6 +238,27 @@ impl ProgramFacts {
     /// `buffer_refs_of`.
     #[must_use]
     pub fn build(program: &Program) -> Self {
+        match Self::try_build(program) {
+            Ok(facts) => facts,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "ProgramFacts::build failed; use try_build on release paths to handle allocation pressure explicitly"
+                );
+                Self::default()
+            }
+        }
+    }
+
+    /// Fallible version of [`ProgramFacts::build`] for release paths that must
+    /// surface allocation pressure instead of panicking during optimizer
+    /// analysis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an actionable message when a ProgramFacts column cannot reserve
+    /// enough storage for the program's cached node/region counts.
+    pub fn try_build(program: &Program) -> Result<Self, String> {
         // Pre-size the columnar Vec storage off the OnceLock-cached
         // node count so the build walk fills already-allocated
         // capacity instead of grow-by-doubling each column. The
@@ -240,15 +269,15 @@ impl ProgramFacts {
         let stats = program.stats();
         let node_count = stats.node_count;
         let mut facts = Self {
-            kinds: Vec::with_capacity(node_count),
-            parent: Vec::with_capacity(node_count),
+            kinds: Vec::new(),
+            parent: Vec::new(),
             kinds_present: 0,
-            lets: Vec::with_capacity(node_count / 4),
-            assigns: Vec::with_capacity(node_count / 8),
-            loop_vars: Vec::with_capacity(node_count / 16),
-            var_reads: Vec::with_capacity(node_count),
-            buffer_refs: Vec::with_capacity(node_count / 2),
-            regions: Vec::with_capacity(stats.region_count as usize),
+            lets: Vec::new(),
+            assigns: Vec::new(),
+            loop_vars: Vec::new(),
+            var_reads: Vec::new(),
+            buffer_refs: Vec::new(),
+            regions: Vec::new(),
             let_index: OnceLock::new(),
             assign_index: OnceLock::new(),
             var_read_index: OnceLock::new(),
@@ -256,10 +285,11 @@ impl ProgramFacts {
             region_index_by_node: OnceLock::new(),
             region_index_by_generator: OnceLock::new(),
         };
+        reserve_program_fact_columns(&mut facts, node_count, stats.region_count as usize)?;
         for node in program.entry() {
             walk_node(node, None, &mut facts);
         }
-        facts
+        Ok(facts)
     }
 
     /// Total number of nodes (preorder count) in the program tree.
@@ -268,7 +298,7 @@ impl ProgramFacts {
         self.kinds.len()
     }
 
-    /// `NodeKind` at index `idx`. Panics if `idx` is out of range —
+    /// `NodeKind` at index `idx`. Panics if `idx` is out of range  -
     /// callers should always pull indices from this same fact table.
     #[must_use]
     pub fn kind_at(&self, idx: NodeIndex) -> NodeKind {
@@ -427,11 +457,7 @@ impl ProgramFacts {
     #[must_use]
     pub fn buffer_refs_of(&self, name: &str) -> &[(NodeIndex, BufferRefKind)] {
         let map = self.buffer_index.get_or_init(|| {
-            let mut out: FxHashMap<Ident, Vec<(NodeIndex, BufferRefKind)>> =
-                FxHashMap::with_capacity_and_hasher(
-                    self.buffer_refs.len(),
-                    std::hash::BuildHasherDefault::default(),
-                );
+            let mut out: FxHashMap<Ident, Vec<(NodeIndex, BufferRefKind)>> = FxHashMap::default();
             for (idx, buffer, kind) in &self.buffer_refs {
                 out.entry(buffer.clone()).or_default().push((*idx, *kind));
             }
@@ -442,7 +468,7 @@ impl ProgramFacts {
 
     /// Every `Node::Region` observed during the build walk, with
     /// its diagnostic `generator` ident and optional `source_region`
-    /// ref. ROADMAP A3 — the side-table half of "treat Region /
+    /// ref. ROADMAP A3  -  the side-table half of "treat Region /
     /// source metadata as side tables during optimization, restore
     /// for diagnostics."
     #[must_use]
@@ -456,11 +482,11 @@ impl ProgramFacts {
     #[must_use]
     pub fn region_at(&self, idx: NodeIndex) -> Option<&RegionMeta> {
         let map = self.region_index_by_node.get_or_init(|| {
-            self.regions
-                .iter()
-                .enumerate()
-                .map(|(i, meta)| (meta.node, i))
-                .collect()
+            let mut out: FxHashMap<NodeIndex, usize> = FxHashMap::default();
+            for (i, meta) in self.regions.iter().enumerate() {
+                out.insert(meta.node, i);
+            }
+            out
         });
         map.get(&idx).and_then(|&i| self.regions.get(i))
     }
@@ -469,10 +495,7 @@ impl ProgramFacts {
     /// argument. O(1) hash lookup once the index is built.
     pub fn regions_by_generator(&self, generator: &str) -> impl Iterator<Item = &RegionMeta> + '_ {
         let map = self.region_index_by_generator.get_or_init(|| {
-            let mut out: FxHashMap<Ident, Vec<usize>> = FxHashMap::with_capacity_and_hasher(
-                self.regions.len(),
-                std::hash::BuildHasherDefault::default(),
-            );
+            let mut out: FxHashMap<Ident, Vec<usize>> = FxHashMap::default();
             for (i, meta) in self.regions.iter().enumerate() {
                 out.entry(meta.generator.clone()).or_default().push(i);
             }
@@ -484,7 +507,7 @@ impl ProgramFacts {
             .filter_map(move |&i| self.regions.get(i))
     }
 
-    /// Convenience: `true` iff `name` is rebound anywhere — either
+    /// Convenience: `true` iff `name` is rebound anywhere  -  either
     /// as a `Let` shadow, an `Assign`, or a `Loop` induction
     /// variable. Used by passes that want to check "is this name
     /// stable across the whole program?" without writing the same
@@ -501,7 +524,7 @@ impl ProgramFacts {
         self.loop_vars.iter().any(|(_, var)| var.as_str() == name)
     }
 
-    /// ROADMAP A12 — points-to fact: `true` iff `buf_a` and `buf_b`
+    /// ROADMAP A12  -  points-to fact: `true` iff `buf_a` and `buf_b`
     /// can be proven to refer to disjoint memory.
     ///
     /// Soundness: in vyre's IR every `BufferDecl` is a distinct
@@ -526,7 +549,7 @@ impl ProgramFacts {
         a_seen && b_seen
     }
 
-    /// ROADMAP A13 — escape fact: `true` iff `name`'s contents are
+    /// ROADMAP A13  -  escape fact: `true` iff `name`'s contents are
     /// observable outside this kernel's execution.
     ///
     /// A buffer escapes the kernel scope when it appears as:
@@ -538,7 +561,7 @@ impl ProgramFacts {
     ///     value is consumed by the dispatch grid).
     ///
     /// Buffers that are READ ONLY (no Write / Atomic / `AsyncDestination`
-    /// / `IndirectCount` in the `buffer_refs` column) do not escape — their
+    /// / `IndirectCount` in the `buffer_refs` column) do not escape  -  their
     /// contents are an input the host produced, not a kernel-local
     /// scratch the host needs to read back.
     ///
@@ -579,16 +602,41 @@ impl ProgramFacts {
     }
 }
 
+
 fn build_index(rows: &[(NodeIndex, Ident)]) -> FxHashMap<Ident, Vec<NodeIndex>> {
-    // Capacity = row count is an upper bound (every row could touch a
-    // unique name); the map is built once via OnceLock so over-sizing
-    // is paid once and saves grow-by-doubling on every insert.
-    let mut out: FxHashMap<Ident, Vec<NodeIndex>> =
-        FxHashMap::with_capacity_and_hasher(rows.len(), std::hash::BuildHasherDefault::default());
+    let mut out: FxHashMap<Ident, Vec<NodeIndex>> = FxHashMap::default();
     for (idx, name) in rows {
         out.entry(name.clone()).or_default().push(*idx);
     }
     out
+}
+
+fn reserve_program_fact_columns(
+    facts: &mut ProgramFacts,
+    node_count: usize,
+    region_count: usize,
+) -> Result<(), String> {
+    reserve_fact_vec(&mut facts.kinds, node_count, "kind column")?;
+    reserve_fact_vec(&mut facts.parent, node_count, "parent column")?;
+    reserve_fact_vec(&mut facts.lets, node_count / 4, "let column")?;
+    reserve_fact_vec(&mut facts.assigns, node_count / 8, "assign column")?;
+    reserve_fact_vec(&mut facts.loop_vars, node_count / 16, "loop-var column")?;
+    reserve_fact_vec(&mut facts.var_reads, node_count, "var-read column")?;
+    reserve_fact_vec(&mut facts.buffer_refs, node_count / 2, "buffer-ref column")?;
+    reserve_fact_vec(&mut facts.regions, region_count, "region metadata column")?;
+    Ok(())
+}
+
+fn reserve_fact_vec<T>(
+    vec: &mut Vec<T>,
+    target_capacity: usize,
+    label: &'static str,
+) -> Result<(), String> {
+    crate::allocation::try_reserve_vec_to_capacity(vec, target_capacity).map_err(|source| {
+        format!(
+            "ProgramFacts {label} reservation failed for {target_capacity} item(s): {source}. Fix: shard the optimizer input or rebuild facts from a smaller program slice."
+        )
+    })
 }
 
 fn record_node(facts: &mut ProgramFacts, kind: NodeKind, parent: Option<NodeIndex>) -> NodeIndex {
@@ -736,6 +784,36 @@ fn walk_node(node: &Node, parent: Option<NodeIndex>, facts: &mut ProgramFacts) {
                 walk_node(n, Some(idx), facts);
             }
         }
+        Node::AllReduce { buffer, .. } => {
+            let idx = record_node(facts, NodeKind::AllReduce, parent);
+            facts
+                .buffer_refs
+                .push((idx, buffer.clone(), BufferRefKind::Write));
+        }
+        Node::AllGather { input, output, .. } => {
+            let idx = record_node(facts, NodeKind::AllGather, parent);
+            facts
+                .buffer_refs
+                .push((idx, input.clone(), BufferRefKind::Read));
+            facts
+                .buffer_refs
+                .push((idx, output.clone(), BufferRefKind::Write));
+        }
+        Node::ReduceScatter { input, output, .. } => {
+            let idx = record_node(facts, NodeKind::ReduceScatter, parent);
+            facts
+                .buffer_refs
+                .push((idx, input.clone(), BufferRefKind::Read));
+            facts
+                .buffer_refs
+                .push((idx, output.clone(), BufferRefKind::Write));
+        }
+        Node::Broadcast { buffer, .. } => {
+            let idx = record_node(facts, NodeKind::Broadcast, parent);
+            facts
+                .buffer_refs
+                .push((idx, buffer.clone(), BufferRefKind::Write));
+        }
         Node::Opaque(_) => {
             record_node(facts, NodeKind::Opaque, parent);
         }
@@ -834,6 +912,39 @@ mod tests {
         Program::wrapped(vec![buf("a"), buf("b")], [1, 1, 1], entry)
     }
 
+    #[test]
+    fn program_facts_build_exposes_fallible_reservation_path() {
+        let production = include_str!("program_soa.rs")
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: ProgramFacts production section should precede tests");
+
+        assert!(
+            production.contains("pub fn try_build"),
+            "Fix: ProgramFacts must expose a fallible build path for release optimizers."
+        );
+        assert!(
+            production.contains("reserve_program_fact_columns"),
+            "Fix: ProgramFacts column storage should reserve through one shared helper."
+        );
+        assert!(
+            !production.contains("Vec::with_capacity"),
+            "Fix: ProgramFacts production code must not use infallible Vec capacity constructors."
+        );
+        assert!(
+            !production.contains(".expect("),
+            "Fix: ProgramFacts production compatibility builders must not panic on allocation pressure."
+        );
+        assert!(
+            !production.contains("with_capacity_and_hasher"),
+            "Fix: ProgramFacts production indexes must not use infallible hash-map capacity constructors."
+        );
+
+        let facts = ProgramFacts::try_build(&program(vec![Node::let_bind("x", Expr::u32(1))]))
+            .expect("Fix: small ProgramFacts build should reserve successfully");
+        assert_eq!(facts.let_sites_of("x").len(), 1);
+    }
+
     /// `build` returns an empty fact table for an entry tree that
     /// has no user nodes (the wrapping Region itself counts as one
     /// node and is recorded).
@@ -848,7 +959,7 @@ mod tests {
     }
 
     /// Empty entry tree has the wrapping Region in `kinds_present`
-    /// and nothing else — no Lets, no Loops, no Stores.
+    /// and nothing else  -  no Lets, no Loops, no Stores.
     #[test]
     fn kinds_present_bitset_starts_empty_then_records_each_kind() {
         let facts = ProgramFacts::build(&program(Vec::new()));
@@ -1077,7 +1188,7 @@ mod tests {
             .iter_nodes()
             .find(|(_, k)| *k == NodeKind::If)
             .map(|(i, _)| i)
-            .expect("If node present");
+            .expect("Fix: If node present");
         assert_eq!(facts.parent_of(if_idx), Some(region));
         let let_idxs: Vec<_> = facts.lets().iter().map(|(i, _)| *i).collect();
         for let_idx in let_idxs {
@@ -1168,8 +1279,8 @@ mod tests {
                     .map(|m| m.generator.as_str() == "custom")
                     .unwrap_or(false)
             })
-            .expect("custom-generator Region present");
-        let meta = facts.region_at(region_idx).expect("region recorded");
+            .expect("Fix: custom-generator Region present");
+        let meta = facts.region_at(region_idx).expect("Fix: region recorded");
         assert_eq!(meta.generator.as_str(), "custom");
         assert_eq!(meta.source_region, None);
         let let_idx = facts.lets().get(0).map(|(i, _)| *i);
@@ -1244,7 +1355,7 @@ mod tests {
             .iter_nodes()
             .find(|(_, kind)| *kind == NodeKind::Block)
             .map(|(idx, _)| idx)
-            .expect("Block node present");
+            .expect("Fix: Block node present");
         let let_idx = facts.lets()[0].0;
         assert_eq!(facts.regionless_parent_of(block), None);
         assert_eq!(facts.regionless_parent_of(let_idx), Some(block));
@@ -1273,7 +1384,7 @@ mod tests {
     }
 
     /// A name that doesn't appear in the buffer_refs column is not
-    /// a real buffer — the fact returns false to keep the contract
+    /// a real buffer  -  the fact returns false to keep the contract
     /// honest.
     #[test]
     fn buffers_provably_distinct_rejects_phantom_name() {
@@ -1284,7 +1395,7 @@ mod tests {
 
     // ──── ROADMAP A13: escape facts (buffer_escapes) ────
 
-    /// A buffer that's only read (Load) does NOT escape — its
+    /// A buffer that's only read (Load) does NOT escape  -  its
     /// contents are an input the host produced.
     #[test]
     fn buffer_does_not_escape_when_read_only() {
@@ -1342,3 +1453,4 @@ mod tests {
         assert!(escaping.iter().any(|k| k.as_str() == "a"));
     }
 }
+

@@ -189,7 +189,11 @@ impl BindingPlan {
                         ),
                     }
                 })?;
-                validate_input_len(binding, byte_len)?;
+                validate_input_len(
+                    binding,
+                    byte_len,
+                    matches!(input_lens, InputLengths::Lengths(_)),
+                )?;
             }
         }
         Ok(())
@@ -201,7 +205,11 @@ impl BindingPlan {
         validate_inputs_now: bool,
     ) -> Result<Self, BackendError> {
         let mut ordered = SmallVec::<[(usize, &BufferDecl); 16]>::new();
-        ordered.try_reserve(program.buffers().len()).map_err(|error| {
+        vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+            &mut ordered,
+            program.buffers().len(),
+        )
+        .map_err(|error| {
             BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: binding-plan construction could not reserve {} ordered buffer slot(s): {error}. Split the program buffers or construct a smaller pipeline.",
@@ -213,34 +221,46 @@ impl BindingPlan {
         ordered.sort_by_key(|(_, buffer)| buffer.binding());
 
         let mut bindings = Vec::new();
-        bindings
-            .try_reserve_exact(ordered.len())
-            .map_err(|error| BackendError::InvalidProgram {
+        crate::allocation::try_reserve_vec_to_capacity(&mut bindings, ordered.len()).map_err(
+            |error| BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: binding-plan construction could not reserve {} binding descriptor(s): {error}. Split the program buffers or construct a smaller pipeline.",
                     ordered.len()
                 ),
-            })?;
+            },
+        )?;
         let (input_slot_count, output_slot_count, shared_slot_count) =
             binding_role_counts(&ordered)?;
         let mut input_indices = SmallVec::<[usize; 8]>::new();
         let mut output_indices = SmallVec::<[usize; 8]>::new();
         let mut shared_indices = SmallVec::<[usize; 4]>::new();
-        input_indices.try_reserve(input_slot_count).map_err(|error| {
+        vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+            &mut input_indices,
+            input_slot_count,
+        )
+        .map_err(|error| {
             BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: binding-plan construction could not reserve {input_slot_count} input index slot(s): {error}. Split the program buffers or construct a smaller pipeline."
                 ),
             }
         })?;
-        output_indices.try_reserve(output_slot_count).map_err(|error| {
+        vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+            &mut output_indices,
+            output_slot_count,
+        )
+        .map_err(|error| {
             BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: binding-plan construction could not reserve {output_slot_count} output index slot(s): {error}. Split the program buffers or construct a smaller pipeline."
                 ),
             }
         })?;
-        shared_indices.try_reserve(shared_slot_count).map_err(|error| {
+        vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+            &mut shared_indices,
+            shared_slot_count,
+        )
+        .map_err(|error| {
             BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: binding-plan construction could not reserve {shared_slot_count} shared index slot(s): {error}. Split the program buffers or construct a smaller pipeline."
@@ -255,8 +275,17 @@ impl BindingPlan {
                 BindingRole::Input | BindingRole::InputOutput | BindingRole::Uniform
             );
             let produces_output = matches!(role, BindingRole::Output | BindingRole::InputOutput);
+            buffer
+                .element()
+                .validate_layout()
+                .map_err(|error| BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: binding `{}` has malformed data-type layout metadata: {error}",
+                        buffer.name()
+                    ),
+                })?;
             let element_size = buffer.element().min_bytes();
-            let static_byte_len = static_byte_len(buffer, element_size)?;
+            let static_byte_len = static_byte_len(buffer)?;
             let preferred_alignment = preferred_alignment(buffer, element_size)?;
 
             let input_index = if consumes_input {
@@ -279,13 +308,7 @@ impl BindingPlan {
             let element_count = if buffer.count() == 0 {
                 input_index
                     .and_then(|index| input_lens.get(index))
-                    .and_then(|byte_len| {
-                        if element_size == 0 {
-                            None
-                        } else {
-                            u32::try_from(byte_len / element_size).ok()
-                        }
-                    })
+                    .and_then(|byte_len| dynamic_element_count_from_bytes(buffer, byte_len))
                     .unwrap_or(0)
             } else {
                 buffer.count()
@@ -359,11 +382,9 @@ fn role_for_buffer(buffer: &BufferDecl) -> Result<BindingRole, BackendError> {
     if buffer.kind() == MemoryKind::Persistent {
         return Ok(BindingRole::Persistent);
     }
-    if buffer.is_output || (buffer.pipeline_live_out && buffer.access() == BufferAccess::ReadWrite)
-    {
+    if buffer.is_output || buffer.pipeline_live_out {
         return Ok(BindingRole::Output);
     }
-
     match buffer.access() {
         BufferAccess::ReadOnly => Ok(BindingRole::Input),
         BufferAccess::ReadWrite => Ok(BindingRole::InputOutput),
@@ -400,35 +421,53 @@ fn preferred_alignment(buffer: &BufferDecl, element_size: usize) -> Result<usize
     Ok(hinted.max(element_size.max(1)))
 }
 
-fn static_byte_len(
-    buffer: &BufferDecl,
-    element_size: usize,
-) -> Result<Option<usize>, BackendError> {
+fn static_byte_len(buffer: &BufferDecl) -> Result<Option<usize>, BackendError> {
     if buffer.count() == 0 {
         return Ok(None);
     }
-    if element_size == 0 {
-        return Err(BackendError::InvalidProgram {
+    let count = usize::try_from(buffer.count()).map_err(|_| BackendError::InvalidProgram {
+        fix: format!(
+            "Fix: binding `{}` element count does not fit usize; split the buffer or reduce element count.",
+            buffer.name()
+        ),
+    })?;
+    buffer
+        .element()
+        .packed_size_bytes(count)
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: binding `{}` static byte length could not be computed: {error}",
+                buffer.name(),
+            ),
+        })?
+        .map(Some)
+        .ok_or_else(|| BackendError::InvalidProgram {
             fix: format!(
                 "Fix: binding `{}` declares {} elements of a runtime-sized data type; use a byte-addressed buffer contract or a fixed-width element type.",
                 buffer.name(),
                 buffer.count()
             ),
-        });
-    }
-    usize::try_from(buffer.count())
-        .ok()
-        .and_then(|count| count.checked_mul(element_size))
-        .map(Some)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: binding `{}` static byte length overflowed usize; split the buffer or reduce element count.",
-                buffer.name()
-            ),
         })
 }
 
-fn validate_input_len(binding: &Binding, input_len: usize) -> Result<(), BackendError> {
+
+fn dynamic_element_count_from_bytes(buffer: &BufferDecl, byte_len: usize) -> Option<u32> {
+    if let Some(bits) = buffer.element().bit_width() {
+        let total_bits = byte_len.checked_mul(8)?;
+        return u32::try_from(total_bits / bits).ok();
+    }
+    buffer
+        .element()
+        .size_bytes()
+        .and_then(|element_size| byte_len.checked_div(element_size))
+        .and_then(|count| u32::try_from(count).ok())
+}
+
+fn validate_input_len(
+    binding: &Binding,
+    input_len: usize,
+    _strict_static_input_len: bool,
+) -> Result<(), BackendError> {
     if binding.element_size > 1 && input_len % binding.element_size != 0 {
         return Err(BackendError::InvalidProgram {
             fix: format!(
@@ -451,11 +490,56 @@ fn validate_input_len(binding: &Binding, input_len: usize) -> Result<(), Backend
     Ok(())
 }
 
+#[cfg(test)]
+mod exact_length_tests {
+    use super::*;
+    use vyre_foundation::ir::DataType;
+
+    fn static_u32_input_program(count: u32) -> Program {
+        Program::wrapped(
+            vec![BufferDecl::read("input", 0, DataType::U32).with_count(count)],
+            [1, 1, 1],
+            Vec::new(),
+        )
+    }
+
+    #[test]
+    fn static_input_lengths_are_exact_for_owned_borrowed_and_resident_inputs() {
+        let program = static_u32_input_program(2);
+        let short = vec![0u8; 4];
+        let exact = vec![0u8; 8];
+
+        let owned_err = BindingPlan::from_program(&program, &[short.clone()])
+            .expect_err("owned static input length must be exact");
+        assert!(owned_err.to_string().contains("expected 8 bytes"));
+        assert!(BindingPlan::from_program(&program, &[exact]).is_ok());
+
+        let borrowed_short = [short.as_slice()];
+        let borrowed_err = BindingPlan::from_borrowed_inputs(&program, &borrowed_short)
+            .expect_err("borrowed static input length must be exact");
+        assert!(borrowed_err.to_string().contains("expected 8 bytes"));
+
+        let resident_err = BindingPlan::from_input_lengths(&program, &[4])
+            .expect_err("resident static input length must be exact");
+        assert!(resident_err.to_string().contains("expected 8 bytes"));
+    }
+
+    #[test]
+    fn dynamic_input_length_sets_runtime_element_count() {
+        let program = static_u32_input_program(0);
+        let plan = BindingPlan::from_program(&program, &[vec![0u8; 12]])
+            .expect("Fix: reject bindings without known element width; do not dispatch un-sized dynamic inputs - dynamic input byte length should define element count");
+
+        assert_eq!(plan.bindings[0].element_count, 3);
+        assert_eq!(plan.bindings[0].static_byte_len, None);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // N7 binding-set merging across consecutive dispatches
 // ---------------------------------------------------------------------------
 
-/// Stable fingerprint of a binding set's *layout* — the parts that
+/// Stable fingerprint of a binding set's *layout*  -  the parts that
 /// determine whether two `BindingPlan`s can share a backend bind
 /// group layout / descriptor set.
 ///
@@ -466,7 +550,7 @@ fn validate_input_len(binding: &Binding, input_len: usize) -> Result<(), Backend
 /// dispatch time on attention/softmax/reduce shapes.
 ///
 /// Layout (this fingerprint) is distinct from contents (which
-/// `program_vsa_fingerprint` covers) — two dispatches of the same
+/// `program_vsa_fingerprint` covers)  -  two dispatches of the same
 /// kernel on different input buffers share a layout fingerprint but
 /// differ in their content fingerprint.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -577,7 +661,7 @@ mod n7_tests {
     }
 
     fn different_layout_program() -> Program {
-        // Three bindings instead of two — must NOT share layout.
+        // Three bindings instead of two  -  must NOT share layout.
         Program::wrapped(
             vec![
                 BufferDecl::storage("a", 0, BufferAccess::ReadOnly, DataType::U32).with_count(16),
@@ -684,7 +768,7 @@ mod tests {
             [64, 1, 1],
             vec![],
         );
-        let plan = BindingPlan::build(&program).expect("alignment hint should build");
+        let plan = BindingPlan::build(&program).expect("Fix: alignment hint should build");
         assert_eq!(plan.bindings[0].preferred_alignment, 64);
     }
 
@@ -712,8 +796,73 @@ mod tests {
             [64, 1, 1],
             vec![],
         );
-        let plan = BindingPlan::build(&program).expect("default alignment should build");
+        let plan = BindingPlan::build(&program).expect("Fix: default alignment should build");
         assert_eq!(plan.bindings[0].preferred_alignment, 4);
+    }
+
+    #[test]
+    fn binding_plan_uses_packed_static_byte_len_for_subbyte_elements() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::storage("packed_i4", 0, BufferAccess::ReadOnly, DataType::I4)
+                    .with_count(3),
+            ],
+            [1, 1, 1],
+            vec![],
+        );
+        let plan =
+            BindingPlan::build(&program).expect("Fix: packed I4 binding layout should build");
+
+        assert_eq!(plan.bindings[0].element_size, 1);
+        assert_eq!(plan.bindings[0].static_byte_len, Some(2));
+    }
+
+    #[test]
+    fn binding_plan_validates_packed_static_input_lengths() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::storage("packed_i4", 0, BufferAccess::ReadOnly, DataType::I4)
+                    .with_count(3),
+            ],
+            [1, 1, 1],
+            vec![],
+        );
+        let plan = BindingPlan::from_input_lengths(&program, &[2])
+            .expect("Fix: packed I4 input should accept the exact packed byte count");
+
+        plan.validate_input_byte_lengths(&[2])
+            .expect("Fix: cached packed I4 input length should remain valid");
+        let error = plan
+            .validate_input_byte_lengths(&[3])
+            .expect_err("unpacked byte length must not satisfy packed I4 contract");
+        assert!(
+            format!("{error}").contains("expected 2 bytes"),
+            "Fix: packed byte mismatch must be explicit: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_plan_rejects_malformed_data_type_layouts() {
+        let program = Program::wrapped(
+            vec![BufferDecl::output(
+                "bad_vec",
+                0,
+                DataType::Vec {
+                    element: Box::new(DataType::U32),
+                    count: 0,
+                },
+            )
+            .with_count(1)],
+            [1, 1, 1],
+            vec![],
+        );
+
+        let error = BindingPlan::build(&program)
+            .expect_err("zero-lane vector layout must not enter binding planning");
+        assert!(
+            format!("{error}").contains("Vec count must be > 0"),
+            "Fix: malformed data-type layout diagnostics must survive binding planning: {error}"
+        );
     }
 
     #[test]
@@ -727,10 +876,10 @@ mod tests {
             vec![],
         );
         let plan = BindingPlan::from_input_lengths(&program, &[16])
-            .expect("resident input length should match the declared u32[4] input");
+            .expect("Fix: resident input length should match the declared u32[4] input");
 
         plan.validate_input_byte_lengths(&[16])
-            .expect("cached resident plan should accept the same input byte length");
+            .expect("Fix: cached resident plan should accept the same input byte length");
         let error = plan
             .validate_input_byte_lengths(&[12])
             .expect_err("cached resident plan must reject stale pipeline shape reuse");
@@ -740,3 +889,4 @@ mod tests {
         );
     }
 }
+

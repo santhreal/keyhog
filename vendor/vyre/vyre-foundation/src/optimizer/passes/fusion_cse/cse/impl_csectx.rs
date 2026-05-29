@@ -228,6 +228,13 @@ impl CseCtx {
                 self.clear_observed_state();
                 node.clone()
             }
+            Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. } => {
+                self.clear_observed_state();
+                node.clone()
+            }
             Node::Region {
                 generator,
                 source_region,
@@ -343,18 +350,18 @@ impl CseCtx {
 
         // Soundness fix (S19): the previous pointer cache mapped
         // `*const Expr → ExprId`, claiming the IR is immutable during
-        // a single CSE pass. That isn't safe — Box<Expr> sub-trees
+        // a single CSE pass. That isn't safe  -  Box<Expr> sub-trees
         // freed by `Cow::Owned` rewrites can be reallocated at the
         // same address by later sub-trees, so a stale ExprId from a
         // prior expression flows through `values.get(stale_id)` and
         // CSE merges semantically distinct expressions (caught by
         // `full_optimize_is_idempotent_on_canonical_wire` regression
-        // — `BitAnd(46, Mul(BitAnd(888, X), 0))` collapsed into the
+        //  -  `BitAnd(46, Mul(BitAnd(888, X), 0))` collapsed into the
         // unrelated `BitOr(invocation, 1)`). Drop the cache; the
         // underlying `deduplication` map already gives O(1) intern
         // dedup by structural key.
         let key = self.intern_expr(rewritten.as_ref());
-        // Never replace a literal with a variable reference — literals are
+        // Never replace a literal with a variable reference  -  literals are
         // already minimal, and the variable may be mutated later (e.g. loop
         // counters or state accumulators). Substituting `0u` with `var state`
         // when `state` was initially `0u` is unsound if `state` is reassigned.

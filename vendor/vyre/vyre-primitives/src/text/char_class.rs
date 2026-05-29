@@ -1,4 +1,4 @@
-//! Tier 2.5 byte classifier — the canonical char-class primitive.
+//! Tier 2.5 byte classifier  -  the canonical char-class primitive.
 //!
 //! Each invocation classifies one packed source byte (`source[i]`,
 //! low 8 bits) by loading a host-supplied 256-entry lookup table from
@@ -87,46 +87,46 @@ pub fn build_char_class_table() -> [u32; 256] {
     let mut table = [C_OTHER; 256];
 
     table[0] = C_EOF;
-    table[b' ' as usize] = C_WS;
-    table[b'\t' as usize] = C_WS;
-    table[b'\n' as usize] = C_NEWLINE;
-    table[b'\r' as usize] = C_NEWLINE;
-    table[b'(' as usize] = C_OPEN_PAREN;
-    table[b')' as usize] = C_CLOSE_PAREN;
-    table[b'{' as usize] = C_OPEN_BRACE;
-    table[b'}' as usize] = C_CLOSE_BRACE;
-    table[b';' as usize] = C_SEMICOLON;
-    table[b',' as usize] = C_COMMA;
-    table[b'.' as usize] = C_DOT;
-    table[b'*' as usize] = C_STAR;
-    table[b'+' as usize] = C_PLUS;
-    table[b'-' as usize] = C_MINUS;
-    table[b'/' as usize] = C_SLASH;
-    table[b'#' as usize] = C_HASH;
-    table[b'\'' as usize] = C_QUOTE;
-    table[b'"' as usize] = C_DQUOTE;
-    table[b'=' as usize] = C_EQUALS;
-    table[b'<' as usize] = C_LT;
-    table[b'>' as usize] = C_GT;
-    table[b'!' as usize] = C_BANG;
-    table[b'&' as usize] = C_AMP;
-    table[b'|' as usize] = C_PIPE;
-    table[b'^' as usize] = C_CARET;
-    table[b'~' as usize] = C_TILDE;
-    table[b'%' as usize] = C_PERCENT;
-    table[b'\\' as usize] = C_BACKSLASH;
-    table[b'[' as usize] = C_OPEN_BRACKET;
-    table[b']' as usize] = C_CLOSE_BRACKET;
-    table[b'_' as usize] = C_ALPHA;
+    table[usize::from(b' ')] = C_WS;
+    table[usize::from(b'\t')] = C_WS;
+    table[usize::from(b'\n')] = C_NEWLINE;
+    table[usize::from(b'\r')] = C_NEWLINE;
+    table[usize::from(b'(')] = C_OPEN_PAREN;
+    table[usize::from(b')')] = C_CLOSE_PAREN;
+    table[usize::from(b'{')] = C_OPEN_BRACE;
+    table[usize::from(b'}')] = C_CLOSE_BRACE;
+    table[usize::from(b';')] = C_SEMICOLON;
+    table[usize::from(b',')] = C_COMMA;
+    table[usize::from(b'.')] = C_DOT;
+    table[usize::from(b'*')] = C_STAR;
+    table[usize::from(b'+')] = C_PLUS;
+    table[usize::from(b'-')] = C_MINUS;
+    table[usize::from(b'/')] = C_SLASH;
+    table[usize::from(b'#')] = C_HASH;
+    table[usize::from(b'\'')] = C_QUOTE;
+    table[usize::from(b'"')] = C_DQUOTE;
+    table[usize::from(b'=')] = C_EQUALS;
+    table[usize::from(b'<')] = C_LT;
+    table[usize::from(b'>')] = C_GT;
+    table[usize::from(b'!')] = C_BANG;
+    table[usize::from(b'&')] = C_AMP;
+    table[usize::from(b'|')] = C_PIPE;
+    table[usize::from(b'^')] = C_CARET;
+    table[usize::from(b'~')] = C_TILDE;
+    table[usize::from(b'%')] = C_PERCENT;
+    table[usize::from(b'\\')] = C_BACKSLASH;
+    table[usize::from(b'[')] = C_OPEN_BRACKET;
+    table[usize::from(b']')] = C_CLOSE_BRACKET;
+    table[usize::from(b'_')] = C_ALPHA;
 
     for byte in b'0'..=b'9' {
-        table[byte as usize] = C_DIGIT;
+        table[usize::from(byte)] = C_DIGIT;
     }
     for byte in b'A'..=b'Z' {
-        table[byte as usize] = C_ALPHA;
+        table[usize::from(byte)] = C_ALPHA;
     }
     for byte in b'a'..=b'z' {
-        table[byte as usize] = C_ALPHA;
+        table[usize::from(byte)] = C_ALPHA;
     }
 
     table
@@ -172,7 +172,7 @@ pub fn char_class(source: &str, classified: &str, n: u32) -> Program {
 ///
 /// Pure function, exposed for fixture generation + harness oracles.
 #[must_use]
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 pub fn reference_char_class(source: &[u8], table: &[u32; 256]) -> Vec<u32> {
     source
         .iter()
@@ -183,17 +183,14 @@ pub fn reference_char_class(source: &[u8], table: &[u32; 256]) -> Vec<u32> {
 /// Pack a `[u32]` slice into the LE-byte layout the harness uses.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    crate::wire::pack_u32_slice(words)
 }
 
 /// Pack a `[u8]` source slice into the per-element u32 layout the GPU
 /// kernel expects (each byte in the low 8 bits of a u32 lane).
 #[must_use]
 pub fn pack_bytes_as_u32(bytes: &[u8]) -> Vec<u8> {
-    bytes
-        .iter()
-        .flat_map(|byte| u32::from(*byte).to_le_bytes())
-        .collect()
+    crate::wire::pack_bytes_as_u32_slice(bytes)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -222,16 +219,16 @@ mod tests {
     #[test]
     fn table_classifies_ascii_letter_as_alpha() {
         let table = build_char_class_table();
-        assert_eq!(table[b'A' as usize], C_ALPHA);
-        assert_eq!(table[b'z' as usize], C_ALPHA);
-        assert_eq!(table[b'_' as usize], C_ALPHA);
+        assert_eq!(table[usize::from(b'A')], C_ALPHA);
+        assert_eq!(table[usize::from(b'z')], C_ALPHA);
+        assert_eq!(table[usize::from(b'_')], C_ALPHA);
     }
 
     #[test]
     fn table_classifies_digits() {
         let table = build_char_class_table();
         for byte in b'0'..=b'9' {
-            assert_eq!(table[byte as usize], C_DIGIT);
+            assert_eq!(table[usize::from(byte)], C_DIGIT);
         }
     }
 
@@ -247,5 +244,23 @@ mod tests {
     #[test]
     fn primitive_id_names_the_primitive_tier() {
         assert_eq!(CHAR_CLASS_OP_ID, "vyre-primitives::text::char_class");
+    }
+
+    #[test]
+    fn char_class_table_builder_uses_widening_indices() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/text/char_class.rs"
+        ))
+        .expect("Fix: char_class source must be readable");
+        let production = src
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: meta-test scans production sources; update fixture path if module moved - production section must exist");
+        assert!(
+            !production.contains(" as usize"),
+            "byte lookup-table indices must use usize::from so the primitive has no narrowing casts"
+        );
+        assert!(production.contains("usize::from(byte)"));
     }
 }

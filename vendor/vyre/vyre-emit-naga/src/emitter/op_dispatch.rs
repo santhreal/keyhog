@@ -1,4 +1,4 @@
-//! `KernelOp` → naga emit dispatcher. The big match arm — every
+//! `KernelOp` → naga emit dispatcher. The big match arm  -  every
 //! `KernelOpKind` variant routes to its emit helper from here. Plus the
 //! two helpers that only `emit_op` calls (`global_invocation_axis`,
 //! `emit_opaque_expr`).
@@ -108,7 +108,7 @@ impl BodyBuilder<'_> {
                 // changes without clobbering the three adjacent bytes
                 // packed into the same u32. Naive Store would write the
                 // value as a u32 to the byte address, corrupting the
-                // surrounding bytes — the same byte/word-addressing
+                // surrounding bytes  -  the same byte/word-addressing
                 // mismatch the LoadGlobal byte-extract path closed.
                 let data_type = self.binding_data_types.get(&slot).cloned();
                 if matches!(data_type, Some(DataType::U8) | Some(DataType::I8)) {
@@ -335,7 +335,7 @@ impl BodyBuilder<'_> {
     /// ...;` inside the inner block and the post-region read of `_eN`
     /// trips `no definition in scope` validation. The lowering's
     /// Region phi-merge handles source-level NAMED carriers; this
-    /// handles UNNAMED in-region SSA results that escape — exactly the
+    /// handles UNNAMED in-region SSA results that escape  -  exactly the
     /// `vyre_loop_carry_<id>` carrier path Loop/If already use.
     pub(super) fn emit_structured_block(
         &mut self,
@@ -448,6 +448,7 @@ impl BodyBuilder<'_> {
         let accept = self.child_block(body, op, child_indices[0])?;
         let reject = if child_indices.len() > 1 {
             self.child_block(body, op, child_indices[1])?
+
         } else {
             naga::Block::new()
         };
@@ -463,7 +464,7 @@ impl BodyBuilder<'_> {
         // Post-if rebind: re-Load every carrier from its function-scope
         // local in the parent block so any subsequent reader resolves
         // to a Load whose Statement::Emit is in the current (parent)
-        // body — not the now-closed if-body's expression range.
+        // body  -  not the now-closed if-body's expression range.
         for id in &new_targets {
             if let Some(local) = self.loop_carrier_locals.get(id).copied() {
                 let pointer = self.append_expr(Expression::LocalVariable(local));
@@ -475,7 +476,7 @@ impl BodyBuilder<'_> {
         Ok(())
     }
 
-    /// `BinOpKind` emit — bool-vs-numeric widening, literal-pool fold,
+    /// `BinOpKind` emit  -  bool-vs-numeric widening, literal-pool fold,
     /// and Math-builtin routing live here to keep `emit_op` flat.
     fn emit_binop(&mut self, op: &KernelOp, binop: BinOp) -> Result<(), EmitError> {
         let left = self.value_operand(op, 0)?;
@@ -898,6 +899,7 @@ impl BodyBuilder<'_> {
                     (Literal::U32(narrow), self.types.u32_ty)
                 }
                 "vyre.literal.i64" => {
+
                     let value = i64::from_le_bytes(bytes);
                     let narrow: i32 = value.try_into().map_err(|_| {
                         EmitError::InvalidDescriptor(format!(
@@ -1065,18 +1067,18 @@ impl BodyBuilder<'_> {
             left: lane_in_word,
             right: eight,
         });
-        // (0xff << shift) — the byte mask in u32-word position.
+        // (0xff << shift)  -  the byte mask in u32-word position.
         let lane_mask = self.append_expr(Expression::Binary {
             op: BinaryOperator::ShiftLeft,
             left: mask_ff,
             right: shift_bits,
         });
-        // ~(0xff << shift) — invert to clear the target byte.
+        // ~(0xff << shift)  -  invert to clear the target byte.
         let cleared_mask = self.append_expr(Expression::Unary {
             op: naga::UnaryOperator::BitwiseNot,
             expr: lane_mask,
         });
-        // (value & 0xff) << shift — value byte in u32-word position.
+        // (value & 0xff) << shift  -  value byte in u32-word position.
         let value_byte = self.append_expr(Expression::Binary {
             op: BinaryOperator::And,
             left: value_u32,
@@ -1115,3 +1117,4 @@ impl BodyBuilder<'_> {
         Ok(())
     }
 }
+

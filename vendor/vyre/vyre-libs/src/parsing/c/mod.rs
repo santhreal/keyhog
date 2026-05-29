@@ -1,4 +1,4 @@
-//! C11 pipeline modules — lex / preprocess / parse / pipeline.
+//! C11 pipeline modules  -  lex / preprocess / parse / pipeline.
 
 /// DFA lexer pipeline (lexer, tokens, keywords).
 pub mod lex;

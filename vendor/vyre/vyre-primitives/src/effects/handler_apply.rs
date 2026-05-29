@@ -176,7 +176,7 @@ mod tests {
     fn handler_passes_through_other_kinds() {
         let row = EffectRow::single(EffectKind::Atomic);
         let h = Handler::single(EffectKind::BufferWrite);
-        assert_eq!(handler_apply(row, h), row);
+        assert_eq!(handler_apply(row, h).bits(), EffectKind::Atomic.mask());
     }
 
     #[test]
@@ -192,7 +192,7 @@ mod tests {
             EffectKind::Trap,
         ] {
             let row = EffectRow::single(kind);
-            assert_eq!(handler_apply(row, id), row);
+            assert_eq!(handler_apply(row, id).bits(), kind.mask());
         }
     }
 

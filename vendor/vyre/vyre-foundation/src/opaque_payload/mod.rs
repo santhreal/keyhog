@@ -4,7 +4,7 @@
 //! `Expr::Opaque` and `Node::Opaque` carry a `Vec<u8>` payload owned by the
 //! dialect that issued the node. The wire framing is byte-identical across
 //! architectures, so extension authors MUST NOT use `to_ne_bytes` or any
-//! host-endian serialization — a Program encoded on one host and decoded on
+//! host-endian serialization  -  a Program encoded on one host and decoded on
 //! another must reproduce the same `crate::ir::Program::hash` and the same
 //! IR. Using `to_le_bytes` everywhere is the only way to honour that
 //! contract.
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn f64_non_zero_floats_pass_through_unchanged() {
-        // Smallest negative subnormal — has sign bit set but is NOT zero.
+        // Smallest negative subnormal  -  has sign bit set but is NOT zero.
         let smallest_neg_subnormal = f64::from_bits(0x8000_0000_0000_0001);
         assert_eq!(
             canonical_f64_zero(smallest_neg_subnormal).to_bits(),
@@ -74,13 +74,13 @@ mod tests {
         );
         // Negative finite.
         assert_eq!(canonical_f64_zero(-1.0_f64).to_bits(), (-1.0_f64).to_bits());
-        // Quiet NaN with sign bit set — payload preserved.
+        // Quiet NaN with sign bit set  -  payload preserved.
         let qnan_neg = f64::from_bits(0xFFF8_0000_0000_0001);
         assert_eq!(
             canonical_f64_zero(qnan_neg).to_bits(),
             0xFFF8_0000_0000_0001
         );
-        // Signalling NaN with sign bit clear — payload preserved.
+        // Signalling NaN with sign bit clear  -  payload preserved.
         let snan_pos = f64::from_bits(0x7FF0_0000_0000_0001);
         assert_eq!(
             canonical_f64_zero(snan_pos).to_bits(),

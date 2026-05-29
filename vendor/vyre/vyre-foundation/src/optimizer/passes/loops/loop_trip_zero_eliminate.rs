@@ -1,8 +1,8 @@
-//! `loop_trip_zero_eliminate` — drop `Node::Loop` whose compile-time-known
+//! `loop_trip_zero_eliminate`  -  drop `Node::Loop` whose compile-time-known
 //! trip count is zero.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_trip_zero_eliminate`.
-//! Soundness: `Exact` over the `from..to` Loop semantics — when both bounds
+//! Soundness: `Exact` over the `from..to` Loop semantics  -  when both bounds
 //! are u32 literals and `from >= to`, the body is dead-code by construction
 //! and the loop never executes. Cost-direction: monotone-down on every
 //! tracked dimension (dropping a Loop strictly reduces node_count,
@@ -17,7 +17,7 @@
 //!   →  Node::Block(vec![])
 //! ```
 //!
-//! The `Block(vec![])` is canonical-empty — downstream passes
+//! The `Block(vec![])` is canonical-empty  -  downstream passes
 //! (`canonicalize` + `dce`) collapse the empty Block to nothing,
 //! shrinking the surrounding sequence.
 //!
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn empty_range_loop_dropped() {
-        // Loop from 5 to 3 — never executes.
+        // Loop from 5 to 3  -  never executes.
         let entry = vec![make_loop(
             5,
             3,
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn equal_bounds_loop_dropped() {
-        // Loop from 5 to 5 — never executes (half-open range).
+        // Loop from 5 to 5  -  never executes (half-open range).
         let entry = vec![make_loop(
             5,
             5,
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn non_empty_range_loop_kept() {
-        // Loop from 0 to 10 — executes 10 times. Must NOT be dropped.
+        // Loop from 0 to 10  -  executes 10 times. Must NOT be dropped.
         let entry = vec![make_loop(
             0,
             10,
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn i32_swapped_bounds_collapses() {
-        // Loop from 5i32 to 3i32 — never executes.
+        // Loop from 5i32 to 3i32  -  never executes.
         let entry = vec![make_loop_i32(
             5,
             3,
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn i32_equal_bounds_collapses() {
-        // Loop from 5i32 to 5i32 — never executes (half-open range).
+        // Loop from 5i32 to 5i32  -  never executes (half-open range).
         let entry = vec![make_loop_i32(
             5,
             5,

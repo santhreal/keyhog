@@ -1,9 +1,9 @@
-//! `loop_peel` — peel the first iteration of a `Node::Loop` when the
+//! `loop_peel`  -  peel the first iteration of a `Node::Loop` when the
 //! body's leading node is a guard conditioned on the loop variable being
 //! the first-iteration value.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_peel`.
-//! Soundness: `Exact` — the peeled iteration body is identical to what the
+//! Soundness: `Exact`  -  the peeled iteration body is identical to what the
 //! original loop would execute for `i == from`. The remaining loop starts
 //! at `from + 1`. Cost-direction: down on branch count (removes one
 //! iteration's predicate check). Preserves: every analysis. Invalidates:
@@ -19,7 +19,7 @@
 //!
 //! ## ROADMAP
 //!
-//! A28 — loop peeling first iteration when guarded.
+//! A28  -  loop peeling first iteration when guarded.
 
 use crate::ir::{BinOp, Expr, Ident, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};

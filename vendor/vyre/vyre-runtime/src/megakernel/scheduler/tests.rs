@@ -91,11 +91,11 @@ fn priority_scan_authorizes_tenant_before_claim_cas() {
     let tenant_mask = names
         .iter()
         .position(|name| *name == "probe_tenant_mask")
-        .expect("priority scheduler must load the tenant mask before claim CAS");
+        .expect("Fix: priority scheduler must load the tenant mask before claim CAS");
     let claim_cas = names
         .iter()
         .position(|name| *name == "probe_prev")
-        .expect("priority scheduler must still claim eligible work");
+        .expect("Fix: priority scheduler must still claim eligible work");
     assert!(
             tenant_mask < claim_cas,
             "Fix: priority scan must not convert unauthorized tenant work into CLAIMED slots; tenant_mask appears at {tenant_mask}, CAS result at {claim_cas}."

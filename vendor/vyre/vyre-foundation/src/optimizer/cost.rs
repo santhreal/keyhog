@@ -41,7 +41,7 @@
 //! | `static_storage_bytes` | `ProgramStats::static_storage_bytes` | sum of statically-known buffer byte sizes |
 //! | `divergence_score` | local walker | count of `if invocation_id == K { ... }` patterns (warp-divergence proxy) |
 //!
-//! Capability bits are NOT compared — passes are allowed to add OR remove
+//! Capability bits are NOT compared  -  passes are allowed to add OR remove
 //! capability requirements; cost-direction is orthogonal.
 
 use crate::ir::{Expr, Node, Program};
@@ -70,7 +70,7 @@ pub struct CostCertificate {
     /// Sum of statically-known buffer byte sizes.
     pub static_storage_bytes: u64,
     /// Count of `if invocation_id == K { ... }` patterns at any nesting
-    /// depth — warp-divergence proxy. Programs that lift divergent stores
+    /// depth  -  warp-divergence proxy. Programs that lift divergent stores
     /// out of an `if invocation_id == K` block reduce this dimension; programs
     /// that introduce one increase it.
     pub divergence_score: u64,
@@ -167,8 +167,8 @@ impl CostCertificate {
     /// whether a `ProgramPass::transform` rewrite is allowed to land silently.
     ///
     /// A pass that intentionally trades one dimension for another (atomic
-    /// ops down, memory ops up — e.g. fusing two `atomic_or` RMWs into a single
-    /// gather + or — store) is expected to opt out via
+    /// ops down, memory ops up  -  e.g. fusing two `atomic_or` RMWs into a single
+    /// gather + or  -  store) is expected to opt out via
     /// `RefusalReason::CostIncrease`; if it does not, this method's `false`
     /// return is the scheduler's signal to refuse the rewrite.
     #[must_use]
@@ -221,7 +221,7 @@ impl CostCertificate {
 /// pattern encountered, recursively. The shape `if invocation_id == K { ... }`
 /// (or `if K == invocation_id { ... }`) is the canonical warp-divergent
 /// pattern this dimension tracks. Other branchy patterns (e.g. `if x < y`) are
-/// not divergent in the same warp-cost sense and are NOT counted here — they
+/// not divergent in the same warp-cost sense and are NOT counted here  -  they
 /// land in `control_flow_count`, which is also tracked.
 fn count_divergent_patterns(node: &Node, score: &mut u64) {
     let _ = crate::visit::node_map::any_descendant(node, &mut |n| {
@@ -235,7 +235,7 @@ fn count_divergent_patterns(node: &Node, score: &mut u64) {
 }
 
 /// Recognize the `invocation_id == K` divergence shape in either operand
-/// orientation. Both `Eq` and `Ne` are explicitly covered — `Ne` is the
+/// orientation. Both `Eq` and `Ne` are explicitly covered  -  `Ne` is the
 /// inverted form (`if invocation_id != K { ... }` divides the warp the same
 /// way) and is counted. Any other comparison is NOT counted (those land in
 /// the broader `control_flow_count` dimension).
@@ -256,7 +256,7 @@ fn is_invocation_id_eq_constant(cond: &Expr) -> bool {
 
 /// True when `expr` is one of the workgroup-relative thread identifiers used
 /// for divergent gating: global invocation id (any axis), local id, or
-/// subgroup local id. Workgroup id is NOT counted — it gates entire
+/// subgroup local id. Workgroup id is NOT counted  -  it gates entire
 /// workgroups, not threads within a warp.
 fn is_invocation_id_expr(expr: &Expr) -> bool {
     matches!(
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn divergence_score_ignores_non_thread_id_comparisons() {
-        // Build: if buf_load < 5 { ... } — control_flow but NOT divergence
+        // Build: if buf_load < 5 { ... }  -  control_flow but NOT divergence
         let program = Program::wrapped(
             vec![
                 BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(4),
@@ -448,6 +448,7 @@ mod tests {
     }
 
     #[test]
+
     fn walker_matches_canonical_on_corpus() {
         // Kept-inline private old walker for drift-prevention
         fn count_divergent_patterns_old(node: &Node, score: &mut u64, visited: &mut Vec<Node>) {
@@ -531,3 +532,4 @@ mod tests {
         }
     }
 }
+

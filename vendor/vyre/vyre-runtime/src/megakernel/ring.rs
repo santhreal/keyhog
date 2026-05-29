@@ -1,10 +1,10 @@
 //! Ring producer / consumer traits for the megakernel host protocol.
 //!
-//! T036 / T037 in `VyreOffload/LEGENDARY_PLAN.md`. Today the protocol
+//! T036 / T037 in `VyreOffload/RELEASE_PLAN.md`. Today the protocol
 //! module ships byte-oriented `encode_*` / `decode_*` helpers and the
 //! consumer (host) drives a `Vec<u8>` ring directly. To make the ring
-//! source swappable — in-process host, out-of-process broker, or a
-//! GPU-direct producer — we lift the two halves of that contract behind
+//! source swappable  -  in-process host, out-of-process broker, or a
+//! GPU-direct producer  -  we lift the two halves of that contract behind
 //! traits and keep the existing path as the default in-process impl.
 //!
 //! The wire format is owned by [`super::protocol`]; this module sits
@@ -24,12 +24,12 @@
 //! [`RingConsumer::read_slot`] is a read-only view of one slot's bytes.
 //! Consumers may decode with `protocol::decode_*`. A consumer is
 //! decoupled from where the bytes are stored (host RAM, GPU mirror,
-//! shared-mem broker) — only the byte layout matters.
+//! shared-mem broker)  -  only the byte layout matters.
 //!
 //! ### Boundary
 //!
 //! Neither trait names a consumer-specific concept (no "expert", no
-//! "MoE", no "shard"). The two traits are vyre-generic — see the
+//! "MoE", no "shard"). The two traits are vyre-generic  -  see the
 //! boundary rule in `AGENTS.md`.
 
 use super::protocol::{self, ProtocolError};
@@ -269,13 +269,13 @@ mod tests {
     /// `protocol::decode_load_miss` helper.
     #[test]
     fn host_ring_publishes_and_round_trips_a_load_miss() {
-        let mut ring = HostRing::new(4).expect("ring constructs");
+        let mut ring = HostRing::new(4).expect("Fix: ring constructs");
         let encoded = protocol::encode_load_miss(123, true);
 
-        RingProducer::publish(&mut ring, 1, &encoded).expect("publish");
+        RingProducer::publish(&mut ring, 1, &encoded).expect("Fix: publish");
 
         let mut slot_bytes = [0u8; SLOT_BYTES];
-        RingConsumer::read_slot(&ring, 1, &mut slot_bytes).expect("read_slot");
+        RingConsumer::read_slot(&ring, 1, &mut slot_bytes).expect("Fix: read_slot");
         assert_eq!(slot_bytes.as_slice(), encoded.as_slice());
 
         // And, importantly, the existing decoder must read it back from
@@ -288,23 +288,49 @@ mod tests {
     fn host_ring_rejects_out_of_range_slot() {
         let mut ring = HostRing::new(2).unwrap();
         let encoded = protocol::encode_load_miss(0, false);
-        assert!(RingProducer::publish(&mut ring, 2, &encoded).is_err());
-        assert!(RingProducer::publish(&mut ring, u32::MAX, &encoded).is_err());
+        let err_hi = RingProducer::publish(&mut ring, 2, &encoded).expect_err("slot 2 OOB");
+        assert!(
+            err_hi.to_string().contains("slot") || err_hi.to_string().contains("range"),
+            "OOB publish error: {err_hi}"
+        );
+        let err_max =
+            RingProducer::publish(&mut ring, u32::MAX, &encoded).expect_err("slot MAX OOB");
+        assert!(
+            err_max.to_string().contains("slot") || err_max.to_string().contains("range"),
+            "MAX slot publish error: {err_max}"
+        );
 
         let mut buf = [0u8; SLOT_BYTES];
-        assert!(RingConsumer::read_slot(&ring, 2, &mut buf).is_err());
+        let read_err = RingConsumer::read_slot(&ring, 2, &mut buf).expect_err("read OOB");
+        assert!(
+            read_err.to_string().contains("slot") || read_err.to_string().contains("range"),
+            "OOB read error: {read_err}"
+        );
     }
 
     #[test]
     fn host_ring_rejects_mis_sized_encoded() {
         let mut ring = HostRing::new(2).unwrap();
         let short = [0u8; SLOT_BYTES - 1];
-        assert!(RingProducer::publish(&mut ring, 0, &short).is_err());
+        let short_pub = RingProducer::publish(&mut ring, 0, &short).expect_err("short publish");
+        assert!(
+            short_pub.to_string().contains("SLOT") || short_pub.to_string().contains("byte"),
+            "short publish error: {short_pub}"
+        );
         let long = [0u8; SLOT_BYTES + 1];
-        assert!(RingProducer::publish(&mut ring, 0, &long).is_err());
+        let long_pub = RingProducer::publish(&mut ring, 0, &long).expect_err("long publish");
+        assert!(
+            long_pub.to_string().contains("SLOT") || long_pub.to_string().contains("byte"),
+            "long publish error: {long_pub}"
+        );
 
         let mut short_out = [0u8; SLOT_BYTES - 1];
-        assert!(RingConsumer::read_slot(&ring, 0, &mut short_out).is_err());
+        let short_read =
+            RingConsumer::read_slot(&ring, 0, &mut short_out).expect_err("short read buffer");
+        assert!(
+            short_read.to_string().contains("SLOT") || short_read.to_string().contains("byte"),
+            "short read error: {short_read}"
+        );
     }
 
     /// Default done_count walks the ring; if we stamp DONE into a slot's

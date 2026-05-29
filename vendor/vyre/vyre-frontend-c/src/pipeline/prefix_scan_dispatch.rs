@@ -7,6 +7,7 @@ use vyre_primitives::reduce::multi_block_prefix_scan::{
 };
 
 use super::backend_select::{dispatch_borrowed_stage_cached_into, stage_pipeline_cache_key};
+use super::buffers::take_last_output_into;
 use super::validate_internal_stage;
 
 #[derive(Default)]
@@ -155,39 +156,4 @@ fn dispatch_borrowed_prefix_scan_u32_large_into(
     take_last_output_into(&mut scratch.pass_c_outputs, output, || {
         format!("{label} {pass_c_stage}: missing scan output")
     })
-}
-
-fn take_last_output_into<F>(
-    outputs: &mut Vec<Vec<u8>>,
-    output: &mut Vec<u8>,
-    missing: F,
-) -> Result<(), String>
-where
-    F: FnOnce() -> String,
-{
-    let mut next = outputs.pop().ok_or_else(missing)?;
-    outputs.clear();
-    mem::swap(output, &mut next);
-    outputs.push(next);
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::take_last_output_into;
-
-    #[test]
-    fn take_last_output_into_preserves_reusable_output_slot() {
-        let mut outputs = vec![vec![1, 2, 3, 4]];
-        let original_capacity = outputs[0].capacity();
-        let mut output = Vec::with_capacity(32);
-        output.extend_from_slice(&[9, 9]);
-
-        take_last_output_into(&mut outputs, &mut output, || "missing".to_string()).unwrap();
-
-        assert_eq!(output, vec![1, 2, 3, 4]);
-        assert_eq!(outputs.len(), 1);
-        assert!(outputs[0].capacity() >= 32);
-        assert!(output.capacity() >= original_capacity);
-    }
 }

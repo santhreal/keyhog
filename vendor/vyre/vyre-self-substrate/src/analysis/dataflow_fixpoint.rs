@@ -15,12 +15,16 @@
 //! Same primitive (#1), same Program, four different IR analyses.
 //! Demonstrates the recursion thesis directly.
 
+use vyre_foundation::pass_substrate::dataflow_fixpoint as foundation_dataflow;
 pub use vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring;
 
 use crate::dispatch_buffers::{
     ceil_div_u32, decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes,
     write_zero_bytes,
 };
+use crate::hardware::scratch::reserve_vec_capacity;
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 
 /// Caller-owned dispatch scratch for repeated semiring-GEMM GPU calls.
@@ -72,48 +76,7 @@ pub fn reference_semiring_gemm_into(
 ) {
     use crate::observability::{bump, dataflow_fixpoint_calls};
     bump(&dataflow_fixpoint_calls);
-    c.clear();
-    c.resize((m * n) as usize, semiring.identity());
-    for i in 0..m {
-        for j in 0..n {
-            let mut acc = semiring.identity();
-            for kk in 0..k {
-                let a_v = a[(i * k + kk) as usize];
-                let b_v = b[(kk * n + j) as usize];
-
-                let combined = match semiring {
-                    Semiring::Real | Semiring::MaxTimes => a_v.wrapping_mul(b_v),
-                    Semiring::MinPlus => {
-                        if a_v == u32::MAX || b_v == u32::MAX {
-                            u32::MAX
-                        } else {
-                            a_v.saturating_add(b_v)
-                        }
-                    }
-                    Semiring::MaxPlus => a_v.saturating_add(b_v),
-                    Semiring::BoolOr | Semiring::Gf2 => a_v & b_v,
-                    Semiring::BoolAnd => a_v | b_v,
-                    Semiring::Lineage => {
-                        if a_v == 0 || b_v == 0 {
-                            0
-                        } else {
-                            a_v | b_v
-                        }
-                    }
-                };
-
-                acc = match semiring {
-                    Semiring::Real | Semiring::MaxPlus => acc.wrapping_add(combined),
-                    Semiring::MinPlus => acc.min(combined),
-                    Semiring::MaxTimes => acc.max(combined),
-                    Semiring::BoolOr | Semiring::Lineage => acc | combined,
-                    Semiring::BoolAnd => acc & combined,
-                    Semiring::Gf2 => acc ^ combined,
-                };
-            }
-            c[(i * n + j) as usize] = acc;
-        }
-    }
+    foundation_dataflow::semiring_gemm_cpu_into(a, b, m, n, k, semiring, c);
 }
 
 /// Compute boolean reachability closure on a Region adjacency matrix
@@ -131,28 +94,11 @@ pub fn reachability_closure(adj: &[u32], n: u32, max_iters: u32) -> Vec<u32> {
 pub fn reachability_closure_into(
     adj: &[u32],
     n: u32,
-    _max_iters: u32,
+    max_iters: u32,
     current: &mut Vec<u32>,
     next: &mut Vec<u32>,
 ) {
-    assert!(n > 0);
-    current.clear();
-    current.extend_from_slice(adj);
-    next.clear();
-    let n_us = n as usize;
-    for k in 0..n_us {
-        for i in 0..n_us {
-            if current[i * n_us + k] == 0 {
-                continue;
-            }
-            for j in 0..n_us {
-                let via_k = current[k * n_us + j];
-                if via_k != 0 {
-                    current[i * n_us + j] |= via_k;
-                }
-            }
-        }
-    }
+    foundation_dataflow::reachability_closure_into(adj, n, max_iters, current, next);
 }
 
 /// Compute lineage (which-clauses-used) closure under `Semiring::Lineage`.
@@ -175,15 +121,7 @@ pub fn lineage_closure_into(
     current: &mut Vec<u32>,
     next: &mut Vec<u32>,
 ) {
-    assert!(n > 0);
-    current.clear();
-    current.extend_from_slice(adj);
-    for _ in 0..max_iters {
-        reference_semiring_gemm_into(current, current, n, n, n, Semiring::Lineage, next);
-        if !merge_or_changed(current, next) {
-            return;
-        }
-    }
+    foundation_dataflow::lineage_closure_into(adj, n, max_iters, current, next);
 }
 
 /// Compute min-cost shortest-path distance matrix under `Semiring::MinPlus`.
@@ -206,16 +144,7 @@ pub fn shortest_path_closure_into(
     current: &mut Vec<u32>,
     next: &mut Vec<u32>,
 ) {
-    assert!(n > 0);
-    current.clear();
-    current.extend_from_slice(adj);
-    for _ in 0..max_iters {
-        reference_semiring_gemm_into(current, current, n, n, n, Semiring::MinPlus, next);
-        // Take minimum elementwise (one more relaxation step).
-        if !merge_min_changed(current, next) {
-            return;
-        }
-    }
+    foundation_dataflow::shortest_path_closure_into(adj, n, max_iters, current, next);
 }
 
 /// Reusable buffers for SCC/dataflow closure queries.
@@ -243,28 +172,6 @@ impl DataflowFixpointScratch {
     pub fn backward_bitset(&self) -> &[u32] {
         &self.backward
     }
-}
-
-fn merge_or_changed(current: &mut [u32], next: &[u32]) -> bool {
-    debug_assert_eq!(current.len(), next.len());
-    let mut changed = false;
-    for (dst, src) in current.iter_mut().zip(next.iter()) {
-        let merged = *dst | *src;
-        changed |= merged != *dst;
-        *dst = merged;
-    }
-    changed
-}
-
-fn merge_min_changed(current: &mut [u32], next: &[u32]) -> bool {
-    debug_assert_eq!(current.len(), next.len());
-    let mut changed = false;
-    for (dst, src) in current.iter_mut().zip(next.iter()) {
-        let merged = (*dst).min(*src);
-        changed |= merged != *dst;
-        *dst = merged;
-    }
-    changed
 }
 
 /// Compute per-pivot forward + backward reach bitsets for the
@@ -433,7 +340,11 @@ pub fn reference_scc_components_via_substrate_into(
     scratch.forward.resize(words, 0);
     scratch.backward.resize(words, 0);
     scratch.next_components.clear();
-    scratch.next_components.reserve(n_us);
+    reserve_vec_capacity_or_panic(
+        &mut scratch.next_components,
+        n_us,
+        "SCC component staging scratch",
+    );
     for pivot in 0..n {
         if components[pivot as usize] != u32::MAX {
             continue;
@@ -575,6 +486,7 @@ pub fn semiring_gemm_via_with_scratch_into(
 }
 
 /// Boolean-OR semiring specialisation of [`semiring_gemm_via`].
+
 pub fn semiring_gemm_via_bool_or(
     dispatcher: &dyn OptimizerDispatcher,
     a: &[u32],
@@ -677,7 +589,7 @@ pub fn reachability_closure_via_with_scratch_into(
     current.clear();
     current.extend_from_slice(adj);
     next.clear();
-    next.reserve(current.len());
+    reserve_vec_capacity(next, current.len(), "reachability closure next matrix")?;
     for _ in 0..n {
         semiring_gemm_via_with_scratch_into(
             dispatcher,
@@ -690,7 +602,7 @@ pub fn reachability_closure_via_with_scratch_into(
             scratch,
             next,
         )?;
-        if !merge_or_changed(current, next) {
+        if !foundation_dataflow::merge_or_changed(current, next) {
             return Ok(());
         }
     }
@@ -721,7 +633,7 @@ pub fn lineage_closure_via(
             Semiring::Lineage,
             &mut next,
         )?;
-        if !merge_or_changed(&mut current, &next) {
+        if !foundation_dataflow::merge_or_changed(&mut current, &next) {
             return Ok(current);
         }
     }
@@ -752,7 +664,7 @@ pub fn shortest_path_closure_via(
             Semiring::MinPlus,
             &mut next,
         )?;
-        if !merge_min_changed(&mut current, &next) {
+        if !foundation_dataflow::merge_min_changed(&mut current, &next) {
             return Ok(current);
         }
     }
@@ -1021,6 +933,66 @@ mod tests {
     }
 
     #[test]
+    fn reference_semiring_gemm_into_delegates_to_foundation_authority() {
+        let left = vec![1, 2, 3, 4, 5, 6];
+        let right = vec![7, 8, 9, 10, 11, 12];
+        let mut out = Vec::with_capacity(8);
+        let ptr = out.as_ptr();
+        reference_semiring_gemm_into(&left, &right, 2, 2, 3, Semiring::Real, &mut out);
+        let mut expected = Vec::new();
+        foundation_dataflow::semiring_gemm_cpu_into(
+            &left,
+            &right,
+            2,
+            2,
+            3,
+            Semiring::Real,
+            &mut expected,
+        );
+        assert_eq!(out, expected);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn reachability_invalid_shapes_clear_buffers_without_panicking() {
+        let mut current = vec![99, 100];
+        let mut next = vec![101];
+        reachability_closure_into(&[0, 1, 0], 2, 4, &mut current, &mut next);
+        assert!(current.is_empty());
+        assert!(next.is_empty());
+        reachability_closure_into(&[], 0, 4, &mut current, &mut next);
+        assert!(current.is_empty());
+        assert!(next.is_empty());
+    }
+
+    #[test]
+    fn reachability_respects_primitive_max_iters_policy() {
+        let adj = vec![0, 1, 0, 0, 0, 1, 0, 0, 0];
+        assert_eq!(reachability_closure(&adj, 3, 0).len(), adj.len());
+        assert_eq!(reachability_closure(&adj, 3, 0), adj);
+    }
+
+    #[test]
+    fn generated_reachability_matches_foundation_authority() {
+        for n in 1u32..=8 {
+            let cells = (n * n) as usize;
+            for seed in 0u32..64 {
+                let mut state = seed ^ n.wrapping_mul(0x9E37);
+                let mut adj = Vec::with_capacity(cells);
+                for _ in 0..cells {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    adj.push((state >> 31) & 1);
+                }
+                assert_eq!(
+                    reachability_closure(&adj, n, n),
+                    foundation_dataflow::reachability_closure(&adj, n, n),
+                    "n={n} seed={seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn semiring_via_into_decodes_exact_output_into_reused_buffer() {
         let dispatcher = SemiringDispatcher {
             outputs: vec![u32_slice_to_le_bytes(&[7])],
@@ -1028,7 +1000,7 @@ mod tests {
         let mut c = Vec::with_capacity(4);
         let ptr = c.as_ptr();
         semiring_gemm_via_into(&dispatcher, &[2], &[3], 1, 1, 1, Semiring::Real, &mut c)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
         assert_eq!(c, vec![7]);
         assert_eq!(c.as_ptr(), ptr);
     }
@@ -1267,3 +1239,4 @@ mod tests {
         assert_eq!(comps, vec![0, 1, 2]);
     }
 }
+

@@ -121,7 +121,7 @@ mod tests {
             let buffer = buffers
                 .iter()
                 .find(|buffer| buffer.name() == name)
-                .expect("buffer must exist");
+                .expect("Fix: buffer must exist");
             assert_eq!(
                 buffer.count, 0,
                 "{name} must be runtime-sized so one #if expression program serves all TU and macro-table sizes"

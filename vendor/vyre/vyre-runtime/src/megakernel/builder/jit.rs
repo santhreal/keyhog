@@ -52,13 +52,31 @@ fn execute_slot_body_jit(payload_processor: &[Node]) -> Vec<Node> {
 /// The JIT body that runs once per iteration per lane.
 #[must_use]
 pub fn persistent_body_jit(workgroup_size_x: u32, payload_processor: &[Node]) -> Vec<Node> {
+    match try_persistent_body_jit(workgroup_size_x, payload_processor) {
+        Ok(body) => body,
+        Err(error) => panic!("{error}"),
+    }
+}
+
+/// Fallible JIT body builder with explicit staging-allocation reporting.
+pub(super) fn try_persistent_body_jit(
+    workgroup_size_x: u32,
+    payload_processor: &[Node],
+) -> Result<Vec<Node>, String> {
     let mut body = persistent_lane_prologue(workgroup_size_x);
-    body.try_reserve_exact(3)
-        .expect("megakernel JIT body node reservation failed. Fix: reduce fused payload/body staging before building the JIT megakernel.");
+    let body_capacity = body.len().checked_add(3).ok_or_else(|| {
+        "megakernel JIT body node reservation overflowed usize. Fix: reduce fused payload/body staging before building the JIT megakernel."
+            .to_string()
+    })?;
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut body, body_capacity).map_err(|error| {
+        format!(
+            "megakernel JIT body node reservation failed: {error}. Fix: reduce fused payload/body staging before building the JIT megakernel."
+        )
+    })?;
     body.push(direct_slot_base_binding());
     body.push(Node::Block(execute_slot_body_jit(payload_processor)));
     body.push(Node::Block(process_io_requests()));
-    body
+    Ok(body)
 }
 
 fn claimed_slot_body_jit(payload_processor: &[Node]) -> Vec<Node> {

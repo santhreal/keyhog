@@ -2,7 +2,7 @@
 //!
 //! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section B item B4.
 //!
-//! First-dispatch pipeline reflection is sync-blocking on wgpu — the
+//! First-dispatch pipeline reflection is sync-blocking on wgpu  -  the
 //! host has to wait for the driver to compile + reflect the shader
 //! before issuing the first dispatch. Pre-warming during the
 //! canonicalize / lower phase moves that cost off the dispatch path.
@@ -21,9 +21,9 @@ pub struct PrewarmHint {
     /// True if pre-warm is recommended.
     pub should_prewarm: bool,
     /// Estimated first-dispatch reflection cost in microseconds (very
-    /// rough — anchored on op-count + binding-count proxies).
+    /// rough  -  anchored on op-count + binding-count proxies).
     pub estimated_first_dispatch_us: u32,
-    /// Reason — useful for logging.
+    /// Reason  -  useful for logging.
     pub reason: String,
 }
 
@@ -50,7 +50,7 @@ pub fn analyze(desc: &KernelDescriptor) -> PrewarmHint {
         (
             false,
             format!(
-                "small kernel ({op_count} ops, {binding_count} bindings) — pre-warm not worth it"
+                "small kernel ({op_count} ops, {binding_count} bindings)  -  pre-warm not worth it"
             ),
         )
     };

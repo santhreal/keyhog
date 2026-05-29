@@ -4,7 +4,7 @@
 //! treat schema migrations between databases as functors `F: C → D`.
 //! Each instance migration is a graph rewrite.
 //!
-//! This file ships the **per-cell functor application** primitive —
+//! This file ships the **per-cell functor application** primitive  -
 //! given a source-instance row, a functor encoded as a column-mapping
 //! lookup table, emit the target-instance row. Composes with
 //! `level_wave_program` for whole-schema migration.
@@ -100,13 +100,57 @@ pub fn functor_apply_sized(
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn functor_apply_cpu(source_row: &[u32], mapping: &[u32], target_size: u32) -> Vec<u32> {
-    let mut out = vec![0u32; target_size as usize];
+    try_functor_apply_cpu(source_row, mapping, target_size)
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Fallible CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_functor_apply_cpu(
+    source_row: &[u32],
+    mapping: &[u32],
+    target_size: u32,
+) -> Result<Vec<u32>, String> {
+    let mut out = Vec::new();
+    try_functor_apply_cpu_into(source_row, mapping, target_size, &mut out)?;
+    Ok(out)
+}
+
+/// Fallible CPU reference using caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_functor_apply_cpu_into(
+    source_row: &[u32],
+    mapping: &[u32],
+    target_size: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    out.clear();
+    resize_functor_cpu_vec(out, target_size as usize, 0u32, "functor_apply CPU output")?;
     for (&src, &dst) in source_row.iter().zip(mapping.iter()) {
         if let Some(slot) = out.get_mut(dst as usize) {
             *slot = src;
         }
     }
-    out
+    Ok(())
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn resize_functor_cpu_vec<T: Clone>(
+    out: &mut Vec<T>,
+    len: usize,
+    value: T,
+    context: &str,
+) -> Result<(), String> {
+    if len > out.len() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "functorial migration CPU oracle",
+            context,
+        )?;
+    }
+    out.resize(len, value);
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -114,8 +158,18 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || functor_apply("source_row", "mapping", "target_row", 4),
-        None,
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            vec![vec![
+                to_bytes(&[10, 20, 30, 40]), // source_row
+                to_bytes(&[2, 0, 1, 3]),     // mapping
+                to_bytes(&[0, 0, 0, 0]),     // target_row
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            vec![vec![to_bytes(&[20, 30, 10, 40])]]
+        }),
     )
 }
 
@@ -160,6 +214,44 @@ mod tests {
     }
 
     #[test]
+    fn generated_cpu_oracle_preserves_last_wins_and_ignores_oob() {
+        let mut out = Vec::new();
+        for case in 0..4096usize {
+            let source_len = case % 65;
+            let map_len = (case / 3) % 65;
+            let target_size = ((case / 11) % 65) as u32;
+            let source_row: Vec<u32> = (0..source_len)
+                .map(|idx| (idx as u32).wrapping_mul(17).wrapping_add(case as u32))
+                .collect();
+            let mapping: Vec<u32> = (0..map_len)
+                .map(|idx| ((idx * 7 + case) % 83) as u32)
+                .collect();
+
+            try_functor_apply_cpu_into(&source_row, &mapping, target_size, &mut out)
+                .expect("Fix: caller must pre-size buffers; use fallible reserve or return ResourceExhausted - generated functor CPU oracle should reserve and evaluate");
+            let expected = independent_functor_apply(&source_row, &mapping, target_size);
+
+            assert_eq!(out, expected, "case {case}: functor CPU oracle mismatch");
+        }
+    }
+
+    fn independent_functor_apply(
+        source_row: &[u32],
+        mapping: &[u32],
+        target_size: u32,
+    ) -> Vec<u32> {
+        let mut out = Vec::new();
+        out.resize(target_size as usize, 0);
+        for idx in 0..source_row.len().min(mapping.len()) {
+            let dst = mapping[idx] as usize;
+            if dst < out.len() {
+                out[dst] = source_row[idx];
+            }
+        }
+        out
+    }
+
+    #[test]
     fn ir_program_buffer_layout() {
         let p = functor_apply("s", "m", "t", 8);
         assert_eq!(p.workgroup_size, [256, 1, 1]);
@@ -181,5 +273,28 @@ mod tests {
     fn zero_n_cols_traps() {
         let p = functor_apply("s", "m", "t", 0);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn functor_cpu_source_uses_fallible_reusable_target_row() {
+        let source = include_str!("functorial.rs");
+        let cpu_source = source
+            .split("/// CPU reference.")
+            .nth(1)
+            .expect("Fix: functor CPU source must be present")
+            .split("#[cfg(feature = \"inventory-registry\")]")
+            .next()
+            .expect("Fix: functor CPU source must precede registry entry");
+
+        assert!(
+            cpu_source.contains("try_functor_apply_cpu_into")
+                && cpu_source.contains("resize_functor_cpu_vec")
+                && cpu_source.contains("crate::graph::scratch::reserve_graph_items")
+                && !cpu_source.contains("fn reserve_functor_cpu_vec")
+                && !cpu_source.contains("vec![0u32; target_size as usize]")
+                && !cpu_source.contains("Vec::with_capacity")
+                && !cpu_source.contains(".reserve("),
+            "Fix: functor CPU oracle must use fallible caller-owned target storage."
+        );
     }
 }

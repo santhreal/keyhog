@@ -131,7 +131,7 @@ mod tests {
         };
         let report = budget
             .validate(&plan(&[128, 512, 256]))
-            .expect("plan is below both per-buffer and peak budgets");
+            .expect("Fix: plan is below both per-buffer and peak budgets");
         assert_eq!(report.backend, "test-gpu");
         assert_eq!(report.static_bytes, 896);
         assert_eq!(report.largest_buffer_name, "b1");

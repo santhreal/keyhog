@@ -1,4 +1,4 @@
-//! ROADMAP M0 — per-stage flame-graph emitter for the warm-batch corpus.
+//! ROADMAP M0  -  per-stage flame-graph emitter for the warm-batch corpus.
 //!
 //! Lane: `bench_harness`. Op id:
 //! `vyre-bench::report::flame`. Soundness: read-only over a finished
@@ -7,7 +7,7 @@
 //! ## What
 //!
 //! Every `CaseReport` aggregates per-stage timing samples in
-//! `metrics: BTreeMap<String, MetricStats>` — keyed by the field
+//! `metrics: BTreeMap<String, MetricStats>`  -  keyed by the field
 //! names from `crate::api::metric::BenchMetrics` (`compile_ns`,
 //! `validate_ns`, `optimize_ns`, `lower_ns`, `cache_lookup_ns`,
 //! `upload_ns`, `dispatch_ns`, `kernel_queue_submit_ns`,
@@ -85,7 +85,7 @@ pub fn collapse_report(report: &ReportSchema) -> String {
 ///
 /// # Errors
 ///
-/// Returns the underlying writer error verbatim — the function does
+/// Returns the underlying writer error verbatim  -  the function does
 /// not retry, swallow, or transform write failures.
 pub fn write_collapsed<W: io::Write>(report: &ReportSchema, writer: &mut W) -> io::Result<usize> {
     let text = collapse_report(report);
@@ -110,7 +110,7 @@ fn write_case_stacks(
         // `write!` to a String is infallible; the `expect` is a static
         // claim, not a runtime check.
         write!(out, "vyre;{};{} {}\n", case_id, display_stage, stats.p50)
-            .expect("writing to a String never fails");
+            .expect("Fix: writing to a String never fails");
     }
 }
 
@@ -135,7 +135,7 @@ pub fn collapse_report_json(report: &ReportSchema) -> String {
             }));
         }
     }
-    serde_json::to_string(&entries).expect("JSON serialization cannot fail for basic types")
+    serde_json::to_string(&entries).expect("Fix: JSON serialization cannot fail for basic types")
 }
 
 #[cfg(test)]
@@ -288,7 +288,7 @@ vyre;vyre-libs::nn::softmax;dispatch 50
             &[("optimize_ns", 100), ("lower_ns", 200)],
         )]);
         let mut buf = Vec::new();
-        let lines = write_collapsed(&report, &mut buf).expect("write must not fail");
+        let lines = write_collapsed(&report, &mut buf).expect("Fix: write must not fail");
         assert_eq!(lines, 2);
         assert_eq!(String::from_utf8(buf).unwrap(), collapse_report(&report));
     }

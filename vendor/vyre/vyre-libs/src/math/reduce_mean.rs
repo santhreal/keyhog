@@ -151,13 +151,13 @@ inventory::submit! {
         id: "vyre-libs::math::reduce_mean",
         build: || reduce_mean("input", "output", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[1.0_f32, 2.0, 3.0, 4.0]), // input
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[2.5_f32]), // mean of [1,2,3,4]
             ]]
@@ -169,18 +169,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32_one as decode_one;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_one(bytes: &[u8]) -> f32 {
-        f32::from_le_bytes(bytes[0..4].try_into().unwrap())
-    }
 
     #[test]
     fn tiled_reduce_mean_matches_scalar_reference_across_multiple_tiles() {
@@ -242,7 +233,7 @@ mod tests {
                 Value::from(vec![0u8; 4]),
             ],
         )
-        .expect("reduce_mean n=1 must execute");
+        .expect("Fix: reduce_mean n=1 must execute");
         let actual = decode_one(&outputs[0].to_bytes());
         assert!(
             (actual - 42.0).abs() <= 1.0e-5,
@@ -261,7 +252,7 @@ mod tests {
                 Value::from(vec![0u8; 4]),
             ],
         )
-        .expect("reduce_mean with NaN must execute");
+        .expect("Fix: reduce_mean with NaN must execute");
         let actual = decode_one(&outputs[0].to_bytes());
         assert!(
             actual.is_nan(),
@@ -280,7 +271,7 @@ mod tests {
                 Value::from(vec![0u8; 4]),
             ],
         )
-        .expect("reduce_mean with Inf must execute");
+        .expect("Fix: reduce_mean with Inf must execute");
         let actual = decode_one(&outputs[0].to_bytes());
         assert!(
             actual.is_infinite() && actual.is_sign_positive(),
@@ -299,7 +290,7 @@ mod tests {
                 Value::from(vec![0u8; 4]),
             ],
         )
-        .expect("reduce_mean with -Inf must execute");
+        .expect("Fix: reduce_mean with -Inf must execute");
         let actual = decode_one(&outputs[0].to_bytes());
         assert!(
             actual.is_infinite() && actual.is_sign_negative(),

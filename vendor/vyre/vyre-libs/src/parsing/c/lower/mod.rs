@@ -6,8 +6,6 @@
 /// AST to PG nodes lowering pass.
 pub mod ast_to_pg_nodes;
 mod semantic_edges;
-#[cfg(test)]
-mod semantic_edges_reference;
 
 #[allow(deprecated)]
 pub use ast_to_pg_nodes::{

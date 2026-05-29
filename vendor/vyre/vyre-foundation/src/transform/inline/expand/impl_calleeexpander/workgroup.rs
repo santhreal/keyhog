@@ -70,7 +70,12 @@ impl CalleeExpander<'_> {
                 tag.clone(),
             )]),
             Node::AsyncWait { tag } => Ok(vec![Node::async_wait(tag)]),
-            Node::Trap { .. } | Node::Resume { .. } => Ok(vec![node.clone()]),
+            Node::Trap { .. }
+            | Node::Resume { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. } => Ok(vec![node.clone()]),
             Node::Region {
                 generator,
                 source_region,

@@ -81,7 +81,7 @@ fn dispatch_dense_ast_windows_with_scratch(
             config,
             "vyre-frontend-c raw-byte statement bounds",
         )?;
-        pack_u32_le_bytes_into(&stmt_pairs, &mut scratch.stmt_bytes);
+        vyre_primitives::wire::pack_u32_slice_into(&stmt_pairs, &mut scratch.stmt_bytes);
         let ast_prog = ast_shunting_yard_with_capacity(
             "tok_types",
             "statements",
@@ -183,9 +183,13 @@ fn build_ast_owned_inputs_for_window_into(
     let token_bytes = (token_capacity as usize).checked_mul(4).ok_or_else(|| {
         "raw-byte AST token input byte length overflows usize. Fix: shard parser input.".to_string()
     })?;
-    inputs.tok_b.clear();
-    inputs.tok_b.resize(token_bytes, 0);
+    if inputs.tok_b.len() != token_bytes {
+        inputs.tok_b.resize(token_bytes, 0);
+    }
     let live = token_window.len().min(inputs.tok_b.len());
+    if live < inputs.tok_b.len() {
+        inputs.tok_b[live..].fill(0);
+    }
     inputs.tok_b[..live].copy_from_slice(&token_window[..live]);
     let out_ast_bytes = token_bytes.checked_mul(4).ok_or_else(|| {
         "raw-byte AST output byte length overflows usize. Fix: shard parser input.".to_string()
@@ -213,15 +217,4 @@ fn build_ast_owned_inputs_for_window_into(
     inputs.scratch_o.clear();
     inputs.scratch_o.resize(scratch_bytes, 0);
     Ok(())
-}
-
-fn pack_u32_le_bytes_into(words: &[u32], bytes: &mut Vec<u8>) {
-    bytes.clear();
-    bytes.reserve(words.len().saturating_mul(4));
-    #[cfg(target_endian = "little")]
-    bytes.extend_from_slice(bytemuck::cast_slice(words));
-    #[cfg(target_endian = "big")]
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
 }

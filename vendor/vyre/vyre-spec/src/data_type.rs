@@ -5,11 +5,13 @@
 // I8=0x10, I16=0x11, I64=0x12, Handle=0x13, Vec=0x14,
 // TensorShaped=0x15, SparseCsr=0x16, SparseCoo=0x17, SparseBsr=0x18,
 // F8E4M3=0x19, F8E5M2=0x1A, I4=0x1B, FP4=0x1C, NF4=0x1D,
-// DeviceMesh=0x1E, 0x1F..=0x7F reserved, Opaque=0x80.
-
-use core::fmt;
+// DeviceMesh=0x1E, Quantized=0x1F, 0x20..=0x7F reserved, Opaque=0x80.
 
 use crate::extension::ExtensionDataTypeId;
+
+mod display;
+mod layout;
+mod validation;
 
 /// Stable handle type id for backend-owned GPU resources.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
@@ -21,6 +23,42 @@ impl TypeId {
     pub const fn as_u32(self) -> u32 {
         self.0
     }
+}
+
+/// Scale metadata layout for a quantized tensor or vector.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+pub enum QuantizationScale {
+    /// One scale value for the whole buffer.
+    PerTensor,
+    /// One scale value per slice along `axis`.
+    PerChannel {
+        /// Tensor axis carrying independent scale values.
+        axis: u32,
+    },
+    /// One scale value per contiguous group.
+    PerGroup {
+        /// Number of logical elements per quantization group.
+        group_size: u32,
+    },
+}
+
+/// Zero-point metadata layout for affine quantization.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+pub enum QuantizationZeroPoint {
+    /// Symmetric quantization; zero point is implicitly zero.
+    Absent,
+    /// One zero point for the whole buffer.
+    PerTensor,
+    /// One zero point per slice along `axis`.
+    PerChannel {
+        /// Tensor axis carrying independent zero-point values.
+        axis: u32,
+    },
+    /// One zero point per contiguous quantization group.
+    PerGroup {
+        /// Number of logical elements per quantization group.
+        group_size: u32,
+    },
 }
 
 /// Canonical data types supported by the vyre IR frozen data contract.
@@ -128,7 +166,7 @@ pub enum DataType {
     },
     /// 8-bit float (E4M3 format, per FP8 spec) for quantized inference.
     F8E4M3,
-    /// 8-bit float (E5M2 format, per FP8 spec) — wider range than E4M3.
+    /// 8-bit float (E5M2 format, per FP8 spec)  -  wider range than E4M3.
     F8E5M2,
     /// 4-bit signed integer for aggressive LLM weight quantization.
     I4,
@@ -136,7 +174,7 @@ pub enum DataType {
     FP4,
     /// 4-bit "normal-float" (per `QLoRA` paper) for LLM weight compression.
     NF4,
-    /// Device-mesh handle — topology identifier consumed by
+    /// Device-mesh handle  -  topology identifier consumed by
     /// collective ops (`all_reduce`, `all_gather`, `reduce_scatter`,
     /// broadcast). Shape is informational; actual topology is
     /// resolved through the backend's mesh registry.
@@ -145,12 +183,28 @@ pub enum DataType {
         /// 2-D = torus; higher-D = hypercube.
         axes: smallvec::SmallVec<[u32; 3]>,
     },
+    /// First-class quantized value domain.
+    ///
+    /// `storage` is the physical packed element family (`I4`, `I8`, `U8`,
+    /// `F8E4M3`, `NF4`, etc.). `scale` and `zero_point` describe the
+    /// sidecar buffers needed to dequantize, operate, and optionally requantize
+    /// without losing the stable IR type. This closes RFC-0003 at the spec
+    /// layer; concrete ops still choose whether to lower to tensor-core MMA,
+    /// scalar dequantize-op-requantize, or a backend-specific packed path.
+    Quantized {
+        /// Physical storage element type.
+        storage: Box<Self>,
+        /// Scale sidecar layout.
+        scale: QuantizationScale,
+        /// Optional zero-point sidecar layout.
+        zero_point: QuantizationZeroPoint,
+    },
     /// Extension-declared data type.
     ///
     /// The `ExtensionDataTypeId` is stable across process runs and
     /// resolves to a `&'static dyn ExtensionDataType` via
     /// `vyre::dialect::extension::resolve_data_type` (in vyre-core).
-    /// Wire encoding of Opaque is `0x80 ++ u32 extension_id` — see
+    /// Wire encoding of Opaque is `0x80 ++ u32 extension_id`  -  see
     /// `docs/wire-format.md` §Extensions.
     ///
     /// The builtin const methods on `DataType` (`min_bytes`, `max_bytes`,
@@ -200,154 +254,8 @@ impl DataType {
             Self::FP4 => Some(0x1C),
             Self::NF4 => Some(0x1D),
             Self::DeviceMesh { .. } => Some(0x1E),
+            Self::Quantized { .. } => Some(0x1F),
             Self::Opaque(_) => None,
-        }
-    }
-
-    /// Minimum byte count to represent one value of this type.
-    #[must_use]
-    pub const fn min_bytes(&self) -> usize {
-        match self {
-            Self::U16 | Self::I16 | Self::F16 | Self::BF16 => 2,
-            Self::Bool | Self::U32 | Self::I32 | Self::F32 | Self::Handle(_) => 4,
-            Self::I64 | Self::U64 | Self::Vec2U32 | Self::F64 => 8,
-            Self::Vec4U32 => 16,
-            Self::Vec { element, count } => element.min_bytes() * (*count as usize),
-            Self::Bytes | Self::Array { .. } | Self::Tensor | Self::TensorShaped { .. } => 0,
-            // Quantized / compressed scalar families. F8/F4 = 1 byte rounded up;
-            // I4 / NF4 = 1 byte rounded up (two values share a byte in practice,
-            // but the conservative minimum is one byte per logical value).
-            Self::U8
-            | Self::I8
-            | Self::F8E4M3
-            | Self::F8E5M2
-            | Self::I4
-            | Self::FP4
-            | Self::NF4 => 1,
-            // Sparse layouts + device-mesh handles are unbounded at the
-            // spec level; runtime asks the extension for a concrete size.
-            Self::SparseCsr { .. } | Self::SparseCoo { .. } | Self::SparseBsr { .. } => 0,
-            Self::DeviceMesh { .. } => 0,
-            // Opaque: conservative sentinel. Real value via ExtensionDataType::min_bytes.
-            Self::Opaque(_) => 0,
-        }
-    }
-
-    /// Maximum byte count for one value of this type.
-    ///
-    /// Returns `None` for truly unbounded types; currently all variants
-    /// have a hard ceiling. Fixed-width types return `Some(min_bytes())`.
-    #[must_use]
-    pub const fn max_bytes(&self) -> Option<usize> {
-        match self {
-            Self::U8 | Self::I8 => Some(1),
-            Self::U16 | Self::I16 | Self::F16 | Self::BF16 => Some(2),
-            Self::U32 | Self::I32 | Self::Bool => Some(4),
-            Self::I64 | Self::U64 | Self::Vec2U32 | Self::F64 => Some(8),
-            Self::Vec4U32 => Some(16),
-            Self::F32 => Some(4),
-            Self::Handle(_) => Some(4),
-            Self::Vec { element, count } => match element.max_bytes() {
-                Some(bytes) => Some(bytes * (*count as usize)),
-                None => None,
-            },
-            Self::Bytes => Some(64 * 1024 * 1024),
-            Self::Array { .. } | Self::Tensor => Some(256 * 1024 * 1024),
-            Self::TensorShaped { .. } => None,
-            Self::F8E4M3 | Self::F8E5M2 => Some(1),
-            Self::I4 | Self::FP4 | Self::NF4 => Some(1),
-            Self::SparseCsr { .. } | Self::SparseCoo { .. } | Self::SparseBsr { .. } => None,
-            Self::DeviceMesh { .. } => Some(4),
-            // Opaque: unbounded at the spec level. Real ceiling via ExtensionDataType::max_bytes.
-            Self::Opaque(_) => None,
-        }
-    }
-
-    /// Element size for array-typed outputs, or `None` for scalar types.
-    #[must_use]
-    pub const fn element_size(&self) -> Option<usize> {
-        match self {
-            Self::Array { element_size } => Some(*element_size),
-            Self::Vec { element, .. }
-            | Self::TensorShaped { element, .. }
-            | Self::SparseCsr { element }
-            | Self::SparseCoo { element }
-            | Self::SparseBsr { element, .. } => element.size_bytes(),
-            Self::Opaque(_) => None,
-            _ => None,
-        }
-    }
-
-    /// Fixed scalar element size in bytes, or `None` for variable-size types.
-    ///
-    /// Scalar types return their natural width (`U32` → `Some(4)`, `Vec4U32` →
-    /// `Some(16)`). `Bytes` returns `Some(1)` because each element is one byte.
-    /// `Array` returns `Some(element_size)`. `Tensor` returns `None` because it
-    /// has no fixed per-element size.
-    #[must_use]
-    pub const fn size_bytes(&self) -> Option<usize> {
-        match self {
-            Self::U8 | Self::I8 => Some(1),
-            Self::U16 | Self::I16 | Self::F16 | Self::BF16 => Some(2),
-            Self::Bool | Self::U32 | Self::I32 | Self::F32 => Some(4),
-            Self::I64 | Self::U64 | Self::Vec2U32 | Self::F64 => Some(8),
-            Self::Vec4U32 => Some(16),
-            Self::Handle(_) => Some(4),
-            Self::Bytes => Some(1),
-            Self::Array { element_size } => Some(*element_size),
-            Self::Vec { element, count } => match element.size_bytes() {
-                Some(bytes) => Some(bytes * (*count as usize)),
-                None => None,
-            },
-            Self::Tensor | Self::TensorShaped { .. } => None,
-            Self::F8E4M3 | Self::F8E5M2 => Some(1),
-            Self::I4 | Self::FP4 | Self::NF4 => Some(1),
-            Self::SparseCsr { .. } | Self::SparseCoo { .. } | Self::SparseBsr { .. } => None,
-            Self::DeviceMesh { .. } => Some(4),
-            // Opaque: real size via ExtensionDataType::size_bytes (runtime).
-            Self::Opaque(_) => None,
-        }
-    }
-
-    /// True element bit width for fixed-width scalar types. Returns `None`
-    /// for variable / dynamically-shaped / extension-defined types.
-    ///
-    /// Sub-byte types (`I4`, `FP4`, `NF4`) report `4` here; `size_bytes`
-    /// over-rounds to `1` for safety. Callers that pack two `I4` per
-    /// byte (the standard layout for INT4 quantization) need
-    /// `bit_width()` to compute correct packed-buffer sizes:
-    ///
-    /// ```ignore
-    /// // Allocate enough bytes to hold `count` packed `I4` values.
-    /// let bits = count.checked_mul(DataType::I4.bit_width().unwrap_or(8)).unwrap();
-    /// let bytes = bits.div_ceil(8);
-    /// ```
-    #[must_use]
-    pub const fn bit_width(&self) -> Option<usize> {
-        match self {
-            Self::I4 | Self::FP4 | Self::NF4 => Some(4),
-            Self::F8E4M3 | Self::F8E5M2 | Self::U8 | Self::I8 => Some(8),
-            Self::U16 | Self::I16 | Self::F16 | Self::BF16 => Some(16),
-            Self::Bool | Self::U32 | Self::I32 | Self::F32 | Self::Handle(_) => Some(32),
-            Self::I64 | Self::U64 | Self::F64 | Self::Vec2U32 => Some(64),
-            Self::Vec4U32 => Some(128),
-            Self::DeviceMesh { .. } => Some(32),
-            Self::Bytes => Some(8),
-            // Vec packs `count` elements: total bits scale with the inner
-            // element's bit width.
-            Self::Vec { element, count } => match element.bit_width() {
-                Some(bits) => Some(bits * (*count as usize)),
-                None => None,
-            },
-            // Variable / extension-defined / dynamically-shaped: no
-            // compile-time width.
-            Self::Array { .. }
-            | Self::Tensor
-            | Self::TensorShaped { .. }
-            | Self::SparseCsr { .. }
-            | Self::SparseCoo { .. }
-            | Self::SparseBsr { .. }
-            | Self::Opaque(_) => None,
         }
     }
 
@@ -362,67 +270,39 @@ impl DataType {
             | Self::SparseCsr { element }
             | Self::SparseCoo { element }
             | Self::SparseBsr { element, .. } => element.is_float_family(),
+            Self::Quantized { .. } => false,
             _ => false,
         }
     }
-}
 
-impl fmt::Display for DataType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    /// Whether this type carries first-class quantization sidecar metadata.
+    #[must_use]
+    pub const fn is_quantized(&self) -> bool {
         match self {
-            Self::U8 => f.write_str("u8"),
-            Self::U16 => f.write_str("u16"),
-            Self::U32 => f.write_str("u32"),
-            Self::I8 => f.write_str("i8"),
-            Self::I16 => f.write_str("i16"),
-            Self::I32 => f.write_str("i32"),
-            Self::I64 => f.write_str("i64"),
-            Self::U64 => f.write_str("u64"),
-            Self::Vec2U32 => f.write_str("vec2<u32>"),
-            Self::Vec4U32 => f.write_str("vec4<u32>"),
-            Self::Bool => f.write_str("bool"),
-            Self::Bytes => f.write_str("bytes"),
-            Self::Array { element_size } => write!(f, "array<{element_size}B>"),
-            Self::F16 => f.write_str("f16"),
-            Self::BF16 => f.write_str("bf16"),
-            Self::F32 => f.write_str("f32"),
-            Self::F64 => f.write_str("f64"),
-            Self::Tensor => f.write_str("tensor"),
-            Self::Handle(id) => write!(f, "handle<{:#010x}>", id.as_u32()),
-            Self::Vec { element, count } => write!(f, "vec<{element};{count}>"),
-            Self::TensorShaped { element, shape } => {
-                write!(f, "tensor<{element};")?;
-                for (idx, dim) in shape.iter().enumerate() {
-                    if idx > 0 {
-                        f.write_str("x")?;
-                    }
-                    write!(f, "{dim}")?;
-                }
-                f.write_str(">")
-            }
-            Self::Opaque(id) => write!(f, "opaque<{:#010x}>", id.as_u32()),
-            Self::F8E4M3 => f.write_str("f8e4m3"),
-            Self::F8E5M2 => f.write_str("f8e5m2"),
-            Self::I4 => f.write_str("i4"),
-            Self::FP4 => f.write_str("fp4"),
-            Self::NF4 => f.write_str("nf4"),
-            Self::SparseCsr { element } => write!(f, "sparse_csr<{element}>"),
-            Self::SparseCoo { element } => write!(f, "sparse_coo<{element}>"),
-            Self::SparseBsr {
-                element,
-                block_rows,
-                block_cols,
-            } => write!(f, "sparse_bsr<{element};{block_rows}x{block_cols}>"),
-            Self::DeviceMesh { axes } => {
-                f.write_str("device_mesh<")?;
-                for (i, a) in axes.iter().enumerate() {
-                    if i > 0 {
-                        f.write_str("x")?;
-                    }
-                    write!(f, "{a}")?;
-                }
-                f.write_str(">")
-            }
+            Self::Quantized { .. } => true,
+            Self::Vec { element, .. }
+            | Self::TensorShaped { element, .. }
+            | Self::SparseCsr { element }
+            | Self::SparseCoo { element }
+            | Self::SparseBsr { element, .. } => element.is_quantized(),
+            _ => false,
         }
+    }
+
+    /// Whether this type is valid as the storage field of `DataType::Quantized`.
+    #[must_use]
+    pub const fn is_quantized_storage(&self) -> bool {
+        matches!(
+            self,
+            Self::I4
+                | Self::I8
+                | Self::I16
+                | Self::U8
+                | Self::U16
+                | Self::F8E4M3
+                | Self::F8E5M2
+                | Self::FP4
+                | Self::NF4
+        )
     }
 }

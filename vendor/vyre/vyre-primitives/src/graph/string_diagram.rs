@@ -1,20 +1,19 @@
 //! String diagram compilation primitive (#53).
 //!
 //! String diagrams (Selinger 2010, Coecke-Kissinger ZX) are the visual
-//! language of monoidal categories — a generalized tensor network.
+//! language of monoidal categories  -  a generalized tensor network.
 //! Recent work (Patterson 2022 DisCoPy) compiles them to numeric
 //! tensor contractions.
 //!
-//! This file ships the **monoidal composition step** primitive —
+//! This file ships the **monoidal composition step** primitive  -
 //! sequential composition `g · f` of two morphisms encoded as small
 //! tensors `f: A → B` and `g: B → C`, producing `g · f: A → C`. This
 //! is matrix multiplication with categorical intent carried in the
 //! stable op id.
 
-use std::sync::Arc;
+use vyre_foundation::ir::{DataType, Program};
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use crate::fixed_u32_matmul::{checked_cells, fixed_u32_matmul_program};
 
 /// Op id.
 pub const OP_ID: &str = "vyre-primitives::graph::monoidal_compose";
@@ -26,10 +25,7 @@ pub const OP_ID: &str = "vyre-primitives::graph::monoidal_compose";
 pub fn monoidal_compose(f: &str, g: &str, out: &str, a: u32, b: u32, c: u32) -> Program {
     match try_monoidal_compose(f, g, out, a, b, c) {
         Ok(program) => program,
-        Err(error) => {
-            eprintln!("{error}");
-            crate::invalid_output_program(OP_ID, out, DataType::U32, error)
-        }
+        Err(error) => crate::invalid_output_program(OP_ID, out, DataType::U32, error),
     }
 }
 
@@ -51,90 +47,70 @@ pub fn try_monoidal_compose(
     let f_cells = checked_cells("monoidal_compose f input", a, b)?;
     let g_cells = checked_cells("monoidal_compose g input", b, c)?;
     let cells = checked_cells("monoidal_compose output", a, c)?;
-    let t = Expr::InvocationId { axis: 0 };
-    let i_expr = Expr::div(t.clone(), Expr::u32(c));
-    let j_expr = Expr::rem(t.clone(), Expr::u32(c));
-
-    let body = vec![Node::if_then(
-        Expr::lt(t.clone(), Expr::u32(cells)),
-        vec![
-            Node::let_bind("acc", Expr::u32(0)),
-            Node::let_bind("i", i_expr),
-            Node::let_bind("j", j_expr),
-            Node::loop_for(
-                "kk",
-                Expr::u32(0),
-                Expr::u32(b),
-                vec![Node::assign(
-                    "acc",
-                    Expr::add(
-                        Expr::var("acc"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    f,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("i"), Expr::u32(b)),
-                                        Expr::var("kk"),
-                                    ),
-                                ),
-                                Expr::load(
-                                    g,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("kk"), Expr::u32(c)),
-                                        Expr::var("j"),
-                                    ),
-                                ),
-                            ),
-                            Expr::u32(16),
-                        ),
-                    ),
-                )],
-            ),
-            Node::store(out, t, Expr::var("acc")),
-        ],
-    )];
-
-    Ok(Program::wrapped(
-        vec![
-            BufferDecl::storage(f, 0, BufferAccess::ReadOnly, DataType::U32).with_count(f_cells),
-            BufferDecl::storage(g, 1, BufferAccess::ReadOnly, DataType::U32).with_count(g_cells),
-            BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(cells),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
+    Ok(fixed_u32_matmul_program(
+        OP_ID, f, g, out, a, b, c, f_cells, g_cells, cells,
     ))
-}
-
-fn checked_cells(label: &'static str, rows: u32, cols: u32) -> Result<u32, String> {
-    rows.checked_mul(cols).ok_or_else(|| {
-        format!(
-            "{label} rows*cols overflows cell count for rows={rows}, cols={cols}. Fix: shard the string diagram before GPU dispatch."
-        )
-    })
 }
 
 /// CPU reference.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn monoidal_compose_cpu(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> Vec<f64> {
+    try_monoidal_compose_cpu(f, g, a, b, c).unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Fallible CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_monoidal_compose_cpu(
+    f: &[f64],
+    g: &[f64],
+    a: u32,
+    b: u32,
+    c: u32,
+) -> Result<Vec<f64>, String> {
     let mut out = Vec::new();
-    monoidal_compose_cpu_into(f, g, a, b, c, &mut out);
-    out
+    try_monoidal_compose_cpu_into(f, g, a, b, c, &mut out)?;
+    Ok(out)
 }
 
 /// CPU reference using caller-owned output storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn monoidal_compose_cpu_into(f: &[f64], g: &[f64], a: u32, b: u32, c: u32, out: &mut Vec<f64>) {
+    try_monoidal_compose_cpu_into(f, g, a, b, c, out).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_monoidal_compose_cpu_into(
+    f: &[f64],
+    g: &[f64],
+    a: u32,
+    b: u32,
+    c: u32,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let a = a as usize;
     let b = b as usize;
     let c = c as usize;
+    let _f_cells = a.checked_mul(b).ok_or_else(|| {
+        "monoidal_compose CPU oracle f shape overflows cell count. Fix: reduce a*b before parity comparison.".to_string()
+    })?;
+    let _g_cells = b.checked_mul(c).ok_or_else(|| {
+        "monoidal_compose CPU oracle g shape overflows cell count. Fix: reduce b*c before parity comparison.".to_string()
+    })?;
+    let out_cells = a.checked_mul(c).ok_or_else(|| {
+        "monoidal_compose CPU oracle output shape overflows cell count. Fix: reduce a*c before parity comparison.".to_string()
+    })?;
+    if out_cells > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            out_cells - out.len(),
+            "string diagram CPU oracle",
+            "monoidal_compose CPU output",
+        )?;
+    }
     out.clear();
-    out.resize(a * c, 0.0);
+    out.resize(out_cells, 0.0);
     for i in 0..a {
         for j in 0..c {
             for k in 0..b {
@@ -144,6 +120,7 @@ pub fn monoidal_compose_cpu_into(f: &[f64], g: &[f64], a: u32, b: u32, c: u32, o
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -151,8 +128,20 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || monoidal_compose("f", "g", "out", 2, 2, 2),
-        None,
-        None,
+        Some(|| {
+            let one = 1u32 << 16;
+            vec![vec![
+                crate::wire::pack_u32_slice(&[one, 0, 0, one]),
+                crate::wire::pack_u32_slice(&[2 * one, 3 * one, 5 * one, 7 * one]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            let one = 1u32 << 16;
+            vec![vec![crate::wire::pack_u32_slice(&[
+                2 * one, 3 * one, 5 * one, 7 * one,
+            ])]]
+        }),
     )
 }
 
@@ -176,6 +165,40 @@ mod tests {
     fn cpu_short_inputs_are_zero_padded() {
         let out = monoidal_compose_cpu(&[2.0], &[3.0, 4.0], 1, 2, 2);
         assert_eq!(out, vec![6.0, 8.0]);
+    }
+
+    #[test]
+    fn checked_cpu_ref_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let capacity = out.capacity();
+
+        try_monoidal_compose_cpu_into(&[2.0, 3.0], &[5.0, 7.0, 11.0, 13.0], 1, 2, 2, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - checked CPU oracle should reuse caller-owned storage");
+
+        assert_eq!(out.len(), 2);
+        assert!(approx_eq(out[0], 43.0));
+        assert!(approx_eq(out[1], 53.0));
+        assert_eq!(out.capacity(), capacity);
+
+        try_monoidal_compose_cpu_into(&[4.0], &[6.0], 1, 1, 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - checked CPU oracle should truncate stale output cells");
+
+        assert_eq!(out, vec![24.0]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn checked_cpu_ref_preserves_output_on_reservation_failure() {
+        let mut out = vec![1.0, 2.0, 3.0];
+        let err = try_monoidal_compose_cpu_into(&[], &[], u32::MAX, 1, u32::MAX, &mut out)
+            .expect_err("checked CPU oracle must reject impossible output reservations");
+
+        assert!(
+            err.contains("monoidal_compose CPU output") || err.contains("reserve"),
+            "error should describe output reservation failure: {err}"
+        );
+        assert_eq!(out, vec![1.0, 2.0, 3.0]);
     }
 
     #[test]
@@ -241,16 +264,37 @@ mod tests {
         let builder_source = source
             .split("/// Sequential composition step.")
             .nth(1)
-            .expect("monoidal compose builder source must be present")
+            .expect("Fix: monoidal compose builder source must be present")
             .split("/// CPU reference.")
             .next()
-            .expect("monoidal compose builder source must precede CPU oracle");
+            .expect("Fix: monoidal compose builder source must precede CPU oracle");
 
         assert!(
             builder_source.contains("pub fn try_monoidal_compose(")
                 && !builder_source.contains(concat!("panic", "!("))
                 && !builder_source.contains(".unwrap_or_else("),
             "Fix: monoidal_compose must expose checked release API and avoid production panics."
+        );
+    }
+
+    #[test]
+    fn monoidal_compose_cpu_source_uses_checked_reusable_output() {
+        let source = include_str!("string_diagram.rs");
+        let cpu_source = source
+            .split("/// CPU reference.")
+            .nth(1)
+            .expect("Fix: monoidal compose CPU source must be present")
+            .split("#[cfg(feature = \"inventory-registry\")]")
+            .next()
+            .expect("Fix: monoidal compose CPU source must precede registry entry");
+
+        assert!(
+            cpu_source.contains("pub fn try_monoidal_compose_cpu_into(")
+                && cpu_source.contains("crate::graph::scratch::reserve_graph_items")
+                && cpu_source.contains("out.capacity()")
+                && !cpu_source.contains("out.resize(a * c, 0.0)")
+                && !cpu_source.contains("Vec::with_capacity"),
+            "Fix: monoidal_compose CPU oracle must use fallible caller-owned output storage."
         );
     }
 }

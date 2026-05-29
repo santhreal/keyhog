@@ -24,9 +24,7 @@ impl PipelineFusionSegment {
     /// Number of pipelines in this segment.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.end
-            .checked_sub(self.start)
-            .expect("pipeline fusion segment has end before start")
+        self.end.saturating_sub(self.start)
     }
 
     /// True when this segment contains no pipelines.

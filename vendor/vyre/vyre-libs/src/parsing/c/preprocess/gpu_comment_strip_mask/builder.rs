@@ -1,25 +1,11 @@
+use super::super::gpu_source_bytes::safe_load_packed_byte_expr;
 use super::*;
 
 /// Build the 17b.5 comment-strip-mask `Program`.
 #[must_use]
 pub fn gpu_comment_strip_mask(byte_count: u32) -> Program {
-    // Real-GPU note: U8 storage buffers emit as `array<u32>`; load
-    // returns the u32 word at index `addr`. Reference-eval is byte-
-    // addressed. Declaring `bytes_in` as packed U32 below makes both
-    // backends agree; this helper extracts the byte explicitly.
-    let load_byte_u32 = |addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load("bytes_in", word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
     let safe_load = |addr: Expr| -> Expr {
-        Expr::select(
-            Expr::lt(addr.clone(), Expr::u32(byte_count)),
-            load_byte_u32(addr),
-            Expr::u32(0),
-        )
+        safe_load_packed_byte_expr("bytes_in", addr, Expr::u32(byte_count))
     };
 
     // One GPU lane walks the byte stream
@@ -170,7 +156,7 @@ pub fn gpu_comment_strip_mask(byte_count: u32) -> Program {
                             ),
                         ],
                     ),
-                    // Write the mask before processing closes — this
+                    // Write the mask before processing closes  -  this
                     // ensures the closing `*/` bytes are themselves
                     // marked as comment.
                     Node::store("comment_mask_out", Expr::var("i"), Expr::var("mask")),
@@ -179,14 +165,14 @@ pub fn gpu_comment_strip_mask(byte_count: u32) -> Program {
                     //   is OUTSIDE the comment per typical C semantics;
                     //   tools that mask comments usually keep newlines
                     //   so line counts stay correct, but we already
-                    //   wrote 1 before checking — fix that next).
+                    //   wrote 1 before checking  -  fix that next).
                     Node::if_then(
                         Expr::and(
                             Expr::eq(Expr::var("in_line"), Expr::u32(1)),
                             Expr::eq(Expr::var("b"), Expr::u32(b'\n' as u32)),
                         ),
                         vec![
-                            // Newline is NOT part of the comment — overwrite.
+                            // Newline is NOT part of the comment  -  overwrite.
                             Node::store("comment_mask_out", Expr::var("i"), Expr::u32(0)),
                             Node::assign("in_line", Expr::u32(0)),
                         ],

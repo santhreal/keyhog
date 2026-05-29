@@ -1,12 +1,12 @@
 //! Quest-style Query-Aware KV Paging.
 //!
-//! Only the "which pages are critical" decision — a pure score-and-select
+//! Only the "which pages are critical" decision  -  a pure score-and-select
 //! pass. Scoring is `dot(query, page_metadata[p])` for each page; the
 //! top-`k` highest-scoring pages are emitted, in descending order, into
 //! `io_queue[0..k]`. The remainder of `io_queue` is zero-filled on the
 //! first pass so the output is deterministic.
 //!
-//! Downstream DMA / `AsyncLoad` is the scheduler's job — this op only
+//! Downstream DMA / `AsyncLoad` is the scheduler's job  -  this op only
 //! tells the scheduler which pages to fetch.
 
 use crate::region::wrap_anonymous;
@@ -19,7 +19,7 @@ const OP_ID: &str = "vyre-libs::nn::attention::quest_paging";
 
 // target builder / target-text rejects `inf` and NaN literals, so the argmax sentinel
 // must be a large-magnitude finite value. `f32::MIN` is the most
-// negative finite f32 — strictly less than every reachable dot-product
+// negative finite f32  -  strictly less than every reachable dot-product
 // score when `query` and `page_metadata` are finite inputs.
 const SCORE_SENTINEL: f32 = f32::MIN;
 
@@ -29,8 +29,8 @@ const SCORE_SENTINEL: f32 = f32::MIN;
 /// Buffers:
 /// - `query` (ReadOnly, F32, `d_head`)
 /// - `page_metadata` (ReadOnly, F32, `num_pages * d_head`)
-/// - `scores` (ReadWrite, F32, `num_pages`) — per-page dot score scratch
-/// - `io_queue` (ReadWrite, U32, `num_pages`) — index 0..k holds top-k,
+/// - `scores` (ReadWrite, F32, `num_pages`)  -  per-page dot score scratch
+/// - `io_queue` (ReadWrite, U32, `num_pages`)  -  index 0..k holds top-k,
 ///    rest holds 0
 #[must_use]
 pub fn quest_paging(
@@ -183,7 +183,7 @@ inventory::submit! {
         build: || quest_paging("q", "meta", "scores", "io", 4, 2, 2),
         test_inputs: Some(|| {
             let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+                |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             // num_pages=4, d_head=2, k=2.
             // query = [1.0, 0.0]
             // page_metadata[p, d]: page 0=[0, 0], page 1=[1, 0], page 2=[2, 0], page 3=[0.5, 0].
@@ -199,7 +199,7 @@ inventory::submit! {
         }),
         expected_output: Some(|| {
             let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+                |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
 
             // scores after selection: only slots that were picked
             // (indices 2 and 1) are overwritten with SCORE_SENTINEL.
@@ -217,25 +217,10 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::bytes_to_u32 as decode_u32;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
-
-    fn decode_u32(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn quest_paging_nan_in_query_produces_nan_scores() {

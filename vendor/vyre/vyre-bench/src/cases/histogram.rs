@@ -2,7 +2,6 @@ use crate::api::case::{
     BenchCase, BenchContext, BenchError, BenchId, BenchLayer, BenchMetadata, BenchRequirements,
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
-use crate::api::metric::{BenchMetrics, MetricPoint};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 pub struct Histogram;
@@ -47,8 +46,7 @@ impl BenchCase for Histogram {
         let count = 1_000_000u32;
         let prog = Program::wrapped(
             vec![
-                BufferDecl::storage("bins", 0, BufferAccess::ReadWrite, DataType::U32)
-                    .with_count(256),
+                BufferDecl::output("bins", 0, DataType::U32).with_count(256),
                 BufferDecl::storage("values", 1, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(count),
             ],
@@ -76,52 +74,20 @@ impl BenchCase for Histogram {
         ctx: &mut BenchContext,
         prepared: &mut PreparedCase,
     ) -> Result<BenchRun, BenchError> {
-        let prog = crate::api::case::prepared_program(prepared)?;
         let count = 1_000_000usize;
         let mut values = vec![0u8; count * 4];
         for i in 0..count {
             values[i * 4..i * 4 + 4].copy_from_slice(&((i * 31 % 256) as u32).to_le_bytes());
         }
-        let inputs = vec![vec![0u8; 256 * 4], values];
+        let inputs = vec![values];
 
-        let timed = ctx
-            .dispatch_timed(prog, &inputs, &ctx.dispatch_config)
-            .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
-        let elapsed = timed.wall_ns;
-        let dispatch_ns = timed.device_ns;
-        let outputs = timed.outputs;
-
-        let start_ref = std::time::Instant::now();
-        let baseline_outputs = vec![crate::cases::cpu_baselines::histogram_u32_256_bytes(
-            &inputs[1],
-        )];
-        let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
-
-        Ok(BenchRun {
-            metrics: BenchMetrics {
-                wall_ns: Some(elapsed),
-                dispatch_ns,
-                input_bytes: Some(inputs.iter().map(Vec::len).sum::<usize>() as u64),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                custom: vec![MetricPoint {
-                    name: "flop_count".to_string(),
-                    value: count as u64,
-                }],
-                ..Default::default()
-            },
-            baseline_metrics: Some(BenchMetrics {
-                wall_ns: Some(elapsed_ref),
-                input_bytes: Some(inputs[1].len() as u64),
-                output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                custom: vec![MetricPoint {
-                    name: "flop_count".to_string(),
-                    value: count as u64,
-                }],
-                ..Default::default()
-            }),
-            outputs,
-            baseline_outputs: Some(baseline_outputs),
-        })
+        crate::cases::gpu_case::run_gpu_with_cpu_baseline(
+            ctx,
+            prepared,
+            inputs,
+            count as u64,
+            |inputs| vec![crate::cases::cpu_baselines::histogram_u32_256_bytes(&inputs[0])],
+        )
     }
 
     fn verify(&self, _ctx: &mut BenchContext, run: &BenchRun) -> Result<Correctness, BenchError> {

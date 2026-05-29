@@ -1,7 +1,7 @@
 //! Pass-precondition compilation via #38 knowledge compilation
 //! (#38 self-consumer).
 //!
-//! Closes the recursion thesis for #38 — d-DNNF compilation +
+//! Closes the recursion thesis for #38  -  d-DNNF compilation +
 //! evaluation ships to user dialects (neuro-symbolic systems,
 //! probabilistic policy engines) AND compiles vyre's optimizer
 //! pass-precondition predicates into tractable evaluation circuits.
@@ -12,7 +12,7 @@
 //! formula over Program features (e.g. "no Region contains atomic
 //! ops" AND "all Loop nodes have unit stride"). Today these
 //! preconditions are evaluated by hand-rolled match-on-Node
-//! traversals — re-implemented per pass with no shared structure.
+//! traversals  -  re-implemented per pass with no shared structure.
 //!
 //! Knowledge compilation reframes the precondition as a
 //! propositional formula `φ`. Compile `φ` to d-DNNF (Darwiche 2002):
@@ -39,7 +39,7 @@
 //! 2. host-side compiler: compile the formula to d-DNNF
 //!    (one-time per pass, cached)
 //! 3. per Program: extract feature assignments, run
-//!    ddnnf_evaluate_cpu — returns 1 iff the precondition holds
+//!    ddnnf_evaluate_cpu  -  returns 1 iff the precondition holds
 //! ```
 //!
 //! This module consumes compiled d-DNNF circuits and evaluates them
@@ -50,6 +50,7 @@
 use crate::dispatch_buffers::{
     ceil_div_u32, decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes,
 };
+use crate::hardware::scratch::reserve_vec_capacity;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::graph::knowledge_compile::ddnnf_evaluate;
 #[cfg(test)]
@@ -217,9 +218,21 @@ pub fn pass_applies_via_with_scratch_into(
     scratch.node_kinds.clear();
     scratch.child_offsets.clear();
     scratch.child_counts.clear();
-    scratch.node_kinds.reserve(nodes.len());
-    scratch.child_offsets.reserve(nodes.len());
-    scratch.child_counts.reserve(nodes.len());
+    reserve_vec_capacity(
+        &mut scratch.node_kinds,
+        nodes.len(),
+        "pass_applies_via node kinds",
+    )?;
+    reserve_vec_capacity(
+        &mut scratch.child_offsets,
+        nodes.len(),
+        "pass_applies_via child offsets",
+    )?;
+    reserve_vec_capacity(
+        &mut scratch.child_counts,
+        nodes.len(),
+        "pass_applies_via child counts",
+    )?;
     for (idx, &(kind, offset, count)) in nodes.iter().enumerate() {
         let end = offset.checked_add(count).ok_or_else(|| {
             DispatchError::BadInputs(format!(
@@ -435,6 +448,7 @@ mod tests {
         ];
         let node_var = vec![0u32, 1u32, 0u32];
         let children = vec![0u32, 1u32];
+
         let topo = vec![0u32, 1u32, 2u32];
 
         // both true.
@@ -476,13 +490,13 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 7);
-            let node_kinds = read_u32s(&inputs[0]);
-            let node_var = read_u32s(&inputs[1]);
-            let child_offsets = read_u32s(&inputs[2]);
-            let child_counts = read_u32s(&inputs[3]);
-            let children = read_u32s(&inputs[4]);
-            let assignments = read_u32s(&inputs[5]);
-            let mut out = read_u32s(&inputs[6]);
+            let node_kinds = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let node_var = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let child_offsets = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+            let child_counts = crate::hardware::dispatch_buffers::read_u32s(&inputs[3]);
+            let children = crate::hardware::dispatch_buffers::read_u32s(&inputs[4]);
+            let assignments = crate::hardware::dispatch_buffers::read_u32s(&inputs[5]);
+            let mut out = crate::hardware::dispatch_buffers::read_u32s(&inputs[6]);
             for node in 0..node_kinds.len() {
                 match node_kinds[node] {
                     LITERAL_TRUE => {
@@ -610,10 +624,10 @@ mod tests {
         let source = include_str!("knowledge_compile_pass_precondition.rs");
         let start = source
             .find("pub fn pass_applies_via")
-            .expect("via path marker must exist");
+            .expect("Fix: via path marker must exist");
         let end = source
             .find("\n/// Convenience: does pass X conflict")
-            .expect("test-only CPU marker must exist");
+            .expect("Fix: test-only CPU marker must exist");
         let release_path = &source[start..end];
         assert!(!release_path.contains("_cpu"));
         assert!(!release_path.contains("reference_"));
@@ -638,11 +652,5 @@ mod tests {
         .unwrap_err();
         assert!(matches!(err, DispatchError::BadInputs(_)));
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

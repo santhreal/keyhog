@@ -31,7 +31,7 @@
 //! ```
 //!
 //! `KernelDescriptor` is the substrate-neutral kernel intermediate
-//! representation — binding layout, dispatch shape, lowered kernel
+//! representation  -  binding layout, dispatch shape, lowered kernel
 //! body. NOT the same as `vyre_foundation::Program` (which is the
 //! pre-lowered IR with high-level constructs like `Node::Region`).
 //! Drivers stay thin: take a backend artifact + bind buffers + dispatch.
@@ -41,7 +41,10 @@ pub mod audit;
 pub mod descriptor;
 pub mod error;
 pub mod lower;
+pub mod emit_adversarial_corpus;
 pub mod optimization_corpus;
+pub(crate) mod op_properties;
+pub(crate) mod operand_semantics;
 pub mod pre_emit;
 pub mod rewrites;
 pub mod verify;
@@ -77,7 +80,7 @@ pub fn verify_then_optimize(
 pub enum VerifyFailure {
     /// Input descriptor was invalid before any rewrites ran.
     Input(Vec<verify::VerifyError>),
-    /// The rewrite pipeline produced an invalid descriptor — a real
+    /// The rewrite pipeline produced an invalid descriptor  -  a real
     /// bug in the rewrite stack. The fuzz harness gates this; if you
     /// hit it in production, it's a bug to file.
     Output(Vec<verify::VerifyError>),
@@ -227,7 +230,7 @@ mod verify_then_optimize_tests {
 
     #[test]
     fn invalid_input_returns_input_failure() {
-        // Descriptor with zero workgroup_size dim — caught by verify.
+        // Descriptor with zero workgroup_size dim  -  caught by verify.
         let desc = KernelDescriptor {
             id: "bad".into(),
             bindings: BindingLayout { slots: vec![] },
@@ -294,14 +297,14 @@ mod verify_then_optimize_tests {
             },
         };
         let report = full_report(&desc);
-        let json = serde_json::to_string(&report).expect("serialize");
+        let json = serde_json::to_string(&report).expect("Fix: serialize");
         assert!(json.contains("\"summary\""));
         assert!(json.contains("\"histogram\""));
         assert!(json.contains("\"perf\""));
         assert!(json.contains("\"stats\""));
 
         // Round-trip back through Deserialize.
-        let _back: FullReport = serde_json::from_str(&json).expect("round-trip");
+        let _back: FullReport = serde_json::from_str(&json).expect("Fix: round-trip");
     }
 
     #[test]
@@ -343,6 +346,6 @@ mod verify_then_optimize_tests {
             },
         };
         let f = verify_then_optimize(&desc).unwrap_err();
-        assert!(!f.errors().is_empty());
+        assert_ne!(f.errors().len(), 0);
     }
 }

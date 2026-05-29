@@ -459,13 +459,14 @@ fn preproc_number_field(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
     #[test]
     fn gpu_preprocessing_coverage_accepts_all_required_records() {
         let proof = validate_gpu_preprocessing_coverage(&capabilities(), &token_classes())
-            .expect("complete GPU preprocessing coverage should pass");
+            .expect("Fix: complete GPU preprocessing coverage should pass");
 
         assert_eq!(proof.capability_count, 9);
         assert_eq!(proof.token_class_count, 7);
@@ -513,7 +514,7 @@ mod tests {
         let proof = validate_gpu_preprocessing_linux_artifact(include_str!(
             "../../../release/evidence/parser/c-parser-linux-subsystem.json"
         ))
-        .expect("committed Linux CUDA preprocessing artifact should pass");
+        .expect("Fix: committed Linux CUDA preprocessing artifact should pass");
 
         assert!(proof.total_files >= 250);
         assert!(proof.total_source_bytes >= 4 * 1024 * 1024);
@@ -619,3 +620,4 @@ mod tests {
         }
     }
 }
+

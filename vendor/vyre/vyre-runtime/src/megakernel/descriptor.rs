@@ -5,6 +5,7 @@
 //! packed-slot path. These descriptors provide an additive typed API
 //! over the existing wire protocol.
 
+use super::staging_reserve::reserve_vec_capacity as reserve_descriptor_vec;
 use crate::PipelineError;
 
 use smallvec::SmallVec;
@@ -214,7 +215,7 @@ pub enum WindowClass {
 }
 
 impl WindowClass {
-    /// Stable on-the-wire encoding — `Required` = 0, `Lookahead` = 1.
+    /// Stable on-the-wire encoding  -  `Required` = 0, `Lookahead` = 1.
     #[must_use]
     pub const fn into_wire(self) -> u32 {
         match self {
@@ -269,8 +270,10 @@ impl WindowDescriptor {
     /// Convert the window into a typed batch publication.
     #[must_use]
     pub fn into_batch(&self) -> BatchDescriptor {
-        self.try_into_batch()
-            .expect("window descriptor batch materialization failed in legacy infallible caller")
+        match self.try_into_batch() {
+            Ok(batch) => batch,
+            Err(error) => panic!("{error}"),
+        }
     }
 
     /// Convert the window into a typed batch publication with explicit staging
@@ -381,23 +384,6 @@ fn window_payload_args(
     let mut args = Vec::new();
     reserve_descriptor_vec(&mut args, required_args, "window payload arg")?;
     Ok(args)
-}
-
-fn reserve_descriptor_vec<T>(
-    values: &mut Vec<T>,
-    capacity: usize,
-    label: &'static str,
-) -> Result<(), PipelineError> {
-    if values.capacity() < capacity {
-        values
-            .try_reserve_exact(capacity - values.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel descriptor {label} reservation failed for {capacity} slot(s): {source}. Fix: split descriptor windows before materialization."
-                ))
-            })?;
-    }
-    Ok(())
 }
 
 fn publish_window_payload(

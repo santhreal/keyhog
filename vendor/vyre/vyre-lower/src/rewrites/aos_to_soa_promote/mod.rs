@@ -1,4 +1,4 @@
-//! J1 — consume [`crate::analyses::layout_aos_to_soa::analyze`] and
+//! J1  -  consume [`crate::analyses::layout_aos_to_soa::analyze`] and
 //! produce a stable per-binding [`LayoutHint`] map.
 //!
 //! ## What this is
@@ -28,7 +28,7 @@ pub enum LayoutHint {
     /// interleaved buffer.
     Aos,
     /// Compound element types should be split across N parallel
-    /// scalar buffers — the access pattern justified the split per
+    /// scalar buffers  -  the access pattern justified the split per
     /// the analysis pass.
     Soa,
 }

@@ -1,4 +1,4 @@
-//! Dispatch surface — dialect lookup, extern op registry, extension hooks.
+//! Dispatch surface  -  dialect lookup, extern op registry, extension hooks.
 //!
 //! Audit cleanup A12 (2026-04-30): grouped from `vyre-foundation/src/`
 //! root scatter.

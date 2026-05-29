@@ -13,7 +13,7 @@
 //! * color change (H): conjugation by a Hadamard turns a Z-spider
 //!   into an X-spider and vice versa.
 //!
-//! No floating-point — phases are stored as numerator over a
+//! No floating-point  -  phases are stored as numerator over a
 //! caller-chosen denominator (`phase_denom`). Two phases are equal
 //! iff numerators agree mod `phase_denom`. Caller picks `phase_denom
 //! = 8` for the Clifford+T fragment, `= 4` for Clifford-only, `= 2`

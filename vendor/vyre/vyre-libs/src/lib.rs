@@ -1,4 +1,4 @@
-//! # vyre-libs — Category A composition ecosystem
+//! # vyre-libs  -  Category A composition ecosystem
 //!
 //! `vyre-libs` is the library layer that sits ON TOP of `vyre-ops`.
 //!
@@ -20,14 +20,14 @@
 //!
 //! The initial proposal suggested `vyre-nn`, `vyre-math`, `vyre-match`,
 //! `vyre-crypto`, `vyre-graph-stitch` as five standalone crates. That
-//! is the right endpoint — each becomes its own crates.io identity
-//! with its own community — but the migration cost at 0.6 is wrong.
+//! is the right endpoint  -  each becomes its own crates.io identity
+//! with its own community  -  but the migration cost at 0.6 is wrong.
 //! This crate starts as one, with public modules for each domain; when
 //! a module has its own consumer base + maturity, it promotes to a
 //! dedicated crate without breaking downstream code (the
 //! `vyre-libs::nn` path moves to `vyre-nn::` via a re-export shim).
 //!
-//! `vyre-graph-stitch` was deliberately omitted — "logical linker for
+//! `vyre-graph-stitch` was deliberately omitted  -  "logical linker for
 //! emitted graphs" is a `vyre-foundation` concern (IR composition),
 //! not a library crate.
 //!
@@ -44,17 +44,17 @@
 //! Each domain lives behind a feature flag so minimal consumers pay
 //! for only what they use:
 //!
-//! - `math` (default) — linear algebra, scans, broadcasts
-//! - `nn` (default, implies `math`) — neural-net primitives
-//! - `matching` (default) — regex, DFA, substring, multi-pattern
-//! - `crypto` (default) — hashing, MAC, checksums
+//! - `math` (default)  -  linear algebra, scans, broadcasts
+//! - `nn` (default, implies `math`)  -  neural-net primitives
+//! - `matching` (default)  -  regex, DFA, substring, multi-pattern
+//! - `crypto` (default)  -  hashing, MAC, checksums
 //!
 //! Turn defaults off with `default-features = false` and cherry-pick
 //! what you need.
 
 // P1.11 (closed): `OpEntry` is now POD over `&'static str` + `fn(...)`,
 // so stdlib auto-traits give us `Send + Sync` for free. No `unsafe`
-// anywhere in vyre-libs — `forbid` catches any future regression.
+// anywhere in vyre-libs  -  `forbid` catches any future regression.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![allow(
@@ -90,20 +90,20 @@ pub(crate) fn invalid_program(
     )
 }
 
-/// Region builder — the shared helper every composition routes through.
+/// Region builder  -  the shared helper every composition routes through.
 /// Library component.
 /// Library component.
 pub mod region;
 
 /// Domain-neutral byte-range ordering predicates. Previously lived inside
 /// `vyre-libs::security::topology`; hoisted out so non-security callers
-/// (a downstream frontend's `Before`/`After` predicates, future dialects) do not pull the
+/// (a downstream analyzer's `Before`/`After` predicates, future dialects) do not pull the
 /// security dialect through the import graph. See CRITIQUE_VISION_ALIGNMENT_2026-04-23 V5.
 /// Library component.
 /// Library component.
 pub mod range_ordering;
 
-/// `TensorRef` — typed buffer-argument wrapper used by every Cat-A
+/// `TensorRef`  -  typed buffer-argument wrapper used by every Cat-A
 /// composition for dtype + shape + name-uniqueness validation.
 /// Library component.
 /// Library component.
@@ -127,7 +127,7 @@ pub use builder::{check_tensors, BuildOptions};
 /// Library component.
 pub mod buffer_names;
 
-/// `ProgramDescriptor` — introspection surface for Cat-A Programs.
+/// `ProgramDescriptor`  -  introspection surface for Cat-A Programs.
 /// Library component.
 /// Library component.
 pub mod descriptor;
@@ -139,14 +139,14 @@ pub use descriptor::{BufferDescriptor, ProgramDescriptor};
 #[cfg(feature = "math-linalg")]
 pub use math::{matmul_bias_tiled, matmul_tiled, MatmulBias, MatmulBiasTiled, MatmulTiled};
 
-/// Universal op harness — auto-testing infrastructure for every composition.
+/// Universal op harness  -  auto-testing infrastructure for every composition.
 ///
 /// Each composition registers an `OpEntry` via
 /// `inventory::submit!`. The harness discovers all entries at test
 /// time and runs validation, wire round-trip, CSE stability, and
 /// reference interpreter tests automatically.
 ///
-/// Hidden from docs.rs — external consumers of vyre-libs don't need
+/// Hidden from docs.rs  -  external consumers of vyre-libs don't need
 /// this module's surface; it exists for internal test infrastructure
 /// only. Kept `pub` so `inventory::submit!` can reference `OpEntry`
 /// from per-op source files at crate-root scope.
@@ -155,7 +155,7 @@ pub use math::{matmul_bias_tiled, matmul_tiled, MatmulBias, MatmulBiasTiled, Mat
 /// Library component.
 pub mod harness;
 
-/// Math dialect — linear algebra, scans, broadcasting.
+/// Math dialect  -  linear algebra, scans, broadcasting.
 #[cfg(any(
     feature = "math-linalg",
     feature = "math-scan",
@@ -165,13 +165,13 @@ pub mod harness;
 /// Library component.
 pub mod math;
 
-/// Logical dialect — element-wise boolean composition.
+/// Logical dialect  -  element-wise boolean composition.
 #[cfg(feature = "logical")]
 /// Library component.
 /// Library component.
 pub mod logical;
 
-/// Neural-network dialect — activation, normalization, attention, linear.
+/// Neural-network dialect  -  activation, normalization, attention, linear.
 #[cfg(any(
     feature = "nn-activation",
     feature = "nn-linear",
@@ -182,9 +182,9 @@ pub mod logical;
 /// Library component.
 pub mod nn;
 
-/// Pattern-scanning dialect — substring, DFA, Aho-Corasick, rule
+/// Pattern-scanning dialect  -  substring, DFA, Aho-Corasick, rule
 /// dispatch, secfinding generation. Renamed from `matching` per
-/// ROADMAP T032 (SEPARATION_AUDIT S7) — "scan" reflects the actual
+/// ROADMAP T032 (SEPARATION_AUDIT S7)  -  "scan" reflects the actual
 /// semantic surface (not just substring matching). The original
 /// `matching` name is kept as a deprecated alias for backwards
 /// compatibility.
@@ -206,11 +206,11 @@ pub mod scan;
 ))]
 #[deprecated(
     since = "0.4.1",
-    note = "use `vyre_libs::scan` instead — the `matching` name is kept as a transition alias only"
+    note = "use `vyre_libs::scan` instead  -  the `matching` name is kept as a transition alias only"
 )]
 pub mod matching;
 
-/// Decode / decompression compositions — base64, hex, DEFLATE (stored),
+/// Decode / decompression compositions  -  base64, hex, DEFLATE (stored),
 /// more coming. Pairs with `vyre-libs::matching::dfa` in the fused
 /// decode→scan pipeline (Innovation I.1).
 #[cfg(feature = "decode")]
@@ -218,11 +218,12 @@ pub mod matching;
 /// Library component.
 pub mod decode;
 
-/// Hash / checksum dialect — FNV-1a-32, FNV-1a-64, CRC-32, Adler-32,
+/// Hash / checksum dialect  -  FNV-1a-32, FNV-1a-64, CRC-32, Adler-32,
 /// BLAKE3 compression. Consolidated from the former `vyre-libs::crypto`
 /// module per Migration 3. Every op lives here as a pure Cat-A
 /// composition over existing IR primitives (no dedicated target builder emitter
 /// arm required, per the intrinsic-vs-library rule).
+#[cfg(feature = "hash")]
 /// Library component.
 /// Library component.
 pub mod hash;
@@ -240,10 +241,16 @@ pub mod representation;
 
 /// GPU parser infrastructure (Phase L3+): bracket matching, DFA
 /// lexer driver, LR(1) table walker. Grammar tables are generated
-/// host-side by the frontend grammar generator and loaded as ReadOnly buffers.
+/// host-side by `downstream analyzer-grammar-gen` and loaded as ReadOnly buffers.
 /// Library component.
 /// Library component.
 pub mod parsing;
+
+/// Front-end-agnostic borrow-check engine: the neutral `BorrowFacts` IR and the
+/// dataflow analysis over it. Producers (the Rust front-end now, a rustc adapter
+/// later) lower to `BorrowFacts`; the engine never depends on any front-end,
+/// which is what lets the borrow checker eventually run standalone.
+pub mod borrowck;
 
 /// Packed AST walks (`ast_walk_*` catalog ops).
 /// Library component.
@@ -266,12 +273,12 @@ pub use compiler::{
 /// Security / taint compositions for static program analysis.
 /// Every op registers via `inventory::submit!` and lives under a
 /// stable op id. The implementations compose graph and dataflow
-/// primitives so frontends lower to one production GPU-facing
+/// primitives so downstream analyzers lower to one production GPU-facing
 /// surface.
 #[cfg(feature = "security")]
 pub mod security;
 
-/// GPU-accelerated visual effects — blur, shadow, filter chain,
+/// GPU-accelerated visual effects  -  blur, shadow, filter chain,
 /// gradient, compositing, and glass material. Tier 3 compositions
 /// over `math::conv1d` (Tier 2.5) and bare IR expressions. The
 /// Molten web engine's visual effect substrate.
@@ -302,7 +309,7 @@ pub use dataflow::{Soundness, SoundnessTagged};
 // hash ops that lived there (adler32, crc32, fnv1a64) are canonical at
 // `vyre-libs::hash::*`.
 
-/// Rule-engine dialect — typed conditions, formulas, and program builder used
+/// Rule-engine dialect  -  typed conditions, formulas, and program builder used
 /// by detection rule compilers.
 #[cfg(feature = "rule")]
 /// Library component.
@@ -310,7 +317,7 @@ pub use dataflow::{Soundness, SoundnessTagged};
 pub mod rule;
 
 /// Vector-widened string interning. CHD perfect hash
-/// over Tier-B label families — 60k+ function-name strings reduce
+/// over Tier-B label families  -  60k+ function-name strings reduce
 /// to one subgroup-shuffle + one DRAM load on the GPU.
 #[cfg(feature = "intern")]
 /// Library component.
@@ -334,7 +341,7 @@ pub use signatures::{
     U32_OUTPUTS, U32_U32_INPUTS,
 };
 /// Pre-sweep shader snapshot migration entries, collected via inventory.
-/// `pub(crate)` because the registry is an internal pre-sweep tool —
+/// `pub(crate)` because the registry is an internal pre-sweep tool  -
 /// downstream dialects do not submit through this path.
 pub(crate) mod test_migration;
 /// Test support components for vyre-libs.
@@ -364,7 +371,7 @@ pub mod prelude {
         check_dtype, check_shape, check_unique_names, TensorRef, TensorRefError,
     };
 
-    // Region wrapper — every composition emits its body through this.
+    // Region wrapper  -  every composition emits its body through this.
     pub use crate::region::{wrap, wrap_anonymous, wrap_child};
 
     // Built-in Cat-A builders (gated on the relevant feature flags so

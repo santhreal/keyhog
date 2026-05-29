@@ -1,4 +1,4 @@
-//! Fusion certificates — prove a fused kernel is equivalent to the unfused
+//! Fusion certificates  -  prove a fused kernel is equivalent to the unfused
 //! chain on a declared witness set.
 //!
 //! Hook emitted after the fusion pass: captures `(pre_program_blake3,

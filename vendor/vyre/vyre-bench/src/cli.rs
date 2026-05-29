@@ -466,6 +466,7 @@ fn generate_dashboard(output_dir: impl AsRef<str>) -> anyhow::Result<()> {
     Ok(())
 }
 
+
 fn find_latest_snapshot(dir: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
     if !dir.exists() {
         anyhow::bail!("snapshots directory does not exist: {}", dir.display());
@@ -511,16 +512,16 @@ fn generate_scorecard_md(report: &ReportSchema) -> String {
                 if s.mean > 0.0 {
                     format!("{:.3}", s.stddev / s.mean)
                 } else {
-                    "—".into()
+                    " - ".into()
                 }
             })
-            .unwrap_or_else(|| "—".into());
+            .unwrap_or_else(|| " - ".into());
         let speedup = case
             .performance
             .as_ref()
             .and_then(|p| p.speedup_x)
             .map(|s| format!("{:.1}×", s))
-            .unwrap_or_else(|| "—".into());
+            .unwrap_or_else(|| " - ".into());
         let status_emoji = match case.status.as_str() {
             "passed" => "✅",
             "failed" => "❌",
@@ -618,16 +619,16 @@ fn generate_index_html(report: &ReportSchema, _scorecard_md: &str) -> String {
                 if s.mean > 0.0 {
                     format!("{:.3}", s.stddev / s.mean)
                 } else {
-                    "—".into()
+                    " - ".into()
                 }
             })
-            .unwrap_or_else(|| "—".into());
+            .unwrap_or_else(|| " - ".into());
         let speedup = case
             .performance
             .as_ref()
             .and_then(|p| p.speedup_x)
             .map(|s| format!("{:.1}×", s))
-            .unwrap_or_else(|| "—".into());
+            .unwrap_or_else(|| " - ".into());
         let status_class = match case.status.as_str() {
             "passed" => "status-pass",
             "failed" => "status-fail",
@@ -809,3 +810,4 @@ fn generate_index_html(report: &ReportSchema, _scorecard_md: &str) -> String {
         rows = rows,
     )
 }
+

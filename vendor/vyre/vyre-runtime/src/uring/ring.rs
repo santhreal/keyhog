@@ -8,7 +8,7 @@
 #![allow(unsafe_code)]
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
-// The POD structs below mirror Linux `io_uring.h` exactly — per-field
+// The POD structs below mirror Linux `io_uring.h` exactly  -  per-field
 // docstrings would just paraphrase the kernel headers. The struct-level
 // doc on each type points at the canonical reference.
 #![allow(missing_docs)]
@@ -469,7 +469,7 @@ impl IoUringState {
     /// # Errors
     ///
     /// Returns [`PipelineError::IoUringSyscall`] if
-    /// `io_uring_register` fails — typical causes are `EFAULT` (bad
+    /// `io_uring_register` fails  -  typical causes are `EFAULT` (bad
     /// pointer), `ENOMEM`, or `EOPNOTSUPP` (kernel < 5.1).
     pub fn register_buffers(
         &self,
@@ -540,6 +540,7 @@ impl IoUringState {
     }
 }
 
+
 impl Drop for IoUringState {
     fn drop(&mut self) {
         // SAFETY: all pointers were returned by the kernel and are unmapped once on drop.
@@ -591,9 +592,10 @@ fn kernel_ring_span_usize(
             _ => "io_uring record width cannot fit u32; use a supported kernel/userspace ABI",
         },
     })?;
-    let payload = entries
-        .checked_mul(record_bytes)
-        .ok_or(PipelineError::IoUringSyscall {
+    let payload = vyre_driver::accounting::checked_mul_u32_value(
+        entries,
+        record_bytes,
+        PipelineError::IoUringSyscall {
             syscall: "io_uring_setup",
             errno: libc::EOVERFLOW,
             fix: match label {
@@ -601,10 +603,12 @@ fn kernel_ring_span_usize(
                 "CQ ring" => "CQ ring mmap size overflowed u32; reduce requested entries",
                 _ => "io_uring mmap size overflowed u32; reduce requested entries",
             },
-        })?;
-    let bytes = base_offset
-        .checked_add(payload)
-        .ok_or(PipelineError::IoUringSyscall {
+        },
+    )?;
+    let bytes = vyre_driver::accounting::checked_add_u32_value(
+        base_offset,
+        payload,
+        PipelineError::IoUringSyscall {
             syscall: "io_uring_setup",
             errno: libc::EOVERFLOW,
             fix: match label {
@@ -612,7 +616,8 @@ fn kernel_ring_span_usize(
                 "CQ ring" => "CQ ring mmap span overflowed u32; reduce requested entries",
                 _ => "io_uring mmap span overflowed u32; reduce requested entries",
             },
-        })?;
+        },
+    )?;
     usize::try_from(bytes).map_err(|_| PipelineError::IoUringSyscall {
         syscall: "io_uring_setup",
         errno: libc::EOVERFLOW,
@@ -637,16 +642,16 @@ fn kernel_record_span_usize(
             _ => "io_uring entry count cannot fit host usize; reduce requested entries",
         },
     })?;
-    entries
-        .checked_mul(record_bytes)
-        .ok_or(PipelineError::IoUringSyscall {
+    vyre_driver::accounting::checked_mul_usize_lazy(entries, record_bytes, || {
+        PipelineError::IoUringSyscall {
             syscall: "io_uring_setup",
             errno: libc::EOVERFLOW,
             fix: match label {
                 "SQE table" => "SQE table mmap size overflowed usize; reduce requested entries",
                 _ => "io_uring record mmap size overflowed usize; reduce requested entries",
             },
-        })
+        }
+    })
 }
 
 fn kernel_offset_usize_or_panic(value: u32, label: &'static str) -> usize {
@@ -672,3 +677,4 @@ fn slice_len_u32(value: usize, label: &'static str) -> Result<u32, PipelineError
         },
     })
 }
+

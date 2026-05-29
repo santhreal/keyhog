@@ -290,7 +290,9 @@ impl PreprocessorExprParser<'_, '_, '_> {
     }
 }
 
-fn is_reserved_preprocessor_identifier(ident: &[u8]) -> bool {
+/// Return true when `ident` is a C/GNU/Clang spelling that
+/// `__is_identifier` must report as unavailable for ordinary identifier use.
+pub fn is_reserved_preprocessor_identifier(ident: &[u8]) -> bool {
     matches!(
         ident,
         b"auto"

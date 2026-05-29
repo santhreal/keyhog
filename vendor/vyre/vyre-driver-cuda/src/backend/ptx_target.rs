@@ -3,6 +3,8 @@
 use cudarc::driver::sys::CUresult;
 use smallvec::SmallVec;
 
+use super::module_cache::{load_cuda_module_data, unload_cuda_module};
+
 pub(crate) fn select_loadable_ptx_target_sm(native_sm: u32) -> Result<u32, String> {
     let candidates = ptx_target_candidates(native_sm);
     let mut failures = SmallVec::<[(u32, CUresult); 10]>::new();
@@ -52,7 +54,7 @@ fn push_candidate(candidates: &mut SmallVec<[u32; 10]>, candidate: u32, native_s
 
 fn probe_ptx_target_sm(target_sm: u32) -> Result<(), CUresult> {
     // Probe PTX must use the same `.version`/`.target` pairing as
-    // `vyre-emit-ptx::ModuleBuilder::write_preamble` — drift here
+    // `vyre-emit-ptx::ModuleBuilder::write_preamble`  -  drift here
     // would let the probe pick a candidate that the real emitter
     // then can't load. The mapping below mirrors that emitter:
     //   sm_120 (Blackwell-2)       → PTX 8.7+
@@ -73,29 +75,8 @@ fn probe_ptx_target_sm(target_sm: u32) -> Result<(), CUresult> {
         ".version {ptx_version}\n.target sm_{target_sm}\n.address_size 64\n\n.visible .entry main(.param .u64 buf) {{\n\t.reg .b64 %rd<3>;\n\t.reg .b32 %r<3>;\n\tld.param.u64 %rd1, [buf];\n\tcvta.to.global.u64 %rd2, %rd1;\n\tmov.u32 %r1, 1;\n\tatom.global.add.u32 %r2, [%rd2], %r1;\n\tbar.sync 0;\n\tret;\n}}\n"
     );
     let cstring = std::ffi::CString::new(ptx).map_err(|_| CUresult::CUDA_ERROR_INVALID_VALUE)?;
-    let mut module = std::ptr::null_mut();
-    let result =
-        // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-        // matching alloc / store API; lifetimes are documented in the
-        // surrounding function. cuda_check (or matching CUresult guard)
-        // propagates non-success codes as BackendError.
-        unsafe { cudarc::driver::sys::cuModuleLoadData(&mut module, cstring.as_ptr().cast()) };
-    if result != CUresult::CUDA_SUCCESS {
-        return Err(result);
-    }
-    if !module.is_null() {
-        // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-        // matching alloc / store API; lifetimes are documented in the
-        // surrounding function. cuda_check (or matching CUresult guard)
-        // propagates non-success codes as BackendError.
-        unsafe {
-            let unload_result = cudarc::driver::sys::cuModuleUnload(module);
-            if unload_result != CUresult::CUDA_SUCCESS {
-                return Err(unload_result);
-            }
-        }
-    }
-    Ok(())
+    let module = load_cuda_module_data(cstring.as_bytes_with_nul())?;
+    unload_cuda_module(module)
 }
 
 #[cfg(test)]

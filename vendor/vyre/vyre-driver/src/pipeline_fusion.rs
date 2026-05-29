@@ -7,7 +7,7 @@
 //! detects the disjoint case for in-megakernel arms; this module
 //! lifts the same analysis to cross-pipeline boundaries.
 //!
-//! Pure decision — no allocation in the disjoint path, no IR walk.
+//! Pure decision  -  no allocation in the disjoint path, no IR walk.
 //! The runtime side (actually fusing the two pipelines into one
 //! launch) lives in `runtime_megakernel` and `driver_shared` and is
 //! out of this module's scope; this module just answers "would it

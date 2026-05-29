@@ -24,7 +24,7 @@ impl RegionInlinePass {
     /// as eligible as a top-level one.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        // O(1) — the cached stats walk already recorded every kind it
+        // O(1)  -  the cached stats walk already recorded every kind it
         // visited. If no Region was observed (rare, since Program::wrapped
         // emits a top-level Region), the recursive any_descendant walk
         // can be skipped entirely.

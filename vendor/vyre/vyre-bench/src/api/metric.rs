@@ -83,7 +83,7 @@ pub struct BenchMetrics {
 }
 
 impl BenchMetrics {
-    /// ROADMAP M4 — CPU-side achieved memory bandwidth probe.
+    /// ROADMAP M4  -  CPU-side achieved memory bandwidth probe.
     ///
     /// Returns `bytes_touched / wall_ns * 1e9 / 1e9` (= `bytes_touched / wall_ns`)
     /// in GB/s when both `bytes_touched` and `wall_ns` are present and
@@ -91,7 +91,7 @@ impl BenchMetrics {
     /// or `wall_ns == 0` (to avoid division by zero).
     ///
     /// The backend-counter half (reading hardware bandwidth counters from
-    /// the GPU) needs driver_cuda / driver_wgpu wiring, which is Codex's lane.
+    /// the GPU) needs concrete driver wiring.
     #[must_use]
     pub fn achieved_bandwidth_gb_s(&self) -> Option<f64> {
         let bytes = self.bytes_touched?;
@@ -119,7 +119,9 @@ mod tests {
     #[test]
     fn achieved_bandwidth_both_present() {
         let m = metrics_with(Some(1_000_000_000), Some(1_000_000_000));
-        let bw = m.achieved_bandwidth_gb_s().expect("both fields present");
+        let bw = m
+            .achieved_bandwidth_gb_s()
+            .expect("Fix: both fields present");
         assert!((bw - 1.0).abs() < 1e-9, "1GB / 1s = 1 GB/s; got {bw}");
     }
 

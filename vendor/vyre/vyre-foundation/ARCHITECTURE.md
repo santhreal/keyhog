@@ -1,4 +1,4 @@
-# vyre-foundation — architecture
+# vyre-foundation  -  architecture
 
 The IR + transforms + validation + frozen-data-contract crate.
 Every other vyre crate depends on this one. Conversely, this
@@ -15,7 +15,7 @@ The IR data model. `Program`, `Node`, `Expr`, `BufferDecl`,
 Optimizer passes: cse, dce, canonicalize, region_inline,
 const_fold, autotune, fuse_cse.
 
-### `pass_substrate/` (OFF-LIMITS — substrate hot-path wires in flight)
+### `pass_substrate/` (OFF-LIMITS  -  substrate hot-path wires in flight)
 Pass-scheduler substrate (PassScheduler + transitive_dependents).
 Currently mid-edit.
 
@@ -80,21 +80,21 @@ Endian-fixed encode/decode helpers for `Expr::Opaque` /
 `Node::Opaque` payloads.
 
 ### `error.rs`
-Foundation error type — wrapped by every consumer.
+Foundation error type  -  wrapped by every consumer.
 
 ## Public types
 
-- **`Program`** — frozen IR root.
-- **`Node` / `Expr`** — AST nodes.
-- **`BufferDecl`** — buffer declaration.
-- **`Ident`** — interned identifier.
-- **`MemoryOrdering` / `MemoryKind`** — frozen memory model.
-- **`ValidationError`** — emitted by `validate(&Program)`.
-- **`FusionError`** — emitted by `fuse_programs_vec`.
+- **`Program`**  -  frozen IR root.
+- **`Node` / `Expr`**  -  AST nodes.
+- **`BufferDecl`**  -  buffer declaration.
+- **`Ident`**  -  interned identifier.
+- **`MemoryOrdering` / `MemoryKind`**  -  frozen memory model.
+- **`ValidationError`**  -  emitted by `validate(&Program)`.
+- **`FusionError`**  -  emitted by `fuse_programs_vec`.
 
 ## Integration points
 
 - Every other vyre crate consumes this.
 - Frozen names land at `vyre::ir::*` via the meta-shim.
-- The wire format is stable — bumping major requires the
+- The wire format is stable  -  bumping major requires the
   conform-runner gate to allow forward-decode.

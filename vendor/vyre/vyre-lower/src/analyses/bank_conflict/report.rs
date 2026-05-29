@@ -15,7 +15,7 @@ pub enum BankConflictKind {
     /// 32-bit word). Single cycle.
     BroadcastSafe,
     /// All N threads in a warp hit the same bank with N distinct
-    /// addresses. Worst case — N-way serialization.
+    /// addresses. Worst case  -  N-way serialization.
     Conflict { way_count: u32 },
     /// Index pattern not classifiable. Default conservative answer
     /// when phase-1 analysis can't prove safety.
@@ -24,16 +24,16 @@ pub enum BankConflictKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ConflictSeverity {
-    /// `NoConflict` or `BroadcastSafe` — performance is fine.
+    /// `NoConflict` or `BroadcastSafe`  -  performance is fine.
     None,
-    /// `Conflict { way_count: 2..=4 }` — typically a 2-4x slowdown
+    /// `Conflict { way_count: 2..=4 }`  -  typically a 2-4x slowdown
     /// on the affected accesses.
     Mild,
-    /// `Conflict { way_count: 5..=15 }` — 5-15x slowdown.
+    /// `Conflict { way_count: 5..=15 }`  -  5-15x slowdown.
     Severe,
-    /// `Conflict { way_count: 16+ }` — full warp serialization.
+    /// `Conflict { way_count: 16+ }`  -  full warp serialization.
     Critical,
-    /// Pattern unknown — caller should treat as suspect until phase-2
+    /// Pattern unknown  -  caller should treat as suspect until phase-2
     /// upgrades the analysis.
     Unknown,
 }

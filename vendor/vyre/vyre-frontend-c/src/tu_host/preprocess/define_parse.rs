@@ -26,13 +26,10 @@ pub(in crate::tu_host) fn parse_define(rest: &str) -> Option<(String, MacroDef)>
                 {
                     variadic = Some("__VA_ARGS__".to_string());
                 }
-            } else if param.strip_suffix("...").is_some() {
+            } else if let Some(name) = param.strip_suffix("...") {
                 #[cfg(feature = "cpu-oracle")]
                 {
-                    let name = param
-                        .strip_suffix("...")
-                        .expect("suffix checked above")
-                        .trim();
+                    let name = name.trim();
                     if !name.is_empty() {
                         variadic = Some(name.to_string());
                     }

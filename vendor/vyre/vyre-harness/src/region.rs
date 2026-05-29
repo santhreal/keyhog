@@ -5,7 +5,7 @@
 //! opaque unit by default. Explicit inline passes can unroll the Region
 //! at lower levels of the pipeline.
 //!
-//! The `generator` name is load-bearing — it's what shows up in
+//! The `generator` name is load-bearing  -  it's what shows up in
 //! BackendError stack traces, conform certificates, and tracing spans.
 //! Every library function uses its fully-qualified path as the
 //! generator name so a consumer looking at a trace can grep exactly

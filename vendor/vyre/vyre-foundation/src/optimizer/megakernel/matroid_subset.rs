@@ -17,7 +17,7 @@ pub fn max_fusion_subset(seed: &[u32], exchange_adj: &[u32], n: usize, max_items
     // Track the actually-selected indices so the compatibility check
     // iterates k items (k = current selection) instead of n. The
     // previous loop scanned the full `selected` row per candidate
-    // even when only a handful were chosen — O(n²) regardless of
+    // even when only a handful were chosen  -  O(n²) regardless of
     // sparsity. Greedy fusion subsets land in the few-dozen range,
     // so this is the typical case.
     let mut chosen_indices: Vec<usize> = Vec::with_capacity(max_items as usize);

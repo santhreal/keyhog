@@ -101,7 +101,7 @@ mod tests {
     fn depth_budget_terminates() {
         let clauses = vec![vec![(0u32, true), (1, true)], vec![(2, true), (3, true)]];
         let dag = compile_precondition(&clauses, 4, 1);
-        // No assertion on the count — only that compile + count
+        // No assertion on the count  -  only that compile + count
         // both terminate (via the saturating arithmetic + depth
         // budget contract).
         assert!(count_models(&dag) > 0);

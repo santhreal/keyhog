@@ -1,8 +1,8 @@
-//! `loop_redundant_bound_check_elide` — drop `if loop_var < to { ... }`
+//! `loop_redundant_bound_check_elide`  -  drop `if loop_var < to { ... }`
 //! guards that re-check the enclosing loop's own upper bound.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_redundant_bound_check_elide`.
-//! Soundness: `Exact` — the loop's `from..to` range guarantees `loop_var < to`
+//! Soundness: `Exact`  -  the loop's `from..to` range guarantees `loop_var < to`
 //! on every iteration, so the inner if-guard is statically true. Replacing
 //! the if-node with its `then` branch wrapped in a `Block` is observationally
 //! equivalent. Cost-direction: monotone-down on `node_count`,
@@ -149,7 +149,7 @@ fn elide_in_node_with_ctx(node: Node, loop_ctx: Option<(&str, u32)>, changed: &m
                     }
                 }
             }
-            // Not the redundant pattern — recurse into both branches.
+            // Not the redundant pattern  -  recurse into both branches.
             Node::If {
                 cond,
                 then: elide_in_sequence(then, loop_ctx, changed),
@@ -183,7 +183,7 @@ fn elide_in_node_with_ctx(node: Node, loop_ctx: Option<(&str, u32)>, changed: &m
                 Ok(v) => v,
                 Err(arc) => (*arc).clone(),
             };
-            // A Region is a fresh scope — drop the loop_ctx because the
+            // A Region is a fresh scope  -  drop the loop_ctx because the
             // inner body's loop var is in a different binding scope.
             let body_vec = elide_in_sequence(body_vec, None, changed);
             Node::Region {
@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn transform_does_not_elide_when_lit_does_not_match_loop_to() {
         // Guard checks i < 8 inside a loop with to=10. The guard is NOT
-        // redundant — inside the loop the i can hit 9.
+        // redundant  -  inside the loop the i can hit 9.
         let entry = vec![loop_with_body(
             "i",
             10,
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn transform_does_not_elide_when_loop_to_is_not_literal() {
-        // Loop bound is `Var("n")` not a literal — no redundancy proof.
+        // Loop bound is `Var("n")` not a literal  -  no redundancy proof.
         let entry = vec![Node::Loop {
             var: Ident::from("i"),
             from: Expr::u32(0),
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn transform_does_not_elide_when_else_branch_is_nonempty() {
-        // The pass refuses if-then-else patterns — only if-then.
+        // The pass refuses if-then-else patterns  -  only if-then.
         let entry = vec![loop_with_body(
             "i",
             10,
@@ -448,6 +448,7 @@ mod tests {
                 vec![Node::store("buf", Expr::var("i"), Expr::u32(7))],
                 vec![Node::store("buf", Expr::var("i"), Expr::u32(0))],
             )],
+
         )];
         let program = program_with_entry(entry);
         let result = LoopRedundantBoundCheckElidePass::transform(program);
@@ -460,7 +461,7 @@ mod tests {
     #[test]
     fn transform_handles_nested_loops_independently() {
         // Outer loop var i, to=10. Inner loop var j, to=5. The inner if
-        // checks j < 5 — redundant for the inner loop but not the outer.
+        // checks j < 5  -  redundant for the inner loop but not the outer.
         let inner = loop_with_body(
             "j",
             5,
@@ -548,7 +549,7 @@ mod tests {
         let program = program_with_entry(entry);
         let result = LoopRedundantBoundCheckElidePass::transform(program);
         assert!(result.changed);
-        // Walk the loop body and count Stores — must be 2.
+        // Walk the loop body and count Stores  -  must be 2.
         fn count_stores(node: &Node) -> usize {
             let mut count = 0;
             match node {
@@ -625,3 +626,4 @@ mod tests {
         assert_eq!(cond_matches_loop_var_lt_lit(&cond, "i"), None);
     }
 }
+

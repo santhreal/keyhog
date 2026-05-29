@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn bytes_per_element_for_each_scalar_type() {
-        // Pin the table — if anyone changes DataType variants, this
+        // Pin the table  -  if anyone changes DataType variants, this
         // test forces them to update bytes_per_element too.
         for (ty, expected) in [
             (DataType::Bool, 1u32),

@@ -163,17 +163,10 @@ mod tests {
             assert_eq!(inputs.len(), 3);
             assert_eq!(inputs[0].len(), inputs[1].len());
             assert_eq!(inputs[2].len(), inputs[1].len());
-            let blocks_in = read_f32s(&inputs[1]);
+            let blocks_in = crate::hardware::dispatch_buffers::read_f32s(&inputs[1]);
             let out = cpu_ref(&blocks_in, 1, 2);
             Ok(vec![f32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn read_f32s(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<f32>())
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     #[test]
@@ -221,15 +214,7 @@ mod tests {
         let p2 = kfac_autotune_step_program("bo2", "bi2", "s2", 1, 4);
         let p3 = kfac_autotune_step_program("bo3", "bi3", "s3", 1, 4);
 
-        let mut entry = p1.entry().to_vec();
-        entry.extend(p2.entry().to_vec());
-        entry.extend(p3.entry().to_vec());
-
-        let mut buffers = p1.buffers().to_vec();
-        buffers.extend(p2.buffers().to_vec());
-        buffers.extend(p3.buffers().to_vec());
-
-        let final_p = Program::wrapped(buffers, [256, 1, 1], entry);
+        let final_p = crate::test_support::wrap_program_sequence(&[&p1, &p2, &p3], [256, 1, 1]);
         let region_count = final_p
             .entry()
             .iter()
@@ -248,7 +233,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[f32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = vyre_primitives::wire::pack_f32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 

@@ -13,47 +13,18 @@ pub fn c11_extract_calls(
 ) -> Program {
     let t = Expr::var("t");
 
-    let mut loop_body = vec![
-        Node::let_bind("tok_type", Expr::load(tok_types, t.clone())),
-        Node::let_bind("prev_type", Expr::u32(0)),
-        Node::let_bind("prev_prev_type", Expr::u32(0)),
-        Node::if_then(
-            Expr::gt(t.clone(), Expr::u32(0)),
-            vec![Node::assign(
-                "prev_type",
-                Expr::load(tok_types, Expr::sub(t.clone(), Expr::u32(1))),
-            )],
-        ),
-        Node::if_then(
-            Expr::gt(t.clone(), Expr::u32(1)),
-            vec![Node::assign(
-                "prev_prev_type",
-                Expr::load(tok_types, Expr::sub(t.clone(), Expr::u32(2))),
-            )],
-        ),
-        Node::let_bind(
-            "next_type",
-            Expr::load(tok_types, Expr::add(t.clone(), Expr::u32(1))),
-        ),
-        Node::let_bind(
-            "matching_rparen",
-            Expr::load(paren_pairs, Expr::add(t.clone(), Expr::u32(1))),
-        ),
-        Node::let_bind("next2_type", Expr::u32(0)),
-        Node::let_bind("numeric_suffix_rparen", Expr::u32(u32::MAX)),
-        Node::if_then(
-            Expr::lt(Expr::add(t.clone(), Expr::u32(2)), num_tokens.clone()),
-            vec![
-                Node::assign(
-                    "next2_type",
-                    Expr::load(tok_types, Expr::add(t.clone(), Expr::u32(2))),
-                ),
-                Node::assign(
-                    "numeric_suffix_rparen",
-                    Expr::load(paren_pairs, Expr::add(t.clone(), Expr::u32(2))),
-                ),
-            ],
-        ),
+    let mut loop_body = emit_token_context(
+        tok_types,
+        paren_pairs,
+        &num_tokens,
+        &t,
+        TokenContextOptions {
+            prev_prev_type: true,
+            next2_type_and_rparen: true,
+            ..TokenContextOptions::default()
+        },
+    );
+    loop_body.extend([
         Node::let_bind(
             "is_numeric_suffix_call_name",
             Expr::and(
@@ -192,7 +163,7 @@ pub fn c11_extract_calls(
                 ),
             ),
         ),
-    ];
+    ]);
     loop_body.extend(emit_enclosing_function_lookup(
         functions,
         num_functions.clone(),
@@ -207,120 +178,65 @@ pub fn c11_extract_calls(
         // target-native subgroup allocation without changing library IR.
         Node::if_then(
             Expr::var("is_direct_call"),
-            vec![
-                Node::store(out_calls, Expr::var("sparse_idx"), Expr::var("caller_id")),
-                Node::store(
-                    out_calls,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(1)),
+            emit_sparse_record_write(
+                out_calls,
+                t.clone(),
+                4,
+                vec![
+                    Expr::var("caller_id"),
                     t.clone(),
-                ),
-                Node::store(
-                    out_calls,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(2)),
                     Expr::add(t.clone(), Expr::u32(1)),
-                ),
-                Node::store(
-                    out_calls,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(3)),
                     Expr::var("args_end"),
-                ),
-            ],
+                ],
+            ),
         ),
         Node::if_then(
             Expr::var("is_ptr_call"),
-            vec![
-                Node::store(out_calls, Expr::var("sparse_idx"), Expr::var("caller_id")),
-                Node::store(
-                    out_calls,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(1)),
+            emit_sparse_record_write(
+                out_calls,
+                t.clone(),
+                4,
+                vec![
+                    Expr::var("caller_id"),
                     t.clone(),
-                ),
-                Node::store(
-                    out_calls,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(2)),
                     Expr::var("ptr_call_lparen"),
-                ),
-                Node::store(
-                    out_calls,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(3)),
                     Expr::var("ptr_call_rparen"),
-                ),
-            ],
+                ],
+            ),
         ),
     ]);
 
-    let tok_count = match &num_tokens {
-        Expr::LitU32(n) => *n,
-        _ => 1,
-    };
-    let fn_count = match &num_functions {
-        Expr::LitU32(n) => *n,
-        _ => tok_count,
-    };
+    let tok_count = literal_u32_or(&num_tokens, 1);
+    let fn_count = literal_u32_or(&num_functions, tok_count);
     let fn_u32_words = fn_count.saturating_mul(3).max(3);
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(tok_count),
-            BufferDecl::storage(paren_pairs, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(tok_count),
-            BufferDecl::storage(functions, 2, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(fn_u32_words),
-            BufferDecl::output(out_calls, 3, DataType::U32).with_count(tok_count.saturating_mul(4)),
-            BufferDecl::storage(out_counts, 4, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1)
-                .with_pipeline_live_out(true),
-        ],
-        [256, 1, 1],
-        vec![wrap_anonymous(
-            "vyre-libs::parsing::c11_extract_calls",
-            vec![
-                Node::let_bind("lane", Expr::LocalId { axis: 0 }),
-                Node::let_bind("block", Expr::WorkgroupId { axis: 0 }),
-                Node::let_bind(
-                    "t",
-                    Expr::add(
-                        Expr::mul(Expr::var("block"), Expr::u32(256)),
-                        Expr::var("lane"),
-                    ),
-                ),
-                Node::let_bind("sparse_idx", Expr::mul(t.clone(), Expr::u32(4))),
-                Node::if_then(
-                    Expr::lt(t.clone(), num_tokens.clone()),
-                    vec![
-                        Node::if_then(
-                            Expr::eq(t.clone(), Expr::u32(0)),
-                            vec![Node::store(
-                                out_counts,
-                                Expr::u32(0),
-                                Expr::mul(num_tokens.clone(), Expr::u32(4)),
-                            )],
-                        ),
-                        Node::store(out_calls, Expr::var("sparse_idx"), Expr::u32(0)),
-                        Node::store(
-                            out_calls,
-                            Expr::add(Expr::var("sparse_idx"), Expr::u32(1)),
-                            Expr::u32(0),
-                        ),
-                        Node::store(
-                            out_calls,
-                            Expr::add(Expr::var("sparse_idx"), Expr::u32(2)),
-                            Expr::u32(0),
-                        ),
-                        Node::store(
-                            out_calls,
-                            Expr::add(Expr::var("sparse_idx"), Expr::u32(3)),
-                            Expr::u32(0),
-                        ),
-                    ],
-                ),
-                Node::if_then(
-                    Expr::lt(t.clone(), Expr::sub(num_tokens.clone(), Expr::u32(1))),
-                    loop_body,
-                ),
-            ],
-        )],
+    let mut buffers = token_pair_input_buffers(tok_types, paren_pairs, tok_count);
+    buffers.extend([
+        BufferDecl::storage(functions, 2, BufferAccess::ReadOnly, DataType::U32)
+            .with_count(fn_u32_words),
+    ]);
+    append_record_output_buffers(
+        &mut buffers,
+        out_calls,
+        3,
+        4,
+        tok_count,
+        out_counts,
+        4,
+        false,
+    );
+    let pre_loop_nodes = emit_sparse_record_output_init(
+        out_calls,
+        out_counts,
+        t.clone(),
+        num_tokens.clone(),
+        4,
+    );
+
+    threaded_structure_program(
+        "vyre-libs::parsing::c11_extract_calls",
+        buffers,
+        pre_loop_nodes,
+        Expr::lt(t, Expr::sub(num_tokens, Expr::u32(1))),
+        loop_body,
     )
-    .with_entry_op_id("vyre-libs::parsing::c11_extract_calls")
-    .with_non_composable_with_self(true)
 }

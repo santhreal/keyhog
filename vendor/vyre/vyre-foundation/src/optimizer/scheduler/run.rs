@@ -4,6 +4,7 @@
 #![allow(unused_imports)]
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 use super::{
@@ -17,6 +18,41 @@ use crate::optimizer::{
     ProgramPassRegistration,
 };
 use crate::runtime::perf::PerfScope;
+
+fn introduces_forbidden_effects(
+    before: crate::lower::effects::ProgramEffects,
+    after: crate::lower::effects::ProgramEffects,
+    allowed_additions: crate::lower::effects::ProgramEffects,
+) -> bool {
+    !after
+        .introduced_since(before)
+        .is_subset_of(allowed_additions)
+}
+
+fn linear_type_violations(program: &Program) -> BTreeSet<String> {
+    crate::validate::linear_type::check_linear_types(program)
+        .into_iter()
+        .map(|error| error.message.into_owned())
+        .collect()
+}
+
+fn introduces_linear_type_violations(before: &BTreeSet<String>, after: &BTreeSet<String>) -> bool {
+    after.iter().any(|violation| !before.contains(violation))
+}
+
+fn shape_predicate_violations(program: &Program) -> BTreeSet<String> {
+    crate::validate::shape_predicate::check_shape_predicates(program)
+        .into_iter()
+        .map(|error| error.message.into_owned())
+        .collect()
+}
+
+fn introduces_shape_predicate_violations(
+    before: &BTreeSet<String>,
+    after: &BTreeSet<String>,
+) -> bool {
+    after.iter().any(|violation| !before.contains(violation))
+}
 
 impl PassScheduler {
     /// `tag → pass names that depend on it` (their own name OR a `requires`
@@ -182,32 +218,95 @@ impl PassScheduler {
 
             if dirty.get(pass_index).copied().unwrap_or(false) && pass.analyze(&program).should_run
             {
-                program = if self.enforce_cost_monotone {
-                    let pre_cost = crate::optimizer::cost::CostCertificate::for_program(&program);
+                let enforce_gates = self.enforce_cost_monotone
+                    || self.enforce_effect_handlers
+                    || self.enforce_linear_types
+                    || self.enforce_shape_predicates;
+                program = if enforce_gates {
+                    let pre_cost = self
+                        .enforce_cost_monotone
+                        .then(|| crate::optimizer::cost::CostCertificate::for_program(&program));
+                    let pre_effects = self
+                        .enforce_effect_handlers
+                        .then(|| crate::lower::effects::compute_program_effects(&program));
+                    let pre_linear_violations = self
+                        .enforce_linear_types
+                        .then(|| linear_type_violations(&program));
+                    let pre_shape_predicate_violations = self
+                        .enforce_shape_predicates
+                        .then(|| shape_predicate_violations(&program));
                     let pre_snapshot = Clone::clone(&program);
-                    match pass.try_transform(program) {
+                    match pass.try_batch_apply(program) {
                         Ok(result) => {
-                            let post_cost = crate::optimizer::cost::CostCertificate::for_program(
-                                &result.program,
-                            );
-                            if result.changed && !post_cost.dominates_or_equal(&pre_cost) {
-                                pre_snapshot
-                            } else {
-                                if result.changed {
+                            if result.changed {
+                                let mut rejected = false;
+                                if let Some(pre_effects) = pre_effects {
+                                    let post_effects =
+                                        crate::lower::effects::compute_program_effects(
+                                            &result.program,
+                                        );
+                                    rejected = introduces_forbidden_effects(
+                                        pre_effects,
+                                        post_effects,
+                                        pass.allowed_effect_additions(),
+                                    );
+                                }
+                                if !rejected {
+                                    if let Some(pre_cost) = pre_cost {
+                                        let post_cost =
+                                            crate::optimizer::cost::CostCertificate::for_program(
+                                                &result.program,
+                                            );
+                                        if !post_cost.dominates_or_equal(&pre_cost) {
+                                            rejected = true;
+                                        }
+                                    }
+                                }
+                                if !rejected {
+                                    if let Some(pre_linear_violations) = &pre_linear_violations {
+                                        let post_linear_violations =
+                                            linear_type_violations(&result.program);
+                                        if introduces_linear_type_violations(
+                                            pre_linear_violations,
+                                            &post_linear_violations,
+                                        ) {
+                                            rejected = true;
+                                        }
+                                    }
+                                }
+                                if !rejected {
+                                    if let Some(pre_shape_predicate_violations) =
+                                        &pre_shape_predicate_violations
+                                    {
+                                        let post_shape_predicate_violations =
+                                            shape_predicate_violations(&result.program);
+                                        if introduces_shape_predicate_violations(
+                                            pre_shape_predicate_violations,
+                                            &post_shape_predicate_violations,
+                                        ) {
+                                            rejected = true;
+                                        }
+                                    }
+                                }
+                                if rejected {
+                                    pre_snapshot
+                                } else {
                                     changed = true;
                                     changed_by = Some(pass.pass_id());
                                     self.mark_invalidated_pass_flags(
                                         metadata.invalidates,
                                         next_dirty,
                                     );
+                                    result.program
                                 }
+                            } else {
                                 result.program
                             }
                         }
                         Err(_refusal) => pre_snapshot,
                     }
                 } else {
-                    let result = pass.transform(program);
+                    let result = pass.batch_apply(program);
                     if result.changed {
                         changed = true;
                         changed_by = Some(pass.pass_id());
@@ -276,6 +375,12 @@ impl PassScheduler {
                 changed: false,
                 decision: PassRunDecision::CleanSkipped,
                 refusal_kind: None,
+                effect_bits_before: 0,
+                effect_bits_after: 0,
+                linear_type_violations_before: 0,
+                linear_type_violations_after: 0,
+                shape_predicate_violations_before: 0,
+                shape_predicate_violations_after: 0,
                 runtime_ns: 0,
                 nodes_before: before_stats.node_count,
                 nodes_after: before_stats.node_count,
@@ -308,51 +413,171 @@ impl PassScheduler {
                 }
                 metric.ran = true;
                 let perf_scope = PerfScope::start("vyre-foundation", metadata.name);
-                let pre_cost_for_gate = self
-                    .enforce_cost_monotone
-                    .then(|| crate::optimizer::cost::CostCertificate::for_program(&program));
-                let pre_snapshot_for_gate =
-                    self.enforce_cost_monotone.then(|| Clone::clone(&program));
-                let result = if self.enforce_cost_monotone {
-                    pass.try_transform(program)
-                } else {
-                    Ok(pass.transform(program))
-                };
-                metric.runtime_ns = u128::from(perf_scope.finish().elapsed_ns);
                 let mut landed_changed = false;
-                program = match (result, pre_cost_for_gate, pre_snapshot_for_gate) {
-                    (Ok(result), Some(pre_cost), Some(pre_snapshot)) if result.changed => {
-                        let post_cost =
-                            crate::optimizer::cost::CostCertificate::for_program(&result.program);
-                        if post_cost.dominates_or_equal(&pre_cost) {
-                            landed_changed = true;
-                            metric.decision = PassRunDecision::Changed;
+                let enforce_gates = self.enforce_cost_monotone
+                    || self.enforce_effect_handlers
+                    || self.enforce_linear_types
+                    || self.enforce_shape_predicates;
+                program = if enforce_gates {
+                    let pre_cost_for_gate = self
+                        .enforce_cost_monotone
+                        .then(|| crate::optimizer::cost::CostCertificate::for_program(&program));
+                    let pre_effects_for_gate = if self.enforce_effect_handlers {
+                        crate::lower::effects::compute_program_effects(&program)
+                    } else {
+                        crate::lower::effects::ProgramEffects::empty()
+                    };
+                    if self.enforce_effect_handlers {
+                        metric.effect_bits_before = pre_effects_for_gate.bits();
+                    }
+                    let pre_linear_violations_for_gate = if self.enforce_linear_types {
+                        linear_type_violations(&program)
+                    } else {
+                        BTreeSet::new()
+                    };
+                    if self.enforce_linear_types {
+                        metric.linear_type_violations_before = pre_linear_violations_for_gate.len();
+                    }
+                    let pre_shape_predicate_violations_for_gate = if self.enforce_shape_predicates {
+                        shape_predicate_violations(&program)
+                    } else {
+                        BTreeSet::new()
+                    };
+                    if self.enforce_shape_predicates {
+                        metric.shape_predicate_violations_before =
+                            pre_shape_predicate_violations_for_gate.len();
+                    }
+                    let pre_snapshot_for_gate = Clone::clone(&program);
+
+                    let result = pass.try_batch_apply(program);
+                    metric.runtime_ns = u128::from(perf_scope.finish().elapsed_ns);
+                    match result {
+                        Ok(result) if result.changed => {
+                            let post_effects = if self.enforce_effect_handlers {
+                                crate::lower::effects::compute_program_effects(&result.program)
+                            } else {
+                                crate::lower::effects::ProgramEffects::empty()
+                            };
+                            if self.enforce_effect_handlers
+                                && introduces_forbidden_effects(
+                                    pre_effects_for_gate,
+                                    post_effects,
+                                    pass.allowed_effect_additions(),
+                                )
+                            {
+                                metric.decision = PassRunDecision::EffectReverted;
+                                metric.effect_bits_after = pre_effects_for_gate.bits();
+                                metric.linear_type_violations_after =
+                                    pre_linear_violations_for_gate.len();
+                                metric.shape_predicate_violations_after =
+                                    pre_shape_predicate_violations_for_gate.len();
+                                pre_snapshot_for_gate
+                            } else if self.enforce_linear_types
+                                && introduces_linear_type_violations(
+                                    &pre_linear_violations_for_gate,
+                                    &linear_type_violations(&result.program),
+                                )
+                            {
+                                metric.decision = PassRunDecision::LinearTypeReverted;
+                                metric.effect_bits_after = pre_effects_for_gate.bits();
+                                metric.linear_type_violations_after =
+                                    pre_linear_violations_for_gate.len();
+                                metric.shape_predicate_violations_after =
+                                    pre_shape_predicate_violations_for_gate.len();
+                                pre_snapshot_for_gate
+                            } else if self.enforce_shape_predicates
+                                && introduces_shape_predicate_violations(
+                                    &pre_shape_predicate_violations_for_gate,
+                                    &shape_predicate_violations(&result.program),
+                                )
+                            {
+                                metric.decision = PassRunDecision::ShapePredicateReverted;
+                                metric.effect_bits_after = pre_effects_for_gate.bits();
+                                metric.linear_type_violations_after =
+                                    pre_linear_violations_for_gate.len();
+                                metric.shape_predicate_violations_after =
+                                    pre_shape_predicate_violations_for_gate.len();
+                                pre_snapshot_for_gate
+                            } else if let Some(pre_cost) = pre_cost_for_gate {
+                                let post_cost =
+                                    crate::optimizer::cost::CostCertificate::for_program(
+                                        &result.program,
+                                    );
+                                if post_cost.dominates_or_equal(&pre_cost) {
+                                    landed_changed = true;
+                                    metric.decision = PassRunDecision::Changed;
+                                    metric.effect_bits_after = post_effects.bits();
+                                    if self.enforce_linear_types {
+                                        metric.linear_type_violations_after =
+                                            linear_type_violations(&result.program).len();
+                                    }
+                                    if self.enforce_shape_predicates {
+                                        metric.shape_predicate_violations_after =
+                                            shape_predicate_violations(&result.program).len();
+                                    }
+                                    result.program
+                                } else {
+                                    // Cost-monotone-down violation: a tracked dimension
+                                    // increased without an explicit refusal. Drop the
+                                    // rewrite, restore the pre-snapshot. The metrics
+                                    // captured below reflect the post-revert shape.
+                                    metric.decision = PassRunDecision::CostReverted;
+                                    metric.effect_bits_after = pre_effects_for_gate.bits();
+                                    metric.linear_type_violations_after =
+                                        pre_linear_violations_for_gate.len();
+                                    metric.shape_predicate_violations_after =
+                                        pre_shape_predicate_violations_for_gate.len();
+                                    pre_snapshot_for_gate
+                                }
+                            } else {
+                                landed_changed = true;
+                                metric.decision = PassRunDecision::Changed;
+                                metric.effect_bits_after = post_effects.bits();
+                                if self.enforce_linear_types {
+                                    metric.linear_type_violations_after =
+                                        linear_type_violations(&result.program).len();
+                                }
+                                if self.enforce_shape_predicates {
+                                    metric.shape_predicate_violations_after =
+                                        shape_predicate_violations(&result.program).len();
+                                }
+                                result.program
+                            }
+                        }
+                        Ok(result) => {
+                            metric.decision = if result.changed {
+                                PassRunDecision::Changed
+                            } else {
+                                PassRunDecision::RanUnchanged
+                            };
+                            metric.effect_bits_after = pre_effects_for_gate.bits();
+                            metric.linear_type_violations_after =
+                                pre_linear_violations_for_gate.len();
+                            metric.shape_predicate_violations_after =
+                                pre_shape_predicate_violations_for_gate.len();
                             result.program
-                        } else {
-                            // Cost-monotone-down violation: a tracked dimension
-                            // increased without an explicit refusal. Drop the
-                            // rewrite, restore the pre-snapshot. The metrics
-                            // captured below reflect the post-revert shape.
-                            metric.decision = PassRunDecision::CostReverted;
-                            pre_snapshot
+                        }
+                        Err(refusal) => {
+                            metric.decision = PassRunDecision::Refused;
+                            metric.refusal_kind = Some(refusal.kind());
+                            metric.effect_bits_after = pre_effects_for_gate.bits();
+                            metric.linear_type_violations_after =
+                                pre_linear_violations_for_gate.len();
+                            metric.shape_predicate_violations_after =
+                                pre_shape_predicate_violations_for_gate.len();
+                            pre_snapshot_for_gate
                         }
                     }
-                    (Ok(result), _, _) => {
-                        landed_changed = result.changed;
-                        metric.decision = if result.changed {
-                            PassRunDecision::Changed
-                        } else {
-                            PassRunDecision::RanUnchanged
-                        };
+                } else {
+                    let result = pass.batch_apply(program);
+                    metric.runtime_ns = u128::from(perf_scope.finish().elapsed_ns);
+                    if result.changed {
+                        landed_changed = true;
+                        metric.decision = PassRunDecision::Changed;
                         result.program
-                    }
-                    (Err(refusal), _, Some(pre_snapshot)) => {
-                        metric.decision = PassRunDecision::Refused;
-                        metric.refusal_kind = Some(refusal.kind());
-                        pre_snapshot
-                    }
-                    (Err(_refusal), _, None) => {
-                        unreachable!("cost-monotone refusal requires a pre-gate snapshot")
+                    } else {
+                        metric.decision = PassRunDecision::RanUnchanged;
+                        result.program
                     }
                 };
                 let after_stats = *program.stats();
@@ -395,3 +620,4 @@ impl PassScheduler {
             .clone()
     }
 }
+

@@ -4,7 +4,7 @@ use crate::api::case::{
 };
 use crate::api::metric::BenchMetrics;
 use crate::api::suite::SuiteKind;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use vyre_foundation::ir::*;
 
 pub struct RegisterExhaustionCase;

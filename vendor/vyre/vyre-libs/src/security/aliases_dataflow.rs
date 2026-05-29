@@ -1,11 +1,11 @@
-//! `aliases_dataflow` — bidirectional dataflow reachability over
+//! `aliases_dataflow`  -  bidirectional dataflow reachability over
 //! the launch shape's `aliases($x, $y)` semantic.
 //!
-//! Pre-promotion this lived inline in a downstream frontend's `lower_aliases` as 9
+//! Pre-promotion this lived inline in an analysis stage `lower_aliases` as 9
 //! `merge_programs` calls composing flows_to + bitset_or_into +
 //! bitset_and. Every aliases-using launch shape (stack_overflow_*,
 //! heap_overflow_*, oob_*, use_after_free_double_drop) re-emitted the
-//! same composition. Promoted to a single primitive: frontend calls
+//! same composition. Promoted to a single primitive: analysis-stage callers
 //! once, vyre owns the composition shape.
 //!
 //! ## Semantics
@@ -15,7 +15,7 @@
 //! `    bitset_and(reach_from(y), x))`
 //!
 //! "Either $x reaches $y, or $y reaches $x, under the dataflow graph"
-//! — soundness `MayOver`. Catches the SSA def→use direction the
+//!  -  soundness `MayOver`. Catches the SSA def→use direction the
 //! launch shape rules need (`$copy_dst aliases $dst` where $dst is a
 //! decl and $copy_dst is the use, etc.).
 //!
@@ -25,12 +25,15 @@
 //! merge) + [`bitset_and`] (intersect with opposite frontier) +
 //! [`bitset_or_into`] (final OR into output). Caller drives the
 //! one-step `flows_to` to fixpoint via the dispatcher's
-//! `fixpoint_iterations` config — the same path single-direction
+//! `fixpoint_iterations` config  -  the same path single-direction
 //! flows_to uses.
+
+use std::sync::Arc;
 
 use vyre::ir::Program;
 use vyre_foundation::execution_plan::fusion::{fuse_programs, FusionError};
-use vyre_foundation::ir::DataType;
+use vyre_foundation::ir::model::expr::Ident;
+use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node};
 use vyre_primitives::bitset::and::bitset_and;
 use vyre_primitives::bitset::or_into::bitset_or_into;
 use vyre_primitives::graph::csr_forward_traverse::bitset_words;
@@ -41,6 +44,32 @@ use crate::security::flows_to::flows_to_alias_only;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-libs::security::aliases_dataflow";
+
+/// Zero every word of a bitset buffer in-place.
+///
+/// `csr_forward_traverse` accumulates into `frontier_out` via `atomic_or`
+/// and does not clear it first. The CPU reference (`cpu_ref_into`) starts
+/// from an empty frontier each hop. Without this clear, `hop_*` buffers
+/// that persist across fixpoint iterations (and are not backend-cleared
+/// because they are scratch, not outputs) retain stale bits; merge then
+/// ORs a polluted hop into `reach_*` and `aliases($x, $y)` misses on
+/// multi-hop chains such as `uninit_callee_store.c`.
+fn bitset_zero_inplace(target: &str, words: u32) -> Program {
+    let t = Expr::InvocationId { axis: 0 };
+    let body = vec![Node::store(target, t.clone(), Expr::u32(0))];
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(target, 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(words),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from("vyre-libs::security::aliases_dataflow::zero"),
+            source_region: None,
+            body: Arc::new(vec![Node::if_then(Expr::lt(t, Expr::u32(words)), body)]),
+        }],
+    )
+}
 
 /// Build a Program: one bidirectional dataflow-aliases step.
 ///
@@ -116,7 +145,10 @@ pub fn try_aliases_dataflow(
     let seed_x = bitset_or_into(reach_x_buf, x_buf, words);
     let seed_y = bitset_or_into(reach_y_buf, y_buf, words);
 
-    // One BFS hop: hop_x = forward(reach_x); hop_y = forward(reach_y).
+    // Zero hop scratch, then one BFS hop (matches CPU `cpu_ref_into` clearing
+    // `frontier_out` before each forward step).
+    let clear_hop_x = bitset_zero_inplace(hop_x_buf, words);
+    let clear_hop_y = bitset_zero_inplace(hop_y_buf, words);
     let hop_x_step = flows_to_alias_only(shape, reach_x_buf, hop_x_buf);
     let hop_y_step = flows_to_alias_only(shape, reach_y_buf, hop_y_buf);
 
@@ -144,6 +176,8 @@ pub fn try_aliases_dataflow(
     fuse_programs(&[
         seed_x,
         seed_y,
+        clear_hop_x,
+        clear_hop_y,
         hop_x_step,
         hop_y_step,
         merge_x,
@@ -159,7 +193,7 @@ pub fn try_aliases_dataflow(
 /// graph. Caller drives the BFS to fixpoint; this single-step
 /// reference returns one hop's contribution to the alias set.
 #[must_use]
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(test)]
 pub(crate) fn cpu_ref_one_step(x: &[u32], y: &[u32], reach_x: &[u32], reach_y: &[u32]) -> Vec<u32> {
     // x_in_y = reach_y AND x; y_in_x = reach_x AND y; OR.
     let n = x.len();
@@ -172,45 +206,75 @@ pub(crate) fn cpu_ref_one_step(x: &[u32], y: &[u32], reach_x: &[u32], reach_y: &
     out
 }
 
+fn witness_program() -> Program {
+    aliases_dataflow(
+        ProgramGraphShape::new(4, 3),
+        "x",
+        "y",
+        "reach_x",
+        "reach_y",
+        "hop_x",
+        "hop_y",
+        "x_in_y",
+        "y_in_x",
+        "out",
+    )
+}
+
+fn witness_words(name: &str, expected: bool) -> Vec<u32> {
+    match (name, expected) {
+        ("x", false) => vec![0b0001],
+        ("y", false) => vec![0b0010],
+        ("reach_x", false) => vec![0b0001],
+        ("reach_y", false) => vec![0b0010],
+        ("pg_nodes", false) => vec![0, 0, 0, 0],
+        ("pg_edge_offsets", false) => vec![0, 1, 2, 3, 3],
+        ("pg_edge_targets", false) => vec![1, 2, 3],
+        ("pg_edge_kind_mask", false) => vec![
+            edge_kind::ASSIGNMENT,
+            edge_kind::ASSIGNMENT,
+            edge_kind::ASSIGNMENT,
+        ],
+        ("pg_node_tags", false) => vec![0, 0, 0, 0],
+        ("hop_x" | "hop_y" | "x_in_y" | "y_in_x" | "out", false) => vec![0],
+        ("reach_x", true) => vec![0b0011],
+        ("reach_y", true) => vec![0b0110],
+        ("hop_x", true) => vec![0b0010],
+        ("hop_y", true) => vec![0b0100],
+        ("x_in_y", true) => vec![0b0000],
+        ("y_in_x", true) => vec![0b0010],
+        ("out", true) => vec![0b0010],
+        _ => panic!(
+            "Fix: aliases_dataflow witness has no {} vector for buffer `{name}`.",
+            if expected { "expected-output" } else { "input" }
+        ),
+    }
+}
+
+fn witness_inputs() -> Vec<Vec<u8>> {
+    witness_program()
+        .buffers()
+        .iter()
+        .filter(|decl| !decl.is_output() && decl.access() != BufferAccess::Workgroup)
+        .map(|decl| vyre_primitives::wire::pack_u32_slice(&witness_words(decl.name(), false)))
+        .collect()
+}
+
+fn witness_expected_outputs() -> Vec<Vec<u8>> {
+    witness_program()
+        .buffers()
+        .iter()
+        .filter(|decl| decl.is_output() || decl.access() == BufferAccess::ReadWrite)
+        .map(|decl| vyre_primitives::wire::pack_u32_slice(&witness_words(decl.name(), true)))
+        .collect()
+}
+
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || aliases_dataflow(ProgramGraphShape::new(4, 3), "x", "y", "reach_x", "reach_y", "hop_x", "hop_y", "x_in_y", "y_in_x", "out"),
-        test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![
-                to_bytes(&[0b0001]),              // reach_x = {0}
-                to_bytes(&[0b0001]),              // x = {0}
-                to_bytes(&[0b0010]),              // reach_y = {1}
-                to_bytes(&[0b0010]),              // y = {1}
-                to_bytes(&[0, 0, 0, 0]),          // pg_nodes
-                to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets
-                to_bytes(&[1, 2, 3]),             // pg_edge_targets
-                to_bytes(&[
-                    edge_kind::ASSIGNMENT,
-                    edge_kind::ASSIGNMENT,
-                    edge_kind::ASSIGNMENT,
-                ]),                               // pg_edge_kind_mask
-                to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
-                to_bytes(&[0b0000]),              // hop_x
-                to_bytes(&[0b0000]),              // hop_y
-                to_bytes(&[0b0000]),              // x_in_y
-                to_bytes(&[0b0000]),              // y_in_x
-                to_bytes(&[0b0000]),              // out
-            ]]
-        }),
-        expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![
-                to_bytes(&[0b0011]),              // reach_x = {0,1}
-                to_bytes(&[0b0110]),              // reach_y = {1,2}
-                to_bytes(&[0b0010]),              // hop_x = {1}
-                to_bytes(&[0b0100]),              // hop_y = {2}
-                to_bytes(&[0b0000]),              // x_in_y = {}
-                to_bytes(&[0b0010]),              // y_in_x = {1}
-                to_bytes(&[0b0010]),              // out = {1}
-            ]]
-        }),
+        build: witness_program,
+        test_inputs: Some(|| vec![witness_inputs()]),
+        expected_output: Some(|| vec![witness_expected_outputs()]),
         category: Some("security"),
     }
 }
@@ -247,7 +311,7 @@ mod tests {
     /// those arms, otherwise threads in later warps observe the pre-
     /// seed state of reach_x_buf and the BFS frontier silently drops
     /// nodes past the warp boundary. The pre-fix local merge_programs
-    /// produced a flat unbarriered entry — this test catches that
+    /// produced a flat unbarriered entry  -  this test catches that
     /// regression.
     #[test]
     fn fused_entry_contains_barrier_between_raw_arms() {
@@ -294,7 +358,7 @@ mod tests {
     /// verbatim, so e.g. seed_x's reach_x_buf at binding 0 and
     /// seed_y's reach_y_buf at binding 0 collided in the merged
     /// declaration table. fuse_programs renumbers every non-Workgroup
-    /// buffer with a fresh `next_binding` slot — this test pins
+    /// buffer with a fresh `next_binding` slot  -  this test pins
     /// that contract so a future refactor can't silently regress it.
     #[test]
     fn fused_program_has_unique_non_workgroup_bindings() {

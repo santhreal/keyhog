@@ -22,7 +22,7 @@ pub const MAX_PREFIX_INPUT_BYTES: usize = 64 * 1024 * 1024;
 /// Compute brace `{`/`}` depth at each byte offset.
 ///
 /// `result[i]` = nesting depth BEFORE byte `i`.
-/// Already existed as `compute_file_brace_depths` — moved here for reuse.
+/// Already existed as `compute_file_brace_depths`  -  moved here for reuse.
 ///
 /// # Errors
 ///
@@ -102,7 +102,7 @@ pub fn nested_depth_prefix(bytes: &[u8]) -> Result<Vec<u32>> {
 /// Compute newline prefix sum for O(1) line-distance queries.
 ///
 /// `result[i]` = number of `\n` bytes in `bytes[0..i]`.
-/// `newline_count_between(a, b) = result[b] - result[a]` — O(1).
+/// `newline_count_between(a, b) = result[b] - result[a]`  -  O(1).
 ///
 /// # Errors
 ///

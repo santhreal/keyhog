@@ -6,10 +6,10 @@
 //! without per-process re-JIT cost.
 //!
 //! NVIDIA controls the cache through three environment variables:
-//!   - `CUDA_CACHE_DISABLE` — always forced to `0`; disabling the JIT cache is
+//!   - `CUDA_CACHE_DISABLE`  -  always forced to `0`; disabling the JIT cache is
 //!     a production performance regression.
-//!   - `CUDA_CACHE_PATH` — directory for cached cuBIN artifacts.
-//!   - `CUDA_CACHE_MAXSIZE` — soft byte ceiling (defaults to 256 MB).
+//!   - `CUDA_CACHE_PATH`  -  directory for cached cuBIN artifacts.
+//!   - `CUDA_CACHE_MAXSIZE`  -  soft byte ceiling (defaults to 256 MB).
 //!
 //! We pick a vyre-namespaced path under the user's XDG cache so the
 //! cache is shared by every process that links `vyre-driver-cuda` on
@@ -22,6 +22,9 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+#[cfg(test)]
+use std::sync::{Mutex, MutexGuard};
+
 const CUDA_CACHE_DISABLE: &str = "CUDA_CACHE_DISABLE";
 const CUDA_CACHE_PATH: &str = "CUDA_CACHE_PATH";
 const CUDA_CACHE_MAXSIZE: &str = "CUDA_CACHE_MAXSIZE";
@@ -33,14 +36,27 @@ const DEFAULT_MAX_BYTES: u64 = 1 * 1024 * 1024 * 1024;
 
 static CONFIGURED: OnceLock<Result<(), String>> = OnceLock::new();
 
+#[cfg(test)]
+static TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+fn lock_test_env() -> MutexGuard<'static, ()> {
+    TEST_ENV_LOCK
+        .lock()
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - CUDA JIT cache env test lock must not be poisoned")
+}
+
 /// Configure the CUDA driver JIT cache for this process. Call once at
 /// CUDA backend bring-up; subsequent calls are no-ops. The function is
 /// thread-safe.
 pub fn configure_jit_cache_default() -> Result<(), String> {
+    #[cfg(test)]
+    let _env_guard = lock_test_env();
+
     CONFIGURED
         .get_or_init(|| {
             let cache_root = default_cache_root()?;
-            configure_jit_cache(cache_root, DEFAULT_MAX_BYTES)
+            configure_jit_cache_unlocked(cache_root, DEFAULT_MAX_BYTES)
         })
         .clone()
 }
@@ -48,6 +64,13 @@ pub fn configure_jit_cache_default() -> Result<(), String> {
 /// Plumb the JIT cache to an explicit directory. Mostly for tests; in
 /// production the `_default()` entry point picks an XDG path.
 pub fn configure_jit_cache(cache_dir: PathBuf, max_bytes: u64) -> Result<(), String> {
+    #[cfg(test)]
+    let _env_guard = lock_test_env();
+
+    configure_jit_cache_unlocked(cache_dir, max_bytes)
+}
+
+fn configure_jit_cache_unlocked(cache_dir: PathBuf, max_bytes: u64) -> Result<(), String> {
     if max_bytes == 0 {
         return Err(
             "CUDA JIT cache max size cannot be zero. Fix: configure a positive CUDA_CACHE_MAXSIZE; disabling cache capacity is a production performance regression."
@@ -77,7 +100,7 @@ pub fn configure_jit_cache(cache_dir: PathBuf, max_bytes: u64) -> Result<(), Str
         )
     })?;
     if std::env::var_os(CUDA_CACHE_PATH).is_none() {
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe {
             std::env::set_var(CUDA_CACHE_PATH, &cache_dir);
         }
@@ -97,7 +120,7 @@ pub fn configure_jit_cache(cache_dir: PathBuf, max_bytes: u64) -> Result<(), Str
                 ));
             }
         }
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         None => unsafe {
             std::env::set_var(CUDA_CACHE_MAXSIZE, max_bytes.to_string());
         },
@@ -127,6 +150,41 @@ fn default_cache_root() -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
+    struct EnvSnapshot {
+        disable: Option<std::ffi::OsString>,
+        path: Option<std::ffi::OsString>,
+        max_size: Option<std::ffi::OsString>,
+        xdg: Option<std::ffi::OsString>,
+    }
+
+    impl EnvSnapshot {
+        fn capture() -> Self {
+            Self {
+                disable: std::env::var_os(CUDA_CACHE_DISABLE),
+                path: std::env::var_os(CUDA_CACHE_PATH),
+                max_size: std::env::var_os(CUDA_CACHE_MAXSIZE),
+                xdg: std::env::var_os("XDG_CACHE_HOME"),
+            }
+        }
+
+        fn restore(self) {
+            restore_var(CUDA_CACHE_DISABLE, self.disable);
+            restore_var(CUDA_CACHE_PATH, self.path);
+            restore_var(CUDA_CACHE_MAXSIZE, self.max_size);
+            restore_var("XDG_CACHE_HOME", self.xdg);
+        }
+    }
+
+    fn restore_var(name: &str, value: Option<std::ffi::OsString>) {
+        // SAFETY: tests hold TEST_ENV_LOCK while mutating CUDA/XDG env.
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+    }
+
     /// All four scenarios live in one test because they mutate
     /// process-global env state and `cargo test` runs tests in
     /// parallel; splitting them would race on the shared CUDA_CACHE_*
@@ -144,6 +202,9 @@ mod tests {
 
     #[test]
     fn jit_cache_env_contract() {
+        let _env_guard = lock_test_env();
+        let snapshot = EnvSnapshot::capture();
+
         // Scenario 1: all three vars get set when the operator hasn't
         // pre-configured anything. Cache directory is created.
         reset_env();
@@ -156,7 +217,7 @@ mod tests {
                 dir.display()
             ),
         }
-        configure_jit_cache(dir.clone(), 12_345)
+        configure_jit_cache_unlocked(dir.clone(), 12_345)
             .expect("Fix: CUDA JIT cache test path should configure");
         assert_eq!(std::env::var(CUDA_CACHE_DISABLE).unwrap(), "0");
         assert_eq!(
@@ -177,7 +238,7 @@ mod tests {
             std::env::set_var(CUDA_CACHE_DISABLE, "1");
         }
         let dir2 = std::env::temp_dir().join("vyre-jit-cache-test-2");
-        configure_jit_cache(dir2, 1024)
+        configure_jit_cache_unlocked(dir2, 1024)
             .expect("Fix: CUDA JIT cache should force-enable driver cache");
         assert_eq!(
             std::env::var(CUDA_CACHE_DISABLE).unwrap(),
@@ -196,7 +257,7 @@ mod tests {
             std::env::set_var(CUDA_CACHE_PATH, &custom);
         }
         let other = std::env::temp_dir().join("vyre-jit-cache-test-3");
-        configure_jit_cache(other, 1024)
+        configure_jit_cache_unlocked(other, 1024)
             .expect("Fix: CUDA JIT cache should preserve operator path");
         assert_eq!(
             std::env::var(CUDA_CACHE_PATH).unwrap(),
@@ -204,7 +265,6 @@ mod tests {
         );
 
         // Scenario 4: default_cache_root() routes through XDG when set.
-        let xdg_before = std::env::var_os("XDG_CACHE_HOME");
         // SAFETY: FFI to libcuda.so. Pointer args were validated by the
         // matching alloc / store API; lifetimes are documented in the
         // surrounding function. cuda_check (or matching CUresult guard)
@@ -214,18 +274,7 @@ mod tests {
         }
         let root = default_cache_root().expect("Fix: XDG cache root should resolve");
         assert_eq!(root, PathBuf::from("/tmp/my-xdg-cache/vyre/cuda-jit"));
-        // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-        // matching alloc / store API; lifetimes are documented in the
-        // surrounding function. cuda_check (or matching CUresult guard)
-        // propagates non-success codes as BackendError.
-        unsafe {
-            match xdg_before {
-                Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
-                None => std::env::remove_var("XDG_CACHE_HOME"),
-            }
-        }
 
-        // Final cleanup so other tests in the crate see a clean env.
-        reset_env();
+        snapshot.restore();
     }
 }

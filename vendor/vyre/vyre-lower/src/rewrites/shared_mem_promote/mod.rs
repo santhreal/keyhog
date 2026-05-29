@@ -11,11 +11,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::body_index::BodyIndex;
+use super::literal::ResultAllocator;
 use crate::{
     BindingSlot, BindingVisibility, KernelBody, KernelDescriptor, KernelOp, KernelOpKind,
     LiteralValue, MemoryClass,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use vyre_foundation::ir::{BinOp, DataType, MemoryOrdering};
 
 /// Promote simple repeated global loads into shared-memory tile reads.
@@ -25,8 +27,8 @@ pub fn shared_mem_promote(desc: &KernelDescriptor) -> KernelDescriptor {
     // Newly-promoted bindings are `MemoryClass::Shared` and must live in the
     // workgroup slot range so they cannot collide with host-bound slots
     // already in `out.bindings.slots`. Seed `next_slot` to the higher of
-    // (a) WORKGROUP_SLOT_BASE — guarantees we are above every host slot —
-    // and (b) max-existing-Shared/Scratch + 1 — picks a fresh shared slot
+    // (a) WORKGROUP_SLOT_BASE  -  guarantees we are above every host slot  -
+    // and (b) max-existing-Shared/Scratch + 1  -  picks a fresh shared slot
     // when prior runs of this rewrite already placed bindings in the range.
     let max_shared = out
         .bindings
@@ -84,7 +86,7 @@ fn rewrite_body(
     let mut prefix = Vec::new();
     let mut waits = Vec::new();
     let mut replacements = BTreeMap::<usize, (u32, u32)>::new();
-    let mut next_result = next_result_id(body);
+    let mut allocator = ResultAllocator::for_body_tree(body);
     let mut first_replaced_op = usize::MAX;
 
     for candidate in candidates {
@@ -108,32 +110,38 @@ fn rewrite_body(
             name: format!("{}_shared_tile", source_binding.name),
         });
 
-        let local_id = push_result(
+        let local_id = allocator.push_result(
             &mut prefix,
-            &mut next_result,
             KernelOpKind::LocalInvocationId,
             vec![0],
         );
         let offset_id = match candidate.index_kind {
-            TileIndexKind::LocalX => push_literal_u32(&mut prefix, body, &mut next_result, 0),
+            TileIndexKind::LocalX => {
+                allocator.push_literal(&mut prefix, &mut body.literals, LiteralValue::U32(0))
+            }
             TileIndexKind::GlobalX => {
-                let workgroup_id = push_result(
+                let workgroup_id = allocator.push_result(
                     &mut prefix,
-                    &mut next_result,
                     KernelOpKind::WorkgroupId,
                     vec![0],
                 );
-                let tile_bytes =
-                    push_literal_u32(&mut prefix, body, &mut next_result, workgroup_x * 4);
-                push_result(
+                let tile_bytes = allocator.push_literal(
                     &mut prefix,
-                    &mut next_result,
+                    &mut body.literals,
+                    LiteralValue::U32(workgroup_x * 4),
+                );
+                allocator.push_result(
+                    &mut prefix,
                     KernelOpKind::BinOpKind(BinOp::Mul),
                     vec![workgroup_id, tile_bytes],
                 )
             }
         };
-        let size_id = push_literal_u32(&mut prefix, body, &mut next_result, workgroup_x * 4);
+        let size_id = allocator.push_literal(
+            &mut prefix,
+            &mut body.literals,
+            LiteralValue::U32(workgroup_x * 4),
+        );
         prefix.push(KernelOp {
             kind: KernelOpKind::AsyncLoad {
                 tag: Arc::from(format!(
@@ -227,7 +235,7 @@ fn collect_candidates(body: &KernelBody, bindings: &[BindingSlot]) -> Vec<Candid
         return Vec::new();
     }
 
-    let producers = producer_map(body);
+    let index = BodyIndex::new(body);
     let mut groups = BTreeMap::<(u32, TileIndexKind), Vec<usize>>::new();
     for (op_index, op) in body.ops.iter().enumerate() {
         if !matches!(op.kind, KernelOpKind::LoadGlobal) {
@@ -239,7 +247,7 @@ fn collect_candidates(body: &KernelBody, bindings: &[BindingSlot]) -> Vec<Candid
         if !readonly_u32_globals.contains(&slot) {
             continue;
         }
-        let Some(index_kind) = classify_tile_index(&producers, index_id) else {
+        let Some(index_kind) = classify_tile_index(body, &index, index_id) else {
             continue;
         };
         groups.entry((slot, index_kind)).or_default().push(op_index);
@@ -260,20 +268,12 @@ fn collect_candidates(body: &KernelBody, bindings: &[BindingSlot]) -> Vec<Candid
         .collect()
 }
 
-type ProducerMap<'a> = FxHashMap<u32, &'a KernelOp>;
-
-fn producer_map(body: &KernelBody) -> ProducerMap<'_> {
-    let mut producers = FxHashMap::with_capacity_and_hasher(body.ops.len(), Default::default());
-    for op in &body.ops {
-        for result in op.result_ids() {
-            producers.insert(result, op);
-        }
-    }
-    producers
-}
-
-fn classify_tile_index(producers: &ProducerMap<'_>, index_id: u32) -> Option<TileIndexKind> {
-    let producer = producers.get(&index_id).copied()?;
+fn classify_tile_index(
+    body: &KernelBody,
+    index: &BodyIndex,
+    index_id: u32,
+) -> Option<TileIndexKind> {
+    let producer = index.producer(body, index_id)?;
     match producer.kind {
         KernelOpKind::GlobalInvocationId
             if producer.operands.first().copied().unwrap_or(0) == 0 =>
@@ -285,49 +285,6 @@ fn classify_tile_index(producers: &ProducerMap<'_>, index_id: u32) -> Option<Til
         }
         _ => None,
     }
-}
-
-fn next_result_id(body: &KernelBody) -> u32 {
-    fn walk(body: &KernelBody, max_id: &mut u32) {
-        for op in &body.ops {
-            for result in op.result_ids() {
-                *max_id = (*max_id).max(result.saturating_add(1));
-            }
-        }
-        for child in &body.child_bodies {
-            walk(child, max_id);
-        }
-    }
-    let mut next = 0;
-    walk(body, &mut next);
-    next
-}
-
-fn push_result(
-    ops: &mut Vec<KernelOp>,
-    next_result: &mut u32,
-    kind: KernelOpKind,
-    operands: Vec<u32>,
-) -> u32 {
-    let result = *next_result;
-    *next_result = next_result.saturating_add(1);
-    ops.push(KernelOp {
-        kind,
-        operands,
-        result: Some(result),
-    });
-    result
-}
-
-fn push_literal_u32(
-    ops: &mut Vec<KernelOp>,
-    body: &mut KernelBody,
-    next_result: &mut u32,
-    value: u32,
-) -> u32 {
-    let pool_index = body.literals.len() as u32;
-    body.literals.push(LiteralValue::U32(value));
-    push_result(ops, next_result, KernelOpKind::Literal, vec![pool_index])
 }
 
 #[cfg(test)]
@@ -440,13 +397,13 @@ mod tests {
             .ops
             .iter()
             .position(|op| matches!(op.kind, KernelOpKind::AsyncLoad { .. }))
-            .expect("shared-memory promotion must issue an async tile load");
+            .expect("Fix: shared-memory promotion must issue an async tile load");
         let wait_pos = output
             .body
             .ops
             .iter()
             .position(|op| matches!(op.kind, KernelOpKind::AsyncWait { .. }))
-            .expect("shared-memory promotion must wait before shared loads");
+            .expect("Fix: shared-memory promotion must wait before shared loads");
         let original_index_pos = output
             .body
             .ops
@@ -454,7 +411,7 @@ mod tests {
             .position(|op| {
                 matches!(op.kind, KernelOpKind::GlobalInvocationId) && op.result == Some(0)
             })
-            .expect("the original pure index op must be preserved");
+            .expect("Fix: the original pure index op must be preserved");
 
         assert!(
             async_pos < original_index_pos && original_index_pos < wait_pos,

@@ -1,4 +1,4 @@
-//! Scalar broadcast — copy a single-element `src` to every slot of `dst`.
+//! Scalar broadcast  -  copy a single-element `src` to every slot of `dst`.
 //!
 //! Category A composition. The minimal broadcast case; a full
 //! shape-broadcasting version (NumPy semantics) belongs in a future
@@ -9,7 +9,7 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use crate::region::wrap_anonymous;
 
 /// Broadcast a scalar into every element of `dst`. `n` is the target
-/// element count — `dst` receives `n × sizeof(U32)` bytes.
+/// element count  -  `dst` receives `n × sizeof(U32)` bytes.
 #[must_use]
 pub fn broadcast(src: &str, dst: &str, n: u32) -> Program {
     if n == 0 {
@@ -53,7 +53,7 @@ inventory::submit! {
         ]]),
         expected_output: Some(|| vec![vec![
             // Only ReadWrite buffer: dst filled with 42
-            [42u32, 42, 42, 42].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            vyre_primitives::wire::pack_u32_slice(&[42u32, 42, 42, 42]),
         ]]),
         category: Some("math"),
     }
@@ -62,18 +62,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::{bytes_to_u32 as decode_u32_words, u32_bytes};
     use vyre_reference::value::Value;
-
-    fn u32_bytes(values: &[u32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn broadcast_single_element() {
@@ -82,7 +72,7 @@ mod tests {
             &program,
             &[Value::from(u32_bytes(&[99u32])), Value::from(vec![0u8; 4])],
         )
-        .expect("broadcast n=1 must execute");
+        .expect("Fix: broadcast n=1 must execute");
         let actual = decode_u32_words(&outputs[0].to_bytes());
         assert_eq!(actual, vec![99u32]);
     }
@@ -90,13 +80,15 @@ mod tests {
     #[test]
     fn broadcast_zero_elements_should_trap_or_be_consistent() {
         let program = broadcast("src", "dst", 0);
-        let result = vyre_reference::reference_eval(
+        let error = vyre_reference::reference_eval(
             &program,
             &[Value::from(u32_bytes(&[99u32])), Value::from(vec![0u8; 0])],
-        );
+        )
+        .expect_err("broadcast n=0 must trap instead of succeeding");
+        let msg = error.to_string();
         assert!(
-            result.is_err(),
-            "broadcast n=0 must trap instead of succeeding"
+            msg.contains("trap") || msg.contains("Fix:"),
+            "broadcast n=0 error must be actionable: {msg}"
         );
     }
 }

@@ -1,4 +1,4 @@
-//! ROADMAP H5 (foundation_optimizer half) — region-fusion hint pass.
+//! ROADMAP H5 (foundation_optimizer half)  -  region-fusion hint pass.
 //!
 //! Detects adjacent `Node::Region` pairs whose generator names
 //! match a fusion rule in the built-in table (e.g.
@@ -9,7 +9,7 @@
 //! lowering reads the generator id and dispatches the existing
 //! fused libs primitive instead of two separate dispatches.
 //!
-//! Soundness: `Approximate` — the rewrite is correct only if the
+//! Soundness: `Approximate`  -  the rewrite is correct only if the
 //! fused primitive is observably equivalent to the two-stage
 //! sequence, which is true for the entries in the built-in fusion
 //! table (linear+relu, linear+silu) by construction. The table is
@@ -21,7 +21,7 @@
 //! (the intermediate buffer between the two stages stays in
 //! registers / scratch instead of round-tripping through global).
 //!
-//! Preserves: every analysis. Invalidates: nothing — the fused
+//! Preserves: every analysis. Invalidates: nothing  -  the fused
 //! Region produces the same observable output the two-stage
 //! sequence did.
 

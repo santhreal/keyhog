@@ -1,6 +1,6 @@
 //! vyre_driver::VyreBackend implementation and core WgpuBackend methods.
 
-use crate::numeric::usize_to_u64;
+use crate::staging_reserve::{reserve_backend_vec, reserve_smallvec, reserve_vec};
 use crate::{AdapterRecoveryTarget, DispatchArena, WgpuBackend};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::{
@@ -10,40 +10,47 @@ use std::sync::{
 use std::time::Instant;
 use vyre_driver::persistent::PersistentThreadMode;
 use vyre_driver::speculate::SpeculationMode;
-use vyre_driver::CompiledPipeline;
 use vyre_foundation::ir::Program;
 
-fn empty_batch_result_slots<T>(len: usize) -> Vec<Option<Result<T, vyre_driver::BackendError>>> {
-    let mut slots = Vec::with_capacity(len);
+fn empty_batch_result_slots<T>(
+    len: usize,
+) -> Result<Vec<Option<Result<T, vyre_driver::BackendError>>>, vyre_driver::BackendError> {
+    let mut slots = Vec::new();
+    reserve_vec(
+        &mut slots,
+        len,
+        "WGPU backend",
+        "batch result slot",
+        "split the batch before dispatch",
+    )?;
     slots.resize_with(len, || None);
-    slots
+    Ok(slots)
 }
 
 fn finalize_batch_results<T>(
     slots: Vec<Option<Result<T, vyre_driver::BackendError>>>,
     missing_slot_message: &'static str,
-) -> Vec<Result<T, vyre_driver::BackendError>> {
-    let mut results = Vec::with_capacity(slots.len());
+) -> Result<Vec<Result<T, vyre_driver::BackendError>>, vyre_driver::BackendError> {
+    let mut results = Vec::new();
+    reserve_vec(
+        &mut results,
+        slots.len(),
+        "WGPU backend",
+        "final batch result",
+        "split the batch before dispatch",
+    )?;
     for slot in slots {
         results.push(
             slot.unwrap_or_else(|| Err(vyre_driver::BackendError::new(missing_slot_message))),
         );
     }
-    results
+    Ok(results)
 }
 
 fn elapsed_micros_u64(start: Instant, label: &str) -> Result<u64, vyre_driver::BackendError> {
     u64::try_from(start.elapsed().as_micros()).map_err(|source| {
         vyre_driver::BackendError::new(format!(
             "{label} elapsed time cannot fit u64 microseconds: {source}. Fix: split or timeout the dispatch before telemetry overflows."
-        ))
-    })
-}
-
-fn elapsed_nanos_u64(start: Instant, label: &str) -> Result<u64, vyre_driver::BackendError> {
-    u64::try_from(start.elapsed().as_nanos()).map_err(|source| {
-        vyre_driver::BackendError::new(format!(
-            "{label} elapsed time cannot fit u64 nanoseconds: {source}. Fix: split or timeout the dispatch before telemetry overflows."
         ))
     })
 }
@@ -112,14 +119,15 @@ impl WgpuBackend {
     ) -> Result<Self, vyre_driver::BackendError> {
         let device_limits = device.limits();
         let adapter_name = Arc::<str>::from(adapter_info.name.as_str());
+        let cache_tiers = vec![
+            crate::runtime::cache::CacheTier::try_new("hot", 1 << 24)?,
+            crate::runtime::cache::CacheTier::try_new("cold", 1 << 30)?,
+        ];
         let persistent_pool = crate::buffer::BufferPool::with_tiering(
             device.clone(),
             queue.clone(),
             &vyre_driver::DispatchConfig::default(),
-            vec![
-                crate::runtime::cache::CacheTier::new("hot", 1 << 24),
-                crate::runtime::cache::CacheTier::new("cold", 1 << 30),
-            ],
+            cache_tiers,
         )?;
         let (pipeline_cache_entries, pipeline_cache_bytes) =
             vyre_driver::pipeline::pipeline_cache_limits_from_env();
@@ -201,7 +209,7 @@ impl WgpuBackend {
         Ok((program_hasher.finish(), config_hasher.finish(), wire.len()))
     }
 
-    fn compile_resident_pipeline_cached(
+    pub(crate) fn compile_resident_pipeline_cached(
         &self,
         program: &Program,
         config: &vyre_driver::DispatchConfig,
@@ -531,9 +539,11 @@ impl WgpuBackend {
         );
         let _enter = _span.enter();
 
-        let mut results = empty_batch_result_slots(jobs.len());
-        let mut recorded = Vec::with_capacity(jobs.len());
-        let mut meta = Vec::with_capacity(jobs.len());
+        let mut results = empty_batch_result_slots(jobs.len())?;
+        let mut recorded = Vec::new();
+        reserve_backend_vec(&mut recorded, jobs.len(), "recorded dispatch")?;
+        let mut meta = Vec::new();
+        reserve_backend_vec(&mut meta, jobs.len(), "batch dispatch metadata")?;
         for (index, (program, inputs, config)) in jobs.iter().enumerate() {
             let started = Instant::now();
             if program.is_explicit_noop() {
@@ -562,10 +572,10 @@ impl WgpuBackend {
                 Ok(outputs)
             }));
         }
-        Ok(finalize_batch_results(
+        finalize_batch_results(
             results,
             "internal batch dispatch result slot was not filled. Fix: keep batch recording metadata synchronized.",
-        ))
+        )
     }
 
     /// Dispatch a borrowed batch and write each job's outputs into caller-owned per-job output buffers.
@@ -589,9 +599,11 @@ impl WgpuBackend {
         );
         let _enter = _span.enter();
 
-        let mut results = empty_batch_result_slots(jobs.len());
-        let mut recorded = Vec::with_capacity(jobs.len());
-        let mut meta = Vec::with_capacity(jobs.len());
+        let mut results = empty_batch_result_slots(jobs.len())?;
+        let mut recorded = Vec::new();
+        reserve_backend_vec(&mut recorded, jobs.len(), "recorded dispatch")?;
+        let mut meta = Vec::new();
+        reserve_backend_vec(&mut meta, jobs.len(), "batch-into dispatch metadata")?;
         for (index, (program, inputs, config)) in jobs.iter().enumerate() {
             let started = Instant::now();
             if program.is_explicit_noop() {
@@ -624,10 +636,10 @@ impl WgpuBackend {
                     }),
             );
         }
-        Ok(finalize_batch_results(
+        finalize_batch_results(
             results,
             "internal batch-into dispatch result slot was not filled. Fix: keep batch recording metadata synchronized.",
-        ))
+        )
     }
 
     /// Dispatch an owned batch of `(Program, inputs, config)` triples.
@@ -642,13 +654,22 @@ impl WgpuBackend {
         Vec<Result<vyre_driver::OutputBuffers, vyre_driver::BackendError>>,
         vyre_driver::BackendError,
     > {
-        let mut borrowed_inputs = Vec::with_capacity(jobs.len());
+        let mut borrowed_inputs = Vec::new();
+        reserve_backend_vec(&mut borrowed_inputs, jobs.len(), "borrowed input batch")?;
         for (_, inputs, _) in jobs {
-            let mut borrowed = smallvec::SmallVec::<[&[u8]; 8]>::with_capacity(inputs.len());
+            let mut borrowed = smallvec::SmallVec::<[&[u8]; 8]>::new();
+            reserve_smallvec(
+                &mut borrowed,
+                inputs.len(),
+                "WGPU backend",
+                "borrowed input slice reference",
+                "split the batch job before dispatch",
+            )?;
             borrowed.extend(inputs.iter().map(Vec::as_slice));
             borrowed_inputs.push(borrowed);
         }
-        let mut borrowed_jobs = Vec::with_capacity(jobs.len());
+        let mut borrowed_jobs = Vec::new();
+        reserve_backend_vec(&mut borrowed_jobs, jobs.len(), "borrowed dispatch job")?;
         for ((program, _, config), inputs) in jobs.iter().zip(borrowed_inputs.iter()) {
             borrowed_jobs.push((program, inputs.as_slice(), config));
         }
@@ -704,7 +725,7 @@ impl WgpuBackend {
 /// Converts caller-owned input buffers into a [`smallvec::SmallVec`] of borrowed slices.
 ///
 /// The wgpu backend's `dispatch_async` routes through this helper so staging reads from the
-/// caller's [`Vec`] allocations without cloning payload bytes—only slice references are
+/// caller's [`Vec`] allocations without cloning payload bytes - only slice references are
 /// collected into the vector. With more than eight inputs the [`SmallVec`] spills to heap
 /// storage while elements still alias the original buffers.
 #[allow(clippy::needless_lifetimes)]
@@ -715,6 +736,7 @@ pub(crate) fn borrowed_slices_from_owned_inputs<'a>(
     borrowed.extend(inputs.iter().map(Vec::as_slice));
     borrowed
 }
+
 
 impl vyre_driver::VyreBackend for WgpuBackend {
     fn id(&self) -> &'static str {
@@ -824,6 +846,26 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         Ok(())
     }
 
+    fn dispatch_borrowed_timed(
+        &self,
+        program: &Program,
+        inputs: &[&[u8]],
+        config: &vyre_driver::DispatchConfig,
+    ) -> Result<vyre_driver::TimedDispatchResult, vyre_driver::BackendError> {
+        let _span = tracing::trace_span!(
+            "vyre.dispatch_timed",
+            backend = "wgpu",
+            inputs = inputs.len(),
+            label = tracing::field::Empty,
+        );
+        let _enter = _span.enter();
+        if let Some(label) = config.label.as_deref() {
+            _span.record("label", label);
+        }
+        WgpuBackend::dispatch_borrowed_async_timed(self, program, inputs, config)?
+            .await_timed_owned()
+    }
+
     fn dispatch_async(
         &self,
         program: &Program,
@@ -913,23 +955,7 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         &self,
         byte_len: usize,
     ) -> Result<vyre_driver::Resource, vyre_driver::BackendError> {
-        let device_queue = self.current_device_queue();
-        let len = u64::try_from(byte_len).map_err(|source| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident allocation byte length {byte_len} cannot fit u64: {source}. Fix: shard the resident buffer before allocation."
-            ))
-        })?;
-        let handle = crate::buffer::GpuBufferHandle::alloc(
-            &device_queue.0,
-            len,
-            wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::INDIRECT,
-        )?;
-        let id = handle.id();
-        self.resident_handles.insert(id, handle);
-        Ok(vyre_driver::Resource::Resident(id))
+        crate::resident_resource::allocate_resident(self, byte_len)
     }
 
     fn upload_resident(
@@ -937,94 +963,37 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         resource: &vyre_driver::Resource,
         bytes: &[u8],
     ) -> Result<(), vyre_driver::BackendError> {
-        let vyre_driver::Resource::Resident(id) = resource else {
-            return Err(vyre_driver::BackendError::new(
-                "WGPU resident upload received a borrowed resource. Fix: allocate a resident buffer before calling upload_resident.",
-            ));
-        };
-        let handle = self.resident_handles.get(id).ok_or_else(|| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident upload received stale handle {id}. Fix: keep the resource allocated until all resident dispatches finish."
-            ))
-        })?;
-        let byte_len = usize_to_u64(bytes.len(), "resident upload bytes")?;
-        if byte_len > handle.allocation_len() {
-            return Err(vyre_driver::BackendError::new(format!(
-                "WGPU resident upload received {} bytes for allocation {}. Fix: resize the resident buffer or upload a bounded prefix.",
-                bytes.len(),
-                handle.allocation_len()
-            )));
-        }
-        let device_queue = self.current_device_queue();
-        crate::buffer::write_padded(
-            &device_queue.1,
-            handle.buffer(),
-            bytes,
-            handle.allocation_len(),
-        )
+        crate::resident_upload::upload_resident(self, resource, bytes)
     }
 
     fn upload_resident_many(
         &self,
         uploads: &[(&vyre_driver::Resource, &[u8])],
     ) -> Result<(), vyre_driver::BackendError> {
-        let mut resolved = smallvec::SmallVec::<[_; 8]>::with_capacity(uploads.len());
-        for &(resource, bytes) in uploads {
-            let vyre_driver::Resource::Resident(id) = resource else {
-                return Err(vyre_driver::BackendError::new(
-                    "WGPU resident batch upload received a borrowed resource. Fix: allocate every resident buffer before calling upload_resident_many.",
-                ));
-            };
-            let handle = self.resident_handles.get(id).ok_or_else(|| {
-                vyre_driver::BackendError::new(format!(
-                    "WGPU resident batch upload received stale handle {id}. Fix: keep every resource allocated until all resident uploads finish."
-                ))
-            })?;
-            let byte_len = usize_to_u64(bytes.len(), "resident batch upload bytes")?;
-            if byte_len > handle.allocation_len() {
-                return Err(vyre_driver::BackendError::new(format!(
-                    "WGPU resident batch upload received {} bytes for allocation {} on handle {id}. Fix: resize the resident buffer or upload a bounded prefix.",
-                    bytes.len(),
-                    handle.allocation_len()
-                )));
-            }
-            resolved.push((handle.clone(), bytes));
-        }
-        let device_queue = self.current_device_queue();
-        for (handle, bytes) in resolved {
-            crate::buffer::write_padded(
-                &device_queue.1,
-                handle.buffer(),
-                bytes,
-                handle.allocation_len(),
-            )?;
-        }
-        Ok(())
+        crate::resident_upload::upload_resident_many(self, uploads)
+    }
+
+    fn upload_resident_at(
+        &self,
+        resource: &vyre_driver::Resource,
+        dst_offset_bytes: usize,
+        bytes: &[u8],
+    ) -> Result<(), vyre_driver::BackendError> {
+        crate::resident_upload::upload_resident_at(self, resource, dst_offset_bytes, bytes)
+    }
+
+    fn upload_resident_at_many(
+        &self,
+        uploads: &[(&vyre_driver::Resource, usize, &[u8])],
+    ) -> Result<(), vyre_driver::BackendError> {
+        crate::resident_upload::upload_resident_at_many(self, uploads)
     }
 
     fn download_resident(
         &self,
         resource: &vyre_driver::Resource,
     ) -> Result<Vec<u8>, vyre_driver::BackendError> {
-        let vyre_driver::Resource::Resident(id) = resource else {
-            return Err(vyre_driver::BackendError::new(
-                "WGPU resident download received a borrowed resource. Fix: allocate a resident buffer before calling download_resident_into.",
-            ));
-        };
-        let handle = self.resident_handles.get(id).ok_or_else(|| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident download received stale handle {id}. Fix: keep the resource allocated until all resident readbacks finish."
-            ))
-        })?;
-        let allocation_len = usize::try_from(handle.allocation_len()).map_err(|source| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident download allocation length cannot fit usize: {source}. Fix: split the resident readback before downloading."
-            ))
-        })?;
-        let mut bytes = Vec::with_capacity(allocation_len);
-        let device_queue = self.current_device_queue();
-        handle.readback_until(&device_queue.0, None, &device_queue.1, &mut bytes, None)?;
-        Ok(bytes)
+        crate::resident_download::download_resident(self, resource)
     }
 
     fn download_resident_into(
@@ -1032,18 +1001,7 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         resource: &vyre_driver::Resource,
         out: &mut Vec<u8>,
     ) -> Result<(), vyre_driver::BackendError> {
-        let vyre_driver::Resource::Resident(id) = resource else {
-            return Err(vyre_driver::BackendError::new(
-                "WGPU resident download received a borrowed resource. Fix: allocate a resident buffer before calling download_resident_into.",
-            ));
-        };
-        let handle = self.resident_handles.get(id).ok_or_else(|| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident download received stale handle {id}. Fix: keep the resource allocated until all resident readbacks finish."
-            ))
-        })?;
-        let device_queue = self.current_device_queue();
-        handle.readback_until(&device_queue.0, None, &device_queue.1, out, None)
+        crate::resident_download::download_resident_into(self, resource, out)
     }
 
     fn download_resident_range(
@@ -1052,9 +1010,7 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         byte_offset: usize,
         byte_len: usize,
     ) -> Result<Vec<u8>, vyre_driver::BackendError> {
-        let mut bytes = Vec::with_capacity(byte_len);
-        self.download_resident_range_into(resource, byte_offset, byte_len, &mut bytes)?;
-        Ok(bytes)
+        crate::resident_download::download_resident_range(self, resource, byte_offset, byte_len)
     }
 
     fn download_resident_range_into(
@@ -1064,53 +1020,28 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         byte_len: usize,
         out: &mut Vec<u8>,
     ) -> Result<(), vyre_driver::BackendError> {
-        let vyre_driver::Resource::Resident(id) = resource else {
-            return Err(vyre_driver::BackendError::new(
-                "WGPU resident ranged download received a borrowed resource. Fix: allocate a resident buffer before calling download_resident_range_into.",
-            ));
-        };
-        let handle = self.resident_handles.get(id).ok_or_else(|| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident ranged download received stale handle {id}. Fix: keep the resource allocated until all resident readbacks finish."
-            ))
-        })?;
-        let byte_offset = u64::try_from(byte_offset).map_err(|source| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident ranged download offset cannot fit u64: {source}. Fix: split the resident readback before calling the backend."
-            ))
-        })?;
-        let byte_len = u64::try_from(byte_len).map_err(|source| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident ranged download length cannot fit u64: {source}. Fix: split the resident readback before calling the backend."
-            ))
-        })?;
-        let device_queue = self.current_device_queue();
-        handle.readback_range_until(
-            &device_queue.0,
-            None,
-            &device_queue.1,
+        crate::resident_download::download_resident_range_into(
+            self,
+            resource,
             byte_offset,
             byte_len,
             out,
-            None,
         )
+    }
+
+    fn download_resident_ranges_into(
+        &self,
+        ranges: &[(&vyre_driver::Resource, usize, usize)],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), vyre_driver::BackendError> {
+        crate::resident_download::download_resident_ranges_into(self, ranges, outputs)
     }
 
     fn free_resident(
         &self,
         resource: vyre_driver::Resource,
     ) -> Result<(), vyre_driver::BackendError> {
-        let vyre_driver::Resource::Resident(id) = resource else {
-            return Err(vyre_driver::BackendError::new(
-                "WGPU resident free received a borrowed resource. Fix: only free handles returned by allocate_resident.",
-            ));
-        };
-        self.resident_handles.remove(&id).ok_or_else(|| {
-            vyre_driver::BackendError::new(format!(
-                "WGPU resident free received stale handle {id}. Fix: free each resident resource exactly once."
-            ))
-        })?;
-        Ok(())
+        crate::resident_resource::free_resident(self, resource)
     }
 
     fn dispatch_resident_timed(
@@ -1119,16 +1050,7 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         resources: &[vyre_driver::Resource],
         config: &vyre_driver::DispatchConfig,
     ) -> Result<vyre_driver::TimedDispatchResult, vyre_driver::BackendError> {
-        let started = Instant::now();
-        let pipeline = self.compile_resident_pipeline_cached(program, config)?;
-        let outputs = pipeline.dispatch_persistent_handles(resources, config)?;
-        Ok(vyre_driver::TimedDispatchResult {
-            outputs,
-            wall_ns: elapsed_nanos_u64(started, "resident timed dispatch")?,
-            device_ns: None,
-            enqueue_ns: None,
-            wait_ns: None,
-        })
+        crate::resident_dispatch::dispatch_resident_timed(self, program, resources, config)
     }
 
     fn dispatch_with_device_buffers(
@@ -1262,11 +1184,8 @@ impl vyre_driver::VyreBackend for WgpuBackend {
     fn flush(&self) -> Result<(), vyre_driver::BackendError> {
         let device_queue = self.current_device_queue();
         let submission = device_queue.1.submit(std::iter::empty());
-        match device_queue.0.poll(wgpu::Maintain::wait_for(submission)) {
-            wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {
-                crate::pipeline::disk_cache::flush_disk_pipeline_cache()
-            }
-        }
+        crate::runtime::device::poll_device_wait_for(&device_queue.0, submission)?;
+        crate::pipeline::disk_cache::flush_disk_pipeline_cache()
     }
 
     fn device_lost(&self) -> bool {
@@ -1298,14 +1217,15 @@ impl vyre_driver::VyreBackend for WgpuBackend {
                 "wgpu recovery selected the original adapter but feature or limit negotiation changed. Fix: construct a new backend so dispatch planning and pipeline caches are rebuilt against the new device contract.",
             ));
         }
+        let cache_tiers = vec![
+            crate::runtime::cache::CacheTier::try_new("hot", 1 << 24)?,
+            crate::runtime::cache::CacheTier::try_new("cold", 1 << 30)?,
+        ];
         let persistent_pool = crate::buffer::BufferPool::with_tiering(
             device.clone(),
             queue.clone(),
             &vyre_driver::DispatchConfig::default(),
-            vec![
-                crate::runtime::cache::CacheTier::new("hot", 1 << 24),
-                crate::runtime::cache::CacheTier::new("cold", 1 << 30),
-            ],
+            cache_tiers,
         )?;
         self.device_queue
             .store(Arc::new((device.clone(), queue.clone())));
@@ -1324,6 +1244,7 @@ impl vyre_driver::VyreBackend for WgpuBackend {
         Ok(())
     }
 }
+
 
 impl vyre_self_substrate::optimizer::dispatcher::OptimizerDispatcher for WgpuBackend {
     fn dispatch(
@@ -1344,7 +1265,9 @@ impl vyre_self_substrate::optimizer::dispatcher::OptimizerDispatcher for WgpuBac
 
 #[cfg(test)]
 mod borrowed_slice_conversion_tests {
-    use super::borrowed_slices_from_owned_inputs;
+    use super::{
+        borrowed_slices_from_owned_inputs, empty_batch_result_slots, finalize_batch_results,
+    };
 
     #[test]
     fn dispatch_async_input_conversion_is_zero_copy_slice_refs() {
@@ -1368,4 +1291,66 @@ mod borrowed_slice_conversion_tests {
             );
         }
     }
+
+    #[test]
+    fn generated_batch_result_finalization_preserves_success_error_and_missing_slots() {
+        for case in 0..4096usize {
+            let len = (case % 19) + 1;
+            let mut slots = empty_batch_result_slots::<usize>(len)
+                .expect("Fix: generated WGPU batch result test must reserve slots");
+            for slot in 0..len {
+                match (slot + case) % 7 {
+                    0 => {}
+                    1 => {
+                        slots[slot] = Some(Err(vyre_driver::BackendError::new(format!(
+                            "generated-error-{case}-{slot}"
+                        ))));
+                    }
+                    _ => {
+                        slots[slot] = Some(Ok(case * 100 + slot));
+                    }
+                }
+            }
+
+            let finalized =
+                finalize_batch_results(slots, "generated missing WGPU batch result slot")
+                    .expect("Fix: generated WGPU batch finalization must reserve output results");
+            assert_eq!(
+                finalized.len(),
+                len,
+                "generated WGPU batch case {case} must preserve slot count"
+            );
+            for (slot, result) in finalized.into_iter().enumerate() {
+                match (slot + case) % 7 {
+                    0 => {
+                        let error =
+                            result.expect_err("Fix: missing generated batch slot must error");
+                        assert!(
+                            error
+                                .to_string()
+                                .contains("generated missing WGPU batch result slot"),
+                            "Fix: missing generated batch slot must report the supplied invariant, got {error}"
+                        );
+                    }
+                    1 => {
+                        let error = result
+                            .expect_err("Fix: explicit generated batch error must stay error");
+                        assert!(
+                            error
+                                .to_string()
+                                .contains(&format!("generated-error-{case}-{slot}")),
+                            "Fix: explicit generated batch error must be preserved, got {error}"
+                        );
+                    }
+                    _ => {
+                        assert_eq!(
+                            result.expect("Fix: generated batch success must stay success"),
+                            case * 100 + slot
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
+

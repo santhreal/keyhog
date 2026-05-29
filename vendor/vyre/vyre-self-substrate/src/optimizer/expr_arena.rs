@@ -2,7 +2,7 @@
 //!
 //! Every `Expr` in the user's `Program` is assigned a stable `ExprId`
 //! and emitted as a 4-tuple `(kind, arg0, arg1, arg2, arg3)` in
-//! post-order — children before parents — so a single linear scan
+//! post-order  -  children before parents  -  so a single linear scan
 //! computes anything bottom-up. The kind tags are stable across runs
 //! and follow the reservations in `vyre-spec`.
 //!
@@ -18,7 +18,7 @@
 //! BinOp, UnOp, Select, Fma, SubgroupLocalId, SubgroupSize. Variadic /
 //! extension Exprs (Call, Atomic, SubgroupBallot/Shuffle/Add, Cast,
 //! Opaque) bail with `EncodeError::Unsupported` until later passes
-//! need them — adding them is a small extension of the `encode_expr`
+//! need them  -  adding them is a small extension of the `encode_expr`
 //! match arm and a new `expr_kind` constant.
 
 use vyre_foundation::ir::model::types::{BinOp, UnOp};
@@ -56,7 +56,7 @@ pub struct ExprArenaEncoding {
     pub expr_count: u32,
     /// Per-Expr kind tag (one of `expr_kind::*`).
     pub kinds: Vec<u32>,
-    /// First arg slot — see kind table in module docs.
+    /// First arg slot  -  see kind table in module docs.
     pub arg0: Vec<u32>,
     /// Second arg slot.
     pub arg1: Vec<u32>,
@@ -87,7 +87,7 @@ pub struct ExprArenaEncoding {
 
 /// Encode every `Expr` in `program`'s entry tree (including nested
 /// scope bodies) as a flat ExprArenaEncoding. The traversal order
-/// matches the Node graph encoder — DFS prefix over Nodes, each
+/// matches the Node graph encoder  -  DFS prefix over Nodes, each
 /// Node's Exprs walked in canonical slot order, every Expr's children
 /// walked first. This guarantees the Node graph's graph-id index and
 /// the arena's `node_top_level_exprs` index align one-to-one.
@@ -268,7 +268,7 @@ impl ArenaCtx {
     }
 
     fn encode_expr(&mut self, expr: &Expr) -> Result<u32, EncodeError> {
-        // Recurse into children FIRST so they get smaller ExprIds —
+        // Recurse into children FIRST so they get smaller ExprIds  -
         // post-order numbering.
         match expr {
             Expr::LitU32(v) => Ok(self.alloc(expr_kind::LIT_U32, *v, 0, 0, 0)),
@@ -465,6 +465,7 @@ fn un_op_tag(op: &UnOp) -> Result<u32, EncodeError> {
 /// Reverse-lookup a `bin_op_tag` u32 back into a `BinOp` for decoder
 /// use. Returns `None` for unknown / extension tags.
 #[must_use]
+
 pub fn bin_op_from_tag(tag: u32) -> Option<BinOp> {
     Some(match tag {
         0x01 => BinOp::Add,
@@ -627,7 +628,8 @@ mod tests {
     #[test]
     fn empty_program_encodes_to_empty_arena() {
         let p = wrapped(Vec::new());
-        let arena = encode_expr_arena(&p).expect("empty program");
+        let arena = encode_expr_arena(&p)
+            .expect("Fix: empty optimizer program must encode into an expression arena");
         assert_eq!(arena.expr_count, 0);
         // Index 0 = ROOT (no Exprs).
         assert_eq!(arena.node_top_level_exprs.len(), 1);
@@ -636,7 +638,8 @@ mod tests {
     #[test]
     fn lit_only_let_encodes_one_lit_expr() {
         let p = wrapped(vec![Node::let_bind("x", Expr::u32(42))]);
-        let arena = encode_expr_arena(&p).expect("flat let");
+        let arena = encode_expr_arena(&p)
+            .expect("Fix: flat let optimizer program must encode into an expression arena");
         assert_eq!(arena.expr_count, 1);
         assert_eq!(arena.kinds[0], expr_kind::LIT_U32);
         assert_eq!(arena.arg0[0], 42);
@@ -652,7 +655,8 @@ mod tests {
             "x",
             Expr::add(Expr::u32(2), Expr::u32(3)),
         )]);
-        let arena = encode_expr_arena(&p).expect("binop");
+        let arena = encode_expr_arena(&p)
+            .expect("Fix: binop optimizer program must encode into an expression arena");
         assert_eq!(arena.expr_count, 3);
         // Children come first in post-order.
         assert_eq!(arena.kinds[0], expr_kind::LIT_U32);
@@ -675,10 +679,11 @@ mod tests {
             then: vec![Node::let_bind("inner", Expr::u32(7))],
             otherwise: vec![],
         }]);
-        let arena = encode_expr_arena(&p).expect("nested if");
+        let arena = encode_expr_arena(&p)
+            .expect("Fix: nested if optimizer program must encode into an expression arena");
         // Exprs in encounter order:
-        //   0: Var("c")        — If's cond
-        //   1: LitU32(7)       — let inner's value
+        //   0: Var("c")         -  If's cond
+        //   1: LitU32(7)        -  let inner's value
         assert_eq!(arena.expr_count, 2);
         // node_top_level_exprs:
         //   [0]: ROOT (empty)
@@ -709,8 +714,8 @@ mod tests {
             },
         ]);
 
-        let arena = encode_expr_arena(&p).expect("arena encoding");
-        let graph = encode_program(&p).expect("program graph encoding");
+        let arena = encode_expr_arena(&p).expect("Fix: expression arena encoding must succeed");
+        let graph = encode_program(&p).expect("Fix: program graph encoding must succeed");
 
         assert_eq!(
             arena.node_top_level_exprs.len() as u32,
@@ -728,8 +733,9 @@ mod tests {
             Node::let_bind("x", Expr::add(Expr::var("a"), Expr::var("b"))),
             Node::let_bind("y", Expr::add(Expr::var("a"), Expr::var("b"))),
         ]);
-        let arena = encode_expr_arena(&p).expect("dual binop");
-        // 6 Exprs: var(a), var(b), add — twice.
+        let arena = encode_expr_arena(&p)
+            .expect("Fix: dual binop optimizer program must encode into an expression arena");
+        // 6 Exprs: var(a), var(b), add  -  twice.
         assert_eq!(arena.expr_count, 6);
         let hashes = structural_hashes(&arena);
         // The two add Exprs are at ids 2 and 5.
@@ -745,13 +751,14 @@ mod tests {
 
     #[test]
     fn structural_hashes_distinguish_commutative_operand_order() {
-        // a + b vs b + a — without a canonicalize pass, these still
+        // a + b vs b + a  -  without a canonicalize pass, these still
         // produce different structural hashes (left/right matter).
         let p = wrapped(vec![
             Node::let_bind("x", Expr::add(Expr::var("a"), Expr::var("b"))),
             Node::let_bind("y", Expr::add(Expr::var("b"), Expr::var("a"))),
         ]);
-        let arena = encode_expr_arena(&p).expect("dual binop");
+        let arena = encode_expr_arena(&p)
+            .expect("Fix: dual binop optimizer program must encode into an expression arena");
         let hashes = structural_hashes(&arena);
         assert_eq!(arena.expr_count, 6);
         // First add is at id 2, second at id 5.
@@ -775,3 +782,4 @@ mod tests {
         assert!(matches!(err, EncodeError::Unsupported(_)));
     }
 }
+

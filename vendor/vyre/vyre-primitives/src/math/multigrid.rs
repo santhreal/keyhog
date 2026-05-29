@@ -2,12 +2,12 @@
 //!
 //! AMG (Brandt 1986, Ruge-Stüben 1987) solves elliptic PDEs in O(n)
 //! by alternating SMOOTHING (relax error on the current level) with
-//! coarsening / restriction. Each level's smoother is GPU-parallel —
+//! coarsening / restriction. Each level's smoother is GPU-parallel  -
 //! the recursive structure is the part that's historically hard to
 //! schedule, but with `level_wave_program` (already in vyre) the
 //! V-cycle becomes a straightforward dispatch sequence.
 //!
-//! This file ships the **Jacobi smoother step** primitive — one
+//! This file ships the **Jacobi smoother step** primitive  -  one
 //! weighted-Jacobi relaxation on a single level. The full V-cycle
 //! pipeline:
 //!
@@ -61,14 +61,25 @@ pub fn jacobi_smooth_step(
     x_out: &str,
     n: u32,
 ) -> Program {
-    if n == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            x_out,
-            DataType::U32,
-            format!("Fix: jacobi_smooth_step requires n > 0, got {n}."),
-        );
+    match try_jacobi_smooth_step(a_matrix, b, x_in, omega_scaled, x_out, n) {
+        Ok(program) => program,
+        Err(error) => crate::invalid_output_program(OP_ID, x_out, DataType::U32, error),
     }
+}
+
+/// One weighted Jacobi smoothing step with checked dense matrix sizing.
+pub fn try_jacobi_smooth_step(
+    a_matrix: &str,
+    b: &str,
+    x_in: &str,
+    omega_scaled: &str,
+    x_out: &str,
+    n: u32,
+) -> Result<Program, String> {
+    if n == 0 {
+        return Err(format!("Fix: jacobi_smooth_step requires n > 0, got {n}."));
+    }
+    let matrix_cells = checked_jacobi_cells(n)?;
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -136,10 +147,10 @@ pub fn jacobi_smooth_step(
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(a_matrix, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n * n),
+                .with_count(matrix_cells),
             BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(x_in, 2, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(omega_scaled, 3, BufferAccess::ReadOnly, DataType::U32)
@@ -152,16 +163,36 @@ pub fn jacobi_smooth_step(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
+}
+
+fn checked_jacobi_cells(n: u32) -> Result<u32, String> {
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "jacobi_smooth_step n={n} overflows dense matrix cell count. Fix: shard or sparsify the AMG level before GPU dispatch."
+        )
+    })
 }
 
 /// CPU reference: one weighted Jacobi step in f64.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn jacobi_smooth_step_cpu(a: &[f64], b: &[f64], x_in: &[f64], omega: f64, n: u32) -> Vec<f64> {
-    let mut out = Vec::with_capacity(n as usize);
-    jacobi_smooth_step_cpu_into(a, b, x_in, omega, n, &mut out);
-    out
+    try_jacobi_smooth_step_cpu(a, b, x_in, omega, n).unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Fallible CPU reference: one weighted Jacobi step in f64.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_jacobi_smooth_step_cpu(
+    a: &[f64],
+    b: &[f64],
+    x_in: &[f64],
+    omega: f64,
+    n: u32,
+) -> Result<Vec<f64>, String> {
+    let mut out = Vec::new();
+    try_jacobi_smooth_step_cpu_into(a, b, x_in, omega, n, &mut out)?;
+    Ok(out)
 }
 
 /// CPU reference: one weighted Jacobi step in f64, writing into caller-owned storage.
@@ -174,9 +205,35 @@ pub fn jacobi_smooth_step_cpu_into(
     n: u32,
     out: &mut Vec<f64>,
 ) {
+    try_jacobi_smooth_step_cpu_into(a, b, x_in, omega, n, out)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference: one weighted Jacobi step in f64, writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_jacobi_smooth_step_cpu_into(
+    a: &[f64],
+    b: &[f64],
+    x_in: &[f64],
+    omega: f64,
+    n: u32,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let n = n as usize;
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "jacobi_smooth_step CPU oracle n={n} overflows dense matrix indexing. Fix: shard or sparsify the AMG level before parity evaluation."
+        )
+    })?;
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "AMG Jacobi CPU oracle",
+            "jacobi_smooth_step output",
+        )?;
+    }
     out.clear();
-    out.reserve(n);
     for i in 0..n {
         let mut ax_i = 0.0;
         for j in 0..n {
@@ -193,6 +250,7 @@ pub fn jacobi_smooth_step_cpu_into(
         };
         out.push(x_in.get(i).copied().unwrap_or(0.0) + omega * res / diag);
     }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -201,7 +259,7 @@ inventory::submit! {
         OP_ID,
         || jacobi_smooth_step("a", "b", "x", "omega", "out", 1),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[1u32 << 16]),
                 to_bytes(&[3u32 << 16]),
@@ -211,7 +269,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[3u32 << 16])]]
         }),
     )
@@ -269,6 +327,86 @@ mod tests {
     }
 
     #[test]
+    fn cpu_into_reuses_output_and_truncates_stale_tail() {
+        let a = vec![4.0, 1.0, 1.0, 3.0];
+        let b = vec![1.0, 2.0];
+        let x_in = vec![0.0, 0.0];
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let ptr = out.as_ptr();
+        let capacity = out.capacity();
+
+        try_jacobi_smooth_step_cpu_into(&a, &b, &x_in, 1.0, 2, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Jacobi CPU oracle should reuse caller-owned output");
+
+        assert_eq!(out.len(), 2);
+        assert!(approx_eq(out[0], 0.25));
+        assert!(approx_eq(out[1], 2.0 / 3.0));
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        try_jacobi_smooth_step_cpu_into(&[2.0], &[4.0], &[1.0], 1.0, 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Jacobi CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![2.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_jacobi_cpu_matches_independent_reference() {
+        for case in 0..512usize {
+            let n = case % 9 + 1;
+            let a_len = (case * 5) % (n * n + 1);
+            let b_len = (case * 7) % (n + 1);
+            let x_len = (case * 11) % (n + 1);
+            let omega = ((case % 17) as f64 - 8.0) / 5.0;
+            let a: Vec<f64> = (0..a_len)
+                .map(|idx| ((idx * 13 + case) % 23) as f64 / 7.0 - 1.0)
+                .collect();
+            let b: Vec<f64> = (0..b_len)
+                .map(|idx| ((idx * 17 + case) % 29) as f64 / 11.0 - 1.0)
+                .collect();
+            let x: Vec<f64> = (0..x_len)
+                .map(|idx| ((idx * 19 + case) % 31) as f64 / 13.0 - 1.0)
+                .collect();
+            let actual = try_jacobi_smooth_step_cpu(&a, &b, &x, omega, n as u32)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated Jacobi CPU oracle should evaluate");
+            let expected = independent_jacobi(&a, &b, &x, omega, n);
+
+            assert_eq!(actual.len(), n, "case {case}: output length");
+            for idx in 0..n {
+                assert!(
+                    approx_eq(actual[idx], expected[idx]),
+                    "case {case} idx {idx}: expected {}, got {}",
+                    expected[idx],
+                    actual[idx]
+                );
+            }
+        }
+    }
+
+    fn independent_jacobi(a: &[f64], b: &[f64], x_in: &[f64], omega: f64, n: usize) -> Vec<f64> {
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut ax_i = 0.0;
+            for j in 0..n {
+                ax_i +=
+                    a.get(i * n + j).copied().unwrap_or(0.0) * x_in.get(j).copied().unwrap_or(0.0);
+            }
+            let res = b.get(i).copied().unwrap_or(0.0) - ax_i;
+            let diag_value = a.get(i * n + i).copied().unwrap_or(0.0);
+            let diag = if diag_value.abs() > 1e-30 {
+                diag_value
+            } else {
+                1.0
+            };
+            out.push(x_in.get(i).copied().unwrap_or(0.0) + omega * res / diag);
+        }
+        out
+    }
+
+    #[test]
     fn ir_program_buffer_layout() {
         let p = jacobi_smooth_step("A", "b", "xi", "om", "xo", 4);
         assert_eq!(p.workgroup_size, [256, 1, 1]);
@@ -285,5 +423,16 @@ mod tests {
     fn zero_n_traps() {
         let p = jacobi_smooth_step("A", "b", "xi", "om", "xo", 0);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_builder_rejects_dense_matrix_overflow() {
+        let error = try_jacobi_smooth_step("A", "b", "xi", "om", "xo", u32::MAX)
+            .expect_err("checked Jacobi builder must reject dense matrix overflow");
+
+        assert!(
+            error.contains("overflows dense matrix cell count"),
+            "error should describe dense matrix overflow: {error}"
+        );
     }
 }

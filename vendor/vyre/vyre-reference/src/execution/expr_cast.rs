@@ -80,11 +80,39 @@ fn invalid_cast(target: &DataType, value: &Value) -> Error {
 
 fn widen_to_words(value: &Value, words: usize) -> Vec<u8> {
     let target_bytes = words * 4;
-    let mut bytes = value.to_bytes();
-    if bytes.len() > target_bytes {
-        bytes.truncate(target_bytes);
-    } else if bytes.len() < target_bytes {
-        bytes.resize(target_bytes, 0);
-    }
+    let mut bytes = vec![0u8; target_bytes];
+    value.write_bytes_width_into(&mut bytes);
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cast_to_vec2_pads_scalar_bytes_to_fixed_width() {
+        let value = cast_value(&DataType::Vec2U32, &Value::U32(0x0403_0201))
+            .expect("Fix: scalar to vec2 cast must be representable.");
+
+        assert_eq!(
+            value.to_bytes(),
+            vec![1, 2, 3, 4, 0, 0, 0, 0],
+            "Fix: vector casts must preserve source bytes and zero-fill the declared lane width."
+        );
+    }
+
+    #[test]
+    fn cast_to_vec4_truncates_oversized_byte_payload_to_fixed_width() {
+        let value = cast_value(
+            &DataType::Vec4U32,
+            &Value::from((0u8..24).collect::<Vec<_>>()),
+        )
+        .expect("Fix: byte payload to vec4 cast must be representable.");
+
+        assert_eq!(
+            value.to_bytes(),
+            (0u8..16).collect::<Vec<_>>(),
+            "Fix: vector casts must truncate oversized payloads at the declared lane width."
+        );
+    }
 }

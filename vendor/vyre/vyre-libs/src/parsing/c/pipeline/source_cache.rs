@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::parsing::c::lex::lexer::c11_lex_single_pass;
 use crate::parsing::c::parse::structure::{c11_extract_calls, c11_extract_functions};
-use crate::parsing::source_cache::ParsedSourceLru;
+use crate::parsing::source_cache::{source_len_u32_nonzero, ParsedSourceLru};
 use vyre::ir::{Expr, Program};
 
 /// Cached C11 pipeline stage bundle for one source shape.
@@ -36,12 +36,8 @@ pub fn get_or_build_c11_pipeline(
     extra: &[u8],
 ) -> Arc<C11PipelinePrograms> {
     cache.get_or_parse(source, extra, |bytes| {
-        let len = u32::try_from(bytes.len())
-            .expect("C11 pipeline source length exceeds the u32 GPU index space. Fix: shard the translation unit before building cached pipeline programs.")
-            .max(1);
-        let token_capacity = len
-            .checked_next_power_of_two()
-            .expect("C11 pipeline token capacity exceeds the u32 GPU index space. Fix: shard the translation unit before building cached pipeline programs.");
+        let len = source_len_u32_nonzero(bytes);
+        let token_capacity = len.checked_next_power_of_two().unwrap_or(u32::MAX);
         C11PipelinePrograms {
             lex: c11_lex_single_pass(
                 "haystack",

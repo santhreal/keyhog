@@ -2,7 +2,7 @@
 //!
 //! `core.indirect_dispatch(workgroup_count: BackendBuffer<[u32;3]>)`
 //! lowers to a target-native indirect dispatch. The workgroup count is
-//! read from device memory at submission time — enabling patterns like:
+//! read from device memory at submission time  -  enabling patterns like:
 //!
 //! * Compact + dispatch: one kernel computes a list of work items
 //!   and writes its size to a buffer; the next dispatch reads the
@@ -10,7 +10,7 @@
 //! * Variable-rate GPU pipelines where downstream dispatch size
 //!   depends on upstream results.
 //!
-//! The op itself has Category C — there is no portable CPU
+//! The op itself has Category C  -  there is no portable CPU
 //! equivalent (dispatching is a backend concept). A Program that
 //! uses `core.indirect_dispatch` on the CPU reference fails Law C
 //! cleanly; a backend that supports indirect dispatch advertises

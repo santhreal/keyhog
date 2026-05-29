@@ -1,4 +1,4 @@
-//! Zero-iteration loop elimination — drop `StructuredForLoop` ops
+//! Zero-iteration loop elimination  -  drop `StructuredForLoop` ops
 //! whose `lo` and `hi` are both U32 literals with `lo >= hi`.
 //!
 //! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4 (loop
@@ -12,11 +12,11 @@
 //!   child body via `drop_unused_child_bodies` later in the pipeline)
 //!
 //! Out of scope:
-//! - Loops with non-literal bounds — even when range analysis can
+//! - Loops with non-literal bounds  -  even when range analysis can
 //!   prove `lo == hi` at runtime, that proof requires the consumer's range
 //!   substrate; this is a pure constant-folding pass over literal
 //!   operands.
-//! - Loop-with-body-of-size-zero (`body: Vec::new()`) — a separate
+//! - Loop-with-body-of-size-zero (`body: Vec::new()`)  -  a separate
 //!   pattern that `descriptor_dce` and `drop_unused_child_bodies`
 //!   already handle when the body never reads/writes.
 //!
@@ -26,8 +26,8 @@
 //! `loop_unroll` so any zero-count loops exposed by loop unrolling
 //! itself drop in the same fixpoint phase.
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 
 #[must_use]
 pub fn loop_zero_iter(desc: &KernelDescriptor) -> KernelDescriptor {
@@ -37,12 +37,7 @@ pub fn loop_zero_iter(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn loop_zero_iter_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
+    let index = BodyIndex::new(&body);
 
     let mut drop_indices: Vec<usize> = Vec::new();
     for (idx, op) in body.ops.iter().enumerate() {
@@ -54,11 +49,11 @@ fn loop_zero_iter_body(mut body: KernelBody) -> KernelBody {
         }
         let lo_id = op.operands[0];
         let hi_id = op.operands[1];
-        let lo = match u32_lit(&body, &result_to_idx, lo_id) {
+        let lo = match index.u32_lit(&body, lo_id) {
             Some(v) => v,
             None => continue,
         };
-        let hi = match u32_lit(&body, &result_to_idx, hi_id) {
+        let hi = match index.u32_lit(&body, hi_id) {
             Some(v) => v,
             None => continue,
         };
@@ -68,7 +63,7 @@ fn loop_zero_iter_body(mut body: KernelBody) -> KernelBody {
     }
 
     // Drop in reverse so earlier indices stay valid through the
-    // splice. Also clear each orphaned child body — the verifier
+    // splice. Also clear each orphaned child body  -  the verifier
     // recurses into ALL child bodies with their lexically-computed
     // scopes, and an orphaned body that no control-flow op activates
     // receives an empty scope, causing any parent-ref operands inside
@@ -95,23 +90,10 @@ fn loop_zero_iter_body(mut body: KernelBody) -> KernelBody {
     body
 }
 
-fn u32_lit(body: &KernelBody, result_to_idx: &FxHashMap<u32, usize>, id: u32) -> Option<u32> {
-    let producer_idx = *result_to_idx.get(&id)?;
-    let producer = body.ops.get(producer_idx)?;
-    if !matches!(producer.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_idx = *producer.operands.first()? as usize;
-    match body.literals.get(pool_idx)? {
-        LiteralValue::U32(v) => Some(*v),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingLayout, Dispatch, KernelOp};
+    use crate::{BindingLayout, Dispatch, KernelOp, LiteralValue};
     fn empty_body() -> KernelBody {
         KernelBody {
             ops: Vec::new(),

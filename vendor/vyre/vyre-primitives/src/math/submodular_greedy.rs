@@ -1,4 +1,4 @@
-//! Submodular maximization — one greedy step.
+//! Submodular maximization  -  one greedy step.
 //!
 //! Submodular function maximization gives constant-factor approximation
 //! guarantees ((1 - 1/e)-approximation for cardinality constraint per

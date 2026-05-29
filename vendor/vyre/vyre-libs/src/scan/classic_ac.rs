@@ -46,6 +46,7 @@ pub fn classic_ac_compile(patterns: &[&[u8]]) -> ClassicAcAutomaton {
 /// Returns a vector of `(pattern_id, end_offset)` pairs.  `end_offset`
 /// is the byte position (0-based, inclusive) where the match ends.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn classic_ac_scan(ac: &ClassicAcAutomaton, haystack: &[u8]) -> Vec<(u32, u32)> {
     let dfa = &ac.dfa;
     let mut state = 0u32;
@@ -67,6 +68,7 @@ pub fn classic_ac_scan(ac: &ClassicAcAutomaton, haystack: &[u8]) -> Vec<(u32, u3
 /// This is the oracle shape used by the companion GPU emit when the
 /// caller only needs cardinality, not the individual pattern ids.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn classic_ac_scan_counts(ac: &ClassicAcAutomaton, haystack: &[u8]) -> Vec<u32> {
     let dfa = &ac.dfa;
     let mut state = 0u32;
@@ -98,7 +100,7 @@ pub fn classic_ac_scan_counts(ac: &ClassicAcAutomaton, haystack: &[u8]) -> Vec<u
 /// `haystack[0..=i]`, then atomically claims slots in `matches` and
 /// writes every pattern id for the final state.
 ///
-/// The serial replay is still O(n²) total work — the fix here is
+/// The serial replay is still O(n²) total work  -  the fix here is
 /// the **match-emission loop**, which is O(matches) thanks to the
 /// flat `output_links`.
 #[must_use]
@@ -267,7 +269,7 @@ pub fn classic_ac_bounded_ranges_program(
 /// (Innovation I.17, one atomic per subgroup leader, the default).
 /// Set `false` for the simpler `append_match` (one atomic per lane
 /// per hit). Use the `false` variant on backends whose IR lowering
-/// can't yet emit `subgroup_ballot`/`subgroup_shuffle` — currently
+/// can't yet emit `subgroup_ballot`/`subgroup_shuffle`  -  currently
 /// `vyre-driver-cuda` rejects the subgroup form during canonical
 /// pre-emit lowering ("variable `_vyre_match_leader` is referenced
 /// before binding"), so callers that route through CUDA must opt
@@ -405,7 +407,7 @@ pub fn classic_ac_bounded_ranges_program_ext(
         // MiB bench (2026-05-19) due to global-atomic serialization
         // on `match_count`. Now using `append_match_subgroup`
         // (Innovation I.17): one atomic_add per subgroup leader,
-        // 32× contention drop on a 32-lane NVIDIA warp — so wg128 is
+        // 32× contention drop on a 32-lane NVIDIA warp  -  so wg128 is
         // safe (4 atomics per workgroup instead of 128).
         [128, 1, 1],
         vec![wrap_anonymous(
@@ -441,7 +443,54 @@ pub fn build_ac_bounded_ranges_program_ext(
     max_matches: u32,
     use_subgroup_coalesce: bool,
 ) -> Program {
-    classic_ac_bounded_ranges_program_ext(
+    match try_build_ac_bounded_ranges_program_ext(
+        dfa,
+        pattern_count,
+        max_matches,
+        use_subgroup_coalesce,
+    ) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("vyre-libs AC bounded-ranges program build failed: {error}");
+            empty_ac_bounded_ranges_program(max_matches, use_subgroup_coalesce)
+        }
+    }
+}
+
+/// Fallible variant of [`build_ac_bounded_ranges_program`].
+///
+/// # Errors
+///
+/// Returns an actionable error when DFA metadata cannot fit the GPU program's
+/// u32 buffer-count ABI.
+
+pub fn try_build_ac_bounded_ranges_program(
+    dfa: &CompiledDfa,
+    pattern_count: u32,
+    max_matches: u32,
+) -> Result<Program, String> {
+    try_build_ac_bounded_ranges_program_ext(dfa, pattern_count, max_matches, true)
+}
+
+/// Fallible variant of [`build_ac_bounded_ranges_program_ext`].
+///
+/// # Errors
+///
+/// Returns an actionable error when DFA metadata cannot fit the GPU program's
+/// u32 buffer-count ABI.
+pub fn try_build_ac_bounded_ranges_program_ext(
+    dfa: &CompiledDfa,
+    pattern_count: u32,
+    max_matches: u32,
+    use_subgroup_coalesce: bool,
+) -> Result<Program, String> {
+    let output_records_len = u32::try_from(dfa.output_records.len()).map_err(|source| {
+        format!(
+            "AC bounded-ranges DFA output record count {} exceeds u32 GPU buffer metadata: {source}. Fix: shard the pattern set or lower the DFA budget before dispatch.",
+            dfa.output_records.len()
+        )
+    })?;
+    Ok(classic_ac_bounded_ranges_program_ext(
         "haystack",
         "transitions",
         "output_offsets",
@@ -451,10 +500,29 @@ pub fn build_ac_bounded_ranges_program_ext(
         "match_count",
         "matches",
         dfa.state_count,
-        dfa.output_records.len() as u32,
+        output_records_len,
         pattern_count,
         max_matches,
         dfa.max_pattern_len,
+        use_subgroup_coalesce,
+    ))
+}
+
+fn empty_ac_bounded_ranges_program(max_matches: u32, use_subgroup_coalesce: bool) -> Program {
+    classic_ac_bounded_ranges_program_ext(
+        "haystack",
+        "transitions",
+        "output_offsets",
+        "output_records",
+        "pattern_lengths",
+        "haystack_len",
+        "match_count",
+        "matches",
+        1,
+        0,
+        0,
+        max_matches,
+        0,
         use_subgroup_coalesce,
     )
 }
@@ -463,6 +531,7 @@ pub fn build_ac_bounded_ranges_program_ext(
 /// `(pattern_id, start, end)` triples reconstructed from
 /// `output_records` plus the pattern length table.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn classic_ac_bounded_ranges_scan(
     ac: &ClassicAcAutomaton,
     pattern_lengths: &[u32],
@@ -488,13 +557,7 @@ pub fn classic_ac_bounded_ranges_scan(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
+    use crate::test_support::byte_pack::bytes_to_u32 as decode_u32_words;
 
     #[test]
     fn single_pattern_matches() {
@@ -682,4 +745,30 @@ mod tests {
         let stored = decode_u32_words(&outputs[1].to_bytes());
         assert_eq!(stored.len(), 2, "only 2 slots allocated");
     }
+
+    #[test]
+    fn bounded_ranges_builder_exposes_checked_metadata_variant() {
+        let production = include_str!("classic_ac.rs")
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: classic AC production section should precede tests");
+
+        assert!(
+            production.contains("try_build_ac_bounded_ranges_program_ext"),
+            "Fix: AC bounded-ranges builder must expose a fallible metadata sizing path."
+        );
+        assert!(
+            !production.contains("dfa.output_records.len() as u32"),
+            "Fix: AC bounded-ranges builder must not narrow output record counts with unchecked casts."
+        );
+        assert!(
+            production.contains("u32::try_from(dfa.output_records.len())"),
+            "Fix: AC bounded-ranges output record count must use checked conversion."
+        );
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: AC bounded-ranges production builder must not panic."
+        );
+    }
 }
+

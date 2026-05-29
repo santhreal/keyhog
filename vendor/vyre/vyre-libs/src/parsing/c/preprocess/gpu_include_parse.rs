@@ -7,12 +7,12 @@
 //!
 //! ## Output columns (one row per token)
 //!
-//! - `path_start`, `path_len`        — byte span between the
+//! - `path_start`, `path_len`         -  byte span between the
 //!                                     delimiters (`<`/`>` or `"`/`"`).
-//! - `is_system`                     — `1` for `<…>`, `0` for `"…"`.
+//! - `is_system`                      -  `1` for `<…>`, `0` for `"…"`.
 //!
 //! Non-INCLUDE rows get all-zero output. `path_len == 0` after this
-//! kernel means "not a parsed `#include` row" — equivalent to the CPU
+//! kernel means "not a parsed `#include` row"  -  equivalent to the CPU
 //! `parse_include_literal` returning `None`/error.
 //!
 //! ## Real-GPU lowering note
@@ -35,14 +35,19 @@
 //!
 //! Inputs:
 //!   - `tok_starts` (U32), `tok_lens` (U32),
-//!     `directive_kinds` (U32) — output of 17a.
+//!     `directive_kinds` (U32)  -  output of 17a.
 //!   - `source` (U8).
 //!
 //! Outputs (all U32, one element per token):
 //!   - `path_start_out`, `path_len_out`, `is_system_out`.
 
+use super::gpu_directive_parse_shared::{
+    directive_program_from_parse, push_bounded_byte_scan_until, push_directive_row_bounds,
+    push_hash_and_keyword_start, push_keyword_end, push_ws_skip_from_expr,
+    safe_source_byte_expr as safe_load, DirectiveOutputColumn, DirectiveThreadLayout,
+};
 use crate::parsing::c::lex::tokens::{TOK_PP_INCLUDE, TOK_PP_INCLUDE_NEXT};
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::{Expr, Node, Program};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_include_parse_v2";
@@ -62,10 +67,20 @@ pub const BINDING_PATH_LEN_OUT: u32 = 5;
 /// Canonical binding for the output `is_system` column.
 pub const BINDING_IS_SYSTEM_OUT: u32 = 6;
 
-/// Maximum horizontal-WS run between path elements the kernel
-/// tolerates. Practical real-world is 0–1; we cap at 4 each which
-/// keeps the unrolled scans a fixed depth.
-const MAX_WS_PREFIX: u32 = 4;
+const OUTPUT_COLUMNS: [DirectiveOutputColumn; 3] = [
+    DirectiveOutputColumn {
+        name: "path_start_out",
+        binding: BINDING_PATH_START_OUT,
+    },
+    DirectiveOutputColumn {
+        name: "path_len_out",
+        binding: BINDING_PATH_LEN_OUT,
+    },
+    DirectiveOutputColumn {
+        name: "is_system_out",
+        binding: BINDING_IS_SYSTEM_OUT,
+    },
+];
 
 /// Build the 17b.7 `#include` row parser `Program`.
 ///
@@ -75,146 +90,11 @@ const MAX_WS_PREFIX: u32 = 4;
 /// requires static byte length for readback), `source_len` is unused.
 #[must_use]
 pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
-    let source_words = source_len.div_ceil(4).max(1);
     let t = Expr::var("t");
-    let lane = Expr::var("lane");
-    let block = Expr::var("block");
-
-    // U8 byte extraction (see module note).
-    let load_byte_u32 = |addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load("source", word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
-    let safe_load = |addr: Expr| -> Expr {
-        Expr::select(
-            Expr::lt(
-                addr.clone(),
-                Expr::mul(Expr::buf_len("source"), Expr::u32(4)),
-            ),
-            load_byte_u32(addr),
-            Expr::u32(0),
-        )
-    };
-    let is_ws = |b: Expr| -> Expr {
-        Expr::select(
-            Expr::or(
-                Expr::or(
-                    Expr::eq(b.clone(), Expr::u32(b' ' as u32)),
-                    Expr::eq(b.clone(), Expr::u32(b'\t' as u32)),
-                ),
-                Expr::or(
-                    Expr::eq(b.clone(), Expr::u32(0x0B)),
-                    Expr::eq(b, Expr::u32(0x0C)),
-                ),
-            ),
-            Expr::u32(1),
-            Expr::u32(0),
-        )
-    };
-
-    // hash_off_expr: scan up to MAX_WS_PREFIX leading WS bytes for `#`.
-    // bitand on u32 0/1 stays u32; reference-eval rejects mixed
-    // u32/Bool in `Expr::and` chains, which is what naive `Expr::and`
-    // chaining produces (first iter returns Bool, subsequent mix it
-    // with u32 vars).
-    let hash_off_expr = {
-        let mut acc = Expr::u32(0xFFFF_FFFF);
-        for p in (0..=MAX_WS_PREFIX).rev() {
-            let mut prefix_ws = Expr::u32(1);
-            for q in 0..p {
-                prefix_ws = Expr::bitand(prefix_ws, Expr::var(format!("hs_ws_{q}")));
-            }
-            let s_eq_hash = Expr::select(
-                Expr::eq(Expr::var(format!("hs_{p}")), Expr::u32(b'#' as u32)),
-                Expr::u32(1),
-                Expr::u32(0),
-            );
-            let cond_u32 = Expr::bitand(s_eq_hash, prefix_ws);
-            acc = Expr::select(Expr::eq(cond_u32, Expr::u32(1)), Expr::u32(p), acc);
-        }
-        acc
-    };
-
-    let ws_skip_expr = |prefix: &str, n: u32| -> Expr {
-        let mut acc = Expr::u32(n);
-        for q in (0..n).rev() {
-            let mut prefix_ws = Expr::u32(1);
-            for r in 0..q {
-                prefix_ws = Expr::bitand(prefix_ws, Expr::var(format!("{prefix}_ws_{r}")));
-            }
-            let xs_q_not_ws = Expr::select(
-                Expr::eq(Expr::var(format!("{prefix}_ws_{q}")), Expr::u32(0)),
-                Expr::u32(1),
-                Expr::u32(0),
-            );
-            let cond_u32 = Expr::bitand(xs_q_not_ws, prefix_ws);
-            acc = Expr::select(Expr::eq(cond_u32, Expr::u32(1)), Expr::u32(q), acc);
-        }
-        acc
-    };
 
     let mut parse: Vec<Node> = Vec::new();
-    parse.push(Node::let_bind(
-        "tok_start",
-        Expr::load("tok_starts", t.clone()),
-    ));
-    parse.push(Node::let_bind("tok_len", Expr::load("tok_lens", t.clone())));
-    parse.push(Node::let_bind(
-        "tok_end",
-        Expr::add(Expr::var("tok_start"), Expr::var("tok_len")),
-    ));
-
-    // ---- step 1: hash_off / hash_idx ----
-    for p in 0..=MAX_WS_PREFIX {
-        parse.push(Node::let_bind(
-            format!("hs_{p}"),
-            safe_load(Expr::add(Expr::var("tok_start"), Expr::u32(p))),
-        ));
-    }
-    for p in 0..=MAX_WS_PREFIX {
-        parse.push(Node::let_bind(
-            format!("hs_ws_{p}"),
-            is_ws(Expr::var(format!("hs_{p}"))),
-        ));
-    }
-    parse.push(Node::let_bind("hash_off", hash_off_expr));
-    parse.push(Node::let_bind(
-        "hash_idx",
-        Expr::add(Expr::var("tok_start"), Expr::var("hash_off")),
-    ));
-    parse.push(Node::let_bind(
-        "found_hash",
-        Expr::select(
-            Expr::lt(Expr::var("hash_off"), Expr::u32(MAX_WS_PREFIX + 1)),
-            Expr::u32(1),
-            Expr::u32(0),
-        ),
-    ));
-
-    // ---- step 2: skip WS between `#` and keyword. kw_start derived. ----
-    for q in 0..MAX_WS_PREFIX {
-        parse.push(Node::let_bind(
-            format!("kp_{q}"),
-            safe_load(Expr::add(Expr::var("hash_idx"), Expr::u32(q + 1))),
-        ));
-    }
-    for q in 0..MAX_WS_PREFIX {
-        parse.push(Node::let_bind(
-            format!("kp_ws_{q}"),
-            is_ws(Expr::var(format!("kp_{q}"))),
-        ));
-    }
-    parse.push(Node::let_bind("kw_skip", ws_skip_expr("kp", MAX_WS_PREFIX)));
-    parse.push(Node::let_bind(
-        "kw_start",
-        Expr::add(
-            Expr::add(Expr::var("hash_idx"), Expr::u32(1)),
-            Expr::var("kw_skip"),
-        ),
-    ));
+    push_directive_row_bounds(&mut parse);
+    push_hash_and_keyword_start(&mut parse);
 
     // ---- step 3: skip past keyword. kw_len = 7 (`include`) or 12
     // (`include_next`). Decided by `kind`. ----
@@ -226,32 +106,16 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
             Expr::u32(7),
         ),
     ));
-    parse.push(Node::let_bind(
-        "post_kw",
-        Expr::add(Expr::var("kw_start"), Expr::var("kw_len_skip")),
-    ));
+    push_keyword_end(&mut parse, Expr::var("kw_len_skip"));
 
     // ---- step 4: skip WS between keyword and delimiter. ----
-    for q in 0..MAX_WS_PREFIX {
-        parse.push(Node::let_bind(
-            format!("dp_{q}"),
-            safe_load(Expr::add(Expr::var("post_kw"), Expr::u32(q))),
-        ));
-    }
-    for q in 0..MAX_WS_PREFIX {
-        parse.push(Node::let_bind(
-            format!("dp_ws_{q}"),
-            is_ws(Expr::var(format!("dp_{q}"))),
-        ));
-    }
-    parse.push(Node::let_bind(
+    push_ws_skip_from_expr(
+        &mut parse,
+        "dp",
+        Expr::var("post_kw"),
         "delim_skip",
-        ws_skip_expr("dp", MAX_WS_PREFIX),
-    ));
-    parse.push(Node::let_bind(
         "delim_pos",
-        Expr::add(Expr::var("post_kw"), Expr::var("delim_skip")),
-    ));
+    );
 
     // ---- step 5: classify delimiter. ----
     parse.push(Node::let_bind(
@@ -303,37 +167,17 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
     // probe, which silently rejected long Linux/generated include
     // paths. The row-length loop keeps the program shape constant but
     // removes the semantic cap.
-    parse.push(Node::let_bind(
-        "path_scan_limit",
-        Expr::select(
-            Expr::lt(Expr::var("path_start_val"), Expr::var("tok_end")),
-            Expr::sub(Expr::var("tok_end"), Expr::var("path_start_val")),
-            Expr::u32(0),
-        ),
-    ));
-    parse.push(Node::let_bind("path_len_val", Expr::u32(0)));
-    parse.push(Node::let_bind("path_done", Expr::u32(0)));
-    parse.push(Node::loop_for(
+    push_bounded_byte_scan_until(
+        &mut parse,
         "path_i",
-        Expr::u32(0),
-        Expr::var("path_scan_limit"),
-        vec![Node::if_then(
-            Expr::eq(Expr::var("path_done"), Expr::u32(0)),
-            vec![
-                Node::let_bind(
-                    "path_byte",
-                    safe_load(Expr::add(Expr::var("path_start_val"), Expr::var("path_i"))),
-                ),
-                Node::if_then(
-                    Expr::eq(Expr::var("path_byte"), Expr::var("close_byte")),
-                    vec![
-                        Node::assign("path_len_val", Expr::var("path_i")),
-                        Node::assign("path_done", Expr::u32(1)),
-                    ],
-                ),
-            ],
-        )],
-    ));
+        "path_start_val",
+        "path_scan_limit",
+        "path_byte",
+        "path_len_val",
+        "path_done",
+        Expr::var("close_byte"),
+        Expr::eq(Expr::u32(1), Expr::u32(1)),
+    );
 
     // ---- step 7: commit if found_hash AND valid_delim ----
     // Both are u32 0/1; bitand stays u32; convert to bool for if_then.
@@ -352,88 +196,18 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
         ],
     ));
 
-    // ---- per-thread top-level body ----
-    let body: Vec<Node> = vec![
-        Node::let_bind("lane", Expr::LocalId { axis: 0 }),
-        Node::let_bind("block", Expr::WorkgroupId { axis: 0 }),
-        Node::let_bind("t", Expr::add(Expr::mul(block, Expr::u32(256)), lane)),
-        Node::if_then(
-            Expr::lt(t.clone(), Expr::buf_len("tok_starts")),
-            vec![
-                Node::let_bind("kind", Expr::load("directive_kinds", t.clone())),
-                // Pre-zero output cells. Parse path conditionally
-                // overwrites them when the row is a parseable include.
-                Node::store("path_start_out", t.clone(), Expr::u32(0)),
-                Node::store("path_len_out", t.clone(), Expr::u32(0)),
-                Node::store("is_system_out", t.clone(), Expr::u32(0)),
-                Node::if_then(
-                    Expr::or(
-                        Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_INCLUDE)),
-                        Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_INCLUDE_NEXT)),
-                    ),
-                    parse,
-                ),
-            ],
+    directive_program_from_parse(
+        OP_ID,
+        num_tokens,
+        source_len,
+        &OUTPUT_COLUMNS,
+        DirectiveThreadLayout::WorkgroupLinear,
+        Expr::or(
+            Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_INCLUDE)),
+            Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_INCLUDE_NEXT)),
         ),
-    ];
-
-    let buffers = vec![
-        BufferDecl::storage(
-            "tok_starts",
-            BINDING_TOK_STARTS,
-            BufferAccess::ReadOnly,
-            DataType::U32,
-        )
-        .with_count(num_tokens.max(1)),
-        BufferDecl::storage(
-            "tok_lens",
-            BINDING_TOK_LENS,
-            BufferAccess::ReadOnly,
-            DataType::U32,
-        )
-        .with_count(num_tokens.max(1)),
-        BufferDecl::storage(
-            "directive_kinds",
-            BINDING_DIRECTIVE_KINDS,
-            BufferAccess::ReadOnly,
-            DataType::U32,
-        )
-        .with_count(num_tokens.max(1)),
-        // The source buffer is declared as packed `u32` words (see
-        // module-level real-GPU note) so reference-eval and real GPU
-        // agree on word-indexed access. The host pads input bytes to a
-        // multiple of 4.
-        BufferDecl::storage(
-            "source",
-            BINDING_SOURCE,
-            BufferAccess::ReadOnly,
-            DataType::U32,
-        )
-        .with_count(source_words),
-        BufferDecl::storage(
-            "path_start_out",
-            BINDING_PATH_START_OUT,
-            BufferAccess::ReadWrite,
-            DataType::U32,
-        )
-        .with_count(num_tokens.max(1)),
-        BufferDecl::storage(
-            "path_len_out",
-            BINDING_PATH_LEN_OUT,
-            BufferAccess::ReadWrite,
-            DataType::U32,
-        )
-        .with_count(num_tokens.max(1)),
-        BufferDecl::storage(
-            "is_system_out",
-            BINDING_IS_SYSTEM_OUT,
-            BufferAccess::ReadWrite,
-            DataType::U32,
-        )
-        .with_count(num_tokens.max(1)),
-    ];
-
-    Program::wrapped(buffers, [256, 1, 1], body).with_entry_op_id(OP_ID)
+        parse,
+    )
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 use super::{enforce_actual_output_budget, DispatchConfig};
+use vyre_driver::tuner::Mode;
+use vyre_driver::validation::LaunchGeometryLimits;
 use vyre_foundation::execution_plan::{self, ReadbackStrategy};
-use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{BufferDecl, DataType, Expr, MemoryKind, Node, Program};
 
 #[test]
 fn hex_short_truncates_to_eight_bytes() {
@@ -44,6 +46,103 @@ fn output_layout_matches_trimmed_execution_plan() {
         .expect("Fix: layout must derive; restore this invariant before continuing.");
     assert_eq!(layouts[0].layout.read_size, 8);
     assert_eq!(layouts[0].layout.copy_size, 8);
+}
+
+#[test]
+fn wgpu_compile_config_receives_natural_gradient_workgroup_before_lowering() {
+    let program = Program::wrapped(
+        vec![BufferDecl::output("out", 0, DataType::U32).with_count(4096)],
+        [32, 1, 1],
+        vec![Node::store("out", Expr::u32(0), Expr::u32(7))],
+    );
+    let limits = LaunchGeometryLimits {
+        backend: "wgpu-test",
+        max_threads_per_block: 1024,
+        max_block_dim: [1024, 1024, 64],
+        max_grid_dim: [u32::MAX, u32::MAX, u32::MAX],
+    };
+
+    let effective = super::wgpu_effective_dispatch_config_for_limits(
+        &program,
+        &DispatchConfig::default(),
+        limits,
+        Mode::NaturalGradient,
+    )
+    .expect("Fix: WGPU natural-gradient config derivation must be pure and valid");
+
+    assert_eq!(
+        effective.workgroup_override,
+        Some([1024, 1, 1]),
+        "Fix: WGPU lowering config must include the natural-gradient workgroup so WGSL @workgroup_size and dispatch metadata agree."
+    );
+}
+
+#[test]
+fn wgpu_natural_gradient_compile_config_preserves_semantic_safety_gates() {
+    let program = Program::wrapped(
+        vec![
+            BufferDecl::output("out", 0, DataType::U32).with_count(4096),
+            BufferDecl::workgroup("scratch", 64, DataType::U32).with_kind(MemoryKind::Shared),
+        ],
+        [64, 1, 1],
+        vec![Node::store("out", Expr::u32(0), Expr::u32(7))],
+    );
+    let limits = LaunchGeometryLimits {
+        backend: "wgpu-test",
+        max_threads_per_block: 1024,
+        max_block_dim: [1024, 1024, 64],
+        max_grid_dim: [u32::MAX, u32::MAX, u32::MAX],
+    };
+    let mut explicit = DispatchConfig::default();
+    explicit.workgroup_override = Some([256, 1, 1]);
+
+    let explicit_effective = super::wgpu_effective_dispatch_config_for_limits(
+        &program,
+        &explicit,
+        limits,
+        Mode::NaturalGradient,
+    )
+    .expect("Fix: explicit WGPU workgroup override must stay valid");
+    assert_eq!(explicit_effective.workgroup_override, Some([256, 1, 1]));
+
+    let shared_effective = super::wgpu_effective_dispatch_config_for_limits(
+        &program,
+        &DispatchConfig::default(),
+        limits,
+        Mode::NaturalGradient,
+    )
+    .expect("Fix: shared-memory WGPU config should remain valid without autotuning");
+    assert_eq!(
+        shared_effective.workgroup_override, None,
+        "Fix: workgroup-local scratch kernels must keep the Program-declared WGPU workgroup."
+    );
+}
+
+#[test]
+fn pipeline_production_uses_fallible_binding_and_trap_staging() {
+    let production = include_str!("../pipeline.rs")
+        .split("\n#[cfg(test)]\nmod tests")
+        .next()
+        .expect("Fix: pipeline production section should precede tests");
+
+    assert!(
+        !production.contains("with_capacity_and_hasher"),
+        "Fix: WGPU pipeline binding classification must not use infallible hash-set constructors."
+    );
+    assert!(
+        !production.contains("Vec::with_capacity(trap_sidecar_bytes)"),
+        "Fix: WGPU trap sidecar readback must not allocate infallibly."
+    );
+    assert!(
+        production.contains("reserve_hash_set_to_capacity"),
+        "Fix: WGPU pipeline binding classification should use the shared fallible hash-set reservation helper."
+    );
+    assert!(
+        production.contains(
+            "reserve_backend_vec(&mut bytes, trap_sidecar_bytes, \"trap sidecar readback\")?"
+        ),
+        "Fix: WGPU trap sidecar readback should reserve through the shared staging helper."
+    );
 }
 
 /// PERF-HOT-01: two WgpuPipeline instances for the same compiled shader
@@ -294,7 +393,7 @@ fn direct_record_and_readback_trap_uses_readback_rings_only() {
         &config,
     ));
     let with_rings_pool = with_rings_arena.pool().clone();
-    let without_rings_pool = without_rings_arena.pool().clone();
+    let _without_rings_pool = without_rings_arena.pool().clone();
 
     let program = Program::wrapped(
         vec![],
@@ -363,6 +462,7 @@ fn direct_record_and_readback_trap_uses_readback_rings_only() {
 }
 
 #[test]
+
 fn direct_record_and_readback_trap_without_readback_rings_allocates_full_sidecar_copy() {
     use std::sync::Arc;
 
@@ -588,3 +688,4 @@ fn direct_record_and_readback_trap_with_output_preserves_ring_fast_path() {
         "Fix: no-ring mixed output+trap path should allocate output storage, trap storage, output readback, and trap readback buffers; ring-backed dispatch must be the path that avoids the two pooled readback allocations.",
     );
 }
+

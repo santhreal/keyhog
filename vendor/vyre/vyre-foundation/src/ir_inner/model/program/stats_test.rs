@@ -210,6 +210,22 @@ fn node_kinds_present_bit_positions_match_program_soa_node_kind() {
     );
     assert_eq!(NODE_KIND_REGION, kind_mask(NodeKind::Region));
     assert_eq!(
+        super::stats::NODE_KIND_ALL_REDUCE,
+        kind_mask(NodeKind::AllReduce)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_ALL_GATHER,
+        kind_mask(NodeKind::AllGather)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_REDUCE_SCATTER,
+        kind_mask(NodeKind::ReduceScatter)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_BROADCAST,
+        kind_mask(NodeKind::Broadcast)
+    );
+    assert_eq!(
         super::stats::NODE_KIND_OPAQUE,
         kind_mask(NodeKind::Opaque)
     );

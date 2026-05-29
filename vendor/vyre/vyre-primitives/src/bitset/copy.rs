@@ -1,15 +1,14 @@
-//! `bitset_copy` — per-word bitwise copy (`target = source`).
+//! `bitset_copy`  -  per-word bitwise copy (`target = source`).
 //!
-//! Replaces the `bitset_or_into` "OR-into-zero" idiom that frontend was
+//! Replaces the `bitset_or_into` "OR-into-zero" idiom that external analyzer was
 //! using as a structural copy. Explicit primitive: doc-clear,
 //! semantics obvious, kernel one assignment per word. Downstream analyzer's
 //! lower_expr's BindingRef arm (and any other "structural copy
 //! between two same-shape bitset buffers") consumes this directly.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use super::binary_word::copy_word_program;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::bitset::copy";
@@ -17,28 +16,7 @@ pub const OP_ID: &str = "vyre-primitives::bitset::copy";
 /// Build a Program: `target[w] = source[w]` for `w` in `0..words`.
 #[must_use]
 pub fn bitset_copy(target: &str, source: &str, words: u32) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-    let body = vec![Node::store(
-        target,
-        t.clone(),
-        Expr::load(source, t.clone()),
-    )];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(target, 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(words),
-            BufferDecl::storage(source, 1, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(words)),
-                body,
-            )]),
-        }],
-    )
+    copy_word_program(OP_ID, target, source, words)
 }
 
 /// CPU reference. Copies `source` into `target` word-for-word.
@@ -54,14 +32,14 @@ inventory::submit! {
         OP_ID,
         || bitset_copy("target", "source", 2),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0]),
                 to_bytes(&[0xDEAD, 0xBEEF]),
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0xDEAD, 0xBEEF])]]
         }),
     )

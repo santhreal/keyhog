@@ -75,11 +75,18 @@ pub fn classify_op_id(id: &str) -> OpTier {
         OpTier::Libs
     } else if id.starts_with("core.") || id.starts_with("io.") || id.starts_with("mem.") {
         OpTier::Runtime
-    } else if id.starts_with("weir::") {
+    } else if is_external_crate_namespace(id) {
         OpTier::External
     } else {
         OpTier::Unknown
     }
+}
+
+fn is_external_crate_namespace(id: &str) -> bool {
+    let Some((crate_name, _)) = id.split_once("::") else {
+        return false;
+    };
+    !crate_name.is_empty() && !crate_name.starts_with("vyre-")
 }
 
 /// Deterministic fixture input cases.
@@ -123,7 +130,7 @@ pub struct OpEntry {
     /// Coarse-grained taxonomy tag (T028 / SEPARATION_AUDIT S2 prep).
     /// Examples: `"math"`, `"nn"`, `"crypto"`, `"scan"`, `"parsing"`,
     /// `"graph"`, `"security"`, `"dataflow"`, `"compiler"`. `None`
-    /// means uncategorised — equivalent to the pre-T028 behaviour.
+    /// means uncategorised  -  equivalent to the pre-T028 behaviour.
     pub category: Option<&'static str>,
 }
 
@@ -209,7 +216,7 @@ fn explicit_tolerance_for_id(id: &str) -> u32 {
         "vyre-libs::nn::rms_norm_linear" => 2,
         "vyre-libs::math::fft::fft_convolve_circular_complex" => 4,
         "vyre-libs::optim::newton_schulz_5step" => 16,
-        // `decay*ema + (1-decay)*theta` — straight mul+add chain,
+        // `decay*ema + (1-decay)*theta`  -  straight mul+add chain,
         // one lane drifts 1 ULP from CPU's serial mul+add+add to
         // GPU's fused mul-add (WGSL-spec-allowed).
         "vyre-libs::optim::ema_apply" => 1,
@@ -491,8 +498,8 @@ mod tests {
     fn vyre_op_macro_build_fn_produces_program() {
         let entry = crate::all_entries()
             .find(|e| e.id == "vyre-harness::test::trivial_minimal")
-            .expect("entry must exist");
+            .expect("Fix: entry must exist");
         let program = (entry.build)();
-        assert!(!program.entry().is_empty());
+        assert_ne!(program.entry().len(), 0);
     }
 }

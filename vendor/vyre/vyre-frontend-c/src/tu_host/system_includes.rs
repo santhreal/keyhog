@@ -38,7 +38,7 @@ fn disabled_system_include_dirs() -> Result<Vec<PathBuf>, String> {
 /// `End of search list.` from a `cc -E -v -` stderr capture.
 ///
 /// Lines inside the list look like ` /usr/include` (a single leading space).
-/// Some drivers append ` (framework directory)` on macOS — treat those as
+/// Some drivers append ` (framework directory)` on macOS  -  treat those as
 /// regular paths; the trailing annotation is dropped.
 #[cfg(test)]
 fn parse_search_list(stderr: &str) -> Vec<PathBuf> {

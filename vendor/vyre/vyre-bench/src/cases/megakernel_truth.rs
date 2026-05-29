@@ -3,14 +3,19 @@ use crate::api::case::{
     BenchRun, Correctness, DeterminismClass, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
-use std::time::{Duration, Instant};
-use vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher;
-use vyre_runtime::megakernel::{protocol, MegakernelConfig, MegakernelWorkItem};
+use crate::api::resident::{
+    dispatch_compiled_timed, input_bytes_total, transfer_accounting, ResidentInputPool,
+};
+use std::sync::Arc;
+use std::time::Instant;
+use vyre_driver::CompiledPipeline;
+use vyre_runtime::megakernel::{self, protocol, MegakernelWorkItem};
 
 pub struct MegakernelTruth;
 
 const WORK_ITEM_COUNT: usize = 1024;
 const WORKER_COUNT: u32 = 256;
+const RESIDENT_SAMPLE_SETS: usize = 8;
 const SUITES: &[crate::api::suite::SuiteKind] = &[
     crate::api::suite::SuiteKind::Release,
     crate::api::suite::SuiteKind::Gpu,
@@ -18,8 +23,12 @@ const SUITES: &[crate::api::suite::SuiteKind] = &[
 ];
 
 struct MegakernelTruthPrepared {
+    program: Arc<vyre_foundation::ir::Program>,
     work_items: Vec<MegakernelWorkItem>,
+    inputs: Vec<Vec<u8>>,
     input_bytes_total: u64,
+    compiled: Option<Arc<dyn CompiledPipeline>>,
+    resident: Option<ResidentInputPool>,
 }
 
 impl BenchCase for MegakernelTruth {
@@ -43,7 +52,7 @@ impl BenchCase for MegakernelTruth {
             layer: BenchLayer::Runtime,
             workload: WorkloadClass::Macro,
             determinism: DeterminismClass::Deterministic,
-            owner_crate: "vyre-driver-wgpu".to_string(),
+            owner_crate: "vyre-runtime".to_string(),
         }
     }
 
@@ -61,13 +70,51 @@ impl BenchCase for MegakernelTruth {
         }
     }
 
-    fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
+    fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let work_items = make_work_items(WORK_ITEM_COUNT)?;
-        let input_bytes_total =
-            (work_items.len() * std::mem::size_of::<MegakernelWorkItem>()) as u64;
+        let slot_count = u32::try_from(WORK_ITEM_COUNT).map_err(|source| {
+            BenchError::ExecutionFailed(format!(
+                "megakernel truth work item count cannot fit u32: {source}"
+            ))
+        })?;
+        let program = megakernel::build_program_sharded_once_slots_control_report_shared(
+            WORKER_COUNT,
+            slot_count,
+            &[],
+        );
+        let control_bytes = megakernel::encode_control(false, 1, 0)
+            .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
+        let mut ring_words = Vec::new();
+        vyre_runtime::megakernel::Megakernel::encode_work_items_ring_words_into(
+            slot_count,
+            0,
+            &work_items,
+            &mut ring_words,
+        )
+        .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
+        let mut ring_bytes = Vec::with_capacity(ring_words.len().saturating_mul(4));
+        for word in &ring_words {
+            ring_bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let debug_bytes = megakernel::encode_empty_debug_log(megakernel::debug::RECORD_CAPACITY)
+            .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
+        let io_bytes = megakernel::io::try_encode_empty_io_queue(megakernel::io::IO_SLOT_COUNT)
+            .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
+        let inputs = vec![control_bytes, ring_bytes, debug_bytes, io_bytes];
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputPool::upload_optional(
+            ctx,
+            &inputs,
+            RESIDENT_SAMPLE_SETS,
+            "megakernel truth bench",
+        )?;
         Ok(Box::new(MegakernelTruthPrepared {
+            program,
             work_items,
+            inputs,
             input_bytes_total,
+            compiled: None,
+            resident,
         }))
     }
 
@@ -81,149 +128,94 @@ impl BenchCase for MegakernelTruth {
         prepared: &mut PreparedCase,
     ) -> Result<BenchRun, BenchError> {
         let prepared = prepared
-            .downcast_ref::<MegakernelTruthPrepared>()
+            .downcast_mut::<MegakernelTruthPrepared>()
             .ok_or_else(|| {
                 BenchError::ExecutionFailed(
                     "megakernel truth prepared payload type mismatch".to_string(),
                 )
             })?;
 
-        let config = MegakernelConfig {
-            worker_count: WORKER_COUNT,
-            max_wall_time: Duration::from_secs(5),
-            expected_items_per_worker: 1,
-            workload: vyre_runtime::megakernel::MegakernelWorkloadHints {
-                graph_node_count: WORK_ITEM_COUNT as u32,
-                graph_edge_count: WORK_ITEM_COUNT.saturating_sub(1) as u32,
-                frontier_density_bps: 10_000,
-                ..Default::default()
-            },
-        };
-        let dispatcher = WgpuMegakernelDispatcher::new(ctx.preferred_backend.as_ref());
-        let started = Instant::now();
-        let report = dispatcher
-            .dispatch_megakernel(&prepared.work_items, &config)
-            .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
-        let wall_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let mut dispatch_config = ctx.dispatch_config.clone();
+        dispatch_config.grid_override =
+            Some([(WORK_ITEM_COUNT as u32).div_ceil(WORKER_COUNT), 1, 1]);
+        if prepared.compiled.is_none() {
+            let compiled = vyre_driver::pipeline::compile_with_telemetry(
+                Arc::clone(&ctx.preferred_backend),
+                prepared.program.as_ref(),
+                &dispatch_config,
+            )
+            .map_err(|error| BenchError::BackendFailed(error.to_string()))?
+            .pipeline;
+            prepared.compiled = Some(compiled);
+        }
+        let compiled = prepared.compiled.as_ref().ok_or_else(|| {
+            BenchError::ExecutionFailed(
+                "megakernel truth compiled pipeline missing after compile".to_string(),
+            )
+        })?;
+        let dispatch = dispatch_compiled_timed(
+            compiled.as_ref(),
+            prepared.resident.as_mut(),
+            &prepared.inputs,
+            &dispatch_config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let wall_ns = dispatch.timed.wall_ns;
+        let outputs = dispatch.timed.outputs;
+        let done_count = read_done_count(&outputs)?;
         let baseline_start = Instant::now();
         let baseline_processed = simulate_cpu_drain(&prepared.work_items);
         let baseline_ns = u64::try_from(baseline_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let output_bytes_total = outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let accounting = transfer_accounting(
+            prepared.input_bytes_total,
+            output_bytes_total,
+            resident_used,
+        );
 
         Ok(BenchRun {
             metrics: BenchMetrics {
                 wall_ns: Some(wall_ns),
-                dispatch_ns: Some(report.backend_dispatch_ns),
-                kernel_queue_submit_ns: Some(
-                    report.queue_plan_ns.saturating_add(report.queue_publish_ns),
-                ),
+                dispatch_ns: Some(wall_ns),
+                kernel_queue_submit_ns: Some(0),
                 input_bytes: Some(prepared.input_bytes_total),
-                bytes_read: Some(prepared.input_bytes_total),
-                bytes_touched: Some(prepared.input_bytes_total),
+                output_bytes: Some(output_bytes_total),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
+                bytes_touched: Some(accounting.bytes_touched),
                 atomic_op_count: Some((WORK_ITEM_COUNT as u64).saturating_mul(2)),
                 custom: vec![
                     MetricPoint {
-                        name: "megakernel_queue_plan_ns".to_string(),
-                        value: report.queue_plan_ns,
-                    },
-                    MetricPoint {
-                        name: "megakernel_queue_publish_ns".to_string(),
-                        value: report.queue_publish_ns,
-                    },
-                    MetricPoint {
                         name: "megakernel_backend_dispatch_ns".to_string(),
-                        value: report.backend_dispatch_ns,
-                    },
-                    MetricPoint {
-                        name: "megakernel_lineage_ns".to_string(),
-                        value: report.lineage_ns,
+                        value: wall_ns,
                     },
                     MetricPoint {
                         name: "megakernel_published_items".to_string(),
-                        value: report.published_items,
-                    },
-                    MetricPoint {
-                        name: "megakernel_lineage_items".to_string(),
-                        value: report.lineage_items,
-                    },
-                    MetricPoint {
-                        name: "megakernel_deduped_items".to_string(),
-                        value: report.deduped_items,
+                        value: WORK_ITEM_COUNT as u64,
                     },
                     MetricPoint {
                         name: "megakernel_items_processed".to_string(),
-                        value: report.items_processed,
+                        value: done_count,
                     },
                     MetricPoint {
                         name: "megakernel_items_remaining".to_string(),
-                        value: report.items_remaining,
-                    },
-                    MetricPoint {
-                        name: "megakernel_bytes_uploaded".to_string(),
-                        value: report.telemetry.bytes_uploaded,
-                    },
-                    MetricPoint {
-                        name: "megakernel_bytes_read_back".to_string(),
-                        value: report.telemetry.bytes_read_back,
-                    },
-                    MetricPoint {
-                        name: "megakernel_bytes_moved".to_string(),
-                        value: report.telemetry.bytes_moved,
-                    },
-                    MetricPoint {
-                        name: "megakernel_resident_allocations".to_string(),
-                        value: u64::from(report.telemetry.resident_allocations),
+                        value: (WORK_ITEM_COUNT as u64).saturating_sub(done_count),
                     },
                     MetricPoint {
                         name: "megakernel_kernel_launches".to_string(),
-                        value: u64::from(report.telemetry.kernel_launches),
+                        value: 1,
                     },
                     MetricPoint {
-                        name: "megakernel_sync_points".to_string(),
-                        value: u64::from(report.telemetry.sync_points),
+                        name: "megakernel_resident_input_pool_sets".to_string(),
+                        value: if resident_used {
+                            RESIDENT_SAMPLE_SETS as u64
+                        } else {
+                            0
+                        },
                     },
                     MetricPoint {
-                        name: "megakernel_occupancy_proxy_bps".to_string(),
-                        value: u64::from(report.telemetry.occupancy_proxy_bps),
-                    },
-                    MetricPoint {
-                        name: "megakernel_frontier_density_bps".to_string(),
-                        value: u64::from(report.telemetry.frontier_density_bps),
-                    },
-                    MetricPoint {
-                        name: "megakernel_readback_buffers".to_string(),
-                        value: u64::from(report.telemetry.readback_buffers),
-                    },
-                    MetricPoint {
-                        name: "megakernel_compiled_pipeline_cache_hit".to_string(),
-                        value: report.telemetry.compiled_pipeline_cache_hit as u64,
-                    },
-                    MetricPoint {
-                        name: "megakernel_resident_input_cache_hit".to_string(),
-                        value: report.telemetry.resident_input_cache_hit as u64,
-                    },
-                    MetricPoint {
-                        name: "megakernel_topology".to_string(),
-                        value: report.telemetry.topology as u64,
-                    },
-                    MetricPoint {
-                        name: "megakernel_pressure".to_string(),
-                        value: report.telemetry.pressure as u64,
-                    },
-                    MetricPoint {
-                        name: "megakernel_execution_mode".to_string(),
-                        value: report.telemetry.execution_mode as u64,
-                    },
-                    MetricPoint {
-                        name: "megakernel_hit_capacity".to_string(),
-                        value: u64::from(report.telemetry.hit_capacity),
-                    },
-                    MetricPoint {
-                        name: "megakernel_estimated_peak_device_bytes".to_string(),
-                        value: report.telemetry.estimated_peak_device_bytes,
-                    },
-                    MetricPoint {
-                        name: "megakernel_device_memory_budget_bytes".to_string(),
-                        value: report.telemetry.device_memory_budget_bytes,
+                        name: "megakernel_backend_neutral_cuda_path".to_string(),
+                        value: u64::from(ctx.preferred_backend.id() == "cuda"),
                     },
                 ],
                 ..Default::default()
@@ -240,7 +232,7 @@ impl BenchCase for MegakernelTruth {
                 }],
                 ..Default::default()
             }),
-            outputs: vec![report.items_processed.to_le_bytes().to_vec()],
+            outputs: vec![done_count.to_le_bytes().to_vec()],
             baseline_outputs: Some(vec![baseline_processed.to_le_bytes().to_vec()]),
         })
     }
@@ -255,6 +247,17 @@ impl BenchCase for MegakernelTruth {
             .map(|prepared| (prepared.input_bytes_total, 0))
             .unwrap_or((0, 0))
     }
+}
+
+fn read_done_count(outputs: &[Vec<u8>]) -> Result<u64, BenchError> {
+    let control = outputs.first().ok_or_else(|| {
+        BenchError::CorrectnessViolation(
+            "megakernel truth dispatch produced no control output".to_string(),
+        )
+    })?;
+    let done = vyre_runtime::megakernel::try_read_done_count(control)
+        .map_err(|error| BenchError::CorrectnessViolation(error.to_string()))?;
+    Ok(u64::from(done))
 }
 
 fn make_work_items(count: usize) -> Result<Vec<MegakernelWorkItem>, BenchError> {
@@ -295,7 +298,7 @@ mod tests {
 
     #[test]
     fn work_items_are_unique_for_dedupe_truth() {
-        let items = make_work_items(64).expect("fixture");
+        let items = make_work_items(64).expect("Fix: fixture");
         let mut deduped = Vec::new();
         let report =
             vyre_runtime::megakernel::prune_redundant_work_items_into(&items, &mut deduped);
@@ -306,7 +309,7 @@ mod tests {
 
     #[test]
     fn cpu_drain_counts_nop_items() {
-        let items = make_work_items(8).expect("fixture");
+        let items = make_work_items(8).expect("Fix: fixture");
 
         assert_eq!(simulate_cpu_drain(&items), 8);
     }

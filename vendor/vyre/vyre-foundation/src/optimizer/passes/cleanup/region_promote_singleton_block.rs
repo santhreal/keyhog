@@ -1,8 +1,8 @@
-//! `region_promote_singleton_block` — unwrap `Region { body: [Block(inner)] }`
+//! `region_promote_singleton_block`  -  unwrap `Region { body: [Block(inner)] }`
 //! to `Region { body: inner }`.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::region_promote_singleton_block`.
-//! Soundness: `Exact` — `Node::Block` is a transparent container with no
+//! Soundness: `Exact`  -  `Node::Block` is a transparent container with no
 //! observable behavior beyond grouping its children. A Region whose entire
 //! body is a single `Block(inner)` is observationally equivalent to a Region
 //! whose body is `inner` directly. Cost-direction: monotone-down on
@@ -107,7 +107,7 @@ fn promote_node(node: Node, changed: &mut bool) -> Node {
     } = recursed
     {
         // Fast path: peek at the shared Arc first. If it isn't a
-        // singleton Block, we never unwrap or clone the body — just
+        // singleton Block, we never unwrap or clone the body  -  just
         // hand the Arc back to a fresh Region. The previous shape
         // unconditionally unwrapped (or fully cloned) every Region
         // body even when the rule did not fire, which is the common

@@ -30,6 +30,37 @@ struct AstManifest {
     enums: Vec<AstEnum>,
 }
 
+impl AstManifest {
+    fn validate(&self) -> syn::Result<()> {
+        let mut enum_names = std::collections::BTreeSet::new();
+        for ast_enum in &self.enums {
+            let enum_name = ast_enum.name.to_string();
+            if !enum_names.insert(enum_name.clone()) {
+                return Err(syn::Error::new_spanned(
+                    &ast_enum.name,
+                    format!(
+                        "duplicate AST enum `{enum_name}`. Fix: merge the variants into one `{enum_name}` block or rename the second enum."
+                    ),
+                ));
+            }
+
+            let mut variant_names = std::collections::BTreeSet::new();
+            for variant in &ast_enum.variants {
+                let variant_name = variant.ident.to_string();
+                if !variant_names.insert(variant_name.clone()) {
+                    return Err(syn::Error::new_spanned(
+                        &variant.ident,
+                        format!(
+                            "duplicate AST variant `{variant_name}` in `{enum_name}`. Fix: keep one `{variant_name}` variant or give each variant a stable unique name."
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Parse for AstManifest {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let mut enums = Vec::new();
@@ -96,6 +127,9 @@ impl Parse for AstManifest {
 #[allow(clippy::too_many_lines)]
 pub(crate) fn vyre_ast_registry_impl(item: TokenStream) -> TokenStream {
     let manifest = parse_macro_input!(item as AstManifest);
+    if let Err(error) = manifest.validate() {
+        return error.to_compile_error().into();
+    }
 
     let mut outputs = Vec::new();
 
@@ -261,4 +295,62 @@ pub(crate) fn vyre_ast_registry_impl(item: TokenStream) -> TokenStream {
 
     let out = quote! { #(#outputs)* };
     out.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    #[test]
+    fn ast_manifest_accepts_unit_tuple_and_named_variants() {
+        let manifest = syn::parse2::<AstManifest>(quote! {
+            Expr {
+                Const,
+                Unary(u32),
+                Binary { left: u32, right: u32 },
+            }
+        })
+        .expect("Fix: AST manifest should parse unit, tuple, and named variants");
+
+        manifest
+            .validate()
+            .expect("Fix: unique AST enum and variant names should validate");
+        assert_eq!(manifest.enums.len(), 1);
+        assert_eq!(manifest.enums[0].variants.len(), 3);
+    }
+
+    #[test]
+    fn ast_manifest_rejects_duplicate_enum_names() {
+        let manifest = syn::parse2::<AstManifest>(quote! {
+            Expr { Const }
+            Expr { Add }
+        })
+        .expect("Fix: duplicate enum names are a validation error, not a parse error");
+
+        let err = manifest
+            .validate()
+            .expect_err("Fix: duplicate AST enum names must be rejected");
+
+        assert!(err.to_string().contains("duplicate AST enum"));
+        assert!(err.to_string().contains("Fix:"));
+    }
+
+    #[test]
+    fn ast_manifest_rejects_duplicate_variant_names() {
+        let manifest = syn::parse2::<AstManifest>(quote! {
+            Expr {
+                Const,
+                Const,
+            }
+        })
+        .expect("Fix: duplicate variant names are a validation error, not a parse error");
+
+        let err = manifest
+            .validate()
+            .expect_err("Fix: duplicate AST variant names must be rejected");
+
+        assert!(err.to_string().contains("duplicate AST variant"));
+        assert!(err.to_string().contains("Fix:"));
+    }
 }

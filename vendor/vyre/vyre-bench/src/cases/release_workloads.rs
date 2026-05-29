@@ -23,6 +23,34 @@ struct SyntheticCountWorkload {
     pattern: SyntheticPattern,
 }
 
+/// Public release macro workload program descriptor for local benchmark entrypoints.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct ReleaseMacroProgramSpec {
+    /// Stable benchmark case id.
+    pub id: &'static str,
+    /// Human-readable benchmark name.
+    pub name: &'static str,
+    /// Logical records processed by the release workload.
+    pub records: u32,
+    /// Number of input buffers in the generated release workload.
+    pub input_buffers: usize,
+    /// Minimum CUDA speedup contract attached to this release workload.
+    pub min_speedup_x: u32,
+}
+
+/// Generated release workload case with concrete inputs and CPU-oracle outputs.
+#[derive(Clone)]
+pub struct ReleaseMacroGeneratedCase {
+    /// Public descriptor for the generated workload shape.
+    pub spec: ReleaseMacroProgramSpec,
+    /// IR program generated for this workload shape.
+    pub program: Program,
+    /// Concrete input byte buffers.
+    pub inputs: Vec<Vec<u8>>,
+    /// Expected output byte buffers from the CPU oracle.
+    pub expected_outputs: Vec<Vec<u8>>,
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SyntheticPattern {
     ConditionEval,
@@ -95,8 +123,7 @@ impl BenchCase for SparseOutputCompactionCount {
     fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let program = Program::wrapped(
             vec![
-                BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                    .with_count(1),
+                BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
                 BufferDecl::storage("flags", 1, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(SPARSE_ITEMS),
             ],
@@ -195,7 +222,7 @@ impl BenchCase for CallgraphReachabilityStep {
             layer: BenchLayer::Libs,
             workload: WorkloadClass::Macro,
             determinism: DeterminismClass::Deterministic,
-            owner_crate: "dataflow".to_string(),
+            owner_crate: "vyre-primitives".to_string(),
         }
     }
 
@@ -210,7 +237,7 @@ impl BenchCase for CallgraphReachabilityStep {
     fn performance_contract(&self) -> Option<PerformanceContract> {
         Some(PerformanceContract::cpu_sota_min_speedup(
             "callgraph reachability CSR step",
-            "weir",
+            "vyre-primitives",
             "optimized CPU graph reachability and witness extraction",
             25.0,
         ))
@@ -326,8 +353,7 @@ impl BenchCase for MetadataConditionBatch {
     fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let program = Program::wrapped(
             vec![
-                BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                    .with_count(1),
+                BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
                 BufferDecl::storage("filesize", 1, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(METADATA_RECORDS),
                 BufferDecl::storage("header", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -389,7 +415,6 @@ impl BenchCase for MetadataConditionBatch {
             entropy.push(ent);
         }
         let inputs = vec![
-            vec![0; 4],
             encode_u32_words(&filesize),
             encode_u32_words(&header),
             encode_u32_words(&entropy),
@@ -468,37 +493,7 @@ impl BenchCase for SyntheticCountWorkload {
     }
 
     fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
-        if self.pattern == SyntheticPattern::ConditionEval {
-            return Ok(Box::new(condition_eval_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::StringBitmapScatter {
-            return Ok(Box::new(string_bitmap_scatter_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::OffsetCountAggregation {
-            return Ok(Box::new(offset_count_aggregation_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::EntropyWindow {
-            return Ok(Box::new(entropy_window_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::QuantifiedLoops {
-            return Ok(Box::new(quantified_condition_loops_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::AliasReachingDef {
-            return Ok(Box::new(alias_reaching_def_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::IfdsWitness {
-            return Ok(Box::new(ifds_witness_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::CAstTraversal {
-            return Ok(Box::new(c_ast_traversal_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::MegakernelQueuedBatch {
-            return Ok(Box::new(megakernel_queue_program(self.records)));
-        }
-        if self.pattern == SyntheticPattern::EgraphSaturation {
-            return Ok(Box::new(egraph_saturation_program(self.records)));
-        }
-        Ok(Box::new(synthetic_count_program(
+        Ok(Box::new(build_synthetic_release_program(
             self.pattern,
             self.records,
         )))
@@ -579,6 +574,21 @@ impl SyntheticCountWorkload {
     }
 }
 
+fn build_synthetic_release_program(pattern: SyntheticPattern, records: u32) -> Program {
+    match pattern {
+        SyntheticPattern::ConditionEval => condition_eval_program(records),
+        SyntheticPattern::StringBitmapScatter => string_bitmap_scatter_program(records),
+        SyntheticPattern::OffsetCountAggregation => offset_count_aggregation_program(records),
+        SyntheticPattern::EntropyWindow => entropy_window_program(records),
+        SyntheticPattern::QuantifiedLoops => quantified_condition_loops_program(records),
+        SyntheticPattern::AliasReachingDef => alias_reaching_def_program(records),
+        SyntheticPattern::IfdsWitness => ifds_witness_program(records),
+        SyntheticPattern::CAstTraversal => c_ast_traversal_program(records),
+        SyntheticPattern::MegakernelQueuedBatch => megakernel_queue_program(records),
+        SyntheticPattern::EgraphSaturation => egraph_saturation_program(records),
+    }
+}
+
 fn gpu_requirements(input_bytes: u64) -> BenchRequirements {
     BenchRequirements {
         needs_gpu: true,
@@ -609,7 +619,6 @@ fn string_bitmap_scatter_inputs(records: u32) -> StringBitmapScatterInputs {
         rule_bitmap.push(row[1]);
     }
     let inputs = vec![
-        vec![0; records.div_ceil(32) as usize * 4],
         encode_u32_words(&pattern_bitmap),
         encode_u32_words(&rule_bitmap),
     ];
@@ -623,8 +632,7 @@ fn string_bitmap_scatter_inputs(records: u32) -> StringBitmapScatterInputs {
 fn synthetic_count_program(pattern: SyntheticPattern, records: u32) -> Program {
     let mut buffers =
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
         ];
     for (binding, name) in pattern_buffers(pattern).iter().enumerate() {
         buffers.push(
@@ -659,8 +667,7 @@ fn synthetic_count_program(pattern: SyntheticPattern, records: u32) -> Program {
 fn condition_eval_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("match_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("rule_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -765,8 +772,7 @@ fn string_bitmap_scatter_program(records: u32) -> Program {
 fn offset_count_aggregation_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("offset_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("length_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -839,8 +845,7 @@ fn offset_count_aggregation_program(records: u32) -> Program {
 fn entropy_window_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("byte_class_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("transition_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -910,8 +915,7 @@ fn entropy_window_program(records: u32) -> Program {
 fn quantified_condition_loops_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("any_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("all_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -996,8 +1000,7 @@ fn quantified_condition_loops_program(records: u32) -> Program {
 fn alias_reaching_def_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("def_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("use_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -1067,8 +1070,7 @@ fn alias_reaching_def_program(records: u32) -> Program {
 fn ifds_witness_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("frontier_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("transfer_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -1138,8 +1140,7 @@ fn ifds_witness_program(records: u32) -> Program {
 fn c_ast_traversal_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("node_kind_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("depth_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -1209,8 +1210,7 @@ fn c_ast_traversal_program(records: u32) -> Program {
 fn megakernel_queue_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("queue_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("predicate_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -1283,8 +1283,7 @@ fn megakernel_queue_program(records: u32) -> Program {
 fn egraph_saturation_program(records: u32) -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
+            BufferDecl::output("out_count", 0, DataType::U32).with_count(1),
             BufferDecl::storage("opcode_mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(records),
             BufferDecl::storage("lhs_class_mask", 2, BufferAccess::ReadOnly, DataType::U32)
@@ -1439,8 +1438,7 @@ fn synthetic_inputs(pattern: SyntheticPattern, records: u32) -> SyntheticInputs 
             column.push(value);
         }
     }
-    let mut inputs = Vec::with_capacity(columns.len() + 1);
-    inputs.push(vec![0; 4]);
+    let mut inputs = Vec::with_capacity(columns.len());
     inputs.extend(columns.iter().map(|column| encode_u32_words(column)));
     SyntheticInputs { inputs, expected }
 }
@@ -2034,7 +2032,7 @@ fn linear_graph_inputs() -> GraphInputs {
         let live_bits = 32 - extra_bits;
         let last = frontier_in
             .last_mut()
-            .expect("CALLGRAPH_WORDS is derived from a nonzero node count");
+            .expect("Fix: CALLGRAPH_WORDS is derived from a nonzero node count");
         *last = (1u32 << live_bits) - 1;
     }
     let frontier_out_seed = vec![0; CALLGRAPH_WORDS];
@@ -2366,7 +2364,7 @@ static ALIAS_REACHING_DEF: SyntheticCountWorkload = SyntheticCountWorkload {
     name: "Release Alias Reaching Definition 1M",
     description: "Alias-aware reaching-definition predicate workload used by optimization passes",
     tags: &["alias", "reaching-def", "dataflow"],
-    owner_crate: "dataflow",
+    owner_crate: "vyre-bench",
     primitive: "alias-aware reaching-definition optimization",
     baseline: "LLVM-style sparse dataflow and alias analysis baseline",
     metric_name: "alias_records",
@@ -2380,7 +2378,7 @@ static IFDS_WITNESS: SyntheticCountWorkload = SyntheticCountWorkload {
     name: "Release IFDS Witness 1M",
     description: "IFDS frontier and edge-kind predicate stage for witness extraction",
     tags: &["ifds", "witness", "dataflow"],
-    owner_crate: "dataflow",
+    owner_crate: "vyre-bench",
     primitive: "IFDS reachability and witness extraction",
     baseline: "optimized CPU graph reachability and witness extraction",
     metric_name: "ifds_records",
@@ -2430,6 +2428,118 @@ static EGRAPH_SATURATION: SyntheticCountWorkload = SyntheticCountWorkload {
     min_speedup_x: 100.0,
     pattern: SyntheticPattern::EgraphSaturation,
 };
+
+fn release_macro_workloads() -> [&'static SyntheticCountWorkload; 10] {
+    [
+        &CONDITION_EVAL_BATCH,
+        &STRING_BITMAP_SCATTER,
+        &OFFSET_COUNT_AGGREGATION,
+        &ENTROPY_WINDOW,
+        &QUANTIFIED_LOOPS,
+        &ALIAS_REACHING_DEF,
+        &IFDS_WITNESS,
+        &C_AST_TRAVERSAL,
+        &MEGAKERNEL_QUEUE,
+        &EGRAPH_SATURATION,
+    ]
+}
+
+/// Return compiler-grade release macro workload descriptors used by Criterion
+/// and generated coverage tests.
+#[must_use]
+pub fn release_macro_program_specs() -> Vec<ReleaseMacroProgramSpec> {
+    release_macro_program_specs_for_records(METADATA_RECORDS)
+}
+
+/// Return compiler-grade release macro workload descriptors at a reduced or
+/// stress-scale record count.
+#[must_use]
+pub fn release_macro_program_specs_for_records(records: u32) -> Vec<ReleaseMacroProgramSpec> {
+    release_macro_workloads()
+        .into_iter()
+        .map(|workload| ReleaseMacroProgramSpec {
+            id: workload.id,
+            name: workload.name,
+            records,
+            input_buffers: pattern_input_count(workload.pattern),
+            min_speedup_x: workload.min_speedup_x as u32,
+        })
+        .collect()
+}
+
+/// Return only release macro descriptors whose output is a single count word.
+#[must_use]
+pub fn release_count_macro_program_specs_for_records(records: u32) -> Vec<ReleaseMacroProgramSpec> {
+    release_macro_workloads()
+        .into_iter()
+        .filter(|workload| is_count_output_pattern(workload.pattern))
+        .map(|workload| ReleaseMacroProgramSpec {
+            id: workload.id,
+            name: workload.name,
+            records,
+            input_buffers: pattern_input_count(workload.pattern),
+            min_speedup_x: workload.min_speedup_x as u32,
+        })
+        .collect()
+}
+
+/// Build the IR program for a compiler-grade release macro workload.
+#[must_use]
+pub fn build_release_macro_program(id: &str) -> Option<Program> {
+    release_macro_workloads()
+        .into_iter()
+        .find(|workload| workload.id == id)
+        .map(|workload| build_synthetic_release_program(workload.pattern, workload.records))
+}
+
+/// Build the IR program for a compiler-grade release macro workload at a
+/// caller-selected record count.
+#[must_use]
+pub fn build_release_macro_program_for_records(id: &str, records: u32) -> Option<Program> {
+    release_macro_workloads()
+        .into_iter()
+        .find(|workload| workload.id == id)
+        .map(|workload| build_synthetic_release_program(workload.pattern, records))
+}
+
+/// Build a reduced or stress-scale release macro case with generated hostile
+/// inputs and CPU-oracle count output.
+#[must_use]
+pub fn build_release_count_macro_case_for_records(
+    id: &str,
+    records: u32,
+) -> Option<ReleaseMacroGeneratedCase> {
+    let workload = release_macro_workloads()
+        .into_iter()
+        .find(|workload| workload.id == id)?;
+    if !is_count_output_pattern(workload.pattern) {
+        return None;
+    }
+
+    let generated = synthetic_inputs(workload.pattern, records);
+    let expected = synthetic_cpu_count(workload.pattern, records);
+    assert_eq!(
+        generated.expected, expected,
+        "Fix: release macro generated input oracle diverged from CPU count oracle for {id}"
+    );
+
+    Some(ReleaseMacroGeneratedCase {
+        spec: ReleaseMacroProgramSpec {
+            id: workload.id,
+            name: workload.name,
+            records,
+            input_buffers: pattern_input_count(workload.pattern),
+            min_speedup_x: workload.min_speedup_x as u32,
+        },
+        program: build_synthetic_release_program(workload.pattern, records),
+        inputs: generated.inputs,
+        expected_outputs: vec![expected.to_le_bytes().to_vec()],
+    })
+}
+
+fn is_count_output_pattern(pattern: SyntheticPattern) -> bool {
+    !matches!(pattern, SyntheticPattern::StringBitmapScatter)
+}
 
 inventory::submit! {
     &SparseOutputCompactionCount as &'static dyn BenchCase

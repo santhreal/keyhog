@@ -192,7 +192,7 @@ mod tests {
         let counters = parse_nvml_telemetry_row(
             "NVIDIA GeForce RTX 5090, 14001, 14001, 2500, 2400, P0, 0x0, 420.4, 600.0, 72, 32768, 8192, 24576, 97, 88",
         )
-        .expect("valid RTX 5090 telemetry row must parse");
+        .expect("Fix: valid RTX 5090 telemetry row must parse");
 
         for required in [
             "clock_mem_max_mhz",

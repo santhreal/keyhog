@@ -60,10 +60,7 @@ inventory::submit! {
             // in LSB-first order, each of which casts to its integer
             // value as f32.
             let values: Vec<f32> = (0u32..16).map(|v| v as f32).collect();
-            let bytes = values
-                .iter()
-                .flat_map(|v| v.to_bits().to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&values);
             vec![vec![bytes]]
         }),
         category: None,

@@ -45,7 +45,12 @@ pub(crate) fn flush_macro_segment_ranges(
         .unwrap_or(0);
     let mut chunk = macro_expansion_cache.take_range_chunk_scratch();
     if chunk.capacity() < max_chunk_len {
-        chunk.reserve(max_chunk_len - chunk.capacity());
+        let additional = max_chunk_len - chunk.capacity();
+        chunk.try_reserve_exact(additional).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {additional} macro segment shard bytes: {error:?}. Fix: shard macro segment ranges before GPU macro expansion."
+            )
+        })?;
     }
     let result = (|| {
         for (chunk_start, chunk_end) in ranges {

@@ -595,6 +595,7 @@ inventory::submit! {
     }
 }
 
+
 fn lexer_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     let source = b"def f(x):\n#z\n";
     let mut haystack = vec![0u8; 16 * 4];
@@ -656,3 +657,4 @@ fn lexer_fixture_expected() -> Vec<Vec<Vec<u8>>> {
         9u32.to_le_bytes().to_vec(),
     ]]
 }
+

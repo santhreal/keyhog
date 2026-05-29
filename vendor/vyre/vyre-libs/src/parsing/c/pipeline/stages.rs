@@ -1,8 +1,8 @@
-//! **Tier 3 — named C11 GPU pipeline stages** (no CLI, no filesystem).
+//! **Tier 3  -  named C11 GPU pipeline stages** (no CLI, no filesystem).
 //!
-//! Drivers (`vyrec`, `vyre-frontend-c`) orchestrate dispatches; embedders can import only the
-//! stages they need. Buffer layouts are defined by each `Program`’s `BufferDecl`
-//! (`with_count`, read/write); see each builder’s module for harness fixtures.
+//! Frontends orchestrate dispatches; embedders can import only the stages they
+//! need. Buffer layouts are defined by each `Program`’s `BufferDecl`
+//! (`with_count`, read/write); see each builder's module for harness fixtures.
 //!
 //! Full roadmap: `docs/COMPILER_E2E_PLAN.md`.
 
@@ -55,3 +55,25 @@ pub use crate::{
 /// Upper bound on token stream length for `ast_shunting_yard` / padded tok buffers.
 /// Must match `vyre-libs` `ast_shunting_yard` implementation.
 pub const C11_AST_MAX_TOK_SCAN: u32 = 65536;
+
+#[cfg(test)]
+mod tests {
+    const SOURCE: &str = include_str!("stages.rs");
+
+    #[test]
+    fn c_pipeline_stage_surface_is_consumer_neutral() {
+        for forbidden in [
+            concat!("vy", "rec"),
+            concat!("we", "ir"),
+            concat!("sur", "gec"),
+            concat!("gos", "san"),
+            concat!("key", "hog"),
+            concat!("vyre-frontend", "-c"),
+        ] {
+            assert!(
+                !SOURCE.to_ascii_lowercase().contains(forbidden),
+                "C pipeline stages must describe generic frontend embedders, not consumer names"
+            );
+        }
+    }
+}

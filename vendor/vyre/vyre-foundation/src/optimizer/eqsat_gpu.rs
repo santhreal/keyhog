@@ -29,8 +29,8 @@
 //! consecutive rows touches one cache line per column (4 columns
 //! × 4 bytes × 32 lanes = 512 bytes per warp).
 
-use rustc_hash::FxHashMap;
-use std::hash::BuildHasherDefault;
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::fmt;
 use std::sync::Arc;
 
 use super::eqsat::{EClassId, EGraph, ENodeLang};
@@ -73,6 +73,325 @@ pub struct GpuEGraphSnapshot {
     pub op_ids: OpIdRegistry,
 }
 
+/// Error returned when a CPU e-graph cannot be represented by the current
+/// 32-bit GPU snapshot ABI.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GpuEGraphSnapshotError {
+    context: &'static str,
+    value: usize,
+}
+
+impl GpuEGraphSnapshotError {
+    fn new(context: &'static str, value: usize) -> Self {
+        Self { context, value }
+    }
+
+    /// Human-readable conversion context.
+    #[must_use]
+    pub const fn context(&self) -> &'static str {
+        self.context
+    }
+
+    /// Host-side value that could not fit the GPU snapshot ABI.
+    #[must_use]
+    pub const fn value(&self) -> usize {
+        self.value
+    }
+}
+
+impl fmt::Display for GpuEGraphSnapshotError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "GPU e-graph snapshot {} value {} exceeds the u32 column ABI. Fix: shard the e-graph snapshot or widen the GPU snapshot ABI before upload.",
+            self.context, self.value
+        )
+    }
+}
+
+impl std::error::Error for GpuEGraphSnapshotError {}
+
+/// Error returned when a GPU e-graph snapshot is structurally malformed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GpuEGraphSnapshotIntegrityError {
+    context: &'static str,
+    row: usize,
+    value: u32,
+}
+
+impl GpuEGraphSnapshotIntegrityError {
+    fn new(context: &'static str, row: usize, value: u32) -> Self {
+        Self {
+            context,
+            row,
+            value,
+        }
+    }
+
+    /// Human-readable validation context.
+    #[must_use]
+    pub const fn context(&self) -> &'static str {
+        self.context
+    }
+
+    /// Snapshot row that failed validation.
+    #[must_use]
+    pub const fn row(&self) -> usize {
+        self.row
+    }
+
+    /// Row-local value that failed validation.
+    #[must_use]
+    pub const fn value(&self) -> u32 {
+        self.value
+    }
+}
+
+impl fmt::Display for GpuEGraphSnapshotIntegrityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "GPU e-graph snapshot integrity error at row {}: {} value {} is invalid. Fix: rebuild the snapshot from canonical e-graph rows before upload.",
+            self.row, self.context, self.value
+        )
+    }
+}
+
+impl std::error::Error for GpuEGraphSnapshotIntegrityError {}
+
+/// Error returned when a GPU e-graph snapshot cannot be packed for upload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GpuEGraphDeviceImageError {
+    /// Snapshot rows are structurally malformed.
+    Integrity(GpuEGraphSnapshotIntegrityError),
+    /// Snapshot or derived index columns exceed the current u32 device ABI.
+    Layout(GpuEGraphSnapshotError),
+}
+
+impl fmt::Display for GpuEGraphDeviceImageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Integrity(error) => error.fmt(f),
+            Self::Layout(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for GpuEGraphDeviceImageError {}
+
+impl From<GpuEGraphSnapshotIntegrityError> for GpuEGraphDeviceImageError {
+    fn from(error: GpuEGraphSnapshotIntegrityError) -> Self {
+        Self::Integrity(error)
+    }
+}
+
+impl From<GpuEGraphSnapshotError> for GpuEGraphDeviceImageError {
+    fn from(error: GpuEGraphSnapshotError) -> Self {
+        Self::Layout(error)
+    }
+}
+
+/// Contiguous span inside a packed GPU e-graph device image.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GpuEGraphDeviceSpan {
+    offset: usize,
+    len: usize,
+}
+
+impl GpuEGraphDeviceSpan {
+    const fn new(offset: usize, len: usize) -> Self {
+        Self { offset, len }
+    }
+
+    /// Word offset of the span inside the packed u32 slab.
+    #[must_use]
+    pub const fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Number of u32 words in the span.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// `true` iff the span contains no words.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn slice<'a>(&self, words: &'a [u32]) -> &'a [u32] {
+        &words[self.offset..self.offset + self.len]
+    }
+}
+
+/// Segment table for a packed GPU e-graph device image.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GpuEGraphDeviceLayout {
+    row_count: usize,
+    child_count: usize,
+    eclass_group_count: usize,
+    row_eclass_ids: GpuEGraphDeviceSpan,
+    row_language_op_ids: GpuEGraphDeviceSpan,
+    row_children_offsets: GpuEGraphDeviceSpan,
+    row_children_lens: GpuEGraphDeviceSpan,
+    row_signatures: GpuEGraphDeviceSpan,
+    children: GpuEGraphDeviceSpan,
+    group_eclass_ids: GpuEGraphDeviceSpan,
+    group_offsets: GpuEGraphDeviceSpan,
+    group_rows: GpuEGraphDeviceSpan,
+}
+
+impl GpuEGraphDeviceLayout {
+    /// Number of snapshot rows packed into the device image.
+    #[must_use]
+    pub const fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    /// Number of child references packed into the device image.
+    #[must_use]
+    pub const fn child_count(&self) -> usize {
+        self.child_count
+    }
+
+    /// Number of e-class row groups in the device image.
+    #[must_use]
+    pub const fn eclass_group_count(&self) -> usize {
+        self.eclass_group_count
+    }
+
+    /// Span containing one e-class id per snapshot row.
+    #[must_use]
+    pub const fn row_eclass_ids(&self) -> GpuEGraphDeviceSpan {
+        self.row_eclass_ids
+    }
+
+    /// Span containing one language op id per snapshot row.
+    #[must_use]
+    pub const fn row_language_op_ids(&self) -> GpuEGraphDeviceSpan {
+        self.row_language_op_ids
+    }
+
+    /// Span containing one child-column offset per snapshot row.
+    #[must_use]
+    pub const fn row_children_offsets(&self) -> GpuEGraphDeviceSpan {
+        self.row_children_offsets
+    }
+
+    /// Span containing one child count per snapshot row.
+    #[must_use]
+    pub const fn row_children_lens(&self) -> GpuEGraphDeviceSpan {
+        self.row_children_lens
+    }
+
+    /// Span containing one structural row signature per snapshot row.
+    #[must_use]
+    pub const fn row_signatures(&self) -> GpuEGraphDeviceSpan {
+        self.row_signatures
+    }
+
+    /// Span containing the flat child e-class column.
+    #[must_use]
+    pub const fn children(&self) -> GpuEGraphDeviceSpan {
+        self.children
+    }
+
+    /// Span containing sorted e-class ids for row groups.
+    #[must_use]
+    pub const fn group_eclass_ids(&self) -> GpuEGraphDeviceSpan {
+        self.group_eclass_ids
+    }
+
+    /// Span containing prefix offsets into [`Self::group_rows`].
+    #[must_use]
+    pub const fn group_offsets(&self) -> GpuEGraphDeviceSpan {
+        self.group_offsets
+    }
+
+    /// Span containing row indices grouped by e-class.
+    #[must_use]
+    pub const fn group_rows(&self) -> GpuEGraphDeviceSpan {
+        self.group_rows
+    }
+}
+
+/// Validated, single-slab u32 image ready for backend upload.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct GpuEGraphDeviceImage {
+    words: Vec<u32>,
+    layout: GpuEGraphDeviceLayout,
+}
+
+impl GpuEGraphDeviceImage {
+    /// Packed u32 words. Backends can upload this slab with one host-to-device copy.
+    #[must_use]
+    pub fn words(&self) -> &[u32] {
+        &self.words
+    }
+
+    /// Segment table describing the packed word slab.
+    #[must_use]
+    pub const fn layout(&self) -> GpuEGraphDeviceLayout {
+        self.layout
+    }
+
+    /// One e-class id per snapshot row.
+    #[must_use]
+    pub fn row_eclass_ids(&self) -> &[u32] {
+        self.layout.row_eclass_ids.slice(&self.words)
+    }
+
+    /// One language op id per snapshot row.
+    #[must_use]
+    pub fn row_language_op_ids(&self) -> &[u32] {
+        self.layout.row_language_op_ids.slice(&self.words)
+    }
+
+    /// One child-column offset per snapshot row.
+    #[must_use]
+    pub fn row_children_offsets(&self) -> &[u32] {
+        self.layout.row_children_offsets.slice(&self.words)
+    }
+
+    /// One child count per snapshot row.
+    #[must_use]
+    pub fn row_children_lens(&self) -> &[u32] {
+        self.layout.row_children_lens.slice(&self.words)
+    }
+
+    /// One structural signature per snapshot row.
+    #[must_use]
+    pub fn row_signatures(&self) -> &[u32] {
+        self.layout.row_signatures.slice(&self.words)
+    }
+
+    /// Flat child e-class column.
+    #[must_use]
+    pub fn children(&self) -> &[u32] {
+        self.layout.children.slice(&self.words)
+    }
+
+    /// Sorted e-class ids for row groups.
+    #[must_use]
+    pub fn group_eclass_ids(&self) -> &[u32] {
+        self.layout.group_eclass_ids.slice(&self.words)
+    }
+
+    /// Prefix offsets into [`Self::group_rows`].
+    #[must_use]
+    pub fn group_offsets(&self) -> &[u32] {
+        self.layout.group_offsets.slice(&self.words)
+    }
+
+    /// Row indices grouped by e-class.
+    #[must_use]
+    pub fn group_rows(&self) -> &[u32] {
+        self.layout.group_rows.slice(&self.words)
+    }
+}
+
 /// Stable language-op id assignment used inside snapshot rows.
 #[derive(Clone, Debug, Default)]
 pub struct OpIdRegistry {
@@ -84,14 +403,21 @@ impl OpIdRegistry {
     /// Intern a language-op name and return its stable id.
     /// Repeated calls with the same name return the same id.
     pub fn intern(&mut self, name: &str) -> u32 {
+        self.try_intern(name)
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Fallible form of [`Self::intern`] for GPU snapshot builders that must
+    /// reject over-wide op dictionaries instead of silently saturating ids.
+    pub fn try_intern(&mut self, name: &str) -> Result<u32, GpuEGraphSnapshotError> {
         if let Some(&id) = self.by_name.get(name) {
-            return id;
+            return Ok(id);
         }
-        let id = u32_len(self.names.len(), "op-id registry");
+        let id = u32_len(self.names.len(), "op-id registry")?;
         let name: Arc<str> = Arc::from(name);
         self.names.push(Arc::clone(&name));
         self.by_name.insert(name, id);
-        id
+        Ok(id)
     }
 
     /// Resolve an op-id back to its name, or `None` if unknown.
@@ -124,14 +450,23 @@ impl GpuEGraphSnapshot {
     where
         I: IntoIterator<Item = (u32, &'a str, &'a [u32])>,
     {
+        Self::try_build(rows).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Fallible form of [`Self::build`] that rejects snapshots too large for
+    /// the current 32-bit GPU column ABI.
+    pub fn try_build<'a, I>(rows: I) -> Result<Self, GpuEGraphSnapshotError>
+    where
+        I: IntoIterator<Item = (u32, &'a str, &'a [u32])>,
+    {
         let mut snapshot = Self::default();
         let rows = rows.into_iter();
         let (lower_bound, _) = rows.size_hint();
         snapshot.rows.reserve(lower_bound);
         for (eclass_id, op_name, kids) in rows {
-            let language_op_id = snapshot.op_ids.intern(op_name);
-            let children_offset = u32_len(snapshot.children.len(), "GPU egraph children offset");
-            let children_len = u32_len(kids.len(), "GPU egraph row child count");
+            let language_op_id = snapshot.op_ids.try_intern(op_name)?;
+            let children_offset = u32_len(snapshot.children.len(), "GPU egraph children offset")?;
+            let children_len = u32_len(kids.len(), "GPU egraph row child count")?;
             snapshot.children.extend_from_slice(kids);
             snapshot.rows.push(SnapshotRow {
                 eclass_id,
@@ -140,7 +475,7 @@ impl GpuEGraphSnapshot {
                 children_len,
             });
         }
-        snapshot
+        Ok(snapshot)
     }
 
     /// Materialise a snapshot directly from the CPU `EGraph`.
@@ -156,13 +491,27 @@ impl GpuEGraphSnapshot {
         F: FnMut(&L) -> S,
         S: AsRef<str>,
     {
+        Self::try_from_egraph_with(egraph, &mut op_name).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Fallible form of [`Self::from_egraph_with`] that rejects CPU e-graphs
+    /// whose node or child-column counts exceed the current 32-bit GPU ABI.
+    pub fn try_from_egraph_with<L, F, S>(
+        egraph: &EGraph<L>,
+        mut op_name: F,
+    ) -> Result<Self, GpuEGraphSnapshotError>
+    where
+        L: ENodeLang,
+        F: FnMut(&L) -> S,
+        S: AsRef<str>,
+    {
         let mut snapshot = Self::default();
         snapshot.rows.reserve(egraph.class_count());
         for (eclass_id, node) in egraph.iter_nodes() {
-            let language_op_id = snapshot.op_ids.intern(op_name(node).as_ref());
+            let language_op_id = snapshot.op_ids.try_intern(op_name(node).as_ref())?;
             let children = node.children();
-            let children_offset = u32_len(snapshot.children.len(), "GPU egraph children offset");
-            let children_len = u32_len(children.len(), "GPU egraph row child count");
+            let children_offset = u32_len(snapshot.children.len(), "GPU egraph children offset")?;
+            let children_len = u32_len(children.len(), "GPU egraph row child count")?;
             snapshot
                 .children
                 .extend(children.iter().map(|child| egraph.find_immut(*child).0));
@@ -173,7 +522,7 @@ impl GpuEGraphSnapshot {
                 children_len,
             });
         }
-        snapshot
+        Ok(snapshot)
     }
 
     /// Number of nodes in the snapshot.
@@ -210,16 +559,174 @@ impl GpuEGraphSnapshot {
     #[must_use]
     pub fn rows_by_eclass(&self) -> FxHashMap<u32, Vec<usize>> {
         let mut out: FxHashMap<u32, Vec<usize>> =
-            FxHashMap::with_capacity_and_hasher(self.rows.len(), BuildHasherDefault::default());
+            FxHashMap::with_capacity_and_hasher(self.rows.len(), Default::default());
         for (i, row) in self.rows.iter().enumerate() {
             out.entry(row.eclass_id).or_default().push(i);
         }
         out
     }
+
+    /// Validate that the columnar snapshot is safe to upload to a GPU kernel.
+    ///
+    /// This checks every row's operation id, child-column range, and child
+    /// e-class references. It is intentionally stricter than construction:
+    /// callers may still build partial test fixtures, but production upload
+    /// paths can require this gate before device execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuEGraphSnapshotIntegrityError`] when a row references an
+    /// unknown op id, points outside the child column, or names a child e-class
+    /// not present in the snapshot.
+    pub fn validate_integrity(&self) -> Result<(), GpuEGraphSnapshotIntegrityError> {
+        let mut eclasses: FxHashSet<u32> =
+            FxHashSet::with_capacity_and_hasher(self.rows.len(), Default::default());
+        for row in &self.rows {
+            eclasses.insert(row.eclass_id);
+        }
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            if self.op_ids.name_of(row.language_op_id).is_none() {
+                return Err(GpuEGraphSnapshotIntegrityError::new(
+                    "unknown language_op_id",
+                    row_idx,
+                    row.language_op_id,
+                ));
+            }
+            let start = row.children_offset as usize;
+            let end = start
+                .checked_add(row.children_len as usize)
+                .ok_or_else(|| {
+                    GpuEGraphSnapshotIntegrityError::new(
+                        "children range overflow",
+                        row_idx,
+                        row.children_len,
+                    )
+                })?;
+            if end > self.children.len() {
+                return Err(GpuEGraphSnapshotIntegrityError::new(
+                    "children range end",
+                    row_idx,
+                    row.children_len,
+                ));
+            }
+            for &child in &self.children[start..end] {
+                if !eclasses.contains(&child) {
+                    return Err(GpuEGraphSnapshotIntegrityError::new(
+                        "dangling child eclass",
+                        row_idx,
+                        child,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Pack the validated snapshot into one backend-uploadable u32 slab.
+    ///
+    /// The image contains row metadata columns, a structural row-signature
+    /// column, the flat child column, and a deterministic e-class-to-row prefix
+    /// index. CUDA and other backends can upload the returned
+    /// [`GpuEGraphDeviceImage::words`] slice in one copy and pass the spans
+    /// from [`GpuEGraphDeviceImage::layout`] as kernel parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuEGraphDeviceImageError`] if the snapshot fails integrity
+    /// validation or if a derived row/group index exceeds the u32 device ABI.
+    pub fn try_pack_device_image(&self) -> Result<GpuEGraphDeviceImage, GpuEGraphDeviceImageError> {
+        self.validate_integrity()?;
+
+        let mut groups: FxHashMap<u32, Vec<u32>> =
+            FxHashMap::with_capacity_and_hasher(self.rows.len(), Default::default());
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            groups
+                .entry(row.eclass_id)
+                .or_default()
+                .push(u32_len(row_idx, "GPU egraph grouped row index")?);
+        }
+
+        let mut group_eclass_ids = groups.keys().copied().collect::<Vec<_>>();
+        group_eclass_ids.sort_unstable();
+
+        let mut group_offsets = Vec::with_capacity(group_eclass_ids.len() + 1);
+        let mut group_rows = Vec::with_capacity(self.rows.len());
+        for eclass_id in &group_eclass_ids {
+            group_offsets.push(u32_len(group_rows.len(), "GPU egraph group row offset")?);
+            let Some(rows) = groups.get(eclass_id) else {
+                return Err(GpuEGraphSnapshotIntegrityError::new(
+                    "missing grouped eclass key",
+                    0,
+                    *eclass_id,
+                )
+                .into());
+            };
+            group_rows.extend_from_slice(rows);
+        }
+        group_offsets.push(u32_len(
+            group_rows.len(),
+            "GPU egraph group row terminal offset",
+        )?);
+
+        let row_signatures = self
+            .rows
+            .iter()
+            .map(|row| {
+                let start = row.children_offset as usize;
+                let end = start + row.children_len as usize;
+                egraph_row_signature(row, &self.children[start..end])
+            })
+            .collect::<Vec<_>>();
+        let mut words = Vec::with_capacity(
+            self.rows.len() * 5
+                + self.children.len()
+                + group_eclass_ids.len()
+                + group_offsets.len()
+                + group_rows.len(),
+        );
+        let row_eclass_ids = append_words(&mut words, self.rows.iter().map(|row| row.eclass_id));
+        let row_language_op_ids =
+            append_words(&mut words, self.rows.iter().map(|row| row.language_op_id));
+        let row_children_offsets =
+            append_words(&mut words, self.rows.iter().map(|row| row.children_offset));
+        let row_children_lens =
+            append_words(&mut words, self.rows.iter().map(|row| row.children_len));
+        let row_signatures = append_words(&mut words, row_signatures);
+        let children = append_words(&mut words, self.children.iter().copied());
+        let group_eclass_ids_span = append_words(&mut words, group_eclass_ids);
+        let group_offsets = append_words(&mut words, group_offsets);
+        let group_rows = append_words(&mut words, group_rows);
+
+        Ok(GpuEGraphDeviceImage {
+            words,
+            layout: GpuEGraphDeviceLayout {
+                row_count: self.rows.len(),
+                child_count: self.children.len(),
+                eclass_group_count: groups.len(),
+                row_eclass_ids,
+                row_language_op_ids,
+                row_children_offsets,
+                row_children_lens,
+                row_signatures,
+                children,
+                group_eclass_ids: group_eclass_ids_span,
+                group_offsets,
+                group_rows,
+            },
+        })
+    }
+
+    /// Panic-on-error form of [`Self::try_pack_device_image`].
+    #[must_use]
+    pub fn pack_device_image(&self) -> GpuEGraphDeviceImage {
+        self.try_pack_device_image()
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
 }
 
 /// Report returned after applying discovered equivalences to an `EGraph`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+
 pub struct ApplyEquivalencesReport {
     /// Input equivalence count.
     pub requested: usize,
@@ -265,7 +772,9 @@ where
         requested: equivalences.len(),
         ..ApplyEquivalencesReport::default()
     };
-    let class_count = u32_len(egraph.class_count(), "CPU egraph class count");
+    let Ok(class_count) = u32_len(egraph.class_count(), "CPU egraph class count") else {
+        return report;
+    };
     for eq in equivalences {
         if eq.left >= class_count || eq.right >= class_count {
             continue;
@@ -283,12 +792,43 @@ where
 }
 
 #[inline]
-#[expect(
-    clippy::expect_used,
-    reason = "GPU snapshot ABI stores row offsets and ids as u32; exceeding it is a hard capacity breach"
-)]
-fn u32_len(value: usize, _context: &str) -> u32 {
-    u32::try_from(value).expect("Fix: GPU egraph snapshot exceeds u32 encoding capacity")
+fn u32_len(value: usize, context: &'static str) -> Result<u32, GpuEGraphSnapshotError> {
+    u32::try_from(value).map_err(|_| GpuEGraphSnapshotError::new(context, value))
+}
+
+fn append_words<I>(words: &mut Vec<u32>, values: I) -> GpuEGraphDeviceSpan
+where
+    I: IntoIterator<Item = u32>,
+{
+    let offset = words.len();
+    words.extend(values);
+    GpuEGraphDeviceSpan::new(offset, words.len() - offset)
+}
+
+/// Structural row signature for packed GPU e-graph columns.
+///
+/// Matches the CUDA row-signature refresh kernel and initial image packing.
+#[must_use]
+pub fn gpu_egraph_row_signature(language_op_id: u32, children_len: u32, children: &[u32]) -> u32 {
+    let mut hash = mix_egraph_signature(0xA24B_AED4, language_op_id);
+    hash = mix_egraph_signature(hash, children_len);
+    for &child in children {
+        hash = mix_egraph_signature(hash, child);
+    }
+    hash
+}
+
+fn egraph_row_signature(row: &SnapshotRow, children: &[u32]) -> u32 {
+    gpu_egraph_row_signature(row.language_op_id, row.children_len, children)
+}
+
+fn mix_egraph_signature(hash: u32, value: u32) -> u32 {
+    let mixed = hash
+        ^ value
+            .wrapping_add(0x9E37_79B9)
+            .wrapping_add(hash << 6)
+            .wrapping_add(hash >> 2);
+    mixed.rotate_left(13).wrapping_mul(0x85EB_CA6B)
 }
 
 #[cfg(test)]
@@ -362,6 +902,41 @@ mod tests {
         assert_eq!(reg.name_of(99), None);
     }
 
+    #[test]
+    fn gpu_snapshot_u32_layout_conversion_rejects_overflow() {
+        let error = u32_len(u32::MAX as usize + 1, "test overflow")
+            .expect_err("Fix: GPU e-graph snapshot must not silently saturate oversized columns");
+
+        assert_eq!(error.context(), "test overflow");
+        assert_eq!(error.value(), u32::MAX as usize + 1);
+        assert!(
+            error.to_string().contains("shard the e-graph snapshot")
+                && error.to_string().contains("widen the GPU snapshot ABI"),
+            "oversized GPU snapshot errors must explain both viable fixes"
+        );
+    }
+
+    #[test]
+    fn gpu_snapshot_builders_use_fallible_u32_conversion_not_saturation() {
+        let source = include_str!("eqsat_gpu.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: production eqsat_gpu section must exist");
+        assert!(
+            source.contains("pub fn try_build")
+                && source.contains("pub fn try_from_egraph_with")
+                && source.contains("snapshot.op_ids.try_intern")
+                && source.contains("u32::try_from(value).map_err")
+                && !source.contains(concat!("unwrap_or", "(u32::MAX)")),
+            "Fix: GPU e-graph snapshots must reject oversized u32 ABI fields instead of saturating them to u32::MAX."
+        );
+        assert!(
+            !production.contains(".expect("),
+            "Fix: GPU e-graph snapshot production paths must return structured errors instead of panicking."
+        );
+    }
+
     /// `rows_by_eclass` groups multi-row e-classes.
     #[test]
     fn rows_by_eclass_groups_correctly() {
@@ -374,6 +949,197 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert_eq!(groups.get(&0).unwrap().len(), 2);
         assert_eq!(groups.get(&1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn generated_snapshot_integrity_accepts_pack_boundaries_and_forward_children() {
+        for node_count in [1_usize, 2, 7, 8, 9, 16, 17, 31, 32, 33, 65, 128] {
+            let mut rows = Vec::with_capacity(node_count);
+            let mut child_storage = Vec::new();
+            for row in 0..node_count {
+                let start = child_storage.len();
+                if row > 0 {
+                    child_storage.push((row - 1) as u32);
+                }
+                if row > 1 && row % 3 == 0 {
+                    child_storage.push((row / 2) as u32);
+                }
+                rows.push((
+                    row as u32,
+                    if row % 2 == 0 { "lit" } else { "add" },
+                    start,
+                    child_storage.len() - start,
+                ));
+            }
+            let build_rows = rows
+                .iter()
+                .map(|&(class, op, start, len)| (class, op, &child_storage[start..start + len]))
+                .collect::<Vec<_>>();
+            let snapshot = GpuEGraphSnapshot::build(build_rows);
+
+            snapshot
+                .validate_integrity()
+                .unwrap_or_else(|error| panic!("node_count={node_count}: {error}"));
+        }
+    }
+
+    #[test]
+    fn snapshot_integrity_rejects_unknown_op_id() {
+        let mut snapshot = GpuEGraphSnapshot::build([(0u32, "lit", &[][..])]);
+        snapshot.rows[0].language_op_id = 99;
+
+        let error = snapshot
+            .validate_integrity()
+            .expect_err("Fix: malformed GPU snapshot op ids must be rejected before upload.");
+
+        assert_eq!(error.context(), "unknown language_op_id");
+        assert_eq!(error.row(), 0);
+        assert_eq!(error.value(), 99);
+    }
+
+    #[test]
+    fn snapshot_integrity_rejects_out_of_bounds_child_range() {
+        let mut snapshot = GpuEGraphSnapshot::build([(0u32, "lit", &[][..])]);
+        snapshot.rows[0].children_offset = 1;
+        snapshot.rows[0].children_len = 1;
+
+        let error = snapshot
+            .validate_integrity()
+            .expect_err("Fix: malformed GPU snapshot child ranges must be rejected before upload.");
+
+        assert_eq!(error.context(), "children range end");
+        assert_eq!(error.row(), 0);
+    }
+
+    #[test]
+    fn snapshot_integrity_rejects_dangling_child_eclass() {
+        let snapshot =
+            GpuEGraphSnapshot::build([(0u32, "lit", &[][..]), (1u32, "add", &[0u32, 99u32][..])]);
+
+        let error = snapshot.validate_integrity().expect_err(
+            "Fix: malformed GPU snapshot child eclasses must be rejected before upload.",
+        );
+
+        assert_eq!(error.context(), "dangling child eclass");
+        assert_eq!(error.row(), 1);
+        assert_eq!(error.value(), 99);
+    }
+
+    #[test]
+    fn device_image_packs_single_upload_slab_with_sorted_group_index() {
+        let snapshot = GpuEGraphSnapshot::build([
+            (2u32, "lit", &[][..]),
+            (1u32, "lit", &[][..]),
+            (2u32, "add", &[1u32, 2u32][..]),
+        ]);
+
+        let image = snapshot
+            .try_pack_device_image()
+            .expect("Fix: valid GPU e-graph snapshot must pack into a device image");
+        let layout = image.layout();
+
+        assert_eq!(layout.row_count(), 3);
+        assert_eq!(layout.child_count(), 2);
+        assert_eq!(layout.eclass_group_count(), 2);
+        assert_eq!(image.row_eclass_ids(), &[2, 1, 2]);
+        assert_eq!(image.row_language_op_ids(), &[0, 0, 1]);
+        assert_eq!(image.row_children_offsets(), &[0, 0, 0]);
+        assert_eq!(image.row_children_lens(), &[0, 0, 2]);
+        assert_eq!(image.row_signatures().len(), 3);
+        assert_ne!(image.row_signatures()[0], image.row_signatures()[2]);
+        assert_eq!(image.children(), &[1, 2]);
+        assert_eq!(image.group_eclass_ids(), &[1, 2]);
+        assert_eq!(image.group_offsets(), &[0, 1, 3]);
+        assert_eq!(image.group_rows(), &[1, 0, 2]);
+        assert_eq!(
+            image.words().len(),
+            layout.row_eclass_ids().len()
+                + layout.row_language_op_ids().len()
+                + layout.row_children_offsets().len()
+                + layout.row_children_lens().len()
+                + layout.row_signatures().len()
+                + layout.children().len()
+                + layout.group_eclass_ids().len()
+                + layout.group_offsets().len()
+                + layout.group_rows().len()
+        );
+    }
+
+    #[test]
+    fn generated_device_image_pack_accepts_empty_and_power_boundaries() {
+        for node_count in [0_usize, 1, 2, 7, 8, 9, 31, 32, 33, 127, 128, 129] {
+            let mut rows = Vec::with_capacity(node_count);
+            let mut child_storage = Vec::new();
+            for row in 0..node_count {
+                let start = child_storage.len();
+                if row > 0 {
+                    child_storage.push((row - 1) as u32);
+                }
+                rows.push((
+                    row as u32,
+                    if row & 1 == 0 { "lit" } else { "neg" },
+                    start,
+                    child_storage.len() - start,
+                ));
+            }
+            let build_rows = rows
+                .iter()
+                .map(|&(class, op, start, len)| (class, op, &child_storage[start..start + len]))
+                .collect::<Vec<_>>();
+            let snapshot = GpuEGraphSnapshot::build(build_rows);
+
+            let image = snapshot
+                .try_pack_device_image()
+                .unwrap_or_else(|error| panic!("node_count={node_count}: {error}"));
+
+            assert_eq!(image.layout().row_count(), node_count);
+            assert_eq!(image.row_eclass_ids().len(), node_count);
+            assert_eq!(image.row_language_op_ids().len(), node_count);
+            assert_eq!(image.row_signatures().len(), node_count);
+            assert_eq!(image.group_rows().len(), node_count);
+            assert_eq!(image.group_offsets().len(), node_count + 1);
+        }
+    }
+
+    #[test]
+    fn row_signatures_group_structural_duplicates_without_eclass_identity() {
+        let snapshot = GpuEGraphSnapshot::build([
+            (1u32, "lit", &[][..]),
+            (2u32, "lit", &[][..]),
+            (10u32, "add", &[1u32, 2u32][..]),
+            (11u32, "add", &[1u32, 2u32][..]),
+            (12u32, "add", &[2u32, 1u32][..]),
+            (13u32, "mul", &[1u32, 2u32][..]),
+        ]);
+
+        let image = snapshot
+            .try_pack_device_image()
+            .expect("Fix: valid duplicate-signature snapshot must pack");
+
+        assert_eq!(image.row_signatures()[2], image.row_signatures()[3]);
+        assert_ne!(image.row_signatures()[2], image.row_signatures()[4]);
+        assert_ne!(image.row_signatures()[2], image.row_signatures()[5]);
+    }
+
+    #[test]
+    fn device_image_rejects_malformed_snapshot_before_pack() {
+        let mut snapshot = GpuEGraphSnapshot::build([(0u32, "lit", &[][..])]);
+        snapshot.rows[0].language_op_id = 42;
+
+        let error = snapshot
+            .try_pack_device_image()
+            .expect_err("Fix: device image packing must reject malformed snapshots");
+
+        match error {
+            GpuEGraphDeviceImageError::Integrity(error) => {
+                assert_eq!(error.context(), "unknown language_op_id");
+                assert_eq!(error.row(), 0);
+                assert_eq!(error.value(), 42);
+            }
+            GpuEGraphDeviceImageError::Layout(error) => {
+                panic!("expected integrity error, got layout error: {error}")
+            }
+        }
     }
 
     /// Snapshot directly from the CPU EGraph canonicalizes children and
@@ -469,3 +1235,4 @@ mod tests {
         assert_ne!(egraph.find(a), egraph.find(c));
     }
 }
+

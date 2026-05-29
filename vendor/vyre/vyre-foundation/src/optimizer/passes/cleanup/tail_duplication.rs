@@ -1,7 +1,7 @@
-//! `tail_duplication` — hoist a common tail out of a divergent `Node::If`.
+//! `tail_duplication`  -  hoist a common tail out of a divergent `Node::If`.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::tail_duplication`.
-//! Soundness: `Exact` — when both arms end with an identical, side-effect-free
+//! Soundness: `Exact`  -  when both arms end with an identical, side-effect-free
 //! tail node, that tail is observably equivalent to executing it after the If.
 //! Cost-direction: monotone-down on code_size (removes one duplicated node).
 //! Preserves: every analysis. Invalidates: nothing.
@@ -18,7 +18,7 @@
 //!
 //! ## ROADMAP
 //!
-//! A32 — tail duplication for divergent branches.
+//! A32  -  tail duplication for divergent branches.
 
 use crate::ir::{Expr, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
@@ -163,6 +163,10 @@ fn node_is_observably_free(node: &Node) -> bool {
         | Node::IndirectDispatch { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncStore { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncWait { .. }
         | Node::Trap { .. }
         | Node::Resume { .. }
@@ -193,7 +197,7 @@ fn expr_is_pure(expr: &Expr) -> bool {
         } => expr_is_pure(cond) && expr_is_pure(true_val) && expr_is_pure(false_val),
         Expr::Cast { value, .. } => expr_is_pure(value),
         Expr::Fma { a, b, c } => expr_is_pure(a) && expr_is_pure(b) && expr_is_pure(c),
-        // Loads are reads from buffers — value-pure when in-bounds, but
+        // Loads are reads from buffers  -  value-pure when in-bounds, but
         // a guarded If may exist to avoid an OOB index, so hoisting
         // changes observable behavior on GPUs.
         Expr::Load { .. }
@@ -206,13 +210,13 @@ fn expr_is_pure(expr: &Expr) -> bool {
         | Expr::SubgroupBallot { .. }
         | Expr::SubgroupShuffle { .. }
         | Expr::SubgroupAdd { .. }
-        // Lane-correlated builtins — value is always equal across
+        // Lane-correlated builtins  -  value is always equal across
         // hoisted/unhoisted positions, but downstream lane-uniform
         // analyses treat hoisted Lets as uniform-by-construction. Keep
         // these gated for parity with branch_value_hoist::expr_is_observably_free.
         | Expr::SubgroupLocalId
         | Expr::SubgroupSize
-        // Opaque extensions — unknown semantics, refuse.
+        // Opaque extensions  -  unknown semantics, refuse.
         | Expr::Opaque(_) => false,
     }
 }
@@ -336,7 +340,7 @@ mod tests {
     }
 
     /// Negative: an identical `Let { value: Atomic }` tail in both arms
-    /// would change the atomic count if hoisted out of the If — hoisting
+    /// would change the atomic count if hoisted out of the If  -  hoisting
     /// it executes one RMW where the original program executed exactly
     /// one in either arm of a divergent dispatch, but the *aggregated*
     /// effect across lanes is observably different. Refuse.
@@ -363,7 +367,7 @@ mod tests {
         let result = TailDuplicationPass::transform(program);
         assert!(
             !result.changed,
-            "must not hoist Let{{Atomic}} — atomic count is observable"
+            "must not hoist Let{{Atomic}}  -  atomic count is observable"
         );
     }
 
@@ -389,7 +393,7 @@ mod tests {
         let result = TailDuplicationPass::transform(program);
         assert!(
             !result.changed,
-            "must not hoist Let{{SubgroupShuffle}} — requires uniform control flow"
+            "must not hoist Let{{SubgroupShuffle}}  -  requires uniform control flow"
         );
     }
 
@@ -415,7 +419,7 @@ mod tests {
         let result = TailDuplicationPass::transform(program);
         assert!(
             !result.changed,
-            "must not hoist Let{{Load}} — guarded If may be the OOB sanitizer"
+            "must not hoist Let{{Load}}  -  guarded If may be the OOB sanitizer"
         );
     }
 

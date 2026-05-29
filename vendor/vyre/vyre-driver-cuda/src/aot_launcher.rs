@@ -1,28 +1,34 @@
 //! CUDA-owned AOT launcher source emission.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::backend::staging_reserve::reserve_vec;
 use vyre_driver::aot::{AotLauncherFiles, AotLauncherRequest, LauncherDependency};
 
 const CUDA_FFI: &str = include_str!("../templates/cuda_ffi.rs.tmpl");
 const NCCL_FFI: &str = include_str!("../templates/nccl_ffi.rs.tmpl");
 
 pub(crate) fn emit_launcher(request: &AotLauncherRequest<'_>) -> Result<AotLauncherFiles, String> {
-    let mut files = BTreeMap::new();
-    files.insert(PathBuf::from("src/main.rs"), emit_main(request));
-    files.insert(PathBuf::from("src/cuda_ffi.rs"), CUDA_FFI.to_string());
+    let file_count = if request.include_collectives { 3 } else { 2 };
+    let mut entries = Vec::new();
+    reserve_vec(&mut entries, file_count, "AOT launcher file entry").map_err(|error| {
+        format!(
+            "CUDA AOT launcher file list could not reserve {file_count} entry slot(s): {error}. Fix: reduce generated launcher sidecar count or split launcher emission."
+        )
+    })?;
+    entries.push((PathBuf::from("src/main.rs"), emit_main(request)));
+    entries.push((PathBuf::from("src/cuda_ffi.rs"), CUDA_FFI.to_string()));
     if request.include_collectives {
-        files.insert(PathBuf::from("src/nccl_ffi.rs"), NCCL_FFI.to_string());
+        entries.push((PathBuf::from("src/nccl_ffi.rs"), NCCL_FFI.to_string()));
     }
 
-    Ok(AotLauncherFiles {
-        dependencies: vec![LauncherDependency {
+    Ok(AotLauncherFiles::from_entries(
+        vec![LauncherDependency {
             name: "libc",
             spec: "\"0.2\"",
         }],
-        files,
-    })
+        entries,
+    ))
 }
 
 fn emit_main(request: &AotLauncherRequest<'_>) -> String {
@@ -122,6 +128,22 @@ fn parse_env_optional_f32(name: &str) -> Result<Option<f32>, Box<dyn std::error:
     Ok(Some(value))
 }}
 
+fn reserve_vec_to_capacity<T>(
+    vec: &mut Vec<T>,
+    target_capacity: usize,
+    context: &str,
+    item: &str,
+) -> Result<(), String> {{
+    if target_capacity <= vec.capacity() {{
+        return Ok(());
+    }}
+    vec.try_reserve_exact(target_capacity - vec.len()).map_err(|error| {{
+        format!(
+            "{{context}} could not reserve {{target_capacity}} {{item}} slot(s): {{error}}. Fix: shard the AOT bundle or reduce manifest fanout before launch."
+        )
+    }})
+}}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {{
     let bundle_dir = if let Some(arg) = env::args().nth(1) {{
         PathBuf::from(arg)
@@ -154,12 +176,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {{
     let kernel = cuda::cu_module_get_function(&module, &bundle.manifest.entry_point)?;
 
     let mut device_ptrs: Vec<cuda::DeviceAllocation> = Vec::new();
-    device_ptrs.try_reserve_exact(bundle.manifest.buffers.len()).map_err(|error| {{
-        format!(
-            "AOT device allocation table could not reserve {{}} CUDA buffer slot(s): {{error}}. Fix: shard the AOT bundle or reduce manifest buffer count.",
-            bundle.manifest.buffers.len()
-        )
-    }})?;
+    reserve_vec_to_capacity(
+        &mut device_ptrs,
+        bundle.manifest.buffers.len(),
+        "AOT device allocation table",
+        "CUDA buffer",
+    )?;
     for index in 0..bundle.manifest.buffers.len() {{
         let bytes = manifest_buffer_allocation_bytes(&bundle.manifest, index)?;
         let dptr = cuda::cu_mem_alloc(bytes)?;
@@ -377,16 +399,19 @@ fn run_eval_time_training_loop(
     if target_loss.is_some() && metrics_dptr.is_none() {{
         return Err(format!("{{TTT_TARGET_LOSS_ENV}} requires a `metrics` buffer in the AOT manifest. Fix: add a metrics buffer or unset {{TTT_TARGET_LOSS_ENV}}.").into());
     }}
+    let sync_for_step_metrics = target_loss.is_some();
 
     for launch_step in 0..steps {{
         launch_manifest_kernel(kernel, bundle, device_ptrs, kernel_args, launch_limits)?;
-        cuda::cu_stream_synchronize()?;
-        if let (Some(target), Some(dptr)) = (target_loss, metrics_dptr) {{
-            let (metric_step, loss, tokens) = read_final_metric_record(dptr, &bundle.manifest)?;
-            if loss.is_finite() && loss <= target {{
-                let completed_step = launch_step + 1;
-                println!("TTT_CONVERGED launch_step={{completed_step}} metric_step={{metric_step}} loss={{loss:.6}} tokens={{tokens}}");
-                return Ok(());
+        if sync_for_step_metrics {{
+            cuda::cu_stream_synchronize()?;
+            if let (Some(target), Some(dptr)) = (target_loss, metrics_dptr) {{
+                let (metric_step, loss, tokens) = read_final_metric_record(dptr, &bundle.manifest)?;
+                if loss.is_finite() && loss <= target {{
+                    let completed_step = launch_step + 1;
+                    println!("TTT_CONVERGED launch_step={{completed_step}} metric_step={{metric_step}} loss={{loss:.6}} tokens={{tokens}}");
+                    return Ok(());
+                }}
             }}
         }}
     }}
@@ -447,7 +472,29 @@ fn read_final_metric_record(
 }
 
 #[cfg(test)]
+
 mod tests {
+    #[test]
+    fn ttt_loop_does_not_sync_every_step_without_metric_readback() {
+        let source = include_str!("aot_launcher.rs");
+        assert!(
+            source.contains("let sync_for_step_metrics = target_loss.is_some();"),
+            "Fix: generated CUDA AOT TTT loops must distinguish metric-readback launches from firehose launches."
+        );
+        assert!(
+            source.contains("if sync_for_step_metrics {{\n            cuda::cu_stream_synchronize()?;"),
+            "Fix: generated CUDA AOT TTT loops must only fence per step when target-loss readback needs metrics."
+        );
+        assert!(
+            !source.contains(concat!(
+                "launch_manifest_kernel(kernel, bundle, device_ptrs, kernel_args, launch_limits)?;\n",
+                "        cuda::cu_stream_synchronize()?;\n",
+                "        if let (Some(target), Some(dptr))"
+            )),
+            "Fix: generated CUDA AOT TTT loops must not synchronize after every launch when no metric target is configured."
+        );
+    }
+
     use super::*;
     use vyre_driver::aot::AotLauncherRequest;
 
@@ -625,6 +672,16 @@ mod tests {
             "Fix: generated CUDA FFI must check device-pointer offset arithmetic before readback."
         );
         assert!(
+            CUDA_FFI.contains("if src.is_empty() {\n        return Ok(());\n    }")
+                && CUDA_FFI.contains("if dst.is_empty() {\n        return Ok(());\n    }"),
+            "Fix: generated CUDA FFI copy wrappers must preserve runtime zero-byte no-op behavior."
+        );
+        assert!(
+            CUDA_FFI.contains("let bytes_u64 = u64::try_from(bytes)")
+                && CUDA_FFI.contains("src.checked_add(bytes_u64)"),
+            "Fix: generated CUDA FFI offset readback must validate the full start..start+byte_len device range."
+        );
+        assert!(
             CUDA_FFI.contains("AOT CUDA kernel argument {index} is a null device pointer"),
             "Fix: generated CUDA FFI must reject null kernel arguments before cuLaunchKernel."
         );
@@ -660,6 +717,25 @@ mod tests {
     }
 
     #[test]
+    fn cuda_ffi_template_rejects_null_context_success_and_drops_safely() {
+        let context_owner = CUDA_FFI
+            .split("pub struct CtxGuard")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct ModuleGuard").next())
+            .expect("Fix: generated CUDA FFI must keep context ownership before module ownership.");
+
+        assert!(
+            context_owner.contains("if self.raw.is_null() {\n            return;\n        }"),
+            "Fix: generated CUDA context guard Drop must not call cuCtxDestroy_v2 on a null context."
+        );
+        assert!(
+            context_owner.contains("if ctx.is_null()")
+                && context_owner.contains("cuCtxCreate_v2 returned a null context after success"),
+            "Fix: generated CUDA context creation must reject null-success handles before module load."
+        );
+    }
+
+    #[test]
     fn cuda_ffi_template_has_no_release_path_unwrap_or_panic_stubs() {
         for forbidden in [
             concat!(".", "unwrap()"),
@@ -681,13 +757,14 @@ mod tests {
         );
         assert!(
             CUDA_FFI.contains("if bytes.ends_with(&[0])")
-                && CUDA_FFI.contains("staged.try_reserve_exact(staged_len)")
+                && CUDA_FFI.contains("reserve_vec_to_capacity(")
                 && CUDA_FFI.contains("module_image_ptr"),
             "Fix: generated CUDA FFI must borrow already-NUL-terminated PTX and fallibly stage only when a terminator is missing."
         );
         let main = emit_main(&request(false));
         assert!(
-            main.contains("device_ptrs.try_reserve_exact(bundle.manifest.buffers.len())"),
+            main.contains("fn reserve_vec_to_capacity<T>")
+                && main.contains("AOT device allocation table"),
             "Fix: generated CUDA AOT launchers must fallibly reserve the device-allocation table before CUDA allocation."
         );
         assert!(
@@ -695,4 +772,22 @@ mod tests {
             "Fix: generated CUDA AOT launchers must propagate fallible kernel-argument table reservation."
         );
     }
+
+    #[test]
+    fn emitted_launcher_uses_driver_file_container_constructor() {
+        let source = include_str!("aot_launcher.rs");
+        assert!(
+            !source.contains(concat!("BTree", "Map")),
+            "Fix: CUDA launcher emission must not open-code ordered map assembly; centralize the public file container in vyre-driver."
+        );
+        assert!(
+            source.contains("reserve_vec(&mut entries, file_count"),
+            "Fix: CUDA launcher emission must fallibly reserve its fixed file-entry list before staging generated source."
+        );
+        assert!(
+            source.contains("AotLauncherFiles::from_entries"),
+            "Fix: CUDA launcher emission must use the backend-neutral constructor for launcher file containers."
+        );
+    }
 }
+

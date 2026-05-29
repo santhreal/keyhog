@@ -53,6 +53,7 @@ required_outputs = [
 [release_gates]
 zero_unexplained_parity_mismatches = true
 zero_silent_cpu_fallbacks = true
+zero_silent_cpu_demotions = true
 zero_false_no_gpu_skips = true
 resident_gpu_frontend_required = true
 megakernel_or_resident_graph_measurement_required = true

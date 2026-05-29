@@ -53,7 +53,7 @@ mod tests {
             0,
             4,
         )
-        .expect("first token span is valid");
+        .expect("Fix: first token span is valid");
         emit_active_token_range(
             source,
             &mut active_segment,
@@ -62,7 +62,7 @@ mod tests {
             1,
             4,
         )
-        .expect("overlapping token span is valid");
+        .expect("Fix: overlapping token span is valid");
         emit_active_token_range(
             source,
             &mut active_segment,
@@ -71,7 +71,7 @@ mod tests {
             4,
             5,
         )
-        .expect("following token span is valid");
+        .expect("Fix: following token span is valid");
 
         assert_eq!(active_segment_start, Some(0));
         assert_eq!(active_segment, source);

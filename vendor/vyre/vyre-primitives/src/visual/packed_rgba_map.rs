@@ -52,18 +52,12 @@ inventory::submit! {
         || packed_rgba_map("in", "out", 4),
         Some(|| {
             let pixels = [0xFF00_0000u32, 0xFF00_00FF, 0xFF00_FF00, 0xFFFF_0000];
-            let mut bytes = Vec::with_capacity(pixels.len() * 4);
-            for pixel in pixels {
-                bytes.extend_from_slice(&pixel.to_le_bytes());
-            }
+            let bytes = crate::wire::pack_u32_slice(&pixels);
             vec![vec![bytes, vec![0; 16]]]
         }),
         Some(|| {
             let pixels = [0xFF00_0000u32, 0xFF00_00FF, 0xFF00_FF00, 0xFFFF_0000];
-            let mut bytes = Vec::with_capacity(pixels.len() * 4);
-            for pixel in pixels {
-                bytes.extend_from_slice(&pixel.to_le_bytes());
-            }
+            let bytes = crate::wire::pack_u32_slice(&pixels);
             vec![vec![bytes]]
         }),
     )

@@ -9,14 +9,14 @@
 //! [`super::sheaf_heterophilic_dispatch::flag_fusion_incompatible`]
 //! divergence flagging, this gives:
 //!
-//! - **Spectral gap** — eigenvalue magnitude indicates how cleanly
+//! - **Spectral gap**  -  eigenvalue magnitude indicates how cleanly
 //!   the graph splits into clusters. Large gap = clean clusters,
 //!   safe to fuse within each cluster.
-//! - **Suggested cluster count** — derived from the eigenvalue
+//! - **Suggested cluster count**  -  derived from the eigenvalue
 //!   spectrum via the substrate's power-iteration diagonal output.
 //!
 //! Used by the megakernel scheduler when the matroid heuristic
-//! produces ambiguous results (many tied gain values) — falls back
+//! produces ambiguous results (many tied gain values)  -  falls back
 //! to spectral cluster suggestions for tie-breaking.
 
 #[cfg(test)]
@@ -26,7 +26,7 @@ use crate::dispatch_buffers::{
     write_u32_slice_le_bytes, write_zero_bytes,
 };
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::math::sheaf_laplacian_eigenvalue::cpu_ref_into;
 use vyre_primitives::math::sheaf_laplacian_eigenvalue::sheaf_laplacian_eigenvalue;
 
@@ -38,18 +38,18 @@ pub const DEFAULT_POWER_ITERATIONS: u32 = 32;
 /// Reusable buffers for sheaf-spectral power iteration.
 #[derive(Debug, Default)]
 pub struct SheafSpectrumScratch {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "cpu-parity"))]
     v_init: Vec<f64>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "cpu-parity"))]
     v: Vec<f64>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "cpu-parity"))]
     v_next: Vec<f64>,
 }
 
 impl SheafSpectrumScratch {
     /// Dominant eigenvector from the last spectral solve.
     #[must_use]
-    #[cfg(test)]
+    #[cfg(any(test, feature = "cpu-parity"))]
     pub fn eigenvector(&self) -> &[f64] {
         &self.v
     }
@@ -82,7 +82,7 @@ pub struct FixedSheafSpectrum {
 ///
 /// Returns `(dominant_eigenvalue, eigenvector)` of length `n`.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn dominant_spectrum(restriction_diag: &[f64], iterations: u32) -> (f64, Vec<f64>) {
     use crate::observability::{bump, sheaf_spectral_clustering_calls};
     bump(&sheaf_spectral_clustering_calls);
@@ -92,7 +92,7 @@ pub fn dominant_spectrum(restriction_diag: &[f64], iterations: u32) -> (f64, Vec
 }
 
 /// Compute the dominant eigenvalue using reusable spectral scratch.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn dominant_spectrum_with_scratch(
     restriction_diag: &[f64],
     iterations: u32,
@@ -108,7 +108,7 @@ pub fn dominant_spectrum_with_scratch(
 }
 
 /// Compute the dominant eigenvalue into caller-owned storage.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_dominant_spectrum_into(
     restriction_diag: &[f64],
     iterations: u32,
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn spectral_gap_is_one_for_uniform_diag() {
-        // Uniform diagonal — eigenvalue equals max — gap = 1.
+        // Uniform diagonal  -  eigenvalue equals max  -  gap = 1.
         let diag = vec![0.5; 8];
         let gap = spectral_gap(&diag);
         assert!((gap - 1.0).abs() < 1e-3);
@@ -429,9 +429,9 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 6);
-            let restriction = read_u32s(&inputs[0]);
-            let v = read_u32s(&inputs[1]);
-            let one_fp = read_u32s(&inputs[5])[0];
+            let restriction = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let v = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let one_fp = crate::hardware::dispatch_buffers::read_u32s(&inputs[5])[0];
             assert_eq!(one_fp, 1u32 << 16);
             let eigenvector: Vec<u32> = restriction
                 .iter()
@@ -447,6 +447,7 @@ mod tests {
     }
 
     struct ExtraSpectrumDispatcher;
+
 
     impl OptimizerDispatcher for ExtraSpectrumDispatcher {
         fn dispatch(
@@ -533,10 +534,10 @@ mod tests {
         let source = include_str!("sheaf_spectral_clustering.rs");
         let start = source
             .find("pub fn dominant_spectrum_fixed_via")
-            .expect("fixed path marker must exist");
+            .expect("Fix: fixed path marker must exist");
         let end = source
             .find("\n/// Convenience: spectral gap")
-            .expect("test-only CPU marker must exist");
+            .expect("Fix: test-only CPU marker must exist");
         let release_path = &source[start..end];
         assert!(!release_path.contains("_cpu"));
         assert!(!release_path.contains("reference_"));
@@ -570,11 +571,5 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

@@ -83,7 +83,7 @@ fn build_c11_syntax_ast_stage_with_scratch(
                     tok_types.len()
                 )
             })?;
-        pack_u32_le_bytes_into(token_window, &mut scratch.token_window_bytes);
+        vyre_primitives::wire::pack_u32_slice_into(token_window, &mut scratch.token_window_bytes);
         let num_stmt = dispatch_c11_statement_bounds_bytes_into(
             backend,
             &scratch.token_window_bytes,
@@ -93,7 +93,7 @@ fn build_c11_syntax_ast_stage_with_scratch(
             &mut scratch.stmt_pairs,
             &mut scratch.statement_bounds,
         )?;
-        pack_u32_le_bytes_into(&scratch.stmt_pairs, &mut scratch.stmt_bytes);
+        vyre_primitives::wire::pack_u32_slice_into(&scratch.stmt_pairs, &mut scratch.stmt_bytes);
         log("dispatch c11_statement_bounds");
         let ast_prog = ast_shunting_yard_with_capacity(
             "tok_types",
@@ -186,12 +186,4 @@ fn build_c11_syntax_ast_stage_with_scratch(
         ast_bytes,
         ast_node_count,
     })
-}
-
-fn pack_u32_le_bytes_into(words: &[u32], bytes: &mut Vec<u8>) {
-    bytes.clear();
-    bytes.reserve(words.len().saturating_mul(4));
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
 }

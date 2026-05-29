@@ -67,6 +67,10 @@ impl TypeFactCtx {
                 Node::Return
                 | Node::Barrier { .. }
                 | Node::IndirectDispatch { .. }
+                | Node::AllReduce { .. }
+                | Node::AllGather { .. }
+                | Node::ReduceScatter { .. }
+                | Node::Broadcast { .. }
                 | Node::AsyncWait { .. }
                 | Node::Resume { .. }
                 | Node::Opaque(_) => {}

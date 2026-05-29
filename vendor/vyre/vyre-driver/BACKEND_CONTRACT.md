@@ -2,7 +2,7 @@
 
 This document is the long-form specification of the `VyreBackend` trait
 defined in `vyre-driver/src/backend.rs`. It exists because after vyre 0.4.1
-the trait surface is *frozen* — the only post-0.6 changes permitted are
+the trait surface is *frozen*  -  the only post-0.6 changes permitted are
 additive defaulted methods. Every backend authored in later versions implements this trait by
 inheriting all defaults and overriding only the methods where the
 backend is more capable than the conservative floor.
@@ -104,7 +104,7 @@ fn __vyre_backend_sealed(&self) {}
 
 This private defaulted method is the forward-compat lever. If vyre 0.8
 truly needs a required method, we can add it alongside a sealed
-breakage of this marker — forcing external impls to explicitly migrate
+breakage of this marker  -  forcing external impls to explicitly migrate
 via a feature gate rather than silently miscompiling. Internal impls
 internal implementations rely on the default body and never notice.
 

@@ -24,7 +24,7 @@ pub struct WorkStealingScheduler {
     /// steal more fine-grained work units. Worker threads call
     /// [`Self::claim_next_unit`] which atomically increments the index;
     /// the returned value is the unit index they own. This is the
-    /// work-stealing primitive — fast backends pull more units, slow
+    /// work-stealing primitive  -  fast backends pull more units, slow
     /// backends pull fewer.
     work_index: AtomicUsize,
 }
@@ -40,8 +40,10 @@ impl WorkStealingScheduler {
 
     /// Partition a large haystack across available GPUs.
     pub fn partition(&self, total_len: usize) -> Vec<Shard> {
-        self.try_partition(total_len)
-            .expect("scheduler shard reservation failed in legacy infallible caller")
+        match self.try_partition(total_len) {
+            Ok(shards) => shards,
+            Err(_error) => Vec::new(),
+        }
     }
 
     /// Partition a large haystack across available GPUs with explicit staging
@@ -84,8 +86,9 @@ impl WorkStealingScheduler {
     /// uses [`Self::claim_next_unit`] to let worker threads atomically
     /// claim units so fast backends steal more work.
     pub fn partition_into(&self, total_len: usize, out: &mut Vec<Shard>) {
-        self.try_partition_into(total_len, out)
-            .expect("scheduler shard reservation failed in legacy infallible caller");
+        if self.try_partition_into(total_len, out).is_err() {
+            out.clear();
+        }
     }
 
     /// Partition into caller-owned storage with explicit staging allocation
@@ -102,14 +105,13 @@ impl WorkStealingScheduler {
         }
         let work_unit_size = partition_work_unit_size(total_len, n);
         let num_units = total_len.div_ceil(work_unit_size);
-        if out.capacity() < num_units {
-            out.try_reserve_exact(num_units - out.capacity())
-                .map_err(|error| BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: scheduler could not reserve {num_units} GPU work shard(s): {error}. Shard the workload before work-stealing partitioning."
-                    ),
-                })?;
-        }
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(out, num_units).map_err(
+            |error| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: scheduler could not reserve {num_units} GPU work shard(s): {error}. Shard the workload before work-stealing partitioning."
+                ),
+            },
+        )?;
         let mut start = 0;
         for i in 0..num_units {
             let end = (start + work_unit_size).min(total_len);

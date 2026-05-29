@@ -1,4 +1,4 @@
-//! P4.3 — content-addressed pipeline cache.
+//! P4.3  -  content-addressed pipeline cache.
 //!
 //! Every compiled `Program` has a stable fingerprint =
 //! `blake3(canonicalize(program).to_wire())`. The fingerprint
@@ -18,7 +18,7 @@ mod fingerprint;
 mod in_memory;
 mod layered;
 mod metrics;
-#[cfg(feature = "remote")]
+#[cfg(feature = "remote-cache")]
 mod remote;
 mod store;
 
@@ -30,6 +30,6 @@ pub use fingerprint::PipelineFingerprint;
 pub use in_memory::InMemoryPipelineCache;
 pub use layered::LayeredPipelineCache;
 pub use metrics::PipelineCacheMetrics;
-#[cfg(feature = "remote")]
+#[cfg(feature = "remote-cache")]
 pub use remote::RemoteCache;
 pub use store::PipelineCacheStore;

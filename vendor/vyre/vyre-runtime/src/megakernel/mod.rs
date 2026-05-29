@@ -1,19 +1,19 @@
-//! Persistent megakernel — the GPU becomes a VIR0 bytecode interpreter.
+//! Persistent megakernel  -  the GPU becomes a VIR0 bytecode interpreter.
 //!
 //! One dispatch compiles the program; the kernel loops forever, pulling
 //! packed bytecode slots from a host-fed ring buffer and executing each.
-//! The host never re-dispatches — it only writes new slots and observes
+//! The host never re-dispatches  -  it only writes new slots and observes
 //! atomic counters in the control buffer.
 //!
 //! ## Layout
 //!
-//! - `protocol` — ring-buffer slot layout, control words, opcodes.
-//! - `handlers` — built-in opcode handlers + extension mechanism.
-//! - `builder` — IR `Program` construction (interpreted + JIT).
-//! - `execution` — compiled persistent-kernel handle and dispatch path.
-//! - `resident` — host mirrors for GPU-resident runtime buffers.
-//! - `readback` — strict output-buffer decoding after dispatch.
-//! - `recovery` — device-loss classification and pipeline rebuild.
+//! - `protocol`  -  ring-buffer slot layout, control words, opcodes.
+//! - `handlers`  -  built-in opcode handlers + extension mechanism.
+//! - `builder`  -  IR `Program` construction (interpreted + JIT).
+//! - `execution`  -  compiled persistent-kernel handle and dispatch path.
+//! - `resident`  -  host mirrors for GPU-resident runtime buffers.
+//! - `readback`  -  strict output-buffer decoding after dispatch.
+//! - `recovery`  -  device-loss classification and pipeline rebuild.
 //!
 //! ## Coordination protocol
 //!
@@ -28,8 +28,6 @@
 #[cfg(feature = "megakernel-batch")]
 pub mod advanced;
 pub mod builder;
-#[cfg(feature = "c-frontend-adapter")]
-pub mod c_frontend;
 pub mod descriptor;
 pub mod execution;
 pub mod handlers;
@@ -48,8 +46,11 @@ pub mod rule_catalog;
 pub mod scaling;
 pub mod scheduler;
 pub mod speculation;
+mod staging_reserve;
 pub mod task;
 pub mod telemetry;
+pub mod workspace_adapter;
+pub mod workspace_layout;
 
 use vyre_driver::backend::BackendError;
 
@@ -60,26 +61,8 @@ pub use builder::{
     build_program_sharded_once_slots, build_program_sharded_once_slots_control_report_shared,
     build_program_sharded_once_slots_shared, build_program_sharded_slots,
     build_program_sharded_slots_shared, build_program_sharded_with_io_polling,
-    build_program_with_self_loading_miss_handler, persistent_body, persistent_body_jit,
-    persistent_body_priority, persistent_body_priority_slots,
-};
-#[cfg(feature = "c-frontend-adapter")]
-pub use builder::{
-    build_program_sharded_with_c_frontend_workspace,
-    build_program_sharded_with_c_frontend_workspace_phases,
-};
-#[cfg(feature = "c-frontend-adapter")]
-pub use c_frontend::{
-    c_frontend_advance_phase_nodes, c_frontend_fault_nodes, c_frontend_phase_dispatch_nodes,
-    c_frontend_phase_machine_guard_nodes, c_frontend_workspace_bootstrap_nodes,
-    is_valid_c_frontend_phase_transition, validate_c_frontend_phase_transition,
-    CFrontendCapacityDiagnosticKind, CFrontendPhase, CFrontendPhaseHandler, CFrontendRegionId,
-    CFrontendWorkspaceError, CFrontendWorkspaceLimits, CFrontendWorkspaceManifest,
-    CFrontendWorkspaceRegion, C_FRONTEND_CONDITIONAL_WORDS, C_FRONTEND_DIAGNOSTIC_WORDS,
-    C_FRONTEND_MACRO_WORDS, C_FRONTEND_MANIFEST_WORDS, C_FRONTEND_PG_EDGE_WORDS,
-    C_FRONTEND_TOKEN_WORDS, C_FRONTEND_VAST_ROW_WORDS, C_FRONTEND_WORKSPACE_ABI_VERSION,
-    C_FRONTEND_WORKSPACE_BINDING, C_FRONTEND_WORKSPACE_BUFFER, C_FRONTEND_WORKSPACE_MAGIC,
-    C_FRONTEND_WORK_QUEUE_WORDS, MAX_C_FRONTEND_WORKSPACE_WORDS,
+    build_program_sharded_with_workspace_adapter, build_program_with_self_loading_miss_handler,
+    persistent_body, persistent_body_jit, persistent_body_priority, persistent_body_priority_slots,
 };
 pub use descriptor::{
     BatchDescriptor, BuiltinOpcode, PackedOpDescriptor, SlotDescriptor, SlotOpcode, WindowClass,
@@ -143,6 +126,12 @@ pub use task::{TaskPriority, TaskQueueSnapshot, TaskState, TaskWorkItem};
 pub use telemetry::{
     ControlSnapshot, CountMinSketch, MegakernelRuntimeCounters, RingOccupancy, RingSlotSnapshot,
     RingStatus, RingTelemetry, SketchTelemetry, WindowTelemetry,
+};
+pub use workspace_adapter::MegakernelWorkspaceAdapter;
+pub use workspace_layout::{
+    build_workspace_regions, first_workspace_region, next_record_workspace_region,
+    next_workspace_region, workspace_record_words, MegakernelWorkspaceLayoutError,
+    MegakernelWorkspaceRegion, MegakernelWorkspaceRegionSpec,
 };
 /// Backend-neutral megakernel dispatch contract.
 pub trait MegakernelDispatch {

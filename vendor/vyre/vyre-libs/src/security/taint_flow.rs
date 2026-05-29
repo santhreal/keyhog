@@ -1,11 +1,11 @@
-//! `taint_flow` — alias for [`crate::security::flows_to::flows_to`],
+//! `taint_flow`  -  alias for [`crate::security::flows_to::flows_to`],
 //! exposed under a separate op id for conformance-harness coverage of
-//! the frontend `taint_flow` / `taint_flow_unsanitized` predicates.
+//! API-facing `taint_flow` / `taint_flow_unsanitized` predicates.
 //!
 //! Downstream analyzer's predicate lowering routes both `taint_flow` and `flows_to`
 //! through `BinaryGraphKind::FlowsToForward`, which calls the
 //! `flows_to` builder; there is no semantic difference. Keeping a
-//! separate file used to mean a duplicated body — the body has been
+//! separate file used to mean a duplicated body  -  the body has been
 //! collapsed to a one-line delegation so the implementation stays
 //! authoritative in `flows_to.rs`.
 
@@ -42,7 +42,7 @@ inventory::submit! {
         id: OP_ID,
         build: || taint_flow(ProgramGraphShape::new(4, 3), "fin", "fout"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // Linear 0 → 1 → 2 → 3 along ASSIGNMENT edges. Starting
             // frontier {0}; `fout` starts as the accumulator.
             vec![vec![
@@ -53,14 +53,14 @@ inventory::submit! {
                     edge_kind::ASSIGNMENT,
                     edge_kind::ASSIGNMENT,
                     edge_kind::ASSIGNMENT,
-                ]),                               // pg_edge_kind_mask — dataflow
+                ]),                               // pg_edge_kind_mask  -  dataflow
                 to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
                 to_bytes(&[0b0001]),              // fin = {0}
                 to_bytes(&[0b0001]),              // fout accumulator seed = {0}
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // One forward step writes {1} into the accumulator.
             vec![vec![to_bytes(&[0b0011])]]
         }),
@@ -106,7 +106,7 @@ mod tests {
             .buffers
             .iter()
             .find(|b| b.name() == "fin")
-            .expect("fin buffer");
+            .expect("Fix: fin buffer");
         assert!(
             fin_buf.count >= 2,
             "bitset_words(64) = 2; count {} suggests degenerate shape",

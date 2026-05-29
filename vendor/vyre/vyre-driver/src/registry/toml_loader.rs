@@ -1,8 +1,8 @@
 //! Runtime TOML dialect loader (A-B5).
 //!
 //! The Rust path registers ops at link time via `inventory::submit!`.
-//! Some consumers — DSL authors, CVE-rule contributors, community
-//! Nuclei-template-style writers — want to drop a TOML file in a
+//! Some consumers  -  DSL authors, CVE-rule contributors, community
+//! Nuclei-template-style writers  -  want to drop a TOML file in a
 //! directory and have the runtime pick it up without recompiling.
 //!
 //! This module provides that mechanism for the **metadata** part of
@@ -10,7 +10,7 @@
 //! behavioral part (`cpu_ref`, `primary_text`, etc.) still comes from
 //! Rust because TOML can't declaratively describe a compute kernel.
 //! External dialect crates can thus ship the behavioral half as Rust
-//! and the declarative half as TOML — the TOML supports community
+//! and the declarative half as TOML  -  the TOML supports community
 //! contributions of new rule-like ops whose behavior is composed from
 //! existing primitives.
 //!
@@ -23,7 +23,7 @@
 //! 4. Consumers query the store via [`TomlDialectStore::dialect`] and
 //!    [`TomlDialectStore::ops_in`].
 //!
-//! Runtime TOML ops are *additive* — they don't override an
+//! Runtime TOML ops are *additive*  -  they don't override an
 //! inventory-registered OpDef with the same id. A conflict is
 //! surfaced as a Diagnostic so downstream consumers can disambiguate.
 
@@ -60,15 +60,15 @@ pub struct DialectManifest {
 pub struct OpManifest {
     /// Fully qualified op id (`<dialect>.<name>`).
     pub id: String,
-    /// Category — `"A"`, `"B"`, or `"C"`.
+    /// Category  -  `"A"`, `"B"`, or `"C"`.
     pub category: String,
     /// Optional free-form summary (one line) surfaced in catalogs.
     #[serde(default)]
     pub summary: Option<String>,
-    /// Declarative input list — `(name, type)` pairs.
+    /// Declarative input list  -  `(name, type)` pairs.
     #[serde(default)]
     pub inputs: Vec<(String, String)>,
-    /// Declarative output list — `(name, type)` pairs.
+    /// Declarative output list  -  `(name, type)` pairs.
     #[serde(default)]
     pub outputs: Vec<(String, String)>,
     /// Algebraic-law tags the op claims to satisfy.
@@ -324,9 +324,11 @@ impl TomlDialectStore {
     #[must_use]
     pub fn manifests(&self) -> Vec<&DialectManifest> {
         let mut manifests = Vec::new();
-        manifests
-            .try_reserve_exact(self.manifests.len())
-            .unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(
+            &mut manifests,
+            self.manifests.len(),
+        )
+        .unwrap_or_else(|error| {
                 panic!(
                     "Vyre TOML registry could not reserve {} manifest reference slot(s): {error}. Fix: split manifest loading into pages or reduce loaded dialect files.",
                     self.manifests.len()
@@ -357,8 +359,8 @@ fn dialect_path_value() -> Option<String> {
     {
         if let Some(path) = dialect_path_override()
             .lock()
-            .expect("dialect path test override lock must not be poisoned")
-            .clone()
+            .ok()
+            .and_then(|guard| guard.clone())
         {
             return Some(path);
         }
@@ -446,6 +448,7 @@ ops = [
         assert!(store.contains_op("community.test.pass"));
         assert_eq!(store.diagnostics().len(), 0);
     }
+
 
     #[test]
     fn rejects_mismatched_op_prefix_with_diagnostic() {
@@ -580,7 +583,7 @@ ops = [ { id = "wrong.bad", category = "B" } ]
         // must not be silently mistaken for an empty knowledge base.
         *dialect_path_override()
             .lock()
-            .expect("dialect path test override lock must not be poisoned") =
+            .expect("Fix: dialect path test override lock must not be poisoned") =
             Some("/no/such/dir:/also/not/real".to_string());
         let store = TomlDialectStore::from_env();
         assert!(store.manifests.is_empty());
@@ -594,7 +597,7 @@ ops = [ { id = "wrong.bad", category = "B" } ]
         );
         *dialect_path_override()
             .lock()
-            .expect("dialect path test override lock must not be poisoned") = None;
+            .expect("Fix: dialect path test override lock must not be poisoned") = None;
     }
 
     #[test]
@@ -602,3 +605,4 @@ ops = [ { id = "wrong.bad", category = "B" } ]
         assert_eq!(CODE_PARSE.as_str(), "E-TOML-PARSE");
     }
 }
+

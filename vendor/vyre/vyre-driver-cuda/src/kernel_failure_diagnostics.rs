@@ -1,5 +1,7 @@
 //! Actionable CUDA kernel capability diagnostics.
 
+use crate::numeric::CUDA_NUMERIC;
+
 /// Device capabilities relevant to launch eligibility.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CudaKernelDeviceEnvelope {
@@ -225,11 +227,14 @@ pub fn diagnose_cuda_kernel_launch(
     requirement: CudaKernelRequirement,
 ) -> CudaKernelLaunchDiagnostic {
     let mut scratch = CudaKernelLaunchDiagnosticScratch::default();
-    let diagnostic =
-        diagnose_cuda_kernel_launch_with_scratch(kernel, device, requirement, &mut scratch);
+    let kernel = {
+        let diagnostic =
+            diagnose_cuda_kernel_launch_with_scratch(kernel, device, requirement, &mut scratch);
+        diagnostic.kernel
+    };
     CudaKernelLaunchDiagnostic {
-        kernel: diagnostic.kernel,
-        failures: diagnostic.failures.to_vec(),
+        kernel,
+        failures: scratch.failures,
     }
 }
 
@@ -391,25 +396,29 @@ fn checked_dim_product_u64(
     dims: [u32; 3],
     label: &'static str,
 ) -> Result<u64, CudaKernelLaunchEnvelopeError> {
-    u64::from(dims[0])
-        .checked_mul(u64::from(dims[1]))
-        .and_then(|xy| xy.checked_mul(u64::from(dims[2])))
-        .ok_or_else(|| CudaKernelLaunchEnvelopeError {
+    CUDA_NUMERIC.checked_dim_product_u64(dims).ok_or_else(|| {
+        CudaKernelLaunchEnvelopeError {
             fix: format!(
                 "CUDA launch envelope {label} overflowed u64 for dimensions {dims:?}. Fix: shard the launch before release diagnostics."
             ),
-        })
+        }
+    })
 }
 
 fn checked_dim_product_u32(
     dims: [u32; 3],
     label: &'static str,
 ) -> Result<u32, CudaKernelLaunchEnvelopeError> {
-    let product = checked_dim_product_u64(dims, label)?;
-    u32::try_from(product).map_err(|source| CudaKernelLaunchEnvelopeError {
-        fix: format!(
-            "CUDA launch envelope {label} value {product} cannot fit u32: {source}. Fix: lower block dimensions before launch."
-        ),
+    CUDA_NUMERIC.checked_dim_product_u32(dims).ok_or_else(|| {
+        let product = checked_dim_product_u64(dims, label).map_or_else(
+            |_| "overflowed u64".to_string(),
+            |value| value.to_string(),
+        );
+        CudaKernelLaunchEnvelopeError {
+            fix: format!(
+                "CUDA launch envelope {label} value {product} cannot fit u32. Fix: lower block dimensions before launch."
+            ),
+        }
     })
 }
 
@@ -485,7 +494,7 @@ mod tests {
             },
             Some(16),
         )
-        .expect("valid CUDA launch envelope should derive");
+        .expect("Fix: valid CUDA launch envelope should derive");
 
         assert_eq!(envelope.grid_blocks, 18);
         assert_eq!(envelope.threads_per_block, 256);
@@ -621,3 +630,55 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+
+mod owned_diagnostic_allocation_tests {
+    use super::*;
+
+    #[test]
+    fn owned_diagnostic_moves_failures_out_of_scratch_without_clone() {
+        let diagnostic = diagnose_cuda_kernel_launch(
+            "frontier",
+            CudaKernelDeviceEnvelope {
+                sm_major: 8,
+                sm_minor: 9,
+                max_threads_per_block: 512,
+                shared_memory_per_block_bytes: 32_768,
+                supports_cooperative_launch: false,
+                supports_tensor_cores: false,
+            },
+            CudaKernelRequirement {
+                min_sm_major: 9,
+                min_sm_minor: 0,
+                requested_threads_per_block: 1_024,
+                requested_shared_memory_bytes: 65_536,
+                requires_cooperative_launch: true,
+                requires_tensor_cores: true,
+            },
+        );
+
+        assert_eq!(diagnostic.failures.len(), 5);
+
+        let source = include_str!("kernel_failure_diagnostics.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: CUDA diagnostic production source must be present before tests");
+        assert!(
+            !production.contains(".to_vec()"),
+            "Fix: owned CUDA launch diagnostics must move the scratch failure vector instead of cloning it."
+        );
+        assert!(
+            production.contains("use crate::numeric::CUDA_NUMERIC;")
+                && production.contains("CUDA_NUMERIC.checked_dim_product_u64(dims)")
+                && production.contains("CUDA_NUMERIC.checked_dim_product_u32(dims)")
+                && !production.contains(concat!(
+                    "vyre_driver::numeric::",
+                    "checked_dim_product"
+                )),
+            "Fix: CUDA launch-envelope dimension products must route through the shared CUDA numeric policy."
+        );
+    }
+}
+

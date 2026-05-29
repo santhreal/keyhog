@@ -3,7 +3,7 @@
 //! Walks a `Program`'s entry tree depth-first and emits the canonical
 //! 5-buffer ProgramGraph CSR ABI used by every Tier 2.5 graph
 //! primitive. Each visited `Node` (top-level or inside any nested
-//! scope — `If`, `Loop`, `Block`, `Region`) gets a graph-node id in
+//! scope  -  `If`, `Loop`, `Block`, `Region`) gets a graph-node id in
 //! prefix-DFS order; a synthetic ROOT at index 0 fans out to every
 //! always-kept Node so a forward BFS reaches every Node needed for
 //! observable side effects.
@@ -364,7 +364,7 @@ impl EncoderCtx {
             | Node::Trap { .. }
             | Node::Resume { .. }
             | Node::Opaque(_) => {}
-            // Future variants — non-exhaustive enum.
+            // Future variants  -  non-exhaustive enum.
             _ => {
                 return Err(EncodeError::Unsupported(
                     "Fix: encoder encountered an unknown Node variant; \
@@ -459,6 +459,7 @@ where
 /// Length of the prefix of `entry` up to and including the first
 /// `Node::Return`, or `entry.len()` if no Return is present. Mirrors
 /// `eliminate_unreachable` in the foundation CPU DCE.
+
 pub fn reachable_prefix_len(entry: &[Node]) -> usize {
     for (i, node) in entry.iter().enumerate() {
         if matches!(node, Node::Return) {
@@ -483,13 +484,13 @@ fn classify_node(node: &Node) -> u32 {
         | Node::Trap { .. }
         | Node::Resume { .. }
         | Node::Opaque(_)
-        // Nested wrappers are always kept too — their bodies are
+        // Nested wrappers are always kept too  -  their bodies are
         // walked recursively and may contain Lets that get dropped.
         | Node::If { .. }
         | Node::Loop { .. }
         | Node::Block(_)
         | Node::Region { .. } => node_tag::SIDE_EFFECT,
-        // Future variants — fall through as side-effect (conservative;
+        // Future variants  -  fall through as side-effect (conservative;
         // over-keeping is safe for DCE). Unknown-variant shapes also
         // surface during encoding via `EncodeError::Unsupported`.
         _ => node_tag::SIDE_EFFECT,
@@ -615,7 +616,8 @@ mod tests {
     #[test]
     fn empty_program_encodes_to_root_only() {
         let p = Program::wrapped(Vec::new(), [1, 1, 1], Vec::new());
-        let encoded = encode_program(&p).expect("empty wrapped program encodes");
+        let encoded = encode_program(&p)
+            .expect("Fix: empty wrapped program must encode for optimizer substrate tests");
         assert_eq!(encoded.node_count, 1);
         assert_eq!(encoded.edge_count, 0);
         assert!(encoded.wrapping.is_some());
@@ -628,7 +630,7 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::var("x")),
         ];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("flat encodes");
+        let encoded = encode_program(&p).expect("Fix: flat optimizer program must encode");
         assert_eq!(encoded.node_count, 3);
         assert_eq!(encoded.nodes[0], node_tag::ROOT);
         assert_eq!(encoded.nodes[1], node_tag::LET);
@@ -651,7 +653,7 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::var("outer_x")),
         ];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("nested encodes");
+        let encoded = encode_program(&p).expect("Fix: nested optimizer program must encode");
         // ROOT(0) + outer_let(1) + if(2) + inner_then(3) + inner_else(4) + store(5)
         assert_eq!(encoded.node_count, 6);
     }
@@ -666,7 +668,7 @@ mod tests {
             vec![Node::store("buf", Expr::var("i"), Expr::u32(0))],
         )];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("loop encodes");
+        let encoded = encode_program(&p).expect("Fix: loop optimizer program must encode");
         // ROOT(0) + loop(1) + store(2)
         assert_eq!(encoded.node_count, 3);
         // The store should have a use-def edge into the loop wrapper
@@ -691,7 +693,7 @@ mod tests {
         // if c {
         //   store buf 0 7
         //   return
-        //   store buf 0 99   // dead — past return
+        //   store buf 0 99   // dead  -  past return
         // } else {}
         let entry = vec![Node::If {
             cond: Expr::var("c"),
@@ -703,8 +705,8 @@ mod tests {
             otherwise: vec![],
         }];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("nested return encodes");
-        // ROOT(0) + if(1) + store(2) + return(3) — the post-return
+        let encoded = encode_program(&p).expect("Fix: nested return optimizer program must encode");
+        // ROOT(0) + if(1) + store(2) + return(3)  -  the post-return
         // store is truncated by reachable_prefix_len.
         assert_eq!(encoded.node_count, 4);
     }
@@ -717,7 +719,7 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::var("b")),
         ];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("flat encodes");
+        let encoded = encode_program(&p).expect("Fix: flat optimizer program must encode");
         let shape = ProgramGraphShape::new(encoded.node_count, encoded.edge_count);
         let mut padded_targets = encoded.edge_targets.clone();
         let mut padded_kinds = encoded.edge_kind_mask.clone();
@@ -733,7 +735,7 @@ mod tests {
             &padded_kinds,
             &encoded.node_tags,
         )
-        .expect("encoded ProgramGraph satisfies the canonical wire invariants");
+        .expect("Fix: encoded ProgramGraph must satisfy canonical wire invariants");
     }
 
     #[test]
@@ -744,7 +746,7 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::var("live")),
         ];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("flat encodes");
+        let encoded = encode_program(&p).expect("Fix: flat optimizer program must encode");
         assert_eq!(encoded.node_count, 4);
 
         let bool_live = vec![true, false, true, true];
@@ -773,7 +775,7 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::var("x")),
         ];
         let p = Program::wrapped(Vec::new(), [1, 1, 1], entry);
-        let encoded = encode_program(&p).expect("flat encodes");
+        let encoded = encode_program(&p).expect("Fix: flat optimizer program must encode");
         // ROOT(0) + let_x_1(1) + let_x_2(2) + store(3).
         // Store's USE_DEF edge must point at let_x_2 (id 2), not let_x_1.
         let store_start = encoded.edge_offsets[3] as usize;
@@ -791,3 +793,4 @@ mod tests {
         );
     }
 }
+

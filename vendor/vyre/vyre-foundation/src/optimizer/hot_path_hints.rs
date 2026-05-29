@@ -1,4 +1,4 @@
-//! ROADMAP I1 — hot-path recording into optimizer hints.
+//! ROADMAP I1  -  hot-path recording into optimizer hints.
 //!
 //! Foundation-side substrate. Backends record per-Region dispatch
 //! latency at runtime; the optimizer reads the recorded hints to
@@ -12,7 +12,7 @@
 //! The optimizer queries `is_hot(region_generator)` /
 //! `dispatch_count(region_generator)` /
 //! `mean_kernel_ns(region_generator)` to decide pass scheduling
-//! per region. The default `HotPathHints::default()` is empty —
+//! per region. The default `HotPathHints::default()` is empty  -
 //! every region is assumed cold until recorded otherwise, so the
 //! optimizer falls back to its default schedule when no PGO data
 //! exists.
@@ -34,7 +34,7 @@
 //!
 //! ## Soundness for the optimizer
 //!
-//! The `is_hot` threshold is a heuristic — passes that consume the
+//! The `is_hot` threshold is a heuristic  -  passes that consume the
 //! hint must remain correct (just not optimal) when the hint is
 //! absent or stale. The optimizer must NEVER turn a soundness gate
 //! into a hot-path-only gate. The hint is a *prioritisation*
@@ -110,7 +110,7 @@ impl Clone for HotPathHints {
 impl HotPathHints {
     /// Build a hint store with the given LRU capacity. `capacity == 0`
     /// disables recording (all queries return defaults). The default
-    /// hot-ns threshold is `100_000` (100µs) — overrideable via
+    /// hot-ns threshold is `100_000` (100µs)  -  overrideable via
     /// [`with_hot_threshold_ns`](Self::with_hot_threshold_ns).
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -174,7 +174,7 @@ impl HotPathHints {
 
     /// True iff `region_generator`'s recorded mean kernel-ns
     /// exceeds the hot threshold. Cold (or unrecorded) regions
-    /// return false — passes that gate on `is_hot` must remain
+    /// return false  -  passes that gate on `is_hot` must remain
     /// correct on the cold path.
     #[must_use]
     pub fn is_hot(&self, region_generator: &str) -> bool {
@@ -264,7 +264,7 @@ mod tests {
         hints.record("matmul", 1_000, 100);
         hints.record("matmul", 3_000, 300);
         hints.record("matmul", 2_000, 200);
-        let rec = hints.record_for("matmul").expect("recorded");
+        let rec = hints.record_for("matmul").expect("Fix: recorded");
         assert_eq!(rec.dispatch_count, 3);
         assert_eq!(rec.kernel_ns_total, 6_000);
         assert_eq!(rec.kernel_ns_max, 3_000);

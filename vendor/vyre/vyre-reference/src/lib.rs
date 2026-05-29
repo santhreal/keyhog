@@ -65,6 +65,14 @@ pub use execution::{reference_eval, run_arena_reference, run_storage_graph};
 /// ```
 pub fn resolve_dual(op_id: &str) -> Option<(dual::ReferenceFn, dual::ReferenceFn)> {
     match op_id {
+        dual_impls::arith::add::OP_ID => Some((
+            dual_impls::arith::add::reference_a::reference,
+            dual_impls::arith::add::reference_b::reference,
+        )),
+        dual_impls::arith::mul::OP_ID => Some((
+            dual_impls::arith::mul::reference_a::reference,
+            dual_impls::arith::mul::reference_b::reference,
+        )),
         dual_impls::bitwise::xor::OP_ID => Some((
             dual_impls::bitwise::xor::reference_a::reference,
             dual_impls::bitwise::xor::reference_b::reference,
@@ -81,6 +89,30 @@ pub fn resolve_dual(op_id: &str) -> Option<(dual::ReferenceFn, dual::ReferenceFn
             dual_impls::bitwise::not::reference_a::reference,
             dual_impls::bitwise::not::reference_b::reference,
         )),
+        dual_impls::bitwise::shift_left::OP_ID => Some((
+            dual_impls::bitwise::shift_left::reference_a::reference,
+            dual_impls::bitwise::shift_left::reference_b::reference,
+        )),
+        dual_impls::bitwise::shift_right::OP_ID => Some((
+            dual_impls::bitwise::shift_right::reference_a::reference,
+            dual_impls::bitwise::shift_right::reference_b::reference,
+        )),
+        dual_impls::bitwise::popcount::OP_ID => Some((
+            dual_impls::bitwise::popcount::reference_a::reference,
+            dual_impls::bitwise::popcount::reference_b::reference,
+        )),
+        dual_impls::bitwise::clz::OP_ID => Some((
+            dual_impls::bitwise::clz::reference_a::reference,
+            dual_impls::bitwise::clz::reference_b::reference,
+        )),
+        dual_impls::compare::eq::OP_ID => Some((
+            dual_impls::compare::eq::reference_a::reference,
+            dual_impls::compare::eq::reference_b::reference,
+        )),
+        dual_impls::compare::lt::OP_ID => Some((
+            dual_impls::compare::lt::reference_a::reference,
+            dual_impls::compare::lt::reference_b::reference,
+        )),
         _ => None,
     }
 }
@@ -91,10 +123,18 @@ pub fn resolve_dual(op_id: &str) -> Option<(dual::ReferenceFn, dual::ReferenceFn
 /// Every new dual-reference pair MUST add its OP_ID here.
 pub fn dual_op_ids() -> &'static [&'static str] {
     &[
+        dual_impls::arith::add::OP_ID,
+        dual_impls::arith::mul::OP_ID,
         dual_impls::bitwise::xor::OP_ID,
         dual_impls::bitwise::and::OP_ID,
         dual_impls::bitwise::or::OP_ID,
         dual_impls::bitwise::not::OP_ID,
+        dual_impls::bitwise::shift_left::OP_ID,
+        dual_impls::bitwise::shift_right::OP_ID,
+        dual_impls::bitwise::popcount::OP_ID,
+        dual_impls::bitwise::clz::OP_ID,
+        dual_impls::compare::eq::OP_ID,
+        dual_impls::compare::lt::OP_ID,
     ]
 }
 

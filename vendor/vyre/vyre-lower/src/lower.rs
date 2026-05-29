@@ -67,7 +67,7 @@ struct LowerCtx {
     slot_memory_classes: FxHashMap<u32, MemoryClass>,
     scope: VarScope,
     next_value: u32,
-    /// Stack of "currently active loop carriers" — one frame per
+    /// Stack of "currently active loop carriers"  -  one frame per
     /// enclosing `Node::Loop` we are inside of. An `Assign(name, ..)`
     /// whose `name` is in any active frame commits its new value
     /// directly to the function-local via `LoopCarrierEnd` and then
@@ -87,7 +87,7 @@ impl LowerCtx {
         // buffers (Global, Constant) keep their declared binding ids
         // because the dispatch path looks them up by the same
         // BufferDecl::binding() value. Workgroup/Scratch buffers are
-        // SM-local — they don't get bound by the host — so they live
+        // SM-local  -  they don't get bound by the host  -  so they live
         // in a high range starting at WORKGROUP_SLOT_BASE that cannot
         // collide with host-bound slots. Without this split,
         // multiple `BufferDecl::workgroup(...)` calls (which all
@@ -220,7 +220,7 @@ impl LowerCtx {
                     // pick up a fresh SSA id sourced from the local.
                     // This bypasses if-then phi-merge for carrier vars
                     // because the merge's seed-vs-then Select cannot
-                    // represent the per-iteration state — the
+                    // represent the per-iteration state  -  the
                     // authoritative store is the function-local.
                     body.ops.push(KernelOp {
                         kind: KernelOpKind::LoopCarrierEnd {
@@ -358,7 +358,7 @@ impl LowerCtx {
 
                 // Identify source-level variables that are reassigned inside
                 // the loop body AND were already bound in the incoming scope.
-                // These are the loop carriers — their per-iteration value
+                // These are the loop carriers  -  their per-iteration value
                 // must round-trip through a function-local because the SSA
                 // operand of in-body reads is baked at lowering time and
                 // would otherwise stay anchored to the pre-loop seed,
@@ -575,7 +575,7 @@ impl LowerCtx {
         // id emitted inside the child KernelBody (Naga's `Statement::Block`
         // closes the inner scope), so reassignments must round-trip through
         // a function-local. Reuses the same `LoopCarrierInit/LoopCarrier/
-        // LoopCarrierEnd` machinery loops use — the local-allocation and
+        // LoopCarrierEnd` machinery loops use  -  the local-allocation and
         // store/load semantics are identical; only the iteration is absent.
         let region_carriers = collect_carrier_names(nodes, &incoming_scope, None);
 
@@ -614,7 +614,7 @@ impl LowerCtx {
 
         // Mark the carriers active so `Node::Assign { name, .. }` inside
         // the body emits `LoopCarrierEnd` (commit to local) followed by
-        // `LoopCarrier` (re-read) instead of just rebinding the SSA id —
+        // `LoopCarrier` (re-read) instead of just rebinding the SSA id  -
         // the rebind alone would leak an in-region SSA into the parent.
         let mut carrier_frame: FxHashSet<Ident> = FxHashSet::default();
         for name in &region_carriers {
@@ -875,7 +875,7 @@ impl LowerCtx {
         match self.slot_memory_classes.get(&slot).copied() {
             Some(MemoryClass::Shared) => Ok(KernelOpKind::StoreShared),
             Some(MemoryClass::Constant | MemoryClass::Uniform) => Err(LowerError::InvalidProgram(format!(
-                "Store to constant/uniform-class buffer `{buffer}` is invalid — read-only at the dispatch boundary. Fix: change the buffer's MemoryKind to Global or its access to ReadWrite."
+                "Store to constant/uniform-class buffer `{buffer}` is invalid  -  read-only at the dispatch boundary. Fix: change the buffer's MemoryKind to Global or its access to ReadWrite."
             ))),
             Some(MemoryClass::Global | MemoryClass::Scratch) => Ok(KernelOpKind::StoreGlobal),
             None => Ok(KernelOpKind::StoreGlobal),
@@ -894,7 +894,7 @@ impl LowerCtx {
         // Only consider host-visible slots when picking the next trap sidecar
         // slot. Shared/Scratch slots live in the WORKGROUP_SLOT_BASE (1<<24)
         // range and are not host-bound; mixing them in here would push the
-        // trap sidecar — which IS host-bound — past the wgpu max binding
+        // trap sidecar  -  which IS host-bound  -  past the wgpu max binding
         // index (1000) and the layout validator would reject it.
         let next_slot = self
             .bindings
@@ -1055,6 +1055,7 @@ impl LowerCtx {
 ///
 /// Order is the deterministic order names are first observed during a
 /// pre-order walk, so the emitted op stream is stable across runs.
+
 fn collect_carrier_names(
     body: &[Node],
     incoming_scope: &scope::ScopeSnapshot,
@@ -1358,7 +1359,7 @@ mod tests {
             vec![Node::store("out", Expr::u32(0), Expr::u32(1))],
         );
 
-        let desc = lower(&program).expect("duplicate Program bindings must descriptor-lower");
+        let desc = lower(&program).expect("Fix: duplicate Program bindings must descriptor-lower");
 
         assert_eq!(desc.bindings.slots.len(), 2);
         assert_ne!(desc.bindings.slots[0].slot, desc.bindings.slots[1].slot);
@@ -1375,13 +1376,13 @@ mod tests {
             vec![Node::trap(Expr::u32(7), "page-fault")],
         );
 
-        let desc = lower(&program).expect("trap programs must descriptor-lower");
+        let desc = lower(&program).expect("Fix: trap programs must descriptor-lower");
         let sidecar = desc
             .bindings
             .slots
             .iter()
             .find(|slot| slot.name == TRAP_SIDECAR_NAME)
-            .expect("trap sidecar binding must be inserted");
+            .expect("Fix: trap sidecar binding must be inserted");
         assert_eq!(sidecar.element_type, DataType::U32);
         assert_eq!(sidecar.element_count, Some(TRAP_SIDECAR_WORDS));
         assert!(matches!(sidecar.visibility, BindingVisibility::ReadWrite));
@@ -1408,13 +1409,13 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("trap + workgroup programs must lower");
+        let desc = lower(&program).expect("Fix: trap + workgroup programs must lower");
         let sidecar = desc
             .bindings
             .slots
             .iter()
             .find(|slot| slot.name == TRAP_SIDECAR_NAME)
-            .expect("trap sidecar must be present");
+            .expect("Fix: trap sidecar must be present");
         assert!(
             sidecar.slot < 1024,
             "trap sidecar slot must stay in the host-bindable range; got {}",
@@ -1432,7 +1433,7 @@ mod tests {
             vec![Node::store("out", Expr::u32(0), Expr::u64(42))],
         );
 
-        let desc = lower(&program).expect("opaque literals must descriptor-lower");
+        let desc = lower(&program).expect("Fix: opaque literals must descriptor-lower");
         fn find_opaque_expr(body: &KernelBody) -> Option<(&String, &Vec<u8>)> {
             body.ops
                 .iter()
@@ -1443,7 +1444,8 @@ mod tests {
                 .or_else(|| body.child_bodies.iter().find_map(find_opaque_expr))
         }
 
-        let opaque = find_opaque_expr(&desc.body).expect("opaque expression op must be present");
+        let opaque =
+            find_opaque_expr(&desc.body).expect("Fix: opaque expression op must be present");
         assert_eq!(opaque.0, "vyre.literal.u64");
         assert_eq!(opaque.1, &42u64.to_le_bytes().to_vec());
     }
@@ -1470,10 +1472,10 @@ mod tests {
             )],
         );
 
-        let desc = lower(&program).expect("loop variable must descriptor-lower");
+        let desc = lower(&program).expect("Fix: loop variable must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
         let (loop_body, loop_op) =
-            find_loop(&desc.body).expect("structured loop op must be present");
+            find_loop(&desc.body).expect("Fix: structured loop op must be present");
         let child = &loop_body.child_bodies[loop_op.operands[2] as usize];
         assert!(
             matches!(
@@ -1507,9 +1509,9 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("shadowed loop variable must descriptor-lower");
+        let desc = lower(&program).expect("Fix: shadowed loop variable must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
-        let store = find_store(&desc.body).expect("post-loop store must be present");
+        let store = find_store(&desc.body).expect("Fix: post-loop store must be present");
         assert_eq!(
             store.operands[2], 0,
             "post-loop read must use the outer i binding, not the loop induction result"
@@ -1540,27 +1542,29 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("if/else must descriptor-lower");
+        let desc = lower(&program).expect("Fix: if/else must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
-        let (_, if_op) = find_if_else(&desc.body).expect("if/else op must be present");
+        let (_, if_op) = find_if_else(&desc.body).expect("Fix: if/else op must be present");
         let parent = find_parent_body_containing_op(&desc.body, if_op as *const KernelOp)
-            .expect("if op parent body must be found");
+            .expect("Fix: if op parent body must be found");
         let else_body = &parent.child_bodies[if_op.operands[2] as usize];
         let else_store = else_body
             .ops
             .iter()
             .find(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
-            .expect("else branch must contain the store");
+            .expect("Fix: else branch must contain the store");
         let else_carrier = else_body
             .ops
             .iter()
             .find(
                 |op| matches!(&op.kind, KernelOpKind::LoopCarrier { name } if name.as_ref() == "x"),
             )
-            .expect("else branch must read x through the if carrier seeded from incoming scope");
+            .expect(
+                "Fix: else branch must read x through the if carrier seeded from incoming scope",
+            );
         let else_carrier_id = else_carrier
             .result
-            .expect("else carrier read must produce an SSA result");
+            .expect("Fix: else carrier read must produce an SSA result");
         assert_eq!(
             else_store.operands[2], else_carrier_id,
             "else branch must read the incoming x through its carrier, not the result assigned only by then"
@@ -1612,15 +1616,17 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("conditional carrier mutation must descriptor-lower");
+        let desc =
+            lower(&program).expect("Fix: conditional carrier mutation must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
-        let (parent, loop_op) = find_loop(&desc.body).expect("structured loop op must be present");
+        let (parent, loop_op) =
+            find_loop(&desc.body).expect("Fix: structured loop op must be present");
         let child = &parent.child_bodies[loop_op.operands[2] as usize];
         let first_if_idx = child
             .ops
             .iter()
             .position(|op| matches!(op.kind, KernelOpKind::StructuredIfThen))
-            .expect("first conditional assignment must lower to StructuredIfThen");
+            .expect("Fix: first conditional assignment must lower to StructuredIfThen");
         let carrier_idx = child
             .ops
             .iter()
@@ -1630,22 +1636,22 @@ mod tests {
                 KernelOpKind::LoopCarrier { name } if name.as_ref() == "x" => Some(idx),
                 _ => None,
             })
-            .expect("parent loop body must reread x carrier after conditional mutation");
+            .expect("Fix: parent loop body must reread x carrier after conditional mutation");
         let carrier_result = child.ops[carrier_idx]
             .result
-            .expect("carrier read must produce an SSA result");
+            .expect("Fix: carrier read must produce an SSA result");
         let second_if = child
             .ops
             .iter()
             .skip(carrier_idx + 1)
             .find(|op| matches!(op.kind, KernelOpKind::StructuredIfThen))
-            .expect("second conditional store must lower after carrier reread");
+            .expect("Fix: second conditional store must lower after carrier reread");
         let store_body = &child.child_bodies[second_if.operands[1] as usize];
         let store = store_body
             .ops
             .iter()
             .find(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
-            .expect("second conditional body must store x");
+            .expect("Fix: second conditional body must store x");
         assert_eq!(
             store.operands[2], carrier_result,
             "sibling after conditional carrier mutation must read the fresh carrier value"
@@ -1700,7 +1706,7 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("region with inner assign must descriptor-lower");
+        let desc = lower(&program).expect("Fix: region with inner assign must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
 
         // Outer-most kernel body: a single `Region { generator: c_lexer }`
@@ -1722,7 +1728,7 @@ mod tests {
             .position(|op| {
                 matches!(&op.kind, KernelOpKind::Region { generator } if generator.as_ref() == "phase")
             })
-            .expect("phase Region op must be lowered");
+            .expect("Fix: phase Region op must be lowered");
         let phase_op = &entry_region_body.ops[phase_pos];
 
         // Pre-region: must emit `LoopCarrierInit { name: "x" }` BEFORE
@@ -1734,7 +1740,7 @@ mod tests {
             .position(|op| {
                 matches!(&op.kind, KernelOpKind::LoopCarrierInit { name } if name.as_ref() == "x")
             })
-            .expect("region must emit LoopCarrierInit for the carried name");
+            .expect("Fix: region must emit LoopCarrierInit for the carried name");
         assert!(
             init_pos < phase_pos,
             "LoopCarrierInit must precede the Region op so the local is seeded before entry"
@@ -1763,11 +1769,11 @@ mod tests {
                 *idx > phase_pos
                     && matches!(&op.kind, KernelOpKind::LoopCarrier { name } if name.as_ref() == "x")
             })
-            .expect("region must emit a post-Region LoopCarrier read for the carried name");
+            .expect("Fix: region must emit a post-Region LoopCarrier read for the carried name");
         let post_read_id = post_read
             .1
             .result
-            .expect("post-region LoopCarrier produces an SSA id");
+            .expect("Fix: post-region LoopCarrier produces an SSA id");
 
         // The store must consume the post-region read id, not the
         // pre-region seed.
@@ -1775,7 +1781,7 @@ mod tests {
             .ops
             .iter()
             .find(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
-            .expect("post-region store must lower into the parent body");
+            .expect("Fix: post-region store must lower into the parent body");
         assert_eq!(
             store.operands[2], post_read_id,
             "post-region Var(x) read must resolve to the carrier publish id, not the pre-region seed"
@@ -1786,7 +1792,7 @@ mod tests {
     /// reassign any outer name must NOT emit any `LoopCarrierInit` /
     /// `LoopCarrierEnd` / `LoopCarrier` ops for region-merge purposes.
     /// (Loop-driven carriers from any enclosing Loop scope are a
-    /// separate machinery — this test runs at root scope so none are
+    /// separate machinery  -  this test runs at root scope so none are
     /// expected.)
     #[test]
     fn region_without_inner_assign_emits_no_carrier_ops() {
@@ -1806,7 +1812,7 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("read-only region must descriptor-lower");
+        let desc = lower(&program).expect("Fix: read-only region must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
 
         fn count_carrier_ops(body: &KernelBody) -> usize {
@@ -1836,7 +1842,7 @@ mod tests {
 
     /// Region phi-merge nested: a Region inside a Loop whose body
     /// reassigns a loop-carrier-eligible name must commit through the
-    /// SAME named-carrier local — the Loop's pre-loop init and the
+    /// SAME named-carrier local  -  the Loop's pre-loop init and the
     /// inner Region's pre-region init both target the same slot, so
     /// the next iteration's top-of-loop read sees the in-region final
     /// value of the previous iteration.
@@ -1867,7 +1873,7 @@ mod tests {
             ],
         );
 
-        let desc = lower(&program).expect("loop+region+assign must descriptor-lower");
+        let desc = lower(&program).expect("Fix: loop+region+assign must descriptor-lower");
         assert!(crate::verify::verify(&desc).is_ok());
 
         // Locate the StructuredForLoop op and its body.
@@ -1880,7 +1886,7 @@ mod tests {
             body.child_bodies.iter().find_map(find_loop)
         }
         let (loop_parent, loop_op) =
-            find_loop(&desc.body).expect("StructuredForLoop must be lowered");
+            find_loop(&desc.body).expect("Fix: StructuredForLoop must be lowered");
         let loop_body = &loop_parent.child_bodies[loop_op.operands[2] as usize];
 
         // Loop body must contain the inner Region op.
@@ -1890,11 +1896,11 @@ mod tests {
             .find(|op| {
                 matches!(&op.kind, KernelOpKind::Region { generator } if generator.as_ref() == "step")
             })
-            .expect("inner Region must lower inside the loop body");
+            .expect("Fix: inner Region must lower inside the loop body");
         let region_body = &loop_body.child_bodies[region_op.operands[0] as usize];
 
         // The inner region's body must commit to the `acc` carrier
-        // local on its Assign — the same local the Loop uses, since
+        // local on its Assign  -  the same local the Loop uses, since
         // emit-naga keys named-carrier locals by name.
         assert!(
             region_body
@@ -1906,17 +1912,18 @@ mod tests {
 
         // Post-loop: the parent body's StoreGlobal must read the
         // post-loop carrier publish (loop's existing post-loop emission)
-        // — proving the in-region commit propagates out of the loop.
+        //  -  proving the in-region commit propagates out of the loop.
         let store = desc
             .body
             .child_bodies
             .iter()
             .flat_map(|child| child.ops.iter())
             .find(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
-            .expect("post-loop store must lower");
+            .expect("Fix: post-loop store must lower");
         assert!(
             !store.operands.is_empty(),
             "post-loop store must read the published carrier"
         );
     }
 }
+

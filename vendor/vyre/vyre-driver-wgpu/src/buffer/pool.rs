@@ -7,6 +7,9 @@ use std::sync::{Arc, Weak};
 
 use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
 use crossbeam_queue::ArrayQueue;
+use vyre_driver::accounting::{
+    pinning_atomic_add_usize_with_order, repair_atomic_sub_usize_fetch_with_order,
+};
 use vyre_driver::{BackendError, DispatchConfig};
 
 use super::handle::GpuBufferHandle;
@@ -25,45 +28,26 @@ impl PaddedAtomicUsize {
     }
 
     fn fetch_add(&self, value: usize, order: Ordering) -> usize {
-        let mut current = self.0.load(Ordering::Relaxed);
-        loop {
-            let next = current.checked_add(value).unwrap_or(usize::MAX);
-            match self
-                .0
-                .compare_exchange_weak(current, next, order, Ordering::Relaxed)
-            {
-                Ok(previous) => {
-                    if next == usize::MAX && previous != usize::MAX {
-                        tracing::error!(
-                            "WGPU buffer-pool counter reached usize::MAX. Fix: reset pool stats or shard retained-buffer accounting before counters wrap."
-                        );
-                    }
-                    return previous;
-                }
-                Err(observed) => current = observed,
-            }
-        }
+        pinning_atomic_add_usize_with_order(&self.0, value, order, Ordering::Relaxed, |_, _| {
+            tracing::error!(
+                "WGPU buffer-pool counter reached usize::MAX. Fix: reset pool stats or shard retained-buffer accounting before counters wrap."
+            );
+        })
     }
 
     fn fetch_sub(&self, value: usize, order: Ordering) -> usize {
-        let mut current = self.0.load(Ordering::Relaxed);
-        loop {
-            let next = current.checked_sub(value).unwrap_or(0);
-            match self
-                .0
-                .compare_exchange_weak(current, next, order, Ordering::Relaxed)
-            {
-                Ok(previous) => {
-                    if previous < value {
-                        tracing::error!(
-                            "WGPU buffer-pool counter underflow was repaired to zero. Fix: rebuild buffer-pool accounting before continuing."
-                        );
-                    }
-                    return previous;
-                }
-                Err(observed) => current = observed,
-            }
-        }
+        repair_atomic_sub_usize_fetch_with_order(
+            &self.0,
+            value,
+            Ordering::Relaxed,
+            order,
+            Ordering::Relaxed,
+            |_, _| {
+                tracing::error!(
+                    "WGPU buffer-pool counter underflow was repaired to zero. Fix: rebuild buffer-pool accounting before continuing."
+                );
+            },
+        )
     }
 }
 
@@ -356,8 +340,8 @@ impl BufferPool {
     ///
     /// The `tiers` vector is ordered coldest-first; `policy` controls
     /// promotion/eviction. Defaults at
-    /// `TieredCache::new(vec![CacheTier::new("hot", 1 << 24),
-    /// CacheTier::new("cold", 1 << 30)])` are a reasonable starting
+    /// `TieredCache::try_new(vec![CacheTier::try_new("hot", 1 << 24)?,
+    /// CacheTier::try_new("cold", 1 << 30)?])` are a reasonable starting
     /// point for 16 MiB hot / 1 GiB cold.
     pub fn with_tiering(
         device: wgpu::Device,
@@ -366,7 +350,7 @@ impl BufferPool {
         tiers: Vec<crate::runtime::cache::CacheTier>,
     ) -> Result<Self, BackendError> {
         let mut pool = Self::new(device, queue, config);
-        let tiered = crate::runtime::cache::TieredCache::new(tiers);
+        let tiered = crate::runtime::cache::TieredCache::try_new(tiers)?;
         let max_retained_bytes = config
             .max_output_bytes
             .unwrap_or(DEFAULT_MAX_RETAINED_BYTES);
@@ -559,6 +543,7 @@ impl BufferPool {
     }
 }
 
+
 impl PoolReturn {
     pub(crate) fn release(
         self,
@@ -614,7 +599,19 @@ impl PoolReturn {
                 if mask == 0 {
                     break;
                 }
-                let leading_zeros = mask.leading_zeros() as usize;
+                let leading_zeros = match u32_to_usize(
+                    mask.leading_zeros(),
+                    "buffer-pool non-empty leading-zero count",
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        tracing::warn!(
+                            "buffer-pool eviction could not convert leading-zero count: {error}. Fix: keep buffer-pool class bitmap width representable by host usize."
+                        );
+                        inner.non_empty_classes.store(0, Ordering::Relaxed);
+                        break;
+                    }
+                };
                 let highest_class = if leading_zeros >= NUM_SIZE_CLASSES {
                     inner.non_empty_classes.store(0, Ordering::Relaxed);
                     break;
@@ -732,13 +729,33 @@ mod tests {
             "unexpected error: {error}"
         );
 
-        assert_eq!(class_index(0).expect("minimum size class should fit"), 2);
+        assert_eq!(
+            class_index(0).expect("Fix: minimum size class should fit"),
+            2
+        );
         let error =
             class_index(u64::MAX).expect_err("invalid retained allocation length must be rejected");
         assert!(
             error.to_string().contains("not a power-of-two"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn production_pool_class_selection_has_no_narrowing_casts() {
+        let src =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/buffer/pool.rs"))
+                .expect("Fix: buffer pool source must be readable");
+        let production = src
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: meta-test scans production sources; update fixture path if module moved - production section must exist");
+        assert!(
+            !production.contains(" as usize"),
+            "buffer-pool release/acquire class selection must use checked conversion helpers"
+        );
+        assert!(production.contains("u32_to_usize("));
+        assert!(production.contains("mask.leading_zeros()"));
     }
 
     #[test]
@@ -904,3 +921,4 @@ mod tests {
         }
     }
 }
+

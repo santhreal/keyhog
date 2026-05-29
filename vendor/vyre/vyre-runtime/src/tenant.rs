@@ -23,7 +23,7 @@
 //! ## Draining
 //!
 //! Unregistering a tenant revokes future publishes but does NOT
-//! revoke in-flight slots — the GPU is still going to execute any
+//! revoke in-flight slots  -  the GPU is still going to execute any
 //! slot it already CAS-claimed. Callers that need hard draining
 //! drive [`TenantHandle::quiesce`] which spins on the megakernel
 //! DONE_COUNT until every slot the tenant published has been
@@ -33,7 +33,7 @@
 //!
 //! The registry is the reusable piece. A full `MegakernelDaemon`
 //! (listening on a Unix socket, vending handles over RPC) is a thin
-//! wrapper that we can ship alongside the runtime — the registry
+//! wrapper that we can ship alongside the runtime  -  the registry
 //! here already handles the interesting concurrency.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -57,7 +57,7 @@ pub const TENANT_OPCODE_BASE: u32 = 0x4000_0000;
 pub const TENANT_ID_MAX: u32 = u32::MAX - 1;
 
 /// Size of the opcode window reserved per tenant. 1 << 20 = 1 MiB
-/// of opcodes — well over any realistic rule count per producer
+/// of opcodes  -  well over any realistic rule count per producer
 /// while still allowing ~4094 simultaneous tenants inside the u32
 /// opcode range.
 pub const OPCODE_RANGE_PER_TENANT: u32 = 1 << 20;
@@ -318,37 +318,37 @@ impl TenantHandle {
 
     fn reserve_publish_slot(&self) -> Result<(), TenantError> {
         let cap = self.state.max_outstanding_slots;
-        let mut published = self.state.published_count.load(Ordering::Acquire);
-        loop {
-            let drained = self.state.drained_count.load(Ordering::Acquire);
-            let outstanding = published.checked_sub(drained).ok_or_else(|| {
-                TenantError::Pipeline(PipelineError::QueueFull {
-                    queue: "tenant",
-                    fix: "tenant drained_count exceeded published_count; rebuild tenant accounting state",
-                })
-            })?;
-            if outstanding >= cap {
-                return Err(TenantError::Backpressure {
-                    tenant_id: self.state.id,
-                    outstanding,
-                    cap,
-                });
-            }
-            match self.state.published_count.compare_exchange_weak(
-                published,
-                published.checked_add(1).ok_or_else(|| {
+        vyre_driver::accounting::checked_atomic_update_u64_with_order(
+            &self.state.published_count,
+            Ordering::Acquire,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |published| {
+                let drained = self.state.drained_count.load(Ordering::Acquire);
+                let outstanding =
+                    vyre_driver::accounting::checked_sub_u64_lazy(published, drained, || {
+                        TenantError::Pipeline(PipelineError::QueueFull {
+                            queue: "tenant",
+                            fix: "tenant drained_count exceeded published_count; rebuild tenant accounting state",
+                        })
+                    })?;
+                if outstanding >= cap {
+                    return Err(TenantError::Backpressure {
+                        tenant_id: self.state.id,
+                        outstanding,
+                        cap,
+                    });
+                }
+                vyre_driver::accounting::checked_add_u64_lazy(published, 1, || {
                     TenantError::Pipeline(PipelineError::QueueFull {
                         queue: "tenant",
                         fix: "tenant published_count overflowed u64; quiesce or recreate the tenant before publishing more slots",
                     })
-                })?,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return Ok(()),
-                Err(next) => published = next,
-            }
-        }
+                })
+            },
+            |_, _| Ok(()),
+        )?;
+        Ok(())
     }
 
     /// Number of slots this tenant has ever published.
@@ -379,11 +379,12 @@ impl TenantHandle {
             tenant_id: self.state.id,
             published_count,
             drained_count,
-            outstanding_slots: published_count.checked_sub(drained_count).unwrap_or_else(|| {
-                panic!(
-                    "tenant drained_count exceeded published_count. Fix: rebuild tenant accounting state."
-                )
-            }),
+            outstanding_slots: vyre_driver::accounting::checked_sub_u64_lazy(
+                published_count,
+                drained_count,
+                || "tenant drained_count exceeded published_count. Fix: rebuild tenant accounting state.",
+            )
+            .unwrap_or_else(|message| panic!("{message}")),
             max_outstanding_slots: self.state.max_outstanding_slots,
             quiesce_calls: self.state.quiesce_calls.load(Ordering::Acquire),
             quiesce_timeouts: self.state.quiesce_timeouts.load(Ordering::Acquire),
@@ -422,7 +423,7 @@ impl TenantHandle {
         self.record_quiesce(started, true);
         Err(TenantError::QuiesceTimeout {
             tenant_id: self.state.id,
-            outstanding: pub_count.checked_sub(drained).ok_or_else(|| {
+            outstanding: vyre_driver::accounting::checked_sub_u64_lazy(pub_count, drained, || {
                 TenantError::Pipeline(PipelineError::QueueFull {
                     queue: "tenant",
                     fix: "tenant drained_count exceeded published_count during quiesce; rebuild tenant accounting state",
@@ -450,6 +451,7 @@ impl TenantHandle {
 }
 
 /// Thread-safe tenant registry. One per megakernel instance.
+
 pub struct TenantRegistry {
     tenants: DashMap<u32, TenantHandle>,
     next_id: AtomicU32,
@@ -483,35 +485,31 @@ impl TenantSelectionScratch {
 }
 
 fn checked_atomic_add_u64(counter: &AtomicU64, value: u64, label: &'static str) {
-    if value == 0 {
-        return;
-    }
-    let mut current = counter.load(Ordering::Acquire);
-    loop {
-        let next = current.checked_add(value).unwrap_or_else(|| {
-            panic!("{label} overflowed u64. Fix: quiesce or recreate the tenant accounting state.")
-        });
-        match counter.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return,
-            Err(observed) => current = observed,
-        }
-    }
+    vyre_driver::accounting::checked_atomic_add_u64_with_order(
+        counter,
+        value,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |_, _| {
+            format!("{label} overflowed u64. Fix: quiesce or recreate the tenant accounting state.")
+        },
+    )
+    .unwrap_or_else(|message| panic!("{message}"));
 }
 
 fn checked_atomic_sub_u64(counter: &AtomicU64, value: u64, label: &'static str) {
-    if value == 0 {
-        return;
-    }
-    let mut current = counter.load(Ordering::Acquire);
-    loop {
-        let next = current.checked_sub(value).unwrap_or_else(|| {
-            panic!("{label} underflowed u64. Fix: rebuild tenant accounting state.")
-        });
-        match counter.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return,
-            Err(observed) => current = observed,
-        }
-    }
+    vyre_driver::accounting::checked_atomic_sub_u64_with_order(
+        counter,
+        value,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |_, _| {
+            format!("{label} underflowed u64. Fix: rebuild tenant accounting state.")
+        },
+    )
+    .unwrap_or_else(|message| panic!("{message}"));
 }
 
 impl TenantRegistry {
@@ -545,42 +543,52 @@ impl TenantRegistry {
         max_outstanding_slots: u64,
     ) -> Result<TenantHandle, TenantError> {
         let mut registration_retries = 0u64;
-        let (issued, id) = loop {
-            let current = self.next_id.load(Ordering::Relaxed);
-            if current >= TENANT_ID_MAX {
-                return Err(TenantError::RegistryFull { issued: current });
-            }
-            let id = current.max(1);
-            let next = id + 1;
-            match self.next_id.compare_exchange_weak(
-                current,
-                next,
-                Ordering::SeqCst,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break (current, id),
-                Err(_) => {
-                    tenant_registry_retry_idle(registration_retries);
-                    registration_retries = registration_retries.checked_add(1).ok_or(
+        let issued = vyre_driver::accounting::checked_atomic_update_u32_with_order(
+            &self.next_id,
+            Ordering::Relaxed,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+            |current| {
+                if current >= TENANT_ID_MAX {
+                    return Err(TenantError::RegistryFull { issued: current });
+                }
+                let id = current.max(1);
+                id.checked_add(1)
+                    .ok_or(TenantError::RegistryFull { issued: current })
+            },
+            |_, _| {
+                tenant_registry_retry_idle(registration_retries);
+                registration_retries = vyre_driver::accounting::checked_add_u64_lazy(
+                    registration_retries,
+                    1,
+                    || {
                         TenantError::Pipeline(PipelineError::QueueFull {
                             queue: "tenant",
                             fix: "tenant registration retry counter overflowed u64; retry registration later",
-                        }),
-                    )?;
-                }
+                        })
+                    },
+                )?;
+                Ok(())
             }
-        };
+        )?;
+        let id = issued.max(1);
 
-        let base_opcode = TENANT_OPCODE_BASE
-            .checked_add(
-                id.checked_mul(OPCODE_RANGE_PER_TENANT)
-                    .ok_or_else(|| TenantError::RegistryFull { issued })?,
-            )
-            .ok_or(TenantError::RegistryFull { issued })?;
-        if base_opcode
-            .checked_add(OPCODE_RANGE_PER_TENANT)
-            .is_none_or(|top| top == SHUTDOWN)
-        {
+        let tenant_offset = vyre_driver::accounting::checked_mul_u32_value(
+            id,
+            OPCODE_RANGE_PER_TENANT,
+            TenantError::RegistryFull { issued },
+        )?;
+        let base_opcode = vyre_driver::accounting::checked_add_u32_value(
+            TENANT_OPCODE_BASE,
+            tenant_offset,
+            TenantError::RegistryFull { issued },
+        )?;
+        let top_opcode = vyre_driver::accounting::checked_add_u32_value(
+            base_opcode,
+            OPCODE_RANGE_PER_TENANT,
+            TenantError::RegistryFull { issued },
+        )?;
+        if top_opcode == SHUTDOWN {
             return Err(TenantError::RegistryFull { issued });
         }
         let handle = TenantHandle {
@@ -604,7 +612,7 @@ impl TenantRegistry {
 
     /// Unregister a tenant. Future publishes on the handle fail
     /// with [`TenantError::Revoked`]. In-flight slots already on
-    /// the GPU still execute — the host is responsible for
+    /// the GPU still execute  -  the host is responsible for
     /// quiescing before unregister if it needs that guarantee.
     pub fn unregister(&self, tenant_id: u32) -> Option<TenantHandle> {
         let (_, handle) = self.tenants.remove(&tenant_id)?;
@@ -698,7 +706,9 @@ impl TenantRegistry {
         if n == 0 {
             return;
         }
-        if n.checked_mul(n) != Some(conflict_adj.len()) {
+        if vyre_driver::accounting::checked_mul_usize_lazy(n, n, || ()).ok()
+            != Some(conflict_adj.len())
+        {
             // Degenerate: caller didn't supply a matching adjacency.
             // Default to all-tenants-can-run (no conflicts).
             out.reserve(n);
@@ -1048,3 +1058,4 @@ mod tests {
         assert_eq!(sorted.len(), ids.len(), "concurrent ids must be unique");
     }
 }
+

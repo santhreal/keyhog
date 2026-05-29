@@ -10,7 +10,7 @@
 //!   splice the `then` body into the parent scope.
 //!
 //! Splicing means the surviving branch's nodes replace the `If` in
-//! place — they become siblings of the surrounding lets/stores,
+//! place  -  they become siblings of the surrounding lets/stores,
 //! which is the natural behaviour for an unconditional code path.
 //!
 //! The rewrite is recursive: surviving branch bodies are
@@ -132,7 +132,7 @@ fn rewrite_scope(body: &[Node]) -> Vec<Node> {
                     // Empty block contributes no behaviour; drop it.
                     continue;
                 }
-                // Block is a transparent scope wrapper — splice the
+                // Block is a transparent scope wrapper  -  splice the
                 // inner Nodes into the parent scope instead of
                 // wrapping them again. Avoids gratuitous nesting that
                 // accumulates after iterative rewrites.
@@ -150,7 +150,7 @@ fn rewrite_scope(body: &[Node]) -> Vec<Node> {
                 });
             }
             // Leaves and value-only nodes pass through. We don't
-            // touch their inner Exprs — const-prop already did.
+            // touch their inner Exprs  -  const-prop already did.
             other => out.push(other.clone()),
         }
     }
@@ -159,7 +159,7 @@ fn rewrite_scope(body: &[Node]) -> Vec<Node> {
 
 /// Structural equality on pure-Expr loop bounds: whether evaluating
 /// `from` and `to` at the same program point would produce the same
-/// runtime value with no observable side effect. Conservative —
+/// runtime value with no observable side effect. Conservative  -
 /// returns false on anything not in the small whitelist below.
 fn from_to_structurally_equal(from: &Expr, to: &Expr) -> bool {
     match (from, to) {
@@ -176,7 +176,7 @@ fn from_to_structurally_equal(from: &Expr, to: &Expr) -> bool {
 
 /// True iff `expr` contains no `Expr::Atomic` anywhere in its tree.
 /// Loads are considered pure for drop purposes (they have no
-/// observable effect — reading memory we never use is a no-op).
+/// observable effect  -  reading memory we never use is a no-op).
 fn expr_no_atomic(expr: &Expr) -> bool {
     match expr {
         Expr::Atomic { .. } => false,

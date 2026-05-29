@@ -234,11 +234,22 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bincode"
-version = "1.3.3"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
 dependencies = [
+ "bincode_derive",
  "serde",
+ "unty",
+]
+
+[[package]]
+name = "bincode_derive"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf95709a440f45e986983918d0e8a1f30a9b1df04918fc828670606804ac3c09"
+dependencies = [
+ "virtue",
 ]
 
 [[package]]
@@ -560,16 +571,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "197fd99cb113a8d5d9b6376f3aa817f32c1078f2343b714fff7d2ca44fdf67d5"
 dependencies = [
  "hashbrown 0.16.1",
-]
-
-[[package]]
-name = "codespan-reporting"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e"
-dependencies = [
- "termcolor",
- "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -3235,28 +3236,6 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "24.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e380993072e52eef724eddfcde0ed013b0c023c3f0417336ed041aa9f076994e"
-dependencies = [
- "arrayvec",
- "bit-set",
- "bitflags 2.11.1",
- "cfg_aliases",
- "codespan-reporting 0.11.1",
- "hexf-parse",
- "indexmap 2.14.0",
- "log",
- "rustc-hash",
- "spirv",
- "strum",
- "termcolor",
- "thiserror 2.0.18",
- "unicode-xid",
-]
-
-[[package]]
-name = "naga"
 version = "25.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b977c445f26e49757f9aca3631c3b8b836942cb278d69a92e7b80d3b24da632"
@@ -3265,7 +3244,7 @@ dependencies = [
  "bit-set",
  "bitflags 2.11.1",
  "cfg_aliases",
- "codespan-reporting 0.12.0",
+ "codespan-reporting",
  "half",
  "hashbrown 0.15.5",
  "hexf-parse",
@@ -5172,6 +5151,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "unty"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5229,6 +5214,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "virtue"
+version = "0.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
+
+[[package]]
 name = "vsimd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5236,7 +5227,7 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "vyre"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "blake3",
  "vyre-driver",
@@ -5246,7 +5237,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5264,19 +5255,22 @@ dependencies = [
  "tracing",
  "vyre-foundation",
  "vyre-macros",
+ "vyre-primitives",
  "vyre-self-substrate",
  "vyre-spec",
 ]
 
 [[package]]
 name = "vyre-driver-cuda"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "blake3",
+ "bytemuck",
  "crossbeam-queue",
  "cudarc",
  "dashmap",
  "inventory",
+ "libc",
  "rustc-hash",
  "smallvec",
  "tracing",
@@ -5290,7 +5284,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver-wgpu"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -5303,7 +5297,7 @@ dependencies = [
  "fs2",
  "inventory",
  "libm",
- "naga 25.0.1",
+ "naga",
  "pollster",
  "rustc-hash",
  "serde",
@@ -5324,15 +5318,16 @@ dependencies = [
 
 [[package]]
 name = "vyre-emit-naga"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "blake3",
  "inventory",
- "naga 25.0.1",
+ "naga",
  "rustc-hash",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
  "vyre-driver",
  "vyre-foundation",
  "vyre-lower",
@@ -5341,7 +5336,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-emit-ptx"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "rustc-hash",
  "serde",
@@ -5353,7 +5348,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-foundation"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -5380,7 +5375,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-harness"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "inventory",
  "vyre",
@@ -5389,7 +5384,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-libs"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -5413,7 +5408,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-lower"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "im",
  "rustc-hash",
@@ -5425,7 +5420,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-macros"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5434,8 +5429,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-primitives"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
+ "bytemuck",
  "inventory",
  "vyre-foundation",
  "vyre-spec",
@@ -5443,7 +5439,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-runtime"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5461,7 +5457,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-self-substrate"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "rustc-hash",
  "tracing",
@@ -5471,7 +5467,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-spec"
-version = "0.4.2"
+version = "0.6.1"
 dependencies = [
  "serde",
  "smallvec",
@@ -5643,18 +5639,20 @@ dependencies = [
 
 [[package]]
 name = "wgpu"
-version = "24.0.5"
+version = "25.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b0b3436f0729f6cdf2e6e9201f3d39dc95813fad61d826c1ed07918b4539353"
+checksum = "ec8fb398f119472be4d80bc3647339f56eb63b2a331f6a3d16e25d8144197dd9"
 dependencies = [
  "arrayvec",
  "bitflags 2.11.1",
  "cfg_aliases",
  "document-features",
+ "hashbrown 0.15.5",
  "js-sys",
  "log",
- "naga 24.0.0",
+ "naga",
  "parking_lot",
+ "portable-atomic",
  "profiling",
  "raw-window-handle",
  "smallvec",
@@ -5669,34 +5667,67 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core"
-version = "24.0.5"
+version = "25.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f0aa306497a238d169b9dc70659105b4a096859a34894544ca81719242e1499"
+checksum = "f7b882196f8368511d613c6aeec80655160db6646aebddf8328879a88d54e500"
 dependencies = [
  "arrayvec",
+ "bit-set",
  "bit-vec",
  "bitflags 2.11.1",
  "cfg_aliases",
  "document-features",
+ "hashbrown 0.15.5",
  "indexmap 2.14.0",
  "log",
- "naga 24.0.0",
+ "naga",
  "once_cell",
  "parking_lot",
+ "portable-atomic",
  "profiling",
  "raw-window-handle",
  "rustc-hash",
  "smallvec",
  "thiserror 2.0.18",
+ "wgpu-core-deps-apple",
+ "wgpu-core-deps-emscripten",
+ "wgpu-core-deps-windows-linux-android",
  "wgpu-hal",
  "wgpu-types",
 ]
 
 [[package]]
-name = "wgpu-hal"
-version = "24.0.4"
+name = "wgpu-core-deps-apple"
+version = "25.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f112f464674ca69f3533248508ee30cb84c67cf06c25ff6800685f5e0294e259"
+checksum = "cfd488b3239b6b7b185c3b045c39ca6bf8af34467a4c5de4e0b1a564135d093d"
+dependencies = [
+ "wgpu-hal",
+]
+
+[[package]]
+name = "wgpu-core-deps-emscripten"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f09ad7aceb3818e52539acc679f049d3475775586f3f4e311c30165cf2c00445"
+dependencies = [
+ "wgpu-hal",
+]
+
+[[package]]
+name = "wgpu-core-deps-windows-linux-android"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cba5fb5f7f9c98baa7c889d444f63ace25574833df56f5b817985f641af58e46"
+dependencies = [
+ "wgpu-hal",
+]
+
+[[package]]
+name = "wgpu-hal"
+version = "25.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f968767fe4d3d33747bbd1473ccd55bf0f6451f55d733b5597e67b5deab4ad17"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -5705,6 +5736,7 @@ dependencies = [
  "bitflags 2.11.1",
  "block",
  "bytemuck",
+ "cfg-if",
  "cfg_aliases",
  "core-graphics-types",
  "glow",
@@ -5712,23 +5744,23 @@ dependencies = [
  "gpu-alloc",
  "gpu-allocator",
  "gpu-descriptor",
+ "hashbrown 0.15.5",
  "js-sys",
  "khronos-egl",
  "libc",
  "libloading",
  "log",
  "metal",
- "naga 24.0.0",
+ "naga",
  "ndk-sys",
  "objc",
- "once_cell",
  "ordered-float",
  "parking_lot",
+ "portable-atomic",
  "profiling",
  "range-alloc",
  "raw-window-handle",
  "renderdoc-sys",
- "rustc-hash",
  "smallvec",
  "thiserror 2.0.18",
  "wasm-bindgen",
@@ -5740,13 +5772,15 @@ dependencies = [
 
 [[package]]
 name = "wgpu-types"
-version = "24.0.0"
+version = "25.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50ac044c0e76c03a0378e7786ac505d010a873665e2d51383dcff8dd227dc69c"
+checksum = "2aa49460c2a8ee8edba3fca54325540d904dd85b2e086ada762767e17d06e8bc"
 dependencies = [
  "bitflags 2.11.1",
+ "bytemuck",
  "js-sys",
  "log",
+ "thiserror 2.0.18",
  "web-sys",
 ]
 

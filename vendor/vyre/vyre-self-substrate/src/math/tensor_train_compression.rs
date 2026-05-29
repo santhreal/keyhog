@@ -4,7 +4,7 @@
 //!
 //! The dispatch-graph cost tensor (per-Region × per-buffer × per-config
 //! cost) grows with the cube of the dispatch size. For a 1k-region
-//! Program with 256 configs and 32 buffers, that's 8M f64 cells —
+//! Program with 256 configs and 32 buffers, that's 8M f64 cells  -
 //! 64MB resident in the autotuner. TT-decomposition compresses this
 //! along each mode (region / buffer / config) into a small set of
 //! "core" tensors with TT-rank that bounds the approximation error.
@@ -19,8 +19,6 @@ use crate::dispatch_buffers::{
     decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes, write_zero_bytes,
 };
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
-#[cfg(test)]
-use vyre_primitives::math::tensor_train_decompose::cpu_ref;
 use vyre_primitives::math::tensor_train_decompose::tensor_train_decompose_step;
 
 /// Compressed cost tensor in tensor-train form.
@@ -55,34 +53,6 @@ pub struct TensorTrainCompressionGpuScratch {
     current: Vec<u32>,
     remainder: Vec<u32>,
     inputs: Vec<Vec<u8>>,
-}
-
-/// Parity-only f64 TT-SVD CPU oracle for compressing a flat cost tensor.
-///
-/// Production fixed-point callers must use [`compress_cost_tensor_fixed_via`] or
-/// [`compress_cost_tensor_fixed_via_with_scratch_into`], which dispatch
-/// [`tensor_train_decompose_step`] through the selected backend.
-///
-/// # Panics
-///
-/// Panics if `target_ranks.len() != dims.len() + 1`, if the boundary
-/// ranks are not 1, or if `tensor.len()` doesn't match the dim
-/// product.
-#[cfg(test)]
-#[must_use]
-pub fn reference_compress_cost_tensor(
-    tensor: &[f64],
-    dims: &[u32],
-    target_ranks: &[u32],
-) -> CompressedCostTensor {
-    use crate::observability::{bump, tensor_train_compression_calls};
-    bump(&tensor_train_compression_calls);
-    let cores = cpu_ref(tensor, dims, target_ranks);
-    CompressedCostTensor {
-        cores,
-        dims: dims.to_vec(),
-        ranks: target_ranks.to_vec(),
-    }
 }
 
 /// Compress a primitive-native fixed-point cost tensor through dispatchable TT steps.
@@ -212,6 +182,17 @@ pub fn compress_cost_tensor_fixed_via_with_scratch_into(
     cores_out[last].clear();
     cores_out[last].extend_from_slice(&scratch.current);
     cores_out.truncate(dims.len());
+    if scratch.current.capacity() < tensor_fixed.len() {
+        scratch
+            .current
+            .try_reserve_exact(tensor_fixed.len() - scratch.current.capacity())
+            .map_err(|error| {
+                DispatchError::BackendError(format!(
+                    "Fix: compress_cost_tensor_fixed_via could not retain current scratch capacity for {} word(s): {error}.",
+                    tensor_fixed.len()
+                ))
+            })?;
+    }
     Ok(())
 }
 
@@ -305,7 +286,7 @@ fn byte_count(words: usize, context: &str) -> Result<usize, DispatchError> {
 }
 
 /// Approximate the original cost tensor's compression ratio:
-/// `(1 - tt_size / original_size)` — a value in `[0, 1]` where 0
+/// `(1 - tt_size / original_size)`  -  a value in `[0, 1]` where 0
 /// means no compression and 1 means full elimination.
 #[must_use]
 pub fn compression_ratio(compressed: &CompressedCostTensor) -> f64 {
@@ -322,7 +303,7 @@ pub fn compression_ratio(compressed: &CompressedCostTensor) -> f64 {
 }
 
 /// Total entries the TT representation stores. Useful for
-/// observability — emit alongside cache size metrics so operators
+/// observability  -  emit alongside cache size metrics so operators
 /// can verify TT compression is actually shrinking memory.
 #[must_use]
 pub fn tt_storage_size(compressed: &CompressedCostTensor) -> usize {
@@ -384,10 +365,15 @@ mod tests {
     #[test]
     fn production_source_does_not_call_cpu_tensor_train_decompose_helper() {
         let source = include_str!("tensor_train_compression.rs");
-        let production_source = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("source prefix exists");
+        let cutoff = [
+            source.find("#[cfg(test)]"),
+            source.find("/// Parity-only f64 TT-SVD CPU oracle"),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        .expect("Fix: source includes an explicit non-production cutoff marker");
+        let production_source = &source[..cutoff];
         assert!(
             !production_source.contains("cpu_ref(")
                 && !production_source.contains("reference_compress_cost_tensor("),
@@ -415,7 +401,7 @@ mod tests {
         };
         let compressed =
             compress_cost_tensor_fixed_via(&dispatcher, &[1, 2, 3, 4], &[2, 2], &[1, 1, 1])
-                .expect("dispatch succeeds");
+                .expect("Fix: dispatch succeeds");
         assert_eq!(compressed.cores, vec![vec![10, 20], vec![30, 40]]);
         assert_eq!(compressed.dims, vec![2, 2]);
         assert_eq!(compressed.ranks, vec![1, 1, 1]);
@@ -440,7 +426,7 @@ mod tests {
             &mut scratch,
             &mut cores,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let current_capacity = scratch.current.capacity();
@@ -455,7 +441,7 @@ mod tests {
             &mut scratch,
             &mut cores,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
@@ -511,3 +497,33 @@ mod tests {
         assert_eq!(compression_ratio(&compressed), 0.0);
     }
 }
+
+/// Parity-only f64 TT-SVD CPU oracle for compressing a flat cost tensor.
+///
+/// Production fixed-point callers must use [`compress_cost_tensor_fixed_via`] or
+/// [`compress_cost_tensor_fixed_via_with_scratch_into`], which dispatch
+/// [`tensor_train_decompose_step`] through the selected backend.
+///
+/// # Panics
+///
+/// Panics if `target_ranks.len() != dims.len() + 1`, if the boundary
+/// ranks are not 1, or if `tensor.len()` doesn't match the dim
+/// product.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[must_use]
+
+pub fn reference_compress_cost_tensor(
+    tensor: &[f64],
+    dims: &[u32],
+    target_ranks: &[u32],
+) -> CompressedCostTensor {
+    use crate::observability::{bump, tensor_train_compression_calls};
+    bump(&tensor_train_compression_calls);
+    let cores = vyre_primitives::math::tensor_train_decompose::cpu_ref(tensor, dims, target_ranks);
+    CompressedCostTensor {
+        cores,
+        dims: dims.to_vec(),
+        ranks: target_ranks.to_vec(),
+    }
+}
+

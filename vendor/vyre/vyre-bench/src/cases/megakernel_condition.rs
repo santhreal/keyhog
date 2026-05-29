@@ -3,10 +3,13 @@ use crate::api::case::{
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
+use crate::api::resident::{
+    dispatch_compiled_timed, input_bytes_total, transfer_accounting, ResidentInputPool,
+};
 use crate::api::suite::SuiteKind;
 use rayon::prelude::*;
 use std::sync::Arc;
-use vyre_driver::{BackendError, CompiledPipeline, Resource};
+use vyre_driver::CompiledPipeline;
 use vyre_foundation::ir::{Expr, Node};
 use vyre_runtime::megakernel::protocol::{
     ARG0_WORD, OPCODE_WORD, PRIORITY_WORD, STATUS_WORD, TENANT_WORD,
@@ -28,25 +31,7 @@ struct MegakernelConditionPrepared {
     input_bytes_total: u64,
     expected_fired: u32,
     compiled: Option<Arc<dyn CompiledPipeline>>,
-    resident: Option<ResidentMegakernel>,
-}
-
-struct ResidentMegakernel {
-    backend: Arc<dyn vyre::VyreBackend>,
-    sets: Vec<Vec<Resource>>,
-    next_set: usize,
-}
-
-impl Drop for ResidentMegakernel {
-    fn drop(&mut self) {
-        for set in self.sets.drain(..) {
-            for resource in set {
-                if let Err(error) = self.backend.free_resident(resource) {
-                    eprintln!("megakernel condition bench resident cleanup failed: {error}");
-                }
-            }
-        }
-    }
+    resident: Option<ResidentInputPool>,
 }
 
 impl BenchCase for MegakernelCondition {
@@ -112,16 +97,13 @@ impl BenchCase for MegakernelCondition {
         let io_bytes = megakernel::io::try_encode_empty_io_queue(megakernel::io::IO_SLOT_COUNT)
             .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
         let inputs = vec![control_bytes, ring_bytes, debug_bytes, io_bytes];
-        let input_bytes_total = inputs.iter().map(Vec::len).sum::<usize>() as u64;
-        let resident = match prepare_resident(ctx, &inputs) {
-            Ok(resident) => Some(resident),
-            Err(BackendError::UnsupportedFeature { name, .. })
-                if name == "resident buffer allocation" =>
-            {
-                None
-            }
-            Err(error) => return Err(BenchError::BackendFailed(error.to_string())),
-        };
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputPool::upload_optional(
+            ctx,
+            &inputs,
+            RESIDENT_SAMPLE_SETS,
+            "megakernel condition bench",
+        )?;
         Ok(Box::new(MegakernelConditionPrepared {
             program,
             inputs,
@@ -167,36 +149,30 @@ impl BenchCase for MegakernelCondition {
                 "megakernel condition compiled pipeline missing after compile".to_string(),
             )
         })?;
-        let timed = if let Some(resident) = &mut prepared.resident {
-            let resources = next_resident_set(resident, &prepared.inputs)?;
-            let started = std::time::Instant::now();
-            let outputs = compiled
-                .dispatch_persistent_handles(resources, &config)
-                .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
-            vyre_driver::TimedDispatchResult {
-                outputs,
-                wall_ns: started.elapsed().as_nanos() as u64,
-                device_ns: None,
-                enqueue_ns: None,
-                wait_ns: None,
-            }
-        } else {
-            let input_refs: Vec<&[u8]> = prepared.inputs.iter().map(Vec::as_slice).collect();
-            compiled
-                .dispatch_borrowed_timed(&input_refs, &config)
-                .map_err(|error| BenchError::BackendFailed(error.to_string()))?
-        };
-        let elapsed = timed.wall_ns;
-        let dispatch_ns = timed.device_ns;
-        let outputs = timed.outputs;
+        let dispatch = dispatch_compiled_timed(
+            compiled.as_ref(),
+            prepared.resident.as_mut(),
+            &prepared.inputs,
+            &config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let elapsed = dispatch.timed.wall_ns;
+        let dispatch_ns = dispatch.timed.device_ns;
+        let outputs = dispatch.timed.outputs;
         let output_bytes_total = outputs.iter().map(Vec::len).sum::<usize>() as u64;
-        let bytes_touched = prepared
-            .input_bytes_total
-            .saturating_add(output_bytes_total);
+        let accounting = transfer_accounting(
+            prepared.input_bytes_total,
+            output_bytes_total,
+            resident_used,
+        );
         let device_ns = dispatch_ns.unwrap_or(elapsed);
         let start_ref = std::time::Instant::now();
         let baseline_outputs = simulate_condition_outputs(&prepared.inputs)?;
         let baseline_ns = start_ref.elapsed().as_nanos() as u64;
+        let baseline_output_bytes = baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let baseline_bytes_touched = prepared
+            .input_bytes_total
+            .saturating_add(baseline_output_bytes);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
@@ -204,12 +180,12 @@ impl BenchCase for MegakernelCondition {
                 dispatch_ns,
                 input_bytes: Some(prepared.input_bytes_total),
                 output_bytes: Some(output_bytes_total),
-                bytes_touched: Some(bytes_touched),
-                bytes_read: Some(prepared.input_bytes_total),
-                bytes_written: Some(output_bytes_total),
+                bytes_touched: Some(accounting.bytes_touched),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
                 atomic_op_count: Some(u64::from(SLOT_COUNT + prepared.expected_fired)),
-                wall_throughput_gb_s: Some(gb_per_second(bytes_touched, elapsed)),
-                device_throughput_gb_s: Some(gb_per_second(bytes_touched, device_ns)),
+                wall_throughput_gb_s: Some(gb_per_second(accounting.bytes_touched, elapsed)),
+                device_throughput_gb_s: Some(gb_per_second(accounting.bytes_touched, device_ns)),
                 custom: vec![
                     MetricPoint {
                         name: "megakernel_condition_slots".to_string(),
@@ -223,16 +199,24 @@ impl BenchCase for MegakernelCondition {
                         name: "megakernel_condition_slots_per_sec_x1000".to_string(),
                         value: rate_per_second_x1000(u64::from(SLOT_COUNT), device_ns),
                     },
+                    MetricPoint {
+                        name: "megakernel_resident_input_pool_sets".to_string(),
+                        value: if resident_used {
+                            RESIDENT_SAMPLE_SETS as u64
+                        } else {
+                            0
+                        },
+                    },
                 ],
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(baseline_ns),
                 input_bytes: Some(prepared.input_bytes_total),
-                output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                bytes_touched: Some(bytes_touched),
+                output_bytes: Some(baseline_output_bytes),
+                bytes_touched: Some(baseline_bytes_touched),
                 bytes_read: Some(prepared.input_bytes_total),
-                bytes_written: Some(output_bytes_total),
+                bytes_written: Some(baseline_output_bytes),
                 ..Default::default()
             }),
             outputs,
@@ -465,6 +449,7 @@ fn verify_condition_outputs(outputs: &[Vec<u8>]) -> Result<Correctness, BenchErr
     Ok(Correctness::Exact)
 }
 
+
 fn gb_per_second(bytes: u64, nanos: u64) -> f64 {
     if nanos == 0 {
         return 0.0;
@@ -499,7 +484,8 @@ fn read_word(bytes: &[u8], word_index: u32) -> Result<u32, BenchError> {
             "megakernel condition word {word_index} is outside output buffer"
         ))
     })?;
-    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    vyre_primitives::wire::read_u32_le_word(bytes, 0, "megakernel condition output")
+        .map_err(BenchError::CorrectnessViolation)
 }
 
 fn write_word(bytes: &mut [u8], word_index: u32, value: u32) -> Result<(), BenchError> {
@@ -525,65 +511,7 @@ fn write_word(bytes: &mut [u8], word_index: u32, value: u32) -> Result<(), Bench
     Ok(())
 }
 
-fn prepare_resident(
-    ctx: &BenchContext,
-    inputs: &[Vec<u8>],
-) -> Result<ResidentMegakernel, BackendError> {
-    let backend = Arc::clone(&ctx.preferred_backend);
-    let mut sets = Vec::with_capacity(RESIDENT_SAMPLE_SETS);
-    let result = (|| {
-        for _ in 0..RESIDENT_SAMPLE_SETS {
-            let mut resources = Vec::with_capacity(inputs.len());
-            for input in inputs {
-                let resource = backend.allocate_resident(input.len())?;
-                backend.upload_resident(&resource, input)?;
-                resources.push(resource);
-            }
-            sets.push(resources);
-        }
-        Ok(())
-    })();
-    if let Err(error) = result {
-        for set in sets {
-            for resource in set {
-                if let Err(cleanup_error) = backend.free_resident(resource) {
-                    eprintln!(
-                        "megakernel condition bench resident rollback cleanup failed: {cleanup_error}"
-                    );
-                }
-            }
-        }
-        return Err(error);
-    }
-    Ok(ResidentMegakernel {
-        backend,
-        sets,
-        next_set: 0,
-    })
-}
-
-fn next_resident_set<'a>(
-    resident: &'a mut ResidentMegakernel,
-    inputs: &[Vec<u8>],
-) -> Result<&'a [Resource], BenchError> {
-    if resident.sets.is_empty() {
-        return Err(BenchError::ExecutionFailed(
-            "megakernel resident pool is empty".to_string(),
-        ));
-    }
-    let index = resident.next_set % resident.sets.len();
-    if resident.next_set >= resident.sets.len() {
-        for (resource, input) in resident.sets[index].iter().zip(inputs.iter()) {
-            resident
-                .backend
-                .upload_resident(resource, input)
-                .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
-        }
-    }
-    resident.next_set = resident.next_set.saturating_add(1);
-    Ok(&resident.sets[index])
-}
-
 inventory::submit! {
     &MegakernelCondition as &'static dyn BenchCase
 }
+

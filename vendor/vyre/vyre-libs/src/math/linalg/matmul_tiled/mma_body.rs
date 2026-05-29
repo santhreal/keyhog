@@ -4,6 +4,7 @@ use vyre::ir::{DataType, Expr, Node};
 
 use super::mma_fragment::matmul_mma_fragment;
 use super::shape::{MatrixShape, TileShape};
+use super::tile_coords::{bind_output_tile_coordinates, OutputTileCoordNames};
 
 pub(super) fn cooperative_matmul_body_mma(
     a: &str,
@@ -40,60 +41,25 @@ pub(super) fn cooperative_matmul_body_mma(
         col_in_bounds.clone(),
     );
 
-    let mut body = vec![
-        Node::let_bind(
-            "local",
-            Expr::add(
-                Expr::add(
-                    Expr::LocalId { axis: 0 },
-                    Expr::mul(Expr::LocalId { axis: 1 }, Expr::u32(tile.x_lanes)),
-                ),
-                Expr::mul(
-                    Expr::LocalId { axis: 2 },
-                    Expr::u32(tile.x_lanes.saturating_mul(tile.y_lanes)),
-                ),
-            ),
-        ),
-        Node::let_bind("tile_block", Expr::WorkgroupId { axis: 0 }),
-        Node::let_bind("tile_cols", Expr::u32(shape.n.div_ceil(tile.out_cols))),
-        Node::let_bind(
-            "tile_row_base",
-            Expr::mul(
-                Expr::div(Expr::var("tile_block"), Expr::var("tile_cols")),
-                Expr::u32(tile.out_rows),
-            ),
-        ),
-        Node::let_bind(
-            "tile_col_base",
-            Expr::mul(
-                Expr::rem(Expr::var("tile_block"), Expr::var("tile_cols")),
-                Expr::u32(tile.out_cols),
-            ),
-        ),
-        Node::let_bind(
-            "lane_row",
-            Expr::div(local.clone(), Expr::u32(tile.out_cols)),
-        ),
-        Node::let_bind(
-            "lane_col",
-            Expr::rem(local.clone(), Expr::u32(tile.out_cols)),
-        ),
-        Node::let_bind(
-            "row0",
-            Expr::add(Expr::var("tile_row_base"), Expr::var("lane_row")),
-        ),
+    let mut body = bind_output_tile_coordinates(
+        shape,
+        tile,
+        OutputTileCoordNames {
+            lane_row: "lane_row",
+            lane_col: "lane_col",
+            row: "row0",
+            col: "col",
+        },
+    );
+    body.extend([
         Node::let_bind("row1", Expr::add(Expr::var("row0"), Expr::u32(4))),
         Node::let_bind("row2", Expr::add(Expr::var("row0"), Expr::u32(8))),
         Node::let_bind("row3", Expr::add(Expr::var("row0"), Expr::u32(12))),
-        Node::let_bind(
-            "col",
-            Expr::add(Expr::var("tile_col_base"), Expr::var("lane_col")),
-        ),
         Node::let_bind("acc0", Expr::u32(0)),
         Node::let_bind("acc1", Expr::u32(0)),
         Node::let_bind("acc2", Expr::u32(0)),
         Node::let_bind("acc3", Expr::u32(0)),
-    ];
+    ]);
     if let Some(bias) = bias {
         body.push(Node::if_then(
             col_in_bounds.clone(),

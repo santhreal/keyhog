@@ -1,10 +1,10 @@
-//! Mori-Zwanzig projection — closed-form coarse-graining of dynamical
+//! Mori-Zwanzig projection  -  closed-form coarse-graining of dynamical
 //! systems.
 //!
 //! Mori-Zwanzig (1965) gives an EXACT reduction of a high-dimensional
 //! dynamical system to a low-dim "resolved" subsystem plus a memory
 //! kernel and orthogonal noise. The Markovian (memory-less)
-//! approximation is widely used in scientific ML — Stinis 2020 / Lin
+//! approximation is widely used in scientific ML  -  Stinis 2020 / Lin
 //! 2024 make the M-Z projector learnable.
 //!
 //! Formal projection:
@@ -19,7 +19,7 @@
 //! and the full dynamics operator `L`. The reduced effective operator
 //! is `L_eff = P L P + memory(L, P, Q, t)`.
 //!
-//! This file ships the **Markovian projection step** — given the full
+//! This file ships the **Markovian projection step**  -  given the full
 //! dynamics output `F` and the projector matrix `P` (constructed from
 //! e.g. randomized SVD over slow-mode trajectories), emit the
 //! resolved-subspace forcing `P · F`. Memory-kernel evaluators compose
@@ -54,19 +54,28 @@ pub const OP_ID: &str = "vyre-primitives::math::mori_zwanzig_project_step";
 /// Emit `out[i] = Σ_j P[i, j] · f[j]`.
 ///
 /// `P` is row-major `n × n` u32 (16.16). The Markovian-M-Z assumption
-/// is that the memory kernel is small — this primitive returns the
+/// is that the memory kernel is small  -  this primitive returns the
 /// dominant `P · F` term; callers add a small memory contribution
 /// (also a matvec) for the next-order correction.
 #[must_use]
 pub fn mz_project_step(p_matrix: &str, f_vec: &str, out: &str, n: u32) -> Program {
-    if n == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out,
-            DataType::U32,
-            format!("Fix: mz_project_step requires n > 0, got {n}."),
-        );
+    match try_mz_project_step(p_matrix, f_vec, out, n) {
+        Ok(program) => program,
+        Err(error) => crate::invalid_output_program(OP_ID, out, DataType::U32, error),
     }
+}
+
+/// Emit `out[i] = Σ_j P[i, j] · f[j]` with checked dense matrix sizing.
+pub fn try_mz_project_step(
+    p_matrix: &str,
+    f_vec: &str,
+    out: &str,
+    n: u32,
+) -> Result<Program, String> {
+    if n == 0 {
+        return Err(format!("Fix: mz_project_step requires n > 0, got {n}."));
+    }
+    let matrix_cells = checked_mz_cells(n)?;
 
     let t = Expr::InvocationId { axis: 0 };
     let body = vec![Node::if_then(
@@ -82,15 +91,9 @@ pub fn mz_project_step(p_matrix: &str, f_vec: &str, out: &str, n: u32) -> Progra
                     "acc",
                     Expr::add(
                         Expr::var("acc"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    p_matrix,
-                                    Expr::add(Expr::var("row_base"), Expr::var("j")),
-                                ),
-                                Expr::load(f_vec, Expr::var("j")),
-                            ),
-                            Expr::u32(16),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(p_matrix, Expr::add(Expr::var("row_base"), Expr::var("j"))),
+                            Expr::load(f_vec, Expr::var("j")),
                         ),
                     ),
                 )],
@@ -99,10 +102,10 @@ pub fn mz_project_step(p_matrix: &str, f_vec: &str, out: &str, n: u32) -> Progra
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(p_matrix, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n * n),
+                .with_count(matrix_cells),
             BufferDecl::storage(f_vec, 1, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(n),
         ],
@@ -112,7 +115,15 @@ pub fn mz_project_step(p_matrix: &str, f_vec: &str, out: &str, n: u32) -> Progra
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
+}
+
+fn checked_mz_cells(n: u32) -> Result<u32, String> {
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "mz_project_step n={n} overflows dense projector cell count. Fix: shard the Mori-Zwanzig resolved space before GPU dispatch."
+        )
+    })
 }
 
 /// CPU reference, f64.
@@ -120,14 +131,39 @@ pub fn mz_project_step(p_matrix: &str, f_vec: &str, out: &str, n: u32) -> Progra
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn mz_project_step_cpu(p_matrix: &[f64], f_vec: &[f64], n: u32) -> Vec<f64> {
     let mut out = Vec::new();
-    mz_project_step_cpu_into(p_matrix, f_vec, n, &mut out);
+    try_mz_project_step_cpu_into(p_matrix, f_vec, n, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
     out
 }
 
 /// CPU reference, f64, using caller-owned output storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn mz_project_step_cpu_into(p_matrix: &[f64], f_vec: &[f64], n: u32, out: &mut Vec<f64>) {
+    try_mz_project_step_cpu_into(p_matrix, f_vec, n, out).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference, f64, using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_mz_project_step_cpu_into(
+    p_matrix: &[f64],
+    f_vec: &[f64],
+    n: u32,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let n = n as usize;
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "mz_project_step CPU oracle n={n} overflows dense projector indexing. Fix: shard the Mori-Zwanzig resolved space before parity evaluation."
+        )
+    })?;
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "Mori-Zwanzig CPU oracle",
+            "mz_project_step output",
+        )?;
+    }
     out.clear();
     out.resize(n, 0.0);
     for i in 0..n {
@@ -139,6 +175,7 @@ pub fn mz_project_step_cpu_into(p_matrix: &[f64], f_vec: &[f64], n: u32, out: &m
         }
         out[i] = acc;
     }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -148,8 +185,22 @@ inventory::submit! {
         || {
             mz_project_step("a", "b", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            let one = 1u32 << 16;
+            vec![vec![
+                crate::wire::pack_u32_slice(&[
+                    one, 0, 0, 0,
+                    0, one, 0, 0,
+                    0, 0, one, 0,
+                    0, 0, 0, one,
+                ]),
+                crate::wire::pack_u32_slice(&[3, 5, 7, 11]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[3, 5, 7, 11])]]
+        }),
     )
 }
 
@@ -198,6 +249,28 @@ mod tests {
     }
 
     #[test]
+    fn cpu_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let ptr = out.as_ptr();
+        let capacity = out.capacity();
+
+        try_mz_project_step_cpu_into(&[1.0, 0.0, 0.0, 1.0], &[3.0, 5.0], 2, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Mori-Zwanzig CPU oracle should reuse caller-owned output");
+
+        assert_eq!(out, vec![3.0, 5.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        try_mz_project_step_cpu_into(&[2.0], &[3.0], 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Mori-Zwanzig CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![6.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
     fn cpu_idempotent_projector_squared_equals_self() {
         // For a true projector, P · P · v = P · v.
         let p = vec![1.0, 0.0, 0.0, 0.0]; // diag(1, 0)
@@ -206,6 +279,58 @@ mod tests {
         let ppf = mz_project_step_cpu(&p, &pf, 2);
         assert!(approx_eq(pf[0], ppf[0]));
         assert!(approx_eq(pf[1], ppf[1]));
+    }
+
+    #[test]
+    fn generated_cpu_matches_independent_projection() {
+        let mut out = Vec::new();
+        for case in 0..1024usize {
+            let n = case % 9 + 1;
+            let p_len = (case * 7) % (n * n + 1);
+            let f_len = (case * 11) % (n + 1);
+            let p: Vec<f64> = (0..p_len)
+                .map(|idx| ((idx * 13 + case) % 31) as f64 / 7.0 - 2.0)
+                .collect();
+            let f: Vec<f64> = (0..f_len)
+                .map(|idx| ((idx * 17 + case) % 29) as f64 / 5.0 - 3.0)
+                .collect();
+
+            try_mz_project_step_cpu_into(&p, &f, n as u32, &mut out)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated Mori-Zwanzig CPU oracle should evaluate");
+            let expected = independent_mz_project(&p, &f, n);
+
+            assert_eq!(out.len(), expected.len(), "case {case}: output length");
+            for idx in 0..out.len() {
+                assert!(
+                    approx_eq(out[idx], expected[idx]),
+                    "case {case} idx {idx}: expected {}, got {}",
+                    expected[idx],
+                    out[idx]
+                );
+            }
+        }
+    }
+
+    fn independent_mz_project(p_matrix: &[f64], f_vec: &[f64], n: usize) -> Vec<f64> {
+        let mut out = vec![0.0; n];
+        for i in 0..n {
+            for j in 0..n {
+                out[i] += p_matrix.get(i * n + j).copied().unwrap_or(0.0)
+                    * f_vec.get(j).copied().unwrap_or(0.0);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn checked_builder_rejects_dense_projector_overflow() {
+        let error = try_mz_project_step("p", "f", "out", u32::MAX)
+            .expect_err("checked M-Z builder must reject n*n overflow");
+
+        assert!(
+            error.contains("overflows dense projector cell count"),
+            "error should describe dense projector overflow: {error}"
+        );
     }
 
     #[test]

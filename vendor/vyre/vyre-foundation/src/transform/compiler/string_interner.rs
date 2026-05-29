@@ -1,4 +1,4 @@
-//! String interner — a deterministic workgroup-local symbol table.
+//! String interner  -  a deterministic workgroup-local symbol table.
 //!
 //! Lexers and parsers need stable ids for identifiers, keywords, and literals.
 //! The string interner provides that without heap allocation: a fixed slot
@@ -35,10 +35,10 @@ pub const EMPTY_STRING_ID: u32 = 0;
 ///
 /// Buffers:
 /// - `input`: `ReadOnly` u32 array (bytes packed little-endian into
-///   u32 words — `byte(i) = (input[i/4] >> (8 * (i % 4))) & 0xff`).
+///   u32 words  -  `byte(i) = (input[i/4] >> (8 * (i % 4))) & 0xff`).
 /// - `out`: `ReadWrite` u32 array with space for at least one word;
 ///   the Program writes the hash into `out[0]`. When `len == 0`
-///   the Program writes [`EMPTY_STRING_ID`] (= 0) — matching the
+///   the Program writes [`EMPTY_STRING_ID`] (= 0)  -  matching the
 ///   CPU reference's empty-string contract.
 ///
 /// The IR is self-contained: no workgroup memory, no atomic ops,
@@ -273,7 +273,7 @@ pub enum StringInternerError {
         "InternerTableFull: no SRAM slot accepted the string. Fix: increase table slots or split the lexing batch."
     )]
     TableFull,
-    /// The byte storage pool is full — the total bytes of interned
+    /// The byte storage pool is full  -  the total bytes of interned
     /// strings would exceed the `byte_capacity` declared at
     /// construction time.
     #[error(

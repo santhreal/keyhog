@@ -15,6 +15,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::operand_semantics::operand_is_result_reference;
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
 
 pub const MAX_UNROLL_COUNT: u32 = 4;
@@ -104,7 +105,7 @@ fn unroll_body(body: &KernelBody) -> KernelBody {
                 // Match the `unrollable` check exactly (saturating_sub
                 // also returns 0 when hi < lo). A plain `hi - lo` here
                 // would underflow in release mode and produce a near-4B
-                // iteration count — OOM-killed the fuzz harness on the
+                // iteration count  -  OOM-killed the fuzz harness on the
                 // first generator run that hit this shape.
                 let count = hi.saturating_sub(lo);
                 // Source-loop variable name carried by the
@@ -114,7 +115,7 @@ fn unroll_body(body: &KernelBody) -> KernelBody {
                 // copying them verbatim. Without the substitution,
                 // every unrolled iteration leaves a stray `LoopIndex`
                 // op in the parent body whose loop wrapper no longer
-                // exists — emit-naga rejects it as
+                // exists  -  emit-naga rejects it as
                 // `loop index `<var>` was emitted outside its
                 // StructuredForLoop`. Surfaced on
                 // `c11_build_vast_nodes` with nt=3 where the
@@ -340,33 +341,6 @@ fn child_body_operands(kind: &KernelOpKind) -> impl Iterator<Item = usize> + '_ 
     positions.iter().copied()
 }
 
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,6 +448,7 @@ mod tests {
     fn loop_with_runtime_bounds_not_unrolled() {
         // for i in tid..hi { ... }  →  loop kept (lo not literal)
         let desc = KernelDescriptor {
+
             id: "runtime".into(),
             bindings: BindingLayout { slots: vec![] },
             dispatch: Dispatch::new(64, 1, 1),
@@ -524,7 +499,7 @@ mod tests {
         let body_lits = vec![LiteralValue::U32(99)];
         let desc = loop_with_body(5, 5, body_op, body_lits);
         let out = loop_unroll(&desc);
-        // Outer: [Lit(5), Lit(5)] only — no inlined body, no loop op.
+        // Outer: [Lit(5), Lit(5)] only  -  no inlined body, no loop op.
         assert_eq!(out.body.ops.len(), 2);
         assert!(out
             .body
@@ -672,3 +647,4 @@ mod tests {
         assert_eq!(MAX_UNROLL_COUNT, 4);
     }
 }
+

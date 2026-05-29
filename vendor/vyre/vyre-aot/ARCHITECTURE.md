@@ -1,16 +1,16 @@
-# vyre-aot — architecture
+# vyre-aot  -  architecture
 
 Ahead-of-time compilation of vyre `Program`s into deployable
 artifacts (binaries, shader blobs, manifest-bundled dispatch
 plans) so a downstream consumer can ship a frozen kernel without
-the full surgec/vyre toolchain at runtime.
+the full source compiler toolchain at runtime.
 
 ## Modules
 
 ### `artifact.rs`
 Wire format for a single AOT artifact: serialized program bytes,
 backend identifier, target adapter caps, conformance certificate
-hash, optional debug info. Frozen — the artifact wire is part of
+hash, optional debug info. Frozen  -  the artifact wire is part of
 the public contract.
 
 ### `bundle.rs`
@@ -36,13 +36,13 @@ the Launcher.
 
 ## Public types
 
-- **`Artifact`** — single (program, backend, target) artifact. Wire-
+- **`Artifact`**  -  single (program, backend, target) artifact. Wire-
   serialised, content-addressable via the conformance-cert hash.
-- **`Bundle`** — multi-artifact container with manifest.
-- **`CompileTarget`** — enumerates backend + adapter caps the
+- **`Bundle`**  -  multi-artifact container with manifest.
+- **`CompileTarget`**  -  enumerates backend + adapter caps the
   AOT pipeline lowers against.
-- **`Manifest`** — TOML-driven bundle metadata.
-- **`Launcher`** — runtime loader; matches a live adapter to an
+- **`Manifest`**  -  TOML-driven bundle metadata.
+- **`Launcher`**  -  runtime loader; matches a live adapter to an
   artifact and hands it to the backend.
 
 ## Integration points
@@ -50,6 +50,6 @@ the Launcher.
 - Reads `vyre::ir::Program` from `vyre-foundation`.
 - Calls into `vyre-driver-{wgpu,spirv,cuda}` lowering for each
   target.
-- Writes a conformance certificate compatible with surgec's proof
-  bundle (so an AOT-shipped rule still carries the same
+- Writes a conformance certificate compatible with downstream proof
+  bundles (so an AOT-shipped rule still carries the same
   bit-identical reproducibility hash chain as the JIT path).

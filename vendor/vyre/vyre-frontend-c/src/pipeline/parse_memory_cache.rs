@@ -279,8 +279,8 @@ mod tests {
         let mut cache = LexerOutputCache::with_limits(4, 64);
         let key = [9; 16];
         cache.insert(key, cached_lexer(16));
-        let first = cache.lookup(&key).expect("first cache hit");
-        let second = cache.lookup(&key).expect("second cache hit");
+        let first = cache.lookup(&key).expect("Fix: first cache hit");
+        let second = cache.lookup(&key).expect("Fix: second cache hit");
         assert!(
             std::sync::Arc::ptr_eq(&first.types, &second.types),
             "cached token types must be shared across hits instead of deep-copied"
@@ -304,16 +304,16 @@ mod tests {
         let mut cache = LexerOutputCache::with_limits(4, 64);
         let key = [8; 16];
         cache.insert(key, cached_cuda_lexer(16, 32));
-        let first = cache.lookup(&key).expect("first CUDA cache hit");
-        let second = cache.lookup(&key).expect("second CUDA cache hit");
+        let first = cache.lookup(&key).expect("Fix: first CUDA cache hit");
+        let second = cache.lookup(&key).expect("Fix: second CUDA cache hit");
         let (first_haystack, first_len) = first
             .cuda_keyword_haystack
             .as_ref()
-            .expect("CUDA cache fixture must retain packed haystack");
+            .expect("Fix: CUDA cache fixture must retain packed haystack");
         let (second_haystack, second_len) = second
             .cuda_keyword_haystack
             .as_ref()
-            .expect("CUDA cache fixture must retain packed haystack");
+            .expect("Fix: CUDA cache fixture must retain packed haystack");
         assert_eq!(*first_len, *second_len);
         assert!(
             std::sync::Arc::ptr_eq(first_haystack, second_haystack),

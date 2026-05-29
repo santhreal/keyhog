@@ -80,18 +80,12 @@ inventory::submit! {
         || core_delimiter_match("tok_types", "tok_depths", 8, 12, 13),
         Some(|| {
             let tokens: [u32; 8] = [12, 12, 0, 0, 0, 13, 13, 0];
-            let bytes = tokens
-                .iter()
-                .flat_map(|value| value.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = crate::wire::pack_u32_slice(&tokens);
             vec![vec![bytes, vec![0u8; 4 * 8]]]
         }),
         Some(|| {
             let depths: [u32; 8] = [1, 2, 2, 2, 2, 1, 0, 0];
-            let bytes = depths
-                .iter()
-                .flat_map(|value| value.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = crate::wire::pack_u32_slice(&depths);
             vec![vec![bytes]]
         }),
     )

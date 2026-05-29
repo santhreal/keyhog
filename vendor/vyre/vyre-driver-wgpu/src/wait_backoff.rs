@@ -99,7 +99,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("wait backoff production source must precede tests");
+            .expect("Fix: wait backoff production source must precede tests");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".unwrap_or_else(")

@@ -154,10 +154,7 @@ inventory::submit! {
         // (read-write u32 × 2), weights (output f32 × 2).
         test_inputs: Some(|| {
             let scores: [f32; 8] = [0.5, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
-            let scores_bytes = scores
-                .iter()
-                .flat_map(|v| v.to_bits().to_le_bytes())
-                .collect::<Vec<u8>>();
+            let scores_bytes = vyre_primitives::wire::pack_f32_slice(&scores);
             vec![vec![scores_bytes, vec![0u8; 4 * 2], vec![0u8; 4 * 2]]]
         }),
         expected_output: Some(|| {
@@ -168,18 +165,12 @@ inventory::submit! {
                 .map(|score| libm::expf(*score - max_score))
                 .sum::<f32>();
             let indices: [u32; 2] = [5, 3];
-            let idx_bytes = indices
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let idx_bytes = vyre_primitives::wire::pack_u32_slice(&indices);
             let expected_weights = [
                 libm::expf(scores[5] - max_score) / sum_exp,
                 libm::expf(scores[3] - max_score) / sum_exp,
             ];
-            let mut weights = Vec::with_capacity(8);
-            for weight in expected_weights {
-                weights.extend_from_slice(&weight.to_bits().to_le_bytes());
-            }
+            let weights = vyre_primitives::wire::pack_f32_slice(&expected_weights);
             vec![vec![idx_bytes, weights]]
         }),
         category: Some("nn"),
@@ -187,17 +178,11 @@ inventory::submit! {
 }
 
 fn f32_fixture(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_bits().to_le_bytes())
-        .collect()
+    vyre_primitives::wire::pack_f32_slice(values)
 }
 
 fn u32_fixture(values: &[u32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
+    vyre_primitives::wire::pack_u32_slice(values)
 }
 
 fn softmax_stats_program() -> Program {
@@ -302,27 +287,15 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
 
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_bits().to_le_bytes())
-            .collect()
-    }
-
     fn u32_words(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
+        vyre_primitives::wire::decode_u32_le_bytes_all(bytes)
     }
 
     fn f32_words(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_bits(u32::from_le_bytes(chunk.try_into().unwrap())))
-            .collect()
+        vyre_primitives::wire::decode_f32_le_bytes_all(bytes)
     }
 
     #[test]

@@ -45,26 +45,16 @@ pub enum AtomicOp {
     Opaque(ExtensionAtomicOpId),
 }
 
-impl AtomicOp {
-    /// Frozen builtin wire tag for this atomic operation.
-    ///
-    /// Returns `None` for extension-declared opaque operators because their
-    /// wire representation is the high-bit extension id, not a core tag.
-    #[must_use]
-    pub const fn builtin_wire_tag(&self) -> Option<u8> {
-        match self {
-            Self::Add => Some(0x01),
-            Self::Or => Some(0x02),
-            Self::And => Some(0x03),
-            Self::Xor => Some(0x04),
-            Self::Min => Some(0x05),
-            Self::Max => Some(0x06),
-            Self::Exchange => Some(0x07),
-            Self::CompareExchange => Some(0x08),
-            Self::CompareExchangeWeak => Some(0x09),
-            Self::FetchNand => Some(0x0A),
-            Self::LruUpdate => Some(0x0B),
-            Self::Opaque(_) => None,
-        }
-    }
-}
+impl_builtin_wire_tag!(AtomicOp, Opaque, {
+    Add => 0x01,
+    Or => 0x02,
+    And => 0x03,
+    Xor => 0x04,
+    Min => 0x05,
+    Max => 0x06,
+    Exchange => 0x07,
+    CompareExchange => 0x08,
+    CompareExchangeWeak => 0x09,
+    FetchNand => 0x0A,
+    LruUpdate => 0x0B,
+});

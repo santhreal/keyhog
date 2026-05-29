@@ -1,4 +1,4 @@
-//! `bytecode_dispatch_table_pack` — pack an opcode-handler dispatch table
+//! `bytecode_dispatch_table_pack`  -  pack an opcode-handler dispatch table
 //! into a constant-buffer for fast GPU-side bytecode interpretation.
 //!
 //! Op id: `vyre-primitives::parsing::bytecode_dispatch_table_pack`. Soundness:
@@ -18,17 +18,17 @@
 //! every thread executes the same handler in the same warp (warp-specialized
 //! interpretation).
 //!
-//! This module ships the *packing* part. The interpreter loop itself is a
-//! consumer that reads the packed table.
+//! This module ships the *packing* part. Interpreter loops read the packed
+//! table through this stable wire layout.
 //!
 //! ## Wire format
 //!
 //! Each table entry is one u32 packed as:
 //!
 //! ```text
-//!   bits 0..23  — handler_offset (max 2^24 = 16M handlers — plenty)
-//!   bits 24..27 — handler_arity  (number of operand bytes, 0..15)
-//!   bits 28..31 — flags          (bit 28 = side_effecting, bit 29 = control_flow)
+//!   bits 0..23   -  handler_offset (max 2^24 = 16M handlers  -  plenty)
+//!   bits 24..27  -  handler_arity  (number of operand bytes, 0..15)
+//!   bits 28..31  -  flags          (bit 28 = side_effecting, bit 29 = control_flow)
 //! ```
 //!
 //! The packed format means dispatch is one u32 load + one mask-and-shift
@@ -71,6 +71,13 @@ pub enum PackError {
         /// The arity that exceeded `15`.
         arity: u8,
     },
+    /// Caller-owned output could not reserve enough entries.
+    Allocation {
+        /// Requested packed entries.
+        requested: usize,
+        /// Allocator detail.
+        source: String,
+    },
 }
 
 /// Number of packed u32 words required for `entries`.
@@ -90,7 +97,7 @@ pub const fn packed_dispatch_table_len(entries_len: usize) -> usize {
 /// reducing the handler-offset (split into chunks) or refusing to register
 /// an arity > 15 handler.
 pub fn pack_dispatch_table(entries: &[OpcodeHandlerEntry]) -> Result<Vec<u32>, PackError> {
-    let mut out = Vec::with_capacity(packed_dispatch_table_len(entries.len()));
+    let mut out = Vec::new();
     pack_dispatch_table_into(entries, &mut out)?;
     Ok(out)
 }
@@ -102,14 +109,12 @@ pub fn pack_dispatch_table(entries: &[OpcodeHandlerEntry]) -> Result<Vec<u32>, P
 ///
 /// # Errors
 ///
-/// Returns the first encoding overflow encountered. On error, `out` is
-/// cleared and contains only entries packed before the failing opcode.
+/// Returns the first encoding overflow or output allocation failure
+/// encountered. On error, `out` is left unchanged.
 pub fn pack_dispatch_table_into(
     entries: &[OpcodeHandlerEntry],
     out: &mut Vec<u32>,
 ) -> Result<(), PackError> {
-    out.clear();
-    out.reserve(entries.len());
     for (idx, entry) in entries.iter().enumerate() {
         if entry.handler_offset >= (1u32 << 24) {
             return Err(PackError::OffsetTooLarge {
@@ -123,6 +128,18 @@ pub fn pack_dispatch_table_into(
                 arity: entry.handler_arity,
             });
         }
+    }
+    let len = packed_dispatch_table_len(entries.len());
+    if len > out.capacity() {
+        out.try_reserve_exact(len - out.capacity())
+            .map_err(|source| PackError::Allocation {
+                requested: len,
+                source: source.to_string(),
+            })?;
+    }
+
+    out.clear();
+    out.extend(entries.iter().map(|entry| {
         let mut packed: u32 = entry.handler_offset & 0x00FF_FFFF;
         packed |= (u32::from(entry.handler_arity) & 0xF) << 24;
         if entry.side_effecting {
@@ -131,9 +148,23 @@ pub fn pack_dispatch_table_into(
         if entry.control_flow {
             packed |= 1 << 29;
         }
-        out.push(packed);
-    }
+        packed
+    }));
     Ok(())
+}
+
+/// Pack one dispatch-table entry without validation.
+#[must_use]
+pub fn pack_entry(entry: OpcodeHandlerEntry) -> u32 {
+    let mut packed = entry.handler_offset & 0x00FF_FFFF;
+    packed |= (u32::from(entry.handler_arity) & 0xF) << 24;
+    if entry.side_effecting {
+        packed |= 1 << 28;
+    }
+    if entry.control_flow {
+        packed |= 1 << 29;
+    }
+    packed
 }
 
 /// Unpack one u32 entry back into the host-side representation. Used by
@@ -161,10 +192,52 @@ mod tests {
             side_effecting: true,
             control_flow: false,
         };
-        let packed = pack_dispatch_table(&[entry]).expect("pack must succeed");
+        let packed = pack_dispatch_table(&[entry]).expect("Fix: pack must succeed");
         assert_eq!(packed.len(), 1);
         let recovered = unpack_entry(packed[0]);
         assert_eq!(recovered, entry, "round-trip must preserve every field");
+        assert_eq!(unpack_entry(pack_entry(entry)), entry);
+    }
+
+    #[test]
+    fn pack_into_reuses_output_and_is_transactional_on_invalid_entry() {
+        let entries = [
+            OpcodeHandlerEntry {
+                handler_offset: 1,
+                handler_arity: 2,
+                side_effecting: false,
+                control_flow: false,
+            },
+            OpcodeHandlerEntry {
+                handler_offset: 3,
+                handler_arity: 4,
+                side_effecting: true,
+                control_flow: true,
+            },
+        ];
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[u32::MAX; 8]);
+        let ptr = out.as_ptr();
+
+        pack_dispatch_table_into(&entries, &mut out).unwrap();
+
+        assert_eq!(
+            out,
+            entries.iter().copied().map(pack_entry).collect::<Vec<_>>()
+        );
+        assert_eq!(out.as_ptr(), ptr);
+        let before = out.clone();
+        let bad = [OpcodeHandlerEntry {
+            handler_offset: 1 << 24,
+            handler_arity: 0,
+            side_effecting: false,
+            control_flow: false,
+        }];
+        assert!(matches!(
+            pack_dispatch_table_into(&bad, &mut out),
+            Err(PackError::OffsetTooLarge { .. })
+        ));
+        assert_eq!(out, before);
     }
 
     #[test]
@@ -186,7 +259,7 @@ mod tests {
     #[test]
     fn pack_rejects_offset_at_field_boundary() {
         let entry = OpcodeHandlerEntry {
-            handler_offset: 1u32 << 24, // exactly the limit — must reject
+            handler_offset: 1u32 << 24, // exactly the limit  -  must reject
             handler_arity: 0,
             side_effecting: false,
             control_flow: false,
@@ -236,7 +309,7 @@ mod tests {
 
     #[test]
     fn pack_empty_table_returns_empty_vec() {
-        let packed = pack_dispatch_table(&[]).expect("empty pack must succeed");
+        let packed = pack_dispatch_table(&[]).expect("Fix: empty pack must succeed");
         assert!(packed.is_empty());
     }
 
@@ -258,7 +331,7 @@ mod tests {
         ];
         let mut out = Vec::with_capacity(64);
         let before = out.capacity();
-        pack_dispatch_table_into(&entries, &mut out).expect("pack_into must succeed");
+        pack_dispatch_table_into(&entries, &mut out).expect("Fix: pack_into must succeed");
         assert_eq!(out.len(), entries.len());
         assert_eq!(
             out.capacity(),
@@ -286,7 +359,7 @@ mod tests {
                 control_flow: opcode % 8 == 0,
             })
             .collect();
-        let packed = pack_dispatch_table(&entries).expect("full 256-table must pack");
+        let packed = pack_dispatch_table(&entries).expect("Fix: full 256-table must pack");
         assert_eq!(packed.len(), 256);
         // Spot-check a few entries.
         assert_eq!(unpack_entry(packed[0]), entries[0]);

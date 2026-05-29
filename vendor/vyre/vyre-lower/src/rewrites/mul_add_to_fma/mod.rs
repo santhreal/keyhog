@@ -10,7 +10,7 @@
 //!    model is intentionally untyped at the rewrite layer, so the only
 //!    safe way to introduce `Fma` (which all backends emit as the FP
 //!    intrinsic) is via positive proof. When the proof is unavailable the
-//!    rewrite no-ops — never wrong, possibly conservative.
+//!    rewrite no-ops  -  never wrong, possibly conservative.
 //!
 //! After the rewrite the original `Mul` op is left in place but becomes
 //! unreferenced; `descriptor_dce` (which runs later in the canonical
@@ -20,8 +20,8 @@
 //! Block/Region`). Idempotent: a second invocation finds no further
 //! Add(Mul(...), ...) shapes because the Add was already replaced.
 
+use super::body_index::BodyIndex;
 use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
 use vyre_foundation::ir::BinOp;
 use vyre_foundation::ir::DataType;
 
@@ -35,24 +35,7 @@ pub fn mul_add_to_fma(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn mul_add_to_fma_body(mut body: KernelBody) -> KernelBody {
-    // Map result-id → op index for fast producer lookup. Only the FIRST
-    // producer wins per result-id — the descriptor is in SSA shape so a
-    // result-id is produced exactly once anyway.
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
-
-    // Use count for each result-id across ALL ops in this body — the
-    // promotion only fires when the inner Mul has exactly one consumer.
-    let mut use_count: FxHashMap<u32, u32> = FxHashMap::default();
-    for op in &body.ops {
-        for operand in &op.operands {
-            *use_count.entry(*operand).or_insert(0) += 1;
-        }
-    }
+    let index = BodyIndex::new(&body);
 
     // Two-pass: decide promotions, then apply.
     let mut promotions: Vec<(usize, u32, u32, u32)> = Vec::new(); // (add_idx, a_id, b_id, c_id)
@@ -70,20 +53,18 @@ fn mul_add_to_fma_body(mut body: KernelBody) -> KernelBody {
 
         // Try lhs as the Mul side first, then rhs. The first hit wins;
         // both can't fire on the same Add anyway.
-        let mul_side = candidate_mul(&body, &result_to_idx, &use_count, lhs)
+        let mul_side = candidate_mul(&body, &index, lhs)
             .map(|(a, b)| (a, b, rhs))
-            .or_else(|| {
-                candidate_mul(&body, &result_to_idx, &use_count, rhs).map(|(a, b)| (a, b, lhs))
-            });
+            .or_else(|| candidate_mul(&body, &index, rhs).map(|(a, b)| (a, b, lhs)));
         let Some((a_id, b_id, c_id)) = mul_side else {
             continue;
         };
         // Only promote when ALL three operand chains are provably float-
         // producing. The descriptor model is untyped so without proof
         // we can't safely emit Fma (which is FP-only at every backend).
-        if !is_float_producing(&body, &result_to_idx, a_id, 0)
-            || !is_float_producing(&body, &result_to_idx, b_id, 0)
-            || !is_float_producing(&body, &result_to_idx, c_id, 0)
+        if !is_float_producing(&body, &index, a_id, 0)
+            || !is_float_producing(&body, &index, b_id, 0)
+            || !is_float_producing(&body, &index, c_id, 0)
         {
             continue;
         }
@@ -107,19 +88,17 @@ fn mul_add_to_fma_body(mut body: KernelBody) -> KernelBody {
 /// `(mul_a, mul_b)`. Otherwise return `None`.
 fn candidate_mul(
     body: &KernelBody,
-    result_to_idx: &FxHashMap<u32, usize>,
-    use_count: &FxHashMap<u32, u32>,
+    index: &BodyIndex,
     result_id: u32,
 ) -> Option<(u32, u32)> {
-    let producer_idx = *result_to_idx.get(&result_id)?;
-    let producer = body.ops.get(producer_idx)?;
+    let producer = index.producer(body, result_id)?;
     if !matches!(producer.kind, KernelOpKind::BinOpKind(BinOp::Mul)) {
         return None;
     }
     if producer.operands.len() != 2 {
         return None;
     }
-    if use_count.get(&result_id).copied().unwrap_or(0) != 1 {
+    if !index.has_single_consumer(result_id) {
         return None;
     }
     Some((producer.operands[0], producer.operands[1]))
@@ -130,17 +109,14 @@ const FLOAT_TRACE_DEPTH_LIMIT: usize = 8;
 
 fn is_float_producing(
     body: &KernelBody,
-    result_to_idx: &FxHashMap<u32, usize>,
+    index: &BodyIndex,
     result_id: u32,
     depth: usize,
 ) -> bool {
     if depth >= FLOAT_TRACE_DEPTH_LIMIT {
         return false;
     }
-    let Some(idx) = result_to_idx.get(&result_id).copied() else {
-        return false;
-    };
-    let Some(op) = body.ops.get(idx) else {
+    let Some(op) = index.producer(body, result_id) else {
         return false;
     };
     match &op.kind {
@@ -162,12 +138,12 @@ fn is_float_producing(
             // its dtype from its inputs.
             op.operands
                 .iter()
-                .any(|operand| is_float_producing(body, result_to_idx, *operand, depth + 1))
+                .any(|operand| is_float_producing(body, index, *operand, depth + 1))
         }
         KernelOpKind::UnOpKind(_) | KernelOpKind::Select => op
             .operands
             .iter()
-            .any(|operand| is_float_producing(body, result_to_idx, *operand, depth + 1)),
+            .any(|operand| is_float_producing(body, index, *operand, depth + 1)),
         _ => false,
     }
 }
@@ -249,7 +225,7 @@ mod tests {
             .expect("Fix: result-4 op must survive the rewrite (now as Fma).");
         assert!(
             matches!(add_op.kind, KernelOpKind::Fma),
-            "Fix: Add(Mul(a,b), c) over floats must become Fma(a, b, c) — got {:?}",
+            "Fix: Add(Mul(a,b), c) over floats must become Fma(a, b, c)  -  got {:?}",
             add_op.kind
         );
         assert_eq!(
@@ -281,7 +257,7 @@ mod tests {
 
     #[test]
     fn no_fma_when_mul_has_multiple_consumers() {
-        // Mul result feeds two Adds — promoting one would still leave
+        // Mul result feeds two Adds  -  promoting one would still leave
         // the other depending on the Mul, so neither can fire.
         let mut body = empty_body();
         lit_f32(&mut body, 1.0, 0);
@@ -302,7 +278,7 @@ mod tests {
 
     #[test]
     fn no_fma_when_operands_are_integer_literals() {
-        // Pure integer pattern — Fma is FP at every backend, so refuse
+        // Pure integer pattern  -  Fma is FP at every backend, so refuse
         // without positive float proof.
         let mut body = empty_body();
         lit_u32(&mut body, 1, 0);
@@ -315,7 +291,7 @@ mod tests {
         for op in &out.body.ops {
             assert!(
                 !matches!(op.kind, KernelOpKind::Fma),
-                "Fix: integer Add(Mul(...), ...) must not promote — Fma is FP-only at every backend."
+                "Fix: integer Add(Mul(...), ...) must not promote  -  Fma is FP-only at every backend."
             );
         }
     }

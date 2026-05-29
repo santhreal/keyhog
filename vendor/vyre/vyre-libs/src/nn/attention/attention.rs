@@ -1,8 +1,8 @@
-//! Scaled dot-product attention — `softmax(Q·Kᵀ / √d) · V`.
+//! Scaled dot-product attention  -  `softmax(Q·Kᵀ / √d) · V`.
 //!
 //! Category-A composition. Inputs are laid out as contiguous F32 row-
 //! major matrices in separate buffers. Shape is encoded statically in
-//! the Program — (seq_len `s`, head_dim `d`). Produces one scores row
+//! the Program  -  (seq_len `s`, head_dim `d`). Produces one scores row
 //! per query token into `output` (also `s * d` F32 elements).
 //!
 //! The default builder maps one invocation to one query row. The
@@ -18,49 +18,12 @@ use vyre_primitives::nn::attention_passes::{
 use crate::builder::{check_tensors, BuildOptions};
 use crate::region::{wrap, wrap_child};
 use crate::tensor_ref::{TensorRef, TensorRefError};
+use vyre_primitives::nn::attention_stability::{
+    bounded_exp_arg, bounded_score, flush_tiny, positive_denominator,
+};
 
 const OP_ID: &str = "vyre-libs::nn::attention";
 const REFERENCE_OP_ID: &str = "vyre-libs::nn::attention_reference";
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn bounded_exp_arg(value: Expr) -> Expr {
-    let value_is_nan = Expr::is_nan(value.clone());
-    let finite = finite_or(value.clone(), Expr::f32(-80.0));
-    let upper_bounded = Expr::select(
-        Expr::gt(finite.clone(), Expr::f32(0.0)),
-        Expr::f32(0.0),
-        finite,
-    );
-    let clamped = Expr::select(
-        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
-        Expr::f32(-80.0),
-        upper_bounded,
-    );
-    Expr::select(value_is_nan, value, clamped)
-}
-
-fn positive_denominator(value: Expr) -> Expr {
-    let repaired = Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value.clone(),
-        Expr::f32(f32::MIN_POSITIVE),
-    );
-    Expr::select(Expr::is_nan(value.clone()), value, repaired)
-}
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 fn attention_score_nodes(q: &str, k: &str, d: u32, scale_expr: Expr) -> Vec<Node> {
     vec![
@@ -89,7 +52,10 @@ fn attention_score_nodes(q: &str, k: &str, d: u32, scale_expr: Expr) -> Vec<Node
                 ),
             )],
         ),
-        Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
+        Node::let_bind(
+            "score",
+            bounded_score(Expr::mul(Expr::var("dot_val"), scale_expr)),
+        ),
     ]
 }
 
@@ -104,7 +70,7 @@ fn direct_score_expr(q: &str, k: &str, row: u32, col: u32, d: u32, scale_expr: E
             ),
         );
     }
-    Expr::mul(dot, scale_expr)
+    bounded_score(Expr::mul(dot, scale_expr))
 }
 
 pub(crate) fn direct_attention_program(
@@ -239,27 +205,6 @@ impl Attention {
         }
     }
 
-    /// Override workgroup size.
-    #[must_use]
-    pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
-        self.options = self.options.with_workgroup_size(size);
-        self
-    }
-
-    /// Override region generator name.
-    #[must_use]
-    pub fn with_region_generator(mut self, name: &'static str) -> Self {
-        self.options = self.options.with_region_generator(name);
-        self
-    }
-
-    /// Stamp the region metadata with a tenant id.
-    #[must_use]
-    pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
-        self.options = self.options.with_tenant_id(tenant_id);
-        self
-    }
-
     /// Validate + materialize the Program.
     ///
     /// # Errors
@@ -336,6 +281,8 @@ impl Attention {
         Ok(program)
     }
 }
+
+crate::builder::impl_cat_a_builder_options!(Attention);
 
 /// Build a Program that computes scaled dot-product attention. Back-
 /// compat wrapper around [`Attention`]; invalid inputs lower to a trap.
@@ -593,6 +540,7 @@ fn attention_program(
 }
 
 #[allow(clippy::too_many_arguments)]
+
 fn attention_reference_program(
     q: &str,
     k: &str,
@@ -616,10 +564,10 @@ fn attention_reference_program(
     // 4) out[i, t] = Σ_j (exp(scores[j] - max)/sum) * V[j, t]
     //
     // We elide the intermediate scores buffer by recomputing exp/sum
-    // and the final weighted sum in separate passes — Cat-A shape.
+    // and the final weighted sum in separate passes  -  Cat-A shape.
 
     // Outer loop over query tokens. Uses a sentinel max from the
-    // first score — initialize with a very negative number so the
+    // first score  -  initialize with a very negative number so the
     // first score wins the max-reduction.
     let per_row_body = vec![
         // target builder rejects Infinity literals in compute entry points; the
@@ -684,9 +632,9 @@ inventory::submit! {
             let k = [1.0f32, 0.25, -0.5, 1.5, 0.75, -1.25, 0.5, 0.5];
             let v = [2.0f32, -1.0, 0.5, 1.25, -0.25, 0.75, 1.5, -0.5];
             vec![vec![
-                q.iter().flat_map(|value| value.to_le_bytes()).collect(),
-                k.iter().flat_map(|value| value.to_le_bytes()).collect(),
-                v.iter().flat_map(|value| value.to_le_bytes()).collect(),
+                vyre_primitives::wire::pack_f32_slice(&q),
+                vyre_primitives::wire::pack_f32_slice(&k),
+                vyre_primitives::wire::pack_f32_slice(&v),
                 vec![0u8; 512 * core::mem::size_of::<f32>()],
             ]]
         }),
@@ -703,21 +651,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn parallel_attention_matches_scalar_reference() {
@@ -811,7 +747,7 @@ mod tests {
             .iter()
             .find(|b| b.name() == "out")
             .map(|b| b.count() as usize * core::mem::size_of::<f32>())
-            .expect("output buffer present");
+            .expect("Fix: output buffer present");
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
@@ -847,7 +783,7 @@ mod tests {
             .iter()
             .find(|b| b.name() == "out")
             .map(|b| b.count() as usize * core::mem::size_of::<f32>())
-            .expect("output buffer present");
+            .expect("Fix: output buffer present");
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
@@ -881,7 +817,7 @@ mod tests {
             .iter()
             .find(|b| b.name() == "out")
             .map(|b| b.count() as usize * core::mem::size_of::<f32>())
-            .expect("output buffer present");
+            .expect("Fix: output buffer present");
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
@@ -900,3 +836,4 @@ mod tests {
         );
     }
 }
+

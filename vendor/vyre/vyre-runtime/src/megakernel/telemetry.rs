@@ -9,6 +9,9 @@ use super::scaling::{
     MegakernelLaunchPolicy, MegakernelLaunchRecommendation, MegakernelLaunchRequest,
     PriorityRequeueAccounting,
 };
+use super::staging_reserve::{
+    reserve_hash_map_capacity, reserve_vec_capacity as reserve_target_capacity,
+};
 use crate::PipelineError;
 
 mod sketch;
@@ -43,22 +46,6 @@ fn read_slot_chunk_word_exact(slot_bytes: &[u8], word_idx: u32) -> u32 {
         slot_bytes[off + 2],
         slot_bytes[off + 3],
     ])
-}
-
-fn reserve_target_capacity<T>(
-    out: &mut Vec<T>,
-    target_capacity: usize,
-    label: &'static str,
-) -> Result<(), PipelineError> {
-    if out.capacity() < target_capacity {
-        out.try_reserve_exact(target_capacity - out.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel telemetry {label} reservation failed for {target_capacity} element(s): {source}. Fix: reduce snapshot size or decode into reusable caller-owned scratch."
-                ))
-            })?;
-    }
-    Ok(())
 }
 
 fn is_sorted_unique_u32(values: &[u32]) -> bool {
@@ -273,16 +260,11 @@ impl RingTelemetry {
             opcodes => WindowOpcodeMatcher::LargeSlice(opcodes),
         };
         if !matches!(window_opcode_matcher, WindowOpcodeMatcher::None) {
-            if scratch.windows.capacity() < slot_count {
-                scratch
-                    .windows
-                    .try_reserve(slot_count - scratch.windows.capacity())
-                    .map_err(|source| {
-                        PipelineError::Backend(format!(
-                            "megakernel telemetry window accumulator reservation failed for {slot_count} slot(s): {source}. Fix: reduce ring snapshot size or reuse caller-owned telemetry scratch."
-                        ))
-                    })?;
-            }
+            reserve_hash_map_capacity(
+                &mut scratch.windows,
+                slot_count,
+                "window accumulator scratch",
+            )?;
         }
         let decode_windows = !matches!(window_opcode_matcher, WindowOpcodeMatcher::None);
 
@@ -567,15 +549,11 @@ impl RingTelemetry {
         let gpu_idle_ppm = if total_slots == 0 {
             0
         } else {
-            u32::try_from((u64::from(gpu_idle_slots) * 1_000_000) / u64::from(total_slots))
-                .expect("GPU idle ppm is bounded by 1_000_000")
+            let raw_idle_ppm = (u64::from(gpu_idle_slots) * 1_000_000) / u64::from(total_slots);
+            raw_idle_ppm.min(1_000_000) as u32
         };
         let frontier_density_bps = density_bps(queue_depth, total_slots);
-        let active_slots = total_slots.checked_sub(gpu_idle_slots).unwrap_or_else(|| {
-            panic!(
-                "megakernel telemetry has more idle slots ({gpu_idle_slots}) than total slots ({total_slots}). Fix: reject malformed ring occupancy before deriving counters."
-            )
-        });
+        let active_slots = total_slots.saturating_sub(gpu_idle_slots);
         let occupancy_proxy_bps = density_bps(active_slots, total_slots);
         let tenant_fairness_total = self
             .control
@@ -707,6 +685,7 @@ impl RingTelemetry {
     }
 }
 
+
 fn read_required_control_word(control_bytes: &[u8], word_idx: usize) -> Result<u32, PipelineError> {
     read_word(control_bytes, word_idx).ok_or_else(|| {
         PipelineError::Backend(format!(
@@ -822,3 +801,4 @@ fn fairness_skew(counters: &[u32]) -> u32 {
 mod tests {
     include!("telemetry_tests.rs");
 }
+

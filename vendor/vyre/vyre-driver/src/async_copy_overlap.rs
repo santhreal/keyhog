@@ -10,7 +10,7 @@
 //! `ArmBindingSummary`, can the dispatcher fire the copy on a side
 //! stream and let the kernel run concurrently on the main stream?
 //!
-//! Read-after-copy on the same slot is the unsafe case — kernel
+//! Read-after-copy on the same slot is the unsafe case  -  kernel
 //! must wait for the copy to land. Otherwise overlap is fine.
 
 use crate::arm_independence::ArmBindingSummary;
@@ -18,10 +18,10 @@ use crate::arm_independence::ArmBindingSummary;
 /// Verdict for [`can_overlap_copy_with_kernel`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyOverlapDecision {
-    /// Copy can run on a side stream concurrently with the kernel —
+    /// Copy can run on a side stream concurrently with the kernel  -
     /// the kernel does not read the destination slot.
     Overlap,
-    /// Kernel reads the slot the copy targets — must serialise (copy
+    /// Kernel reads the slot the copy targets  -  must serialise (copy
     /// completes before kernel starts).
     Serialize,
 }
@@ -38,7 +38,7 @@ pub fn can_overlap_copy_with_kernel(
         return CopyOverlapDecision::Serialize;
     }
     if kernel_arm.writes.contains(&copy_dst_slot) {
-        // Kernel writes the same slot — RAW would race regardless of
+        // Kernel writes the same slot  -  RAW would race regardless of
         // ordering. The runtime should never plan an H2D copy whose
         // destination is a kernel output, but defensive serialization
         // keeps the verdict sound.

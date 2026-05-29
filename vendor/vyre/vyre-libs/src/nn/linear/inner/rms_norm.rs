@@ -1,7 +1,8 @@
 //! Fused `rms_norm_linear` constructor.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+use crate::nn::rms::{inverse_rms_expr, square_expr};
 use crate::region::wrap_anonymous;
 use crate::tensor_ref::TensorRefError;
 
@@ -74,20 +75,14 @@ pub fn try_rms_norm_linear(
                 "sum_sq",
                 Expr::add(
                     Expr::var("sum_sq"),
-                    Expr::mul(Expr::load(input, k.clone()), Expr::load(input, k.clone())),
+                    square_expr(Expr::load(input, k.clone())),
                 ),
             )],
         ),
         Node::Store {
             buffer: "inv_rms".into(),
             index: Expr::u32(0),
-            value: Expr::UnOp {
-                op: UnOp::InverseSqrt,
-                operand: Box::new(Expr::add(
-                    Expr::div(Expr::var("sum_sq"), Expr::f32(n as f32)),
-                    Expr::f32(eps),
-                )),
-            },
+            value: inverse_rms_expr(Expr::var("sum_sq"), n, eps),
         },
     ];
 
@@ -147,7 +142,7 @@ inventory::submit! {
         id: "vyre-libs::nn::rms_norm_linear",
         build: || rms_norm_linear("input", "w", "b", "out", 4, 4, 4, 1e-5),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             let input = [1.0_f32, 2.0, 3.0, 4.0];
             let weights = (0u32..16u32).map(|v| v as f32).collect::<Vec<_>>();
             vec![vec![
@@ -157,7 +152,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             let input = [1.0_f32, 2.0, 3.0, 4.0];
             let eps = 1e-5_f32;
             let inv_scale =

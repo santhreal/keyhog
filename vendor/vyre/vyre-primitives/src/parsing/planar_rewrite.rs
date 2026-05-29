@@ -4,11 +4,11 @@
 //! 1995, Zhu-Mumford 2007 image grammars, Wu 2017 generative shape
 //! programs) replace string productions with **local 2D rewrites**:
 //! a small `k × k` window matches a pattern, then writes a replacement.
-//! Each rewrite is a neighborhood read+write — pure GPU shape, but
+//! Each rewrite is a neighborhood read+write  -  pure GPU shape, but
 //! historically not packaged as a primitive at the IR level.
 //!
 //! This file ships the **non-overlapping rewrite scheduler** primitive
-//! — given a candidate-match map, mark a maximal set of mutually
+//!  -  given a candidate-match map, mark a maximal set of mutually
 //! non-overlapping `k × k` windows that can apply in parallel.
 //!
 //! Algorithm: greedy serpentine scan with `k`-row stride. Each chosen
@@ -16,13 +16,13 @@
 //! neighboring matches from firing in the same wave. Matches not
 //! chosen this wave remain candidates for the next wave.
 //!
-//! # Why this primitive is dual-use
+//! # Composition roles
 //!
-//! | Consumer | Use |
+//! | Role | Use |
 //! |---|---|
-//! | `vyre-libs::vision::scene_parse` consumers | scene parsing, layout analysis |
-//! | `vyre-libs::sci::cellular_automata` consumers | parallel CA stepping with rewrite rules |
-//! | `vyre-libs::doc::layout` consumers | document-layout extraction grammars |
+//! | scene parsing | layout analysis over 2D structures |
+//! | cellular automata | parallel CA stepping with rewrite rules |
+//! | document layout | layout extraction grammars |
 
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ pub const OP_ID: &str = "vyre-primitives::parsing::planar_rewrite_schedule";
 /// Inputs:
 /// - `candidates`: row-major `h × w` u32 mask, `1` if a match starts
 ///   at `(row, col)` (top-left corner of a `k × k` window), else `0`.
-/// - `chosen`: row-major `h × w` u32 — output mask of the chosen
+/// - `chosen`: row-major `h × w` u32  -  output mask of the chosen
 ///   matches. The complement (candidates AND NOT chosen) remains for
 ///   the next wave.
 ///
@@ -174,38 +174,7 @@ pub fn planar_rewrite_schedule(candidates: &str, chosen: &str, h: u32, w: u32, k
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_planar_rewrite_schedule(candidates: &[u32], h: u32, w: u32, k: u32) -> Vec<u32> {
-    let h = h as usize;
-    let w = w as usize;
-    let k = k as usize;
-
-    let mut chosen = vec![0u32; h * w];
-    for r in 0..h {
-        for c in 0..w {
-            let addr = r * w + c;
-            if candidates.get(addr).copied().unwrap_or(0) == 0 {
-                continue;
-            }
-            let mut conflict = false;
-            for di in 0..k {
-                for dj in 0..k {
-                    if di > r || dj > c {
-                        continue;
-                    }
-                    if chosen[(r - di) * w + (c - dj)] != 0 {
-                        conflict = true;
-                        break;
-                    }
-                }
-                if conflict {
-                    break;
-                }
-            }
-            if !conflict {
-                chosen[addr] = 1;
-            }
-        }
-    }
-    chosen
+    vyre_foundation::optimizer::planar_rewrite_schedule_mask(candidates, h, w, k)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -213,8 +182,21 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || planar_rewrite_schedule("candidates", "chosen", 4, 4, 2),
-        None,
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            let mut cands = vec![0; 16];
+            cands[5] = 1;
+            vec![vec![
+                to_bytes(&cands),                // candidates
+                to_bytes(&[0; 16]),              // chosen
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            let mut expected = vec![0; 16];
+            expected[5] = 1;
+            vec![vec![to_bytes(&expected)]]
+        }),
     )
 }
 
@@ -253,7 +235,7 @@ mod tests {
 
     #[test]
     fn cpu_widely_spaced_candidates_all_chosen() {
-        // 5x5 grid, candidates at corners — all far enough apart.
+        // 5x5 grid, candidates at corners  -  all far enough apart.
         let mut cands = vec![0u32; 25];
         cands[0] = 1; // (0, 0)
         cands[4] = 1; // (0, 4)
@@ -281,7 +263,7 @@ mod tests {
         let chosen = reference_planar_rewrite_schedule(&cands, 4, 4, 2);
         let total: u32 = chosen.iter().sum();
         // Greedy row-major with k=2 exclusion picks every other cell
-        // in row 0 and skips a row, then resumes — but exact count is
+        // in row 0 and skips a row, then resumes  -  but exact count is
         // implementation-specific. Verify ≥ 4 chosen and no conflicts.
         assert!(total >= 4);
         // Verify no two chosen are adjacent within k.

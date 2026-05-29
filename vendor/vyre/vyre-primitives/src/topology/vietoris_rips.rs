@@ -7,7 +7,7 @@
 //! threshold ε. Recent work (Bauer 2021 Ripser++, Lewis 2024 chunked
 //! GPU reduction) makes V-R practical at billions of simplices.
 //!
-//! This file ships the **edge filtration step** primitive — given
+//! This file ships the **edge filtration step** primitive  -  given
 //! a pairwise-distance matrix and the current threshold ε, output a
 //! sorted list of edges (pairs of vertices) whose distance ≤ ε. Edges
 //! are encoded as `u32` packed `(u_vertex << 16) | v_vertex`.
@@ -16,13 +16,10 @@
 //! semiring on the edge incidence matrix) for the chunk-reduction
 //! step that extracts persistence pairs.
 //!
-//! # Why this primitive is dual-use
-//!
-//! | Consumer | Use |
-//! |---|---|
-//! | future `vyre-libs::topology::tda` | shape analysis, anomaly detection |
-//! | future `vyre-libs::ml::scattering` | persistent landscape features for NN inputs |
-//! | future `vyre-libs::security::callgraph_topology` | call-graph topological signature |
+//! The primitive stays domain-neutral: higher-level crates can compose
+//! it into shape analysis, anomaly detection, persistent-landscape
+//! features, or graph-signature pipelines without changing the
+//! topology authority layer.
 
 use std::sync::Arc;
 
@@ -37,10 +34,10 @@ pub const OP_ID: &str = "vyre-primitives::topology::vietoris_rips_edge_filter";
 /// Inputs:
 /// - `dist_matrix`: row-major `n × n` u32 (pairwise distances, 16.16
 ///   fp). Symmetric with zero diagonal.
-/// - `epsilon`: 1-element u32 — current scale.
+/// - `epsilon`: 1-element u32  -  current scale.
 ///
 /// Output:
-/// - `edge_mask`: row-major `n × n` u32 — `1` if (i, j) is an edge
+/// - `edge_mask`: row-major `n × n` u32  -  `1` if (i, j) is an edge
 ///   at scale ε (i < j AND dist[i, j] ≤ ε), else `0`. Half of the
 ///   matrix (lower triangular) is zero by construction (i ≥ j).
 ///
@@ -101,8 +98,37 @@ pub fn vietoris_rips_edge_filter(
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn vietoris_rips_edge_filter_cpu(dist_matrix: &[f64], epsilon: f64, n: u32) -> Vec<u32> {
-    let n = n as usize;
-    let mut out = vec![0u32; n * n];
+    let mut out = Vec::new();
+    match try_vietoris_rips_edge_filter_cpu_into(dist_matrix, epsilon, n, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives Vietoris-Rips edge filter CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
+}
+
+/// Fallible CPU reference using a caller-owned output buffer.
+///
+/// Missing distance entries are treated as `INFINITY`, matching the
+/// owned CPU helper. `out` is not mutated until all required storage is
+/// reserved.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_vietoris_rips_edge_filter_cpu_into(
+    dist_matrix: &[f64],
+    epsilon: f64,
+    n: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    let n = usize::try_from(n).map_err(|_| "n does not fit usize".to_string())?;
+    let cells = n
+        .checked_mul(n)
+        .ok_or_else(|| format!("n * n overflows usize for n={n}"))?;
+    let additional = cells.saturating_sub(out.capacity());
+    out.try_reserve_exact(additional)
+        .map_err(|err| format!("failed to reserve edge mask: {err}"))?;
+    out.clear();
+    out.resize(cells, 0);
     for i in 0..n {
         for j in 0..n {
             let addr = i * n + j;
@@ -111,7 +137,7 @@ pub fn vietoris_rips_edge_filter_cpu(dist_matrix: &[f64], epsilon: f64, n: u32) 
             }
         }
     }
-    out
+    Ok(())
 }
 
 /// CPU helper: extract the edge list from a mask. Returns
@@ -119,8 +145,42 @@ pub fn vietoris_rips_edge_filter_cpu(dist_matrix: &[f64], epsilon: f64, n: u32) 
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn extract_edges_cpu(edge_mask: &[u32], n: u32) -> Vec<(u32, u32)> {
-    let n = n as usize;
     let mut edges = Vec::new();
+    match try_extract_edges_cpu_into(edge_mask, n, &mut edges) {
+        Ok(()) => edges,
+        Err(error) => {
+            eprintln!("vyre-primitives Vietoris-Rips edge extraction CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
+}
+
+/// Fallible CPU helper that extracts edges into a caller-owned vector.
+///
+/// The function pre-counts edges so `edges` is not mutated if reserve
+/// fails.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_extract_edges_cpu_into(
+    edge_mask: &[u32],
+    n: u32,
+    edges: &mut Vec<(u32, u32)>,
+) -> Result<(), String> {
+    let n = usize::try_from(n).map_err(|_| "n does not fit usize".to_string())?;
+    let mut edge_count = 0_usize;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if edge_mask.get(i * n + j).copied().unwrap_or(0) != 0 {
+                edge_count = edge_count
+                    .checked_add(1)
+                    .ok_or_else(|| "edge count overflows usize".to_string())?;
+            }
+        }
+    }
+    let additional = edge_count.saturating_sub(edges.capacity());
+    edges
+        .try_reserve_exact(additional)
+        .map_err(|err| format!("failed to reserve edge list: {err}"))?;
+    edges.clear();
     for i in 0..n {
         for j in (i + 1)..n {
             if edge_mask.get(i * n + j).copied().unwrap_or(0) != 0 {
@@ -128,7 +188,7 @@ pub fn extract_edges_cpu(edge_mask: &[u32], n: u32) -> Vec<(u32, u32)> {
             }
         }
     }
-    edges
+    Ok(())
 }
 
 #[cfg(test)]
@@ -167,6 +227,55 @@ mod tests {
         let mask = vec![0u32, 1, 0, 0, 0, 1, 0, 0, 0];
         let edges = extract_edges_cpu(&mask, 3);
         assert_eq!(edges, vec![(0, 1), (1, 2)]);
+    }
+
+    #[test]
+    fn cpu_edge_filter_into_reuses_output_and_clears_tail() {
+        let d = vec![0.0, 1.0, 5.0, 1.0, 0.0, 5.0, 5.0, 5.0, 0.0];
+        let mut out = Vec::with_capacity(16);
+        out.extend([99; 16]);
+        let ptr = out.as_ptr();
+        try_vietoris_rips_edge_filter_cpu_into(&d, 2.0, 3, &mut out).unwrap();
+        assert_eq!(out, vec![0, 1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn cpu_extract_edges_into_reuses_output_and_clears_tail() {
+        let mask = vec![0u32, 1, 0, 0, 0, 1, 0, 0, 0];
+        let mut edges = Vec::with_capacity(8);
+        edges.extend([(9, 9); 8]);
+        let ptr = edges.as_ptr();
+        try_extract_edges_cpu_into(&mask, 3, &mut edges).unwrap();
+        assert_eq!(edges, vec![(0, 1), (1, 2)]);
+        assert_eq!(edges.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_references() {
+        let d = vec![0.0, 1.0, 5.0, 1.0, 0.0, 5.0, 5.0, 5.0, 0.0];
+        let mut mask = Vec::with_capacity(16);
+        try_vietoris_rips_edge_filter_cpu_into(&d, 2.0, 3, &mut mask)
+            .expect("Fix: small edge mask CPU reference must reserve");
+        assert_eq!(vietoris_rips_edge_filter_cpu(&d, 2.0, 3), mask);
+
+        let mut edges = Vec::with_capacity(8);
+        try_extract_edges_cpu_into(&mask, 3, &mut edges)
+            .expect("Fix: small edge extraction CPU reference must reserve");
+        assert_eq!(extract_edges_cpu(&mask, 3), edges);
+    }
+
+    #[test]
+    fn production_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("vietoris_rips.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: vietoris_rips.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: Vietoris-Rips CPU reference wrappers must not panic in production."
+        );
     }
 
     #[test]

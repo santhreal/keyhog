@@ -1,26 +1,19 @@
 //! EMA update: `ema = decay * ema + (1 - decay) * theta`.
 //!
-//! Category A — element-wise weighted average. Recipe decay=0.9965.
+//! Category A  -  element-wise weighted average. Recipe decay=0.9965.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::f32_stability::flush_tiny;
 
 const OP_ID: &str = "vyre-libs::optim::ema_apply";
 
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
-
 /// Build a Program for EMA update in-place (F32).
 ///
-/// `ema[n]` (RW) — running average.
-/// `theta[n]` (RO) — current weights.
-/// `decay` — scalar, baked as constant.
+/// `ema[n]` (RW)  -  running average.
+/// `theta[n]` (RO)  -  current weights.
+/// `decay`  -  scalar, baked as constant.
 #[must_use]
 pub fn ema_apply(ema: &str, theta: &str, n: u32, decay: f32) -> Program {
     let i = Expr::var("i");
@@ -60,7 +53,7 @@ inventory::submit! {
         id: OP_ID,
         build: || ema_apply("ema", "theta", 4, 0.9),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[10.0, 20.0, 30.0, 40.0]),  // ema
                 to_f32(&[11.0, 21.0, 31.0, 41.0]),  // theta
@@ -73,7 +66,7 @@ inventory::submit! {
             let out: Vec<f32> = ema.iter().zip(theta.iter())
                 .map(|(e, t)| decay * e + (1.0 - decay) * t)
                 .collect();
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),

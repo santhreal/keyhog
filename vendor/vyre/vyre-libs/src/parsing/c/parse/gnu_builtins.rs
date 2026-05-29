@@ -184,10 +184,7 @@ inventory::submit! {
                 GNU_BUILTIN_OBJECT_SIZE_OPCODE,
                 C_AST_KIND_BUILTIN_CHOOSE_EXPR,
             ];
-            let ast_bytes = ast
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let ast_bytes = vyre_primitives::wire::pack_u32_slice(&ast);
             vec![vec![ast_bytes, vec![0u8; 4 * 4]]]
         }),
         expected_output: Some(|| {
@@ -197,10 +194,7 @@ inventory::submit! {
                 C_AST_KIND_BUILTIN_OBJECT_SIZE_EXPR,
                 C_AST_KIND_BUILTIN_CHOOSE_EXPR,
             ];
-            let out_bytes = out
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let out_bytes = vyre_primitives::wire::pack_u32_slice(&out);
             vec![vec![out_bytes]]
         }),
         category: Some("parsing"),

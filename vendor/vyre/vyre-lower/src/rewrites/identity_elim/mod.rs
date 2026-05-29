@@ -3,7 +3,7 @@
 //! Detects `BinOp` ops where one operand is a Literal whose value is the
 //! algebraic identity (or absorbing element) for that op, and rewrites
 //! all references to the BinOp's result-id to point at the surviving
-//! operand instead. The eliminated BinOp becomes dead — `descriptor_dce` cleans it
+//! operand instead. The eliminated BinOp becomes dead  -  `descriptor_dce` cleans it
 //! up; the literal stays put (CSE will dedupe duplicates if any).
 //!
 //! ## Patterns
@@ -26,7 +26,7 @@
 //! - `BitOr(0, x)` → `x`
 //! - `BitXor(0, x)` → `x`
 //! - `WrappingAdd(0, x)` → `x`
-//! - (Sub, Div, Shl, Shr are not commutative — left-identity does NOT
+//! - (Sub, Div, Shl, Shr are not commutative  -  left-identity does NOT
 //!   apply.)
 //!
 //! Absorbing-zero (kept = the literal-zero side):
@@ -46,7 +46,7 @@
 //! `run_all` ordering puts `identity_elim` before `descriptor_dce`/`descriptor_cse`. Because
 //! `descriptor_const_fold` already collapses `BinOp(Literal, Literal)` into a single
 //! `Literal`, identity_elim only sees `BinOp(var, Literal)` and
-//! `BinOp(var, var)` shapes — the literal-vs-literal case is already
+//! `BinOp(var, var)` shapes  -  the literal-vs-literal case is already
 //! handled.
 //!
 //! ## Non-patterns
@@ -64,6 +64,7 @@ use vyre_foundation::optimizer::algebraic_rules::{
 };
 
 use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
+use crate::operand_semantics::operand_is_result_reference;
 use rustc_hash::FxHashMap;
 
 #[must_use]
@@ -74,7 +75,7 @@ pub fn identity_elim(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn identity_elim_body(mut body: KernelBody) -> KernelBody {
-    // Step 1: build literal lookup — result_id → LiteralValue (only for
+    // Step 1: build literal lookup  -  result_id → LiteralValue (only for
     // ops that are themselves Literal kind).
     let mut lit_value: FxHashMap<u32, LiteralValue> = FxHashMap::default();
     for op in &body.ops {
@@ -99,7 +100,7 @@ fn identity_elim_body(mut body: KernelBody) -> KernelBody {
                 }
                 let lhs_raw = op.operands[0];
                 let rhs_raw = op.operands[1];
-                // Apply the existing remap to the operand ids — earlier
+                // Apply the existing remap to the operand ids  -  earlier
                 // identity-elim may have substituted them already
                 // conceptually (we do the rewrite in step 3, but the
                 // kept side must reflect whatever it would resolve to).
@@ -134,7 +135,7 @@ fn identity_elim_body(mut body: KernelBody) -> KernelBody {
             }
             KernelOpKind::Fma => {
                 // Fma(a, b, c) = a*b + c. When either factor is
-                // Literal(0), the result equals c — substitute the
+                // Literal(0), the result equals c  -  substitute the
                 // Fma's result-id with c's id. (Lit(1) cases would
                 // simplify to Add(other_factor, c) but require
                 // synthesizing a new op; that's outside identity_elim's
@@ -176,7 +177,7 @@ fn identity_elim_body(mut body: KernelBody) -> KernelBody {
     }
 
     // Step 3: rewrite operand references through id_remap. We do NOT
-    // strip the eliminated BinOp ops here — DCE handles that. Keeping
+    // strip the eliminated BinOp ops here  -  DCE handles that. Keeping
     // them in place avoids any re-numbering of result-ids in this pass,
     // so we don't have to touch every operand list.
     for op in &mut body.ops {
@@ -198,7 +199,7 @@ fn identity_elim_body(mut body: KernelBody) -> KernelBody {
 fn resolve(id: u32, remap: &FxHashMap<u32, u32>) -> u32 {
     let mut cur = id;
     // Path-compression-free transitive resolution. Bounded by the number
-    // of remap entries — chains can't loop (each remap maps a higher
+    // of remap entries  -  chains can't loop (each remap maps a higher
     // result-id forward to one already produced).
     let mut hops = 0usize;
     while let Some(&nxt) = remap.get(&cur) {
@@ -243,34 +244,6 @@ fn scalar_literal(v: &LiteralValue) -> ScalarLiteral {
         LiteralValue::I32(value) => ScalarLiteral::I32(*value),
         LiteralValue::F32(value) => ScalarLiteral::F32(*value),
         LiteralValue::Bool(value) => ScalarLiteral::Bool(*value),
-    }
-}
-
-/// Mirror of descriptor_dce/descriptor_cse/licm/loop_unroll classifier — must stay in sync.
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
     }
 }
 
@@ -475,6 +448,7 @@ mod tests {
                     result: Some(2),
                 },
                 KernelOp {
+
                     kind: KernelOpKind::StoreGlobal,
                     operands: vec![0, 0, 2],
                     result: None,
@@ -488,7 +462,7 @@ mod tests {
 
     #[test]
     fn sub_zero_x_does_not_eliminate() {
-        // Sub is not commutative — `0 - x` is negation, not identity.
+        // Sub is not commutative  -  `0 - x` is negation, not identity.
         let desc = empty_desc(
             vec![
                 KernelOp {
@@ -515,13 +489,13 @@ mod tests {
             vec![LiteralValue::U32(0), LiteralValue::U32(5)],
         );
         let out = identity_elim(&desc);
-        // Store should still reference r2 — Sub(0, x) is not eliminable.
+        // Store should still reference r2  -  Sub(0, x) is not eliminable.
         assert_eq!(out.body.ops[3].operands, vec![0, 0, 2]);
     }
 
     #[test]
     fn div_one_x_does_not_eliminate() {
-        // Div is not commutative — `1 / x` is reciprocal, not identity.
+        // Div is not commutative  -  `1 / x` is reciprocal, not identity.
         let desc = empty_desc(
             vec![
                 KernelOp {
@@ -845,7 +819,7 @@ mod tests {
 
     #[test]
     fn select_with_non_literal_cond_unchanged() {
-        // tid as cond — not a literal. Select stays.
+        // tid as cond  -  not a literal. Select stays.
         let desc = empty_desc(
             vec![
                 KernelOp {
@@ -925,6 +899,7 @@ mod tests {
 
     #[test]
     fn fma_with_b_zero_picks_c() {
+
         // Fma(x, 0, c) → c
         let desc = empty_desc(
             vec![
@@ -966,7 +941,7 @@ mod tests {
 
     #[test]
     fn fma_with_no_zero_unchanged() {
-        // Fma(x, y, c) where neither factor is 0 — Fma op stays.
+        // Fma(x, y, c) where neither factor is 0  -  Fma op stays.
         let desc = empty_desc(
             vec![
                 KernelOp {
@@ -1008,7 +983,7 @@ mod tests {
 
     #[test]
     fn select_with_non_bool_cond_unchanged() {
-        // U32 literal as cond — wrong type, won't fold.
+        // U32 literal as cond  -  wrong type, won't fold.
         let desc = empty_desc(
             vec![
                 KernelOp {
@@ -1047,3 +1022,4 @@ mod tests {
         assert_eq!(out.body.ops[4].operands, vec![0, 0, 3]);
     }
 }
+

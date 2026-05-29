@@ -10,8 +10,10 @@ pub mod intern;
 pub mod lazy_scope;
 /// Declaration lookup IR fragments.
 pub mod lookup;
+mod predicates;
 /// Registered C semantic-analysis programs.
 pub mod registry;
+mod scan;
 /// Scope-walk IR fragments.
 pub mod walk;
 

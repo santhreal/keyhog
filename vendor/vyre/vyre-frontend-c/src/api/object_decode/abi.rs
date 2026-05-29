@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::object_format::{parse_embedded_vyrecob2, SectionTag, Vyrecob2};
+use super::{common::decode_u32_words_for_section, decode_embedded_object, read_object_file};
+use crate::object_format::{SectionTag, Vyrecob2};
 
 /// Decoded ABI layout table from a `vyre-frontend-c` object.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,8 +29,7 @@ pub struct CObjectAbiLayoutEntry {
 
 /// Decode ABI layout rows from a compiled `vyre-frontend-c` object.
 pub fn decode_object_abi_layout(object_bytes: &[u8]) -> Result<CObjectAbiLayout, String> {
-    let container = parse_embedded_vyrecob2(object_bytes)?;
-    decode_object_abi_layout_from_container(&container)
+    decode_embedded_object(object_bytes, decode_object_abi_layout_from_container)
 }
 
 pub(crate) fn decode_object_abi_layout_from_container(
@@ -43,7 +43,7 @@ pub(crate) fn decode_object_abi_layout_from_container(
         "vyre-frontend-c object is missing AbiTypes. Fix: regenerate the object; do not decode ABI layout without exact type-kind metadata."
             .to_string()
     })?;
-    let type_kinds = decode_u32_words(type_section)?;
+    let type_kinds = decode_u32_words_for_section(type_section, "AbiTypes")?;
     let entries = decode_abi_layout_entries(abi_section, &type_kinds)?;
     Ok(CObjectAbiLayout {
         vyrecob2_version: container.version,
@@ -54,9 +54,7 @@ pub(crate) fn decode_object_abi_layout_from_container(
 
 /// Read and decode ABI layout rows from a compiled object path.
 pub fn decode_object_abi_layout_file(path: &Path) -> Result<CObjectAbiLayout, String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("vyre-frontend-c: read object {}: {error}", path.display()))?;
-    decode_object_abi_layout(&bytes)
+    read_object_file(path, decode_object_abi_layout)
 }
 
 fn decode_abi_layout_entries(
@@ -140,31 +138,10 @@ mod tests {
         let mut section = words(&[4, 8]);
         section.extend(words(&[4, 8]));
         let entries = decode_abi_layout_entries(&section, &[17, 23])
-            .expect("matching AbiTypes and AbiLayout rows must decode");
+            .expect("Fix: matching AbiTypes and AbiLayout rows must decode");
         assert_eq!(entries[0].type_kind, 17);
         assert_eq!(entries[1].type_kind, 23);
     }
-}
-
-fn decode_u32_words(bytes: &[u8]) -> Result<Vec<u32>, String> {
-    if bytes.len() % 4 != 0 {
-        return Err(format!(
-            "vyre-frontend-c AbiTypes section length {} is not u32-aligned. Fix: regenerate the object.",
-            bytes.len()
-        ));
-    }
-    bytes
-        .chunks_exact(4)
-        .enumerate()
-        .map(|(idx, chunk)| {
-            let word: [u8; 4] = chunk.try_into().map_err(|_| {
-                format!(
-                    "vyre-frontend-c AbiTypes word {idx} is truncated. Fix: regenerate the object."
-                )
-            })?;
-            Ok(u32::from_le_bytes(word))
-        })
-        .collect()
 }
 
 fn read_u32_word(bytes: &[u8], offset: usize, label: &str) -> Result<u32, String> {

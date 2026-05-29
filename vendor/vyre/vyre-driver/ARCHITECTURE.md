@@ -1,4 +1,4 @@
-# vyre-driver — architecture
+# vyre-driver  -  architecture
 
 Substrate-neutral backend orchestration. Owns the `VyreBackend`
 trait, the dispatch contract, the routing table that picks a
@@ -19,7 +19,7 @@ validation calls, and timing/dispatch mechanics.
 ## Modules
 
 ### `backend/` + `backend.rs`
-The `VyreBackend` trait — the frozen contract every backend
+The `VyreBackend` trait  -  the frozen contract every backend
 must implement. Sealed via `backend::private::Sealed` so external
 crates can't accidentally implement it without going through the
 explicit per-backend crate.
@@ -74,21 +74,21 @@ the backend timing trait with target timestamp mechanisms.
 Shared successful-validation cache and launch-geometry validation. Concrete
 drivers provide live limits and run target compiler/adapter checks.
 
-### `lib.rs` (OFF-LIMITS — substrate hot-path wires in flight)
+### `lib.rs` (OFF-LIMITS  -  substrate hot-path wires in flight)
 Top-level wiring of the routing table + extern dialect bridge.
 
 ## Public types
 
-- **`VyreBackend`** — frozen backend contract.
-- **`BackendError`** — uniform error type all backends emit.
-- **`DispatchConfig`** — per-call options.
-- **`OutputBindingLayout`** — per-output buffer layout used by
+- **`VyreBackend`**  -  frozen backend contract.
+- **`BackendError`**  -  uniform error type all backends emit.
+- **`DispatchConfig`**  -  per-call options.
+- **`OutputBindingLayout`**  -  per-output buffer layout used by
   the pipeline cache + readback path.
-- **`BindingPlan` / `BindingRole`** — backend-neutral buffer ABI plan.
-- **`FusionDecision` / `FusionCaps`** — cross-dispatch fusion legality.
-- **`SpecMap` / `SpecValue`** — neutral specialization inputs.
-- **`SubgroupOp` / `SubgroupCaps`** — shared subgroup taxonomy.
-- **`Pipeline`** — pre-compiled per-Program handle.
+- **`BindingPlan` / `BindingRole`**  -  backend-neutral buffer ABI plan.
+- **`FusionDecision` / `FusionCaps`**  -  cross-dispatch fusion legality.
+- **`SpecMap` / `SpecValue`**  -  neutral specialization inputs.
+- **`SubgroupOp` / `SubgroupCaps`**  -  shared subgroup taxonomy.
+- **`Pipeline`**  -  pre-compiled per-Program handle.
 
 ## Integration points
 

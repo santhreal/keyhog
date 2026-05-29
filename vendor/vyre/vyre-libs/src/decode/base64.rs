@@ -4,15 +4,19 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Program};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
-use crate::buffer_names::scoped_generic_name;
+use crate::decode::buffers::{scoped_decode_input_buffer, scoped_decoded_output_buffer};
 use crate::decode::scan::linear_aho_scan_body;
 use crate::region::wrap_anonymous;
-use vyre_primitives::decode::base64::base64_decode_child;
+#[cfg(test)]
+use vyre_primitives::decode::base64::decode_standard_packed_reference;
+use vyre_primitives::decode::base64::{
+    base64_decode_child, decoded_capacity, standard_decode_table_ref, BASE64_DECODE_TABLE_WORDS,
+    BASE64_WORKGROUP_SIZE,
+};
 
 const OP_ID: &str = "vyre-libs::decode::base64";
 const FUSED_SCAN_OP_ID: &str = "vyre-libs::decode::base64_then_aho_corasick";
 const FAMILY_PREFIX: &str = "decode_base64";
-const INVALID: u32 = 0xFF;
 
 /// Fixed buffer name carrying the base64 decode lookup table.
 ///
@@ -28,48 +32,7 @@ const INVALID: u32 = 0xFF;
 pub const BASE64_DECODE_TABLE_BUFFER: &str = "__vyre_decode_base64_table";
 const DECODED_LEN_BUFFER: &str = "__vyre_decode_base64_decoded_len";
 
-fn scoped_input_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
-}
-
-fn scoped_output_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "decoded", name, &["decoded", "output"])
-}
-
-fn blocks_for_len(input_len: u32) -> u32 {
-    input_len / 4
-}
-
-fn decoded_capacity(input_len: u32) -> u32 {
-    blocks_for_len(input_len).saturating_mul(3)
-}
-
-fn base64_table() -> [u32; 256] {
-    let mut table = [INVALID; 256];
-    let mut byte = b'A';
-    while byte <= b'Z' {
-        table[byte as usize] = u32::from(byte - b'A');
-        byte += 1;
-    }
-    byte = b'a';
-    while byte <= b'z' {
-        table[byte as usize] = u32::from(byte - b'a' + 26);
-        byte += 1;
-    }
-    byte = b'0';
-    while byte <= b'9' {
-        table[byte as usize] = u32::from(byte - b'0' + 52);
-        byte += 1;
-    }
-    table[b'+' as usize] = 62;
-    table[b'/' as usize] = 63;
-    table[b'=' as usize] = 0;
-    table
-}
-
-fn pack_words(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_words;
 
 /// Build a Program that decodes base64-encoded ASCII bytes from `input` into
 /// `output`, storing one decoded byte per `u32` slot.
@@ -86,8 +49,8 @@ fn pack_words(words: &[u32]) -> Vec<u8> {
 ///
 #[must_use]
 pub fn base64_decode(input: &str, output: &str, input_len: u32) -> Program {
-    let input = scoped_input_buffer(input);
-    let output = scoped_output_buffer(output);
+    let input = scoped_decode_input_buffer(FAMILY_PREFIX, input);
+    let output = scoped_decoded_output_buffer(FAMILY_PREFIX, output);
     let body = vec![base64_decode_child(
         OP_ID,
         &input,
@@ -106,12 +69,12 @@ pub fn base64_decode(input: &str, output: &str, input_len: u32) -> Program {
                 BufferAccess::ReadOnly,
                 DataType::U32,
             )
-            .with_count(256),
+            .with_count(BASE64_DECODE_TABLE_WORDS),
             BufferDecl::output(&output, 2, DataType::U32).with_count(decoded_capacity(input_len)),
-            // Length is aux state — `read_write` only (V022: at most one `::output`).
+            // Length is aux state  -  `read_write` only (V022: at most one `::output`).
             BufferDecl::read_write(DECODED_LEN_BUFFER, 3, DataType::U32).with_count(1),
         ],
-        [64, 1, 1],
+        BASE64_WORKGROUP_SIZE,
         vec![wrap_anonymous(OP_ID, body)],
     )
 }
@@ -144,8 +107,8 @@ pub fn base64_decode_then_aho_corasick(
     input_len: u32,
     state_count: u32,
 ) -> Program {
-    let input = scoped_input_buffer(input);
-    let decoded = scoped_output_buffer(decoded);
+    let input = scoped_decode_input_buffer(FAMILY_PREFIX, input);
+    let decoded = scoped_decoded_output_buffer(FAMILY_PREFIX, decoded);
     let decoded_capacity = decoded_capacity(input_len);
     let mut entry = vec![base64_decode_child(
         FUSED_SCAN_OP_ID,
@@ -172,7 +135,7 @@ pub fn base64_decode_then_aho_corasick(
                 BufferAccess::ReadOnly,
                 DataType::U32,
             )
-            .with_count(256),
+            .with_count(BASE64_DECODE_TABLE_WORDS),
             BufferDecl::read_write(&decoded, 2, DataType::U32).with_count(decoded_capacity),
             BufferDecl::storage(transitions, 3, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(state_count.saturating_mul(256)),
@@ -181,44 +144,14 @@ pub fn base64_decode_then_aho_corasick(
             BufferDecl::output(matches, 5, DataType::U32).with_count(decoded_capacity),
             BufferDecl::read_write(DECODED_LEN_BUFFER, 6, DataType::U32).with_count(1),
         ],
-        [64, 1, 1],
+        BASE64_WORKGROUP_SIZE,
         vec![wrap_anonymous(FUSED_SCAN_OP_ID, entry)],
     )
 }
 
 #[cfg(test)]
 fn cpu_ref(input: &[u8]) -> (Vec<u32>, u32) {
-    let table = base64_table();
-    let blocks = input.len() / 4;
-    let mut out = vec![0u32; blocks.saturating_mul(3)];
-    for block in 0..blocks {
-        let base = block * 4;
-        let vals = [
-            table[input[base] as usize],
-            table[input[base + 1] as usize],
-            table[input[base + 2] as usize],
-            table[input[base + 3] as usize],
-        ]
-        .map(|value| if value == INVALID { 0 } else { value });
-        let out_base = block * 3;
-        out[out_base] = (vals[0] << 2) | (vals[1] >> 4);
-        if input[base + 2] != b'=' {
-            out[out_base + 1] = ((vals[1] & 0x0F) << 4) | (vals[2] >> 2);
-        }
-        if input[base + 3] != b'=' {
-            out[out_base + 2] = ((vals[2] & 0x03) << 6) | vals[3];
-        }
-    }
-    let mut decoded_len = out.len() as u32;
-    if input.len() >= 2 {
-        if input[input.len() - 1] == b'=' {
-            decoded_len = decoded_len.saturating_sub(1);
-        }
-        if input[input.len() - 2] == b'=' {
-            decoded_len = decoded_len.saturating_sub(1);
-        }
-    }
-    (out, decoded_len)
+    decode_standard_packed_reference(input)
 }
 
 fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
@@ -234,7 +167,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'F'),
                 u32::from(b'u'),
             ]),
-            pack_words(&base64_table()),
+            pack_words(standard_decode_table_ref()),
             vec![0u8; 4],
         ],
         vec![
@@ -248,7 +181,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'E'),
                 u32::from(b'='),
             ]),
-            pack_words(&base64_table()),
+            pack_words(standard_decode_table_ref()),
             vec![0u8; 4],
         ],
         vec![
@@ -262,7 +195,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'8'),
                 u32::from(b'*'),
             ]),
-            pack_words(&base64_table()),
+            pack_words(standard_decode_table_ref()),
             vec![0u8; 4],
         ],
     ]
@@ -301,17 +234,13 @@ mod tests {
                     .map(|&byte| u32::from(byte))
                     .collect::<Vec<_>>(),
             )),
-            Value::from(pack_words(base64_table().as_ref())),
+            Value::from(pack_words(standard_decode_table_ref())),
             Value::from(vec![0u8; decoded_capacity as usize * 4]),
             Value::from(vec![0u8; 4]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: base64 decode must run; restore this invariant before continuing.");
-        let decoded = outputs[0]
-            .to_bytes()
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<_>>();
+        let decoded = vyre_primitives::wire::decode_u32_le_bytes_all(&outputs[0].to_bytes());
         let len_bytes = outputs[1].to_bytes();
         let decoded_len =
             u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]);
@@ -391,5 +320,26 @@ mod tests {
         let (decoded, decoded_len) = run(b"TWFuTWFuTWFu");
         assert_eq!(&decoded[..9], &[77, 97, 110, 77, 97, 110, 77, 97, 110]);
         assert_eq!(decoded_len, 9);
+    }
+
+    #[test]
+    fn generated_quads_match_cpu_reference_for_invalid_padding_and_symbols() {
+        const ALPHABET: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=*#\n";
+
+        for seed in 0u32..4096 {
+            let quads = 1 + (seed % 6);
+            let mut state = seed ^ 0xB64D_EC0D;
+            let mut input = Vec::with_capacity(quads as usize * 4);
+            for _ in 0..(quads * 4) {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                input.push(ALPHABET[(state as usize) % ALPHABET.len()]);
+            }
+
+            let (actual, actual_len) = run(&input);
+            let (expected, expected_len) = cpu_ref(&input);
+            assert_eq!(actual_len, expected_len, "decoded length seed {seed}");
+            assert_eq!(actual, expected, "decoded bytes seed {seed}");
+        }
     }
 }

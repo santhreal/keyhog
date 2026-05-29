@@ -4,10 +4,10 @@
 //! writes per buffer, and reports violations against each
 //! `BufferDecl::linear_type()` declaration:
 //!
-//! * `Linear`     — exactly one use; reject if `uses == 0` or `uses > 1`.
-//! * `Affine`     — at most one use; reject if `uses > 1`.
-//! * `Relevant`   — at least one use; reject if `uses == 0`.
-//! * `Unrestricted` — anything (default).
+//! * `Linear`      -  exactly one use; reject if `uses == 0` or `uses > 1`.
+//! * `Affine`      -  at most one use; reject if `uses > 1`.
+//! * `Relevant`    -  at least one use; reject if `uses == 0`.
+//! * `Unrestricted`  -  anything (default).
 //!
 //! "Use" here means any reference: `Expr::Load`, `Expr::BufLen`,
 //! `Expr::Atomic`, `Node::Store`, `Node::AsyncLoad`, `Node::AsyncStore`,
@@ -27,7 +27,7 @@ use crate::validate::{err, ValidationError};
 #[must_use]
 pub fn check_linear_types(program: &Program) -> Vec<ValidationError> {
     // Skip the fact derivation when no buffer has a non-default linear type
-    // (the common case — most kernels do not opt into the linearity gate).
+    // (the common case  -  most kernels do not opt into the linearity gate).
     if program
         .buffers()
         .iter()
@@ -39,7 +39,7 @@ pub fn check_linear_types(program: &Program) -> Vec<ValidationError> {
     // ProgramFacts records every buffer touch (Read / Write / Atomic /
     // AsyncSource / AsyncDestination / IndirectCount) in one cached
     // single-pass walk. `buffer_refs_of(name).len()` is the same use-count
-    // the dedicated NodeVisitor + ExprVisitor pair built up — no second
+    // the dedicated NodeVisitor + ExprVisitor pair built up  -  no second
     // full traversal needed.
     let facts = crate::optimizer::program_soa::ProgramFacts::build_cached(program);
     let mut errors = Vec::new();

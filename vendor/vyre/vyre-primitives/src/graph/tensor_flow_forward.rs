@@ -1,4 +1,4 @@
-//! `tensor_flow_forward` — 1000x Parallel 3D Matrix Flow Tracking
+//! `tensor_flow_forward`  -  1000x Parallel 3D Matrix Flow Tracking
 //!
 //! Exceeds Datalog performance loops by compiling Context-Sensitive Dataflow
 //! directly into a Subgroup bitset operation over bounds:
@@ -7,10 +7,8 @@
 //! Sub-warps concurrently execute field-sensitive flow checks on an execution graph,
 //! tracking nested dependencies efficiently.
 
-use crate::graph::program_graph::{
-    ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS,
-    NAME_EDGE_TARGETS,
-};
+use crate::graph::csr_frontier_step::edge_scan_body;
+use crate::graph::program_graph::{ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_TARGETS};
 use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -26,8 +24,82 @@ pub const BINDING_TENSOR_OUT: u32 = BINDING_PRIMITIVE_START + 1;
 /// Word count calculates matrix boundaries packed strictly per node.
 #[must_use]
 pub const fn tensor_words(node_count: u32, context_limit: u32, field_limit: u32) -> u32 {
-    let bits = node_count * context_limit * field_limit;
-    (bits + 31) / 32
+    let bits = (node_count as u64) * (context_limit as u64) * (field_limit as u64);
+    let words = (bits + 31) / 32;
+    if words > u32::MAX as u64 {
+        u32::MAX
+    } else {
+        words as u32
+    }
+}
+
+/// Checked tensor word count for release builders and CPU parity oracles.
+pub fn try_tensor_words(
+    node_count: u32,
+    context_limit: u32,
+    field_limit: u32,
+) -> Result<u32, String> {
+    let tensor_lane_count = context_limit.checked_mul(field_limit).ok_or_else(|| {
+        format!(
+            "{OP_ID} context_limit={context_limit} field_limit={field_limit} overflows per-node tensor lane count. Fix: shard context or field dimensions."
+        )
+    })?;
+    let bit_count = node_count.checked_mul(tensor_lane_count).ok_or_else(|| {
+        format!(
+            "{OP_ID} node_count={node_count} context_limit={context_limit} field_limit={field_limit} overflows tensor bit count. Fix: shard the graph tensor before dispatch."
+        )
+    })?;
+    Ok(bit_count / 32 + u32::from(bit_count % 32 != 0))
+}
+
+fn tensor_flow_edge_scan_body(
+    tensor_out: &str,
+    node_count: u32,
+    field_limit: u32,
+    tensor_lane_count: u32,
+    allow_mask: u32,
+) -> Vec<Node> {
+    edge_scan_body(
+        allow_mask,
+        vec![Node::let_bind(
+            "dst",
+            Expr::load(NAME_EDGE_TARGETS, Expr::var("e")),
+        )],
+        vec![Node::if_then(
+            Expr::lt(Expr::var("dst"), Expr::u32(node_count)),
+            mark_tensor_bit(tensor_out, field_limit, tensor_lane_count),
+        )],
+    )
+}
+
+fn mark_tensor_bit(tensor_out: &str, field_limit: u32, tensor_lane_count: u32) -> Vec<Node> {
+    vec![
+        Node::let_bind(
+            "dst_abs_bit",
+            Expr::add(
+                Expr::mul(Expr::var("dst"), Expr::u32(tensor_lane_count)),
+                Expr::add(
+                    Expr::mul(Expr::var("ctx"), Expr::u32(field_limit)),
+                    Expr::var("fld"),
+                ),
+            ),
+        ),
+        Node::let_bind(
+            "dst_word",
+            Expr::shr(Expr::var("dst_abs_bit"), Expr::u32(5)),
+        ),
+        Node::let_bind(
+            "dst_bit",
+            Expr::shl(
+                Expr::u32(1),
+                Expr::bitand(Expr::var("dst_abs_bit"), Expr::u32(31)),
+            ),
+        ),
+        Node::let_bind(
+            "_prev",
+            Expr::atomic_or(tensor_out, Expr::var("dst_word"), Expr::var("dst_bit")),
+        ),
+    ]
 }
 
 /// Generate Context-Sensitive / Field-Sensitive Traverse primitive program.
@@ -40,9 +112,45 @@ pub fn tensor_flow_forward(
     field_limit: u32,
     allow_mask: u32,
 ) -> Program {
+    match try_tensor_flow_forward(
+        shape,
+        tensor_in,
+        tensor_out,
+        context_limit,
+        field_limit,
+        allow_mask,
+    ) {
+        Ok(program) => program,
+        Err(error) => crate::invalid_output_program(OP_ID, tensor_out, DataType::U32, error),
+    }
+}
+
+/// Generate checked Context-Sensitive / Field-Sensitive Traverse primitive program.
+pub fn try_tensor_flow_forward(
+    shape: ProgramGraphShape,
+    tensor_in: &str,
+    tensor_out: &str,
+    context_limit: u32,
+    field_limit: u32,
+    allow_mask: u32,
+) -> Result<Program, String> {
+    if shape.node_count == 0 {
+        return Err(format!(
+            "{OP_ID} requires node_count > 0. Fix: pass a non-empty ProgramGraphShape."
+        ));
+    }
+    if context_limit == 0 || field_limit == 0 {
+        return Err(format!(
+            "{OP_ID} requires non-zero context_limit and field_limit. Fix: pass at least one context and one field lane."
+        ));
+    }
+    let tensor_lane_count = context_limit.checked_mul(field_limit).ok_or_else(|| {
+        format!(
+            "{OP_ID} context_limit={context_limit} field_limit={field_limit} overflows per-node tensor lane count. Fix: shard context or field dimensions."
+        )
+    })?;
     let t = Expr::InvocationId { axis: 0 };
-    let _total_bits = shape.node_count * context_limit * field_limit;
-    let words = tensor_words(shape.node_count, context_limit, field_limit);
+    let words = try_tensor_words(shape.node_count, context_limit, field_limit)?;
 
     // X axis handles Node_ID resolution
     // Inside the body we scan the full dimension stride of Context/Fields to advance flow
@@ -65,7 +173,7 @@ pub fn tensor_flow_forward(
                     Node::let_bind(
                         "abs_bit",
                         Expr::add(
-                            Expr::mul(Expr::var("src"), Expr::u32(context_limit * field_limit)),
+                            Expr::mul(Expr::var("src"), Expr::u32(tensor_lane_count)),
                             Expr::add(
                                 Expr::mul(Expr::var("ctx"), Expr::u32(field_limit)),
                                 Expr::var("fld"),
@@ -86,97 +194,13 @@ pub fn tensor_flow_forward(
                             Expr::bitand(Expr::var("src_word"), Expr::var("bit_mask")),
                             Expr::u32(0),
                         ),
-                        vec![
-                            // Core traversal
-                            Node::let_bind(
-                                "edge_start",
-                                Expr::load(NAME_EDGE_OFFSETS, Expr::var("src")),
-                            ),
-                            Node::let_bind(
-                                "edge_end",
-                                Expr::load(
-                                    NAME_EDGE_OFFSETS,
-                                    Expr::add(Expr::var("src"), Expr::u32(1)),
-                                ),
-                            ),
-                            Node::loop_for(
-                                "e",
-                                Expr::var("edge_start"),
-                                Expr::var("edge_end"),
-                                vec![
-                                    Node::let_bind(
-                                        "kind_mask",
-                                        Expr::load(NAME_EDGE_KIND_MASK, Expr::var("e")),
-                                    ),
-                                    Node::if_then(
-                                        Expr::ne(
-                                            Expr::bitand(
-                                                Expr::var("kind_mask"),
-                                                Expr::u32(allow_mask),
-                                            ),
-                                            Expr::u32(0),
-                                        ),
-                                        vec![
-                                            Node::let_bind(
-                                                "dst",
-                                                Expr::load(NAME_EDGE_TARGETS, Expr::var("e")),
-                                            ),
-                                            Node::if_then(
-                                                Expr::lt(
-                                                    Expr::var("dst"),
-                                                    Expr::u32(shape.node_count),
-                                                ),
-                                                vec![
-                                                    Node::let_bind(
-                                                        "dst_abs_bit",
-                                                        Expr::add(
-                                                            Expr::mul(
-                                                                Expr::var("dst"),
-                                                                Expr::u32(
-                                                                    context_limit * field_limit,
-                                                                ),
-                                                            ),
-                                                            Expr::add(
-                                                                Expr::mul(
-                                                                    Expr::var("ctx"),
-                                                                    Expr::u32(field_limit),
-                                                                ),
-                                                                Expr::var("fld"),
-                                                            ),
-                                                        ),
-                                                    ),
-                                                    Node::let_bind(
-                                                        "dst_word",
-                                                        Expr::shr(
-                                                            Expr::var("dst_abs_bit"),
-                                                            Expr::u32(5),
-                                                        ),
-                                                    ),
-                                                    Node::let_bind(
-                                                        "dst_bit",
-                                                        Expr::shl(
-                                                            Expr::u32(1),
-                                                            Expr::bitand(
-                                                                Expr::var("dst_abs_bit"),
-                                                                Expr::u32(31),
-                                                            ),
-                                                        ),
-                                                    ),
-                                                    Node::let_bind(
-                                                        "_prev",
-                                                        Expr::atomic_or(
-                                                            tensor_out,
-                                                            Expr::var("dst_word"),
-                                                            Expr::var("dst_bit"),
-                                                        ),
-                                                    ),
-                                                ],
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            ),
-                        ],
+                        tensor_flow_edge_scan_body(
+                            tensor_out,
+                            shape.node_count,
+                            field_limit,
+                            tensor_lane_count,
+                            allow_mask,
+                        ),
                     ),
                 ],
             )],
@@ -203,7 +227,7 @@ pub fn tensor_flow_forward(
         .with_count(words),
     );
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         buffers,
         [1, 1, 1],
         vec![Node::Region {
@@ -214,7 +238,131 @@ pub fn tensor_flow_forward(
                 body,
             )]),
         }],
-    )
+    ))
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn tensor_bit_index(node: u32, ctx: u32, fld: u32, context_limit: u32, field_limit: u32) -> u32 {
+    node * context_limit * field_limit + ctx * field_limit + fld
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn tensor_bit_is_set(words: &[u32], bit: u32) -> bool {
+    words
+        .get((bit / 32) as usize)
+        .copied()
+        .is_some_and(|word| (word & (1u32 << (bit % 32))) != 0)
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn set_tensor_bit(words: &mut [u32], bit: u32) {
+    if let Some(word) = words.get_mut((bit / 32) as usize) {
+        *word |= 1u32 << (bit % 32);
+    }
+}
+
+/// Checked CPU oracle for [`tensor_flow_forward`].
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_tensor_flow_forward_cpu(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    tensor_in_words: &[u32],
+    context_limit: u32,
+    field_limit: u32,
+    allow_mask: u32,
+) -> Result<Vec<u32>, String> {
+    let mut out = Vec::new();
+    try_tensor_flow_forward_cpu_into(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        tensor_in_words,
+        context_limit,
+        field_limit,
+        allow_mask,
+        &mut out,
+    )?;
+    Ok(out)
+}
+
+/// Checked CPU oracle for [`tensor_flow_forward`] using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(clippy::too_many_arguments)]
+pub fn try_tensor_flow_forward_cpu_into(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    tensor_in_words: &[u32],
+    context_limit: u32,
+    field_limit: u32,
+    allow_mask: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    if context_limit == 0 || field_limit == 0 {
+        return Err(format!(
+            "{OP_ID} CPU oracle requires non-zero context_limit and field_limit. Fix: pass at least one context and one field lane."
+        ));
+    }
+    if edge_offsets.len() != node_count as usize + 1 {
+        return Err(format!(
+            "{OP_ID} CPU oracle received {} CSR offsets for node_count={node_count}. Fix: pass exactly node_count + 1 offsets.",
+            edge_offsets.len()
+        ));
+    }
+    for (row, pair) in edge_offsets.windows(2).enumerate() {
+        if pair[0] > pair[1] {
+            return Err(format!(
+                "{OP_ID} CPU oracle received non-monotonic CSR offsets at row {row}: {} > {}. Fix: rebuild CSR row pointers.",
+                pair[0],
+                pair[1]
+            ));
+        }
+    }
+    let edge_count = edge_offsets.last().copied().unwrap_or(0) as usize;
+    if edge_targets.len() < edge_count || edge_kind_mask.len() < edge_count {
+        return Err(format!(
+            "{OP_ID} CPU oracle received edge buffers shorter than CSR edge_count={edge_count}. Fix: pass canonical ProgramGraph edge buffers."
+        ));
+    }
+
+    let word_count = try_tensor_words(node_count, context_limit, field_limit)? as usize;
+    if word_count > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            word_count - out.len(),
+            "tensor flow CPU oracle",
+            "tensor_flow_forward output",
+        )?;
+    }
+    out.clear();
+    out.resize(word_count, 0);
+    for src in 0..node_count {
+        for ctx in 0..context_limit {
+            for fld in 0..field_limit {
+                let src_bit = tensor_bit_index(src, ctx, fld, context_limit, field_limit);
+                if !tensor_bit_is_set(tensor_in_words, src_bit) {
+                    continue;
+                }
+                let start = edge_offsets[src as usize] as usize;
+                let end = edge_offsets[src as usize + 1] as usize;
+                for edge in start..end {
+                    if (edge_kind_mask[edge] & allow_mask) == 0 {
+                        continue;
+                    }
+                    let dst = edge_targets[edge];
+                    if dst < node_count {
+                        let dst_bit = tensor_bit_index(dst, ctx, fld, context_limit, field_limit);
+                        set_tensor_bit(out, dst_bit);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -223,7 +371,7 @@ inventory::submit! {
         OP_ID,
         || tensor_flow_forward(ProgramGraphShape::new(4, 4), "tin", "tout", 2, 2, 0xFFFF_FFFF),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0, 0, 0]),          // pg_nodes
                 to_bytes(&[0, 2, 3, 4, 4]),       // pg_edge_offsets
@@ -235,8 +383,189 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0x1110])]]
         }),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn explicit_edge_first_reference(
+        node_count: u32,
+        edge_offsets: &[u32],
+        edge_targets: &[u32],
+        edge_kind_mask: &[u32],
+        tensor_in_words: &[u32],
+        context_limit: u32,
+        field_limit: u32,
+        allow_mask: u32,
+    ) -> Vec<u32> {
+        let mut out = vec![0u32; tensor_words(node_count, context_limit, field_limit) as usize];
+        for src in 0..node_count {
+            let start = edge_offsets[src as usize] as usize;
+            let end = edge_offsets[src as usize + 1] as usize;
+            for edge in start..end {
+                if (edge_kind_mask[edge] & allow_mask) == 0 {
+                    continue;
+                }
+                let dst = edge_targets[edge];
+                if dst >= node_count {
+                    continue;
+                }
+                for ctx in 0..context_limit {
+                    for fld in 0..field_limit {
+                        let src_bit = tensor_bit_index(src, ctx, fld, context_limit, field_limit);
+                        if tensor_bit_is_set(tensor_in_words, src_bit) {
+                            let dst_bit =
+                                tensor_bit_index(dst, ctx, fld, context_limit, field_limit);
+                            set_tensor_bit(&mut out, dst_bit);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn generated_tensor_flow_cpu_matches_edge_first_reference() {
+        let mut state = 0x7E11_50F0_u32;
+        for case in 0..2048u32 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let node_count = state % 41 + 1;
+            let context_limit = state.rotate_left(5) % 5 + 1;
+            let field_limit = state.rotate_left(9) % 7 + 1;
+            let mut edge_offsets = Vec::with_capacity(node_count as usize + 1);
+            let mut edge_targets = Vec::new();
+            let mut edge_kind_mask = Vec::new();
+            edge_offsets.push(0);
+            for src in 0..node_count {
+                state = state.rotate_left(3) ^ src.wrapping_mul(0x9E37_79B9);
+                let degree = state % 6;
+                for edge in 0..degree {
+                    state = state.rotate_left(7) ^ edge.wrapping_mul(0x85EB_CA6B);
+                    let target = match edge % 5 {
+
+                        0 => state % node_count,
+                        1 => node_count,
+                        2 => u32::MAX,
+                        _ => state % (node_count + 3),
+                    };
+                    edge_targets.push(target);
+                    edge_kind_mask.push(1u32 << (state & 7));
+                }
+                edge_offsets.push(edge_targets.len() as u32);
+            }
+
+            let mut tensor_in =
+                vec![0u32; tensor_words(node_count, context_limit, field_limit) as usize];
+            for src in 0..node_count {
+                for ctx in 0..context_limit {
+                    for fld in 0..field_limit {
+                        state = state.rotate_left(11)
+                            ^ src.wrapping_mul(17)
+                            ^ ctx.wrapping_mul(31)
+                            ^ fld.wrapping_mul(43);
+                        if (state & 3) != 0 {
+                            let bit = tensor_bit_index(src, ctx, fld, context_limit, field_limit);
+                            set_tensor_bit(&mut tensor_in, bit);
+                        }
+                    }
+                }
+            }
+            let allow_mask = if case % 13 == 0 {
+                0
+            } else {
+                (1u32 << (case & 7)) | (1u32 << ((case + 5) & 7))
+            };
+
+            let expected = explicit_edge_first_reference(
+                node_count,
+                &edge_offsets,
+                &edge_targets,
+                &edge_kind_mask,
+                &tensor_in,
+                context_limit,
+                field_limit,
+                allow_mask,
+            );
+            let actual = try_tensor_flow_forward_cpu(
+                node_count,
+                &edge_offsets,
+                &edge_targets,
+                &edge_kind_mask,
+                &tensor_in,
+                context_limit,
+                field_limit,
+                allow_mask,
+            )
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated tensor-flow CPU oracle case must be valid");
+
+            assert_eq!(actual, expected, "generated tensor-flow case {case}");
+        }
+    }
+
+    #[test]
+    fn checked_tensor_flow_cpu_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99, 98, 97, 96]);
+        let capacity = out.capacity();
+
+        try_tensor_flow_forward_cpu_into(2, &[0, 1, 1], &[1], &[1], &[1], 1, 1, 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - valid tensor-flow CPU oracle should reuse output storage");
+
+        assert_eq!(out, vec![0b10]);
+        assert_eq!(out.capacity(), capacity);
+
+        try_tensor_flow_forward_cpu_into(1, &[0, 0], &[], &[], &[1], 1, 1, 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - smaller tensor-flow CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![0]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn checked_tensor_flow_builder_rejects_tensor_shape_overflow() {
+        let error = try_tensor_flow_forward(
+            ProgramGraphShape::new(u32::MAX, 0),
+            "tin",
+            "tout",
+            u32::MAX,
+            2,
+            1,
+        )
+        .expect_err("checked tensor-flow builder must reject tensor bit-count overflow");
+
+        assert!(
+            error.contains("overflows"),
+            "error should describe tensor shape overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn checked_tensor_words_rejects_lane_overflow() {
+        let error = try_tensor_words(1, u32::MAX, 2)
+            .expect_err("checked tensor word count must reject per-node lane overflow");
+
+        assert!(
+            error.contains("overflows per-node tensor lane count"),
+            "error should describe per-node tensor lane overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn checked_tensor_flow_cpu_rejects_malformed_csr() {
+        let error =
+            try_tensor_flow_forward_cpu(2, &[0, 3, 1], &[0, 1, 0], &[1, 1, 1], &[1], 1, 1, 1)
+                .expect_err("checked tensor-flow oracle must reject non-monotonic CSR offsets");
+
+        assert!(
+            error.contains("non-monotonic CSR offsets"),
+            "error should describe malformed CSR offsets: {error}"
+        );
+    }
+}
+

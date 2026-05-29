@@ -1,4 +1,4 @@
-//! Unary idempotence — fold doubled-up rounding/normalization ops
+//! Unary idempotence  -  fold doubled-up rounding/normalization ops
 //! into a single application. Companion to `negate_cancel`'s
 //! involution patterns; this pass handles ops that are idempotent
 //! (`f(f(x)) == f(x)`) rather than involutory (`f(f(x)) == x`).
@@ -21,18 +21,18 @@
 //! sign domain.
 //!
 //! Out of scope:
-//! - `Negate(Negate(x))` and `BitNot(BitNot(x))` — those are
+//! - `Negate(Negate(x))` and `BitNot(BitNot(x))`  -  those are
 //!   INVOLUTIONS (handled by `negate_cancel`, fold to `Copy(x)`
 //!   not `Copy(inner)`).
-//! - `LogicalNot(LogicalNot(x))` — boolean involution, handled by
+//! - `LogicalNot(LogicalNot(x))`  -  boolean involution, handled by
 //!   `boolean_simplify`.
 //!
 //! Recurses. Idempotent. Wired into `CANONICAL_REWRITE_PASSES`
 //! immediately after `negate_cancel` in the algebraic-simplification
 //! cluster.
 
+use super::body_index::BodyIndex;
 use crate::{KernelBody, KernelDescriptor, KernelOpKind};
-use rustc_hash::FxHashMap;
 use vyre_foundation::ir::UnOp;
 
 #[must_use]
@@ -43,12 +43,7 @@ pub fn unary_idemp(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn unary_idemp_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
+    let index = BodyIndex::new(&body);
 
     let mut rewrites: Vec<(usize, u32)> = Vec::new();
     for (idx, op) in body.ops.iter().enumerate() {
@@ -63,14 +58,12 @@ fn unary_idemp_body(mut body: KernelBody) -> KernelBody {
             continue;
         }
         let inner_id = op.operands[0];
-        let producer_idx = match result_to_idx.get(&inner_id) {
-            Some(p) => *p,
-            None => continue,
+        let Some(producer) = index.producer(&body, inner_id) else {
+            continue;
         };
-        let producer = &body.ops[producer_idx];
         if let KernelOpKind::UnOpKind(inner) = &producer.kind {
             if same_unop(&outer, inner) {
-                // Outer op is redundant — replace with Copy of the
+                // Outer op is redundant  -  replace with Copy of the
                 // inner-op result (NOT inner-op's operand, since the
                 // inner application is the one that did the work).
                 rewrites.push((idx, inner_id));
@@ -97,7 +90,7 @@ fn is_idempotent_unop(op: &UnOp) -> bool {
 }
 
 fn same_unop(a: &UnOp, b: &UnOp) -> bool {
-    // Discriminant equality is the right test — none of the
+    // Discriminant equality is the right test  -  none of the
     // idempotent unops carry payloads, so structural equality
     // collapses to discriminant equality.
     std::mem::discriminant(a) == std::mem::discriminant(b)
@@ -197,7 +190,7 @@ mod tests {
 
     #[test]
     fn mismatched_unops_do_not_fold() {
-        // Floor(Ceil(x)) is NOT Floor(Floor(x)) — skip.
+        // Floor(Ceil(x)) is NOT Floor(Floor(x))  -  skip.
         let mut body = empty_body();
         lit_f32(&mut body, 3.7, 0);
         unop(&mut body, UnOp::Ceil, 0, 1);

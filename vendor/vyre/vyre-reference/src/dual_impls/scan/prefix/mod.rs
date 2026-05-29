@@ -1,2 +1,2 @@
-/// docs
+/// Prefix scan dual implementation reference.
 pub mod reference;

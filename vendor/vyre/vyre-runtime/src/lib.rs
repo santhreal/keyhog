@@ -1,21 +1,21 @@
-//! # vyre-runtime — persistent megakernel + io_uring zero-copy
+//! # vyre-runtime  -  persistent megakernel + io_uring zero-copy
 //!
-//! This crate provides the execution runtime for vyre — the layer
+//! This crate provides the execution runtime for vyre  -  the layer
 //! between "I have a compiled Program" and "bytes flow through the
 //! GPU continuously."
 //!
 //! ## Architecture
 //!
-//! 1. **`megakernel`** — the persistent GPU process. A vyre `Program`
+//! 1. **`megakernel`**  -  the persistent GPU process. A vyre `Program`
 //!    wrapping `Node::forever` that loops a ring-buffer interpreter
 //!    or a JIT-fused payload processor.
-//!    - `protocol` — slot layout, control words, opcodes
-//!    - `opcode` — built-in opcode handlers + extension mechanism
-//!    - `builder` — IR `Program` construction (interpreted + JIT)
-//! 2. **`cache`** — content-addressed compilation cache.
-//! 3. **`stream`** — `GpuStream` glue bridging io_uring completions
+//!    - `protocol`  -  slot layout, control words, opcodes
+//!    - `opcode`  -  built-in opcode handlers + extension mechanism
+//!    - `builder`  -  IR `Program` construction (interpreted + JIT)
+//! 2. **`cache`**  -  content-addressed compilation cache.
+//! 3. **`stream`**  -  `GpuStream` glue bridging io_uring completions
 //!    to the megakernel tail pointer.
-//! 4. **`uring`** (Linux only) — raw `io_uring` syscall wrappers.
+//! 4. **`uring`** (Linux only)  -  raw `io_uring` syscall wrappers.
 //!
 //! ## Design laws
 //!
@@ -79,7 +79,7 @@ impl From<vyre_driver::backend::BackendError> for PipelineError {
     }
 }
 
-/// Persistent megakernel — the vyre Program that runs forever on
+/// Persistent megakernel  -  the vyre Program that runs forever on
 /// the GPU, decoding host-fed ring opcodes from a host-fed ring buffer.
 pub mod megakernel;
 
@@ -87,7 +87,7 @@ pub mod megakernel;
 /// is the cache key.
 pub mod pipeline_cache;
 
-/// Differential megakernel replay log — captures every published
+/// Differential megakernel replay log  -  captures every published
 /// ring slot so a later cert run can diff epoch-by-epoch execution
 /// against a live backend.
 pub mod replay;
@@ -98,7 +98,7 @@ pub mod routing;
 /// Multi-GPU work partitioning across runtime backends.
 pub mod scheduler;
 
-/// Multi-tenant megakernel multiplexing — one persistent kernel per
+/// Multi-tenant megakernel multiplexing  -  one persistent kernel per
 /// GPU, shared across producer tools via the `tenant_id` field already
 /// in the ring protocol.
 pub mod tenant;
@@ -128,9 +128,9 @@ pub mod uring;
 pub struct GpuStream<'a> {
     #[cfg(target_os = "linux")]
     uring: Option<uring::AsyncUringStream<'a>>,
-    // On non-Linux the `uring` field is cfg'd out and `'a` would
-    // otherwise be unused. Carry it via PhantomData so the lifetime
-    // parameter compiles on every platform.
+    // On macOS / Windows the `uring` field is compiled out, which leaves the
+    // `'a` lifetime unused and the compiler rejects the struct. Carry a
+    // zero-sized marker so the lifetime stays live on non-Linux targets.
     #[cfg(not(target_os = "linux"))]
     _phantom: std::marker::PhantomData<&'a ()>,
     shutdown_requested: bool,
@@ -247,7 +247,7 @@ impl<'a> GpuStream<'a> {
             tv_nsec: (timeout_ns % 1_000_000_000) as i64,
         };
 
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         let res = unsafe {
             libc::syscall(
                 SYS_FUTEX_WAITV,
@@ -260,7 +260,7 @@ impl<'a> GpuStream<'a> {
         };
 
         if res < 0 {
-            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+            // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
             let errno = unsafe { *libc::__errno_location() };
             if errno == libc::EAGAIN {
                 return Ok(());

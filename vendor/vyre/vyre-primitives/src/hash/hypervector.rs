@@ -1,4 +1,4 @@
-//! Vector Symbolic Architecture (VSA) primitives — bind + bundle on
+//! Vector Symbolic Architecture (VSA) primitives  -  bind + bundle on
 //! high-dimensional binary hypervectors.
 //!
 //! VSAs (Plate 1995, Kanerva 2009) compute over 10K-dim ±1 / 0/1
@@ -15,19 +15,19 @@
 //!
 //! # Why this primitive is dual-use
 //!
-//! | Consumer | Use |
+//! | Composition role | Use |
 //! |---|---|
-//! | future `vyre-libs::retrieval` | structured key-value retrieval |
-//! | future `vyre-libs::reasoning` | symbolic reasoning substrate |
-//! | `vyre-foundation::ir::fingerprint::vsa` (#29) | **VSA-based op cache key**: fingerprint Programs by binding op-kind+buffer-sig+region-shape into one hypervector. Two semantically-equivalent Regions with reordered children produce near-identical hypervectors → cache hit even though byte-equal hashing misses |
+//! | retrieval | structured key-value lookup |
+//! | symbolic reasoning | compositional symbol algebra |
+//! | program fingerprints | bind op-kind, buffer signature, and region shape into one hypervector so semantically-equivalent regions can share cache entries even when byte-equal hashing misses |
 //!
 //! # Operations
 //!
-//! - `hypervector_xor_bind(a, b, out, dim_words)` — bitwise XOR.
+//! - `hypervector_xor_bind(a, b, out, dim_words)`  -  bitwise XOR.
 //!   Each output word is `a[i] ^ b[i]`. XOR is its own inverse, so
 //!   `xor_bind(xor_bind(a, b), b) == a` (unbinding by re-binding with
 //!   the same key).
-//! - `hypervector_majority_bundle(stacked, out, dim_words, k)` —
+//! - `hypervector_majority_bundle(stacked, out, dim_words, k)`  -
 //!   per-bit majority over `k` stacked hypervectors. For each bit
 //!   position, output bit = 1 iff > k/2 input bits are 1. Ties
 //!   (k even, exactly k/2) round to 0 (callers typically use odd k).
@@ -112,11 +112,16 @@ pub fn hypervector_majority_bundle(stacked: &str, out: &str, dim_words: u32, k: 
             "Fix: hypervector_majority_bundle requires k > 0, got 0.".to_string(),
         );
     }
-    let stacked_words = k.checked_mul(dim_words).unwrap_or_else(|| {
-        panic!(
-            "hypervector_majority_bundle k*dim_words overflows stacked input count for k={k}, dim_words={dim_words}. Fix: shard the hypervector bundle before GPU dispatch."
-        )
-    });
+    let Some(stacked_words) = k.checked_mul(dim_words) else {
+        return crate::invalid_output_program(
+            BUNDLE_OP_ID,
+            out,
+            DataType::U32,
+            format!(
+                "Fix: hypervector_majority_bundle k*dim_words overflows stacked input count for k={k}, dim_words={dim_words}; shard the bundle before GPU dispatch."
+            ),
+        );
+    };
 
     let t = Expr::InvocationId { axis: 0 };
     let threshold = k / 2; // ties (count == threshold) round to 0.
@@ -200,17 +205,37 @@ pub fn hypervector_majority_bundle(stacked: &str, out: &str, dim_words: u32, k: 
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn xor_bind_cpu(a: &[u32], b: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
-    xor_bind_cpu_into(a, b, &mut out);
-    out
+    match try_xor_bind_cpu_into(a, b, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives hypervector XOR bind CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference for [`hypervector_xor_bind`] using a caller-owned buffer.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn xor_bind_cpu_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
+    if let Err(error) = try_xor_bind_cpu_into(a, b, out) {
+        eprintln!("vyre-primitives hypervector XOR bind CPU reference failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference for [`hypervector_xor_bind`] using a caller-owned buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_xor_bind_cpu_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) -> Result<(), String> {
     let dim_words = a.len().min(b.len());
+    if dim_words > out.capacity() {
+        out.try_reserve_exact(dim_words - out.capacity())
+            .map_err(|err| {
+                format!("hypervector XOR bind could not reserve {dim_words} output words: {err}")
+            })?;
+    }
     out.clear();
-    out.reserve(dim_words);
     out.extend(a.iter().zip(b.iter()).take(dim_words).map(|(&x, &y)| x ^ y));
+    Ok(())
 }
 
 /// CPU reference for [`hypervector_majority_bundle`].
@@ -218,23 +243,47 @@ pub fn xor_bind_cpu_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn majority_bundle_cpu(hvs: &[Vec<u32>]) -> Vec<u32> {
     let mut out = Vec::new();
-    majority_bundle_cpu_into(hvs, &mut out);
-    out
+    match try_majority_bundle_cpu_into(hvs, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives hypervector majority bundle CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference for [`hypervector_majority_bundle`] using a caller-owned buffer.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn majority_bundle_cpu_into(hvs: &[Vec<u32>], out: &mut Vec<u32>) {
-    out.clear();
+    if let Err(error) = try_majority_bundle_cpu_into(hvs, out) {
+        eprintln!("vyre-primitives hypervector majority bundle CPU reference failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference for [`hypervector_majority_bundle`] using a caller-owned buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_majority_bundle_cpu_into(hvs: &[Vec<u32>], out: &mut Vec<u32>) -> Result<(), String> {
     let Some(dim_words) = hvs.iter().map(Vec::len).min() else {
-        return;
+        out.clear();
+        return Ok(());
     };
     if dim_words == 0 {
-        return;
+        out.clear();
+        return Ok(());
     }
     let k = hvs.len();
     let threshold = k / 2;
 
+    if dim_words > out.capacity() {
+        out.try_reserve_exact(dim_words - out.capacity())
+            .map_err(|err| {
+                format!(
+                    "hypervector majority bundle could not reserve {dim_words} output words: {err}"
+                )
+            })?;
+    }
+    out.clear();
     out.resize(dim_words, 0);
     for w in 0..dim_words {
         for bit in 0..32 {
@@ -247,6 +296,7 @@ pub fn majority_bundle_cpu_into(hvs: &[Vec<u32>], out: &mut Vec<u32>) {
             }
         }
     }
+    Ok(())
 }
 
 /// Cosine-style similarity over BSC hypervectors: 1 - 2 · hamming(a, b) /
@@ -274,7 +324,7 @@ mod tests {
 
     #[test]
     fn xor_bind_self_cancels() {
-        // bind(bind(a, b), b) == a — XOR is self-inverse.
+        // bind(bind(a, b), b) == a  -  XOR is self-inverse.
         let a = vec![0xDEAD_BEEFu32, 0x0BAD_F00D];
         let b = vec![0x1234_5678, 0x90AB_CDEF];
         let bound = xor_bind_cpu(&a, &b);
@@ -286,7 +336,7 @@ mod tests {
     fn xor_bind_zero_is_identity() {
         let a = vec![0x1234, 0x5678, 0xABCD];
         let zero = vec![0u32; a.len()];
-        assert_eq!(xor_bind_cpu(&a, &zero), a);
+        assert_eq!(xor_bind_cpu(&a, &zero), vec![0x1234, 0x5678, 0xABCD]);
     }
 
     #[test]
@@ -298,6 +348,35 @@ mod tests {
         xor_bind_cpu_into(&a, &b, &mut out);
         assert_eq!(out, vec![0xEDCB, 0x5678, 0xBADC]);
         assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn try_xor_bind_cpu_into_clears_stale_tail_without_reallocating() {
+        let a = vec![0x1234, 0x5678, 0xABCD];
+        let b = vec![0xFFFF];
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[u32::MAX; 8]);
+        let ptr = out.as_ptr();
+
+        try_xor_bind_cpu_into(&a, &b, &mut out).unwrap();
+
+        assert_eq!(out, vec![0xEDCB]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn xor_bind_wrappers_match_fallible_reference() {
+        let a = vec![0x1234, 0x5678, 0xABCD];
+        let b = vec![0xFFFF, 0, 0x1111];
+        let mut compat = Vec::with_capacity(8);
+        let mut fallible = Vec::with_capacity(8);
+
+        xor_bind_cpu_into(&a, &b, &mut compat);
+        try_xor_bind_cpu_into(&a, &b, &mut fallible)
+            .expect("Fix: small hypervector XOR bind CPU reference must reserve");
+
+        assert_eq!(xor_bind_cpu(&a, &b), fallible);
+        assert_eq!(compat, fallible);
     }
 
     #[test]
@@ -332,6 +411,33 @@ mod tests {
         majority_bundle_cpu_into(&hvs, &mut out);
         assert_eq!(out, vec![0b001]);
         assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn try_majority_bundle_cpu_into_clears_stale_tail_without_reallocating() {
+        let hvs = vec![vec![0b001], vec![0b001], vec![0b010]];
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[u32::MAX; 8]);
+        let ptr = out.as_ptr();
+
+        try_majority_bundle_cpu_into(&hvs, &mut out).unwrap();
+
+        assert_eq!(out, vec![0b001]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn majority_bundle_wrappers_match_fallible_reference() {
+        let hvs = vec![vec![0b001], vec![0b001], vec![0b010]];
+        let mut compat = Vec::with_capacity(8);
+        let mut fallible = Vec::with_capacity(8);
+
+        majority_bundle_cpu_into(&hvs, &mut compat);
+        try_majority_bundle_cpu_into(&hvs, &mut fallible)
+            .expect("Fix: small hypervector majority bundle CPU reference must reserve");
+
+        assert_eq!(majority_bundle_cpu(&hvs), fallible);
+        assert_eq!(compat, fallible);
     }
 
     #[test]
@@ -395,6 +501,28 @@ mod tests {
         let p = hypervector_majority_bundle("stack", "out", 8, 5);
         assert_eq!(p.buffers[0].count(), 5 * 8);
         assert_eq!(p.buffers[1].count(), 8);
+    }
+
+    #[test]
+    fn bundle_overflow_lowers_to_trap_not_host_panic() {
+        let p = hypervector_majority_bundle("stack", "out", u32::MAX, 2);
+        assert!(p.stats().trap());
+        assert_eq!(p.buffers[0].name(), "out");
+    }
+
+    #[test]
+    fn production_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("hypervector.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: hypervector.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(")
+                && !production.contains(".unwrap(")
+                && !production.contains("panic!("),
+            "Fix: hypervector production path must not panic."
+        );
     }
 
     #[test]

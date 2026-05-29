@@ -1,7 +1,7 @@
 use crate::harness::OpEntry;
 
 fn u32s(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|value| value.to_le_bytes()).collect()
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 macro_rules! bitset_and_entry {

@@ -103,8 +103,9 @@ pub fn try_reduction_offsets(subgroup_size: u32) -> Result<Vec<u32>, String> {
 
 /// Write canonical reduction offsets into caller-owned storage.
 pub fn reduction_offsets_into(subgroup_size: u32, offsets: &mut Vec<u32>) {
-    try_reduction_offsets_into(subgroup_size, offsets)
-        .expect("subgroup reduction offset staging failed; use try_reduction_offsets_into to handle allocator failure or invalid subgroup width");
+    if try_reduction_offsets_into(subgroup_size, offsets).is_err() {
+        offsets.clear();
+    }
 }
 
 /// Fallibly write canonical reduction offsets into caller-owned storage.
@@ -128,15 +129,11 @@ pub fn try_reduction_offsets_into(
     } else {
         rounded_width.ilog2() as usize
     };
-    if offsets.capacity() < offset_count {
-        offsets
-            .try_reserve_exact(offset_count - offsets.capacity())
-            .map_err(|error| {
-                format!(
-                    "subgroup reduction offsets could not reserve {offset_count} slot(s): {error}. Fix: reuse caller-owned offset storage or clamp subgroup size."
-                )
-            })?;
-    }
+    crate::allocation::try_reserve_vec_to_capacity(offsets, offset_count).map_err(|error| {
+        format!(
+            "subgroup reduction offsets could not reserve {offset_count} slot(s): {error}. Fix: reuse caller-owned offset storage or clamp subgroup size."
+        )
+    })?;
     let mut width = rounded_width / 2;
     while width > 0 {
         offsets.push(width);
@@ -169,5 +166,15 @@ mod tests {
     fn try_reduction_offsets_rejects_overflowing_rounding() {
         let error = try_reduction_offsets(u32::MAX).unwrap_err();
         assert!(error.contains("cannot be rounded to a power of two"));
+    }
+
+    #[test]
+    fn legacy_reduction_offset_wrapper_clears_invalid_width() {
+        let mut offsets = vec![16, 8, 4];
+
+        reduction_offsets_into(u32::MAX, &mut offsets);
+
+        assert!(offsets.is_empty());
+        assert!(reduction_offsets(u32::MAX).is_empty());
     }
 }

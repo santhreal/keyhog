@@ -3,15 +3,17 @@
 //! Category-A composition with a workgroup-tiled reduction. The scalar
 //! [`rms_norm_reference`] entry remains available as the correctness oracle.
 
-use crate::{builder::strided_accumulate_child, region::wrap_anonymous};
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use crate::{
+    builder::{strided_accumulate_child, strided_writeback_child},
+    nn::rms::{inverse_rms_expr, square_expr, EMPTY_RMS_FIX},
+    region::wrap_anonymous,
+};
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_primitives::reduce::workgroup_tree::{self, WorkgroupReductionScope};
 
 const OP_ID: &str = "vyre-libs::nn::rms_norm";
 const REFERENCE_OP_ID: &str = "vyre-libs::nn::rms_norm_reference";
 const RMS_TILE: u32 = 256;
-const EMPTY_RMS_FIX: &str =
-    "Fix: rms_norm n=0 is invalid; pass at least one element or bypass normalization.";
 
 /// Build a Program that applies RMSNorm element-wise.
 #[must_use]
@@ -36,10 +38,9 @@ fn invalid_rms_program(op_id: &'static str, output: &str) -> Program {
 }
 
 fn rms_norm_tiled_program(input: &str, output: &str, n: u32, eps: f32) -> Program {
-    let tile = RMS_TILE;
+    let tile = RMS_TILE.min(n).max(1);
     let chunks = n.div_ceil(tile);
     let local = Expr::var("local");
-    let idx = Expr::var("idx");
     let mut body = vec![
         Node::let_bind("local", Expr::LocalId { axis: 0 }),
         strided_accumulate_child(
@@ -52,7 +53,7 @@ fn rms_norm_tiled_program(input: &str, output: &str, n: u32, eps: f32) -> Progra
             "rms_scratch",
             |idx, acc| {
                 let value = Expr::load(input, idx);
-                Expr::add(acc, Expr::mul(value.clone(), value))
+                Expr::add(acc, square_expr(value))
             },
         ),
         Node::barrier(),
@@ -71,43 +72,22 @@ fn rms_norm_tiled_program(input: &str, output: &str, n: u32, eps: f32) -> Progra
         vec![Node::Store {
             buffer: "rms_scale".into(),
             index: Expr::u32(0),
-            value: Expr::UnOp {
-                op: UnOp::InverseSqrt,
-                operand: Box::new(Expr::add(
-                    Expr::div(Expr::load("rms_scratch", Expr::u32(0)), Expr::f32(n as f32)),
-                    Expr::f32(eps),
-                )),
-            },
+            value: inverse_rms_expr(Expr::load("rms_scratch", Expr::u32(0)), n, eps),
         }],
     ));
-    body.extend(vec![
-        Node::barrier(),
-        Node::if_then(
-            Expr::eq(Expr::WorkgroupId { axis: 0 }, Expr::u32(0)),
-            vec![
-                Node::let_bind("scale", Expr::load("rms_scale", Expr::u32(0))),
-                Node::loop_for(
-                    "chunk",
-                    Expr::u32(0),
-                    Expr::u32(chunks),
-                    vec![
-                        Node::let_bind(
-                            "idx",
-                            Expr::add(Expr::mul(Expr::var("chunk"), Expr::u32(tile)), local),
-                        ),
-                        Node::if_then(
-                            Expr::lt(idx.clone(), Expr::u32(n)),
-                            vec![Node::Store {
-                                buffer: output.into(),
-                                index: idx.clone(),
-                                value: Expr::mul(Expr::load(input, idx), Expr::var("scale")),
-                            }],
-                        ),
-                    ],
-                ),
-            ],
-        ),
-    ]);
+    body.push(Node::barrier());
+    body.push(strided_writeback_child(
+        OP_ID,
+        tile,
+        chunks,
+        n,
+        output,
+        vec![Node::let_bind(
+            "scale",
+            Expr::load("rms_scale", Expr::u32(0)),
+        )],
+        |idx| Expr::mul(Expr::load(input, idx), Expr::var("scale")),
+    ));
 
     Program::wrapped(
         vec![
@@ -132,23 +112,11 @@ fn rms_norm_reference_program(input: &str, output: &str, n: u32, eps: f32) -> Pr
                 Node::let_bind("val", Expr::load(input, Expr::var("k"))),
                 Node::assign(
                     "sum_sq",
-                    Expr::add(
-                        Expr::var("sum_sq"),
-                        Expr::mul(Expr::var("val"), Expr::var("val")),
-                    ),
+                    Expr::add(Expr::var("sum_sq"), square_expr(Expr::var("val"))),
                 ),
             ],
         ),
-        Node::let_bind(
-            "rms",
-            Expr::UnOp {
-                op: UnOp::InverseSqrt,
-                operand: Box::new(Expr::add(
-                    Expr::div(Expr::var("sum_sq"), Expr::f32(n as f32)),
-                    Expr::f32(eps),
-                )),
-            },
-        ),
+        Node::let_bind("rms", inverse_rms_expr(Expr::var("sum_sq"), n, eps)),
         Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
         Node::if_then(
             Expr::lt(Expr::var("idx"), Expr::u32(n)),
@@ -176,13 +144,13 @@ inventory::submit! {
         build: || rms_norm("input", "output", 4, 1e-5),
         test_inputs: Some(|| {
             let to_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+                |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             // Input = [1.0, 2.0, 3.0, 4.0].
             vec![vec![to_bytes(&[1.0, 2.0, 3.0, 4.0])]]
         }),
         expected_output: Some(|| {
             let to_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+                |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             // mean(x^2) = (1+4+9+16)/4 = 7.5.
             // rms = inverseSqrt(7.5 + 1e-5).
             // y_i = x_i * rms.
@@ -198,21 +166,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn tiled_rms_norm_matches_scalar_reference_across_multiple_tiles() {
@@ -238,6 +194,38 @@ mod tests {
             assert!(
                 (lhs - rhs).abs() <= 1.0e-5,
                 "rms_norm mismatch at lane {idx}: tiled={lhs:?} reference={rhs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_rms_norm_matches_reference_for_2048_lanes() {
+        let n = 2048_u32;
+        let eps = 1.0e-5_f32;
+        let input = (0..n)
+            .map(|i| {
+                let wave = ((i as f32) * 0.011_718_75).sin() * 17.0;
+                let saw = ((i % 37) as f32 - 18.0) * 0.03125;
+                wave + saw
+            })
+            .collect::<Vec<_>>();
+        let run = |program: Program| {
+            let outputs = vyre_reference::reference_eval(
+                &program,
+                &[
+                    Value::from(f32_bytes(&input)),
+                    Value::from(vec![0u8; n as usize * 4]),
+                ],
+            )
+            .expect("Fix: generated rms_norm program must execute in the reference interpreter.");
+            decode_f32(&outputs[0].to_bytes())
+        };
+        let actual = run(rms_norm("input", "output", n, eps));
+        let expected = run(rms_norm_reference("input", "output", n, eps));
+        for (idx, (lhs, rhs)) in actual.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (lhs - rhs).abs() <= 1.0e-5,
+                "generated rms_norm mismatch at lane {idx}: tiled={lhs:?} reference={rhs:?}"
             );
         }
     }

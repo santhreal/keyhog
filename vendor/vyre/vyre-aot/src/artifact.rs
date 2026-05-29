@@ -2,7 +2,7 @@
 //!
 //! A [`CompiledArtifact`] is what the compiler hands to a launcher: the
 //! emitted GPU bytes plus everything the launcher needs to allocate, bind,
-//! and dispatch — without re-running any vyre IR machinery at runtime.
+//! and dispatch  -  without re-running any vyre IR machinery at runtime.
 
 use serde::{Deserialize, Serialize};
 
@@ -54,7 +54,7 @@ impl BufferEntry {
     }
 }
 
-/// Test-friendly alias for [`DispatchGeometry`] — the integration test
+/// Test-friendly alias for [`DispatchGeometry`]  -  the integration test
 /// surface (manifest_round_trip, launcher_contracts, etc.) was written
 /// against an older `DispatchConfig` name. Keep the alias at the public
 /// surface so test files import the historical path; the canonical type

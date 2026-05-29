@@ -5,12 +5,12 @@
 //! Shared memory on modern GPUs is divided into N banks. Each bank can
 //! serve one read or write per cycle. When K threads in the same
 //! warp/subgroup access K different addresses that map to the **same
-//! bank**, those accesses serialize — costing up to 32x throughput
+//! bank**, those accesses serialize  -  costing up to 32x throughput
 //! for the worst case (32-way conflict).
 //!
 //! A common cause: a stride pattern where `addr % BANK_COUNT` is the
 //! same for every thread. Classic example: a 32x32 tile in shared
-//! memory accessed column-major with stride 32 — all 32 threads in a
+//! memory accessed column-major with stride 32  -  all 32 threads in a
 //! warp hit bank 0, full 32-way serialization.
 //!
 //! This crate detects bank-conflict candidates among shared-memory

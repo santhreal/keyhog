@@ -135,8 +135,7 @@ pub fn mlp_backward(
 
     Program::wrapped(
         vec![
-            BufferDecl::storage(x, 0, BufferAccess::ReadOnly, DataType::F32)
-                .with_count(model_dim),
+            BufferDecl::storage(x, 0, BufferAccess::ReadOnly, DataType::F32).with_count(model_dim),
             BufferDecl::storage(w1, 1, BufferAccess::ReadOnly, DataType::F32)
                 .with_count(model_dim * hidden_dim),
             BufferDecl::storage(b1, 2, BufferAccess::ReadOnly, DataType::F32)
@@ -157,7 +156,7 @@ inventory::submit! {
         id: OP_ID,
         build: || mlp_backward("x", "w1", "b1", "w2", "grad_out", "grad_x", 2, 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[1.0, 2.0]),           // x
                 to_f32(&[1.0, 0.0, 0.0, 1.0]), // w1 = identity (2×2)
@@ -174,7 +173,7 @@ inventory::submit! {
             // grad_h = d_act * grad_h_act = [2*1, 4*1] = [2, 4]
             // grad_x[i] = sum_j grad_h[j]*W1[i*2+j] → W1=I so [2, 4]
             let out = [2.0_f32, 4.0];
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),

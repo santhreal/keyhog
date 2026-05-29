@@ -10,7 +10,7 @@
 //! effects from a row; `handler_compose` (V1.2) builds a single
 //! handler from two.
 //!
-//! No IR-builder dependencies — this layer is consumable from
+//! No IR-builder dependencies  -  this layer is consumable from
 //! anywhere in the workspace.
 
 pub mod handler_apply;

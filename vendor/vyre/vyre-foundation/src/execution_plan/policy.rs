@@ -449,6 +449,7 @@ const fn effective_subgroup_size(caps: &AdapterCaps) -> u32 {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -655,3 +656,4 @@ mod tests {
         assert_eq!(policy().select_unroll_depth(Some(32), &caps), 8);
     }
 }
+

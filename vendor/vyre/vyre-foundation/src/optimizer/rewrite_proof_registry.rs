@@ -1,4 +1,4 @@
-//! N3 — registry of shipped rewrite proof obligations.
+//! N3  -  registry of shipped rewrite proof obligations.
 //!
 //! `rewrite_proof` provides the SMT-LIB v2 emitter; this module is the
 //! library of *concrete* obligations, one (or more) per shipped
@@ -24,7 +24,7 @@
 //!
 //! Rewrites with structural / control-flow effects (LICM,
 //! dead-code cleanup, `dead_store`, `branch_collapse`) live outside
-//! the QF_BV proof surface — they require SMT-LIA or SMT-array
+//! the QF_BV proof surface  -  they require SMT-LIA or SMT-array
 //! reasoning the current solver layer does not export. Their
 //! soundness is documented in each pass's module docstring under the
 //! "soundness" / "correctness" sections; this registry is not the
@@ -77,7 +77,7 @@ pub fn shipped_obligations() -> Vec<RewriteProofObligation> {
         // strength_reduce mul-by-power-of-2 → shift. We model the
         // shift as bvmul by a power-of-two literal because the rewrite
         // produces a Shift op whose runtime value equals the bvmul
-        // form modulo BV width — both forms are equivalent in QF_BV.
+        // form modulo BV width  -  both forms are equivalent in QF_BV.
         RewriteProofObligation::equivalence(
             "strength_reduce_mul_pow2_two",
             std::iter::empty(),

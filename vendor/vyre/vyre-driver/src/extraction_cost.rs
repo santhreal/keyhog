@@ -2,7 +2,7 @@
 //!
 //! ROADMAP A7. The egraph extraction substrate (`extract_best`) accepts an
 //! arbitrary `Fn(&L) -> u64` cost function. Each consumer Family used to
-//! roll its own — passing a flat per-op cost table that ignored the
+//! roll its own  -  passing a flat per-op cost table that ignored the
 //! current device's tensor-core throughput, hot/cold path heat, and
 //! FP16-eligibility hints.
 //!
@@ -17,7 +17,7 @@
 //! 2. **Tensor-core scaling for FP16-eligible ALU work.** When the
 //!    profile reports `supports_tensor_cores && supports_f16`, ALU
 //!    nodes flagged as `fp16_eligible` are scaled by the
-//!    profile's tensor-core throughput multiplier (default `0.25` —
+//!    profile's tensor-core throughput multiplier (default `0.25`  -
 //!    i.e. 4× cheaper than scalar f32) so the extractor prefers
 //!    FP16-eligible variants on supporting hardware.
 //!
@@ -59,7 +59,6 @@ pub const TENSOR_CORE_COST_SCALE: f32 = 0.25;
 /// extraction path.
 pub const TENSOR_CORE_COST_SCALE_BPS: u32 = 2_500;
 
-const ONE_SCALE_BPS: u32 = 10_000;
 const MAX_SCALE_BPS: u32 = 40_000;
 
 /// Per-node hint bits derived from the foundation analyses.
@@ -67,7 +66,7 @@ const MAX_SCALE_BPS: u32 = 40_000;
 /// Callers populate this from the substrate they already have:
 /// `PrecisionHints::lookup(digest)` for `fp16_eligible`, the F1
 /// `vsa_specialization_key` for `compile_time_constant`. The cost
-/// helper does not compute these — it only consumes them.
+/// helper does not compute these  -  it only consumes them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NodeHints {
     /// Foundation precision_hint analysis flagged this node as
@@ -85,7 +84,7 @@ pub struct NodeHints {
 ///
 /// `base_cost_fn` gives the ABSTRACT per-op cost (e.g. 1 for a const,
 /// 2 for an Add, 4 for a Div). `hint_lookup` answers per-node hint
-/// bits — typically a wrapper over `PrecisionHints::lookup`.
+/// bits  -  typically a wrapper over `PrecisionHints::lookup`.
 ///
 /// The returned closure is `Fn(&L) -> u64` and can be passed
 /// straight into `extract_best`. It owns its arguments by value so
@@ -110,7 +109,7 @@ where
     let tensor_scale_bps = if profile.supports_tensor_cores && profile.supports_f16 {
         TENSOR_CORE_COST_SCALE_BPS
     } else {
-        ONE_SCALE_BPS
+        crate::numeric::BASIS_POINTS_DENOMINATOR
     };
     move |node: &L| {
         let base = base_cost_fn(node);
@@ -129,17 +128,23 @@ where
 /// Scale is clamped to `[1, 40000]` basis points before scaling; zero
 /// falls back to the base cost to preserve the old invalid-scale contract.
 fn scale_cost_basis_points(base: u64, scale_bps: u32) -> u64 {
-    if scale_bps == 0 {
-        return base;
-    }
-    let clamped = scale_bps.min(MAX_SCALE_BPS);
-    let scaled = (u128::from(base) * u128::from(clamped) + 5_000) / 10_000;
-    u64::try_from(scaled).unwrap_or(u64::MAX)
+    crate::numeric::scale_u64_by_basis_points_round_clamped(
+        base,
+        scale_bps,
+        base,
+        MAX_SCALE_BPS,
+        "extraction cost",
+        "driver",
+    )
 }
 
 fn compose_scale_basis_points(left_bps: u32, right_bps: u32) -> u32 {
-    let composed = (u64::from(left_bps) * u64::from(right_bps)) / u64::from(ONE_SCALE_BPS);
-    u32::try_from(composed).unwrap_or(u32::MAX)
+    crate::numeric::compose_basis_points_u32(
+        left_bps,
+        right_bps,
+        "extraction cost scale composition",
+        "driver",
+    )
 }
 
 #[cfg(test)]
@@ -222,7 +227,7 @@ mod tests {
             compose_scale_basis_points(HOT_PATH_COST_SCALE_BPS, TENSOR_CORE_COST_SCALE_BPS),
         );
         assert_eq!(cost(&Toy::Heavy), expected);
-        // Const is not fp16-eligible — only hot-path scaling applies.
+        // Const is not fp16-eligible  -  only hot-path scaling applies.
         assert_eq!(
             cost(&Toy::Const(0)),
             scale_cost_basis_points(1, HOT_PATH_COST_SCALE_BPS)
@@ -261,11 +266,12 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("extraction-cost production source must precede tests");
+            .expect("Fix: extraction-cost production source must precede tests");
 
         assert!(
             production.contains("scale_cost_basis_points")
-                && production.contains("compose_scale_basis_points"),
+                && production.contains("compose_scale_basis_points")
+                && production.contains("crate::numeric::"),
             "Fix: extraction cost scaling must use deterministic integer basis-point arithmetic."
         );
         assert!(

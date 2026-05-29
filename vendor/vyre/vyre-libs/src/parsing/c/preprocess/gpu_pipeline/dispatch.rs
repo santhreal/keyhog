@@ -5,8 +5,8 @@ use vyre::{DispatchConfig, VyreBackend};
 /// input buffers and return output buffers. Lets the orchestrator be
 /// driven by either a real `VyreBackend` (production) or a closure
 /// over `vyre_reference::reference_eval` (tests). The closure form
-/// matters because `VyreBackend` is sealed — third-party impls aren't
-/// allowed — and because the reference path needs none of the GPU
+/// matters because `VyreBackend` is sealed  -  third-party impls aren't
+/// allowed  -  and because the reference path needs none of the GPU
 /// driver's transitive dependencies.
 pub trait GpuDispatcher {
     /// Run `program` with `inputs`; return one `Vec<u8>` per output buffer.
@@ -18,7 +18,7 @@ pub trait GpuDispatcher {
     /// path (notably the reference interpreter). Real-GPU dispatchers
     /// override this to forward the slices straight to
     /// `VyreBackend::dispatch_borrowed`, eliminating one full input-buffer
-    /// clone per dispatch — material at the per-include preprocess hot
+    /// clone per dispatch  -  material at the per-include preprocess hot
     /// loop where each translation unit fans out to ~30 dispatches.
     fn dispatch_borrowed(
         &self,

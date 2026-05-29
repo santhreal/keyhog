@@ -6,6 +6,7 @@
 //! so file paths match Rust’s usual `mod` / `use` story.
 #![allow(missing_docs)]
 
+pub(crate) mod atomic_collect;
 pub mod cfg;
 pub mod object_writer;
 pub mod regalloc;

@@ -1,4 +1,4 @@
-//! Cat-C `subgroup_ballot` — popcount of per-lane bool into u32 bitmask.
+//! Cat-C `subgroup_ballot`  -  popcount of per-lane bool into u32 bitmask.
 //!
 //! Maps to the target-native subgroup ballot intrinsic via a concrete
 //! driver emitter arm.
@@ -77,6 +77,12 @@ inventory::submit! {
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
         category: Some("hardware"),
+        shape: Some(crate::harness::OpShape::new(
+            1,
+            1,
+            4,
+            crate::harness::HardwareSemantic::SubgroupBallotU32,
+        )),
     }
 }
 

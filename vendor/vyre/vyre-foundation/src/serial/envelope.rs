@@ -13,7 +13,7 @@
 //!
 //! This module is the lego block. One implementation, one set of typed
 //! errors, one suite of round-trip / version-mismatch / truncation
-//! tests — every consumer adopts it and its fixes propagate.
+//! tests  -  every consumer adopts it and its fixes propagate.
 //!
 //! # Layered usage
 //!
@@ -181,7 +181,7 @@ pub struct WireReader<'a> {
 impl<'a> WireReader<'a> {
     /// Begin a reader; validates the 8-byte magic + version header.
     /// Consumers MUST call this and propagate the error before reading
-    /// any sections — sections after a bad header cannot be trusted.
+    /// any sections  -  sections after a bad header cannot be trusted.
     ///
     /// # Errors
     ///
@@ -320,7 +320,7 @@ pub mod test_helpers {
         const MAGIC: [u8; 4];
         /// Wire version the type stamps on every blob.
         const VERSION: u32;
-        /// Encoder error type. Not exercised here — consumers pre-
+        /// Encoder error type. Not exercised here  -  consumers pre-
         /// validate that `to_bytes` returns `Ok` for the sample.
         type EncodeError: std::fmt::Debug;
         /// Decoder error type. Used to confirm that mutated blobs
@@ -355,7 +355,7 @@ pub mod test_helpers {
     ///   - mutating the version dword produces a typed decode error
     ///   - truncating the trailing byte produces a typed decode error
     ///   - feeding an 8-byte buffer (header only, zero sections) is a
-    ///     decoder concern — helper does NOT assert success/failure
+    ///     decoder concern  -  helper does NOT assert success/failure
     ///     because section-counts vary by consumer.
     ///
     /// Intentionally panics on assertion failure (this is a test

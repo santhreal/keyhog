@@ -239,7 +239,7 @@ impl RewriteProofObligation {
         self.before.collect_vars(&mut vars);
         self.after.collect_vars(&mut vars);
         let mut vars: Vec<_> = vars.into_iter().collect();
-        // Var names are unique per (collect_vars) — unstable sort is
+        // Var names are unique per (collect_vars)  -  unstable sort is
         // sufficient and faster than the stable sort.
         vars.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
 

@@ -1,4 +1,4 @@
-//! Tier 2.5 line-index — write a per-byte line number into `lines[i]`.
+//! Tier 2.5 line-index  -  write a per-byte line number into `lines[i]`.
 //!
 //! Every parser dialect that reports diagnostics needs line numbers.
 //! This op walks the source serially (single invocation) maintaining a
@@ -6,7 +6,7 @@
 //! line number is written to every byte position.
 //!
 //! Carriage-return handling: `\r` alone (Mac classic), `\r\n` (Windows),
-//! and bare `\n` (Unix) are all normalized — `\r` does NOT increment
+//! and bare `\n` (Unix) are all normalized  -  `\r` does NOT increment
 //! the counter (the following `\n` does), and a `\r` not followed by
 //! `\n` increments on the `\r` itself. This matches `str::lines()`
 //! semantics for byte-counting purposes.
@@ -25,7 +25,7 @@ pub const OP_ID: &str = "vyre-primitives::text::line_index";
 
 /// Build a Program that writes `lines[i] = line_number_of(source[i])`.
 ///
-/// Single-invocation serial scan — bytes are read in order, the line
+/// Single-invocation serial scan  -  bytes are read in order, the line
 /// counter starts at 0 and increments on each `\n` byte. The increment
 /// is applied AFTER the assignment for the newline byte itself, so
 /// `lines[idx_of_newline]` reads the line that contained the newline.
@@ -53,7 +53,7 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
                         // the current byte belongs to the next line.
                         // Apply the increment BEFORE storing so the
                         // current byte records its new line. (CPU
-                        // does the same — see reference_line_index lines 112-114.)
+                        // does the same  -  see reference_line_index lines 112-114.)
                         Node::if_then(
                             Expr::and(
                                 Expr::eq(Expr::var("prev_was_cr"), Expr::u32(1)),
@@ -69,7 +69,7 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
                         // induced by the current byte itself.
                         Node::store(lines, Expr::var("i"), Expr::var("line")),
                         // Increment when we see '\n' (0x0A) regardless
-                        // of prev_was_cr — '\r\n' increments only once
+                        // of prev_was_cr  -  '\r\n' increments only once
                         // because the prior '\r' did NOT increment.
                         Node::if_then_else(
                             Expr::eq(Expr::var("byte"), Expr::u32(0x0A)),
@@ -81,7 +81,7 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
                                 Expr::eq(Expr::var("byte"), Expr::u32(0x0D)),
                                 vec![
                                     // '\r' marks state but doesn't yet
-                                    // increment — wait until we see what
+                                    // increment  -  wait until we see what
                                     // follows.
                                     Node::assign("prev_was_cr", Expr::u32(1)),
                                 ],
@@ -111,14 +111,14 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
 
 /// Reference oracle: same line-counting semantics as the GPU kernel.
 #[must_use]
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 pub fn reference_line_index(source: &[u8]) -> Vec<u32> {
     let mut out = Vec::with_capacity(source.len());
     let mut line: u32 = 0;
     let mut prev_was_cr = false;
     for &byte in source {
         // Lone `\r` (not followed by `\n`) means the current byte
-        // belongs to the next line — increment BEFORE recording this
+        // belongs to the next line  -  increment BEFORE recording this
         // byte's line number.
         if prev_was_cr && byte != b'\n' {
             line += 1;

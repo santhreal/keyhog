@@ -1,9 +1,9 @@
-//! `barrier_coalesce` — fold consecutive `Node::Barrier` runs into one.
+//! `barrier_coalesce`  -  fold consecutive `Node::Barrier` runs into one.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::barrier_coalesce`. Soundness:
 //! `Exact` over the per-MemoryOrdering join rule documented in
 //! `vyre-foundation::memory_model`. Cost-direction: monotone-down on
-//! `node_count` and `control_flow_count` — never inserts a barrier; only
+//! `node_count` and `control_flow_count`  -  never inserts a barrier; only
 //! removes redundant ones. Preserves: every analysis. Invalidates: nothing
 //! (the IR shape changes but downstream passes that care about barrier
 //! placement only ask for the strictest barrier in each sequence).
@@ -12,7 +12,7 @@
 //!
 //! When the IR contains a sequence `[..., Barrier(A), Barrier(B), ...]`
 //! at the same scope (same parent body), the pair is replaced by a single
-//! `Barrier(join(A, B))` where `join` is the MemoryOrdering join — the
+//! `Barrier(join(A, B))` where `join` is the MemoryOrdering join  -  the
 //! stronger of the two. This is sound because two barriers in immediate
 //! sequence with no intervening memory operations are equivalent to one
 //! barrier of the stronger ordering: every guarantee of either is provided
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn join_workgroup_acqrel_workgroup_acqrel_yields_acqrel() {
-        // Two AcqRel barriers join to AcqRel — neither is stronger.
+        // Two AcqRel barriers join to AcqRel  -  neither is stronger.
         assert_eq!(
             join_ordering(MemoryOrdering::AcqRel, MemoryOrdering::AcqRel),
             MemoryOrdering::AcqRel
@@ -282,7 +282,7 @@ mod tests {
             assert_eq!(
                 join_ordering(MemoryOrdering::GridSync, other),
                 MemoryOrdering::GridSync,
-                "GridSync ⊔ {other:?} must stay GridSync — losing GridSync would silently \
+                "GridSync ⊔ {other:?} must stay GridSync  -  losing GridSync would silently \
                  downgrade cross-block synchronization"
             );
             assert_eq!(
@@ -344,7 +344,7 @@ mod tests {
             .entry()
             .iter()
             .find_map(first_barrier_ordering)
-            .expect("a barrier must exist after coalesce");
+            .expect("Fix: a barrier must exist after coalesce");
         assert_eq!(
             ordering,
             MemoryOrdering::AcqRel,
@@ -366,7 +366,7 @@ mod tests {
         let program = program_with_entry(entry);
         let result = BarrierCoalescePass::transform(program);
         // The store between the two barriers means they're NOT consecutive
-        // siblings — coalescing would skip the store's memory effects.
+        // siblings  -  coalescing would skip the store's memory effects.
         assert!(
             !result.changed,
             "barriers separated by a store must NOT coalesce"
@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn coalesces_grid_sync_with_workgroup_to_grid_sync() {
-        // GridSync followed by SeqCst (workgroup-scope) — GridSync dominates.
+        // GridSync followed by SeqCst (workgroup-scope)  -  GridSync dominates.
         let entry = vec![
             Node::Barrier {
                 ordering: MemoryOrdering::GridSync,
@@ -412,7 +412,7 @@ mod tests {
             .entry()
             .iter()
             .find_map(first_barrier_ordering)
-            .expect("a barrier must exist");
+            .expect("Fix: a barrier must exist");
         assert_eq!(
             ordering,
             MemoryOrdering::GridSync,

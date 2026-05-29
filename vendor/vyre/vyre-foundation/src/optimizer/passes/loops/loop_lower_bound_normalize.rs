@@ -1,4 +1,4 @@
-//! ROADMAP A30 — polyhedral loop-bound normalization.
+//! ROADMAP A30  -  polyhedral loop-bound normalization.
 //!
 //! Shipped variant: lower-bound normalization. Every literal-bounded
 //! `Loop(i, lo, hi, body)` with `lo > 0` and `hi >= lo` rewrites to
@@ -6,7 +6,7 @@
 //! preserved exactly, the trip count is unchanged, and every body
 //! expression that read the original loop variable now reads
 //! `Var(i') + LitU32(lo)`. This is the polyhedral library's
-//! `Affine::Translate(-lo)` rewrite — the simplest piece of a real
+//! `Affine::Translate(-lo)` rewrite  -  the simplest piece of a real
 //! polyhedral substrate, and the prerequisite for the iteration-
 //! space normalisation that A29 strip-mine, A26 fusion, and A28 peel
 //! all assume.
@@ -437,7 +437,7 @@ mod tests {
         }];
         let result = LoopLowerBoundNormalize::transform(program(entry));
         assert!(result.changed, "loop with from=4 must normalize");
-        let loop_node = find_loop(result.program.entry()).expect("loop present");
+        let loop_node = find_loop(result.program.entry()).expect("Fix: loop present");
         match loop_node {
             Node::Loop {
                 var,
@@ -448,6 +448,7 @@ mod tests {
                 assert_eq!(var.as_str(), "i", "var is not freshened after #2734");
                 assert_eq!(*from, Expr::LitU32(0), "from must be 0");
                 assert_eq!(*to, Expr::LitU32(8), "to must be original (12) - lower (4)");
+
                 match &body[0] {
                     Node::Store { index, .. } => match index {
                         Expr::BinOp { op, left, right } => {
@@ -524,7 +525,7 @@ mod tests {
     }
 
     /// Negative: a loop body that reassigns the loop var blocks the
-    /// rewrite — substitution would not preserve the in-body
+    /// rewrite  -  substitution would not preserve the in-body
     /// reassignment semantics.
     #[test]
     fn keeps_loop_when_body_assigns_loop_var() {
@@ -598,3 +599,4 @@ mod tests {
         }
     }
 }
+

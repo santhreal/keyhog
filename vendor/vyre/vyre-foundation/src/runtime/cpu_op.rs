@@ -27,6 +27,12 @@ pub trait CategoryAOp {
 /// Each op can register its own CPU ref via `vyre-reference`, and
 /// `DialectRegistry::get_lowering(ReferenceBackend)` dispatches to it
 /// directly rather than going through this sentinel.
+///
+/// AUDIT_2026-05-23: Deprecated - panicking CPU sentinel is a fallback hole.
+/// Category C ops must implement typed GPU lowerings instead.
+#[deprecated(
+    note = "structured_intrinsic_cpu is a panicking fallback. Implement typed GPU lowering for the op."
+)]
 pub fn structured_intrinsic_cpu(input: &[u8], output: &mut Vec<u8>) {
     output.clear();
     panic!(
@@ -42,6 +48,7 @@ pub fn structured_intrinsic_cpu(input: &[u8], output: &mut Vec<u8>) {
 /// instead of pretending a flat CPU adapter exists.
 #[must_use]
 pub fn is_cpu_reference_sentinel(f: CpuFn) -> bool {
+    #[allow(deprecated)]
     std::ptr::fn_addr_eq(f, structured_intrinsic_cpu as CpuFn)
 }
 
@@ -55,6 +62,7 @@ pub fn is_fallback_cpu_ref(f: CpuFn) -> bool {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
@@ -83,7 +91,7 @@ mod tests {
             .downcast_ref::<String>()
             .map(String::as_str)
             .or_else(|| panic.downcast_ref::<&str>().copied())
-            .expect("structured intrinsic CPU sentinel panic should carry a message");
+            .expect("Fix: structured intrinsic CPU sentinel panic should carry a message");
         assert!(message.contains("no typed reference implementation is registered"));
         assert!(
             message.contains("production execution must select a concrete GPU/backend lowering")

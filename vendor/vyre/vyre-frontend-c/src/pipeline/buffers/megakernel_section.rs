@@ -18,8 +18,8 @@ pub(crate) fn megakernel_section_bytes(
     bytes.extend_from_slice(&function_count.to_le_bytes());
     bytes.extend_from_slice(&cfg_word_count.to_le_bytes());
     bytes.extend_from_slice(&section_count.to_le_bytes());
-    for tag in section_tags {
-        bytes.extend_from_slice(&tag.to_le_bytes());
-    }
+    // Tag table emits as a single LE bytemuck::cast_slice on LE hosts
+    // via wire::append_u32_slice_le_bytes - no per-tag extend loop.
+    vyre_primitives::wire::append_u32_slice_le_bytes(section_tags, &mut bytes);
     Ok(bytes)
 }

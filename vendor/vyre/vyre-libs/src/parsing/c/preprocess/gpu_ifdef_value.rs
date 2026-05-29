@@ -9,24 +9,24 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `tok_starts` (U32) — per-token byte offset into `source`.
-//!   - `tok_lens` (U32) — per-token byte length.
-//!   - `directive_kinds` (U32) — output of `gpu_directive_metadata`.
+//!   - `tok_starts` (U32)  -  per-token byte offset into `source`.
+//!   - `tok_lens` (U32)  -  per-token byte length.
+//!   - `directive_kinds` (U32)  -  output of `gpu_directive_metadata`.
 //!   - `source` (U32 packed bytes; see real-GPU note).
-//!   - `macro_names_packed` (U32 packed bytes) — concatenated
+//!   - `macro_names_packed` (U32 packed bytes)  -  concatenated
 //!     defined-macro name bytes. Empty when no macros are defined.
-//!   - `macro_offsets` (U32) — start offsets of each macro name.
+//!   - `macro_offsets` (U32)  -  start offsets of each macro name.
 //!     Length `num_macros + 1`; the final entry is the total
 //!     `macro_names_packed` length so each name's length is
 //!     `offsets[i+1] - offsets[i]`.
 //!
 //! Outputs:
-//!   - `directive_values` (U32) — per-token value: `1` / `0` for
+//!   - `directive_values` (U32)  -  per-token value: `1` / `0` for
 //!     ifdef / ifndef; `0` for every other directive kind.
 //!
 //! ## Real-GPU lowering note
 //!
-//! Same conventions as the rest of the directive-classify family —
+//! Same conventions as the rest of the directive-classify family  -
 //! `source` and `macro_names_packed` declared as packed U32 so
 //! reference-eval and naga-emitted real GPU agree on word-indexed
 //! access; byte extraction is inline. The kernel is **straight-line**
@@ -39,6 +39,7 @@
 //! check is bounded by the candidate macro-name length. One compiled
 //! program handles every macro-table size and identifier length.
 
+use super::gpu_source_bytes::{packed_source_byte_len_expr, safe_load_packed_byte_expr};
 use crate::parsing::c::lex::tokens::{TOK_PP_IFDEF, TOK_PP_IFNDEF};
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -61,7 +62,7 @@ pub const BINDING_MACRO_OFFSETS: u32 = 5;
 pub const BINDING_DIRECTIVE_VALUES: u32 = 6;
 
 /// Maximum horizontal-WS run before `#`, between `#` and the
-/// keyword, between the keyword and the identifier. Cap at 4 — real
+/// keyword, between the keyword and the identifier. Cap at 4  -  real
 /// rows have 0–1.
 const MAX_WS_PREFIX: u32 = 4;
 
@@ -76,21 +77,10 @@ const MAX_WS_PREFIX: u32 = 4;
 pub fn gpu_ifdef_value(num_tokens: u32, source_len: u32) -> Program {
     let _ = source_len;
     let t = Expr::var("t");
-    let source_byte_len = Expr::mul(Expr::buf_len("source"), Expr::u32(4));
+    let source_byte_len = packed_source_byte_len_expr();
 
-    let load_byte_u32 = |buf: &'static str, addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load(buf, word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
     let safe_load = |buf: &'static str, addr: Expr, bound: Expr| -> Expr {
-        Expr::select(
-            Expr::lt(addr.clone(), bound),
-            load_byte_u32(buf, addr),
-            Expr::u32(0),
-        )
+        safe_load_packed_byte_expr(buf, addr, bound)
     };
     let is_ws = |b: Expr| -> Expr {
         Expr::select(
@@ -347,7 +337,7 @@ pub fn gpu_ifdef_value(num_tokens: u32, source_len: u32) -> Program {
     // loop over `m_len`, guarded by the equal-length check.
     //
     // `macro_names_len` (the byte length of the packed names buffer)
-    // is also runtime — `Expr::buf_len("macro_names_packed") * 4`
+    // is also runtime  -  `Expr::buf_len("macro_names_packed") * 4`
     // gives the padded byte capacity, which is >= the host-supplied
     // real byte length. Looser bound is safe: all valid macros end
     // strictly before the real length, and zero-padding past the
@@ -536,6 +526,7 @@ pub fn gpu_ifdef_value(num_tokens: u32, source_len: u32) -> Program {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -569,10 +560,11 @@ mod tests {
             .buffers()
             .iter()
             .find(|buffer| buffer.name() == "source")
-            .expect("source buffer must exist");
+            .expect("Fix: source buffer must exist");
         assert_eq!(
             source.count, 0,
             "source must be runtime-sized so one ifdef evaluator program serves all source lengths"
         );
     }
 }
+

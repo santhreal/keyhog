@@ -128,6 +128,22 @@ fn derive_nodes_uses(nodes: &[Node], facts: &mut UseFactBuilder, control_deps: &
                 facts.indirect_dispatch_buffers.insert(count_buffer.clone());
                 *facts.buffer_reads.entry(count_buffer.clone()).or_insert(0) += 1;
             }
+            Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+                *facts.buffer_reads.entry(buffer.clone()).or_insert(0) += 1;
+                *facts.buffer_writes.entry(buffer.clone()).or_insert(0) += 1;
+                let mut deps = FxHashSet::default();
+                deps.extend(control_deps.iter().cloned());
+                deps.insert(buffer.clone());
+                add_buffer_write_deps(facts, buffer, deps);
+            }
+            Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+                *facts.buffer_reads.entry(input.clone()).or_insert(0) += 1;
+                *facts.buffer_writes.entry(output.clone()).or_insert(0) += 1;
+                let mut deps = FxHashSet::default();
+                deps.extend(control_deps.iter().cloned());
+                deps.insert(input.clone());
+                add_buffer_write_deps(facts, output, deps);
+            }
             Node::Opaque(_) => {
                 facts.has_opaque = true;
             }
@@ -144,7 +160,7 @@ fn record_expr_uses_and_buffer_deps(expr: &Expr, facts: &mut UseFactBuilder) -> 
 
 /// In-place variant of [`record_expr_uses_and_buffer_deps`]. Use when
 /// merging dep sets across two sibling expressions (Store index+value,
-/// AsyncLoad/Store offset+size, Loop from+to) — avoids the second
+/// AsyncLoad/Store offset+size, Loop from+to)  -  avoids the second
 /// allocation that the return-value form would otherwise produce on
 /// `deps.extend(record_expr_uses_and_buffer_deps(...))`.
 fn record_expr_uses_and_buffer_deps_into(

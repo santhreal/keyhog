@@ -5,7 +5,7 @@
 //!
 //! Split from `mod.rs` so the loop substrate (`emit_structured_for_loop`
 //! plus the carrier helpers) lives in one auditable file. All methods
-//! are `impl<'a> BodyBuilder<'a>` extensions; nothing here is public —
+//! are `impl<'a> BodyBuilder<'a>` extensions; nothing here is public  -
 //! callers go through `emit_op` which dispatches into these methods.
 
 use naga::{
@@ -42,7 +42,7 @@ impl<'a> BodyBuilder<'a> {
         op: &KernelOp,
         loop_var: &vyre_lower::descriptor::Name,
     ) -> Result<(), EmitError> {
-        // Q7: identify loop-carried result ids — values produced
+        // Q7: identify loop-carried result ids  -  values produced
         // inside the loop child body that the parent body references
         // AFTER this loop op. Each becomes a function-scope
         // `LocalVariable` carrier so post-loop reads load the final
@@ -66,7 +66,7 @@ impl<'a> BodyBuilder<'a> {
             self.loop_carrier_targets.insert(*id);
             // Resolve the pre-loop value of `id` in the CURRENT (parent) scope.
             // Critical: the cached handle in `self.values` may be a `Load`
-            // whose `Statement::Emit` lives inside an outer loop's body — out
+            // whose `Statement::Emit` lives inside an outer loop's body  -  out
             // of scope at this nested-loop's pre-init Store site.  The helper
             // synthesizes a fresh `LocalVariable + Load` here when `id` is a
             // carrier so the resulting handle is in scope where pre_init Stores.
@@ -85,7 +85,7 @@ impl<'a> BodyBuilder<'a> {
         // we rejected the descriptor outright; that blocked every
         // megakernel (memcpy_body, batch_fence_body, ...) whose
         // protocol-buffer-loaded bound was wider/narrower than the
-        // literal start. Casting is the right semantic — both ends
+        // literal start. Casting is the right semantic  -  both ends
         // are integer scalars, and the loop arithmetic operates on
         // index_ty afterwards.
         let to_ty = self.value_type_operand(op, 1)?;
@@ -149,7 +149,7 @@ impl<'a> BodyBuilder<'a> {
 
         // Q7: pre-allocate carriers for loop-carried ids and seed them
         // from the pre-loop SSA value (if the parent body had bound the
-        // same id beforehand — common shape: `Let("hash", u32(seed))`
+        // same id beforehand  -  common shape: `Let("hash", u32(seed))`
         // outside the loop, `Assign("hash", ...)` inside).
         for (id, init_handle) in &pre_init {
             let local = self.allocate_carrier_local(*id, init_handle);

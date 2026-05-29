@@ -5,7 +5,7 @@
 //! Once an image is in im2col form, 2D convolution becomes a
 //! matrix-vector multiply: `output[i] = sum_k im2col[i, k] *
 //! kernel[k]`. This lets the existing tiled / vectorised `matmul`
-//! primitive carry the convolution work — at the cost of `H*W*9 - H*W`
+//! primitive carry the convolution work  -  at the cost of `H*W*9 - H*W`
 //! extra F32 of memory for the patch matrix.
 //!
 //! Decision wrapper (im2col-vs-direct, ROADMAP H3): use im2col when
@@ -17,6 +17,7 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::region::wrap_anonymous;
+use crate::test_support::byte_pack::f32_bytes;
 
 const OP_ID: &str = "vyre-libs::math::conv::im2col_3x3";
 
@@ -122,13 +123,6 @@ inventory::submit! {
     }
 }
 
-fn f32_bytes(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
-}
-
 fn im2col_fixture_input() -> Vec<f32> {
     (0..16).map(|i| i as f32 + 1.0).collect()
 }
@@ -158,17 +152,15 @@ fn naive_im2col_3x3(input: &[f32], h: usize, w: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
 
     fn decode(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
+        vyre_primitives::wire::decode_f32_le_bytes_all(bytes)
     }
 
     fn run(input: &[f32], h: u32, w: u32) -> Vec<f32> {
-        let prog = im2col_3x3("input", "output", h, w).expect("build");
+        let prog = im2col_3x3("input", "output", h, w).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(&prog, &[Value::from(f32_bytes(input))])
             .expect("Fix: im2col_3x3 must execute in the reference interpreter.");
         decode(&outputs[0].to_bytes())
@@ -187,7 +179,7 @@ mod tests {
     }
 
     /// Centre pixel of a 3x3 image holds the full input as a row
-    /// (no boundary clipping) — `im2col[4, k] = input[k]` for the
+    /// (no boundary clipping)  -  `im2col[4, k] = input[k]` for the
     /// (1, 1) pixel.
     #[test]
     fn im2col_centre_pixel_holds_full_3x3() {
@@ -205,7 +197,7 @@ mod tests {
     }
 
     /// Corner pixel (0, 0) of a 3x3 image clips 5 of 9 taps to 0.
-    /// Only the bottom-right 2x2 sub-window survives — taps (1,1),
+    /// Only the bottom-right 2x2 sub-window survives  -  taps (1,1),
     /// (1,2), (2,1), (2,2) of the kernel correspond to input
     /// positions (0,0), (0,1), (1,0), (1,1).
     #[test]

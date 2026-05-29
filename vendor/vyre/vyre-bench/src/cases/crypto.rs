@@ -1,4 +1,4 @@
-//! `crypto.aes_ctr.encrypt.10mb` — AES-128-CTR encryption over 10MB.
+//! `crypto.aes_ctr.encrypt.10mb`  -  AES-128-CTR encryption over 10MB.
 //!
 //! GPU kernel: counter-mode AES where each thread encrypts one 16-byte
 //! counter block using the AES-128 round function, then XORs the generated
@@ -12,9 +12,13 @@ use crate::api::case::{
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::BenchMetrics;
+use crate::api::resident::{
+    dispatch_program_timed, input_bytes_total, transfer_accounting, ResidentInputSet,
+};
 use crate::api::suite::SuiteKind;
 use openssl::symm::{Cipher, Crypter, Mode};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_primitives::wire::pack_u32_iter;
 
 // 100MB = 6_553_600 blocks of 16 bytes each
 // Reduced to 10MB for smoke suite to keep tests fast
@@ -69,6 +73,8 @@ struct AesCtrPrepared {
     plaintext_bytes: Vec<u8>,
     key_bytes: [u8; AES_BLOCK_BYTES],
     inputs: Vec<Vec<u8>>,
+    input_bytes_total: u64,
+    resident: Option<ResidentInputSet>,
 }
 
 impl BenchCase for AesCtrEncrypt {
@@ -124,7 +130,7 @@ impl BenchCase for AesCtrEncrypt {
         (bytes, bytes) // read plaintext, write ciphertext
     }
 
-    fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
+    fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let body = aes_ctr_kernel_body();
         let prog = Program::wrapped(
             vec![
@@ -137,17 +143,21 @@ impl BenchCase for AesCtrEncrypt {
             [256, 1, 1],
             body,
         );
-        let plaintext_bytes: Vec<u8> = (0..TOTAL_WORDS).flat_map(|i| i.to_le_bytes()).collect();
+        let plaintext_bytes = pack_u32_iter(0..TOTAL_WORDS);
         let key_bytes = [
             0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB,
             0xCD, 0xEF,
         ];
         let inputs = vec![plaintext_bytes.clone(), aes_table_bytes(key_bytes)];
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputSet::upload_optional(ctx, &inputs, "aes-ctr bench")?;
         Ok(Box::new(AesCtrPrepared {
             program: prog,
             plaintext_bytes,
             key_bytes,
             inputs,
+            input_bytes_total,
+            resident,
         }))
     }
 
@@ -166,29 +176,40 @@ impl BenchCase for AesCtrEncrypt {
             BenchError::ExecutionFailed("aes-ctr prepared payload type mismatch".to_string())
         })?;
 
-        let timed = ctx
-            .dispatch_timed(&prepared.program, &prepared.inputs, &ctx.dispatch_config)
-            .map_err(|e| BenchError::BackendFailed(e.to_string()))?;
+        let dispatch = dispatch_program_timed(
+            ctx,
+            &prepared.program,
+            prepared.resident.as_ref(),
+            &prepared.inputs,
+            &ctx.dispatch_config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let timed = dispatch.timed;
         let outputs = timed.outputs;
 
         // CPU baseline
         let start_ref = std::time::Instant::now();
         let cpu_result = cpu_openssl_aes_ctr(&prepared.plaintext_bytes, &prepared.key_bytes)?;
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
-        let input_bytes = prepared.inputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let input_bytes = prepared.input_bytes_total;
+        let output_bytes = outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let accounting = transfer_accounting(input_bytes, output_bytes, resident_used);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
                 wall_ns: Some(timed.wall_ns),
                 dispatch_ns: timed.device_ns,
                 input_bytes: Some(input_bytes),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                bytes_read: Some(TOTAL_WORDS as u64 * 4),
-                bytes_written: Some(TOTAL_WORDS as u64 * 4),
+                output_bytes: Some(output_bytes),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
+                bytes_touched: Some(accounting.bytes_touched),
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(elapsed_ref),
+                input_bytes: Some(prepared.plaintext_bytes.len() as u64),
+                output_bytes: Some(cpu_result.len() as u64),
                 ..Default::default()
             }),
             outputs,
@@ -359,7 +380,7 @@ fn pack_word(bytes: [Expr; 4]) -> Expr {
 }
 
 fn u32_words_bytes(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 fn aes_table_bytes(key: [u8; AES_BLOCK_BYTES]) -> Vec<u8> {

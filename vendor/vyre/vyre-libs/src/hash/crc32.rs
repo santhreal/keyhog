@@ -1,4 +1,4 @@
-//! Cat-A `crc32` — CRC-32 (ISO 3309 / ITU-T V.42) checksum.
+//! Cat-A `crc32`  -  CRC-32 (ISO 3309 / ITU-T V.42) checksum.
 //!
 //! Serial single-invocation walk. Standard CRC-32 polynomial
 //! 0xEDB88320 (reflected), init 0xFFFFFFFF, final XOR 0xFFFFFFFF,
@@ -8,51 +8,26 @@
 //! `input[i]` packs one byte per u32 slot (low 8 bits). `out[0]`
 //! receives the final CRC-32.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Program};
-use vyre_foundation::ir::model::expr::GeneratorRef;
+use vyre::ir::Program;
 use vyre_primitives::hash::crc32::{crc32_program, CRC32_OP_ID};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
-use crate::buffer_names::scoped_generic_name;
 #[cfg(test)]
 use vyre_primitives::hash::crc32::crc32 as crc32_cpu_reference;
 
+use super::wrap::HashWrapperSpec;
+
 const OP_ID: &str = "vyre-libs::hash::crc32";
 const FAMILY_PREFIX: &str = "hash_crc32";
-
-fn scoped_input_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
-}
-
-fn scoped_output_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "out", name, &["out", "output"])
-}
+const SPEC: HashWrapperSpec = HashWrapperSpec::new(OP_ID, CRC32_OP_ID, FAMILY_PREFIX, 1);
 
 /// Build a Program that writes CRC-32(input[0..n]) to `out[0]`.
 #[must_use]
 pub fn crc32(input: &str, out: &str, n: u32) -> Program {
-    let input = scoped_input_buffer(input);
-    let out = scoped_output_buffer(out);
+    let (input, out) = SPEC.scoped_standard_buffers(input, out);
     let primitive = crc32_program(&input, &out, n);
-    let parent = GeneratorRef {
-        name: OP_ID.to_string(),
-    };
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-            BufferDecl::output(&out, 1, DataType::U32).with_count(1),
-        ],
-        [1, 1, 1],
-        vec![crate::region::wrap_anonymous(
-            OP_ID,
-            vec![crate::region::wrap_child(
-                CRC32_OP_ID,
-                parent,
-                primitive.into_entry_vec(),
-            )],
-        )],
-    )
+    SPEC.wrap_static_count(&input, &out, n, primitive)
 }
 
 #[cfg(test)]
@@ -65,8 +40,7 @@ inventory::submit! {
         id: OP_ID,
         build: || crc32("input", "out", 3),
         test_inputs: Some(|| {
-            let mut bytes = Vec::with_capacity(12);
-            for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
+            let bytes = vyre_primitives::wire::pack_bytes_as_u32_slice(b"abc");
             vec![vec![bytes]]
         }),
         // Canonical CRC-32 of "abc" (reflected poly 0xEDB88320) = 0x352441c2.
@@ -91,15 +65,13 @@ mod tests {
     fn run_words(words: &[u32]) -> u32 {
         let n = words.len().max(1) as u32;
         let program = crc32("input", "out", n);
-        let mut input = Vec::with_capacity(words.len() * 4);
-        for &word in words {
-            input.extend_from_slice(&word.to_le_bytes());
-        }
+        let input = vyre_primitives::wire::pack_u32_slice(words);
         let inputs = vec![Value::Bytes(input.into())];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: crc32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
-        u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+        vyre_primitives::wire::read_u32_le_word(&raw, 0, "crc32 output")
+            .expect("Fix: crc32 output must contain one u32.")
     }
 
     #[test]
@@ -126,6 +98,35 @@ mod tests {
     }
 
     #[test]
+    fn generated_crc32_wrapper_matches_primitive_for_4096_packed_cases() {
+        let mut assertions = 0usize;
+        for seed in 0u32..4096 {
+            let len = ((seed.wrapping_mul(37) ^ seed.rotate_left(11)) % 96 + 1) as usize;
+            let mut words = Vec::with_capacity(len);
+            let mut bytes = Vec::with_capacity(len);
+            let mut state = seed ^ 0xA5A5_5A5A;
+            for index in 0..len {
+                state = state
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(1_013_904_223)
+                    .rotate_left((index as u32) & 15);
+                let byte = (state ^ (seed << (index & 7))) as u8;
+                let hostile_high_bits = state & 0xFFFF_FF00;
+                words.push(hostile_high_bits | u32::from(byte));
+                bytes.push(byte);
+            }
+
+            assert_eq!(
+                run_words(&words),
+                cpu_ref(&bytes),
+                "Fix: generated CRC32 wrapper case {seed} must ignore packed-slot high bits and match the primitive CPU authority."
+            );
+            assertions += 1;
+        }
+        assert_eq!(assertions, 4096);
+    }
+
+    #[test]
     fn wrapper_delegates_to_primitive_crc32_region() {
         let program = crc32("input", "out", 3);
         let [vyre::ir::Node::Region { body, .. }] = program.entry() else {
@@ -135,6 +136,18 @@ mod tests {
             panic!("expected CRC32 wrapper to contain one primitive child region");
         };
         assert_eq!(generator.as_str(), CRC32_OP_ID);
+    }
+
+    #[test]
+    fn wrapper_source_does_not_fork_crc32_algorithm() {
+        let source = include_str!("crc32.rs");
+
+        assert!(source.contains("crc32_program"));
+        assert!(source.contains("crc32_cpu_reference"));
+        assert!(!source.contains(concat!("CRC32", "_POLY")));
+        assert!(!source.contains(concat!("build", "_table")));
+        assert!(!source.contains(concat!("crc32_update", "_byte_state")));
+        assert!(!source.contains(concat!("loop", "_for(")));
     }
 
     #[test]

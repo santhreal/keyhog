@@ -63,6 +63,7 @@ mod tests {
     fn yoneda_iso_equals_f_image() {
         let cat = FiniteCategory::discrete(3);
         for f_at_x in [0u32, 1, 5, 100] {
+            assert_eq!(natural_transformation_count(&cat, 1, 0), 0u32);
             assert_eq!(natural_transformation_count(&cat, 1, f_at_x), f_at_x);
         }
     }

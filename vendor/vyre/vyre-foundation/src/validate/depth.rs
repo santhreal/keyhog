@@ -125,12 +125,13 @@ mod tests {
 
     #[test]
     fn max_call_depth_within_bounds() {
-        assert!(max_call_depth("my_op", 10).is_ok());
+        assert_eq!(max_call_depth("my_op", 10), Ok(10));
     }
 
     #[test]
     fn max_call_depth_exceeded() {
-        let result = max_call_depth("my_op", DEFAULT_MAX_CALL_DEPTH + 1);
-        assert!(result.is_err());
+        let limit = max_call_depth("my_op", DEFAULT_MAX_CALL_DEPTH + 1)
+            .expect_err("depth over limit must fail");
+        assert_eq!(limit, DEFAULT_MAX_CALL_DEPTH);
     }
 }

@@ -119,7 +119,16 @@ pub fn eviction_basis_points(dropped_entries: usize, total_entries: usize) -> u3
         return 0;
     }
     let bounded_dropped = dropped_entries.min(total_entries);
-    ((bounded_dropped as u128 * 10_000) / total_entries as u128) as u32
+    let dropped = u64::try_from(bounded_dropped).unwrap_or(u64::MAX);
+    let total = u64::try_from(total_entries).unwrap_or(u64::MAX);
+    crate::numeric::ratio_basis_points_u64(
+        dropped,
+        total,
+        0,
+        "cache eviction dropped entries",
+        "driver",
+    )
+    .min(10_000)
 }
 
 fn effective_len(gains: &[u32], n: u32) -> usize {
@@ -130,15 +139,12 @@ fn reserve_picked(
     picked: &mut Vec<u32>,
     effective_n: usize,
 ) -> Result<(), CacheEvictionAllocationError> {
-    if picked.capacity() >= effective_n {
-        return Ok(());
-    }
-    picked
-        .try_reserve_exact(effective_n - picked.capacity())
-        .map_err(|error| CacheEvictionAllocationError {
+    crate::allocation::try_reserve_vec_to_capacity(picked, effective_n).map_err(|error| {
+        CacheEvictionAllocationError {
             requested: effective_n,
             message: error.to_string(),
-        })
+        }
+    })
 }
 
 fn argmax_unpicked(gains: &[u32], picked: &[u32]) -> Option<usize> {
@@ -196,7 +202,7 @@ mod tests {
         let mut picked = Vec::with_capacity(8);
         let ptr = picked.as_ptr();
         try_select_retention_set_into(&mut gains, 3, 2, &mut picked)
-            .expect("retention scratch should be reusable");
+            .expect("Fix: retention scratch should be reusable");
         assert_eq!(picked, vec![0, 1, 1]);
         assert_eq!(picked.as_ptr(), ptr);
     }
@@ -214,6 +220,7 @@ mod tests {
         assert_eq!(eviction_basis_points(1, 2), 5_000);
         assert_eq!(eviction_basis_points(476, 512), 9_296);
         assert_eq!(eviction_basis_points(9, 3), 10_000);
+        assert_eq!(eviction_basis_points(usize::MAX, usize::MAX), 10_000);
     }
 
     #[test]
@@ -230,7 +237,7 @@ mod tests {
         assert!(
             source.contains("pub fn try_select_retention_set")
                 && source.contains("pub fn try_select_retention_set_into")
-                && source.contains("try_reserve_exact"),
+                && source.contains("try_reserve_vec_to_capacity"),
             "Fix: release cache eviction callers need a fallible selector path instead of infallible Vec allocation."
         );
         assert!(

@@ -1,7 +1,8 @@
 use super::{
-    ProgramStats, CAP_ASYNC_DISPATCH, CAP_BF16, CAP_F16, CAP_F64, CAP_INDIRECT_DISPATCH,
-    CAP_SUBGROUP_OPS, CAP_TENSOR_OPS, CAP_TRAP, NODE_KIND_ASSIGN, NODE_KIND_BARRIER, NODE_KIND_IF,
-    NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_REGION, NODE_KIND_STORE,
+    ProgramStats, CAP_ASYNC_DISPATCH, CAP_BF16, CAP_DISTRIBUTED_COLLECTIVES, CAP_F16, CAP_F64,
+    CAP_INDIRECT_DISPATCH, CAP_SUBGROUP_OPS, CAP_TENSOR_OPS, CAP_TRAP, NODE_KIND_ASSIGN,
+    NODE_KIND_BARRIER, NODE_KIND_IF, NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_REGION,
+    NODE_KIND_STORE,
 };
 
 impl ProgramStats {
@@ -59,6 +60,13 @@ impl ProgramStats {
     #[must_use]
     pub fn trap(&self) -> bool {
         self.capability_bits & CAP_TRAP != 0
+    }
+
+    /// True when the program uses distributed collective communication nodes.
+    #[inline]
+    #[must_use]
+    pub fn distributed_collectives(&self) -> bool {
+        self.capability_bits & CAP_DISTRIBUTED_COLLECTIVES != 0
     }
 
     /// True when at least one node of any kind in `mask` was observed

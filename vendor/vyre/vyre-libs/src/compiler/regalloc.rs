@@ -27,7 +27,7 @@ pub fn opt_x86_64_register_allocation(
             "used_registers_mask",
             Expr::atomic_add("thread_block_interference", Expr::u32(0), Expr::var("node")),
         ),
-        // Round-robin register assignment — stable under permutation of
+        // Round-robin register assignment  -  stable under permutation of
         // lane ids.
         Node::let_bind("assigned_reg", Expr::rem(t.clone(), Expr::u32(16))),
         // Map the SSA Value directly to its physical x86 Register Enum Target!
@@ -50,7 +50,7 @@ pub fn opt_x86_64_register_allocation(
             )
             .with_count(node_count),
             // The interference-mask scratch is kept in a ReadWrite storage
-            // buffer rather than workgroup memory — atomics on workgroup
+            // buffer rather than workgroup memory  -  atomics on workgroup
             // memory are not portable across the target-text / reference-interp
             // backends we certify against.
             BufferDecl::storage(
@@ -77,14 +77,12 @@ inventory::submit! {
         // a nonzero CFG weight to the shared interference counter, then
         // assigns reg = t % 16.
         test_inputs: Some(|| vec![vec![
-            (1u32..=16)
-                .flat_map(u32::to_le_bytes)
-                .collect::<Vec<u8>>(),
+            vyre_primitives::wire::pack_u32_iter(1u32..=16),
             vec![0u8; 16 * 4],       // out_physical_registers
             vec![0u8; 4],            // thread_block_interference (scratch)
         ]]),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&(0u32..16).collect::<Vec<u32>>()),
                 to_bytes(&[136u32]),

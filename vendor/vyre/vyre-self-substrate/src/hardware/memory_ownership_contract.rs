@@ -448,10 +448,11 @@ mod tests {
                 "reference-oracle",
                 "vyre-cuda-tests",
                 MemoryOwner::ParityOnly,
+
                 false,
             ),
         ])
-        .expect("valid memory ownership contract should pass");
+        .expect("Fix: valid memory ownership contract should pass");
 
         assert_eq!(proof.record_count, 5);
         assert_eq!(proof.device_resident_count, 1);
@@ -510,7 +511,7 @@ mod tests {
     #[test]
     fn memory_ownership_accepts_committed_driver_and_cuda_artifacts() {
         let proof = committed_artifact_proof()
-            .expect("committed driver/CUDA sources should prove memory ownership");
+            .expect("Fix: committed driver/CUDA sources should prove memory ownership");
 
         assert_eq!(proof.surface_count, 7);
         assert!(proof.output_reuse_token_count >= 8);
@@ -591,3 +592,4 @@ mod tests {
         )
     }
 }
+

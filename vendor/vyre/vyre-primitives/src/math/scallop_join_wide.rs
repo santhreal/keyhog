@@ -1,8 +1,8 @@
-//! `scallop_join_wide` — Multi-word lineage extension of `scallop_join`.
+//! `scallop_join_wide`  -  Multi-word lineage extension of `scallop_join`.
 //!
 //! Extends `#39 scallop_join` from a 32-rule (single u32) capacity to
 //! `W` rules per cell for `W ∈ {2, 4, 8}`. This allows up to 256-rule
-//! provenance tracking for large Scallop programs or frontend closures.
+//! provenance tracking for large Scallop programs or external analyzer closures.
 //!
 //! Composes `semiring_gemm_wide` under the `Lineage` semantics with
 //! `persistent_fixpoint`.
@@ -243,6 +243,34 @@ pub fn cpu_ref(
     w: u32,
     max_iterations: u32,
 ) -> (Vec<u32>, u32) {
+    let mut current = Vec::new();
+    let mut next = Vec::new();
+    let iters = cpu_ref_into(
+        state,
+        join_rules,
+        n,
+        w,
+        max_iterations,
+        &mut current,
+        &mut next,
+    );
+    (current, iters)
+}
+
+/// CPU reference using caller-owned state and scratch buffers.
+///
+/// `current` is overwritten with the final wide relation matrix. `next` is
+/// reused as the semiring GEMM target across iterations and calls.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_into(
+    state: &[u32],
+    join_rules: &[u32],
+    n: u32,
+    w: u32,
+    max_iterations: u32,
+    current: &mut Vec<u32>,
+    next: &mut Vec<u32>,
+) -> u32 {
     let words = n
         .checked_mul(n)
         .and_then(|cells| cells.checked_mul(w))
@@ -265,9 +293,10 @@ pub fn cpu_ref(
         "scallop_join_wide CPU oracle received join_rules_len={} for n={n} w={w}. Fix: pass a complete n*n*w rule matrix before parity comparison.",
         join_rules.len()
     );
-    let mut current = vec![0u32; words];
-    current.copy_from_slice(state);
-    let mut next = vec![0u32; words];
+    current.clear();
+    current.extend_from_slice(state);
+    next.clear();
+    next.resize(words, 0);
 
     let cell_nonzero = |buffer: &[u32], start: usize| {
         let end = start.checked_add(width).unwrap_or_else(|| {
@@ -277,9 +306,8 @@ pub fn cpu_ref(
         });
         buffer
             .get(start..end)
-            .expect("scallop_join_wide CPU oracle computed an out-of-range cell. Fix: verify n*n*w shape before parity comparison.")
-            .iter()
-            .any(|&x| x != 0)
+            .map(|cell| cell.iter().any(|&x| x != 0))
+            .unwrap_or(false)
     };
 
     for iter in 0..max_iterations {
@@ -314,10 +342,10 @@ pub fn cpu_ref(
         }
 
         if !changed {
-            return (current, iter);
+            return iter;
         }
     }
-    (current, max_iterations)
+    max_iterations
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -326,7 +354,7 @@ inventory::submit! {
         OP_ID,
         || scallop_join_wide("state", "next", "join_rules", "changed", 2, 2, 4),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0, 0b01, 0, 0, 0, 0, 0]), // state (2x2 cells, 2 words per cell)
                 to_bytes(&[0, 0, 0, 0, 0, 0, 0, 0]), // next
@@ -335,7 +363,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0, 0b01, 0b10, 0, 0, 0, 0]), // state
                 to_bytes(&[0, 0, 0b01, 0b10, 0, 0, 0, 0]), // next
@@ -406,6 +434,37 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_wide_buffers_and_truncates_stale_tail() {
+        let n = 2;
+        let w = 2;
+        let mut state = vec![0; 8];
+        state[2] = 0b01;
+        let mut join_rules = vec![0; 8];
+        join_rules[7] = 0b10;
+        let mut current = Vec::with_capacity(16);
+        let mut next = Vec::with_capacity(16);
+        current.extend_from_slice(&[99; 12]);
+        next.extend_from_slice(&[77; 12]);
+        let current_capacity = current.capacity();
+        let next_capacity = next.capacity();
+
+
+        let iters = cpu_ref_into(&state, &join_rules, n, w, 4, &mut current, &mut next);
+
+        assert!(iters <= 4);
+        assert_eq!(current, vec![0, 0, 0b01, 0b10, 0, 0, 0, 0]);
+        assert_eq!(current.capacity(), current_capacity);
+        assert_eq!(next.capacity(), next_capacity);
+
+        let iters = cpu_ref_into(&[0b01], &[0b10], 1, 1, 10, &mut current, &mut next);
+        assert_eq!(iters, 1);
+        assert_eq!(current, vec![0b11]);
+        assert_eq!(next, vec![0b11]);
+        assert_eq!(current.capacity(), current_capacity);
+        assert_eq!(next.capacity(), next_capacity);
+    }
+
+    #[test]
     fn test_parity_2x2_2w() {
         let n = 2;
         let w = 2;
@@ -422,7 +481,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[u32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = crate::wire::pack_u32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 
@@ -443,3 +502,4 @@ mod tests {
         assert_eq!(actual_state, expected_state);
     }
 }
+

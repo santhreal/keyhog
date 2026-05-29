@@ -12,10 +12,10 @@
 //! against the SAME pre-canon arena. Their deltas are merged in a
 //! priority order (const-fold > pattern-match > canonicalize) when
 //! conflicts arise. This is correct for the V1 rule sets:
-//!  - V1 const-fold rules require both operands literal — neither
+//!  - V1 const-fold rules require both operands literal  -  neither
 //!    canon's swap nor pattern-match's identity rules change literal-
 //!    operand status.
-//!  - V1 canon swap is "literal on right" — already-canon Programs
+//!  - V1 canon swap is "literal on right"  -  already-canon Programs
 //!    are unchanged.
 //!  - V1 pattern-match rules check both literal-on-left and literal-
 //!    on-right, so they fire regardless of canon's swap.
@@ -35,14 +35,23 @@ use crate::dispatch_buffers::{decode_u32_output_exact, u32_slice_to_le_bytes};
 use super::canonicalize_via_encoded::build_canonicalize_program;
 use super::const_fold_via_encoded::build_const_fold_program_fused;
 use super::cse_via_encoded::{
-    apply_cse_let_dedupe, build_canonical_id_program, build_structural_hash_program,
+    apply_cse_let_dedupe_with_lookup, build_canonical_id_program, build_structural_hash_program,
     CANONICAL_TABLE_MULT,
 };
 use super::dce_program::build_dce_bfs_program;
-use super::dispatcher::{DispatchError, OptimizerDispatcher, ResidentDispatchStep};
+use super::dispatcher::{
+    DispatchError, OptimizerDispatcher, ResidentDispatchStep, ResidentReadRange,
+    ResidentStaticBufferSet,
+};
 use super::encode::{apply_live_bitset_mask, encode_program, ROOT_GRAPH_ID};
 use super::expr_arena::encode_expr_arena;
 use super::pattern_match_via_encoded::build_pattern_match_program_with_cse;
+use super::pipeline_resident_decode::{
+    apply_combined_arena_deltas_bitsets, build_resident_delta_bitset_pack_program,
+};
+
+const RESIDENT_CACHE_DOMAIN_PIPELINE_ARENA_RO: u64 = 0x5659_5245_4152_4f31;
+const RESIDENT_CACHE_DOMAIN_PIPELINE_DCE_RO: u64 = 0x5659_5245_4443_4531;
 
 /// Errors surfaced by the persistent pipeline.
 #[derive(Debug)]
@@ -116,7 +125,7 @@ pub fn gpu_pipeline_resident(
     }
 
     // ---- Allocate resident handles for the arena passes ------------
-    // Shared RO across canon + const-fold + pattern-match.
+    // Shared immutable RO across canon + const-fold + pattern-match.
     let kinds_bytes = u32_slice_to_le_bytes(&arena.kinds);
     let arg0_bytes = u32_slice_to_le_bytes(&arena.arg0);
     let arg1_bytes = u32_slice_to_le_bytes(&arena.arg1);
@@ -132,38 +141,56 @@ pub fn gpu_pipeline_resident(
     // Pre-allocated here so the pattern-match dispatch can consume the
     // canonical buffer without re-allocating.
     let table_capacity = n.saturating_mul(CANONICAL_TABLE_MULT).max(2);
-    let table_init: Vec<u8> = (0..table_capacity)
-        .flat_map(|_| u32::MAX.to_le_bytes())
-        .collect();
-    let arena_payloads: [&[u8]; 13] = [
+    let table_init_byte_len = table_capacity as usize * 4;
+    let bitset_words_len = bitset_words(n) as usize;
+    let bitset_byte_len = bitset_words_len
+        .checked_mul(std::mem::size_of::<u32>())
+        .ok_or_else(|| {
+            PipelineError::Dispatch(DispatchError::BackendError(format!(
+                "Fix: pipeline_resident compact arena bitset byte count overflows usize for expr_count={n}."
+            )))
+        })?;
+    let arena_static_payloads: [&[u8]; 6] = [
         &kinds_bytes,
         &arg0_bytes,
         &arg1_bytes,
         &arg2_bytes,
         &depths_bytes,
         &max_depth_bytes,
-        &zero_n,
-        &zero_n,
-        &zero_n,
-        &zero_n,
-        &zero_n,
-        &zero_n,
-        &table_init,
     ];
-    let arena_handles = alloc_many(dispatcher, &arena_payloads)?;
-    let kinds_h = arena_handles[0];
-    let arg0_h = arena_handles[1];
-    let arg1_h = arena_handles[2];
-    let arg2_h = arena_handles[3];
-    let depths_h = arena_handles[4];
-    let max_depth_h = arena_handles[5];
-    let swap_mask_h = arena_handles[6];
-    let foldable_h = arena_handles[7];
-    let value_h = arena_handles[8];
-    let rewrite_action_h = arena_handles[9];
-    let hash_h = arena_handles[10];
-    let canonical_h = arena_handles[11];
-    let table_canonical_h = arena_handles[12];
+    let arena_static = acquire_static_uploads(
+        dispatcher,
+        RESIDENT_CACHE_DOMAIN_PIPELINE_ARENA_RO,
+        &arena_static_payloads,
+        "pipeline_resident arena read-only cache",
+    )?;
+    let arena_mutable_lens: [usize; 9] = [
+        zero_n.len(),
+        zero_n.len(),
+        zero_n.len(),
+        zero_n.len(),
+        zero_n.len(),
+        zero_n.len(),
+        table_init_byte_len,
+        bitset_byte_len,
+        bitset_byte_len,
+    ];
+    let arena_mutable_handles = alloc_many_lens(dispatcher, &arena_mutable_lens)?;
+    let kinds_h = arena_static.handles[0];
+    let arg0_h = arena_static.handles[1];
+    let arg1_h = arena_static.handles[2];
+    let arg2_h = arena_static.handles[3];
+    let depths_h = arena_static.handles[4];
+    let max_depth_h = arena_static.handles[5];
+    let swap_mask_h = arena_mutable_handles[0];
+    let foldable_h = arena_mutable_handles[1];
+    let value_h = arena_mutable_handles[2];
+    let rewrite_action_h = arena_mutable_handles[3];
+    let hash_h = arena_mutable_handles[4];
+    let canonical_h = arena_mutable_handles[5];
+    let table_canonical_h = arena_mutable_handles[6];
+    let swap_bits_h = arena_mutable_handles[7];
+    let fold_bits_h = arena_mutable_handles[8];
 
     let arena_pass_workgroup_x: u32 = 256;
     let grid_x = (n + arena_pass_workgroup_x - 1) / arena_pass_workgroup_x;
@@ -192,6 +219,7 @@ pub fn gpu_pipeline_resident(
     // matching hash. Acceptable up to n ≈ 5000 on RTX 5090.
     let canonical_program = build_canonical_id_program(n, table_capacity);
     let pattern_program = build_pattern_match_program_with_cse(n);
+    let delta_bitset_program = build_resident_delta_bitset_pack_program(n);
     let canon_handles = [kinds_h, arg0_h, arg1_h, arg2_h, swap_mask_h];
     let const_fold_handles = [
         kinds_h,
@@ -221,8 +249,9 @@ pub fn gpu_pipeline_resident(
         rewrite_action_h,
         canonical_h,
     ];
-    let mut swap_mask = Vec::with_capacity(n as usize);
-    let mut foldable = Vec::with_capacity(n as usize);
+    let delta_bitset_handles = [swap_mask_h, foldable_h, swap_bits_h, fold_bits_h];
+    let mut swap_bits = Vec::with_capacity(bitset_words_len);
+    let mut fold_bits = Vec::with_capacity(bitset_words_len);
     let mut value = Vec::with_capacity(n as usize);
     let mut rewrite_action = Vec::with_capacity(n as usize);
     let mut canonical = Vec::with_capacity(n as usize);
@@ -253,49 +282,63 @@ pub fn gpu_pipeline_resident(
             handle_ids: &pattern_handles,
             grid_override: grid,
         },
+        ResidentDispatchStep {
+            program: &delta_bitset_program,
+            handle_ids: &delta_bitset_handles,
+            grid_override: grid,
+        },
     ];
-    let arena_uploads = arena_handles
-        .iter()
-        .copied()
-        .zip(arena_payloads.iter().copied())
-        .collect::<Vec<_>>();
-    upload_resident_sequence_read_u32_many_exact(
+    let arena_fills = [
+        (swap_mask_h, zero_n.len(), 0),
+        (foldable_h, zero_n.len(), 0),
+        (value_h, zero_n.len(), 0),
+        (rewrite_action_h, zero_n.len(), 0),
+        (hash_h, zero_n.len(), 0),
+        (canonical_h, zero_n.len(), 0),
+        (table_canonical_h, table_init_byte_len, 0xFF),
+        (swap_bits_h, bitset_byte_len, 0),
+        (fold_bits_h, bitset_byte_len, 0),
+    ];
+    let arena_result = upload_resident_sequence_read_u32_ranges_exact(
         dispatcher,
-        &arena_uploads,
+        &arena_fills,
+        &[],
         &arena_steps,
         &[
-            (swap_mask_h, n as usize, "pipeline_resident swap_mask"),
-            (foldable_h, n as usize, "pipeline_resident foldable"),
-            (value_h, n as usize, "pipeline_resident value"),
+            (
+                swap_bits_h,
+                0,
+                bitset_words_len,
+                "pipeline_resident swap_bits",
+            ),
+            (
+                fold_bits_h,
+                0,
+                bitset_words_len,
+                "pipeline_resident fold_bits",
+            ),
+            (value_h, 0, n as usize, "pipeline_resident value"),
             (
                 rewrite_action_h,
+                0,
                 n as usize,
                 "pipeline_resident rewrite_action",
             ),
-            (canonical_h, n as usize, "pipeline_resident canonical"),
+            (canonical_h, 0, n as usize, "pipeline_resident canonical"),
         ],
         &mut [
-            &mut swap_mask,
-            &mut foldable,
+            &mut swap_bits,
+            &mut fold_bits,
             &mut value,
             &mut rewrite_action,
             &mut canonical,
         ],
         &mut byte_readbacks,
-    )
-    .map_err(PipelineError::Dispatch)?;
+    );
     if trace {
         eprintln!("[pl] arena_sequence_read: {} us", t.elapsed().as_micros());
     }
-
-    // Free the arena-pass handles (including CSE scratch).
     for h in [
-        kinds_h,
-        arg0_h,
-        arg1_h,
-        arg2_h,
-        depths_h,
-        max_depth_h,
         swap_mask_h,
         foldable_h,
         value_h,
@@ -303,16 +346,21 @@ pub fn gpu_pipeline_resident(
         hash_h,
         canonical_h,
         table_canonical_h,
+        swap_bits_h,
+        fold_bits_h,
     ] {
         let _ = dispatcher.free_resident(h);
     }
+    let arena_release = dispatcher.release_resident_static_uploads(arena_static);
+    arena_result.map_err(PipelineError::Dispatch)?;
+    arena_release.map_err(PipelineError::Dispatch)?;
 
     // ---- Apply combined deltas to produce the post-arena Program ---
     t = std::time::Instant::now();
-    let post_arena = super::pipeline_resident_decode::apply_combined_arena_deltas(
+    let post_arena = apply_combined_arena_deltas_bitsets(
         &program,
-        &swap_mask,
-        &foldable,
+        &swap_bits,
+        &fold_bits,
         &value,
         &rewrite_action,
     );
@@ -325,13 +373,13 @@ pub fn gpu_pipeline_resident(
     // whose value-Expr is structurally equivalent to an earlier Let
     // in the same scope (per `canonical`), replaces the value with
     // `Var(orig_let_name)`. Pure CPU walk on the post-arena Program
-    // — the canonical map describes the original arena's Expr
+    //  -  the canonical map describes the original arena's Expr
     // equivalence classes, but Let-RHS structure (and the
     // node_top_level_exprs index) is preserved by all the
     // arena-level rewrites that come before this point, so the
     // canonical lookup remains valid.
     t = std::time::Instant::now();
-    let post_dedupe = apply_cse_let_dedupe(&post_arena, &arena, &canonical);
+    let post_dedupe = apply_cse_let_dedupe_with_lookup(&post_arena, &arena, canonical.as_slice());
     if trace {
         eprintln!("[pl] cse_let_dedupe: {} us", t.elapsed().as_micros());
     }
@@ -342,8 +390,11 @@ pub fn gpu_pipeline_resident(
     // at the scope start. Generalizes past `apply_cse_let_dedupe`
     // which only handled `let`-RHS pairs.
     t = std::time::Instant::now();
-    let post_cross =
-        super::cross_scope_cse::apply_cross_scope_cse(&post_dedupe, &arena, &canonical);
+    let post_cross = super::cross_scope_cse::apply_cross_scope_cse_with_lookup(
+        &post_dedupe,
+        &arena,
+        canonical.as_slice(),
+    );
     if trace {
         eprintln!("[pl] cross_scope_cse: {} us", t.elapsed().as_micros());
     }
@@ -394,19 +445,15 @@ pub fn gpu_pipeline_resident(
     r
 }
 
-fn alloc_many(
+fn alloc_many_lens(
     dispatcher: &dyn OptimizerDispatcher,
-    payloads: &[&[u8]],
+    byte_lens: &[usize],
 ) -> Result<Vec<u64>, PipelineError> {
-    payloads
-        .iter()
-        .map(|bytes| {
-            dispatcher
-                .alloc_resident(bytes.len())
-                .map_err(PipelineError::Dispatch)
-        })
-        .collect::<Result<Vec<_>, _>>()
+    dispatcher
+        .alloc_resident_many(byte_lens)
+        .map_err(PipelineError::Dispatch)
 }
+
 
 fn run_dce_resident(
     program: Program,
@@ -448,25 +495,36 @@ fn run_dce_resident(
     let seed_bytes = u32_slice_to_le_bytes(&seed);
     let frontier_out_bytes = vec![0u8; words.max(1) * 4];
     let changed_bytes = [0u8; 4];
-    let dce_payloads: [&[u8]; 8] = [
+    let dce_static_payloads: [&[u8]; 6] = [
         &nodes_bytes,
         &edge_offsets_bytes,
         &edge_targets_bytes,
         &edge_kind_bytes,
         &node_tags_bytes,
         &seed_bytes,
-        &frontier_out_bytes,
-        &changed_bytes,
     ];
-    let dce_handles = alloc_many_d(dispatcher, &dce_payloads)?;
-    let nodes_h = dce_handles[0];
-    let edge_offsets_h = dce_handles[1];
-    let edge_targets_h = dce_handles[2];
-    let edge_kind_h = dce_handles[3];
-    let node_tags_h = dce_handles[4];
-    let frontier_in_h = dce_handles[5];
-    let frontier_out_h = dce_handles[6];
-    let changed_h = dce_handles[7];
+    let dce_static = acquire_static_uploads(
+        dispatcher,
+        RESIDENT_CACHE_DOMAIN_PIPELINE_DCE_RO,
+        &dce_static_payloads,
+        "pipeline_resident DCE read-only cache",
+    )
+    .map_err(|err| match err {
+        PipelineError::Dispatch(dispatch) => dispatch,
+        PipelineError::Encode(_) | PipelineError::LimitViolation(_) => DispatchError::BackendError(
+            "Fix: DCE resident static upload surfaced a non-dispatch pipeline error.".to_string(),
+        ),
+    })?;
+    let dce_mutable_payloads: [&[u8]; 2] = [&frontier_out_bytes, &changed_bytes];
+    let dce_mutable_handles = alloc_many_d(dispatcher, &dce_mutable_payloads)?;
+    let nodes_h = dce_static.handles[0];
+    let edge_offsets_h = dce_static.handles[1];
+    let edge_targets_h = dce_static.handles[2];
+    let edge_kind_h = dce_static.handles[3];
+    let node_tags_h = dce_static.handles[4];
+    let frontier_in_h = dce_static.handles[5];
+    let frontier_out_h = dce_mutable_handles[0];
+    let changed_h = dce_mutable_handles[1];
 
     let shape = ProgramGraphShape::new(encoded.node_count, encoded.edge_count);
     // Optimizer-tailored DCE BFS: same buffer/binding layout as
@@ -504,33 +562,27 @@ fn run_dce_resident(
         handle_ids: &dce_step_handles,
         grid_override: Some([dce_grid_x, 1, 1]),
     }];
-    let dce_uploads = dce_handles
-        .iter()
-        .copied()
-        .zip(dce_payloads.iter().copied())
-        .collect::<Vec<_>>();
+    let dce_fills = [
+        (frontier_out_h, frontier_out_bytes.len(), 0),
+        (changed_h, changed_bytes.len(), 0),
+    ];
     let mut byte_readbacks = Vec::with_capacity(1);
-    upload_resident_sequence_read_u32_many_exact(
+    let dce_result = upload_resident_sequence_read_u32_many_exact(
         dispatcher,
-        &dce_uploads,
+        &dce_fills,
+        &[],
         &dce_steps,
         &[(frontier_out_h, words, "pipeline_resident DCE frontier_out")],
         &mut [&mut frontier_out],
         &mut byte_readbacks,
-    )?;
+    );
 
-    for h in [
-        nodes_h,
-        edge_offsets_h,
-        edge_targets_h,
-        edge_kind_h,
-        node_tags_h,
-        frontier_in_h,
-        frontier_out_h,
-        changed_h,
-    ] {
+    for h in [frontier_out_h, changed_h] {
         let _ = dispatcher.free_resident(h);
     }
+    let dce_release = dispatcher.release_resident_static_uploads(dce_static);
+    dce_result?;
+    dce_release?;
 
     Ok(apply_live_bitset_mask(&program, &encoded, &frontier_out))
 }
@@ -539,10 +591,38 @@ fn alloc_many_d(
     dispatcher: &dyn OptimizerDispatcher,
     payloads: &[&[u8]],
 ) -> Result<Vec<u64>, DispatchError> {
-    payloads
-        .iter()
-        .map(|bytes| dispatcher.alloc_resident(bytes.len()))
-        .collect::<Result<Vec<_>, _>>()
+    let mut byte_lens = Vec::new();
+    byte_lens.try_reserve(payloads.len()).map_err(|error| {
+        DispatchError::BackendError(format!(
+            "Fix: reserve DCE resident mutable byte lengths before allocation; requested {} payload(s): {error}.",
+            payloads.len()
+        ))
+    })?;
+    for payload in payloads {
+        byte_lens.push(payload.len());
+    }
+    dispatcher.alloc_resident_many(&byte_lens)
+}
+
+fn acquire_static_uploads(
+    dispatcher: &dyn OptimizerDispatcher,
+    cache_domain: u64,
+    payloads: &[&[u8]],
+    context: &str,
+) -> Result<ResidentStaticBufferSet, PipelineError> {
+    let set = dispatcher
+        .acquire_resident_static_uploads(cache_domain, payloads)
+        .map_err(PipelineError::Dispatch)?;
+    if set.handles.len() != payloads.len() {
+        return Err(PipelineError::Dispatch(DispatchError::BackendError(
+            format!(
+                "Fix: {context} returned {} handle(s) for {} immutable payload(s).",
+                set.handles.len(),
+                payloads.len()
+            ),
+        )));
+    }
+    Ok(set)
 }
 
 #[cfg(test)]
@@ -559,6 +639,7 @@ fn read_resident_u32_exact(
 
 fn upload_resident_sequence_read_u32_many_exact(
     dispatcher: &dyn OptimizerDispatcher,
+    fills: &[(u64, usize, u8)],
     uploads: &[(u64, &[u8])],
     steps: &[ResidentDispatchStep<'_>],
     requests: &[(u64, usize, &str)],
@@ -576,7 +657,8 @@ fn upload_resident_sequence_read_u32_many_exact(
         .iter()
         .map(|(handle, _, _)| *handle)
         .collect::<Vec<_>>();
-    dispatcher.upload_resident_many_sequence_read_many_into(
+    dispatcher.fill_upload_resident_many_sequence_read_many_into(
+        fills,
         uploads,
         steps,
         &handles,
@@ -590,6 +672,67 @@ fn upload_resident_sequence_read_u32_many_exact(
         )));
     }
     for ((bytes, (_, expected_words, context)), out) in byte_outputs
+        .iter()
+        .zip(requests.iter())
+        .zip(outputs.iter_mut())
+    {
+        decode_u32_output_exact(bytes, *expected_words, context, out)?;
+    }
+    Ok(())
+}
+
+fn upload_resident_sequence_read_u32_ranges_exact(
+    dispatcher: &dyn OptimizerDispatcher,
+    fills: &[(u64, usize, u8)],
+    uploads: &[(u64, &[u8])],
+    steps: &[ResidentDispatchStep<'_>],
+    requests: &[(u64, usize, usize, &str)],
+    outputs: &mut [&mut Vec<u32>],
+    byte_outputs: &mut Vec<Vec<u8>>,
+) -> Result<(), DispatchError> {
+    if requests.len() != outputs.len() {
+        return Err(DispatchError::BadInputs(format!(
+            "Fix: resident sequence range readback expected matching request/output counts but got {} request(s) and {} output slot(s).",
+            requests.len(),
+            outputs.len()
+        )));
+    }
+    let mut ranges = Vec::new();
+    ranges.try_reserve(requests.len()).map_err(|error| {
+        DispatchError::BackendError(format!(
+            "Fix: reserve resident sequence range readback descriptors for {} request(s): {error}.",
+            requests.len()
+        ))
+    })?;
+    for &(handle_id, byte_offset, expected_words, _) in requests {
+        let byte_len = expected_words
+            .checked_mul(std::mem::size_of::<u32>())
+            .ok_or_else(|| {
+                DispatchError::BadInputs(format!(
+                    "Fix: resident sequence range readback byte length overflows for handle {handle_id} word count {expected_words}."
+                ))
+            })?;
+        ranges.push(ResidentReadRange {
+            handle_id,
+            byte_offset,
+            byte_len,
+        });
+    }
+    dispatcher.fill_upload_resident_many_sequence_read_ranges_into(
+        fills,
+        uploads,
+        steps,
+        &ranges,
+        byte_outputs,
+    )?;
+    if byte_outputs.len() != requests.len() {
+        return Err(DispatchError::BadInputs(format!(
+            "Fix: resident sequence range readback returned {} byte output(s) for {} request(s).",
+            byte_outputs.len(),
+            requests.len()
+        )));
+    }
+    for ((bytes, (_, _, expected_words, context)), out) in byte_outputs
         .iter()
         .zip(requests.iter())
         .zip(outputs.iter_mut())
@@ -632,7 +775,7 @@ mod tests {
         let mut out = Vec::with_capacity(4);
         let ptr = out.as_ptr();
         read_resident_u32_exact(&dispatcher, 7, 2, "resident test", &mut out)
-            .expect("readback succeeds");
+            .expect("Fix: readback succeeds");
         assert_eq!(out, vec![3, 5]);
         assert_eq!(out.as_ptr(), ptr);
     }
@@ -651,3 +794,4 @@ mod tests {
         );
     }
 }
+

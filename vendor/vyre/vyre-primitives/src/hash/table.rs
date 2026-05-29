@@ -1,12 +1,13 @@
 //! GPU-native lock-free hash table primitives.
 //!
 //! Tier 2.5 LEGO components returning `Vec<Node>` fragments.
-//! Program construction and harness registration belong in `vyre-libs`.
+//! Program construction and harness registration belong to higher-level
+//! composition crates that choose table shape and dispatch policy.
 
 use vyre_foundation::ir::{Expr, Node};
 use vyre_foundation::MemoryOrdering;
 
-use super::fnv1a::{FNV1A32_OFFSET, FNV1A32_PRIME};
+use super::fnv1a::{fnv1a32_initial_expr, fnv1a32_update_byte_expr};
 
 /// Empty key sentinel for the in-place hash table representation.
 ///
@@ -172,17 +173,16 @@ fn fnv1a32_u32_expr(value: Expr) -> Expr {
     let byte1 = Expr::bitand(Expr::shr(value.clone(), Expr::u32(8)), Expr::u32(0xFF));
     let byte2 = Expr::bitand(Expr::shr(value.clone(), Expr::u32(16)), Expr::u32(0xFF));
     let byte3 = Expr::bitand(Expr::shr(value, Expr::u32(24)), Expr::u32(0xFF));
-    fnv1a32_step(
-        fnv1a32_step(
-            fnv1a32_step(fnv1a32_step(Expr::u32(FNV1A32_OFFSET), byte0), byte1),
+    fnv1a32_update_byte_expr(
+        fnv1a32_update_byte_expr(
+            fnv1a32_update_byte_expr(
+                fnv1a32_update_byte_expr(fnv1a32_initial_expr(), byte0),
+                byte1,
+            ),
             byte2,
         ),
         byte3,
     )
-}
-
-fn fnv1a32_step(hash: Expr, byte: Expr) -> Expr {
-    Expr::mul(Expr::bitxor(hash, byte), Expr::u32(FNV1A32_PRIME))
 }
 
 #[cfg(test)]
@@ -208,6 +208,23 @@ mod tests {
         assert!(
             !dbg.contains("vyre-primitives::crypto::fnv1a"),
             "Fix: hash_insert must not call a fake hash op id: {dbg}"
+        );
+    }
+
+    #[test]
+    fn table_hash_uses_canonical_fnv1a_helper_expression() {
+        let source = include_str!("table.rs");
+        assert!(
+            source.contains("fnv1a32_update_byte_expr"),
+            "Fix: hash table fragments must reuse the canonical FNV-1a32 helper."
+        );
+        assert!(
+            !source.contains(concat!("FNV1A32", "_PRIME")),
+            "Fix: hash table fragments must not fork FNV-1a32 constants."
+        );
+        assert!(
+            !source.contains(concat!("fn ", "fnv1a32_step")),
+            "Fix: hash table fragments must not carry a private FNV-1a32 step."
         );
     }
 

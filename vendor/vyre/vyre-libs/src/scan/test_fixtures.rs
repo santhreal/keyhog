@@ -5,21 +5,21 @@
 //! tests live in separate target binaries and can't share a private
 //! `tests/common.rs` without path attributes. Exposing the
 //! fixtures behind a feature flag keeps the public API surface
-//! explicit, lets downstream consumers (secret-scanning consumer tests, conformance
-//! harness, benchmark suites) reuse the *exact* corpus our regression
-//! tests use, and avoids accidental drift between "the fixtures the
-//! tests use" and "the fixtures secret-scanning consumer smoke-tests against."
+//! explicit, lets downstream consumers (scanner tests, conformance harness,
+//! benchmark suites) reuse the *exact* corpus our regression tests use, and
+//! avoids accidental drift between "the fixtures the tests use" and "the
+//! fixtures downstream smoke-tests against."
 //!
 //! Compiled in two contexts:
 //!
-//! 1. `#[cfg(test)]` — always available to in-tree tests.
-//! 2. `feature = "test-fixtures"` — exported to downstream crates that
+//! 1. `#[cfg(test)]`  -  always available to in-tree tests.
+//! 2. `feature = "test-fixtures"`  -  exported to downstream crates that
 //!    opt in.
 //!
 //! The fixtures are tiny by design. Production detector corpora belong in
 //! dedicated corpus modules so small parity tests stay fast and readable.
 
-/// Canonical AWS Access Key ID literal — used in nearly every parity,
+/// Canonical AWS Access Key ID literal  -  used in nearly every parity,
 /// cache, and dedup test as the "obvious-hit" payload.
 pub const AKIA_LITERAL: &[u8] = b"AKIA";
 
@@ -32,7 +32,7 @@ pub const GHP_PREFIX: &[u8] = b"ghp_";
 /// confirm the same `(pattern, start, end)` triples.
 pub const MIXED_HAYSTACK: &[u8] = b"foo AKIA bar ghp_test baz";
 
-/// A long synthesised haystack — 32 repetitions of the mixed pattern.
+/// A long synthesised haystack  -  32 repetitions of the mixed pattern.
 /// Used by parity-on-large-input tests where the literal-set DFA is
 /// expected to keep up over many KB.
 #[must_use]
@@ -71,7 +71,7 @@ pub fn canonical_regex_set() -> (&'static [&'static str], &'static [u8]) {
     (PATTERNS, HAYSTACK)
 }
 
-/// 200 realistic detector pattern bytestrings — the same corpus the
+/// 200 realistic detector pattern bytestrings  -  the same corpus the
 /// `cache_key_collision` integration test runs against. Kept in this
 /// module so future cache-key contracts can exercise the same
 /// production-shaped input set without duplicating the array.

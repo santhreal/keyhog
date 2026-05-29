@@ -133,11 +133,11 @@ fn classify_typedef_vast_unfused(
         }
         scoped_vast_blob.to_vec()
     } else {
-        let annotate_key = super::stage_pipeline_cache_key(
-            "c11_annotate_typedef_names",
-            &[
-                haystack_len.max(1) as u64,
-                vast_count.max(1) as u64,
+    let annotate_key = super::stage_pipeline_cache_key(
+        "c11_annotate_typedef_names",
+        &[
+            haystack_len.max(1) as u64,
+            vast_count.max(1) as u64,
                 packed_haystack as u64,
                 global_typedef_count as u64,
             ],
@@ -150,6 +150,7 @@ fn classify_typedef_vast_unfused(
         } else {
             &annotate_normal_inputs
         };
+        scratch.annotate_outputs.clear();
         super::dispatch_borrowed_stage_cached_into(
             backend,
             annotate_key,
@@ -171,7 +172,10 @@ fn classify_typedef_vast_unfused(
         )
         .map_err(|error| format!("c11_annotate_typedef_names dispatch failed: {error}"))?;
         log("dispatch c11_annotate_typedef_names");
-        take_exact_scratch_output("c11_annotate_typedef_names", &mut scratch.annotate_outputs)?
+        super::buffers::take_exact_output(
+            "c11_annotate_typedef_names",
+            &mut scratch.annotate_outputs,
+        )?
     };
     cfg.label = Some(format!("vyre-frontend-c vast-classify {}", path.display()));
     let classify_key = super::stage_pipeline_cache_key(
@@ -182,23 +186,25 @@ fn classify_typedef_vast_unfused(
         eprintln!("[stage-trace] typedef/classify dispatching classify vast_count={vast_count}");
     }
     let classify_inputs = [annotated_vast.as_slice(), decl_context_blob];
-    super::dispatch_borrowed_stage_cached_into(
+    let classify_prog =
+        super::buffers::mark_program_outputs(classify_program(vast_count), &["typed_vast_nodes"]);
+    super::validate_internal_stage(&classify_prog, "c11_classify_vast_node_kinds")?;
+    let previous_workgroup_override = cfg.workgroup_override;
+    cfg.workgroup_override = Some(classify_prog.workgroup_size());
+    scratch.classify_outputs.clear();
+    let classify_dispatch = super::dispatch_borrowed_stage_cached_into(
         backend,
         classify_key,
-        || {
-            let classify_prog = classify_program(vast_count);
-            let classify_prog =
-                super::buffers::mark_program_outputs(classify_prog, &["typed_vast_nodes"]);
-            super::validate_internal_stage(&classify_prog, "c11_classify_vast_node_kinds")?;
-            Ok(classify_prog)
-        },
+        || Ok(classify_prog),
         &classify_inputs,
         cfg,
         &mut scratch.classify_outputs,
-    )
-    .map_err(|error| format!("c11_classify_vast_node_kinds dispatch failed: {error}"))?;
+    );
+    cfg.workgroup_override = previous_workgroup_override;
+    classify_dispatch
+        .map_err(|error| format!("c11_classify_vast_node_kinds dispatch failed: {error}"))?;
     log("dispatch c11_classify_vast_node_kinds");
-    take_exact_scratch_output(
+    super::buffers::take_exact_output(
         "c11_classify_vast_node_kinds",
         &mut scratch.classify_outputs,
     )
@@ -250,6 +256,7 @@ fn classify_typedef_vast_fused_or_unfused(
             } else {
                 &fusion_normal_inputs
             };
+            scratch.fused_outputs.clear();
             match super::dispatch_borrowed_cached_into(
                 backend,
                 &fused,
@@ -353,16 +360,4 @@ fn classify_program(vast_count: u32) -> vyre::ir::Program {
         Expr::u32(vast_count.max(1)),
         "typed_vast_nodes",
     )
-}
-
-fn take_exact_scratch_output(stage: &str, outputs: &mut Vec<Vec<u8>>) -> Result<Vec<u8>, String> {
-    if outputs.len() != 1 {
-        return Err(format!(
-            "{stage} returned {} output buffer(s), expected exactly 1. Fix: backend must return the declared stage output only.",
-            outputs.len()
-        ));
-    }
-    let mut output = Vec::new();
-    mem::swap(&mut output, &mut outputs[0]);
-    Ok(output)
 }

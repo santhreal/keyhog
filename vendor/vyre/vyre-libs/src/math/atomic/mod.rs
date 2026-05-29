@@ -77,15 +77,176 @@ macro_rules! register_atomic_cas_op {
     };
 }
 
-pub mod atomic_add;
-pub mod atomic_and;
+macro_rules! define_atomic_serial_module {
+    (
+        $fn_name:ident,
+        $op_id:literal,
+        $atomic_op:ident,
+        $oracle:ident,
+        $values:expr,
+        $initial:expr,
+        $final_state:expr,
+        $trace:expr
+    ) => {
+        use vyre::ir::Program;
+
+        const OP_ID: &str = $op_id;
+
+        /// Sequential atomic operation over `values[0..n]` into one-slot `state`.
+        #[must_use]
+        pub fn $fn_name(values: &str, state: &str, trace: &str, n: u32) -> Program {
+            super::build_atomic_serial(
+                OP_ID,
+                vyre::ir::AtomicOp::$atomic_op,
+                values,
+                state,
+                trace,
+                n,
+            )
+        }
+
+        inventory::submit! {
+            crate::harness::OpEntry {
+                id: OP_ID,
+                build: || $fn_name("values", "state", "trace", 4),
+                test_inputs: Some(|| {
+                    let to_bytes = vyre_primitives::wire::pack_u32_slice;
+                    let values: &[u32] = &$values;
+                    vec![vec![to_bytes(values), to_bytes(&[$initial])]]
+                }),
+                expected_output: Some(|| {
+                    let to_bytes = vyre_primitives::wire::pack_u32_slice;
+                    let trace: &[u32] = &$trace;
+                    vec![vec![to_bytes(&[$final_state]), to_bytes(trace)]]
+                }),
+                category: Some("math"),
+            }
+        }
+
+        register_atomic_serial_op!(OP_ID, || $fn_name("values", "state", "trace", 4));
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+            use crate::math::atomic::testutil::{assert_serial_matches, SerialAtomicOracle};
+
+            #[test]
+            fn fixture_matches_serial_oracle() {
+                let values: &[u32] = &$values;
+                let program = $fn_name("values", "state", "trace", values.len() as u32);
+                assert_serial_matches(&program, SerialAtomicOracle::$oracle, values, $initial);
+            }
+
+            #[test]
+            fn single_value_matches_serial_oracle() {
+                let values: &[u32] = &$values;
+                let single = [values[0]];
+                let program = $fn_name("values", "state", "trace", 1);
+                assert_serial_matches(&program, SerialAtomicOracle::$oracle, &single, $initial);
+            }
+        }
+    };
+}
+
+/// Cat-B atomic-add composition.
+pub mod atomic_add {
+    define_atomic_serial_module!(
+        atomic_add_u32,
+        "vyre-libs::math::atomic::atomic_add_u32",
+        Add,
+        Add,
+        [1u32, 5, u32::MAX, 3],
+        7u32,
+        15u32,
+        [7u32, 8, 13, 12]
+    );
+}
+
+/// Cat-B atomic-AND composition.
+pub mod atomic_and {
+    define_atomic_serial_module!(
+        atomic_and_u32,
+        "vyre-libs::math::atomic::atomic_and_u32",
+        And,
+        And,
+        [0xFFu32, 0xF0, 0x0F, 0x33],
+        u32::MAX,
+        0x00u32,
+        [u32::MAX, 0xFF, 0xF0, 0x00]
+    );
+}
+
 pub mod atomic_compare_exchange;
-pub mod atomic_exchange;
+/// Cat-B atomic-exchange composition.
+pub mod atomic_exchange {
+    define_atomic_serial_module!(
+        atomic_exchange_u32,
+        "vyre-libs::math::atomic::atomic_exchange_u32",
+        Exchange,
+        Exchange,
+        [100u32, 200, 300, 400],
+        42u32,
+        400u32,
+        [42u32, 100, 200, 300]
+    );
+}
+
 pub mod atomic_lru_update;
-pub mod atomic_max;
-pub mod atomic_min;
-pub mod atomic_or;
-pub mod atomic_xor;
+/// Cat-B atomic-max composition.
+pub mod atomic_max {
+    define_atomic_serial_module!(
+        atomic_max_u32,
+        "vyre-libs::math::atomic::atomic_max_u32",
+        Max,
+        Max,
+        [50u32, 20, 80, 10],
+        0u32,
+        80u32,
+        [0u32, 50, 50, 80]
+    );
+}
+
+/// Cat-B atomic-min composition.
+pub mod atomic_min {
+    define_atomic_serial_module!(
+        atomic_min_u32,
+        "vyre-libs::math::atomic::atomic_min_u32",
+        Min,
+        Min,
+        [50u32, 20, 80, 10],
+        100u32,
+        10u32,
+        [100u32, 50, 20, 20]
+    );
+}
+
+/// Cat-B atomic-OR composition.
+pub mod atomic_or {
+    define_atomic_serial_module!(
+        atomic_or_u32,
+        "vyre-libs::math::atomic::atomic_or_u32",
+        Or,
+        Or,
+        [0x01u32, 0x02, 0x04, 0x08],
+        0u32,
+        0x0Fu32,
+        [0u32, 1, 3, 7]
+    );
+}
+
+/// Cat-B atomic-XOR composition.
+pub mod atomic_xor {
+    define_atomic_serial_module!(
+        atomic_xor_u32,
+        "vyre-libs::math::atomic::atomic_xor_u32",
+        Xor,
+        Xor,
+        [0xF0u32, 0x0F, 0xFF, 0x55],
+        0u32,
+        0x55u32,
+        [0u32, 0xF0, 0xFF, 0x00]
+    );
+}
 
 pub use atomic_add::atomic_add_u32;
 pub use atomic_and::atomic_and_u32;
@@ -206,8 +367,56 @@ pub(crate) fn build_atomic_compare_exchange(
 pub(crate) mod testutil {
     use vyre_reference::value::Value;
 
-    pub(crate) fn pack_u32(words: &[u32]) -> Vec<u8> {
-        words.iter().flat_map(|w| w.to_le_bytes()).collect()
+    pub(crate) use crate::scan::dispatch_io::pack_u32_slice as pack_u32;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(crate) enum SerialAtomicOracle {
+        Add,
+        And,
+        Exchange,
+        Max,
+        Min,
+        Or,
+        Xor,
+    }
+
+    impl SerialAtomicOracle {
+        fn apply(self, state: u32, value: u32) -> u32 {
+            match self {
+                Self::Add => state.wrapping_add(value),
+                Self::And => state & value,
+                Self::Exchange => value,
+                Self::Max => state.max(value),
+                Self::Min => state.min(value),
+                Self::Or => state | value,
+                Self::Xor => state ^ value,
+            }
+        }
+    }
+
+    pub(crate) fn cpu_serial(
+        kind: SerialAtomicOracle,
+        values: &[u32],
+        initial_state: u32,
+    ) -> (u32, Vec<u32>) {
+        let mut state = initial_state;
+        let mut trace = Vec::with_capacity(values.len());
+        for &value in values {
+            trace.push(state);
+            state = kind.apply(state, value);
+        }
+        (state, trace)
+    }
+
+    pub(crate) fn assert_serial_matches(
+        program: &vyre::ir::Program,
+        kind: SerialAtomicOracle,
+        values: &[u32],
+        initial_state: u32,
+    ) {
+        let gpu_like = run_serial(program, values, initial_state);
+        let expected = cpu_serial(kind, values, initial_state);
+        assert_eq!(gpu_like, expected);
     }
 
     pub(crate) fn run_serial(
@@ -224,17 +433,10 @@ pub(crate) mod testutil {
         let outputs = vyre_reference::reference_eval(program, &inputs)
             .expect("Fix: atomic op must run; restore this invariant before continuing.");
         let state_bytes = outputs[0].to_bytes();
-        let state = u32::from_le_bytes([
-            state_bytes[0],
-            state_bytes[1],
-            state_bytes[2],
-            state_bytes[3],
-        ]);
+        let state = vyre_primitives::wire::read_u32_le_word(&state_bytes, 0, "atomic state")
+            .expect("Fix: atomic state output must contain one u32.");
         let trace_bytes = outputs[1].to_bytes();
-        let trace = trace_bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect::<Vec<_>>();
+        let trace = vyre_primitives::wire::decode_u32_le_bytes_all(&trace_bytes);
         (state, trace)
     }
 
@@ -254,17 +456,96 @@ pub(crate) mod testutil {
         let outputs = vyre_reference::reference_eval(program, &inputs)
             .expect("Fix: cas op must run; restore this invariant before continuing.");
         let state_bytes = outputs[0].to_bytes();
-        let state = u32::from_le_bytes([
-            state_bytes[0],
-            state_bytes[1],
-            state_bytes[2],
-            state_bytes[3],
-        ]);
+        let state = vyre_primitives::wire::read_u32_le_word(&state_bytes, 0, "cas state")
+            .expect("Fix: CAS state output must contain one u32.");
         let trace_bytes = outputs[1].to_bytes();
-        let trace = trace_bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect::<Vec<_>>();
+        let trace = vyre_primitives::wire::decode_u32_le_bytes_all(&trace_bytes);
         (state, trace)
     }
 }
+
+#[cfg(test)]
+
+mod tests {
+    use super::*;
+    use testutil::{assert_serial_matches, SerialAtomicOracle};
+
+    struct GeneratedSerialCase {
+        name: &'static str,
+        kind: SerialAtomicOracle,
+        build: fn(&str, &str, &str, u32) -> Program,
+        seed: u32,
+    }
+
+    #[test]
+    fn generated_atomic_serial_family_matches_cpu_oracle() {
+        let cases = [
+            GeneratedSerialCase {
+                name: "add",
+                kind: SerialAtomicOracle::Add,
+                build: atomic_add_u32,
+                seed: 0xA11C_EE01,
+            },
+            GeneratedSerialCase {
+                name: "and",
+                kind: SerialAtomicOracle::And,
+                build: atomic_and_u32,
+                seed: 0xA11C_EE02,
+            },
+            GeneratedSerialCase {
+                name: "exchange",
+                kind: SerialAtomicOracle::Exchange,
+                build: atomic_exchange_u32,
+                seed: 0xA11C_EE03,
+            },
+            GeneratedSerialCase {
+                name: "max",
+                kind: SerialAtomicOracle::Max,
+                build: atomic_max_u32,
+                seed: 0xA11C_EE04,
+            },
+            GeneratedSerialCase {
+                name: "min",
+                kind: SerialAtomicOracle::Min,
+                build: atomic_min_u32,
+                seed: 0xA11C_EE05,
+            },
+            GeneratedSerialCase {
+                name: "or",
+                kind: SerialAtomicOracle::Or,
+                build: atomic_or_u32,
+                seed: 0xA11C_EE06,
+            },
+            GeneratedSerialCase {
+                name: "xor",
+                kind: SerialAtomicOracle::Xor,
+                build: atomic_xor_u32,
+                seed: 0xA11C_EE07,
+            },
+        ];
+
+        for case in cases {
+            let mut state = case.seed;
+            for iteration in 0..512_u32 {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let len = ((state >> 27) as usize % 9) + 1;
+                let initial = state.rotate_left(iteration & 31) ^ 0x5EED_5EED;
+                let mut values = Vec::with_capacity(len);
+                for word in 0..len {
+                    state = state.rotate_left(7)
+                        ^ (iteration.wrapping_mul(0x9E37_79B9))
+                        ^ (word as u32).wrapping_mul(0x85EB_CA6B);
+                    values.push(match word % 4 {
+                        0 => state,
+                        1 => !state,
+                        2 => state.wrapping_add(u32::MAX),
+                        _ => state ^ (1_u32 << ((iteration as usize + word) & 31)),
+                    });
+                }
+                let program = (case.build)("values", "state", "trace", values.len() as u32);
+                assert_serial_matches(&program, case.kind, &values, initial);
+            }
+        }
+    }
+}
+

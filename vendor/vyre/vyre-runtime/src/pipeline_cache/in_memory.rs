@@ -1,15 +1,19 @@
-//! [`InMemoryPipelineCache`] — sharded zero-persistence cache. The hot
+//! [`InMemoryPipelineCache`]  -  sharded zero-persistence cache. The hot
 //! path for in-process pipeline reuse.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rustc_hash::FxHashMap;
+use vyre_driver::accounting::{
+    checked_add_u64_lazy, checked_add_usize_lazy, checked_sub_usize_lazy,
+    checked_usize_to_u64_lazy,
+};
 
 use super::fingerprint::PipelineFingerprint;
 use super::metrics::{PipelineCacheCounters, PipelineCacheMetrics};
 use super::store::PipelineCacheStore;
 
-/// In-memory pipeline cache — zero-persistence, zero-network, sharded
+/// In-memory pipeline cache  -  zero-persistence, zero-network, sharded
 /// `FxHashMap`s behind mutexes so concurrent `get`/`put` on different
 /// fingerprints rarely contend (VYRE_RUNTIME / PERF hot-cache audit).
 #[derive(Debug)]
@@ -63,10 +67,12 @@ impl InMemoryPipelineCache {
         self.shards
             .iter()
             .map(|s| Self::lock_shard(s).entries.len())
-            .try_fold(0usize, |acc, value| acc.checked_add(value))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Vyre in-memory pipeline cache entry count overflowed usize. Fix: shard cache metrics before snapshotting."
+            .fold(0usize, |acc, value| {
+                cache_usize_add(
+                    acc,
+                    value,
+                    "entry count",
+                    "shard cache metrics before snapshotting",
                 )
             })
     }
@@ -76,10 +82,12 @@ impl InMemoryPipelineCache {
         self.shards
             .iter()
             .map(|s| Self::lock_shard(s).bytes)
-            .try_fold(0usize, |acc, value| acc.checked_add(value))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Vyre in-memory pipeline cache byte count overflowed usize. Fix: shard cache metrics before snapshotting."
+            .fold(0usize, |acc, value| {
+                cache_usize_add(
+                    acc,
+                    value,
+                    "byte count",
+                    "shard cache metrics before snapshotting",
                 )
             })
     }
@@ -98,6 +106,34 @@ impl Default for InMemoryPipelineCache {
     }
 }
 
+fn cache_usize_add(lhs: usize, rhs: usize, label: &'static str, fix: &'static str) -> usize {
+    checked_add_usize_lazy(lhs, rhs, || {
+        format!("Vyre in-memory pipeline cache {label} overflowed usize. Fix: {fix}.")
+    })
+    .unwrap_or_else(|message| panic!("{message}"))
+}
+
+fn cache_usize_sub(lhs: usize, rhs: usize, label: &'static str, fix: &'static str) -> usize {
+    checked_sub_usize_lazy(lhs, rhs, || {
+        format!("Vyre in-memory pipeline cache {label} underflowed usize. Fix: {fix}.")
+    })
+    .unwrap_or_else(|message| panic!("{message}"))
+}
+
+fn cache_u64_add(lhs: u64, rhs: u64, label: &'static str, fix: &'static str) -> u64 {
+    checked_add_u64_lazy(lhs, rhs, || {
+        format!("Vyre in-memory pipeline cache {label} overflowed u64. Fix: {fix}.")
+    })
+    .unwrap_or_else(|message| panic!("{message}"))
+}
+
+fn cache_usize_to_u64(value: usize, label: &'static str, fix: &'static str) -> u64 {
+    checked_usize_to_u64_lazy(value, || {
+        format!("Vyre in-memory pipeline cache {label} cannot fit u64. Fix: {fix}.")
+    })
+    .unwrap_or_else(|message| panic!("{message}"))
+}
+
 #[derive(Debug, Default)]
 struct InMemoryCacheShard {
     entries: FxHashMap<PipelineFingerprint, InMemoryCacheEntry>,
@@ -107,11 +143,12 @@ struct InMemoryCacheShard {
 
 impl InMemoryCacheShard {
     fn next_tick(&mut self) -> u64 {
-        self.clock = self.clock.checked_add(1).unwrap_or_else(|| {
-            panic!(
-                "Vyre in-memory pipeline cache shard clock overflowed u64. Fix: recreate the cache before LRU timestamps wrap."
-            )
-        });
+        self.clock = cache_u64_add(
+            self.clock,
+            1,
+            "shard clock",
+            "recreate the cache before LRU timestamps wrap",
+        );
         self.clock
     }
 
@@ -129,27 +166,28 @@ impl InMemoryCacheShard {
                 return (evictions, evicted_bytes);
             };
             if let Some(removed) = self.entries.remove(&victim) {
-                self.bytes = self.bytes.checked_sub(removed.bytes).unwrap_or_else(|| {
-                    panic!(
-                        "Vyre in-memory pipeline cache byte accounting underflowed during eviction. Fix: rebuild the cache."
-                    )
-                });
-                evictions = evictions.checked_add(1).unwrap_or_else(|| {
-                    panic!(
-                        "Vyre in-memory pipeline cache eviction count overflowed u64. Fix: shard cache eviction work."
-                    )
-                });
-                evicted_bytes = evicted_bytes
-                    .checked_add(u64::try_from(removed.bytes).unwrap_or_else(|error| {
-                        panic!(
-                            "Vyre in-memory pipeline cache evicted byte count cannot fit u64: {error}. Fix: shard cache artifacts before eviction."
-                        )
-                    }))
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Vyre in-memory pipeline cache evicted byte count overflowed u64. Fix: shard cache eviction work."
-                        )
-                    });
+                self.bytes = cache_usize_sub(
+                    self.bytes,
+                    removed.bytes,
+                    "byte accounting during eviction",
+                    "rebuild the cache",
+                );
+                evictions = cache_u64_add(
+                    evictions,
+                    1,
+                    "eviction count",
+                    "shard cache eviction work",
+                );
+                evicted_bytes = cache_u64_add(
+                    evicted_bytes,
+                    cache_usize_to_u64(
+                        removed.bytes,
+                        "evicted byte count",
+                        "shard cache artifacts before eviction",
+                    ),
+                    "evicted byte count",
+                    "shard cache eviction work",
+                );
             }
         }
         (evictions, evicted_bytes)
@@ -194,19 +232,20 @@ impl PipelineCacheStore for InMemoryPipelineCache {
         {
             PipelineCacheCounters::increment(&self.metrics.rejected_puts, "rejected puts");
             if let Some(removed) = shard.entries.remove(&fp) {
-                shard.bytes = shard.bytes.checked_sub(removed.bytes).unwrap_or_else(|| {
-                    panic!(
-                        "Vyre in-memory pipeline cache byte accounting underflowed while rejecting put. Fix: rebuild the cache."
-                    )
-                });
+                shard.bytes = cache_usize_sub(
+                    shard.bytes,
+                    removed.bytes,
+                    "byte accounting while rejecting put",
+                    "rebuild the cache",
+                );
                 PipelineCacheCounters::increment(&self.metrics.evictions, "evictions");
                 PipelineCacheCounters::add(
                     &self.metrics.evicted_bytes,
-                    u64::try_from(removed.bytes).unwrap_or_else(|error| {
-                        panic!(
-                            "Vyre in-memory pipeline cache evicted byte count cannot fit u64: {error}. Fix: shard cache artifacts before eviction."
-                        )
-                    }),
+                    cache_usize_to_u64(
+                        removed.bytes,
+                        "evicted byte count",
+                        "shard cache artifacts before eviction",
+                    ),
                     "evicted bytes",
                 );
             }
@@ -214,18 +253,20 @@ impl PipelineCacheStore for InMemoryPipelineCache {
         }
 
         if let Some(existing) = shard.entries.remove(&fp) {
-            shard.bytes = shard.bytes.checked_sub(existing.bytes).unwrap_or_else(|| {
-                panic!(
-                    "Vyre in-memory pipeline cache byte accounting underflowed while replacing entry. Fix: rebuild the cache."
-                )
-            });
+            shard.bytes = cache_usize_sub(
+                shard.bytes,
+                existing.bytes,
+                "byte accounting while replacing entry",
+                "rebuild the cache",
+            );
         }
         let tick = shard.next_tick();
-        shard.bytes = shard.bytes.checked_add(bytes).unwrap_or_else(|| {
-            panic!(
-                "Vyre in-memory pipeline cache byte accounting overflowed while inserting entry. Fix: lower per-shard cache byte budget."
-            )
-        });
+        shard.bytes = cache_usize_add(
+            shard.bytes,
+            bytes,
+            "byte accounting while inserting entry",
+            "lower per-shard cache byte budget",
+        );
         shard.entries.insert(
             fp,
             InMemoryCacheEntry {

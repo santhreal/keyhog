@@ -7,7 +7,7 @@ impl CseCtx {
     #[inline]
     pub(crate) fn intern_expr(&mut self, expr: &Expr) -> ExprId {
         // Soundness (S19): pointer-keyed cache removed. See the
-        // matching comment in `impl_csectx.rs::expr` — `Box<Expr>`
+        // matching comment in `impl_csectx.rs::expr`  -  `Box<Expr>`
         // addresses are reused as Cow::Owned rewrites churn through
         // them, so caching by raw pointer returned stale ExprIds and
         // CSE merged semantically distinct expressions. The
@@ -112,7 +112,7 @@ fn bin_op_key(op: BinOp) -> Option<u8> {
     // Soundness: every concrete BinOp variant gets a distinct tag so
     // CSE never merges semantically distinct ops. The previous
     // `_ => 255` fallback collapsed WrappingSub / RotateLeft /
-    // RotateRight / MulHigh onto a single tag — silent CSE soundness
+    // RotateRight / MulHigh onto a single tag  -  silent CSE soundness
     // gap waiting on an adversarial input. `BinOp::Opaque` is keyed
     // separately via `ExprKey::BinOpOpaque` (carries the extension u32
     // id) so the integer table below covers only built-in variants.

@@ -1,4 +1,4 @@
-//! Cat-C `subgroup_shuffle` — per-lane permutation via source-lane indices.
+//! Cat-C `subgroup_shuffle`  -  per-lane permutation via source-lane indices.
 //! Maps to hardware `subgroupShuffle()`.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -69,6 +69,12 @@ inventory::submit! {
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
         category: Some("hardware"),
+        shape: Some(crate::harness::OpShape::new(
+            2,
+            1,
+            4,
+            crate::harness::HardwareSemantic::SubgroupShuffleU32,
+        )),
     }
 }
 

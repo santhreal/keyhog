@@ -6,6 +6,7 @@
 //! dispatch path.
 
 use crate::numeric::usize_to_u64;
+use crate::staging_reserve::reserve_backend_vec;
 use crate::WgpuBackend;
 use crossbeam_channel::RecvTimeoutError;
 use std::sync::{
@@ -77,10 +78,11 @@ impl WgpuBackend {
                 inputs.len()
             ))
         })?;
+        let input_bytes = f32_batch_bytes(inputs)?;
         let output = dispatch_probe_wgsl(
             &self.current_device_queue(),
             &probe_wgsl(op, BATCH_WORKGROUP_SIZE)?,
-            &f32_batch_bytes(inputs),
+            &input_bytes,
             output_size,
             input_words,
         )?;
@@ -125,12 +127,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
     ))
 }
 
-fn f32_batch_bytes(inputs: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(inputs.len() * F32_BYTES);
+fn f32_batch_bytes(inputs: &[f32]) -> Result<Vec<u8>, vyre_driver::BackendError> {
+    let byte_len = inputs.len().checked_mul(F32_BYTES).ok_or_else(|| {
+        vyre_driver::BackendError::new(format!(
+            "parity probe f32 input byte length overflow for {} samples. Fix: split the parity probe batch.",
+            inputs.len()
+        ))
+    })?;
+    let mut bytes = Vec::new();
+    reserve_backend_vec(&mut bytes, byte_len, "parity probe f32 input staging")?;
     for value in inputs {
         bytes.extend_from_slice(&value.to_bits().to_le_bytes());
     }
-    bytes
+    Ok(bytes)
 }
 
 fn dispatch_probe_wgsl(
@@ -244,7 +253,7 @@ fn dispatch_probe_wgsl(
     let ready_cb = Arc::clone(&ready);
     slice.map_async(wgpu::MapMode::Read, move |result| {
         if let Err(error) = sender.send(result) {
-            eprintln!("wgpu parity probe readback notification failed: {error}");
+            tracing::warn!("wgpu parity probe readback notification failed: {error}");
         }
         ready_cb.store(true, Ordering::Release);
     });
@@ -252,9 +261,7 @@ fn dispatch_probe_wgsl(
     let deadline = Instant::now() + PROBE_TIMEOUT;
     let mut backoff = crate::wait_backoff::AdaptiveWaitBackoff::from_micros(64, 2, 50, 5);
     while !ready.load(Ordering::Acquire) {
-        match device.poll(wgpu::Maintain::Poll) {
-            wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-        }
+        crate::runtime::device::poll_device_once(device)?;
         let now = Instant::now();
         if now >= deadline {
             return Err(vyre_driver::BackendError::new(
@@ -286,7 +293,8 @@ fn dispatch_probe_wgsl(
             ))
         })?;
     let mapped = slice.get_mapped_range();
-    let mut bytes = Vec::with_capacity(output_size);
+    let mut bytes = Vec::new();
+    reserve_backend_vec(&mut bytes, output_size, "parity probe readback staging")?;
     bytes.extend_from_slice(&mapped[..output_size]);
     drop(mapped);
     readback_buffer.unmap();
@@ -315,7 +323,12 @@ fn decode_f32_batch(
             output.len()
         )));
     }
-    let mut values = Vec::with_capacity(expected_words);
+    let mut values = Vec::new();
+    reserve_backend_vec(
+        &mut values,
+        expected_words,
+        "parity probe decoded f32 staging",
+    )?;
     for chunk in output.chunks_exact(F32_BYTES) {
         let mut raw = [0_u8; F32_BYTES];
         raw.copy_from_slice(chunk);
@@ -353,5 +366,22 @@ mod tests {
                 "Fix: batched probe result at lane {index} must match singleton probe"
             );
         }
+    }
+
+    #[test]
+    fn parity_probe_uses_fallible_staging() {
+        let src =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/parity_probe.rs"))
+                .expect("Fix: parity probe source must be readable");
+        let production = src
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: meta-test scans production sources; update fixture path if module moved - production section must exist");
+        assert!(
+            !production.contains("Vec::with_capacity("),
+            "parity probe staging must use reserve_backend_vec"
+        );
+        assert!(production.contains("reserve_backend_vec"));
+        assert!(production.contains("f32_batch_bytes(inputs)?"));
     }
 }

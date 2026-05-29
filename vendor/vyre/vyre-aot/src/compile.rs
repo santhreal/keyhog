@@ -62,7 +62,7 @@ pub fn compile_with_resolver(
     target: Target,
     resolver: Option<OpResolver>,
 ) -> Result<CompiledArtifact, CompileError> {
-    // AOT emitters need a Program with no `Expr::Call` nodes — run
+    // AOT emitters need a Program with no `Expr::Call` nodes  -  run
     // inline_calls when a resolver is provided, otherwise pass through
     // unchanged (the caller has either pre-inlined or guarantees no Call).
     let inlined = match resolver {
@@ -88,7 +88,7 @@ pub fn compile_with_resolver(
     // differ only in non-semantic detail (instruction order,
     // commutative-operand ordering) collide on the same VSA
     // fingerprint, letting AOT toolchains skip redundant emit.
-    // Computed via the driver-level canonical VSA fingerprint — the
+    // Computed via the driver-level canonical VSA fingerprint  -  the
     // same approximate-match cache key that driver validation caches
     // use, so AOT and JIT share artifact-identity without reaching
     // into a CPU-named substrate helper.

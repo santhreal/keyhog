@@ -105,7 +105,13 @@ pub fn run_persistent_kernel(
     })?;
 
     let pipeline = ensure_persistent_pipeline(backend, program, config)?;
-    let mut payloads = SmallVec::<[&[u8]; 16]>::with_capacity(queue.items.len());
+    let mut payloads = SmallVec::<[&[u8]; 16]>::new();
+    payloads.try_reserve(queue.items.len()).map_err(|source| {
+        BackendError::new(format!(
+            "persistent kernel could not reserve {} payload slice reference(s): {source}. Fix: split the persistent queue before dispatch.",
+            queue.items.len()
+        ))
+    })?;
     payloads.extend(queue.items.iter().map(|item| item.payload.as_slice()));
     let output_batches = pipeline
         .dispatch_coalesced_borrowed(&payloads, config)
@@ -124,7 +130,13 @@ pub fn run_persistent_kernel(
         )));
     }
 
-    let mut results = Vec::with_capacity(queue.items.len());
+    let mut results = Vec::new();
+    results.try_reserve(queue.items.len()).map_err(|source| {
+        BackendError::new(format!(
+            "persistent kernel could not reserve {} work result slot(s): {source}. Fix: split the persistent queue before collecting outputs.",
+            queue.items.len()
+        ))
+    })?;
     for (item_index, (item, outputs)) in queue.items.into_iter().zip(output_batches).enumerate() {
         if outputs.len() != 1 {
             return Err(BackendError::new(format!(
@@ -134,9 +146,12 @@ pub fn run_persistent_kernel(
             )));
         }
         let mut outputs = outputs.into_iter();
-        let payload = outputs
-            .next()
-            .expect("persistent output count was checked before extraction");
+        let Some(payload) = outputs.next() else {
+            return Err(BackendError::new(format!(
+                "persistent kernel work item index {item_index} id={} returned no payload after output cardinality validation. Fix: keep persistent output extraction synchronized with the one-output WorkResult contract.",
+                item.id
+            )));
+        };
         results.push(WorkResult {
             id: item.id,
             payload,

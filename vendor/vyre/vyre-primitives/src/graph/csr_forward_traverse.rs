@@ -1,4 +1,4 @@
-//! `csr_forward_traverse` — one BFS frontier step over a
+//! `csr_forward_traverse`  -  one BFS frontier step over a
 //! `super::program_graph::ProgramGraph`.
 //!
 //! Given an input frontier bitset (`frontier_in`) and a per-edge
@@ -13,23 +13,15 @@
 //! CPU reference + witness ship alongside so the conform harness
 //! can exercise the primitive end-to-end without GPU hardware.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-
-use crate::graph::program_graph::{
-    ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS,
-    NAME_EDGE_TARGETS,
-};
+use crate::graph::csr_frontier_step::{csr_frontier_step_program, CsrFrontierStepKind};
+use crate::graph::program_graph::ProgramGraphShape;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::csr_forward_traverse";
 
-/// Canonical binding index for the input frontier bitset.
-pub const BINDING_FRONTIER_IN: u32 = BINDING_PRIMITIVE_START;
-/// Canonical binding index for the output frontier bitset.
-pub const BINDING_FRONTIER_OUT: u32 = BINDING_PRIMITIVE_START + 1;
+pub use crate::graph::csr_frontier_step::{BINDING_FRONTIER_IN, BINDING_FRONTIER_OUT};
 
 /// Number of u32 words needed to hold a bitset over `node_count`
 /// nodes (one bit per node, packed 32-per-word, rounded up).
@@ -63,114 +55,25 @@ pub fn csr_forward_traverse(
     frontier_out: &str,
     allow_mask: u32,
 ) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-    let words = bitset_words(shape.node_count);
+    csr_forward_traverse_with_op_id(OP_ID, shape, frontier_in, frontier_out, allow_mask)
+}
 
-    let body = vec![
-        Node::let_bind("src", t.clone()),
-        Node::let_bind("word_idx", Expr::shr(Expr::var("src"), Expr::u32(5))),
-        Node::let_bind(
-            "bit_mask",
-            Expr::shl(Expr::u32(1), Expr::bitand(Expr::var("src"), Expr::u32(31))),
-        ),
-        Node::let_bind("src_word", Expr::load(frontier_in, Expr::var("word_idx"))),
-        // Only proceed if this source lane is in the input frontier.
-        Node::if_then(
-            Expr::ne(
-                Expr::bitand(Expr::var("src_word"), Expr::var("bit_mask")),
-                Expr::u32(0),
-            ),
-            vec![
-                Node::let_bind(
-                    "edge_start",
-                    Expr::load(NAME_EDGE_OFFSETS, Expr::var("src")),
-                ),
-                Node::let_bind(
-                    "edge_end",
-                    Expr::load(NAME_EDGE_OFFSETS, Expr::add(Expr::var("src"), Expr::u32(1))),
-                ),
-                Node::loop_for(
-                    "e",
-                    Expr::var("edge_start"),
-                    Expr::var("edge_end"),
-                    vec![
-                        Node::let_bind(
-                            "kind_mask",
-                            Expr::load(NAME_EDGE_KIND_MASK, Expr::var("e")),
-                        ),
-                        Node::if_then(
-                            Expr::ne(
-                                Expr::bitand(Expr::var("kind_mask"), Expr::u32(allow_mask)),
-                                Expr::u32(0),
-                            ),
-                            vec![
-                                Node::let_bind(
-                                    "dst",
-                                    Expr::load(NAME_EDGE_TARGETS, Expr::var("e")),
-                                ),
-                                Node::if_then(
-                                    Expr::lt(Expr::var("dst"), Expr::u32(shape.node_count)),
-                                    vec![
-                                        Node::let_bind(
-                                            "dst_word_idx",
-                                            Expr::shr(Expr::var("dst"), Expr::u32(5)),
-                                        ),
-                                        Node::let_bind(
-                                            "dst_bit",
-                                            Expr::shl(
-                                                Expr::u32(1),
-                                                Expr::bitand(Expr::var("dst"), Expr::u32(31)),
-                                            ),
-                                        ),
-                                        Node::let_bind(
-                                            "_prev",
-                                            Expr::atomic_or(
-                                                frontier_out,
-                                                Expr::var("dst_word_idx"),
-                                                Expr::var("dst_bit"),
-                                            ),
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-            ],
-        ),
-    ];
-
-    let mut buffers = shape.read_only_buffers();
-    buffers.push(
-        BufferDecl::storage(
-            frontier_in,
-            BINDING_FRONTIER_IN,
-            BufferAccess::ReadOnly,
-            DataType::U32,
-        )
-        .with_count(words),
-    );
-    buffers.push(
-        BufferDecl::storage(
-            frontier_out,
-            BINDING_FRONTIER_OUT,
-            BufferAccess::ReadWrite,
-            DataType::U32,
-        )
-        .with_count(words),
-    );
-
-    Program::wrapped(
-        buffers,
-        [1, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(shape.node_count)),
-                body,
-            )]),
-        }],
+/// Build a CSR forward step under a caller-owned op id.
+#[must_use]
+pub(crate) fn csr_forward_traverse_with_op_id(
+    op_id: &'static str,
+    shape: ProgramGraphShape,
+    frontier_in: &str,
+    frontier_out: &str,
+    allow_mask: u32,
+) -> Program {
+    csr_frontier_step_program(
+        op_id,
+        CsrFrontierStepKind::Forward,
+        shape,
+        frontier_in,
+        frontier_out,
+        allow_mask,
     )
 }
 
@@ -200,6 +103,44 @@ pub fn cpu_ref(
     out
 }
 
+/// Validate CSR buffers shared by forward and backward CPU references.
+///
+/// The CPU oracle is used as GPU parity evidence, so malformed graph layouts
+/// must fail loudly instead of producing an empty frontier that can mask
+/// upstream object corruption.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub(crate) fn validate_csr_frontier_step_cpu_inputs(
+    label: &str,
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+) -> usize {
+    let expected_offsets = node_count as usize + 1;
+    assert_eq!(
+        edge_offsets.len(),
+        expected_offsets,
+        "{label} CPU oracle received {} row offsets for node_count={node_count}; Fix: pass exactly node_count + 1 CSR offsets.",
+        edge_offsets.len()
+    );
+    let edge_count = edge_offsets[expected_offsets - 1] as usize;
+    assert!(
+        edge_targets.len() >= edge_count && edge_kind_mask.len() >= edge_count,
+        "{label} CPU oracle received edge_count={edge_count} but targets_len={} kind_mask_len={}. Fix: pass complete CSR edge buffers.",
+        edge_targets.len(),
+        edge_kind_mask.len()
+    );
+    for (index, pair) in edge_offsets.windows(2).enumerate() {
+        assert!(
+            pair[0] <= pair[1],
+            "{label} CPU oracle received non-monotonic CSR offsets at row {index}: {} > {}. Fix: rebuild CSR row pointers before parity comparison.",
+            pair[0],
+            pair[1]
+        );
+    }
+    edge_count
+}
+
 /// CPU reference using caller-owned output storage.
 ///
 /// Malformed CSR inputs fail loudly. GPU parity evidence must not turn a
@@ -218,28 +159,13 @@ pub fn cpu_ref_into(
     let words = bitset_words(node_count) as usize;
     out.clear();
     out.resize(words, 0);
-    let expected_offsets = node_count as usize + 1;
-    assert_eq!(
-        edge_offsets.len(),
-        expected_offsets,
-        "csr_forward_traverse CPU oracle received {} row offsets for node_count={node_count}; Fix: pass exactly node_count + 1 CSR offsets.",
-        edge_offsets.len()
+    validate_csr_frontier_step_cpu_inputs(
+        "csr_forward_traverse",
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
     );
-    let edge_count = edge_offsets[expected_offsets - 1] as usize;
-    assert!(
-        edge_targets.len() >= edge_count && edge_kind_mask.len() >= edge_count,
-        "csr_forward_traverse CPU oracle received edge_count={edge_count} but targets_len={} kind_mask_len={}. Fix: pass complete CSR edge buffers.",
-        edge_targets.len(),
-        edge_kind_mask.len()
-    );
-    for (index, pair) in edge_offsets.windows(2).enumerate() {
-        assert!(
-            pair[0] <= pair[1],
-            "csr_forward_traverse CPU oracle received non-monotonic CSR offsets at row {index}: {} > {}. Fix: rebuild CSR row pointers before parity comparison.",
-            pair[0],
-            pair[1]
-        );
-    }
     for src in 0..node_count {
         let word_idx = (src / 32) as usize;
         let bit_mask = 1u32 << (src % 32);
@@ -274,7 +200,7 @@ inventory::submit! {
         Some(|| {
             // Graph: 0→1, 0→2, 1→3, 2→3. Start frontier = {0}.
             // Expected out frontier = {1, 2}.
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0, 0, 0]),          // pg_nodes
                 to_bytes(&[0, 2, 3, 4, 4]),       // pg_edge_offsets
@@ -286,7 +212,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             // After one forward step starting from {0}: frontier = {1, 2}.
             vec![vec![to_bytes(&[0b0110])]]
         }),
@@ -363,7 +289,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Adversarial fixtures — hostile boundaries, empty graphs, kind-mask
+    // Adversarial fixtures  -  hostile boundaries, empty graphs, kind-mask
     // diversity (M8), malformed CSR, cross-word bitsets.
     // ------------------------------------------------------------------
 

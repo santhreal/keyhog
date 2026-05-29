@@ -6,10 +6,10 @@
 //! `Expr::Atomic` (F-IR-35).
 //!
 //! Organized into sub-dialects so each concern has its own namespace:
-//! - `linalg` — dot, matmul, matmul_tiled
-//! - `scan` — scan_prefix_sum
-//! - `broadcast` — broadcast
-//! - `succinct` — rank/select bitvector metadata
+//! - `linalg`  -  dot, matmul, matmul_tiled
+//! - `scan`  -  scan_prefix_sum
+//! - `broadcast`  -  broadcast
+//! - `succinct`  -  rank/select bitvector metadata
 //!
 //! The flat-name re-exports (`vyre_libs::math::dot`, etc.) are kept
 //! for back-compat so external consumers pinning against the flat
@@ -33,27 +33,25 @@ pub mod algebra;
 pub mod succinct;
 
 /// Atomic read-modify-write compositions (add/and/or/xor/min/max/exchange/compare_exchange)
-/// — migrated from vyre-ops per the intrinsic-vs-library rule (Expr::Atomic is an
+///  -  migrated from vyre-ops per the intrinsic-vs-library rule (Expr::Atomic is an
 /// existing IR variant, so these are library compositions rather than intrinsics).
 pub mod atomic;
 /// Average floor operation
 pub mod avg_floor;
+mod bit_count_ops;
+mod bit_count_u32;
 /// Clamp to [lo, hi] per lane (migrated from vyre-ops per the intrinsic-vs-library rule).
 pub mod clamp_u32;
-/// 2D convolution — direct 3x3 kernel base case (ROADMAP H3).
+/// 2D convolution  -  direct 3x3 kernel base case (ROADMAP H3).
 pub mod conv;
-/// Fast Fourier Transform — base-case 4-point complex FFT (ROADMAP H2).
+/// Fast Fourier Transform  -  base-case 4-point complex FFT (ROADMAP H2).
 pub mod fft;
-/// Count leading zeros per u32 lane (migrated from vyre-ops).
-pub mod lzcnt_u32;
 /// Arithmetic mean reduction
 pub mod reduce_mean;
 /// Welford variance reduction
 pub mod reduce_variance;
 /// Element-wise square operation
 pub mod square;
-/// Count trailing zeros per u32 lane (migrated from vyre-ops).
-pub mod tzcnt_u32;
 /// Block-FMA weighted-sum reduction (ROADMAP G7).
 pub mod weighted_sum;
 /// Welford sum-of-squares operation
@@ -61,19 +59,22 @@ pub mod welford;
 /// Wrapping negation operation
 pub mod wrapping_neg;
 
+pub(crate) mod elementwise;
+
 pub use atomic::{
     atomic_add_u32, atomic_and_u32, atomic_compare_exchange_u32, atomic_exchange_u32,
     atomic_max_u32, atomic_min_u32, atomic_or_u32, atomic_xor_u32,
 };
+pub use bit_count_ops::lzcnt_u32::lzcnt_u32;
+pub use bit_count_ops::tzcnt_u32::tzcnt_u32;
+pub use bit_count_ops::{lzcnt_u32, tzcnt_u32};
 pub use clamp_u32::clamp_u32;
-pub use lzcnt_u32::lzcnt_u32;
 pub use reduce_mean::reduce_mean;
 pub use reduce_variance::reduce_variance;
 pub use square::square;
-pub use tzcnt_u32::tzcnt_u32;
 pub use welford::welford_sum_of_squares;
 
-// Flat re-exports — keep callers that pin against `vyre_libs::math::dot`
+// Flat re-exports  -  keep callers that pin against `vyre_libs::math::dot`
 // (and siblings) working across the nested-tree reshape.
 #[cfg(feature = "math-algebra")]
 pub use algebra::{

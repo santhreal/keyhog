@@ -191,18 +191,20 @@ fn cache_status_from_snapshots(
     after: Option<PipelineCacheSnapshot>,
 ) -> Option<bool> {
     let (before, after) = (before?, after?);
-    let hits = after.hits.checked_sub(before.hits).unwrap_or_else(|| {
-        panic!(
+    let hits = crate::accounting::checked_sub_u64_lazy(after.hits, before.hits, || {
+        format!(
             "pipeline cache hit counter regressed from {} to {}. Fix: backend cache snapshots must be monotonic within one compile.",
             before.hits, after.hits
         )
-    });
-    let misses = after.misses.checked_sub(before.misses).unwrap_or_else(|| {
-        panic!(
+    })
+    .unwrap_or_else(|message| panic!("{message}"));
+    let misses = crate::accounting::checked_sub_u64_lazy(after.misses, before.misses, || {
+        format!(
             "pipeline cache miss counter regressed from {} to {}. Fix: backend cache snapshots must be monotonic within one compile.",
             before.misses, after.misses
         )
-    });
+    })
+    .unwrap_or_else(|message| panic!("{message}"));
     if hits > 0 {
         Some(true)
     } else if misses > 0 {

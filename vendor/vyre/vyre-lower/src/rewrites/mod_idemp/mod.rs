@@ -1,4 +1,4 @@
-//! `Mod` idempotence — fold `Mod(Mod(x, Lit(a)), Lit(a))` to
+//! `Mod` idempotence  -  fold `Mod(Mod(x, Lit(a)), Lit(a))` to
 //! `Mod(x, Lit(a))`. Identity:
 //!     ((x mod a) mod a) = (x mod a) for any a > 0.
 //! Also folds `Mod(Mod(x, Lit(a)), Lit(b))` to `Mod(x, Lit(a))` when
@@ -14,14 +14,14 @@
 //!
 //! Out-of-scope: zero divisors (preserved unchanged so the runtime
 //! mod-by-zero trap stays observable), b < a (would require knowing
-//! whether b divides a — handled instead by `egraph_saturation`),
+//! whether b divides a  -  handled instead by `egraph_saturation`),
 //! signed mod (I32 left to a future pass), and `Mod(Lit, Mod(...))`.
 //!
 //! Recurses. Idempotent. Wired immediately after `div_combine` in
 //! `CANONICAL_REWRITE_PASSES`.
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 use vyre_foundation::ir::BinOp;
 
 #[must_use]
@@ -32,19 +32,7 @@ pub fn mod_idemp(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn mod_idemp_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
-
-    let mut use_count: FxHashMap<u32, u32> = FxHashMap::default();
-    for op in &body.ops {
-        for operand in &op.operands {
-            *use_count.entry(*operand).or_insert(0) += 1;
-        }
-    }
+    let index = BodyIndex::new(&body);
 
     // (op_idx_to_replace, replacement_result_id)
     let mut rewrites: Vec<(usize, u32)> = Vec::new();
@@ -58,16 +46,14 @@ fn mod_idemp_body(mut body: KernelBody) -> KernelBody {
         let lhs = op.operands[0];
         let rhs = op.operands[1];
 
-        let Some(b) = u32_lit(&body, &result_to_idx, rhs) else {
+        let Some(b) = index.u32_lit(&body, rhs) else {
             continue;
         };
         if b == 0 {
             continue;
         }
 
-        let Some((inner_result, _x, a)) =
-            inner_mod_with_rhs_lit(&body, &result_to_idx, &use_count, lhs)
-        else {
+        let Some((inner_result, _x, a)) = inner_mod_with_rhs_lit(&body, &index, lhs) else {
             continue;
         };
         if a == 0 {
@@ -75,7 +61,7 @@ fn mod_idemp_body(mut body: KernelBody) -> KernelBody {
         }
 
         if b >= a {
-            // The outer Mod is the identity on the inner — replace the
+            // The outer Mod is the identity on the inner  -  replace the
             // outer's users with the inner's result. We do this by
             // turning the outer into a no-op alias: every user of
             // op.result will be patched to use inner_result.
@@ -105,44 +91,29 @@ fn mod_idemp_body(mut body: KernelBody) -> KernelBody {
 
 fn inner_mod_with_rhs_lit(
     body: &KernelBody,
-    result_to_idx: &FxHashMap<u32, usize>,
-    use_count: &FxHashMap<u32, u32>,
+    index: &BodyIndex,
     result_id: u32,
 ) -> Option<(u32, u32, u32)> {
-    let producer_idx = *result_to_idx.get(&result_id)?;
-    let producer = body.ops.get(producer_idx)?;
+    let producer = index.producer(body, result_id)?;
     if !matches!(producer.kind, KernelOpKind::BinOpKind(BinOp::Mod)) {
         return None;
     }
     if producer.operands.len() != 2 {
         return None;
     }
-    if use_count.get(&result_id).copied().unwrap_or(0) != 1 {
+    if !index.has_single_consumer(result_id) {
         return None;
     }
     let lhs = producer.operands[0];
     let rhs = producer.operands[1];
-    let c = u32_lit(body, result_to_idx, rhs)?;
+    let c = index.u32_lit(body, rhs)?;
     Some((result_id, lhs, c))
-}
-
-fn u32_lit(body: &KernelBody, result_to_idx: &FxHashMap<u32, usize>, id: u32) -> Option<u32> {
-    let producer_idx = *result_to_idx.get(&id)?;
-    let producer = body.ops.get(producer_idx)?;
-    if !matches!(producer.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_idx = *producer.operands.first()? as usize;
-    match body.literals.get(pool_idx)? {
-        LiteralValue::U32(v) => Some(*v),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingLayout, Dispatch, KernelOp};
+    use crate::{BindingLayout, Dispatch, KernelOp, LiteralValue};
     use vyre_foundation::ir::BinOp;
 
     fn empty_body() -> KernelBody {
@@ -219,7 +190,7 @@ mod tests {
 
     #[test]
     fn outer_divisor_larger_collapses() {
-        // ((x mod 5) mod 100) — inner < 5 < 100, outer is identity.
+        // ((x mod 5) mod 100)  -  inner < 5 < 100, outer is identity.
         let mut body = empty_body();
         nonliteral_source(&mut body, 0);
         lit_u32(&mut body, 5, 1);
@@ -239,7 +210,7 @@ mod tests {
 
     #[test]
     fn outer_divisor_smaller_left_alone() {
-        // ((x mod 100) mod 5) — outer is meaningful (different residue).
+        // ((x mod 100) mod 5)  -  outer is meaningful (different residue).
         let mut body = empty_body();
         nonliteral_source(&mut body, 0);
         lit_u32(&mut body, 100, 1);

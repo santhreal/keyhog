@@ -6,6 +6,7 @@ use crate::region::wrap_anonymous;
 use crate::scan::builders::append_match_subgroup;
 use crate::scan::dfa::{dfa_compile, CompiledDfa};
 use crate::scan::hit_buffer::HIT_BUFFER_OVERFLOW_COUNT;
+use std::collections::TryReserveError;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre::VyreBackend;
 pub use vyre_foundation::match_result::Match;
@@ -15,6 +16,72 @@ const OP_ID: &str = "vyre-libs::matching::literal_set";
 
 /// Back-compatible literal match type.
 pub type LiteralMatch = Match;
+
+/// Errors returned by [`GpuLiteralSet::try_compile`].
+#[derive(Debug)]
+pub enum LiteralSetCompileError {
+    /// Number of patterns does not fit the GPU ABI's `u32` count field.
+    PatternCountOverflow {
+        /// Number of patterns supplied by the caller.
+        count: usize,
+    },
+    /// One pattern length does not fit the GPU ABI's `u32` length field.
+    PatternLengthOverflow {
+        /// Index of the oversized pattern.
+        pattern_index: usize,
+        /// Byte length of the oversized pattern.
+        len: usize,
+    },
+    /// Total concatenated pattern bytes overflowed host `usize`.
+    PatternByteCountOverflow,
+    /// Total concatenated pattern bytes do not fit the GPU ABI's `u32` field.
+    PatternByteCountExceedsGpuAbi {
+        /// Concatenated pattern byte count.
+        count: usize,
+    },
+    /// Compiler staging allocation failed.
+    StorageReserveFailed {
+        /// Scratch vector being reserved.
+        field: &'static str,
+        /// Requested target capacity.
+        requested: usize,
+        /// Allocator failure details.
+        message: String,
+    },
+}
+
+impl std::fmt::Display for LiteralSetCompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PatternCountOverflow { count } => write!(
+                f,
+                "literal_set pattern count {count} exceeds u32 capacity. Fix: shard the pattern set before GPU compilation."
+            ),
+            Self::PatternLengthOverflow { pattern_index, len } => write!(
+                f,
+                "literal_set pattern {pattern_index} length {len} exceeds u32 capacity. Fix: split or reject oversized literals before GPU compilation."
+            ),
+            Self::PatternByteCountOverflow => write!(
+                f,
+                "literal_set total pattern byte count overflowed host usize. Fix: shard the pattern set before GPU compilation."
+            ),
+            Self::PatternByteCountExceedsGpuAbi { count } => write!(
+                f,
+                "literal_set total pattern byte count {count} exceeds u32 capacity. Fix: shard the pattern set before GPU compilation."
+            ),
+            Self::StorageReserveFailed {
+                field,
+                requested,
+                message,
+            } => write!(
+                f,
+                "literal_set compile failed to reserve {requested} {field} slot(s): {message}. Fix: shard the pattern set before GPU compilation."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LiteralSetCompileError {}
 
 /// A high-level literal matching engine.
 pub struct GpuLiteralSet {
@@ -34,12 +101,62 @@ impl GpuLiteralSet {
     /// Compile a set of literal patterns into a GPU-ready matcher.
     #[must_use]
     pub fn compile(patterns: &[&[u8]]) -> Self {
+        match Self::try_compile(patterns) {
+            Ok(compiled) => compiled,
+            Err(error) => {
+                eprintln!("vyre-libs GpuLiteralSet::compile failed: {error}");
+                Self::empty_after_compile_failure()
+            }
+        }
+    }
+
+    /// Compile a set of literal patterns into a GPU-ready matcher, surfacing
+    /// allocation and ABI-size failures instead of truncating them.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LiteralSetCompileError`] when staging allocation fails or a
+    /// pattern count/length cannot be represented by the GPU ABI.
+    pub fn try_compile(patterns: &[&[u8]]) -> Result<Self, LiteralSetCompileError> {
         let dfa = dfa_compile(patterns);
-        let pattern_lengths: Vec<u32> = patterns.iter().map(|p| p.len() as u32).collect();
-        let mut pattern_offsets = Vec::with_capacity(patterns.len());
+        let declared_pattern_count = u32::try_from(patterns.len()).map_err(|_| {
+            LiteralSetCompileError::PatternCountOverflow {
+                count: patterns.len(),
+            }
+        })?;
+        let total_pattern_bytes = patterns.iter().try_fold(0usize, |sum, pattern| {
+            sum.checked_add(pattern.len())
+                .ok_or(LiteralSetCompileError::PatternByteCountOverflow)
+        })?;
+        let pattern_byte_count = u32::try_from(total_pattern_bytes).map_err(|_| {
+            LiteralSetCompileError::PatternByteCountExceedsGpuAbi {
+                count: total_pattern_bytes,
+            }
+        })?;
+        let mut pattern_lengths = Vec::new();
+        reserve_vec(&mut pattern_lengths, patterns.len(), "pattern length")?;
+        let mut pattern_offsets = Vec::new();
+        reserve_vec(&mut pattern_offsets, patterns.len(), "pattern offset")?;
         let mut pattern_bytes = Vec::new();
-        for pattern in patterns {
-            pattern_offsets.push(pattern_bytes.len() as u32);
+        reserve_vec(
+            &mut pattern_bytes,
+            total_pattern_bytes,
+            "packed pattern byte",
+        )?;
+        for (pattern_index, pattern) in patterns.iter().enumerate() {
+            let offset = u32::try_from(pattern_bytes.len()).map_err(|_| {
+                LiteralSetCompileError::PatternByteCountExceedsGpuAbi {
+                    count: pattern_bytes.len(),
+                }
+            })?;
+            let len = u32::try_from(pattern.len()).map_err(|_| {
+                LiteralSetCompileError::PatternLengthOverflow {
+                    pattern_index,
+                    len: pattern.len(),
+                }
+            })?;
+            pattern_offsets.push(offset);
+            pattern_lengths.push(len);
             pattern_bytes.extend(pattern.iter().map(|&byte| u32::from(byte)));
         }
 
@@ -52,15 +169,39 @@ impl GpuLiteralSet {
             "pattern_count",
             "match_count",
             "matches",
-            patterns.len() as u32,
-            pattern_bytes.len() as u32,
+            declared_pattern_count,
+            pattern_byte_count,
         );
 
-        Self {
+        Ok(Self {
             dfa,
             pattern_bytes,
             pattern_offsets,
             pattern_lengths,
+            program,
+        })
+    }
+
+    fn empty_after_compile_failure() -> Self {
+        let dfa = dfa_compile(&[]);
+        let program = build_literal_set_program(
+            "haystack",
+            "pattern_offsets",
+            "pattern_lengths",
+            "pattern_bytes",
+            "haystack_len",
+            "pattern_count",
+            "match_count",
+            "matches",
+            0,
+            0,
+        );
+
+        Self {
+            dfa,
+            pattern_bytes: Vec::new(),
+            pattern_offsets: Vec::new(),
+            pattern_lengths: Vec::new(),
             program,
         }
     }
@@ -117,6 +258,28 @@ impl GpuLiteralSet {
         max_matches: u32,
         matches: &mut Vec<Match>,
     ) -> Result<(), vyre::BackendError> {
+        let mut scratch = crate::scan::dispatch_io::ScanDispatchScratch::default();
+        self.scan_into_with_scratch(backend, haystack, max_matches, matches, &mut scratch)
+    }
+
+    /// GPU scan dispatch that decodes into caller-owned match scratch and
+    /// reuses caller-owned byte staging.
+    ///
+    /// This is the lowest-allocation hot-loop API for literal scanning:
+    /// `matches` reuses decoded match storage and `scratch` reuses the packed
+    /// haystack buffer across dispatches.
+    ///
+    /// # Errors
+    /// Returns [`vyre::BackendError`] if dispatch, readback, scan-boundary
+    /// validation, or host staging allocation fails.
+    pub fn scan_into_with_scratch<B: VyreBackend + ?Sized>(
+        &self,
+        backend: &B,
+        haystack: &[u8],
+        max_matches: u32,
+        matches: &mut Vec<Match>,
+        scratch: &mut crate::scan::dispatch_io::ScanDispatchScratch,
+    ) -> Result<(), vyre::BackendError> {
         use crate::scan::dispatch_io;
 
         matches.clear();
@@ -131,7 +294,8 @@ impl GpuLiteralSet {
         // Buffer order matches the BufferDecl declaration in
         // `build_literal_set_program`; reordering here would silently
         // miswire the GPU program.
-        let haystack_bytes = dispatch_io::pack_haystack_u32(haystack);
+        dispatch_io::pack_haystack_u32_into(haystack, &mut scratch.haystack_bytes)?;
+        let haystack_bytes = scratch.haystack_bytes.as_slice();
         let pattern_offset_bytes = dispatch_io::u32_words_as_le_bytes(&self.pattern_offsets);
         let pattern_length_bytes = dispatch_io::u32_words_as_le_bytes(&self.pattern_lengths);
         let pattern_bytes = dispatch_io::u32_words_as_le_bytes(&self.pattern_bytes);
@@ -146,7 +310,7 @@ impl GpuLiteralSet {
             dispatch_io::byte_scan_dispatch_config(haystack_len, self.program.workgroup_size[0]);
         let borrowed_inputs: smallvec::SmallVec<[&[u8]; 8]> = [
             // 0: haystack (Packed U32)
-            haystack_bytes.as_slice(),
+            haystack_bytes,
             // 1: pattern_offsets
             pattern_offset_bytes.as_ref(),
             // 2: pattern_lengths
@@ -177,7 +341,7 @@ impl GpuLiteralSet {
         ]);
         let matches_bytes = &outputs[1];
 
-        dispatch_io::unpack_match_triples_into(matches_bytes, count.min(max_matches), matches);
+        dispatch_io::try_unpack_match_triples_into(matches_bytes, count.min(max_matches), matches)?;
         Ok(())
     }
 
@@ -262,6 +426,93 @@ impl GpuLiteralSet {
     }
 }
 
+fn reserve_vec<T>(
+    vec: &mut Vec<T>,
+    requested: usize,
+    field: &'static str,
+) -> Result<(), LiteralSetCompileError> {
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(vec, requested).map_err(
+        |source: TryReserveError| LiteralSetCompileError::StorageReserveFailed {
+            field,
+            requested,
+            message: source.to_string(),
+        },
+    )
+}
+
+#[cfg(test)]
+mod compile_tests {
+    use super::*;
+
+    #[test]
+    fn try_compile_packs_offsets_lengths_and_bytes_without_truncation() {
+        let compiled = GpuLiteralSet::try_compile(&[b"ab".as_slice(), b"cde".as_slice()])
+            .expect("Fix: small literal set must compile");
+
+        assert_eq!(compiled.pattern_offsets, vec![0, 2]);
+        assert_eq!(compiled.pattern_lengths, vec![2, 3]);
+        assert_eq!(
+            compiled.pattern_bytes,
+            vec![
+                b'a' as u32,
+                b'b' as u32,
+                b'c' as u32,
+                b'd' as u32,
+                b'e' as u32
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_empty_patterns_matches_fallible_compile_contract() {
+        let compat = GpuLiteralSet::compile(&[]);
+        let fallible = GpuLiteralSet::try_compile(&[]).expect("Fix: empty literal set must compile");
+
+        assert_eq!(compat.pattern_offsets, fallible.pattern_offsets);
+        assert_eq!(compat.pattern_lengths, fallible.pattern_lengths);
+        assert_eq!(compat.pattern_bytes, fallible.pattern_bytes);
+    }
+
+    #[test]
+    fn reserve_vec_reports_compile_storage_failure() {
+        let mut scratch = Vec::<u8>::new();
+        let error = reserve_vec(&mut scratch, usize::MAX, "adversarial scratch")
+            .expect_err("Fix: usize::MAX reserve must fail instead of silently truncating");
+
+        match error {
+            LiteralSetCompileError::StorageReserveFailed {
+                field, requested, ..
+            } => {
+                assert_eq!(field, "adversarial scratch");
+                assert_eq!(requested, usize::MAX);
+            }
+            other => panic!("expected storage reserve failure, got {other:?}"),
+        }
+        assert!(scratch.is_empty());
+    }
+
+    #[test]
+    fn literal_scan_exposes_scratch_backed_dispatch_staging() {
+        let production = include_str!("literal_set.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: literal_set.rs must contain production section");
+
+        assert!(
+            production.contains("pub fn scan_into_with_scratch")
+                && production.contains("ScanDispatchScratch")
+                && production.contains("pack_haystack_u32_into")
+                && !production.contains(concat!("pack_haystack_u32", "(haystack)")),
+            "Fix: literal scan hot path must expose reusable dispatch scratch and avoid fresh haystack packing allocations."
+        );
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: literal_set production wrappers must not panic."
+        );
+    }
+}
+
+
 const LITERAL_SET_WIRE_MAGIC: &[u8; 4] = b"VLIT";
 const LITERAL_SET_WIRE_VERSION: u32 = 1;
 
@@ -316,16 +567,10 @@ fn build_literal_set_program(
     let idx = Expr::InvocationId { axis: 0 };
     let subgroup_size = 32u32;
 
-    fn packed_byte(haystack: &str, index: Expr) -> Expr {
-        Expr::bitand(
-            Expr::shr(
-                Expr::load(haystack, Expr::div(index.clone(), Expr::u32(4))),
-                Expr::mul(Expr::rem(index, Expr::u32(4)), Expr::u32(8)),
-            ),
-            Expr::u32(0xFF),
-        )
-    }
-
+    // Use the canonical `builders::load_packed_byte` LEGO primitive
+    // instead of a local re-inlining. Earlier "complete" tasks (#21,
+    // #22) missed this site; the inline version was less efficient
+    // (no let-bind for the loaded word ⇒ no CSE opportunity).
     let offset_at_end = Expr::add(idx.clone(), Expr::u32(1));
     let lane_body = vec![Node::Loop {
         var: "_pid".into(),
@@ -358,7 +603,7 @@ fn build_literal_set_program(
                 to: Expr::var("_len"),
                 body: vec![Node::If {
                     cond: Expr::ne(
-                        packed_byte(
+                        crate::scan::builders::load_packed_byte_expr(
                             haystack,
                             Expr::add(Expr::var("_candidate_start"), Expr::var("_j")),
                         ),
@@ -465,3 +710,4 @@ fn build_state_cascade(dfa: &CompiledDfa, state: u32, state_var: &str, byte_expr
     }
     node
 }
+

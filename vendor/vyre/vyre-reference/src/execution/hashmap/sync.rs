@@ -5,8 +5,10 @@
 
 use super::state::HashmapInvocation;
 use smallvec::SmallVec;
-use vyre::ir::{BufferDecl, Node};
+use vyre::ir::BufferDecl;
 use vyre::Error;
+
+pub(crate) use crate::execution::node_tree::{contains_barrier, node_id};
 
 pub(crate) fn release_barrier_if_ready(invocations: &mut [HashmapInvocation<'_>]) -> bool {
     let active = invocations.iter().filter(|inv| !inv.done()).count();
@@ -46,37 +48,6 @@ pub(crate) fn verify_uniform_control_flow(
         }
     }
     Ok(())
-}
-
-pub(crate) fn contains_barrier(nodes: &[Node]) -> bool {
-    nodes.iter().any(node_contains_barrier)
-}
-
-fn node_contains_barrier(node: &Node) -> bool {
-    match node {
-        Node::Barrier { .. } => true,
-        Node::Let { .. }
-        | Node::Assign { .. }
-        | Node::Store { .. }
-        | Node::Return
-        | Node::IndirectDispatch { .. }
-        | Node::AsyncLoad { .. }
-        | Node::AsyncStore { .. }
-        | Node::AsyncWait { .. }
-        | Node::Trap { .. }
-        | Node::Resume { .. }
-        | Node::Opaque(_) => false,
-        Node::If {
-            then, otherwise, ..
-        } => contains_barrier(then) || contains_barrier(otherwise),
-        Node::Loop { body, .. } => contains_barrier(body),
-        Node::Block(body) => contains_barrier(body),
-        _ => false,
-    }
-}
-
-pub(crate) fn node_id(node: &Node) -> usize {
-    std::ptr::from_ref(node).addr()
 }
 
 pub(crate) fn element_count(decl: &BufferDecl, byte_len: usize) -> Result<u32, Error> {

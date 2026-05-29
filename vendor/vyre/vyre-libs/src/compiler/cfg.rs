@@ -13,7 +13,7 @@ use vyre_foundation::ir::model::expr::GeneratorRef;
 /// The hash insert / lookup use linear probing on a 4096-slot table
 /// with `AtomicCompareExchange` for first-writer-wins registration
 /// and a bounded linear scan for lookup. No external primitive
-/// dependency — the kernel is self-contained.
+/// dependency  -  the kernel is self-contained.
 ///
 /// Opcode sentinels (ASCII tag bytes): `0x4C41424C` = "LABL" (label
 /// definition), `0x474F544F` = "GOTO" (goto site).
@@ -144,14 +144,16 @@ pub fn c11_build_cfg_and_gotos(
                 BufferAccess::ReadWrite,
                 DataType::U32,
             )
-            .with_count(TABLE_CAP),
+            .with_count(TABLE_CAP)
+            .with_output_byte_range(0..0),
             BufferDecl::storage(
                 "goto_labels_vals",
                 4,
                 BufferAccess::ReadWrite,
                 DataType::U32,
             )
-            .with_count(TABLE_CAP),
+            .with_count(TABLE_CAP)
+            .with_output_byte_range(0..0),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(
@@ -192,13 +194,7 @@ inventory::submit! {
 
             let labels = vec![0u8; 5 * 4];
 
-            let mut keys = vec![0xFFu8; 4 * 4096];
-            let mut vals = vec![0u8; 4 * 4096];
-            let slot = (7u32.wrapping_mul(2_654_435_769) & (4096 - 1)) as usize;
-            keys[slot * 4..slot * 4 + 4].copy_from_slice(&7u32.to_le_bytes());
-            vals[slot * 4..slot * 4 + 4].copy_from_slice(&1u32.to_le_bytes());
-
-            vec![vec![cfg, labels, keys, vals]]
+            vec![vec![cfg, labels, Vec::new(), Vec::new()]]
         }),
         category: Some("compiler"),
     }

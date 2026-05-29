@@ -1,7 +1,6 @@
 //! Disk-backed WGSL + compiled-pipeline cache for compiled pipeline mode.
 
 use fs2::FileExt;
-use smallvec::SmallVec;
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -10,6 +9,8 @@ use std::sync::{Mutex, OnceLock};
 use vyre_driver::{BackendError, DispatchConfig};
 use vyre_foundation::ir::Program;
 use vyre_foundation::serial::wire::framing::WIRE_FORMAT_VERSION;
+
+use crate::staging_reserve::reserve_backend_vec;
 
 #[cfg(test)]
 pub(crate) use super::disk_cache_invalidation::set_test_disk_pipeline_cache_root;
@@ -68,7 +69,7 @@ pub(crate) fn load_or_compile_disk_wgsl(
     tracing::info!(
         program_fingerprint = %cache_key_hex,
         elapsed_ms = elapsed.as_secs_f64() * 1000.0,
-        "WGSL cache miss — cold cache or program shape changed"
+        "WGSL cache miss  -  cold cache or program shape changed"
     );
     persist_disk_wgsl(
         &dir,
@@ -184,9 +185,13 @@ pub(crate) fn flush_disk_pipeline_cache() -> Result<(), BackendError> {
     };
     let paths = {
         let mut guard = pending.lock().map_err(BackendError::poisoned_lock)?;
-        let pending_paths = std::mem::take(&mut *guard);
-        let mut paths = Vec::with_capacity(pending_paths.len());
-        paths.extend(pending_paths);
+        let mut paths = Vec::new();
+        reserve_backend_vec(
+            &mut paths,
+            guard.len(),
+            "pipeline cache pending flush path staging",
+        )?;
+        paths.extend(std::mem::take(&mut *guard));
         paths
     };
     if paths.is_empty() {
@@ -203,7 +208,12 @@ pub(crate) fn flush_disk_pipeline_cache() -> Result<(), BackendError> {
 
 fn flush_disk_cache_paths(paths: &[PathBuf]) -> Result<(), BackendError> {
     sync_cache_files_bounded(paths, File::sync_data, "pipeline cache explicit flush")?;
-    let mut parents: SmallVec<[PathBuf; 8]> = SmallVec::with_capacity(paths.len());
+    let mut parents = Vec::new();
+    reserve_backend_vec(
+        &mut parents,
+        paths.len(),
+        "pipeline cache parent directory staging",
+    )?;
     for path in paths {
         if let Some(parent) = path.parent() {
             parents.push(parent.to_path_buf());
@@ -268,7 +278,7 @@ fn load_compiled_pipeline_blob(
     let Ok(metadata) = read_metadata::<CompiledPipelineMetadata>(&meta_path) else {
         tracing::warn!(
             cache_key = %key.cache_key,
-            "compiled-pipeline cache miss — metadata missing or unreadable"
+            "compiled-pipeline cache miss  -  metadata missing or unreadable"
         );
         return Ok(None);
     };
@@ -281,7 +291,7 @@ fn load_compiled_pipeline_blob(
     {
         tracing::warn!(
             cache_key = %key.cache_key,
-            "compiled-pipeline cache miss — metadata does not match current adapter or compiler contract"
+            "compiled-pipeline cache miss  -  metadata does not match current adapter or compiler contract"
         );
         return Ok(None);
     }
@@ -295,7 +305,7 @@ fn load_compiled_pipeline_blob(
             cache_key = %key.cache_key,
             blob_bytes = metadata.blob_bytes,
             max_bytes = MAX_COMPILED_PIPELINE_CACHE_BLOB_BYTES,
-            "compiled-pipeline cache miss — blob exceeds bounded cache read budget"
+            "compiled-pipeline cache miss  -  blob exceeds bounded cache read budget"
         );
         return Ok(None);
     }
@@ -310,7 +320,7 @@ fn load_compiled_pipeline_blob(
     if bytes.len() != metadata.blob_bytes || blake3_hex(&bytes) != metadata.blob_blake3 {
         tracing::warn!(
             cache_key = %key.cache_key,
-            "compiled-pipeline cache miss — blob length or digest mismatch"
+            "compiled-pipeline cache miss  -  blob length or digest mismatch"
         );
         return Ok(None);
     }
@@ -394,7 +404,12 @@ fn sync_cache_files_bounded(
         .clamp(1, 16);
     for chunk in paths.chunks(workers) {
         std::thread::scope(|scope| {
-            let mut handles = SmallVec::<[_; 16]>::with_capacity(chunk.len());
+            let mut handles = Vec::new();
+            reserve_backend_vec(
+                &mut handles,
+                chunk.len(),
+                "pipeline cache flush worker staging",
+            )?;
             for path in chunk {
                 handles.push(scope.spawn(move || -> Result<(), BackendError> {
                     let file = File::open(path).map_err(|error| {
@@ -439,7 +454,8 @@ fn read_metadata<T: serde::de::DeserializeOwned>(meta_path: &Path) -> Result<T, 
     }
     let capacity = usize::try_from(metadata.len()).map_err(|_| ())?;
     let bounded_read_limit = MAX_PIPELINE_CACHE_METADATA_BYTES.checked_add(1).ok_or(())?;
-    let mut text = String::with_capacity(capacity);
+    let mut text = String::new();
+    text.try_reserve_exact(capacity).map_err(|_| ())?;
     let res = Read::by_ref(&mut file)
         .take(bounded_read_limit)
         .read_to_string(&mut text);
@@ -453,6 +469,7 @@ fn read_metadata<T: serde::de::DeserializeOwned>(meta_path: &Path) -> Result<T, 
     }
     toml::from_str::<T>(&text).map_err(|_| ())
 }
+
 
 fn read_bounded_utf8(path: &Path, max_bytes: u64) -> std::io::Result<String> {
     let bytes = read_bounded_bytes(path, max_bytes)?;
@@ -481,7 +498,13 @@ fn read_bounded_bytes(path: &Path, max_bytes: u64) -> std::io::Result<Vec<u8>> {
             "cache entry max_bytes cannot add sentinel byte without overflowing u64",
         )
     })?;
-    let mut bytes = Vec::with_capacity(capacity);
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(capacity).map_err(|source| {
+        std::io::Error::new(
+            std::io::ErrorKind::OutOfMemory,
+            format!("cache entry buffer could not reserve {capacity} bytes: {source}"),
+        )
+    })?;
     Read::by_ref(&mut file)
         .take(bounded_read_limit)
         .read_to_end(&mut bytes)?;
@@ -540,7 +563,7 @@ fn adapter_fingerprint(adapter_info: &wgpu::AdapterInfo) -> String {
 
 fn adapter_backend_name(backend: wgpu::Backend) -> &'static str {
     match backend {
-        wgpu::Backend::Empty => "Empty",
+        wgpu::Backend::Noop => "Noop",
         wgpu::Backend::Vulkan => "Vulkan",
         wgpu::Backend::Metal => "Metal",
         wgpu::Backend::Dx12 => "Dx12",
@@ -578,12 +601,13 @@ fn path_fingerprint(path: &Path) -> String {
 
 fn hex_hash(bytes: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut hex = String::with_capacity(64);
-    for byte in bytes {
-        hex.push(HEX[hex_nibble_index(byte >> 4)] as char);
-        hex.push(HEX[hex_nibble_index(byte & 0x0f)] as char);
+    let mut hex = [0_u8; 64];
+    for (index, byte) in bytes.iter().enumerate() {
+        let offset = index * 2;
+        hex[offset] = HEX[hex_nibble_index(byte >> 4)];
+        hex[offset + 1] = HEX[hex_nibble_index(byte & 0x0f)];
     }
-    hex
+    String::from_utf8_lossy(&hex).into_owned()
 }
 
 fn push_hex_u32(out: &mut String, value: u32) {
@@ -606,4 +630,47 @@ fn hex_nibble_index(nibble: u8) -> usize {
 mod tests {
     #![allow(missing_docs)]
     include!("disk_cache_tests.rs");
+
+    #[test]
+    fn disk_cache_production_uses_fallible_cache_staging() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/pipeline/disk_cache.rs"
+        ))
+        .expect("Fix: disk cache source must be readable");
+        let production = src
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: meta-test scans production sources; update fixture path if module moved - production section must exist");
+        assert!(
+            !production.contains("Vec::with_capacity("),
+            "disk cache Vec staging must reserve fallibly"
+        );
+        assert!(
+            !production.contains("SmallVec::with_capacity("),
+            "disk cache dynamic staging must reserve fallibly"
+        );
+        assert!(
+            !production.contains("String::with_capacity("),
+            "disk cache string staging must reserve fallibly"
+        );
+        assert!(production.contains("reserve_backend_vec"));
+        assert!(production.contains("try_reserve_exact"));
+    }
+
+    #[test]
+    fn fixed_digest_hex_hash_is_lowercase_and_stack_encoded() {
+        let mut digest = [0_u8; 32];
+        digest[0] = 0xab;
+        digest[31] = 0x7f;
+
+        let hex = hex_hash(&digest);
+
+        assert_eq!(hex.len(), 64);
+        assert!(hex.starts_with("ab00"));
+        assert!(hex.ends_with("007f"));
+        assert!(hex.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(hex, hex.to_ascii_lowercase());
+    }
 }
+

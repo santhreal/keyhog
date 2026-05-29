@@ -4,7 +4,7 @@
 //! pipeline, the launch overhead dominates execution time (~5 µs
 //! per native launch, ~10–50 µs per portable queue submit). Replacing the
 //! N launches with ONE persistent kernel that polls a device-side
-//! work queue eliminates the per-launch cost entirely — a 100×
+//! work queue eliminates the per-launch cost entirely  -  a 100×
 //! speedup on workloads where kernel duration < 50 µs.
 //!
 //! Persistent mode has a one-time setup cost (allocate the work queue,
@@ -14,7 +14,7 @@
 //! per-item kernel duration, should the dispatcher run N standard
 //! launches or one persistent kernel?
 //!
-//! Pure decision — no kernel launch, no Program walk. Caller passes
+//! Pure decision  -  no kernel launch, no Program walk. Caller passes
 //! the measurements; the substrate produces a verdict.
 
 /// Inputs to the persistent-kernel decision.
@@ -38,12 +38,12 @@ pub struct PersistentKernelInputs {
 /// Verdict returned by [`decide_persistent_kernel`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PersistentKernelDecision {
-    /// Use the standard launch path — N separate kernel launches.
+    /// Use the standard launch path  -  N separate kernel launches.
     /// Either the batch is too small to amortise persistent setup,
     /// or the per-item kernel is large enough that launch overhead
     /// is negligible.
     StandardLaunches,
-    /// Use persistent kernel mode — one launch + device-side queue
+    /// Use persistent kernel mode  -  one launch + device-side queue
     /// polling for `batch_size` work items.
     PersistentKernel {
         /// Predicted total time saved (in nanoseconds) by using the
@@ -60,14 +60,14 @@ pub enum PersistentKernelDecision {
 /// Persistent wins iff `batch_size * per_launch_overhead > persistent_setup`.
 ///
 /// Returns `StandardLaunches` when batch_size is 0 or 1 (persistent
-/// mode never wins for a single launch — the setup cost dominates).
+/// mode never wins for a single launch  -  the setup cost dominates).
 #[must_use]
 pub fn decide_persistent_kernel(inputs: PersistentKernelInputs) -> PersistentKernelDecision {
     if inputs.batch_size <= 1 {
         return PersistentKernelDecision::StandardLaunches;
     }
     // Defensive: zero per-launch overhead means we have no model to
-    // amortise — keep the standard path.
+    // amortise  -  keep the standard path.
     if inputs.per_launch_overhead_ns == 0 {
         return PersistentKernelDecision::StandardLaunches;
     }
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn batch_at_amortisation_threshold_is_standard() {
-        // Exactly equal — the policy uses strict `>` so equal cost
+        // Exactly equal  -  the policy uses strict `>` so equal cost
         // stays on the standard path (cheaper to keep launching).
         let dec = decide_persistent_kernel(inp(10, 5_000, 1_000, 50_000));
         assert_eq!(dec, PersistentKernelDecision::StandardLaunches);
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn zero_per_launch_overhead_returns_standard() {
         // Defensive: a backend that reports zero launch overhead has
-        // no model to amortise — keep the standard path.
+        // no model to amortise  -  keep the standard path.
         let dec = decide_persistent_kernel(inp(1000, 0, 100, 50_000));
         assert_eq!(dec, PersistentKernelDecision::StandardLaunches);
     }

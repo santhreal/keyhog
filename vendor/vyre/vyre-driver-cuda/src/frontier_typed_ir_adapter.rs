@@ -1,5 +1,9 @@
 //! Adapter from substrate frontier-typed IR plans to CUDA frontier waves.
 
+use crate::backend::accounting::{checked_mul_u64_count as checked_mul, CudaArithmeticOverflow};
+use crate::backend::staging_reserve::{
+    reserve_typed_vec as reserve_vec, CudaStorageReserveFailure,
+};
 use crate::megakernel_barrier_planner::{CudaMegakernelFrontierWave, CudaMegakernelWaveDependency};
 use vyre_self_substrate::frontier_typed_ir::FrontierTypedPlan;
 
@@ -43,31 +47,9 @@ impl CudaFrontierTypedIrInput {
         wave_count: usize,
     ) -> Result<(), CudaFrontierTypedIrAdapterError> {
         let dependency_count = dependency_capacity(wave_count);
-        self.waves.try_reserve_exact(wave_count).map_err(|error| {
-            CudaFrontierTypedIrAdapterError::StorageReserveFailed {
-                field: "waves",
-                requested: wave_count,
-                message: error.to_string(),
-            }
-        })?;
-        self.active_items
-            .try_reserve_exact(wave_count)
-            .map_err(
-                |error| CudaFrontierTypedIrAdapterError::StorageReserveFailed {
-                    field: "active items",
-                    requested: wave_count,
-                    message: error.to_string(),
-                },
-            )?;
-        self.dependencies
-            .try_reserve_exact(dependency_count)
-            .map_err(
-                |error| CudaFrontierTypedIrAdapterError::StorageReserveFailed {
-                    field: "dependencies",
-                    requested: dependency_count,
-                    message: error.to_string(),
-                },
-            )?;
+        reserve_vec(&mut self.waves, wave_count, "waves")?;
+        reserve_vec(&mut self.active_items, wave_count, "active items")?;
+        reserve_vec(&mut self.dependencies, dependency_count, "dependencies")?;
         Ok(())
     }
 }
@@ -95,6 +77,22 @@ pub enum CudaFrontierTypedIrAdapterError {
         /// Allocator error text.
         message: String,
     },
+}
+
+impl CudaArithmeticOverflow for CudaFrontierTypedIrAdapterError {
+    fn arithmetic_overflow(field: &'static str) -> Self {
+        Self::ByteCountOverflow { field }
+    }
+}
+
+impl CudaStorageReserveFailure for CudaFrontierTypedIrAdapterError {
+    fn storage_reserve_failed(field: &'static str, requested: usize, message: String) -> Self {
+        Self::StorageReserveFailed {
+            field,
+            requested,
+            message,
+        }
+    }
 }
 
 impl std::fmt::Display for CudaFrontierTypedIrAdapterError {
@@ -183,15 +181,6 @@ const fn dependency_capacity(wave_count: usize) -> usize {
     }
 }
 
-fn checked_mul(
-    lhs: u64,
-    rhs: u64,
-    field: &'static str,
-) -> Result<u64, CudaFrontierTypedIrAdapterError> {
-    lhs.checked_mul(rhs)
-        .ok_or(CudaFrontierTypedIrAdapterError::ByteCountOverflow { field })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,10 +209,10 @@ mod tests {
                 after: 1,
             }],
         )
-        .expect("frontier plan should build");
+        .expect("Fix: frontier plan should build");
 
         let cuda = adapt_frontier_typed_ir_to_cuda(&plan, 8, 16, 32)
-            .expect("frontier plan should adapt to CUDA");
+            .expect("Fix: frontier plan should adapt to CUDA");
 
         assert_eq!(
             cuda.active_items,
@@ -253,7 +242,7 @@ mod tests {
             }]
         );
         let barriers = plan_cuda_megakernel_barriers(cuda.waves.len(), &cuda.dependencies)
-            .expect("adapted frontier dependencies should barrier-plan");
+            .expect("Fix: adapted frontier dependencies should barrier-plan");
         assert_eq!(barriers.global_barriers, 1);
         assert_eq!(barriers.groups[0].waves, vec![0]);
         assert_eq!(barriers.groups[1].waves, vec![1]);
@@ -283,7 +272,7 @@ mod tests {
     #[test]
     fn adapter_into_reuses_caller_owned_frontier_storage() {
         let mut out = CudaFrontierTypedIrInput::try_with_capacity(8)
-            .expect("frontier storage should reserve");
+            .expect("Fix: frontier storage should reserve");
         let initial_wave_capacity = out.waves.capacity();
         let initial_active_capacity = out.active_items.capacity();
         let initial_dependency_capacity = out.dependencies.capacity();
@@ -305,10 +294,10 @@ mod tests {
                 after: 1,
             }],
         )
-        .expect("frontier plan should build");
+        .expect("Fix: frontier plan should build");
 
         adapt_frontier_typed_ir_to_cuda_into(&plan, 8, 16, 32, &mut out)
-            .expect("frontier plan should adapt into reused CUDA storage");
+            .expect("Fix: frontier plan should adapt into reused CUDA storage");
 
         assert_eq!(out.waves.capacity(), initial_wave_capacity);
         assert_eq!(out.active_items.capacity(), initial_active_capacity);
@@ -323,7 +312,7 @@ mod tests {
 
         assert!(
             source.contains("fn try_reserve_for_waves(")
-                && source.contains("try_reserve_exact(dependency_count)")
+                && source.contains("reserve_typed_vec as reserve_vec")
                 && source.contains("dependencies.push(CudaMegakernelWaveDependency"),
             "Fix: frontier-typed CUDA adapter must build dependency edges with explicit fallible preallocated storage."
         );
@@ -340,7 +329,7 @@ mod tests {
 
         assert!(
             source.contains("dependency_capacity(wave_count)")
-                && source.contains("try_reserve_exact(wave_count)")
+                && source.contains("reserve_vec(&mut self.waves, wave_count")
                 && source.contains("StorageReserveFailed"),
             "Fix: frontier-typed CUDA adapter must not hide release-path capacity failures behind infallible Vec reservations."
         );

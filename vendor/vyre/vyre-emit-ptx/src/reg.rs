@@ -5,7 +5,7 @@ use vyre_foundation::ir::DataType;
 /// PTX scalar register classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PtxType {
-    /// `.b16` register (`%h<N>`) — used for packed f16/bf16 memory values.
+    /// `.b16` register (`%h<N>`)  -  used for packed f16/bf16 memory values.
     B16,
     /// `.u32` register (`%r<N>`).
     U32,
@@ -15,7 +15,7 @@ pub(crate) enum PtxType {
     F32,
     /// `.pred` register (`%p<N>`).
     Bool,
-    /// `.u64` register (`%rd<N>`) — used for pointers.
+    /// `.u64` register (`%rd<N>`)  -  used for pointers.
     U64,
 }
 

@@ -1,6 +1,5 @@
 //! DFA / Aho-Corasick sub-dialect: pre-built transition tables + scanner.
 mod aho_corasick;
-#[path = "../cooperative_dfa.rs"]
 mod cooperative_dfa;
 mod dfa_compile;
 

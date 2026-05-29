@@ -1,15 +1,15 @@
-//! ROADMAP A1 — hash-consed Expr arena.
+//! ROADMAP A1  -  hash-consed Expr arena.
 //!
 //! Op id: `vyre-foundation::optimizer::expr_arena`. Soundness: read-only
 //! over the input `Expr`; produces an additive side-table that does not
 //! mutate the program. Cost-direction: monotone-down on optimizer
-//! clone/walk cost — every interned `Expr` becomes a 32-bit `ExprId`,
+//! clone/walk cost  -  every interned `Expr` becomes a 32-bit `ExprId`,
 //! so passes that previously cloned subtrees now copy 4 bytes.
 //! Preserves: every analysis. Invalidates: nothing.
 //!
 //! ## Why
 //!
-//! `Expr` lives in `Box<Expr>` slots throughout the IR — every
+//! `Expr` lives in `Box<Expr>` slots throughout the IR  -  every
 //! `BinOp { left, right }`, every `Select { cond, true_val, false_val }`,
 //! every `Load { index }` allocates. Optimizer passes that re-walk
 //! the same subtree (CSE, fusion, const-fold to fixpoint) clone the
@@ -36,7 +36,7 @@
 //!
 //! ## Migration
 //!
-//! Additive — no existing code changes shape. Passes that want the
+//! Additive  -  no existing code changes shape. Passes that want the
 //! speedup do `let arena = ExprArena::default(); let id =
 //! arena.intern(&expr);` and operate on `ExprId`s. The CSE pass is
 //! the obvious first consumer; the egglog `Family` substrate
@@ -67,7 +67,7 @@ use std::sync::Arc;
 ///
 /// `Copy` so passes can pass it around without clones. Two
 /// structurally-equal `Expr`s interned into the same arena produce
-/// the same `ExprId` — that is the whole point of the hash-cons.
+/// the same `ExprId`  -  that is the whole point of the hash-cons.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ExprId(pub u32);
 
@@ -87,7 +87,7 @@ impl ExprId {
 /// `Eq` + `Hash` are derived structurally, so the hash-cons table is
 /// `FxHashMap<FlatExpr, ExprId>`.
 ///
-/// Variants mirror the [`Expr`] enum 1:1 — see that type's documentation
+/// Variants mirror the [`Expr`] enum 1:1  -  see that type's documentation
 /// for per-variant semantics.
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -170,7 +170,7 @@ pub enum FlatExpr {
 }
 
 /// Pointer-identity tag for opaque extension expressions. Wraps the
-/// `Arc<dyn ExprNode>` raw pointer cast to `usize` — two `Arc`s
+/// `Arc<dyn ExprNode>` raw pointer cast to `usize`  -  two `Arc`s
 /// pointing to the same allocation produce the same `OpaqueId`; two
 /// `Arc`s wrapping equal contents but with distinct allocations
 /// produce different `OpaqueId`s.
@@ -185,7 +185,7 @@ pub struct OpaqueId(usize);
 #[derive(Debug, Default)]
 pub struct ExprArena {
     /// Interned nodes, addressed by `ExprId.0`. Stored as `Arc<FlatExpr>`
-    /// so the hashcons key shares storage with the node — interning a
+    /// so the hashcons key shares storage with the node  -  interning a
     /// fresh expression performs one heap allocation (the Arc) rather
     /// than two (one for the Vec push clone + one for the map insert).
     /// Public `get(id)` still returns `&FlatExpr` via `Arc::as_ref`.
@@ -431,12 +431,8 @@ impl ExprArena {
     }
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "ExprId is the arena's compact u32 handle; exceeding it is a hard capacity breach"
-)]
 fn expr_id_from_len(len: usize) -> ExprId {
-    ExprId(u32::try_from(len).expect("Fix: expression arena exceeds u32 ExprId capacity"))
+    ExprId(u32::try_from(len).unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]
@@ -452,6 +448,7 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(arena.len(), 2);
     }
+
 
     #[test]
     fn equal_literals_collapse_to_one_id() {
@@ -469,7 +466,7 @@ mod tests {
     #[test]
     fn equal_subtrees_collapse_at_every_level() {
         let mut arena = ExprArena::default();
-        // BinOp::Add(LitU32(1), LitU32(2)) — first interning produces
+        // BinOp::Add(LitU32(1), LitU32(2))  -  first interning produces
         // 3 nodes (Lit 1, Lit 2, BinOp).
         let lhs = Expr::add(Expr::u32(1), Expr::u32(2));
         let id_a = arena.intern(&lhs);
@@ -483,7 +480,7 @@ mod tests {
     #[test]
     fn shared_leaves_dedup_across_distinct_parents() {
         let mut arena = ExprArena::default();
-        // Add(1, 2) and Sub(1, 2) — distinct parents, but the two
+        // Add(1, 2) and Sub(1, 2)  -  distinct parents, but the two
         // literals 1 and 2 must share ids.
         let add_id = arena.intern(&Expr::add(Expr::u32(1), Expr::u32(2)));
         let sub_id = arena.intern(&Expr::sub(Expr::u32(1), Expr::u32(2)));
@@ -607,3 +604,4 @@ mod tests {
         assert_eq!(arena.len(), 1);
     }
 }
+

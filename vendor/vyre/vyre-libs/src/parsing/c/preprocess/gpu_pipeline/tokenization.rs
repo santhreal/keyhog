@@ -1,5 +1,6 @@
 use super::buffers::{
-    bucket_pow2, pack_u32_words_into, pad_to_u32_words_into, read_u32_scalar_exact,
+    bucket_pow2, checked_gpu_u32, pack_u32_words_into, pad_to_u32_words_into, padded_u32_byte_len,
+    read_u32_scalar_exact, reserve_gpu_staging_bytes, u32_word_byte_len,
     unpack_u32_words_prefix_exact,
 };
 use super::dispatch::GpuDispatcher;
@@ -80,7 +81,7 @@ pub(super) fn count_directives(directive_kinds: &[u32]) -> u32 {
         .filter(|&&kind| kind != 0)
         .count()
         .try_into()
-        .expect("C preprocessor directive row count exceeds u32. Fix: shard the translation unit before GPU directive payload extraction.")
+        .unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -140,9 +141,11 @@ pub(super) struct TokenizationScratch {
 }
 
 impl TokenizationScratch {
-    fn prepare_zero(out: &mut Vec<u8>, byte_len: usize) {
+    fn prepare_zero(out: &mut Vec<u8>, byte_len: usize) -> Result<(), String> {
         out.clear();
+        reserve_gpu_staging_bytes(out, byte_len, "tokenization zero staging")?;
         out.resize(byte_len, 0);
+        Ok(())
     }
 }
 
@@ -176,7 +179,7 @@ pub(super) fn reject_invalid_if_expression_values(
 ///
 /// `raw` should be the post-byte-filter stream (output of
 /// `gpu_filter_source_bytes`), but the function works on any byte
-/// slice — no preprocessing is required for the lexer to produce a
+/// slice  -  no preprocessing is required for the lexer to produce a
 /// valid token list.
 ///
 /// # Errors
@@ -226,11 +229,14 @@ pub(super) fn gpu_tokenize_and_classify_with_scratch(
     let dm_prog = gpu_directive_metadata(n_bucket as u32, 0);
     let n_pad = n_bucket;
     let _ = n_bytes;
-    pack_u32_words_into(&mut scratch.tok_types_b, &tok_types, n_pad);
-    pack_u32_words_into(&mut scratch.tok_starts_b, &tok_starts, n_pad);
-    pack_u32_words_into(&mut scratch.tok_lens_b, &tok_lens, n_pad);
-    pad_to_u32_words_into(&mut scratch.raw_words, raw);
-    TokenizationScratch::prepare_zero(&mut scratch.directive_zero, n_pad * 4);
+    pack_u32_words_into(&mut scratch.tok_types_b, &tok_types, n_pad)?;
+    pack_u32_words_into(&mut scratch.tok_starts_b, &tok_starts, n_pad)?;
+    pack_u32_words_into(&mut scratch.tok_lens_b, &tok_lens, n_pad)?;
+    pad_to_u32_words_into(&mut scratch.raw_words, raw)?;
+    TokenizationScratch::prepare_zero(
+        &mut scratch.directive_zero,
+        u32_word_byte_len(n_pad, "directive metadata zero staging")?,
+    )?;
     let dm_inputs: [&[u8]; 6] = [
         scratch.tok_types_b.as_slice(),
         scratch.tok_starts_b.as_slice(),
@@ -311,19 +317,26 @@ fn sparse_tokenize(
     // dispatch. Soundness: the lexer's default classification for any
     // byte is `tok_type=TOK_WHITESPACE, emit=0`. Zero-padding the
     // haystack from `raw.len()` up to the bucket size therefore produces
-    // no spurious tokens — padding positions get emit=0, so they
+    // no spurious tokens  -  padding positions get emit=0, so they
     // contribute zero to the prefix scan's running sum and zero to the
     // compact output. n_tokens at the end reflects only real-source
     // tokens.
-    // PERF 2026-05-10: floor 1024 — same as gpu_extract_directive_payloads
+    // PERF 2026-05-10: floor 1024  -  same as gpu_extract_directive_payloads
     // and gpu_tokenize_and_classify. The lexer kernel was previously
     // unbucketed (every distinct file size was its own program); now it
     // shares a small set of bucket programs with the rest of the pipeline.
-    let n_bytes_bucket = bucket_pow2(raw.len().max(1), 1024) as u32;
+    let n_bytes_bucket = checked_gpu_u32(
+        "sparse tokenizer bucket byte count",
+        bucket_pow2(raw.len().max(1), 1024),
+    )?;
     let bucket_pad_words = n_bytes_bucket as usize;
-    let raw_pad_len = ((n_bytes_bucket as usize).div_ceil(4) * 4).max(4);
+    let raw_pad_len = padded_u32_byte_len(n_bytes_bucket as usize, "sparse tokenizer raw input")?;
     scratch.raw_padded.clear();
-    scratch.raw_padded.reserve(raw_pad_len);
+    reserve_gpu_staging_bytes(
+        &mut scratch.raw_padded,
+        raw_pad_len,
+        "sparse tokenizer raw input",
+    )?;
     scratch.raw_padded.extend_from_slice(raw);
     scratch.raw_padded.resize(raw_pad_len, 0);
 
@@ -335,7 +348,10 @@ fn sparse_tokenize(
         "sparse_flags",
         n_bytes_bucket,
     );
-    TokenizationScratch::prepare_zero(&mut scratch.sparse_zero, bucket_pad_words * 4);
+    TokenizationScratch::prepare_zero(
+        &mut scratch.sparse_zero,
+        u32_word_byte_len(bucket_pad_words, "sparse tokenizer zero staging")?,
+    )?;
     let sparse_inputs: [&[u8]; 5] = [
         scratch.raw_padded.as_slice(),
         scratch.sparse_zero.as_slice(),
@@ -389,8 +405,11 @@ fn sparse_tokenize(
             n_bytes_bucket,
         )
     };
-    TokenizationScratch::prepare_zero(&mut scratch.compact_zero, bucket_pad_words * 4);
-    TokenizationScratch::prepare_zero(&mut scratch.compact_count_zero, 4);
+    TokenizationScratch::prepare_zero(
+        &mut scratch.compact_zero,
+        u32_word_byte_len(bucket_pad_words, "compact tokenizer zero staging")?,
+    )?;
+    TokenizationScratch::prepare_zero(&mut scratch.compact_count_zero, 4)?;
     if requires_output_inputs {
         let compact_inputs: [&[u8]; 8] = [
             scratch.sparse_outputs[0].as_slice(),
@@ -455,6 +474,7 @@ fn sparse_tokenize(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use vyre::ir::Program;
@@ -495,3 +515,4 @@ mod tests {
         );
     }
 }
+

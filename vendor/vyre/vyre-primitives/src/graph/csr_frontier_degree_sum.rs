@@ -1,4 +1,4 @@
-//! `csr_frontier_degree_sum` — total outgoing-edge count of an active
+//! `csr_frontier_degree_sum`  -  total outgoing-edge count of an active
 //! BFS frontier on a `super::program_graph::ProgramGraph`.
 //!
 //! `csr_forward_traverse` launches one thread per *source node*, which
@@ -8,9 +8,9 @@
 //! instead; the host needs this count to launch the exact grid.
 //!
 //! This primitive computes that count. Given:
-//!   - `frontier_in` — a packed bitset over `node_count`, one bit per
+//!   - `frontier_in`  -  a packed bitset over `node_count`, one bit per
 //!     active source node.
-//!   - `pg_edge_offsets` — the canonical CSR row pointers from
+//!   - `pg_edge_offsets`  -  the canonical CSR row pointers from
 //!     `ProgramGraph`.
 //!
 //! It emits a single u32 scalar:
@@ -26,6 +26,7 @@ use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+use crate::graph::csr_frontier_step::active_frontier_source_lane;
 use crate::graph::program_graph::{ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_OFFSETS};
 
 /// Canonical op id.
@@ -48,46 +49,26 @@ pub fn csr_frontier_degree_sum(shape: ProgramGraphShape) -> Program {
     let frontier_in = "frontier_in";
     let degree_sum_out = "degree_sum_out";
 
-    let body = vec![
-        Node::let_bind("src", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(Expr::var("src"), Expr::u32(shape.node_count)),
-            vec![
-                Node::let_bind("word_idx", Expr::shr(Expr::var("src"), Expr::u32(5))),
-                Node::let_bind(
-                    "bit_mask",
-                    Expr::shl(Expr::u32(1), Expr::bitand(Expr::var("src"), Expr::u32(31))),
-                ),
-                Node::let_bind("src_word", Expr::load(frontier_in, Expr::var("word_idx"))),
-                // Only proceed if this source lane is in the active frontier.
-                Node::if_then(
-                    Expr::ne(
-                        Expr::bitand(Expr::var("src_word"), Expr::var("bit_mask")),
-                        Expr::u32(0),
-                    ),
-                    vec![
-                        // degree = edge_offsets[src+1] - edge_offsets[src]
-                        Node::let_bind("off_lo", Expr::load(NAME_EDGE_OFFSETS, Expr::var("src"))),
-                        Node::let_bind(
-                            "off_hi",
-                            Expr::load(
-                                NAME_EDGE_OFFSETS,
-                                Expr::add(Expr::var("src"), Expr::u32(1)),
-                            ),
-                        ),
-                        Node::let_bind(
-                            "degree",
-                            Expr::sub(Expr::var("off_hi"), Expr::var("off_lo")),
-                        ),
-                        Node::let_bind(
-                            "_old",
-                            Expr::atomic_add(degree_sum_out, Expr::u32(0), Expr::var("degree")),
-                        ),
-                    ],
-                ),
-            ],
-        ),
-    ];
+    let body = vec![active_frontier_source_lane(
+        shape.node_count,
+        frontier_in,
+        Expr::InvocationId { axis: 0 },
+        vec![
+            Node::let_bind("off_lo", Expr::load(NAME_EDGE_OFFSETS, Expr::var("src"))),
+            Node::let_bind(
+                "off_hi",
+                Expr::load(NAME_EDGE_OFFSETS, Expr::add(Expr::var("src"), Expr::u32(1))),
+            ),
+            Node::let_bind(
+                "degree",
+                Expr::sub(Expr::var("off_hi"), Expr::var("off_lo")),
+            ),
+            Node::let_bind(
+                "_old",
+                Expr::atomic_add(degree_sum_out, Expr::u32(0), Expr::var("degree")),
+            ),
+        ],
+    )];
 
     let mut buffers = shape.read_only_buffers();
     let frontier_words = crate::bitset::bitset_words(shape.node_count);
@@ -131,10 +112,7 @@ pub fn csr_frontier_degree_sum_cpu(
 ) -> u32 {
     match try_csr_frontier_degree_sum_cpu(frontier_in, edge_offsets, node_count) {
         Ok(total) => total,
-        Err(error) => {
-            eprintln!("{error}");
-            u32::MAX
-        }
+        Err(_) => u32::MAX,
     }
 }
 
@@ -184,8 +162,22 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || csr_frontier_degree_sum(ProgramGraphShape::new(4, 4)),
-        None,
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            vec![vec![
+                to_bytes(&[0, 0, 0, 0]),          // pg_nodes
+                to_bytes(&[0, 2, 3, 4, 4]),       // pg_edge_offsets
+                to_bytes(&[1, 2, 3, 3]),          // pg_edge_targets
+                to_bytes(&[1, 1, 1, 1]),          // pg_edge_kind_mask
+                to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
+                to_bytes(&[0b0011]),              // frontier_in = {0, 1}
+                to_bytes(&[0]),                   // degree_sum_out
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            vec![vec![to_bytes(&[3])]]
+        }),
     )
 }
 
@@ -287,10 +279,10 @@ mod tests {
         let oracle_source = source
             .split("/// CPU reference.")
             .nth(1)
-            .expect("degree-sum CPU oracle source must be present")
+            .expect("Fix: degree-sum CPU oracle source must be present")
             .split("#[cfg(test)]")
             .next()
-            .expect("degree-sum CPU oracle source must precede tests");
+            .expect("Fix: degree-sum CPU oracle source must precede tests");
 
         assert!(
             oracle_source.contains("pub fn try_csr_frontier_degree_sum_cpu(")
@@ -300,6 +292,37 @@ mod tests {
                 && !oracle_source.contains(".unwrap_or_else("),
             "Fix: degree-sum CPU parity oracle must expose checked accumulation and avoid panics."
         );
+    }
+
+    #[test]
+    fn generated_degree_sum_cpu_matches_scalar_reference() {
+        let mut state = 0xD36D_5A17_u32;
+        for case in 0..4096u32 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let node_count = state % 257 + 1;
+            let mut edge_offsets = Vec::with_capacity(node_count as usize + 1);
+            let mut expected = 0u32;
+            let words = crate::bitset::bitset_words(node_count) as usize;
+            let mut frontier = vec![0u32; words];
+
+            edge_offsets.push(0);
+            for src in 0..node_count {
+                state = state.rotate_left(7) ^ src.wrapping_mul(0x9E37_79B9);
+                let degree = state % 13;
+                let active = (state.rotate_right((src & 15) + 1) & 3) != 0;
+                if active {
+                    frontier[(src / 32) as usize] |= 1u32 << (src % 32);
+                    expected += degree;
+                }
+                edge_offsets.push(edge_offsets.last().copied().unwrap_or(0) + degree);
+            }
+
+            assert_eq!(
+                try_csr_frontier_degree_sum_cpu(&frontier, &edge_offsets, node_count),
+                Ok(expected),
+                "generated degree-sum case {case}"
+            );
+        }
     }
 
     #[test]

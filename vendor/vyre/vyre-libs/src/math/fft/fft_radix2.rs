@@ -1,6 +1,6 @@
 //! Recursive radix-2 Cooley-Tukey FFT for power-of-two N.
 //!
-//! ROADMAP H2 — companion to `fft4_complex`. Builds an N-point
+//! ROADMAP H2  -  companion to `fft4_complex`. Builds an N-point
 //! complex FFT by recursive bit-reversal + butterfly stages on top
 //! of the verified 4-point base case.
 //!
@@ -28,6 +28,7 @@
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+use super::common::{bit_reverse, validate_complex_len};
 use crate::region::wrap_anonymous;
 
 const OP_ID: &str = "vyre-libs::math::fft::fft_radix2";
@@ -42,23 +43,7 @@ const OP_ID: &str = "vyre-libs::math::fft::fft_radix2";
 /// Returns `Err` when `n` is not a power of two, when `n < 2`, or
 /// when `2 * n` overflows `u32`.
 pub fn fft_radix2_complex(input: &str, output: &str, n: u32) -> Result<Program, String> {
-    if n < 2 {
-        return Err(format!(
-            "Fix: fft_radix2_complex requires n >= 2; got n={n}."
-        ));
-    }
-    if !n.is_power_of_two() {
-        return Err(format!(
-            "Fix: fft_radix2_complex requires n a power of two; got n={n}."
-        ));
-    }
-    let elements = (n as u64)
-        .checked_mul(2)
-        .ok_or_else(|| "Fix: fft_radix2_complex 2*n overflows; reduce n.".to_string())?;
-    if elements > u32::MAX as u64 {
-        return Err("Fix: fft_radix2_complex 2*n exceeds u32::MAX; reduce n.".to_string());
-    }
-    let elements = elements as u32;
+    let elements = validate_complex_len(n, "fft_radix2_complex")?;
     let log2_n = n.trailing_zeros() as usize;
 
     let mut body = Vec::new();
@@ -170,34 +155,18 @@ pub fn fft_radix2_complex(input: &str, output: &str, n: u32) -> Result<Program, 
     .with_entry_op_id(OP_ID))
 }
 
-fn bit_reverse(value: u32, bits: usize) -> u32 {
-    let mut result = 0u32;
-    let mut v = value;
-    for _ in 0..bits {
-        result = (result << 1) | (v & 1);
-        v >>= 1;
-    }
-    result
-}
-
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
         build: || fft_radix2_complex("input", "output", 4)
             .unwrap_or_else(|_| unreachable!("Fix: catalog fixture uses a valid radix-2 FFT size.")),
         test_inputs: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             vec![vec![
-                f32_bytes(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                crate::test_support::byte_pack::f32_bytes(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             ]]
         }),
         expected_output: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
-            vec![vec![f32_bytes(&[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])]]
+            vec![vec![crate::test_support::byte_pack::f32_bytes(&[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])]]
         }),
         category: Some("math"),
     }
@@ -206,11 +175,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
 
     fn decode(bytes: &[u8]) -> Vec<f32> {
         bytes
@@ -240,7 +206,7 @@ mod tests {
     }
 
     fn run(n: u32, input: &[f32]) -> Vec<f32> {
-        let prog = fft_radix2_complex("input", "output", n).expect("build");
+        let prog = fft_radix2_complex("input", "output", n).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -286,7 +252,7 @@ mod tests {
         }
     }
 
-    /// N=8 fuzz vs naive DFT (1.0e-3 tolerance — log2(8)=3 stages
+    /// N=8 fuzz vs naive DFT (1.0e-3 tolerance  -  log2(8)=3 stages
     /// of f32 rounding accumulate).
     #[test]
     fn fft_radix2_n8_matches_naive_on_random_fuzz() {
@@ -321,8 +287,16 @@ mod tests {
     /// Rejects N < 2.
     #[test]
     fn fft_radix2_rejects_tiny_n() {
-        assert!(fft_radix2_complex("input", "output", 0).is_err());
-        assert!(fft_radix2_complex("input", "output", 1).is_err());
+        let err0 = fft_radix2_complex("input", "output", 0).expect_err("n=0 must error");
+        let err1 = fft_radix2_complex("input", "output", 1).expect_err("n=1 must error");
+        assert!(
+            err0.contains("power of two") || err0.contains("Fix:"),
+            "n=0 fft error: {err0}"
+        );
+        assert!(
+            err1.contains("power of two") || err1.contains("Fix:"),
+            "n=1 fft error: {err1}"
+        );
     }
 
     /// Bit-reverse helper sanity check.

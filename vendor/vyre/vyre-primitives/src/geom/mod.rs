@@ -6,7 +6,7 @@
 //! GTN) shows it as the substrate for equivariant networks, physics
 //! simulation, robotics, 3D vision.
 //!
-//! Multivector products are structured shuffles + fused multiply-add —
+//! Multivector products are structured shuffles + fused multiply-add  -
 //! identical hardware to matmul, so packaging this as a primitive
 //! makes equivariance work GPU-native for the first time at the
 //! IR level.

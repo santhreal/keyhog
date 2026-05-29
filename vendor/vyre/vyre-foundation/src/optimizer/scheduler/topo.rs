@@ -6,7 +6,9 @@
 
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
+use std::hash::{BuildHasher, Hash};
 
+use crate::allocation::{try_reserve_hash_map_to_capacity, try_reserve_vec_to_capacity};
 use crate::optimizer::{PassMetadata, ProgramPassRegistration};
 
 /// Describes errors that can occur during pass scheduling.
@@ -43,6 +45,18 @@ pub enum PassSchedulingError {
         /// The dependency that must appear first.
         requirement: &'static str,
     },
+    /// Scheduler scratch allocation failed before graph traversal.
+    #[error(
+        "optimizer pass scheduler could not reserve {requested} {context} slot(s): {message}. Fix: reduce the pass set or schedule it in shards."
+    )]
+    StorageReserveFailed {
+        /// Scratch vector or map being reserved.
+        context: &'static str,
+        /// Requested target capacity.
+        requested: usize,
+        /// Allocator failure details.
+        message: String,
+    },
 }
 
 /// Computes a valid execution order for the given passes according to their requirements.
@@ -54,28 +68,33 @@ pub enum PassSchedulingError {
 pub fn schedule_passes(
     passes: &[&'static ProgramPassRegistration],
 ) -> Result<Vec<&'static ProgramPassRegistration>, PassSchedulingError> {
-    let mut metadata = Vec::with_capacity(passes.len());
+    let mut metadata = Vec::new();
+    reserve_vec_capacity(&mut metadata, passes.len(), "pass metadata")?;
     metadata.extend(passes.iter().map(|pass| pass.metadata));
     let order = schedule_pass_metadata_indices(&metadata)?;
-    let mut scheduled = Vec::with_capacity(order.len());
+    let mut scheduled = Vec::new();
+    reserve_vec_capacity(&mut scheduled, order.len(), "scheduled pass output")?;
     scheduled.extend(order.into_iter().map(|index| passes[index]));
     Ok(scheduled)
 }
 
-pub(super) fn schedule_pass_metadata_indices(
+pub(crate) fn schedule_pass_metadata_indices(
     passes: &[PassMetadata],
 ) -> Result<Vec<usize>, PassSchedulingError> {
     let n = passes.len();
-    let mut by_id =
-        FxHashMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
+    let mut by_id = FxHashMap::default();
+    reserve_hash_map_capacity(&mut by_id, n, "pass id lookup")?;
     for (i, pass) in passes.iter().enumerate() {
         if by_id.insert(pass.name, i).is_some() {
             return Err(PassSchedulingError::DuplicateId { id: pass.name });
         }
     }
 
-    let mut indegree = vec![0usize; n];
-    let mut dependents = Vec::with_capacity(n);
+    let mut indegree = Vec::new();
+    reserve_vec_capacity(&mut indegree, n, "pass indegree table")?;
+    indegree.resize(n, 0usize);
+    let mut dependents = Vec::new();
+    reserve_vec_capacity(&mut dependents, n, "pass dependents table")?;
     dependents.resize_with(n, Vec::new);
 
     for (i, pass) in passes.iter().enumerate() {
@@ -97,7 +116,8 @@ pub(super) fn schedule_pass_metadata_indices(
         children.sort_unstable_by_key(|&child| passes[child].name);
     }
 
-    let mut initial_ready = Vec::with_capacity(n);
+    let mut initial_ready = Vec::new();
+    reserve_vec_capacity(&mut initial_ready, n, "initial ready pass queue")?;
     initial_ready.extend(
         indegree
             .iter()
@@ -107,7 +127,8 @@ pub(super) fn schedule_pass_metadata_indices(
     initial_ready.sort_unstable_by_key(|&id| passes[id].name);
     let mut ready = VecDeque::from(initial_ready);
 
-    let mut ordered = Vec::with_capacity(n);
+    let mut ordered = Vec::new();
+    reserve_vec_capacity(&mut ordered, n, "scheduled pass indices")?;
     while let Some(id) = ready.pop_front() {
         ordered.push(id);
         for &child in &dependents[id] {
@@ -124,7 +145,8 @@ pub(super) fn schedule_pass_metadata_indices(
     }
 
     if ordered.len() != n {
-        let mut pass_ids = Vec::with_capacity(n - ordered.len());
+        let mut pass_ids = Vec::new();
+        reserve_vec_capacity(&mut pass_ids, n - ordered.len(), "cycle pass ids")?;
         pass_ids.extend(
             indegree
                 .into_iter()
@@ -139,4 +161,36 @@ pub(super) fn schedule_pass_metadata_indices(
     }
 
     Ok(ordered)
+}
+
+pub(super) fn reserve_vec_capacity<T>(
+    vec: &mut Vec<T>,
+    requested: usize,
+    context: &'static str,
+) -> Result<(), PassSchedulingError> {
+    try_reserve_vec_to_capacity(vec, requested).map_err(|source| {
+        PassSchedulingError::StorageReserveFailed {
+            context,
+            requested,
+            message: source.to_string(),
+        }
+    })
+}
+
+pub(super) fn reserve_hash_map_capacity<K, V, S>(
+    map: &mut std::collections::HashMap<K, V, S>,
+    requested: usize,
+    context: &'static str,
+) -> Result<(), PassSchedulingError>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    try_reserve_hash_map_to_capacity(map, requested).map_err(|source| {
+        PassSchedulingError::StorageReserveFailed {
+            context,
+            requested,
+            message: source.to_string(),
+        }
+    })
 }

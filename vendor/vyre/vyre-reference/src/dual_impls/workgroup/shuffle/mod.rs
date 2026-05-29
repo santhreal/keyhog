@@ -1,2 +1,2 @@
-/// docs
-pub mod reference;
+/// Workgroup shuffle dual implementation reference.
+pub mod reference {}

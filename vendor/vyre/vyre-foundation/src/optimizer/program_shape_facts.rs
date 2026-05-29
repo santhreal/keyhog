@@ -105,7 +105,7 @@ impl BufferShapeFacts {
 /// Map of buffer-name → static facts. Built once per `Program`; immutable.
 ///
 /// Build with [`ProgramShapeFacts::derive`]. Pass it through optimizer
-/// `PassCtx`, lowering, and validation as a typed input — they all
+/// `PassCtx`, lowering, and validation as a typed input  -  they all
 /// consume the same facts so a contradiction can never arise.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProgramShapeFacts {

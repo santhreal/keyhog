@@ -8,7 +8,7 @@
 //! Buffers:
 //! - `chaining_in`: ReadOnly, 8 u32. Previous chaining value (or IV).
 //! - `message`: ReadOnly, 16 u32. Message block (padded as needed).
-//! - `params`: ReadOnly, 4 u32 — `[counter_lo, counter_hi, block_len, flags]`.
+//! - `params`: ReadOnly, 4 u32  -  `[counter_lo, counter_hi, block_len, flags]`.
 //! - `chaining_out`: ReadWrite, 8 u32. Output chaining value.
 //!
 //! Single-invocation dispatch: one workgroup of [1, 1, 1] runs the
@@ -27,6 +27,7 @@ use crate::region::{wrap_anonymous, wrap_child};
 
 const OP_ID: &str = "vyre-libs::hash::blake3_compress";
 const FAMILY_PREFIX: &str = "hash_blake3_compress";
+const BLAKE3_COMPRESS_BODY_NODE_COUNT: usize = 8 + 4 + 4 + 16 + MSG_SCHEDULE.len() + 8;
 
 fn scoped_chaining_in(name: &str) -> String {
     scoped_generic_name(
@@ -86,11 +87,10 @@ pub fn blake3_compress(
     let message = message.as_str();
     let params = params.as_str();
     let chaining_out = chaining_out.as_str();
-    // V7-PERF-027: exact push count = 8 init + 4 IV + 4 params +
-    //              16 msg + 7 rounds * (16 remap + 8 quartets * 8 G-ops) +
-    //              8 output stores = 8 + 4 + 4 + 16 + 7*(16 + 64) + 8 = 600.
-    // Reserve up front so the 600 pushes are allocation-free.
-    let mut body: Vec<Node> = Vec::with_capacity(80);
+    // Each round is wrapped as one child Region; reserve the exact top-level
+    // body size so construction is allocation-free without over-retaining
+    // unused node slots.
+    let mut body: Vec<Node> = Vec::with_capacity(BLAKE3_COMPRESS_BODY_NODE_COUNT);
     let parent = GeneratorRef {
         name: OP_ID.to_string(),
     };
@@ -181,5 +181,24 @@ inventory::submit! {
             ],
         ]),
         category: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blake3_compress_body_capacity_matches_actual_top_level_shape() {
+        let program = blake3_compress("cv_in", "msg", "params", "cv_out");
+        let [Node::Region { body, .. }] = program.entry() else {
+            panic!("Fix: blake3_compress must remain a single provenance Region.");
+        };
+
+        assert_eq!(
+            body.len(),
+            BLAKE3_COMPRESS_BODY_NODE_COUNT,
+            "Fix: BLAKE3 compress body reservation must stay exact as the top-level IR shape evolves."
+        );
     }
 }

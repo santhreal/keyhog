@@ -1,4 +1,4 @@
-//! Dead-code elimination — registered ProgramPass.
+//! Dead-code elimination  -  registered ProgramPass.
 //!
 //! The engine itself lives at `super::engine`; this module hooks it
 //! into the scheduler's fixpoint loop and invalidation tracking.

@@ -116,11 +116,11 @@ fn direct_megakernel_defers_tenant_loads_until_status_is_published() {
     let observed = names
         .iter()
         .position(|name| *name == "observed_status")
-        .expect("status load must gate the claim path");
+        .expect("Fix: status load must gate the claim path");
     let tenant_mask = names
         .iter()
         .position(|name| *name == "tenant_mask")
-        .expect("tenant authorization must still exist for published slots");
+        .expect("Fix: tenant authorization must still exist for published slots");
     assert!(
             observed < tenant_mask,
             "Fix: idle megakernel slots must skip tenant table loads; observed_status appears at {observed}, tenant_mask at {tenant_mask}."

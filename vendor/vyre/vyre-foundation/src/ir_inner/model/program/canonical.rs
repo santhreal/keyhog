@@ -163,6 +163,40 @@ impl CanonicalCtx {
                 count_buffer: count_buffer.clone(),
                 count_offset: *count_offset,
             },
+            Node::AllReduce { buffer, op, group } => Node::AllReduce {
+                buffer: buffer.clone(),
+                op: *op,
+                group: *group,
+            },
+            Node::AllGather {
+                input,
+                output,
+                group,
+            } => Node::AllGather {
+                input: input.clone(),
+                output: output.clone(),
+                group: *group,
+            },
+            Node::ReduceScatter {
+                input,
+                output,
+                op,
+                group,
+            } => Node::ReduceScatter {
+                input: input.clone(),
+                output: output.clone(),
+                op: *op,
+                group: *group,
+            },
+            Node::Broadcast {
+                buffer,
+                root,
+                group,
+            } => Node::Broadcast {
+                buffer: buffer.clone(),
+                root: *root,
+                group: *group,
+            },
             Node::AsyncWait { tag } => Node::AsyncWait { tag: tag.clone() },
             Node::Resume { tag } => Node::Resume { tag: tag.clone() },
             Node::Return => Node::Return,

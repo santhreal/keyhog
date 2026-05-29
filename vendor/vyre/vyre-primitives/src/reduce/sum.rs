@@ -1,4 +1,4 @@
-//! `reduce_sum` — wrapping unsigned sum over a u32 ValueSet.
+//! `reduce_sum`  -  wrapping unsigned sum over a u32 ValueSet.
 
 use vyre_foundation::ir::Program;
 
@@ -26,11 +26,11 @@ inventory::submit! {
         OP_ID,
         || reduce_sum("values", "out", 4),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1, 2, 3, 4]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[10])]]
         }),
     )

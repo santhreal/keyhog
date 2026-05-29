@@ -1,7 +1,7 @@
-//! Effect lattice — composition-aware refusal for fusion + dispatch.
+//! Effect lattice  -  composition-aware refusal for fusion + dispatch.
 //!
 //! Op id: `vyre-foundation::optimizer::effect_lattice`. Soundness: `Exact` over
-//! the closed lattice declared below. Cost-direction: read-only — lifts
+//! the closed lattice declared below. Cost-direction: read-only  -  lifts
 //! `SideEffectClass` declarations into the lattice and reasons about
 //! composition; never mutates the IR.
 //!
@@ -9,18 +9,18 @@
 //!
 //! Today's `SideEffectClass` is single-valued (Pure / ReadsMemory / WritesMemory /
 //! Synchronizing / Atomic). A fusion pass that combines two ops can silently
-//! compose effects that shouldn't compose — the canonical example is
+//! compose effects that shouldn't compose  -  the canonical example is
 //! `Pure ∘ Diverging` (a value computation followed by a `if invocation_id == K`-
 //! gated store), where lifting one op into the other without an explicit
 //! `MemoryOrdering::GridSync` produces a kernel that races on cross-block reads.
 //! That class of bug shipped as the recall-zero-past-block-zero failure on
-//! downstream consumers — silent miscompile, no error message.
+//! downstream consumers  -  silent miscompile, no error message.
 //!
 //! This module promotes effects into a checked lattice with composition rules.
 //! When a fusion pass asks "may I fuse producer P into consumer C", the
 //! lattice answers either:
-//!   - `Ok(combined_effect)` — fusion is sound, here's the combined effect.
-//!   - `Err(RefusalReason::EffectLatticeViolation)` — fusion is unsound, here's
+//!   - `Ok(combined_effect)`  -  fusion is sound, here's the combined effect.
+//!   - `Err(RefusalReason::EffectLatticeViolation)`  -  fusion is unsound, here's
 //!     a structured reason naming both ops + a suggested fix.
 //!
 //! ## Lattice
@@ -29,13 +29,13 @@
 //! Pure  ⊑  ReadAtomic  ⊑  ReadWriteAtomic(Ordering)  ⊑  Synchronized(Scope)  ⊑  Diverging
 //! ```
 //!
-//! - `Pure` — no memory effects, no synchronization, no thread-id-gated control flow.
-//! - `ReadAtomic` — atomic loads only. Composes freely with anything weaker.
-//! - `ReadWriteAtomic(Ordering)` — atomic RMW with a declared `MemoryOrdering`.
+//! - `Pure`  -  no memory effects, no synchronization, no thread-id-gated control flow.
+//! - `ReadAtomic`  -  atomic loads only. Composes freely with anything weaker.
+//! - `ReadWriteAtomic(Ordering)`  -  atomic RMW with a declared `MemoryOrdering`.
 //!   Two `ReadWriteAtomic`s with mismatched orderings synthesize a barrier.
-//! - `Synchronized(Scope)` — explicit barrier site (workgroup / subgroup / grid).
+//! - `Synchronized(Scope)`  -  explicit barrier site (workgroup / subgroup / grid).
 //!   Carries the scope so the composition rule knows which scope to honor.
-//! - `Diverging` — the program reads from or writes to memory inside a
+//! - `Diverging`  -  the program reads from or writes to memory inside a
 //!   `if invocation_id == K { ... }` block. Composing this into a consumer that
 //!   reads the touched memory without a `GridSync` between is unsound.
 //!
@@ -62,17 +62,17 @@ use vyre_spec::op_contract::SideEffectClass;
 /// Memory-ordering tag carried by `ReadWriteAtomic`. Mirrors the wire-frozen
 /// `MemoryOrdering` in `vyre-foundation::memory_model` but reduced to the
 /// orderings the lattice composition rules distinguish. `Relaxed` is treated
-/// as `Acquire` in lattice composition (conservative — no rule allows weaker).
+/// as `Acquire` in lattice composition (conservative  -  no rule allows weaker).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum AtomicOrdering {
-    /// Acquire ordering — synchronizes with a Release on the same address.
+    /// Acquire ordering  -  synchronizes with a Release on the same address.
     Acquire,
-    /// Release ordering — synchronizes with an Acquire on the same address.
+    /// Release ordering  -  synchronizes with an Acquire on the same address.
     Release,
     /// Acquire+Release combined.
     AcqRel,
-    /// Sequentially consistent ordering — total order across all `SeqCst` ops.
+    /// Sequentially consistent ordering  -  total order across all `SeqCst` ops.
     SeqCst,
 }
 
@@ -122,7 +122,7 @@ impl SyncScope {
 pub enum EffectLevel {
     /// No memory effects, no synchronization, no thread-id-gated control flow.
     Pure,
-    /// Atomic loads only — composes freely with anything weaker.
+    /// Atomic loads only  -  composes freely with anything weaker.
     ReadAtomic,
     /// Atomic RMW with a declared `AtomicOrdering`.
     ReadWriteAtomic(AtomicOrdering),
@@ -152,7 +152,7 @@ impl EffectLevel {
         }
     }
 
-    /// Stable kind tag for diagnostics — drives the `RefusalReason` payload.
+    /// Stable kind tag for diagnostics  -  drives the `RefusalReason` payload.
     #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
@@ -168,7 +168,7 @@ impl EffectLevel {
 /// Compose `producer` followed by `consumer` and return the combined effect,
 /// OR a structured refusal naming both sides + the fix the user must apply.
 ///
-/// The producer's effect is observed by the consumer — that's the asymmetry
+/// The producer's effect is observed by the consumer  -  that's the asymmetry
 /// the rules encode. `compose(Pure, Diverging)` is fine in one direction
 /// (consuming a divergent value into a pure computation is sound) but
 /// `compose(Diverging, anything-that-reads-affected-memory)` is not.
@@ -245,7 +245,7 @@ pub fn compose(producer: EffectLevel, consumer: EffectLevel) -> Result<EffectLev
 /// fusion-refusal pass to derive the lattice PROFILE of one program before
 /// deciding whether it composes with ANOTHER program.
 ///
-/// This is intentionally NOT `compose`-based — `compose` is the producer→consumer
+/// This is intentionally NOT `compose`-based  -  `compose` is the producer→consumer
 /// rule that refuses unsound fusions BETWEEN two programs. Within one program,
 /// the user's intent is encoded as written; the program-level effect simply
 /// summarizes "what's the strongest effect this program ever exhibits," which
@@ -268,7 +268,7 @@ pub fn program_effect_level(program: &Program) -> EffectLevel {
     acc
 }
 
-/// Lattice join — take the strongest of two effect levels. Used by
+/// Lattice join  -  take the strongest of two effect levels. Used by
 /// `program_effect_level` to summarise a program (no refusal semantics);
 /// `compose` is the version used by fusion-refusal that returns Err on
 /// unsound producer→consumer pairs.
@@ -314,6 +314,10 @@ pub fn node_effect_level(node: &Node) -> EffectLevel {
         Node::Loop { body, .. } | Node::Block(body) => join_arms(body.iter()),
         Node::Region { body, .. } => join_arms(body.iter()),
         Node::IndirectDispatch { .. } => EffectLevel::Synchronized(SyncScope::Grid),
+        Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. } => EffectLevel::Synchronized(SyncScope::Grid),
         Node::Trap { .. } | Node::Resume { .. } | Node::Return | Node::Opaque(_) => {
             EffectLevel::Pure
         }
@@ -324,7 +328,7 @@ fn join_arms<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> EffectLevel {
     let mut acc = EffectLevel::Pure;
     for child in nodes {
         // Use lattice_join (not compose) for SUMMARISING the effect of a
-        // node tree — within one node tree the user's intent is encoded;
+        // node tree  -  within one node tree the user's intent is encoded;
         // the lattice's job is to summarise, not to refuse. Refusal applies
         // only when fusing two programs (see `compose`).
         acc = lattice_join(acc, node_effect_level(child));
@@ -346,7 +350,7 @@ fn barrier_effect(ordering: crate::memory_model::MemoryOrdering) -> EffectLevel 
     match ordering {
         MemoryOrdering::GridSync => EffectLevel::Synchronized(SyncScope::Grid),
         MemoryOrdering::Relaxed => EffectLevel::ReadWriteAtomic(AtomicOrdering::Acquire),
-        // Conservative default — an unrecognized ordering is treated as the
+        // Conservative default  -  an unrecognized ordering is treated as the
         // strongest available.
         _ => EffectLevel::Synchronized(SyncScope::Workgroup),
     }
@@ -385,7 +389,7 @@ mod tests {
     }
 
     fn divergent_store_program() -> Program {
-        // if invocation_id == 0 { store buf[0] = 1 } — Diverging by construction.
+        // if invocation_id == 0 { store buf[0] = 1 }  -  Diverging by construction.
         Program::wrapped(
             vec![buf()],
             [256, 1, 1],
@@ -444,6 +448,7 @@ mod tests {
                     suggested_fix.contains("GridSync"),
                     "fix string must name MemoryOrdering::GridSync; got: {suggested_fix}"
                 );
+
             }
             other => panic!(
                 "expected EffectLatticeViolation refusing to fuse Diverging producer with Pure; \
@@ -473,7 +478,7 @@ mod tests {
         assert_eq!(
             r,
             Ok(EffectLevel::ReadWriteAtomic(AtomicOrdering::AcqRel)),
-            "Acquire ∘ Release must synthesize AcqRel — without this the lattice would lose \
+            "Acquire ∘ Release must synthesize AcqRel  -  without this the lattice would lose \
              the Release-side guarantee"
         );
     }
@@ -525,7 +530,7 @@ mod tests {
             level,
             EffectLevel::Diverging,
             "a program containing `if invocation_id == K {{ store ... }}` must surface as \
-             Diverging at the program level — without this the fusion-refusal pass cannot \
+             Diverging at the program level  -  without this the fusion-refusal pass cannot \
              catch the recall-zero-past-block-zero shape"
         );
     }
@@ -537,7 +542,7 @@ mod tests {
         assert_eq!(
             level,
             EffectLevel::Pure,
-            "a pure program (just Return) must stay Pure — without this every pass would \
+            "a pure program (just Return) must stay Pure  -  without this every pass would \
              see a stronger effect than the program actually has"
         );
     }
@@ -564,7 +569,7 @@ mod tests {
 
     #[test]
     fn divergent_program_paired_with_grid_sync_composes_cleanly() {
-        // Diverging program followed by Synchronized(Grid) program — the
+        // Diverging program followed by Synchronized(Grid) program  -  the
         // canonical fix. The fusion pass would compose the two and get Ok back.
         let div = program_effect_level(&divergent_store_program());
         let sync = EffectLevel::Synchronized(SyncScope::Grid);
@@ -587,8 +592,9 @@ mod tests {
         assert_eq!(
             r,
             Ok(EffectLevel::Synchronized(SyncScope::Grid)),
-            "Grid scope MUST dominate Subgroup scope on join — losing the larger scope would \
+            "Grid scope MUST dominate Subgroup scope on join  -  losing the larger scope would \
              silently downgrade the program's synchronization guarantee"
         );
     }
 }
+

@@ -448,6 +448,7 @@ pub fn c11_lexer(
                                     "tok_len",
                                     Expr::add(Expr::var("tok_len"), Expr::u32(1)),
                                 ),
+
                                 Node::if_then(
                                     Expr::or(
                                         Expr::var("scan_is_float_dot"),
@@ -649,3 +650,4 @@ pub fn c11_lexer(
     .with_entry_op_id("vyre-libs::parsing::c_lexer")
     .with_non_composable_with_self(true)
 }
+

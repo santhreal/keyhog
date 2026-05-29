@@ -1,6 +1,6 @@
 //! Megakernel fusion-grouping via #46 matroid intersection (#22 self-consumer).
 //!
-//! Closes the recursion thesis for #46 — `matroid_exchange_bfs_step` ships
+//! Closes the recursion thesis for #46  -  `matroid_exchange_bfs_step` ships
 //! to user dialects (combinatorial scheduling, bipartite matching) AND
 //! powers vyre's megakernel scheduler.
 //!
@@ -12,7 +12,7 @@
 //! 1. **Memory constraints** (graphic matroid): every selected pair
 //!    of fused Programs must share ≤ M GiB of intermediate buffers,
 //!    or fusion overflows on-chip storage. The set of "fusable
-//!    pairs" forms a graphic matroid — the independent sets are the
+//!    pairs" forms a graphic matroid  -  the independent sets are the
 //!    fusion-cliques whose total memory stays within budget.
 //!
 //! 2. **Sync constraints** (partition matroid): each Region belongs
@@ -32,7 +32,7 @@
 //! The existing `megakernel_schedule` ships the homotopy-relaxation
 //! continuous solver. That gives a smooth fractional answer in
 //! `[0, 1]^n` over fusion indicators. The matroid intersection here
-//! is the discrete, exact, combinatorial solver — used when the
+//! is the discrete, exact, combinatorial solver  -  used when the
 //! homotopy result is ambiguous (fractional values near 0.5) or when
 //! the dispatch budget demands a provably-optimal selection.
 //!
@@ -52,7 +52,7 @@
 //! Standard augmenting-path matroid intersection:
 //!
 //! 1. Start with empty independent set `S`.
-//! 2. Build the exchange graph `D(S)` — node per element, edge `i → j`
+//! 2. Build the exchange graph `D(S)`  -  node per element, edge `i → j`
 //!    when swapping `i` (∈ S) for `j` (∉ S) preserves independence in
 //!    matroid 1, and edge `j → i` when it preserves independence in
 //!    matroid 2.
@@ -128,7 +128,7 @@ fn validate_inputs(
 ///
 /// `n` Programs, indexed 0..n. `exchange_adj` is the n*n exchange
 /// graph adjacency in matroid 1 union matroid 2 (caller pre-merges
-/// via OR — the BFS step picks up any reachable edge regardless of
+/// via OR  -  the BFS step picks up any reachable edge regardless of
 /// origin matroid). `seed` is the initial independent set as a
 /// 0/1 vector of length n.
 ///
@@ -190,7 +190,7 @@ pub fn max_fusion_subset_into(
         let any_change = matroid_bfs_step_into(current, exchange_adj, current, n, next);
 
         if !any_change {
-            // No augmenting path — current is maximum.
+            // No augmenting path  -  current is maximum.
             return Ok(());
         }
 

@@ -120,13 +120,47 @@ pub fn cpu_ref(
     n_nodes: u32,
     max_iterations: u32,
 ) -> (Vec<u32>, u32) {
+    let mut current = Vec::new();
+    let mut next = Vec::new();
+    let iters = cpu_ref_into(
+        src,
+        dst,
+        weight,
+        dist,
+        n_nodes,
+        max_iterations,
+        &mut current,
+        &mut next,
+    );
+    (current, iters)
+}
+
+/// CPU reference using caller-owned current and next-distance buffers.
+///
+/// `current` is overwritten with the final distance vector. `next` is retained
+/// as monotone relaxation scratch so repeated parity checks do not allocate
+/// fresh `Vec`s or clone the initial distance vector.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(clippy::too_many_arguments)]
+pub fn cpu_ref_into(
+    src: &[u32],
+    dst: &[u32],
+    weight: &[u32],
+    dist: &[u32],
+    n_nodes: u32,
+    max_iterations: u32,
+    current: &mut Vec<u32>,
+    next: &mut Vec<u32>,
+) -> u32 {
     let n = n_nodes as usize;
     let edge_count = src.len().min(dst.len()).min(weight.len());
-    let mut current = vec![u32::MAX; n];
+    current.clear();
+    current.resize(n, u32::MAX);
     for (out, &value) in current.iter_mut().zip(dist.iter()) {
         *out = value;
     }
-    let mut next = current.clone();
+    next.clear();
+    next.extend_from_slice(current);
     for iter in 0..max_iterations {
         for i in 0..edge_count {
             let u = src[i] as usize;
@@ -141,12 +175,12 @@ pub fn cpu_ref(
                 next[v] = next[v].min(alt);
             }
         }
-        if next == current {
-            return (current, iter);
+        if next.as_slice() == current.as_slice() {
+            return iter;
         }
         current.copy_from_slice(&next);
     }
-    (current, max_iterations)
+    max_iterations
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -155,7 +189,7 @@ inventory::submit! {
         OP_ID,
         || bellman_shortest_path("src", "dst", "weight", "dist", "next_dist", "changed", 4, 4, 10),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, u32::MAX, u32::MAX, u32::MAX]), // dist
                 to_bytes(&[0, u32::MAX, u32::MAX, u32::MAX]), // next_dist
@@ -166,7 +200,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 10, 30, 60]), // dist
                 to_bytes(&[0, 10, 30, 60]), // next_dist
@@ -249,6 +283,34 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_current_and_next_buffers() {
+        let src = vec![0, 1, 2, 0];
+        let dst = vec![1, 2, 3, 3];
+        let weight = vec![10, 20, 30, 100];
+        let dist = vec![0, u32::MAX, u32::MAX, u32::MAX];
+        let mut current = Vec::with_capacity(16);
+        let mut next = Vec::with_capacity(16);
+        current.extend_from_slice(&[99, 98, 97, 96, 95, 94]);
+        next.extend_from_slice(&[77, 76, 75, 74, 73, 72]);
+        let current_capacity = current.capacity();
+        let next_capacity = next.capacity();
+
+        let iters = cpu_ref_into(&src, &dst, &weight, &dist, 4, 10, &mut current, &mut next);
+
+        assert_eq!(current, vec![0, 10, 30, 60]);
+        assert!(iters <= 4);
+        assert_eq!(current.capacity(), current_capacity);
+        assert_eq!(next.capacity(), next_capacity);
+
+        let iters = cpu_ref_into(&[], &[], &[], &[0], 1, 10, &mut current, &mut next);
+        assert_eq!(current, vec![0]);
+        assert_eq!(next, vec![0]);
+        assert_eq!(iters, 0);
+        assert_eq!(current.capacity(), current_capacity);
+        assert_eq!(next.capacity(), next_capacity);
+    }
+
+    #[test]
     fn test_parity_small_graph() {
         let src = vec![0, 1, 2, 0];
         let dst = vec![1, 2, 3, 3];
@@ -273,7 +335,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[u32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = crate::wire::pack_u32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 

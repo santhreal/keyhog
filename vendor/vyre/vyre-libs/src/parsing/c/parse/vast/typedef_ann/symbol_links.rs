@@ -80,19 +80,7 @@ pub fn c11_link_vast_typedef_symbols(
                 ),
                 Node::let_bind(
                     "link_possible_declarator",
-                    any_token_eq(
-                        Expr::var("link_next_kind"),
-                        &[
-                            TOK_SEMICOLON,
-                            TOK_COMMA,
-                            TOK_ASSIGN,
-                            TOK_LPAREN,
-                            TOK_LBRACKET,
-                            TOK_COLON,
-                            TOK_RPAREN,
-                            TOK_RBRACKET,
-                        ],
-                    ),
+                    is_typedef_symbol_link_follower_token(Expr::var("link_next_kind")),
                 ),
                 Node::assign(
                     "link_prev_encoded",

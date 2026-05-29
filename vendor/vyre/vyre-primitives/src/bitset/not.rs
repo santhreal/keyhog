@@ -1,40 +1,28 @@
-//! `bitset_not` — per-word bitwise NOT over a packed bitset.
+//! `bitset_not`  -  per-word bitwise NOT over a packed bitset.
 
-use std::sync::Arc;
+use vyre_foundation::ir::{Program, UnOp};
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use crate::bitset::unary_word::bitset_unary_word_program;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::bitset::not";
 
 /// Build a Program: `out[w] = !input[w]`.
+///
+/// Per-word bitwise complement for boolean-algebra lowering when a negated
+/// predicate needs a complement bitset for a subsequent intersection.
+///
+/// # Example
+///
+/// ```
+/// use vyre_primitives::bitset::not::bitset_not;
+///
+/// let program = bitset_not("input", "out", 4);
+/// assert_eq!(program.entry.len(), 1);
+/// ```
 #[must_use]
 pub fn bitset_not(input: &str, out: &str, words: u32) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-    let body = vec![Node::store(
-        out,
-        t.clone(),
-        Expr::UnOp {
-            op: UnOp::BitNot,
-            operand: Box::new(Expr::load(input, t.clone())),
-        },
-    )];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(out, 1, BufferAccess::ReadWrite, DataType::U32).with_count(words),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(words)),
-                body,
-            )]),
-        }],
-    )
+    bitset_unary_word_program(OP_ID, input, out, words, UnOp::BitNot)
 }
 
 /// CPU reference.
@@ -42,16 +30,38 @@ pub fn bitset_not(input: &str, out: &str, words: u32) -> Program {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
-    cpu_ref_into(input, &mut out);
-    out
+    match try_cpu_ref_into(input, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives bitset_not cpu_ref failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], out: &mut Vec<u32>) {
+    if let Err(error) = try_cpu_ref_into(input, out) {
+        eprintln!("vyre-primitives bitset_not cpu_ref_into failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(input: &[u32], out: &mut Vec<u32>) -> Result<(), String> {
+    if input.len() > out.capacity() {
+        out.try_reserve(input.len() - out.len()).map_err(|err| {
+            format!(
+                "bitset_not CPU oracle failed to reserve {} output words: {err}. Fix: shard the bitset before parity evaluation.",
+                input.len()
+            )
+        })?;
+    }
     out.clear();
-    out.reserve(input.len());
     out.extend(input.iter().map(|word| !word));
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -60,11 +70,11 @@ inventory::submit! {
         OP_ID,
         || bitset_not("input", "out", 1),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0x0F0F_0F0F]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0xF0F0_F0F0])]]
         }),
     )
@@ -94,5 +104,70 @@ mod tests {
     fn cross_word_boundary() {
         let input = vec![0x8000_0000, 0x0000_0001];
         assert_eq!(cpu_ref(&input), vec![0x7FFF_FFFF, 0xFFFF_FFFE]);
+    }
+
+    #[test]
+    fn cpu_ref_into_truncates_stale_tail_without_reallocating() {
+        let input = vec![0x8000_0000, 0x0000_0001];
+        let mut out = Vec::with_capacity(8);
+        out.extend([0xDEAD_BEEF; 8]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(&input, &mut out).unwrap();
+
+        assert_eq!(out, vec![0x7FFF_FFFF, 0xFFFF_FFFE]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let input = [0x1234_5678, 0xFFFF_0000];
+        let mut compat = Vec::with_capacity(4);
+        let mut fallible = Vec::with_capacity(4);
+
+        cpu_ref_into(&input, &mut compat);
+        try_cpu_ref_into(&input, &mut fallible)
+            .expect("Fix: small bitset_not CPU oracle must reserve");
+
+        assert_eq!(cpu_ref(&input), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_cpu_ref_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("not.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: not.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: bitset_not CPU parity wrappers must not panic in production."
+        );
+    }
+
+    #[test]
+    fn generated_not_is_involutive_and_matches_scalar_reference() {
+        for len in 0..96usize {
+            let input: Vec<u32> = (0..len)
+                .map(|idx| {
+                    (idx as u32)
+                        .wrapping_mul(0x9E37_79B9)
+                        .wrapping_add(len as u32)
+                })
+                .collect();
+            let mut out = Vec::with_capacity(len + 3);
+            let mut roundtrip = Vec::with_capacity(len + 3);
+
+            try_cpu_ref_into(&input, &mut out).unwrap();
+            try_cpu_ref_into(&out, &mut roundtrip).unwrap();
+
+            assert_eq!(
+                out,
+                input.iter().map(|word| !word).collect::<Vec<_>>(),
+                "generated not case len={len}"
+            );
+            assert_eq!(roundtrip, input, "generated involution case len={len}");
+        }
     }
 }

@@ -5,6 +5,7 @@
 //! persistent device-derived work schedule + sparse hit ring alive across dispatches.
 
 use crate::buffer::GpuBufferHandle;
+use crate::staging_reserve::reserve_vec_exact_for_len;
 use std::sync::Arc;
 use vyre_runtime::PipelineError;
 
@@ -192,12 +193,8 @@ impl FileBatch {
         validate_hit_capacity(hit_capacity)?;
         let (device, queue) = &*device_queue;
         validate_batch_shape(files, rule_count)?;
-        let mut file_metadata = Vec::with_capacity(files.len());
-        let mut file_offsets =
-            Vec::with_capacity(files.len().checked_add(1).ok_or(PipelineError::QueueFull {
-                queue: "submission",
-                fix: "file count overflows offset table length; split the batch before upload",
-            })?);
+        let mut file_metadata = Vec::new();
+        let mut file_offsets = Vec::new();
         let mut haystack_words = Vec::new();
         build_metadata_into(files, &mut file_metadata)?;
         build_offsets_into(files, &mut file_offsets)?;
@@ -470,6 +467,7 @@ fn upload_or_refresh(
     }
 }
 
+
 fn padded_write_len(len: usize) -> Result<u64, PipelineError> {
     if len == 0 {
         return Ok(0);
@@ -533,20 +531,13 @@ fn write_padded_prefix(
     buffer: &wgpu::Buffer,
     bytes: &[u8],
 ) -> Result<(), PipelineError> {
-    let aligned_len = bytes.len() & !3;
-    if aligned_len > 0 {
-        queue.write_buffer(buffer, 0, &bytes[..aligned_len]);
-    }
-    let tail_len = bytes.len() - aligned_len;
-    if tail_len > 0 {
-        let mut tail = [0u8; 4];
-        tail[..tail_len].copy_from_slice(&bytes[aligned_len..]);
-        queue.write_buffer(
-            buffer,
-            usize_to_u64(aligned_len, "padded batch write tail offset")?,
-            &tail,
-        );
-    }
+    crate::padded_upload::write_padded_prefix(
+        queue,
+        buffer,
+        bytes,
+        "padded batch write tail offset",
+    )
+    .map_err(|source| PipelineError::Backend(source.to_string()))?;
     Ok(())
 }
 
@@ -619,9 +610,7 @@ fn build_metadata_into(
     files: &[BatchFile],
     metadata: &mut Vec<FileMetadata>,
 ) -> Result<(), PipelineError> {
-    if metadata.capacity() < files.len() {
-        metadata.reserve_exact(files.len() - metadata.capacity());
-    }
+    reserve_batch_vec_len(metadata, files.len(), "file metadata records")?;
     if metadata.len() == files.len() {
         for (slot, file) in metadata.iter_mut().zip(files) {
             *slot = FileMetadata::from_file(file)?;
@@ -647,9 +636,7 @@ fn build_offsets_into(files: &[BatchFile], offsets: &mut Vec<u32>) -> Result<(),
         queue: "submission",
         fix: "file count overflows offset table length; split the batch before upload",
     })?;
-    if offsets.capacity() < required {
-        offsets.reserve_exact(required - offsets.capacity());
-    }
+    reserve_batch_vec_len(offsets, required, "file offset table")?;
     let stable_len = offsets.len() == required;
     if stable_len {
         offsets[0] = 0;
@@ -699,9 +686,7 @@ fn flatten_haystack_words_into(
             })
     })?;
     let target_words = total.div_ceil(4).max(1);
-    if words.capacity() < target_words {
-        words.reserve_exact(target_words - words.capacity());
-    }
+    reserve_batch_vec_len(words, target_words, "packed haystack words")?;
     let stable_len = words.len() == target_words;
     if stable_len {
         words.fill(0);
@@ -826,6 +811,21 @@ fn initial_queue_state(
     [0, queue_len, 0, hit_capacity, 0, rule_count]
 }
 
+fn reserve_batch_vec_len<T>(
+    vec: &mut Vec<T>,
+    target_len: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    reserve_vec_exact_for_len(
+        vec,
+        target_len,
+        "megakernel FileBatch staging",
+        label,
+        "split the file batch or reduce rule fanout before upload",
+    )
+    .map_err(|error| PipelineError::Backend(error.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -925,7 +925,7 @@ mod tests {
         const LEGACY_HOST_WORK_QUEUE_CAP: usize = 16 * 1024 * 1024;
         let rule_count = u32::try_from(LEGACY_HOST_WORK_QUEUE_CAP / metadata.len() + 1).unwrap();
         let queue_len = dense_queue_len(metadata.len(), rule_count)
-            .expect("device-derived scheduling must not retain the old host allocation cap");
+            .expect("Fix: device-derived scheduling must not retain the old host allocation cap");
         assert!(
             queue_len as usize > LEGACY_HOST_WORK_QUEUE_CAP,
             "dense scheduling must scale past the removed host Vec<WorkTriple> limit"
@@ -950,7 +950,7 @@ mod tests {
         ];
         let second = vec![BatchFile::new(3, 2, b"xyz".to_vec())];
         let mut batch = FileBatch::upload(backend.device_queue(), &first, 4, 1024)
-            .expect("initial FileBatch upload must succeed");
+            .expect("Fix: initial FileBatch upload must succeed");
         let metadata_ptr = batch.file_metadata.as_ptr();
         let offsets_ptr = batch.file_offsets.as_ptr();
         let haystack_words_ptr = batch.haystack_words.as_ptr();
@@ -962,7 +962,7 @@ mod tests {
 
         let refresh_report = batch
             .refresh_with_report(&second, 2, 512)
-            .expect("smaller FileBatch refresh must succeed in place");
+            .expect("Fix: smaller FileBatch refresh must succeed in place");
 
         assert_eq!(batch.file_metadata.as_ptr(), metadata_ptr);
         assert_eq!(batch.file_offsets.as_ptr(), offsets_ptr);
@@ -1007,14 +1007,14 @@ mod tests {
             .expect("Fix: live batch dispatcher must compile after FileBatch refresh");
         let rules = vec![
             vyre_runtime::megakernel::BatchRuleProgram::new(0, vec![0; 256], vec![1], 1)
-                .expect("accepting rule 0 must be valid"),
+                .expect("Fix: accepting rule 0 must be valid"),
             vyre_runtime::megakernel::BatchRuleProgram::new(1, vec![0; 256], vec![1], 1)
-                .expect("accepting rule 1 must be valid"),
+                .expect("Fix: accepting rule 1 must be valid"),
         ];
         let mut hits = Vec::new();
         let report = dispatcher
             .dispatch_into(&batch, &rules, &mut hits)
-            .expect("refreshed FileBatch must dispatch");
+            .expect("Fix: refreshed FileBatch must dispatch");
         assert_eq!(
             report.hit_count, 6,
             "refreshed batch must scan only the 3 refreshed bytes across 2 rules, not stale tail bytes"
@@ -1024,16 +1024,20 @@ mod tests {
     #[test]
     fn refresh_reused_buffers_write_only_padded_logical_prefix() {
         let src = include_str!("batch.rs");
+        let production = src
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: FileBatch production section should precede tests");
         let refresh_body = src
             .split("pub fn refresh(")
             .nth(1)
             .and_then(|tail| tail.split("pub fn reset_queue_state").next())
-            .expect("FileBatch::refresh body must be discoverable");
+            .expect("Fix: FileBatch::refresh body must be discoverable");
         let reused_write_body = src
             .split("fn write_padded_prefix(")
             .nth(1)
             .and_then(|tail| tail.split("fn validate_batch_shape").next())
-            .expect("write_padded_prefix body must be discoverable");
+            .expect("Fix: write_padded_prefix body must be discoverable");
 
         assert!(
             refresh_body.contains("accumulate_refresh"),
@@ -1044,12 +1048,25 @@ mod tests {
             "FileBatch::refresh must preserve the telemetry-capable refresh path"
         );
         assert!(
-            reused_write_body.contains("&bytes[..aligned_len]"),
-            "reused FileBatch buffers must upload only the logical aligned prefix"
+            reused_write_body.contains("crate::padded_upload::write_padded_prefix"),
+            "reused FileBatch buffers must use the shared padded-prefix writer"
         );
         assert!(
             !reused_write_body.contains("allocation_len"),
             "reused FileBatch buffers must not zero-fill the full old allocation on smaller refreshes"
         );
+        assert!(
+            !production.contains("Vec::with_capacity"),
+            "Fix: FileBatch upload/refresh staging must not use infallible capacity constructors."
+        );
+        assert!(
+            !production.contains(".reserve_exact("),
+            "Fix: FileBatch upload/refresh staging must route reservations through the shared fallible helper."
+        );
+        assert!(
+            production.contains("reserve_batch_vec_len"),
+            "Fix: FileBatch staging should have one shared target-length reservation adapter."
+        );
     }
 }
+

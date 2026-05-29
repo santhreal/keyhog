@@ -23,7 +23,7 @@ pub(crate) fn validate_binop_operands(
 
     match op {
         // Arithmetic: U32, I32, and F32 are all valid in target-text.
-        // Bool is NOT — `(a && b) + 1` must be rejected at validation time.
+        // Bool is NOT  -  `(a && b) + 1` must be rejected at validation time.
         // Operand types must also match: `u32 + f32` is silently ambiguous
         // today and must be rejected (VAL-003).
         BinOp::Add
@@ -146,7 +146,7 @@ pub(crate) fn validate_binop_operands(
             }
         }
         // Shifts and rotates: target-text masks the right operand with `& 31u`,
-        // so both sides must be u32. Rotates share the same typing —
+        // so both sides must be u32. Rotates share the same typing  -
         // left is the bit-pattern, right is the rotation count in bits.
         BinOp::Shl | BinOp::Shr | BinOp::RotateLeft | BinOp::RotateRight => {
             for (side, ty) in [("left", left_ty), ("right", right_ty)] {
@@ -213,7 +213,7 @@ pub(crate) fn validate_unop_operand(
             crate::ir_inner::model::types::UnOp::Negate => {
                 if matches!(ty, DataType::I32) {
                     errors.push(err(format!(
-                        "unary operation `Negate` operand has type `{ty}`, but legal unary Negate types are `u32`, `i32`, and `f32`. Fix: cast to U32 before Negate, or guard with Select(i32::MIN, 0, -x)."
+                        "unary operation `Negate` operand has type `{ty}`, but legal total Negate types are `u32` and `f32`; raw i32 negation has the i32::MIN overflow case. Fix: use `0 - x` for wrapping i32 negation, cast to U32 before Negate, or guard with Select(i32::MIN, 0, -x)."
                     )));
                 } else if !matches!(ty, DataType::U32 | DataType::F32) {
                     errors.push(err(format!(
@@ -470,6 +470,7 @@ pub(crate) fn expr_type(
 }
 
 #[cfg(test)]
+
 mod typecheck_critical_test {
     include!("typecheck_critical_test.rs");
 }
@@ -536,7 +537,7 @@ mod tests {
 
     #[test]
     fn bool_plus_int_is_rejected() -> Result<(), String> {
-        // Regression for REF-002: `(a && b) + 1` — previously accepted because
+        // Regression for REF-002: `(a && b) + 1`  -  previously accepted because
         // And was typed U32. Now And types as Bool, so arithmetic must reject.
         let and_expr = bin(BinOp::And, Expr::LitBool(true), Expr::LitBool(false));
         let add_expr = bin(BinOp::Add, and_expr, Expr::LitU32(1));
@@ -553,9 +554,11 @@ mod tests {
         } else {
             return Err("expected BinOp".to_string());
         }
+        assert_eq!(errors.len(), 1, "bool + int must produce exactly one type error");
         assert!(
-            !errors.is_empty(),
-            "arithmetic on a Bool-typed operand must be rejected"
+            errors[0].message().contains("Bool") || errors[0].message().contains("type"),
+            "type error must mention Bool mismatch: {}",
+            errors[0].message()
         );
         Ok(())
     }
@@ -605,3 +608,4 @@ mod tests {
         assert!(errors.iter().any(|error| error.message().contains("V044")));
     }
 }
+

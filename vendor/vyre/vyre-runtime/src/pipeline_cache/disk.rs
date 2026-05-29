@@ -19,7 +19,7 @@ use super::store::PipelineCacheStore;
 /// Disk-backed pipeline cache. Writes one file per fingerprint
 /// under `<root>/<hex>.bin`. Reads are stateless; writes are
 /// `write + rename` for atomicity. No eviction policy today
-/// (user decides) — the footprint is bounded by
+/// (user decides)  -  the footprint is bounded by
 /// sum(artifact_size × unique_canonical_programs).
 #[derive(Debug)]
 pub struct DiskCache {
@@ -174,9 +174,10 @@ impl PipelineCacheStore for DiskCache {
             match fs::remove_file(&tmp_path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => eprintln!(
-                    "Fix: failed to remove temporary disk-cache artifact `{}` after rejected put: {error}",
-                    tmp_path.display()
+                Err(error) => tracing::warn!(
+                    tmp_path = %tmp_path.display(),
+                    error = %error,
+                    "failed to remove temporary disk-cache artifact after rejected put"
                 ),
             }
         } else {
@@ -284,7 +285,7 @@ fn sync_worker_count() -> usize {
 pub enum DiskCacheError {
     /// Neither `$XDG_CACHE_HOME` nor `$HOME` is set.
     #[error(
-        "could not resolve a user cache directory — set XDG_CACHE_HOME or HOME, or call DiskCache::new() with an explicit path"
+        "could not resolve a user cache directory  -  set XDG_CACHE_HOME or HOME, or call DiskCache::new() with an explicit path"
     )]
     CacheDirUnknown,
     /// `std::io` failure (mkdir, read, write).
@@ -301,8 +302,7 @@ fn read_verified_cache_blob_with_capacity(
     mut reader: impl Read,
     capacity: usize,
 ) -> Option<Vec<u8>> {
-    let max_encoded_capacity = usize::try_from(MAX_ENCODED_PIPELINE_BLOB_BYTES)
-        .expect("pipeline cache encoded blob cap must fit host usize");
+    let max_encoded_capacity = usize::try_from(MAX_ENCODED_PIPELINE_BLOB_BYTES).ok()?;
     let mut bytes = Vec::with_capacity(capacity.min(max_encoded_capacity));
     reader
         .by_ref()

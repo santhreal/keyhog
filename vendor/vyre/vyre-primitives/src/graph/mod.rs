@@ -13,13 +13,14 @@ pub mod toposort;
 /// Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst } + a per-lane depth predicate; no new sub-op.
 pub mod level_wave;
 
-/// Reachability scan — given a source set + edge list, which nodes
+/// Reachability scan  -  given a source set + edge list, which nodes
 /// are transitively reachable?
 pub mod reachable;
 
 /// Canonical 5-buffer ProgramGraph ABI (CSR wire format, shared by
 /// every graph primitive).
 pub mod program_graph;
+pub(crate) mod scratch;
 
 /// One BFS step that accumulates into frontier_out and reports changes.
 pub mod csr_forward_or_changed;
@@ -40,12 +41,17 @@ pub mod csr_frontier_degree_sum;
 /// Device-side active-frontier queue materialization and queue-driven CSR
 /// expansion for sparse dataflow waves.
 pub mod csr_frontier_queue;
+mod csr_frontier_step;
 
 /// One BFS step over BOTH forward + backward edges.
 pub mod csr_bidirectional;
 
 /// Dominance-frontier query for SSA phi placement.
 pub mod dominator_frontier;
+
+/// Exact immediate-dominator tree (Lengauer–Tarjan CPU reference +
+/// Cooper–Harvey–Kennedy serial GPU kernel).
+pub mod dominator_tree;
 
 /// Walk parent-pointer array from a target back to the root; emit
 /// the materialized path into a u32 buffer.
@@ -58,15 +64,15 @@ pub mod motif;
 /// ProgramGraph CSR.
 pub mod scc_decompose;
 
-/// Exploded-supergraph builder — (CFG × fact) pairs as graph vertices
+/// Exploded-supergraph builder  -  (CFG × fact) pairs as graph vertices
 /// so IFDS/IDE reduces to `csr_forward_traverse`.
 pub mod exploded;
 
-/// Adaptive CSR / dense bitmatrix traversal — picks representation
+/// Adaptive CSR / dense bitmatrix traversal  -  picks representation
 /// per tile based on frontier density.
 pub mod adaptive_traverse;
 
-/// Persistent BFS — multi-step frontier expansion in a single dispatch.
+/// Persistent BFS  -  multi-step frontier expansion in a single dispatch.
 pub mod persistent_bfs;
 
 /// IR Extension interface registering Alias-solving opcodes to the compiler front-end.
@@ -92,7 +98,7 @@ pub mod chebyshev_filter;
 /// dispatch cost-model (#28).
 pub mod sum_product_circuit;
 
-/// Pearl do-calculus graph surgery — incoming-edge deletion for
+/// Pearl do-calculus graph surgery  -  incoming-edge deletion for
 /// `do(X = x)` interventions. Same Program serves user causal-
 /// inference dialects AND vyre-self change-impact analysis (do(rule_X)
 /// on rule dependency graph predicts cache invalidation downstream).
@@ -103,7 +109,7 @@ pub mod do_calculus;
 /// algorithm pipelines.
 pub mod adjustment_set;
 
-/// Matroid intersection — exchange-graph BFS step for combinatorial
+/// Matroid intersection  -  exchange-graph BFS step for combinatorial
 /// scheduling and bipartite matching (#46). Self-consumer: vyre's
 /// megakernel scheduler fusion-grouping (#22).
 pub mod matroid;

@@ -26,7 +26,7 @@ enum ReductionScope {
 /// The pass is gated by `caps.supports_subgroup_ops`.  It also requires the
 /// total workgroup invocation count to be `<= caps.subgroup_size` so that a
 /// single `subgroup_add` covers every active lane.  Larger workgroups are
-/// left untouched — a future extension can implement the two-level
+/// left untouched  -  a future extension can implement the two-level
 /// subgroup-then-shared reduction.
 #[must_use]
 pub fn lower_subgroup_reductions(program: Program, caps: &AdapterCaps) -> Program {
@@ -146,7 +146,7 @@ fn try_lower_workgroup_reduction(generator: &str, body: &[Node]) -> Option<Vec<N
         // Max reductions are lowered via a shuffle-based tree using
         // subgroup_shuffle.  For simplicity we emit the same load+
         // shuffle-tree pattern, but here we just keep the original
-        // body — the task focuses on sum reductions (attention softmax,
+        // body  -  the task focuses on sum reductions (attention softmax,
         // MoE routing, KV cache compaction).
         None
     } else {

@@ -44,15 +44,7 @@ mod tests {
         let p2 = scallop_provenance_wide_program("s2", "n2", "j2", "c2", 4, 1, 5);
         let p3 = scallop_provenance_wide_program("s3", "n3", "j3", "c3", 4, 1, 5);
 
-        let mut entry = p1.entry().to_vec();
-        entry.extend(p2.entry().to_vec());
-        entry.extend(p3.entry().to_vec());
-
-        let mut buffers = p1.buffers().to_vec();
-        buffers.extend(p2.buffers().to_vec());
-        buffers.extend(p3.buffers().to_vec());
-
-        let final_p = Program::wrapped(buffers, [256, 1, 1], entry);
+        let final_p = crate::test_support::wrap_program_sequence(&[&p1, &p2, &p3], [256, 1, 1]);
         let region_count = final_p
             .entry()
             .iter()
@@ -77,7 +69,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[u32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = vyre_primitives::wire::pack_u32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 

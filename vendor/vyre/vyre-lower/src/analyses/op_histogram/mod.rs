@@ -1,7 +1,7 @@
 //! Per-kind op histogram.
 //!
 //! Counts each `KernelOpKind` variant occurrence in the descriptor
-//! (parent body + recursive child bodies). Useful for telemetry —
+//! (parent body + recursive child bodies). Useful for telemetry  -
 //! answers "what does this kernel mostly do?" with a single struct.
 //!
 //! Group categories collapse related variants:
@@ -97,7 +97,7 @@ impl OpHistogram {
         self.other = self.other.saturating_add(other.other);
     }
 
-    /// Identity element for [`Self::merge`] — all zeros. `Default` produces
+    /// Identity element for [`Self::merge`]  -  all zeros. `Default` produces
     /// the same value but `zero()` reads more naturally as a fold seed.
     pub fn zero() -> Self {
         Self::default()
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn memory_bound_when_loads_dominate() {
-        // 5 loads, 1 lit — memory > everything else (1 lit).
+        // 5 loads, 1 lit  -  memory > everything else (1 lit).
         let mut ops = vec![KernelOp {
             kind: KernelOpKind::Literal,
             operands: vec![0],
@@ -448,6 +448,7 @@ mod tests {
         let h = analyze(&build(
             vec![
                 KernelOp {
+
                     kind: KernelOpKind::LocalInvocationId,
                     operands: vec![0],
                     result: Some(0),
@@ -529,3 +530,4 @@ mod tests {
         assert_eq!(h.total(), 22);
     }
 }
+

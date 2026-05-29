@@ -117,7 +117,7 @@ pub fn c11_precompute_vast_scopes(
     .with_non_composable_with_self(true)
 }
 
-pub(super) const VAST_SCOPE_STACK_WORKGROUP_MAX_U32: u32 = 12_288;
+pub(super) const VAST_SCOPE_STACK_WORKGROUP_MAX_U32: u32 = 0;
 
 #[must_use]
 pub fn c11_precompute_vast_scopes_uses_global_stack(num_nodes: u32) -> bool {

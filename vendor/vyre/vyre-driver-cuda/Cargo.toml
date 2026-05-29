@@ -1,6 +1,6 @@
 [package]
 name = "vyre-driver-cuda"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -37,17 +37,20 @@ vyre-self-substrate = { workspace = true }
 inventory.workspace = true
 tracing.workspace = true
 blake3.workspace = true
+bytemuck.workspace = true
 smallvec.workspace = true
 cudarc.workspace = true
 rustc-hash.workspace = true
-crossbeam-queue = "0.3"
+crossbeam-queue = { workspace = true }
 dashmap.workspace = true
+libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 serde_json.workspace = true
 vyre.workspace = true
+vyre-reference.workspace = true
 vyre-primitives = { workspace = true, features = ["decode", "math", "cpu-parity"] }
 vyre-self-substrate = { workspace = true, features = ["cpu-parity"] }
-vyre-libs = { workspace = true }
+vyre-libs.workspace = true
 pollster.workspace = true

@@ -103,7 +103,7 @@ pub fn decide_param_inlining(bytes_len: u32, policy: ParamInliningPolicy) -> Par
         return ParamInliningDecision::UniformBuffer;
     }
     if policy.align_bytes == 0 {
-        // Defensive — a zero alignment is meaningless; treat as
+        // Defensive  -  a zero alignment is meaningless; treat as
         // uniform-buffer-only to avoid undefined-behaviour packing.
         return ParamInliningDecision::UniformBuffer;
     }
@@ -241,7 +241,7 @@ mod tests {
     fn zero_byte_payload_inlines_with_zero_padded_bytes() {
         let policy = ParamInliningPolicy::large_inline_default();
         // Zero-byte payloads are degenerate but must take the inline path
-        // because there's literally nothing to upload — uniform buffer
+        // because there's literally nothing to upload  -  uniform buffer
         // for zero bytes is wasteful.
         assert_eq!(
             decide_param_inlining(0, policy),

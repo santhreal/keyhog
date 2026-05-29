@@ -1,4 +1,4 @@
-//! ROADMAP L2 / E2 — content-hash LRU cache for parsed source.
+//! ROADMAP L2 / E2  -  content-hash LRU cache for parsed source.
 //!
 //! Substrate that any language's parse pipeline can opt into without
 //! plumbing a cache through every layer of the parser. The cache is
@@ -9,7 +9,7 @@
 //!
 //! ## Why content hash, not string identity
 //!
-//! In the frontend scan loop the same `.h` header is included from
+//! In the downstream analyzer scan loop the same `.h` header is included from
 //! many translation units. Identity-keyed memoisation misses every
 //! caller because each caller holds its own `String`. Content-hash
 //! lookup lets every translation unit share a single parse.
@@ -24,7 +24,7 @@
 //!
 //! ## Thread safety
 //!
-//! The cache is `Send + Sync` — backed by a `Mutex<...>` so the
+//! The cache is `Send + Sync`  -  backed by a `Mutex<...>` so the
 //! parse work proceeds outside the global cache lock and only the lookup /
 //! insert / eviction touches it. Concurrent callers asking for the same key
 //! coalesce through a per-key in-flight slot, so the expensive parse closure
@@ -53,6 +53,17 @@ impl SourceHash {
         out.copy_from_slice(hasher.finalize().as_bytes());
         Self(out)
     }
+}
+
+/// Convert source byte length to the non-zero `u32` extent used by generated
+/// parsing Programs.
+///
+/// Empty inputs still need one logical lane so generated Programs keep their
+/// buffer declarations valid. Inputs larger than `u32::MAX` saturate at the
+/// maximum Program-visible extent instead of panicking during cache population.
+#[must_use]
+pub fn source_len_u32_nonzero(source: &[u8]) -> u32 {
+    u32::try_from(source.len()).unwrap_or(u32::MAX).max(1)
 }
 
 /// Bounded LRU cache mapping `SourceHash` to `Arc<T>`. Eviction is
@@ -85,6 +96,27 @@ enum CacheMissAction<T> {
     Hit(Arc<T>),
     Parse(Arc<InFlight<T>>),
     Wait(Arc<InFlight<T>>),
+}
+
+#[cfg(test)]
+mod generated_source_extent_tests {
+    use super::source_len_u32_nonzero;
+
+    #[test]
+    fn source_len_u32_nonzero_pins_empty_small_and_boundary_inputs() {
+        assert_eq!(source_len_u32_nonzero(b""), 1);
+        assert_eq!(source_len_u32_nonzero(b"x"), 1);
+        assert_eq!(source_len_u32_nonzero(b"abcdef"), 6);
+
+        for len in 0usize..4096 {
+            let bytes = vec![0u8; len];
+            assert_eq!(
+                source_len_u32_nonzero(&bytes),
+                u32::try_from(len).unwrap_or(u32::MAX).max(1),
+                "generated source length case {len} must match the shared parser extent contract"
+            );
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -172,9 +204,12 @@ impl<T> ParsedSourceLru<T> {
                     }
                 }
                 CacheMissAction::Parse(in_flight) => {
-                    let parse = parse
-                        .take()
-                        .expect("Fix: only the first get_or_parse miss owner may consume parse");
+                    let Some(parse) = parse.take() else {
+                        if let Some(result) = wait_for_in_flight(&in_flight) {
+                            return result;
+                        }
+                        continue;
+                    };
                     let parsed =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse(source)));
                     match parsed {
@@ -328,7 +363,6 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Barrier;
-    use std::time::Duration;
 
     /// Same content + same extra hash to the same key.
     #[test]
@@ -381,6 +415,7 @@ mod tests {
         let workers = 8usize;
         let barrier = Arc::new(Barrier::new(workers));
         let parse_calls = Arc::new(AtomicUsize::new(0));
+        let ready_to_parse = Arc::new((Mutex::new(0usize), std::sync::Condvar::new()));
         let mut handles = Vec::with_capacity(workers);
 
         for _ in 0..workers {
@@ -388,15 +423,32 @@ mod tests {
             let source = Arc::clone(&source);
             let barrier = Arc::clone(&barrier);
             let parse_calls = Arc::clone(&parse_calls);
+            let ready_to_parse = Arc::clone(&ready_to_parse);
             handles.push(std::thread::spawn(move || {
                 barrier.wait();
+                {
+                    let (lock, wake) = ready_to_parse.as_ref();
+                    let mut ready = lock
+                        .lock()
+                        .expect("Fix: source-cache readiness mutex must not be poisoned");
+                    *ready += 1;
+                    wake.notify_all();
+                }
                 cache.get_or_parse(source.as_slice(), b"", |_| {
                     parse_calls.fetch_add(1, Ordering::SeqCst);
-                    use std::thread::sleep;
-                    sleep(Duration::from_millis(20));
+                    let (lock, wake) = ready_to_parse.as_ref();
+                    let mut ready = lock
+                        .lock()
+                        .expect("Fix: source-cache readiness mutex must not be poisoned");
+                    while *ready < workers {
+                        ready = wake
+                            .wait(ready)
+                            .expect("Fix: source-cache readiness condvar must not be poisoned");
+                    }
                     99usize
                 })
             }));
+
         }
 
         let results = handles
@@ -505,9 +557,9 @@ mod tests {
         let key = SourceHash::of(b"a", b"");
         assert!(cache.get(key).is_none());
         let _first = cache.insert(key, 1);
-        assert_eq!(*cache.get(key).expect("after first insert"), 1);
+        assert_eq!(*cache.get(key).expect("Fix: after first insert"), 1);
         let _second = cache.insert(key, 2);
-        assert_eq!(*cache.get(key).expect("after second insert"), 2);
+        assert_eq!(*cache.get(key).expect("Fix: after second insert"), 2);
         assert_eq!(cache.len(), 1);
     }
 
@@ -536,3 +588,4 @@ mod tests {
         );
     }
 }
+

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fetch_honest_corpus.sh — download and verify honest workload corpora.
+# fetch_honest_corpus.sh  -  download and verify honest workload corpora.
 #
 # Usage: ./scripts/fetch_honest_corpus.sh
 #

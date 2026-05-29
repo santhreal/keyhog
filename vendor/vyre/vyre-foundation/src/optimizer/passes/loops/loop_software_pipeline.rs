@@ -1,4 +1,4 @@
-//! ROADMAP A31 — software pipelining.
+//! ROADMAP A31  -  software pipelining.
 //!
 //! 2-stage Load-then-Store narrow slice shipped here. Detect the
 //! tight pattern:
@@ -9,7 +9,7 @@
 //!   Store(buf_out, Var(i), expr_using_x),
 //! ])
 //!     where lo, hi are literals AND hi - lo >= 2
-//!     AND `buf_in` != `buf_out` (distinct named buffers — A12 alias proof)
+//!     AND `buf_in` != `buf_out` (distinct named buffers  -  A12 alias proof)
 //!     AND `expr_using_x` reads `Var(x)` (so the Store depends on the Load)
 //!     AND `expr_using_x` is observably free of side effects beyond `Var(x)`
 //! ```
@@ -39,7 +39,7 @@
 //! Cost direction: monotone-down on per-iteration latency (the
 //! load latency is hidden behind the previous iteration's compute);
 //! `node_count` rises by ~3 (prologue Let + Assign + epilogue
-//! Store) but the per-iteration body shrinks by zero — net
+//! Store) but the per-iteration body shrinks by zero  -  net
 //! constant overhead amortised over `hi - lo` iterations.
 //!
 //! ## Conservatism
@@ -57,7 +57,7 @@
 //!   alias, the prefetch could read a value the previous iteration
 //!   just overwrote.
 //! - The Store value expression must be observably free apart from
-//!   the `Var(name)` read — no Load (other than via name), no
+//!   the `Var(name)` read  -  no Load (other than via name), no
 //!   Atomic, no Call, no Opaque, no Subgroup.
 
 use crate::ir::{BinOp, Expr, Ident, Node, Program};
@@ -448,6 +448,7 @@ mod tests {
             var: Ident::from("i"),
             from: Expr::u32(lo),
             to: Expr::u32(hi),
+
             body: vec![
                 Node::let_bind(
                     "x",
@@ -521,7 +522,7 @@ mod tests {
         assert_eq!(stores, 2);
     }
 
-    /// Negative: trip count < 2 — the prologue/epilogue degenerate.
+    /// Negative: trip count < 2  -  the prologue/epilogue degenerate.
     #[test]
     fn keeps_loop_with_trip_count_one() {
         let entry = pipelinable_loop(0, 1);
@@ -530,7 +531,7 @@ mod tests {
         assert!(!result.changed);
     }
 
-    /// Negative: same buffer in Load and Store — alias proof fails.
+    /// Negative: same buffer in Load and Store  -  alias proof fails.
     #[test]
     fn keeps_loop_when_buffers_alias() {
         let entry = vec![Node::Loop {
@@ -564,7 +565,7 @@ mod tests {
         );
     }
 
-    /// Negative: index expression isn't `Var(i)` — affine indexing
+    /// Negative: index expression isn't `Var(i)`  -  affine indexing
     /// is the next refinement.
     #[test]
     fn keeps_loop_with_non_var_index() {
@@ -592,7 +593,7 @@ mod tests {
         assert!(!result.changed);
     }
 
-    /// Negative: body has a third statement — pattern doesn't match.
+    /// Negative: body has a third statement  -  pattern doesn't match.
     #[test]
     fn keeps_loop_with_three_body_stmts() {
         let entry = vec![Node::Loop {
@@ -616,7 +617,7 @@ mod tests {
         assert!(!result.changed);
     }
 
-    /// Negative: store value doesn't read the Let-bound name —
+    /// Negative: store value doesn't read the Let-bound name  -
     /// no Load → Store dataflow to pipeline.
     #[test]
     fn keeps_loop_when_store_does_not_use_load() {
@@ -640,7 +641,7 @@ mod tests {
         assert!(!result.changed);
     }
 
-    /// Negative: store value contains another Load — observably-free
+    /// Negative: store value contains another Load  -  observably-free
     /// gate fails.
     #[test]
     fn keeps_loop_when_store_value_has_other_load() {
@@ -675,7 +676,7 @@ mod tests {
         assert!(!result.changed);
     }
 
-    /// Negative: runtime bounds skip — needs literal bounds for
+    /// Negative: runtime bounds skip  -  needs literal bounds for
     /// prologue / epilogue construction.
     #[test]
     fn keeps_loop_with_runtime_bounds() {
@@ -744,3 +745,4 @@ mod tests {
         assert!(!result.changed);
     }
 }
+

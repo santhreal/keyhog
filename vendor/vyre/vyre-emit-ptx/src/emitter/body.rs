@@ -1,7 +1,8 @@
 use std::fmt::Write as _;
 
 use smallvec::SmallVec;
-use vyre_lower::{KernelBody, KernelOp};
+use vyre_foundation::ir::BinOp;
+use vyre_lower::{KernelBody, KernelOp, KernelOpKind};
 
 use super::facts::EmitFacts;
 use super::schedule::{
@@ -9,6 +10,7 @@ use super::schedule::{
     operand_is_immediate,
 };
 use super::BodyCtx;
+use crate::reg::PtxType;
 use crate::EmitError;
 
 const MAX_LOAD_GAP_FILLERS: usize = 3;
@@ -58,6 +60,15 @@ impl BodyCtx<'_> {
                     skip[op_idx] = true;
                 }
                 self.mark_dead_vec_index_ops(body, &facts, &chain, &mut skip)?;
+                idx += 1;
+                continue;
+            }
+            if self.should_defer_integer_mul_for_mad(body, &facts, idx) {
+                skip[idx] = true;
+                idx += 1;
+                continue;
+            }
+            if self.emit_integer_mad_from_add(body, &facts, &body.ops[idx])? {
                 idx += 1;
                 continue;
             }
@@ -133,5 +144,84 @@ impl BodyCtx<'_> {
         op.operands.iter().all(|operand| {
             operand_is_immediate(op, *operand) || self.operand_to_reg.contains_key(operand)
         })
+    }
+
+    fn should_defer_integer_mul_for_mad(
+        &self,
+        body: &KernelBody,
+        facts: &EmitFacts,
+        op_idx: usize,
+    ) -> bool {
+        let _ = (body, facts, op_idx);
+        false
+    }
+
+    fn emit_integer_mad_from_add(
+        &mut self,
+        body: &KernelBody,
+        facts: &EmitFacts,
+        op: &KernelOp,
+    ) -> Result<bool, EmitError> {
+        if !matches!(
+            op.kind,
+            KernelOpKind::BinOpKind(BinOp::Add | BinOp::WrappingAdd)
+        ) || op.operands.len() != 2
+        {
+            return Ok(false);
+        }
+
+        let lhs = op.operands[0];
+        let rhs = op.operands[1];
+        let mad = self
+            .integer_mad_parts(body, facts, lhs, rhs)
+            .or_else(|| self.integer_mad_parts(body, facts, rhs, lhs));
+        let Some((a, b, c, ptx_suffix, out_ty)) = mad else {
+            return Ok(false);
+        };
+
+        let out = self.alloc(out_ty);
+        let _ = writeln!(
+            self.text,
+            "    mad.lo.{ptx_suffix}    {out}, {a}, {b}, {c};"
+        );
+        self.bind_result(op, out)?;
+        Ok(true)
+    }
+
+    fn integer_mad_parts(
+        &self,
+        body: &KernelBody,
+        facts: &EmitFacts,
+        mul_result_id: u32,
+        addend_id: u32,
+    ) -> Option<(
+        crate::reg::Reg,
+        crate::reg::Reg,
+        crate::reg::Reg,
+        &'static str,
+        PtxType,
+    )> {
+        if facts.result_use_count(mul_result_id) != 1 {
+            return None;
+        }
+        let producer_idx = facts.producer_idx(mul_result_id)?;
+        let producer = body.ops.get(producer_idx)?;
+        if !matches!(producer.kind, KernelOpKind::BinOpKind(BinOp::Mul))
+            || producer.operands.len() != 2
+            || producer.result != Some(mul_result_id)
+        {
+            return None;
+        }
+        let a = self.operand_to_reg.get(&producer.operands[0]).copied()?;
+        let b = self.operand_to_reg.get(&producer.operands[1]).copied()?;
+        let c = self.operand_to_reg.get(&addend_id).copied()?;
+        if a.0 != b.0 || a.0 != c.0 {
+            return None;
+        }
+        match a.0 {
+            PtxType::U32 => Some((a, b, c, "u32", PtxType::U32)),
+            PtxType::I32 => Some((a, b, c, "s32", PtxType::I32)),
+            _ => None,
+        }
     }
 }

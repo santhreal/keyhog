@@ -16,9 +16,9 @@ pub mod lowering;
 pub mod migration;
 /// `MutationClass` declarations carried by every op.
 pub mod mutation;
-/// `OpDef` + `OpDefRegistration` — stable definition surface every backend reads.
+/// `OpDef` + `OpDefRegistration`  -  stable definition surface every backend reads.
 pub mod op_def;
-/// `DialectRegistry` — the frozen lookup table walked at dispatch time.
+/// `DialectRegistry`  -  the frozen lookup table walked at dispatch time.
 pub mod registry;
 /// TOML-source dialect/op loader for Tier B community extensibility.
 pub mod toml_loader;

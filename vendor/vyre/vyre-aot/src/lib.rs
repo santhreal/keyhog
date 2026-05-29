@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! vyre-aot — Ahead-of-time compilation for vyre Programs.
+//! vyre-aot  -  Ahead-of-time compilation for vyre Programs.
 //!
 //! Vyre is a JIT-friendly substrate: at runtime, a `Program` is lowered
 //! through `vyre-driver` to a backend-specific module loaded by the GPU

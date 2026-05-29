@@ -20,55 +20,19 @@ pub fn c11_extract_functions(
     // vyre-conform-enforce. Non-identifier positions read values
     // that never reach the `is_match` write path because the
     // guard expression gates the whole decision.
-    let loop_body = vec![
-        Node::let_bind("tok_type", Expr::load(tok_types, t.clone())),
-        Node::let_bind("prev_type", Expr::u32(0)),
-        Node::if_then(
-            Expr::gt(t.clone(), Expr::u32(0)),
-            vec![Node::assign(
-                "prev_type",
-                Expr::load(tok_types, Expr::sub(t.clone(), Expr::u32(1))),
-            )],
-        ),
-        Node::let_bind(
-            "next_type",
-            Expr::load(tok_types, Expr::add(t.clone(), Expr::u32(1))),
-        ),
-        Node::let_bind("before_wrapper_type", Expr::u32(TOK_EOF)),
-        Node::if_then(
-            Expr::gt(t.clone(), Expr::u32(1)),
-            vec![Node::assign(
-                "before_wrapper_type",
-                Expr::load(tok_types, Expr::sub(t.clone(), Expr::u32(2))),
-            )],
-        ),
-        Node::let_bind(
-            "matching_rparen",
-            Expr::load(paren_pairs, Expr::add(t.clone(), Expr::u32(1))),
-        ),
-        Node::let_bind("parenthesized_wrapper_rparen", Expr::u32(u32::MAX)),
-        Node::if_then(
-            Expr::gt(t.clone(), Expr::u32(0)),
-            vec![Node::assign(
-                "parenthesized_wrapper_rparen",
-                Expr::load(paren_pairs, Expr::sub(t.clone(), Expr::u32(1))),
-            )],
-        ),
-        Node::let_bind("after_wrapper_type", Expr::u32(TOK_EOF)),
-        Node::let_bind("after_wrapper_rparen", Expr::u32(u32::MAX)),
-        Node::if_then(
-            Expr::lt(Expr::add(t.clone(), Expr::u32(2)), num_tokens.clone()),
-            vec![
-                Node::assign(
-                    "after_wrapper_type",
-                    Expr::load(tok_types, Expr::add(t.clone(), Expr::u32(2))),
-                ),
-                Node::assign(
-                    "after_wrapper_rparen",
-                    Expr::load(paren_pairs, Expr::add(t.clone(), Expr::u32(2))),
-                ),
-            ],
-        ),
+    let mut loop_body = emit_token_context(
+        tok_types,
+        paren_pairs,
+        &num_tokens,
+        &t,
+        TokenContextOptions {
+            before_wrapper_type: true,
+            parenthesized_wrapper_rparen: true,
+            after_wrapper_type_and_rparen: true,
+            ..TokenContextOptions::default()
+        },
+    );
+    loop_body.extend([
         Node::let_bind(
             "is_parenthesized_function_name",
             Expr::and(
@@ -112,11 +76,20 @@ pub fn c11_extract_functions(
                 Expr::var("after_wrapper_rparen"),
             )],
         ),
-    ];
-    let mut loop_body = loop_body;
+    ]);
+    loop_body.extend([
+        Node::let_bind("function_body_scan_start", num_tokens.clone()),
+        Node::if_then(
+            Expr::ne(Expr::var("matching_rparen"), Expr::u32(u32::MAX)),
+            vec![Node::assign(
+                "function_body_scan_start",
+                Expr::add(Expr::var("matching_rparen"), Expr::u32(1)),
+            )],
+        ),
+    ]);
     loop_body.extend(emit_body_open_scan(
         tok_types,
-        Expr::add(Expr::var("matching_rparen"), Expr::u32(1)),
+        Expr::var("function_body_scan_start"),
         num_tokens.clone(),
         "body_open",
     ));
@@ -171,87 +144,63 @@ pub fn c11_extract_functions(
         ),
         Node::if_then(
             Expr::var("is_match"),
-            vec![
-                Node::let_bind("body_start", Expr::var("body_open")),
-                Node::let_bind("body_end", Expr::var("matching_rbrace")),
-                Node::store(out_functions, Expr::var("sparse_idx"), t.clone()),
-                Node::store(
-                    out_functions,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(1)),
-                    Expr::var("body_start"),
-                ),
-                Node::store(
-                    out_functions,
-                    Expr::add(Expr::var("sparse_idx"), Expr::u32(2)),
-                    Expr::var("body_end"),
-                ),
-            ],
+            emit_sparse_record_write(
+                out_functions,
+                t.clone(),
+                3,
+                vec![
+                    t.clone(),
+                    Expr::var("body_open"),
+                    Expr::var("matching_rbrace"),
+                ],
+            ),
         ),
     ]);
 
-    let tok_count = match &num_tokens {
-        Expr::LitU32(n) => *n,
-        _ => 1,
-    };
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(tok_count),
-            BufferDecl::storage(paren_pairs, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(tok_count),
-            BufferDecl::storage(brace_pairs, 2, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(tok_count),
-            BufferDecl::output(out_functions, 3, DataType::U32)
-                .with_count(tok_count.saturating_mul(3).max(3)),
-            BufferDecl::storage(out_counts, 4, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1)
-                .with_pipeline_live_out(true),
-        ],
-        [256, 1, 1],
-        vec![wrap_anonymous(
-            "vyre-libs::parsing::c11_extract_functions",
-            vec![
-                Node::let_bind("lane", Expr::LocalId { axis: 0 }),
-                Node::let_bind("block", Expr::WorkgroupId { axis: 0 }),
-                Node::let_bind(
-                    "t",
-                    Expr::add(
-                        Expr::mul(Expr::var("block"), Expr::u32(256)),
-                        Expr::var("lane"),
-                    ),
-                ),
-                Node::let_bind("sparse_idx", Expr::mul(t.clone(), Expr::u32(3))),
-                Node::if_then(
-                    Expr::lt(t.clone(), num_tokens.clone()),
-                    vec![
-                        Node::if_then(
-                            Expr::eq(t.clone(), Expr::u32(0)),
-                            vec![Node::store(
-                                out_counts,
-                                Expr::u32(0),
-                                Expr::mul(num_tokens.clone(), Expr::u32(3)),
-                            )],
-                        ),
-                        Node::store(out_functions, Expr::var("sparse_idx"), Expr::u32(0)),
-                        Node::store(
-                            out_functions,
-                            Expr::add(Expr::var("sparse_idx"), Expr::u32(1)),
-                            Expr::u32(0),
-                        ),
-                        Node::store(
-                            out_functions,
-                            Expr::add(Expr::var("sparse_idx"), Expr::u32(2)),
-                            Expr::u32(0),
-                        ),
-                    ],
-                ),
-                Node::if_then(
-                    Expr::lt(t.clone(), Expr::sub(num_tokens.clone(), Expr::u32(2))),
-                    loop_body,
-                ),
-            ],
-        )],
+    let tok_count = literal_u32_or(&num_tokens, 1);
+    let mut buffers = token_pair_input_buffers(tok_types, paren_pairs, tok_count);
+    buffers.extend([
+        BufferDecl::storage(brace_pairs, 2, BufferAccess::ReadOnly, DataType::U32)
+            .with_count(tok_count),
+    ]);
+    append_record_output_buffers(
+        &mut buffers,
+        out_functions,
+        3,
+        3,
+        tok_count,
+        out_counts,
+        4,
+        false,
+    );
+    let sparse_zero_pre_loop = emit_sparse_record_output_init(
+        out_functions,
+        out_counts,
+        t.clone(),
+        num_tokens.clone(),
+        3,
+    );
+    threaded_structure_program(
+        "vyre-libs::parsing::c11_extract_functions",
+        buffers,
+        sparse_zero_pre_loop,
+        Expr::lt(t, Expr::sub(num_tokens, Expr::u32(2))),
+        loop_body,
     )
-    .with_entry_op_id("vyre-libs::parsing::c11_extract_functions")
-    .with_non_composable_with_self(true)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn function_body_scan_does_not_add_one_to_match_none() {
+        let source = include_str!("functions.rs");
+        assert!(
+            source.contains("function_body_scan_start"),
+            "Fix: function extraction must route body scans through a guarded start variable."
+        );
+        assert!(
+            !source.contains("emit_body_open_scan(\n        tok_types,\n        Expr::add(Expr::var(\"matching_rparen\"), Expr::u32(1))"),
+            "Fix: function extraction must not add one to MATCH_NONE before guarding the body scan."
+        );
+    }
 }

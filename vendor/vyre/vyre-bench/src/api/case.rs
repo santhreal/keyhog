@@ -275,6 +275,71 @@ impl BenchRun {
             baseline,
         )))
     }
+
+    pub fn verify_f32_outputs_with_ulp(&self, ulp_budget: u32) -> Result<Correctness, BenchError> {
+        let baseline = self.baseline_outputs.as_ref().ok_or_else(|| {
+            BenchError::CorrectnessViolation(
+                "benchmark did not capture a baseline output; cannot claim f32 ULP correctness"
+                    .to_string(),
+            )
+        })?;
+        if self.outputs.len() != baseline.len() {
+            return Err(BenchError::CorrectnessViolation(format!(
+                "f32 output count mismatch: backend returned {}, baseline returned {}",
+                self.outputs.len(),
+                baseline.len()
+            )));
+        }
+
+        let mut max_observed_ulp = 0u32;
+        for (buffer_index, (actual, expected)) in self.outputs.iter().zip(baseline).enumerate() {
+            if actual.len() != expected.len() {
+                return Err(BenchError::CorrectnessViolation(format!(
+                    "f32 output buffer {buffer_index} length mismatch: backend returned {} bytes, baseline returned {} bytes",
+                    actual.len(),
+                    expected.len()
+                )));
+            }
+            if actual.len() % 4 != 0 {
+                return Err(BenchError::CorrectnessViolation(format!(
+                    "f32 output buffer {buffer_index} has non-f32 byte length {}",
+                    actual.len()
+                )));
+            }
+            for (value_index, (actual_chunk, expected_chunk)) in actual
+                .chunks_exact(4)
+                .zip(expected.chunks_exact(4))
+                .enumerate()
+            {
+                let actual_value = f32::from_le_bytes(actual_chunk.try_into().map_err(|_| {
+                    BenchError::CorrectnessViolation(
+                        "backend f32 output chunk was not 4 bytes".to_string(),
+                    )
+                })?);
+                let expected_value =
+                    f32::from_le_bytes(expected_chunk.try_into().map_err(|_| {
+                        BenchError::CorrectnessViolation(
+                            "baseline f32 output chunk was not 4 bytes".to_string(),
+                        )
+                    })?);
+                let distance = f32_ulp_distance(actual_value, expected_value).ok_or_else(|| {
+                    BenchError::CorrectnessViolation(format!(
+                        "f32 output buffer {buffer_index} value {value_index} contains NaN: backend={actual_value:?}, baseline={expected_value:?}"
+                    ))
+                })?;
+                max_observed_ulp = max_observed_ulp.max(distance);
+                if distance > ulp_budget {
+                    return Err(BenchError::CorrectnessViolation(format!(
+                        "f32 output buffer {buffer_index} value {value_index} exceeded ULP budget {ulp_budget}: observed {distance}, backend={actual_value:?}, baseline={expected_value:?}"
+                    )));
+                }
+            }
+        }
+        Ok(Correctness::Toleranced {
+            ulp_budget,
+            max_observed_ulp,
+        })
+    }
 }
 
 pub fn prepared_program(prepared: &PreparedCase) -> Result<&vyre::ir::Program, BenchError> {
@@ -317,6 +382,31 @@ fn first_output_difference(outputs: &[Vec<u8>], baseline: &[Vec<u8>]) -> String 
         }
     }
     "backend output differs from baseline".to_string()
+}
+
+fn f32_ulp_distance(actual: f32, expected: f32) -> Option<u32> {
+    if actual.to_bits() == expected.to_bits() {
+        return Some(0);
+    }
+    if actual.is_nan() || expected.is_nan() {
+        return None;
+    }
+    let actual_ordered = ordered_f32_bits(actual);
+    let expected_ordered = ordered_f32_bits(expected);
+    Some(
+        actual_ordered
+            .abs_diff(expected_ordered)
+            .min(u64::from(u32::MAX)) as u32,
+    )
+}
+
+fn ordered_f32_bits(value: f32) -> i64 {
+    let bits = value.to_bits();
+    if bits & 0x8000_0000 == 0 {
+        i64::from(bits | 0x8000_0000)
+    } else {
+        i64::from(!bits)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -364,6 +454,7 @@ pub trait BenchCase: Send + Sync {
     }
 }
 
+
 fn static_program_bytes_touched(program: &vyre::ir::Program) -> (u64, u64) {
     let mut read_bytes = 0_u64;
     let mut write_bytes = 0_u64;
@@ -390,3 +481,51 @@ fn static_program_bytes_touched(program: &vyre::ir::Program) -> (u64, u64) {
     }
     (read_bytes, write_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f32_bytes(values: &[f32]) -> Vec<u8> {
+        vyre_primitives::wire::pack_f32_slice(values)
+    }
+
+    #[test]
+    fn f32_ulp_verifier_accepts_budgeted_difference() {
+        let one = 1.0f32;
+        let next = f32::from_bits(one.to_bits() + 1);
+        let run = BenchRun {
+            metrics: BenchMetrics::default(),
+            baseline_metrics: None,
+            outputs: vec![f32_bytes(&[next])],
+            baseline_outputs: Some(vec![f32_bytes(&[one])]),
+        };
+
+        assert!(matches!(
+            run.verify_f32_outputs_with_ulp(1).unwrap(),
+            Correctness::Toleranced {
+                ulp_budget: 1,
+                max_observed_ulp: 1
+            }
+        ));
+    }
+
+    #[test]
+    fn f32_ulp_verifier_rejects_over_budget_difference() {
+        let one = 1.0f32;
+        let far = f32::from_bits(one.to_bits() + 8);
+        let run = BenchRun {
+            metrics: BenchMetrics::default(),
+            baseline_metrics: None,
+            outputs: vec![f32_bytes(&[far])],
+            baseline_outputs: Some(vec![f32_bytes(&[one])]),
+        };
+
+        let error = run.verify_f32_outputs_with_ulp(2).unwrap_err();
+        assert!(
+            error.to_string().contains("exceeded ULP budget"),
+            "Fix: over-budget f32 mismatch should be actionable: {error}"
+        );
+    }
+}
+

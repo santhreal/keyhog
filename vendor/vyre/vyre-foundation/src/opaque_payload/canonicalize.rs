@@ -10,7 +10,7 @@
 /// semantic regex hash equal under `crate::ir::Program::hash`.
 ///
 /// Rust/ICU-style inline regex literals of the shape `(?flags)pattern`
-/// accept the flag characters in any order — `(?mi)` and `(?im)`
+/// accept the flag characters in any order  -  `(?mi)` and `(?im)`
 /// describe the same regex but the differing byte sequences hash
 /// distinctly, defeating CSE and cache lookups (F-IR-02 / F-IR-37).
 /// Extension authors who encode a regex literal into an opaque payload
@@ -34,13 +34,13 @@ pub fn canonical_regex_flags(flags: &str) -> String {
 /// hash distinctly. Extension authors who want two programs that differ
 /// only by the sign of zero to hash equal call this helper before
 /// [`super::endian::push_f32`]. Non-zero floats and every NaN bit pattern are
-/// returned unchanged — callers preserve their distinct identities
+/// returned unchanged  -  callers preserve their distinct identities
 /// because sign-of-zero is the only "semantically equal but
 /// bit-distinct" shape common enough to justify canonicalising at the
 /// wire layer.
 ///
 /// See F-IR-37 in CRITIQUE_IR_SOUNDNESS_2026-04-22.md for the full
-/// rationale. The 64-bit companion is [`canonical_f64_zero`] — every
+/// rationale. The 64-bit companion is [`canonical_f64_zero`]  -  every
 /// extension that wants cross-width sign-of-zero canonicalisation
 /// should use the helper matching the literal's width to avoid bit
 /// pattern drift between f32 and f64 encodings.
@@ -61,7 +61,7 @@ pub fn canonical_f32_zero(value: f32) -> f32 {
 /// only by the sign of zero hash equal under `Program::hash`. Every
 /// non-zero f64 (including every signalling and quiet NaN in either
 /// sign, every subnormal, every finite with a non-zero mantissa) is
-/// returned unchanged — callers preserve the distinct bit patterns
+/// returned unchanged  -  callers preserve the distinct bit patterns
 /// that carry IEEE-754 semantic meaning (NaN payloads, signed zero in
 /// division, etc.).
 ///

@@ -14,7 +14,11 @@ pub(crate) fn record_missing_object_replacement_provenance(
     token_provenance_events: &mut Vec<TokenProvenanceEvent>,
 ) -> Result<(), String> {
     let replacement_count = replacement_token_count(replacement_tokens);
-    token_provenance_events.reserve(replacement_count);
+    reserve_token_provenance_events(
+        token_provenance_events,
+        replacement_count,
+        "object replacement provenance",
+    )?;
     let single_token_len = if replacement_count == 1 {
         checked_usize_to_u32(
             replacement_tokens.source.len(),
@@ -23,10 +27,9 @@ pub(crate) fn record_missing_object_replacement_provenance(
     } else {
         0
     };
-    let mut recorded_replacement_spans = SpanDedupe::from_iter(
-        token_provenance_events[dedupe_start..]
-            .iter()
-            .filter_map(|event| {
+    let mut recorded_replacement_spans =
+        SpanDedupe::try_from_iter(token_provenance_events[dedupe_start..].iter().filter_map(
+            |event| {
                 if event.macro_name == macro_name
                     && event.expansion_start as usize == expansion_start
                 {
@@ -34,8 +37,8 @@ pub(crate) fn record_missing_object_replacement_provenance(
                 } else {
                     None
                 }
-            }),
-    );
+            },
+        ))?;
     for idx in 0..replacement_tokens.tok_types.len() {
         if replacement_tokens.tok_types[idx] == 0 {
             continue;
@@ -46,7 +49,7 @@ pub(crate) fn record_missing_object_replacement_provenance(
         } else {
             single_token_len
         };
-        if !recorded_replacement_spans.insert((spelling_base.saturating_add(start), len)) {
+        if !recorded_replacement_spans.insert((spelling_base.saturating_add(start), len))? {
             continue;
         }
         token_provenance_events.push(TokenProvenanceEvent {

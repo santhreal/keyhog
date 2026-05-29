@@ -215,6 +215,7 @@ impl VyreBackend for SpirvBackendRegistration {
             backend: self.id(),
             supports_subgroup_ops: false,
             supports_indirect_dispatch: false,
+            supports_distributed_collectives: false,
             supports_specialization_constants: false,
             supports_f16: false,
             supports_bf16: false,
@@ -249,7 +250,7 @@ pub fn spirv_factory() -> Result<Box<dyn VyreBackend>, BackendError> {
     SpirvBackendRegistration::acquire().map(|backend| Box::new(backend) as Box<dyn VyreBackend>)
 }
 
-/// Op-support set — SPIR-V through naga supports every op the naga::Module
+/// Op-support set  -  SPIR-V through naga supports every op the naga::Module
 /// builders already emit. Empty at the registration layer; the conform runner
 /// populates real coverage at runtime.
 pub fn spirv_supported_ops() -> &'static std::collections::HashSet<vyre_foundation::ir::OpId> {
@@ -271,5 +272,12 @@ inventory::submit! {
     vyre_driver::backend::BackendPrecedence {
         id: SPIRV_BACKEND_ID,
         rank: 30,
+    }
+}
+
+inventory::submit! {
+    vyre_driver::backend::BackendCapability {
+        id: SPIRV_BACKEND_ID,
+        dispatches: true,
     }
 }

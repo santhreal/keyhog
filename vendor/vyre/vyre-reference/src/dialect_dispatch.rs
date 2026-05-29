@@ -9,7 +9,7 @@
 //! dialect crates can
 //! `inventory::submit!` an `OpDef` (`vyre_driver::OpDef`) with an
 //! executable `cpu_ref` function, and the reference interpreter
-//! immediately knows how to run it — no patch to vyre-reference
+//! immediately knows how to run it  -  no patch to vyre-reference
 //! required.
 //!
 //! The BackendRegistration exported below makes the capability

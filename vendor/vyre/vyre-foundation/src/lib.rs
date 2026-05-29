@@ -1,4 +1,4 @@
-//! vyre-foundation — substrate-neutral compiler foundation.
+//! vyre-foundation  -  substrate-neutral compiler foundation.
 //!
 //! Defines the vyre IR (`Expr`, `Node`, `Program`), the type system, the
 //! memory model, the wire format, visitor traits, and extension resolvers.
@@ -102,15 +102,18 @@ pub mod ir {
     /// Compose with `ProgramStats::has_any_node_kind` for O(1) `analyze_impl` gates.
     pub mod stats {
         pub use crate::ir_inner::model::program::{
-            NODE_KIND_ASSIGN, NODE_KIND_ASYNC_LOAD, NODE_KIND_ASYNC_STORE, NODE_KIND_ASYNC_WAIT,
-            NODE_KIND_BARRIER, NODE_KIND_BLOCK, NODE_KIND_EXPRESSION_BEARING_MASK, NODE_KIND_IF,
+            NODE_KIND_ALL_GATHER, NODE_KIND_ALL_REDUCE, NODE_KIND_ASSIGN, NODE_KIND_ASYNC_LOAD,
+            NODE_KIND_ASYNC_STORE, NODE_KIND_ASYNC_WAIT, NODE_KIND_BARRIER, NODE_KIND_BLOCK,
+            NODE_KIND_BROADCAST, NODE_KIND_EXPRESSION_BEARING_MASK, NODE_KIND_IF,
             NODE_KIND_INDIRECT_DISPATCH, NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_OPAQUE,
-            NODE_KIND_REGION, NODE_KIND_RESUME, NODE_KIND_RETURN, NODE_KIND_STORE, NODE_KIND_TRAP,
+            NODE_KIND_REDUCE_SCATTER, NODE_KIND_REGION, NODE_KIND_RESUME, NODE_KIND_RETURN,
+            NODE_KIND_STORE, NODE_KIND_TRAP,
         };
     }
     pub use crate::ir_inner::model::program::ProgramStats;
     pub use crate::ir_inner::model::types::{
-        AtomicOp, BinOp, BufferAccess, Convention, DataType, OpSignature, UnOp,
+        AtomicOp, BinOp, BufferAccess, CollectiveOp, CommGroup, Convention, DataType, OpSignature,
+        UnOp,
     };
     pub use crate::memory_model;
     pub use crate::memory_model::MemoryOrdering;
@@ -142,6 +145,9 @@ pub mod algebra;
 
 /// Static-analysis surface (graph_view).
 pub mod analysis;
+
+/// Substrate-neutral allocation reservation arithmetic shared by hot paths.
+pub mod allocation;
 
 // ---- Back-compat re-exports (old `vyre_foundation::<file>` paths) -----
 pub use algebra::algebraic_law_registry;
@@ -176,7 +182,7 @@ pub use dispatch::extern_registry::{
     ExternOp, ExternVerifyError,
 };
 
-// V7-API-017: `ir_inner` is intentionally private — the public surface
+// V7-API-017: `ir_inner` is intentionally private  -  the public surface
 // re-exports through `pub mod ir` above. The internal name is pinned by
 // the `vyre_macros::vyre_ast_registry!` proc-macro, which emits literal
 // `crate::ir_inner::model::*` paths for the generated decoder cascades.
@@ -187,7 +193,7 @@ mod ir_inner {
     pub mod model;
 }
 // composition / cpu_op / cpu_references / extension / ir_eval / match_result
-// / perf / program_caps relocated in audit cleanup A12 (2026-04-30) — they
+// / perf / program_caps relocated in audit cleanup A12 (2026-04-30)  -  they
 // now live under runtime/, dispatch/, algebra/, analysis/. Back-compat
 // re-exports for external `vyre_foundation::<file>::*` paths land further
 // up via `pub use runtime::memory_model;` etc.
@@ -232,14 +238,14 @@ pub use runtime::program_caps;
 pub mod error;
 pub use error::{Error, Result};
 
-/// Soundness lattice for dataflow primitives. Canonical home — dataflow
+/// Soundness lattice for dataflow primitives. Canonical home  -  dataflow
 /// engines and composition crates consume from here per the LEGO discipline
 /// (consumers always
 /// calls vyre, vyre never calls anything else).
 pub mod soundness;
 
 /// Test utilities shared across optimizer and transform test suites.
-/// `pub(crate)` because they are an internal contract — no consumer
+/// `pub(crate)` because they are an internal contract  -  no consumer
 /// outside vyre-foundation should depend on these helpers.
 #[cfg(test)]
 pub(crate) mod test_util;

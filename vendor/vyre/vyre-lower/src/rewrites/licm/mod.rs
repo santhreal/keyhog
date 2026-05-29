@@ -16,6 +16,11 @@
 use rustc_hash::FxHashSet;
 use std::collections::BTreeMap;
 
+use super::dataflow_facts::resolve_reaching_def_id as resolve;
+use super::memory_address::{
+    locations_may_alias, AddressKey, MemoryLocation, MemoryTarget, SlotAliasPolicy,
+};
+use crate::operand_semantics::operand_is_result_reference;
 use crate::{BindingVisibility, KernelBody, KernelDescriptor, KernelOp, KernelOpKind};
 
 /// LICM with a correct cross-body id rewrite.
@@ -120,7 +125,7 @@ fn licm_body(
     //
     // Note that `remap_body_ids` already rewrites the LOOP body and
     // any ops we push AFTER the loop op need this same treatment in
-    // the parent — that's what `parent_id_map` captures.
+    // the parent  -  that's what `parent_id_map` captures.
     let mut parent_id_map = BTreeMap::<u32, u32>::new();
 
     for op in &body.ops {
@@ -169,7 +174,7 @@ fn licm_body(
                                         h_op.operands[0] = new_idx;
                                     }
                                     // When the source literal is missing
-                                    // we leave the operand alone — the
+                                    // we leave the operand alone  -  the
                                     // op was already invalid in the
                                     // source body; LICM does not have to
                                     // fabricate a slot for it.
@@ -220,7 +225,7 @@ fn licm_body(
                         }
                         continue;
                     }
-                    // No invariants to hoist — just recurse into child.
+                    // No invariants to hoist  -  just recurse into child.
                     let recursed = licm_body(
                         &remaining,
                         next_free_id,
@@ -297,7 +302,7 @@ fn licm_body(
 
 /// Recursively apply `id_map` to every result-reference operand in
 /// `body` and all nested child bodies. Result ids of ops themselves
-/// are left unchanged — only operand refs are rewritten.
+/// are left unchanged  -  only operand refs are rewritten.
 fn remap_body_ids(body: &KernelBody, id_map: &BTreeMap<u32, u32>) -> KernelBody {
     let new_ops: Vec<KernelOp> = body
         .ops
@@ -432,13 +437,18 @@ fn load_is_loop_invariant_memory(
     }
     let load_slot = load.operands[0];
     let load_index = resolve(load.operands[1], reaching_defs);
+    let load_target = match load.kind {
+        KernelOpKind::LoadGlobal => MemoryTarget::global(load_slot),
+        KernelOpKind::LoadShared => MemoryTarget::shared(load_slot),
+        _ => return false,
+    };
     if matches!(load.kind, KernelOpKind::LoadGlobal) {
         let is_read_only = read_only_bindings.contains(&load_slot);
         let has_alias_facts = alias_facts.is_some();
         let has_reaching_defs = reaching_defs.is_some();
         // Conservative path: read-only slot + alias facts → safe.
         // Dataflow path: reaching-defs + alias facts → safe
-        // (Weir can prove non-aliasing even on ReadWrite slots).
+        // (external facts can prove non-aliasing even on ReadWrite slots).
         // Otherwise: reject the hoist.
         if !(is_read_only && has_alias_facts) && !(has_reaching_defs && has_alias_facts) {
             return false;
@@ -471,45 +481,22 @@ fn load_is_loop_invariant_memory(
         }
         let store_slot = candidate.operands[0];
         let store_index = resolve(candidate.operands[1], reaching_defs);
-        !memory_accesses_may_alias(load_slot, load_index, store_slot, store_index, alias_facts)
+        let store_target = match candidate.kind {
+            KernelOpKind::StoreGlobal | KernelOpKind::Atomic { .. } => {
+                MemoryTarget::global(store_slot)
+            }
+            KernelOpKind::StoreShared => MemoryTarget::shared(store_slot),
+            _ => return false,
+        };
+        !locations_may_alias(
+            MemoryLocation::new(load_target, load_index, AddressKey::Result(load_index)),
+            MemoryLocation::new(store_target, store_index, AddressKey::Result(store_index)),
+            alias_facts,
+            SlotAliasPolicy::DistinctSlotsMayAlias,
+        )
     })
 }
 
-fn memory_accesses_may_alias(
-    load_slot: u32,
-    load_index: u32,
-    store_slot: u32,
-    store_index: u32,
-    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
-) -> bool {
-    if load_slot == store_slot && load_index == store_index {
-        return true;
-    }
-    !alias_facts
-        .is_some_and(|facts| facts.proves_no_alias(load_slot, load_index, store_slot, store_index))
-}
-
-fn resolve(
-    id: u32,
-    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
-) -> u32 {
-    let Some(facts) = reaching_defs else {
-        return id;
-    };
-    let mut cur = id;
-    let mut hops = 0usize;
-    loop {
-        let reaching = facts.reaching_defs(cur);
-        if reaching.len() != 1 || reaching[0] == cur {
-            return cur;
-        }
-        cur = reaching[0];
-        hops += 1;
-        if hops > facts.len() + 1 {
-            return cur;
-        }
-    }
-}
 
 fn is_pure(kind: &KernelOpKind) -> bool {
     !matches!(
@@ -538,39 +525,12 @@ fn is_pure(kind: &KernelOpKind) -> bool {
             | KernelOpKind::LoopCarrierInit { .. }
             | KernelOpKind::LoopCarrier { .. }
             | KernelOpKind::LoopCarrierEnd { .. }
-            // Loads aren't safely hoistable — the underlying buffer
+            // Loads aren't safely hoistable  -  the underlying buffer
             // could be written by another thread between iterations.
             | KernelOpKind::LoadGlobal
             | KernelOpKind::LoadShared
             | KernelOpKind::LoadConstant
     )
-}
-
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
 }
 
 #[cfg(test)]
@@ -706,7 +666,7 @@ mod tests {
                     operands: vec![1],
                     result: Some(11),
                 },
-                // This Add USES the prior Literals — but those are now
+                // This Add USES the prior Literals  -  but those are now
                 // hoisted, so the Add itself can also be hoisted.
                 KernelOp {
                     kind: KernelOpKind::BinOpKind(BinOp::Add),
@@ -774,7 +734,7 @@ mod tests {
                             operands: vec![0],
                             result: Some(10),
                         },
-                        // LoadGlobal — should NOT hoist.
+                        // LoadGlobal  -  should NOT hoist.
                         KernelOp {
                             kind: KernelOpKind::LoadGlobal,
                             operands: vec![0, 10],
@@ -938,7 +898,7 @@ mod tests {
                 .ops
                 .iter()
                 .any(|op| matches!(op.kind, KernelOpKind::LoadGlobal)),
-            "cross-binding stores may alias the load without Weir proof, so LICM must keep the load in-loop"
+            "cross-binding stores may alias the load without an external proof, so LICM must keep the load in-loop"
         );
 
         let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
@@ -954,7 +914,7 @@ mod tests {
                 .ops
                 .iter()
                 .any(|op| matches!(op.kind, KernelOpKind::LoadGlobal)),
-            "Weir no-alias proof should recover cross-binding LICM load hoisting"
+            "external no-alias proof should recover cross-binding LICM load hoisting"
         );
     }
 
@@ -1051,7 +1011,7 @@ mod tests {
 
     #[test]
     fn licm_handles_no_for_loop_op_gracefully() {
-        // Body with StructuredIfThen but no for-loop — should be a noop on the loop side.
+        // Body with StructuredIfThen but no for-loop  -  should be a noop on the loop side.
         let desc = KernelDescriptor {
             id: "if_only".into(),
             bindings: BindingLayout { slots: vec![] },
@@ -1256,3 +1216,4 @@ mod tests {
         );
     }
 }
+

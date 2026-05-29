@@ -60,7 +60,7 @@ pub(crate) fn flush_active_macro_segment_inner(
     if segment.iter().all(|byte| byte.is_ascii_whitespace()) {
         output.extend_from_slice(segment);
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[stage-trace] macro-flush direct whitespace file={} segment_bytes={} elapsed_us={}",
                 file_path.display(),
                 segment.len(),
@@ -81,7 +81,7 @@ pub(crate) fn flush_active_macro_segment_inner(
         )?;
         output.extend_from_slice(segment);
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[stage-trace] macro-flush direct no-macros file={} segment_bytes={} elapsed_us={}",
                 file_path.display(),
                 segment.len(),
@@ -96,7 +96,7 @@ pub(crate) fn flush_active_macro_segment_inner(
     if classified.tok_types.is_empty() {
         output.extend_from_slice(segment);
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[stage-trace] macro-flush direct no-tokens file={} segment_bytes={} elapsed_us={}",
                 file_path.display(),
                 segment.len(),
@@ -121,7 +121,7 @@ pub(crate) fn flush_active_macro_segment_inner(
         )?;
         output.extend_from_slice(segment);
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[stage-trace] macro-flush direct no-live-use file={} segment_bytes={} tokens={} live_macros={} elapsed_us={}",
                 file_path.display(),
                 segment.len(),
@@ -138,7 +138,7 @@ pub(crate) fn flush_active_macro_segment_inner(
         &segment_macros,
         macros,
         &mut macro_expansion_cache.live_macro_lookup,
-    ) {
+    )? {
         segment_macros = prescan_macros;
     }
     if let Some(ranges) = macro_use_statement_ranges(&classified, &segment_macros)? {
@@ -200,7 +200,7 @@ pub(crate) fn flush_active_macro_segment_inner(
             token_provenance_events,
         )?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[stage-trace] macro-flush expanded-cache-hit file={} segment_bytes={} out_bytes={} out_tokens={} elapsed_us={}",
                 file_path.display(),
                 segment.len(),
@@ -219,7 +219,7 @@ pub(crate) fn flush_active_macro_segment_inner(
             .map(|mac| String::from_utf8_lossy(&mac.name).into_owned())
             .collect::<Vec<_>>()
             .join(",");
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] macro-flush expand-start file={} segment_bytes={} tokens={} live_macros={} segment_macros={} macro_names={} elapsed_us={}",
             file_path.display(),
             segment.len(),
@@ -321,35 +321,65 @@ pub(crate) fn flush_active_macro_segment_inner(
         dispatch_scratch.input_buffer_mut(0),
         &classified.tok_types,
         token_count_bucket,
-    );
+    )?;
     pack_u32_words_into(
         dispatch_scratch.input_buffer_mut(1),
         &classified.tok_starts,
         token_count_bucket,
-    );
+    )?;
     pack_u32_words_into(
         dispatch_scratch.input_buffer_mut(2),
         &classified.tok_lens,
         token_count_bucket,
-    );
+    )?;
     bytes_to_u32_word_bytes_into(
         dispatch_scratch.input_buffer_mut(3),
         &classified.source,
         source_len_bucket,
-    );
-    dispatch_scratch.write_zero_bytes(4, max_out_tokens as usize * 4);
-    dispatch_scratch.write_zero_bytes(5, max_out_tokens as usize * 4);
-    dispatch_scratch.write_zero_bytes(6, max_out_tokens as usize * 4);
-    dispatch_scratch.write_zero_bytes(7, max_out_source_bytes as usize * 4);
-    dispatch_scratch.write_zero_bytes(8, 4);
-    dispatch_scratch.write_zero_bytes(9, 4);
-    dispatch_scratch.write_zero_bytes(10, token_count_bucket * 4);
-    dispatch_scratch.write_zero_bytes(11, token_count_bucket * 4);
+    )?;
+    dispatch_scratch.write_zero_bytes(
+        4,
+        checked_staging_word_bytes(
+            max_out_tokens as usize,
+            "macro expansion output token types",
+        )?,
+    )?;
+    dispatch_scratch.write_zero_bytes(
+        5,
+        checked_staging_word_bytes(
+            max_out_tokens as usize,
+            "macro expansion output token starts",
+        )?,
+    )?;
+    dispatch_scratch.write_zero_bytes(
+        6,
+        checked_staging_word_bytes(
+            max_out_tokens as usize,
+            "macro expansion output token lengths",
+        )?,
+    )?;
+    dispatch_scratch.write_zero_bytes(
+        7,
+        checked_staging_word_bytes(
+            max_out_source_bytes as usize,
+            "macro expansion output source bytes",
+        )?,
+    )?;
+    dispatch_scratch.write_zero_bytes(8, 4)?;
+    dispatch_scratch.write_zero_bytes(9, 4)?;
+    dispatch_scratch.write_zero_bytes(
+        10,
+        checked_staging_word_bytes(token_count_bucket, "macro expansion replacement starts")?,
+    )?;
+    dispatch_scratch.write_zero_bytes(
+        11,
+        checked_staging_word_bytes(token_count_bucket, "macro expansion replacement lengths")?,
+    )?;
     pad_u32_byte_buffer_into(
         &mut dispatch_scratch.replacement_words,
         &table.expansion_replacement_words_le,
         replacement_source_len_bucket,
-    );
+    )?;
     dispatch_scratch.write_runtime_counts(token_count, source_len, replacement_source_len);
 
     if dispatcher.requires_output_inputs() {
@@ -415,9 +445,10 @@ pub(crate) fn flush_active_macro_segment_inner(
     }
     let expanded = &dispatch_scratch.outputs;
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] macro-flush expand-dispatched file={} segment_bytes={} elapsed_us={}",
             file_path.display(),
+
             segment.len(),
             flush_start.elapsed().as_micros()
         );
@@ -448,7 +479,11 @@ pub(crate) fn flush_active_macro_segment_inner(
         ));
     }
     let output_base_before_push = output.len();
-    output.reserve(source_count);
+    output.try_reserve_exact(source_count).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {source_count} expanded macro source bytes: {error:?}. Fix: shard macro expansion materialization before GPU preprocessing."
+        )
+    })?;
     output.extend(
         source_words
             .chunks_exact(4)
@@ -520,7 +555,7 @@ pub(crate) fn flush_active_macro_segment_inner(
         return Ok(());
     }
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] macro-flush expanded-columns-decoded file={} segment_bytes={} out_bytes={} out_tokens={} elapsed_us={}",
             file_path.display(),
             segment.len(),
@@ -549,7 +584,7 @@ pub(crate) fn flush_active_macro_segment_inner(
         },
     );
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] macro-flush provenance-recorded file={} segment_bytes={} elapsed_us={}",
             file_path.display(),
             segment.len(),
@@ -557,7 +592,7 @@ pub(crate) fn flush_active_macro_segment_inner(
         );
     }
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] macro-flush expanded file={} segment_bytes={} tokens={} live_macros={} segment_macros={} out_bytes={} elapsed_us={}",
             file_path.display(),
             segment.len(),
@@ -571,3 +606,4 @@ pub(crate) fn flush_active_macro_segment_inner(
     segment.clear();
     Ok(())
 }
+

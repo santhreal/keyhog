@@ -2,7 +2,7 @@
 
 This document is the canonical recipe for landing a new Category-A
 composition inside `vyre-libs`. A Cat-A op produces a `Program`
-assembled from vyre primitives — no raw shader source, no
+assembled from vyre primitives  -  no raw shader source, no
 backend-specific code. Every backend that implements `VyreBackend`
 runs the same Program with byte-identical output.
 
@@ -158,7 +158,7 @@ inventory::submit! {
 }
 ```
 
-The registration is pure metadata — CI does not verify the law
+The registration is pure metadata  -  CI does not verify the law
 holds at this step; that's what the conformance harness (P5.4) does
 against a witness corpus. Mis-declaring is a P0 correctness bug:
 the optimizer will apply rewrites that produce wrong bytes.
@@ -179,7 +179,7 @@ inventory::submit! {
 ```
 
 The harness fires validation, wire round-trip, and CSE stability on
-every registered entry — no per-op test file needed for those gates.
+every registered entry  -  no per-op test file needed for those gates.
 
 ---
 

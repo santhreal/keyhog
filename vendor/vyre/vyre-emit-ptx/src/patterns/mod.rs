@@ -11,6 +11,7 @@ pub mod ldmatrix_cp_async;
 pub mod predicated_execution;
 pub mod tensor_core_fragment;
 pub mod vec_load_fusion;
+mod vec_memory_fusion;
 pub mod vec_store_fusion;
 
 use serde::{Deserialize, Serialize};
@@ -42,7 +43,7 @@ pub fn audit(desc: &KernelDescriptor, target: ComputeCapability) -> PtxAuditRepo
 /// Shows what PTX-specific patterns still apply AFTER the
 /// substrate-neutral optimization stack has run. A non-empty
 /// post-optimization audit tells you the PTX layer is the only path
-/// to recover the remaining perf — e.g., a vec_load_fusion candidate
+/// to recover the remaining perf  -  e.g., a vec_load_fusion candidate
 /// that survives means scalar `ld.global.u32` instructions will be
 /// emitted unless the PTX emit-side rewrite is taught to fuse.
 #[must_use]
@@ -110,7 +111,7 @@ impl PtxAuditReport {
         !self.has_any()
     }
 
-    /// Identity element for [`Self::merge`] — empty report. The `target`
+    /// Identity element for [`Self::merge`]  -  empty report. The `target`
     /// defaults to SM_70 (the broadest-compatibility floor); merging
     /// reports with different targets is allowed but the aggregate
     /// keeps the seed's target.
@@ -257,7 +258,7 @@ mod tests {
     #[test]
     fn ptx_audit_merge_aggregates_candidates() {
         let mut acc = PtxAuditReport::zero();
-        // Merge two empty reports — both have no findings, so aggregate
+        // Merge two empty reports  -  both have no findings, so aggregate
         // stays empty.
         let desc = KernelDescriptor {
             id: "k".into(),

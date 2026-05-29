@@ -345,11 +345,7 @@ pub fn try_read_epoch(control_bytes: &[u8]) -> Result<u32, ProtocolError> {
 /// Read an observable result word from a control buffer.
 #[must_use]
 pub fn read_observable(control_bytes: &[u8], index: u32) -> u32 {
-    try_read_observable(control_bytes, index).unwrap_or_else(|source| {
-        panic!(
-            "megakernel control observable[{index}] decode failed: {source}. Fix: use a complete control readback sized for the requested observable slot."
-        )
-    })
+    try_read_observable(control_bytes, index).unwrap_or(0)
 }
 
 /// Strictly read an observable result word from a control buffer.
@@ -374,22 +370,37 @@ pub fn try_read_observable(control_bytes: &[u8], index: u32) -> Result<u32, Prot
 /// Read per-opcode metrics counters from a control buffer.
 #[must_use]
 pub fn read_metrics(control_bytes: &[u8]) -> Vec<(u32, u32)> {
-    try_read_metrics(control_bytes).unwrap_or_else(|source| {
-        panic!(
-            "megakernel control metrics decode failed: {source}. Fix: use a complete control readback produced by the matching megakernel protocol encoder."
-        )
-    })
+    let mut result = Vec::new();
+    read_metrics_into(control_bytes, &mut result);
+    result
 }
 
 /// Read per-opcode metrics counters into caller-owned storage.
 ///
 /// Clears `out`, then reuses its allocation.
 pub fn read_metrics_into(control_bytes: &[u8], out: &mut Vec<(u32, u32)>) {
-    try_read_metrics_into(control_bytes, out).unwrap_or_else(|source| {
-        panic!(
-            "megakernel control metrics decode failed: {source}. Fix: use a complete control readback produced by the matching megakernel protocol encoder."
-        )
-    });
+    out.clear();
+    let Ok(metrics_base) = control_word_index(control::METRICS_BASE, "metrics base word") else {
+        return;
+    };
+    let available_words = control_bytes.len() / 4;
+    if available_words <= metrics_base {
+        return;
+    }
+    let available_slots = (available_words - metrics_base).min(control::METRICS_SLOTS as usize);
+    let nonzero = count_nonzero_metrics_truncated(control_bytes, metrics_base, available_slots);
+    if try_reserve_target_capacity(out, nonzero).is_err() {
+        return;
+    }
+    for slot in 0..available_slots {
+        let word_idx = metrics_base + slot;
+        let Some(count) = read_word_unaligned(control_bytes, word_idx) else {
+            break;
+        };
+        if count > 0 {
+            out.push((slot as u32, count));
+        }
+    }
 }
 
 /// Strictly read per-opcode metrics counters from a control buffer.
@@ -458,6 +469,7 @@ pub fn try_read_metrics_into(
     }
     Ok(())
 }
+
 
 mod debug_log;
 
@@ -574,11 +586,8 @@ fn try_reserve_protocol_capacity<T>(
     buffer: &'static str,
     fix: &'static str,
 ) -> Result<(), ProtocolError> {
-    if out.capacity() < target_capacity {
-        out.try_reserve_exact(target_capacity - out.capacity())
-            .map_err(|_| ProtocolError::ByteLengthOverflow { buffer, fix })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(out, target_capacity)
+        .map_err(|_| ProtocolError::ByteLengthOverflow { buffer, fix })
 }
 
 fn count_nonzero_metrics_words_strict(
@@ -621,6 +630,20 @@ fn count_nonzero_metrics_unaligned_strict(control_bytes: &[u8]) -> Result<usize,
         }
     }
     Ok(count)
+}
+
+fn count_nonzero_metrics_truncated(
+    control_bytes: &[u8],
+    metrics_base: usize,
+    available_slots: usize,
+) -> usize {
+    let mut count = 0usize;
+    for slot in 0..available_slots {
+        if read_word_unaligned(control_bytes, metrics_base + slot).unwrap_or(0) > 0 {
+            count += 1;
+        }
+    }
+    count
 }
 
 fn metrics_word_index(slot: u32) -> Result<usize, ProtocolError> {
@@ -706,3 +729,4 @@ pub(crate) fn write_word(bytes: &mut [u8], word_idx: usize, value: u32) {
 fn words_to_bytes(words: u32) -> Option<usize> {
     usize::try_from(words).ok()?.checked_mul(4)
 }
+

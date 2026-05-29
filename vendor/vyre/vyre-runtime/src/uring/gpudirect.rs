@@ -9,7 +9,7 @@
 //! `GpuMappedBuffer::from_bar1_peer`-backed region with zero host
 //! bounce.
 //!
-//! Gated behind the `uring-cmd-nvme` feature — the module is
+//! Gated behind the `uring-cmd-nvme` feature  -  the module is
 //! compiled even without the feature so consumers can read
 //! [`GpuDirectCapability::probe`] and get a structured
 //! `Disabled` result instead of a link error.
@@ -35,7 +35,7 @@ pub enum GpuDirectCapability {
     },
     /// Probe ran but nvidia-fs isn't installed or the driver is
     /// disabled. Callers fall back to `IORING_OP_READ_FIXED` into
-    /// host-visible GPU memory — still zero-copy past the PCIe
+    /// host-visible GPU memory  -  still zero-copy past the PCIe
     /// root complex, but not bypassed.
     Unavailable {
         /// Why the capability isn't present.
@@ -127,7 +127,7 @@ pub const NVME_CMD_READ: u8 = 0x02;
 /// byte  8..16: reserved
 /// byte 16..24: reserved
 /// byte 24..32: reserved (metadata ptr)
-/// byte 32..40: dest_ptr (BAR1 peer — VRAM)
+/// byte 32..40: dest_ptr (BAR1 peer  -  VRAM)
 /// byte 40..48: starting LBA (little-endian u64)
 /// byte 48..52: number_of_blocks (zero-based, so `blocks - 1`)
 /// byte 52..56: dsmgmt
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn probe_returns_a_structured_variant() {
-        // We don't assert which variant — depends on host — but we
+        // We don't assert which variant  -  depends on host  -  but we
         // do assert the probe never panics and returns one of the
         // defined variants.
         match GpuDirectCapability::probe() {

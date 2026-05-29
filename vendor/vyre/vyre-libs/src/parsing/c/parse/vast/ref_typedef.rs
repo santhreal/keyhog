@@ -29,15 +29,7 @@ use identifiers::*;
 use scopes::*;
 
 pub(super) fn vast_field_at(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
-    let word_idx = node_idx
-        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
-        .and_then(|base| base.checked_add(field_idx))
-        .expect("C typedef VAST field index overflow. Fix: pass a bounded complete VAST table.");
-    *vast_nodes.get(word_idx).unwrap_or_else(|| {
-        panic!(
-            "C typedef VAST node {node_idx} is missing field {field_idx}. Fix: pass complete VAST rows."
-        )
-    })
+    c_vast_word_at(vast_nodes, node_idx, field_idx)
 }
 
 pub(super) fn parent_at(vast_nodes: &[u32], node_idx: usize) -> u32 {

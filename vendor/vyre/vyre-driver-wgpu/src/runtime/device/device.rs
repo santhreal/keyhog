@@ -5,9 +5,11 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, Thread};
 use vyre_driver::error::{Error, Result};
 
+use crate::staging_reserve::reserve_backend_vec;
+
 /// Snapshot of features that were actually enabled when the cached
 /// device was created. Consumed by `WgpuBackend::supports_*` methods
-/// so the VyreBackend capability reports are *honest* — a feature bit
+/// so the VyreBackend capability reports are *honest*  -  a feature bit
 /// is reported only if it was both advertised by the adapter AND
 /// requested at device creation.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -41,6 +43,29 @@ pub struct EnabledFeatures {
     pub min_subgroup_size: u32,
 }
 
+pub(crate) fn poll_device_once(
+    device: &wgpu::Device,
+) -> std::result::Result<wgpu::PollStatus, vyre_driver::BackendError> {
+    device.poll(wgpu::PollType::Poll).map_err(|error| {
+        vyre_driver::BackendError::new(format!(
+            "wgpu device poll failed: {error}. Fix: inspect device loss and driver health before reusing this backend."
+        ))
+    })
+}
+
+pub(crate) fn poll_device_wait_for(
+    device: &wgpu::Device,
+    submission: wgpu::SubmissionIndex,
+) -> std::result::Result<wgpu::PollStatus, vyre_driver::BackendError> {
+    device
+        .poll(wgpu::PollType::wait_for(submission))
+        .map_err(|error| {
+            vyre_driver::BackendError::new(format!(
+                "wgpu device wait-for-submission poll failed: {error}. Fix: inspect device loss, driver health, and submission lifetime before reusing this backend."
+            ))
+        })
+}
+
 struct CachedRuntime {
     device_queue: Arc<(wgpu::Device, wgpu::Queue)>,
     adapter_info: wgpu::AdapterInfo,
@@ -67,7 +92,7 @@ fn cached_runtime() -> &'static Result<CachedRuntime> {
 
 /// Acquire the singleton device/queue pair.
 ///
-/// ⚠ **Test / convenience helper — not the production path.**
+/// ⚠ **Test / convenience helper  -  not the production path.**
 ///
 /// Production backends construct their own `wgpu::Device` via
 /// [`WgpuBackend::acquire`](crate::WgpuBackend::acquire), which routes
@@ -164,7 +189,12 @@ pub async fn acquire_gpu() -> Result<(
 
     let instance = wgpu::Instance::default();
     let adapters = instance.enumerate_adapters(wgpu::Backends::all());
-    let mut candidates = Vec::with_capacity(adapters.len());
+    let mut candidates = Vec::new();
+    reserve_probe_vec(
+        &mut candidates,
+        adapters.len(),
+        "GPU acquisition candidates",
+    )?;
     candidates.extend(adapters.iter().filter_map(|adapter| {
         let info = adapter.get_info();
         crate::capabilities::is_real_gpu(&info).then(|| {
@@ -174,7 +204,8 @@ pub async fn acquire_gpu() -> Result<(
     }));
     candidates.sort_by(|left, right| right.2.cmp(&left.2));
 
-    let mut failures = Vec::with_capacity(candidates.len());
+    let mut failures = Vec::new();
+    reserve_probe_vec(&mut failures, candidates.len(), "GPU acquisition failures")?;
     for (adapter, info, _) in candidates {
         match request_device_for_adapter(adapter, "vyre device").await {
             Ok(device) => return Ok(device),
@@ -182,7 +213,8 @@ pub async fn acquire_gpu() -> Result<(
         }
     }
 
-    let mut probed = Vec::with_capacity(adapters.len());
+    let mut probed = Vec::new();
+    reserve_probe_vec(&mut probed, adapters.len(), "GPU acquisition probe report")?;
     probed.extend(adapters.iter().map(|adapter| {
         let info = adapter.get_info();
         format!(
@@ -222,7 +254,7 @@ pub(super) async fn request_device_for_adapter(
     // `WgpuBackend::supports_subgroup_ops`, `supports_f16`, etc.) and
     // costs nothing at runtime if no lowering emits the corresponding
     // intrinsic. Features we do NOT lower against (e.g. mesh shaders,
-    // ray tracing) are deliberately omitted — enabling them would be a
+    // ray tracing) are deliberately omitted  -  enabling them would be a
     // LAW 9 evasion (claiming support that the lowering path does not
     // deliver).
     let adapter_features = adapter.features();
@@ -250,7 +282,7 @@ pub(super) async fn request_device_for_adapter(
                     // batch-amortized scanners (`MAX_BATCH × num_rules
                     // × 65 536 × 4` packed-output buffer scales beyond that
                     // when MAX_BATCH grows past ~50). Take whatever the
-                    // adapter reports — falls back to the spec floor on
+                    // adapter reports  -  falls back to the spec floor on
                     // adapters that don't expose more.
                     max_buffer_size: adapter_limits.max_buffer_size,
                     min_subgroup_size: if enabled.subgroup {
@@ -273,8 +305,8 @@ pub(super) async fn request_device_for_adapter(
                     ..wgpu::Limits::default()
                 },
                 memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::Off,
             },
-            None,
         )
         .await
         .map_err(|error| Error::Gpu {
@@ -415,6 +447,7 @@ fn gpu_candidate_score(
         | storage_buffers
 }
 
+
 fn subgroup_smoke_compiles(device: &wgpu::Device) -> std::result::Result<(), String> {
     const WGSL: &str = r#"
 @compute @workgroup_size(32)
@@ -469,9 +502,9 @@ impl Wake for NoopWaker {
 pub(crate) fn pop_error_scope_now(
     device: &wgpu::Device,
 ) -> std::result::Result<Option<wgpu::Error>, &'static str> {
-    match device.poll(wgpu::Maintain::Poll) {
-        wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-    }
+    device
+        .poll(wgpu::PollType::Poll)
+        .map_err(|_| "wgpu device poll failed before error-scope pop")?;
     let waker = Waker::from(Arc::new(NoopWaker));
     let mut context = Context::from_waker(&waker);
     let mut future = Box::pin(device.pop_error_scope());
@@ -493,6 +526,12 @@ pub(super) fn wait_for_gpu<T>(future: impl Future<Output = T>) -> T {
             Poll::Pending => thread::park(),
         }
     }
+}
+
+fn reserve_probe_vec<T>(vec: &mut Vec<T>, additional: usize, context: &'static str) -> Result<()> {
+    reserve_backend_vec(vec, additional, context).map_err(|error| Error::Gpu {
+        message: error.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -578,4 +617,26 @@ mod tests {
             "Fix: automatic GPU acquisition must prefer the stronger same-class compute adapter."
         );
     }
+
+    #[test]
+    fn production_device_acquisition_uses_fallible_probe_reservations() {
+        let production = include_str!("device.rs")
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: device production section should precede tests");
+
+        assert!(
+            !production.contains("Vec::with_capacity"),
+            "Fix: centralized GPU acquisition must not use infallible capacity constructors."
+        );
+        assert!(
+            production.contains("reserve_probe_vec"),
+            "Fix: centralized GPU acquisition should reserve probe metadata through the shared staging helper."
+        );
+        assert!(
+            production.contains("reserve_backend_vec"),
+            "Fix: WGPU device acquisition should reuse the backend staging reservation policy."
+        );
+    }
 }
+

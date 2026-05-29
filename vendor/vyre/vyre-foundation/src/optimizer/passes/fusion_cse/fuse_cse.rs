@@ -23,7 +23,7 @@
 //!    pre-validates workgroup-size compatibility (which the
 //!    single-Program `ProgramPass` trait
 //!    cannot express) before delegating to `fuse_programs_vec`.
-//! 2. `cse_savings` — counts buffer-level sharing so the G12
+//! 2. `cse_savings`  -  counts buffer-level sharing so the G12
 //!    benchmark harness can assert fusion is actually happening
 //!    and a regression (savings drop to 0) gets flagged.
 //!
@@ -33,7 +33,7 @@
 //! delegated to `fuse_programs_vec` (which rejects self-aliasing
 //! pairs with `FusionError::SelfAliasing` and inherits the
 //! flag from inputs). Mixed workgroup sizes are rejected at this
-//! layer (returns `None`) — the caller is expected to normalise
+//! layer (returns `None`)  -  the caller is expected to normalise
 //! via the `autotune` pass first.
 
 use rustc_hash::FxHashSet;
@@ -47,7 +47,7 @@ use crate::ir::Program;
 /// Semantics match `fuse_programs_vec`: entry bodies run in order,
 /// barriers are inserted where a buffer is read by one arm and
 /// written by a later arm. Shared buffers collapse to a single
-/// declaration — that is the CSE.
+/// declaration  -  that is the CSE.
 #[must_use]
 pub fn fuse_cse(mut programs: Vec<Program>) -> Option<Program> {
     if programs.is_empty() {
@@ -57,7 +57,7 @@ pub fn fuse_cse(mut programs: Vec<Program>) -> Option<Program> {
         return programs.pop();
     }
 
-    // Reject conflicting workgroup sizes — the caller must run
+    // Reject conflicting workgroup sizes  -  the caller must run
     // autotune first to normalise.
     let wg0 = programs[0].workgroup_size;
     if programs.iter().any(|p| p.workgroup_size != wg0) {
@@ -69,7 +69,7 @@ pub fn fuse_cse(mut programs: Vec<Program>) -> Option<Program> {
 
 /// CSE savings from fusion: how many buffer declarations the
 /// fused Program omitted compared to the independent pre-fusion
-/// set. A savings of 0 means every rule brought unique buffers —
+/// set. A savings of 0 means every rule brought unique buffers  -
 /// the pass is doing no buffer-level sharing and is a regression
 /// signal. The G12 benchmark harness asserts this is > 0 for
 /// realistic rule sets (which typically share `input` and

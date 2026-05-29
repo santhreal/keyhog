@@ -5,7 +5,7 @@
 //!
 //! ## Phase split (matches the v0.4 plan)
 //!
-//! - **17a (this file, today):** directive kind classification only —
+//! - **17a (this file, today):** directive kind classification only  -
 //!   walks the directive row source bytes per token, skips horizontal
 //!   whitespace, expects `#`, reads the directive keyword, byte-compares
 //!   against the 16 known names, emits the matched `TOK_PP_*` constant.
@@ -23,16 +23,16 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `tok_types` (U32) — token-kind id per token.
-//!   - `tok_starts` (U32) — byte offset into `source` per token.
-//!   - `tok_lens` (U32) — byte length per token (excludes any phase-2
+//!   - `tok_types` (U32)  -  token-kind id per token.
+//!   - `tok_starts` (U32)  -  byte offset into `source` per token.
+//!   - `tok_lens` (U32)  -  byte length per token (excludes any phase-2
 //!     splices but includes the row's terminating newline).
-//!   - `source` (U8) — original source bytes.
+//!   - `source` (U8)  -  original source bytes.
 //!
 //! Outputs:
-//!   - `directive_kinds` (U32) — `TOK_PP_*` constant for `TOK_PREPROC`
+//!   - `directive_kinds` (U32)  -  `TOK_PP_*` constant for `TOK_PREPROC`
 //!     tokens; `0` for all other token types.
-//!   - `directive_values` (U32) — conditional value (0/1). Always 0 in
+//!   - `directive_values` (U32)  -  conditional value (0/1). Always 0 in
 //!     17a; populated by 17b's evaluator.
 //!
 //! Workgroup size is fixed at 256.
@@ -40,7 +40,7 @@
 //! ## Real-GPU lowering note
 //!
 //! vyre-lower's region-scope phi-merge drops nested-scope assigns to
-//! outer-scope mutables (Q7 carrier-seed family bug — see
+//! outer-scope mutables (Q7 carrier-seed family bug  -  see
 //! `vyre-q7-carrier-seed-bug.md`). The earlier loop-and-mutable
 //! formulation of this kernel was correct under reference-eval but
 //! returned `0` for every `TOK_PREPROC` token on real GPU because the
@@ -49,7 +49,7 @@
 //! WGSL phi-merge.
 //!
 //! This implementation uses **only** straight-line `let_bind` chains
-//! and direct buffer stores — no loops, no outer-scope mutables. Every
+//! and direct buffer stores  -  no loops, no outer-scope mutables. Every
 //! intermediate value is bound once and read by name; every output is
 //! a `Node::store` directly inside whatever conditional fires it.
 //! The one mutability is the output buffer cell, which is pre-stored
@@ -103,37 +103,9 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
     let t = Expr::var("t");
 
     // ---- helper expression builders ----
-    //
-    // Real-GPU note: `DataType::U8` storage buffers are emitted by
-    // vyre-emit-naga as `array<u32>` (since WGSL has no `u8` storage),
-    // and `Expr::load("source", addr)` returns `source[addr]` — the
-    // u32 word at index `addr`, NOT the byte at byte-address `addr`.
-    // Reference-eval treats U8 buffers byte-wise, which is why the
-    // 253/253 reference roundtrip tests pass while real-GPU classify
-    // bottoms out (every byte read returned a packed 4-byte word).
-    //
-    // The fix: do the byte extraction in the kernel itself —
-    // `byte = (word[addr/4] >> ((addr%4) * 8)) & 0xFF` — so the kernel
-    // is correct on both backends regardless of how U8 is lowered.
-    let load_byte_u32 = |addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load("source", word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
-    // Safe load: if `addr < source_len` load source[addr] else 0.
-    // source_len read at runtime via Expr::buf_len so the program is
-    // independent of the host's source-buffer size.
+    let source_byte_len = super::gpu_source_bytes::packed_source_byte_len_expr();
     let safe_load = |addr: Expr| -> Expr {
-        Expr::select(
-            Expr::lt(
-                addr.clone(),
-                Expr::mul(Expr::buf_len("source"), Expr::u32(4)),
-            ),
-            load_byte_u32(addr),
-            Expr::u32(0),
-        )
+        super::gpu_source_bytes::safe_load_source_byte_expr(addr, source_byte_len.clone())
     };
     // is_ws(b): 1 if b is one of {space, tab, VT, FF}, else 0.
     let is_ws = |b: Expr| -> Expr {
@@ -467,7 +439,7 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
             .with_count(num_tokens.max(1)),
             // The source buffer is declared as packed `u32` words rather
             // than `u8` bytes. Reference-eval and naga-emitted real GPU
-            // disagreed on `load(U8 buffer, addr)` semantics —
+            // disagreed on `load(U8 buffer, addr)` semantics  -
             // reference-eval returned the byte at `addr`, while real
             // GPU returned the u32 word at index `addr` (packed bytes
             // 4*addr..4*addr+4). Declaring the buffer as U32 forces
@@ -502,6 +474,7 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -537,7 +510,7 @@ mod tests {
             .buffers()
             .iter()
             .find(|buffer| buffer.name() == "source")
-            .expect("source buffer must exist");
+            .expect("Fix: source buffer must exist after directive metadata allocation");
         assert_eq!(
             source.count, 0,
             "source must be runtime-sized so one directive classifier program serves all source lengths"
@@ -550,3 +523,4 @@ mod tests {
         assert!(MAX_KEYWORD_LEN >= 12);
     }
 }
+

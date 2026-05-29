@@ -1,6 +1,7 @@
 use super::super::scan::{inclusive_prefix_scan_u32_into, PrefixScanScratch};
 use super::host::read_output_u32;
 use super::program_helpers::{byte_compact_program, combine_keep_mask_program};
+use super::scratch::{copy_output_bytes, write_zero_bytes};
 use super::FilteredBytes;
 use crate::parsing::c::preprocess::gpu_comment_strip_mask::gpu_comment_strip_mask;
 use crate::parsing::c::preprocess::gpu_pipeline::GpuDispatcher;
@@ -19,16 +20,17 @@ pub(super) struct FullCommentScratch {
 }
 
 impl FullCommentScratch {
-    fn prepare_zero_words(&mut self, byte_len: usize) {
-        self.zero_words.clear();
-        self.zero_words.resize(byte_len, 0);
+    fn prepare_zero_words(&mut self, byte_len: usize) -> Result<(), String> {
+        write_zero_bytes(&mut self.zero_words, byte_len, "full comment zero words")
     }
 
-    fn prepare_compact_inputs(&mut self, compact_len: usize) {
-        self.compact_init.clear();
-        self.compact_init.resize(compact_len, 0);
-        self.live_init.clear();
-        self.live_init.resize(4, 0);
+    fn prepare_compact_inputs(&mut self, compact_len: usize) -> Result<(), String> {
+        write_zero_bytes(
+            &mut self.compact_init,
+            compact_len,
+            "full comment compact init",
+        )?;
+        write_zero_bytes(&mut self.live_init, 4, "full comment live init")
     }
 }
 
@@ -52,7 +54,10 @@ pub(super) fn gpu_filter_full_comment_state(
     let splice_prog = line_splice_classify(n_bucket);
     let comment_prog = gpu_comment_strip_mask(n_bucket);
     let combine_prog = combine_keep_mask_program(n_bucket);
-    scratch.prepare_zero_words(cap_bucket * 4);
+    let zero_word_bytes = cap_bucket.checked_mul(4).ok_or_else(|| {
+        "full comment zero words overflowed usize. Fix: reduce batch size.".to_string()
+    })?;
+    scratch.prepare_zero_words(zero_word_bytes)?;
     dispatcher
         .dispatch_borrowed_into(
             &splice_prog,
@@ -118,12 +123,12 @@ pub(super) fn gpu_filter_full_comment_state(
     // byte_compact dispatches one thread per *output word* (the
     // kernel iterates `w = InvocationId.x` over `0..ceil(n/4)`,
     // unrolling 4 input bytes per thread). compacted_out is sized
-    // at `ceil(n/4)` u32 words = `byte_buf_pad` bytes — no over-
+    // at `ceil(n/4)` u32 words = `byte_buf_pad` bytes  -  no over-
     // allocation, and the inferred grid (output_word_count =
     // ceil(n/4)) matches the kernel's logical extent exactly. The
     // host MUST zero-init compacted_out because the kernel
     // accumulates via `atomic_or`.
-    scratch.prepare_compact_inputs(byte_buf_pad);
+    scratch.prepare_compact_inputs(byte_buf_pad)?;
     dispatcher
         .dispatch_borrowed_into(
             &compact_prog,
@@ -155,6 +160,6 @@ pub(super) fn gpu_filter_full_comment_state(
     let live = read_output_u32(&live_buf, "byte_compact live_count")? as usize;
     let byte_len = live.min(raw.len()).min(compacted_buf.len());
     Ok(FilteredBytes {
-        bytes: compacted_buf[..byte_len].to_vec(),
+        bytes: copy_output_bytes(&compacted_buf[..byte_len], "full comment byte_compact")?,
     })
 }

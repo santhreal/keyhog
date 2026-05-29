@@ -1,4 +1,4 @@
-//! Extracted from `vast/build.rs` (T10 file-cap split — original file
+//! Extracted from `vast/build.rs` (T10 file-cap split  -  original file
 //! crossed the 500-LOC hygiene cap at 1255 LOC; this 428-LOC body is
 //! the largest single function in the original module).
 //!
@@ -11,7 +11,7 @@
 //! and an optional typedef-name lookup against the source haystack).
 //!
 //! Called from `build::emit_declaration_kind_for_index` and
-//! `build::emit_builtin_declaration_kind_for_index` only — kept
+//! `build::emit_builtin_declaration_kind_for_index` only  -  kept
 //! `pub(super)` so both call sites continue to work without going
 //! through a public API.
 
@@ -20,7 +20,12 @@
 use crate::parsing::c::lex::tokens::*;
 use vyre::ir::{Expr, Node};
 
-use super::build::{emit_identifier_source_hash_for_index, emit_visible_typedef_name_for_index};
+use super::build::{
+    emit_declaration_kind_result_assignment, emit_identifier_source_hash_for_index,
+    emit_visible_typedef_name_for_index, vast_bounded_row_kind_expr, vast_row_base_expr,
+    vast_prior_row_kind_expr, vast_row_field_expr, vast_row_kind_from_base_expr,
+    vast_row_parent_from_base_expr,
+};
 use super::helpers::*;
 use super::*;
 
@@ -110,37 +115,24 @@ pub(super) fn emit_declaration_kind_for_index_inner(
 
     vec![
         Node::let_bind(out_name, Expr::u32(0)),
+        Node::let_bind(&base, vast_row_base_expr(idx.clone())),
         Node::let_bind(
-            &base,
-            Expr::mul(idx.clone(), Expr::u32(VAST_NODE_STRIDE_U32)),
+            &kind,
+            vast_row_kind_from_base_expr(vast_nodes, Expr::var(&base)),
         ),
-        Node::let_bind(&kind, Expr::load(vast_nodes, Expr::var(&base))),
         Node::let_bind(
             &parent_idx,
-            Expr::load(vast_nodes, Expr::add(Expr::var(&base), Expr::u32(1))),
+            vast_row_parent_from_base_expr(vast_nodes, Expr::var(&base)),
         ),
         Node::let_bind(
             &parent_kind,
-            Expr::select(
-                Expr::lt(Expr::var(&parent_idx), Expr::var("annot_num_nodes")),
-                Expr::load(
-                    vast_nodes,
-                    Expr::mul(Expr::var(&parent_idx), Expr::u32(VAST_NODE_STRIDE_U32)),
-                ),
-                Expr::u32(SENTINEL),
-            ),
+            vast_bounded_row_kind_expr(vast_nodes, Expr::var(&parent_idx), Expr::u32(SENTINEL)),
         ),
         Node::let_bind(
             &parent_parent_idx,
             Expr::select(
                 Expr::lt(Expr::var(&parent_idx), Expr::var("annot_num_nodes")),
-                Expr::load(
-                    vast_nodes,
-                    Expr::add(
-                        Expr::mul(Expr::var(&parent_idx), Expr::u32(VAST_NODE_STRIDE_U32)),
-                        Expr::u32(1),
-                    ),
-                ),
+                vast_row_field_expr(vast_nodes, Expr::var(&parent_idx), 1),
                 Expr::u32(SENTINEL),
             ),
         ),
@@ -149,15 +141,9 @@ pub(super) fn emit_declaration_kind_for_index_inner(
             Expr::select(
                 Expr::and(
                     Expr::lt(Expr::var(&parent_idx), Expr::var("annot_num_nodes")),
-                    Expr::gt(Expr::var(&parent_idx), Expr::u32(0)),
+                    Expr::ge(Expr::var(&parent_idx), Expr::u32(1)),
                 ),
-                Expr::load(
-                    vast_nodes,
-                    Expr::mul(
-                        Expr::sub(Expr::var(&parent_idx), Expr::u32(1)),
-                        Expr::u32(VAST_NODE_STRIDE_U32),
-                    ),
-                ),
+                vast_prior_row_kind_expr(vast_nodes, Expr::var(&parent_idx), 1),
                 Expr::u32(SENTINEL),
             ),
         ),
@@ -166,15 +152,9 @@ pub(super) fn emit_declaration_kind_for_index_inner(
             Expr::select(
                 Expr::and(
                     Expr::lt(Expr::var(&parent_idx), Expr::var("annot_num_nodes")),
-                    Expr::gt(Expr::var(&parent_idx), Expr::u32(1)),
+                    Expr::ge(Expr::var(&parent_idx), Expr::u32(2)),
                 ),
-                Expr::load(
-                    vast_nodes,
-                    Expr::mul(
-                        Expr::sub(Expr::var(&parent_idx), Expr::u32(2)),
-                        Expr::u32(VAST_NODE_STRIDE_U32),
-                    ),
-                ),
+                vast_prior_row_kind_expr(vast_nodes, Expr::var(&parent_idx), 2),
                 Expr::u32(SENTINEL),
             ),
         ),
@@ -188,20 +168,20 @@ pub(super) fn emit_declaration_kind_for_index_inner(
                 vec![
                     Node::let_bind(
                         &parent_aggregate_base,
-                        Expr::mul(
-                            Expr::var(&parent_aggregate_scan),
-                            Expr::u32(VAST_NODE_STRIDE_U32),
-                        ),
+                        vast_row_base_expr(Expr::var(&parent_aggregate_scan)),
                     ),
                     Node::let_bind(
                         &parent_aggregate_kind,
-                        Expr::load(vast_nodes, Expr::var(&parent_aggregate_base)),
+                        vast_row_kind_from_base_expr(
+                            vast_nodes,
+                            Expr::var(&parent_aggregate_base),
+                        ),
                     ),
                     Node::let_bind(
                         &parent_aggregate_parent,
-                        Expr::load(
+                        vast_row_parent_from_base_expr(
                             vast_nodes,
-                            Expr::add(Expr::var(&parent_aggregate_base), Expr::u32(1)),
+                            Expr::var(&parent_aggregate_base),
                         ),
                     ),
                     Node::if_then(
@@ -257,10 +237,7 @@ pub(super) fn emit_declaration_kind_for_index_inner(
             &prev_kind,
             Expr::select(
                 Expr::gt(idx.clone(), Expr::u32(0)),
-                Expr::load(
-                    vast_nodes,
-                    Expr::mul(Expr::var(&prev_idx), Expr::u32(VAST_NODE_STRIDE_U32)),
-                ),
+                vast_row_kind_from_base_expr(vast_nodes, vast_row_base_expr(Expr::var(&prev_idx))),
                 Expr::u32(SENTINEL),
             ),
         ),
@@ -268,23 +245,16 @@ pub(super) fn emit_declaration_kind_for_index_inner(
             &prev_prev_kind,
             Expr::select(
                 Expr::gt(idx.clone(), Expr::u32(1)),
-                Expr::load(
+                vast_row_kind_from_base_expr(
                     vast_nodes,
-                    Expr::mul(Expr::var(&prev_prev_idx), Expr::u32(VAST_NODE_STRIDE_U32)),
+                    vast_row_base_expr(Expr::var(&prev_prev_idx)),
                 ),
                 Expr::u32(SENTINEL),
             ),
         ),
         Node::let_bind(
             &next_kind,
-            Expr::select(
-                Expr::lt(Expr::var(&next_idx), Expr::var("annot_num_nodes")),
-                Expr::load(
-                    vast_nodes,
-                    Expr::mul(Expr::var(&next_idx), Expr::u32(VAST_NODE_STRIDE_U32)),
-                ),
-                Expr::u32(SENTINEL),
-            ),
+            vast_bounded_row_kind_expr(vast_nodes, Expr::var(&next_idx), Expr::u32(SENTINEL)),
         ),
         Node::let_bind(&prefix_has_typedef, Expr::u32(0)),
         Node::let_bind(&prefix_has_type, Expr::u32(0)),
@@ -319,13 +289,10 @@ pub(super) fn emit_declaration_kind_for_index_inner(
                             Expr::sub(Expr::var(&prefix_scan), Expr::var(&prefix_start)),
                         ),
                     ),
-                    Node::let_bind(
-                        &prefix_base,
-                        Expr::mul(Expr::var(&prefix_idx), Expr::u32(VAST_NODE_STRIDE_U32)),
-                    ),
+                    Node::let_bind(&prefix_base, vast_row_base_expr(Expr::var(&prefix_idx))),
                     Node::let_bind(
                         &prefix_kind,
-                        Expr::load(vast_nodes, Expr::var(&prefix_base)),
+                        vast_row_kind_from_base_expr(vast_nodes, Expr::var(&prefix_base)),
                     ),
                     Node::let_bind(
                         &prefix_in_skipped_paren,
@@ -405,18 +372,7 @@ pub(super) fn emit_declaration_kind_for_index_inner(
         ),
         Node::let_bind(
             &declarator_follower,
-            any_token_eq(
-                Expr::var(&next_kind),
-                &[
-                    TOK_SEMICOLON,
-                    TOK_COMMA,
-                    TOK_ASSIGN,
-                    TOK_LBRACKET,
-                    TOK_LPAREN,
-                    TOK_RPAREN,
-                    TOK_GNU_ATTRIBUTE,
-                ],
-            ),
+            is_declarator_follower_token(Expr::var(&next_kind)),
         ),
         Node::let_bind(
             &sizeof_type_operand,
@@ -435,40 +391,23 @@ pub(super) fn emit_declaration_kind_for_index_inner(
                 Expr::eq(Expr::var(&prev_prev_kind), Expr::u32(TOK_RPAREN)),
             ),
         ),
-        Node::if_then(
+        emit_declaration_kind_result_assignment(
+            out_name,
+            Expr::var(&is_identifier),
+            Expr::var(&declarator_follower),
+            Expr::not(is_declaration_previous_disqualifier_token(Expr::var(
+                &prev_kind,
+            ))),
+            Expr::ne(Expr::var(&next_kind), Expr::u32(TOK_COLON)),
             Expr::and(
-                Expr::var(&is_identifier),
+                Expr::not(Expr::var(&in_aggregate_body)),
                 Expr::and(
-                    Expr::and(
-                        Expr::not(any_token_eq(
-                            Expr::var(&prev_kind),
-                            &[TOK_STRUCT, TOK_UNION, TOK_ENUM, TOK_DOT, TOK_ARROW],
-                        )),
-                        Expr::and(
-                            Expr::ne(Expr::var(&next_kind), Expr::u32(TOK_COLON)),
-                            Expr::and(
-                                Expr::not(Expr::var(&in_aggregate_body)),
-                                Expr::and(
-                                    Expr::not(Expr::var(&sizeof_type_operand)),
-                                    Expr::not(Expr::var(&cast_pointer_expr_operand)),
-                                ),
-                            ),
-                        ),
-                    ),
-                    Expr::and(
-                        Expr::var(&declarator_follower),
-                        Expr::or(
-                            Expr::eq(Expr::var(&prefix_has_typedef), Expr::u32(1)),
-                            Expr::eq(Expr::var(&prefix_has_type), Expr::u32(1)),
-                        ),
-                    ),
+                    Expr::not(Expr::var(&sizeof_type_operand)),
+                    Expr::not(Expr::var(&cast_pointer_expr_operand)),
                 ),
             ),
-            vec![Node::if_then_else(
-                Expr::eq(Expr::var(&prefix_has_typedef), Expr::u32(1)),
-                vec![Node::assign(out_name, Expr::u32(1))],
-                vec![Node::assign(out_name, Expr::u32(2))],
-            )],
+            Expr::eq(Expr::var(&prefix_has_typedef), Expr::u32(1)),
+            Expr::eq(Expr::var(&prefix_has_type), Expr::u32(1)),
         ),
     ]
 }

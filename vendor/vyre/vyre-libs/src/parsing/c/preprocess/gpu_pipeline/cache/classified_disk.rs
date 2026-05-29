@@ -30,18 +30,22 @@ pub(crate) fn load_classified_from_disk(key: &ClassifiedCacheKey) -> Option<Clas
     }
 }
 
-pub(crate) fn store_classified_to_disk(key: &ClassifiedCacheKey, classified: &ClassifiedTokens) {
+pub(crate) fn store_classified_to_disk(
+    key: &ClassifiedCacheKey,
+    classified: &ClassifiedTokens,
+) -> Result<(), String> {
     let dir = parsed_ast_cache_dir();
     let path = classified_disk_path(&dir, key);
-    let encoded = encode_classified(key, classified);
+    let encoded = encode_classified(key, classified)?;
     // Atomic publish via tempfile + rename so a concurrent reader
     // never sees a half-written entry.
     let tmp = disk_cache_tmp_path(&path, "vct");
-    std::fs::write(&tmp, &encoded).unwrap_or_else(|error| {
-        panic!(
+    std::fs::write(&tmp, &encoded).map_err(|error| {
+        format!(
             "vyre C GPU preprocessor disk cache could not write classified temp entry {}: {error}. Fix: repair cache directory permissions.",
             tmp.display()
         )
-    });
+    })?;
     publish_disk_cache_file(&tmp, &path, "classified");
+    Ok(())
 }

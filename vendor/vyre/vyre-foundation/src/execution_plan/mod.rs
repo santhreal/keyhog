@@ -276,8 +276,8 @@ fn memory_plan(program: &Program, adapter_caps: &AdapterCaps) -> Result<MemoryPl
     let mut static_bytes = 0u64;
     let mut visible_readback_bytes = 0u64;
     let mut avoided_readback_bytes = 0u64;
-    // Pre-size to the exact buffer count — every buffer becomes one
-    // BufferPlan entry — so the inner push loop never reallocates the
+    // Pre-size to the exact buffer count  -  every buffer becomes one
+    // BufferPlan entry  -  so the inner push loop never reallocates the
     // backing storage. memory_plan is called once per
     // execution_plan::plan(), which itself is on every backend's
     // pre-dispatch path.
@@ -424,7 +424,7 @@ fn autotune_plan(
         // declares preferred shapes. The previous
         // `recommended_workgroup_size != parallel_region_size` check
         // fired spuriously for tiny declared shapes (e.g. [1, 1, 1])
-        // because the policy's min_workgroup_x floor is 32 — the
+        // because the policy's min_workgroup_x floor is 32  -  the
         // selector always returns a different number, so every small
         // program got marked autotune-recommended even when it has no
         // measurement variants worth exploring.
@@ -452,6 +452,7 @@ fn infer_static_problem_size(program: &Program) -> Option<u32> {
         .map(crate::ir_inner::model::program::BufferDecl::count)
         .min()
 }
+
 
 fn track_decisions(
     fusion: &FusionPlan,
@@ -737,3 +738,4 @@ mod tests {
         assert_eq!(wide_plan.autotune.recommended_unroll_depth, 8);
     }
 }
+

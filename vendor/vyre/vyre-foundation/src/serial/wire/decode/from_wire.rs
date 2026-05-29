@@ -1,4 +1,5 @@
-use crate::ir_inner::model::program::{CacheLocality, MemoryHints, MemoryKind};
+mod payload;
+use crate::ir_inner::model::program::{MemoryHints, MemoryKind};
 use crate::ir_inner::model::types::{BufferAccess, DataType};
 use crate::serial::wire::decode::reject_reserved_extension_id;
 use crate::serial::wire::framing::{
@@ -6,6 +7,10 @@ use crate::serial::wire::framing::{
 };
 use crate::serial::wire::tags::access_from_tag::access_from_tag;
 use crate::serial::wire::{BufferDecl, Program, Reader, MAX_BUFFERS, MAX_NODES, MAX_PROGRAM_BYTES};
+use payload::{
+    data_type_from_tag, memory_kind_from_tag, read_dense_quantization_scale,
+    read_dense_quantization_zero_point, read_hints,
+};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -132,10 +137,14 @@ pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
     }
 
     let non_composable_with_self = metadata.non_composable_with_self;
-    let buffers = metadata
-        .buffers
-        .into_iter()
-        .map(|buffer| BufferDecl {
+    let mut buffers = Vec::new();
+    reserve_decoded_vec_capacity(
+        &mut buffers,
+        metadata.buffers.len(),
+        "decoded Program buffer table",
+    )?;
+    for buffer in metadata.buffers {
+        buffers.push(BufferDecl {
             name: Arc::from(buffer.name),
             binding: buffer.binding,
             access: buffer.access,
@@ -154,8 +163,8 @@ pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
             // Wire v1 carries no shape predicates; decoded historical blobs
             // have no static shape refinement.
             shape_predicate: None,
-        })
-        .collect();
+        });
+    }
     let program = Program::new_raw(buffers, workgroup_size, metadata.entry)
         .with_optional_entry_op_id(entry_op_id)
         .with_non_composable_with_self(non_composable_with_self);
@@ -213,7 +222,7 @@ fn read_nodes(
         return Err("InvalidDiscriminant: metadata node has operands. Fix: reserialize with Program::to_wire().".to_string());
     }
     let (entry_op_id, workgroup_size, mut metadata) = read_metadata(payload)?;
-    metadata.entry.reserve(count - 1);
+    reserve_decoded_vec_capacity(&mut metadata.entry, count - 1, "decoded entry nodes")?;
     for node_index in 1..count {
         let (op_id, payload, operands) = read_node_record(reader, node_index)?;
         if !operands.is_empty() {
@@ -246,7 +255,7 @@ fn read_nodes(
 // VYRE_IR_HOTSPOTS CRIT (from_wire.rs:220): the previous signature
 // copied the payload slice into a Vec<u8> for every node record.
 // Returning a sub-slice view bound to the reader's input lifetime
-// removes one allocation per node — N-node wire decodes now skip
+// removes one allocation per node  -  N-node wire decodes now skip
 // N heap allocations on the payload path entirely.
 fn read_node_record<'a>(
     reader: &mut Reader<'a>,
@@ -256,7 +265,8 @@ fn read_node_record<'a>(
     let payload_len = reader.leb_len(usize::MAX, "node payload length")?;
     let payload = reader.take(payload_len)?;
     let operand_count = reader.leb_len(MAX_NODES, "operand count")?;
-    let mut operands = Vec::with_capacity(operand_count);
+    let mut operands = Vec::new();
+    reserve_decoded_vec_capacity(&mut operands, operand_count, "decoded node operands")?;
     for _ in 0..operand_count {
         let operand = reader.leb_u32()?;
         if usize::try_from(operand).map_or(true, |operand| operand >= node_index) {
@@ -288,6 +298,7 @@ fn read_metadata(payload: &[u8]) -> Result<(Option<String>, [u32; 3], DecodedMet
         }
     };
     let workgroup_size = [reader.u32()?, reader.u32()?, reader.u32()?];
+    super::invariants::validate_workgroup_size(workgroup_size)?;
     let non_composable_with_self = match reader.u8()? {
         0 => false,
         1 => true,
@@ -298,7 +309,8 @@ fn read_metadata(payload: &[u8]) -> Result<(Option<String>, [u32; 3], DecodedMet
         }
     };
     let buffer_count = reader.leb_len(MAX_BUFFERS, "metadata buffer count")?;
-    let mut buffers = Vec::with_capacity(buffer_count);
+    let mut buffers = Vec::new();
+    reserve_decoded_vec_capacity(&mut buffers, buffer_count, "decoded metadata buffers")?;
     for _ in 0..buffer_count {
         let name = reader.string()?;
         let binding = reader.u32()?;
@@ -324,6 +336,7 @@ fn read_metadata(payload: &[u8]) -> Result<(Option<String>, [u32; 3], DecodedMet
                 let end = usize::try_from(reader.leb_u64()?).map_err(|err| {
                     format!("TruncatedPayload: output range end cannot fit usize ({err}). Fix: reject this payload on this target.")
                 })?;
+                super::invariants::validate_output_range_order(start, end)?;
                 Some(start..end)
             }
             value => {
@@ -418,6 +431,23 @@ fn read_memory_regions(
             })?;
             let id_value = reject_reserved_extension_id(id_value, "DataType")?;
             DataType::Opaque(vyre_spec::extension::ExtensionDataTypeId(id_value))
+        } else if element_tag == 0x1F {
+            let storage_tag = u8::try_from(shape_reader.leb_u64()?).map_err(|err| {
+                format!("TruncatedPayload: quantized storage DataType tag cannot fit u8 ({err}). Fix: reject this payload.")
+            })?;
+            let storage = data_type_from_tag(storage_tag)?;
+            if !storage.is_quantized_storage() {
+                return Err(format!(
+                    "InvalidDiscriminant: quantized storage tag {storage_tag} decodes to `{storage}`, which is not a valid quantized storage type. Fix: reserialize with I4/I8/I16/U8/U16/F8/FP4/NF4 storage."
+                ));
+            }
+            let scale = read_dense_quantization_scale(&mut shape_reader)?;
+            let zero_point = read_dense_quantization_zero_point(&mut shape_reader)?;
+            DataType::Quantized {
+                storage: Box::new(storage),
+                scale,
+                zero_point,
+            }
         } else {
             data_type_from_tag(element_tag)?
         };
@@ -462,6 +492,7 @@ fn read_memory_regions(
                 metadata_buffer.name
             ));
         }
+        super::invariants::validate_output_range_fits(metadata_buffer, &element, count_value)?;
         let buffer = &mut metadata.buffers[index];
         buffer.kind = kind;
         buffer.access = access;
@@ -472,76 +503,21 @@ fn read_memory_regions(
     Ok(())
 }
 
-fn read_hints(reader: &mut Reader<'_>) -> Result<MemoryHints, String> {
-    let coalesce_axis = match reader.u8()? {
-        0 => None,
-        1 => Some(reader.u8()?),
-        value => {
-            return Err(format!(
-                "InvalidDiscriminant: field coalesce_axis tag has value {value}. Fix: reserialize with Program::to_wire()."
-            ));
-        }
-    };
-    let preferred_alignment = reader.u32()?;
-    let cache_locality = match reader.u8()? {
-        0 => CacheLocality::Streaming,
-        1 => CacheLocality::Temporal,
-        2 => CacheLocality::Random,
-        value => {
-            return Err(format!(
-                "InvalidDiscriminant: field cache_locality has value {value}. Fix: reserialize with Program::to_wire()."
-            ));
-        }
-    };
-    Ok(MemoryHints {
-        coalesce_axis,
-        preferred_alignment,
-        cache_locality,
-    })
-}
 
-fn memory_kind_from_tag(tag: u8) -> Result<MemoryKind, String> {
-    match tag {
-        0 => Ok(MemoryKind::Global),
-        1 => Ok(MemoryKind::Shared),
-        2 => Ok(MemoryKind::Uniform),
-        3 => Ok(MemoryKind::Local),
-        4 => Ok(MemoryKind::Readonly),
-        5 => Ok(MemoryKind::Push),
-        6 => Ok(MemoryKind::Persistent),
-        value => Err(format!(
-            "InvalidDiscriminant: field kind has value {value}. Fix: use a defined MemoryKind discriminant."
-        )),
+fn reserve_decoded_vec_capacity<T>(
+    vec: &mut Vec<T>,
+    capacity: usize,
+    field: &'static str,
+) -> Result<(), String> {
+    if vec.capacity() >= capacity {
+        return Ok(());
     }
-}
-
-fn data_type_from_tag(tag: u8) -> Result<DataType, String> {
-    match tag {
-        0x01 => Ok(DataType::U32),
-        0x02 => Ok(DataType::I32),
-        0x03 => Ok(DataType::U64),
-        0x04 => Ok(DataType::Vec2U32),
-        0x05 => Ok(DataType::Vec4U32),
-        0x06 => Ok(DataType::Bool),
-        0x07 => Ok(DataType::Bytes),
-        0x08 => Err("InvalidDiscriminant: Array element tag requires shape payload. Fix: include array element_size in the Dense shape payload.".to_string()),
-        0x09 => Ok(DataType::F16),
-        0x0A => Ok(DataType::BF16),
-        0x0B => Ok(DataType::F32),
-        0x0C => Ok(DataType::F64),
-        0x0D => Ok(DataType::Tensor),
-        0x0E => Ok(DataType::U8),
-        0x0F => Ok(DataType::U16),
-        0x10 => Ok(DataType::I8),
-        0x11 => Ok(DataType::I16),
-        0x12 => Ok(DataType::I64),
-        0x13 => Err("InvalidDiscriminant: Handle element tag requires shape payload. Fix: include handle type id in the Dense shape payload.".to_string()),
-        0x14 => Err("InvalidDiscriminant: Vec element tag is not valid for a Dense memory element. Fix: serialize vectors as scalar lanes or extend the Dense shape payload.".to_string()),
-        0x15 => Err("InvalidDiscriminant: TensorShaped element tag is not valid for a Dense memory element. Fix: use DataType::Tensor in this VIR0 schema.".to_string()),
-        value => Err(format!(
-            "InvalidDiscriminant: field element has value {value}. Fix: use a defined DataType discriminant."
-        )),
-    }
+    vec.try_reserve_exact(capacity - vec.capacity())
+        .map_err(|error| {
+            format!(
+                "TruncatedPayload: failed to reserve {field} for {capacity} entries: {error}. Fix: reject this untrusted wire payload or split the Program before serialization."
+            )
+        })
 }
 
 fn hex32(bytes: &[u8; 32]) -> String {
@@ -612,3 +588,7 @@ impl LebReader for Reader<'_> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
+

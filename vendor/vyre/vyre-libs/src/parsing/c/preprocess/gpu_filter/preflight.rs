@@ -5,13 +5,8 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 pub(super) fn transform_candidate_program(n: u32) -> Program {
     let i = Expr::var("i");
-    let load_byte_u32 = |addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load("bytes_in", word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
+    let load_byte_u32 =
+        |addr: Expr| -> Expr { crate::scan::builders::load_packed_byte_expr("bytes_in", addr) };
     let load_next = |addr: Expr| -> Expr {
         Expr::select(
             Expr::lt(addr.clone(), Expr::load("transform_n_real", Expr::u32(0))),

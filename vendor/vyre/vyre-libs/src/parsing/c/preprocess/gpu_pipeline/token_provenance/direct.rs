@@ -8,7 +8,11 @@ pub(crate) fn record_direct_token_provenance(
     output_base: usize,
     token_provenance_events: &mut Vec<TokenProvenanceEvent>,
 ) -> Result<(), String> {
-    token_provenance_events.reserve(replacement_token_count(classified));
+    reserve_token_provenance_events(
+        token_provenance_events,
+        replacement_token_count(classified),
+        "direct token provenance",
+    )?;
     for (idx, token_kind) in classified.tok_types.iter().enumerate() {
         if *token_kind == 0 {
             continue;

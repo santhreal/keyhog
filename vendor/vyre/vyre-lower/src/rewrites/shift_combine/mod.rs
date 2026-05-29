@@ -1,10 +1,10 @@
-//! Shift combination — fold `Shl(Shl(x, n), m)` to `Shl(x, n+m)`
+//! Shift combination  -  fold `Shl(Shl(x, n), m)` to `Shl(x, n+m)`
 //! and `Shr(Shr(x, n), m)` to `Shr(x, n+m)` when both shift amounts
 //! are U32 literals and their sum fits in `[0, 32)`.
 //!
 //! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4
 //! (algebraic simplification family). Companion to `strength_reduce`
-//! which produces shifts from mul/div by power-of-two — chained
+//! which produces shifts from mul/div by power-of-two  -  chained
 //! shifts often appear after that pass folds nested multiplications.
 //!
 //! Patterns rewritten:
@@ -12,10 +12,10 @@
 //! - `Shr(Shr(x, Lit(n)), Lit(m))` → `Shr(x, Lit(n + m))` when n + m < 32
 //!
 //! Out of scope:
-//! - `Shl(Shr(x, n), m)` and the reverse — these are NOT
+//! - `Shl(Shr(x, n), m)` and the reverse  -  these are NOT
 //!   semantically equivalent to a single shift because the inner
 //!   shift truncates bits; combining requires careful analysis.
-//! - `n + m >= 32` — undefined behaviour territory for u32 shifts;
+//! - `n + m >= 32`  -  undefined behaviour territory for u32 shifts;
 //!   we leave the chain alone rather than fold to an out-of-range
 //!   shift count. (A future const_fold extension can handle the
 //!   `n+m >= 32 → Lit(0)` case for u32.)
@@ -26,24 +26,21 @@
 //! folds the new combined-shift constant if its operand is also a
 //! literal).
 
-use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use super::literal::ResultAllocator;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
 use vyre_foundation::ir::BinOp;
 
 #[must_use]
 pub fn shift_combine(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    out.body = shift_combine_body(out.body);
+    let mut allocator = ResultAllocator::for_body_tree(&out.body);
+    out.body = shift_combine_body(out.body, &mut allocator);
     out
 }
 
-fn shift_combine_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
+fn shift_combine_body(mut body: KernelBody, allocator: &mut ResultAllocator) -> KernelBody {
+    let index = BodyIndex::new(&body);
 
     // (op_idx, x_id, combined_shift). The new combined shift lives in
     // a freshly synthesized Literal op pushed at the end of body.ops.
@@ -58,15 +55,13 @@ fn shift_combine_body(mut body: KernelBody) -> KernelBody {
         }
         let inner_id = op.operands[0];
         let outer_shift_id = op.operands[1];
-        let outer_shift_lit = match u32_lit(&body, &result_to_idx, outer_shift_id) {
+        let outer_shift_lit = match index.u32_lit(&body, outer_shift_id) {
             Some(v) => v,
             None => continue,
         };
-        let inner_idx = match result_to_idx.get(&inner_id) {
-            Some(p) => *p,
-            None => continue,
+        let Some(inner_op) = index.producer(&body, inner_id) else {
+            continue;
         };
-        let inner_op = &body.ops[inner_idx];
         let inner_kind = match &inner_op.kind {
             KernelOpKind::BinOpKind(b) => *b,
             _ => continue,
@@ -79,7 +74,7 @@ fn shift_combine_body(mut body: KernelBody) -> KernelBody {
         }
         let x_id = inner_op.operands[0];
         let inner_shift_id = inner_op.operands[1];
-        let inner_shift_lit = match u32_lit(&body, &result_to_idx, inner_shift_id) {
+        let inner_shift_lit = match index.u32_lit(&body, inner_shift_id) {
             Some(v) => v,
             None => continue,
         };
@@ -92,23 +87,8 @@ fn shift_combine_body(mut body: KernelBody) -> KernelBody {
         rewrites.push((idx, x_id, sum, outer));
     }
 
-    let mut next_id: u32 = body
-        .ops
-        .iter()
-        .filter_map(|o| o.result)
-        .max()
-        .map(|m| m + 1)
-        .unwrap_or(0);
-
     for (op_idx, x_id, sum, outer) in rewrites {
-        let pool_idx = push_lit(&mut body.literals, LiteralValue::U32(sum));
-        let synth_id = next_id;
-        next_id += 1;
-        body.ops.push(KernelOp {
-            kind: KernelOpKind::Literal,
-            operands: vec![pool_idx],
-            result: Some(synth_id),
-        });
+        let synth_id = allocator.push_literal(&mut body.ops, &mut body.literals, LiteralValue::U32(sum));
         body.ops[op_idx].kind = KernelOpKind::BinOpKind(outer);
         body.ops[op_idx].operands = vec![x_id, synth_id];
     }
@@ -116,31 +96,9 @@ fn shift_combine_body(mut body: KernelBody) -> KernelBody {
     body.child_bodies = body
         .child_bodies
         .into_iter()
-        .map(shift_combine_body)
+        .map(|child| shift_combine_body(child, allocator))
         .collect();
     body
-}
-
-fn u32_lit(body: &KernelBody, result_to_idx: &FxHashMap<u32, usize>, id: u32) -> Option<u32> {
-    let producer_idx = *result_to_idx.get(&id)?;
-    let producer = body.ops.get(producer_idx)?;
-    if !matches!(producer.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_idx = *producer.operands.first()? as usize;
-    match body.literals.get(pool_idx)? {
-        LiteralValue::U32(v) => Some(*v),
-        _ => None,
-    }
-}
-
-fn push_lit(literals: &mut Vec<LiteralValue>, value: LiteralValue) -> u32 {
-    if let Some(idx) = literals.iter().position(|lit| lit == &value) {
-        return idx as u32;
-    }
-    let idx = literals.len() as u32;
-    literals.push(value);
-    idx
 }
 
 #[cfg(test)]
@@ -254,7 +212,7 @@ mod tests {
 
     #[test]
     fn mixed_shl_shr_chain_left_alone() {
-        // x << 2 >> 3 — different ops, NOT combinable.
+        // x << 2 >> 3  -  different ops, NOT combinable.
         let mut body = empty_body();
         lit_u32(&mut body, 7, 0);
         lit_u32(&mut body, 2, 1);

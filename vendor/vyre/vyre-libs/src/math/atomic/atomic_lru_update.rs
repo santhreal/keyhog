@@ -40,13 +40,13 @@ inventory::submit! {
         id: "vyre-libs::math::atomic::lru_update_u32",
         build: || atomic_lru_update_u32("buffer", Expr::u32(0), Expr::u32(12345)),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0u32]), // buffer (single slot, initial value 0)
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             // Single lane writes timestamp 12345 into slot 0.
             vec![vec![to_bytes(&[12345u32])]]
         }),

@@ -17,7 +17,7 @@ use vyre_foundation::dialect_lookup::PrimaryTextBuilder;
 /// # Panics
 ///
 /// Panics with an actionable `Fix:` message when a Category-A op carries a
-/// dedicated target builder arm — the exact drift shape that F-IR-34 exists to catch.
+/// dedicated target builder arm  -  the exact drift shape that F-IR-34 exists to catch.
 pub fn check_opdef(id: &str, category: Category, primary_text: Option<PrimaryTextBuilder>) {
     if category == Category::Composite && primary_text.is_some() {
         panic!(
@@ -51,14 +51,14 @@ mod tests {
 
     #[test]
     fn composite_without_primary_text_passes() {
-        // Category A, pure IR composition — no target builder arm.  This is the
+        // Category A, pure IR composition  -  no target builder arm.  This is the
         // canonical correct shape.
         check_opdef("test.cat_a_ok", Category::Composite, None);
     }
 
     #[test]
     fn intrinsic_without_primary_text_passes() {
-        // Category C runtime-only op (e.g. core.indirect_dispatch) —
+        // Category C runtime-only op (e.g. core.indirect_dispatch)  - 
         // Intrinsic category but no target-text arm yet.
         check_opdef("test.cat_c_ok", Category::Intrinsic, None);
     }

@@ -175,6 +175,7 @@ pub(super) fn build_vast_and_pg(
                 ],
             );
             let expr_inputs = [raw_vast_blob.as_slice(), typed_vast_blob.as_slice()];
+            scratch.expr_outputs.clear();
             super::dispatch_borrowed_stage_cached_into(
                 backend,
                 expr_key,
@@ -229,6 +230,7 @@ pub(super) fn build_vast_and_pg(
                 ],
             );
             let semantic_inputs = [typed_vast_blob.as_slice()];
+            scratch.semantic_outputs.clear();
             super::dispatch_borrowed_stage_cached_into(
                 backend,
                 semantic_key,

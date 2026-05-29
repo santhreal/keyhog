@@ -4,6 +4,7 @@
 //! matching kernels so decode→scan chains can stay on-device.
 
 pub mod base64;
+mod buffers;
 pub mod encodex;
 pub mod hex;
 pub mod inflate;

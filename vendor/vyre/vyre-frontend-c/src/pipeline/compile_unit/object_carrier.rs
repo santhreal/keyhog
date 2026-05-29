@@ -24,6 +24,8 @@ pub(super) fn emit_object_carrier(
     )?;
     let elf_blob = try_dispatch_elf(backend, &compiler_bytes, compiler_word_count)?;
     trace.log("try_dispatch_elf");
+    validate_gpu_elf_blob(&elf_blob)?;
+    trace.log("validate_gpu_elf_blob");
 
     let lex_section = crate::object_format::build_vyrecob1_lex_section(
         path,
@@ -101,6 +103,32 @@ pub(super) fn emit_object_carrier(
     }
     let vyrecob2 = crate::object_format::serialize_vyrecob2(&sections)
         .map_err(|error| format!("VYRECOB2 serialization failed: {error}"))?;
+    trace.log("serialize_vyrecob2");
     let elf_obj = crate::elf_linux::emit_translation_unit_relocatable(&vyrecob2, path)?;
-    write_object_atomic(dest, &elf_obj)
+    trace.log("emit_translation_unit_relocatable");
+    write_object_atomic(dest, &elf_obj)?;
+    trace.log("write_object_atomic");
+    Ok(())
+}
+
+fn validate_gpu_elf_blob(elf_blob: &[u8]) -> Result<(), String> {
+    if elf_blob.len() < 4 {
+        return Err(format!(
+            "GPU ELF lowering returned {} bytes, shorter than the ELF magic. Fix: repair opt_lower_elf output sizing.",
+            elf_blob.len()
+        ));
+    }
+    if &elf_blob[..4] != b"\x7fELF" {
+        return Err(format!(
+            "GPU ELF lowering returned invalid ELF magic {:02x?}. Fix: repair opt_lower_elf header emission before embedding the section.",
+            &elf_blob[..4]
+        ));
+    }
+    if elf_blob.len() % 4 != 0 {
+        return Err(format!(
+            "GPU ELF lowering returned {} bytes, not u32-aligned. Fix: keep opt_lower_elf output buffers word-aligned.",
+            elf_blob.len()
+        ));
+    }
+    Ok(())
 }

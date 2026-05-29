@@ -1,7 +1,14 @@
-#![forbid(unsafe_code)]
-//! `vyre-primitives` — compositional primitives for vyre.
+// Crate policy: unsafe is DENIED by default (was `forbid`), so the crate stays
+// unsafe-free everywhere except call sites that carry an explicit
+// `#[allow(unsafe_code)]` plus a `// SAFETY:` proof. The sole current exception
+// is `wire::fill_le_words_into`, where eliminating a redundant pre-copy
+// zero-fill on the GPU-readback decode hot path is worth a single, audited
+// uninitialized-write. `deny` (not `forbid`) is required so that one annotated
+// exception can compile; every other `unsafe` in the crate still hard-errors.
+#![deny(unsafe_code)]
+//! `vyre-primitives`  -  compositional primitives for vyre.
 //!
-//! Shape (mirrors Linux kernel `fs/` / `mm/` / `net/` — subsystem
+//! Shape (mirrors Linux kernel `fs/` / `mm/` / `net/`  -  subsystem
 //! directories under one crate, feature-gated for consumers):
 //!
 //! ```text
@@ -31,18 +38,18 @@
 //!
 //! Two kinds of primitive live here:
 //!
-//! 1. **Marker types** (`markers`, always on, zero deps) — unit
+//! 1. **Marker types** (`markers`, always on, zero deps)  -  unit
 //!    structs the reference interpreter and backend emitters dispatch
 //!    on.
 //!
-//! 2. **Tier 2.5 substrate** (per-domain feature flags) — shared
+//! 2. **Tier 2.5 substrate** (per-domain feature flags)  -  shared
 //!    `fn(...) -> Program` primitives reused by ≥ 2 Tier-3 dialects.
 //!    Each domain is one folder + one feature flag. Tier 3 crates
 //!    depend on `vyre-primitives` and enable only the domains they
 //!    need.
 //!
 //! The path IS the interface. Subsystem `mod.rs` exposes sub-modules,
-//! not a flat namespace — callers write
+//! not a flat namespace  -  callers write
 //! `vyre_primitives::text::char_class::char_class(...)` so the LEGO
 //! chain is visible at every call site.
 //!
@@ -50,6 +57,7 @@
 //! the tier rule, admission criteria, and Gate 1 enforcement.
 
 mod markers;
+pub mod wire;
 #[cfg(feature = "vyre-foundation")]
 use std::sync::Arc;
 
@@ -88,7 +96,7 @@ pub(crate) fn invalid_output_program(
 
 /// Return `(left * right) >> 16` for unsigned 16.16 fixed-point lanes without
 /// losing the high half of the product to 32-bit overflow.
-#[cfg(feature = "vyre-foundation")]
+#[cfg(any(feature = "graph", feature = "math", feature = "geom", feature = "opt"))]
 pub(crate) fn fixed_mul_16_16_expr(left: Expr, right: Expr) -> Expr {
     let low = Expr::mul(left.clone(), right.clone());
     let high = Expr::mulhi(left, right);
@@ -97,6 +105,12 @@ pub(crate) fn fixed_mul_16_16_expr(left: Expr, right: Expr) -> Expr {
         Expr::shl(high, Expr::u32(16)),
     )
 }
+
+#[cfg(any(feature = "graph", feature = "math"))]
+pub(crate) mod fixed_u32_matmul;
+
+#[cfg(any(feature = "label", feature = "predicate"))]
+pub(crate) mod nodeset_filter;
 
 /// Domain-neutral byte-range primitive.
 ///
@@ -127,7 +141,7 @@ pub mod matching;
 #[cfg(feature = "decode")]
 pub mod decode;
 
-/// NFA primitives — subgroup-cooperative simulator (G1 GPU perf).
+/// NFA primitives  -  subgroup-cooperative simulator (G1 GPU perf).
 #[cfg(feature = "nfa")]
 pub mod nfa;
 
@@ -148,8 +162,8 @@ pub mod parsing;
 pub mod nn;
 
 /// Graph primitives (topological sort, reachability, CSR traversal,
-/// SCC decomposition, path reconstruction — the Tier 2.5 substrate
-/// that a downstream frontend's stdlib rules compose against).
+/// SCC decomposition, path reconstruction  -  the Tier 2.5 substrate
+/// that a external analyzer's stdlib rules compose against).
 #[cfg(feature = "graph")]
 pub mod graph;
 
@@ -208,24 +222,24 @@ pub mod zx;
 #[cfg(feature = "dnnf")]
 pub mod dnnf;
 
-/// Bitset primitives — `and`/`or`/`not`/`xor`/`popcount`/`any`/
+/// Bitset primitives  -  `and`/`or`/`not`/`xor`/`popcount`/`any`/
 /// `contains` over packed u32 bitsets. The NodeSet / ValueSet
 /// representation every graph primitive consumes.
 #[cfg(feature = "bitset")]
 pub mod bitset;
 
-/// Reduction primitives — `count`/`min`/`max`/`sum` over bitsets and
+/// Reduction primitives  -  `count`/`min`/`max`/`sum` over bitsets and
 /// fixed-width ValueSets. Backs source-query dialect aggregates.
 #[cfg(feature = "reduce")]
 pub mod reduce;
 
-/// Label → NodeSet resolver — turn a TagFamily bitmask into a
-/// NodeSet bitset. Implements the `@family` lookup that a downstream frontend's
+/// Label → NodeSet resolver  -  turn a TagFamily bitmask into a
+/// NodeSet bitset. Implements the `@family` lookup that a external analyzer's
 /// label surface surfaces.
 #[cfg(feature = "label")]
 pub mod label;
 
-/// Frozen predicate primitives — the ~10 engine primitives (call_to,
+/// Frozen predicate primitives  -  the ~10 engine primitives (call_to,
 /// return_value_of, arg_of, size_argument_of, edge, in_function,
 /// in_file, in_package, literal_of, node_kind) that source-query dialect stdlib
 /// rules compose into every higher-level query.
@@ -274,6 +288,26 @@ pub mod vfs;
 pub mod serial_data {
     pub use vyre_foundation::serial::envelope::{
         test_helpers, EnvelopeError, WireReader, WireWriter,
+    };
+}
+
+/// Curated prelude - the byte-pack/decode primitives every consumer
+/// needs for GPU buffer construction and readback, plus the shared
+/// envelope types when vyre-foundation is in play.
+///
+/// `use vyre_primitives::prelude::*;` should be the only import a
+/// caller needs for the common pack/unpack surface. Adding new wire
+/// primitives must keep this list in sync.
+pub mod prelude {
+    pub use crate::wire::{
+        append_f32_slice_le_bytes, append_packed_byte_lane, append_u32_slice_le_bytes,
+        decode_f32_le_bytes_all, decode_i32_le_bytes_all, decode_u16_le_bytes_all,
+        decode_u32_le_bytes_all, decode_u64_le_bytes_all, pack_bytes_as_u32_slice,
+        pack_bytes_as_u32_slice_min_words, pack_f32_slice, pack_f32_slice_into,
+        pack_f32_slice_into_uninit, pack_i32_slice, pack_i32_slice_into, pack_u16_slice,
+        pack_u16_slice_into, pack_u32_slice, pack_u32_slice_into, pack_u32_slice_into_uninit,
+        pack_u32_slice_min_words_into, pack_u64_slice, pack_u64_slice_into, unpack_f32_slice,
+        unpack_f32_slice_into, unpack_u32_slice_into,
     };
 }
 

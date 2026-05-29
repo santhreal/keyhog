@@ -46,7 +46,7 @@ pub struct PackGroup {
 
 impl PackGroup {
     /// Number of scalar accesses that pack into one vector op. Matches
-    /// `PackKind::lane_count()` — kept on PackGroup as a convenience.
+    /// `PackKind::lane_count()`  -  kept on PackGroup as a convenience.
     #[must_use]
     pub fn op_count(&self) -> usize {
         self.pack.lane_count() as usize
@@ -74,7 +74,7 @@ impl PackingPlan {
         self.groups.iter().map(|g| g.op_count() - 1).sum()
     }
 
-    /// Sum of `(lane_count - 1) * throughput_factor` per group —
+    /// Sum of `(lane_count - 1) * throughput_factor` per group  -
     /// a single score where higher means more wins available.
     #[must_use]
     pub fn estimated_savings_score(&self) -> f32 {
