@@ -90,8 +90,17 @@ async fn main() -> ExitCode {
         }
     });
 
+    // Color the log stream only when stderr is a TTY and NO_COLOR is unset;
+    // otherwise (pipes, files, CI logs) tracing would emit raw ANSI escape
+    // sequences, matching the discipline crate::style::Palette applies to the
+    // command surface.
+    let log_ansi = {
+        use std::io::IsTerminal;
+        std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+    };
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
+        .with_ansi(log_ansi)
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env().add_directive(
                 "keyhog=warn".parse().unwrap_or_else(|_| {
