@@ -148,7 +148,11 @@ impl CompiledScanner {
         // allocating a fresh `Captures` per match. For a 100k-file scan
         // hitting 10k matches across a handful of hot patterns, that's tens
         // of thousands of avoided allocations per scan.
-        let mut locs = entry.regex.capture_locations();
+        // Compile-on-first-use: this pattern's regex is built here the first
+        // time it is actually needed (see LazyRegex), then cached. Bind once
+        // so the inner match loop reuses the same `&Regex`.
+        let rx = entry.regex.get();
+        let mut locs = rx.capture_locations();
         let groups_total = locs.len();
         let bytes_total = search_text.len();
         // GPU-anchored path: caller restricts the scan to a small
@@ -194,7 +198,7 @@ impl CompiledScanner {
                 }
             }
             match_count += 1;
-            let Some(whole) = entry.regex.captures_read_at(&mut locs, search_text, cursor) else {
+            let Some(whole) = rx.captures_read_at(&mut locs, search_text, cursor) else {
                 break;
             };
             let full_start = whole.start();
@@ -326,6 +330,8 @@ impl CompiledScanner {
         // legacy path (range_start=0, range_end=bytes_total) behaves
         // identically to the prior `find_iter` loop.
         let mut cursor = range_start;
+        // Compile-on-first-use (see LazyRegex); bind once for the walk.
+        let rx = entry.regex.get();
         while cursor <= range_end {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
@@ -338,7 +344,7 @@ impl CompiledScanner {
                     break;
                 }
             }
-            let Some(matched) = entry.regex.find_at(search_text, cursor) else {
+            let Some(matched) = rx.find_at(search_text, cursor) else {
                 break;
             };
             if matched.start() > range_end {

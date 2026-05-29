@@ -1,4 +1,4 @@
-//! GPU program fusion — collapses multiple sequential vyre `Program` dispatches
+//! GPU program fusion - collapses multiple sequential vyre `Program` dispatches
 //! into a single fused program for single-GPU-dispatch execution.
 //!
 //! keyhog currently dispatches the AC literal-set program, decode programs,
@@ -17,7 +17,7 @@
 //!
 //! If fusion fails (incompatible buffer layouts, over-dispatch geometry,
 //! self-aliasing), the module logs the failure and the scanner falls back
-//! to sequential dispatch. This is a pure optimization — correctness is
+//! to sequential dispatch. This is a pure optimization - correctness is
 //! never compromised.
 //!
 //! # Usage
@@ -68,7 +68,7 @@ impl CompiledScanner {
                     tracing::debug!(
                         target: "keyhog::gpu",
                         programs = programs.len(),
-                        "program fusion skipped — fewer than 2 eligible programs"
+                        "program fusion skipped - fewer than 2 eligible programs"
                     );
                     return None;
                 }
@@ -85,7 +85,7 @@ impl CompiledScanner {
                             fused_buffers = fused.buffers().len(),
                             fused_workgroup = ?fused.workgroup_size(),
                             elapsed_ms,
-                            "program fusion succeeded — single GPU dispatch active"
+                            "program fusion succeeded - single GPU dispatch active"
                         );
                         // Attempt to cache the fused program on disk.
                         self.cache_fused_program(&fused, &programs);
@@ -96,7 +96,7 @@ impl CompiledScanner {
                             target: "keyhog::gpu",
                             input_programs = programs.len(),
                             error = %error,
-                            "program fusion failed — falling back to sequential dispatch. \
+                            "program fusion failed - falling back to sequential dispatch. \
                              Common causes: incompatible buffer layouts, over-dispatch geometry, \
                              or self-aliasing constraints."
                         );

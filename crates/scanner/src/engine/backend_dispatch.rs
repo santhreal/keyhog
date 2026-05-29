@@ -18,7 +18,7 @@ impl CompiledScanner {
             // CLI orchestrator with --threads / KEYHOG_THREADS / physical
             // core count. Hyperscan + AC scans are CPU-bound and trivially
             // independent per-chunk, so par_iter() saturates cores cleanly
-            // — was previously a serial iter().map() that pinned to one
+            // - was previously a serial iter().map() that pinned to one
             // worker even on 32-core boxes.
             use rayon::prelude::*;
             let mut results: Vec<Vec<RawMatch>> = chunks
@@ -27,7 +27,7 @@ impl CompiledScanner {
                 .collect();
             // Cross-chunk window-boundary reassembly. Without this, a
             // secret straddling the seam between two adjacent gapless
-            // chunks from the same file is invisible — both halves are
+            // chunks from the same file is invisible - both halves are
             // too short to match the regex on their own. The GPU paths
             // below call `scan_chunk_boundaries` after their batch
             // dispatch (see `scan_coalesced_megascan`/`scan_coalesced_gpu`);
@@ -47,7 +47,7 @@ impl CompiledScanner {
         // GPU batch path: `scan_coalesced_gpu` produces full per-chunk
         // RawMatch results in one device dispatch + parallel post-process.
         // The previous `populate_gpu_batch_triggers` was a comment-only TODO
-        // that threw the GPU results away — see audit release-2026-04-26.
+        // that threw the GPU results away - see audit release-2026-04-26.
         if self.gpu_literals.is_none() || self.gpu_backend.is_none() {
             super::gpu_forced::deny_silent_gpu_degrade(self, backend);
             let fallback_backend = self.degraded_backend_after_gpu_failure();

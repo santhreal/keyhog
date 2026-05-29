@@ -58,7 +58,16 @@ pub async fn run(args: UpdateArgs) -> Result<ExitCode> {
     println!("\n  downloading    {}", asset.browser_download_url);
     let bytes = installer::download_verified_asset(&client, asset).await?;
     let exe = installer::current_binary()?;
-    installer::install_binary(&exe, &bytes)?;
+    // Clear any stash left locked by a prior self-replace (Windows keeps the
+    // old image locked until its process exits; this is the next run).
+    installer::reap_stale_binaries(&exe);
+
+    // Recoverability invariant: back up the current binary, install, then run
+    // the NEW binary's `doctor` as a health gate. If it can't run on this host
+    // (wrong libc, broken release), roll back to the working binary instead of
+    // leaving the user with a bricked install reporting "✓ updated".
+    println!("\n{dim}verifying the new binary on this host...{reset}\n");
+    installer::install_with_rollback(&exe, &bytes, installer::verify_via_doctor)?;
 
     println!(
         "\n{green}{bold}✓ updated v{current} → {latest}{reset}  {dim}{}{reset}",

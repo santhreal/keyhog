@@ -92,6 +92,10 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
     let detector_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors)
         .context("daemon: compiling scanner from detector specs")?;
+    // The daemon is long-lived and serves many scan requests; pay the lazy
+    // regex compile once, up front and in parallel, so no client request
+    // eats a detector's first-use compile latency.
+    scanner.warm();
 
     // Process-wide dogfood capture is gated by the `KEYHOG_DOGFOOD`
     // env var on the daemon side. Per-request toggling would require a

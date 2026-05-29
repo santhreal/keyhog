@@ -274,7 +274,30 @@ fn every_contract_passes_positives_negatives_evasions() {
 
 #[test]
 fn every_contract_perf_budget_holds() {
+    // Perf budgets are calibrated for the OPTIMIZED build CI runs this gate
+    // under (`cargo test --profile release-fast`, see .github/workflows/ci.yml).
+    // A plain `cargo test` builds the dev/debug profile, where regex matching
+    // is 10-40x slower and EVERY budget blows by design - a debug-mode false
+    // alarm, not a regression. Skip loudly rather than report ~50 phantom
+    // failures that send the next reader chasing a perf bug that isn't there.
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "every_contract_perf_budget_holds: SKIPPED (debug build). Perf budgets \
+             only hold under optimization. Enforce with:\n  \
+             cargo test -p keyhog-scanner --profile release-fast --test contracts_runner"
+        );
+        return;
+    }
     let scanner = scanner();
+    // Compile every pattern up front: the per-detector perf budget measures
+    // match THROUGHPUT (catching a regex that is catastrophically slow to
+    // match), not one-time compilation. Patterns compile lazily on first use
+    // (LazyRegex), so without warming the first scan to touch each detector
+    // would fold that detector's one-time compile into the measured μs and
+    // blow the budget - an artifact of this harness scanning ~895 separate
+    // fixtures, not a real per-scan cost (a real repo scan compiles each
+    // detector once then reuses it across every file).
+    scanner.warm();
     let contracts = load_contracts();
     let mut failures: Vec<String> = Vec::new();
 
@@ -324,6 +347,10 @@ fn every_contract_perf_budget_holds() {
 #[test]
 fn every_contract_scale_gate_holds() {
     let scanner = scanner();
+    // See `every_contract_perf_budget_holds`: warm so the scale budget
+    // (max_seconds on a multi-MB fixture) measures scanning, not the
+    // one-time lazy regex compile for the detector under test.
+    scanner.warm();
     let contracts = load_contracts();
     let mut failures: Vec<String> = Vec::new();
 
@@ -379,7 +406,13 @@ fn every_contract_scale_gate_holds() {
                 matches.len(),
             ));
         }
-        if elapsed > scale.max_seconds {
+        // Correctness (the credential still surfaces in a multi-MB fixture)
+        // is checked above in every build. The wall-clock budget, like the
+        // per-detector perf budget, only holds under optimization - skip the
+        // timing assertion in debug so a plain `cargo test` doesn't report
+        // phantom "scale budget exceeded" failures from 10-40x-slower debug
+        // regex matching. CI enforces it via `--profile release-fast`.
+        if !cfg!(debug_assertions) && elapsed > scale.max_seconds {
             failures.push(format!(
                 "{}: scale budget exceeded - {:.3}s > budget {:.3}s ({})",
                 c.detector_id,

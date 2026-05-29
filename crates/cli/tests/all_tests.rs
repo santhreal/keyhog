@@ -8,4 +8,5 @@ pub mod gate;
 pub mod integration;
 pub mod property;
 pub mod regression;
+pub mod reliability;
 pub mod unit;

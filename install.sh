@@ -133,7 +133,29 @@ confirm() {
 # ============================================================
 
 usage() {
-    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+    # When invoked from a file (`sh install.sh --help`) the header comment IS
+    # the help, so reproduce it from $0. Under `curl ... | sh -s -- --help`
+    # there is no readable $0 - the old `sed "$0"` printed "sed: can't read sh"
+    # and NO help at all. Fall back to a built-in synopsis so --help works on
+    # every transport.
+    help_text=""
+    if [ -r "$0" ]; then
+        help_text=$(sed -n '2,30p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//')
+    fi
+    if [ -n "$help_text" ]; then
+        printf '%s\n' "$help_text"
+    else
+        printf '%s\n' \
+"KeyHog installer (Linux + macOS)." \
+"" \
+"Quick install:" \
+"  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sh" \
+"" \
+"Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
+"Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
+"        --yes/-y  --no-prompt  --no-color  --help/-h" \
+"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  NO_COLOR"
+    fi
     exit 0
 }
 
@@ -338,28 +360,28 @@ resolve_tag() {
         exit 1
     fi
 
-    # Parse the first 10 releases. Each block contains a tag_name and an
-    # assets array. We accept the first release whose assets array is
-    # non-empty. POSIX awk-only, no jq dep.
+    # Parse the first 10 releases (most-recent first) and pick the newest
+    # tag whose release has at least one downloadable asset. POSIX awk-only,
+    # no jq dep.
+    #
+    # This is deliberately indentation-INDEPENDENT. The previous version
+    # keyed on `/^  \]/` to find the close of the assets array, assuming a
+    # two-space indent - but the GitHub REST API indents the assets array's
+    # closing bracket FOUR spaces (`    ],`), so that pattern never matched
+    # and the default `curl | sh` install always failed with "no release has
+    # assets" unless the user passed --version. Within each release object
+    # the API emits "tag_name" BEFORE its "assets" array, and
+    # "browser_download_url" appears ONLY inside an asset entry. So the first
+    # browser_download_url we encounter belongs to the first (newest) release
+    # that actually has an asset, and `tag` still holds that release's tag.
     TAG=$(printf '%s' "$releases_json" | awk '
         /"tag_name": / {
             sub(/.*"tag_name": *"/, "")
             sub(/".*/, "")
             tag = $0
         }
-        /"assets": *\[/ {
-            in_assets = 1
-            asset_lines = 0
-        }
-        in_assets && /"name": / {
-            asset_lines++
-        }
-        /^  \]/ && in_assets {
-            in_assets = 0
-            if (asset_lines > 0 && tag != "") {
-                print tag
-                exit
-            }
+        /"browser_download_url": / {
+            if (tag != "") { print tag; exit }
         }
     ')
 
@@ -433,10 +455,17 @@ verify_checksum() {
     return 1
 }
 
+# Holds the path to the pre-upgrade binary backup so a failed verification can
+# roll back to the previously-working binary instead of leaving the user with a
+# broken one. Empty when there was nothing to back up (fresh install).
+INSTALL_BACKUP=""
+
 stage_and_install() {
     tmp=$(mktemp)
+    staged=""
+    INSTALL_BACKUP=""
     # shellcheck disable=SC2064
-    trap "rm -f '$tmp'" EXIT INT TERM
+    trap 'rm -f "$tmp" "$staged" 2>/dev/null' EXIT INT TERM
 
     if ! download_asset "$ASSET" "$tmp" 2>/dev/null; then
         if [ -n "$ASSET_FALLBACK" ] && [ "$ASSET_FALLBACK" != "$ASSET" ]; then
@@ -454,6 +483,24 @@ stage_and_install() {
         fi
     fi
 
+    # A zero-byte download means the asset 404'd into an empty file, the
+    # connection dropped before the first byte, or a proxy served an empty
+    # body. An empty file is still chmod-able and, with no shebang, executes
+    # as a no-op shell script that exits 0 - so verify_install would wave it
+    # through and "install" a binary that does nothing. Refuse up front.
+    # This happens BEFORE any backup/overwrite, so a pre-existing working
+    # binary is never touched.
+    if [ ! -s "$tmp" ]; then
+        err "Downloaded asset $ASSET is empty (0 bytes)."
+        err "The release asset may be missing or the download was interrupted."
+        err "Browse https://github.com/$REPO/releases to confirm asset availability."
+        rm -f "$tmp"
+        trap - EXIT INT TERM
+        exit 1
+    fi
+
+    # Checksum is also verified BEFORE we overwrite, so a corrupt download can
+    # never replace a working binary.
     if ! verify_checksum "$tmp" "$ASSET"; then
         rm -f "$tmp"
         trap - EXIT INT TERM
@@ -461,20 +508,96 @@ stage_and_install() {
     fi
 
     mkdir -p "$INSTALL_DIR"
-    mv "$tmp" "$INSTALL_DIR/keyhog"
-    chmod +x "$INSTALL_DIR/keyhog"
+    target="$INSTALL_DIR/keyhog"
+
+    # Recoverability invariant: never destroy a working binary before the
+    # replacement has proven itself on THIS host. Back the current one up, stage
+    # the new one beside it (same filesystem, so the final swap is an atomic
+    # rename), then let finalize_install verify and roll back on failure.
+    if [ -e "$target" ]; then
+        INSTALL_BACKUP="$INSTALL_DIR/.keyhog.bak.$$"
+        if ! cp -p "$target" "$INSTALL_BACKUP" 2>/dev/null; then
+            err "Could not back up the existing binary at $target."
+            err "Refusing to overwrite it - your current install is left untouched."
+            rm -f "$tmp"
+            INSTALL_BACKUP=""
+            trap - EXIT INT TERM
+            exit 1
+        fi
+    fi
+
+    staged="$INSTALL_DIR/.keyhog.new.$$"
+    # $tmp may live on a different filesystem (TMPDIR), so copy (not rename)
+    # into the install dir; the atomic rename is the same-dir mv below.
+    if ! cp "$tmp" "$staged" 2>/dev/null; then
+        err "Could not stage the download into $INSTALL_DIR (directory not writable?)."
+        rm -f "$tmp" "$INSTALL_BACKUP"
+        INSTALL_BACKUP=""
+        trap - EXIT INT TERM
+        exit 1
+    fi
+    rm -f "$tmp"
+    chmod +x "$staged"
+    # Atomic same-directory replace: a concurrent `keyhog` exec sees either the
+    # old inode or the fully-written new one, never a half-copied file.
+    mv -f "$staged" "$target"
+    staged=""
     trap - EXIT INT TERM
 }
 
+# Restore the pre-upgrade binary after a failed verification. On a fresh
+# install (no backup) the broken download is removed unless it is merely
+# missing a system library (then it is kept, because it is the correct binary
+# and the user can fix the lib without re-downloading). Either way the host is
+# never left strictly worse off than before the install ran.
+finalize_install() {
+    vrc=0
+    verify_install || vrc=$?
+    if [ "$vrc" = "0" ]; then
+        # New binary works: drop the backup.
+        [ -n "$INSTALL_BACKUP" ] && rm -f "$INSTALL_BACKUP"
+        INSTALL_BACKUP=""
+        return 0
+    fi
+
+    if [ -n "$INSTALL_BACKUP" ] && [ -e "$INSTALL_BACKUP" ]; then
+        # Upgrade/repair over a binary that worked: the old one ran, the new
+        # one does not on this host - restore the one that worked.
+        mv -f "$INSTALL_BACKUP" "$INSTALL_DIR/keyhog"
+        INSTALL_BACKUP=""
+        warn "Rolled back to your previous working keyhog at $INSTALL_DIR/keyhog."
+    elif [ "$vrc" = "2" ]; then
+        # Fresh install, correct binary, missing system library: keep it so the
+        # user can install the lib (hint already printed) without re-downloading.
+        warn "Left the binary in place; install the library listed above, then run 'keyhog doctor' to confirm."
+    else
+        # Fresh install, non-runnable binary (wrong CPU / corrupt): leaving it
+        # on PATH would fail confusingly on every call - remove it.
+        rm -f "$INSTALL_DIR/keyhog"
+        warn "Removed the non-runnable download; no working keyhog was overwritten."
+    fi
+    return 1
+}
+
+# Verify the freshly-staged binary. Returns:
+#   0 - healthy (ran --version cleanly)
+#   2 - runs but a required system library is missing (binary is correct)
+#   1 - non-runnable for any other reason (wrong CPU, corrupt, ...)
+# Never exits the script: finalize_install owns rollback/cleanup decisions.
 verify_install() {
     # Capture stderr so we can decode the real reason --version refused to run.
     # The previous "may be corrupt" message hid the most common failure mode:
     # a missing shared library on Linux (Hyperscan, libssl, etc.).
+    verify_status=0
     verify_err=$("$INSTALL_DIR/keyhog" --version 2>&1 >/dev/null) || verify_status=$?
-    verify_status="${verify_status:-0}"
 
-    if [ "$verify_status" = "0" ] && [ -z "$verify_err" ]; then
+    # Success is exit 0 from --version. A warning on stderr (deprecation note,
+    # config-load warning, locale grumble) is NOT a broken binary - the old
+    # `-z "$verify_err"` gate treated any such noise as a failure and would,
+    # post-rollback-fix, needlessly roll back a perfectly good upgrade.
+    if [ "$verify_status" = "0" ]; then
         ok "Installed $("$INSTALL_DIR/keyhog" --version)"
+        [ -n "$verify_err" ] && dim "  (binary emitted a startup notice: $verify_err)"
         # Native post-install health check. `keyhog doctor` reuses the same
         # hw_probe the scanner uses (so there's no shell-side GPU detection to
         # drift from runtime) and runs an end-to-end scan self-test: it plants
@@ -514,14 +637,15 @@ verify_install() {
                     err "    Fedora/RHEL:   sudo dnf install -y openssl ca-certificates"
                     ;;
             esac
-            exit 1
+            # The binary itself is correct; it just needs a runtime library.
+            return 2
         fi
     fi
 
     err "The download may be corrupt or wrong for this CPU."
     err "  Picked asset: $ASSET"
     err "  Browse https://github.com/$REPO/releases to confirm asset availability."
-    exit 1
+    return 1
 }
 
 show_summary() {
@@ -609,7 +733,7 @@ install_completions() {
       *) warn "  Unknown shell ($shell_name), skipping completions."; return ;;
     esac
     mkdir -p "$dir"
-    if "$INSTALL_DIR/keyhog" completions "$shell_name" > "$file" 2>/dev/null; then
+    if "$INSTALL_DIR/keyhog" completion "$shell_name" > "$file" 2>/dev/null; then
         ok "  Completions written to $file"
     else
         warn "  completions subcommand not in this build, skipping (upgrade to v0.5.30+)."
@@ -635,7 +759,10 @@ do_install() {
     fi
 
     stage_and_install
-    verify_install
+    if ! finalize_install; then
+        err "Install failed verification; see above."
+        exit 1
+    fi
     post_install_wizard
 
     printf '\n%sNext steps:%s\n' "$C_BOLD" "$C_RESET"
@@ -652,7 +779,11 @@ do_repair() {
     if [ -z "$bin" ]; then
         warn "No existing keyhog binary found. Installing fresh."
         stage_and_install
-        verify_install
+        if ! finalize_install; then
+            err "Repair failed; see above."
+            exit 1
+        fi
+        ok "Repair complete."
         return
     fi
     say "Found existing binary: $bin"
@@ -662,7 +793,10 @@ do_repair() {
         warn "Existing binary does not run. Replacing with $ASSET."
     fi
     stage_and_install
-    verify_install
+    if ! finalize_install; then
+        err "Repair failed; your previous binary state was preserved where possible (see above)."
+        exit 1
+    fi
     ok "Repair complete."
 }
 

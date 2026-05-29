@@ -3,7 +3,6 @@
 use crate::error::Result;
 use crate::types::*;
 use keyhog_core::DetectorSpec;
-use regex::Regex;
 
 use super::compiler_prefix::{extract_inner_literals, extract_literal_prefixes};
 
@@ -24,7 +23,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     // De-duplicate identical regex strings BEFORE compilation. The 888-
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple
     // google-* detectors share the `AIza` regex shape). Compiling each
-    // once cuts startup-compile time and RAM proportionally — see
+    // once cuts startup-compile time and RAM proportionally - see
     // audits/legendary-2026-04-26.
     let unique_patterns: HashMap<String, ()> = detectors
         .iter()
@@ -80,7 +79,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
             // tokens where the literal prefix has been visually spoofed
             // with Cyrillic/Greek/full-width lookalikes. Earlier code
             // dropped just the expanded PREFIX into fallback as
-            // `Regex::new("^[hh][ff]_")` — anchored to start, but with
+            // `Regex::new("^[hh][ff]_")` - anchored to start, but with
             // NO body constraint, so any string beginning with the
             // prefix would match. Combined with the task #69 fallback
             // wire fix that finally runs these patterns, that turned
@@ -107,28 +106,32 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                         // the leading `(?:...)` with the expanded prefix so the
                         // homoglyph variant still requires the rest of the pattern
                         // to match. Without this, every alternation-prefix detector
-                        // silently skipped its homoglyph fallback — leaving
+                        // silently skipped its homoglyph fallback - leaving
                         // Cyrillic/full-width spoofed credentials of the form
                         // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
                         rewritten
                     } else {
                         // Prefix appears in the parse tree but isn't a leading
                         // literal slice and isn't a trivially-rewritable alternation
-                        // (e.g. it sits inside a nested group). Skip — there's no
+                        // (e.g. it sits inside a nested group). Skip - there's no
                         // safe text rewrite we can do here.
                         continue;
                     };
-                if let Ok(re) = Regex::new(&full_homoglyph_regex) {
-                    fallback.push((
-                        CompiledPattern {
-                            detector_index,
-                            regex: std::sync::Arc::new(re),
-                            group: pattern.group,
-                            client_safe: pattern.client_safe,
-                        },
-                        detector.keywords.clone(),
-                    ));
-                }
+                // Deferred like every other pattern: build the homoglyph
+                // variant's Regex on first use, not here. The old eager
+                // `Regex::new` doubled as a validity gate (skip-if-Err); the
+                // lazy path's never-match fallback covers a non-compiling
+                // variant instead, so a bad expansion simply never fires
+                // rather than being silently dropped at build.
+                fallback.push((
+                    CompiledPattern {
+                        detector_index,
+                        regex: LazyRegex::plain(full_homoglyph_regex),
+                        group: pattern.group,
+                        client_safe: pattern.client_safe,
+                    },
+                    detector.keywords.clone(),
+                ));
             }
 
             if !prefixes.is_empty() {
@@ -137,7 +140,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                     ac_map.push(compiled.clone());
                 }
             } else {
-                // Prefix extraction failed — try the AST-walking inner-literal
+                // Prefix extraction failed - try the AST-walking inner-literal
                 // extractor before falling back. Patterns like
                 // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}` have no leading literal
                 // but contain `_AKIA` mid-pattern; pulling that into the AC
@@ -177,14 +180,14 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
 /// start with a non-capturing alternation group we know how to rewrite.
 ///
 /// This is the homoglyph counterpart of `extract_literal_prefixes`'s
-/// alternation handling — when the prefix extractor returned a literal
+/// alternation handling - when the prefix extractor returned a literal
 /// from inside `(?:ghp_|github_pat_)`, the homoglyph compiler needs the
 /// matching surgical rewrite to splice the expanded prefix into the
 /// regex without losing the trailing body constraint.
 pub fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<String> {
     // Strip a leading inline flag group like `(?i)`.
     let (flag_prefix, body) = split_leading_inline_flag(regex);
-    // Only consider non-capturing groups — `(?:p1|p2|...)`. A bare
+    // Only consider non-capturing groups - `(?:p1|p2|...)`. A bare
     // `(...)` is a capturing group around the whole credential, NOT an
     // alternation of prefixes; rewriting it as "{expanded_prefix}{suffix}"
     // would drop the credential body and leave a regex that matches just
@@ -207,7 +210,7 @@ pub fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<
     } else if let Some(rest) = body.strip_prefix("(?ms:") {
         body.len() - rest.len()
     } else {
-        // Bare `(` or no leading group — refuse to rewrite. The simple
+        // Bare `(` or no leading group - refuse to rewrite. The simple
         // strip_prefix path in the caller handles literal-head regexes;
         // this function is strictly for `(?:...)` alternation prefixes.
         return None;
@@ -226,14 +229,14 @@ pub fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<
                     break;
                 }
             }
-            // Don't track escapes — we only need to find the *top-level*
+            // Don't track escapes - we only need to find the *top-level*
             // closing paren, and within a regex source a literal `(` or
             // `)` inside a character class is rare in real detectors.
             _ => {}
         }
     }
     let close = close_at?;
-    // The leading group must actually contain a `|` — without one this
+    // The leading group must actually contain a `|` - without one this
     // is just `(?:singleton)pattern`, not an alternation, and rewriting
     // would silently drop the singleton body.
     let inside = &body[group_open_end..close];

@@ -203,7 +203,7 @@ impl CompiledScanner {
                 } else {
                     tracing::debug!(
                         target: "keyhog::gpu",
-                        "fused decode+scan programs not available — CPU decode path will be used"
+                        "fused decode+scan programs not available - CPU decode path will be used"
                     );
                     None
                 }

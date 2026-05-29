@@ -200,6 +200,11 @@ function Verify-Checksum {
     return $false
 }
 
+# Holds the path to the pre-upgrade binary backup so a failed verification can
+# roll back to the previously-working binary instead of leaving the user with a
+# broken one. $null when there was nothing to back up (fresh install).
+$Script:InstallBackup = $null
+
 function Stage-Install {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
@@ -210,39 +215,106 @@ function Stage-Install {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }
+    # Empty-download guard (parity with install.sh): a 0-byte file would still
+    # be "installed" as a do-nothing stub. This and the checksum check run
+    # BEFORE any overwrite, so a pre-existing working binary is never touched.
+    if ((Get-Item $tmp).Length -eq 0) {
+        Err "Downloaded asset $($Script:Asset) is empty (0 bytes)."
+        Err "The release asset may be missing or the download was interrupted."
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+        exit 1
+    }
     if (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     $dest = Join-Path $InstallDir 'keyhog.exe'
-    Move-Item -Force $tmp $dest
+
+    # Recoverability invariant: never destroy a working binary before the
+    # replacement has proven itself. Back the current one up; Finalize-Install
+    # restores it if the new binary fails to run.
+    $Script:InstallBackup = $null
+    if (Test-Path $dest) {
+        $backup = Join-Path $InstallDir (".keyhog.bak.$PID.exe")
+        try {
+            Copy-Item -Force $dest $backup
+            $Script:InstallBackup = $backup
+        } catch {
+            Err "Could not back up the existing binary at $dest."
+            Err "Refusing to overwrite it - your current install is left untouched."
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
+    }
+    try {
+        Move-Item -Force $tmp $dest
+    } catch {
+        Err "Could not write $dest (file in use or directory not writable?): $_"
+        if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+        exit 1
+    }
     return $dest
 }
 
-function Verify-Install {
+# Returns $true iff the binary runs `--version` and exits 0. The old
+# Verify-Install only caught a launch failure (a thrown exception); a binary
+# that launched but exited nonzero - the common corrupt / wrong-build case -
+# slipped through and was reported as "Installed". Check $LASTEXITCODE too.
+function Test-Binary {
     param($BinPath)
     try {
-        $v = & $BinPath --version 2>&1
-        Ok "Installed $v"
+        $out = & $BinPath --version 2>&1
     } catch {
-        Err "Installed binary at $BinPath does not run. The download may be corrupt."
-        exit 1
+        Err "Installed binary at $BinPath could not be launched."
+        Err "  $_"
+        return $false
     }
-    # Native post-install health check (parity with install.sh): reuses the
-    # scanner's own hw_probe and runs an end-to-end scan self-test, so the
-    # install ends by proving the binary actually detects a secret on this
-    # host - not just that it runs. Non-fatal; we only warn if doctor reports
-    # an issue (a PATH note shouldn't fail an otherwise-working install).
-    Say ""
-    try {
-        & $BinPath doctor
-        if ($LASTEXITCODE -ne 0) {
-            Warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
+    if ($LASTEXITCODE -ne 0) {
+        Err "Installed binary at $BinPath ran but exited $LASTEXITCODE (--version failed)."
+        Err "  output: $out"
+        Err "The download may be corrupt or the wrong build for this machine."
+        return $false
+    }
+    Ok "Installed $($out | Select-Object -First 1)"
+    return $true
+}
+
+# Verify the freshly-staged binary; on failure restore the previous working
+# binary (upgrade) or remove the broken download (fresh install). Returns
+# $true on success. Mirrors install.sh's finalize_install.
+function Finalize-Install {
+    param($BinPath)
+    if (Test-Binary -BinPath $BinPath) {
+        if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
+        # Native post-install health check (parity with install.sh): reuses the
+        # scanner's own hw_probe and runs an end-to-end scan self-test, proving
+        # the binary actually detects a secret on this host. Non-fatal; a PATH
+        # note shouldn't fail an otherwise-working install.
+        Say ""
+        try {
+            # Out-Host: doctor prints to the console but its stdout must NOT
+            # land on this function's output stream, or it would contaminate
+            # the boolean return value (Finalize-Install is used as a predicate).
+            & $BinPath doctor | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                Warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
+            }
+        } catch {
+            Warn "Could not run 'keyhog doctor' for post-install verification: $_"
         }
-    } catch {
-        Warn "Could not run 'keyhog doctor' for post-install verification: $_"
+        return $true
     }
+    if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
+        Move-Item -Force $Script:InstallBackup $BinPath
+        $Script:InstallBackup = $null
+        Warn "Rolled back to your previous working keyhog at $BinPath."
+    } else {
+        Remove-Item -Force $BinPath -ErrorAction SilentlyContinue
+        Warn "Removed the non-runnable download; no working keyhog was overwritten."
+    }
+    return $false
 }
 
 function Show-Summary {
@@ -282,7 +354,7 @@ function Post-Install-Wizard {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $file = Join-Path $dir 'keyhog.ps1'
         try {
-            & (Join-Path $InstallDir 'keyhog.exe') completions powershell > $file
+            & (Join-Path $InstallDir 'keyhog.exe') completion powershell > $file
             Ok "  Completions at $file. Add 'Import-Module $file' to your `$PROFILE."
         } catch {
             Warn "  completions subcommand not in this build, skipping (upgrade to v0.5.30+)."
@@ -308,7 +380,10 @@ function Do-Install {
         if (-not (Confirm-Choice "Proceed with this install?" 'Y')) { Warn "Aborted."; return }
     }
     $bin = Stage-Install
-    Verify-Install -BinPath $bin
+    if (-not (Finalize-Install -BinPath $bin)) {
+        Err "Install failed verification; see above."
+        exit 1
+    }
     Post-Install-Wizard
     Write-Host ""
     Use-Color "Next steps:" 'White'
@@ -325,18 +400,25 @@ function Do-Repair {
     if (-not $bin) {
         Warn "No existing keyhog binary found. Installing fresh."
         $bin = Stage-Install
-        Verify-Install -BinPath $bin
+        if (-not (Finalize-Install -BinPath $bin)) {
+            Err "Repair failed; see above."
+            exit 1
+        }
+        Ok "Repair complete."
         return
     }
     Say "Found existing binary: $bin"
-    try {
-        & $bin --version > $null 2>&1
+    & $bin --version > $null 2>&1
+    if ($LASTEXITCODE -eq 0) {
         Ok "Binary runs cleanly. Re-downloading $($Script:Asset) anyway (--repair)."
-    } catch {
+    } else {
         Warn "Existing binary does not run. Replacing with $($Script:Asset)."
     }
     $newBin = Stage-Install
-    Verify-Install -BinPath $newBin
+    if (-not (Finalize-Install -BinPath $newBin)) {
+        Err "Repair failed; your previous binary was preserved where possible (see above)."
+        exit 1
+    }
     Ok "Repair complete."
 }
 

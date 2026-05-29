@@ -41,7 +41,12 @@ async-trait = "0.1"
 serde_with = "3"
 parking_lot = "0.12"
 indexmap = "2"
-blake3 = "=1.8.4"
+# `pure` forces the portable Rust implementation and drops blake3's C/assembly
+# build script, which fails on the macos-latest (arm64) CI runner and on any
+# cross/portable build without a target C toolchain. blake3 here only hashes
+# files for the incremental merkle cache (cold path, not the scan hot loop), so
+# the pure-Rust speed cost is irrelevant while the build becomes target-agnostic.
+blake3 = { version = "=1.8.4", features = ["pure"] }
 dirs = "6"
 zeroize = { version = "=1.8.2", features = ["derive"] }
 anyhow = "=1.0.102"

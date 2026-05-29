@@ -101,6 +101,58 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     }
     println!("  version        v{}", env!("CARGO_PKG_VERSION"));
 
+    // Shadowing: a DIFFERENT keyhog earlier on PATH masks this one. `keyhog`
+    // typed at a shell may resolve to a stale /usr/local/bin/keyhog ahead of
+    // the freshly-installed ~/.local/bin/keyhog - so the user runs an old
+    // binary and every "I updated but nothing changed" report traces back
+    // here. A classic bad install the in-process self-test cannot see
+    // (it only ever exercises the running binary).
+    let exe_name = if cfg!(windows) {
+        "keyhog.exe"
+    } else {
+        "keyhog"
+    };
+    let mut on_path: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(pathvar) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&pathvar) {
+            let cand = dir.join(exe_name);
+            if cand.is_file() {
+                let canon = std::fs::canonicalize(&cand).unwrap_or(cand);
+                if !on_path.contains(&canon) {
+                    on_path.push(canon);
+                }
+            }
+        }
+    }
+    let running = std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::canonicalize(&p).ok());
+    match on_path.len() {
+        0 => println!(
+            "  resolves       {dim}not on PATH (invoke by full path or add its dir){reset}"
+        ),
+        1 => println!("  resolves       {green}one keyhog on PATH{reset}"),
+        n => {
+            warned = true;
+            println!(
+                "  resolves       {yellow}{n} keyhog binaries on PATH - possible shadowing:{reset}"
+            );
+            for p in &on_path {
+                println!("                 {dim}{}{reset}", p.display());
+            }
+        }
+    }
+    if let (Some(run), Some(first)) = (&running, on_path.first()) {
+        if run != first {
+            warned = true;
+            println!(
+                "  {yellow}shadowed{reset}       PATH resolves keyhog to {} but THIS binary is {}.\n                 {dim}An older install is ahead on PATH; remove it or fix PATH order.{reset}",
+                first.display(),
+                run.display()
+            );
+        }
+    }
+
     // ── Detector corpus ───────────────────────────────────────────────
     println!("\n{bold}detectors{reset}");
     let embedded = keyhog_core::embedded_detector_count();

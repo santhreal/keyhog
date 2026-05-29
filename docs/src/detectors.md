@@ -148,23 +148,35 @@ Restart the scanner and the new detector is loaded alongside the
 built-ins. There's no opt-in, no flag, no rebuild - TOML in, detector
 out.
 
-## Disabling detectors
+## Running a subset of detectors
+
+There is no per-ID enable/disable flag. The detector set is the corpus
+keyhog loads, so you control it by choosing which TOMLs are present:
 
 ```sh
-keyhog scan . --disable-detectors stripe-secret-key,aws-access-key
+# Copy just the detectors you want into a directory and point at it.
+mkdir my-detectors
+cp detectors/stripe-secret-key.toml detectors/aws-*.toml my-detectors/
+keyhog scan . --detectors my-detectors/     # or KEYHOG_DETECTORS=my-detectors
 ```
 
-Or via config (`.keyhog.toml` in the repo root):
+## Quieting a noisy detector
 
-```toml
-[scan]
-disable_detectors = ["stripe-secret-key", "aws-access-key"]
+When a detector produces persistent false positives in your repo,
+down-weight it instead of dropping it entirely so a real hit still
+surfaces:
+
+```sh
+keyhog calibrate --fp generic-api-key       # record a false positive
+keyhog scan . --min-confidence 0.7          # filter low-confidence hits
 ```
 
-The disabled set is checked AFTER detection, so the regex still runs;
-the finding is just dropped at emit time. Use this when a detector
-generates persistent FPs in your repo and you want to silence it
-while keeping the rest of the scan.
+Each `--fp` lowers that detector's Bayesian confidence multiplier
+(persisted under `$XDG_DATA_HOME/keyhog/`), so repeated FPs steadily
+push its findings below your `--min-confidence` floor. To suppress
+*specific* findings rather than a whole detector, use a
+[`.keyhogignore`](./suppressions.md), the `[allowlist]` config, or a
+`--baseline`.
 
 ## Severity bumps and downgrades
 

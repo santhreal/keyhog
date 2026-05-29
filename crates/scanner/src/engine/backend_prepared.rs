@@ -3,7 +3,7 @@ use keyhog_core::Chunk;
 
 pub(crate) struct PreparedChunk<'a> {
     /// Borrowed handle on the caller's chunk. Was `Chunk` (owned)
-    /// historically — every consumer reads `prepared.chunk.foo` via
+    /// historically - every consumer reads `prepared.chunk.foo` via
     /// auto-deref, never moves out, and the caller already owns the
     /// chunk for the call's duration. Borrowing drops one full
     /// ChunkMetadata clone per chunk (5+ String allocations on

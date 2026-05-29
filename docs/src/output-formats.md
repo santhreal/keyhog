@@ -85,7 +85,7 @@ keyhog scan . --verify --format json \
 is findings-only, which is what CI scripts usually want:
 
 ```sh
-keyhog scan . --quiet --format json
+keyhog scan . --format json
 ```
 
 Exit code semantics are unchanged.

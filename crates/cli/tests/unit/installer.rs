@@ -26,7 +26,20 @@ fn asset_name_matches_release_convention() {
         asset_name("macos", "aarch64", true).as_deref(),
         Some("keyhog-macos-aarch64")
     );
-    assert_eq!(asset_name("windows", "x86_64", false), None);
+    // Windows x86_64: release.yml uploads keyhog-windows-x86_64.exe, so
+    // `update`/`repair` must resolve it (previously returned None, which
+    // left both commands dead on Windows). CUDA has no Windows asset, so
+    // the flag is ignored - no `-cuda` suffix.
+    assert_eq!(
+        asset_name("windows", "x86_64", false).as_deref(),
+        Some("keyhog-windows-x86_64.exe")
+    );
+    assert_eq!(
+        asset_name("windows", "x86_64", true).as_deref(),
+        Some("keyhog-windows-x86_64.exe")
+    );
+    // Unsupported (os, arch) pairs still yield None.
+    assert_eq!(asset_name("windows", "aarch64", false), None);
     assert_eq!(asset_name("linux", "riscv64", false), None);
 }
 
