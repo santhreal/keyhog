@@ -17,7 +17,7 @@ use std::cell::RefCell;
 
 #[path = "ml_features.rs"]
 mod ml_features;
-pub(crate) use ml_features::compute_features_with_config;
+pub use ml_features::compute_features_with_config;
 pub use ml_features::{compute_features_public, NUM_FEATURES};
 
 /// Number of mixture-of-experts specialists. Each expert sees the same input

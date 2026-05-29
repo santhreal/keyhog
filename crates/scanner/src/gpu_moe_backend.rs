@@ -10,7 +10,10 @@ use wgpu::util::DeviceExt;
 /// Below this, CPU is faster due to GPU dispatch overhead.
 const GPU_BATCH_THRESHOLD: usize = 64;
 
-const INPUT_DIM: usize = 41;
+// Single source of truth for the feature width: the MoE input dimension is the
+// ML feature-vector length. Kept in lockstep with the WGSL `INPUT_DIM` in
+// gpu_shader.rs and the host-side feature extractor.
+const INPUT_DIM: usize = crate::ml_scorer::NUM_FEATURES;
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -226,7 +229,7 @@ CPU/SIMD scan path. Set KEYHOG_NO_GPU=1 to silence this, or KEYHOG_REQUIRE_GPU=1
 ///
 /// ```rust,ignore
 /// use keyhog_scanner::gpu::batch_score_features;
-/// let _ = batch_score_features(&[[0.0; 41]]);
+/// let _ = batch_score_features(&[[0.0; 42]]);
 /// ```
 pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     if features.len() < GPU_BATCH_THRESHOLD {

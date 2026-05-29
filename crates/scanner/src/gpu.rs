@@ -48,7 +48,7 @@ pub fn batch_ml_inference(
         use rayon::prelude::*;
         // Auto-route: try GPU batch first, fall back to CPU MoE on failure or
         // when the batch is below the GPU crossover threshold.
-        let features: Vec<[f32; 41]> = candidates
+        let features: Vec<[f32; crate::ml_scorer::NUM_FEATURES]> = candidates
             .par_iter()
             .map(|(text, ctx)| {
                 crate::ml_scorer::compute_features_with_config(
@@ -140,7 +140,7 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
                     .to_string()
             })?;
 
-            let features = [[0.0_f32; 41]; SELF_TEST_BATCH];
+            let features = [[0.0_f32; crate::ml_scorer::NUM_FEATURES]; SELF_TEST_BATCH];
             let scores = backend::batch_score_features(&features)
                 .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
 

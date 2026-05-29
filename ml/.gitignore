@@ -1,0 +1,6 @@
+# Generated training artifacts (reproducible from corpus.py + train_classifier.py).
+data/
+*.bin
+*.bin.bak
+__pycache__/
+*.pyc

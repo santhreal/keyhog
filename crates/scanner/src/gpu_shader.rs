@@ -1,25 +1,25 @@
 pub(crate) const MOE_SHADER: &str = r#"
 // MoE architecture constants
-const INPUT_DIM: u32 = 41u;
+const INPUT_DIM: u32 = 42u;
 const EXPERT_COUNT: u32 = 6u;
 const HIDDEN1: u32 = 32u;
 const HIDDEN2: u32 = 16u;
 
 // Weight layout offsets (in f32 units)
 const GATE_W_OFF: u32 = 0u;
-const GATE_W_COUNT: u32 = 246u;  // 41 * 6
-const GATE_B_OFF: u32 = 246u;
+const GATE_W_COUNT: u32 = 252u;  // 42 * 6
+const GATE_B_OFF: u32 = 252u;
 const GATE_B_COUNT: u32 = 6u;
-const EXPERTS_OFF: u32 = 252u;
+const EXPERTS_OFF: u32 = 258u;
 
 // Per-expert parameter counts
-const E_FC1_W: u32 = 1312u;  // 41 * 32
+const E_FC1_W: u32 = 1344u;  // 42 * 32
 const E_FC1_B: u32 = 32u;
 const E_FC2_W: u32 = 512u;   // 32 * 16
 const E_FC2_B: u32 = 16u;
 const E_FC3_W: u32 = 16u;
 const E_FC3_B: u32 = 1u;
-const EXPERT_PARAMS: u32 = 1889u;  // sum of above
+const EXPERT_PARAMS: u32 = 1921u;  // sum of above (1344+32+512+16+16+1)
 
 struct Params {
 batch_size: u32,
