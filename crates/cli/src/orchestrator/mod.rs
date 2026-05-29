@@ -34,6 +34,12 @@ pub struct ScanOrchestrator {
     pub(crate) scanner: Arc<CompiledScanner>,
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
+    /// Detector ids disabled via `.keyhog.toml` `[detector.<id>] enabled = false`.
+    /// TOML-corpus detectors are also dropped at load (so they never compile),
+    /// but the hardcoded hot-pattern fast path is not part of that corpus, so
+    /// their findings are filtered here in `filter_and_resolve` - making the
+    /// documented toggle work for every detector, hot or TOML.
+    pub(crate) disabled_detectors: std::collections::HashSet<String>,
 }
 
 impl ScanOrchestrator {
@@ -58,18 +64,58 @@ impl ScanOrchestrator {
         if args.git_staged && args.path.is_none() {
             args.path = Some(PathBuf::from("."));
         }
-        apply_config_file(&mut args);
+        let cfg = apply_config_file(&mut args);
+        let disabled_detectors = cfg.disabled_detectors;
+
+        // `[lockdown] require = true` is a fail-closed security control: refuse
+        // to run unless the operator consciously passed --lockdown. Previously
+        // this config was parsed and silently ignored, so a repo that believed
+        // it mandated lockdown ran unprotected (README documents it as active).
+        if cfg.require_lockdown && !args.lockdown {
+            anyhow::bail!(
+                ".keyhog.toml sets [lockdown] require = true, but --lockdown was not passed. \
+                 Re-run with --lockdown to enforce the configured hardening, or remove the \
+                 requirement from .keyhog.toml."
+            );
+        }
+
+        // Tier-A: per-regex lazy-DFA cache cap (default 1 MiB → .keyhog.toml →
+        // --regex-dfa-limit). Set the process-global BEFORE any detector regex
+        // compiles, so the cap takes effect on the per-worker DFA caches that
+        // dominate scan memory. 0 = use the compiled default.
+        keyhog_scanner::types::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0));
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
         configure_threads(args.threads, hw.physical_cores);
 
         let detectors_path = auto_discover_detectors(&args.detectors)?;
-        let detectors = if args.lockdown {
+        let mut detectors = if args.lockdown {
             load_detectors_no_cache(&detectors_path)
                 .context("loading detectors (lockdown: cache disabled)")?
         } else {
             load_detectors_with_cache(&detectors_path)?
         };
+
+        // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
+        // disabled detectors from the corpus so they never compile or fire.
+        // (Previously this config key was parsed and silently ignored.)
+        if !disabled_detectors.is_empty() {
+            let before = detectors.len();
+            detectors.retain(|d| !disabled_detectors.iter().any(|id| id == &d.id));
+            let dropped = before - detectors.len();
+            if dropped > 0 {
+                tracing::info!(
+                    target: "keyhog::config",
+                    dropped,
+                    "disabled detectors via .keyhog.toml [detector.<id>] enabled = false"
+                );
+            } else {
+                eprintln!(
+                    "⚠️  .keyhog.toml disables detector id(s) {disabled_detectors:?}, but none matched the loaded corpus. \
+                     Detector ids come from `keyhog detectors` (e.g. hot-pattern ids are prefixed `hot-`)."
+                );
+            }
+        }
 
         let mut scanner_config = build_scanner_config(&args);
 
@@ -121,6 +167,7 @@ impl ScanOrchestrator {
             scanner,
             signatures,
             test_fixture_suppressions,
+            disabled_detectors: disabled_detectors.into_iter().collect(),
         })
     }
 
@@ -180,6 +227,7 @@ impl ScanOrchestrator {
             scanner,
             signatures,
             test_fixture_suppressions,
+            disabled_detectors: std::collections::HashSet::new(),
         }
     }
 }

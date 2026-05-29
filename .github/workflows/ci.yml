@@ -93,6 +93,52 @@ jobs:
       - name: Property tests
         run: cargo test -p keyhog-scanner property::scanner_fuzz --profile release-fast
 
+  # Integration aggregators. Every crate ships a `tests/all_tests.rs` that
+  # pulls in its `unit/ adversarial/ contract/ gap/ gate/ integration/
+  # property/ regression/ concurrent/` modules - ~3900 tests total. Before
+  # this job CI ran only `--lib` plus a handful of named `--test` runners, so
+  # NOTHING built the `all_tests` targets: a unit test under tests/unit/ that
+  # stopped compiling (e.g. the LazyRegex CompiledPattern field change) sailed
+  # through every gate because no CI step ever built that target. This job is
+  # the gate that turns "the integration suite is green on my box" into "green
+  # in CI". lfs:true + Hyperscan mirror the `test` job - the contract corpus
+  # and several fixtures are LFS-tracked and the default build links Hyperscan.
+  integration-tests:
+    name: Integration test aggregators
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      # Default features (Hyperscan/simd + simdsieve hot path) - the exact
+      # engine configuration the Linux release ships, so these aggregators
+      # exercise the same detection path users get rather than a feature
+      # subset. Each crate's `all_tests` is one binary; run them per crate so
+      # a failure names the crate.
+      - name: core all_tests
+        run: cargo test -p keyhog-core --test all_tests --profile release-fast
+      - name: scanner all_tests
+        run: cargo test -p keyhog-scanner --test all_tests --profile release-fast
+      - name: sources all_tests
+        run: cargo test -p keyhog-sources --test all_tests --profile release-fast
+      - name: verifier all_tests
+        run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
+      - name: cli all_tests
+        run: cargo test -p keyhog --test all_tests --profile release-fast
+      # Detector-corpus integrity: every embedded detector must load, compile
+      # into the scanner backend, declare a >=3-char keyword, carry metadata +
+      # >=1 pattern, and the canonical-shape smoke set must fire. A detector
+      # whose regex fails to compile degrades to a never-match LazyRegex with
+      # only an error! log - silent recall loss this gate is the only thing
+      # that catches.
+      - name: detector self-validation
+        run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile release-fast
+
   macos-build:
     name: macOS Build
     runs-on: macos-latest

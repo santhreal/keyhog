@@ -270,12 +270,15 @@ fn github_fine_grained_empty_not_applicable() {
 // ── validator_id sanity checks ────────────────────────────────────────────────
 
 #[test]
-fn validator_ids_are_non_empty() {
-    assert!(!GithubClassicPatValidator.validator_id().is_empty());
-    assert!(!GithubFineGrainedPatValidator.validator_id().is_empty());
-    assert!(!NpmTokenValidator.validator_id().is_empty());
-    assert!(!SlackTokenValidator.validator_id().is_empty());
-    assert!(!StripeTokenValidator.validator_id().is_empty());
-    assert!(!PypiTokenValidator.validator_id().is_empty());
-    assert!(!GitlabTokenValidator.validator_id().is_empty());
+fn validator_ids_match_expected() {
+    assert_eq!(GithubClassicPatValidator.validator_id(), "github-classic-pat");
+    assert_eq!(
+        GithubFineGrainedPatValidator.validator_id(),
+        "github-fine-grained-pat"
+    );
+    assert_eq!(NpmTokenValidator.validator_id(), "npm-access-token");
+    assert_eq!(SlackTokenValidator.validator_id(), "slack-token");
+    assert_eq!(StripeTokenValidator.validator_id(), "stripe-api-key");
+    assert_eq!(PypiTokenValidator.validator_id(), "pypi-api-token");
+    assert_eq!(GitlabTokenValidator.validator_id(), "gitlab-token");
 }
