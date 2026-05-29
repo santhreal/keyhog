@@ -118,10 +118,7 @@ fn adv31_fathom_normal_must_fire() {
 
 #[test]
 fn adv31_fathom_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "fathom-api-key",
-        "gathom_key = \"abcde12345abcde12345\"",
-    );
+    assert_detector_silent("fathom-api-key", "gathom_key = \"abcde12345abcde12345\"");
 }
 
 #[test]

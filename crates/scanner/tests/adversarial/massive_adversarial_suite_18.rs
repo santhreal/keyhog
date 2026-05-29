@@ -166,10 +166,7 @@ fn adv18_checkout_normal_must_fire() {
 
 #[test]
 fn adv18_checkout_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "checkout-com-api-key",
-        "tk_sbox_abcde12345abcde12345abcde",
-    );
+    assert_detector_silent("checkout-com-api-key", "tk_sbox_abcde12345abcde12345abcde");
 }
 
 #[test]

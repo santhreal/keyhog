@@ -487,5 +487,3 @@ fn adv16_calendly_webhook_evade_homoglyph_must_fire() {
         "abcde123456",
     );
 }
-
-
