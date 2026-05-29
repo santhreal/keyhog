@@ -1,0 +1,6 @@
+description = "Human text format renders the detector name and a result summary, exit 1"
+corpus = ["aws_leak.env"]
+args = ["scan", "--format", "text", "{corpus}/aws_leak.env"]
+exit_code = 1
+max_ms = 20000
+stdout_contains = ["AWS Access Key", "1 secret found"]
