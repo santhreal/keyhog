@@ -1,11 +1,11 @@
 //! IR transform passes as categorical functors (#52 self-consumer).
 //!
-//! Closes the recursion thesis for #52 — categorical-database
+//! Closes the recursion thesis for #52  -  categorical-database
 //! migration ships to user dialects (ETL pipelines, schema evolution)
 //! AND treats vyre's IR transform passes as functors in a
 //! Cat-of-IR-views category.
 //!
-//! # The legendary self-use
+//! # The release self-use
 //!
 //! Vyre's optimizer applies passes that rewrite the Region tree.
 //! Today each pass is an ad-hoc match-on-Node procedure with no
@@ -219,7 +219,7 @@ pub fn compose_passes_into(
 }
 
 /// Categorical identity functor: maps each column to itself.
-/// Used as the "no-op pass" — composes with anything as identity.
+/// Used as the "no-op pass"  -  composes with anything as identity.
 #[must_use]
 pub fn identity_functor(n_cols: u32) -> Vec<u32> {
     let mut out = Vec::new();
@@ -269,20 +269,13 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 3);
-            let source = read_u32s(&inputs[0]);
-            let mapping = read_u32s(&inputs[1]);
+            let source = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let mapping = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
             let target_n_cols = inputs[2].len() / std::mem::size_of::<u32>();
             assert_eq!(source.len(), mapping.len());
             let out = apply_pass_functor(&source, &mapping, target_n_cols as u32);
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     #[test]

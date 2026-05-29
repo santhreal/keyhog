@@ -1,4 +1,4 @@
-//! Algebraic-laws surface — registration of provable algebraic
+//! Algebraic-laws surface  -  registration of provable algebraic
 //! identities + composition machinery the optimizer's algebraic
 //! catalog (`optimizer/passes/algebraic/`) consumes.
 //!

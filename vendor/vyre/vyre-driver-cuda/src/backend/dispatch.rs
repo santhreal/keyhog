@@ -7,12 +7,13 @@ use smallvec::SmallVec;
 use vyre_driver::binding::{BindingPlan, BindingRole};
 use vyre_driver::speculate::SpeculationMode;
 use vyre_driver::validation::ValidationCache;
-use vyre_driver::{BackendError, DispatchConfig, LaunchPlan};
+use vyre_driver::{resolve_fixpoint_iterations, BackendError, DispatchConfig, LaunchPlan};
 use vyre_foundation::ir::Program;
 
 use super::allocations::{DeviceAllocationPool, PinnedHostAllocationPool};
 use super::module_cache::{
     CudaModuleCache, CudaPtxSourceCache, CudaPtxSourceCacheSnapshot, ModuleCacheKey,
+    PtxSourceCacheKey,
 };
 use super::plan::{compute_ordered_output_indices, CudaDispatchPlan};
 use super::ptx_target::select_loadable_ptx_target_sm;
@@ -24,16 +25,6 @@ use crate::device::{CudaDeviceCaps, CudaDeviceHandle};
 const TRANSIENT_ALLOCATION_POOL_BYTES: usize = 256 * 1024 * 1024;
 const PINNED_HOST_POOL_BYTES: usize = 128 * 1024 * 1024;
 const CUDA_LAUNCH_RESOURCE_CACHE: usize = 128;
-
-fn resolve_fixpoint_iterations(config: &DispatchConfig) -> Result<u32, BackendError> {
-    match config.fixpoint_iterations {
-        Some(0) => Err(BackendError::InvalidProgram {
-            fix: "Fix: DispatchConfig::fixpoint_iterations must be at least 1 when set; CUDA must not silently rewrite an explicit zero-iteration dispatch.".to_string(),
-        }),
-        Some(iterations) => Ok(iterations),
-        None => Ok(1),
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -146,7 +137,7 @@ impl CudaBackend {
         self.validate_program_cached(program)?;
         let cooperative = self.resolve_cooperative_flag(config)?;
         let output_binding_indices = compute_ordered_output_indices(&bindings)?;
-        let fixpoint_iterations = resolve_fixpoint_iterations(config)?;
+        let fixpoint_iterations = resolve_fixpoint_iterations(config, "CUDA")?;
         Ok(CudaDispatchPlan {
             bindings,
             output_binding_indices,
@@ -166,7 +157,7 @@ impl CudaBackend {
         self.validate_program_cached(program)?;
         let cooperative = self.resolve_cooperative_flag(config)?;
         let output_binding_indices = compute_ordered_output_indices(&bindings)?;
-        let fixpoint_iterations = resolve_fixpoint_iterations(config)?;
+        let fixpoint_iterations = resolve_fixpoint_iterations(config, "CUDA")?;
         Ok(CudaDispatchPlan {
             bindings,
             output_binding_indices,
@@ -228,7 +219,7 @@ impl CudaBackend {
         self.validate_program_cached(program)?;
         let cooperative = self.resolve_cooperative_flag(config)?;
         let output_binding_indices = compute_ordered_output_indices(&bindings)?;
-        let fixpoint_iterations = resolve_fixpoint_iterations(config)?;
+        let fixpoint_iterations = resolve_fixpoint_iterations(config, "CUDA")?;
         Ok(CudaDispatchPlan {
             bindings,
             output_binding_indices,
@@ -249,7 +240,7 @@ impl CudaBackend {
     /// still controlled by `lowers_grid_sync()`. Callers that opt into
     /// cooperative launch but whose program does not contain any GridSync
     /// barriers get the cooperative API call (resident grid) but no
-    /// in-kernel sync sequence — the launcher still runs faster on programs
+    /// in-kernel sync sequence  -  the launcher still runs faster on programs
     /// that benefit from a resident grid even without explicit grid-sync.
     fn resolve_cooperative_flag(&self, config: &DispatchConfig) -> Result<bool, BackendError> {
         if !config.cooperative {
@@ -323,9 +314,20 @@ impl CudaBackend {
         self.resident_store.handle_from_resource(resource)
     }
 
-    pub(crate) fn module_cache_key(&self, ptx_src: &str) -> ModuleCacheKey {
+    pub(crate) fn module_cache_key_for_ptx_source_key(
+        &self,
+        ptx_source_key: PtxSourceCacheKey,
+    ) -> Result<ModuleCacheKey, BackendError> {
         self.module_cache
-            .key_for_ptx(ptx_src, self.caps.compute_capability)
+            .key_for_ptx_source_key(ptx_source_key, self.caps.compute_capability)
+    }
+
+    pub(crate) fn module_cache_key_for_raw_ptx_artifact(
+        &self,
+        raw_ptx_source: &str,
+    ) -> Result<ModuleCacheKey, BackendError> {
+        self.module_cache
+            .key_for_raw_ptx_artifact(raw_ptx_source, self.caps.compute_capability)
     }
 
     pub(crate) fn module_for_ptx_with_key(
@@ -422,9 +424,8 @@ impl CudaBackend {
         vyre_driver::observability::DriverObservability::snapshot()
     }
 
-    /// PTX disk-cache directory path. Reuses the same on-disk layout
-    /// vyre-driver-wgpu uses for its pipeline cache, keyed by the shared
-    /// VSA fingerprint.
+    /// PTX disk-cache directory path. Reuses the shared on-disk pipeline-cache
+    /// layout, keyed by the VSA fingerprint.
     ///
     /// P-CUDA-2: PTX/CUBIN blobs persist across runs in this directory
     /// so first-run compile cost amortizes over the cluster.
@@ -447,6 +448,7 @@ impl CudaBackend {
                 .join(".cache")
                 .join("vyre")
                 .join("ptx-cache"));
+
         }
         Err(BackendError::InvalidProgram {
             fix: "Fix: CUDA PTX disk cache has no VYRE_PTX_CACHE_DIR, XDG_CACHE_HOME, or HOME. Configure a writable persistent cache root; temporary fallback is forbidden for production compile performance."
@@ -478,17 +480,26 @@ impl CudaBackend {
         program: std::sync::Arc<Program>,
         config: &DispatchConfig,
     ) -> Result<std::sync::Arc<dyn vyre_driver::CompiledPipeline>, BackendError> {
-        let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+        let program = match vyre_foundation::transform::collectives::lower_single_rank_collectives(
+            program.as_ref(),
+        )
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: error.to_string(),
+        })? {
+            Some(lowered) => Arc::new(lowered),
+            None => program,
+        };
+        let trace = crate::instrumentation::cuda_stage_trace_enabled();
         let started = std::time::Instant::now();
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-compile] start entry={}",
                 program.entry_op_id.as_deref().unwrap_or("<anonymous>")
             );
         }
         let prepared = self.prepare_static_dispatch(program.as_ref(), config)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-compile] +{}ms prepare_static_dispatch buffers={} outputs={} elements={} grid={:?}",
                 started.elapsed().as_millis(),
                 prepared.bindings.bindings.len(),
@@ -497,22 +508,23 @@ impl CudaBackend {
                 prepared.launch.grid
             );
         }
-        let ptx_src = self.ptx_for_program_cached(program.as_ref(), config)?;
+        let (ptx_src, ptx_source_key) =
+            self.ptx_for_program_cached_with_key(program.as_ref(), config)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-compile] +{}ms ptx_source bytes={}",
                 started.elapsed().as_millis(),
                 ptx_src.len()
             );
         }
-        let module_key = self.module_cache_key(&ptx_src);
+        let module_key = self.module_cache_key_for_ptx_source_key(ptx_source_key)?;
         self.warmup()?;
         if trace {
-            eprintln!("[cuda-compile] +{}ms warmup", started.elapsed().as_millis());
+            tracing::debug!("[cuda-compile] +{}ms warmup", started.elapsed().as_millis());
         }
         self.module_for_ptx_with_key(&ptx_src, module_key)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-compile] +{}ms module ready",
                 started.elapsed().as_millis()
             );
@@ -522,6 +534,7 @@ impl CudaBackend {
                 self.clone(),
                 program,
                 ptx_src,
+                ptx_source_key,
                 module_key,
                 config,
                 prepared,
@@ -529,3 +542,4 @@ impl CudaBackend {
         ))
     }
 }
+

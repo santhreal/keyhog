@@ -19,6 +19,8 @@ pub struct BackendCapabilities {
     pub supports_indirect_dispatch: bool,
     /// The backend can compile specialization constants.
     pub supports_specialization_constants: bool,
+    /// The backend can lower distributed collective communication nodes.
+    pub supports_distributed_collectives: bool,
     /// Backend has native unsigned multiply-high.
     pub has_mul_high: bool,
     /// INT32 and FP32 pipelines can execute simultaneously.
@@ -64,6 +66,12 @@ pub trait BackendValidationCapabilities {
         false
     }
 
+    /// Return true when the backend supports distributed collective nodes.
+    #[inline]
+    fn supports_distributed_collectives(&self) -> bool {
+        false
+    }
+
     /// Export backend capabilities in a version-stable value object.
     #[must_use]
     #[inline]
@@ -72,6 +80,7 @@ pub trait BackendValidationCapabilities {
             supports_subgroup_ops: self.supports_subgroup_ops(),
             supports_indirect_dispatch: self.supports_indirect_dispatch(),
             supports_specialization_constants: self.supports_specialization_constants(),
+            supports_distributed_collectives: self.supports_distributed_collectives(),
             ..BackendCapabilities::default()
         }
     }
@@ -160,6 +169,14 @@ impl<'a> ValidationOptions<'a> {
         self.backend_capabilities
             .is_some_and(|caps| caps.supports_subgroup_ops)
     }
+
+    /// Return true when this validation run accepts distributed collectives.
+    #[must_use]
+    #[inline]
+    pub fn supports_distributed_collectives(&self) -> bool {
+        self.backend_capabilities
+            .is_some_and(|caps| caps.supports_distributed_collectives)
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +238,7 @@ mod tests {
         assert!(!caps.supports_subgroup_ops);
         assert!(!caps.supports_indirect_dispatch);
         assert!(!caps.supports_specialization_constants);
+        assert!(!caps.supports_distributed_collectives);
     }
 
     #[test]

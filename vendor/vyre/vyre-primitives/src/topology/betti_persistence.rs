@@ -1,4 +1,4 @@
-//! `betti_persistence` — full H_1 cycle counting on a Vietoris-Rips
+//! `betti_persistence`  -  full H_1 cycle counting on a Vietoris-Rips
 //! 1-skeleton (P-PRIM-4).
 //!
 //! Given a row-major n×n edge mask (0/1) produced by
@@ -13,13 +13,13 @@
 //!     b1 = E - V + b0       (#independent cycles)
 //! ```
 //!
-//! V = number of non-isolated vertices? No — the standard formula
+//! V = number of non-isolated vertices? No  -  the standard formula
 //! treats every vertex as a 0-cell, so V = `n` always. An isolated
 //! vertex bumps `b0` by 1 and contributes 0 edges, so the b1
 //! computation is unaffected.
 //!
 //! Implementation: a single-pass union-find over the upper-triangle
-//! edges. O(E·α(V)) — practically linear in the edge count.
+//! edges. O(E·α(V))  -  practically linear in the edge count.
 
 /// Compute (b0, b1, edge_count) for the 1-skeleton encoded by `mask`.
 /// `mask` is row-major n×n; `mask[i*n + j] != 0` means an edge
@@ -27,23 +27,57 @@
 /// mask[j*n+i]`. Self-edges (i == j) are ignored.
 ///
 /// Returns:
-/// * `b0` — number of connected components.
-/// * `b1` — first Betti number (independent cycle count).
-/// * `edges` — number of distinct unordered edges counted.
+/// * `b0`  -  number of connected components.
+/// * `b1`  -  first Betti number (independent cycle count).
+/// * `edges`  -  number of distinct unordered edges counted.
 ///
-/// # Panics
-///
+/// Returns `(0, 0, 0)` when the mask is shorter than `n * n`, asymmetric, or
+/// the CPU oracle cannot reserve its working buffers. Use
+/// [`try_betti_persistence_cpu`] when the caller needs a recoverable
+/// error.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn betti_persistence_cpu(mask: &[u32], n: u32) -> (u32, u32, u32) {
-    let n_us = n as usize;
+    match try_betti_persistence_cpu(mask, n) {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("vyre-primitives betti_persistence CPU reference failed: {error}");
+            (0, 0, 0)
+        }
+    }
+}
 
+/// Fallible CPU reference for [`betti_persistence_cpu`].
+///
+/// This variant validates the full row-major mask, rejects asymmetric
+/// edges, and reserves all working memory before running union-find.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_betti_persistence_cpu(mask: &[u32], n: u32) -> Result<(u32, u32, u32), String> {
     if n == 0 {
-        return (0, 0, 0);
+        return Ok((0, 0, 0));
     }
 
-    let mut parent: Vec<u32> = (0..n).collect();
-    let mut rank: Vec<u32> = vec![0; n_us];
+    let n_us = usize::try_from(n).map_err(|_| "n does not fit usize".to_string())?;
+    let cells = n_us
+        .checked_mul(n_us)
+        .ok_or_else(|| format!("n * n overflows usize for n={n}"))?;
+    if mask.len() < cells {
+        return Err(format!(
+            "mask is too short for {n}x{n}: got {}, need {cells}",
+            mask.len()
+        ));
+    }
+
+    let mut parent: Vec<u32> = Vec::new();
+    parent
+        .try_reserve_exact(n_us)
+        .map_err(|err| format!("failed to reserve union-find parent buffer: {err}"))?;
+    parent.extend(0..n);
+
+    let mut rank: Vec<u32> = Vec::new();
+    rank.try_reserve_exact(n_us)
+        .map_err(|err| format!("failed to reserve union-find rank buffer: {err}"))?;
+    rank.resize(n_us, 0);
 
     fn find(parent: &mut [u32], mut x: u32) -> u32 {
         // Iterative path compression.
@@ -79,22 +113,42 @@ pub fn betti_persistence_cpu(mask: &[u32], n: u32) -> (u32, u32, u32) {
     // Iterate the upper triangle so each edge is counted once.
     for i in 0..n_us {
         for j in (i + 1)..n_us {
-            if mask.get(i * n_us + j).copied().unwrap_or(0) == 0 {
+            let upper = mask[i * n_us + j];
+            let lower = mask[j * n_us + i];
+            if upper != lower {
+                return Err(format!(
+                    "mask is asymmetric at ({i}, {j}): upper={upper}, lower={lower}"
+                ));
+            }
+            if upper == 0 {
                 continue;
             }
-            edges = edges.saturating_add(1);
+            edges = edges
+                .checked_add(1)
+                .ok_or_else(|| "edge count exceeds u32::MAX".to_string())?;
             if union(&mut parent, &mut rank, i as u32, j as u32) {
-                tree_edges = tree_edges.saturating_add(1);
+                tree_edges = tree_edges
+                    .checked_add(1)
+                    .ok_or_else(|| "tree edge count exceeds u32::MAX".to_string())?;
             }
         }
     }
 
     // After all unions, count distinct roots = b0.
-    let mut roots = std::collections::BTreeSet::new();
+    let mut seen = Vec::new();
+    seen.try_reserve_exact(n_us)
+        .map_err(|err| format!("failed to reserve root bitmap: {err}"))?;
+    seen.resize(n_us, false);
+    let mut b0 = 0_u32;
     for v in 0..n {
-        roots.insert(find(&mut parent, v));
+        let root = find(&mut parent, v) as usize;
+        if !seen[root] {
+            seen[root] = true;
+            b0 = b0
+                .checked_add(1)
+                .ok_or_else(|| "component count exceeds u32::MAX".to_string())?;
+        }
     }
-    let b0 = roots.len() as u32;
 
     // b1 = E - V + b0. Substituting V = n and tree_edges = n - b0
     // gives b1 = E - tree_edges (every non-tree edge contributes one
@@ -102,7 +156,7 @@ pub fn betti_persistence_cpu(mask: &[u32], n: u32) -> (u32, u32, u32) {
     // intermediate.
     let b1 = edges - tree_edges;
 
-    (b0, b1, edges)
+    Ok((b0, b1, edges))
 }
 
 #[cfg(test)]
@@ -240,6 +294,50 @@ mod tests {
         add_edge(&mut mask, n, 0, 1);
         let (b0, b1, edges) = betti_persistence_cpu(&mask, n);
         assert_eq!((b0, b1, edges), (2, 0, 1));
+    }
+
+    #[test]
+    fn fallible_cpu_rejects_short_mask() {
+        let err = try_betti_persistence_cpu(&[0, 1, 0], 2).unwrap_err();
+        assert!(err.contains("too short"), "{err}");
+    }
+
+    #[test]
+    fn compatibility_wrapper_matches_fallible_reference() {
+        let n = 3;
+        let mut mask = empty_mask(n);
+        add_edge(&mut mask, n, 0, 1);
+        add_edge(&mut mask, n, 1, 2);
+
+        assert_eq!(
+            betti_persistence_cpu(&mask, n),
+            try_betti_persistence_cpu(&mask, n)
+                .expect("Fix: small Betti CPU reference must reserve")
+        );
+    }
+
+    #[test]
+    fn compatibility_wrapper_returns_zero_tuple_on_invalid_mask() {
+        assert_eq!(betti_persistence_cpu(&[0, 1, 0], 2), (0, 0, 0));
+    }
+
+    #[test]
+    fn production_wrapper_has_no_raw_panic_path() {
+        let production = include_str!("betti_persistence.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: betti_persistence.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: Betti persistence CPU wrapper must not panic in production."
+        );
+    }
+
+    #[test]
+    fn fallible_cpu_rejects_asymmetric_mask() {
+        let err = try_betti_persistence_cpu(&[0, 1, 0, 0], 2).unwrap_err();
+        assert!(err.contains("asymmetric"), "{err}");
     }
 
     #[test]

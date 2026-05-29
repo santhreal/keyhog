@@ -48,7 +48,7 @@ pub struct PreparedResidentSyntaxBytes {
     pub source_bytes: u64,
     /// Logical resident haystack length in u32 lanes.
     pub haystack_len: u32,
-    pub(crate) source: Arc<[u8]>,
+    pub(crate) quote_free: bool,
     pub(crate) haystack: Arc<[u8]>,
 }
 
@@ -344,7 +344,7 @@ pub fn prepare_resident_syntax_bytes(source: &[u8]) -> Result<PreparedResidentSy
                 .to_string()
         })?,
         haystack_len,
-        source: Arc::from(source),
+        quote_free: !source.contains(&b'"'),
         haystack: Arc::from(haystack),
     })
 }
@@ -492,11 +492,7 @@ pub(super) fn insert_resident_syntax_cache_with_limits(
 }
 
 pub(super) fn resident_syntax_entry_bytes(prepared: &PreparedResidentSyntaxBytes) -> usize {
-    prepared.source.len().checked_add(prepared.haystack.len()).unwrap_or_else(|| {
-        panic!(
-            "vyre-frontend-c resident syntax cache entry byte size overflows usize. Fix: shard resident syntax entries before caching."
-        )
-    })
+    prepared.haystack.len()
 }
 
 pub(super) fn resident_syntax_cache_bytes(cache: &ResidentSyntaxCache) -> usize {
@@ -527,6 +523,7 @@ pub(super) fn syntax_summary_from_c_summary(
 }
 
 #[cfg(test)]
+
 mod tests {
     use std::sync::Arc;
 
@@ -549,15 +546,15 @@ mod tests {
         PreparedResidentSyntaxBytes {
             source_bytes: source.len() as u64,
             haystack_len: (haystack.len() / 4) as u32,
-            source: Arc::<[u8]>::from(source),
+            quote_free: !source.contains(&b'"'),
             haystack: Arc::<[u8]>::from(haystack),
         }
     }
 
     #[test]
-    fn resident_syntax_entry_bytes_counts_source_and_haystack() {
+    fn resident_syntax_entry_bytes_counts_resident_haystack_only() {
         let entry = prepared(b"abc", b"01234567");
-        assert_eq!(resident_syntax_entry_bytes(&entry), 11);
+        assert_eq!(resident_syntax_entry_bytes(&entry), 8);
     }
 
     #[test]
@@ -621,7 +618,7 @@ mod tests {
             16,
         );
         assert_eq!(cache.len(), 1);
-        assert_eq!(resident_syntax_cache_bytes(&cache), 8);
+        assert_eq!(resident_syntax_cache_bytes(&cache), 4);
     }
 
     #[test]

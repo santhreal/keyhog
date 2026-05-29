@@ -1,13 +1,13 @@
-//! Byte-range primitive — a domain-neutral `(tag, start, end)` triple.
+//! Byte-range primitive  -  a domain-neutral `(tag, start, end)` triple.
 //!
 //! CRITIQUE_VISION_ALIGNMENT_2026-04-23 V1 (forward-compatible half):
 //! `vyre-foundation` currently ships a matching-domain-flavoured
 //! `Match { pattern_id, start, end }` struct as its Tier-1 scan-result
 //! type. That name (`Match`) and the field (`pattern_id`) pre-decide
-//! that byte ranges are *matches* from a *pattern* — a Tier-3
+//! that byte ranges are *matches* from a *pattern*  -  a Tier-3
 //! matching-dialect concept. A crypto-decoder dialect returning decode
 //! spans, an AST-span dialect, a taint-source locator, a regex
-//! capture-group emitter — none of them have "patterns". They all
+//! capture-group emitter  -  none of them have "patterns". They all
 //! want `(tag, start, end)`.
 //!
 //! This module introduces the neutral name **without breaking the
@@ -23,7 +23,7 @@
 
 /// A tagged, half-open byte range `[start, end)`.
 ///
-/// `tag` is a producer-chosen 32-bit identifier — a matching dialect
+/// `tag` is a producer-chosen 32-bit identifier  -  a matching dialect
 /// can pass a `pattern_id`, a decoder can pass an encoding ID, an
 /// AST-span emitter can pass a node kind, a taint-source locator can
 /// pass a source index. The producer decides what it means; the type

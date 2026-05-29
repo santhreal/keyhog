@@ -1,6 +1,6 @@
 //! Byte shuffle for Brotli compression preparation.
 //!
-//! Category A composition — gather/scatter reordering of bytes to
+//! Category A composition  -  gather/scatter reordering of bytes to
 //! improve Brotli compression ratio. Groups similar bytes together
 //! so the entropy coder sees longer runs.
 //!
@@ -66,11 +66,11 @@ inventory::submit! {
         },
         test_inputs: Some(|| vec![vec![
             // 3 elements × 2 bytes: [a0,a1, b0,b1, c0,c1]
-            [10u32, 11, 20, 21, 30, 31].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            vyre_primitives::wire::pack_u32_slice(&[10u32, 11, 20, 21, 30, 31]),
         ]]),
         expected_output: Some(|| vec![vec![
             // Byte-transposed: [a0,b0,c0, a1,b1,c1]
-            [10u32, 20, 30, 11, 21, 31].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            vyre_primitives::wire::pack_u32_slice(&[10u32, 20, 30, 11, 21, 31]),
         ]]),
         category: Some("nn"),
     }

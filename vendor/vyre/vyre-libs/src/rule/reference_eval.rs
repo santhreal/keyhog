@@ -117,15 +117,34 @@ pub fn evaluate_condition<C: RuleEvaluationContext + ?Sized>(
         RuleCondition::LiteralTrue => true,
         RuleCondition::LiteralFalse => false,
         RuleCondition::RegexMatch { field, pattern } => {
-            // Compile-on-eval. Hot loops should pre-compile and use
-            // an Opaque extension condition; the AST RegexMatch is a
-            // convenience for one-shot evaluation.
+            // AUDIT_2026-05-23: was compile-on-every-eval (regex::Regex::new).
+            // Added lazy cache. Long-term: replace with vyre AC kernel
+            // (vyre_libs::scan::aho_corasick) or Opaque pre-compiled condition.
             let Some(value) = ctx.field_value(field.as_ref()) else {
                 return false;
             };
-            match regex::Regex::new(pattern.as_ref()) {
-                Ok(re) => re.is_match(value),
-                Err(_) => false,
+            use std::collections::HashMap;
+            use std::sync::LazyLock;
+            use std::sync::Mutex;
+            static REGEX_CACHE: LazyLock<Mutex<HashMap<String, regex::Regex>>> =
+                LazyLock::new(|| Mutex::new(HashMap::new()));
+            let Ok(cache) = REGEX_CACHE.lock() else {
+                return false;
+            };
+            let re = cache.get(pattern.as_ref()).cloned();
+            drop(cache);
+            match re {
+                Some(re) => re.is_match(value),
+                None => match regex::Regex::new(pattern.as_ref()) {
+                    Ok(re) => {
+                        let Ok(mut cache) = REGEX_CACHE.lock() else {
+                            return false;
+                        };
+                        cache.insert(pattern.to_string(), re.clone());
+                        re.is_match(value)
+                    }
+                    Err(_) => false,
+                },
             }
         }
         RuleCondition::SubstringMatch { haystack, needle } => ctx

@@ -1,4 +1,4 @@
-//! `TensorRef` — typed buffer-argument wrapper for Cat-A ops.
+//! `TensorRef`  -  typed buffer-argument wrapper for Cat-A ops.
 //!
 //! Every Cat-A composition that takes a buffer name as `&str` is a
 //! landmine: nothing type-checks `attention(q, k, v, out)` when the
@@ -8,8 +8,8 @@
 //!
 //! The type is intentionally shallow: it carries just enough metadata
 //! to catch the most common mistakes (dtype mismatch, shape mismatch,
-//! name collision). Full tensor-semantic analysis — broadcasting,
-//! stride inference, view lifetimes — belongs in a future
+//! name collision). Full tensor-semantic analysis  -  broadcasting,
+//! stride inference, view lifetimes  -  belongs in a future
 //! `vyre-libs-tensor` layer, but the name + shape + dtype trio here
 //! is the frozen API every consumer pins to.
 //!
@@ -96,7 +96,7 @@ impl TensorRef {
             .try_fold(1u32, |acc, &dim| acc.checked_mul(dim))
     }
 
-    /// Borrow the buffer name as `&str` — the form every IR builder
+    /// Borrow the buffer name as `&str`  -  the form every IR builder
     /// still accepts. Lets Cat-A ops forward to underlying primitives
     /// while keeping the typed surface on the boundary.
     #[must_use]
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn check_dtype_passes_on_match() {
         let t = TensorRef::f32_1d("y", 8);
-        assert!(check_dtype(&t, DataType::F32, "op").is_ok());
+        assert!(matches!(check_dtype(&t, DataType::F32, "op"), Ok(())));
     }
 
     #[test]

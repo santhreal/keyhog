@@ -1,15 +1,15 @@
-//! Tier 2.5 UTF-8 validator — single-pass byte classification with
+//! Tier 2.5 UTF-8 validator  -  single-pass byte classification with
 //! structural sequence checks.
 //!
 //! Each invocation reads one source byte (`source[i]`, low 8 bits)
 //! and writes one of four classification codes into `classes[i]`:
 //!
-//! - [`UTF8_ASCII`] — byte 0x00..0x7F, single-byte sequence
-//! - [`UTF8_LEAD_2`] — byte 0xC0..0xDF, lead of a 2-byte sequence
-//! - [`UTF8_LEAD_3`] — byte 0xE0..0xEF, lead of a 3-byte sequence
-//! - [`UTF8_LEAD_4`] — byte 0xF0..0xF7, lead of a 4-byte sequence
-//! - [`UTF8_CONT`]   — byte 0x80..0xBF, continuation byte
-//! - [`UTF8_INVALID`] — byte 0xC0/0xC1 (overlong) or ≥ 0xF8 (out of range)
+//! - [`UTF8_ASCII`]  -  byte 0x00..0x7F, single-byte sequence
+//! - [`UTF8_LEAD_2`]  -  byte 0xC0..0xDF, lead of a 2-byte sequence
+//! - [`UTF8_LEAD_3`]  -  byte 0xE0..0xEF, lead of a 3-byte sequence
+//! - [`UTF8_LEAD_4`]  -  byte 0xF0..0xF7, lead of a 4-byte sequence
+//! - [`UTF8_CONT`]    -  byte 0x80..0xBF, continuation byte
+//! - [`UTF8_INVALID`]  -  byte 0xC0/0xC1 (overlong) or ≥ 0xF8 (out of range)
 //!
 //! Malformed lead/continuation structure is reported as
 //! [`UTF8_INVALID`] at the offending byte. Valid bytes retain the
@@ -22,17 +22,17 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 /// Stable op id for the registered Tier 3 wrapper.
 pub const OP_ID: &str = "vyre-primitives::text::utf8_validate";
 
-/// 0x00..0x7F — single-byte ASCII.
+/// 0x00..0x7F  -  single-byte ASCII.
 pub const UTF8_ASCII: u32 = 0;
-/// 0xC2..0xDF — lead of a valid 2-byte sequence.
+/// 0xC2..0xDF  -  lead of a valid 2-byte sequence.
 pub const UTF8_LEAD_2: u32 = 1;
-/// 0xE0..0xEF — lead of a 3-byte sequence.
+/// 0xE0..0xEF  -  lead of a 3-byte sequence.
 pub const UTF8_LEAD_3: u32 = 2;
-/// 0xF0..0xF7 — lead of a 4-byte sequence.
+/// 0xF0..0xF7  -  lead of a 4-byte sequence.
 pub const UTF8_LEAD_4: u32 = 3;
-/// 0x80..0xBF — continuation byte.
+/// 0x80..0xBF  -  continuation byte.
 pub const UTF8_CONT: u32 = 4;
-/// 0xC0, 0xC1 (overlong) or 0xF8..0xFF (out of range) — invalid lead.
+/// 0xC0, 0xC1 (overlong) or 0xF8..0xFF (out of range)  -  invalid lead.
 pub const UTF8_INVALID: u32 = 5;
 
 /// Build a Program that validates and classifies each `source[i]`
@@ -346,24 +346,24 @@ fn lead4_validation_body(source: &str, n: u32) -> Vec<Node> {
 
 /// Reference oracle: validate and classify each byte the same way the GPU kernel does.
 #[must_use]
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 pub fn reference_utf8_validate(source: &[u8]) -> Vec<u32> {
     (0..source.len())
         .map(|idx| cpu_class_at(source, idx))
         .collect()
 }
 
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 fn cpu_is_cont(byte: u8) -> bool {
     matches!(byte, 0x80..=0xBF)
 }
 
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 fn cpu_valid_lead2(source: &[u8], idx: usize) -> bool {
     matches!(source[idx], 0xC2..=0xDF) && source.get(idx + 1).copied().is_some_and(cpu_is_cont)
 }
 
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 fn cpu_valid_lead3(source: &[u8], idx: usize) -> bool {
     let Some(&b1) = source.get(idx + 1) else {
         return false;
@@ -380,7 +380,7 @@ fn cpu_valid_lead3(source: &[u8], idx: usize) -> bool {
     first_ok && cpu_is_cont(b2)
 }
 
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 fn cpu_valid_lead4(source: &[u8], idx: usize) -> bool {
     let Some(&b1) = source.get(idx + 1) else {
         return false;
@@ -400,7 +400,7 @@ fn cpu_valid_lead4(source: &[u8], idx: usize) -> bool {
     first_ok && cpu_is_cont(b2) && cpu_is_cont(b3)
 }
 
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 fn cpu_valid_cont_position(source: &[u8], idx: usize) -> bool {
     idx.checked_sub(1).is_some_and(|lead| {
         cpu_valid_lead2(source, lead)
@@ -414,7 +414,7 @@ fn cpu_valid_cont_position(source: &[u8], idx: usize) -> bool {
             .is_some_and(|lead| cpu_valid_lead4(source, lead))
 }
 
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 fn cpu_class_at(source: &[u8], idx: usize) -> u32 {
     match source[idx] {
         0x00..=0x7F => UTF8_ASCII,
@@ -447,6 +447,7 @@ inventory::submit! {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -457,7 +458,7 @@ mod tests {
 
     #[test]
     fn reference_2_byte_sequence() {
-        // U+00E9 (é) = 0xC3 0xA9 — LEAD_2 + CONT
+        // U+00E9 (é) = 0xC3 0xA9  -  LEAD_2 + CONT
         assert_eq!(
             reference_utf8_validate(&[0xC3, 0xA9]),
             vec![UTF8_LEAD_2, UTF8_CONT]
@@ -466,7 +467,7 @@ mod tests {
 
     #[test]
     fn reference_3_byte_sequence() {
-        // U+20AC (€) = 0xE2 0x82 0xAC — LEAD_3 + CONT + CONT
+        // U+20AC (€) = 0xE2 0x82 0xAC  -  LEAD_3 + CONT + CONT
         assert_eq!(
             reference_utf8_validate(&[0xE2, 0x82, 0xAC]),
             vec![UTF8_LEAD_3, UTF8_CONT, UTF8_CONT]
@@ -475,7 +476,7 @@ mod tests {
 
     #[test]
     fn reference_4_byte_sequence() {
-        // U+1F600 (😀) = 0xF0 0x9F 0x98 0x80 — LEAD_4 + CONT × 3
+        // U+1F600 (😀) = 0xF0 0x9F 0x98 0x80  -  LEAD_4 + CONT × 3
         assert_eq!(
             reference_utf8_validate(&[0xF0, 0x9F, 0x98, 0x80]),
             vec![UTF8_LEAD_4, UTF8_CONT, UTF8_CONT, UTF8_CONT]
@@ -494,7 +495,7 @@ mod tests {
 
     #[test]
     fn reference_out_of_range_lead_invalid() {
-        // 0xF8..0xFF would imply 5+ byte sequences — banned since RFC 3629.
+        // 0xF8..0xFF would imply 5+ byte sequences  -  banned since RFC 3629.
         assert_eq!(
             reference_utf8_validate(&[0xF8, 0xFC, 0xFF]),
             vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
@@ -539,3 +540,4 @@ mod tests {
         );
     }
 }
+

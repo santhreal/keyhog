@@ -23,7 +23,7 @@
 //! binding that the rewrites then optimize away (e.g., redundant
 //! Loads forwarded out, Stores collapsed by dead_store). After the
 //! arithmetic rewrites finish, the binding may have zero remaining
-//! references — dropping it saves the host from binding a buffer it
+//! references  -  dropping it saves the host from binding a buffer it
 //! doesn't need.
 
 use crate::{KernelBody, KernelDescriptor, KernelOpKind};
@@ -37,14 +37,14 @@ pub fn drop_unused_bindings(desc: &KernelDescriptor) -> KernelDescriptor {
     // Retain rule: a binding is part of the host dispatch contract
     // and must NOT be dropped when:
     //   1. some op references it (the obvious case);
-    //   2. it is WriteOnly — the host expects readback;
-    //   3. it is ReadWrite — the host passed input bytes for it AND
+    //   2. it is WriteOnly  -  the host expects readback;
+    //   3. it is ReadWrite  -  the host passed input bytes for it AND
     //      expects the modified contents back, so dropping it from
     //      the descriptor breaks the dispatch ABI even when no op
     //      currently reads it (multi-stage pipelines like
     //      `c11_lex_digraphs` declare `tok_starts` / `tok_lens`
     //      ReadWrite so the surrounding pipeline passes them through);
-    //   4. it is a host-visible binding — the host passes buffers
+    //   4. it is a host-visible binding  -  the host passes buffers
     //      positionally,
     //      so silently dropping a ReadOnly binding shifts every later
     //      input slot's index. Real-world parsers like
@@ -208,7 +208,7 @@ mod tests {
         // when aggressive constant-folding DCE'd the loads (e.g. the
         // c11 parser pipeline's `haystack` input when an upstream stage
         // returns a 1-node count). True scratch is Local/Shared memory
-        // class — never a host-visible binding.
+        // class  -  never a host-visible binding.
         let desc = KernelDescriptor {
             id: "k".into(),
             bindings: BindingLayout {
@@ -368,7 +368,7 @@ mod tests {
         // Even if every Store to it got DCE'd by an upstream pass,
         // the host's output_binding_layouts() still expects the slot
         // to exist in the lowered descriptor. This test pins the rule
-        // by declaring 4 unreferenced bindings — 2 ReadOnly inputs
+        // by declaring 4 unreferenced bindings  -  2 ReadOnly inputs
         // (must be dropped) and 2 outputs (must survive).
         let desc = KernelDescriptor {
             id: "k".into(),

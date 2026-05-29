@@ -1,9 +1,9 @@
 [package]
 name = "vyre-spec"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
-description = "Frozen data contracts for vyre — OpDef, AlgebraicLaw, Category, IntrinsicTable"
+description = "Frozen data contracts for vyre  -  OpDef, AlgebraicLaw, Category, IntrinsicTable"
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -18,7 +18,10 @@ serde.workspace = true
 smallvec.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 serde_json.workspace = true
+vyre-foundation.workspace = true
+vyre-primitives.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -26,3 +29,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
+
+[[test]]
+name = "sweep_wire_roundtrip_oracle_matrix"
+path = "tests/sweep_wire_roundtrip_oracle_matrix.rs"
+[[test]]
+name = "sweep_wire_u32_volume_oracle_matrix"
+path = "tests/sweep_wire_u32_volume_oracle_matrix.rs"

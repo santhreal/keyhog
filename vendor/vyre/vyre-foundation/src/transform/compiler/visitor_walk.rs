@@ -1,4 +1,4 @@
-//! Visitor walk — a bounded post-order tree traversal primitive.
+//! Visitor walk  -  a bounded post-order tree traversal primitive.
 //!
 //! Compilers spend most of their time walking trees: AST visitors, scope-tree
 //! traversals, dominator walks.  `visitor_walk` gives vyre a first-class
@@ -28,13 +28,13 @@ pub const VISIT_STACK_EMPTY: u32 = u32::MAX;
 /// when the caller pushes children before parents.
 ///
 /// Buffers:
-/// - `child_offsets`: `ReadOnly` u32 array of length `node_count` + 1 —
+/// - `child_offsets`: `ReadOnly` u32 array of length `node_count` + 1  -
 ///   CSR offsets into the child table.
-/// - `children`: `ReadOnly` u32 array — flat child list.
-/// - `stack`: `ReadWrite` u32 array — the explicit DFS stack, with
+/// - `children`: `ReadOnly` u32 array  -  flat child list.
+/// - `stack`: `ReadWrite` u32 array  -  the explicit DFS stack, with
 ///   `stack[0]` holding the top-of-stack index and `stack[1..]` the contents.
-/// - `post_order`: `ReadWrite` u32 array — sequence of popped nodes.
-/// - `post_count`: `ReadWrite` u32 array of length 1 — how many
+/// - `post_order`: `ReadWrite` u32 array  -  sequence of popped nodes.
+/// - `post_count`: `ReadWrite` u32 array of length 1  -  how many
 ///   entries in `post_order` are populated.
 ///
 /// The IR pops one node per dispatch. The host loop wrapping this

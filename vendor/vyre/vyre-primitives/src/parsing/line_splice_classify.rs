@@ -1,12 +1,11 @@
-//! `line_splice_classify` — per-byte "is-kept" mask for C translation
+//! `line_splice_classify`  -  per-byte "is-kept" mask for C translation
 //! phase 2 (`\<newline>` deletion).
 //!
 //! Op id: `vyre-primitives::parsing::line_splice_classify`. Soundness:
 //! `Exact` against the C11 phase-2 spec (and the existing Reference oracle
-//! `c_translation_phase_line_splice` in
-//! `vyre-libs::parsing::c::preprocess::mod`). The Reference oracle at the
-//! bottom of this file is the contract; the GPU `Program` matches it
-//! byte-for-byte.
+//! `c_translation_phase_line_splice` in higher-level preprocessing
+//! compositions). The Reference oracle at the bottom of this file is the
+//! contract; the GPU `Program` matches it byte-for-byte.
 //!
 //! ## Why it matters
 //!
@@ -19,12 +18,12 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `bytes_in` — `DataType::Bytes` buffer holding one input byte per
+//!   - `bytes_in`  -  `DataType::Bytes` buffer holding one input byte per
 //!     element. Out-of-range loads (past `byte_count`) are guarded by an
 //!     `if_then` and never speculate.
 //!
 //! Outputs:
-//!   - `kept_mask_out` — `DataType::U32`, one entry per input byte. `1`
+//!   - `kept_mask_out`  -  `DataType::U32`, one entry per input byte. `1`
 //!     if the byte survives phase-2 splice deletion; `0` if it is part of
 //!     a `\<newline>` sequence and must be dropped. Composes with
 //!     `vyre-primitives::math::stream_compact` to produce the post-phase-2
@@ -59,14 +58,14 @@ const CR: u32 = 0x0D; // '\r'
 /// `[i-2, i-1, i, i+1, i+2]` (0 outside the buffer) and emits `0` to
 /// `kept_mask_out[i]` if `byte_in[i]` is part of any deletable sequence.
 ///
-/// The five deletion cases — corresponding 1:1 to the Reference oracle
+/// The five deletion cases  -  corresponding 1:1 to the Reference oracle
 /// `c_translation_phase_line_splice`:
-/// 1. `byte[i] == '\\' && byte[i+1] == '\n'` — `\` of `\<LF>`.
-/// 2. `byte[i] == '\\' && byte[i+1] == '\r'` — `\` of `\<CR>` /
+/// 1. `byte[i] == '\\' && byte[i+1] == '\n'`  -  `\` of `\<LF>`.
+/// 2. `byte[i] == '\\' && byte[i+1] == '\r'`  -  `\` of `\<CR>` /
 ///    `\<CR><LF>`.
-/// 3. `byte[i-1] == '\\' && byte[i] == '\n'` — `<LF>` after `\`.
-/// 4. `byte[i-1] == '\\' && byte[i] == '\r'` — `<CR>` after `\`.
-/// 5. `byte[i-2] == '\\' && byte[i-1] == '\r' && byte[i] == '\n'` —
+/// 3. `byte[i-1] == '\\' && byte[i] == '\n'`  -  `<LF>` after `\`.
+/// 4. `byte[i-1] == '\\' && byte[i] == '\r'`  -  `<CR>` after `\`.
+/// 5. `byte[i-2] == '\\' && byte[i-1] == '\r' && byte[i] == '\n'`  -
 ///    `<LF>` of `\<CR><LF>`.
 ///
 /// `byte_count` is the number of input bytes. Workgroup size is 256.
@@ -220,16 +219,35 @@ pub fn line_splice_classify(byte_count: u32) -> Program {
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_line_splice_classify(source: &[u8]) -> Vec<u32> {
-    let mut out = Vec::with_capacity(source.len());
-    reference_line_splice_classify_into(source, &mut out);
+    let mut out = Vec::new();
+    try_reference_line_splice_classify_into(source, &mut out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - line-splice classifier reference allocation failed");
     out
 }
 
 /// Capacity-reusing variant of `reference_line_splice_classify`.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_line_splice_classify_into(source: &[u8], out: &mut Vec<u32>) {
+    try_reference_line_splice_classify_into(source, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - line-splice classifier reference allocation failed");
+}
+
+/// Fallible capacity-reusing variant of `reference_line_splice_classify`.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_reference_line_splice_classify_into(
+    source: &[u8],
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    if source.len() > out.capacity() {
+        out.try_reserve_exact(source.len() - out.capacity())
+            .map_err(|err| {
+                format!(
+                    "line-splice classifier reference could not reserve {} output words: {err}",
+                    source.len()
+                )
+            })?;
+    }
     out.clear();
-    out.reserve(source.len());
     for i in 0..source.len() {
         let b_m2 = i.checked_sub(2).map(|j| source[j]).unwrap_or(0);
         let b_m1 = i.checked_sub(1).map(|j| source[j]).unwrap_or(0);
@@ -243,6 +261,7 @@ pub fn reference_line_splice_classify_into(source: &[u8], out: &mut Vec<u32>) {
         let dropped = case1 || case2 || case3 || case4 || case5;
         out.push(u32::from(!dropped));
     }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -250,8 +269,22 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || line_splice_classify(256),
-        None,
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            let mut bytes = vec![120 | (120 << 8) | (120 << 16) | (120 << 24); 64];
+            bytes[0] = 97 | (92 << 8) | (10 << 16) | (98 << 24);
+            vec![vec![
+                to_bytes(&bytes),                // bytes_in
+                to_bytes(&[0; 256]),             // kept_mask_out
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            let mut expected = vec![1; 256];
+            expected[1] = 0;
+            expected[2] = 0;
+            vec![vec![to_bytes(&expected)]]
+        }),
     )
 }
 
@@ -265,6 +298,18 @@ mod tests {
     }
 
     #[test]
+    fn classify_into_reuses_output_and_clears_stale_tail() {
+        let mut out = Vec::with_capacity(16);
+        out.extend_from_slice(&[u32::MAX; 16]);
+        let ptr = out.as_ptr();
+
+        try_reference_line_splice_classify_into(b"a\\\nB", &mut out).unwrap();
+
+        assert_eq!(out, vec![1, 0, 0, 1]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
     fn no_backslashes_keeps_every_byte() {
         let src = b"int main(void) { return 0; }";
         let mask = reference_line_splice_classify(src);
@@ -273,7 +318,7 @@ mod tests {
 
     #[test]
     fn lone_backslash_with_no_newline_is_kept() {
-        // Backslash followed by space is not a splice — both bytes survive.
+        // Backslash followed by space is not a splice  -  both bytes survive.
         let src = b"a\\ b";
         let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 1, 1, 1]);
@@ -297,7 +342,7 @@ mod tests {
 
     #[test]
     fn backslash_cr_alone_drops_both_bytes() {
-        // \<CR> with no following LF — still a splice on classic
+        // \<CR> with no following LF  -  still a splice on classic
         // Mac-style line endings.
         let src = b"a\\\rb";
         let mask = reference_line_splice_classify(src);
@@ -306,7 +351,7 @@ mod tests {
 
     #[test]
     fn back_to_back_splices_each_drop_their_pair() {
-        // a\\\nb\\\nc — two splices.
+        // a\\\nb\\\nc  -  two splices.
         let src = b"a\\\nb\\\nc";
         let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 0, 0, 1, 0, 0, 1]);
@@ -314,7 +359,7 @@ mod tests {
 
     #[test]
     fn splice_at_start_of_buffer_is_handled() {
-        // Buffer starts with \\\n — both dropped.
+        // Buffer starts with \\\n  -  both dropped.
         let src = b"\\\nx";
         let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![0, 0, 1]);
@@ -322,7 +367,7 @@ mod tests {
 
     #[test]
     fn splice_at_end_of_buffer_is_handled() {
-        // Buffer ends with \\\n — both dropped.
+        // Buffer ends with \\\n  -  both dropped.
         let src = b"x\\\n";
         let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 0, 0]);
@@ -330,7 +375,7 @@ mod tests {
 
     #[test]
     fn lone_backslash_at_eof_is_kept() {
-        // Backslash at end of buffer with nothing following — keeps it
+        // Backslash at end of buffer with nothing following  -  keeps it
         // (there's no newline to splice with).
         let src = b"x\\";
         let mask = reference_line_splice_classify(src);
@@ -339,7 +384,7 @@ mod tests {
 
     #[test]
     fn double_backslash_before_newline_only_drops_the_pair() {
-        // a\\\\\nb — `\\\\` is two backslashes; only the second `\\` and
+        // a\\\\\nb  -  `\\\\` is two backslashes; only the second `\\` and
         // the `\n` form a splice.
         let src = b"a\\\\\nb";
         let mask = reference_line_splice_classify(src);

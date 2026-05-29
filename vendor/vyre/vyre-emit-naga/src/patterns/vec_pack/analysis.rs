@@ -13,12 +13,12 @@
 //! 4. Skip any group that crosses a side-effecting op on the same
 //!    buffer (RAW/WAR hazard).
 //!
-//! Index-difference detection is conservative — phase 1 only proves
+//! Index-difference detection is conservative  -  phase 1 only proves
 //! `+1` increment when the index expressions both decompose as
 //! `Add(<same base>, LiteralU32(<k>))` and `Add(<same base>, LiteralU32(<k+1>))`,
 //! OR when one is `<base>` and the other is `Add(<base>, LiteralU32(1))`.
 //! Anything more exotic (multi-term polynomials, runtime base) falls
-//! through to "not packable" — phase 2 may upgrade.
+//! through to "not packable"  -  phase 2 may upgrade.
 
 use super::plan::{PackGroup, PackKind, PackingPlan};
 use vyre_foundation::ir::BinOp;
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn negative_loads_with_non_consecutive_offsets_not_packed() {
-        // Indices base+0 and base+2 — gap of 1 — not packable.
+        // Indices base+0 and base+2  -  gap of 1  -  not packable.
         let kk = k(
             vec![binding(0)],
             vec![
@@ -448,10 +448,11 @@ mod tests {
     }
 
     #[test]
+
     fn adversarial_loads_with_compute_op_between_still_pack() {
         // load(buf, base+0); add(...); load(buf, base+1)
         // The intervening compute op is pure (consumes the loaded
-        // value, doesn't touch the buffer) — this is exactly the
+        // value, doesn't touch the buffer)  -  this is exactly the
         // pattern a real lowered op produces. Two-phase analysis
         // (collect-then-group) treats them as adjacent accesses.
         let kk = k(
@@ -477,7 +478,7 @@ mod tests {
     fn adversarial_load_then_store_then_load_breaks_group_via_hazard() {
         // load(buf, base+0); store(buf, base+5, ...); load(buf, base+1)
         // The intervening Store to the same buffer creates a RAW hazard.
-        // The two loads must NOT pack — phase-1 hazard barrier.
+        // The two loads must NOT pack  -  phase-1 hazard barrier.
         let kk = k(
             vec![binding(0)],
             vec![
@@ -575,3 +576,4 @@ mod tests {
         assert_eq!(p.kernel_id, "k");
     }
 }
+

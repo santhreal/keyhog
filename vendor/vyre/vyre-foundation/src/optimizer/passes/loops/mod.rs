@@ -41,6 +41,7 @@ pub mod loop_trip_zero_eliminate;
 pub mod loop_unroll;
 /// Loop-induction range facts that fold known-true / known-false
 /// `If(Cmp(Var(i), LitU32(n)), then, else)` conditions inside
-/// `Loop(i, lo, hi, body)` (ROADMAP A16 — range facts into branch
+/// `Loop(i, lo, hi, body)` (ROADMAP A16  -  range facts into branch
 /// elision via the structural loop range).
 pub mod loop_var_range_fold;
+mod substitution;

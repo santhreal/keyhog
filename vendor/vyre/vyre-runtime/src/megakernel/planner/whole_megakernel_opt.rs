@@ -1,7 +1,7 @@
 //! C1 substrate: whole-megakernel optimization domain.
 //!
 //! Per-arm optimization (the existing CSE/DCE per arm, then fuse) is
-//! conservative — it can't see structural redundancy ACROSS arms.
+//! conservative  -  it can't see structural redundancy ACROSS arms.
 //! When two adjacent arms produce the same intermediate result the
 //! first arm could compute it once and the second arm could just
 //! read it.
@@ -11,7 +11,7 @@
 //! emit the same op→input→output triple. The dispatcher uses the
 //! verdict to skip the redundant compute.
 //!
-//! Pure substrate — no Program walk, no allocation outside the
+//! Pure substrate  -  no Program walk, no allocation outside the
 //! returned redundancy report. The actual rewrite (collapse
 //! redundant arms into one + rewire downstream readers) is the
 //! Codex-side runtime work; this substrate just names the
@@ -19,6 +19,7 @@
 
 use crate::{megakernel::planner::MegakernelWorkItem, PipelineError};
 use rustc_hash::FxHashMap;
+use vyre_foundation::allocation::{try_reserve_hash_map_to_capacity, try_reserve_vec_to_capacity};
 
 const DENSE_OUTPUT_UNIQUE_BITS: usize = 4096;
 const DENSE_OUTPUT_UNIQUE_WORDS: usize = DENSE_OUTPUT_UNIQUE_BITS / u64::BITS as usize;
@@ -43,7 +44,7 @@ pub struct CrossArmRedundancy {
 }
 
 impl CrossArmRedundancy {
-    /// Empty report — no redundancy across arms.
+    /// Empty report  -  no redundancy across arms.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -80,13 +81,11 @@ impl RedundantWorkItemPruneScratch {
             self.first_seen.shrink_to(len);
         }
         if self.first_seen.capacity() < len {
-            self.first_seen
-                .try_reserve(len - self.first_seen.capacity())
-                .map_err(|source| {
-                    PipelineError::Backend(format!(
-                        "megakernel redundant-work hash reservation failed for {len} item(s): {source}. Fix: shard the work batch before pruning."
-                    ))
-                })?;
+            try_reserve_hash_map_to_capacity(&mut self.first_seen, len).map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel redundant-work hash reservation failed for {len} item(s): {source}. Fix: shard the work batch before pruning."
+                ))
+            })?;
         }
         Ok(())
     }
@@ -98,10 +97,10 @@ impl RedundantWorkItemPruneScratch {
 /// substrate sees in arm N, it remembers which arm produced it. If
 /// an identical triple appears in a later arm M > N, the substrate
 /// records `(N, M, op_idx_in_M)`. WorkItems are compared by the
-/// `(op_handle, input_handle, output_handle)` triple alone — the
+/// `(op_handle, input_handle, output_handle)` triple alone  -  the
 /// `param` field is treated as separate launch metadata.
 ///
-/// O(total_ops) — uses one pass + one hash table. Allocation only
+/// O(total_ops)  -  uses one pass + one hash table. Allocation only
 /// for the redundancy report and the seen-set.
 #[must_use]
 pub fn detect_cross_arm_redundancy(arms: &[&[MegakernelWorkItem]]) -> CrossArmRedundancy {
@@ -140,7 +139,7 @@ pub fn try_detect_cross_arm_redundancy(
                         .push((early_arm_idx, arm_idx, op_idx));
                 }
                 Some(_) => {
-                    // Same arm — not a cross-arm redundancy.
+                    // Same arm  -  not a cross-arm redundancy.
                 }
                 None => {
                     first_seen.insert(key, arm_idx);
@@ -273,7 +272,12 @@ where
     K: Eq + std::hash::Hash,
 {
     if additional > 0 {
-        values.try_reserve(additional).map_err(|source| {
+        let capacity = values.len().checked_add(additional).ok_or_else(|| {
+            PipelineError::Backend(format!(
+                "megakernel {label} reservation overflowed for {additional} additional entry slot(s). Fix: shard the work batch before whole-megakernel optimization."
+            ))
+        })?;
+        try_reserve_hash_map_to_capacity(values, capacity).map_err(|source| {
             PipelineError::Backend(format!(
                 "megakernel {label} reservation failed for {additional} additional entry slot(s): {source}. Fix: shard the work batch before whole-megakernel optimization."
             ))
@@ -300,13 +304,11 @@ fn reserve_work_items(
     label: &'static str,
 ) -> Result<(), PipelineError> {
     if values.capacity() < capacity {
-        values
-            .try_reserve_exact(capacity - values.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel {label} reservation failed for {capacity} item slot(s): {source}. Fix: shard the work batch before whole-megakernel optimization."
-                ))
-            })?;
+        try_reserve_vec_to_capacity(values, capacity).map_err(|source| {
+            PipelineError::Backend(format!(
+                "megakernel {label} reservation failed for {capacity} item slot(s): {source}. Fix: shard the work batch before whole-megakernel optimization."
+            ))
+        })?;
     }
     Ok(())
 }
@@ -419,7 +421,7 @@ mod tests {
 
     #[test]
     fn redundancy_uses_first_seen_arm_index() {
-        // Op appears in arms 0, 2, 3 — both 2 and 3 should reference 0.
+        // Op appears in arms 0, 2, 3  -  both 2 and 3 should reference 0.
         let a = vec![item(1, 0, 5)];
         let b = vec![item(99, 0, 0)];
         let c = vec![item(1, 0, 5)];
@@ -432,7 +434,7 @@ mod tests {
 
     #[test]
     fn param_field_does_not_affect_redundancy() {
-        // Same (op, in, out) triple but different param — still
+        // Same (op, in, out) triple but different param  -  still
         // cross-arm redundant by this substrate's contract.
         let a = vec![MegakernelWorkItem {
             op_handle: 1,
@@ -446,6 +448,7 @@ mod tests {
             output_handle: 5,
             param: 99,
         }];
+
         let arms: [&[MegakernelWorkItem]; 2] = [&a, &b];
         let report = detect_cross_arm_redundancy(&arms);
         assert_eq!(report.total_redundant_ops, 1);
@@ -608,3 +611,4 @@ mod tests {
         assert_eq!(out, vec![item(1, 0, 5), item(2, 0, 6)]);
     }
 }
+

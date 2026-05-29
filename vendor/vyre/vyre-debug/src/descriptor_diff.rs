@@ -2,9 +2,14 @@ use std::collections::{BTreeMap, HashSet};
 use vyre_foundation::ir::Program;
 use vyre_lower::KernelDescriptor;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DescriptorDiff {
     pub bindings_dropped: Vec<u32>,
     pub bindings_added: Vec<u32>,
+    #[serde(
+        serialize_with = "crate::path_map_serde::serialize_i64",
+        deserialize_with = "crate::path_map_serde::deserialize_i64"
+    )]
     pub op_count_delta: BTreeMap<Vec<usize>, i64>,
     pub root_shape_changed: bool,
 }
@@ -76,6 +81,7 @@ pub fn diff_descriptors(before: &KernelDescriptor, after: &KernelDescriptor) -> 
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RewriteBisectResult {
     pub first_failing_rewrite: Option<String>,
     pub verify_errors: Vec<String>,

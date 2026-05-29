@@ -242,18 +242,6 @@ inventory::submit! {
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::parsing::c_lexer::classify_at_pos",
-        build: || {
-            c11_lexer("haystack", "out_tok_types", "out_tok_starts", "out_tok_lens", "out_counts", 4096)
-        },
-        test_inputs: Some(lexer_bounded_identifier_inputs),
-        expected_output: Some(lexer_bounded_identifier_expected),
-        category: Some("parsing"),
-    }
-}
-
-inventory::submit! {
-    crate::harness::OpEntry {
         id: "vyre-libs::parsing::c11_lex_digraphs",
         build: || {
             c11_lex_digraphs("tok_types", "tok_starts", "tok_lens", 4096)
@@ -264,9 +252,7 @@ inventory::submit! {
     }
 }
 
-fn pack_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_u32;
 
 fn lexer_bounded_identifier_inputs() -> Vec<Vec<Vec<u8>>> {
     vec![vec![

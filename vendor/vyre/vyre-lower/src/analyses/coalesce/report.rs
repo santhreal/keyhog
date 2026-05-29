@@ -21,7 +21,7 @@ pub enum AccessPattern {
     /// usually need shared-memory promotion (PERF B12) or explicit
     /// gather/scatter primitives.
     Scattered,
-    /// Index is a literal constant — every thread reads the same
+    /// Index is a literal constant  -  every thread reads the same
     /// address. Hardware broadcasts; this is fine for reads, wasteful
     /// for writes (last-writer-wins with race semantics).
     Broadcast,
@@ -112,7 +112,7 @@ impl CoalescenceReport {
             .count()
     }
 
-    /// Sum of `1 - throughput_factor` across all sites — a single
+    /// Sum of `1 - throughput_factor` across all sites  -  a single
     /// score where 0.0 means perfect and higher means worse. Useful
     /// for sorting kernels by which to optimize first.
     #[must_use]
@@ -320,7 +320,7 @@ mod tests {
         // depend on serde_json directly, so do this via the lower
         // crate's serde infra: constructed values should equal after
         // bincode-style serialize-then-deserialize. Simplest assertion
-        // here is structural equality after clone — the strong
+        // here is structural equality after clone  -  the strong
         // round-trip is exercised in vyre-lower's descriptor tests.
         let r2 = r.clone();
         assert_eq!(r, r2);

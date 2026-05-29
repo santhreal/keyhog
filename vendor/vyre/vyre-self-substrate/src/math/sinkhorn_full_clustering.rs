@@ -76,15 +76,7 @@ mod tests {
             "k3", "kt3", "a3", "b3", "uc3", "un3", "v3", "kv3", "ktu3", "c3", 2, 2, 1,
         );
 
-        let mut entry = p1.entry().to_vec();
-        entry.extend(p2.entry().to_vec());
-        entry.extend(p3.entry().to_vec());
-
-        let mut buffers = p1.buffers().to_vec();
-        buffers.extend(p2.buffers().to_vec());
-        buffers.extend(p3.buffers().to_vec());
-
-        let final_p = Program::wrapped(buffers, [256, 1, 1], entry);
+        let final_p = crate::test_support::wrap_program_sequence(&[&p1, &p2, &p3], [256, 1, 1]);
         let region_count = final_p
             .entry()
             .iter()
@@ -110,7 +102,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[u32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = vyre_primitives::wire::pack_u32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 

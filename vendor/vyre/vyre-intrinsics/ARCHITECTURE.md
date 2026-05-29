@@ -1,8 +1,8 @@
-# vyre-intrinsics — architecture
+# vyre-intrinsics  -  architecture
 
 Tier-2 hardware-intrinsic ops. Every op here requires both a
 dedicated naga emitter arm AND a dedicated `vyre-reference`
-eval arm — composition cannot lower it.
+eval arm  -  composition cannot lower it.
 
 ## Modules
 
@@ -28,7 +28,7 @@ expressible op landing here trips the build.
 
 - **(per-op)** Each hardware op exports a constructor `op_id() →
   Program` and a `cpu_ref(args) → output` for the conform suite.
-- **`HardwareConformHarness`** — differential runner.
+- **`HardwareConformHarness`**  -  differential runner.
 
 ## Integration points
 

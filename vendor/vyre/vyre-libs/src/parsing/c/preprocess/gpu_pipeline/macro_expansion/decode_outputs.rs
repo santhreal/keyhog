@@ -11,11 +11,18 @@ pub(crate) fn expanded_classified_from_materialized_outputs(
             expanded.len()
         ));
     }
+    let mut directive_kinds = Vec::new();
+    reserve_macro_decode_vec_capacity(
+        &mut directive_kinds,
+        token_count,
+        "expanded directive kind defaults",
+    )?;
+    directive_kinds.resize(token_count, 0);
     Ok(ClassifiedTokens::from_parts(
         read_u32_words_exact(&expanded[0], token_count, "expanded token types")?,
         read_u32_words_exact(&expanded[1], token_count, "expanded token starts")?,
         read_u32_words_exact(&expanded[2], token_count, "expanded token lengths")?,
-        vec![0; token_count],
+        directive_kinds,
         std::sync::Arc::from(source),
     ))
 }
@@ -34,9 +41,22 @@ pub(crate) fn read_u32_words_exact(
             bytes.len()
         ));
     }
-    let mut out = Vec::with_capacity(count);
+    let mut out = Vec::new();
+    reserve_macro_decode_vec_capacity(&mut out, count, label)?;
     for idx in 0..count {
         out.push(read_u32_word(bytes, idx, label)?);
     }
     Ok(out)
+}
+
+fn reserve_macro_decode_vec_capacity<T>(
+    vec: &mut Vec<T>,
+    count: usize,
+    label: &str,
+) -> Result<(), String> {
+    vec.try_reserve_exact(count).map_err(|error| {
+        format!(
+            "named macro expansion {label} allocation failed for {count} elements: {error}. Fix: shard macro expansion output before ABI decode."
+        )
+    })
 }

@@ -29,17 +29,28 @@ pub(super) fn vast_field(vast_nodes: &str, idx: Expr, field: usize) -> Expr {
     )
 }
 
-pub(super) fn resolve_root_nodes(
+fn emit_root_node_walk(
     vast_nodes: &str,
     num_nodes: &Expr,
     start_idx: Expr,
     root_var: &str,
     parent_var: &str,
     loop_var: &str,
+    bind_initial_vars: bool,
 ) -> Vec<Node> {
+    let root_init = if bind_initial_vars {
+        Node::let_bind(root_var, start_idx.clone())
+    } else {
+        Node::assign(root_var, start_idx.clone())
+    };
+    let parent_init = if bind_initial_vars {
+        Node::let_bind(parent_var, Expr::u32(u32::MAX))
+    } else {
+        Node::assign(parent_var, Expr::u32(u32::MAX))
+    };
     vec![
-        Node::let_bind(root_var, start_idx.clone()),
-        Node::let_bind(parent_var, Expr::u32(u32::MAX)),
+        root_init,
+        parent_init,
         Node::if_then(
             valid_node_idx(start_idx.clone(), num_nodes),
             vec![Node::assign(
@@ -65,6 +76,19 @@ pub(super) fn resolve_root_nodes(
     ]
 }
 
+pub(super) fn resolve_root_nodes(
+    vast_nodes: &str,
+    num_nodes: &Expr,
+    start_idx: Expr,
+    root_var: &str,
+    parent_var: &str,
+    loop_var: &str,
+) -> Vec<Node> {
+    emit_root_node_walk(
+        vast_nodes, num_nodes, start_idx, root_var, parent_var, loop_var, true,
+    )
+}
+
 pub(super) fn assign_root_nodes(
     vast_nodes: &str,
     num_nodes: &Expr,
@@ -73,30 +97,7 @@ pub(super) fn assign_root_nodes(
     parent_var: &str,
     loop_var: &str,
 ) -> Vec<Node> {
-    vec![
-        Node::assign(root_var, start_idx.clone()),
-        Node::assign(parent_var, Expr::u32(u32::MAX)),
-        Node::if_then(
-            valid_node_idx(start_idx.clone(), num_nodes),
-            vec![Node::assign(
-                parent_var,
-                vast_field(vast_nodes, start_idx, IDX_PARENT),
-            )],
-        ),
-        Node::loop_for(
-            loop_var,
-            Expr::u32(0),
-            num_nodes.clone(),
-            vec![Node::if_then(
-                valid_node_idx(Expr::var(parent_var), num_nodes),
-                vec![
-                    Node::assign(root_var, Expr::var(parent_var)),
-                    Node::assign(
-                        parent_var,
-                        vast_field(vast_nodes, Expr::var(parent_var), IDX_PARENT),
-                    ),
-                ],
-            )],
-        ),
-    ]
+    emit_root_node_walk(
+        vast_nodes, num_nodes, start_idx, root_var, parent_var, loop_var, false,
+    )
 }

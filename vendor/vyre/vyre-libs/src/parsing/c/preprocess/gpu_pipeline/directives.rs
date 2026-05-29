@@ -44,7 +44,7 @@ pub enum DirectivePayload {
         /// `true` if the directive used the `name(args)` form.
         is_function_like: bool,
     },
-    /// `#undef name`. Currently classified by directive kind only —
+    /// `#undef name`. Currently classified by directive kind only  -
     /// the name extraction reuses the define-parse name span shape
     /// (treats `#undef` as `#define`-shaped for the parse).
     Undef {
@@ -77,9 +77,9 @@ pub enum DirectivePayload {
         /// `true` for `#elif`, `false` for `#if`.
         is_elif: bool,
     },
-    /// `#else`. No payload — caller flips the conditional frame.
+    /// `#else`. No payload  -  caller flips the conditional frame.
     Else,
-    /// `#endif`. No payload — caller pops the conditional frame.
+    /// `#endif`. No payload  -  caller pops the conditional frame.
     Endif,
     /// `#pragma`, `#line`, `#error`, `#warning`, `#ident`, `#sccs`,
     /// `#null` (empty `#`). Carried by kind only; payload is opaque.
@@ -115,10 +115,49 @@ pub(super) struct DirectiveExtractionScratch {
 }
 
 impl DirectiveExtractionScratch {
-    fn prepare_zero_init(&mut self, byte_len: usize) {
+    fn prepare_zero_init(&mut self, byte_len: usize) -> Result<(), String> {
         self.zero_init.clear();
+        self.zero_init.try_reserve_exact(byte_len).map_err(|error| {
+            format!(
+                "gpu directive parse zero-init staging could not reserve {byte_len} bytes: {error:?}. Fix: shard preprocessing before directive payload extraction."
+            )
+        })?;
         self.zero_init.resize(byte_len, 0);
+        Ok(())
     }
+}
+
+fn directive_word_bytes(word_count: usize, label: &'static str) -> Result<usize, String> {
+    word_count.checked_mul(4).ok_or_else(|| {
+        format!(
+            "gpu directive parse {label} word count {word_count} overflows host byte sizing. Fix: shard preprocessing before directive payload extraction."
+        )
+    })
+}
+
+fn directive_padded_u32_bytes(byte_len: usize, label: &'static str) -> Result<usize, String> {
+    byte_len
+        .checked_add(3)
+        .and_then(|value| value.checked_div(4))
+        .and_then(|words| words.checked_mul(4))
+        .map(|bytes| bytes.max(4))
+        .ok_or_else(|| {
+            format!(
+                "gpu directive parse {label} byte length {byte_len} overflows u32 padding. Fix: shard preprocessing before directive payload extraction."
+            )
+        })
+}
+
+fn reserve_directive_vec<T>(
+    out: &mut Vec<T>,
+    additional: usize,
+    label: &'static str,
+) -> Result<(), String> {
+    out.try_reserve_exact(additional).map_err(|error| {
+        format!(
+            "gpu directive parse could not reserve {additional} {label}: {error:?}. Fix: shard preprocessing before directive payload extraction."
+        )
+    })
 }
 
 /// Extract per-directive payloads for every directive row in
@@ -175,7 +214,7 @@ fn gpu_extract_directive_payloads_impl(
     // arrive at this stage already preprocessor-clean (the common case
     // after the host has expanded includes / inlined defines upstream),
     // this avoids 3 cold native-compiles of the directive parse
-    // kernels — each of which is ~MB-scale WGSL and ~20s cold-compile
+    // kernels  -  each of which is ~MB-scale WGSL and ~20s cold-compile
     // on the wgpu Vulkan path. The kernels still dispatch when
     // directives are present.
     if !classified.has_directives() {
@@ -195,10 +234,10 @@ fn gpu_extract_directive_payloads_impl(
             classified.source.len()
         )
     })?;
-    pack_u32_words_into(&mut scratch.starts_b, &classified.tok_starts, n_pad);
-    pack_u32_words_into(&mut scratch.lens_b, &classified.tok_lens, n_pad);
-    pack_u32_words_into(&mut scratch.kinds_b, &classified.directive_kinds, n_pad);
-    pad_to_u32_words_into(&mut scratch.src_pad, &classified.source);
+    pack_u32_words_into(&mut scratch.starts_b, &classified.tok_starts, n_pad)?;
+    pack_u32_words_into(&mut scratch.lens_b, &classified.tok_lens, n_pad)?;
+    pack_u32_words_into(&mut scratch.kinds_b, &classified.directive_kinds, n_pad)?;
+    pad_to_u32_words_into(&mut scratch.src_pad, &classified.source)?;
 
     // ---- Dispatch 1: define + include + undef parsers fused ----
     // All three kernels share the (tok_starts, tok_lens,
@@ -219,7 +258,8 @@ fn gpu_extract_directive_payloads_impl(
     let parse_fused = fuse_programs(&[dp, ip, up])
         .map_err(|e| format!("fuse define+include+undef parse: {e}"))?
         .with_entry_op_id("vyre-libs::parsing::c::preprocess::define_include_undef_parse_fused");
-    scratch.prepare_zero_init(n_pad * 4);
+    let zero_init_bytes = directive_word_bytes(n_pad, "zero-init")?;
+    scratch.prepare_zero_init(zero_init_bytes)?;
     let parse_inputs = [
         scratch.starts_b.as_slice(),
         scratch.lens_b.as_slice(),
@@ -330,38 +370,75 @@ fn gpu_extract_directive_payloads_impl(
     // gpu_ifdef_value and gpu_if_expression now read num_macros and
     // macro_names_len at runtime via Expr::buf_len, so the kernel
     // program shape is independent of how many macros the host packs.
-    // No more bucketing needed for these dimensions — one cold compile
+    // No more bucketing needed for these dimensions  -  one cold compile
     // per process for the ifdef/if-expression pair.
     if evaluate_condition_values {
         // Pack defined_macros into the (names_packed, offsets, values)
         // layout only when the caller needs snapshot condition values. The
         // production driver skips this branch and re-evaluates reachable
         // conditionals against the live macro table instead.
-        let macro_name_bytes = defined_macros.iter().map(|name| name.len()).sum();
+        let macro_name_bytes =
+            defined_macros
+                .iter()
+                .try_fold(0usize, |total, name| {
+                    total.checked_add(name.len()).ok_or_else(|| {
+                        "gpu directive parse macro-name byte total overflows usize. Fix: shard preprocessing before directive payload extraction.".to_string()
+                    })
+                })?;
         scratch.macro_names.clear();
-        scratch.macro_names.reserve(macro_name_bytes);
-        let mut macro_offsets: Vec<u32> = Vec::with_capacity(defined_macros.len() + 1);
+        reserve_directive_vec(
+            &mut scratch.macro_names,
+            macro_name_bytes,
+            "macro-name bytes",
+        )?;
+        let macro_offset_slots = defined_macros.len().checked_add(1).ok_or_else(|| {
+            "gpu directive parse macro-offset slot count overflows usize. Fix: shard preprocessing before directive payload extraction.".to_string()
+        })?;
+        let mut macro_offsets: Vec<u32> = Vec::new();
+        reserve_directive_vec(&mut macro_offsets, macro_offset_slots, "macro-offset slots")?;
         macro_offsets.push(0);
         for name in defined_macros {
             scratch.macro_names.extend_from_slice(name);
-            macro_offsets.push(scratch.macro_names.len() as u32);
+            macro_offsets.push(u32::try_from(scratch.macro_names.len()).map_err(|_| {
+                format!(
+                    "gpu directive parse macro-name byte offset {} exceeds u32 address space. Fix: shard preprocessing before directive payload extraction.",
+                    scratch.macro_names.len()
+                )
+            })?);
         }
-        let padded = scratch.macro_names.len().div_ceil(4) * 4;
-        scratch.macro_names.resize(padded.max(4), 0);
+        let padded = directive_padded_u32_bytes(scratch.macro_names.len(), "macro names")?;
+        let macro_name_padding = padded
+            .checked_sub(scratch.macro_names.len())
+            .ok_or_else(|| {
+                "gpu directive parse macro-name padded length underflowed. Fix: repair directive padding sizing.".to_string()
+            })?;
+        reserve_directive_vec(
+            &mut scratch.macro_names,
+            macro_name_padding,
+            "macro-name padding bytes",
+        )?;
+        scratch.macro_names.resize(padded, 0);
         pack_u32_words_into(
             &mut scratch.macro_offsets_b,
             &macro_offsets,
             macro_offsets.len(),
-        );
+        )?;
         let count = defined_macros.len().max(1);
         scratch.macro_values_b.clear();
         let builtin_hashes = gpu_builtin_hash_table_words();
-        scratch
-            .macro_values_b
-            .reserve((count + builtin_hashes.len()) * 4);
-        scratch
-            .macro_values_b
-            .extend(builtin_hashes.iter().flat_map(|hash| hash.to_le_bytes()));
+        let macro_value_words = count.checked_add(builtin_hashes.len()).ok_or_else(|| {
+            "gpu directive parse macro-value word count overflows usize. Fix: shard preprocessing before directive payload extraction.".to_string()
+        })?;
+        let macro_value_bytes = directive_word_bytes(macro_value_words, "macro values")?;
+        reserve_directive_vec(
+            &mut scratch.macro_values_b,
+            macro_value_bytes,
+            "macro-value bytes",
+        )?;
+        vyre_primitives::wire::append_u32_slice_le_bytes(
+            &builtin_hashes,
+            &mut scratch.macro_values_b,
+        );
         for idx in 0..count {
             let value = u32::from(idx < defined_macros.len());
             scratch
@@ -434,7 +511,8 @@ fn gpu_extract_directive_payloads_impl(
     // Total: 5 dispatches → 3.)
 
     // ---- Walk and assemble payloads ----
-    let mut out = Vec::with_capacity(n);
+    let mut out = Vec::new();
+    reserve_directive_vec(&mut out, n, "directive payload slots")?;
     for i in 0..n {
         let kind = classified.directive_kinds[i];
         let payload = match kind {
@@ -523,6 +601,7 @@ fn gpu_extract_directive_payloads_impl(
     Ok(out)
 }
 
+
 fn payload_span_bytes(
     source: &[u8],
     start: usize,
@@ -584,7 +663,7 @@ mod tests {
             &classified,
             &mut scratch,
         )
-        .expect("directive-free production extraction must not dispatch");
+        .expect("Fix: directive-free production extraction must not dispatch");
 
         assert!(
             payloads.is_empty(),
@@ -596,7 +675,7 @@ mod tests {
     fn compatibility_payload_extraction_preserves_per_token_none_contract() {
         let classified = directive_free_classified();
         let payloads = gpu_extract_directive_payloads(&NoDispatch, &classified, &[])
-            .expect("compatibility extraction must not dispatch on directive-free inputs");
+            .expect("Fix: compatibility extraction must not dispatch on directive-free inputs");
 
         assert_eq!(
             payloads,
@@ -607,4 +686,37 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn directive_staging_sizing_is_checked_and_fallible() {
+        assert_eq!(
+            directive_word_bytes(3, "test").expect("Fix: small directive table should fit"),
+            12
+        );
+        assert!(
+            directive_word_bytes(usize::MAX, "test").is_err(),
+            "Fix: directive word-to-byte sizing must reject usize overflow"
+        );
+        assert_eq!(
+            directive_padded_u32_bytes(0, "test")
+                .expect("Fix: empty macro-name table should pad to one u32"),
+            4
+        );
+        assert_eq!(
+            directive_padded_u32_bytes(5, "test")
+                .expect("Fix: small macro-name table should pad to u32 bytes"),
+            8
+        );
+        assert!(
+            directive_padded_u32_bytes(usize::MAX, "test").is_err(),
+            "Fix: directive padding must reject usize overflow"
+        );
+
+        let mut scratch = DirectiveExtractionScratch::default();
+        scratch
+            .prepare_zero_init(8)
+            .expect("Fix: small directive zero staging should fit");
+        assert_eq!(scratch.zero_init, vec![0; 8]);
+    }
 }
+

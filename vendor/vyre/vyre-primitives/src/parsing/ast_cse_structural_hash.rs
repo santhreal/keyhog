@@ -5,6 +5,8 @@ use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+use crate::hash::fnv1a::{fnv1a32_mul_xor_word_expr, fnv1a32_mul_xor_word_state};
+
 use super::ast_ops::{AST_ADD, AST_PTR_DEREF, AST_VAR};
 
 /// Stable op id for the structural CSE child region.
@@ -33,17 +35,11 @@ pub fn ast_cse_structural_hash(
             Node::let_bind("r_idx2", Expr::load(ast_rights, t.clone())),
             Node::let_bind(
                 "h",
-                Expr::bitxor(
-                    Expr::mul(Expr::var("op"), Expr::u32(0x01000193)),
-                    Expr::var("l_idx2"),
-                ),
+                fnv1a32_mul_xor_word_expr(Expr::var("op"), Expr::var("l_idx2")),
             ),
             Node::assign(
                 "h",
-                Expr::bitxor(
-                    Expr::mul(Expr::var("h"), Expr::u32(0x01000193)),
-                    Expr::var("r_idx2"),
-                ),
+                fnv1a32_mul_xor_word_expr(Expr::var("h"), Expr::var("r_idx2")),
             ),
             Node::let_bind(
                 "slot",
@@ -167,17 +163,11 @@ pub fn ast_cse_structural_hash_program(num_nodes: u32, hash_set_capacity: u32) -
                             ),
                             Node::let_bind(
                                 "h",
-                                Expr::bitxor(
-                                    Expr::mul(Expr::var("op"), Expr::u32(0x01000193)),
-                                    Expr::var("l_idx2"),
-                                ),
+                                fnv1a32_mul_xor_word_expr(Expr::var("op"), Expr::var("l_idx2")),
                             ),
                             Node::assign(
                                 "h",
-                                Expr::bitxor(
-                                    Expr::mul(Expr::var("h"), Expr::u32(0x01000193)),
-                                    Expr::var("r_idx2"),
-                                ),
+                                fnv1a32_mul_xor_word_expr(Expr::var("h"), Expr::var("r_idx2")),
                             ),
                             Node::let_bind(
                                 "slot",
@@ -302,14 +292,13 @@ pub fn ast_cse_structural_hash_program(num_nodes: u32, hash_set_capacity: u32) -
 
 #[cfg(feature = "inventory-registry")]
 fn fixture_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    crate::wire::pack_u32_slice(words)
 }
 
 #[cfg(feature = "inventory-registry")]
 fn structural_hash(op: u32, left: u32, right: u32) -> u32 {
-    let prime = 0x0100_0193_u32;
-    let h = op.wrapping_mul(prime) ^ left;
-    h.wrapping_mul(prime) ^ right
+    let h = fnv1a32_mul_xor_word_state(op, left);
+    fnv1a32_mul_xor_word_state(h, right)
 }
 
 #[cfg(feature = "inventory-registry")]

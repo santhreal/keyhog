@@ -7,44 +7,86 @@
 use crate::parsing::c::preprocess::gpu_pipeline::MacroDef;
 use rustc_hash::FxHashMap as HashMap;
 
-pub(super) fn macro_integer_values(macros: &[MacroDef]) -> Vec<u32> {
-    let mut values = vec![0u32; macros.len()];
+fn reserve_macro_value_vec<T>(
+    target: &mut Vec<T>,
+    additional: usize,
+    label: &str,
+) -> Result<(), String> {
+    target.try_reserve_exact(additional).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {additional} {label}: {error:?}. Fix: shard macro integer folding before GPU conditional evaluation."
+        )
+    })
+}
+
+pub(super) fn macro_integer_values(macros: &[MacroDef]) -> Result<Vec<u32>, String> {
+    let mut values = Vec::new();
+    reserve_macro_value_vec(&mut values, macros.len(), "macro integer values")?;
+    values.resize(macros.len(), 0u32);
     if macros.is_empty() {
-        return values;
+        return Ok(values);
     }
     let mut macro_indexes: HashMap<&[u8], usize> = HashMap::default();
-    macro_indexes.reserve(macros.len());
+    macro_indexes.try_reserve(macros.len()).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {} macro integer index entries: {error:?}. Fix: shard macro integer folding before GPU conditional evaluation.",
+            macros.len()
+        )
+    })?;
     for (idx, mac) in macros.iter().enumerate() {
         macro_indexes.insert(mac.name.as_slice(), idx);
     }
-    let mut dependents = vec![Vec::new(); macros.len()];
-    let mut unresolved_counts = vec![0usize; macros.len()];
-    let mut seen_dependency_marks = vec![usize::MAX; macros.len()];
+    let mut dependents = Vec::new();
+    reserve_macro_value_vec(&mut dependents, macros.len(), "macro dependency buckets")?;
+    dependents.resize_with(macros.len(), Vec::new);
+    let mut unresolved_counts = Vec::new();
+    reserve_macro_value_vec(
+        &mut unresolved_counts,
+        macros.len(),
+        "macro unresolved dependency counters",
+    )?;
+    unresolved_counts.resize(macros.len(), 0usize);
+    let mut seen_dependency_marks = Vec::new();
+    reserve_macro_value_vec(
+        &mut seen_dependency_marks,
+        macros.len(),
+        "macro dependency dedupe marks",
+    )?;
+    seen_dependency_marks.resize(macros.len(), usize::MAX);
     for (idx, mac) in macros.iter().enumerate() {
         if mac.is_function_like {
             continue;
         }
         collect_macro_body_identifiers(&mac.body, |ident| {
             let Some(dep_idx) = macro_indexes.get(ident).copied() else {
-                return;
+                return Ok(());
             };
             if dep_idx == idx {
                 unresolved_counts[idx] = unresolved_counts[idx].saturating_add(1);
             } else if seen_dependency_marks[dep_idx] != idx {
                 seen_dependency_marks[dep_idx] = idx;
                 unresolved_counts[idx] = unresolved_counts[idx].saturating_add(1);
+                dependents[dep_idx].try_reserve(1).map_err(|error| {
+                    format!(
+                        "vyre-libs::gpu_pipeline: could not reserve macro dependency edge: {error:?}. Fix: shard macro integer folding before GPU conditional evaluation."
+                    )
+                })?;
                 dependents[dep_idx].push(idx);
             }
-        });
+            Ok(())
+        })?;
     }
-    let mut ready = Vec::with_capacity(macros.len());
+    let mut ready = Vec::new();
+    reserve_macro_value_vec(&mut ready, macros.len(), "ready macro queue entries")?;
     ready.extend(
         unresolved_counts
             .iter()
             .enumerate()
             .filter_map(|(idx, count)| (*count == 0).then_some(idx)),
     );
-    let mut resolved = vec![false; macros.len()];
+    let mut resolved = Vec::new();
+    reserve_macro_value_vec(&mut resolved, macros.len(), "resolved macro flags")?;
+    resolved.resize(macros.len(), false);
     while let Some(idx) = ready.pop() {
         if resolved[idx] {
             continue;
@@ -59,18 +101,32 @@ pub(super) fn macro_integer_values(macros: &[MacroDef]) -> Vec<u32> {
             }
         }
     }
-    values
+    Ok(values)
 }
 
-pub(super) fn macro_integer_values_with_builtin_prefix(macros: &[MacroDef]) -> Vec<u32> {
-    let user_values = macro_integer_values(macros);
-    let mut values =
-        vec![0; crate::parsing::c::parse::gnu_builtins::GPU_BUILTIN_HASH_TABLE_SIZE as usize];
+pub(super) fn macro_integer_values_with_builtin_prefix(
+    macros: &[MacroDef],
+) -> Result<Vec<u32>, String> {
+    let user_values = macro_integer_values(macros)?;
+    let builtin_slots =
+        crate::parsing::c::parse::gnu_builtins::GPU_BUILTIN_HASH_TABLE_SIZE as usize;
+    let mut values = Vec::new();
+    reserve_macro_value_vec(
+        &mut values,
+        builtin_slots.checked_add(user_values.len()).ok_or_else(|| {
+            "vyre-libs::gpu_pipeline: macro integer builtin prefix length overflows usize. Fix: shard macro integer folding before GPU conditional evaluation.".to_string()
+        })?,
+        "macro integer builtin-prefixed values",
+    )?;
+    values.resize(builtin_slots, 0);
     values.extend_from_slice(&user_values);
-    values
+    Ok(values)
 }
 
-fn collect_macro_body_identifiers(mut body: &[u8], mut visit: impl FnMut(&[u8])) {
+fn collect_macro_body_identifiers(
+    mut body: &[u8],
+    mut visit: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
     while let Some((&byte, rest)) = body.split_first() {
         if byte.is_ascii_digit() || (byte == b'.' && rest.first().is_some_and(u8::is_ascii_digit)) {
             let end = scan_numeric_literal(body);
@@ -85,12 +141,13 @@ fn collect_macro_body_identifiers(mut body: &[u8], mut visit: impl FnMut(&[u8]))
             body = &body[end..];
         } else if is_ident_start(byte) {
             let end = scan_while(body, 1, is_ident_continue);
-            visit(&body[..end]);
+            visit(&body[..end])?;
             body = &body[end..];
         } else {
             body = rest;
         }
     }
+    Ok(())
 }
 
 fn scan_numeric_literal(body: &[u8]) -> usize {
@@ -482,6 +539,7 @@ impl MacroIntegerParser<'_> {
     }
 }
 
+
 fn scan_while(body: &[u8], start: usize, predicate: impl Fn(u8) -> bool) -> usize {
     let mut index = start;
     while body.get(index).copied().is_some_and(&predicate) {
@@ -535,7 +593,7 @@ mod tests {
         for (body, expected) in cases {
             let macros = [object_macro(b"VALUE", body)];
             assert_eq!(
-                macro_integer_values(&macros),
+                macro_integer_values(&macros).expect("Fix: reject preprocessor macros whose values do not fit u32; fail parse, do not truncate - macro integer values should fit"),
                 vec![expected],
                 "body `{}`",
                 String::from_utf8_lossy(body)
@@ -551,7 +609,10 @@ mod tests {
             object_macro(b"C", b"B == 3"),
             object_macro(b"D", b"MISSING"),
         ];
-        assert_eq!(macro_integer_values(&macros), vec![1, 3, 1, 0]);
+        assert_eq!(
+            macro_integer_values(&macros).expect("Fix: reject preprocessor macros whose values do not fit u32; fail parse, do not truncate - macro integer values should fit"),
+            vec![1, 3, 1, 0]
+        );
     }
 
     #[test]
@@ -560,7 +621,10 @@ mod tests {
             object_macro(b"CONFIG_HZ", b"1000"),
             object_macro(b"HZ", b"CONFIG_HZ\t/* Internal kernel timer frequency */"),
         ];
-        assert_eq!(macro_integer_values(&macros), vec![1000, 1000]);
+        assert_eq!(
+            macro_integer_values(&macros).expect("Fix: reject preprocessor macros whose values do not fit u32; fail parse, do not truncate - macro integer values should fit"),
+            vec![1000, 1000]
+        );
     }
 
     #[test]
@@ -570,6 +634,10 @@ mod tests {
             object_macro(b"A", b"!A"),
             object_macro(b"DEPENDS_ON_STABLE", b"STABLE + 1"),
         ];
-        assert_eq!(macro_integer_values(&macros), vec![9, 0, 10]);
+        assert_eq!(
+            macro_integer_values(&macros).expect("Fix: reject preprocessor macros whose values do not fit u32; fail parse, do not truncate - macro integer values should fit"),
+            vec![9, 0, 10]
+        );
     }
 }
+

@@ -1,4 +1,4 @@
-//! ROADMAP A36 — minimize identity-op atomics under Relaxed ordering
+//! ROADMAP A36  -  minimize identity-op atomics under Relaxed ordering
 //! to a plain `Expr::Load`, and eliminate unique-writer atomics.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::atomic_minimize`.
@@ -11,6 +11,7 @@ use crate::runtime::memory_model::MemoryOrdering;
 // table that never sees adversarial input. FxHashMap/FxHashSet measurably
 // shorten the analysis pass on programs with many distinct buffers.
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use smallvec::SmallVec;
 
 #[derive(Default, Debug, Clone, Copy)]
 struct BufferAccesses {
@@ -272,85 +273,252 @@ fn rewrite_node_multi(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "owned expression rewriter avoids recursive drop/clone on deep generated atomic expressions"
+)]
 fn rewrite_expr(expr: Expr, changed: &mut bool) -> Expr {
-    match expr {
-        Expr::Atomic {
-            op,
-            buffer,
-            index,
-            expected,
-            value,
-            ordering,
-        } => {
-            let index_rw = Box::new(rewrite_expr(*index, changed));
-            let value_rw = Box::new(rewrite_expr(*value, changed));
-            let expected_rw = expected.map(|e| Box::new(rewrite_expr(*e, changed)));
-            if expected_rw.is_none()
-                && ordering == MemoryOrdering::Relaxed
-                && is_identity_atomic(op, value_rw.as_ref())
-            {
-                *changed = true;
-                return Expr::Load {
+    enum Frame {
+        Expr(Expr),
+        Load {
+            buffer: crate::ir::Ident,
+        },
+        BinOp {
+            op: crate::ir::BinOp,
+        },
+        UnOp {
+            op: crate::ir::UnOp,
+        },
+        Call {
+            op_id: crate::ir::Ident,
+            argc: usize,
+        },
+        Select,
+        Cast {
+            target: crate::ir::DataType,
+        },
+        Fma,
+        Atomic {
+            op: AtomicOp,
+            buffer: crate::ir::Ident,
+            ordering: MemoryOrdering,
+            has_expected: bool,
+        },
+        SubgroupBallot,
+        SubgroupShuffle,
+        SubgroupAdd,
+    }
+
+    let mut stack = vec![Frame::Expr(expr)];
+    let mut results = Vec::new();
+
+    while let Some(frame) = stack.pop() {
+        match frame {
+            Frame::Expr(expr) => match expr {
+                Expr::Load { buffer, index } => {
+                    stack.push(Frame::Load { buffer });
+                    stack.push(Frame::Expr(*index));
+                }
+                Expr::BinOp { op, left, right } => {
+                    stack.push(Frame::BinOp { op });
+                    stack.push(Frame::Expr(*right));
+                    stack.push(Frame::Expr(*left));
+                }
+                Expr::UnOp { op, operand } => {
+                    stack.push(Frame::UnOp { op });
+                    stack.push(Frame::Expr(*operand));
+                }
+                Expr::Call { op_id, args } => {
+                    let argc = args.len();
+                    stack.push(Frame::Call { op_id, argc });
+                    stack.extend(args.into_iter().rev().map(Frame::Expr));
+                }
+                Expr::Select {
+                    cond,
+                    true_val,
+                    false_val,
+                } => {
+                    stack.push(Frame::Select);
+                    stack.push(Frame::Expr(*false_val));
+                    stack.push(Frame::Expr(*true_val));
+                    stack.push(Frame::Expr(*cond));
+                }
+                Expr::Cast { target, value } => {
+                    stack.push(Frame::Cast { target });
+                    stack.push(Frame::Expr(*value));
+                }
+                Expr::Fma { a, b, c } => {
+                    stack.push(Frame::Fma);
+                    stack.push(Frame::Expr(*c));
+                    stack.push(Frame::Expr(*b));
+                    stack.push(Frame::Expr(*a));
+                }
+                Expr::Atomic {
+                    op,
                     buffer,
-                    index: index_rw,
-                };
+                    index,
+                    expected,
+                    value,
+                    ordering,
+                } => {
+                    let has_expected = expected.is_some();
+                    stack.push(Frame::Atomic {
+                        op,
+                        buffer,
+                        ordering,
+                        has_expected,
+                    });
+                    stack.push(Frame::Expr(*value));
+                    if let Some(expected) = expected {
+                        stack.push(Frame::Expr(*expected));
+                    }
+                    stack.push(Frame::Expr(*index));
+                }
+                Expr::SubgroupBallot { cond } => {
+                    stack.push(Frame::SubgroupBallot);
+                    stack.push(Frame::Expr(*cond));
+                }
+                Expr::SubgroupShuffle { value, lane } => {
+                    stack.push(Frame::SubgroupShuffle);
+                    stack.push(Frame::Expr(*lane));
+                    stack.push(Frame::Expr(*value));
+                }
+                Expr::SubgroupAdd { value } => {
+                    stack.push(Frame::SubgroupAdd);
+                    stack.push(Frame::Expr(*value));
+                }
+                terminal => results.push(terminal),
+            },
+            Frame::Load { buffer } => {
+                let index = pop_owned_expr_result(&mut results, "load index");
+                results.push(Expr::Load {
+                    buffer,
+                    index: Box::new(index),
+                });
             }
-            Expr::Atomic {
+            Frame::BinOp { op } => {
+                let right = pop_owned_expr_result(&mut results, "binary rhs");
+                let left = pop_owned_expr_result(&mut results, "binary lhs");
+                results.push(Expr::BinOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+            }
+            Frame::UnOp { op } => {
+                let operand = pop_owned_expr_result(&mut results, "unary operand");
+                results.push(Expr::UnOp {
+                    op,
+                    operand: Box::new(operand),
+                });
+            }
+            Frame::Call { op_id, argc } => {
+                let start = results.len().checked_sub(argc).unwrap_or_else(|| {
+                    unreachable!(
+                        "Fix: atomic_minimize owned rewriter lost call args; stack state is inconsistent."
+                    )
+                });
+                let args = results.drain(start..).collect();
+                results.push(Expr::Call { op_id, args });
+            }
+            Frame::Select => {
+                let false_val = pop_owned_expr_result(&mut results, "select false value");
+                let true_val = pop_owned_expr_result(&mut results, "select true value");
+                let cond = pop_owned_expr_result(&mut results, "select condition");
+                results.push(Expr::Select {
+                    cond: Box::new(cond),
+                    true_val: Box::new(true_val),
+                    false_val: Box::new(false_val),
+                });
+            }
+            Frame::Cast { target } => {
+                let value = pop_owned_expr_result(&mut results, "cast value");
+                results.push(Expr::Cast {
+                    target,
+                    value: Box::new(value),
+                });
+            }
+            Frame::Fma => {
+                let c = pop_owned_expr_result(&mut results, "fma c");
+                let b = pop_owned_expr_result(&mut results, "fma b");
+                let a = pop_owned_expr_result(&mut results, "fma a");
+                results.push(Expr::Fma {
+                    a: Box::new(a),
+                    b: Box::new(b),
+                    c: Box::new(c),
+                });
+            }
+            Frame::Atomic {
                 op,
                 buffer,
-                index: index_rw,
-                expected: expected_rw,
-                value: value_rw,
                 ordering,
+                has_expected,
+            } => {
+                let value = pop_owned_expr_result(&mut results, "atomic value");
+                let expected = if has_expected {
+                    Some(pop_owned_expr_result(&mut results, "atomic expected"))
+                } else {
+                    None
+                };
+                let index = pop_owned_expr_result(&mut results, "atomic index");
+                if expected.is_none()
+                    && ordering == MemoryOrdering::Relaxed
+                    && is_identity_atomic(op, &value)
+                {
+                    *changed = true;
+                    results.push(Expr::Load {
+                        buffer,
+                        index: Box::new(index),
+                    });
+                } else {
+                    results.push(Expr::Atomic {
+                        op,
+                        buffer,
+                        index: Box::new(index),
+                        expected: expected.map(Box::new),
+                        value: Box::new(value),
+                        ordering,
+                    });
+                }
+            }
+            Frame::SubgroupBallot => {
+                let cond = pop_owned_expr_result(&mut results, "subgroup ballot condition");
+                results.push(Expr::SubgroupBallot {
+                    cond: Box::new(cond),
+                });
+            }
+            Frame::SubgroupShuffle => {
+                let lane = pop_owned_expr_result(&mut results, "subgroup shuffle lane");
+                let value = pop_owned_expr_result(&mut results, "subgroup shuffle value");
+                results.push(Expr::SubgroupShuffle {
+                    value: Box::new(value),
+                    lane: Box::new(lane),
+                });
+            }
+            Frame::SubgroupAdd => {
+                let value = pop_owned_expr_result(&mut results, "subgroup add value");
+                results.push(Expr::SubgroupAdd {
+                    value: Box::new(value),
+                });
             }
         }
-        Expr::Load { buffer, index } => Expr::Load {
-            buffer,
-            index: Box::new(rewrite_expr(*index, changed)),
-        },
-        Expr::BinOp { op, left, right } => Expr::BinOp {
-            op,
-            left: Box::new(rewrite_expr(*left, changed)),
-            right: Box::new(rewrite_expr(*right, changed)),
-        },
-        Expr::UnOp { op, operand } => Expr::UnOp {
-            op,
-            operand: Box::new(rewrite_expr(*operand, changed)),
-        },
-        Expr::Call { op_id, args } => Expr::Call {
-            op_id,
-            args: args.into_iter().map(|a| rewrite_expr(a, changed)).collect(),
-        },
-        Expr::Select {
-            cond,
-            true_val,
-            false_val,
-        } => Expr::Select {
-            cond: Box::new(rewrite_expr(*cond, changed)),
-            true_val: Box::new(rewrite_expr(*true_val, changed)),
-            false_val: Box::new(rewrite_expr(*false_val, changed)),
-        },
-        Expr::Cast { target, value } => Expr::Cast {
-            target,
-            value: Box::new(rewrite_expr(*value, changed)),
-        },
-        Expr::Fma { a, b, c } => Expr::Fma {
-            a: Box::new(rewrite_expr(*a, changed)),
-            b: Box::new(rewrite_expr(*b, changed)),
-            c: Box::new(rewrite_expr(*c, changed)),
-        },
-        Expr::SubgroupBallot { cond } => Expr::SubgroupBallot {
-            cond: Box::new(rewrite_expr(*cond, changed)),
-        },
-        Expr::SubgroupShuffle { value, lane } => Expr::SubgroupShuffle {
-            value: Box::new(rewrite_expr(*value, changed)),
-            lane: Box::new(rewrite_expr(*lane, changed)),
-        },
-        Expr::SubgroupAdd { value } => Expr::SubgroupAdd {
-            value: Box::new(rewrite_expr(*value, changed)),
-        },
-        other => other,
     }
+
+    match results.pop() {
+        Some(result) => result,
+        None => unreachable!(
+            "Fix: atomic_minimize owned rewriter produced no expression result; stack state is inconsistent."
+        ),
+    }
+}
+
+
+fn pop_owned_expr_result(results: &mut Vec<Expr>, context: &'static str) -> Expr {
+    results.pop().unwrap_or_else(|| {
+        unreachable!(
+            "Fix: atomic_minimize owned rewriter lost {context}; stack state is inconsistent."
+        )
+    })
 }
 
 fn is_identity_atomic(op: AtomicOp, value: &Expr) -> bool {
@@ -405,62 +573,36 @@ fn scan_expr_for_identity(expr: &Expr, found: &mut bool) {
     if *found {
         return;
     }
-    match expr {
-        Expr::Atomic {
-            op,
-            value,
-            expected,
-            ordering,
-            index,
-            ..
-        } => {
-            if expected.is_none()
-                && *ordering == MemoryOrdering::Relaxed
-                && is_identity_atomic(*op, value)
-            {
-                *found = true;
-                return;
+    let mut stack: SmallVec<[&Expr; 32]> = SmallVec::new();
+    stack.push(expr);
+    while let Some(expr) = stack.pop() {
+        if *found {
+            return;
+        }
+        match expr {
+            Expr::Atomic {
+                op,
+                value,
+                expected,
+                ordering,
+                index,
+                ..
+            } => {
+                if expected.is_none()
+                    && *ordering == MemoryOrdering::Relaxed
+                    && is_identity_atomic(*op, value)
+                {
+                    *found = true;
+                    return;
+                }
+                push_expr_child(&mut stack, value);
+                if let Some(expected) = expected.as_deref() {
+                    push_expr_child(&mut stack, expected);
+                }
+                push_expr_child(&mut stack, index);
             }
-            scan_expr_for_identity(index, found);
-            if let Some(e) = expected.as_deref() {
-                scan_expr_for_identity(e, found);
-            }
-            scan_expr_for_identity(value, found);
+            _ => push_expr_children(&mut stack, expr),
         }
-        Expr::Load { index, .. } => scan_expr_for_identity(index, found),
-        Expr::BinOp { left, right, .. } => {
-            scan_expr_for_identity(left, found);
-            scan_expr_for_identity(right, found);
-        }
-        Expr::UnOp { operand, .. } => scan_expr_for_identity(operand, found),
-        Expr::Call { args, .. } => {
-            for a in args {
-                scan_expr_for_identity(a, found);
-            }
-        }
-        Expr::Select {
-            cond,
-            true_val,
-            false_val,
-        } => {
-            scan_expr_for_identity(cond, found);
-            scan_expr_for_identity(true_val, found);
-            scan_expr_for_identity(false_val, found);
-        }
-        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
-            scan_expr_for_identity(value, found);
-        }
-        Expr::Fma { a, b, c } => {
-            scan_expr_for_identity(a, found);
-            scan_expr_for_identity(b, found);
-            scan_expr_for_identity(c, found);
-        }
-        Expr::SubgroupBallot { cond } => scan_expr_for_identity(cond, found),
-        Expr::SubgroupShuffle { value, lane } => {
-            scan_expr_for_identity(value, found);
-            scan_expr_for_identity(lane, found);
-        }
-        _ => {}
     }
 }
 
@@ -517,6 +659,13 @@ fn count_buffer_accesses(nodes: &[Node], counts: &mut HashMap<crate::ir::Ident, 
                 count_expr_accesses(offset, counts);
                 count_expr_accesses(size, counts);
             }
+            Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+                counts.entry(buffer.clone()).or_default().other_accesses += 1;
+            }
+            Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+                counts.entry(input.clone()).or_default().other_accesses += 1;
+                counts.entry(output.clone()).or_default().other_accesses += 1;
+            }
             Node::Trap { address, .. } => count_expr_accesses(address, counts),
             Node::Barrier { .. }
             | Node::Return
@@ -529,63 +678,99 @@ fn count_buffer_accesses(nodes: &[Node], counts: &mut HashMap<crate::ir::Ident, 
 }
 
 fn count_expr_accesses(expr: &Expr, counts: &mut HashMap<crate::ir::Ident, BufferAccesses>) {
-    match expr {
-        Expr::Atomic {
-            op,
-            buffer,
-            index,
-            expected,
-            value,
-            ..
-        } => {
-            if *op == AtomicOp::Add && expected.is_none() {
-                counts.entry(buffer.clone()).or_default().atomic_adds += 1;
-            } else {
+    let mut stack: SmallVec<[&Expr; 32]> = SmallVec::new();
+    stack.push(expr);
+    while let Some(expr) = stack.pop() {
+        match expr {
+            Expr::Atomic {
+                op,
+                buffer,
+                index,
+                expected,
+                value,
+                ..
+            } => {
+                if *op == AtomicOp::Add && expected.is_none() {
+                    counts.entry(buffer.clone()).or_default().atomic_adds += 1;
+                } else {
+                    counts.entry(buffer.clone()).or_default().other_accesses += 1;
+                }
+                push_expr_child(&mut stack, value);
+                if let Some(expected) = expected.as_deref() {
+                    push_expr_child(&mut stack, expected);
+                }
+                push_expr_child(&mut stack, index);
+            }
+            Expr::Load { buffer, index } => {
                 counts.entry(buffer.clone()).or_default().other_accesses += 1;
+                push_expr_child(&mut stack, index);
             }
-            count_expr_accesses(index, counts);
-            if let Some(e) = expected {
-                count_expr_accesses(e, counts);
-            }
-            count_expr_accesses(value, counts);
+            _ => push_expr_children(&mut stack, expr),
         }
-        Expr::Load { buffer, index } => {
-            counts.entry(buffer.clone()).or_default().other_accesses += 1;
-            count_expr_accesses(index, counts);
-        }
+    }
+}
+
+fn push_expr_child<'a>(stack: &mut SmallVec<[&'a Expr; 32]>, child: &'a Expr) {
+    stack.push(child);
+}
+
+fn push_expr_children<'a>(stack: &mut SmallVec<[&'a Expr; 32]>, expr: &'a Expr) {
+    match expr {
         Expr::BinOp { left, right, .. } => {
-            count_expr_accesses(left, counts);
-            count_expr_accesses(right, counts);
+            push_expr_child(stack, right);
+            push_expr_child(stack, left);
         }
-        Expr::UnOp { operand, .. } => count_expr_accesses(operand, counts),
+        Expr::UnOp { operand, .. } => push_expr_child(stack, operand),
         Expr::Call { args, .. } => {
-            for a in args {
-                count_expr_accesses(a, counts);
-            }
+            stack.extend(args.iter().rev());
         }
         Expr::Select {
             cond,
             true_val,
             false_val,
         } => {
-            count_expr_accesses(cond, counts);
-            count_expr_accesses(true_val, counts);
-            count_expr_accesses(false_val, counts);
+            push_expr_child(stack, false_val);
+            push_expr_child(stack, true_val);
+            push_expr_child(stack, cond);
         }
         Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
-            count_expr_accesses(value, counts);
+            push_expr_child(stack, value);
         }
         Expr::Fma { a, b, c } => {
-            count_expr_accesses(a, counts);
-            count_expr_accesses(b, counts);
-            count_expr_accesses(c, counts);
+            push_expr_child(stack, c);
+            push_expr_child(stack, b);
+            push_expr_child(stack, a);
         }
-        Expr::SubgroupBallot { cond } => count_expr_accesses(cond, counts),
+        Expr::SubgroupBallot { cond } => push_expr_child(stack, cond),
         Expr::SubgroupShuffle { value, lane } => {
-            count_expr_accesses(value, counts);
-            count_expr_accesses(lane, counts);
+            push_expr_child(stack, lane);
+            push_expr_child(stack, value);
         }
-        _ => {}
+        Expr::Load { index, .. } => push_expr_child(stack, index),
+        Expr::Atomic {
+            index,
+            expected,
+            value,
+            ..
+        } => {
+            push_expr_child(stack, value);
+            if let Some(expected) = expected.as_deref() {
+                push_expr_child(stack, expected);
+            }
+            push_expr_child(stack, index);
+        }
+        Expr::LitU32(_)
+        | Expr::LitI32(_)
+        | Expr::LitF32(_)
+        | Expr::LitBool(_)
+        | Expr::Var(_)
+        | Expr::BufLen { .. }
+        | Expr::InvocationId { .. }
+        | Expr::WorkgroupId { .. }
+        | Expr::LocalId { .. }
+        | Expr::SubgroupLocalId
+        | Expr::SubgroupSize
+        | Expr::Opaque(_) => {}
     }
 }
 
@@ -814,6 +999,60 @@ mod tests {
     }
 
     #[test]
+    fn generated_deep_identity_atomic_expression_rewrites_without_recursive_expr_walk() {
+        for depth in [1usize, 8, 64, 512, 4096] {
+            let mut value = relaxed_atomic(AtomicOp::Add, Expr::u32(0));
+            for _ in 0..depth {
+                value = Expr::add(value, Expr::u32(0));
+            }
+
+            let PassResult {
+                program: rewritten_program,
+                changed,
+            } = AtomicMinimizePass::transform(program(vec![Node::let_bind("x", value)]));
+            assert!(
+                changed,
+                "Fix: atomic_minimize must rewrite nested identity atomic at generated depth {depth}."
+            );
+            let rewritten_program = Box::leak(Box::new(rewritten_program));
+            let rewritten = find_let_value_ref(rewritten_program, "x")
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated deep atomic program must still contain let x");
+            assert!(
+                !expr_contains_atomic(rewritten),
+                "Fix: atomic_minimize left an atomic inside generated depth {depth}: {rewritten:?}"
+            );
+            assert!(
+                expr_contains_load(rewritten),
+                "Fix: atomic_minimize must replace the identity atomic with a load at generated depth {depth}."
+            );
+        }
+    }
+
+    fn find_let_value_ref<'a>(program: &'a Program, target: &str) -> Option<&'a Expr> {
+        let mut stack = Vec::new();
+        stack.extend(program.entry().iter().rev());
+        while let Some(node) = stack.pop() {
+            match node {
+                Node::Let { name, value } if name.as_str() == target => return Some(value),
+                Node::If {
+                    then, otherwise, ..
+                } => {
+                    stack.extend(otherwise.iter().rev());
+                    stack.extend(then.iter().rev());
+                }
+                Node::Loop { body, .. } | Node::Block(body) => {
+                    stack.extend(body.iter().rev());
+                }
+                Node::Region { body, .. } => {
+                    stack.extend(body.iter().rev());
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    #[test]
     fn seq_cst_not_identity_but_maybe_single_writer() {
         let entry = vec![Node::let_bind(
             "x",
@@ -838,4 +1077,25 @@ mod tests {
             other => panic!("expected SKIP, got {other:?}"),
         }
     }
+
+    fn expr_contains_atomic(expr: &Expr) -> bool {
+        expr_contains(expr, |expr| matches!(expr, Expr::Atomic { .. }))
+    }
+
+    fn expr_contains_load(expr: &Expr) -> bool {
+        expr_contains(expr, |expr| matches!(expr, Expr::Load { .. }))
+    }
+
+    fn expr_contains(expr: &Expr, mut predicate: impl FnMut(&Expr) -> bool) -> bool {
+        let mut stack: SmallVec<[&Expr; 32]> = SmallVec::new();
+        stack.push(expr);
+        while let Some(expr) = stack.pop() {
+            if predicate(expr) {
+                return true;
+            }
+            push_expr_children(&mut stack, expr);
+        }
+        false
+    }
 }
+

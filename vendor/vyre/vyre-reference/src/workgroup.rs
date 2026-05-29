@@ -1,4 +1,4 @@
-//! Workgroup simulation — the parity engine's model of invocation coordination.
+//! Workgroup simulation  -  the parity engine's model of invocation coordination.
 //!
 //! GPU backends must reproduce the exact barrier synchronization, shared-memory
 //! layout, and invocation-ID arithmetic that this module defines. The conform gate
@@ -33,7 +33,7 @@ pub const MAX_WORKGROUP_BYTES: usize = 64 * 1024 * 1024;
 /// every load/store in the inner interpreter loop. This struct preserves
 /// the public `get` / `get_mut` / `insert` shape consumers depend on while
 /// eliminating the per-lookup hash + heap traffic.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BufferMap {
     entries: SmallVec<[(Arc<str>, Buffer); 8]>,
 }
@@ -125,7 +125,7 @@ impl InvocationIds {
 }
 
 /// Shared execution memory for storage and current workgroup buffers.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Memory {
     pub(crate) storage: BufferMap,
     pub(crate) workgroup: BufferMap,
@@ -448,6 +448,7 @@ impl<'a> Invocation<'a> {
         Self {
             ids,
             slots,
+
             locals: vec![None; slot_count],
             immutable: vec![false; slot_count],
             scopes: vec![Vec::new()],
@@ -695,3 +696,4 @@ pub(crate) fn workgroup_memory(program: &Program) -> Result<BufferMap, vyre::Err
     }
     Ok(workgroup)
 }
+

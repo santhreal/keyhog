@@ -135,7 +135,7 @@ pub fn ssa_dominance_scan_program(num_nodes: u32, phi_words: u32) -> Program {
 
 #[cfg(feature = "inventory-registry")]
 fn fixture_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    crate::wire::pack_u32_slice(words)
 }
 
 #[cfg(feature = "inventory-registry")]

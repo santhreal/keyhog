@@ -1,6 +1,6 @@
 [package]
 name = "vyre-driver"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,12 +22,25 @@ name = "cache_invalidation_default"
 path = "tests/cache_invalidation_default.rs"
 required-features = ["self-substrate-adapters"]
 
+[[test]]
+name = "sweep_dispatch_shape_oracle_matrix"
+path = "tests/sweep_dispatch_shape_oracle_matrix.rs"
+
+[[test]]
+name = "sweep_numeric_oracle_matrix"
+path = "tests/sweep_numeric_oracle_matrix.rs"
+
+[[test]]
+name = "driver_lifecycle_e2e"
+path = "tests/driver_lifecycle_e2e.rs"
+
 [features]
 default = []
 self-substrate-adapters = ["dep:vyre-self-substrate"]
 
 [dependencies]
 vyre-foundation = { workspace = true }
+vyre-primitives = { workspace = true }
 vyre-self-substrate = { workspace = true, optional = true }
 vyre-spec.workspace = true
 vyre-macros.workspace = true
@@ -41,8 +54,8 @@ blake3.workspace = true
 bytemuck.workspace = true
 inventory.workspace = true
 toml.workspace = true
-arc-swap = "1.9.1"
-lasso = { version = "0.7.3", features = ["multi-threaded"] }
+arc-swap = { workspace = true }
+lasso.workspace = true
 dashmap.workspace = true
 fs2.workspace = true
 
@@ -51,11 +64,12 @@ workspace = true
 
 [dev-dependencies]
 vyre-reference = { workspace = true }
+vyre-driver-reference = { workspace = true }
 vyre-self-substrate = { workspace = true }
 # The `vyre` meta-shim re-exports every driver-tier public type. Doctest
 # examples in this crate demonstrate the consumer-facing `vyre::X` path
 # (that's how consumers call them in production), so
-# the shim must be in scope when doctests compile. Dev-dep only — the
+# the shim must be in scope when doctests compile. Dev-dep only  -  the
 # library itself has no runtime dependency on `vyre`.
 vyre = { workspace = true }
 tempfile.workspace = true

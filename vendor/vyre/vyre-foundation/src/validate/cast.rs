@@ -40,7 +40,11 @@ pub(crate) fn cast_is_valid(source: &DataType, target: &DataType) -> bool {
             | (&DataType::Vec4U32, &DataType::Bool)
             | (&DataType::Vec4U32, &DataType::U64)
             | (&DataType::U32, &DataType::F32)
+            | (&DataType::I32, &DataType::F32)
+            | (&DataType::Bool, &DataType::F32)
             | (&DataType::F32, &DataType::U32)
+            | (&DataType::F32, &DataType::I32)
+            | (&DataType::F32, &DataType::Bool)
     )
 }
 
@@ -95,7 +99,11 @@ mod tests {
     #[test]
     fn u32_to_f32_is_valid() {
         assert!(cast_is_valid(&DataType::U32, &DataType::F32));
+        assert!(cast_is_valid(&DataType::I32, &DataType::F32));
+        assert!(cast_is_valid(&DataType::Bool, &DataType::F32));
         assert!(cast_is_valid(&DataType::F32, &DataType::U32));
+        assert!(cast_is_valid(&DataType::F32, &DataType::I32));
+        assert!(cast_is_valid(&DataType::F32, &DataType::Bool));
     }
 
     #[test]

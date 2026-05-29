@@ -200,7 +200,7 @@ pub fn python312_extract_calls(
                             ),
                             Expr::eq(Expr::var("bracket_depth"), Expr::u32(0)),
                         ),
-                        // Drop the explicit `Node::let_bind` siblings —
+                        // Drop the explicit `Node::let_bind` siblings  -
                         // `search_next_token` / `search_prev_token` each
                         // emit their own outer let_bind, so the manual
                         // ones here were duplicate-sibling V032 errors.

@@ -137,6 +137,74 @@ fn promote_c11_keywords_with_scratch(
             scratch.outputs.len()
         ));
     }
+    preserve_unpromoted_token_types(types, &mut scratch.outputs[0], n_tokens)?;
     mem::swap(types, &mut scratch.outputs[0]);
     Ok(())
+}
+
+fn preserve_unpromoted_token_types(
+    original: &[u8],
+    promoted: &mut [u8],
+    n_tokens: u32,
+) -> Result<(), String> {
+    let logical_bytes = usize::try_from(n_tokens)
+        .ok()
+        .and_then(|tokens| tokens.checked_mul(std::mem::size_of::<u32>()))
+        .ok_or_else(|| {
+            format!(
+                "keyword promotion token count {n_tokens} overflows host byte indexing. Fix: shard token promotion."
+            )
+        })?;
+    if original.len() < logical_bytes || promoted.len() < logical_bytes {
+        return Err(format!(
+            "keyword promotion buffers are too short for {n_tokens} token(s): original={} promoted={}. Fix: keep keyword promotion output aligned with lexer output.",
+            original.len(),
+            promoted.len()
+        ));
+    }
+    for offset in (0..logical_bytes).step_by(std::mem::size_of::<u32>()) {
+        let original_word = u32::from_le_bytes(
+            original[offset..offset + 4]
+                .try_into()
+                .map_err(|_| "keyword promotion original word decode failed".to_string())?,
+        );
+        let promoted_word = u32::from_le_bytes(
+            promoted[offset..offset + 4]
+                .try_into()
+                .map_err(|_| "keyword promotion promoted word decode failed".to_string())?,
+        );
+        if promoted_word == 0 && original_word != 0 {
+            promoted[offset..offset + 4].copy_from_slice(&original[offset..offset + 4]);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preserve_unpromoted_token_types;
+
+    #[test]
+    fn preserve_unpromoted_token_types_restores_zeroed_non_keywords() {
+        let original = pack_words(&[10, 20, 30]);
+        let mut promoted = pack_words(&[10, 0, 99]);
+
+        preserve_unpromoted_token_types(&original, &mut promoted, 3).unwrap();
+
+        assert_eq!(promoted, pack_words(&[10, 20, 99]));
+    }
+
+    #[test]
+    fn preserve_unpromoted_token_types_rejects_short_output() {
+        let original = pack_words(&[10, 20]);
+        let mut promoted = pack_words(&[10]);
+
+        let error = preserve_unpromoted_token_types(&original, &mut promoted, 2)
+            .expect_err("Fix: short keyword outputs must be rejected.");
+        assert!(error.contains("too short"));
+    }
+
+    fn pack_words(words: &[u32]) -> Vec<u8> {
+        words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    }
 }

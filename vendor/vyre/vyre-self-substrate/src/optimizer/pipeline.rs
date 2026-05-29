@@ -6,7 +6,7 @@
 //! (canon → const-fold → pattern-match → DCE) for dispatchers that
 //! only implement the borrowed `dispatch` surface (wgpu today).
 //!
-//! Callers don't need to know which backend they have — they call
+//! Callers don't need to know which backend they have  -  they call
 //! `gpu_optimize(program, dispatcher)` and get an optimized Program
 //! back through whichever path the dispatcher supports.
 

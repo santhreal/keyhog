@@ -5,6 +5,7 @@
 //! `gpu_program.rs`.
 
 use crate::parsing::c::lower::semantic_edges::*;
+use crate::parsing::c::parse::vast::c_vast_word_at;
 
 use super::semantic::*;
 use super::*;
@@ -13,14 +14,11 @@ fn try_u32_words_from_bytes(bytes: &[u8]) -> Result<Vec<u32>, PgReferenceDecodeE
     if bytes.len() % 4 != 0 {
         return Err(PgReferenceDecodeError::MisalignedBytes { len: bytes.len() });
     }
-    Ok(bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect())
+    Ok(vyre_primitives::wire::decode_u32_le_bytes_all(bytes))
 }
 
 pub(super) fn u32_words_to_bytes(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 /// Compute the same mapping as `c_lower_ast_to_pg_nodes` in the explicit CPU
@@ -97,15 +95,7 @@ pub fn reference_ast_to_pg_semantic_graph(vast_node_bytes: &[u8]) -> SemanticPgR
 }
 
 fn vast_field(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
-    let word_idx = node_idx
-        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
-        .and_then(|base| base.checked_add(field_idx))
-        .expect("VAST node field index overflow. Fix: pass a bounded complete VAST table to the AST-to-PG reference oracle.");
-    *vast_nodes.get(word_idx).unwrap_or_else(|| {
-        panic!(
-            "VAST node {node_idx} is missing field {field_idx}. Fix: pass complete VAST rows to the AST-to-PG reference oracle."
-        )
-    })
+    c_vast_word_at(vast_nodes, node_idx, field_idx)
 }
 
 fn reference_ast_to_pg_nodes_from_words(vast_nodes: &[u32]) -> Vec<u8> {

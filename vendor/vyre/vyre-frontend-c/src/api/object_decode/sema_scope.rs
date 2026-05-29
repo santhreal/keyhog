@@ -1,8 +1,7 @@
 use super::*;
 /// Decode semantic scope records from a VYRECOB2 object byte stream.
 pub fn decode_object_sema_scope(object_bytes: &[u8]) -> Result<CObjectSemaScope, String> {
-    let container = parse_embedded_vyrecob2(object_bytes)?;
-    decode_object_sema_scope_from_container(&container)
+    decode_embedded_object(object_bytes, decode_object_sema_scope_from_container)
 }
 
 pub(crate) fn decode_object_sema_scope_from_container(
@@ -82,9 +81,7 @@ pub(super) fn validate_sema_scope_records(records: &[CSemaScopeRecord]) -> Resul
 
 /// Decode semantic scope records from a VYRECOB2 object file.
 pub fn decode_object_sema_scope_file(path: &Path) -> Result<CObjectSemaScope, String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("vyre-frontend-c: read object {}: {error}", path.display()))?;
-    decode_object_sema_scope(&bytes)
+    read_object_file(path, decode_object_sema_scope)
 }
 
 pub(super) fn decode_c_sema_scope_records(bytes: &[u8]) -> Result<Vec<CSemaScopeRecord>, String> {

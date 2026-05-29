@@ -4,7 +4,7 @@
 //! rewrites the program.
 //!
 //! **Hand-curated pass-pair list:** There is no longer a static list of ~30 `(before, after)`
-//! pairs in this module (location *N/A* — not present in this revision). Constraints that map
+//! pairs in this module (location *N/A*  -  not present in this revision). Constraints that map
 //! to named predecessor passes are encoded only via each pass’s `requires` entries and are
 //! honored by [`schedule_passes`] and the runtime requirement check inside `PassScheduler`'s fixpoint step.
 //!
@@ -61,6 +61,30 @@ pub struct PassScheduler {
     /// preserved bit-for-bit. Audits, tests, and the catalog-landing pipeline
     /// (Phase 4) flip this to `true` to drive the cost contract end-to-end.
     enforce_cost_monotone: bool,
+    /// When `true`, every landed pass rewrite is checked as an effect handler:
+    /// it may discharge effects already present in the program, but it may not
+    /// introduce new effect bits unless the pass declares them via
+    /// `ProgramPass::allowed_effect_additions`.
+    ///
+    /// This is the production hook for P-1.0-V1 effects-handler lowering.
+    /// Default remains `false` for compatibility; backend pre-lowering enables
+    /// it so release paths cannot silently add stores, atomics, barriers,
+    /// traps, async loads, or nested GPU dispatch during optimization.
+    enforce_effect_handlers: bool,
+    /// When `true`, every landed pass rewrite is checked against declared
+    /// `BufferDecl::linear_type` discipline. Rewrites may repair existing
+    /// violations, but they may not introduce a new linear/affine/relevant
+    /// violation after frontend validation.
+    ///
+    /// This is the production hook for P-1.0-V2 linear BufferAccess.
+    enforce_linear_types: bool,
+    /// When `true`, every landed pass rewrite is checked against declared
+    /// `BufferDecl::shape_predicate` refinements. Rewrites may repair existing
+    /// predicate violations, but they may not introduce a new liquid-shape
+    /// contradiction after frontend validation.
+    ///
+    /// This is the production hook for P-1.0-V3 liquid BufferDecl shapes.
+    enforce_shape_predicates: bool,
 }
 
 /// Optimized program plus per-pass runtime/size counters.
@@ -87,6 +111,24 @@ pub struct PassRunMetric {
     pub decision: PassRunDecision,
     /// Refusal kind when [`PassRunDecision::Refused`] applies.
     pub refusal_kind: Option<&'static str>,
+    /// Program effect-row bits before the pass when effect-handler
+    /// enforcement is enabled; otherwise zero.
+    pub effect_bits_before: u32,
+    /// Program effect-row bits after the pass and all scheduler gates when
+    /// effect-handler enforcement is enabled; otherwise zero.
+    pub effect_bits_after: u32,
+    /// Count of linear-type validation failures before the pass when
+    /// linear-type enforcement is enabled; otherwise zero.
+    pub linear_type_violations_before: usize,
+    /// Count of linear-type validation failures after the pass and all
+    /// scheduler gates when linear-type enforcement is enabled; otherwise zero.
+    pub linear_type_violations_after: usize,
+    /// Count of shape-predicate validation failures before the pass when
+    /// shape-predicate enforcement is enabled; otherwise zero.
+    pub shape_predicate_violations_before: usize,
+    /// Count of shape-predicate validation failures after the pass and all
+    /// scheduler gates when shape-predicate enforcement is enabled; otherwise zero.
+    pub shape_predicate_violations_after: usize,
     /// Transform wall-clock runtime in nanoseconds. Zero when skipped.
     pub runtime_ns: u128,
     /// Node count before the pass.
@@ -140,6 +182,15 @@ pub enum PassRunDecision {
     Changed,
     /// Cost-monotone enforcement rejected the produced rewrite.
     CostReverted,
+    /// Effects-handler enforcement rejected a rewrite that introduced
+    /// undeclared effects.
+    EffectReverted,
+    /// Linear-type enforcement rejected a rewrite that introduced a new
+    /// BufferAccess discipline violation.
+    LinearTypeReverted,
+    /// Shape-predicate enforcement rejected a rewrite that introduced a new
+    /// liquid BufferDecl contradiction.
+    ShapePredicateReverted,
     /// Pass explicitly refused through [`crate::optimizer::ProgramPass::try_transform`].
     Refused,
 }
@@ -232,6 +283,10 @@ fn estimate_node_allocations(node: &Node, estimate: &mut IrAllocationEstimate) {
             estimate.allocations = estimate.allocations.saturating_add(1);
         }
         Node::IndirectDispatch { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncWait { .. }
         | Node::Resume { .. }
         | Node::Return
@@ -348,6 +403,9 @@ impl PassScheduler {
             dirty_trigger_index_cache: OnceLock::new(),
             initial_dirty_flags_cache: OnceLock::new(),
             enforce_cost_monotone: false,
+            enforce_effect_handlers: false,
+            enforce_linear_types: false,
+            enforce_shape_predicates: false,
         })
     }
 
@@ -365,7 +423,47 @@ impl PassScheduler {
     pub fn cost_monotone_enforcement(&self) -> bool {
         self.enforce_cost_monotone
     }
+
+    /// Toggle effects-handler post-condition enforcement.
+    #[must_use]
+    pub fn with_effect_handler_enforcement(mut self, enforce: bool) -> Self {
+        self.enforce_effect_handlers = enforce;
+        self
+    }
+
+    /// Whether effects-handler enforcement is active.
+    #[must_use]
+    pub fn effect_handler_enforcement(&self) -> bool {
+        self.enforce_effect_handlers
+    }
+
+    /// Toggle linear-type post-condition enforcement.
+    #[must_use]
+    pub fn with_linear_type_enforcement(mut self, enforce: bool) -> Self {
+        self.enforce_linear_types = enforce;
+        self
+    }
+
+    /// Whether linear-type post-condition enforcement is active.
+    #[must_use]
+    pub fn linear_type_enforcement(&self) -> bool {
+        self.enforce_linear_types
+    }
+
+    /// Toggle shape-predicate post-condition enforcement.
+    #[must_use]
+    pub fn with_shape_predicate_enforcement(mut self, enforce: bool) -> Self {
+        self.enforce_shape_predicates = enforce;
+        self
+    }
+
+    /// Whether shape-predicate post-condition enforcement is active.
+    #[must_use]
+    pub fn shape_predicate_enforcement(&self) -> bool {
+        self.enforce_shape_predicates
+    }
 }
+
 
 impl Default for PassScheduler {
     fn default() -> Self {
@@ -399,7 +497,9 @@ mod queries;
 /// run_once_with_metrics, mark_invalidated_passes.
 mod run;
 
+pub(crate) use topo::schedule_pass_metadata_indices;
 pub use topo::{schedule_passes, PassSchedulingError};
 
 #[cfg(test)]
 mod tests;
+

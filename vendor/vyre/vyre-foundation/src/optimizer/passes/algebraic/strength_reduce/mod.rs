@@ -112,7 +112,7 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
             None
         }
         // Unsigned Div-by-2^k → Shr by k. Only fires when rhs is a
-        // LitU32 power of two — LitI32 paths avoid signed semantics
+        // LitU32 power of two  -  LitI32 paths avoid signed semantics
         // mismatch (negative dividend + rounding direction).
         BinOp::Div => {
             // ROADMAP G2: 1.0 / constant → compile-time reciprocal literal.

@@ -6,6 +6,10 @@
 //! envelope and quantifies the upload/allocation/fence work removed by keeping
 //! graph state resident.
 
+use crate::backend::accounting::{
+    checked_add_u64_count as checked_add, checked_mul_u64_count as checked_mul,
+    CudaArithmeticOverflow,
+};
 use crate::backend::staging_reserve::reserved_vec;
 use crate::megakernel_speedup_gate::{
     format_validated_cuda_megakernel_speedup_evidence_csv, CudaMegakernelSpeedupGateError,
@@ -188,6 +192,12 @@ impl std::fmt::Display for CudaResidentGraphSessionError {
 
 impl std::error::Error for CudaResidentGraphSessionError {}
 
+impl CudaArithmeticOverflow for CudaResidentGraphSessionError {
+    fn arithmetic_overflow(field: &'static str) -> Self {
+        Self::ByteCountOverflow { field }
+    }
+}
+
 impl std::fmt::Display for CudaResidentGraphSessionEvidenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -347,11 +357,7 @@ pub fn resident_graph_session_speedup_sample(
         compute_capability_minor: evidence.compute_capability_minor,
         graph_nodes: evidence.graph_nodes,
         graph_edges: evidence.graph_edges,
-        repetitions: evidence.plan.avoided_host_fences.checked_add(1).ok_or(
-            CudaResidentGraphSessionError::ByteCountOverflow {
-                field: "evidence repetitions",
-            },
-        )?,
+        repetitions: checked_add(evidence.plan.avoided_host_fences, 1, "evidence repetitions")?,
         host_orchestrated_ns: evidence.host_orchestrated_ns,
         resident_megakernel_ns: evidence.resident_megakernel_ns,
         setup_ns: evidence.setup_ns,
@@ -384,27 +390,20 @@ pub fn format_validated_cuda_resident_graph_session_evidence_csv(
         .map_err(CudaResidentGraphSessionEvidenceError::Speedup)
 }
 
-fn checked_mul(
-    lhs: u64,
-    rhs: u64,
-    field: &'static str,
-) -> Result<u64, CudaResidentGraphSessionError> {
-    lhs.checked_mul(rhs)
-        .ok_or(CudaResidentGraphSessionError::ByteCountOverflow { field })
-}
-
-fn checked_add(
-    lhs: u64,
-    rhs: u64,
-    field: &'static str,
-) -> Result<u64, CudaResidentGraphSessionError> {
-    lhs.checked_add(rhs)
-        .ok_or(CudaResidentGraphSessionError::ByteCountOverflow { field })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resident_graph_session_uses_shared_typed_cuda_arithmetic() {
+        let source = include_str!("resident_graph_session.rs");
+
+        assert!(source.contains("checked_add_u64_count as checked_add"));
+        assert!(source.contains("checked_mul_u64_count as checked_mul"));
+        assert!(source.contains("impl CudaArithmeticOverflow for CudaResidentGraphSessionError"));
+        assert!(!source.contains(concat!("fn checked_", "mul(")));
+        assert!(!source.contains(concat!("fn checked_", "add(")));
+    }
 
     #[test]
     fn resident_graph_session_amortizes_fixed_graph_repeated_execution() {
@@ -418,7 +417,7 @@ mod tests {
             budget_bytes: 2_000_000,
             readback: CudaResidentGraphReadback::FinalOnly,
         })
-        .expect("resident graph session should fit");
+        .expect("Fix: resident graph session should fit");
 
         assert_eq!(plan.one_time_graph_upload_bytes, 1_048_576);
         assert_eq!(plan.total_frontier_refresh_bytes, 524_288);
@@ -447,7 +446,8 @@ mod tests {
             budget_bytes: 2_000_000,
             readback: CudaResidentGraphReadback::FinalOnly,
         })
-        .expect("resident graph session should fit");
+        .expect("Fix: resident graph session should fit");
+
 
         let sample = resident_graph_session_speedup_sample(CudaResidentGraphSessionEvidence {
             backend_id: crate::CUDA_BACKEND_ID,
@@ -462,7 +462,7 @@ mod tests {
             resident_megakernel_ns: 10_000.0,
             setup_ns: 250_000.0,
         })
-        .expect("resident final-only plan should produce release evidence");
+        .expect("Fix: resident final-only plan should produce release evidence");
 
         assert_eq!(sample.backend_id, crate::CUDA_BACKEND_ID);
         assert_eq!(sample.device_memory_bytes, 32 * 1024 * 1024 * 1024);
@@ -487,7 +487,7 @@ mod tests {
             budget_bytes: 2_000_000,
             readback: CudaResidentGraphReadback::FinalOnly,
         })
-        .expect("first resident graph session should fit");
+        .expect("Fix: first resident graph session should fit");
         let plan_b = plan_cuda_resident_graph_session(CudaResidentGraphSessionProfile {
             graph_layout_hash: 0xdef,
             graph_bytes: 2_097_152,
@@ -498,7 +498,7 @@ mod tests {
             budget_bytes: 4_000_000,
             readback: CudaResidentGraphReadback::FinalOnly,
         })
-        .expect("second resident graph session should fit");
+        .expect("Fix: second resident graph session should fit");
         let evidence = [
             CudaResidentGraphSessionEvidence {
                 backend_id: crate::CUDA_BACKEND_ID,
@@ -530,9 +530,9 @@ mod tests {
 
         let (proof, csv) =
             format_validated_cuda_resident_graph_session_evidence_csv(&evidence, 100.0)
-                .expect("resident graph release evidence should format as validated CSV");
+                .expect("Fix: resident graph release evidence should format as validated CSV");
         let reparsed = crate::validate_cuda_megakernel_speedup_evidence_csv(&csv, 100.0)
-            .expect("resident graph release CSV should roundtrip through verifier");
+            .expect("Fix: resident graph release CSV should roundtrip through verifier");
 
         assert_eq!(proof, reparsed);
         assert_eq!(proof.sample_count, 2);
@@ -611,3 +611,4 @@ mod tests {
         }
     }
 }
+

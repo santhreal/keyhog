@@ -178,7 +178,7 @@ fn record_dispatch_unsubmitted_impl(
             }
             continue;
         }
-        input_idx_by_binding.push(info.binding, next_input);
+        input_idx_by_binding.push(info.binding, next_input)?;
         next_input = next_input.checked_add(1).ok_or_else(|| {
             BackendError::new(
                 "record-and-readback consumed input index overflowed usize. Fix: split the dispatch input list before recording.",
@@ -190,13 +190,13 @@ fn record_dispatch_unsubmitted_impl(
     // Tuple = (binding, pooled buffer, logical-byte-size). The third
     // field is the size we want the descriptor binding range to use,
     // not the size_class allocation length the pool returns. See
-    // ROADMAP Q3 — using `as_entire_binding()` made `arrayLength`
+    // ROADMAP Q3  -  using `as_entire_binding()` made `arrayLength`
     // report the rounded-up element count instead of the logical one.
     let mut gpu_buffers = GpuBuffers::with_capacity(non_shared_binding_count);
     let gpu_idx_by_binding = &mut scratch.gpu_idx_by_binding;
     let output_idx_by_binding = &mut scratch.output_idx_by_binding;
     for (idx, output) in request.output_bindings.iter().enumerate() {
-        output_idx_by_binding.push(output.binding, idx);
+        output_idx_by_binding.push(output.binding, idx)?;
     }
     // P0 #9: scratch.clear_requests is a thread-local Vec that retains
     // capacity across dispatches. Programs with > 8 buffers no longer pay a
@@ -348,7 +348,7 @@ fn record_dispatch_unsubmitted_impl(
 
         let idx = gpu_buffers.len();
         gpu_buffers.push((info.binding, buf, logical_size));
-        gpu_idx_by_binding.push(info.binding, idx);
+        gpu_idx_by_binding.push(info.binding, idx)?;
     }
     let host_upload_us = u64::try_from(host_upload_started.elapsed().as_micros()).map_err(|source| {
         BackendError::new(format!(
@@ -499,17 +499,9 @@ fn record_dispatch_unsubmitted_impl(
     })
 }
 
+
 fn padded_wgpu_usize(size: usize, label: &'static str) -> Result<usize, BackendError> {
-    let normalized = size.max(4);
-    let remainder = normalized % 4;
-    if remainder == 0 {
-        return Ok(normalized);
-    }
-    normalized.checked_add(4 - remainder).ok_or_else(|| {
-        BackendError::new(format!(
-            "{label} overflows usize while padding to WGPU's 4-byte buffer alignment. Fix: split the dispatch input."
-        ))
-    })
+    crate::numeric::align_up_usize(size, 4, label)
 }
 
 /// Record compute work, submit it, and return trimmed readback bytes.
@@ -523,3 +515,4 @@ pub(crate) fn record_and_readback(
 ) -> Result<vyre_driver::OutputBuffers, BackendError> {
     record_and_submit_async(request)?.await_result()
 }
+

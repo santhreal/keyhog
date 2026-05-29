@@ -11,9 +11,9 @@
 //!
 //! This module ships:
 //!
-//! * `SpirvEmitter` — stateless helper that wraps
+//! * `SpirvEmitter`  -  stateless helper that wraps
 //!   `naga::back::spv::write_vec`.
-//! * `SpirvBackend` — emission helper for Vulkan/SPIR-V validation.
+//! * `SpirvBackend`  -  emission helper for Vulkan/SPIR-V validation.
 //!   Live SPIR-V dispatch must acquire a concrete Vulkan backend or
 //!   fail loudly with an actionable driver/probe error.
 //!
@@ -46,7 +46,7 @@ impl SpirvEmitter {
         // SPIR-V" result even though the bytecode is from the same
         // naga::Module. Unify on `all()` so both back-ends accept
         // the same capability set. (Emission is still a best-effort
-        // operation — naga rejects SPIR-V-incompatible constructs at
+        // operation  -  naga rejects SPIR-V-incompatible constructs at
         // writer time with a specific error.)
         let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
         let info = validator.validate(module).map_err(|e| {
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn emit_returns_nonempty_words_for_empty_module() {
         // An empty naga::Module still emits a SPIR-V header +
-        // minimum entry-point prologue — the output should never be
+        // minimum entry-point prologue  -  the output should never be
         // empty even for a no-op program.
         let mut module = naga::Module::default();
         // Add a minimal compute entry point so the emitter has

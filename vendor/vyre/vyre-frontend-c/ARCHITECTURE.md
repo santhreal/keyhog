@@ -1,4 +1,4 @@
-# vyre-frontend-c — architecture
+# vyre-frontend-c  -  architecture
 
 Compile vyre `Program`s into native object files so the program
 can be linked against any C/C++/Rust toolchain. Distinct from
@@ -18,7 +18,7 @@ the host C compiler (clang preferred, gcc fallback) → emits a
 PIC object → archives.
 
 ### `tu_host/` + `tu_host.rs`
-Translation-unit host interface — generates the per-op C
+Translation-unit host interface  -  generates the per-op C
 prototypes and binds them through the host's symbol table so a
 linked program can call them by name.
 
@@ -32,11 +32,11 @@ right emitter per `target_triple`.
 
 ## Public types
 
-- **`Pipeline`** — entry-point for a single `Program → object`
+- **`Pipeline`**  -  entry-point for a single `Program → object`
   compile.
-- **`HostTu`** — translation-unit handle the host program holds
+- **`HostTu`**  -  translation-unit handle the host program holds
   while the compiled object is alive.
-- **`ObjectFormat`** — enum of supported object formats.
+- **`ObjectFormat`**  -  enum of supported object formats.
 
 ## Integration points
 

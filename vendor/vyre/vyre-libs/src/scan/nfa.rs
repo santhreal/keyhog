@@ -1,4 +1,4 @@
-//! Subgroup-cooperative NFA scan (G1 consumer).
+//! Subgroup-cooperative NFA scan.
 //!
 //! Composes [`vyre_primitives::nfa::subgroup_nfa::nfa_step`] semantics
 //! into a full scan loop that walks an input byte stream, advances
@@ -38,9 +38,16 @@ pub const OP_ID: &str = "vyre-libs::matching::nfa_scan";
 /// Compile a set of patterns into a scan Program.
 ///
 /// See module docs for buffer encoding. Hit buffer layout is
-/// `[counter, p0, s0, e0, p1, s1, e1, …]` — slot 0 is an atomic
+/// `[counter, p0, s0, e0, p1, s1, e1, …]`  -  slot 0 is an atomic
 /// counter, each match does `atomic_add(counter, 1)` and writes its
 /// `(pattern_id, start, end)` triple at `1 + 3*slot`.
+///
+/// `input_len` is the program's input-buffer **capacity** (max bytes
+/// the program is sized to handle in one dispatch). The actual
+/// haystack byte count is read at runtime from a dedicated
+/// `haystack_len` storage buffer so a single compiled program can
+/// dispatch any haystack between zero and the declared capacity
+/// without recompile.
 ///
 /// Invalid pattern plans lower to an explicit trap program.
 #[must_use]
@@ -69,9 +76,35 @@ pub fn try_nfa_scan(
     hit_buf: &str,
     input_len: u32,
 ) -> Result<Program, String> {
-    let plan = compile(patterns).for_input_len(input_len);
+    let plan = try_compile(patterns)
+        .map_err(|error| error.to_string())?
+        .for_input_len(input_len);
     nfa_scan_with_plan(&plan, false, input_buf, hit_buf, input_len)
 }
+
+/// Canonical buffer name for the runtime-supplied haystack byte count.
+/// Mirrors `classic_ac_bounded_ranges_program`'s `haystack_len` slot so
+/// every scan kernel in `vyre-libs::matching` exposes the same
+/// out-of-band length input.
+pub const HAYSTACK_LEN_BUF: &str = "nfa_haystack_len";
+
+/// Canonical buffer name for the runtime-supplied per-workgroup cursor
+/// bound. Each workgroup walks bytes from `WorkgroupId(0)` up to
+/// `min(haystack_len, WorkgroupId(0) + max_scan_bytes)`. Set to
+/// `u32::MAX` for unbounded scans (legacy behavior - every workgroup
+/// walks to the end of the haystack, giving O(N²) total work).
+///
+/// The bound exists because the entry-anchored cursor design dispatches
+/// one workgroup per byte and each workgroup walks until accept OR
+/// end-of-haystack - for a 62 MiB input that's ~1.9e15 transition-table
+/// loads total, fundamentally O(N²). When the consumer knows the longest
+/// possible match (e.g. `[MN].{22-24}\..{6-8}\..{27-38}` cannot exceed
+/// 73 bytes), passing that bound flips the kernel to O(N × bound), which
+/// for high-volume detector regexes drops the 62 MiB-shard cost from
+/// ~30 s to a few milliseconds. Patterns whose longest possible match
+/// would exceed `bound` (e.g. PEM blocks) need either a larger bound,
+/// a literal-bookend kernel (BEGIN/END), or a different scan strategy.
+pub const MAX_SCAN_BYTES_BUF: &str = "nfa_max_scan_bytes";
 
 /// Build an NFA scan kernel from a precompiled plan.
 ///
@@ -115,21 +148,44 @@ pub fn nfa_scan_with_plan(
     let accept_start_anchored = plan.accept_start_anchored.clone();
     let accept_end_anchored = plan.accept_end_anchored.clone();
 
+    // Runtime haystack byte count. Read once per workgroup-bound
+    // dispatch from the `nfa_haystack_len` uniform so a program
+    // compiled for a 256-MiB capacity can scan any haystack length
+    // from 0 .. capacity without recompiling. The constant
+    // `plan.input_len` only sizes the input buffer declaration.
+    let haystack_len_expr = || Expr::load(HAYSTACK_LEN_BUF, Expr::u32(0));
+
+    // Per-workgroup cursor cap. The cursor loop runs from
+    // `start = WorkgroupId(0)` to `min(haystack_len, start + max_scan_bytes)`.
+    // Without this bound, each workgroup walks to the end of the haystack
+    // (O(N) per workgroup × N workgroups = O(N²)). With a bound matched
+    // to the longest possible pattern match, total work drops to O(N × bound).
+    // Pass `u32::MAX` for unbounded scans to preserve legacy semantics.
+    let max_scan_bytes_expr = || Expr::load(MAX_SCAN_BYTES_BUF, Expr::u32(0));
+    // `min(haystack_len, start + max_scan_bytes)` - saturating add to
+    // avoid wraparound when `start + max_scan_bytes > u32::MAX`. The
+    // saturation produces u32::MAX, which then loses the `min` race
+    // against `haystack_len`, so the cursor still stops at the real
+    // haystack tail when the bound would have run past it.
+    let scan_end_expr = || {
+        let sum = Expr::select(
+            Expr::lt(Expr::add(start_u32(), max_scan_bytes_expr()), start_u32()),
+            // wrap detected → clamp to u32::MAX
+            Expr::u32(u32::MAX),
+            Expr::add(start_u32(), max_scan_bytes_expr()),
+        );
+        Expr::select(
+            Expr::lt(sum.clone(), haystack_len_expr()),
+            sum,
+            haystack_len_expr(),
+        )
+    };
+
     // Per-cursor body. Runs inside the byte loop.
     let mut cursor_body: Vec<Node> = Vec::new();
-    fn packed_byte(input_buf: &str, index: Expr) -> Expr {
-        Expr::bitand(
-            Expr::shr(
-                Expr::load(input_buf, Expr::div(index.clone(), Expr::u32(4))),
-                Expr::mul(Expr::rem(index, Expr::u32(4)), Expr::u32(8)),
-            ),
-            Expr::u32(0xFF),
-        )
-    }
-
     cursor_body.push(Node::let_bind(
         "byte",
-        packed_byte(input_buf, Expr::var("cursor")),
+        crate::scan::builders::load_packed_byte_expr(input_buf, Expr::var("cursor")),
     ));
     cursor_body.push(Node::let_bind("next_state", Expr::u32(0)));
 
@@ -184,7 +240,7 @@ pub fn nfa_scan_with_plan(
         }
     }
 
-    // Epsilon closure — only when the pattern set has ε edges.
+    // Epsilon closure  -  only when the pattern set has ε edges.
     // OR is idempotent so a fixed `num_states` iteration count
     // reaches fixpoint.
     if has_epsilon {
@@ -239,7 +295,7 @@ pub fn nfa_scan_with_plan(
     cursor_body.push(Node::assign("state_word", Expr::var("next_state")));
 
     // Per-cursor accept emission. Fixes the post-loop-only bug the
-    // PHASE3_SCAN audit flagged — intermediate matches were lost.
+    // PHASE3_SCAN audit flagged  -  intermediate matches were lost.
     // Slot 0 of hit_buf is the atomic counter; each match claims
     // the next `(pattern_id, start, end)` triple via atomic_add(1).
     let max_hits = 10_000u32;
@@ -271,7 +327,7 @@ pub fn nfa_scan_with_plan(
                 accept_guard,
                 Expr::eq(
                     Expr::add(Expr::var("cursor"), Expr::u32(1)),
-                    Expr::u32(plan.input_len),
+                    haystack_len_expr(),
                 ),
             );
         }
@@ -376,7 +432,7 @@ pub fn nfa_scan_with_plan(
     body.push(Node::loop_for(
         "cursor",
         start_u32(),
-        Expr::u32(plan.input_len),
+        scan_end_expr(),
         cursor_body,
     ));
 
@@ -391,6 +447,10 @@ pub fn nfa_scan_with_plan(
             .with_count(num_states * LANES_PER_SUBGROUP as u32),
         BufferDecl::storage(hit_buf, 3, BufferAccess::ReadWrite, DataType::U32)
             .with_count(num_hit_slots),
+        BufferDecl::storage(HAYSTACK_LEN_BUF, 4, BufferAccess::ReadOnly, DataType::U32)
+            .with_count(1),
+        BufferDecl::storage(MAX_SCAN_BYTES_BUF, 5, BufferAccess::ReadOnly, DataType::U32)
+            .with_count(1),
     ];
 
     Ok(Program::wrapped(
@@ -402,7 +462,7 @@ pub fn nfa_scan_with_plan(
             body: Arc::new(vec![Node::if_then(
                 Expr::and(
                     Expr::lt(lane_u32(), Expr::u32(LANES_PER_SUBGROUP as u32)),
-                    Expr::lt(start_u32(), Expr::u32(plan.input_len)),
+                    Expr::lt(start_u32(), haystack_len_expr()),
                 ),
                 body,
             )]),
@@ -410,164 +470,18 @@ pub fn nfa_scan_with_plan(
     ))
 }
 
-/// Compiled plan for a pattern set.
-#[derive(Debug, Clone)]
-pub struct NfaPlan {
-    /// Total NFA state count (across every pattern + the shared entry).
-    pub num_states: u32,
-    /// Input buffer length the plan was compiled against.
-    pub input_len: u32,
-    /// One `(pattern_id, pattern_len)` per accept state.
-    pub accept_states: Vec<(u32, u32)>,
-    /// NFA state id for each entry in [`accept_states`](Self::accept_states).
-    pub accept_state_ids: Vec<u32>,
-    /// Per-accept flag requiring the match start offset to be zero.
-    pub accept_start_anchored: Vec<bool>,
-    /// Per-accept flag requiring the match end offset to equal input length.
-    pub accept_end_anchored: Vec<bool>,
-}
 
-impl NfaPlan {
-    /// Attach the expected input length.
-    #[must_use]
-    pub fn for_input_len(mut self, input_len: u32) -> Self {
-        self.input_len = input_len;
-        self
-    }
-}
+mod alloc;
+mod plan;
+mod shards;
+mod tables;
 
-/// Compile patterns into an [`NfaPlan`]. Literal-only: each pattern
-/// contributes `len(p)` states; all patterns share state 0 (entry),
-/// so total state count is `1 + sum(len(p))`.
-#[must_use]
-pub fn compile(patterns: &[&str]) -> NfaPlan {
-    let mut accept_states = Vec::with_capacity(patterns.len());
-    let mut accept_state_ids = Vec::with_capacity(patterns.len());
-    let mut next_state: u32 = 1;
-    for (pid, p) in patterns.iter().enumerate() {
-        let len = p.len() as u32;
-        accept_states.push((pid as u32, len));
-        accept_state_ids.push(if len == 0 { 0 } else { next_state + len - 1 });
-        next_state += len;
-    }
-    NfaPlan {
-        num_states: next_state,
-        input_len: 0,
-        accept_states,
-        accept_state_ids,
-        accept_start_anchored: vec![false; patterns.len()],
-        accept_end_anchored: vec![false; patterns.len()],
-    }
-}
-
-/// Build the `nfa_transition` lane-major bit-table matching the
-/// [`subgroup_nfa::nfa_step`] contract:
-/// `[num_states × 256 × LANES_PER_SUBGROUP]` u32s. Entry
-/// `trans[src * 256 * LANES + byte * LANES + dst_lane]` is the
-/// destination bitset held by `dst_lane` when state `src` sees `byte`.
-///
-/// [`subgroup_nfa::nfa_step`]: vyre_primitives::nfa::subgroup_nfa::nfa_step
-#[must_use]
-pub fn build_transition_table(patterns: &[&str]) -> Vec<u32> {
-    let plan = compile(patterns);
-    let num_states = plan.num_states as usize;
-    let mut table = vec![0_u32; num_states * 256 * LANES_PER_SUBGROUP];
-    let mut state_cursor: usize = 1;
-    for p in patterns {
-        let mut src = 0_usize;
-        for b in p.bytes() {
-            let dst = state_cursor;
-            let dst_lane = dst / 32;
-            let dst_bit = 1_u32 << (dst % 32);
-            let idx = src * 256 * LANES_PER_SUBGROUP + (b as usize) * LANES_PER_SUBGROUP + dst_lane;
-            table[idx] |= dst_bit;
-            src = dst;
-            state_cursor += 1;
-        }
-    }
-    table
-}
-
-/// Lane-major transition table where each lane's slice is contiguous.
-///
-/// Layout: `lane * padded_num_states * 256 + byte * padded_num_states + src_state`
-/// where `padded_num_states = LANES_PER_SUBGROUP * ceil(num_states / LANES_PER_SUBGROUP)`.
-///
-/// # Cache-line + coalescing rationale
-///
-/// The flat layout (`src * 256 * LANES + byte * LANES + lane`) keeps all
-/// lanes' data for one `(src, byte)` tuple adjacent. This coalesces
-/// perfectly when every lane reads the same `src`/`byte` simultaneously,
-/// but when a lane needs to scan across *all* source states for a single
-/// byte (e.g. a vectorized bit-test that replaces the 1024 per-bit
-/// branches), each load strides by `LANES` u32s, defeating SIMD gather.
-///
-/// This layout transposes the dimensions so that for a fixed `lane` and
-/// `byte`, the `num_states` entries are contiguous. A single 128-bit SIMD
-/// load fetches four states; on AVX-512 / subgroup-shuffle paths a full
-/// cache line (16 states) arrives in one cycle. The padded row length
-/// aligns each byte's row to a multiple of the subgroup width, ensuring
-/// that cross-lane addresses in a workgroup dispatch fall on different
-/// cache banks and avoid bank conflicts.
-#[must_use]
-pub fn build_transition_table_lane_major(patterns: &[&str]) -> Vec<u32> {
-    let plan = compile(patterns);
-    let num_states = plan.num_states as usize;
-    let padded_states = LANES_PER_SUBGROUP * num_states.div_ceil(LANES_PER_SUBGROUP);
-    let mut table = vec![0_u32; padded_states * 256 * LANES_PER_SUBGROUP];
-    let mut state_cursor: usize = 1;
-    for p in patterns {
-        let mut src = 0_usize;
-        for b in p.bytes() {
-            let dst = state_cursor;
-            let dst_lane = dst / 32;
-            let dst_bit = 1_u32 << (dst % 32);
-            let idx = dst_lane * padded_states * 256 + (b as usize) * padded_states + src;
-            table[idx] |= dst_bit;
-            src = dst;
-            state_cursor += 1;
-        }
-    }
-    table
-}
-
-/// Build the `nfa_epsilon` lane-major table
-/// `[num_states × LANES_PER_SUBGROUP]`. Literal-only → all zero.
-#[must_use]
-pub fn build_epsilon_table(patterns: &[&str]) -> Vec<u32> {
-    let n = compile(patterns).num_states as usize;
-    vec![0_u32; n * LANES_PER_SUBGROUP]
-}
-
-/// Shard a pattern set across multiple NFA plans so each shard fits
-/// in [`MAX_STATES_PER_SUBGROUP`]. Greedy first-fit.
-#[must_use]
-pub fn plan_shards<'a>(patterns: &'a [&'a str]) -> Vec<Vec<&'a str>> {
-    let mut shards: Vec<Vec<&str>> = Vec::new();
-    let mut current: Vec<&str> = Vec::new();
-    let mut current_states: usize = 1;
-    for p in patterns {
-        let extra = p.len();
-        if extra >= MAX_STATES_PER_SUBGROUP {
-            if !current.is_empty() {
-                shards.push(std::mem::take(&mut current));
-                current_states = 1;
-            }
-            shards.push(vec![*p]);
-            continue;
-        }
-        if current_states + extra > MAX_STATES_PER_SUBGROUP {
-            shards.push(std::mem::take(&mut current));
-            current_states = 1;
-        }
-        current.push(*p);
-        current_states += extra;
-    }
-    if !current.is_empty() {
-        shards.push(current);
-    }
-    shards
-}
+pub use plan::{compile, try_compile, NfaCompileError, NfaPlan};
+pub use shards::plan_shards;
+pub use tables::{
+    build_epsilon_table, build_transition_table, build_transition_table_lane_major,
+    try_build_epsilon_table, try_build_transition_table, try_build_transition_table_lane_major,
+};
 
 #[cfg(test)]
 mod tests {
@@ -585,6 +499,66 @@ mod tests {
         let plan = compile(&["ab", "cd"]);
         assert_eq!(plan.num_states, 5);
         assert_eq!(plan.accept_states.len(), 2);
+    }
+
+    #[test]
+    fn try_compile_matches_legacy_plan_without_truncating_fields() {
+        let plan = try_compile(&["ab", "", "xyz"])
+            .expect("Fix: small NFA pattern set must compile fallibly");
+
+        assert_eq!(plan.num_states, 6);
+        assert_eq!(plan.accept_states, vec![(0, 2), (1, 0), (2, 3)]);
+        assert_eq!(plan.accept_state_ids, vec![2, 0, 5]);
+        assert_eq!(plan.accept_start_anchored, vec![false; 3]);
+        assert_eq!(plan.accept_end_anchored, vec![false; 3]);
+    }
+
+    #[test]
+    fn fallible_table_builders_match_legacy_table_shapes() {
+        let patterns = ["abc", "de"];
+        assert_eq!(
+            try_build_transition_table(&patterns)
+                .expect("Fix: fallible transition table should build"),
+            build_transition_table(&patterns)
+        );
+        assert_eq!(
+            try_build_transition_table_lane_major(&patterns)
+                .expect("Fix: fallible lane-major transition table should build"),
+            build_transition_table_lane_major(&patterns)
+        );
+        assert_eq!(
+            try_build_epsilon_table(&patterns).expect("Fix: fallible epsilon table should build"),
+            build_epsilon_table(&patterns)
+        );
+    }
+
+    #[test]
+    fn nfa_compile_and_tables_use_checked_allocation_paths() {
+        let root = include_str!("nfa.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: nfa.rs must contain production section");
+        let production = [
+            root,
+            include_str!("nfa/alloc.rs"),
+            include_str!("nfa/plan.rs"),
+            include_str!("nfa/tables.rs"),
+        ]
+        .join("\n");
+
+        assert!(
+            production.contains("pub fn try_compile")
+                && production.contains("u32::try_from(p.len())")
+                && production.contains("u32::try_from(pid)")
+                && production.contains("checked_add(len)")
+                && production.contains("try_build_transition_table")
+                && production.contains("try_reserve_vec_to_capacity")
+                && !production.contains("p.len() as u32")
+                && !production.contains("pid as u32")
+                && !production.contains("next_state += len")
+                && !production.contains("vec![0_u32;"),
+            "Fix: NFA compilation must not truncate pattern ids, pattern lengths, state counts, or allocate tables through infallible zero-vector construction."
+        );
     }
 
     #[test]
@@ -618,7 +592,7 @@ mod tests {
         let refs: Vec<&str> = pats.iter().map(String::as_str).collect();
         let t = build_transition_table(&refs);
         let plan = compile(&refs);
-        // Dst state 32 is reached from entry (state 0) on byte ('a' + 32) = '!' + … — find it by search.
+        // Dst state 32 is reached from entry (state 0) on byte ('a' + 32) = '!' + …  -  find it by search.
         // Any entry at lane 1 should be non-zero.
         let has_lane1 = (0..256)
             .map(|byte| t[0 * 256 * LANES_PER_SUBGROUP + byte * LANES_PER_SUBGROUP + 1])
@@ -764,7 +738,9 @@ mod tests {
         // Program, so callers can route empty haystacks through the
         // same dispatch builder as non-empty inputs.
         let prog = nfa_scan(&["abc"], "input", "hits", 0);
-        assert!(!prog.entry().is_empty());
+        let names: Vec<&str> = prog.buffers().iter().map(|b| b.name()).collect();
+        assert!(names.contains(&"input"));
+        assert!(names.contains(&"hits"));
     }
 
     #[test]
@@ -831,7 +807,7 @@ pub mod bench {
             }
         }
 
-        // Epsilon closure — real fixpoint. Same logic as flat layout;
+        // Epsilon closure  -  real fixpoint. Same logic as flat layout;
         // epsilon table is not transposed.
         for _ in 0..MAX_EPSILON_ITERS as usize {
             let prev = acc.clone();
@@ -857,3 +833,4 @@ pub mod bench {
         acc
     }
 }
+

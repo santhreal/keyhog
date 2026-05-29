@@ -1,23 +1,23 @@
 //! Family name → tag-bit mask allocation.
 //!
 //! Canonical bit allocation for every `@family` predicate label that
-//! appears in surge rules. Shared across consumers so the predicate-
+//! appears in security rules. Shared across consumers so the predicate-
 //! side `@family` resolver and the source-side classifier agree on
 //! which bit a family lives at.
 //!
 //! Every family used in any rule must be represented explicitly in
-//! [`CANONICAL_BITS`]. There is no synthetic-bit fallback — a family
+//! [`CANONICAL_BITS`]. There is no synthetic-bit fallback  -  a family
 //! without an entry is a compile-time error.
 //!
 //! # Bit layout
 //!
-//! - bits 0..15  — canonical security families (ALLOCATOR, RECEIVE,
+//! - bits 0..15   -  canonical security families (ALLOCATOR, RECEIVE,
 //!   SANITIZER, etc.).
-//! - bits 16..18 — reserved for structural families (FUNCTION, FILE,
+//! - bits 16..18  -  reserved for structural families (FUNCTION, FILE,
 //!   PACKAGE) declared by consumers.
-//! - bits 19..23 — reserved for consumer extension tags (e.g.
+//! - bits 19..23  -  reserved for consumer extension tags (e.g.
 //!   STRING_LITERAL, STACK_ARRAY).
-//! - bits 24..31 — launch-family unique bits.
+//! - bits 24..31  -  launch-family unique bits.
 
 /// Canonical family → tag-bit mask. Returns `None` for any family
 /// without an explicit allocation.
@@ -46,7 +46,7 @@ pub fn resolve_label_family_mask(family: &str) -> Result<u32, String> {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Canonical security families — bits 0..15.
+// Canonical security families  -  bits 0..15.
 // ────────────────────────────────────────────────────────────────────
 
 pub const ALLOCATOR: u32 = 1 << 0;
@@ -67,7 +67,7 @@ pub const PRIVILEGE_CHECK: u32 = 1 << 13;
 pub const PRIVILEGE_USE: u32 = 1 << 14;
 
 // ────────────────────────────────────────────────────────────────────
-// Launch-family unique bits — bits 24..31. 8 slots; each is OR'd onto
+// Launch-family unique bits  -  bits 24..31. 8 slots; each is OR'd onto
 // a node alongside any canonical bit it semantically inherits, so
 // `call_to(@receive_family)` continues to match every receive call
 // (broad) while `call_to(@gets_family)` matches only `gets`-shaped

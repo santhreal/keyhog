@@ -8,7 +8,7 @@
 //!
 //! # Why a separate module instead of widening `nfa::compile`
 //!
-//! The literal compiler is hot-path simple — every byte is a single
+//! The literal compiler is hot-path simple  -  every byte is a single
 //! state. Bolting alternation / repetition / character classes onto it
 //! would either bloat the literal path or fork the construction code.
 //! The lego-block fix is a SECOND construction module that emits the
@@ -70,6 +70,32 @@ pub enum RegexCompileError {
         /// Per-pipeline maximum.
         cap: usize,
     },
+    /// Pattern count does not fit the GPU ABI's `u32` pattern id field.
+    PatternCountOverflow {
+        /// Number of patterns supplied by the caller.
+        count: usize,
+    },
+    /// A compiled regex match length does not fit the `u32` match ABI.
+    MatchLengthOverflow {
+        /// Index into the input slice that produced the oversized match.
+        pattern_index: usize,
+        /// Longest matched byte length for the pattern.
+        len: usize,
+    },
+    /// Transition or epsilon table word count overflowed host `usize`.
+    TableWordCountOverflow {
+        /// Table being built.
+        table: &'static str,
+    },
+    /// Compiler staging allocation failed.
+    StorageReserveFailed {
+        /// Scratch vector being reserved.
+        field: &'static str,
+        /// Requested target capacity.
+        requested: usize,
+        /// Allocator failure details.
+        message: String,
+    },
 }
 
 impl std::fmt::Display for RegexCompileError {
@@ -96,13 +122,36 @@ impl std::fmt::Display for RegexCompileError {
                 "regex_compile: NFA needs {states} states; per-pipeline cap is {cap}. \
                  Fix: split the pattern set across multiple pipelines."
             ),
+            Self::PatternCountOverflow { count } => write!(
+                f,
+                "regex_compile: pattern count {count} exceeds u32 capacity. Fix: shard the pattern set before GPU regex compilation."
+            ),
+            Self::MatchLengthOverflow {
+                pattern_index,
+                len,
+            } => write!(
+                f,
+                "regex_compile: pattern {pattern_index} match length {len} exceeds u32 capacity. Fix: bound or shard the regex before GPU compilation."
+            ),
+            Self::TableWordCountOverflow { table } => write!(
+                f,
+                "regex_compile: {table} table word count overflows host usize. Fix: shard the regex pattern set before table construction."
+            ),
+            Self::StorageReserveFailed {
+                field,
+                requested,
+                message,
+            } => write!(
+                f,
+                "regex_compile: could not reserve {requested} {field} slot(s): {message}. Fix: shard the regex pattern set before GPU compilation."
+            ),
         }
     }
 }
 
 impl std::error::Error for RegexCompileError {}
 
-/// Output of [`compile_regex_set`] — same triple shape as the literal
+/// Output of [`compile_regex_set`]  -  same triple shape as the literal
 /// `nfa::compile` returns plus the GPU side-tables `nfa::nfa_scan`
 /// expects, so consumers can plug this into `RulePipeline` without
 /// changing the dispatch path.
@@ -126,10 +175,26 @@ const STATE_CAP: usize = LANES * 32;
 /// See [`RegexCompileError`].
 pub fn compile_regex_set(patterns: &[&str]) -> Result<CompiledRegexSet, RegexCompileError> {
     let mut builder = NfaBuilder::new();
-    let mut accept_states = Vec::with_capacity(patterns.len());
-    let mut accept_state_ids = Vec::with_capacity(patterns.len());
-    let mut accept_start_anchored = Vec::with_capacity(patterns.len());
-    let mut accept_end_anchored = Vec::with_capacity(patterns.len());
+    let _pattern_count =
+        u32::try_from(patterns.len()).map_err(|_| RegexCompileError::PatternCountOverflow {
+            count: patterns.len(),
+        })?;
+    let mut accept_states = Vec::new();
+    reserve_vec(&mut accept_states, patterns.len(), "accept state")?;
+    let mut accept_state_ids = Vec::new();
+    reserve_vec(&mut accept_state_ids, patterns.len(), "accept state id")?;
+    let mut accept_start_anchored = Vec::new();
+    reserve_vec(
+        &mut accept_start_anchored,
+        patterns.len(),
+        "accept start-anchor flag",
+    )?;
+    let mut accept_end_anchored = Vec::new();
+    reserve_vec(
+        &mut accept_end_anchored,
+        patterns.len(),
+        "accept end-anchor flag",
+    )?;
     let entry = builder.fresh_state(); // shared entry state 0
 
     // Use the byte-oriented parser configuration: `unicode(false)` +
@@ -138,18 +203,46 @@ pub fn compile_regex_set(patterns: &[&str]) -> Result<CompiledRegexSet, RegexCom
     // `regex_syntax::parse(pat)` defaults to Unicode classes that
     // explode into hundreds of byte ranges and trip our `> 0x7F` guard.
     for (pid, pat) in patterns.iter().enumerate() {
-        let mut parser = regex_syntax::ParserBuilder::new()
+        // Two-phase parse: byte-mode first (keeps `\d`/`\w`/`\s` ASCII
+        // so they don't explode into hundreds of Unicode codepoint
+        // ranges), then unicode-mode as a fallback when the source
+        // contains a non-ASCII codepoint inside a character class
+        // (e.g. homoglyph-expanded `[hнһｈ]`). The unicode-mode HIR
+        // gets the same `build_class` lowering - non-ASCII members
+        // expand into UTF-8 byte-sequence alternations.
+        let hir = match regex_syntax::ParserBuilder::new()
             .unicode(false)
             .utf8(false)
-            .build();
-        let hir = parser.parse(pat).map_err(|e| RegexCompileError::Parse {
-            pattern_index: pid,
-            message: format!("{e}"),
-        })?;
+            .build()
+            .parse(pat)
+        {
+            Ok(h) => h,
+            Err(byte_mode_err) => regex_syntax::ParserBuilder::new()
+                .unicode(true)
+                .utf8(false)
+                .build()
+                .parse(pat)
+                .map_err(|_unicode_err| RegexCompileError::Parse {
+                    pattern_index: pid,
+                    // Surface the byte-mode diagnostic since that's the
+                    // narrow grammar the kernel actually supports; the
+                    // unicode-mode retry exists only to widen the
+                    // character-class path.
+                    message: format!("{byte_mode_err}"),
+                })?,
+        };
         let (frag, anchors) = build_pattern_hir(&mut builder, &hir, pid)?;
         // Connect the shared entry to this pattern's start via epsilon.
         builder.add_epsilon(entry, frag.start);
-        accept_states.push((pid as u32, frag.match_len as u32));
+        let pid_u32 = u32::try_from(pid).map_err(|_| RegexCompileError::PatternCountOverflow {
+            count: patterns.len(),
+        })?;
+        let match_len_u32 =
+            u32::try_from(frag.match_len).map_err(|_| RegexCompileError::MatchLengthOverflow {
+                pattern_index: pid,
+                len: frag.match_len,
+            })?;
+        accept_states.push((pid_u32, match_len_u32));
         accept_state_ids.push(frag.end);
         accept_start_anchored.push(anchors.start);
         accept_end_anchored.push(anchors.end);
@@ -163,14 +256,19 @@ pub fn compile_regex_set(patterns: &[&str]) -> Result<CompiledRegexSet, RegexCom
     }
 
     let plan = NfaPlan {
-        num_states: builder.state_count() as u32,
+        num_states: u32::try_from(builder.state_count()).map_err(|_| {
+            RegexCompileError::TooManyStates {
+                states: builder.state_count(),
+                cap: STATE_CAP,
+            }
+        })?,
         input_len: 0,
         accept_states,
         accept_state_ids,
         accept_start_anchored,
         accept_end_anchored,
     };
-    let (transition_table, epsilon_table) = builder.emit_lane_major_tables();
+    let (transition_table, epsilon_table) = builder.emit_lane_major_tables()?;
     Ok(CompiledRegexSet {
         plan,
         transition_table,
@@ -296,8 +394,12 @@ impl NfaBuilder {
     }
 
     fn fresh_state(&mut self) -> u32 {
-        let state = self.state_count as u32;
-        self.state_count += 1;
+        let state = u32::try_from(self.state_count)
+            .expect("Fix: regex NFA state ids must be checked before exceeding u32 capacity");
+        self.state_count = self
+            .state_count
+            .checked_add(1)
+            .expect("Fix: regex NFA state count must not overflow host usize");
         state
     }
 
@@ -311,10 +413,14 @@ impl NfaBuilder {
 
     /// Lane-major emission, matching the contract of
     /// `nfa::build_transition_table` + `build_epsilon_table`.
-    fn emit_lane_major_tables(&self) -> (Vec<u32>, Vec<u32>) {
+    fn emit_lane_major_tables(&self) -> Result<(Vec<u32>, Vec<u32>), RegexCompileError> {
         let n = self.state_count();
-        let mut transitions = vec![0u32; n * 256 * LANES];
-        let mut epsilons = vec![0u32; n * LANES];
+        let mut transitions = zeroed_u32_table(
+            table_word_count(n, 256, "transition")?,
+            "transition table word",
+        )?;
+        let mut epsilons =
+            zeroed_u32_table(table_word_count(n, 1, "epsilon")?, "epsilon table word")?;
 
         for edge in &self.transitions {
             let src = edge.src as usize;
@@ -331,8 +437,41 @@ impl NfaBuilder {
             let idx = src as usize * LANES + dst_lane;
             epsilons[idx] |= dst_bit;
         }
-        (transitions, epsilons)
+        Ok((transitions, epsilons))
     }
+}
+
+fn table_word_count(
+    states: usize,
+    byte_columns: usize,
+    table: &'static str,
+) -> Result<usize, RegexCompileError> {
+    states
+        .checked_mul(byte_columns)
+        .and_then(|words| words.checked_mul(LANES))
+        .ok_or(RegexCompileError::TableWordCountOverflow { table })
+}
+
+
+fn zeroed_u32_table(words: usize, field: &'static str) -> Result<Vec<u32>, RegexCompileError> {
+    let mut table = Vec::new();
+    reserve_vec(&mut table, words, field)?;
+    table.resize(words, 0);
+    Ok(table)
+}
+
+fn reserve_vec<T>(
+    vec: &mut Vec<T>,
+    requested: usize,
+    field: &'static str,
+) -> Result<(), RegexCompileError> {
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(vec, requested).map_err(|source| {
+        RegexCompileError::StorageReserveFailed {
+            field,
+            requested,
+            message: source.to_string(),
+        }
+    })
 }
 
 fn empty_fragment(b: &mut NfaBuilder) -> Fragment {
@@ -431,17 +570,7 @@ fn build_hir(b: &mut NfaBuilder, hir: &Hir, pid: usize) -> Result<Fragment, Rege
                 match_len: lit.0.len(),
             })
         }
-        HirKind::Class(cls) => {
-            let set = byte_set_from_class(cls, pid)?;
-            let start = b.fresh_state();
-            let end = b.fresh_state();
-            b.add_byte_transition(start, set, end);
-            Ok(Fragment {
-                start,
-                end,
-                match_len: 1,
-            })
-        }
+        HirKind::Class(cls) => build_class(b, cls, pid),
         HirKind::Repetition(rep) => build_repetition(b, rep, pid),
         HirKind::Concat(parts) => build_hir_slice(b, parts, pid),
         HirKind::Alternation(alts) => {
@@ -545,39 +674,166 @@ fn build_repetition(
     })
 }
 
-fn byte_set_from_class(cls: &Class, pid: usize) -> Result<ByteSet, RegexCompileError> {
+/// Lower a regex character class into an NFA fragment, taking the
+/// single-byte fast path when the class fits in 0..=127 and the
+/// UTF-8-alternation expansion path otherwise.
+///
+/// The single-byte path is identical to the original implementation:
+/// one ByteSet, one transition, `match_len = 1`. The expansion path
+/// emits one byte-chain fragment per codepoint (or per pre-existing
+/// multi-byte range like `\u{0100}-\u{01FF}` enumerated codepoint-by-
+/// codepoint) and ε-merges them via a shared end state.
+///
+/// `match_len` for the expansion case is the MAX byte length across
+/// arms - anchored extraction uses `match_len` only to position
+/// the post-process window, not to extract the credential text, and
+/// over-sizing the window is harmless (the real regex re-extracts the
+/// exact match inside it).
+///
+/// To keep state-budget worst case bounded, expansion is capped at
+/// `MAX_CLASS_EXPANSION_CODEPOINTS = 256` enumerated codepoints (a
+/// `[\u{0100}-\u{017F}]` Latin-Extended block sits at 128, which is
+/// well within budget; a class spanning a full CJK block would refuse).
+fn build_class(b: &mut NfaBuilder, cls: &Class, pid: usize) -> Result<Fragment, RegexCompileError> {
+    if let Some(set) = try_class_as_ascii_byte_set(cls) {
+        let start = b.fresh_state();
+        let end = b.fresh_state();
+        b.add_byte_transition(start, set, end);
+        return Ok(Fragment {
+            start,
+            end,
+            match_len: 1,
+        });
+    }
+    let sequences = class_to_utf8_sequences(cls, pid)?;
+    if sequences.is_empty() {
+        return Err(RegexCompileError::Unsupported {
+            pattern_index: pid,
+            feature: "empty character class after Unicode expansion",
+        });
+    }
+    let start = b.fresh_state();
+    let end = b.fresh_state();
+    let mut max_len = 1usize;
+    for seq in &sequences {
+        if seq.is_empty() {
+            continue;
+        }
+        // Build a sequential chain start ε→ s0 -b0-> s1 -b1-> ... -bN-> end
+        // for this UTF-8 byte sequence.
+        let arm_start = b.fresh_state();
+        b.add_epsilon(start, arm_start);
+        let mut prev = arm_start;
+        for &byte in seq {
+            let next = b.fresh_state();
+            b.add_byte_transition(prev, ByteSet::from_byte(byte), next);
+            prev = next;
+        }
+        b.add_epsilon(prev, end);
+        if seq.len() > max_len {
+            max_len = seq.len();
+        }
+    }
+    Ok(Fragment {
+        start,
+        end,
+        match_len: max_len,
+    })
+}
+
+/// Returns `Some(ByteSet)` when every member of the class fits in
+/// 0..=127 (i.e. the original single-byte ASCII fast path). Otherwise
+/// returns None so the caller takes the UTF-8 expansion path.
+fn try_class_as_ascii_byte_set(cls: &Class) -> Option<ByteSet> {
     let mut out = ByteSet::new();
     match cls {
         Class::Bytes(byte_class) => {
+            // Byte classes are already at the byte level - every member
+            // is a u8, no codepoint expansion involved. The legacy fast
+            // path always applies.
             for r in byte_class.iter() {
-                let lo = r.start();
-                let hi = r.end();
-                let merged = ByteSet::from_range(lo, hi);
+                let merged = ByteSet::from_range(r.start(), r.end());
                 for w in 0..4 {
                     out.bits[w] |= merged.bits[w];
+                }
+            }
+            Some(out)
+        }
+        Class::Unicode(uni) => {
+            // ASCII-only fast path. The moment any range escapes
+            // 0..=0x7F, fall through to UTF-8 expansion.
+            for r in uni.iter() {
+                if (r.end() as u32) > 0x7F {
+                    return None;
+                }
+                let merged = ByteSet::from_range(r.start() as u8, r.end() as u8);
+                for w in 0..4 {
+                    out.bits[w] |= merged.bits[w];
+                }
+            }
+            Some(out)
+        }
+    }
+}
+
+/// Cap on enumerated codepoints during UTF-8 expansion. A class like
+/// `[\u{0100}-\u{017F}]` (Latin Extended-A) expands to 128 sequences,
+/// well within the cap. A class spanning a full CJK block (~20 000
+/// codepoints) would blow past it - the byte-state automaton can't
+/// represent that cleanly, so the consumer should keep that pattern on
+/// the CPU regex path.
+const MAX_CLASS_EXPANSION_CODEPOINTS: usize = 256;
+
+/// Enumerate every codepoint in `cls`, encode each into UTF-8, and
+/// return the resulting `Vec<Vec<u8>>` so the caller can build an
+/// alternation of byte-chain fragments. ASCII members come back as
+/// 1-byte sequences; non-ASCII as 2-4 byte sequences.
+fn class_to_utf8_sequences(cls: &Class, pid: usize) -> Result<Vec<Vec<u8>>, RegexCompileError> {
+    let mut sequences: Vec<Vec<u8>> = Vec::new();
+    let mut budget = MAX_CLASS_EXPANSION_CODEPOINTS;
+    match cls {
+        Class::Bytes(byte_class) => {
+            for r in byte_class.iter() {
+                for byte in r.start()..=r.end() {
+                    if budget == 0 {
+                        return Err(RegexCompileError::Unsupported {
+                            pattern_index: pid,
+                            feature: "byte character class exceeded expansion cap",
+                        });
+                    }
+                    sequences.push(vec![byte]);
+                    budget -= 1;
                 }
             }
         }
         Class::Unicode(uni) => {
-            // Only support ASCII subset of unicode classes — anything
-            // outside 0..=127 escapes the byte-state automaton.
             for r in uni.iter() {
                 let lo = r.start() as u32;
                 let hi = r.end() as u32;
-                if hi > 0x7F {
-                    return Err(RegexCompileError::Unsupported {
-                        pattern_index: pid,
-                        feature: "unicode character classes outside ASCII",
-                    });
-                }
-                let merged = ByteSet::from_range(lo as u8, hi as u8);
-                for w in 0..4 {
-                    out.bits[w] |= merged.bits[w];
+                for cp in lo..=hi {
+                    if budget == 0 {
+                        return Err(RegexCompileError::Unsupported {
+                            pattern_index: pid,
+                            feature: "unicode character class exceeded expansion cap",
+                        });
+                    }
+                    // Use a small buffer + `char::encode_utf8` to avoid
+                    // pulling in a heavyweight UTF-8 dependency. Invalid
+                    // codepoints (surrogates) are silently skipped -
+                    // regex-syntax shouldn't emit them in a parsed HIR
+                    // for character classes, but the `char::from_u32`
+                    // guard catches the corner case if it ever does.
+                    if let Some(c) = char::from_u32(cp) {
+                        let mut buf = [0u8; 4];
+                        let encoded = c.encode_utf8(&mut buf);
+                        sequences.push(encoded.as_bytes().to_vec());
+                        budget -= 1;
+                    }
                 }
             }
         }
     }
-    Ok(out)
+    Ok(sequences)
 }
 
 #[cfg(test)]
@@ -610,7 +866,7 @@ mod tests {
         let r = compile_regex_set(&["[a-z]"]).unwrap();
         assert!(r.plan.num_states > 0);
         // Sanity: 26 lowercase bytes hit the same destination state.
-        // We don't introspect the table here — just ensure it builds.
+        // We don't introspect the table here  -  just ensure it builds.
     }
 
     #[test]
@@ -625,6 +881,45 @@ mod tests {
         let r = compile_regex_set(&["a{0,128}"]).unwrap();
         assert!(r.plan.num_states > 64);
         assert!(r.plan.num_states <= STATE_CAP as u32);
+    }
+
+    #[test]
+    fn regex_compile_preserves_accept_metadata_through_checked_paths() {
+        let r = compile_regex_set(&["a", "bc", "^de$"]).unwrap();
+
+        assert_eq!(r.plan.accept_states, vec![(0, 1), (1, 2), (2, 2)]);
+        assert_eq!(r.plan.accept_state_ids.len(), 3);
+        assert_eq!(r.plan.accept_start_anchored, vec![false, false, true]);
+        assert_eq!(r.plan.accept_end_anchored, vec![false, false, true]);
+        assert_eq!(
+            r.transition_table.len(),
+            r.plan.num_states as usize * 256 * LANES
+        );
+        assert_eq!(r.epsilon_table.len(), r.plan.num_states as usize * LANES);
+    }
+
+    #[test]
+    fn regex_compile_uses_checked_abi_and_table_allocation_paths() {
+        let production = include_str!("regex_compile.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: regex_compile.rs must contain production section");
+
+        assert!(
+            production.contains("u32::try_from(pid)")
+                && production.contains("u32::try_from(frag.match_len)")
+                && production.contains("u32::try_from(builder.state_count())")
+                && production.contains("u32::try_from(self.state_count)")
+                && production.contains("checked_add(1)")
+                && production.contains("try_reserve_vec_to_capacity")
+                && !production.contains("pid as u32")
+                && !production.contains("frag.match_len as u32")
+                && !production.contains("builder.state_count() as u32")
+                && !production.contains("self.state_count as u32")
+                && !production.contains("vec![0u32;")
+                && !production.contains("Vec::with_capacity(patterns.len())"),
+            "Fix: regex compilation must not truncate ids/counts or allocate NFA tables with infallible zero-vector construction."
+        );
     }
 
     #[test]
@@ -679,4 +974,73 @@ mod tests {
             "unsupported GPU-NFA regex diagnostics must name the GPU-compatible rewrite contract: {message}"
         );
     }
+
+    /// Contract: non-ASCII codepoints inside a character class no longer
+    /// abort compile. They expand into a UTF-8 byte-sequence alternation
+    /// the byte-NFA can represent. Mirrors the homoglyph-expanded
+    /// detector patterns consumers feed in (e.g. openai `[hнһｈ]f_...`)
+    /// that used to fall on the floor with "unicode character classes
+    /// outside ASCII".
+    #[test]
+    fn unicode_class_outside_ascii_compiles_via_utf8_expansion() {
+        // `н` (U+043D) and `һ` (U+04BB) are 2-byte UTF-8; `ｈ` (U+FF48)
+        // is 3-byte UTF-8; `h` (U+0068) is 1-byte. All four must be
+        // representable.
+        let pat = "[hнһｈ]f_[a-zA-Z0-9]{4}";
+        let result = compile_regex_set(&[pat]);
+        let compiled = match result {
+            Ok(c) => c,
+            Err(e) => {
+                panic!("unicode-extended character class must compile via UTF-8 expansion; got {e}")
+            }
+        };
+        // 4 alternation arms (one per codepoint) × varying byte length
+        // + chain states + literal `f_` chain + bounded repetition
+        // states - the exact count is implementation-dependent, but
+        // every successfully-compiled regex must produce >=2 accept-
+        // state-ids worth of state graph.
+        assert!(
+            compiled.plan.num_states > 4,
+            "expanded NFA must have non-trivial state count"
+        );
+        // accept_state_ids carries one entry per accept (one pattern,
+        // so one accept) regardless of arm count; the load-bearing
+        // assertion is that compile didn't error.
+        assert_eq!(compiled.plan.accept_states.len(), 1);
+    }
+
+    /// Contract: classes containing ONLY ASCII still take the fast
+    /// single-byte-transition path. Without this guarantee, every AC
+    /// detector regex would pay the multi-state expansion cost.
+    #[test]
+    fn ascii_only_class_keeps_single_byte_transition_path() {
+        // Single state for entry + 2 for `[ab]` (start + end) = 3.
+        // Anything larger means we accidentally took the expansion arm.
+        let r = compile_regex_set(&["[ab]"]).unwrap();
+        assert_eq!(
+            r.plan.num_states, 3,
+            "[ab] must stay on the single-transition fast path (entry + 2 class states); got {} states",
+            r.plan.num_states
+        );
+    }
+
+    /// Contract: massive Unicode ranges that would blow past the
+    /// expansion cap return a structured error instead of consuming
+    /// unbounded memory.
+    #[test]
+    fn unicode_class_above_expansion_cap_errors_cleanly() {
+        // 257 codepoints - one above MAX_CLASS_EXPANSION_CODEPOINTS = 256.
+        let pat = "[\u{0100}-\u{0200}]";
+        let err = compile_regex_set(&[pat]).unwrap_err();
+        match err {
+            RegexCompileError::Unsupported { feature, .. } => {
+                assert!(
+                    feature.contains("expansion cap"),
+                    "over-cap expansion must name the cap in its diagnostic: {feature}"
+                );
+            }
+            other => panic!("expected Unsupported expansion-cap error, got {other:?}"),
+        }
+    }
 }
+

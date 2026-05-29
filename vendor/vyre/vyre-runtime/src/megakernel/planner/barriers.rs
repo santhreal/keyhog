@@ -6,6 +6,7 @@
 //! neighboring arms have known buffer effects and no same-buffer read/write or
 //! write/write dependency crosses the barrier.
 
+use super::super::staging_reserve::reserve_vec_capacity as reserve_generic_vec;
 use std::sync::Arc;
 
 use crate::PipelineError;
@@ -79,7 +80,7 @@ fn try_rewrite_nodes(
         return Ok(nodes);
     }
     let mut rewritten = Vec::new();
-    reserve_node_vec(&mut rewritten, nodes.len(), "barrier rewrite nodes")?;
+    reserve_generic_vec(&mut rewritten, nodes.len(), "barrier rewrite nodes")?;
     for node in nodes {
         rewritten.push(try_rewrite_node(node, report)?);
     }
@@ -140,7 +141,7 @@ fn try_elide_barrier_siblings(
     report: &mut BarrierElisionReport,
 ) -> Result<Vec<Node>, PipelineError> {
     let mut out = Vec::new();
-    reserve_node_vec(&mut out, nodes.len(), "barrier sibling output")?;
+    reserve_generic_vec(&mut out, nodes.len(), "barrier sibling output")?;
     let mut iter = nodes.into_iter().peekable();
     while let Some(node) = iter.next() {
         if matches!(&node, Node::Barrier { .. }) {
@@ -176,34 +177,9 @@ fn try_arc_vec_into_vec<T: Clone>(
 
 fn clone_nodes(nodes: &[Node], label: &'static str) -> Result<Vec<Node>, PipelineError> {
     let mut cloned = Vec::new();
-    reserve_node_vec(&mut cloned, nodes.len(), label)?;
+    reserve_generic_vec(&mut cloned, nodes.len(), label)?;
     cloned.extend(nodes.iter().cloned());
     Ok(cloned)
-}
-
-fn reserve_node_vec(
-    nodes: &mut Vec<Node>,
-    capacity: usize,
-    label: &'static str,
-) -> Result<(), PipelineError> {
-    reserve_generic_vec(nodes, capacity, label)
-}
-
-fn reserve_generic_vec<T>(
-    values: &mut Vec<T>,
-    capacity: usize,
-    label: &'static str,
-) -> Result<(), PipelineError> {
-    if values.capacity() < capacity {
-        values
-            .try_reserve_exact(capacity - values.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel {label} reservation failed for {capacity} element(s): {source}. Fix: split the fused program before barrier elision."
-                ))
-            })?;
-    }
-    Ok(())
 }
 
 fn is_runtime_arm(node: &Node) -> bool {
@@ -472,6 +448,7 @@ mod tests {
             [64, 1, 1],
             vec![
                 Node::Block(vec![Node::store("a", Expr::u32(0), Expr::u32(1))]),
+
                 Node::barrier(),
                 Node::Block(vec![Node::let_bind("x", Expr::load("a", Expr::u32(0)))]),
             ],
@@ -526,3 +503,4 @@ mod tests {
         }
     }
 }
+

@@ -112,9 +112,9 @@ pub fn sheaf_laplacian_eigenvalue(
                 Expr::atomic_add(
                     scratch_norm,
                     Expr::u32(0),
-                    Expr::shr(
-                        Expr::mul(Expr::var(val_var.as_str()), Expr::var(val_var.as_str())),
-                        Expr::u32(16),
+                    crate::fixed_mul_16_16_expr(
+                        Expr::var(val_var.as_str()),
+                        Expr::var(val_var.as_str()),
                     ),
                 ),
             ),
@@ -200,8 +200,22 @@ pub fn sheaf_laplacian_eigenvalue(
 pub fn cpu_ref(restriction_diag: &[f64], v_init: &[f64], iterations: u32) -> (f64, Vec<f64>) {
     let mut v = Vec::new();
     let mut v_next = Vec::new();
-    let lambda = cpu_ref_into(restriction_diag, v_init, iterations, &mut v, &mut v_next);
+    let lambda = try_cpu_ref_into(restriction_diag, v_init, iterations, &mut v, &mut v_next)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sheaf_laplacian_eigenvalue cpu_ref failed: invalid CPU buffers");
     (lambda, v)
+}
+
+/// Fallible CPU reference: Power iteration on sheaf Laplacian diagonal.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref(
+    restriction_diag: &[f64],
+    v_init: &[f64],
+    iterations: u32,
+) -> Result<(f64, Vec<f64>), String> {
+    let mut v = Vec::new();
+    let mut v_next = Vec::new();
+    let lambda = try_cpu_ref_into(restriction_diag, v_init, iterations, &mut v, &mut v_next)?;
+    Ok((lambda, v))
 }
 
 /// CPU reference writing the final eigenvector into caller-owned storage.
@@ -213,6 +227,28 @@ pub fn cpu_ref_into(
     v: &mut Vec<f64>,
     v_next: &mut Vec<f64>,
 ) -> f64 {
+    try_cpu_ref_into(restriction_diag, v_init, iterations, v, v_next)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sheaf_laplacian_eigenvalue cpu_ref_into failed: invalid CPU buffers")
+}
+
+/// Fallible CPU reference writing the final eigenvector into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(
+    restriction_diag: &[f64],
+    v_init: &[f64],
+    iterations: u32,
+    v: &mut Vec<f64>,
+    v_next: &mut Vec<f64>,
+) -> Result<f64, String> {
+    if restriction_diag.len() < v_init.len() {
+        return Err(format!(
+            "sheaf_laplacian_eigenvalue CPU oracle restriction_diag too short: got {}, need {}.",
+            restriction_diag.len(),
+            v_init.len()
+        ));
+    }
+    reserve_eigen_tmp(v, v_init.len(), "eigenvector output")?;
+    reserve_eigen_tmp(v_next, v_init.len(), "next-vector scratch")?;
     v.clear();
     v.extend_from_slice(v_init);
     v_next.clear();
@@ -237,7 +273,20 @@ pub fn cpu_ref_into(
             break;
         }
     }
-    lambda
+    Ok(lambda)
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn reserve_eigen_tmp(out: &mut Vec<f64>, len: usize, name: &str) -> Result<(), String> {
+    if len > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "sheaf Laplacian eigenvalue CPU oracle",
+            name,
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -246,12 +295,7 @@ inventory::submit! {
         OP_ID,
         || sheaf_laplacian_eigenvalue("r", "v", "l", "sv", "sn", 4, 1, 4),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![
                 to_bytes(&[0; 4]),     // r
                 to_bytes(&[0; 4]),     // v
@@ -262,12 +306,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![
                 to_bytes(&[0; 4]), // v
                 to_bytes(&[0]),    // l
@@ -302,21 +341,11 @@ inventory::submit! {
             )
         },
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![to_bytes(&[11]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![to_bytes(&[11])]]
         }),
     )
@@ -370,8 +399,89 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_vectors_and_truncates_stale_tail() {
+        let r = vec![1.0, 2.0, 5.0, 3.0];
+        let init = vec![1.0, 1.0, 1.0, 1.0];
+        let mut v = Vec::with_capacity(8);
+        let mut next = Vec::with_capacity(8);
+        v.extend([99.0; 8]);
+        next.extend([99.0; 8]);
+        let v_ptr = v.as_ptr();
+        let next_ptr = next.as_ptr();
+
+        let lambda = try_cpu_ref_into(&r, &init, 20, &mut v, &mut next).unwrap();
+
+        assert!((lambda - 5.0).abs() < 1e-5);
+        assert_eq!(v.len(), init.len());
+        assert_eq!(next.len(), init.len());
+        assert_eq!(v.as_ptr(), v_ptr);
+        assert_eq!(next.as_ptr(), next_ptr);
+    }
+
+    #[test]
+    fn generated_cpu_ref_matches_independent_power_iteration() {
+        for case in 0..48 {
+            let n = 1 + (case % 8);
+            let restriction: Vec<f64> =
+                (0..n).map(|idx| 0.5 + (idx + case) as f64 * 0.25).collect();
+            let init: Vec<f64> = (0..n).map(|idx| 1.0 + idx as f64 * 0.125).collect();
+            let iterations = 1 + (case % 8) as u32;
+            let mut v = Vec::with_capacity(n + 3);
+            let mut next = Vec::with_capacity(n + 3);
+
+            let lambda =
+                try_cpu_ref_into(&restriction, &init, iterations, &mut v, &mut next).unwrap();
+            let (expected_lambda, expected_v) =
+                independent_power_iteration(&restriction, &init, iterations);
+
+            assert!(
+                (lambda - expected_lambda).abs() < 1e-10,
+                "case {case}: expected lambda {expected_lambda}, got {lambda}"
+            );
+            for idx in 0..n {
+                assert!(
+                    (v[idx] - expected_v[idx]).abs() < 1e-10,
+                    "case {case} idx {idx}: expected {}, got {}",
+                    expected_v[idx],
+                    v[idx]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn try_cpu_ref_rejects_short_restriction_diag() {
+        let err = try_cpu_ref(&[1.0], &[1.0, 2.0], 1).unwrap_err();
+        assert!(err.contains("restriction_diag too short"), "{err}");
+    }
+
+    #[test]
     fn program_buffer_count() {
         let p = sheaf_laplacian_eigenvalue("r", "v", "l", "sv", "sn", 4, 1, 4);
         assert_eq!(p.buffers.len(), 6);
+    }
+
+    fn independent_power_iteration(
+        restriction_diag: &[f64],
+        v_init: &[f64],
+        iterations: u32,
+    ) -> (f64, Vec<f64>) {
+        let mut v = v_init.to_vec();
+        let mut next = vec![0.0; v.len()];
+        let mut lambda = 0.0;
+        for _ in 0..iterations {
+            for idx in 0..v.len() {
+                next[idx] = restriction_diag[idx] * v[idx];
+            }
+            let norm = next.iter().map(|value| value * value).sum::<f64>().sqrt();
+            if norm <= 1e-20 {
+                break;
+            }
+            for idx in 0..v.len() {
+                v[idx] = next[idx] / norm;
+            }
+            lambda = norm;
+        }
+        (lambda, v)
     }
 }

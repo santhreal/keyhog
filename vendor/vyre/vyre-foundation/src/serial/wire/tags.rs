@@ -13,6 +13,8 @@ pub(crate) const FLAG_SEALED: u16 = 1 << 1;
 /// host-endian extension payloads never silently cross architectures.
 pub(crate) const FLAG_OPAQUE_ENDIAN_FIXED: u16 = 1 << 2;
 
+mod op_tag_decode;
+
 /// Decode an atomic operation tag from the wire stream.
 ///
 /// Atomic op tags live inside `Expr::Atomic` wire payloads. An unrecognized
@@ -39,7 +41,7 @@ pub(crate) use bin_op_tag::bin_op_tag;
 /// its tag (12) is rejected here because the element-size payload must be
 /// read by `Reader::data_type` (see `impl_reader.rs`).
 pub(crate) use data_type_from_tag::data_type_from_tag;
-// `data_type_tag` was re-exported here but unused at the crate boundary —
+// `data_type_tag` was re-exported here but unused at the crate boundary  -
 // callers use `put_data_type` which wraps it (ORPH-004). Kept private to
 // its defining module to avoid a dead re-export.
 /// Encode a data type enum and any required payload for the wire stream.
@@ -78,7 +80,9 @@ pub mod atomic_op_tag;
 /// Decode a `BinOp` from its VIR0 wire tag.
 ///
 /// See [`mod@bin_op_tag`] for the inverse mapping. Covers audit L.1.27 / I4.
-pub mod bin_op_from_tag;
+pub mod bin_op_from_tag {
+    pub(crate) use super::op_tag_decode::bin_op_from_tag;
+}
 /// Encode a `BinOp` into its VIR0 wire tag.
 ///
 /// See [`mod@bin_op_from_tag`] for the inverse mapping. Covers audit L.1.27 / I4.
@@ -95,7 +99,9 @@ pub mod data_type_tag;
 /// Decode a `UnOp` from its VIR0 wire tag.
 ///
 /// See [`mod@un_op_tag`] for the inverse mapping. Covers audit L.1.27 / I4.
-pub mod un_op_from_tag;
+pub mod un_op_from_tag {
+    pub(crate) use super::op_tag_decode::un_op_from_tag;
+}
 /// Encode a `UnOp` into its VIR0 wire tag.
 ///
 /// See [`mod@un_op_from_tag`] for the inverse mapping. Covers audit L.1.27 / I4.

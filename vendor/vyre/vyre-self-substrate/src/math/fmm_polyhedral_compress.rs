@@ -1,6 +1,6 @@
 //! Polyhedral-fusion all-pairs compression via #51 FMM (#19+#51 self-consumer).
 //!
-//! Closes the recursion thesis for #51 — the FMM (fast multipole)
+//! Closes the recursion thesis for #51  -  the FMM (fast multipole)
 //! hierarchical-expansion primitives ship to user dialects (kernel
 //! methods at scale, computational physics, dense GP inference) AND
 //! provide vyre's polyhedral fusion analysis with the hierarchical
@@ -13,7 +13,7 @@
 //! [`crate::polyhedral_fusion`]) computes pairwise
 //! affine-dependency adjacency over Regions: every pair (i, j) is
 //! checked for fusion eligibility. At N Regions this is N(N-1)/2
-//! comparisons — O(N²) memory + compute.
+//! comparisons  -  O(N²) memory + compute.
 //!
 //! FMM exploits the fact that Regions far apart in the dispatch
 //! topology rarely have fusion dependencies (the dispatch graph is
@@ -33,7 +33,7 @@
 //! # Why this matters
 //!
 //! At workspace scale, polyhedral_fusion's O(N²) cost is the
-//! gating factor — 1M Regions = 10¹² pairs, untractable. With FMM,
+//! gating factor  -  1M Regions = 10¹² pairs, untractable. With FMM,
 //! 1M Regions = ~20M operations, dispatched in seconds.
 //!
 //! # Algorithm
@@ -45,6 +45,8 @@ use crate::dispatch_buffers::{
     ceil_div_u32, decode_f32_output_exact, ensure_input_slots, write_f32_slice_le_bytes,
     write_u32_slice_le_bytes, write_zero_bytes,
 };
+#[cfg(test)]
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::math::fmm::{l2p_zeroth_f32_step, m2l_zeroth_f32_step, p2m_zeroth_f32_step};
 
@@ -181,7 +183,7 @@ pub fn reference_evaluate_at_regions_into(
     bump(&fmm_polyhedral_compress_calls);
     assert_eq!(cell_assignment.len(), n as usize);
     out.clear();
-    out.reserve(n as usize);
+    reserve_vec_capacity_or_panic(out, n as usize, "FMM region evaluation output");
     #[allow(clippy::needless_range_loop)]
     for i in 0..n as usize {
         let cell = cell_assignment[i] as usize;
@@ -448,6 +450,7 @@ pub fn evaluate_at_regions_via_with_scratch_into(
 /// # Errors
 ///
 /// Returns [`DispatchError`] for malformed inputs, dispatch failure, or malformed backend output.
+
 pub fn fmm_compress_pairwise_via(
     dispatcher: &dyn OptimizerDispatcher,
     scores: &[f32],
@@ -715,7 +718,7 @@ mod tests {
         let distances = vec![0.0_f32, 1.0, 1.0, 0.0];
 
         let out = fmm_compress_pairwise_via(&dispatcher, &scores, &cells, &distances, 4)
-            .expect("dispatchable FMM pipeline should run");
+            .expect("Fix: dispatchable FMM pipeline should run");
 
         assert_eq!(dispatcher.calls.get(), 3);
         assert_eq!(out.len(), 4);
@@ -746,10 +749,10 @@ mod tests {
         let via_section = source
             .split("pub fn aggregate_to_cells_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[cfg(test)]\nmod tests")
             .next()
-            .expect("test module marker should exist");
+            .expect("Fix: test module marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_"));
@@ -787,8 +790,14 @@ mod tests {
                 inputs.len()
             )));
         };
-        let scores = bytes_to_f32(score_bytes)?;
-        let cells = bytes_to_u32(cell_bytes)?;
+        let scores = crate::hardware::dispatch_buffers::decode_f32_input_aligned(
+            score_bytes,
+            "FMM test dispatcher",
+        )?;
+        let cells = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+            cell_bytes,
+            "FMM test dispatcher",
+        )?;
         let n_cells = out_bytes.len() / std::mem::size_of::<f32>();
         let mut out = vec![0.0_f32; n_cells];
         for (score, &cell) in scores.iter().zip(&cells) {
@@ -804,8 +813,14 @@ mod tests {
                 inputs.len()
             )));
         };
-        let moments = bytes_to_f32(moment_bytes)?;
-        let distances = bytes_to_f32(distance_bytes)?;
+        let moments = crate::hardware::dispatch_buffers::decode_f32_input_aligned(
+            moment_bytes,
+            "FMM test dispatcher",
+        )?;
+        let distances = crate::hardware::dispatch_buffers::decode_f32_input_aligned(
+            distance_bytes,
+            "FMM test dispatcher",
+        )?;
         let n_cells = out_bytes.len() / std::mem::size_of::<f32>();
         let mut out = vec![0.0_f32; n_cells];
         for target in 0..n_cells {
@@ -826,8 +841,14 @@ mod tests {
                 inputs.len()
             )));
         };
-        let local = bytes_to_f32(local_bytes)?;
-        let cells = bytes_to_u32(cell_bytes)?;
+        let local = crate::hardware::dispatch_buffers::decode_f32_input_aligned(
+            local_bytes,
+            "FMM test dispatcher",
+        )?;
+        let cells = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+            cell_bytes,
+            "FMM test dispatcher",
+        )?;
         let out_len = out_bytes.len() / std::mem::size_of::<f32>();
         let mut out = Vec::with_capacity(out_len);
         for &cell in cells.iter().take(out_len) {
@@ -835,30 +856,5 @@ mod tests {
         }
         Ok(vec![f32_slice_to_le_bytes(&out)])
     }
-
-    fn bytes_to_f32(bytes: &[u8]) -> Result<Vec<f32>, DispatchError> {
-        if bytes.len() % std::mem::size_of::<f32>() != 0 {
-            return Err(DispatchError::BadInputs(format!(
-                "Fix: f32 test input byte count {} is not divisible by 4.",
-                bytes.len()
-            )));
-        }
-        Ok(bytes
-            .chunks_exact(std::mem::size_of::<f32>())
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect())
-    }
-
-    fn bytes_to_u32(bytes: &[u8]) -> Result<Vec<u32>, DispatchError> {
-        if bytes.len() % std::mem::size_of::<u32>() != 0 {
-            return Err(DispatchError::BadInputs(format!(
-                "Fix: u32 test input byte count {} is not divisible by 4.",
-                bytes.len()
-            )));
-        }
-        Ok(bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect())
-    }
 }
+

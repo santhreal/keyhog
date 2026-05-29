@@ -8,18 +8,14 @@ use std::time::Instant;
 
 use smallvec::SmallVec;
 use vyre_driver::program_walks::enforce_actual_output_budget;
-use vyre_driver::{BackendError, CompiledPipeline, DispatchConfig, OutputBuffers};
+use vyre_driver::{
+    resolve_fixpoint_iterations_usize, BackendError, CompiledPipeline, DispatchConfig,
+    OutputBuffers,
+};
 
+use crate::pipeline::output_slots::resize_vec_with;
 use crate::pipeline::WgpuPipeline;
-
-fn fixpoint_iteration_count(config: &DispatchConfig) -> Result<usize, BackendError> {
-    let iterations = config.fixpoint_iterations.unwrap_or(1).max(1);
-    usize::try_from(iterations).map_err(|source| {
-        BackendError::new(format!(
-            "WGPU fixpoint iteration count {iterations} cannot fit usize: {source}. Fix: lower fixpoint_iterations or split the dispatch into bounded phases."
-        ))
-    })
-}
+use crate::staging_reserve::{reserve_pipeline_vec, reserve_smallvec, reserve_vec};
 
 impl CompiledPipeline for WgpuPipeline {
     fn dispatch_persistent_handles(
@@ -27,7 +23,14 @@ impl CompiledPipeline for WgpuPipeline {
         inputs: &[vyre_driver::Resource],
         config: &DispatchConfig,
     ) -> Result<OutputBuffers, BackendError> {
-        let mut outputs = Vec::with_capacity(self.output_bindings.len());
+        let mut outputs = Vec::new();
+        reserve_vec(
+            &mut outputs,
+            self.output_bindings.len(),
+            "WGPU pipeline",
+            "persistent dispatch output buffers",
+            "split the dispatch batch before submission",
+        )?;
         self.dispatch_persistent_handles_into(inputs, config, &mut outputs)?;
         enforce_actual_output_budget(config, outputs.as_slice())?;
         Ok(outputs)
@@ -65,8 +68,7 @@ impl CompiledPipeline for WgpuPipeline {
     ) -> Result<Vec<vyre_driver::Resource>, BackendError> {
         self.enforce_static_output_budget(config)?;
         let (device, queue) = &*self.device_queue;
-        let output_resources = resident_output_resources(self, inputs)?;
-        let resolved = self.resolve_persistent_resources(inputs, queue)?;
+        let resolved = self.resolve_persistent_resources_for_resource_outputs(inputs, queue)?;
         let item = crate::pipeline::persistent::BorrowedDispatchItem {
             inputs: crate::pipeline::persistent::borrowed_handle_refs(&resolved.inputs),
             outputs: crate::pipeline::persistent::borrowed_handle_refs(&resolved.outputs),
@@ -78,7 +80,7 @@ impl CompiledPipeline for WgpuPipeline {
             .timeout
             .and_then(|timeout| Instant::now().checked_add(timeout));
         self.raise_if_trapped(&resolved.inputs, device, queue, deadline)?;
-        Ok(output_resources)
+        Ok(resolved.output_resources.into_iter().collect())
     }
 
     fn dispatch_persistent_handles_batched(
@@ -86,7 +88,14 @@ impl CompiledPipeline for WgpuPipeline {
         batches: &[&[vyre_driver::Resource]],
         config: &DispatchConfig,
     ) -> Result<Vec<OutputBuffers>, BackendError> {
-        let mut outputs = Vec::with_capacity(batches.len());
+        let mut outputs = Vec::new();
+        reserve_vec(
+            &mut outputs,
+            batches.len(),
+            "WGPU pipeline",
+            "persistent batched dispatch output sets",
+            "split the dispatch batch before submission",
+        )?;
         self.dispatch_persistent_handles_batched_into(batches, config, &mut outputs)?;
         Ok(outputs)
     }
@@ -108,15 +117,27 @@ impl CompiledPipeline for WgpuPipeline {
             .timeout
             .and_then(|timeout| Instant::now().checked_add(timeout));
 
-        let mut resolved = SmallVec::<[_; 8]>::with_capacity(batches.len());
+        let mut resolved = SmallVec::<[_; 8]>::new();
+        reserve_smallvec(
+            &mut resolved,
+            batches.len(),
+            "persistent batched dispatch",
+            "resolved resource set",
+            "split the persistent dispatch batch before submission",
+        )?;
         for batch in batches {
             resolved.push(self.resolve_persistent_resources(batch, queue)?);
         }
 
         let mut items =
-            SmallVec::<[crate::pipeline::persistent::BorrowedDispatchItem<'_>; 8]>::with_capacity(
-                resolved.len(),
-            );
+            SmallVec::<[crate::pipeline::persistent::BorrowedDispatchItem<'_>; 8]>::new();
+        reserve_smallvec(
+            &mut items,
+            resolved.len(),
+            "persistent batched dispatch",
+            "command item",
+            "split the persistent dispatch batch before submission",
+        )?;
         for item in resolved.iter() {
             items.push(crate::pipeline::persistent::BorrowedDispatchItem {
                 inputs: crate::pipeline::persistent::borrowed_handle_refs(&item.inputs),
@@ -128,14 +149,12 @@ impl CompiledPipeline for WgpuPipeline {
 
         self.dispatch_borrowed_persistent_batched(&items)?;
 
-        if batch_outputs.len() < resolved.len() {
-            if batch_outputs.capacity() < resolved.len() {
-                batch_outputs.reserve_exact(resolved.len() - batch_outputs.capacity());
-            }
-            batch_outputs.resize_with(resolved.len(), Vec::new);
-        } else {
-            batch_outputs.truncate(resolved.len());
-        }
+        resize_vec_with(
+            batch_outputs,
+            resolved.len(),
+            Vec::new,
+            "persistent batched dispatch output slots",
+        )?;
         for (item, outputs) in resolved.iter().zip(batch_outputs.iter_mut()) {
             self.raise_if_trapped(&item.inputs, device, queue, deadline)?;
             self.readback_persistent_outputs(&item.outputs, deadline, outputs)?;
@@ -154,8 +173,7 @@ impl CompiledPipeline for WgpuPipeline {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let mut borrowed = SmallVec::<[&[u8]; 8]>::with_capacity(inputs.len());
-        borrowed.extend(inputs.iter().map(Vec::as_slice));
+        let borrowed = vyre_driver::borrowed_input_slices(inputs, "wgpu compiled borrowed input")?;
         self.dispatch_borrowed(&borrowed, config)
     }
 
@@ -164,7 +182,12 @@ impl CompiledPipeline for WgpuPipeline {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let mut outputs = Vec::with_capacity(self.output_bindings.len());
+        let mut outputs = Vec::new();
+        reserve_pipeline_vec(
+            &mut outputs,
+            self.output_bindings.len(),
+            "borrowed dispatch output buffers",
+        )?;
         self.dispatch_borrowed_into(inputs, config, &mut outputs)?;
         Ok(outputs)
     }
@@ -174,7 +197,12 @@ impl CompiledPipeline for WgpuPipeline {
         batches: &[&[&[u8]]],
         config: &DispatchConfig,
     ) -> Result<Vec<OutputBuffers>, BackendError> {
-        let mut outputs = Vec::with_capacity(batches.len());
+        let mut outputs = Vec::new();
+        reserve_pipeline_vec(
+            &mut outputs,
+            batches.len(),
+            "borrowed batched dispatch output sets",
+        )?;
         self.dispatch_borrowed_batched_into(batches, config, &mut outputs)?;
         Ok(outputs)
     }
@@ -195,15 +223,27 @@ impl CompiledPipeline for WgpuPipeline {
             .and_then(|timeout| Instant::now().checked_add(timeout));
         let workgroup_count = self.workgroups_for_dispatch(config)?;
 
-        let mut resolved = SmallVec::<[_; 8]>::with_capacity(batches.len());
+        let mut resolved = SmallVec::<[_; 8]>::new();
+        reserve_smallvec(
+            &mut resolved,
+            batches.len(),
+            "borrowed batched dispatch",
+            "resolved handle set",
+            "split the borrowed dispatch batch before submission",
+        )?;
         for inputs in batches {
             resolved.push(self.legacy_handles_from_inputs(inputs)?);
         }
 
         let mut items =
-            SmallVec::<[crate::pipeline::persistent::BorrowedDispatchItem<'_>; 8]>::with_capacity(
-                resolved.len(),
-            );
+            SmallVec::<[crate::pipeline::persistent::BorrowedDispatchItem<'_>; 8]>::new();
+        reserve_smallvec(
+            &mut items,
+            resolved.len(),
+            "borrowed batched dispatch",
+            "command item",
+            "split the borrowed dispatch batch before submission",
+        )?;
         for (inputs, outputs) in resolved.iter() {
             items.push(crate::pipeline::persistent::BorrowedDispatchItem {
                 inputs: crate::pipeline::persistent::borrowed_handle_refs(inputs),
@@ -213,20 +253,18 @@ impl CompiledPipeline for WgpuPipeline {
             });
         }
 
-        let max_iters = fixpoint_iteration_count(config)?;
+        let max_iters = resolve_fixpoint_iterations_usize(config, "WGPU")?;
         for _ in 0..max_iters {
             self.dispatch_borrowed_persistent_batched(&items)?;
         }
 
         let (device, queue) = &*self.device_queue;
-        if batch_outputs.len() < resolved.len() {
-            if batch_outputs.capacity() < resolved.len() {
-                batch_outputs.reserve_exact(resolved.len() - batch_outputs.capacity());
-            }
-            batch_outputs.resize_with(resolved.len(), Vec::new);
-        } else {
-            batch_outputs.truncate(resolved.len());
-        }
+        resize_vec_with(
+            batch_outputs,
+            resolved.len(),
+            Vec::new,
+            "borrowed batched dispatch output slots",
+        )?;
         for ((inputs, outputs), item_outputs) in resolved.iter().zip(batch_outputs.iter_mut()) {
             self.raise_if_trapped(inputs, device, queue, deadline)?;
             self.readback_persistent_outputs(outputs, deadline, item_outputs)?;
@@ -248,7 +286,7 @@ impl CompiledPipeline for WgpuPipeline {
         let workgroup_count = self.workgroups_for_dispatch(config)?;
 
         let (input_handles, mut output_handles) = self.legacy_handles_from_inputs(inputs)?;
-        let max_iters = fixpoint_iteration_count(config)?;
+        let max_iters = resolve_fixpoint_iterations_usize(config, "WGPU")?;
         for _iter in 0..max_iters {
             self.dispatch_persistent(&input_handles, &mut output_handles, None, workgroup_count)?;
         }
@@ -262,14 +300,12 @@ impl CompiledPipeline for WgpuPipeline {
         }
         let (device, queue) = &*self.device_queue;
         self.raise_if_trapped(&input_handles, device, queue, deadline)?;
-        if outputs.len() < output_handles.len() {
-            if outputs.capacity() < output_handles.len() {
-                outputs.reserve_exact(output_handles.len() - outputs.capacity());
-            }
-            outputs.resize_with(output_handles.len(), Vec::new);
-        } else {
-            outputs.truncate(output_handles.len());
-        }
+        resize_vec_with(
+            outputs,
+            output_handles.len(),
+            Vec::new,
+            "borrowed dispatch output slots",
+        )?;
         for ((handle, output), bytes) in output_handles
             .iter()
             .zip(self.output_bindings.iter())
@@ -291,42 +327,34 @@ impl CompiledPipeline for WgpuPipeline {
     }
 }
 
-fn resident_output_resources(
-    pipeline: &WgpuPipeline,
-    resources: &[vyre_driver::Resource],
-) -> Result<Vec<vyre_driver::Resource>, BackendError> {
-    let mut resource_index = 0usize;
-    let mut output_resources = Vec::with_capacity(pipeline.output_bindings.len());
-    for info in pipeline.buffer_bindings.iter() {
-        if info.kind == vyre_foundation::ir::MemoryKind::Shared || info.internal_trap {
-            continue;
-        }
-        let resource = resources.get(resource_index).ok_or_else(|| {
-            BackendError::new(format!(
-                "persistent resident-output dispatch missing resource for binding {} (`{}`). Fix: pass one resource per public non-shared binding in BufferDecl order.",
-                info.binding, info.name
-            ))
-        })?;
-        resource_index += 1;
-        if info.is_output {
-            match resource {
-                vyre_driver::Resource::Resident(id) => {
-                    output_resources.push(vyre_driver::Resource::Resident(*id));
-                }
-                vyre_driver::Resource::Borrowed(_) => {
-                    return Err(BackendError::new(format!(
-                        "persistent resident-output dispatch cannot return borrowed output binding {} (`{}`). Fix: allocate a resident output buffer and pass Resource::Resident so the backend can skip host readback.",
-                        info.binding, info.name
-                    )));
-                }
-            }
+#[cfg(test)]
+mod tests {
+    use vyre_driver::{resolve_fixpoint_iterations_usize, DispatchConfig};
+
+    #[test]
+    fn generated_fixpoint_iteration_count_uses_driver_policy() {
+        let default_config = DispatchConfig::default();
+        assert_eq!(
+            resolve_fixpoint_iterations_usize(&default_config, "WGPU")
+                .expect("Fix: default fixpoint count fits"),
+            1
+        );
+
+        let mut zero_config = DispatchConfig::default();
+        zero_config.fixpoint_iterations = Some(0);
+        assert!(
+            resolve_fixpoint_iterations_usize(&zero_config, "WGPU").is_err(),
+            "Fix: WGPU must use the driver-owned policy and reject explicit zero fixpoint iterations."
+        );
+
+        for iterations in 1..4096u32 {
+            let mut config = DispatchConfig::default();
+            config.fixpoint_iterations = Some(iterations);
+            assert_eq!(
+                resolve_fixpoint_iterations_usize(&config, "WGPU")
+                    .expect("Fix: generated fixpoint count should fit usize"),
+                iterations as usize
+            );
         }
     }
-    if resource_index != resources.len() {
-        return Err(BackendError::new(format!(
-            "persistent resident-output dispatch received {} resources but consumed {resource_index}. Fix: pass resources in public non-shared BufferDecl order without extra handles.",
-            resources.len()
-        )));
-    }
-    Ok(output_resources)
 }

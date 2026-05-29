@@ -2,7 +2,7 @@
 //!
 //! The manifest is the single JSON file the launcher reads at startup to
 //! discover artifact layout, dispatch config, and metadata. Bundles are
-//! self-describing through this file — vyre is not present at run-time.
+//! self-describing through this file  -  vyre is not present at run-time.
 
 use serde::{Deserialize, Serialize};
 

@@ -18,7 +18,7 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 #[allow(clippy::too_many_arguments)]
 pub fn ast_cfg_blocks(
     tok_types: &str,
-    _out_scope_parents: &str, // Inherited logical boundaries — reserved for V2.
+    _out_scope_parents: &str, // Inherited logical boundaries  -  reserved for V2.
     statements: &str,         // Array of statement [start_tok, end_tok]
     num_statements: Expr,
     out_block_headers: &str, // Maps stmt -> enclosing control flow keyword token index
@@ -118,15 +118,12 @@ inventory::submit! {
             // statements is [start_tok, end_tok] per statement:
             //   stmt 0 → (1, 1), stmt 1 → (0, 0)
             let statements: [u32; 4] = [1, 1, 0, 0];
-            let to_bytes = |s: &[u32]| s.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&tok_types), to_bytes(&statements), vec![0u8; 4 * 2]]]
         }),
         expected_output: Some(|| {
             let headers: [u32; 2] = [0, u32::MAX];
-            let bytes = headers
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&headers);
             vec![vec![bytes]]
         }),
         category: Some("parsing"),

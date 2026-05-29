@@ -10,14 +10,14 @@ use super::{MemoryHints, MemoryKind};
 /// Vyre's IR is moving from an unrestricted-by-default world toward
 /// a substructural type system: a buffer can be marked `Linear`
 /// (must be used exactly once on each path through the Program),
-/// `Affine` (used at most once — drops are fine), `Relevant`
+/// `Affine` (used at most once  -  drops are fine), `Relevant`
 /// (used at least once), or `Unrestricted` (the historical default).
 /// The type-checker pass (P-1.0-V2.2) verifies these assertions
 /// before lowering; backends that hit a violation reject the
 /// program at validation time instead of producing wrong code.
 ///
 /// `Unrestricted` is the safe default when authoring a `BufferDecl`
-/// for back-compat — every existing program continues to type-check.
+/// for back-compat  -  every existing program continues to type-check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum LinearType {
@@ -525,6 +525,7 @@ impl BufferDecl {
 }
 
 #[cfg(test)]
+
 mod linear_type_tests {
     use super::*;
 
@@ -720,3 +721,4 @@ mod shape_predicate_tests {
         );
     }
 }
+

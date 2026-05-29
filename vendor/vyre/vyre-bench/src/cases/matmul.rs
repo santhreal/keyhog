@@ -51,12 +51,11 @@ impl BenchCase for Matmul {
 
         let prog = Program::wrapped(
             vec![
-                BufferDecl::storage("C", 0, BufferAccess::ReadWrite, DataType::F32)
-                    .with_count((m * n) as u32),
-                BufferDecl::storage("A", 1, BufferAccess::ReadOnly, DataType::F32)
+                BufferDecl::storage("A", 0, BufferAccess::ReadOnly, DataType::F32)
                     .with_count((m * k) as u32),
-                BufferDecl::storage("B", 2, BufferAccess::ReadOnly, DataType::F32)
+                BufferDecl::storage("B", 1, BufferAccess::ReadOnly, DataType::F32)
                     .with_count((k * n) as u32),
+                BufferDecl::output("C", 2, DataType::F32).with_count((m * n) as u32),
             ],
             [16, 16, 1],
             vec![
@@ -133,9 +132,7 @@ impl BenchCase for Matmul {
             b_bytes[i * 4..i * 4 + 4].copy_from_slice(&value.to_le_bytes());
         }
 
-        let c_bytes = vec![0u8; m * n * 4];
-
-        let inputs = vec![c_bytes, a_bytes, b_bytes];
+        let inputs = vec![a_bytes, b_bytes];
 
         let timed = ctx
             .dispatch_timed(prog, &inputs, &ctx.dispatch_config)
@@ -146,7 +143,7 @@ impl BenchCase for Matmul {
 
         let start_ref = std::time::Instant::now();
         let baseline_outputs = vec![crate::cases::cpu_baselines::matmul_f32_bytes(
-            &inputs[1], &inputs[2], m, n, k,
+            &inputs[0], &inputs[1], m, n, k,
         )];
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
         let flop_count = (2 * m * n * k) as u64;
@@ -165,7 +162,7 @@ impl BenchCase for Matmul {
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(elapsed_ref),
-                input_bytes: Some(inputs[1].len().saturating_add(inputs[2].len()) as u64),
+                input_bytes: Some(inputs[0].len().saturating_add(inputs[1].len()) as u64),
                 output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
                 custom: vec![MetricPoint {
                     name: "flop_count".to_string(),

@@ -23,7 +23,7 @@ This document specifies the JSON output schema produced by `vyre-bench run --for
 |---|---|---|
 | `commit` | `string` | Full SHA-1 of HEAD. |
 | `branch` | `string` | Current branch name. |
-| `dirty` | `string` | `"true"` or `"false"` — whether the worktree has uncommitted changes. |
+| `dirty` | `string` | `"true"` or `"false"`  -  whether the worktree has uncommitted changes. |
 | `parent` | `string` | SHA-1 of HEAD~1. |
 | `timestamp` | `string` | Unix timestamp of the HEAD commit. |
 

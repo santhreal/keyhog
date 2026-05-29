@@ -31,6 +31,10 @@ pub(super) fn has_divergent_invocation_gated_store(
             .iter()
             .any(|n| has_divergent_invocation_gated_store(n, inside_invocation_gate)),
         Node::IndirectDispatch { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::Return
         | Node::Barrier { .. }
         | Node::AsyncLoad { .. }
@@ -103,7 +107,7 @@ fn cond_depends_on_invocation_id(expr: &Expr) -> bool {
 
 /// `true` when `expr` is an atomic operation (which writes memory).
 /// Used by the divergent-gate detector to pick up `Let { value:
-/// Atomic { ... } }` / `Assign { value: Atomic { ... } }` patterns —
+/// Atomic { ... } }` / `Assign { value: Atomic { ... } }` patterns  -
 /// the canonical `lower_call_to` `atomic_or` shape.
 pub(super) fn expr_writes_atomic(expr: &Expr) -> bool {
     match expr {

@@ -15,7 +15,7 @@ pub mod dead_store_elim;
 pub mod decode_scan_fuse;
 /// Hoist `Let(name, Load(ro_buf, idx))` out of common branch
 /// prefixes when `ro_buf` is declared `BufferAccess::ReadOnly`
-/// (ROADMAP A15 — buffer-aliasing-fact-aware load elision via
+/// (ROADMAP A15  -  buffer-aliasing-fact-aware load elision via
 /// the trivial alias proof).
 pub mod read_only_load_hoist;
 /// Replace `Let(name, Load(b, i))` with the value of an immediately

@@ -4,12 +4,12 @@
 //! building block for molecules, cryo-EM, robotics. Each layer is a
 //! contraction over Clebsch-Gordan coefficients between irreducible
 //! representations (irreps) `(l_in, l_filter) → l_out`. The CG
-//! product is structured shuffles + fused multiply-add — same
+//! product is structured shuffles + fused multiply-add  -  same
 //! hardware as matmul, so the substrate is GPU-trivial; the moat is
 //! that nobody has packaged it as a Tier-2.5 primitive at the IR
 //! level.
 //!
-//! This file ships the **scalar (l = 0) channel mixing step** —
+//! This file ships the **scalar (l = 0) channel mixing step**  -
 //! given per-node scalar features and a learnable mixing weight,
 //! emit the next-layer scalar features. This is the trivial
 //! equivariant case (rotation-invariant). Higher-l irrep contractions
@@ -28,7 +28,7 @@ pub const OP_ID: &str = "vyre-primitives::geom::tfn_scalar_mix";
 ///
 /// Inputs:
 /// - `features`: `n_nodes * c_in` u32 (16.16 fp).
-/// - `weights`: `c_out * c_in` u32 — learnable mixing matrix.
+/// - `weights`: `c_out * c_in` u32  -  learnable mixing matrix.
 ///
 /// Output:
 /// - `out`: `n_nodes * c_out` u32.
@@ -79,18 +79,12 @@ pub fn tfn_scalar_mix(
                     "acc",
                     Expr::add(
                         Expr::var("acc"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    weights,
-                                    Expr::add(Expr::var("w_base"), Expr::var("ci")),
-                                ),
-                                Expr::load(
-                                    features,
-                                    Expr::add(Expr::var("feat_base"), Expr::var("ci")),
-                                ),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(weights, Expr::add(Expr::var("w_base"), Expr::var("ci"))),
+                            Expr::load(
+                                features,
+                                Expr::add(Expr::var("feat_base"), Expr::var("ci")),
                             ),
-                            Expr::u32(16),
                         ),
                     ),
                 )],
@@ -144,6 +138,27 @@ pub fn tfn_scalar_mix_cpu(
     out
 }
 
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || tfn_scalar_mix("features", "weights", "out", 1, 2, 2),
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[2u32 << 16, 3u32 << 16]),
+                crate::wire::pack_u32_slice(&[1u32 << 16, 0, 0, 1u32 << 16]),
+                crate::wire::pack_u32_slice(&[0, 0]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[
+                2u32 << 16,
+                3u32 << 16,
+            ])]]
+        }),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,12 +204,12 @@ mod tests {
     #[test]
     fn cpu_se3_invariance_l0_irrep_holds() {
         // l = 0 (scalar) channels are by definition rotation-invariant
-        // — the mix step doesn't mix in any rotation-dependent terms.
+        //  -  the mix step doesn't mix in any rotation-dependent terms.
         // This test verifies the property: applying the same mix to
         // two "rotated" feature vectors (which for l=0 means identical)
         // gives identical output.
         let f1 = vec![1.0, 2.0, 3.0];
-        let f2 = vec![1.0, 2.0, 3.0]; // "rotated" — for l=0, no change
+        let f2 = vec![1.0, 2.0, 3.0]; // "rotated"  -  for l=0, no change
         let w = vec![0.5, 0.3, 0.1];
         let out1 = tfn_scalar_mix_cpu(&f1, &w, 1, 3, 1);
         let out2 = tfn_scalar_mix_cpu(&f2, &w, 1, 3, 1);

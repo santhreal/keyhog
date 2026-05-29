@@ -30,7 +30,7 @@ pub fn remove_identities(diagram: ZxDiagram) -> ZxDiagram {
     primitive_identity_removal(diagram)
 }
 
-/// Apply both rewrites — fusion, then identity removal — to
+/// Apply both rewrites  -  fusion, then identity removal  -  to
 /// fixpoint. The standard simplification chain.
 #[must_use]
 pub fn simplify_diagram(diagram: ZxDiagram) -> ZxDiagram {

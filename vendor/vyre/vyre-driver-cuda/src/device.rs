@@ -1,10 +1,32 @@
 //! CUDA device probing and capability snapshots.
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use cudarc::driver::{result, sys::CUdevice_attribute, CudaContext};
 
 use crate::backend::staging_reserve::reserved_vec;
+
+fn format_cuda_context_init_error(ordinal: usize, error: impl fmt::Display) -> String {
+    format!(
+        "CUDA context init failed for ordinal {ordinal}: {error}. Fix: choose a visible `nvidia-smi -L` ordinal and ensure no exclusive-process compute mode blocks context creation. If the error is CUDA_ERROR_OUT_OF_MEMORY, treat it as live VRAM pressure during context creation: run `nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv`, free or move the processes holding VRAM, then rerun the CUDA-required validation; do not skip GPU tests or continue on a CPU path."
+    )
+}
+
+#[cfg(test)]
+mod context_init_error_tests {
+    use super::format_cuda_context_init_error;
+
+    #[test]
+    fn context_init_oom_diagnostic_names_vram_pressure_without_cpu_escape() {
+        let diagnostic = format_cuda_context_init_error(0, "CUDA_ERROR_OUT_OF_MEMORY");
+        assert!(diagnostic.contains("CUDA_ERROR_OUT_OF_MEMORY"));
+        assert!(diagnostic.contains("live VRAM pressure during context creation"));
+        assert!(diagnostic
+            .contains("nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv"));
+        assert!(diagnostic.contains("do not skip GPU tests"));
+        assert!(diagnostic.contains("continue on a CPU path"));
+    }
+}
 
 /// Queried physical limits and capabilities of a CUDA GPU.
 #[derive(Debug, Clone)]
@@ -46,7 +68,7 @@ pub struct CudaDeviceCaps {
     /// Global memory bus width in bits.
     pub global_memory_bus_width_bits: i32,
     /// Maximum 32-bit registers usable by a single thread block. Required
-    /// for occupancy-aware workgroup sizing (I4) — when ptxas reports a
+    /// for occupancy-aware workgroup sizing (I4)  -  when ptxas reports a
     /// kernel's per-thread register pressure, this caps the largest block
     /// the driver can launch without spill.
     pub max_registers_per_block: i32,
@@ -87,11 +109,8 @@ impl CudaDeviceHandle {
             ));
         }
 
-        let ctx = CudaContext::new(ordinal).map_err(|e| {
-            format!(
-                "CUDA context init failed for ordinal {ordinal}: {e}. Fix: choose a visible `nvidia-smi -L` ordinal and ensure no exclusive-process compute mode blocks context creation."
-            )
-        })?;
+        let ctx = CudaContext::new(ordinal)
+            .map_err(|error| format_cuda_context_init_error(ordinal, error))?;
         ctx.bind_to_thread().map_err(|e| {
             format!(
                 "CUDA context bind failed for ordinal {ordinal}: {e}. Fix: repair CUDA context ownership before dispatch; GPU-required runs must not continue with an unbound context."
@@ -116,7 +135,13 @@ impl CudaDeviceCaps {
             );
             return 0;
         }
-        value as u32
+        u32::try_from(value).unwrap_or_else(|source| {
+            tracing::error!(
+                "CUDA device `{}` carried non-u32 {name}={value} after capability validation: {source}. Fix: reject corrupt capability snapshots during probe.",
+                self.name
+            );
+            0
+        })
     }
 
     /// Return the number of CUDA devices visible to the CUDA driver.
@@ -176,11 +201,8 @@ impl CudaDeviceCaps {
             ));
         }
 
-        let ctx = CudaContext::new(ordinal).map_err(|e| {
-            format!(
-                "CUDA context init failed for ordinal {ordinal}: {e}. Fix: choose a visible `nvidia-smi -L` ordinal and ensure no exclusive-process compute mode blocks context creation."
-            )
-        })?;
+        let ctx = CudaContext::new(ordinal)
+            .map_err(|error| format_cuda_context_init_error(ordinal, error))?;
         Self::probe_context(ordinal, &ctx)
     }
 
@@ -449,7 +471,13 @@ impl CudaDeviceCaps {
             self.global_memory_bus_width_bits,
         );
         let gbps = (u64::from(clock_khz) * u64::from(bus_bits)) / 4_000_000;
-        gbps.max(1).min(u64::from(u32::MAX)) as u32
+        u32::try_from(gbps.max(1)).unwrap_or_else(|source| {
+            tracing::error!(
+                "CUDA device `{}` memory bandwidth {gbps} GB/s does not fit u32: {source}. Fix: normalize the bandwidth model before exporting device profile telemetry.",
+                self.name
+            );
+            u32::MAX
+        })
     }
 
     /// NVIDIA CUDA architectural register ceiling per thread.
@@ -517,10 +545,9 @@ impl CudaDeviceCaps {
     ///   `cuLaunchKernelEx` and `cuLaunchCooperativeKernel` with
     ///   indirect launch parameters; `true` when cooperative launch is
     ///   reported (the megakernel prerequisite that exercises this).
-    /// - `supports_specialization_constants`: CUDA does not expose
-    ///   pipeline-creation specialization constants the way wgpu /
-    ///   SPIR-V do — kernel parameters are runtime arguments instead of
-    ///   compile-time overrides; surfaced as `false`.
+    /// - `supports_specialization_constants`: CUDA uses runtime kernel
+    ///   parameters rather than pipeline-creation specialization constants;
+    ///   surfaced as `false`.
     /// - `subgroup_size`: warp size (32 on every shipping NVIDIA GPU,
     ///   but probed live so future architectures stay correct).
     #[must_use]
@@ -536,6 +563,7 @@ impl CudaDeviceCaps {
             backend: "cuda",
             supports_subgroup_ops: subgroup.supports_subgroup,
             supports_indirect_dispatch: self.cooperative_launch,
+            supports_distributed_collectives: false,
             supports_specialization_constants: false,
             supports_f16: self.hardware_supports_f16(),
             supports_bf16: self.hardware_supports_bf16(),
@@ -575,40 +603,13 @@ impl CudaDeviceCaps {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::CudaDeviceCaps;
 
-    fn blackwell_caps() -> CudaDeviceCaps {
-        CudaDeviceCaps {
-            name: "NVIDIA GeForce RTX 5090".to_string(),
-            ordinal: 0,
-            compute_capability: (12, 0),
-            total_memory: 32 * 1024 * 1024 * 1024,
-            max_threads_per_block: 1024,
-            max_block_dim: [1024, 1024, 64],
-            max_grid_dim: [2_147_483_647, 65_535, 65_535],
-            shared_memory_per_block: 128 * 1024,
-            shared_memory_per_sm: 256 * 1024,
-            warp_size: 32,
-            cooperative_launch: true,
-            concurrent_kernels: true,
-            async_engine_count: 2,
-            multi_processor_count: 170,
-            l2_cache_bytes: 96 * 1024 * 1024,
-            memory_clock_rate_khz: 14_000_000,
-            global_memory_bus_width_bits: 512,
-            // Blackwell SM_120: 65536 32-bit regs/block, 65536 regs/SM,
-            // 2048 threads/SM. Real probed values may differ slightly per
-            // driver revision; these are SM_120 spec floors.
-            max_registers_per_block: 65_536,
-            max_registers_per_sm: 65_536,
-            max_threads_per_sm: 2048,
-        }
-    }
+mod tests {
+    use crate::synthetic_device_caps::blackwell_sm120_caps_default;
 
     #[test]
     fn cuda_profile_applies_builtin_sm_signature() {
-        let profile = blackwell_caps().to_device_profile();
+        let profile = blackwell_sm120_caps_default().to_device_profile();
         let table =
             vyre_driver::DeviceSignatureTable::builtins().expect("Fix: builtin signatures load");
         let signature = table
@@ -627,7 +628,7 @@ mod tests {
 
     #[test]
     fn cuda_profile_preserves_probed_compute_units_without_builtin_signature() {
-        let mut caps = blackwell_caps();
+        let mut caps = blackwell_sm120_caps_default();
         caps.compute_capability = (99, 0);
         caps.multi_processor_count = 13;
 
@@ -680,6 +681,26 @@ mod tests {
             "Fix: CUDA capability accessors must not manufacture fake nonzero defaults after validation."
         );
         assert!(
+            !helper.contains(" as u32"),
+            "Fix: CUDA capability accessors must use checked integer conversion, not release-path narrowing casts."
+        );
+        let bandwidth_start = source
+            .find("pub fn memory_bandwidth_gbps")
+            .expect("Fix: CUDA memory bandwidth helper must exist");
+        let bandwidth_end = source[bandwidth_start..]
+            .find("/// NVIDIA CUDA architectural register ceiling")
+            .expect("Fix: CUDA memory bandwidth helper should precede register helper")
+            + bandwidth_start;
+        let bandwidth_helper = &source[bandwidth_start..bandwidth_end];
+        assert!(
+            !bandwidth_helper.contains(" as u32"),
+            "Fix: CUDA bandwidth telemetry must not narrow with an unchecked cast."
+        );
+        assert!(
+            bandwidth_helper.contains("u32::try_from"),
+            "Fix: CUDA bandwidth telemetry must use checked conversion after widened arithmetic."
+        );
+        assert!(
             source.contains("caps.validate_required_attributes()?"),
             "Fix: CUDA capability probing must validate launch-critical values before exposing infallible accessors."
         );
@@ -690,3 +711,4 @@ mod tests {
         );
     }
 }
+

@@ -269,9 +269,9 @@ fn resident_prep_dependency_lookup_reuses_shared_signature_storage() {
     );
 
     let first = lookup_resident_prep_cache_deps(&mut cache, &key)
-        .expect("resident prep dependency cache should hit");
+        .expect("Fix: resident prep dependency cache should hit");
     let second = lookup_resident_prep_cache_deps(&mut cache, &key)
-        .expect("resident prep dependency cache should hit repeatedly");
+        .expect("Fix: resident prep dependency cache should hit repeatedly");
 
     assert!(std::sync::Arc::ptr_eq(&deps, &first));
     assert!(std::sync::Arc::ptr_eq(&first, &second));

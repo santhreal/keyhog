@@ -218,15 +218,13 @@ fn decode_pod_output_into<T: Pod>(
     }
     output.clear();
     let value_count = bytes.len() / width;
-    if output.capacity() < value_count {
-        output
-            .try_reserve_exact(value_count - output.capacity())
-            .map_err(|error| BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: typed dispatch could not reserve {value_count} decoded POD value(s) for output buffer {index}: {error}. Decode into caller-owned output storage or shard the dispatch output."
-                ),
-            })?;
-    }
+    crate::allocation::try_reserve_vec_to_capacity(output, value_count).map_err(|error| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: typed dispatch could not reserve {value_count} decoded POD value(s) for output buffer {index}: {error}. Decode into caller-owned output storage or shard the dispatch output."
+            ),
+        }
+    })?;
     output.extend(
         bytes
             .chunks_exact(width)

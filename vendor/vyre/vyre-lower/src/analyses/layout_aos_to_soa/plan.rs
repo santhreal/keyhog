@@ -1,5 +1,6 @@
 //! Output type for the AoS→SoA layout-transform analysis.
 
+use crate::analyses::candidate_plan::CandidatePlan;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10,35 +11,15 @@ pub struct LayoutCandidate {
     /// Number of components in the AoS element (e.g. 4 for Vec4).
     pub component_count: u32,
     /// Estimated speedup if split: `1.0 + (component_count - 1) * 0.3`.
-    /// Conservative — actual gain depends on access pattern coalescing.
+    /// Conservative  -  actual gain depends on access pattern coalescing.
     pub estimated_speedup_factor: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LayoutTransformPlan {
-    pub kernel_id: String,
-    pub candidates: Vec<LayoutCandidate>,
-}
-
-impl LayoutTransformPlan {
-    #[must_use]
-    pub fn candidate_count(&self) -> usize {
-        self.candidates.len()
-    }
-}
+pub type LayoutTransformPlan = CandidatePlan<LayoutCandidate>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn empty_plan_has_zero_candidates() {
-        let p = LayoutTransformPlan {
-            kernel_id: "k".into(),
-            candidates: vec![],
-        };
-        assert_eq!(p.candidate_count(), 0);
-    }
 
     #[test]
     fn vec4_speedup_grows_with_component_count() {

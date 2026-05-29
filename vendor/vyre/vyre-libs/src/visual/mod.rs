@@ -11,13 +11,15 @@
 //!
 //! # Discovery checklist (LEGO-BLOCK-RULE compliance)
 //!
-//! - `blur` — composes `math::conv1d` (horizontal + vertical weight tables)
-//! - `shadow` — private SDF helper (single caller, stays inline)
-//! - `filter_chain` — IR expressions only (mul, add, select)
-//! - `composite` — IR expressions only (alpha arithmetic)
-//! - `gradient` — IR expressions only (dot product + lerp)
-//! - `downsample` — IR expressions only (box filter = average of 4)
-//! - `glass` — composes blur + filter_chain (hero composition)
+//! - `blur`  -  composes `math::conv1d` (horizontal + vertical weight tables)
+//! - `shadow`  -  private SDF helper (single caller, stays inline)
+//! - `filter_chain`  -  IR expressions only (mul, add, select)
+//! - `composite`  -  IR expressions only (alpha arithmetic)
+//! - `gradient`  -  IR expressions only (dot product + lerp)
+//! - `downsample`  -  IR expressions only (box filter = average of 4)
+//! - `glass`  -  composes blur + filter_chain (hero composition)
+
+use vyre::ir::Expr;
 
 /// Two-pass separable Gaussian blur (composes `math::conv1d`).
 pub mod blur;
@@ -28,7 +30,7 @@ pub mod composite;
 pub mod downsample;
 /// Composable per-pixel filter chain (brightness, contrast, saturate, invert).
 pub mod filter_chain;
-/// Complete glass material (blur + tint + border) — the hero composition.
+/// Complete glass material (blur + tint + border)  -  the hero composition.
 pub mod glass;
 /// CSS-compatible gradient rasterization (linear, radial, conic).
 pub mod gradient;
@@ -50,3 +52,20 @@ pub use shadow::box_shadow;
 pub use upsample::upsample_2x;
 
 pub(crate) const PIXEL_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Return `(left * right) >> shift` without losing the high half of the
+/// unsigned 32-bit product before the rescale.
+pub(crate) fn wide_mul_shr_u32(left: Expr, right: Expr, shift: u32) -> Expr {
+    debug_assert!((1..32).contains(&shift));
+    let low = Expr::mul(left.clone(), right.clone());
+    let high = Expr::mulhi(left, right);
+    Expr::bitor(
+        Expr::shr(low, Expr::u32(shift)),
+        Expr::shl(high, Expr::u32(32 - shift)),
+    )
+}
+
+/// Return `(left * right) >> 16` for unsigned 16.16 fixed-point pixel math.
+pub(crate) fn fixed_mul_16_16_expr(left: Expr, right: Expr) -> Expr {
+    wide_mul_shr_u32(left, right, 16)
+}

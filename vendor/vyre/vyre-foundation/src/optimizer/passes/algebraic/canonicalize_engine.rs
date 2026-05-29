@@ -1,4 +1,4 @@
-//! P4.2 — Canonical-form pass.
+//! P4.2  -  Canonical-form pass.
 //!
 //! Rewrites `Program` IR into a canonical shape so semantically-equal
 //! Programs have byte-equal wire output. This is the foundation the
@@ -23,9 +23,9 @@
 //! Rules owned by CSE / DCE / rewrite passes:
 //!
 //! - Expression-CSE (lives in `cse.rs`).
-//! - Identity-fold (`x + 0 → x`) — requires `AlgebraicLaw::Identity`
+//! - Identity-fold (`x + 0 → x`)  -  requires `AlgebraicLaw::Identity`
 //!   registration lookup; next pass.
-//! - Associativity-rearranging — left-fold stays left, no right-
+//! - Associativity-rearranging  -  left-fold stays left, no right-
 //!   rotation.
 //!
 //! The pass is idempotent: `canonicalize(canonicalize(p)) ==
@@ -43,7 +43,7 @@ use vyre_spec::BinOp;
 pub fn run(program: Program) -> Program {
     // VYRE_IR_HOTSPOTS CRIT: `program.entry().to_vec()` cloned the
     // whole `Vec<Node>` unconditionally. `Program::map_entry` moves the
-    // entry out of its Arc when uniquely owned (the common case —
+    // entry out of its Arc when uniquely owned (the common case  -
     // canonicalize runs on programs the pass pipeline has exclusive
     // access to) and rebuilds on the remaining fields without an
     // intermediate scaffold allocation.
@@ -115,7 +115,7 @@ fn canonicalize_node(node: Node) -> Node {
             body,
         } => {
             // VYRE_IR_HOTSPOTS CRIT: avoid cloning the inner Vec<Node>
-            // when the Arc is uniquely owned — try_unwrap hands the
+            // when the Arc is uniquely owned  -  try_unwrap hands the
             // Vec back directly.
             let body_vec = match std::sync::Arc::try_unwrap(body) {
                 Ok(v) => v,

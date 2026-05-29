@@ -92,11 +92,11 @@ features; SM_80+ enables async copies and tensor cores.
 
 ## Errors
 
-- `EmitError::UnsupportedOp(op)` — descriptor uses a `KernelOpKind`
+- `EmitError::UnsupportedOp(op)`  -  descriptor uses a `KernelOpKind`
   the PTX emitter hasn't lowered yet.
-- `EmitError::InvalidBinding { slot, reason }` — binding can't be
+- `EmitError::InvalidBinding { slot, reason }`  -  binding can't be
   represented as a PTX `.param` or `.global` of the given type.
-- `EmitError::InvalidDescriptor(s)` — descriptor malformed.
+- `EmitError::InvalidDescriptor(s)`  -  descriptor malformed.
 
 ## See also
 

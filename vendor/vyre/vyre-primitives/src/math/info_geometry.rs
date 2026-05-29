@@ -1,4 +1,4 @@
-//! Information-geometry primitives — Fisher-Rao distance + Amari
+//! Information-geometry primitives  -  Fisher-Rao distance + Amari
 //! α-connection between distributions on a statistical manifold.
 //!
 //! Fisher-Rao distance is the Riemannian distance on the statistical
@@ -14,10 +14,10 @@
 //! families; α = 0 recovers the Levi-Civita connection (Fisher-Rao).
 //!
 //! This file ships:
-//! - `bhattacharyya_coefficient` — `Σ sqrt(p · q)`, the inner
+//! - `bhattacharyya_coefficient`  -  `Σ sqrt(p · q)`, the inner
 //!   product on the spherical statistical manifold. Distance is
 //!   `2 · arccos(coeff)` host-side.
-//! - [`crate::math::info_geometry::amari_alpha_step_cpu`] — host-side α-connection interpolation,
+//! - [`crate::math::info_geometry::amari_alpha_step_cpu`]  -  host-side α-connection interpolation,
 //!   useful for distribution-aware loss design.
 //!
 //! # Why this primitive is dual-use
@@ -161,35 +161,64 @@ pub fn fisher_rao_distance_cpu(p: &[f64], q: &[f64]) -> f64 {
 ///
 /// `α = 1`: exponential (geometric) mixture: `r_i ∝ p_i^t · q_i^(1-t)`.
 /// `α = -1`: linear (mixture-family) mixture: `r_i = t·p_i + (1-t)·q_i`.
-/// `α = 0`: spherical (Fisher-Rao geodesic) — slerp on `sqrt(p)`.
+/// `α = 0`: spherical (Fisher-Rao geodesic)  -  slerp on `sqrt(p)`.
 ///
 /// Returns the un-normalized blend; caller normalizes if needed.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn amari_alpha_step_cpu(p: &[f64], q: &[f64], alpha: f64, t: f64) -> Vec<f64> {
+    let mut out = Vec::new();
+    try_amari_alpha_step_cpu_into(p, q, alpha, t, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
+    out
+}
+
+/// Amari α-connection interpolation into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn amari_alpha_step_cpu_into(p: &[f64], q: &[f64], alpha: f64, t: f64, out: &mut Vec<f64>) {
+    try_amari_alpha_step_cpu_into(p, q, alpha, t, out).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible Amari α-connection interpolation into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_amari_alpha_step_cpu_into(
+    p: &[f64],
+    q: &[f64],
+    alpha: f64,
+    t: f64,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let t = t.clamp(0.0, 1.0);
     let s = 1.0 - t;
-    p.iter()
-        .zip(q.iter())
-        .map(|(&pi, &qi)| {
-            if (alpha - 1.0).abs() < 1e-12 {
-                pi.powf(t) * qi.powf(s)
-            } else if (alpha + 1.0).abs() < 1e-12 {
-                t * pi + s * qi
-            } else if alpha.abs() < 1e-12 {
-                let sp = pi.max(0.0).sqrt();
-                let sq = qi.max(0.0).sqrt();
-                let blended = t * sp + s * sq;
-                blended * blended
-            } else {
-                // General α-connection: r_i^((1-α)/2) = t · p_i^((1-α)/2) +
-                //                                       (1-t) · q_i^((1-α)/2)
-                let beta = (1.0 - alpha) / 2.0;
-                let blended = t * pi.max(0.0).powf(beta) + s * qi.max(0.0).powf(beta);
-                blended.powf(1.0 / beta)
-            }
-        })
-        .collect()
+    let n = p.len().min(q.len());
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "information-geometry CPU oracle",
+            "amari_alpha_step output",
+        )?;
+    }
+    out.clear();
+    p.iter().zip(q.iter()).for_each(|(&pi, &qi)| {
+        if (alpha - 1.0).abs() < 1e-12 {
+            out.push(pi.powf(t) * qi.powf(s));
+        } else if (alpha + 1.0).abs() < 1e-12 {
+            out.push(t * pi + s * qi);
+        } else if alpha.abs() < 1e-12 {
+            let sp = pi.max(0.0).sqrt();
+            let sq = qi.max(0.0).sqrt();
+            let blended = t * sp + s * sq;
+            out.push(blended * blended);
+        } else {
+            // General α-connection: r_i^((1-α)/2) = t · p_i^((1-α)/2) +
+            //                                       (1-t) · q_i^((1-α)/2)
+            let beta = (1.0 - alpha) / 2.0;
+            let blended = t * pi.max(0.0).powf(beta) + s * qi.max(0.0).powf(beta);
+            out.push(blended.powf(1.0 / beta));
+        }
+    });
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -199,8 +228,16 @@ inventory::submit! {
         || {
             bhattacharyya_per_element("a", "b", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[1; 4]),
+                crate::wire::pack_u32_slice(&[1; 4]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[0; 4])]]
+        }),
     )
 }
 
@@ -220,7 +257,7 @@ mod tests {
 
     #[test]
     fn cpu_orthogonal_distance_is_pi() {
-        // p = (1, 0), q = (0, 1) — disjoint support.
+        // p = (1, 0), q = (0, 1)  -  disjoint support.
         let p = vec![1.0, 0.0];
         let q = vec![0.0, 1.0];
         // BC = 0, distance = 2 arccos(0) = pi
@@ -244,6 +281,90 @@ mod tests {
         assert_eq!(bhattacharyya_coefficient_cpu(&[1.0], &[]), 0.0);
         let out = amari_alpha_step_cpu(&[1.0, 2.0], &[3.0], -1.0, 2.0);
         assert_eq!(out, vec![1.0]);
+    }
+
+    #[test]
+    fn cpu_amari_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let ptr = out.as_ptr();
+        let capacity = out.capacity();
+
+        try_amari_alpha_step_cpu_into(&[1.0, 0.0], &[0.0, 1.0], -1.0, 0.25, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Amari alpha CPU oracle should reuse caller-owned output");
+
+        assert_eq!(out, vec![0.25, 0.75]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        try_amari_alpha_step_cpu_into(&[2.0], &[4.0], -1.0, 0.5, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - Amari alpha CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![3.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_amari_alpha_matches_independent_reference() {
+        let mut out = Vec::new();
+        for case in 0..1024usize {
+            let p_len = case % 65;
+            let q_len = (case * 7) % 65;
+            let alpha = match case % 5 {
+                0 => -1.0,
+                1 => 0.0,
+                2 => 1.0,
+                _ => ((case % 17) as f64 - 8.0) / 5.0,
+            };
+            let t = ((case % 23) as f64 - 4.0) / 11.0;
+            let p: Vec<f64> = (0..p_len)
+                .map(|idx| ((idx * 13 + case) % 31) as f64 / 31.0)
+                .collect();
+            let q: Vec<f64> = (0..q_len)
+                .map(|idx| ((idx * 17 + case) % 29) as f64 / 29.0)
+                .collect();
+
+            try_amari_alpha_step_cpu_into(&p, &q, alpha, t, &mut out)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated Amari alpha CPU oracle should evaluate");
+            let expected = independent_amari_alpha(&p, &q, alpha, t);
+
+            assert_eq!(out.len(), expected.len(), "case {case}: output length");
+            for idx in 0..out.len() {
+                if expected[idx].is_nan() {
+                    assert!(out[idx].is_nan(), "case {case} idx {idx}: expected NaN");
+                } else {
+                    assert!(
+                        approx_eq(out[idx], expected[idx]),
+                        "case {case} idx {idx}: expected {}, got {}",
+                        expected[idx],
+                        out[idx]
+                    );
+                }
+            }
+        }
+    }
+
+    fn independent_amari_alpha(p: &[f64], q: &[f64], alpha: f64, t: f64) -> Vec<f64> {
+        let t = t.clamp(0.0, 1.0);
+        let s = 1.0 - t;
+        p.iter()
+            .zip(q.iter())
+            .map(|(&pi, &qi)| {
+                if (alpha - 1.0).abs() < 1e-12 {
+                    pi.powf(t) * qi.powf(s)
+                } else if (alpha + 1.0).abs() < 1e-12 {
+                    t * pi + s * qi
+                } else if alpha.abs() < 1e-12 {
+                    let blended = t * pi.max(0.0).sqrt() + s * qi.max(0.0).sqrt();
+                    blended * blended
+                } else {
+                    let beta = (1.0 - alpha) / 2.0;
+                    let blended = t * pi.max(0.0).powf(beta) + s * qi.max(0.0).powf(beta);
+                    blended.powf(1.0 / beta)
+                }
+            })
+            .collect()
     }
 
     #[test]

@@ -296,28 +296,22 @@ fn reserve_resource_rows(
     rows: &mut Vec<[Resource; 4]>,
     capacity: usize,
 ) -> Result<(), PipelineError> {
-    if rows.capacity() < capacity {
-        rows.try_reserve_exact(capacity - rows.capacity())
-            .map_err(|error| {
-                PipelineError::Backend(format!(
-                    "megakernel resident resource-row reservation failed for {capacity} row(s): {error}. Fix: split persistent-handle dispatch batches before launch."
-                ))
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(rows, capacity).map_err(|error| {
+        PipelineError::Backend(format!(
+            "megakernel resident resource-row reservation failed for {capacity} row(s): {error}. Fix: split persistent-handle dispatch batches before launch."
+        ))
+    })
 }
 
 fn reserve_resource_rows_small(
     rows: &mut SmallVec<[[Resource; 4]; 16]>,
     capacity: usize,
 ) -> Result<(), PipelineError> {
-    if rows.capacity() < capacity {
-        rows.try_reserve_exact(capacity - rows.capacity())
-            .map_err(|error| {
-                PipelineError::Backend(format!(
-                    "megakernel resident inline resource-row reservation failed for {capacity} row(s): {error}. Fix: split persistent-handle dispatch batches before launch."
-                ))
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_smallvec_to_capacity(rows, capacity).map_err(
+        |error| {
+            PipelineError::Backend(format!(
+                "megakernel resident inline resource-row reservation failed for {capacity} row(s): {error}. Fix: split persistent-handle dispatch batches before launch."
+            ))
+        },
+    )
 }

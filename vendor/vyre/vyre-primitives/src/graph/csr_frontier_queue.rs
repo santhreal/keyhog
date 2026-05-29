@@ -5,7 +5,9 @@
 //! into two GPU-resident primitives:
 //!
 //! 1. `frontier_to_queue` compacts active source-node ids from a packed bitset
-//!    into an active queue with an atomic device-side length.
+//!    into an active queue with an atomic device-side length. It uses one
+//!    cooperative workgroup and a strided scan so the queue length can be
+//!    initialized inside the same dispatch without an unsupported grid barrier.
 //! 2. `csr_queue_forward_traverse` consumes only queued sources and expands
 //!    their CSR rows into `frontier_out`.
 //!
@@ -16,15 +18,46 @@ use std::sync::Arc;
 
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::MemoryOrdering;
 
 use crate::bitset::bitset_words;
 
 /// Canonical op id for bitset-to-queue compaction.
 pub const FRONTIER_TO_QUEUE_OP_ID: &str = "vyre-primitives::graph::frontier_to_queue";
+/// Canonical op id for device-side queue length initialization.
+pub const FRONTIER_QUEUE_LEN_INIT_OP_ID: &str = "vyre-primitives::graph::frontier_queue_len_init";
 /// Canonical op id for queue-driven CSR expansion.
 pub const CSR_QUEUE_FORWARD_OP_ID: &str = "vyre-primitives::graph::csr_queue_forward_traverse";
 
+/// Build a GPU program that initializes the active queue length scalar.
+///
+/// This replaces a per-wave host-to-device zero upload in resident sparse
+/// traversal pipelines. Keeping initialization as a separate single-lane
+/// device step avoids the global-synchronization race that would occur if the
+/// multi-workgroup compaction kernel tried to clear and atomically increment
+/// the same scalar.
+#[must_use]
+pub fn frontier_queue_len_init(queue_len: &str) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(queue_len, 0, BufferAccess::ReadWrite, DataType::U32).with_count(1),
+        ],
+        [1, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(FRONTIER_QUEUE_LEN_INIT_OP_ID),
+            source_region: None,
+            body: Arc::new(vec![Node::store(queue_len, Expr::u32(0), Expr::u32(0))]),
+        }],
+    )
+}
+
 /// Build a GPU program that appends every active frontier node to a queue.
+///
+/// This is intentionally a single-workgroup cooperative scan: lane 0 clears
+/// `queue_len`, a workgroup barrier orders that clear, then all lanes walk
+/// `node_count` in 256-wide strides. Sparse queue traversal is selected only
+/// for low-density frontiers, so avoiding a separate queue-length init launch
+/// is more valuable than spreading this scan across every SM.
 #[must_use]
 pub fn frontier_to_queue(
     frontier_in: &str,
@@ -45,40 +78,60 @@ pub fn frontier_to_queue(
     }
     let lane = Expr::InvocationId { axis: 0 };
     let words = bitset_words(node_count);
+    let scan_iters = node_count.div_ceil(256).max(1);
     let body = vec![
-        Node::let_bind("q_src", lane.clone()),
+        Node::let_bind("q_lane", lane.clone()),
         Node::if_then(
-            Expr::lt(Expr::var("q_src"), Expr::u32(node_count)),
+            Expr::eq(Expr::var("q_lane"), Expr::u32(0)),
+            vec![Node::store(queue_len, Expr::u32(0), Expr::u32(0))],
+        ),
+        Node::barrier_with_ordering(MemoryOrdering::SeqCst),
+        Node::loop_for(
+            "q_iter",
+            Expr::u32(0),
+            Expr::u32(scan_iters),
             vec![
-                Node::let_bind("q_word_idx", Expr::shr(Expr::var("q_src"), Expr::u32(5))),
                 Node::let_bind(
-                    "q_bit_mask",
-                    Expr::shl(
-                        Expr::u32(1),
-                        Expr::bitand(Expr::var("q_src"), Expr::u32(31)),
+                    "q_src",
+                    Expr::add(
+                        Expr::mul(Expr::var("q_iter"), Expr::u32(256)),
+                        Expr::var("q_lane"),
                     ),
-                ),
-                Node::let_bind(
-                    "q_src_word",
-                    Expr::load(frontier_in, Expr::var("q_word_idx")),
                 ),
                 Node::if_then(
-                    Expr::ne(
-                        Expr::bitand(Expr::var("q_src_word"), Expr::var("q_bit_mask")),
-                        Expr::u32(0),
-                    ),
+                    Expr::lt(Expr::var("q_src"), Expr::u32(node_count)),
                     vec![
+                        Node::let_bind("q_word_idx", Expr::shr(Expr::var("q_src"), Expr::u32(5))),
                         Node::let_bind(
-                            "q_slot",
-                            Expr::atomic_add(queue_len, Expr::u32(0), Expr::u32(1)),
+                            "q_bit_mask",
+                            Expr::shl(
+                                Expr::u32(1),
+                                Expr::bitand(Expr::var("q_src"), Expr::u32(31)),
+                            ),
+                        ),
+                        Node::let_bind(
+                            "q_src_word",
+                            Expr::load(frontier_in, Expr::var("q_word_idx")),
                         ),
                         Node::if_then(
-                            Expr::lt(Expr::var("q_slot"), Expr::u32(queue_capacity)),
-                            vec![Node::store(
-                                active_queue,
-                                Expr::var("q_slot"),
-                                Expr::var("q_src"),
-                            )],
+                            Expr::ne(
+                                Expr::bitand(Expr::var("q_src_word"), Expr::var("q_bit_mask")),
+                                Expr::u32(0),
+                            ),
+                            vec![
+                                Node::let_bind(
+                                    "q_slot",
+                                    Expr::atomic_add(queue_len, Expr::u32(0), Expr::u32(1)),
+                                ),
+                                Node::if_then(
+                                    Expr::lt(Expr::var("q_slot"), Expr::u32(queue_capacity)),
+                                    vec![Node::store(
+                                        active_queue,
+                                        Expr::var("q_slot"),
+                                        Expr::var("q_src"),
+                                    )],
+                                ),
+                            ],
                         ),
                     ],
                 ),
@@ -251,12 +304,54 @@ pub fn frontier_to_queue_cpu(
     node_count: u32,
     queue_capacity: usize,
 ) -> (Vec<u32>, u32) {
-    let mut queue = Vec::with_capacity(queue_capacity);
+    try_frontier_to_queue_cpu(frontier_in, node_count, queue_capacity).unwrap_or_else(|err| {
+        panic!("frontier_to_queue CPU oracle received malformed input. {err}")
+    })
+}
+
+/// Fallible CPU reference for queue materialization.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_frontier_to_queue_cpu(
+    frontier_in: &[u32],
+    node_count: u32,
+    queue_capacity: usize,
+) -> Result<(Vec<u32>, u32), String> {
+    let mut queue: Vec<u32> = Vec::new();
+    let seen = try_frontier_to_queue_cpu_into(frontier_in, node_count, queue_capacity, &mut queue)?;
+    Ok((queue, seen))
+}
+
+/// Fallible CPU reference for queue materialization into caller-owned storage.
+///
+/// On error, `queue` is left unchanged. This keeps parity harnesses and
+/// resident dispatch diagnostics from losing the last queue snapshot when a
+/// malformed frontier arrives.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_frontier_to_queue_cpu_into(
+    frontier_in: &[u32],
+    node_count: u32,
+    queue_capacity: usize,
+    queue: &mut Vec<u32>,
+) -> Result<u32, String> {
+    let expected_words = bitset_words(node_count) as usize;
+    if frontier_in.len() != expected_words {
+        return Err(format!(
+            "Fix: frontier_to_queue requires frontier_in.len() == bitset_words(node_count), got len={} but expected {expected_words} for node_count={node_count}.",
+            frontier_in.len()
+        ));
+    }
+    crate::graph::scratch::reserve_graph_items(
+        queue,
+        queue_capacity,
+        "CSR frontier queue CPU oracle",
+        "active frontier queue",
+    )?;
+    queue.clear();
     let mut seen = 0u32;
     for src in 0..node_count {
         let word = (src / 32) as usize;
         let bit = 1u32 << (src % 32);
-        if frontier_in.get(word).copied().unwrap_or(0) & bit == 0 {
+        if frontier_in[word] & bit == 0 {
             continue;
         }
         if queue.len() < queue_capacity {
@@ -264,7 +359,7 @@ pub fn frontier_to_queue_cpu(
         }
         seen = seen.saturating_add(1);
     }
-    (queue, seen)
+    Ok(seen)
 }
 
 /// CPU reference for queue-driven CSR expansion.
@@ -279,11 +374,67 @@ pub fn csr_queue_forward_traverse_cpu(
     node_count: u32,
     allow_mask: u32,
 ) -> Vec<u32> {
-    validate_csr_queue_graph(node_count, edge_offsets, edge_targets, edge_kind_mask)
-        .unwrap_or_else(|err| {
-            panic!("csr_queue_forward_traverse CPU oracle received malformed input. {err}")
-        });
-    let mut out = vec![0u32; bitset_words(node_count) as usize];
+    try_csr_queue_forward_traverse_cpu(
+        active_queue,
+        queue_len,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        node_count,
+        allow_mask,
+    )
+    .unwrap_or_else(|err| {
+        panic!("csr_queue_forward_traverse CPU oracle received malformed input. {err}")
+    })
+}
+
+/// Fallible CPU reference for queue-driven CSR expansion.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_csr_queue_forward_traverse_cpu(
+    active_queue: &[u32],
+    queue_len: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    node_count: u32,
+    allow_mask: u32,
+) -> Result<Vec<u32>, String> {
+    let mut out: Vec<u32> = Vec::new();
+    try_csr_queue_forward_traverse_cpu_into(
+        active_queue,
+        queue_len,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        node_count,
+        allow_mask,
+        &mut out,
+    )?;
+    Ok(out)
+}
+
+/// Fallible CPU reference for queue-driven CSR expansion into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(clippy::too_many_arguments)]
+pub fn try_csr_queue_forward_traverse_cpu_into(
+    active_queue: &[u32],
+    queue_len: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    node_count: u32,
+    allow_mask: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    let layout = validate_csr_queue_graph(node_count, edge_offsets, edge_targets, edge_kind_mask)?;
+    crate::graph::scratch::reserve_graph_items(
+        out,
+        layout.words,
+        "CSR frontier queue CPU oracle",
+        "frontier output bitset",
+    )?;
+    out.clear();
+    out.resize(layout.words, 0);
     let take = (queue_len as usize).min(active_queue.len());
     for &src in &active_queue[..take] {
         if src >= node_count {
@@ -301,7 +452,99 @@ pub fn csr_queue_forward_traverse_cpu(
             }
         }
     }
-    out
+    Ok(())
+}
+
+#[cfg(test)]
+
+mod generated_cpu_oracle_tests {
+    use super::*;
+
+    #[test]
+    fn frontier_to_queue_rejects_missing_words_without_clobbering_queue() {
+        let mut queue = vec![7, 3, 1];
+
+        let err = try_frontier_to_queue_cpu_into(&[0b101], 64, 4, &mut queue)
+            .expect_err("short frontier bitset must fail exact-width validation");
+
+        assert!(
+            err.contains("frontier_in.len() == bitset_words(node_count)"),
+            "Fix: frontier width error must identify the exact bitset contract, got: {err}"
+        );
+        assert_eq!(
+            queue,
+            vec![7, 3, 1],
+            "failed frontier materialization must preserve previous queue diagnostics"
+        );
+    }
+
+    #[test]
+    fn queue_forward_traverse_into_rejects_bad_graph_without_clobbering_output() {
+        let mut out = vec![0xDEAD_BEEF];
+
+        let err = try_csr_queue_forward_traverse_cpu_into(
+            &[0],
+            1,
+            &[0, 1, 1],
+            &[2],
+            &[1],
+            2,
+            1,
+            &mut out,
+        )
+        .expect_err("out-of-range target must fail CSR queue graph validation");
+
+        assert!(
+            err.contains("outside node_count"),
+            "Fix: queue traversal graph errors must identify invalid targets, got: {err}"
+        );
+        assert_eq!(
+            out,
+            vec![0xDEAD_BEEF],
+            "failed queue traversal preflight must preserve previous output diagnostics"
+        );
+    }
+
+    #[test]
+    fn generated_frontier_queue_and_traverse_cpu_oracles_match_shape_contracts() {
+        for node_count in 1u32..=128 {
+            let edge_offsets: Vec<u32> = (0..=node_count).collect();
+            let edge_targets: Vec<u32> = (0..node_count)
+                .map(|node| (node + 1) % node_count)
+                .collect();
+            let edge_kind_mask = vec![1u32; node_count as usize];
+            for queue_capacity in 0usize..32 {
+                let mut frontier = vec![0u32; bitset_words(node_count) as usize];
+                let period = (queue_capacity as u32 % 7) + 1;
+                let mut expected_seen = 0u32;
+                for node in 0..node_count {
+                    if node % period == 0 {
+                        frontier[node as usize / 32] |= 1u32 << (node % 32);
+                        expected_seen = expected_seen.saturating_add(1);
+                    }
+                }
+                let (queue, seen) =
+                    try_frontier_to_queue_cpu(&frontier, node_count, queue_capacity).unwrap();
+                assert_eq!(seen, expected_seen);
+                assert_eq!(queue.len(), queue_capacity.min(expected_seen as usize));
+                let out = try_csr_queue_forward_traverse_cpu(
+                    &queue,
+                    seen,
+                    &edge_offsets,
+                    &edge_targets,
+                    &edge_kind_mask,
+                    node_count,
+                    1,
+                )
+                .unwrap();
+                assert_eq!(out.len(), bitset_words(node_count) as usize);
+                for &src in &queue {
+                    let dst = (src + 1) % node_count;
+                    assert_ne!(out[dst as usize / 32] & (1u32 << (dst % 32)), 0);
+                }
+            }
+        }
+    }
 }
 
 /// Validated resident graph layout for queue-driven sparse traversal.
@@ -486,6 +729,9 @@ mod tests {
 
     #[test]
     fn emitted_programs_have_stable_shapes() {
+        let queue_len_init = frontier_queue_len_init("len");
+        assert_eq!(queue_len_init.workgroup_size, [1, 1, 1]);
+        assert_eq!(queue_len_init.buffers.len(), 1);
         let queue = frontier_to_queue("frontier", "queue", "len", 64, 8);
         assert_eq!(queue.workgroup_size, [256, 1, 1]);
         assert_eq!(queue.buffers.len(), 3);
@@ -538,7 +784,7 @@ mod tests {
         let frontiers: [&[u32]; 2] = [&[1, 0], &[0, 2]];
 
         let words = validate_frontier_queue_batch(64, &frontiers, 8)
-            .expect("two 64-node frontiers should be valid");
+            .expect("Fix: two 64-node frontiers should be valid");
 
         assert_eq!(words, 2);
     }
@@ -572,3 +818,4 @@ mod tests {
         assert!(err.contains("queue_capacity > 0"));
     }
 }
+

@@ -1,13 +1,13 @@
 [package]
 name = "vyre-harness"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Universal Cat-A op harness registry: OpEntry, ConvergenceContract, FixpointContract, UniversalDiffExemption — the registry types every vyre-built library publishes through."
+description = "Universal Cat-A op harness registry: OpEntry, ConvergenceContract, FixpointContract, UniversalDiffExemption  -  the registry types every vyre-built library publishes through."
 readme = "README.md"
 keywords = ["vyre", "gpu", "harness", "registry"]
 categories = ["development-tools::testing"]

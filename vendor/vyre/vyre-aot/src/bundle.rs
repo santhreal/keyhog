@@ -24,6 +24,7 @@ use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
+use hashkit::sha256_hash::sha256_hex;
 use thiserror::Error;
 
 use crate::artifact::CompiledArtifact;
@@ -335,12 +336,3 @@ fn brotli_compress(input: &[u8]) -> Result<Vec<u8>, BundleError> {
     Ok(out)
 }
 
-fn sha256_hex(input: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let hash = Sha256::digest(input);
-    let mut s = String::with_capacity(hash.len() * 2);
-    for b in hash {
-        let _ = std::fmt::Write::write_fmt(&mut s, format_args!("{b:02x}"));
-    }
-    s
-}

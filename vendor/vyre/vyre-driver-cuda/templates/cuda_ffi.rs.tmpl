@@ -154,6 +154,22 @@ fn check(rc: CUresult, op: &str) -> Result<(), String> {
     }
 }
 
+fn reserve_vec_to_capacity<T>(
+    vec: &mut Vec<T>,
+    target_capacity: usize,
+    context: &str,
+    item: &str,
+) -> Result<(), String> {
+    if target_capacity <= vec.capacity() {
+        return Ok(());
+    }
+    vec.try_reserve_exact(target_capacity - vec.len()).map_err(|error| {
+        format!(
+            "{context} could not reserve {target_capacity} {item}(s): {error}. Fix: split the AOT kernel artifact before launch."
+        )
+    })
+}
+
 pub fn cu_init() -> Result<(), String> {
     let c = cuda()?;
     unsafe { check((c.cuInit)(0), "cuInit") }
@@ -239,6 +255,9 @@ pub struct CtxGuard {
 
 impl Drop for CtxGuard {
     fn drop(&mut self) {
+        if self.raw.is_null() {
+            return;
+        }
         if let Ok(c) = cuda() {
             unsafe {
                 let rc = (c.cuCtxDestroy_v2)(self.raw);
@@ -258,6 +277,12 @@ pub fn cu_ctx_create(device: CUdevice) -> Result<CtxGuard, String> {
             (c.cuCtxCreate_v2)(&mut ctx, 0, device),
             "cuCtxCreate_v2",
         )?;
+    }
+    if ctx.is_null() {
+        return Err(
+            "cuCtxCreate_v2 returned a null context after success. Fix: update the CUDA driver or fail this AOT launch before loading modules."
+                .to_string(),
+        );
     }
     Ok(CtxGuard { raw: ctx })
 }
@@ -299,11 +324,12 @@ pub fn cu_module_load_data(bytes: &[u8]) -> Result<ModuleGuard, String> {
             "cuModuleLoadData PTX image length overflowed while appending NUL terminator. Fix: split the AOT kernel artifact before launch."
                 .to_string()
         })?;
-        staged.try_reserve_exact(staged_len).map_err(|error| {
-            format!(
-                "cuModuleLoadData could not reserve {staged_len} byte(s) for NUL-terminated PTX staging: {error}. Fix: split the AOT kernel artifact before launch."
-            )
-        })?;
+        reserve_vec_to_capacity(
+            &mut staged,
+            staged_len,
+            "cuModuleLoadData NUL-terminated PTX staging",
+            "byte",
+        )?;
         staged.extend_from_slice(bytes);
         staged.push(0);
         staged.as_ptr()
@@ -411,6 +437,9 @@ pub fn cu_mem_free(dptr: CUdeviceptr) -> Result<(), String> {
 }
 
 pub fn cu_memcpy_h_to_d(dst: CUdeviceptr, src: &[u8]) -> Result<(), String> {
+    if src.is_empty() {
+        return Ok(());
+    }
     if dst == 0 {
         return Err(
             "cuMemcpyHtoD_v2 received a null destination device pointer. Fix: repair AOT device allocation before upload."
@@ -427,6 +456,9 @@ pub fn cu_memcpy_h_to_d(dst: CUdeviceptr, src: &[u8]) -> Result<(), String> {
 }
 
 pub fn cu_memcpy_d_to_h(dst: &mut [u32], src: CUdeviceptr) -> Result<(), String> {
+    if dst.is_empty() {
+        return Ok(());
+    }
     if src == 0 {
         return Err(
             "cuMemcpyDtoH_v2 received a null source device pointer. Fix: repair AOT device allocation before readback."
@@ -448,6 +480,9 @@ pub fn cu_memcpy_d_to_h_offset(
     src: CUdeviceptr,
     offset_bytes: u64,
 ) -> Result<(), String> {
+    if dst.is_empty() {
+        return Ok(());
+    }
     if src == 0 {
         return Err(
             "cuMemcpyDtoH_v2 offset readback received a null source device pointer. Fix: repair AOT metrics allocation before readback."
@@ -456,8 +491,14 @@ pub fn cu_memcpy_d_to_h_offset(
     }
     let c = cuda()?;
     let bytes = std::mem::size_of_val(dst);
+    let bytes_u64 = u64::try_from(bytes).map_err(|error| {
+        format!("cuMemcpyDtoH_v2 offset readback byte length cannot fit u64: {error}. Fix: split the metrics readback before launch.")
+    })?;
     let src = src.checked_add(offset_bytes).ok_or_else(|| {
         format!("cuMemcpyDtoH_v2 offset readback overflowed device pointer: base={src}, offset={offset_bytes}. Fix: correct the AOT manifest metrics buffer size.")
+    })?;
+    src.checked_add(bytes_u64).ok_or_else(|| {
+        format!("cuMemcpyDtoH_v2 offset readback range overflowed device pointer: start={src}, bytes={bytes_u64}. Fix: correct the AOT manifest metrics buffer size.")
     })?;
     unsafe {
         check(
@@ -477,13 +518,13 @@ impl KernelArgs {
         let mut storage = Vec::new();
         storage.try_reserve_exact(capacity).map_err(|error| {
             format!(
-                "AOT CUDA kernel-argument value table could not reserve {capacity} slot(s): {error}. Fix: reduce manifest buffer count or shard the launcher."
+                "AOT CUDA kernel-argument value table could not reserve {capacity} slot(s): {error}. Fix: split the AOT kernel artifact before launch."
             )
         })?;
         let mut ptrs = Vec::new();
         ptrs.try_reserve_exact(capacity).map_err(|error| {
             format!(
-                "AOT CUDA kernel-argument pointer table could not reserve {capacity} slot(s): {error}. Fix: reduce manifest buffer count or shard the launcher."
+                "AOT CUDA kernel-argument pointer table could not reserve {capacity} slot(s): {error}. Fix: split the AOT kernel artifact before launch."
             )
         })?;
         Ok(Self { storage, ptrs })
@@ -499,18 +540,18 @@ impl KernelArgs {
                 ));
             }
         }
-        self.storage.try_reserve(device_ptrs.len()).map_err(|error| {
-            format!(
-                "AOT CUDA kernel-argument value table could not reserve {} launch slot(s): {error}. Fix: reduce manifest buffer count or shard the launcher.",
-                device_ptrs.len()
-            )
-        })?;
-        self.ptrs.try_reserve(device_ptrs.len()).map_err(|error| {
-            format!(
-                "AOT CUDA kernel-argument pointer table could not reserve {} launch slot(s): {error}. Fix: reduce manifest buffer count or shard the launcher.",
-                device_ptrs.len()
-            )
-        })?;
+        reserve_vec_to_capacity(
+            &mut self.storage,
+            device_ptrs.len(),
+            "AOT CUDA kernel-argument value table",
+            "launch slot",
+        )?;
+        reserve_vec_to_capacity(
+            &mut self.ptrs,
+            device_ptrs.len(),
+            "AOT CUDA kernel-argument pointer table",
+            "launch slot",
+        )?;
         for allocation in device_ptrs {
             self.storage.push(allocation.ptr());
         }

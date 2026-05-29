@@ -2,11 +2,11 @@
 //!
 //! Each constant maps to a token category. Stored as `u32` for GPU
 //! alignment. The numbering scheme reserves:
-//! - `0..9` — literals and identifiers
-//! - `10..39` — single-char punctuation
-//! - `40..59` — multi-char operators
-//! - `100..199` — keywords
-//! - `200..255` — meta-tokens (stripped before structural analysis)
+//! - `0..9`  -  literals and identifiers
+//! - `10..39`  -  single-char punctuation
+//! - `40..59`  -  multi-char operators
+//! - `100..199`  -  keywords
+//! - `200..255`  -  meta-tokens (stripped before structural analysis)
 #![allow(missing_docs)]
 
 // Token type constants (fits in u8, stored as u32 for GPU alignment)

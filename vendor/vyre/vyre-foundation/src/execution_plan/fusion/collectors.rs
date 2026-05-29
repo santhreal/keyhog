@@ -3,7 +3,7 @@
 //! `VYRE_IR_HOTSPOTS` HIGH: `fuse_programs_multi` previously called three
 //! independent walks (`collect_atomic_targets_from_node`,
 //! `collect_load_targets_from_node`, `collect_store_targets_from_node`)
-//! per arm — three full traversals of the same IR tree. The unified
+//! per arm  -  three full traversals of the same IR tree. The unified
 //! [`collect_buffer_targets`] helper does it in one walk with three
 //! mutable target sets. This is the canonical collector API for fusion:
 //! adding single-target wrappers would reintroduce duplicate IR walks and
@@ -60,6 +60,14 @@ pub(super) fn collect_buffer_targets(
             for n in body.iter() {
                 collect_buffer_targets(n, loads, stores, atomics);
             }
+        }
+        Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+            loads.insert(buffer.clone());
+            stores.insert(buffer.clone());
+        }
+        Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+            loads.insert(input.clone());
+            stores.insert(output.clone());
         }
         Node::IndirectDispatch { .. }
         | Node::Return

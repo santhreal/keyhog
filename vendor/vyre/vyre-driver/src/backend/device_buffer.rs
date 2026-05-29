@@ -1,7 +1,7 @@
 //! Backend-owned device-buffer abstraction (SEED-6).
 //!
 //! Today every `VyreBackend::dispatch` round-trips inputs and outputs as
-//! owned `Vec<u8>` buffers — uploaded to the device per call, downloaded
+//! owned `Vec<u8>` buffers  -  uploaded to the device per call, downloaded
 //! back per call. For workloads that issue thousands of small dispatches
 //! against the same logical buffers (the C parser preprocessor pipeline
 //! is the canonical case), the host-device copies dominate wall time.
@@ -23,7 +23,7 @@ use vyre_foundation::ir::Program;
 ///
 /// The handle is `Send + Sync` so callers can park it across awaits and
 /// share it across worker threads, but it is NOT portable across
-/// backends — the backend that allocated it must be the same backend
+/// backends  -  the backend that allocated it must be the same backend
 /// that dispatches it. Cross-backend transfer requires explicit
 /// download → re-upload through the substrate-neutral host path.
 ///
@@ -57,12 +57,12 @@ pub trait DeviceBuffer: std::any::Any + Send + Sync + std::fmt::Debug {
 /// [`DeviceBuffer`] yet. The default
 /// [`crate::backend::VyreBackend::allocate_device_buffer`] returns this
 /// variant via [`BackendError::UnsupportedFeature`] so the consumer
-/// path is the same shape across all backends — opt-in detection is one
+/// path is the same shape across all backends  -  opt-in detection is one
 /// `Result::is_err` check, no separate trait.
 pub const DEVICE_BUFFER_FEATURE: &str = "DeviceBuffer";
 
 /// Convenience helper for default `VyreBackend::allocate_device_buffer`
-/// impls — every shipped backend returns this variant until they
+/// impls  -  every shipped backend returns this variant until they
 /// implement persistent device-buffer allocation.
 pub(crate) fn unsupported_device_buffer(backend_id: &'static str) -> BackendError {
     BackendError::UnsupportedFeature {
@@ -72,7 +72,7 @@ pub(crate) fn unsupported_device_buffer(backend_id: &'static str) -> BackendErro
 }
 
 /// Implementor of [`DeviceBuffer`] for compatibility tests and explicit
-/// host-resident fixtures — stores raw bytes on the host, identifies as
+/// host-resident fixtures  -  stores raw bytes on the host, identifies as
 /// the requesting backend.
 ///
 /// This is not a production substitute for real device allocation. Real
@@ -109,7 +109,7 @@ impl HostShimBuffer {
         })
     }
 
-    /// Borrow the underlying bytes. Only `HostShimBuffer` exposes this —
+    /// Borrow the underlying bytes. Only `HostShimBuffer` exposes this  -
     /// real device buffers cannot be byte-borrowed without a download.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
@@ -237,13 +237,13 @@ mod tests {
         let shim = buf
             .as_any_mut()
             .downcast_mut::<HostShimBuffer>()
-            .expect("HostShimBuffer");
+            .expect("Fix: HostShimBuffer");
         shim.as_mut_slice()
             .copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
         let shim_ref = buf
             .as_any()
             .downcast_ref::<HostShimBuffer>()
-            .expect("HostShimBuffer");
+            .expect("Fix: HostShimBuffer");
         assert_eq!(shim_ref.as_slice(), &[1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
@@ -264,7 +264,7 @@ mod tests {
         let a = HostShimBuffer::allocate("cuda", 4);
         let b = HostShimBuffer::allocate("cuda", 8);
         validate_buffer_ownership("cuda", [a.as_ref(), b.as_ref()].into_iter())
-            .expect("same-backend buffers must validate");
+            .expect("Fix: same-backend buffers must validate");
     }
 
     #[test]

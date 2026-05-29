@@ -56,8 +56,8 @@ pub struct PostProcessedMatch {
     /// for zero-width matches.
     pub entropy_bits_per_byte: f32,
     /// `[0.0, 1.0]` confidence score combining length + entropy.
-    /// Specifically `min(1, len/16) * (entropy / 8)` — the same
-    /// heuristic a secret-scanning consumer's per-match scorer applies. The factor of 16
+    /// Specifically `min(1, len/16) * (entropy / 8)`  -  the same
+    /// heuristic a scan consumer's per-match scorer applies. The factor of 16
     /// matches the typical AKIA / ghp_ token width; entropy is
     /// normalised against the 8 bits/byte ceiling for binary-uniform
     /// data.
@@ -74,6 +74,7 @@ pub struct PostProcessedMatch {
 ///
 /// Returns [`PostProcessError::InvalidRange`] if any deduped match points
 /// outside `haystack`.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_post_process(
     matches: &[Match],
     haystack: &[u8],
@@ -93,6 +94,7 @@ pub fn try_reference_post_process(
 ///
 /// Returns [`PostProcessError::InvalidRange`] if any deduped match points
 /// outside `haystack`.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_post_process_into(
     matches: &[Match],
     haystack: &[u8],
@@ -148,6 +150,7 @@ pub fn try_reference_post_process_into(
 /// Panics on corrupt match triples. Callers that need recoverable diagnostics
 /// use [`try_reference_post_process`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_post_process(matches: &[Match], haystack: &[u8]) -> Vec<PostProcessedMatch> {
     try_reference_post_process(matches, haystack).unwrap_or_else(|error| {
         panic!("vyre-libs scan Reference oracle post-process contract failed: {error}")
@@ -156,17 +159,15 @@ pub fn reference_post_process(matches: &[Match], haystack: &[u8]) -> Vec<PostPro
 
 /// Shannon entropy in bits/byte. Returns `0.0` on an empty slice. The
 /// implementation is straight `-sum(p_i log2 p_i)` over a 256-bucket
-/// histogram — match cost is dominated by the haystack scan, so a
+/// histogram  -  match cost is dominated by the haystack scan, so a
 /// fixed stack histogram here is amortised on every realistic input.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn shannon_entropy_bits_per_byte(bytes: &[u8]) -> f32 {
     if bytes.is_empty() {
         return 0.0;
     }
-    let mut counts = [0u32; 256];
-    for &b in bytes {
-        counts[b as usize] += 1;
-    }
+    let counts = vyre_primitives::text::byte_histogram::reference_byte_histogram(bytes);
     let n = bytes.len() as f32;
     let mut h = 0.0_f32;
     for c in counts {

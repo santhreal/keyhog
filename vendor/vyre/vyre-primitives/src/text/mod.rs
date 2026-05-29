@@ -1,7 +1,7 @@
 //! Tier 2.5 text primitives.
 //!
 //! The path IS the interface. Callers write
-//! `vyre_primitives::text::char_class::char_class(...)` — explicit
+//! `vyre_primitives::text::char_class::char_class(...)`  -  explicit
 //! paths keep the LEGO substrate visible at every call site. No
 //! wildcard re-exports; the subsystem exposes its sub-modules, not a
 //! flat namespace.
@@ -10,13 +10,13 @@
 
 /// 256-bin byte histogram over u32-packed bytes.
 pub mod byte_histogram;
-/// Byte classifier — host 256-entry lookup table classifies each source byte.
+/// Byte classifier  -  host 256-entry lookup table classifies each source byte.
 pub mod char_class;
 /// Histogram-based encoding classifier.
 #[cfg(feature = "reduce")]
 pub mod encoding_classify;
 
-/// UTF-8 byte classifier — single-pass sequence-shape detection.
+/// UTF-8 byte classifier  -  single-pass sequence-shape detection.
 pub mod utf8_validate;
 
 /// Line-number-per-byte index for diagnostic-producing parsers.
@@ -29,7 +29,7 @@ pub use byte_histogram::reference_byte_histogram;
 pub use byte_histogram::{
     byte_histogram_256, byte_histogram_256_body, byte_histogram_256_child, BYTE_HISTOGRAM_256_OP_ID,
 };
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 pub use char_class::reference_char_class;
 pub use char_class::{
     build_char_class_table, char_class, pack_bytes_as_u32, pack_u32 as pack_classified_u32,
@@ -45,13 +45,15 @@ pub use encoding_classify::{
     ENC_BINARY, ENC_ISO8859_1, ENC_UTF16BE, ENC_UTF16LE, ENC_UTF8,
 };
 #[cfg(any(test, feature = "cpu-parity"))]
-pub use line_index::{line_index, reference_line_index};
+pub use line_index::line_index;
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
+pub use line_index::reference_line_index;
 #[cfg(any(test, feature = "cpu-parity"))]
 pub use utf8_shape_counts::reference_utf8_shape_counts;
 pub use utf8_shape_counts::{
     utf8_shape_counts, utf8_shape_counts_body, utf8_shape_counts_child, UTF8_SHAPE_COUNTS_OP_ID,
 };
-#[cfg(any(test, feature = "cpu-parity"))]
+#[cfg(any(test, feature = "cpu-parity", feature = "text"))]
 pub use utf8_validate::reference_utf8_validate;
 pub use utf8_validate::{
     utf8_validate, UTF8_ASCII, UTF8_CONT, UTF8_INVALID, UTF8_LEAD_2, UTF8_LEAD_3, UTF8_LEAD_4,

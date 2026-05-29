@@ -1,5 +1,7 @@
 //! Homotopy-based megakernel scheduling oracle.
 
+#![allow(deprecated)]
+
 use crate::cpu_references::{homotopy_euler_predictor_cpu, linear_homotopy_cpu};
 
 /// Produce normalized fusion weights from dispatch costs.

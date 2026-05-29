@@ -59,7 +59,7 @@ pub struct Program {
     pub entry: Arc<Vec<Node>>,
     /// Cached blake3 hash of the program for fast equality and cache lookups.
     pub(crate) hash: OnceLock<blake3::Hash>,
-    /// Per-backend validation cache (lazily initialized — most intermediate
+    /// Per-backend validation cache (lazily initialized  -  most intermediate
     /// programs created during fixpoint iteration are never validated, so the
     /// sharded DashSet is only allocated on first `mark_validated_on` call).
     #[doc(hidden)]
@@ -118,7 +118,7 @@ impl Clone for Program {
             non_composable_with_self: self.non_composable_with_self,
         };
         // Each OnceLock above was just initialised with `OnceLock::new()`,
-        // so the matching `.set(...)` is infallible by construction —
+        // so the matching `.set(...)` is infallible by construction  -
         // `let _ = ...set(...)` matches the same pattern used for the
         // validation_set initialiser above and avoids the raw-expect
         // CI gate without introducing fake error paths.

@@ -1,4 +1,4 @@
-//! `bitset_fixpoint` — deterministic transitive closure.
+//! `bitset_fixpoint`  -  deterministic transitive closure.
 //!
 //! Layout:
 //! - `current` (ReadOnly): the dispatch-start snapshot bitset.
@@ -84,7 +84,7 @@ pub fn bitset_fixpoint(current: &str, next: &str, changed: &str, words: u32) -> 
 }
 
 /// Reference evaluation: returns `1` if the two bitsets differ
-/// word-for-word, else `0`. Primitive only — doesn't run the
+/// word-for-word, else `0`. Primitive only  -  doesn't run the
 /// transfer body.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -99,7 +99,7 @@ pub fn reference_eval(current: &[u32], next: &[u32]) -> u32 {
 /// Canonical seed-buffer name for the warm-start variant.
 pub const NAME_WARM_SEED: &str = "fp_warm_seed";
 
-/// I.8 — **warm-start** variant of [`bitset_fixpoint`]. Before running
+/// I.8  -  **warm-start** variant of [`bitset_fixpoint`]. Before running
 /// the compare-and-flag pass, this Program OR's a caller-provided
 /// `seed` bitset into `current`, so the next iteration starts from
 /// the converged state of a previous run instead of from zero.
@@ -115,7 +115,7 @@ pub const NAME_WARM_SEED: &str = "fp_warm_seed";
 ///       if changed[0] == 0: break
 ///       swap current/next
 ///       zero changed[0]
-///     // `current` now holds the converged state for this file —
+///     // `current` now holds the converged state for this file  -
 ///     // feed it as `seed` to the next file's warm_start dispatch.
 /// ```
 ///
@@ -148,7 +148,7 @@ pub fn bitset_fixpoint_warm_start(
         Node::let_bind("c0", Expr::load(current, t.clone())),
         Node::let_bind("c1", Expr::bitor(Expr::var("c0"), Expr::var("s"))),
         Node::store(current, t.clone(), Expr::var("c1")),
-        // Compare-and-flag: AUDIT_2026-04-24 F-BF-01 CRITICAL —
+        // Compare-and-flag: AUDIT_2026-04-24 F-BF-01 CRITICAL  -
         // prior code compared `c1` (seed-warmed current) against
         // `next`, which falsely signalled convergence when the
         // transfer body had written exactly the bits the seed
@@ -196,7 +196,7 @@ pub const OP_ID_WARM_START: &str = "vyre-primitives::fixpoint::bitset_fixpoint_w
 /// warm-started `updated` (`current | seed`) against `next`, which
 /// falsely signalled convergence when the transfer body had added
 /// exactly the bits the seed already provided.  Convergence means
-/// the transfer step contributed no new bits — compare `current`
+/// the transfer step contributed no new bits  -  compare `current`
 /// directly.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -218,12 +218,12 @@ inventory::submit! {
         OP_ID,
         || bitset_fixpoint("current", "next", NAME_CHANGED_FLAG, 1),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             // Bitsets differ → changed becomes 1.
             vec![vec![to_bytes(&[0b0001]), to_bytes(&[0b0011]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1])]]
         }),
     )
@@ -244,7 +244,7 @@ mod tests {
         // was a tautology (identical inputs → flag=0). Exercise the
         // real convergence protocol across two iterations: first a
         // transfer that adds bits flips the flag, then a no-op
-        // transfer clears it — proves both signal directions.
+        // transfer clears it  -  proves both signal directions.
         let current = vec![0b0001];
         let next_after_transfer = vec![0b0011];
         assert_eq!(

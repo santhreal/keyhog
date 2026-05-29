@@ -1,4 +1,4 @@
-//! # vyre-driver-cuda — CUDA/PTX backend for vyre
+//! # vyre-driver-cuda  -  CUDA/PTX backend for vyre
 //!
 //! Implements [`VyreBackend`] via the CUDA driver API through `cudarc`.
 //! Translates vyre `Program` IR into PTX kernels, loads them through
@@ -35,8 +35,15 @@ pub mod device;
 pub mod device_diagnostic_aggregation;
 /// Device-side work queue planning for dependent dataflow.
 pub mod device_work_queue;
+/// CUDA upload planning for GPU e-graph device images.
+pub mod egraph_device_image;
+/// CUDA launch-wave planning for resident e-graph device images.
+pub mod egraph_kernel_plan;
+mod egraph_readback;
 /// Adapter from frontier-typed IR plans to CUDA frontier wave envelopes.
 pub mod frontier_typed_ir_adapter;
+mod input_identity;
+mod instrumentation;
 /// Cross-process persistent CUDA JIT cache wiring (E4 + E5): configures
 /// the NVIDIA driver's built-in disk cache at backend bring-up so the
 /// JIT-compiled cuBINs persist across runs and are shared across every
@@ -57,17 +64,21 @@ mod numeric;
 /// `(CudaDeviceCaps, KernelResourceUsage)`. The runtime feeds the result
 /// into `AutotuneStore` (I3) so subsequent dispatches reuse the choice.
 pub mod occupancy;
-/// Self-hosted optimizer GPU dispatcher — runs the
+/// Self-hosted optimizer GPU dispatcher  -  runs the
 /// `vyre-self-substrate::optimizer` passes (DCE, CSE, const-fold,
 /// validator) on CUDA. External parity tests reach in via the
 /// `CudaOptimizerDispatcher` re-export below.
 pub mod optimizer;
 mod pipeline;
+/// CUDA profiler range integration for Nsight/NVTX without mandatory NVTX linkage.
+pub mod profiler;
 /// Repeated execution over persistent CUDA-resident graph state.
 pub mod resident_graph_session;
 /// Compact result readback planning.
 pub mod result_compaction;
 mod stream;
+/// Synthetic CUDA device profiles for offline release-path planning.
+pub mod synthetic_device_caps;
 /// CUDA execution planning for unified token/fact graph frontier waves.
 pub mod token_fact_frontier_execution;
 /// Adapter from unified token/fact graph layouts to CUDA resident bytes.
@@ -101,6 +112,41 @@ pub use device_work_queue::{
     CudaDeviceWorkQueueBackpressurePlan, CudaDeviceWorkQueueDrainStrategy,
     CudaDeviceWorkQueueError, CudaDeviceWorkQueuePlan, CudaDeviceWorkQueueProfile,
     CudaWorkQueueHostSync,
+};
+pub use egraph_device_image::{
+    plan_cuda_egraph_device_upload, plan_cuda_egraph_device_upload_from_image,
+    plan_cuda_egraph_device_upload_from_image_ref, CudaEGraphDeviceBorrowedUploadPlan,
+    CudaEGraphDeviceByteLayout, CudaEGraphDeviceByteSpan, CudaEGraphDeviceKernelView,
+    CudaEGraphDeviceUploadError, CudaEGraphDeviceUploadPlan, CudaResidentEGraphDeviceImage,
+};
+pub use egraph_kernel_plan::{
+    collect_cuda_egraph_structural_equivalences, cuda_egraph_canonical_rewrite_kernel_ptx,
+    cuda_egraph_signature_pair_rows, cuda_egraph_signature_refresh_kernel_ptx,
+    cuda_egraph_structural_equivalence_kernel_ptx, pack_cuda_egraph_canonical_rewrite_device_image,
+    pack_cuda_egraph_signature_bucket_device_image, plan_cuda_egraph_kernel_work,
+    plan_cuda_egraph_signature_buckets, plan_cuda_egraph_signature_buckets_from_resident_snapshot,
+    plan_cuda_egraph_signature_buckets_from_signature_snapshot,
+    plan_cuda_egraph_structural_equivalence_launch_artifact,
+    plan_cuda_egraph_structural_equivalence_output, plan_cuda_egraph_structural_equivalences,
+    plan_cuda_egraph_union_compaction, CudaEGraphCanonicalRewrite,
+    CudaEGraphCanonicalRewriteDeviceImage, CudaEGraphCanonicalRewriteKernelPtx,
+    CudaEGraphCanonicalRewriteKernelResult, CudaEGraphFixedPointReadback,
+    CudaEGraphKernelLaunchConfig, CudaEGraphKernelPass, CudaEGraphKernelPlanError,
+    CudaEGraphKernelWave, CudaEGraphKernelWorkPlan, CudaEGraphResidentColumnSnapshot,
+    CudaEGraphResidentSignatureSnapshot, CudaEGraphSignatureBucket,
+    CudaEGraphSignatureBucketDeviceImage, CudaEGraphSignatureBucketPlan,
+    CudaEGraphSignaturePairWave, CudaEGraphSignatureRefreshKernelPtx,
+    CudaEGraphSignatureRefreshKernelResult, CudaEGraphStructuralCanonicalizationFixedPointReport,
+    CudaEGraphStructuralCanonicalizationFixedPointResult,
+    CudaEGraphStructuralCanonicalizationRoundResult, CudaEGraphStructuralEquivalenceKernelPtx,
+    CudaEGraphStructuralEquivalenceKernelResult, CudaEGraphStructuralEquivalenceLaunchArtifact,
+    CudaEGraphStructuralEquivalenceOutputPlan, CudaEGraphStructuralEquivalencePlan,
+    CudaEGraphUnionCompactionPass, CudaEGraphUnionCompactionPlan, CudaEGraphUnionCompactionWave,
+    CUDA_EGRAPH_CANONICAL_REWRITE_KERNEL_ENTRY, CUDA_EGRAPH_CANONICAL_REWRITE_KERNEL_PARAM_COUNT,
+    CUDA_EGRAPH_CANONICAL_REWRITE_RECORD_WORDS, CUDA_EGRAPH_SIGNATURE_BUCKET_RECORD_WORDS,
+    CUDA_EGRAPH_SIGNATURE_REFRESH_KERNEL_ENTRY, CUDA_EGRAPH_SIGNATURE_REFRESH_KERNEL_PARAM_COUNT,
+    CUDA_EGRAPH_STRUCTURAL_EQUIVALENCE_KERNEL_ENTRY,
+    CUDA_EGRAPH_STRUCTURAL_EQUIVALENCE_KERNEL_PARAM_COUNT,
 };
 pub use frontier_typed_ir_adapter::{
     adapt_frontier_typed_ir_to_cuda, CudaFrontierTypedIrAdapterError, CudaFrontierTypedIrInput,
@@ -186,7 +232,7 @@ pub const CUDA_BACKEND_ID: &str = "cuda";
 /// `Box<dyn DeviceBuffer>` against the CUDA backend without naming
 /// `CudaResidentBuffer` directly.
 ///
-/// Lifecycle is explicit-free — call
+/// Lifecycle is explicit-free  -  call
 /// `VyreBackend::free_device_buffer(boxed_buffer)` when done. This
 /// matches the existing CUDA-resident contract and keeps the substrate
 /// free of reference-counted backend handles. A future RAII variant
@@ -340,6 +386,64 @@ impl CudaBackendRegistration {
         Ok((handles, concrete_readbacks))
     }
 
+    fn resolve_step_handle_sets(
+        &self,
+        steps: &[vyre_driver::backend::ResidentDispatchStep<'_>],
+        field: &'static str,
+    ) -> Result<SmallVec<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>, BackendError>
+    {
+        let mut handle_sets =
+            SmallVec::<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>::new();
+        reserve_smallvec(&mut handle_sets, steps.len(), field)?;
+        for step in steps {
+            handle_sets.push(self.inner.resident_handles_from_resources(step.resources)?);
+        }
+        Ok(handle_sets)
+    }
+
+    fn resolve_repeated_step_handle_sets(
+        &self,
+        steps: &[vyre_driver::backend::ResidentDispatchStep<'_>],
+        repeat_count: usize,
+    ) -> Result<SmallVec<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>, BackendError>
+    {
+        let mut handle_sets =
+            SmallVec::<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>::new();
+        let capacity = if repeat_count == 0 { 0 } else { steps.len() };
+        reserve_smallvec(
+            &mut handle_sets,
+            capacity,
+            "CUDA repeated resident repeated handle sets",
+        )?;
+        if repeat_count != 0 {
+            for step in steps {
+                handle_sets.push(self.inner.resident_handles_from_resources(step.resources)?);
+            }
+        }
+        Ok(handle_sets)
+    }
+
+    fn concrete_resident_steps<'program: 'handles, 'handles>(
+        steps: &[vyre_driver::backend::ResidentDispatchStep<'program>],
+        handle_sets: &'handles [SmallVec<[crate::backend::CudaResidentBuffer; 8]>],
+        field: &'static str,
+    ) -> Result<SmallVec<[crate::backend::CudaResidentDispatchStep<'handles>; 8]>, BackendError>
+    {
+        let mut concrete_steps =
+            SmallVec::<[crate::backend::CudaResidentDispatchStep<'handles>; 8]>::new();
+        reserve_smallvec(&mut concrete_steps, handle_sets.len(), field)?;
+        for (step, handles) in steps.iter().zip(handle_sets.iter()) {
+            let mut config = DispatchConfig::default();
+            config.grid_override = step.grid_override;
+            concrete_steps.push(crate::backend::CudaResidentDispatchStep {
+                program: step.program,
+                handles,
+                config,
+            });
+        }
+        Ok(concrete_steps)
+    }
+
     /// Bytes of transient CUDA device memory currently owned by the transient pool.
     ///
     /// This includes checked-out dispatch allocations, compiled-pipeline static parameter
@@ -365,7 +469,37 @@ impl CudaBackendRegistration {
         }
         Ok(())
     }
+
+    fn validate_program_for_dispatch(&self, program: &Program) -> Result<(), BackendError> {
+        let required = vyre_foundation::program_caps::scan(program);
+        vyre_foundation::program_caps::check_backend_capabilities(
+            CUDA_BACKEND_ID,
+            self.supports_subgroup_ops(),
+            self.supports_f16(),
+            self.supports_bf16(),
+            self.supports_indirect_dispatch(),
+            true,
+            self.supports_distributed_collectives(),
+            self.max_workgroup_size(),
+            &required,
+        )
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: error.to_string(),
+        })?;
+        self.reject_grid_sync_without_native_lowering(program)
+    }
+
+    fn validate_resident_steps_for_dispatch(
+        &self,
+        steps: &[vyre_driver::backend::ResidentDispatchStep<'_>],
+    ) -> Result<(), BackendError> {
+        for step in steps {
+            self.validate_program_for_dispatch(step.program)?;
+        }
+        Ok(())
+    }
 }
+
 
 impl vyre_driver::backend::private::Sealed for CudaBackendRegistration {}
 
@@ -384,28 +518,7 @@ impl VyreBackend for CudaBackendRegistration {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        // Reject programs that ask for capabilities the live CUDA
-        // backend doesn't expose BEFORE we attempt PTX emit. Without
-        // this gate, indirect_dispatch / f16 / bf16 IR falls all the
-        // way down to vyre-emit-ptx and returns a generic
-        // "unsupported KernelOp kind" message that doesn't surface
-        // the missing-capability contract the dispatch layer is
-        // supposed to enforce.
-        let required = vyre_foundation::program_caps::scan(program);
-        vyre_foundation::program_caps::check_backend_capabilities(
-            CUDA_BACKEND_ID,
-            self.supports_subgroup_ops(),
-            self.supports_f16(),
-            self.supports_bf16(),
-            self.supports_indirect_dispatch(),
-            true,
-            self.max_workgroup_size(),
-            &required,
-        )
-        .map_err(|error| BackendError::InvalidProgram {
-            fix: error.to_string(),
-        })?;
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner.dispatch(program, inputs, config)
     }
 
@@ -415,7 +528,7 @@ impl VyreBackend for CudaBackendRegistration {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Box<dyn vyre_driver::PendingDispatch>, BackendError> {
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner.dispatch_async(program, inputs, config)
     }
 
@@ -425,7 +538,7 @@ impl VyreBackend for CudaBackendRegistration {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Box<dyn vyre_driver::PendingDispatch>, BackendError> {
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner.dispatch_borrowed_async(program, inputs, config)
     }
 
@@ -435,7 +548,7 @@ impl VyreBackend for CudaBackendRegistration {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner
             .dispatch_borrowed_async(program, inputs, config)?
             .await_result()
@@ -448,7 +561,7 @@ impl VyreBackend for CudaBackendRegistration {
         config: &DispatchConfig,
         outputs: &mut vyre_driver::OutputBuffers,
     ) -> Result<(), BackendError> {
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner
             .dispatch_borrowed_async(program, inputs, config)?
             .await_result_into(outputs)
@@ -460,7 +573,7 @@ impl VyreBackend for CudaBackendRegistration {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<vyre_driver::TimedDispatchResult, BackendError> {
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner.dispatch_borrowed_timed(program, inputs, config)
     }
 
@@ -543,9 +656,10 @@ impl VyreBackend for CudaBackendRegistration {
         outputs: &mut [&mut dyn vyre_driver::DeviceBuffer],
         config: &DispatchConfig,
     ) -> Result<(), BackendError> {
+        self.validate_program_for_dispatch(program)?;
         // Convert &[&dyn DeviceBuffer] into &[Resource::Resident(id)]
         // so we can re-use the existing dispatch_resident_timed path.
-        // Outputs are bound by Resource::Resident as well — the kernel
+        // Outputs are bound by Resource::Resident as well  -  the kernel
         // writes results in-place into the device-resident buffers; the
         // caller reads them via download_device_buffer afterwards.
         vyre_driver::validate_buffer_ownership(self.id(), inputs.iter().copied())?;
@@ -690,6 +804,7 @@ impl VyreBackend for CudaBackendRegistration {
         resources: &[Resource],
         config: &DispatchConfig,
     ) -> Result<vyre_driver::TimedDispatchResult, BackendError> {
+        self.validate_program_for_dispatch(program)?;
         let handles = self.inner.resident_handles_from_resources(resources)?;
         self.inner
             .dispatch_resident_timed(program, &handles, config)
@@ -701,6 +816,7 @@ impl VyreBackend for CudaBackendRegistration {
         read_ranges: &[vyre_driver::backend::ResidentReadRange<'_>],
         outputs: &mut [&mut Vec<u8>],
     ) -> Result<(), BackendError> {
+        self.validate_resident_steps_for_dispatch(steps)?;
         if read_ranges.len() != outputs.len() {
             return Err(BackendError::InvalidProgram {
                 fix: format!(
@@ -710,32 +826,10 @@ impl VyreBackend for CudaBackendRegistration {
                 ),
             });
         }
-        let mut handle_sets =
-            SmallVec::<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>::new();
-        reserve_smallvec(
-            &mut handle_sets,
-            steps.len(),
-            "CUDA resident sequence handle sets",
-        )?;
-        for step in steps {
-            handle_sets.push(self.inner.resident_handles_from_resources(step.resources)?);
-        }
-        let mut concrete_steps =
-            SmallVec::<[crate::backend::CudaResidentDispatchStep<'_>; 8]>::new();
-        reserve_smallvec(
-            &mut concrete_steps,
-            steps.len(),
-            "CUDA resident sequence steps",
-        )?;
-        for (step, handles) in steps.iter().zip(handle_sets.iter()) {
-            let mut config = DispatchConfig::default();
-            config.grid_override = step.grid_override;
-            concrete_steps.push(crate::backend::CudaResidentDispatchStep {
-                program: step.program,
-                handles,
-                config,
-            });
-        }
+        let handle_sets =
+            self.resolve_step_handle_sets(steps, "CUDA resident sequence handle sets")?;
+        let concrete_steps =
+            Self::concrete_resident_steps(steps, &handle_sets, "CUDA resident sequence steps")?;
 
         let (read_handles, concrete_readbacks) = self.resolve_read_ranges(read_ranges)?;
 
@@ -758,6 +852,8 @@ impl VyreBackend for CudaBackendRegistration {
         read_ranges: &[vyre_driver::backend::ResidentReadRange<'_>],
         outputs: &mut [&mut Vec<u8>],
     ) -> Result<(), BackendError> {
+        self.validate_resident_steps_for_dispatch(prefix_steps)?;
+        self.validate_resident_steps_for_dispatch(repeated_steps)?;
         let repeat_count =
             usize::try_from(repeat_count).map_err(|error| BackendError::InvalidProgram {
                 fix: format!(
@@ -774,68 +870,20 @@ impl VyreBackend for CudaBackendRegistration {
             });
         }
 
-        let mut prefix_handle_sets =
-            SmallVec::<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>::new();
-        reserve_smallvec(
-            &mut prefix_handle_sets,
-            prefix_steps.len(),
-            "CUDA repeated resident prefix handle sets",
-        )?;
-        for step in prefix_steps {
-            prefix_handle_sets.push(self.inner.resident_handles_from_resources(step.resources)?);
-        }
-        let mut repeated_handle_sets =
-            SmallVec::<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>::new();
-        let repeated_handle_capacity = if repeat_count == 0 {
-            0
-        } else {
-            repeated_steps.len()
-        };
-        reserve_smallvec(
-            &mut repeated_handle_sets,
-            repeated_handle_capacity,
-            "CUDA repeated resident repeated handle sets",
-        )?;
-        if repeat_count != 0 {
-            for step in repeated_steps {
-                repeated_handle_sets
-                    .push(self.inner.resident_handles_from_resources(step.resources)?);
-            }
-        }
-        let mut concrete_prefix =
-            SmallVec::<[crate::backend::CudaResidentDispatchStep<'_>; 8]>::new();
-        reserve_smallvec(
-            &mut concrete_prefix,
-            prefix_steps.len(),
+        let prefix_handle_sets = self
+            .resolve_step_handle_sets(prefix_steps, "CUDA repeated resident prefix handle sets")?;
+        let repeated_handle_sets =
+            self.resolve_repeated_step_handle_sets(repeated_steps, repeat_count)?;
+        let concrete_prefix = Self::concrete_resident_steps(
+            prefix_steps,
+            &prefix_handle_sets,
             "CUDA repeated resident prefix steps",
         )?;
-        for (step, handles) in prefix_steps.iter().zip(prefix_handle_sets.iter()) {
-            let mut config = DispatchConfig::default();
-            config.grid_override = step.grid_override;
-            concrete_prefix.push(crate::backend::CudaResidentDispatchStep {
-                program: step.program,
-                handles,
-                config,
-            });
-        }
-        let mut concrete_repeated =
-            SmallVec::<[crate::backend::CudaResidentDispatchStep<'_>; 8]>::new();
-        reserve_smallvec(
-            &mut concrete_repeated,
-            repeated_handle_sets.len(),
+        let concrete_repeated = Self::concrete_resident_steps(
+            repeated_steps,
+            &repeated_handle_sets,
             "CUDA repeated resident repeated steps",
         )?;
-        if repeat_count != 0 {
-            for (step, handles) in repeated_steps.iter().zip(repeated_handle_sets.iter()) {
-                let mut config = DispatchConfig::default();
-                config.grid_override = step.grid_override;
-                concrete_repeated.push(crate::backend::CudaResidentDispatchStep {
-                    program: step.program,
-                    handles,
-                    config,
-                });
-            }
-        }
 
         let (read_handles, concrete_readbacks) = self.resolve_read_ranges(read_ranges)?;
         let uploads: [(crate::backend::CudaResidentBuffer, &[u8]); 0] = [];
@@ -856,7 +904,7 @@ impl VyreBackend for CudaBackendRegistration {
         program: &Program,
         config: &DispatchConfig,
     ) -> Result<Option<Arc<dyn vyre_driver::CompiledPipeline>>, BackendError> {
-        self.reject_grid_sync_without_native_lowering(program)?;
+        self.validate_program_for_dispatch(program)?;
         self.inner.compile_native(program, config).map(Some)
     }
 
@@ -865,7 +913,7 @@ impl VyreBackend for CudaBackendRegistration {
         program: Arc<Program>,
         config: &DispatchConfig,
     ) -> Result<Option<Arc<dyn vyre_driver::CompiledPipeline>>, BackendError> {
-        self.reject_grid_sync_without_native_lowering(program.as_ref())?;
+        self.validate_program_for_dispatch(program.as_ref())?;
         self.inner.compile_native_shared(program, config).map(Some)
     }
 
@@ -887,6 +935,27 @@ impl VyreBackend for CudaBackendRegistration {
         }
         metrics.push(("cuda_ptx_source_cache_hits", source_cache.hits));
         metrics.push(("cuda_ptx_source_cache_misses", source_cache.misses));
+        let telemetry = self.inner.telemetry_snapshot();
+        metrics.push(("cuda_timed_dispatches", telemetry.timed_dispatches));
+        metrics.push((
+            "cuda_timed_device_measurements",
+            telemetry.timed_device_measurements,
+        ));
+        metrics.push((
+            "cuda_timed_dispatches_missing_device_time",
+            telemetry.timed_dispatches_missing_device_time,
+        ));
+        metrics.push(("cuda_timed_wall_ns_total", telemetry.timed_wall_ns_total));
+        metrics.push((
+            "cuda_timed_device_ns_total",
+            telemetry.timed_device_ns_total,
+        ));
+        metrics.push(("cuda_timed_device_ns_max", telemetry.timed_device_ns_max));
+        metrics.push((
+            "cuda_timed_enqueue_ns_total",
+            telemetry.timed_enqueue_ns_total,
+        ));
+        metrics.push(("cuda_timed_wait_ns_total", telemetry.timed_wait_ns_total));
         metrics
     }
 
@@ -959,6 +1028,7 @@ impl VyreBackend for CudaBackendRegistration {
 }
 
 /// Factory function for inventory registration.
+
 pub fn cuda_factory() -> Result<Box<dyn VyreBackend>, BackendError> {
     let backend = CudaBackend::acquire().map_err(|e| BackendError::DispatchFailed {
         code: None,
@@ -967,7 +1037,7 @@ pub fn cuda_factory() -> Result<Box<dyn VyreBackend>, BackendError> {
     Ok(Box::new(CudaBackendRegistration { inner: backend }))
 }
 
-/// Op-support set — CUDA supports every op the foundation IR defines
+/// Op-support set  -  CUDA supports every op the foundation IR defines
 /// plus hardware intrinsics. Populated at runtime by the conform runner.
 pub fn cuda_supported_ops() -> &'static std::collections::HashSet<vyre_foundation::ir::OpId> {
     vyre_driver::backend::validation::default_supported_ops_with_trap()
@@ -1065,5 +1135,140 @@ mod tests {
                 && source.contains("CUDA borrowed dispatch resource handles"),
             "Fix: public CUDA resident sequence and borrowed-buffer staging paths must expose specific fallible-reservation labels."
         );
+        assert!(
+            source.contains("fn resolve_step_handle_sets")
+                && source.contains("fn resolve_repeated_step_handle_sets")
+                && source.contains("fn concrete_resident_steps"),
+            "Fix: public CUDA resident sequence paths must share one handle-set and concrete-step staging implementation."
+        );
+    }
+
+    #[test]
+    fn public_cuda_execution_entrypoints_share_capability_validation() {
+        let source = include_str!("lib.rs");
+        assert!(
+            source.contains("fn validate_program_for_dispatch")
+                && source.contains("check_backend_capabilities")
+                && source.contains("reject_grid_sync_without_native_lowering(program)"),
+            "Fix: CUDA dispatch validation must centralize capability and grid-sync checks before launch/lowering."
+        );
+
+        for (name, body) in [
+            (
+                "dispatch",
+                method_region(source, "    fn dispatch(\n", "    fn dispatch_async("),
+            ),
+            (
+                "dispatch_async",
+                method_region(
+                    source,
+                    "    fn dispatch_async(\n",
+                    "    fn dispatch_borrowed_async(",
+                ),
+            ),
+            (
+                "dispatch_borrowed_async",
+                method_region(
+                    source,
+                    "    fn dispatch_borrowed_async(\n",
+                    "    fn dispatch_borrowed(",
+                ),
+            ),
+            (
+                "dispatch_borrowed",
+                method_region(
+                    source,
+                    "    fn dispatch_borrowed(\n",
+                    "    fn dispatch_borrowed_into(",
+                ),
+            ),
+            (
+                "dispatch_borrowed_into",
+                method_region(
+                    source,
+                    "    fn dispatch_borrowed_into(\n",
+                    "    fn dispatch_borrowed_timed(",
+                ),
+            ),
+            (
+                "dispatch_borrowed_timed",
+                method_region(
+                    source,
+                    "    fn dispatch_borrowed_timed(\n",
+                    "    fn allocate_resident(",
+                ),
+            ),
+            (
+                "dispatch_with_device_buffers",
+                method_region(
+                    source,
+                    "    fn dispatch_with_device_buffers(\n",
+                    "    fn upload_resident(",
+                ),
+            ),
+            (
+                "dispatch_resident_timed",
+                method_region(
+                    source,
+                    "    fn dispatch_resident_timed(\n",
+                    "    fn dispatch_resident_sequence_read_ranges_into(",
+                ),
+            ),
+            (
+                "compile_native",
+                method_region(
+                    source,
+                    "    fn compile_native(\n",
+                    "    fn compile_native_shared(",
+                ),
+            ),
+        ] {
+            assert!(
+                body.contains("validate_program_for_dispatch(program)?"),
+                "Fix: CUDA {name} must run the shared capability/grid-sync validation gate before lowering or launch."
+            );
+        }
+
+        let compile_shared = method_region(
+            source,
+            "    fn compile_native_shared(\n",
+            "    fn pipeline_cache_snapshot(",
+        );
+        assert!(
+            compile_shared.contains("validate_program_for_dispatch(program.as_ref())?"),
+            "Fix: CUDA compile_native_shared must validate the shared Program before lowering."
+        );
+
+        let resident_sequence = method_region(
+            source,
+            "    fn dispatch_resident_sequence_read_ranges_into(\n",
+            "    fn dispatch_resident_repeated_sequence_read_ranges_into(",
+        );
+        assert!(
+            resident_sequence.contains("validate_resident_steps_for_dispatch(steps)?"),
+            "Fix: CUDA resident sequence dispatch must validate every step Program before launch."
+        );
+
+        let repeated_sequence = method_region(
+            source,
+            "    fn dispatch_resident_repeated_sequence_read_ranges_into(\n",
+            "    fn compile_native(",
+        );
+        assert!(
+            repeated_sequence.contains("validate_resident_steps_for_dispatch(prefix_steps)?")
+                && repeated_sequence.contains("validate_resident_steps_for_dispatch(repeated_steps)?"),
+            "Fix: CUDA repeated resident sequence dispatch must validate both prefix and repeated step Programs before launch."
+        );
+    }
+
+    fn method_region<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split(start)
+            .nth(1)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - method start must exist")
+            .split(end)
+            .next()
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - method end must exist")
     }
 }
+

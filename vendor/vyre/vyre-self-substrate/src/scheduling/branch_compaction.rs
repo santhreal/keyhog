@@ -151,7 +151,7 @@ mod tests {
     fn branch_compaction_skips_empty_arms_and_packs_parameters() {
         let plan =
             plan_branch_compaction(&[arm(10, 0, 64, 8), arm(20, 48, 64, 16), arm(30, 16, 64, 12)])
-                .expect("valid branches should compact");
+                .expect("Fix: valid branches should compact");
 
         assert_eq!(
             plan.arms,
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn branch_compaction_orders_equal_density_by_stable_id() {
         let plan = plan_branch_compaction(&[arm(3, 4, 8, 4), arm(1, 4, 8, 4)])
-            .expect("valid branches should compact deterministically");
+            .expect("Fix: valid branches should compact deterministically");
 
         assert_eq!(plan.arms[0].id, 1);
         assert_eq!(plan.arms[1].id, 3);

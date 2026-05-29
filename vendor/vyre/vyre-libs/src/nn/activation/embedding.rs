@@ -1,6 +1,6 @@
 //! Embedding lookup: `y[s, d] = embed_table[token[s], d]`.
 //!
-//! Category A composition — gather from weight buffer by token index.
+//! Category A composition  -  gather from weight buffer by token index.
 //! Tokens are U32, embedding table is F32.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Program};
@@ -42,15 +42,15 @@ inventory::submit! {
         id: OP_ID,
         build: || embedding("table", "tokens", "output", 2, 3),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
+            let to_u32 = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![
                 to_f32(&[1.0, 2.0, 3.0,  4.0, 5.0, 6.0]), // table: 2 vocab × 3 dim
                 to_u32(&[1, 0]),                             // tokens
             ]]
         }),
         expected_output: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             // token 1 → [4,5,6], token 0 → [1,2,3]
             vec![vec![to_f32(&[4.0, 5.0, 6.0, 1.0, 2.0, 3.0])]]
         }),
@@ -61,22 +61,10 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
+    use crate::test_support::byte_pack::u32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn u32_bytes(values: &[u32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn embedding_empty_tensor() {

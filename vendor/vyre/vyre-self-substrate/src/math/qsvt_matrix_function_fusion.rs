@@ -1,6 +1,6 @@
 //! Transport-based fusion analysis via #34 QSVT (#34 self-consumer).
 //!
-//! Closes the recursion thesis for #34 — the QSVT (quantum singular
+//! Closes the recursion thesis for #34  -  the QSVT (quantum singular
 //! value transform) primitives ship to user dialects (matrix
 //! function evaluation: exp, sqrt, inverse without eigendecomposition)
 //! AND power vyre's transport-based fusion analyses.
@@ -30,7 +30,7 @@
 //! QSVT computes f(M) · v directly via Chebyshev expansion (O(K · n²)
 //! where K is the polynomial order). For K = 16 and n = 1M, this is
 //! 16 × 10¹² ≈ 10¹³ operations vs 10¹⁸ for the eigendecomposition
-//! path — five orders of magnitude faster.
+//! path  -  five orders of magnitude faster.
 //!
 //! # Algorithm
 //!
@@ -45,13 +45,14 @@
 //!
 //! Wasserstein over dispatch graphs is the only metric that captures
 //! "Regions that USE buffers similarly should fuse." LRU, LFU,
-//! random — none capture this. QSVT-via-Chebyshev makes the
+//! random  -  none capture this. QSVT-via-Chebyshev makes the
 //! Wasserstein-distance computation tractable at 1M+ Regions.
 
 use crate::dispatch_buffers::{
     ceil_div_u32, checked_square_cells, decode_u32_output_exact, ensure_input_slots,
     write_u32_slice_le_bytes,
 };
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::graph::chebyshev_filter::{chebyshev_filter, MAX_K as CHEBYSHEV_MAX_K};
 #[cfg(test)]
@@ -65,7 +66,7 @@ pub struct QsvtTransportGpuScratch {
 
 /// Compute the negative-truncation Chebyshev coefficients of length
 /// `k_steps`. The truncation function is `f(λ) = -λ if λ < 0 else 0`
-/// — the standard negative-eigenvalue projector used in
+///  -  the standard negative-eigenvalue projector used in
 /// transport-based fusion analyses.
 ///
 /// Uses a hand-derived Chebyshev expansion that approximates the
@@ -303,7 +304,7 @@ pub fn fusion_affinity(transport_residual: &[f64]) -> Vec<f64> {
 /// Derive fusion-affinity scores into caller-owned storage.
 pub fn fusion_affinity_into(transport_residual: &[f64], out: &mut Vec<f64>) {
     out.clear();
-    out.reserve(transport_residual.len());
+    reserve_vec_capacity_or_panic(out, transport_residual.len(), "QSVT fusion-affinity output");
     out.extend(transport_residual.iter().map(|&v| -v.abs()));
 }
 
@@ -327,9 +328,9 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 3);
-            let matrix = read_u32s(&inputs[0]);
-            let weights = read_u32s(&inputs[1]);
-            let coeffs = read_u32s(&inputs[2]);
+            let matrix = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let weights = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let coeffs = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
             assert_eq!(matrix, vec![1, 0, 0, 1]);
             assert_eq!(coeffs, vec![1, 0]);
             Ok(vec![u32_slice_to_le_bytes(&weights)])
@@ -447,10 +448,10 @@ mod tests {
         let via_section = source
             .split("pub fn transport_residual_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("/// Convenience: derive a fusion-affinity score")
             .next()
-            .expect("post-via marker should exist");
+            .expect("Fix: post-via marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_transport"));
@@ -462,12 +463,5 @@ mod tests {
         let cost = vec![1.0; 4];
         let weights = vec![1.0; 2];
         let _residual = transport_residual(&cost, &weights, 2, 0);
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 }

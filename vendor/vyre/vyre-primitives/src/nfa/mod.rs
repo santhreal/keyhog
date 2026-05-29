@@ -1,4 +1,4 @@
-//! NFA primitives — subgroup-cooperative epsilon closure and
+//! NFA primitives  -  subgroup-cooperative epsilon closure and
 //! step simulation.
 //!
 //! G1 (GPU perf innovation #1) is a 32-state-per-subgroup NFA
@@ -8,8 +8,8 @@
 //! the transition-table slice per tile.
 //!
 //! This file is the subsystem entry point. The primitive kernel
-//! lives in `subgroup_nfa`; the multi-string / regex scan helper
-//! that composes it lives in `vyre-libs/src/matching/nfa.rs`.
+//! lives in `subgroup_nfa`; higher-level multi-string / regex scan
+//! helpers compose it with tiling and table-building policy.
 
 /// Subgroup-cooperative NFA simulation kernel.
 pub mod subgroup_nfa;

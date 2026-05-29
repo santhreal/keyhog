@@ -57,27 +57,25 @@ inventory::collect!(ExternOp);
 /// Every dialect registered at link time.
 #[must_use]
 pub fn dialects() -> Vec<&'static ExternDialect> {
-    let iter = inventory::iter::<ExternDialect>();
-    let (lo, hi) = iter.size_hint();
-    let mut out = Vec::with_capacity(hi.unwrap_or(lo));
-    out.extend(iter);
-    out
+    collect_inventory_refs(inventory::iter::<ExternDialect>())
 }
 
 /// Every registered op belonging to `dialect`.
 #[must_use]
 pub fn ops_in_dialect(dialect: &str) -> Vec<&'static ExternOp> {
-    let iter = inventory::iter::<ExternOp>().filter(|op| op.dialect == dialect);
-    let (lo, hi) = iter.size_hint();
-    let mut out = Vec::with_capacity(hi.unwrap_or(lo));
-    out.extend(iter);
-    out
+    collect_inventory_refs(inventory::iter::<ExternOp>().filter(|op| op.dialect == dialect))
 }
 
 /// Every registered op across every dialect.
 #[must_use]
 pub fn all_ops() -> Vec<&'static ExternOp> {
-    let iter = inventory::iter::<ExternOp>();
+    collect_inventory_refs(inventory::iter::<ExternOp>())
+}
+
+fn collect_inventory_refs<T>(iter: impl Iterator<Item = &'static T>) -> Vec<&'static T>
+where
+    T: 'static,
+{
     let (lo, hi) = iter.size_hint();
     let mut out = Vec::with_capacity(hi.unwrap_or(lo));
     out.extend(iter);
@@ -172,6 +170,11 @@ pub fn verify() -> Result<(), Vec<ExternVerifyError>> {
 mod tests {
     use super::*;
 
+    static TEST_DIALECT_A: ExternDialect =
+        ExternDialect::new("vyre-libs-test-a", "0.1.0", "https://example.invalid/a");
+    static TEST_DIALECT_B: ExternDialect =
+        ExternDialect::new("vyre-libs-test-b", "0.1.0", "https://example.invalid/b");
+
     #[test]
     fn extern_dialect_construction() {
         let d = ExternDialect::new("vyre-libs-quant", "0.1.0", "https://github.com/example");
@@ -185,6 +188,12 @@ mod tests {
         let op = ExternOp::new("vyre-libs-quant", "vyre-libs-quant::int8::matmul");
         assert_eq!(op.dialect, "vyre-libs-quant");
         assert_eq!(op.op_id, "vyre-libs-quant::int8::matmul");
+    }
+
+    #[test]
+    fn inventory_collection_uses_one_shared_collector() {
+        let collected = collect_inventory_refs([&TEST_DIALECT_A, &TEST_DIALECT_B].into_iter());
+        assert_eq!(collected, vec![&TEST_DIALECT_A, &TEST_DIALECT_B]);
     }
 
     #[test]
@@ -226,15 +235,15 @@ mod tests {
     #[test]
     fn verify_empty_registry_succeeds() {
         // No ExternDialect or ExternOp are submitted in this test crate,
-        // so verify should pass (at minimum — other tests may submit entries).
+        // so verify should pass (at minimum  -  other tests may submit entries).
         let result = verify();
         // Either Ok or the errors are all from other test crates.
         if let Err(errors) = &result {
             // All errors should be well-formed.
             for e in errors {
                 assert!(
-                    !e.to_string().is_empty(),
-                    "extern registry validation errors must be displayable"
+                    e.to_string().contains("Fix:") || e.to_string().contains("extern"),
+                    "extern registry validation errors must be displayable: {e}"
                 );
             }
         }

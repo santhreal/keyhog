@@ -5,10 +5,15 @@
 //! primitive that user attention dialects use; here it picks the
 //! best dispatch configuration.
 
+use super::natural_gradient_autotuner::{
+    precondition_autotune_gradient_fixed_via_with_scratch_into, NaturalGradientGpuScratch,
+};
 use crate::dispatch_buffers::{
     ceil_div_u32, decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes,
     write_zero_bytes,
 };
+#[cfg(test)]
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::math::differentiable::softmax_step;
 #[cfg(test)]
@@ -18,6 +23,14 @@ use vyre_primitives::math::differentiable::{differentiable_argmax_cpu_into, soft
 #[derive(Debug, Default)]
 pub struct DifferentiableAutotuneGpuScratch {
     inputs: Vec<Vec<u8>>,
+}
+
+/// Caller-owned scratch for Fisher-preconditioned differentiable autotuning.
+#[derive(Debug, Default)]
+pub struct NaturalDifferentiableAutotuneGpuScratch {
+    softmax: DifferentiableAutotuneGpuScratch,
+    fisher: NaturalGradientGpuScratch,
+    probabilities: Vec<u32>,
 }
 
 /// Soft-pick configuration probabilities from pre-exponentiated fixed-point
@@ -136,6 +149,72 @@ pub fn config_gradient_magnitude_pre_exp_fixed_via_with_scratch_into(
     pick_config_pre_exp_fixed_via_with_scratch_into(dispatcher, pre_exp_fixed, scratch, out)
 }
 
+/// Compute the Fisher-preconditioned fixed-point autotune gradient.
+///
+/// This composes the differentiable policy primitive with the natural-gradient
+/// primitive in the release path:
+///
+/// `pre_exp_fixed -> softmax policy gradient -> M_inv_sqrt * gradient`
+///
+/// `m_inv_sqrt_fixed` is an `n x n` row-major 16.16 inverse-Fisher square-root
+/// matrix and `pre_exp_fixed.len() == n`.
+///
+/// # Errors
+///
+/// Returns [`DispatchError`] when candidate counts overflow, the Fisher block
+/// has the wrong shape, or backend execution/readback fails.
+pub fn natural_config_gradient_magnitude_pre_exp_fixed_via(
+    dispatcher: &impl OptimizerDispatcher,
+    pre_exp_fixed: &[u32],
+    m_inv_sqrt_fixed: &[u32],
+) -> Result<Vec<u32>, DispatchError> {
+    let mut scratch = NaturalDifferentiableAutotuneGpuScratch::default();
+    let mut out = Vec::new();
+    natural_config_gradient_magnitude_pre_exp_fixed_via_with_scratch_into(
+        dispatcher,
+        pre_exp_fixed,
+        m_inv_sqrt_fixed,
+        &mut scratch,
+        &mut out,
+    )?;
+    Ok(out)
+}
+
+/// Compute the Fisher-preconditioned fixed-point autotune gradient into
+/// caller-owned output storage.
+///
+/// # Errors
+///
+/// Returns [`DispatchError`] when validation or backend execution fails.
+pub fn natural_config_gradient_magnitude_pre_exp_fixed_via_with_scratch_into(
+    dispatcher: &impl OptimizerDispatcher,
+    pre_exp_fixed: &[u32],
+    m_inv_sqrt_fixed: &[u32],
+    scratch: &mut NaturalDifferentiableAutotuneGpuScratch,
+    out: &mut Vec<u32>,
+) -> Result<(), DispatchError> {
+    let n = u32::try_from(pre_exp_fixed.len()).map_err(|_| {
+        DispatchError::BadInputs(format!(
+            "Fix: natural_config_gradient_magnitude_pre_exp_fixed_via candidate count {} exceeds u32::MAX.",
+            pre_exp_fixed.len()
+        ))
+    })?;
+    pick_config_pre_exp_fixed_via_with_scratch_into(
+        dispatcher,
+        pre_exp_fixed,
+        &mut scratch.softmax,
+        &mut scratch.probabilities,
+    )?;
+    precondition_autotune_gradient_fixed_via_with_scratch_into(
+        dispatcher,
+        m_inv_sqrt_fixed,
+        &scratch.probabilities,
+        n,
+        &mut scratch.fisher,
+        out,
+    )
+}
+
 /// Soft-pick the best configuration index given per-config cost
 /// scores (lower cost = better). Returns probabilities that sum to 1;
 /// at low temperature the argmax dominates.
@@ -162,7 +241,11 @@ pub fn reference_pick_config_into(
     bump(&differentiable_autotune_calls);
     // Negate costs so higher input = better config.
     neg_costs.clear();
-    neg_costs.reserve(costs.len());
+    reserve_vec_capacity_or_panic(
+        neg_costs,
+        costs.len(),
+        "differentiable autotune negated costs",
+    );
     neg_costs.extend(costs.iter().map(|&c| -c));
     differentiable_argmax_cpu_into(neg_costs, temperature, scaled, out);
 }
@@ -210,7 +293,11 @@ pub fn reference_config_gradient_into(
     assert!(temperature > 0.0, "temperature must be positive");
     // d softmax / d cost_i = -softmax_i (since costs are negated).
     neg_costs.clear();
-    neg_costs.reserve(costs.len());
+    reserve_vec_capacity_or_panic(
+        neg_costs,
+        costs.len(),
+        "differentiable autotune gradient negated costs",
+    );
     neg_costs.extend(costs.iter().map(|&c| -c / temperature));
     softmax_cpu_into(neg_costs, out);
     for value in out.iter_mut() {
@@ -223,19 +310,8 @@ mod tests {
     use super::*;
     use vyre_foundation::ir::Program;
 
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
-
     fn u32_slice_to_le_bytes(values: &[u32]) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-        for &value in values {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes
+        vyre_primitives::wire::pack_u32_slice(values)
     }
 
     struct DifferentiableDispatcher;
@@ -247,18 +323,42 @@ mod tests {
             inputs: &[Vec<u8>],
             grid_override: Option<[u32; 3]>,
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
-            assert_eq!(inputs.len(), 2);
             assert_eq!(grid_override, Some([1, 1, 1]));
-            let pre_exp = read_u32s(&inputs[0]);
-            let output_seed = read_u32s(&inputs[1]);
-            assert_eq!(output_seed, vec![0; pre_exp.len()]);
-            let sum: u64 = pre_exp.iter().map(|&value| u64::from(value)).sum();
-            let sum = sum.max(1);
-            let probabilities: Vec<u32> = pre_exp
-                .iter()
-                .map(|&value| ((u64::from(value) << 16) / sum) as u32)
-                .collect();
-            Ok(vec![u32_slice_to_le_bytes(&probabilities)])
+            match inputs.len() {
+                2 => {
+                    let pre_exp = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+                    let output_seed = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+                    assert_eq!(output_seed, vec![0; pre_exp.len()]);
+                    let sum: u64 = pre_exp.iter().map(|&value| u64::from(value)).sum();
+                    let sum = sum.max(1);
+                    let probabilities: Vec<u32> = pre_exp
+                        .iter()
+                        .map(|&value| ((u64::from(value) << 16) / sum) as u32)
+                        .collect();
+                    Ok(vec![u32_slice_to_le_bytes(&probabilities)])
+                }
+                3 => {
+                    let matrix = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+                    let grad = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+                    assert_eq!(inputs[2].len(), grad.len() * std::mem::size_of::<u32>());
+                    let n = grad.len();
+                    assert_eq!(matrix.len(), n * n);
+                    let mut out = vec![0u32; n];
+                    for i in 0..n {
+                        let mut acc = 0u64;
+                        for j in 0..n {
+                            acc = acc.wrapping_add(
+                                ((u64::from(matrix[i * n + j])) * u64::from(grad[j])) >> 16,
+                            );
+                        }
+                        out[i] = acc as u32;
+                    }
+                    Ok(vec![u32_slice_to_le_bytes(&out)])
+                }
+                other => {
+                    panic!("Fix: unexpected differentiable autotune dispatch input count {other}.")
+                }
+            }
         }
     }
 
@@ -270,7 +370,7 @@ mod tests {
     fn fixed_pick_config_normalizes_pre_exp_weights() {
         let out =
             pick_config_pre_exp_fixed_via(&DifferentiableDispatcher, &[65_536, 131_072, 65_536])
-                .expect("dispatch should normalize pre-exp weights");
+                .expect("Fix: dispatch should normalize pre-exp weights");
         assert_eq!(out, vec![16_384, 32_768, 16_384]);
     }
 
@@ -289,7 +389,7 @@ mod tests {
             &mut scratch,
             &mut out,
         )
-        .expect("dispatch should reuse caller-owned buffers");
+        .expect("Fix: dispatch should reuse caller-owned buffers");
         assert_eq!(out, vec![32_768, 32_768]);
         assert_eq!(scratch.inputs[0].as_ptr(), first_input_ptr);
         assert_eq!(scratch.inputs[1].as_ptr(), second_input_ptr);
@@ -306,8 +406,65 @@ mod tests {
             &mut scratch,
             &mut out,
         )
-        .expect("dispatch should return unsigned gradient magnitudes");
+        .expect("Fix: dispatch should return unsigned gradient magnitudes");
         assert_eq!(out, vec![16_384, 49_152]);
+    }
+
+    #[test]
+    fn fixed_natural_gradient_preconditions_policy_gradient() {
+        let one = 1 << 16;
+        let half = 1 << 15;
+        let m_inv_sqrt = vec![one, 0, 0, half];
+
+        let out = natural_config_gradient_magnitude_pre_exp_fixed_via(
+            &DifferentiableDispatcher,
+            &[one, one],
+            &m_inv_sqrt,
+        )
+        .expect(
+            "Fix: release autotuner should compose softmax gradient with Fisher preconditioning",
+        );
+
+        assert_eq!(out, vec![half, 1 << 14]);
+    }
+
+    #[test]
+    fn fixed_natural_gradient_reuses_two_stage_scratch() {
+        let one = 1 << 16;
+        let m_inv_sqrt = vec![one, 0, 0, one];
+        let mut scratch = NaturalDifferentiableAutotuneGpuScratch::default();
+        let mut out = Vec::new();
+
+        natural_config_gradient_magnitude_pre_exp_fixed_via_with_scratch_into(
+            &DifferentiableDispatcher,
+            &[one, one],
+            &m_inv_sqrt,
+            &mut scratch,
+            &mut out,
+        )
+        .expect("Fix: first natural-gradient autotune dispatch should succeed");
+        let softmax_ptrs: Vec<*const u8> = scratch.softmax.inputs.iter().map(Vec::as_ptr).collect();
+        let probabilities_ptr = scratch.probabilities.as_ptr();
+        let out_ptr = out.as_ptr();
+
+        natural_config_gradient_magnitude_pre_exp_fixed_via_with_scratch_into(
+
+            &DifferentiableDispatcher,
+            &[one, one],
+            &m_inv_sqrt,
+            &mut scratch,
+            &mut out,
+        )
+        .expect("Fix: second natural-gradient autotune dispatch should reuse buffers");
+
+        for (before, after) in softmax_ptrs
+            .iter()
+            .zip(scratch.softmax.inputs.iter().map(Vec::as_ptr))
+        {
+            assert_eq!(*before, after);
+        }
+        assert_eq!(scratch.probabilities.as_ptr(), probabilities_ptr);
+        assert_eq!(out.as_ptr(), out_ptr);
     }
 
     #[test]
@@ -327,10 +484,10 @@ mod tests {
         let source = include_str!("differentiable_autotune.rs");
         let start = source
             .find("pub fn pick_config_pre_exp_fixed_via")
-            .expect("fixed path marker must exist");
+            .expect("Fix: fixed path marker must exist");
         let end = source
             .find("\n/// Soft-pick the best configuration index")
-            .expect("test-only CPU path marker must exist");
+            .expect("Fix: test-only CPU path marker must exist");
         let release_path = &source[start..end];
         assert!(!release_path.contains("_cpu"));
         assert!(!release_path.contains("reference_"));
@@ -402,3 +559,4 @@ mod tests {
         assert_eq!(out.as_ptr(), out_ptr);
     }
 }
+

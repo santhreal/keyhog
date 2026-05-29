@@ -1,4 +1,4 @@
-//! Cat-C `subgroup_add` — per-lane sum reduction broadcast to every lane.
+//! Cat-C `subgroup_add`  -  per-lane sum reduction broadcast to every lane.
 //! Maps to hardware `subgroupAdd()`.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -88,6 +88,12 @@ inventory::submit! {
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
         category: Some("hardware"),
+        shape: Some(crate::harness::OpShape::new(
+            1,
+            1,
+            4,
+            crate::harness::HardwareSemantic::SubgroupAddU32,
+        )),
     }
 }
 

@@ -483,7 +483,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
 
     /// Optional pre-compilation hook for the pipeline-mode API.
     ///
-    /// Default returns `Ok(None)` — the framework wraps in a passthrough
+    /// Default returns `Ok(None)`  -  the framework wraps in a passthrough
     /// pipeline whose `dispatch` calls back into [`VyreBackend::dispatch`]
     /// every time. Backends that genuinely cache compiled state (compute
     /// pipeline, bind-group layout, lowered shader text) override this and
@@ -492,7 +492,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     ///
     /// The returned pipeline MUST be bit-identical to repeated
     /// `dispatch(program, inputs, config)` for the program it was compiled
-    /// from. The cache key is the backend's responsibility — the framework
+    /// from. The cache key is the backend's responsibility  -  the framework
     /// does not deduplicate compile calls.
     ///
     /// Implementing this method is the P-6 contract from
@@ -604,7 +604,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     // These are the stable capability surface. Additional backends implement
     // this trait by default-inheriting every capability below and OVERRIDING
     // only the ones where they are more capable than the conservative floor.
-    // This means adding a backend is strictly additive — no existing
+    // This means adding a backend is strictly additive  -  no existing
     // backend impl has to change when a new capability query is added.
     //
     // Backends MUST report HONESTLY. Returning `true` from a capability
@@ -618,7 +618,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// Whether this backend's lowering path emits subgroup / wave
     /// intrinsics AND the current adapter exposes them.
     ///
-    /// Default: `false` (conservative — assumes no native subgroup lowering).
+    /// Default: `false` (conservative  -  assumes no native subgroup lowering).
     #[must_use]
     fn supports_subgroup_ops(&self) -> bool {
         false
@@ -668,7 +668,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
         false
     }
 
-    /// Whether this backend supports speculative dispatch — a fused
+    /// Whether this backend supports speculative dispatch  -  a fused
     /// prefilter + confirmer kernel with commit-gated output and a
     /// counter tail read back by the host.
     ///
@@ -688,7 +688,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     }
 
     /// Whether this backend can satisfy `Node::Barrier { ordering:
-    /// MemoryOrdering::GridSync }` inside a single dispatch — i.e.
+    /// MemoryOrdering::GridSync }` inside a single dispatch  -  i.e.
     /// every thread in the entire grid waits at the barrier and
     /// every prior write is globally visible afterwards. Backends
     /// that lack a native grid barrier (workgroup-only fences) must
@@ -734,9 +734,20 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
         false
     }
 
+    /// Whether this backend lowers distributed collective communication
+    /// nodes (`AllReduce`, `AllGather`, `ReduceScatter`, `Broadcast`).
+    ///
+    /// This is intentionally separate from [`VyreBackend::is_distributed`]:
+    /// a backend may partition work across devices without yet exposing a
+    /// correct collective transport/lowering stack. Default: `false`.
+    #[must_use]
+    fn supports_distributed_collectives(&self) -> bool {
+        false
+    }
+
     /// Maximum supported workgroup size per axis `[x, y, z]`.
     ///
-    /// Default: `[1, 1, 1]` (scalar dispatch — a backend that has not
+    /// Default: `[1, 1, 1]` (scalar dispatch  -  a backend that has not
     /// reported a real limit cannot be trusted to execute parallel
     /// workgroups).
     #[must_use]
@@ -773,10 +784,10 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// Native subgroup size for the backing device when the backend
     /// knows it. Returning
     /// `None` tells the dispatch planner the backend can't report a
-    /// subgroup width — the planner falls back to `max_workgroup_size`
+    /// subgroup width  -  the planner falls back to `max_workgroup_size`
     /// for its sizing heuristic.
     ///
-    /// I.6 — adaptive workgroup sizing reads this capability to pick
+    /// I.6  -  adaptive workgroup sizing reads this capability to pick
     /// a workgroup multiple of the subgroup so threads don't straddle
     /// subgroups. Typical devices expose 16, 32, or 64 lanes.
     #[must_use]
@@ -807,6 +818,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
             backend: self.id(),
             supports_subgroup_ops: self.supports_subgroup_ops(),
             supports_indirect_dispatch: self.supports_indirect_dispatch(),
+            supports_distributed_collectives: self.supports_distributed_collectives(),
             supports_specialization_constants: false,
             supports_f16: self.supports_f16(),
             supports_bf16: self.supports_bf16(),
@@ -862,7 +874,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// Useful before tearing down a context or before reading back data
     /// that was produced by the last asynchronous dispatch.
     ///
-    /// Default: no-op `Ok(())` — backends that do not queue work
+    /// Default: no-op `Ok(())`  -  backends that do not queue work
     /// implicitly satisfy flush.
     ///
     /// # Errors
@@ -888,7 +900,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// Probe whether the underlying device has been lost since the last
     /// successful dispatch.
     ///
-    /// Default: `false` (assume healthy — backends that have no
+    /// Default: `false` (assume healthy  -  backends that have no
     /// device-loss story do not need to probe).
     #[must_use]
     fn device_lost(&self) -> bool {
@@ -898,7 +910,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// Attempt to recover from device loss by reacquiring the underlying
     /// device and invalidating pipeline caches.
     ///
-    /// Default: returns an `UnsupportedFeature` error — recovery must be
+    /// Default: returns an `UnsupportedFeature` error  -  recovery must be
     /// opt-in, because a backend that silently re-acquires without
     /// notifying the caller is a correctness hazard.
     ///
@@ -1005,6 +1017,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -1041,7 +1054,7 @@ mod tests {
                 &DispatchConfig::default(),
                 &mut outputs,
             )
-            .expect("default borrowed-into dispatch must succeed");
+            .expect("Fix: default borrowed-into dispatch must succeed");
 
         let telemetry = crate::observability::snapshot_dispatch_telemetry();
         assert!(telemetry.launches >= before.launches + 1);
@@ -1069,7 +1082,7 @@ mod tests {
             let production = source
                 .split("#[cfg(test)]")
                 .next()
-                .expect("backend source must contain production section before tests");
+                .expect("Fix: backend source must contain production section before tests");
             assert!(
                 production.contains("clone_borrowed_inputs_for_dispatch")
                     && production.contains("checked_elapsed_wall_ns")
@@ -1081,7 +1094,7 @@ mod tests {
         let compiled_production = compiled_source
             .split("#[cfg(test)]")
             .next()
-            .expect("compiled pipeline source must contain production section before tests");
+            .expect("Fix: compiled pipeline source must contain production section before tests");
         assert!(
             compiled_production.contains("reserved_batch_output_slots")
                 && !compiled_production.contains("Vec::with_capacity(batches.len())"),
@@ -1089,3 +1102,4 @@ mod tests {
         );
     }
 }
+

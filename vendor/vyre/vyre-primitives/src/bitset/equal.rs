@@ -1,17 +1,15 @@
-//! `bitset_equal` — exact-equality check, writes 1 to `out_scalar`
+//! `bitset_equal`  -  exact-equality check, writes 1 to `out_scalar`
 //! iff every word of `lhs` equals the corresponding word of `rhs`.
 //!
 //! Used by fixpoint convergence checks: "did the frontier change?"
 //! is `bitset_equal(prev, current, out_scalar)` then "if out == 1 stop."
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use crate::bitset::relation::{bitset_relation_program, BitsetRelation};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::bitset::equal";
-const WORKGROUP_SIZE: u32 = 256;
 
 /// Build a Program: `out_scalar[0] = (forall w: lhs[w] == rhs[w]) ? 1 : 0`.
 ///
@@ -20,65 +18,21 @@ const WORKGROUP_SIZE: u32 = 256;
 /// equality predicate into the scalar.
 #[must_use]
 pub fn bitset_equal(lhs: &str, rhs: &str, out_scalar: &str, words: u32) -> Program {
-    let lane = Expr::InvocationId { axis: 0 };
-    let chunk_count = Expr::div(
-        Expr::add(Expr::u32(words), Expr::u32(WORKGROUP_SIZE - 1)),
-        Expr::u32(WORKGROUP_SIZE),
-    );
-    let body = vec![
-        Node::if_then(
-            Expr::eq(lane.clone(), Expr::u32(0)),
-            vec![Node::store(out_scalar, Expr::u32(0), Expr::u32(1))],
-        ),
-        Node::Barrier {
-            ordering: vyre_foundation::MemoryOrdering::SeqCst,
-        },
-        Node::loop_for(
-            "chunk",
-            Expr::u32(0),
-            chunk_count,
-            vec![
-                Node::let_bind(
-                    "w",
-                    Expr::add(
-                        Expr::mul(Expr::var("chunk"), Expr::u32(WORKGROUP_SIZE)),
-                        lane.clone(),
-                    ),
-                ),
-                Node::if_then(
-                    Expr::lt(Expr::var("w"), Expr::u32(words)),
-                    vec![Node::let_bind(
-                        "_eq_prev",
-                        Expr::atomic_and(
-                            out_scalar,
-                            Expr::u32(0),
-                            Expr::select(
-                                Expr::eq(
-                                    Expr::load(lhs, Expr::var("w")),
-                                    Expr::load(rhs, Expr::var("w")),
-                                ),
-                                Expr::u32(1),
-                                Expr::u32(0),
-                            ),
-                        ),
-                    )],
-                ),
-            ],
-        ),
-    ];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(lhs, 0, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(rhs, 1, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(out_scalar, 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
-        ],
-        [WORKGROUP_SIZE, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
+    bitset_relation_program(OP_ID, lhs, rhs, out_scalar, words, BitsetRelation::Equal)
+}
+
+/// Return whether `program` advertises the canonical `bitset_equal` op id.
+///
+/// Consumer crates should use this semantic tag helper instead of inspecting
+/// the raw IR entry shape.
+#[must_use]
+pub fn is_bitset_equal_program(program: &Program) -> bool {
+    if program.entry_op_id.as_deref() == Some(OP_ID) {
+        return true;
+    }
+    matches!(
+        program.entry.as_slice(),
+        [vyre_foundation::ir::Node::Region { generator, .. }] if generator.as_ref() == OP_ID
     )
 }
 
@@ -102,7 +56,7 @@ inventory::submit! {
         OP_ID,
         || bitset_equal("lhs", "rhs", "out", 2),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0xFFFF, 0xF0F0]),
                 to_bytes(&[0xFFFF, 0xF0F0]),
@@ -110,7 +64,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1])]]
         }),
     )
@@ -119,6 +73,7 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vyre_foundation::ir::Node;
 
     #[test]
     fn identical_returns_one() {
@@ -143,5 +98,39 @@ mod tests {
     #[test]
     fn length_mismatch_returns_zero() {
         assert_eq!(cpu_ref(&[0], &[0, 0]), 0);
+    }
+
+    #[test]
+    fn preserves_wrapper_op_id() {
+        let program = bitset_equal("lhs", "rhs", "out", 2);
+        let generator = match &program.entry[0] {
+            Node::Region { generator, .. } => generator.to_string(),
+            other => panic!("Fix: bitset_equal must build a Region entry, got {other:?}."),
+        };
+        assert_eq!(generator, OP_ID);
+        assert!(is_bitset_equal_program(&program));
+    }
+
+    #[test]
+    fn generated_adversarial_pairs_match_exact_equality_contract() {
+        let mut state = 0xA5A5_5A5A_u32;
+        for case in 0..4096 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let len = (state as usize % 17) + 1;
+            let mut lhs = Vec::with_capacity(len);
+            let mut rhs = Vec::with_capacity(len);
+            for word in 0..len {
+                state = state.rotate_left(5) ^ (case as u32).wrapping_mul(0x9E37_79B9);
+                let value = state ^ (word as u32).wrapping_mul(0x85EB_CA6B);
+                lhs.push(value);
+                rhs.push(if case % 4 == 0 {
+                    value
+                } else {
+                    value ^ (1_u32 << ((case + word) & 31))
+                });
+            }
+            let expected = u32::from(lhs == rhs);
+            assert_eq!(cpu_ref(&lhs, &rhs), expected, "case {case}");
+        }
     }
 }

@@ -1,7 +1,7 @@
 //! Sparse linear-system solver for matroid intersection via #50
 //! algebraic multigrid (#50 self-consumer).
 //!
-//! Closes the recursion thesis for #50 — Algebraic Multigrid (AMG)
+//! Closes the recursion thesis for #50  -  Algebraic Multigrid (AMG)
 //! Jacobi smoothing ships to user dialects (any PDE / sparse-system
 //! workload) AND solves the inner linear systems that
 //! Chakrabarty-Lee-Sidford (2021) reduces matroid intersection to.
@@ -11,7 +11,7 @@
 //! Modern matroid-intersection algorithms (CLS-2021) reduce each
 //! augmenting iteration to O(n²) iterations of solving sparse linear
 //! systems M·x = b where M is the matroid-cover Laplacian.
-//! Naive Gauss-Seidel takes O(n²) per step → O(n⁴) overall —
+//! Naive Gauss-Seidel takes O(n²) per step → O(n⁴) overall  -
 //! intractable at workspace scale.
 //!
 //! AMG V-cycle drops this to O(n) per step → O(n³) overall, AND
@@ -50,9 +50,9 @@ use crate::dispatch_buffers::{
     write_u32_slice_le_bytes, write_zero_bytes,
 };
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
-use vyre_primitives::math::multigrid::jacobi_smooth_step;
 #[cfg(test)]
-use vyre_primitives::math::multigrid::{jacobi_smooth_step_cpu, jacobi_smooth_step_cpu_into};
+use vyre_foundation::pass_substrate::multigrid_matroid_solver as foundation_multigrid;
+use vyre_primitives::math::multigrid::jacobi_smooth_step;
 
 /// Caller-owned dispatch scratch for fixed-point multigrid Jacobi smoothing.
 #[derive(Debug, Default)]
@@ -81,7 +81,7 @@ pub fn reference_matroid_solve_step(
 ) -> Vec<f64> {
     use crate::observability::{bump, multigrid_matroid_solver_calls};
     bump(&multigrid_matroid_solver_calls);
-    jacobi_smooth_step_cpu(a, b, x_in, omega, n)
+    foundation_multigrid::matroid_solve_step(a, b, x_in, omega, n)
 }
 
 /// Apply one weighted-Jacobi smoothing step into caller-owned storage.
@@ -99,7 +99,7 @@ pub fn reference_matroid_solve_step_into(
 ) {
     use crate::observability::{bump, multigrid_matroid_solver_calls};
     bump(&multigrid_matroid_solver_calls);
-    jacobi_smooth_step_cpu_into(a, b, x_in, omega, n, out);
+    foundation_multigrid::matroid_solve_step_into(a, b, x_in, omega, n, out);
 }
 
 /// Primitive-native fixed-point production path for one weighted-Jacobi
@@ -368,6 +368,58 @@ mod tests {
         assert!(approx_eq(x_out[1], 4.0));
     }
 
+    #[test]
+    fn reference_step_matches_foundation_authority_generated() {
+        for n in 1..5usize {
+            let mut a = vec![0.0; n * n];
+            let mut b = vec![0.0; n];
+            let mut x = vec![0.0; n];
+            for i in 0..n {
+                b[i] = (i as f64 + 1.0) * 1.5;
+                x[i] = i as f64 * 0.25;
+                for j in 0..n {
+                    a[i * n + j] = if i == j {
+                        (n + i + 2) as f64
+                    } else {
+                        ((i + j) % 3) as f64 * 0.125
+                    };
+                }
+            }
+
+            let reference = reference_matroid_solve_step(&a, &b, &x, 0.66, n as u32);
+            let authority = foundation_multigrid::matroid_solve_step(&a, &b, &x, 0.66, n as u32);
+
+            assert_eq!(reference.len(), authority.len());
+            for (reference, authority) in reference.iter().zip(authority.iter()) {
+                assert!(approx_eq(*reference, *authority));
+            }
+        }
+    }
+
+    #[test]
+    fn reference_step_into_reuses_output() {
+        let a = vec![2.0, 0.0, 0.0, 4.0];
+        let b = vec![4.0, 8.0];
+        let x = vec![0.0, 0.0];
+        let mut out = Vec::with_capacity(16);
+        out.extend_from_slice(&[99.0, 98.0, 97.0]);
+        let capacity = out.capacity();
+
+        reference_matroid_solve_step_into(&a, &b, &x, 0.5, 2, &mut out);
+
+        assert_eq!(out, vec![1.0, 1.0]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn reference_step_handles_sparse_missing_entries_without_panicking() {
+        let reference = reference_matroid_solve_step(&[2.0], &[4.0], &[1.0], 0.5, 2);
+        let authority = foundation_multigrid::matroid_solve_step(&[2.0], &[4.0], &[1.0], 0.5, 2);
+
+        assert_eq!(reference, authority);
+        assert_eq!(reference, vec![1.5, 0.0]);
+    }
+
     struct JacobiDispatcher;
 
     impl OptimizerDispatcher for JacobiDispatcher {
@@ -379,10 +431,10 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 5);
-            let a = read_u32s(&inputs[0]);
-            let b = read_u32s(&inputs[1]);
-            let x_in = read_u32s(&inputs[2]);
-            let omega = read_u32s(&inputs[3])[0];
+            let a = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let b = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let x_in = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+            let omega = crate::hardware::dispatch_buffers::read_u32s(&inputs[3])[0];
             assert_eq!(inputs[4].len(), b.len() * std::mem::size_of::<u32>());
             let n = b.len();
             let mut out = Vec::with_capacity(n);
@@ -396,6 +448,7 @@ mod tests {
                 let omega_res = ((omega as u64 * res as u64) >> 16) as u32;
                 out.push(x_in[i].saturating_add((((omega_res as u64) << 16) / diag as u64) as u32));
             }
+
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
     }
@@ -467,19 +520,13 @@ mod tests {
         let via_section = source
             .split("pub fn matroid_solve_step_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("/// Iterate Jacobi smoothing until residual norm drops below `tol`")
             .next()
-            .expect("post-via marker should exist");
+            .expect("Fix: post-via marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_matroid"));
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

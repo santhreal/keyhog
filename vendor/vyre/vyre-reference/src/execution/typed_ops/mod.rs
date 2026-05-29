@@ -481,6 +481,7 @@ int_un_helpers!(
     un_reverse_bits_u64
 );
 
+
 fn binop_bool(op: BinOp, left: bool, right: bool) -> Result<Value, vyre::Error> {
     match op {
         BinOp::Eq => Ok(Value::Bool(left == right)),
@@ -655,3 +656,4 @@ mod tests {
         );
     }
 }
+

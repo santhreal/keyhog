@@ -371,7 +371,7 @@ impl BodyCtx<'_> {
                 let false_id = *op.operands.get(2).ok_or_else(|| {
                     EmitError::InvalidDescriptor("Select missing false_val".into())
                 })?;
-                let cond = self.lookup_operand(cond_id)?;
+                let cond = self.pred_from_boolish(self.lookup_operand(cond_id)?);
                 let t = self.lookup_operand(true_id)?;
                 let f = self.lookup_operand(false_id)?;
                 let dst = self.alloc(t.0);
@@ -448,6 +448,7 @@ impl BodyCtx<'_> {
                     offset_id,
                     size_id,
                     AsyncCopyDirection::Store,
+
                 )?;
             }
             AsyncWait { tag } => {
@@ -588,3 +589,4 @@ impl BodyCtx<'_> {
         Ok(())
     }
 }
+

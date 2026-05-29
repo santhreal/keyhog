@@ -65,9 +65,9 @@ fn poll_map_result_until(
 ) -> Result<Result<(), wgpu::BufferAsyncError>, &'static str> {
     let mut backoff = ReadbackPollBackoff::new();
     loop {
-        match device.poll(wgpu::Maintain::Poll) {
-            wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-        }
+        device
+            .poll(wgpu::PollType::Poll)
+            .map_err(|_| "device poll failed while waiting for trap-buffer map callback")?;
         match receiver.try_recv() {
             Ok(result) => return Ok(result),
             Err(crossbeam_channel::TryRecvError::Empty) => {}

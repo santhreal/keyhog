@@ -7,7 +7,7 @@ use super::classified_memory::{ClassifiedCacheKey, PREPROCESS_CACHE_SEMANTIC_VER
 //
 // Default location is `${XDG_CACHE_HOME:-$HOME/.cache}/vyre/parsed-ast/`. Each entry is a
 // length-prefixed binary file named by the (path, source_len, source_
-// hash) cache key — a cache miss in process memory consults disk
+// hash) cache key  -  a cache miss in process memory consults disk
 // before paying for the GPU lex+classify dispatches; a successful
 // disk hit also warms the in-memory cache so subsequent hits in the
 // same process pay no I/O.

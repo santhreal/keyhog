@@ -177,16 +177,11 @@ impl CountMinSketch {
 }
 
 fn reserve_counter_capacity(counters: &mut Vec<u64>, len: usize) -> Result<(), PipelineError> {
-    if counters.capacity() >= len {
-        return Ok(());
-    }
-    counters
-        .try_reserve_exact(len - counters.capacity())
-        .map_err(|source| {
-            PipelineError::Backend(format!(
-                "Count-Min sketch could not reserve {len} counters: {source}. Fix: reduce telemetry sketch depth or width."
-            ))
-        })
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(counters, len).map_err(|source| {
+        PipelineError::Backend(format!(
+            "Count-Min sketch could not reserve {len} counters: {source}. Fix: reduce telemetry sketch depth or width."
+        ))
+    })
 }
 
 /// Compact sketch summary derived from a megakernel telemetry snapshot.

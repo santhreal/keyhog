@@ -1,11 +1,11 @@
-# vyre-driver-cuda — architecture
+# vyre-driver-cuda  -  architecture
 
 CUDA backend. Implements `VyreBackend` against the NVIDIA CUDA
 runtime + driver APIs.
 
 ## Modules
 
-### `backend.rs` (OFF-LIMITS — submodular eviction just shipped)
+### `backend.rs` (OFF-LIMITS  -  submodular eviction just shipped)
 Backend-trait implementation. Owns the device handle, the stream
 pool, and the dispatch hot path. Currently mid-edit; do not
 co-edit with this turn's work.
@@ -33,10 +33,10 @@ with kernel execution.
 
 ## Public types
 
-- **`CudaBackend`** — backend-trait implementation. Acquired via
+- **`CudaBackend`**  -  backend-trait implementation. Acquired via
   `CudaBackend::acquire()` which probes for a CUDA-capable
   device.
-- **`StreamPool`** — internal; not exposed across the trait
+- **`StreamPool`**  -  internal; not exposed across the trait
   boundary.
 
 ## Integration points

@@ -153,21 +153,9 @@ pub fn expert_mlp(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn expert_mlp_executes_fused_gate_up_swiglu_down() {
@@ -219,8 +207,13 @@ mod tests {
 
     #[test]
     fn expert_mlp_zero_dim_errors() {
-        assert!(expert_mlp("x", "wg", "bg", "wu", "bu", "wd", "bd", "out", 0, 2, 2).is_err());
-        assert!(expert_mlp("x", "wg", "bg", "wu", "bu", "wd", "bd", "out", 2, 0, 2).is_err());
-        assert!(expert_mlp("x", "wg", "bg", "wu", "bu", "wd", "bd", "out", 2, 2, 0).is_err());
+        for (batch, hidden, out_dim) in [(0, 2, 2), (2, 0, 2), (2, 2, 0)] {
+            let err = expert_mlp("x", "wg", "bg", "wu", "bu", "wd", "bd", "out", batch, hidden, out_dim)
+                .expect_err("zero dim must error");
+            assert!(
+                err.contains("expert_mlp") && err.contains("> 0"),
+                "expert_mlp zero-dim ({batch},{hidden},{out_dim}): {err}"
+            );
+        }
     }
 }

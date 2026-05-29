@@ -1,10 +1,10 @@
 //! Span-region dedup primitive.
 //!
-//! Every multimatch consumer (`vyre-libs::matching` engines, secret-scanning consumer,
-//! frontend) ends up doing the same operation after the GPU dispatch
+//! Every multimatch consumer (`vyre-libs::matching` engines, scanner consumer,
+//! external analyzer) ends up doing the same operation after the GPU dispatch
 //! returns: take the raw `Vec<Match>`, collapse adjacent overlapping
 //! or duplicate spans into a representative, return the deduped set.
-//! Each consumer wrote it differently — some by `(detector_id,
+//! Each consumer wrote it differently  -  some by `(detector_id,
 //! credential)` HashMap, some by `(start, end)` pair sort, some by ad-
 //! hoc loop. The lego-block fix is one primitive every consumer calls.
 //!
@@ -16,11 +16,11 @@
 //! `pid`. This collapses both:
 //!
 //!   - `(pid=0, 5, 10)` and `(pid=0, 6, 11)` → `(pid=0, 5, 11)`
-//!     (overlapping, same pattern — extend span).
+//!     (overlapping, same pattern  -  extend span).
 //!   - `(pid=0, 5, 10)` and `(pid=0, 5, 10)` → one entry
 //!     (exact dup).
 //!
-//! Distinct `pid`s never merge — two patterns matching the same
+//! Distinct `pid`s never merge  -  two patterns matching the same
 //! region produce two output spans (cross-pattern dedup is a
 //! different operation; consumers that want it apply a second pass).
 //!
@@ -38,7 +38,7 @@
 
 use std::cmp::Ordering;
 
-/// One match as exposed by `vyre_foundation::match_result::Match` —
+/// One match as exposed by `vyre_foundation::match_result::Match`  -
 /// duplicated here as a plain triple so this primitive doesn't depend
 /// on foundation. Consumers convert at the boundary.
 ///
@@ -98,7 +98,7 @@ pub fn dedup_regions_cpu(input: Vec<RegionTriple>) -> Vec<RegionTriple> {
 /// GPU companion to [`dedup_regions_inplace`].
 ///
 /// Input contract: `pids`, `starts`, `ends` are three parallel
-/// storage buffers, sorted by `(pid, start, end)` — the same order
+/// storage buffers, sorted by `(pid, start, end)`  -  the same order
 /// the CPU reference produces after `sort_unstable`. Each lane reads
 /// its own slot and one neighbour, then writes a `0`/`1` survivor
 /// flag into the `survivors` buffer. The flag is `1` when the slot
@@ -110,7 +110,7 @@ pub fn dedup_regions_cpu(input: Vec<RegionTriple>) -> Vec<RegionTriple> {
 /// [`crate::math::stream_compact::stream_compact`] over the same
 /// flag buffer to obtain a packed deduped output. The two Programs
 /// share the lego-block contract that backs the CPU
-/// [`dedup_regions_inplace`] — caller does the host-side sort,
+/// [`dedup_regions_inplace`]  -  caller does the host-side sort,
 /// then dispatches `dedup_regions_flag_program` followed by
 /// `stream_compact` to land the deduped triples on-device without a
 /// readback round-trip.
@@ -153,7 +153,7 @@ pub fn dedup_regions_flag_program(
                         Expr::load(ends, Expr::sub(t.clone(), Expr::u32(1))),
                     ),
                     // Survivor flag = 1 iff this lane starts a new
-                    // (pid, run) — either the pid changed, or the
+                    // (pid, run)  -  either the pid changed, or the
                     // sorted start is past the previous end. The
                     // CPU reference uses `next.start <= last.end`
                     // as the merge predicate; we negate it here so
@@ -197,7 +197,7 @@ pub fn dedup_regions_flag_program(
     )
 }
 
-/// CPU reference for [`region_sort_program`] — stable lexicographic
+/// CPU reference for [`region_sort_program`]  -  stable lexicographic
 /// sort of `(pid, start, end)` triples by composite key.
 ///
 /// `dedup_regions_inplace` already sorts internally, so callers that
@@ -210,7 +210,7 @@ pub fn sort_regions_cpu(input: &mut [RegionTriple]) {
 }
 
 /// GPU stable rank sort of three parallel `(pid, start, end)` buffers
-/// by composite lexicographic key — closes the host-side sort gap in
+/// by composite lexicographic key  -  closes the host-side sort gap in
 /// the dedup pipeline.
 ///
 /// Pairs with [`dedup_regions_flag_program`] +
@@ -230,16 +230,16 @@ pub fn sort_regions_cpu(input: &mut [RegionTriple]) {
 /// how many input slots `j` carry a strictly-smaller composite key,
 /// plus a stable tie-break (`j < i` for equal keys). The output
 /// triples land at the rank position. Composite-key compare is the
-/// 3-way lexicographic order `(pid, start, end)` — the same order
+/// 3-way lexicographic order `(pid, start, end)`  -  the same order
 /// `RegionTriple`'s [`Ord`] impl produces, so CPU and GPU outputs
 /// must agree triple-for-triple.
 ///
 /// This is a single-dispatch O(n²) rank sort, like
 /// [`crate::reduce::radix_sort`]. The algorithm is correct for any
 /// `count`; bench-scale dispatches (up to ~10K matches per scan
-/// window) are the secret-scanning consumer/frontend target. The multi-dispatch radix
+/// window) are the scanner consumer/external analyzer target. The multi-dispatch radix
 /// pipeline can replace this body once pipeline-level scratch is
-/// available — the function signature is stable.
+/// available  -  the function signature is stable.
 #[must_use]
 pub fn region_sort_program(
     pids_in: &str,
@@ -359,6 +359,7 @@ pub fn region_sort_program(
 /// Regions are ordered by `(pid, start, end)`. Adjacent entries with the same
 /// pattern id and overlapping or touching byte spans are coalesced into a
 /// single [`RegionTriple`]. The vector is truncated to the deduplicated length.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn dedup_regions_inplace(input: &mut Vec<RegionTriple>) {
     if input.is_empty() {
         return;
@@ -446,6 +447,7 @@ mod tests {
         let got = dedup_regions_cpu(vec![b, a, c]);
         assert_eq!(got, vec![RegionTriple::new(0, 5, 12), c]);
     }
+
 
     #[test]
     fn cluster_of_three_merges() {
@@ -548,3 +550,4 @@ mod tests {
         assert_eq!(flag_inputs, vec!["ps", "ss", "es"]);
     }
 }
+

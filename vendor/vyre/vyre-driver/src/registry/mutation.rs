@@ -1,6 +1,6 @@
 //! IR mutation classification.
 //!
-//! Every optimizer pass declares a `MutationClass` — a frozen tag that says
+//! Every optimizer pass declares a `MutationClass`  -  a frozen tag that says
 //! *what kind of change this pass is allowed to make*. The conformance
 //! harness uses the class to decide how strictly the result must match the
 //! reference interpreter:

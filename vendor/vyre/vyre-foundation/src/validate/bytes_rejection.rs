@@ -86,7 +86,7 @@ pub(crate) fn check_load(
                 "load from unknown buffer `{buffer}`. Fix: declare it in Program::buffers."
             )));
         }
-        // L.1.18: V013 coverage extends to `Expr::Load` — loading from
+        // L.1.18: V013 coverage extends to `Expr::Load`  -  loading from
         // a `Bytes` buffer gives the caller an opaque multi-byte blob
         // that no scalar arithmetic in the IR knows how to consume.
         // Catch it here rather than letting target-text lowering fail with a

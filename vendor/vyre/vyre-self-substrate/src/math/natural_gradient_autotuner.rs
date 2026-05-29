@@ -1,6 +1,6 @@
 //! Autotuner gradient direction via #56 natural_gradient (#56 self-consumer).
 //!
-//! Closes the recursion thesis for #56 — natural_gradient ships to
+//! Closes the recursion thesis for #56  -  natural_gradient ships to
 //! user dialects (KFAC-trained NNs, Fisher-information-aware
 //! optimizers) AND drives vyre's autotuner past the
 //! `differentiable_autotune` baseline by using the Fisher-information
@@ -16,7 +16,7 @@
 //! varies fast in workgroup-x, slow in y/z).
 //!
 //! Natural gradient preconditions the gradient by the inverse
-//! Fisher information — the Riemannian gradient on the
+//! Fisher information  -  the Riemannian gradient on the
 //! parameter manifold. Empirically, KFAC-style block-diagonal
 //! Fisher approximation gives 5-10× faster convergence than
 //! plain gradient on the same configuration-tuning surfaces.
@@ -279,8 +279,8 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 3);
-            let matrix = read_u32s(&inputs[0]);
-            let grad = read_u32s(&inputs[1]);
+            let matrix = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let grad = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
             assert_eq!(inputs[2].len(), grad.len() * std::mem::size_of::<u32>());
             let n = grad.len();
             assert_eq!(matrix.len(), n * n);
@@ -294,13 +294,6 @@ mod tests {
             }
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     #[test]
@@ -423,10 +416,10 @@ mod tests {
         let via_section = source
             .split("pub fn precondition_autotune_gradient_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[must_use]\n#[cfg(test)]\npub fn autotune_step")
             .next()
-            .expect("test-only autotune marker should exist");
+            .expect("Fix: test-only autotune marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_precondition"));

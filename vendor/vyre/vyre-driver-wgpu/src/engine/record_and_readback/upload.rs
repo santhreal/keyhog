@@ -13,23 +13,12 @@ pub(super) fn write_padded_input(
     bytes: &[u8],
     size: usize,
 ) -> Result<Option<(u64, u64)>, BackendError> {
-    let aligned_len = bytes.len() & !3;
-    if aligned_len > 0 {
-        queue.write_buffer(buffer, 0, &bytes[..aligned_len]);
-    }
-
-    let mut zero_start = aligned_len;
-    let tail_len = bytes.len() - aligned_len;
-    if tail_len > 0 {
-        let mut tail = [0u8; 4];
-        tail[..tail_len].copy_from_slice(&bytes[aligned_len..]);
-        queue.write_buffer(
-            buffer,
-            usize_to_u64(aligned_len, "padded input tail offset")?,
-            &tail,
-        );
-        zero_start += 4;
-    }
+    let zero_start = crate::padded_upload::write_padded_prefix(
+        queue,
+        buffer,
+        bytes,
+        "padded input tail offset",
+    )?;
 
     if size > zero_start {
         Ok(Some((

@@ -1,10 +1,14 @@
-//! `search.binary.u32.1m` — divergent binary search over a sorted table.
+//! `search.binary.u32.1m`  -  divergent binary search over a sorted table.
 
+use super::byte_pack::u32_bytes;
 use crate::api::case::{
     BenchCase, BenchContext, BenchError, BenchId, BenchLayer, BenchMetadata, BenchRequirements,
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::BenchMetrics;
+use crate::api::resident::{
+    dispatch_program_timed, input_bytes_total, transfer_accounting, ResidentInputSet,
+};
 use crate::api::suite::SuiteKind;
 use rayon::prelude::*;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -23,6 +27,8 @@ struct BinarySearchPrepared {
     keys: Vec<u32>,
     queries: Vec<u32>,
     inputs: Vec<Vec<u8>>,
+    input_bytes_total: u64,
+    resident: Option<ResidentInputSet>,
 }
 
 impl BenchCase for BinarySearchU32 {
@@ -74,13 +80,13 @@ impl BenchCase for BinarySearchU32 {
     fn bytes_touched(&self, prepared: &PreparedCase) -> (u64, u64) {
         let read = prepared
             .downcast_ref::<BinarySearchPrepared>()
-            .map(|prepared| prepared.inputs.iter().map(Vec::len).sum::<usize>() as u64)
+            .map(|prepared| prepared.input_bytes_total)
             .unwrap_or_else(|| (u64::from(KEY_COUNT) + u64::from(QUERY_COUNT)) * 4);
         let write = u64::from(QUERY_COUNT) * 4;
         (read, write)
     }
 
-    fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
+    fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let program = Program::wrapped(
             vec![
                 BufferDecl::storage("keys", 0, BufferAccess::ReadOnly, DataType::U32)
@@ -160,12 +166,16 @@ impl BenchCase for BinarySearchU32 {
             .collect();
         let queries = build_queries();
         let inputs = vec![u32_bytes(&keys), u32_bytes(&queries)];
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputSet::upload_optional(ctx, &inputs, "binary search bench")?;
 
         Ok(Box::new(BinarySearchPrepared {
             program,
             keys,
             queries,
             inputs,
+            input_bytes_total,
+            resident,
         }))
     }
 
@@ -188,24 +198,33 @@ impl BenchCase for BinarySearchU32 {
                 )
             })?;
 
-        let timed = ctx
-            .dispatch_timed(&prepared.program, &prepared.inputs, &ctx.dispatch_config)
-            .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
+        let dispatch = dispatch_program_timed(
+            ctx,
+            &prepared.program,
+            prepared.resident.as_ref(),
+            &prepared.inputs,
+            &ctx.dispatch_config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let timed = dispatch.timed;
         let outputs = timed.outputs;
 
         let start_ref = std::time::Instant::now();
         let baseline = cpu_binary_search_results(&prepared.keys, &prepared.queries);
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
-        let input_bytes = prepared.inputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let input_bytes = prepared.input_bytes_total;
+        let output_bytes = outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let accounting = transfer_accounting(input_bytes, output_bytes, resident_used);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
                 wall_ns: Some(timed.wall_ns),
                 dispatch_ns: timed.device_ns,
                 input_bytes: Some(input_bytes),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                bytes_read: Some((u64::from(KEY_COUNT) + u64::from(QUERY_COUNT)) * 4),
-                bytes_written: Some(u64::from(QUERY_COUNT) * 4),
+                output_bytes: Some(output_bytes),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
+                bytes_touched: Some(accounting.bytes_touched),
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
@@ -248,13 +267,6 @@ fn cpu_binary_search_results(keys: &[u32], queries: &[u32]) -> Vec<u8> {
         })
         .collect();
     u32_bytes(&results)
-}
-
-fn u32_bytes(values: &[u32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
 }
 
 inventory::submit! {

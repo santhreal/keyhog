@@ -1,7 +1,7 @@
-//! `flows_to_to_sink` — composite source→sink reachability primitive.
+//! `flows_to_to_sink`  -  composite source→sink reachability primitive.
 //!
 //! The "does taint reach a sink node" pattern is the single most
-//! common composition in every taint-style source-query dialect rule:
+//! common composition in every taint-style generic query dialect rule:
 //!
 //! ```text
 //!   reach    = csr_forward_traverse(source, FLOWS_TO_MASK)
@@ -9,12 +9,12 @@
 //!   any_hit  = bitset_any(hits) → u32
 //! ```
 //!
-//! Downstream analyzer's `lower_binary_graph_predicate` emitted this composition
+//! Earlier lowering paths emitted this composition
 //! inline at every call site (~25 lines of boilerplate per call,
 //! plus a fresh accumulator buffer per invocation). Centralising it
 //! here as one fused Region:
 //!
-//! * cuts a downstream frontend's per-call lowering surface from ~5 sub-programs
+//! * cuts per-call lowering surface from ~5 sub-programs
 //!   merged via `merge_programs` to one helper invocation;
 //! * gives the optimizer one Region with a stable op id to fuse,
 //!   cache, and CSE across rules;
@@ -22,7 +22,7 @@
 //!   foot-gun that the audit caught when `flows_to_via` and
 //!   `flows_to_not_via` silently shared the same emitted Program.
 //!
-//! Soundness: identical to the one BFS step `flows_to` provides —
+//! Soundness: identical to the one BFS step `flows_to` provides  -
 //! [`MayOver`](super::super::dataflow::Soundness::MayOver) on a single
 //! step, `Exact` when iterated to fixpoint with sanitizer gating.
 
@@ -40,11 +40,11 @@ pub(crate) const OP_ID: &str = "vyre-libs::security::flows_to_to_sink";
 /// with `sink_buf`, reduced to a single u32 stored in `out_scalar_buf`.
 ///
 /// Buffers:
-/// * `source_buf`  — read-only bitset of source-tagged nodes.
-/// * `sink_buf`    — read-only bitset of sink-tagged nodes.
-/// * `reach_buf`   — read-write scratch bitset for the BFS step result.
-/// * `hits_buf`    — read-write scratch bitset for the AND result.
-/// * `out_scalar_buf` — read-write 1-word output: nonzero iff any
+/// * `source_buf`   -  read-only bitset of source-tagged nodes.
+/// * `sink_buf`     -  read-only bitset of sink-tagged nodes.
+/// * `reach_buf`    -  read-write scratch bitset for the BFS step result.
+/// * `hits_buf`     -  read-write scratch bitset for the AND result.
+/// * `out_scalar_buf`  -  read-write 1-word output: nonzero iff any
 ///   sink node was reached.
 #[must_use]
 pub fn flows_to_to_sink(
@@ -93,7 +93,7 @@ inventory::submit! {
         id: OP_ID,
         build: || flows_to_to_sink(ProgramGraphShape::new(4, 3), "source", "sink", "reach", "hits", "out_scalar"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0, 0, 0, 0]),          // pg_nodes
                 to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets
@@ -112,7 +112,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0b0011]),              // reach = {0,1}
                 to_bytes(&[0b0010]),              // hits = {1}
@@ -141,7 +141,7 @@ mod tests {
     fn two_hops_unreachable_in_one_step_returns_zero() {
         let (off, tgt, msk) = linear_dataflow(4);
         let source = [0b0001u32]; // node 0
-        let sink = [0b0100u32]; // node 2 (two hops away — not reached in one step)
+        let sink = [0b0100u32]; // node 2 (two hops away  -  not reached in one step)
         let result = cpu_ref(4, &off, &tgt, &msk, &source, &sink);
         assert_eq!(result, 0);
     }

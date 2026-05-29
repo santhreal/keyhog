@@ -89,15 +89,12 @@ inventory::submit! {
         test_inputs: Some(|| {
             let tokens: [u32; 4] = [TOK_STAR, TOK_PLUS, 0x3D, 0];
             let depths: [u32; 4] = [1, 1, 0, 0];
-            let to_bytes = |s: &[u32]| s.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&tokens), to_bytes(&depths), vec![0u8; 4 * 4]]]
         }),
         expected_output: Some(|| {
             let strengths: [u32; 4] = [140, 130, 10, 0];
-            let bytes = strengths
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&strengths);
             vec![vec![bytes]]
         }),
         category: Some("parsing"),

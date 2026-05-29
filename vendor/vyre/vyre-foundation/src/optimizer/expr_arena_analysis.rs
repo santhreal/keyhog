@@ -3,7 +3,7 @@
 //!
 //! Walks every `Expr` in a `Program` (root + every node's child Exprs)
 //! and interns each into a single shared [`ExprArena`]. Returns
-//! aggregate stats — total interned positions, distinct subexpression
+//! aggregate stats  -  total interned positions, distinct subexpression
 //! count, deduplication ratio, and a stable program-level fingerprint
 //! derived from the sorted multiset of root `ExprId`s.
 //!
@@ -15,7 +15,7 @@
 //! pipeline-cache early-key reuse, and CSE-effectiveness reporting.
 //!
 //! Cost: one pass over the program; O(N) interning where N is the
-//! total `Expr` count. The arena is dropped on return — this is an
+//! total `Expr` count. The arena is dropped on return  -  this is an
 //! analysis, not an in-place rewrite.
 
 use crate::ir::{Expr, Program};
@@ -28,7 +28,7 @@ use std::hash::{Hash, Hasher};
 pub struct ExprArenaStats {
     /// Total number of root `Expr` positions interned. Counts each
     /// node-attached Expr once at its root; child Exprs are NOT
-    /// counted as separate roots — they're internal to the arena
+    /// counted as separate roots  -  they're internal to the arena
     /// after interning.
     pub root_intern_count: usize,
     /// Number of distinct subexpression nodes the arena ended up
@@ -59,7 +59,7 @@ impl ExprArenaStats {
         // ratio is 1 - (distinct / max(total, 1)); clamp to [0, 1]
         // because for nested programs distinct can theoretically
         // exceed root count (every root contributes nested distinct
-        // subtrees) — the saturation gives a stable display value.
+        // subtrees)  -  the saturation gives a stable display value.
         (1.0 - distinct / total).clamp(0.0, 1.0)
     }
 }
@@ -83,7 +83,7 @@ pub fn analyze_program_expr_arena(program: &Program) -> ExprArenaStats {
 }
 
 fn compute_fingerprint(arena: &ExprArena, root_ids: &mut [ExprId]) -> [u8; 32] {
-    // Hash the content (FlatExpr structural shape) at every root —
+    // Hash the content (FlatExpr structural shape) at every root  -
     // ExprId values are local to this arena and not stable across
     // calls, so they cannot be used in the fingerprint themselves.
     // Sorting by content-hash keeps the fingerprint invariant under
@@ -146,7 +146,7 @@ mod tests {
         ];
         let program = program_with(vec![buffer("buf")], body);
         let stats = analyze_program_expr_arena(&program);
-        // The walker visits roots only — 2 stores × 2 root Exprs each
+        // The walker visits roots only  -  2 stores × 2 root Exprs each
         // (index + value) = 4 root intern positions. Of those: u32(0),
         // u32(1), and the BinOp(Add(u32(1), u32(2))) for both stores
         // (collapses to one). Plus distinct subtrees: u32(0), u32(1),
@@ -195,7 +195,7 @@ mod tests {
         ];
         let program = program_with(vec![buffer("buf")], body);
         let stats = analyze_program_expr_arena(&program);
-        // All 6 root Exprs are distinct — ratio is non-positive → clamped to 0.
+        // All 6 root Exprs are distinct  -  ratio is non-positive → clamped to 0.
         assert_eq!(stats.dedup_ratio(), 0.0);
     }
 }

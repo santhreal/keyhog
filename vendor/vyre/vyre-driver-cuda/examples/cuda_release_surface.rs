@@ -269,14 +269,14 @@ mod tests {
              cuda,0,34359738368,12,0,20000,160000,3567,2097152,256,8192,131072,4096,4000000,2500000,20000,350000\n"
         );
         let evidence = parse_resident_graph_session_evidence_csv(&input)
-            .expect("resident graph release evidence should parse");
+            .expect("Fix: resident graph release evidence should parse");
         let (proof, csv) =
             vyre_driver_cuda::format_validated_cuda_resident_graph_session_evidence_csv(
                 &evidence, 100.0,
             )
-            .expect("resident graph release evidence should format");
+            .expect("Fix: resident graph release evidence should format");
         let reparsed = vyre_driver_cuda::validate_cuda_megakernel_speedup_evidence_csv(&csv, 100.0)
-            .expect("formatted resident graph evidence should verify");
+            .expect("Fix: formatted resident graph evidence should verify");
 
         assert_eq!(proof, reparsed);
         assert_eq!(proof.sample_count, 2);

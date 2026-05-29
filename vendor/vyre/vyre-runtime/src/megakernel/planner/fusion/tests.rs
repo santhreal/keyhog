@@ -295,7 +295,7 @@ fn select_fused_subset_pruned_into_reuses_selection_scratch() {
 #[test]
 fn prune_dead_arms_does_not_count_unselected_dead_arms() {
     // Arm 1 is dead but ALREADY unselected (selection=0). It should
-    // not increment the eliminated count — there's nothing to remove.
+    // not increment the eliminated count  -  there's nothing to remove.
     let mut sel = vec![1, 0, 1];
     let dead = vec![false, true, false];
     let n = prune_dead_arms_inplace(&mut sel, &dead);

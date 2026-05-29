@@ -1,28 +1,19 @@
-//! `csr_backward_traverse` — reverse BFS frontier step.
+//! `csr_backward_traverse`  -  reverse BFS frontier step.
 //!
 //! Mirrors `super::csr_forward_traverse` but propagates along the
 //! reverse edge direction: a destination in `frontier_in` lights up
 //! every source that points at it. Used by dominator-tree
 //! intersection and path_reconstruct frontier inversion.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-
-use crate::graph::csr_forward_traverse::bitset_words;
-use crate::graph::program_graph::{
-    ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS,
-    NAME_EDGE_TARGETS,
-};
+use crate::graph::csr_frontier_step::{csr_frontier_step_program, CsrFrontierStepKind};
+use crate::graph::program_graph::ProgramGraphShape;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::csr_backward_traverse";
 
-/// Canonical binding index for the input frontier bitset.
-pub const BINDING_FRONTIER_IN: u32 = BINDING_PRIMITIVE_START;
-/// Canonical binding index for the output frontier bitset.
-pub const BINDING_FRONTIER_OUT: u32 = BINDING_PRIMITIVE_START + 1;
+pub use crate::graph::csr_frontier_step::{BINDING_FRONTIER_IN, BINDING_FRONTIER_OUT};
 
 /// Build the IR `Program`. Each invocation owns one `src` and, if
 /// any of its outgoing edges' destinations are set in `frontier_in`
@@ -35,140 +26,28 @@ pub fn csr_backward_traverse(
     frontier_out: &str,
     allow_mask: u32,
 ) -> Program {
-    // AUDIT_2026-04-24 F-CBT-03: `dst = edge_targets[e]` is
-    // bounds-checked against node_count before loading from
-    // frontier_in, so a malformed edge list with dst >= node_count
-    // cannot read past the frontier bitset on the GPU. Out-of-range
-    // destinations are treated as "bit not set" (no hit), matching
-    // the cpu_ref semantics that also drop dst_word >= frontier_in.len().
-    let t = Expr::InvocationId { axis: 0 };
-    let words = bitset_words(shape.node_count);
-    let node_count = shape.node_count;
+    csr_backward_traverse_with_op_id(OP_ID, shape, frontier_in, frontier_out, allow_mask)
+}
 
-    let body = vec![
-        Node::let_bind("src", t.clone()),
-        Node::let_bind(
-            "edge_start",
-            Expr::load(NAME_EDGE_OFFSETS, Expr::var("src")),
-        ),
-        Node::let_bind(
-            "edge_end",
-            Expr::load(NAME_EDGE_OFFSETS, Expr::add(Expr::var("src"), Expr::u32(1))),
-        ),
-        Node::let_bind("hit", Expr::u32(0)),
-        Node::loop_for(
-            "e",
-            Expr::var("edge_start"),
-            Expr::var("edge_end"),
-            vec![
-                // Skip remaining edge checks once a hit has been found.
-                // (The IR has no break; this avoids redundant loads.)
-                Node::if_then(
-                    Expr::eq(Expr::var("hit"), Expr::u32(0)),
-                    vec![
-                        Node::let_bind(
-                            "kind_mask",
-                            Expr::load(NAME_EDGE_KIND_MASK, Expr::var("e")),
-                        ),
-                        Node::if_then(
-                            Expr::ne(
-                                Expr::bitand(Expr::var("kind_mask"), Expr::u32(allow_mask)),
-                                Expr::u32(0),
-                            ),
-                            vec![
-                                Node::let_bind(
-                                    "dst",
-                                    Expr::load(NAME_EDGE_TARGETS, Expr::var("e")),
-                                ),
-                                // AUDIT_2026-04-24 F-CBT-03: guard load on
-                                // `dst < node_count` to prevent OOB read on
-                                // frontier_in when the edge list is malformed.
-                                Node::if_then(
-                                    Expr::lt(Expr::var("dst"), Expr::u32(node_count)),
-                                    vec![
-                                        Node::let_bind(
-                                            "dst_word",
-                                            Expr::load(
-                                                frontier_in,
-                                                Expr::shr(Expr::var("dst"), Expr::u32(5)),
-                                            ),
-                                        ),
-                                        Node::let_bind(
-                                            "dst_bit",
-                                            Expr::shl(
-                                                Expr::u32(1),
-                                                Expr::bitand(Expr::var("dst"), Expr::u32(31)),
-                                            ),
-                                        ),
-                                        Node::if_then(
-                                            Expr::ne(
-                                                Expr::bitand(
-                                                    Expr::var("dst_word"),
-                                                    Expr::var("dst_bit"),
-                                                ),
-                                                Expr::u32(0),
-                                            ),
-                                            vec![Node::assign("hit", Expr::u32(1))],
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-            ],
-        ),
-        Node::if_then(
-            Expr::eq(Expr::var("hit"), Expr::u32(1)),
-            vec![
-                Node::let_bind("src_word_idx", Expr::shr(Expr::var("src"), Expr::u32(5))),
-                Node::let_bind(
-                    "src_bit",
-                    Expr::shl(Expr::u32(1), Expr::bitand(Expr::var("src"), Expr::u32(31))),
-                ),
-                Node::let_bind(
-                    "_prev",
-                    Expr::atomic_or(
-                        frontier_out,
-                        Expr::var("src_word_idx"),
-                        Expr::var("src_bit"),
-                    ),
-                ),
-            ],
-        ),
-    ];
-
-    let mut buffers = shape.read_only_buffers();
-    buffers.push(
-        BufferDecl::storage(
-            frontier_in,
-            BINDING_FRONTIER_IN,
-            BufferAccess::ReadOnly,
-            DataType::U32,
-        )
-        .with_count(words),
-    );
-    buffers.push(
-        BufferDecl::storage(
-            frontier_out,
-            BINDING_FRONTIER_OUT,
-            BufferAccess::ReadWrite,
-            DataType::U32,
-        )
-        .with_count(words),
-    );
-
-    Program::wrapped(
-        buffers,
-        [1, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(shape.node_count)),
-                body,
-            )]),
-        }],
+/// Build the same reverse traversal kernel under a caller-owned op id.
+///
+/// Predicate wrappers use this to preserve their semantic operation identity
+/// without forking the reverse CSR traversal body.
+#[must_use]
+pub(crate) fn csr_backward_traverse_with_op_id(
+    op_id: &'static str,
+    shape: ProgramGraphShape,
+    frontier_in: &str,
+    frontier_out: &str,
+    allow_mask: u32,
+) -> Program {
+    csr_frontier_step_program(
+        op_id,
+        CsrFrontierStepKind::Backward,
+        shape,
+        frontier_in,
+        frontier_out,
+        allow_mask,
     )
 }
 
@@ -185,28 +64,50 @@ pub fn cpu_ref(
     frontier_in: &[u32],
     allow_mask: u32,
 ) -> Vec<u32> {
+    let mut out = Vec::new();
+    cpu_ref_into(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        frontier_in,
+        allow_mask,
+        &mut out,
+    );
+    out
+}
+
+/// CPU reference using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_into(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    frontier_in: &[u32],
+    allow_mask: u32,
+    out: &mut Vec<u32>,
+) {
     let words = crate::graph::csr_forward_traverse::bitset_words(node_count) as usize;
-    let mut out = vec![0u32; words];
+    out.clear();
+    out.resize(words, 0);
+    crate::graph::csr_forward_traverse::validate_csr_frontier_step_cpu_inputs(
+        "csr_backward_traverse",
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+    );
     for src in 0..node_count {
-        let Some(edge_start) = edge_offsets.get(src as usize).copied() else {
-            continue;
-        };
-        let Some(edge_end) = edge_offsets.get(src as usize + 1).copied() else {
-            continue;
-        };
-        let edge_start = edge_start as usize;
-        let edge_end = edge_end as usize;
+        let edge_start = edge_offsets[src as usize] as usize;
+        let edge_end = edge_offsets[src as usize + 1] as usize;
         let mut hit = false;
         for e in edge_start..edge_end {
-            let Some(kind) = edge_kind_mask.get(e).copied() else {
-                break;
-            };
+            let kind = edge_kind_mask[e];
             if (kind & allow_mask) == 0 {
                 continue;
             }
-            let Some(dst) = edge_targets.get(e).copied() else {
-                break;
-            };
+            let dst = edge_targets[e];
             let dst_word = (dst / 32) as usize;
             let dst_bit = 1u32 << (dst % 32);
             if dst_word < frontier_in.len() && (frontier_in[dst_word] & dst_bit) != 0 {
@@ -222,7 +123,6 @@ pub fn cpu_ref(
             }
         }
     }
-    out
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -234,7 +134,7 @@ inventory::submit! {
             // Same graph as forward test. frontier_in = {3}; after
             // one reverse step, frontier_out = {1, 2} (both point at
             // 3).
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0, 0, 0]),
                 to_bytes(&[0, 2, 3, 4, 4]),
@@ -246,7 +146,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0b0110])]]
         }),
     )
@@ -269,8 +169,32 @@ mod tests {
         assert_eq!(got, vec![0b0110]);
     }
 
+    #[test]
+    fn cpu_ref_into_reuses_output_buffer_and_truncates_stale_words() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[u32::MAX, u32::MAX, u32::MAX]);
+        let capacity = out.capacity();
+
+        cpu_ref_into(
+            4,
+            &[0, 2, 3, 4, 4],
+            &[1, 2, 3, 3],
+            &[1, 1, 1, 1],
+            &[0b1000],
+            0xFFFF_FFFF,
+            &mut out,
+        );
+
+        assert_eq!(out, vec![0b0110]);
+        assert_eq!(out.capacity(), capacity);
+
+        cpu_ref_into(0, &[0], &[], &[], &[], 0xFFFF_FFFF, &mut out);
+        assert!(out.is_empty());
+        assert_eq!(out.capacity(), capacity);
+    }
+
     // ------------------------------------------------------------------
-    // Adversarial fixtures — backward direction is undertested.
+    // Adversarial fixtures  -  backward direction is undertested.
     // ------------------------------------------------------------------
 
     #[test]
@@ -310,8 +234,7 @@ mod tests {
     fn max_node_count_cross_word_boundary_backward() {
         // 65 nodes (3 words), one edge from node 0 to node 64.
         let mut offsets = vec![0u32; 66];
-        offsets[0] = 0;
-        offsets[1] = 1;
+        offsets[1..].fill(1);
         let mut frontier = vec![0u32; 3];
         frontier[2] = 1; // node 64
         let got = cpu_ref(65, &offsets, &[64], &[1], &frontier, 0xFFFF_FFFF);
@@ -370,9 +293,21 @@ mod tests {
     }
 
     #[test]
-    fn malformed_csr_returns_empty_without_panicking() {
-        // edge_offsets too short — cpu_ref uses .get() so it does not panic.
+    #[should_panic(expected = "node_count + 1 CSR offsets")]
+    fn malformed_csr_short_offsets_fail_loudly() {
         let got = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
         assert_eq!(got, vec![0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "complete CSR edge buffers")]
+    fn malformed_csr_short_edge_buffers_fail_loudly() {
+        let _ = cpu_ref(2, &[0, 2, 2], &[1], &[1], &[0b0010], 0xFFFF_FFFF);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-monotonic CSR offsets")]
+    fn malformed_csr_non_monotonic_offsets_fail_loudly() {
+        let _ = cpu_ref(2, &[0, 2, 1], &[1, 0], &[1, 1], &[0b0010], 0xFFFF_FFFF);
     }
 }

@@ -58,6 +58,7 @@ pub(crate) fn data_type_tag(value: &DataType) -> Result<u8, WireEncodeErr> {
         DataType::FP4 => Ok(0x1C),
         DataType::NF4 => Ok(0x1D),
         DataType::DeviceMesh { .. } => Ok(0x1E),
+        DataType::Quantized { .. } => Ok(0x1F),
         DataType::Opaque(_) => Ok(DATA_TYPE_TAG_OPAQUE),
         _ => Err(WireEncodeErr::static_msg("unknown DataType variant")),
     }
@@ -144,6 +145,20 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), W
                 put_u32(out, *axis);
             }
         }
+        DataType::Quantized {
+            storage,
+            scale,
+            zero_point,
+        } => {
+            if !storage.is_quantized_storage() {
+                return Err(WireEncodeErr::static_msg(
+                    "Fix: DataType::Quantized storage must be I4/I8/I16/U8/U16/F8E4M3/F8E5M2/FP4/NF4.",
+                ));
+            }
+            put_data_type(out, storage)?;
+            put_quantization_scale(out, scale)?;
+            put_quantization_zero_point(out, zero_point)?;
+        }
         // Fixed-width scalar and vector types consume zero payload bytes
         // beyond the tag byte `data_type_tag` returned above.
         DataType::U8
@@ -181,6 +196,62 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), W
     Ok(())
 }
 
+fn put_quantization_scale(
+    out: &mut Vec<u8>,
+    scale: &vyre_spec::QuantizationScale,
+) -> Result<(), WireEncodeErr> {
+    match scale {
+        vyre_spec::QuantizationScale::PerTensor => {
+            put_u8(out, 0);
+            put_u32(out, 0);
+        }
+        vyre_spec::QuantizationScale::PerChannel { axis } => {
+            put_u8(out, 1);
+            put_u32(out, *axis);
+        }
+        vyre_spec::QuantizationScale::PerGroup { group_size } => {
+            if *group_size == 0 {
+                return Err(WireEncodeErr::static_msg(
+                    "Fix: quantized PerGroup scale requires group_size > 0.",
+                ));
+            }
+            put_u8(out, 2);
+            put_u32(out, *group_size);
+        }
+    }
+    Ok(())
+}
+
+fn put_quantization_zero_point(
+    out: &mut Vec<u8>,
+    zero_point: &vyre_spec::QuantizationZeroPoint,
+) -> Result<(), WireEncodeErr> {
+    match zero_point {
+        vyre_spec::QuantizationZeroPoint::Absent => {
+            put_u8(out, 0);
+            put_u32(out, 0);
+        }
+        vyre_spec::QuantizationZeroPoint::PerTensor => {
+            put_u8(out, 1);
+            put_u32(out, 0);
+        }
+        vyre_spec::QuantizationZeroPoint::PerChannel { axis } => {
+            put_u8(out, 2);
+            put_u32(out, *axis);
+        }
+        vyre_spec::QuantizationZeroPoint::PerGroup { group_size } => {
+            if *group_size == 0 {
+                return Err(WireEncodeErr::static_msg(
+                    "Fix: quantized PerGroup zero-point requires group_size > 0.",
+                ));
+            }
+            put_u8(out, 3);
+            put_u32(out, *group_size);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::put_data_type;
@@ -199,7 +270,7 @@ mod tests {
     /// Every DataType variant the encoder accepts must also round-trip
     /// through the decoder with bit-exact equality. A drift here means
     /// the on-disk wire format silently corrupts buffer-element types
-    /// across encode/decode — a contract-invariant the optimizer cache
+    /// across encode/decode  -  a contract-invariant the optimizer cache
     /// and AOT artifact format both rely on.
     #[test]
     fn every_supported_data_type_round_trips_through_the_wire() {
@@ -249,6 +320,16 @@ mod tests {
             },
             DataType::DeviceMesh {
                 axes: smallvec![4, 8, 16],
+            },
+            DataType::Quantized {
+                storage: Box::new(DataType::I4),
+                scale: vyre_spec::QuantizationScale::PerGroup { group_size: 128 },
+                zero_point: vyre_spec::QuantizationZeroPoint::Absent,
+            },
+            DataType::Quantized {
+                storage: Box::new(DataType::I8),
+                scale: vyre_spec::QuantizationScale::PerChannel { axis: 1 },
+                zero_point: vyre_spec::QuantizationZeroPoint::PerChannel { axis: 1 },
             },
             // Extension ids must have the high bit set per
             // reject_reserved_extension_id (low half is reserved for core IR).

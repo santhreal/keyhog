@@ -104,10 +104,7 @@ inventory::submit! {
         || byte_histogram_256("bytes", "histogram", 5),
         Some(|| {
             vec![vec![
-                [b'a', b'b', b'a', 0xC3, 0xA9]
-                    .into_iter()
-                    .flat_map(|byte| u32::from(byte).to_le_bytes())
-                    .collect(),
+                crate::wire::pack_bytes_as_u32_slice(&[b'a', b'b', b'a', 0xC3, 0xA9]),
                 vec![0; 256 * 4],
             ]]
         }),
@@ -117,7 +114,7 @@ inventory::submit! {
             histogram[usize::from(b'b')] = 1;
             histogram[0xC3] = 1;
             histogram[0xA9] = 1;
-            vec![vec![histogram.iter().flat_map(|value| value.to_le_bytes()).collect()]]
+            vec![vec![crate::wire::pack_u32_slice(&histogram)]]
         }),
     )
 }

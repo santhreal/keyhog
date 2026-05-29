@@ -1,4 +1,4 @@
-//! Clifford / geometric product over Cl(2, 0) — 4-component
+//! Clifford / geometric product over Cl(2, 0)  -  4-component
 //! multivectors `(s, e1, e2, e12)` (scalar, two vector basis elements,
 //! pseudoscalar).
 //!
@@ -47,8 +47,8 @@ pub const MV_COMPONENTS: u32 = 4;
 /// multivector pairs.
 ///
 /// Inputs:
-/// - `lhs`: `n_pairs * 4` u32 — (s, e1, e2, e12) per pair, 16.16 fp.
-/// - `rhs`: `n_pairs * 4` u32 — same layout.
+/// - `lhs`: `n_pairs * 4` u32  -  (s, e1, e2, e12) per pair, 16.16 fp.
+/// - `rhs`: `n_pairs * 4` u32  -  same layout.
 ///
 /// Output:
 /// - `out`: `n_pairs * 4` u32.
@@ -198,8 +198,20 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || clifford2_product("lhs", "rhs", "out", 2),
-        None,
-        None,
+        Some(|| {
+            let one = 1u32 << 16;
+            vec![vec![
+                crate::wire::pack_u32_slice(&[one, 0, 0, 0, one, 0, 0, 0]),
+                crate::wire::pack_u32_slice(&[2 * one, 3 * one, 0, 0, 4 * one, 0, 5 * one, 0]),
+                crate::wire::pack_u32_slice(&[0; 8]),
+            ]]
+        }),
+        Some(|| {
+            let one = 1u32 << 16;
+            vec![vec![crate::wire::pack_u32_slice(&[
+                2 * one, 3 * one, 0, 0, 4 * one, 0, 5 * one, 0,
+            ])]]
+        }),
     )
 }
 
@@ -287,7 +299,7 @@ mod tests {
 
     #[test]
     fn cpu_geometric_product_distributes() {
-        // a · (b + c) = a · b + a · c — verify with concrete
+        // a · (b + c) = a · b + a · c  -  verify with concrete
         // multivectors.
         let a = Cl2Mv {
             s: 1.0,

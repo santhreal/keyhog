@@ -26,7 +26,7 @@ fn infer_grid_uses_readonly_input_for_accumulator_kernels() {
     let inputs = vec![vec![0u8; 4], vec![0u8; 1_000_000 * 4]];
 
     let grid = infer_dispatch_grid(&program, &inputs, &DispatchConfig::default())
-        .expect("accumulator kernel grid should infer from full binding plan");
+        .expect("Fix: accumulator kernel grid should infer from full binding plan");
 
     assert_eq!(grid, [3907, 1, 1]);
 }
@@ -49,7 +49,7 @@ fn infer_grid_prefers_explicit_output_over_large_inputs() {
     let inputs = vec![vec![0u8; 1_000_000 * 4]];
 
     let grid = infer_dispatch_grid(&program, &inputs, &DispatchConfig::default())
-        .expect("output-driven kernel grid should infer from the output binding");
+        .expect("Fix: output-driven kernel grid should infer from the output binding");
 
     assert_eq!(grid, [2, 1, 1]);
 }
@@ -69,7 +69,7 @@ fn infer_grid_uses_full_span_for_shared_memory_reductions() {
     let inputs = vec![vec![0u8; 1024 * 4]];
 
     let grid = infer_dispatch_grid(&program, &inputs, &DispatchConfig::default())
-        .expect("shared-memory reduction grid should cover all input lanes");
+        .expect("Fix: shared-memory reduction grid should cover all input lanes");
 
     assert_eq!(grid, [4, 1, 1]);
 }
@@ -89,7 +89,7 @@ fn infer_grid_counts_readwrite_live_out_buffers() {
     let inputs = vec![vec![0u8; 5 * 4], vec![0u8; 256 * 4]];
 
     let grid = infer_dispatch_grid(&program, &inputs, &DispatchConfig::default())
-        .expect("read-write live-out buffers should size the dispatch span");
+        .expect("Fix: read-write live-out buffers should size the dispatch span");
 
     assert_eq!(grid, [1, 1, 1]);
 }

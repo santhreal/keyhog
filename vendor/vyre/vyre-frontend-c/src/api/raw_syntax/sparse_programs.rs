@@ -114,10 +114,7 @@ pub(super) fn sparse_token_block_compact_program(
     sparse_types: &str,
     sparse_starts: &str,
     sparse_lens: &str,
-    out_tok_types: &str,
-    out_tok_starts: &str,
-    out_tok_lens: &str,
-    out_counts: &str,
+    out_tok_triplets_and_count: &str,
     count: u32,
     num_blocks: u32,
 ) -> Program {
@@ -212,6 +209,25 @@ pub(super) fn sparse_token_block_compact_program(
             vec![
                 Node::let_bind("token_type", Expr::load(sparse_types, global.clone())),
                 Node::let_bind(
+                    "global_triplet_base",
+                    Expr::add(Expr::mul(global.clone(), Expr::u32(3)), Expr::u32(1)),
+                ),
+                Node::store(
+                    out_tok_triplets_and_count,
+                    Expr::var("global_triplet_base"),
+                    Expr::u32(0),
+                ),
+                Node::store(
+                    out_tok_triplets_and_count,
+                    Expr::add(Expr::var("global_triplet_base"), Expr::u32(1)),
+                    Expr::u32(0),
+                ),
+                Node::store(
+                    out_tok_triplets_and_count,
+                    Expr::add(Expr::var("global_triplet_base"), Expr::u32(2)),
+                    Expr::u32(0),
+                ),
+                Node::let_bind(
                     "rank",
                     Expr::add(Expr::load(scratch_a, lane.clone()), Expr::var("offset")),
                 ),
@@ -222,22 +238,34 @@ pub(super) fn sparse_token_block_compact_program(
                             "slot",
                             Expr::saturating_sub(Expr::var("rank"), Expr::u32(1)),
                         ),
-                        Node::store(out_tok_types, Expr::var("slot"), Expr::var("token_type")),
+                        Node::let_bind(
+                            "slot_triplet_base",
+                            Expr::add(Expr::mul(Expr::var("slot"), Expr::u32(3)), Expr::u32(1)),
+                        ),
                         Node::store(
-                            out_tok_starts,
-                            Expr::var("slot"),
+                            out_tok_triplets_and_count,
+                            Expr::var("slot_triplet_base"),
+                            Expr::var("token_type"),
+                        ),
+                        Node::store(
+                            out_tok_triplets_and_count,
+                            Expr::add(Expr::var("slot_triplet_base"), Expr::u32(1)),
                             Expr::load(sparse_starts, global.clone()),
                         ),
                         Node::store(
-                            out_tok_lens,
-                            Expr::var("slot"),
+                            out_tok_triplets_and_count,
+                            Expr::add(Expr::var("slot_triplet_base"), Expr::u32(2)),
                             Expr::load(sparse_lens, global.clone()),
                         ),
                     ],
                 ),
                 Node::if_then(
                     Expr::eq(Expr::add(global, Expr::u32(1)), Expr::u32(count)),
-                    vec![Node::store(out_counts, Expr::u32(0), Expr::var("rank"))],
+                    vec![Node::store(
+                        out_tok_triplets_and_count,
+                        Expr::u32(0),
+                        Expr::var("rank"),
+                    )],
                 ),
             ],
         ),
@@ -253,10 +281,8 @@ pub(super) fn sparse_token_block_compact_program(
             BufferDecl::storage(sparse_types, 1, BufferAccess::ReadOnly, DataType::U32),
             BufferDecl::storage(sparse_starts, 2, BufferAccess::ReadOnly, DataType::U32),
             BufferDecl::storage(sparse_lens, 3, BufferAccess::ReadOnly, DataType::U32),
-            BufferDecl::storage(out_tok_types, 4, BufferAccess::ReadWrite, DataType::U32),
-            BufferDecl::storage(out_tok_starts, 5, BufferAccess::ReadWrite, DataType::U32),
-            BufferDecl::storage(out_tok_lens, 6, BufferAccess::ReadWrite, DataType::U32),
-            BufferDecl::output(out_counts, 7, DataType::U32).with_count(1),
+            BufferDecl::output(out_tok_triplets_and_count, 4, DataType::U32)
+                .with_count(count.saturating_mul(3).saturating_add(1)),
             BufferDecl::workgroup(scratch_a, BLOCK_LANES, DataType::U32),
             BufferDecl::workgroup(scratch_b, BLOCK_LANES, DataType::U32),
         ],
@@ -274,8 +300,7 @@ pub(super) fn sparse_token_block_compact_program(
 pub(super) fn sparse_token_type_block_compact_program(
     block_totals_scanned: &str,
     sparse_types: &str,
-    out_tok_types: &str,
-    out_counts: &str,
+    out_tok_types_and_count: &str,
     count: u32,
     num_blocks: u32,
 ) -> Program {
@@ -376,14 +401,21 @@ pub(super) fn sparse_token_type_block_compact_program(
                 Node::if_then(
                     Expr::ne(Expr::var("token_type"), Expr::u32(0)),
                     vec![Node::store(
-                        out_tok_types,
-                        Expr::saturating_sub(Expr::var("rank"), Expr::u32(1)),
+                        out_tok_types_and_count,
+                        Expr::add(
+                            Expr::saturating_sub(Expr::var("rank"), Expr::u32(1)),
+                            Expr::u32(1),
+                        ),
                         Expr::var("token_type"),
                     )],
                 ),
                 Node::if_then(
                     Expr::eq(Expr::add(global, Expr::u32(1)), Expr::u32(count)),
-                    vec![Node::store(out_counts, Expr::u32(0), Expr::var("rank"))],
+                    vec![Node::store(
+                        out_tok_types_and_count,
+                        Expr::u32(0),
+                        Expr::var("rank"),
+                    )],
                 ),
             ],
         ),
@@ -397,8 +429,8 @@ pub(super) fn sparse_token_type_block_compact_program(
                 DataType::U32,
             ),
             BufferDecl::storage(sparse_types, 1, BufferAccess::ReadOnly, DataType::U32),
-            BufferDecl::storage(out_tok_types, 2, BufferAccess::ReadWrite, DataType::U32),
-            BufferDecl::output(out_counts, 3, DataType::U32).with_count(1),
+            BufferDecl::output(out_tok_types_and_count, 2, DataType::U32)
+                .with_count(count.saturating_add(1)),
             BufferDecl::workgroup(scratch_a, BLOCK_LANES, DataType::U32),
             BufferDecl::workgroup(scratch_b, BLOCK_LANES, DataType::U32),
         ],

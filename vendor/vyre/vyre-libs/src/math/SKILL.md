@@ -44,6 +44,6 @@ collision path.
 
 ## Overflow contract
 
-`m * k`, `k * n`, `m * n` — any product that exceeds `u32::MAX` must
+`m * k`, `k * n`, `m * n`  -  any product that exceeds `u32::MAX` must
 panic with `"element-count overflows u32"` at builder time. See
 `tests/overflow_guards.rs` for the 7 panic-path assertions.

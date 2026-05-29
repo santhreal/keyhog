@@ -7,7 +7,7 @@ thread_local! {
     // FxHashMap (FxHashBuilder) replaces the default SipHash-backed
     // HashMap so per-PerfScope::finish hashes cost ~10ns instead of
     // ~50ns. Optimizer pipelines call into roughly two perf scopes per
-    // pass × ~120 passes per optimize() — the savings compound.
+    // pass × ~120 passes per optimize()  -  the savings compound.
     static METRICS: RefCell<FxHashMap<&'static str, u64>> = RefCell::new(FxHashMap::default());
 }
 

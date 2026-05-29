@@ -66,13 +66,20 @@ impl PrerecordedDispatch {
                 self.output_handles.len()
             ))
         })?;
-        let mut bytes =
-            Vec::with_capacity(usize::try_from(output.byte_len()).map_err(|error| {
+        let byte_capacity = usize::try_from(output.byte_len()).map_err(|error| {
+            BackendError::new(format!(
+                "pre-recorded output byte length {} does not fit usize on this host: {error}. Fix: shard the GPU output before readback.",
+                output.byte_len()
+            ))
+        })?;
+        let mut bytes = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut bytes, byte_capacity).map_err(
+            |source| {
                 BackendError::new(format!(
-                    "pre-recorded output byte length {} does not fit usize on this host: {error}. Fix: shard the GPU output before readback.",
-                    output.byte_len()
+                    "pre-recorded output readback could not reserve {byte_capacity} byte(s): {source}. Fix: shard the GPU output before readback."
                 ))
-            })?);
+            },
+        )?;
         output.readback(&self.device, &self.queue, &mut bytes)?;
         Ok(bytes)
     }
@@ -114,7 +121,17 @@ impl WgpuPipeline {
         let (device, queue) = &*self.device_queue;
         let bound = bind_handles(&self.buffer_bindings, inputs, outputs, params)?;
         let mut grouped_bound: Vec<SmallVec<[(&BufferBindingInfo, &GpuBufferHandle); 16]>> =
-            Vec::with_capacity(self.bind_group_layouts.len());
+            Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(
+            &mut grouped_bound,
+            self.bind_group_layouts.len(),
+        )
+        .map_err(|source| {
+            BackendError::new(format!(
+                "pre-recorded bind-group staging could not reserve {} group slot(s): {source}. Fix: split bind-group resources before recording.",
+                self.bind_group_layouts.len()
+            ))
+        })?;
         grouped_bound.resize_with(self.bind_group_layouts.len(), SmallVec::new);
         for (info, handle) in &bound {
             let group = usize::try_from(info.group).map_err(|source| {
@@ -134,7 +151,17 @@ impl WgpuPipeline {
             };
             slot.push((*info, *handle));
         }
-        let mut bind_groups = Vec::with_capacity(self.bind_group_layouts.len());
+        let mut bind_groups = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(
+            &mut bind_groups,
+            self.bind_group_layouts.len(),
+        )
+        .map_err(|source| {
+            BackendError::new(format!(
+                "pre-recorded bind-group cache result could not reserve {} group slot(s): {source}. Fix: split bind-group resources before recording.",
+                self.bind_group_layouts.len()
+            ))
+        })?;
         for (group_index, layout) in self.bind_group_layouts.iter().enumerate() {
             let group_bound = &grouped_bound[group_index];
             let handle_id_capacity = group_bound.len().checked_mul(2).ok_or_else(|| {
@@ -142,35 +169,57 @@ impl WgpuPipeline {
                     "pre-recorded bind group handle-id count overflowed usize. Fix: split bind-group resources before recording.",
                 )
             })?;
-            let mut handle_ids: SmallVec<[u64; 16]> = SmallVec::with_capacity(handle_id_capacity);
+            let mut handle_ids: SmallVec<[u64; 16]> = SmallVec::new();
+            vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+                &mut handle_ids,
+                handle_id_capacity,
+            )
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "pre-recorded bind-group handle-id cache key could not reserve {handle_id_capacity} word slot(s): {source}. Fix: split bind-group resources before recording."
+                ))
+            })?;
+            let mut checked_bound: SmallVec<[(&BufferBindingInfo, &GpuBufferHandle, u64); 16]> =
+                SmallVec::new();
+            vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+                &mut checked_bound,
+                group_bound.len(),
+            )
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "pre-recorded bind-group checked binding staging could not reserve {} binding slot(s): {source}. Fix: split bind-group resources before recording.",
+                    group_bound.len()
+                ))
+            })?;
             for (_, handle) in group_bound {
                 handle_ids.push(handle.allocation_identity());
-                handle_ids.push(padded_wgpu_u64(
+                let bind_size = padded_wgpu_u64(
                     handle.byte_len(),
                     "pre-recorded bind-group cache key byte length",
-                )?);
+                )?;
+                handle_ids.push(bind_size);
+            }
+            for (info, handle) in group_bound {
+                checked_bound.push((
+                    info,
+                    handle,
+                    padded_wgpu_u64(handle.byte_len(), "pre-recorded bind-group binding size")?,
+                ));
             }
             let layout_id = Arc::as_ptr(layout).addr();
             let bg = self
                 .bind_group_cache
                 .get_or_create_by_ids(layout_id, handle_ids, || {
-                    let mut entries =
-                        SmallVec::<[wgpu::BindGroupEntry<'_>; 16]>::with_capacity(
-                            group_bound.len(),
-                        );
-                    entries.extend(group_bound.iter().map(|(info, handle)| {
+                    let mut entries = SmallVec::<[wgpu::BindGroupEntry<'_>; 16]>::with_capacity(
+                        group_bound.len(),
+                    );
+                    entries.extend(checked_bound.iter().map(|(info, handle, bind_size)| {
                         wgpu::BindGroupEntry {
                             binding: info.binding,
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: handle.buffer(),
                                 offset: 0,
-                                size: wgpu::BufferSize::new(
-                                    padded_wgpu_u64(
-                                        handle.byte_len(),
-                                        "pre-recorded bind-group binding size",
-                                    )
-                                    .expect("pre-recorded bind-group size must match checked cache-key size"),
-                                ),
+                                size: wgpu::BufferSize::new(*bind_size),
                             }),
                         }
                     }));
@@ -220,9 +269,24 @@ impl WgpuPipeline {
             }
         }
 
-        let mut handles = Vec::with_capacity(bound.len());
+        let mut handles = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut handles, bound.len()).map_err(
+            |source| {
+                BackendError::new(format!(
+                    "pre-recorded dispatch handle retention could not reserve {} handle slot(s): {source}. Fix: split bound resources before recording.",
+                    bound.len()
+                ))
+            },
+        )?;
         handles.extend(bound.iter().map(|(_, handle)| (*handle).clone()));
-        let mut output_handles = Vec::with_capacity(outputs.len());
+        let mut output_handles = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut output_handles, outputs.len())
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "pre-recorded output handle retention could not reserve {} output slot(s): {source}. Fix: split output resources before recording.",
+                    outputs.len()
+                ))
+            })?;
         output_handles.extend(outputs.iter().cloned());
         Ok(PrerecordedDispatch {
             cb: Mutex::new(Some(encoder.finish())),
@@ -273,7 +337,14 @@ fn bind_handles<'a>(
     let mut input_index = 0usize;
     let mut output_index = 0usize;
     let mut params_used = false;
-    let mut bound = SmallVec::with_capacity(bindings.len());
+    let mut bound = SmallVec::new();
+    vyre_foundation::allocation::try_reserve_smallvec_to_capacity(&mut bound, bindings.len())
+        .map_err(|source| {
+            BackendError::new(format!(
+                "pre-recorded binding resolution could not reserve {} binding slot(s): {source}. Fix: split bound resources before recording.",
+                bindings.len()
+            ))
+        })?;
     for info in bindings {
         if info.kind == vyre_foundation::ir::MemoryKind::Shared {
             continue;

@@ -123,7 +123,11 @@ pub(super) fn tokenize_preproc_expr_inner(
                             "preprocessor probe `__is_identifier` in expression `{expr}` requires exactly one identifier argument. Fix: use `__is_identifier(name)`."
                         );
                     }
-                    i128::from(!is_reserved_preprocessor_identifier(args[0].as_bytes()))
+                    i128::from(
+                        !vyre_libs::parsing::c::preprocess::is_reserved_preprocessor_identifier(
+                            args[0].as_bytes(),
+                        ),
+                    )
                 } else {
                     0
                 };
@@ -307,82 +311,6 @@ fn is_plain_identifier(bytes: &[u8]) -> bool {
         return false;
     };
     is_ident_start(first) && rest.iter().copied().all(is_ident_continue)
-}
-
-fn is_reserved_preprocessor_identifier(ident: &[u8]) -> bool {
-    matches!(
-        ident,
-        b"auto"
-            | b"break"
-            | b"case"
-            | b"char"
-            | b"const"
-            | b"continue"
-            | b"default"
-            | b"do"
-            | b"double"
-            | b"else"
-            | b"enum"
-            | b"extern"
-            | b"float"
-            | b"for"
-            | b"goto"
-            | b"if"
-            | b"inline"
-            | b"int"
-            | b"long"
-            | b"register"
-            | b"restrict"
-            | b"return"
-            | b"short"
-            | b"signed"
-            | b"sizeof"
-            | b"static"
-            | b"struct"
-            | b"switch"
-            | b"typedef"
-            | b"union"
-            | b"unsigned"
-            | b"void"
-            | b"volatile"
-            | b"while"
-            | b"_Alignas"
-            | b"_Alignof"
-            | b"_Atomic"
-            | b"_Bool"
-            | b"_Complex"
-            | b"_Generic"
-            | b"_Imaginary"
-            | b"_Noreturn"
-            | b"_Static_assert"
-            | b"_Thread_local"
-            | b"asm"
-            | b"typeof"
-            | b"typeof_unqual"
-            | b"__asm"
-            | b"__asm__"
-            | b"__attribute"
-            | b"__attribute__"
-            | b"__auto_type"
-            | b"__complex"
-            | b"__complex__"
-            | b"__const"
-            | b"__const__"
-            | b"__extension__"
-            | b"__inline"
-            | b"__inline__"
-            | b"__int128"
-            | b"__label__"
-            | b"__restrict"
-            | b"__restrict__"
-            | b"__signed"
-            | b"__signed__"
-            | b"__thread"
-            | b"__typeof"
-            | b"__typeof__"
-            | b"__volatile"
-            | b"__volatile__"
-    )
 }
 
 pub(super) fn parse_expr_macro_args(src: &str, open_idx: usize) -> Option<(Vec<String>, usize)> {

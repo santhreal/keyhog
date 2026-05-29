@@ -1,9 +1,9 @@
-//! Complete glass material — the hero Molten composition.
+//! Complete glass material  -  the hero Molten composition.
 //!
 //! Combines blur + tint + border into a single batched pipeline
 //! that replaces CSS `backdrop-filter: blur(N) + background-color`.
 //!
-//! Category A composition — composes blur, filter_chain, and composite.
+//! Category A composition  -  composes blur, filter_chain, and composite.
 //!
 //! ## Half-resolution optimization
 //!
@@ -47,8 +47,8 @@ pub struct GlassParams {
 /// Build the complete glass pipeline as a sequence of sub-compositions.
 ///
 /// The glass material is built by chaining:
-/// 1. `blur` — Gaussian blur the background scene
-/// 2. `filter_chain` — apply tint via brightness/saturation adjustment
+/// 1. `blur`  -  Gaussian blur the background scene
+/// 2. `filter_chain`  -  apply tint via brightness/saturation adjustment
 /// 3. Return the result
 ///
 /// Since each sub-composition produces a standalone `Program`, and
@@ -62,7 +62,7 @@ pub struct GlassParams {
 /// dispatch(filter_program, blurred → blurred) // in-place tint
 /// ```
 ///
-/// This function returns the blur `Program` — the critical path.
+/// This function returns the blur `Program`  -  the critical path.
 /// Call `glass_filter_stage` for the tint program.
 #[must_use]
 pub fn glass_blur_stage(
@@ -117,13 +117,13 @@ pub fn glass_stages(
     )
 }
 
-/// Half-resolution glass pipeline — 4× fewer pixels processed.
+/// Half-resolution glass pipeline  -  4× fewer pixels processed.
 ///
 /// Returns four stages:
-/// 1. `downsample` — input (W×H) → half (W/2 × H/2)
-/// 2. `blur` — blur at half resolution (radius/2, sigma/2)
-/// 3. `upsample` — half → full resolution
-/// 4. `filter` — brightness/saturation tint
+/// 1. `downsample`  -  input (W×H) → half (W/2 × H/2)
+/// 2. `blur`  -  blur at half resolution (radius/2, sigma/2)
+/// 3. `upsample`  -  half → full resolution
+/// 4. `filter`  -  brightness/saturation tint
 ///
 /// For blur_radius ≤ 8, this falls back to the full-res path since
 /// the downsample/upsample overhead outweighs the pixel savings.

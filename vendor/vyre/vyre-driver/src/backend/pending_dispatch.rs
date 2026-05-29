@@ -22,7 +22,7 @@ use crate::backend::{private, BackendError, OutputBuffers};
 ///
 /// Backends that do not overlap host and device work return a
 /// trivially-ready handle built by the default
-/// [`crate::backend::VyreBackend::dispatch_async`] implementation — the consumer code
+/// [`crate::backend::VyreBackend::dispatch_async`] implementation  -  the consumer code
 /// above still works, just without the overlap.
 pub trait PendingDispatch: private::Sealed + Send + Sync {
     /// Non-blocking probe. Returns `true` when
@@ -112,7 +112,7 @@ mod tests {
             outputs: vec![vec![1, 2, 3]],
         })
         .await_result_into(&mut outputs)
-        .expect("ready pending output should write into caller storage");
+        .expect("Fix: ready pending output should write into caller storage");
 
         assert_eq!(outputs, vec![vec![1, 2, 3]]);
         assert_eq!(outputs.as_ptr() as usize, outputs_addr);

@@ -1,4 +1,4 @@
-use super::timestamp::{emit_timestamp_profile, PendingTimestampProfile};
+use super::timestamp::{collect_timestamp_profile, PendingTimestampProfile};
 use super::trap;
 use crate::buffer::GpuBufferHandle;
 use crate::pipeline::OutputBindingLayout;
@@ -275,8 +275,8 @@ impl WgpuPendingReadback {
     /// Non-blocking readiness probe.
     pub(crate) fn is_ready(&self) -> bool {
         let (device, _) = &*self.device_queue;
-        match device.poll(wgpu::Maintain::Poll) {
-            wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
+        if crate::runtime::device::poll_device_once(device).is_err() {
+            return false;
         }
         let outputs_ready = self.pending.iter().all(|(_, pending)| pending.is_ready());
         outputs_ready
@@ -312,6 +312,40 @@ impl WgpuPendingReadback {
     ) -> Result<(), BackendError> {
         let deadline = Instant::now() + Duration::from_secs(30);
         self.await_into_until(outputs, deadline)
+    }
+
+    pub(crate) fn await_timed_result(
+        mut self,
+    ) -> Result<(vyre_driver::OutputBuffers, Option<u64>), BackendError> {
+        let mut outputs = std::mem::take(&mut self.outputs);
+        let device_ns = self.await_timed_into(&mut outputs)?;
+        Ok((outputs, device_ns))
+    }
+
+    pub(crate) fn await_timed_result_until(
+        mut self,
+        deadline: Instant,
+    ) -> Result<(vyre_driver::OutputBuffers, Option<u64>), BackendError> {
+        let mut outputs = std::mem::take(&mut self.outputs);
+        let device_ns = self.await_timed_into_until(&mut outputs, deadline)?;
+        Ok((outputs, device_ns))
+    }
+
+    pub(crate) fn await_timed_into(
+        self,
+        outputs: &mut vyre_driver::OutputBuffers,
+    ) -> Result<Option<u64>, BackendError> {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        self.await_timed_into_until(outputs, deadline)
+    }
+
+    pub(crate) fn await_timed_into_until(
+        self,
+        outputs: &mut vyre_driver::OutputBuffers,
+        deadline: Instant,
+    ) -> Result<Option<u64>, BackendError> {
+        self.poll_until_ready(deadline)?;
+        self.collect_after_submission_wait_timed(outputs, deadline)
     }
 
     /// Wait until `deadline` for the GPU submission and collect into caller-owned storage.
@@ -351,7 +385,15 @@ impl WgpuPendingReadback {
         pending: Vec<Self>,
     ) -> Vec<Result<vyre_driver::OutputBuffers, BackendError>> {
         let deadline = Self::wait_for_many(&pending);
-        let mut results = Vec::with_capacity(pending.len());
+        let mut results = Vec::new();
+        if let Err(source) =
+            vyre_driver::allocation::try_reserve_vec_to_capacity(&mut results, pending.len())
+        {
+            return vec![Err(BackendError::new(format!(
+                "batched WGPU readback could not reserve {} result slot(s): {source}. Fix: split the dispatch batch before awaiting readbacks.",
+                pending.len()
+            )))];
+        }
         for mut readback in pending {
             let mut outputs = std::mem::take(&mut readback.outputs);
             results.push(
@@ -379,8 +421,8 @@ impl WgpuPendingReadback {
         while Instant::now() < deadline {
             for device_queue in &device_queues {
                 let (device, _) = &**device_queue;
-                match device.poll(wgpu::Maintain::Poll) {
-                    wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
+                if crate::runtime::device::poll_device_once(device).is_err() {
+                    return deadline;
                 }
             }
             if pending.iter().all(Self::readback_ready) {
@@ -407,9 +449,7 @@ impl WgpuPendingReadback {
         let (device, _) = &*self.device_queue;
         let mut backoff = ReadbackPollBackoff::new();
         while Instant::now() < deadline {
-            match device.poll(wgpu::Maintain::Poll) {
-                wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-            }
+            crate::runtime::device::poll_device_once(device)?;
             let outputs_ready = self.pending.iter().all(|(_, pending)| pending.is_ready());
             let timestamps_ready = self
                 .timestamp_profile
@@ -435,20 +475,27 @@ impl WgpuPendingReadback {
         outputs: &mut vyre_driver::OutputBuffers,
         deadline: Instant,
     ) -> Result<(), BackendError> {
+        self.collect_after_submission_wait_timed(outputs, deadline)
+            .map(|_| ())
+    }
+
+    pub(crate) fn collect_after_submission_wait_timed(
+        self,
+        outputs: &mut vyre_driver::OutputBuffers,
+        deadline: Instant,
+    ) -> Result<Option<u64>, BackendError> {
         let (device, _) = &*self.device_queue;
         let output_count = self.output_count();
         let trap_tags = self.trap_tags;
         let timestamp_profile = self.timestamp_profile;
         if outputs.len() < output_count {
-            if outputs.capacity() < output_count {
-                outputs
-                    .try_reserve_exact(output_count - outputs.capacity())
-                    .map_err(|source| {
-                        BackendError::new(format!(
-                            "readback output slot vector could not reserve {output_count} slots exactly: {source}. Fix: split the dispatch output set before collection."
-                        ))
-                    })?;
-            }
+            vyre_driver::allocation::try_reserve_vec_to_capacity(outputs, output_count).map_err(
+                |source| {
+                    BackendError::new(format!(
+                        "readback output slot vector could not reserve {output_count} slots exactly: {source}. Fix: split the dispatch output set before collection."
+                    ))
+                },
+            )?;
             outputs.resize_with(output_count, Vec::new);
         } else {
             outputs.truncate(output_count);
@@ -469,15 +516,13 @@ impl WgpuPendingReadback {
                         out.copy_from_slice(bytes);
                     } else {
                         out.clear();
-                        if read_len > out.capacity() {
-                            let additional = read_len - out.capacity();
-                            out.try_reserve_exact(additional).map_err(|source| {
+                        vyre_driver::allocation::try_reserve_vec_to_capacity(out, read_len)
+                            .map_err(|source| {
                                 BackendError::new(format!(
                                     "readback output `{}` could not reserve {read_len} bytes exactly: {source}. Fix: lower max_output_bytes or split the output buffer.",
                                     output.name
                                 ))
                             })?;
-                        }
                         out.extend_from_slice(bytes);
                     }
                     Ok(())
@@ -493,8 +538,8 @@ impl WgpuPendingReadback {
             }
         }
 
-        emit_timestamp_profile(timestamp_profile, deadline)?;
-        Ok(())
+        Ok(collect_timestamp_profile(timestamp_profile, deadline)?
+            .map(|profile| profile.dispatch_ns))
     }
 
     pub(crate) fn collect_mapped_after_submission_wait<F>(
@@ -531,10 +576,11 @@ impl WgpuPendingReadback {
             }
         }
 
-        emit_timestamp_profile(timestamp_profile, deadline)?;
+        let _timestamp_profile = collect_timestamp_profile(timestamp_profile, deadline)?;
         Ok(())
     }
 }
+
 
 fn trimmed_output_bytes<'a>(
     output: &OutputBindingLayout,
@@ -571,3 +617,4 @@ impl ReadbackPollBackoff {
         self.backoff.idle_until(deadline);
     }
 }
+

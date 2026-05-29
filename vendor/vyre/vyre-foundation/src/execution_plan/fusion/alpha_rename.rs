@@ -103,6 +103,40 @@ fn alpha_rename_arm_node(node: &Node, arm_idx: usize) -> Node {
             count_buffer: count_buffer.clone(),
             count_offset: *count_offset,
         },
+        Node::AllReduce { buffer, op, group } => Node::AllReduce {
+            buffer: buffer.clone(),
+            op: *op,
+            group: *group,
+        },
+        Node::AllGather {
+            input,
+            output,
+            group,
+        } => Node::AllGather {
+            input: input.clone(),
+            output: output.clone(),
+            group: *group,
+        },
+        Node::ReduceScatter {
+            input,
+            output,
+            op,
+            group,
+        } => Node::ReduceScatter {
+            input: input.clone(),
+            output: output.clone(),
+            op: *op,
+            group: *group,
+        },
+        Node::Broadcast {
+            buffer,
+            root,
+            group,
+        } => Node::Broadcast {
+            buffer: buffer.clone(),
+            root: *root,
+            group: *group,
+        },
         Node::Return => Node::Return,
         Node::Barrier { ordering } => Node::barrier_with_ordering(*ordering),
         Node::Opaque(extension) => Node::Opaque(Arc::clone(extension)),

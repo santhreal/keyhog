@@ -1,4 +1,4 @@
-//! Runtime / evaluation surface — IR-time and dispatch-time machinery.
+//! Runtime / evaluation surface  -  IR-time and dispatch-time machinery.
 //!
 //! Audit cleanup A12 (2026-04-30): grouped from `vyre-foundation/src/`
 //! root scatter so the layout scales beyond a flat 22-file root.

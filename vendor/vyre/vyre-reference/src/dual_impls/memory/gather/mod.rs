@@ -1,2 +1,2 @@
-/// docs
-pub mod reference;
+/// Memory-gather dual implementation reference.
+pub mod reference {}

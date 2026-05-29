@@ -12,3 +12,4 @@ mod precedence;
 mod tests;
 
 pub(super) use model::PreprocessorExprParser;
+pub use operators::is_reserved_preprocessor_identifier;

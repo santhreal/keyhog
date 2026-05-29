@@ -1,5 +1,6 @@
 use crate::ir::BinOp;
 use crate::serial::wire::encode::WireEncodeErr;
+use crate::serial::wire::tags::op_tag_decode::{encode_tag, BIN_OP_TAGS};
 
 /// Encode a [`BinOp`] into its stable VIR0 wire-format tag byte.
 ///
@@ -25,43 +26,5 @@ use crate::serial::wire::encode::WireEncodeErr;
 /// legitimately declared a Min/Max `BinOp`. They now map to `19` and `20`.
 #[inline]
 pub(crate) fn bin_op_tag(value: BinOp) -> Result<u8, WireEncodeErr> {
-    match value {
-        BinOp::Add => Ok(0x01),
-        BinOp::Sub => Ok(0x02),
-        BinOp::Mul => Ok(0x03),
-        BinOp::Div => Ok(0x04),
-        BinOp::Mod => Ok(0x05),
-        BinOp::BitAnd => Ok(0x06),
-        BinOp::BitOr => Ok(0x07),
-        BinOp::BitXor => Ok(0x08),
-        BinOp::Shl => Ok(0x09),
-        BinOp::Shr => Ok(0x0A),
-        BinOp::Eq => Ok(0x0B),
-        BinOp::Ne => Ok(0x0C),
-        BinOp::Lt => Ok(0x0D),
-        BinOp::Gt => Ok(0x0E),
-        BinOp::Le => Ok(0x0F),
-        BinOp::Ge => Ok(0x10),
-        BinOp::And => Ok(0x11),
-        BinOp::Or => Ok(0x12),
-        BinOp::AbsDiff => Ok(0x13),
-        // L.1.27 / I4: Min and Max had no tag and were rejected at
-        // serialize time, breaking `Program::from_wire(Program::to_wire(p))`
-        // for any program that legitimately declared a Min/Max BinOp.
-        BinOp::Min => Ok(0x14),
-        BinOp::Max => Ok(0x15),
-        BinOp::SaturatingAdd => Ok(0x16),
-        BinOp::SaturatingSub => Ok(0x17),
-        BinOp::SaturatingMul => Ok(0x18),
-        BinOp::Shuffle => Ok(0x19),
-        BinOp::Ballot => Ok(0x1A),
-        BinOp::WaveReduce => Ok(0x1B),
-        BinOp::WaveBroadcast => Ok(0x1C),
-        BinOp::RotateLeft => Ok(0x1D),
-        BinOp::RotateRight => Ok(0x1E),
-        BinOp::WrappingAdd => Ok(0x1F),
-        BinOp::WrappingSub => Ok(0x20),
-        BinOp::MulHigh => Ok(0x21),
-        _ => Err(WireEncodeErr::static_msg("unknown BinOp variant")),
-    }
+    encode_tag(&value, BIN_OP_TAGS, "unknown BinOp variant")
 }

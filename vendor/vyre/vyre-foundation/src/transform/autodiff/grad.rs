@@ -7,10 +7,11 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node, Program};
+use crate::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Ident, Node, Program, UnOp};
 
 use super::error::AutodiffError;
-use super::rules::{binop_adjoints, fma_adjoints, unop_adjoint};
+mod expr;
+use expr::{emit_adjoint_expr, insert_pullback};
 
 /// Per-forward-node pullback expression metadata.
 ///
@@ -22,9 +23,9 @@ pub type PullbackMap = FxHashMap<usize, Expr>;
 ///
 /// # Arguments
 ///
-/// * `program` — the forward-pass Program.
-/// * `outputs` — buffer names whose values to differentiate (the "loss").
-/// * `inputs` — buffer names to compute gradients w.r.t. Gradient buffers
+/// * `program`  -  the forward-pass Program.
+/// * `outputs`  -  buffer names whose values to differentiate (the "loss").
+/// * `inputs`  -  buffer names to compute gradients w.r.t. Gradient buffers
 ///   `grad_<name>` are added to the output Program.
 ///
 /// # Returns
@@ -59,14 +60,15 @@ pub fn grad_with_pullback(
     inputs: &[&str],
 ) -> Result<(Program, PullbackMap), AutodiffError> {
     validate_buffer_names(program, outputs, inputs)?;
-    let (back_buffers, output_set, input_set) = build_backward_buffers(program, outputs, inputs);
+    let (back_buffers, output_set, input_set, grad_source_set) =
+        build_backward_buffers(program, outputs, inputs);
 
     // Build the backward body.
     let mut body: Vec<Node> = Vec::new();
     let i_expr = Expr::InvocationId { axis: 0 };
     let mut pullbacks = PullbackMap::default();
     let forward_nodes = program.entry();
-    let mut adjoint_env: AdjointEnv = AdjointEnv::new(&input_set);
+    let mut adjoint_env: AdjointEnv = AdjointEnv::new(&grad_source_set, program);
 
     // Reverse-mode execution must declare every local adjoint before any
     // reverse contribution assigns to it. A previous implementation declared
@@ -84,7 +86,20 @@ pub fn grad_with_pullback(
         });
     }
 
-    // Phase 1: Seed — store 1.0 into each grad_<output>[i].
+    // Phase 0: Gradient buffers are read during accumulation. Make the
+    // generated backward Program self-contained by clearing every declared
+    // gradient lane before any seed or pullback store runs; callers must not
+    // have to provide pre-zeroed scratch to get correct gradients.
+    for source_name in &grad_source_set {
+        let grad_name = format!("grad_{source_name}");
+        body.push(Node::Store {
+            buffer: grad_name.into(),
+            index: i_expr.clone(),
+            value: Expr::f32(0.0),
+        });
+    }
+
+    // Phase 1: Seed  -  store 1.0 into each grad_<output>[i].
     for out_name in &output_set {
         let grad_name = format!("grad_{out_name}");
         body.push(Node::Store {
@@ -149,7 +164,7 @@ fn build_backward_buffers(
     program: &Program,
     outputs: &[&str],
     inputs: &[&str],
-) -> (Vec<BufferDecl>, Vec<String>, Vec<String>) {
+) -> (Vec<BufferDecl>, Vec<String>, Vec<String>, Vec<String>) {
     let mut back_buffers = Vec::new();
     let mut next_binding = 0u32;
     for fwd_buf in program.buffers() {
@@ -167,8 +182,9 @@ fn build_backward_buffers(
 
     let output_set: Vec<String> = outputs.iter().map(ToString::to_string).collect();
     let input_set: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+    let grad_source_set = grad_buffer_source_names(program, &output_set, &input_set);
     let mut grad_buf_binding = FxHashMap::default();
-    for name in output_set.iter().chain(input_set.iter()) {
+    for name in &grad_source_set {
         let grad_name = format!("grad_{name}");
         if grad_buf_binding.contains_key(&grad_name) {
             continue;
@@ -180,15 +196,41 @@ fn build_backward_buffers(
         else {
             continue;
         };
-        back_buffers.push(
-            BufferDecl::read_write(&grad_name, next_binding, DataType::F32)
-                .with_pipeline_live_out(true)
-                .with_count(fwd_buf.count()),
-        );
+        let mut grad_decl = BufferDecl::read_write(&grad_name, next_binding, DataType::F32)
+            .with_count(fwd_buf.count());
+        if output_set.iter().any(|candidate| candidate == name)
+            || input_set.iter().any(|candidate| candidate == name)
+        {
+            grad_decl = grad_decl.with_pipeline_live_out(true);
+        }
+        back_buffers.push(grad_decl);
         grad_buf_binding.insert(grad_name, next_binding);
         next_binding += 1;
     }
-    (back_buffers, output_set, input_set)
+    (back_buffers, output_set, input_set, grad_source_set)
+}
+
+fn grad_buffer_source_names(
+    program: &Program,
+    outputs: &[String],
+    inputs: &[String],
+) -> Vec<String> {
+    let mut names = Vec::new();
+    for name in outputs.iter().chain(inputs) {
+        push_unique_string(&mut names, name.as_str());
+    }
+    for buffer in program.buffers() {
+        if buffer.element() == DataType::F32 {
+            push_unique_string(&mut names, buffer.name());
+        }
+    }
+    names
+}
+
+fn push_unique_string(out: &mut Vec<String>, name: &str) {
+    if !out.iter().any(|existing| existing == name) {
+        out.push(name.to_string());
+    }
 }
 
 /// Environment tracking adjoint accumulation for each variable / buffer load.
@@ -197,17 +239,29 @@ struct AdjointEnv {
     var_adjoints: FxHashMap<String, String>,
     /// Counter for generating fresh adjoint variable names.
     fresh_counter: u32,
-    /// Set of input buffer names we care about.
-    input_buffers: Vec<String>,
+    /// Buffers with declared gradient storage in the backward Program.
+    grad_buffers: Vec<String>,
+    /// Declared element type for every forward buffer.
+    buffer_types: FxHashMap<String, DataType>,
+    /// Inferred type for forward locals.
+    var_types: FxHashMap<String, DataType>,
 }
 
 impl AdjointEnv {
-    fn new(inputs: &[String]) -> Self {
-        Self {
+    fn new(grad_buffers: &[String], program: &Program) -> Self {
+        let mut env = Self {
             var_adjoints: FxHashMap::default(),
             fresh_counter: 0,
-            input_buffers: inputs.to_vec(),
-        }
+            grad_buffers: grad_buffers.to_vec(),
+            buffer_types: program
+                .buffers()
+                .iter()
+                .map(|buffer| (buffer.name().to_string(), buffer.element()))
+                .collect(),
+            var_types: FxHashMap::default(),
+        };
+        env.record_forward_types(program.entry());
+        env
     }
 
     /// Get or create an accumulator variable for the adjoint of `var_name`.
@@ -227,11 +281,181 @@ impl AdjointEnv {
         self.var_adjoints.get(buf_name).cloned()
     }
 
-    /// Check if a buffer name is one of the inputs we differentiate w.r.t.
-    fn is_tracked_input(&self, buf_name: &str) -> bool {
-        self.input_buffers.iter().any(|b| b == buf_name)
+    fn has_grad_buffer(&self, buf_name: &str) -> bool {
+        self.grad_buffers.iter().any(|b| b == buf_name)
+    }
+
+    fn buffer_type(&self, buf_name: &str) -> Option<DataType> {
+        self.buffer_types.get(buf_name).cloned()
+    }
+
+    fn record_forward_types(&mut self, nodes: &[Node]) {
+        for node in nodes {
+            match node {
+                Node::Let { name, value } | Node::Assign { name, value } => {
+                    if let Some(ty) = self.expr_type(value) {
+                        self.var_types.insert(name.as_str().to_string(), ty);
+                    } else {
+                        self.var_types.remove(name.as_str());
+                    }
+                }
+                Node::If {
+                    then, otherwise, ..
+                } => {
+                    self.record_forward_types(then);
+                    self.record_forward_types(otherwise);
+                }
+                Node::Loop {
+                    var,
+                    body: loop_body,
+                    ..
+                } => {
+                    self.var_types
+                        .insert(var.as_str().to_string(), DataType::U32);
+                    self.record_forward_types(loop_body);
+                }
+                Node::Block(body) => self.record_forward_types(body),
+                Node::Region { body, .. } => self.record_forward_types(body),
+                Node::Store { .. }
+                | Node::IndirectDispatch { .. }
+                | Node::AllReduce { .. }
+                | Node::AllGather { .. }
+                | Node::ReduceScatter { .. }
+                | Node::Broadcast { .. }
+                | Node::AsyncLoad { .. }
+                | Node::AsyncStore { .. }
+                | Node::AsyncWait { .. }
+                | Node::Trap { .. }
+                | Node::Resume { .. }
+                | Node::Return
+                | Node::Barrier { .. }
+                | Node::Opaque(_) => {}
+            }
+        }
+    }
+
+    fn expr_type(&self, expr: &Expr) -> Option<DataType> {
+        match expr {
+            Expr::LitU32(_)
+            | Expr::BufLen { .. }
+            | Expr::InvocationId { .. }
+            | Expr::WorkgroupId { .. }
+            | Expr::LocalId { .. }
+            | Expr::SubgroupLocalId
+            | Expr::SubgroupSize
+            | Expr::Atomic { .. }
+            | Expr::SubgroupBallot { .. }
+            | Expr::SubgroupShuffle { .. }
+            | Expr::SubgroupAdd { .. } => Some(DataType::U32),
+            Expr::LitI32(_) => Some(DataType::I32),
+            Expr::LitF32(_) => Some(DataType::F32),
+            Expr::LitBool(_) => Some(DataType::Bool),
+            Expr::Var(name) => self.var_types.get(name.as_str()).cloned(),
+            Expr::Load { buffer, .. } => self.buffer_types.get(buffer.as_str()).cloned(),
+            Expr::Cast { target, .. } => Some(target.clone()),
+            Expr::BinOp { op, left, right } => self.binop_type(*op, left, right),
+            Expr::UnOp { op, operand } => self.unop_type(op.clone(), operand),
+            Expr::Select {
+                true_val,
+                false_val,
+                ..
+            } => {
+                let true_ty = self.expr_type(true_val)?;
+                let false_ty = self.expr_type(false_val)?;
+                (true_ty == false_ty).then_some(true_ty)
+            }
+            Expr::Fma { a, b, c } => {
+                let all_f32 = self.expr_type(a) == Some(DataType::F32)
+                    && self.expr_type(b) == Some(DataType::F32)
+                    && self.expr_type(c) == Some(DataType::F32);
+                all_f32.then_some(DataType::F32)
+            }
+            Expr::Call { .. } => None,
+            Expr::Opaque(extension) => extension.result_type(),
+        }
+    }
+
+    fn binop_type(&self, op: BinOp, left: &Expr, right: &Expr) -> Option<DataType> {
+        match op {
+            BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::Div
+            | BinOp::SaturatingAdd
+            | BinOp::SaturatingSub
+            | BinOp::SaturatingMul
+            | BinOp::Min
+            | BinOp::Max => {
+                let left_ty = self.expr_type(left)?;
+                let right_ty = self.expr_type(right)?;
+                (left_ty == right_ty).then_some(left_ty)
+            }
+            BinOp::And
+            | BinOp::Or
+            | BinOp::Eq
+            | BinOp::Ne
+            | BinOp::Lt
+            | BinOp::Gt
+            | BinOp::Le
+            | BinOp::Ge => Some(DataType::Bool),
+            BinOp::Mod
+            | BinOp::WrappingAdd
+            | BinOp::WrappingSub
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::AbsDiff
+            | BinOp::Shuffle
+            | BinOp::Ballot
+            | BinOp::WaveReduce
+            | BinOp::WaveBroadcast
+            | BinOp::RotateLeft
+            | BinOp::RotateRight
+            | BinOp::MulHigh => Some(DataType::U32),
+            BinOp::Opaque(_) => None,
+            _ => None,
+        }
+    }
+
+    fn unop_type(&self, op: UnOp, operand: &Expr) -> Option<DataType> {
+        match op {
+            UnOp::Negate
+            | UnOp::BitNot
+            | UnOp::Popcount
+            | UnOp::Clz
+            | UnOp::Ctz
+            | UnOp::ReverseBits => self.expr_type(operand),
+            UnOp::LogicalNot | UnOp::IsNan | UnOp::IsInf | UnOp::IsFinite => Some(DataType::Bool),
+            UnOp::Cos
+            | UnOp::Sin
+            | UnOp::Abs
+            | UnOp::Sqrt
+            | UnOp::Floor
+            | UnOp::Ceil
+            | UnOp::Round
+            | UnOp::Trunc
+            | UnOp::Sign
+            | UnOp::Exp
+            | UnOp::Log
+            | UnOp::Log2
+            | UnOp::Exp2
+            | UnOp::Tan
+            | UnOp::Acos
+            | UnOp::Asin
+            | UnOp::Atan
+            | UnOp::Tanh
+            | UnOp::Sinh
+            | UnOp::Cosh
+            | UnOp::InverseSqrt
+            | UnOp::Reciprocal => Some(DataType::F32),
+            UnOp::Unpack4Low | UnOp::Unpack4High | UnOp::Unpack8Low | UnOp::Unpack8High => None,
+            _ => None,
+        }
     }
 }
+
 
 fn collect_adjoint_targets(nodes: &[Node], out: &mut Vec<Ident>) {
     for node in nodes {
@@ -247,6 +471,10 @@ fn collect_adjoint_targets(nodes: &[Node], out: &mut Vec<Ident>) {
             Node::Region { body, .. } => collect_adjoint_targets(body, out),
             Node::Store { .. }
             | Node::IndirectDispatch { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
             | Node::AsyncWait { .. }
@@ -297,21 +525,26 @@ fn emit_adjoint_node(
             value,
         } => {
             let buf_name = buffer.as_str();
+            let has_grad_buffer =
+                output_set.iter().any(|o| o == buf_name) || env.has_grad_buffer(buf_name);
             let grad_buf = format!("grad_{buf_name}");
-            // Load the adjoint from the gradient buffer.
-            let adj_expr =
-                if output_set.iter().any(|o| o == buf_name) || env.is_tracked_input(buf_name) {
-                    Expr::Load {
-                        buffer: grad_buf.into(),
-                        index: Box::new(index.clone()),
-                    }
-                } else {
-                    // Internal buffer — adjoint comes from downstream consumers.
-                    // For now, treat as the accumulated adjoint.
-                    Expr::f32(0.0)
-                };
+            let adj_expr = if has_grad_buffer {
+                Expr::Load {
+                    buffer: grad_buf.clone().into(),
+                    index: Box::new(index.clone()),
+                }
+            } else {
+                Expr::f32(0.0)
+            };
             insert_pullback(pullbacks, next_pullback_id, adj_expr.clone());
             emit_adjoint_expr(value, &adj_expr, body, env)?;
+            if has_grad_buffer {
+                body.push(Node::Store {
+                    buffer: grad_buf.into(),
+                    index: index.clone(),
+                    value: Expr::f32(0.0),
+                });
+            }
         }
         // Forward: x = value (reassignment)
         // Same as Let for adjoint purposes.
@@ -385,17 +618,17 @@ fn emit_adjoint_node(
                 body: adj_body,
             });
         }
-        // Barrier — pass through.
+        // Barrier  -  pass through.
         Node::Barrier { ordering } => {
             body.push(Node::barrier_with_ordering(*ordering));
         }
-        // Block — unwrap and recurse.
+        // Block  -  unwrap and recurse.
         Node::Block(nodes) => {
             for n in nodes.iter().rev() {
                 emit_adjoint_node(n, body, env, output_set, pullbacks, next_pullback_id)?;
             }
         }
-        // Region — recurse into body.
+        // Region  -  recurse into body.
         Node::Region {
             generator,
             source_region,
@@ -418,9 +651,13 @@ fn emit_adjoint_node(
                 body: std::sync::Arc::new(adj_region_body),
             });
         }
-        // Return, IndirectDispatch, Async*, Trap, Resume — not differentiable control flow.
+        // Return, IndirectDispatch, Async*, Trap, Resume  -  not differentiable control flow.
         Node::Return
         | Node::IndirectDispatch { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncStore { .. }
         | Node::AsyncWait { .. }
@@ -430,7 +667,7 @@ fn emit_adjoint_node(
                 kind: format!("{node:?}").chars().take(60).collect(),
             });
         }
-        // Opaque — cannot differentiate unknown ops.
+        // Opaque  -  cannot differentiate unknown ops.
         Node::Opaque(_) => {
             return Err(AutodiffError::UnsupportedNode {
                 kind: "Node::Opaque".to_string(),
@@ -440,255 +677,6 @@ fn emit_adjoint_node(
     Ok(())
 }
 
-fn insert_pullback(pullbacks: &mut PullbackMap, next_pullback_id: &mut usize, expr: Expr) {
-    let id = *next_pullback_id;
-    *next_pullback_id = next_pullback_id.saturating_add(1);
-    pullbacks.insert(id, expr);
-}
-
-/// Propagate adjoint through an expression tree, emitting accumulation nodes.
-#[expect(
-    clippy::too_many_lines,
-    reason = "autodiff expression cases are kept in one exhaustive match so new IR expression variants are reviewed in one place"
-)]
-fn emit_adjoint_expr(
-    expr: &Expr,
-    adjoint: &Expr,
-    body: &mut Vec<Node>,
-    env: &mut AdjointEnv,
-) -> Result<(), AutodiffError> {
-    match expr {
-        // Leaf: variable reference.
-        // Accumulate adjoint into the variable's adjoint accumulator.
-        Expr::Var(name) => {
-            let adj_var = env.ensure_adjoint_var(name.as_str());
-            body.push(Node::Assign {
-                name: adj_var.clone().into(),
-                value: Expr::add(Expr::Var(adj_var.into()), adjoint.clone()),
-            });
-        }
-        // Leaf: buffer load.
-        // If this buffer is a tracked input, accumulate into its grad buffer.
-        Expr::Load { buffer, index } => {
-            let buf_name = buffer.as_str();
-            if env.is_tracked_input(buf_name) {
-                let grad_buf = format!("grad_{buf_name}");
-                // Atomic add to handle multiple gradient contributions.
-                body.push(Node::Store {
-                    buffer: grad_buf.into(),
-                    index: *index.clone(),
-                    value: Expr::add(
-                        Expr::Load {
-                            buffer: format!("grad_{buf_name}").into(),
-                            index: index.clone(),
-                        },
-                        adjoint.clone(),
-                    ),
-                });
-            }
-        }
-        // Leaf: literal — zero gradient, nothing to propagate.
-        Expr::LitF32(_)
-        | Expr::LitU32(_)
-        | Expr::LitI32(_)
-        | Expr::LitBool(_)
-        | Expr::InvocationId { .. }
-        | Expr::WorkgroupId { .. }
-        | Expr::LocalId { .. }
-        | Expr::SubgroupLocalId
-        | Expr::SubgroupSize
-        | Expr::BufLen { .. } => {}
-        // BinOp: apply chain rule.
-        Expr::BinOp { op, left, right } => {
-            let contribs = binop_adjoints(*op, left, right, adjoint)?;
-            for contrib in contribs {
-                emit_adjoint_expr(&contrib.child, &contrib.adjoint, body, env)?;
-            }
-        }
-        // UnOp: apply chain rule.
-        Expr::UnOp { op, operand } => {
-            let contrib = unop_adjoint(op, operand, adjoint)?;
-            emit_adjoint_expr(&contrib.child, &contrib.adjoint, body, env)?;
-        }
-        // Select: route adjoint to the taken branch.
-        Expr::Select {
-            cond,
-            true_val,
-            false_val,
-        } => {
-            let true_adj = Expr::Select {
-                cond: cond.clone(),
-                true_val: Box::new(adjoint.clone()),
-                false_val: Box::new(Expr::f32(0.0)),
-            };
-            let false_adj = Expr::Select {
-                cond: cond.clone(),
-                true_val: Box::new(Expr::f32(0.0)),
-                false_val: Box::new(adjoint.clone()),
-            };
-            emit_adjoint_expr(true_val, &true_adj, body, env)?;
-            emit_adjoint_expr(false_val, &false_adj, body, env)?;
-        }
-        // Fma: a*b + c.
-        Expr::Fma { a, b, c } => {
-            let contribs = fma_adjoints(a, b, c, adjoint);
-            for contrib in contribs {
-                emit_adjoint_expr(&contrib.child, &contrib.adjoint, body, env)?;
-            }
-        }
-        // Cast: pass adjoint through (f32→f32 identity; cross-type TBD).
-        Expr::Cast { value, .. } => {
-            emit_adjoint_expr(value, adjoint, body, env)?;
-        }
-        // Non-differentiable expression nodes.
-        Expr::Call { op_id, .. } => {
-            return Err(AutodiffError::NotDifferentiable {
-                op: format!("Expr::Call({op_id})"),
-                fix:
-                    "inline the call before running autodiff, or register a derivative for this op"
-                        .into(),
-            });
-        }
-        Expr::Atomic { .. } => {
-            return Err(AutodiffError::NotDifferentiable {
-                op: "Expr::Atomic".into(),
-                fix: "atomics are not differentiable; restructure to use non-atomic accumulation"
-                    .into(),
-            });
-        }
-        Expr::SubgroupBallot { .. } | Expr::SubgroupShuffle { .. } | Expr::SubgroupAdd { .. } => {
-            return Err(AutodiffError::NotDifferentiable {
-                op: format!("{expr:?}").chars().take(40).collect(),
-                fix: "subgroup ops are not differentiable in the general case".into(),
-            });
-        }
-        Expr::Opaque(_) => {
-            return Err(AutodiffError::NotDifferentiable {
-                op: "Expr::Opaque".into(),
-                fix: "register a derivative rule for this opaque expression".into(),
-            });
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ir::BinOp;
+mod tests;
 
-    /// Test: d(x*x)/dx = 2*x for a simple square program.
-    #[test]
-    fn grad_simple_square() {
-        // Forward: out[i] = x[i] * x[i]
-        let program = Program::wrapped(
-            vec![
-                BufferDecl::storage("x", 0, BufferAccess::ReadOnly, DataType::F32).with_count(4),
-                BufferDecl::output("out", 1, DataType::F32).with_count(4),
-            ],
-            [64, 1, 1],
-            vec![Node::Store {
-                buffer: "out".into(),
-                index: Expr::InvocationId { axis: 0 },
-                value: Expr::mul(
-                    Expr::Load {
-                        buffer: "x".into(),
-                        index: Box::new(Expr::InvocationId { axis: 0 }),
-                    },
-                    Expr::Load {
-                        buffer: "x".into(),
-                        index: Box::new(Expr::InvocationId { axis: 0 }),
-                    },
-                ),
-            }],
-        );
-
-        let result = grad(&program, &["out"], &["x"]);
-        assert!(result.is_ok(), "grad should succeed: {:?}", result.err());
-        let backward = result.unwrap();
-
-        // The backward program should declare grad_x and grad_out buffers.
-        let buf_names: Vec<&str> = backward.buffers().iter().map(|b| b.name()).collect();
-        assert!(
-            buf_names.contains(&"grad_out"),
-            "should have grad_out buffer"
-        );
-        assert!(buf_names.contains(&"grad_x"), "should have grad_x buffer");
-    }
-
-    /// Test: non-differentiable op returns error.
-    #[test]
-    fn grad_bitwise_errors() {
-        let program = Program::wrapped(
-            vec![
-                BufferDecl::storage("x", 0, BufferAccess::ReadOnly, DataType::U32).with_count(1),
-                BufferDecl::output("out", 1, DataType::U32).with_count(1),
-            ],
-            [1, 1, 1],
-            vec![Node::Store {
-                buffer: "out".into(),
-                index: Expr::u32(0),
-                value: Expr::BinOp {
-                    op: BinOp::BitAnd,
-                    left: Box::new(Expr::Load {
-                        buffer: "x".into(),
-                        index: Box::new(Expr::u32(0)),
-                    }),
-                    right: Box::new(Expr::u32(0xFF)),
-                },
-            }],
-        );
-
-        let result = grad(&program, &["out"], &["x"]);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            AutodiffError::NotDifferentiable { op, .. } => {
-                assert!(op.contains("BitAnd"));
-            }
-            e => panic!("expected NotDifferentiable, got: {e}"),
-        }
-    }
-
-    /// Test: missing buffer name returns error.
-    #[test]
-    fn grad_missing_buffer() {
-        let program = Program::wrapped(
-            vec![BufferDecl::output("out", 0, DataType::F32).with_count(1)],
-            [1, 1, 1],
-            vec![],
-        );
-
-        let result = grad(&program, &["nonexistent"], &[]);
-        assert!(matches!(result, Err(AutodiffError::BufferNotFound { .. })));
-    }
-
-    /// Test: exp derivative — d(exp(x))/dx = exp(x).
-    #[test]
-    fn grad_exp() {
-        let program = Program::wrapped(
-            vec![
-                BufferDecl::storage("x", 0, BufferAccess::ReadOnly, DataType::F32).with_count(1),
-                BufferDecl::output("out", 1, DataType::F32).with_count(1),
-            ],
-            [1, 1, 1],
-            vec![Node::Store {
-                buffer: "out".into(),
-                index: Expr::u32(0),
-                value: Expr::UnOp {
-                    op: crate::ir::UnOp::Exp,
-                    operand: Box::new(Expr::Load {
-                        buffer: "x".into(),
-                        index: Box::new(Expr::u32(0)),
-                    }),
-                },
-            }],
-        );
-
-        let result = grad(&program, &["out"], &["x"]);
-        assert!(
-            result.is_ok(),
-            "exp should be differentiable: {:?}",
-            result.err()
-        );
-    }
-}

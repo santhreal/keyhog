@@ -6,7 +6,7 @@
 use crate::ir::eval::fold_fma_literal;
 use crate::ir::Expr;
 
-/// Fma simplifications — constant folding and edge-case elimination.
+/// Fma simplifications  -  constant folding and edge-case elimination.
 pub(super) fn simplify_fma(a: &Expr, b: &Expr, c: &Expr) -> Option<Expr> {
     // Full constant fold: fma(a, b, c) → a*b+c
     if let Some(folded) = fold_fma_literal(a, b, c) {

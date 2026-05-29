@@ -1,4 +1,4 @@
-//! Multi-block parallel prefix sum — bridges the gap between
+//! Multi-block parallel prefix sum  -  bridges the gap between
 //! `vyre_primitives::math::prefix_scan` (single workgroup, ≤1024 lanes)
 //! and `prefix_scan_large` (single-thread sequential).
 //!
@@ -6,7 +6,7 @@
 //!
 //! `prefix_scan` is fast but only handles 1024-element inputs.
 //! `prefix_scan_large` accepts arbitrary `n` but its body is
-//! `if InvocationId == 0 { for i in 0..n { ... } }` — single-thread
+//! `if InvocationId == 0 { for i in 0..n { ... } }`  -  single-thread
 //! sequential, the antithesis of the parallel substrate this crate
 //! exists for. Real workloads (lex compaction over a 3 MB C TU,
 //! histogram CDFs over millions of bins, etc.) need both: arbitrary
@@ -20,7 +20,7 @@
 //!           writes per-element partials and per-block totals.
 //!   GridSync barrier (substrate splits the dispatch here).
 //!   Pass B: scan of per-block totals.
-//!           recursive — this fn calls itself with the totals as input.
+//!           recursive  -  this fn calls itself with the totals as input.
 //!           Bottoms out at `prefix_scan` (≤1024 element single-workgroup).
 //!   GridSync barrier.
 //!   Pass C: per-element offset add.
@@ -52,7 +52,7 @@ pub const BLOCK_LANES: u32 = 1024;
 
 /// Maximum input size handled directly without falling back to the
 /// existing serial `prefix_scan_large`. `BLOCK_LANES * BLOCK_LANES`
-/// = 1,048,576 elements — Pass B (which scans `num_blocks`) recurses
+/// = 1,048,576 elements  -  Pass B (which scans `num_blocks`) recurses
 /// into this same function and bottoms out at `prefix_scan` once
 /// `num_blocks ≤ BLOCK_LANES`.
 pub const SOFT_MAX_N: u32 = BLOCK_LANES * BLOCK_LANES;
@@ -115,7 +115,7 @@ pub fn multi_block_prefix_scan_sum_u32(input: &str, output: &str, n: u32) -> Pro
     }
 }
 
-/// Pass A — per-block local inclusive Hillis-Steele scan.
+/// Pass A  -  per-block local inclusive Hillis-Steele scan.
 ///
 /// Each workgroup of `BLOCK_LANES` threads scans one block of the input.
 /// Lane L within block B reads `input[B*BLOCK_LANES + L]`, runs a
@@ -267,7 +267,7 @@ pub fn pass_a_local_scan(
     )
 }
 
-/// Pass C — broadcast scanned per-block totals back to per-element output.
+/// Pass C  -  broadcast scanned per-block totals back to per-element output.
 ///
 /// `out[B*BLOCK_LANES + L] = partials[B*BLOCK_LANES + L] + offset`,
 /// where `offset = scanned_block_totals[B - 1]` (or `0` for block 0).
@@ -362,13 +362,44 @@ pub fn pass_c_broadcast_offsets(
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32]) -> Vec<u32> {
-    let mut out = Vec::with_capacity(input.len());
+    let mut out = Vec::new();
+    match try_cpu_ref_into(input, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives multi-block prefix-scan CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
+}
+
+/// CPU reference writing into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_into(input: &[u32], out: &mut Vec<u32>) {
+    if let Err(error) = try_cpu_ref_into(input, out) {
+        eprintln!("vyre-primitives multi-block prefix-scan CPU reference failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference writing into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(input: &[u32], out: &mut Vec<u32>) -> Result<(), String> {
+    if input.len() > out.capacity() {
+        out.try_reserve_exact(input.len() - out.capacity())
+            .map_err(|err| {
+                format!(
+                    "multi-block prefix-scan CPU reference could not reserve {} output words: {err}",
+                    input.len()
+                )
+            })?;
+    }
+    out.clear();
     let mut acc: u32 = 0;
     for &x in input {
         acc = acc.wrapping_add(x);
         out.push(acc);
     }
-    out
+    Ok(())
 }
 
 #[cfg(test)]
@@ -383,12 +414,68 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[99, 98, 97, 96]);
+        let capacity = out.capacity();
+
+        cpu_ref_into(&[u32::MAX, 1, 2], &mut out);
+        assert_eq!(out, vec![u32::MAX, 0, 2]);
+        assert_eq!(out.capacity(), capacity);
+
+        cpu_ref_into(&[7], &mut out);
+        assert_eq!(out, vec![7]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn try_cpu_ref_into_reuses_output_and_clears_stale_tail() {
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[99, 98, 97, 96]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(&[u32::MAX, 1, 2], &mut out).unwrap();
+
+        assert_eq!(out, vec![u32::MAX, 0, 2]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let input = &[u32::MAX, 1, 2];
+        let mut compat = Vec::with_capacity(8);
+        let mut fallible = Vec::with_capacity(8);
+
+        cpu_ref_into(input, &mut compat);
+        try_cpu_ref_into(input, &mut fallible)
+            .expect("Fix: small multi-block prefix-scan CPU reference must reserve");
+
+        assert_eq!(cpu_ref(input), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("multi_block_prefix_scan.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: multi_block_prefix_scan.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: multi-block prefix-scan CPU reference wrappers must not panic in production."
+        );
+    }
+
+    #[test]
     fn small_n_falls_through_to_single_block_path() {
         // n ≤ BLOCK_LANES routes to existing prefix_scan; verify the builder
         // produces a non-empty Program for representative small sizes.
         for &n in &[1u32, 2, 64, 1023, 1024] {
             let prog = multi_block_prefix_scan_sum_u32("in_buf", "out_buf", n);
-            assert!(!prog.buffers().is_empty(), "n={n} should produce non-empty");
+            let names: Vec<&str> = prog.buffers().iter().map(BufferDecl::name).collect();
+            assert!(names.contains(&"in_buf"), "n={n} must declare in_buf, got {names:?}");
+            assert!(names.contains(&"out_buf"), "n={n} must declare out_buf, got {names:?}");
         }
     }
 
@@ -418,6 +505,8 @@ mod tests {
         // n = 1_048_576 → num_blocks = 1024 → Pass B falls through to single
         // workgroup `prefix_scan` (1024 ≤ BLOCK_LANES). Verify build.
         let prog = multi_block_prefix_scan_sum_u32("in_buf", "out_buf", SOFT_MAX_N);
-        assert!(!prog.buffers().is_empty());
+        let names: Vec<&str> = prog.buffers().iter().map(BufferDecl::name).collect();
+        assert!(names.contains(&"in_buf"));
+        assert!(names.contains(&"out_buf"));
     }
 }

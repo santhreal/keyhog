@@ -77,6 +77,10 @@ pub(crate) fn data_type_from_tag(tag: u8) -> Result<DataType, String> {
             "Fix: device-mesh data type tag requires an axes payload; use Reader::data_type instead of data_type_from_tag."
                 .to_string(),
         ),
+        0x1F => Err(
+            "Fix: quantized data type tag requires storage, scale, and zero-point payloads; use Reader::data_type instead of data_type_from_tag."
+                .to_string(),
+        ),
         0x80 => Err(
             "Fix: opaque data type tag 0x80 requires a u32 extension id payload; use Reader::data_type instead of data_type_from_tag."
                 .to_string(),

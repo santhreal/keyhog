@@ -36,9 +36,29 @@ fn count_done_ring_slots_counts_only_done_status_words() {
 
 #[test]
 fn allocating_encoders_reject_allocation_cap_before_reserving() {
-    assert!(try_encode_control(false, 1, MAX_ENCODED_OBSERVABLE_SLOTS + 1).is_err());
-    assert!(try_encode_empty_ring(MAX_ENCODED_RING_SLOTS + 1).is_err());
-    assert!(try_encode_empty_debug_log(MAX_ENCODED_DEBUG_RECORDS + 1).is_err());
+    let control_err = try_encode_control(false, 1, MAX_ENCODED_OBSERVABLE_SLOTS + 1)
+        .expect_err("observable cap exceeded");
+    let err_str = control_err.to_string();
+    assert!(
+        err_str.contains("observable"),
+        "control cap error: {}",
+        err_str
+    );
+    let ring_err = try_encode_empty_ring(MAX_ENCODED_RING_SLOTS + 1).expect_err("ring cap exceeded");
+    let err_str = ring_err.to_string();
+    assert!(
+        err_str.contains("ring") || err_str.contains("slot"),
+        "ring cap error: {}",
+        err_str
+    );
+    let debug_err = try_encode_empty_debug_log(MAX_ENCODED_DEBUG_RECORDS + 1)
+        .expect_err("debug cap exceeded");
+    let err_str = debug_err.to_string();
+    assert!(
+        err_str.contains("debug"),
+        "debug cap error: {}",
+        err_str
+    );
 }
 
 #[test]

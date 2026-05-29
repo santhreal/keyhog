@@ -9,6 +9,7 @@
 use vyre::ir::{Expr, Node, Program};
 
 use crate::{
+    execution::node_tree::{contains_barrier, node_id},
     execution::expr as eval_expr,
     oob,
     workgroup::{AsyncTransfer, Frame, Invocation, Memory},
@@ -187,6 +188,35 @@ fn execute_node<'a>(
         }
         Node::Resume { tag } => Err(vyre::Error::interp(format!(
             "reference dispatch reached Resume `{tag}` without a replay runtime. Fix: lower Resume through a runtime-owned replay path before reference execution."
+        ))),
+        Node::AllReduce { buffer, group, .. } => Err(vyre::Error::interp(format!(
+            "reference dispatch reached AllReduce on buffer `{buffer}` for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+            group.as_u32()
+        ))),
+        Node::AllGather {
+            input,
+            output,
+            group,
+        } => Err(vyre::Error::interp(format!(
+            "reference dispatch reached AllGather `{input}` -> `{output}` for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+            group.as_u32()
+        ))),
+        Node::ReduceScatter {
+            input,
+            output,
+            group,
+            ..
+        } => Err(vyre::Error::interp(format!(
+            "reference dispatch reached ReduceScatter `{input}` -> `{output}` for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+            group.as_u32()
+        ))),
+        Node::Broadcast {
+            buffer,
+            root,
+            group,
+        } => Err(vyre::Error::interp(format!(
+            "reference dispatch reached Broadcast on buffer `{buffer}` from root {root} for group {}. Fix: run this Program on a distributed backend with collective support or lower the single-rank collective before reference execution.",
+            group.as_u32()
         ))),
         Node::Region { body, .. } => eval_block(body, invocation),
         Node::Opaque(extension) => Err(vyre::Error::interp(format!(
@@ -420,6 +450,7 @@ fn ensure_writable_buffer(memory: &mut Memory, program: &Program, name: &str) ->
     eval_expr::buffer_mut(memory, program, name).map(|_| ())
 }
 
+
 fn apply_async_transfer(
     transfer: AsyncTransfer,
     memory: &mut Memory,
@@ -540,39 +571,6 @@ fn eval_barrier(invocation: &mut Invocation<'_>) -> Result<(), vyre::Error> {
     Ok(())
 }
 
-/// Whether any statement in `nodes` may reach a [`Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst }`], scanning
-/// child statement lists recursively with an exhaustive [`Node`] match.
-fn contains_barrier(nodes: &[Node]) -> bool {
-    nodes.iter().any(node_contains_barrier)
-}
-
-fn node_contains_barrier(node: &Node) -> bool {
-    match node {
-        Node::Barrier { .. } => true,
-        Node::Let { .. }
-        | Node::Assign { .. }
-        | Node::Store { .. }
-        | Node::Return
-        | Node::IndirectDispatch { .. }
-        | Node::AsyncLoad { .. }
-        | Node::AsyncStore { .. }
-        | Node::AsyncWait { .. }
-        | Node::Trap { .. }
-        | Node::Resume { .. }
-        | Node::Opaque(_) => false,
-        Node::If {
-            then, otherwise, ..
-        } => contains_barrier(then) || contains_barrier(otherwise),
-        Node::Loop { body, .. } => contains_barrier(body),
-        Node::Block(body) => contains_barrier(body),
-        _ => false,
-    }
-}
-
-fn node_id(node: &Node) -> usize {
-    std::ptr::from_ref(node).addr()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,7 +590,7 @@ mod tests {
         memory
             .storage
             .get(name)
-            .expect("test buffer exists")
+            .expect("Fix: test buffer exists")
             .bytes
             .read()
             .unwrap_or_else(|error| error.into_inner())
@@ -648,3 +646,4 @@ mod tests {
         assert_eq!(bytes(&memory, "dst"), vec![0, 0, 0, 21, 22, 23, 24, 0]);
     }
 }
+

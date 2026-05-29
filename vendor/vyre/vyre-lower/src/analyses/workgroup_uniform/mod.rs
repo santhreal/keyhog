@@ -5,10 +5,10 @@
 //! On every modern GPU, when all threads in a workgroup take the same
 //! branch (the "uniform" path), hardware can use a more efficient
 //! single-instruction-multiple-thread dispatch. When threads diverge,
-//! both sides serialize — costing roughly 2x throughput per branch.
+//! both sides serialize  -  costing roughly 2x throughput per branch.
 //!
 //! This analysis detects `StructuredIfThen` / `StructuredIfThenElse`
-//! ops whose conditions are provably workgroup-uniform — i.e., the
+//! ops whose conditions are provably workgroup-uniform  -  i.e., the
 //! condition does NOT depend on `LocalInvocationId` (or any value
 //! derived from it). When uniform, the emitter can annotate the
 //! branch with the substrate's native uniform-branch perf hint.

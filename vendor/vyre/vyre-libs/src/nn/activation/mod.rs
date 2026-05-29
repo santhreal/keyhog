@@ -10,6 +10,7 @@ pub mod relu;
 pub mod silu;
 pub mod skip_gate;
 pub mod swiglu;
+pub(crate) mod unary;
 
 pub use cross_entropy::{cross_entropy, try_cross_entropy};
 pub use embedding::embedding;

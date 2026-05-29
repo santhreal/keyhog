@@ -27,29 +27,17 @@ pub use vyre_primitives::text::encoding_classify::{
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
-use crate::buffer_names::scoped_generic_name;
+use crate::decode::buffers::{scoped_decode_input_buffer, scoped_decode_output_buffer};
 use crate::region::wrap_anonymous;
 
 const OP_ID: &str = "vyre-libs::decode::encodex";
 const FAMILY_PREFIX: &str = "decode_encodex";
 const HISTOGRAM_BUFFER: &str = "__vyre_decode_encodex_histogram";
 
-fn scoped_input_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
-}
-
-fn scoped_output_buffer(name: &str) -> String {
-    scoped_generic_name(
-        FAMILY_PREFIX,
-        "encoding_id",
-        name,
-        &["encoding_id", "output"],
-    )
-}
-
-fn pack_words(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
-}
+// Cross-domain reuse: same LE u32-pack byte layout as the matching
+// dialect's storage-buffer inputs. Single source of truth in
+// `scan::dispatch_io::pack_u32_slice` - was a third inline copy here.
+use crate::scan::dispatch_io::pack_u32_slice as pack_words;
 
 /// Build a Program that computes a 256-bin byte histogram over `input`
 /// and writes the detected encoding-id to `output`.
@@ -67,8 +55,13 @@ fn pack_words(words: &[u32]) -> Vec<u8> {
 /// ```
 #[must_use]
 pub fn encodex_gpu(input: &str, output: &str, count: u32) -> Program {
-    let input = scoped_input_buffer(input);
-    let output = scoped_output_buffer(output);
+    let input = scoped_decode_input_buffer(FAMILY_PREFIX, input);
+    let output = scoped_decode_output_buffer(
+        FAMILY_PREFIX,
+        "encoding_id",
+        output,
+        &["encoding_id", "output"],
+    );
     let histogram = HISTOGRAM_BUFFER.to_string();
     let body = vec![
         byte_histogram_256_child(OP_ID, &input, &histogram, count),
@@ -92,10 +85,7 @@ pub fn encodex_gpu(input: &str, output: &str, count: u32) -> Program {
 /// classification rules so the host oracle and `encodex_gpu` agree on
 /// every fixture input.
 pub fn encodex_reference(input: &[u8]) -> u32 {
-    let mut histogram = [0u32; 256];
-    for &byte in input {
-        histogram[usize::from(byte)] += 1;
-    }
+    let histogram = vyre_primitives::text::byte_histogram::reference_byte_histogram(input);
     classify_from_histogram(&histogram, input.len() as u32)
 }
 
@@ -128,13 +118,10 @@ fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
     fixture_cases()
         .into_iter()
         .map(|input| {
-            let mut histogram = [0u32; 256];
-            for &b in &input {
-                histogram[usize::from(b)] += 1;
-            }
+            let histogram = vyre_primitives::text::byte_histogram::reference_byte_histogram(&input);
             let enc_id = classify_from_histogram(&histogram, input.len() as u32);
             vec![
-                histogram.iter().flat_map(|v| v.to_le_bytes()).collect(),
+                vyre_primitives::wire::pack_u32_slice(&histogram),
                 enc_id.to_le_bytes().to_vec(),
             ]
         })
@@ -173,11 +160,7 @@ mod tests {
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: encodex must run; restore this invariant before continuing.");
-        let histogram = outputs[0]
-            .to_bytes()
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect();
+        let histogram = vyre_primitives::wire::decode_u32_le_bytes_all(&outputs[0].to_bytes());
         let enc_id = u32::from_le_bytes([
             outputs[1].to_bytes()[0],
             outputs[1].to_bytes()[1],

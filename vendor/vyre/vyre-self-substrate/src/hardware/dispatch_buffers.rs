@@ -51,27 +51,42 @@ pub(crate) fn checked_product_count(
 }
 
 /// Encode a u32 slice as little-endian bytes for dispatcher input buffers.
+///
+/// Routes through the canonical `vyre-primitives::wire::pack_u32_slice`
+/// LEGO primitive (with `bytemuck::cast_slice` fast path on LE hosts).
+/// Dispatcher input-buffer encoding now matches every other GPU upload
+/// path's throughput floor instead of running its own scalar `extend`
+/// loop.
 #[must_use]
 pub(crate) fn u32_slice_to_le_bytes(values: &[u32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-    for &value in values {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
+    vyre_primitives::wire::pack_u32_slice(values)
 }
 
-/// Ensure a dispatcher input-vector shell has at least `count` reusable slots.
+/// Ensure a dispatcher input-vector shell has exactly `count` reusable slots.
+///
+/// Dispatcher calls consume the whole `Vec<Vec<u8>>`. Leaving stale slots after
+/// a scratch object moves from a wider primitive to a narrower primitive silently
+/// changes the backend ABI and can force needless uploads. Active slots keep
+/// their allocation; inactive slots are dropped instead of being passed on.
 pub(crate) fn ensure_input_slots(inputs: &mut Vec<Vec<u8>>, count: usize) {
     if inputs.len() < count {
         inputs.resize_with(count, Vec::new);
+    } else if inputs.len() > count {
+        inputs.truncate(count);
     }
 }
 
 /// Fill a reusable dispatcher byte buffer with zeros without replacing the
 /// allocation.
 pub(crate) fn write_zero_bytes(out: &mut Vec<u8>, len: usize) {
-    out.clear();
-    out.resize(len, 0);
+    if out.len() == len {
+        if out.iter().any(|&byte| byte != 0) {
+            out.fill(0);
+        }
+    } else {
+        out.clear();
+        out.resize(len, 0);
+    }
 }
 
 /// Return the exact byte count needed for `count` u32 words.
@@ -97,49 +112,70 @@ pub(crate) fn write_zero_u32_words(
 }
 
 /// Encode a u32 slice as little-endian bytes into caller-owned dispatcher
-/// input storage.
+/// input storage. Routes through `vyre-primitives::wire::pack_u32_slice_into`
+/// so dispatcher writes use the same LE-host `bytemuck::cast_slice` fast
+/// path as every other GPU-upload site.
 pub(crate) fn write_u32_slice_le_bytes(out: &mut Vec<u8>, values: &[u32]) {
-    out.clear();
-    out.reserve(std::mem::size_of_val(values));
-    for &value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Encode a u32 slice, or a zero-filled padded buffer when the slice is empty.
-pub(crate) fn write_u32_slice_or_zero_words(
-    out: &mut Vec<u8>,
-    values: &[u32],
-    zero_words_when_empty: usize,
-    context: &str,
-) -> Result<(), DispatchError> {
-    if values.is_empty() {
-        write_zero_u32_words(out, zero_words_when_empty, context)
-    } else {
-        write_u32_slice_le_bytes(out, values);
-        Ok(())
-    }
+    vyre_primitives::wire::pack_u32_slice_into(values, out);
 }
 
 /// Encode an f32 slice as little-endian bytes for dispatcher input buffers.
 #[must_use]
 #[cfg(test)]
 pub(crate) fn f32_slice_to_le_bytes(values: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-    for &value in values {
-        bytes.extend_from_slice(&value.to_le_bytes());
+    vyre_primitives::wire::pack_f32_slice(values)
+}
+
+/// Decode an aligned u32 input buffer for test dispatchers.
+#[cfg(test)]
+pub(crate) fn decode_u32_input_aligned(
+    bytes: &[u8],
+    context: &str,
+) -> Result<Vec<u32>, DispatchError> {
+    if bytes.len() % std::mem::size_of::<u32>() != 0 {
+        return Err(DispatchError::BadInputs(format!(
+            "Fix: {context} input byte count {} is not divisible by 4.",
+            bytes.len()
+        )));
     }
-    bytes
+    Ok(vyre_primitives::wire::decode_u32_le_bytes_all(bytes))
+}
+
+/// Decode an aligned f32 input buffer for test dispatchers.
+#[cfg(test)]
+pub(crate) fn decode_f32_input_aligned(
+    bytes: &[u8],
+    context: &str,
+) -> Result<Vec<f32>, DispatchError> {
+    if bytes.len() % std::mem::size_of::<f32>() != 0 {
+        return Err(DispatchError::BadInputs(format!(
+            "Fix: {context} input byte count {} is not divisible by 4.",
+            bytes.len()
+        )));
+    }
+    Ok(vyre_primitives::wire::decode_f32_le_bytes_all(bytes))
+}
+
+/// Decode a u32 byte buffer for tests and explicit CPU-parity dispatchers that
+/// intentionally validate through the same lenient scalar oracle used before centralization.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[must_use]
+pub(crate) fn read_u32s(bytes: &[u8]) -> Vec<u32> {
+    vyre_primitives::wire::decode_u32_le_bytes_all(bytes)
+}
+
+/// Decode an f32 byte buffer for tests that intentionally validate through the
+/// same lenient scalar oracle used before centralization.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn read_f32s(bytes: &[u8]) -> Vec<f32> {
+    vyre_primitives::wire::decode_f32_le_bytes_all(bytes)
 }
 
 /// Encode an f32 slice as little-endian bytes into caller-owned dispatcher
 /// input storage.
 pub(crate) fn write_f32_slice_le_bytes(out: &mut Vec<u8>, values: &[f32]) {
-    out.clear();
-    out.reserve(std::mem::size_of_val(values));
-    for &value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
+    vyre_primitives::wire::pack_f32_slice_into(values, out);
 }
 
 /// Decode a dispatcher u32 output buffer with exact byte-count validation.
@@ -163,11 +199,34 @@ pub(crate) fn decode_u32_output_exact(
         )));
     }
 
+    vyre_primitives::wire::unpack_u32_slice_into(bytes, expected_words, context, out)
+        .map_err(DispatchError::BackendError)
+}
+
+/// Decode a dispatcher i32 output buffer with exact byte-count validation.
+pub(crate) fn decode_i32_output_exact(
+    bytes: &[u8],
+    expected_words: usize,
+    context: &str,
+    out: &mut Vec<i32>,
+) -> Result<(), DispatchError> {
+    let expected_bytes = expected_words
+        .checked_mul(std::mem::size_of::<i32>())
+        .ok_or_else(|| {
+            DispatchError::BackendError(format!(
+                "Fix: {context} output byte count overflowed usize."
+            ))
+        })?;
+    if bytes.len() != expected_bytes {
+        return Err(DispatchError::BackendError(format!(
+            "Fix: {context} expected {expected_bytes} output bytes, got {}.",
+            bytes.len()
+        )));
+    }
+
     out.clear();
     out.reserve(expected_words);
-    for chunk in bytes.chunks_exact(std::mem::size_of::<u32>()) {
-        out.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
+    out.extend(vyre_primitives::wire::decode_i32_le_bytes_all(bytes));
     Ok(())
 }
 
@@ -192,12 +251,8 @@ pub(crate) fn decode_f32_output_exact(
         )));
     }
 
-    out.clear();
-    out.reserve(expected_words);
-    for chunk in bytes.chunks_exact(std::mem::size_of::<f32>()) {
-        out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
-    Ok(())
+    vyre_primitives::wire::unpack_f32_slice_into(bytes, expected_words, context, out)
+        .map_err(DispatchError::BackendError)
 }
 
 #[cfg(test)]
@@ -219,20 +274,30 @@ mod tests {
     fn zero_u32_words_preserves_allocation_and_exact_byte_count() {
         let mut bytes = Vec::with_capacity(64);
         let ptr = bytes.as_ptr();
-        write_zero_u32_words(&mut bytes, 3, "zero test").expect("zeroing succeeds");
+        write_zero_u32_words(&mut bytes, 3, "zero test").expect("Fix: zeroing succeeds");
         assert_eq!(bytes, vec![0; 12]);
         assert_eq!(bytes.as_ptr(), ptr);
     }
 
     #[test]
-    fn optional_u32_slice_pads_empty_and_encodes_non_empty() {
-        let mut bytes = Vec::new();
-        write_u32_slice_or_zero_words(&mut bytes, &[], 2, "optional test")
-            .expect("empty slice padding succeeds");
-        assert_eq!(bytes, vec![0; 8]);
+    fn zero_bytes_reuses_already_sized_zero_buffer_without_reallocation() {
+        let mut bytes = vec![0u8; 32];
+        let ptr = bytes.as_ptr();
 
-        write_u32_slice_or_zero_words(&mut bytes, &[0x0102_0304], 2, "optional test")
-            .expect("non-empty slice encoding succeeds");
-        assert_eq!(bytes, vec![4, 3, 2, 1]);
+        write_zero_bytes(&mut bytes, 32);
+
+        assert_eq!(bytes, vec![0; 32]);
+        assert_eq!(bytes.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn zero_bytes_clears_dirty_same_size_buffer_without_reallocation() {
+        let mut bytes = vec![0xA5u8; 32];
+        let ptr = bytes.as_ptr();
+
+        write_zero_bytes(&mut bytes, 32);
+
+        assert_eq!(bytes, vec![0; 32]);
+        assert_eq!(bytes.as_ptr(), ptr);
     }
 }

@@ -3,7 +3,7 @@
 //! Fingerprints a Program by binding op-kind, buffer-signature, and
 //! region-shape into one 10K-dim hypervector. Approximate-match cache
 //! returns the same fingerprint for two semantically-equivalent
-//! Region trees with reordered children — beats byte-equal hashing.
+//! Region trees with reordered children  -  beats byte-equal hashing.
 
 use crate::dispatch_buffers::{
     ceil_div_u32, decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes,
@@ -38,11 +38,7 @@ pub fn vsa_fingerprint_words(program: &vyre_foundation::ir::Program) -> [u32; 8]
     use crate::observability::{bump, vsa_fingerprint_calls};
     bump(&vsa_fingerprint_calls);
     let fingerprint = program.fingerprint();
-    let mut words = [0_u32; 8];
-    for (slot, chunk) in words.iter_mut().zip(fingerprint.chunks_exact(4)) {
-        *slot = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-    }
-    words
+    vyre_primitives::wire::decode_u32x8_le_bytes(&fingerprint)
 }
 
 /// Fingerprint a Program from a (kind, signature, region) triple.
@@ -224,8 +220,14 @@ mod tests {
                     inputs.len()
                 )));
             };
-            let a = bytes_to_u32(a_bytes)?;
-            let b = bytes_to_u32(b_bytes)?;
+            let a = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+                a_bytes,
+                "XOR test dispatcher",
+            )?;
+            let b = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+                b_bytes,
+                "XOR test dispatcher",
+            )?;
             let out_len = out_bytes.len() / 4;
             if a.len() < out_len || b.len() < out_len {
                 return Err(DispatchError::BadInputs(format!(
@@ -242,19 +244,6 @@ mod tests {
                 .collect::<Vec<_>>();
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn bytes_to_u32(bytes: &[u8]) -> Result<Vec<u32>, DispatchError> {
-        if bytes.len() % 4 != 0 {
-            return Err(DispatchError::BadInputs(format!(
-                "Fix: XOR test dispatcher input byte length must be u32-aligned, got {}.",
-                bytes.len()
-            )));
-        }
-        Ok(bytes
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect())
     }
 
     #[test]
@@ -302,7 +291,8 @@ mod tests {
         let kind = vec![0xDEAD_BEEFu32; 8];
         let sig = vec![0x1234_5678u32; 8];
         let region = vec![0x9ABC_DEF0u32; 8];
-        let got = fingerprint_via(&dispatcher, &kind, &sig, &region).expect("dispatch succeeds");
+        let got =
+            fingerprint_via(&dispatcher, &kind, &sig, &region).expect("Fix: dispatch succeeds");
         assert_eq!(got, reference_fingerprint(&kind, &sig, &region));
     }
 
@@ -311,10 +301,10 @@ mod tests {
         let source = include_str!("vsa_fingerprint.rs");
         let start = source
             .find("pub fn fingerprint_via")
-            .expect("via path marker must exist");
+            .expect("Fix: via path marker must exist");
         let end = source
             .find("\n/// Approximate cache lookup")
-            .expect("lookup marker must exist");
+            .expect("Fix: lookup marker must exist");
         let release_path = &source[start..end];
         assert!(!release_path.contains("_cpu"));
         assert!(!release_path.contains("reference_"));

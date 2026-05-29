@@ -1,63 +1,27 @@
-//! Cat-A `multi_hash` — CRC-32 + FNV-1a 32-bit + Adler-32 in one pass.
+//! Cat-A `multi_hash`  -  CRC-32 + FNV-1a 32-bit + Adler-32 in one pass.
 //!
 //! Single lane-0 guarded walk over `input[0..]`.  Each iteration updates
 //! all three hash states using the same loaded byte, so the buffer is
 //! walked exactly once.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::Program;
+use vyre_primitives::hash::multi_hash::{multi_hash_program, MULTI_HASH_OP_ID};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
-use crate::buffer_names::scoped_generic_name;
+
+use super::wrap::{scoped_input_buffer, HashWrapperSpec};
 
 const OP_ID: &str = "vyre-libs::hash::multi_hash";
 const FAMILY_PREFIX: &str = "hash_multi";
-
-const CRC32_POLY_REFLECTED: u32 = 0xEDB8_8320;
-const CRC32_INIT: u32 = 0xFFFF_FFFF;
-const CRC32_FINAL_XOR: u32 = 0xFFFF_FFFF;
-
-const FNV1A32_OFFSET: u32 = 0x811c_9dc5;
-const FNV1A32_PRIME: u32 = 0x0100_0193;
-
-const MOD_ADLER: u32 = 65_521;
-
-fn scoped_input_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
-}
-
-fn scoped_crc32_buffer(name: &str) -> String {
-    scoped_generic_name(
-        FAMILY_PREFIX,
-        "out_crc32",
-        name,
-        &["out", "output", "crc32", "out_crc32"],
-    )
-}
-
-fn scoped_fnv1a32_buffer(name: &str) -> String {
-    scoped_generic_name(
-        FAMILY_PREFIX,
-        "out_fnv1a32",
-        name,
-        &["out", "output", "fnv1a32", "out_fnv1a32"],
-    )
-}
-
-fn scoped_adler32_buffer(name: &str) -> String {
-    scoped_generic_name(
-        FAMILY_PREFIX,
-        "out_adler32",
-        name,
-        &["out", "output", "adler32", "out_adler32"],
-    )
-}
+const SPEC: HashWrapperSpec = HashWrapperSpec::new(OP_ID, MULTI_HASH_OP_ID, FAMILY_PREFIX, 3);
 
 /// Build a Program that computes CRC-32, FNV-1a 32-bit, and Adler-32 over
 /// `input[0..n]` in a single walk.
 ///
-/// `input[i]` packs one byte per u32 slot.  The three results are written
-/// to `out_crc32[0]`, `out_fnv1a32[0]`, and `out_adler32[0]`.
+/// `input[i]` packs one byte per u32 slot. The three results are packed into
+/// one ABI-legal output buffer:
+/// `out[0] = crc32`, `out[1] = fnv1a32`, `out[2] = adler32`.
 #[must_use]
 pub fn multi_hash(
     input: &str,
@@ -66,92 +30,21 @@ pub fn multi_hash(
     out_adler32: &str,
     n: u32,
 ) -> Program {
-    let input = scoped_input_buffer(input);
-    let out_crc32 = scoped_crc32_buffer(out_crc32);
-    let out_fnv1a32 = scoped_fnv1a32_buffer(out_fnv1a32);
-    let out_adler32 = scoped_adler32_buffer(out_adler32);
-
-    let body = vec![crate::region::wrap_anonymous(
-        OP_ID,
-        vec![Node::if_then(
-            Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-            vec![
-                Node::let_bind("crc", Expr::u32(CRC32_INIT)),
-                Node::let_bind("fnv", Expr::u32(FNV1A32_OFFSET)),
-                Node::let_bind("a", Expr::u32(1)),
-                Node::let_bind("b", Expr::u32(0)),
-                Node::loop_for(
-                    "i",
-                    Expr::u32(0),
-                    Expr::u32(n),
-                    vec![
-                        Node::let_bind("byte", Expr::load(&input, Expr::var("i"))),
-                        // CRC-32 update
-                        Node::assign("crc", Expr::bitxor(Expr::var("crc"), Expr::var("byte"))),
-                        Node::loop_for(
-                            "bit",
-                            Expr::u32(0),
-                            Expr::u32(8),
-                            vec![Node::assign(
-                                "crc",
-                                Expr::Select {
-                                    cond: Box::new(Expr::ne(
-                                        Expr::bitand(Expr::var("crc"), Expr::u32(1)),
-                                        Expr::u32(0),
-                                    )),
-                                    true_val: Box::new(Expr::bitxor(
-                                        Expr::shr(Expr::var("crc"), Expr::u32(1)),
-                                        Expr::u32(CRC32_POLY_REFLECTED),
-                                    )),
-                                    false_val: Box::new(Expr::shr(Expr::var("crc"), Expr::u32(1))),
-                                },
-                            )],
-                        ),
-                        // FNV-1a 32 update
-                        Node::assign("fnv", Expr::bitxor(Expr::var("fnv"), Expr::var("byte"))),
-                        Node::assign("fnv", Expr::mul(Expr::var("fnv"), Expr::u32(FNV1A32_PRIME))),
-                        // Adler-32 update
-                        Node::assign(
-                            "a",
-                            Expr::rem(
-                                Expr::add(Expr::var("a"), Expr::var("byte")),
-                                Expr::u32(MOD_ADLER),
-                            ),
-                        ),
-                        Node::assign(
-                            "b",
-                            Expr::rem(
-                                Expr::add(Expr::var("b"), Expr::var("a")),
-                                Expr::u32(MOD_ADLER),
-                            ),
-                        ),
-                    ],
-                ),
-                Node::store(
-                    &out_crc32,
-                    Expr::u32(0),
-                    Expr::bitxor(Expr::var("crc"), Expr::u32(CRC32_FINAL_XOR)),
-                ),
-                Node::store(&out_fnv1a32, Expr::u32(0), Expr::var("fnv")),
-                Node::store(
-                    &out_adler32,
-                    Expr::u32(0),
-                    Expr::bitor(Expr::shl(Expr::var("b"), Expr::u32(16)), Expr::var("a")),
-                ),
-            ],
-        )],
-    )];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-            BufferDecl::output(&out_crc32, 1, DataType::U32).with_count(1),
-            BufferDecl::read_write(&out_fnv1a32, 2, DataType::U32).with_count(1),
-            BufferDecl::read_write(&out_adler32, 3, DataType::U32).with_count(1),
+    let input = scoped_input_buffer(FAMILY_PREFIX, input);
+    let out_crc32 = SPEC.scoped_output_buffer_with_aliases(
+        out_crc32,
+        &[
+            "out",
+            "output",
+            "crc32",
+            "out_crc32",
+            "multi_hash",
+            "out_multi_hash",
         ],
-        [1, 1, 1],
-        body,
-    )
+    );
+    let _legacy_output_names = (out_fnv1a32, out_adler32);
+    let primitive = multi_hash_program(&input, &out_crc32, n);
+    SPEC.wrap_static_count(&input, &out_crc32, n, primitive)
 }
 
 inventory::submit! {
@@ -159,19 +52,14 @@ inventory::submit! {
         id: OP_ID,
         build: || multi_hash("input", "out_crc32", "out_fnv1a32", "out_adler32", 3),
         test_inputs: Some(|| {
-            let mut bytes = Vec::with_capacity(12);
-            for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
-            vec![vec![
-                bytes,
-                vec![0u8; 4],
-                vec![0u8; 4],
-            ]]
+            let bytes = vyre_primitives::wire::pack_bytes_as_u32_slice(b"abc");
+            vec![vec![bytes]]
         }),
-        expected_output: Some(|| vec![vec![
-            0x3524_41c2u32.to_le_bytes().to_vec(),
-            0x1a47_e90bu32.to_le_bytes().to_vec(),
-            0x024D_0127u32.to_le_bytes().to_vec(),
-        ]]),
+        expected_output: Some(|| vec![vec![vyre_primitives::wire::pack_u32_slice(&[
+            0x3524_41c2,
+            0x1a47_e90b,
+            0x024D_0127,
+        ])]]),
         category: None,
     }
 }
@@ -187,32 +75,21 @@ mod tests {
         let program = multi_hash("input", "out_crc32", "out_fnv1a32", "out_adler32", n);
         let mut input_bytes = pack_bytes_as_u32(bytes);
         input_bytes.resize(n as usize * 4, 0);
-        let inputs = vec![
-            Value::Bytes(input_bytes.into()),
-            Value::Bytes(vec![0u8; 4].into()),
-            Value::Bytes(vec![0u8; 4].into()),
-            Value::Bytes(vec![0u8; 4].into()),
-        ];
+        let inputs = vec![Value::Bytes(input_bytes.into())];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: multi_hash must run; restore this invariant before continuing.");
-        let crc = u32::from_le_bytes([
-            outputs[0].to_bytes()[0],
-            outputs[0].to_bytes()[1],
-            outputs[0].to_bytes()[2],
-            outputs[0].to_bytes()[3],
-        ]);
-        let fnv = u32::from_le_bytes([
-            outputs[1].to_bytes()[0],
-            outputs[1].to_bytes()[1],
-            outputs[1].to_bytes()[2],
-            outputs[1].to_bytes()[3],
-        ]);
-        let adler = u32::from_le_bytes([
-            outputs[2].to_bytes()[0],
-            outputs[2].to_bytes()[1],
-            outputs[2].to_bytes()[2],
-            outputs[2].to_bytes()[3],
-        ]);
+        assert_eq!(
+            outputs.len(),
+            1,
+            "multi_hash must expose one packed output buffer"
+        );
+        let raw = outputs[0].to_bytes();
+        let crc = vyre_primitives::wire::read_u32_le_word(&raw, 0, "multi-hash crc32 output")
+            .expect("Fix: multi_hash output must contain crc32 word.");
+        let fnv = vyre_primitives::wire::read_u32_le_word(&raw, 1, "multi-hash fnv1a32 output")
+            .expect("Fix: multi_hash output must contain fnv1a32 word.");
+        let adler = vyre_primitives::wire::read_u32_le_word(&raw, 2, "multi-hash adler32 output")
+            .expect("Fix: multi_hash output must contain adler32 word.");
         (crc, fnv, adler)
     }
 
@@ -228,7 +105,8 @@ mod tests {
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: crc32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
-        u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+        vyre_primitives::wire::read_u32_le_word(&raw, 0, "multi-hash crc32 output")
+            .expect("Fix: crc32 output must contain one u32.")
     }
 
     fn run_fnv1a32(bytes: &[u8]) -> u32 {
@@ -242,7 +120,8 @@ mod tests {
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: fnv1a32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
-        u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+        vyre_primitives::wire::read_u32_le_word(&raw, 0, "multi-hash fnv1a32 output")
+            .expect("Fix: fnv1a32 output must contain one u32.")
     }
 
     fn run_adler32(bytes: &[u8]) -> u32 {
@@ -257,7 +136,8 @@ mod tests {
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: adler32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
-        u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+        vyre_primitives::wire::read_u32_le_word(&raw, 0, "multi-hash adler32 output")
+            .expect("Fix: adler32 output must contain one u32.")
     }
 
     #[test]
@@ -296,6 +176,67 @@ mod tests {
     }
 
     #[test]
+    fn crc_lane_ignores_high_input_bits_like_primitive_crc32() {
+        let program = multi_hash("input", "out_crc32", "out_fnv1a32", "out_adler32", 1);
+        let inputs = vec![Value::Bytes(0xFFFF_FF61u32.to_le_bytes().to_vec().into())];
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: multi_hash must run on high-bit-polluted u32 byte slots.");
+        let raw = outputs[0].to_bytes();
+        let crc = vyre_primitives::wire::read_u32_le_word(&raw, 0, "multi-hash crc output")
+            .expect("Fix: multi_hash crc output must contain one u32.");
+
+        assert_eq!(crc, run_crc32(b"a"));
+    }
+
+    #[test]
+    fn generated_crc_lane_masks_high_bits_for_polluted_u32_slots() {
+        let program = multi_hash("input", "out_crc32", "out_fnv1a32", "out_adler32", 4);
+        for seed in 0u32..64 {
+            let logical = [
+                seed as u8,
+                seed.wrapping_mul(3) as u8,
+                seed.wrapping_add(17) as u8,
+                seed.wrapping_mul(11).wrapping_add(9) as u8,
+            ];
+            let polluted = logical
+                .iter()
+                .enumerate()
+                .flat_map(|(index, byte)| {
+                    (0xA5A5_0000u32 | ((index as u32) << 12) | u32::from(*byte)).to_le_bytes()
+                })
+                .collect::<Vec<_>>();
+            let inputs = vec![Value::Bytes(polluted.into())];
+            let outputs = vyre_reference::reference_eval(&program, &inputs).unwrap_or_else(|error| {
+                panic!("Fix: multi_hash must run for generated polluted u32 byte slots at seed={seed}: {error}")
+            });
+            let raw = outputs[0].to_bytes();
+            let crc = vyre_primitives::wire::read_u32_le_word(&raw, 0, "multi-hash crc32 output")
+                .expect("Fix: generated multi_hash output must contain crc32 word.");
+            let fnv = vyre_primitives::wire::read_u32_le_word(&raw, 1, "multi-hash fnv1a32 output")
+                .expect("Fix: generated multi_hash output must contain fnv1a32 word.");
+            let adler =
+                vyre_primitives::wire::read_u32_le_word(&raw, 2, "multi-hash adler32 output")
+                    .expect("Fix: generated multi_hash output must contain adler32 word.");
+
+            assert_eq!(
+                crc,
+                run_crc32(&logical),
+                "crc32 high-bit masking mismatch at seed {seed}"
+            );
+            assert_eq!(
+                fnv,
+                run_fnv1a32(&logical),
+                "fnv1a32 high-bit masking mismatch at seed {seed}"
+            );
+            assert_eq!(
+                adler,
+                run_adler32(&logical),
+                "adler32 high-bit masking mismatch at seed {seed}"
+            );
+        }
+    }
+
+    #[test]
     fn generic_default_names_are_family_scoped() {
         let program = multi_hash("input", "out_crc32", "out_fnv1a32", "out_adler32", 4);
         assert_eq!(
@@ -304,15 +245,18 @@ mod tests {
         );
         assert_eq!(
             program.buffers()[1].name(),
-            fixed_name(FAMILY_PREFIX, "out_crc32")
+            fixed_name(FAMILY_PREFIX, "out")
         );
+    }
+
+    #[test]
+    fn declares_single_packed_output_buffer_for_backend_abi() {
+        let program = multi_hash("input", "out_crc32", "out_fnv1a32", "out_adler32", 4);
         assert_eq!(
-            program.buffers()[2].name(),
-            fixed_name(FAMILY_PREFIX, "out_fnv1a32")
+            program.buffers().len(),
+            2,
+            "multi_hash must expose input plus one packed output buffer"
         );
-        assert_eq!(
-            program.buffers()[3].name(),
-            fixed_name(FAMILY_PREFIX, "out_adler32")
-        );
+        assert_eq!(program.buffers()[1].count(), 3);
     }
 }

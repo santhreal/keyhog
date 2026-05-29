@@ -164,6 +164,8 @@ impl InterpCtx {
 pub enum NodeStorage {
     /// Literal unsigned 32-bit integer.
     LitU32(u32),
+    /// Literal unsigned 64-bit integer.
+    LitU64(u64),
     /// Literal signed 32-bit integer.
     LitI32(i32),
     /// Literal floating-point value.
@@ -205,7 +207,11 @@ impl NodeStorage {
             Self::BinOp { left, right, .. } => vec![*left, *right],
             Self::UnOp { operand, .. } => vec![*operand],
             Self::Extern { operands, .. } => operands.iter().copied().collect(),
-            Self::LitU32(_) | Self::LitI32(_) | Self::LitF32(_) | Self::LitBool(_) => Vec::new(),
+            Self::LitU32(_)
+            | Self::LitU64(_)
+            | Self::LitI32(_)
+            | Self::LitF32(_)
+            | Self::LitBool(_) => Vec::new(),
         }
     }
 
@@ -218,6 +224,7 @@ impl NodeStorage {
     pub fn interpret(&self, ctx: &mut InterpCtx) -> Result<Value, EvalError> {
         match self {
             Self::LitU32(value) => Ok(Value::U32(*value)),
+            Self::LitU64(value) => Ok(Value::U64(*value)),
             Self::LitI32(value) => Ok(Value::I32(*value)),
             Self::LitF32(value) => Ok(Value::F32(*value)),
             Self::LitBool(value) => Ok(Value::Bool(*value)),
@@ -272,6 +279,42 @@ fn interpret_bin_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalE
             BinOp::Or => Ok(Value::Bool(left != 0 || right != 0)),
             _ => Err(EvalError::new(format!(
                 "unsupported u32 binary operation {op:?}. Fix: add interpreter semantics before registering this operation."
+            ))),
+        },
+        (Value::U64(left), Value::U64(right)) => match op {
+            BinOp::Add => Ok(Value::U64(left.wrapping_add(right))),
+            BinOp::Sub => Ok(Value::U64(left.wrapping_sub(right))),
+            BinOp::Mul => Ok(Value::U64(left.wrapping_mul(right))),
+            BinOp::Div => Ok(Value::U64(if right == 0 {
+                u64::MAX
+            } else {
+                left / right
+            })),
+            BinOp::Mod => Ok(Value::U64(if right == 0 { 0 } else { left % right })),
+            BinOp::BitAnd => Ok(Value::U64(left & right)),
+            BinOp::BitOr => Ok(Value::U64(left | right)),
+            BinOp::BitXor => Ok(Value::U64(left ^ right)),
+            BinOp::Shl => Ok(Value::U64(left.wrapping_shl((right & 63) as u32))),
+            BinOp::Shr => Ok(Value::U64(left.wrapping_shr((right & 63) as u32))),
+            BinOp::Eq => Ok(Value::Bool(left == right)),
+            BinOp::Ne => Ok(Value::Bool(left != right)),
+            BinOp::Lt => Ok(Value::Bool(left < right)),
+            BinOp::Le => Ok(Value::Bool(left <= right)),
+            BinOp::Gt => Ok(Value::Bool(left > right)),
+            BinOp::Ge => Ok(Value::Bool(left >= right)),
+            BinOp::Min => Ok(Value::U64(left.min(right))),
+            BinOp::Max => Ok(Value::U64(left.max(right))),
+            BinOp::SaturatingAdd => Ok(Value::U64(left.saturating_add(right))),
+            BinOp::SaturatingSub => Ok(Value::U64(left.saturating_sub(right))),
+            BinOp::SaturatingMul => Ok(Value::U64(left.saturating_mul(right))),
+            BinOp::AbsDiff => Ok(Value::U64(left.abs_diff(right))),
+            BinOp::WrappingAdd => Ok(Value::U64(left.wrapping_add(right))),
+            BinOp::WrappingSub => Ok(Value::U64(left.wrapping_sub(right))),
+            BinOp::MulHigh => Ok(Value::U64(((left as u128 * right as u128) >> 64) as u64)),
+            BinOp::And => Ok(Value::Bool(left != 0 && right != 0)),
+            BinOp::Or => Ok(Value::Bool(left != 0 || right != 0)),
+            _ => Err(EvalError::new(format!(
+                "unsupported u64 binary operation {op:?}. Fix: add interpreter semantics before registering this operation."
             ))),
         },
         (Value::Bool(left), Value::Bool(right)) => match op {
@@ -394,7 +437,9 @@ fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
             ))),
         },
         Value::U64(value) => match op {
+            UnOp::Negate => Ok(Value::U64(0u64.wrapping_sub(value))),
             UnOp::BitNot => Ok(Value::U64(!value)),
+            UnOp::LogicalNot => Ok(Value::Bool(value == 0)),
             UnOp::Popcount => Ok(Value::U64(u64::from(value.count_ones()))),
             UnOp::Clz => Ok(Value::U64(u64::from(value.leading_zeros()))),
             UnOp::Ctz => Ok(Value::U64(u64::from(value.trailing_zeros()))),
@@ -407,6 +452,7 @@ fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -459,3 +505,4 @@ mod tests {
         assert!(matches!(result, Value::F32(value) if value.to_bits() == 0.0f32.to_bits()));
     }
 }
+

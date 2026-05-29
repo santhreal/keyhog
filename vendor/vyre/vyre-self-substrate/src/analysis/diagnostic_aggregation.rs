@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn compact_diagnostic_plan_bounds_readback_to_records() {
         let plan = plan_compact_diagnostic_readback(1_000_000, 3, 16, 16)
-            .expect("bounded compact diagnostics should plan");
+            .expect("Fix: bounded compact diagnostics should plan");
 
         assert_eq!(plan.compact_readback_bytes, 72);
         assert_eq!(plan.avoided_raw_readback_bytes, 15_999_928);
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn compact_diagnostic_plan_accepts_zero_actual_records() {
         let plan = plan_compact_diagnostic_readback(4096, 0, 8, 16)
-            .expect("zero diagnostics still has a bounded readback plan");
+            .expect("Fix: zero diagnostics still has a bounded readback plan");
 
         assert_eq!(plan.compact_readback_bytes, 0);
         assert_eq!(plan.avoided_raw_readback_bytes, 65_536);

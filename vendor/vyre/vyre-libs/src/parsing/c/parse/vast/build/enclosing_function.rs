@@ -25,13 +25,10 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
 
     let mut nodes = vec![
         Node::let_bind(out_name, Expr::u32(SENTINEL)),
-        Node::let_bind(
-            &base,
-            Expr::mul(idx.clone(), Expr::u32(VAST_NODE_STRIDE_U32)),
-        ),
+        Node::let_bind(&base, vast_row_base_expr(idx.clone())),
         Node::let_bind(
             &parent,
-            Expr::load(vast_nodes, Expr::add(Expr::var(&base), Expr::u32(1))),
+            vast_row_parent_from_base_expr(vast_nodes, Expr::var(&base)),
         ),
         Node::loop_for(
             &parent_walk,
@@ -45,25 +42,15 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                 vec![
                     Node::let_bind(
                         &parent_base,
-                        Expr::mul(Expr::var(&parent), Expr::u32(VAST_NODE_STRIDE_U32)),
+                        vast_row_base_expr(Expr::var(&parent)),
                     ),
                     Node::let_bind(
                         &parent_kind,
-                        Expr::load(vast_nodes, Expr::var(&parent_base)),
+                        vast_row_kind_from_base_expr(vast_nodes, Expr::var(&parent_base)),
                     ),
                     Node::let_bind(
                         &parent_prev_kind,
-                        Expr::select(
-                            Expr::gt(Expr::var(&parent), Expr::u32(0)),
-                            Expr::load(
-                                vast_nodes,
-                                Expr::mul(
-                                    Expr::sub(Expr::var(&parent), Expr::u32(1)),
-                                    Expr::u32(VAST_NODE_STRIDE_U32),
-                                ),
-                            ),
-                            Expr::u32(SENTINEL),
-                        ),
+                        vast_prior_row_kind_expr(vast_nodes, Expr::var(&parent), 1),
                     ),
                     Node::if_then(
                         Expr::and(
@@ -74,7 +61,7 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                     ),
                     Node::assign(
                         &parent,
-                        Expr::load(vast_nodes, Expr::add(Expr::var(&parent_base), Expr::u32(1))),
+                        vast_row_parent_from_base_expr(vast_nodes, Expr::var(&parent_base)),
                     ),
                 ],
             )],
@@ -97,11 +84,11 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                 Expr::lt(Expr::var(&scope), Expr::var("annot_num_nodes")),
             ),
             vec![
+                Node::let_bind(&scope_base, vast_row_base_expr(Expr::var(&scope))),
                 Node::let_bind(
-                    &scope_base,
-                    Expr::mul(Expr::var(&scope), Expr::u32(VAST_NODE_STRIDE_U32)),
+                    &scope_kind,
+                    vast_row_kind_from_base_expr(vast_nodes, Expr::var(&scope_base)),
                 ),
-                Node::let_bind(&scope_kind, Expr::load(vast_nodes, Expr::var(&scope_base))),
                 Node::if_then(
                     Expr::eq(Expr::var(&scope_kind), Expr::u32(TOK_LBRACE)),
                     vec![
@@ -121,10 +108,7 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                                 ),
                                 Node::let_bind(
                                     &scan_kind,
-                                    Expr::load(
-                                        vast_nodes,
-                                        Expr::mul(Expr::var(&rev), Expr::u32(VAST_NODE_STRIDE_U32)),
-                                    ),
+                                    vast_row_kind_expr(vast_nodes, Expr::var(&rev)),
                                 ),
                                 Node::if_then(
                                     Expr::eq(Expr::var(&scan_kind), Expr::u32(TOK_RPAREN)),
@@ -156,14 +140,11 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                                                     &scan_prev_kind,
                                                     Expr::select(
                                                         Expr::gt(Expr::var(&rev), Expr::u32(0)),
-                                                        Expr::load(
+                                                        vast_row_kind_expr(
                                                             vast_nodes,
-                                                            Expr::mul(
-                                                                Expr::sub(
-                                                                    Expr::var(&rev),
-                                                                    Expr::u32(1),
-                                                                ),
-                                                                Expr::u32(VAST_NODE_STRIDE_U32),
+                                                            Expr::sub(
+                                                                Expr::var(&rev),
+                                                                Expr::u32(1),
                                                             ),
                                                         ),
                                                         Expr::u32(SENTINEL),
@@ -190,7 +171,7 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                 ),
                 Node::assign(
                     &scope,
-                    Expr::load(vast_nodes, Expr::add(Expr::var(&scope_base), Expr::u32(1))),
+                    vast_row_parent_from_base_expr(vast_nodes, Expr::var(&scope_base)),
                 ),
             ],
         )],

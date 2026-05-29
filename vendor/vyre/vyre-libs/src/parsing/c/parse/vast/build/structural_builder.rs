@@ -65,6 +65,32 @@ pub fn c11_build_vast_nodes(
     let build_loop = vec![
         Node::let_bind("row", build_row),
         Node::let_bind("tok", Expr::load(tok_types, Expr::var("build_i"))),
+        Node::store(out_vast_nodes, Expr::var("row"), Expr::var("tok")),
+        Node::store(
+            out_vast_nodes,
+            Expr::add(Expr::var("row"), Expr::u32(5)),
+            Expr::load(tok_starts, Expr::var("build_i")),
+        ),
+        Node::store(
+            out_vast_nodes,
+            Expr::add(Expr::var("row"), Expr::u32(6)),
+            Expr::load(tok_lens, Expr::var("build_i")),
+        ),
+        Node::store(
+            out_vast_nodes,
+            Expr::add(Expr::var("row"), Expr::u32(VAST_TYPEDEF_FLAGS_FIELD)),
+            Expr::u32(0),
+        ),
+        Node::store(
+            out_vast_nodes,
+            Expr::add(Expr::var("row"), Expr::u32(VAST_TYPEDEF_SCOPE_FIELD)),
+            Expr::u32(0),
+        ),
+        Node::store(
+            out_vast_nodes,
+            Expr::add(Expr::var("row"), Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD)),
+            Expr::u32(0),
+        ),
         Node::let_bind(
             "parent_idx",
             Expr::select(
@@ -92,11 +118,6 @@ pub fn c11_build_vast_nodes(
             out_vast_nodes,
             Expr::add(Expr::var("row"), Expr::u32(4)),
             Expr::u32(SENTINEL),
-        ),
-        Node::store(
-            out_vast_nodes,
-            Expr::add(Expr::var("row"), Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD)),
-            Expr::u32(0),
         ),
         // Clamp parent_idx into a safe in-range slot (0) before the
         // speculative load. `Expr::select` evaluates both arms; on PTX the
@@ -166,7 +187,7 @@ pub fn c11_build_vast_nodes(
         //     attribute and the paren pair (lexer filters this, fine).
         //   - `__attribute__((...)) __attribute__((...))` chained.
         //   - `__attribute_const__` / `__nonnull` etc. expanding to
-        //     `__attribute__ ((...))` via macro — should be fine after
+        //     `__attribute__ ((...))` via macro  -  should be fine after
         //     preprocessor expansion.
         //   - GCC also accepts `__attribute__()` (empty) and silently
         //     discards it.

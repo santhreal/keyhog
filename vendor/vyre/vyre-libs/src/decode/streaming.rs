@@ -5,12 +5,12 @@
 //! `decode::base64 / hex / inflate / lz4` each used to produce a
 //! storage-buffer output that `matching::dfa / nfa` then re-read
 //! from DRAM. Two kernels, two DMA round-trips, one pipeline
-//! barrier — cheap on a 1 MiB corpus, ruinous on a 100 GiB corpus
+//! barrier  -  cheap on a 1 MiB corpus, ruinous on a 100 GiB corpus
 //! scan where the decoded-bytes footprint dominates the DRAM budget.
 //!
 //! The fused path hands bytes from decoder → scanner through
 //! **workgroup-shared memory** on the same dispatch. No DRAM
-//! round-trip, no pipeline barrier — the scanner's loads hit L1 on
+//! round-trip, no pipeline barrier  -  the scanner's loads hit L1 on
 //! the SM that decoded the bytes.
 //!
 //! # Contract
@@ -27,7 +27,7 @@
 //! The fusion transformation itself is a foundation-layer pass
 //! (`optimizer::passes::decode_scan_fuse`). This module is the
 //! library-level API that consumers reach for directly. Both
-//! paths land on the same fused Program — the foundation pass is
+//! paths land on the same fused Program  -  the foundation pass is
 //! the canonical transformation, this is a thin convenience layer.
 
 use vyre_foundation::execution_plan::fusion::fuse_programs;
@@ -38,7 +38,7 @@ use vyre_foundation::ir::{BufferDecl, DataType, Program};
 pub enum DecodeScanFuseError {
     /// The caller supplied `&decoder` and `&scanner` but neither
     /// declares the named handoff buffer. Fusing would produce a
-    /// Program with no shared byte-flow path — the caller's intent
+    /// Program with no shared byte-flow path  -  the caller's intent
     /// cannot be honoured.
     #[error(
         "Fix: handoff buffer {handoff:?} does not appear in the decoder or scanner Program's \
@@ -66,7 +66,7 @@ pub enum DecodeScanFuseError {
     /// `fuse_programs` rejected the pair (self-aliasing or
     /// workgroup-size mismatch). The inner error is the original.
     #[error(
-        "Fix: kernel-level fusion failed — run the autotune pass to normalise workgroup \
+        "Fix: kernel-level fusion failed  -  run the autotune pass to normalise workgroup \
          sizes and rename any self-aliasing buffers before calling `fuse_decode_scan`. \
          Inner: {0}"
     )]
@@ -79,7 +79,7 @@ pub enum DecodeScanFuseError {
 /// workgroup memory so its bytes never touch DRAM.
 ///
 /// `handoff_byte_count` is the capacity the fused Program reserves
-/// for the workgroup handoff — typically the decoder's max output
+/// for the workgroup handoff  -  typically the decoder's max output
 /// bytes per workgroup. Must be strictly positive.
 pub fn fuse_decode_scan(
     decoder: Program,
@@ -106,7 +106,7 @@ pub fn fuse_decode_scan(
 
 fn promote_to_workgroup(program: Program, handoff_buf: &str, count: u32) -> Program {
     // `BufferDecl::workgroup` already sets `access: Workgroup` and
-    // `kind: Shared` — no extra `.with_kind()` required.
+    // `kind: Shared`  -  no extra `.with_kind()` required.
     let mut new_buffers: Vec<BufferDecl> = program
         .buffers
         .iter()

@@ -3,19 +3,19 @@
 //!
 //! The existing [`crate::optimizer::ProgramPass`] trait takes a `Program`
 //! and returns a `PassResult`. That shape is fine for IR-only
-//! rewrites. But backend-aware passes — fusion (Gemini C's C-B8),
-//! subgroup-op lowering (C-B2), shared-memory allocator — need
+//! rewrites. But backend-aware passes  -  fusion (Gemini C's C-B8),
+//! subgroup-op lowering (C-B2), shared-memory allocator  -  need
 //! access to adapter caps at scheduling time.
 //!
 //! This module ships the types every such pass consumes:
 //!
-//! * [`AdapterCaps`] — the subset of concrete adapter info that
+//! * [`AdapterCaps`]  -  the subset of concrete adapter info that
 //!   passes care about, in a backend-neutral shape. Backends fill
 //!   this in; passes read it.
-//! * [`PassCtx`] — the mutable context handed to passes that opt
+//! * [`PassCtx`]  -  the mutable context handed to passes that opt
 //!   into the ctx-based API. Accretes [`crate::diagnostics::Diagnostic`]s,
 //!   carries the caps, exposes a typed analysis cache.
-//! * [`scheduling_error_to_diagnostic`] — maps the existing
+//! * [`scheduling_error_to_diagnostic`]  -  maps the existing
 //!   `crate::PassSchedulingError` onto a structured
 //!   diagnostic with the stable `E-PASS-CYCLE` / `E-PASS-REQUIRE`
 //!   codes.
@@ -204,7 +204,7 @@ impl AnalysisCache {
         self.entries.get(key).and_then(|v| v.downcast_ref::<T>())
     }
 
-    /// Drop every cached analysis — called between fixpoint
+    /// Drop every cached analysis  -  called between fixpoint
     /// iterations so stale analyses cannot survive an invalidation.
     pub fn clear(&mut self) {
         self.entries.clear();
@@ -267,6 +267,13 @@ pub fn scheduling_error_to_diagnostic(err: &crate::optimizer::PassSchedulingErro
             "OPTSCHED004: pass `{pass}` is scheduled before required pass `{requirement}`. Fix: move `{requirement}` earlier or remove the stale requirement."
         ))
         .with_location(OpLocation::op(pass.to_string())),
+        E::StorageReserveFailed {
+            context,
+            requested,
+            message,
+        } => Diagnostic::error(format!(
+            "OPTSCHED005: scheduler could not reserve {requested} {context} slot(s): {message}. Fix: reduce the pass set or schedule it in shards."
+        )),
     }
 }
 

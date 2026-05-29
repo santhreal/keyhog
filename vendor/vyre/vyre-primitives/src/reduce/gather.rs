@@ -1,4 +1,4 @@
-//! `reduce_gather` — parallel gather over a u32 ValueSet.
+//! `reduce_gather`  -  parallel gather over a u32 ValueSet.
 //!
 //! Each global invocation loads one index and, if in-range, copies
 //! `src[index]` into `dst[global_id]`.  Used by graph operations for
@@ -17,13 +17,14 @@
 //!         dst[global_id] = src[idx]
 //! ```
 //!
-//! Out-of-range indices are silently dropped — at internet scale an
+//! Out-of-range indices are silently dropped  -  at internet scale an
 //! unguarded load would read past the end of the source buffer.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+#[cfg(any(test, feature = "cpu-parity"))]
+use super::indexed_move::{indexed_move_cpu_ref_into, try_indexed_move_cpu_ref_into};
+use super::indexed_move::{indexed_move_program, IndexedMoveKind};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::reduce::gather";
@@ -34,46 +35,7 @@ pub const OP_ID: &str = "vyre-primitives::reduce::gather";
 /// Invalid `count == 0` lowers to an explicit trap program.
 #[must_use]
 pub fn gather(src: &str, indices: &str, dst: &str, count: u32) -> Program {
-    if count == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            dst,
-            DataType::U32,
-            format!("Fix: gather requires count > 0, got {count}."),
-        );
-    }
-
-    let t = Expr::InvocationId { axis: 0 };
-
-    let body = vec![
-        Node::let_bind("idx", Expr::load(indices, t.clone())),
-        Node::if_then(
-            Expr::lt(Expr::var("idx"), Expr::u32(count)),
-            vec![Node::store(
-                dst,
-                t.clone(),
-                Expr::load(src, Expr::var("idx")),
-            )],
-        ),
-    ];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(src, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(indices, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(count),
-            BufferDecl::storage(dst, 2, BufferAccess::ReadWrite, DataType::U32).with_count(count),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(count)),
-                body,
-            )]),
-        }],
-    )
+    indexed_move_program(OP_ID, src, indices, dst, count, IndexedMoveKind::Gather)
 }
 
 /// CPU reference.
@@ -84,19 +46,25 @@ pub fn gather(src: &str, indices: &str, dst: &str, count: u32) -> Program {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(src: &[u32], indices: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
-    cpu_ref_into(src, indices, &mut out);
-    out
+    match try_cpu_ref_into(src, indices, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives gather CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(src: &[u32], indices: &[u32], out: &mut Vec<u32>) {
-    out.clear();
-    out.reserve(indices.len());
-    for &idx in indices {
-        let i = idx as usize;
-        out.push(src.get(i).copied().unwrap_or(0));
-    }
+    indexed_move_cpu_ref_into(IndexedMoveKind::Gather, src, indices, indices.len(), out);
+}
+
+/// Fallible CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(src: &[u32], indices: &[u32], out: &mut Vec<u32>) -> Result<(), String> {
+    try_indexed_move_cpu_ref_into(IndexedMoveKind::Gather, src, indices, indices.len(), out)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -105,7 +73,7 @@ inventory::submit! {
         OP_ID,
         || gather("src", "indices", "dst", 4),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[10, 20, 30, 40]),
                 to_bytes(&[3, 0, 2, 1]),
@@ -113,7 +81,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[40, 10, 30, 20])]]
         }),
     )
@@ -170,6 +138,48 @@ mod tests {
         let src = &[1u32, 2, 3];
         let indices = &[u32::MAX];
         assert_eq!(cpu_ref(src, indices), vec![0]);
+    }
+
+    #[test]
+    fn try_cpu_ref_into_reuses_output_and_clears_stale_tail() {
+        let src = &[10u32, 20, 30, 40];
+        let indices = &[3u32, 0, u32::MAX, 1];
+        let mut out = Vec::with_capacity(16);
+        out.extend_from_slice(&[u32::MAX; 16]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(src, indices, &mut out).unwrap();
+
+        assert_eq!(out, vec![40, 10, 0, 20]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let src = &[10u32, 20, 30, 40];
+        let indices = &[3u32, 0, u32::MAX, 1];
+        let mut compat = Vec::with_capacity(8);
+        let mut fallible = Vec::with_capacity(8);
+
+        cpu_ref_into(src, indices, &mut compat);
+        try_cpu_ref_into(src, indices, &mut fallible)
+            .expect("Fix: small gather CPU reference must reserve");
+
+        assert_eq!(cpu_ref(src, indices), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_cpu_ref_wrapper_has_no_raw_panic_path() {
+        let production = include_str!("gather.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: gather.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: gather CPU parity wrappers must not panic in production."
+        );
     }
 
     #[test]

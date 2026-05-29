@@ -2,8 +2,7 @@ use super::*;
 
 /// Decode framed AST windows from a compiled `vyre-frontend-c` object.
 pub fn decode_object_ast(object_bytes: &[u8]) -> Result<CObjectAst, String> {
-    let container = parse_embedded_vyrecob2(object_bytes)?;
-    decode_object_ast_from_container(&container)
+    decode_embedded_object(object_bytes, decode_object_ast_from_container)
 }
 
 pub(crate) fn decode_object_ast_from_container(
@@ -29,9 +28,7 @@ pub(crate) fn decode_object_ast_from_container(
 
 /// Read and decode framed AST windows from a compiled object path.
 pub fn decode_object_ast_file(path: &Path) -> Result<CObjectAst, String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("vyre-frontend-c: read object {}: {error}", path.display()))?;
-    decode_object_ast(&bytes)
+    read_object_file(path, decode_object_ast)
 }
 
 pub(super) fn decode_ast_windows(section: &[u8]) -> Result<Vec<CObjectAstWindow>, String> {

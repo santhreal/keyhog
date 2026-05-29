@@ -202,7 +202,7 @@ pub(super) fn walk_directives(
     trace.log("walk directives");
     if std::env::var_os("VYRE_PREPROC_COUNTS").is_some() {
         let elapsed = state.walk_start.elapsed();
-        eprintln!(
+        tracing::debug!(
             "[preproc-counts] {} bytes={} payloads={} elapsed={:?} gpu_ifdef={} gpu_if={}",
             file_path.display(),
             source.len(),

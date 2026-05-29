@@ -1,11 +1,11 @@
 //! BinOp emit-time helpers split out of `emitter/mod.rs`:
 //!
-//! - [`BodyBuilder::is_bool_expression`] — local heuristic for whether
+//! - [`BodyBuilder::is_bool_expression`]  -  local heuristic for whether
 //!   a Naga `Expression` produces a bool-typed value (used to widen
 //!   mixed bool+u32 bitwise operands so naga's type checker accepts).
-//! - [`BodyBuilder::coerce_to_u32`] — `Expression::Select` (bool→u32),
+//! - [`BodyBuilder::coerce_to_u32`]  -  `Expression::Select` (bool→u32),
 //!   `Expression::As` (i32→u32), or identity for already-u32 values.
-//! - [`BodyBuilder::fold_literal_binop`] — host-side evaluator for
+//! - [`BodyBuilder::fold_literal_binop`]  -  host-side evaluator for
 //!   literal-vs-literal U32/I32 BinOps so naga's compile-time
 //!   evaluator never sees underflow / overflow it would reject.
 //!
@@ -26,7 +26,7 @@ impl<'a> BodyBuilder<'a> {
         match self.scalar_kind_of_expression(value, 0) {
             Some(ScalarKind::Bool) => true,
             Some(_) => false,
-            // Unknown shape — fall back to the conservative shape
+            // Unknown shape  -  fall back to the conservative shape
             // heuristic. Better than treating it as non-bool when it
             // might actually be bool (one direction of the And mixed-
             // type problem).
@@ -89,13 +89,13 @@ impl<'a> BodyBuilder<'a> {
             _ => None,
         }
         .or_else(|| {
-            // Pointer/Array bases — when we can't dereference we fall
+            // Pointer/Array bases  -  when we can't dereference we fall
             // back to None.
             None::<ScalarKind>
         })
         .map(|s| match s {
             // Naga sometimes carries a vec3<u32> whose access yields
-            // u32 — the recursive map above already covers that.
+            // u32  -  the recursive map above already covers that.
             other => other,
         })
         .and_then(|s| {
@@ -137,10 +137,10 @@ impl<'a> BodyBuilder<'a> {
         } else if target == self.types.f32_ty {
             ScalarKind::Float
         } else {
-            return value; // unknown target — pass through
+            return value; // unknown target  -  pass through
         };
         if std::env::var("VYRE_COERCE_TRACE").is_ok() {
-            eprintln!(
+            tracing::debug!(
                 "[coerce_value_to_type] value={value:?} target_kind={target_kind:?} scalar_kind={:?}",
                 self.scalar_kind_of_expression(value, 0)
             );
@@ -273,7 +273,7 @@ impl<'a> BodyBuilder<'a> {
     }
 
     fn binding_types_lookup(&self, ty: naga::Handle<naga::Type>) -> Option<naga::ScalarKind> {
-        // BodyBuilder doesn't own the type arena directly — we read
+        // BodyBuilder doesn't own the type arena directly  -  we read
         // from `self.types` which holds the four scalar-type handles
         // vyre creates upfront. Match against those.
         if ty == self.types.bool_ty {
@@ -340,7 +340,7 @@ impl<'a> BodyBuilder<'a> {
         // value_types[id] is sometimes wrong (vyre IR's tracked type
         // doesn't always survive emit-naga's inserted comparisons /
         // coercions). If we coerced based on the stale hint we'd emit
-        // `select(u32_value, 1u, 0u)` whose condition is u32 — which
+        // `select(u32_value, 1u, 0u)` whose condition is u32  -  which
         // naga then rejects with `SelectConditionNotABool`.
         let actual = self.scalar_kind_of_expression(value, 0);
         let kind = match actual {

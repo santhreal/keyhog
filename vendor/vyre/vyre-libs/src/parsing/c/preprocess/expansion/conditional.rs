@@ -356,28 +356,18 @@ inventory::submit! {
         ),
         test_inputs: Some(|| {
             vec![vec![
-                vec![TOK_PREPROC, TOK_IDENTIFIER, TOK_PREPROC]
-                    .into_iter()
-                    .flat_map(u32::to_le_bytes)
-                    .collect(),
-                vec![TOK_PP_IF, 0, TOK_PP_ENDIF]
-                    .into_iter()
-                    .flat_map(u32::to_le_bytes)
-                    .collect(),
-                vec![0u32, 0, 0]
-                    .into_iter()
-                    .flat_map(u32::to_le_bytes)
-                    .collect(),
+                vyre_primitives::wire::pack_u32_slice(&[
+                    TOK_PREPROC,
+                    TOK_IDENTIFIER,
+                    TOK_PREPROC,
+                ]),
+                vyre_primitives::wire::pack_u32_slice(&[TOK_PP_IF, 0, TOK_PP_ENDIF]),
+                vyre_primitives::wire::pack_u32_slice(&[0u32, 0, 0]),
                 vec![0u8; 4 * 3],
             ]]
         }),
         expected_output: Some(|| {
-            vec![vec![
-                vec![1u32, 0, 1]
-                    .into_iter()
-                    .flat_map(u32::to_le_bytes)
-                    .collect()
-            ]]
+            vec![vec![vyre_primitives::wire::pack_u32_slice(&[1u32, 0, 1])]]
         }),
         category: Some("parsing"),
     }
@@ -405,9 +395,7 @@ fn write_u32_at(dst: &mut [u8], idx: usize, value: u32) {
     dst[base..base + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-fn pack_u32_words(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_u32_words;
 
 fn dynamic_macro_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     let macro_token = 777u32;

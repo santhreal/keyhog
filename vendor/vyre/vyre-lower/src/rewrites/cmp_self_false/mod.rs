@@ -1,4 +1,4 @@
-//! Strict-self comparison folding — `Lt(x, x)` and `Gt(x, x)` always
+//! Strict-self comparison folding  -  `Lt(x, x)` and `Gt(x, x)` always
 //! evaluate to `false`, including for NaN floats (`NaN < NaN` is
 //! `false` per IEEE-754 §5.11).
 //!
@@ -10,14 +10,14 @@
 //! - `Gt(x, x)` → `Copy(synth Lit(false))`
 //!
 //! Out of scope deliberately:
-//! - `Eq(x, x)` → `true` — UNSAFE under f32 because `NaN == NaN`
+//! - `Eq(x, x)` → `true`  -  UNSAFE under f32 because `NaN == NaN`
 //!   is `false`. The descriptor IR is dtype-untyped at the rewrite
 //!   layer, so we cannot tell `Eq(int, int)` from `Eq(float, float)`
 //!   here. boolean_simplify already covers the safe sub-case
 //!   `Eq(LitU32, LitU32)`.
-//! - `Le(x, x)` → `true`, `Ge(x, x)` → `true` — same NaN caveat
+//! - `Le(x, x)` → `true`, `Ge(x, x)` → `true`  -  same NaN caveat
 //!   (`NaN <= NaN` is `false`).
-//! - `Ne(x, x)` → `false` — UNSAFE for the same reason as `Eq`.
+//! - `Ne(x, x)` → `false`  -  UNSAFE for the same reason as `Eq`.
 //!
 //! Safe by construction: strict less-than-itself and strict
 //! greater-than-itself are mathematical falsehoods under any total
@@ -28,17 +28,19 @@
 //! to inspect are normalized to `Lt`/`Le`/`Eq`/`Ne` form (Gt and Ge
 //! get rewritten to Lt/Le by cmp_normalize first).
 
-use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
+use super::literal::ResultAllocator;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
 use vyre_foundation::ir::BinOp;
 
 #[must_use]
 pub fn cmp_self_false(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    out.body = cmp_self_false_body(out.body);
+    let mut allocator = ResultAllocator::for_body_tree(&out.body);
+    out.body = cmp_self_false_body(out.body, &mut allocator);
     out
 }
 
-fn cmp_self_false_body(mut body: KernelBody) -> KernelBody {
+fn cmp_self_false_body(mut body: KernelBody, allocator: &mut ResultAllocator) -> KernelBody {
     let mut rewrites: Vec<usize> = Vec::new();
     for (idx, op) in body.ops.iter().enumerate() {
         let bin = match &op.kind {
@@ -59,29 +61,13 @@ fn cmp_self_false_body(mut body: KernelBody) -> KernelBody {
         body.child_bodies = body
             .child_bodies
             .into_iter()
-            .map(cmp_self_false_body)
+            .map(|child| cmp_self_false_body(child, allocator))
             .collect();
         return body;
     }
 
-    let mut next_id: u32 = body
-        .ops
-        .iter()
-        .filter_map(|o| o.result)
-        .max()
-        .map(|m| m + 1)
-        .unwrap_or(0);
-
     // One synthesised Bool(false) literal shared across all rewrites.
-    let pool_idx = push_lit(&mut body.literals, LiteralValue::Bool(false));
-    let synth_id = next_id;
-    next_id += 1;
-    body.ops.push(KernelOp {
-        kind: KernelOpKind::Literal,
-        operands: vec![pool_idx],
-        result: Some(synth_id),
-    });
-    let _ = next_id;
+    let synth_id = allocator.push_literal(&mut body.ops, &mut body.literals, LiteralValue::Bool(false));
 
     for op_idx in rewrites {
         body.ops[op_idx].kind = KernelOpKind::Copy;
@@ -91,18 +77,9 @@ fn cmp_self_false_body(mut body: KernelBody) -> KernelBody {
     body.child_bodies = body
         .child_bodies
         .into_iter()
-        .map(cmp_self_false_body)
+        .map(|child| cmp_self_false_body(child, allocator))
         .collect();
     body
-}
-
-fn push_lit(literals: &mut Vec<LiteralValue>, value: LiteralValue) -> u32 {
-    if let Some(idx) = literals.iter().position(|lit| lit == &value) {
-        return idx as u32;
-    }
-    let idx = literals.len() as u32;
-    literals.push(value);
-    idx
 }
 
 #[cfg(test)]
@@ -214,7 +191,7 @@ mod tests {
             .unwrap();
         assert!(
             matches!(op.kind, KernelOpKind::BinOpKind(BinOp::Eq)),
-            "Fix: Eq(x, x) must NOT fold here — NaN safety. boolean_simplify handles the safe Eq(LitU32, LitU32) sub-case."
+            "Fix: Eq(x, x) must NOT fold here  -  NaN safety. boolean_simplify handles the safe Eq(LitU32, LitU32) sub-case."
         );
     }
 

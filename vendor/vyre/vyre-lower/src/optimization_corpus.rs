@@ -13,7 +13,7 @@ use crate::{
     KernelOp, KernelOpKind, LiteralValue, MemoryClass,
 };
 
-/// Minimum generated cases required by the Vyre/Weir release gate.
+/// Minimum generated cases required by the release optimization gate.
 pub const RELEASE_MIN_OPTIMIZATION_CASES: usize = 4_096;
 
 /// One generated release optimization case.
@@ -118,7 +118,7 @@ pub struct OptimizationCorpusValidation {
     pub optimized_cases: usize,
     /// Number of generated descriptors using Dataflow facts.
     pub dataflow_cases: usize,
-    /// Number of Dataflow descriptors changed by Weir-aware optimization.
+    /// Number of Dataflow descriptors changed by external-dataflow optimization.
     pub dataflow_optimized_cases: usize,
     /// Number of descriptors that did not converge.
     pub non_converged_cases: usize,
@@ -492,6 +492,7 @@ fn dataflow_dse_case(seed: u32) -> OptimizationCorpusCase {
         descriptor: desc,
     }
 }
+
 
 fn push_control_cases(seed: u32, cases: &mut Vec<OptimizationCorpusCase>) {
     let mut desc = literal_descriptor("control", "branch_collapse", seed);
@@ -965,6 +966,7 @@ fn vec_pack_fixture_case(seed: u32) -> OptimizationCorpusCase {
     }
 }
 
+
 fn buffer_slot(
     slot: u32,
     memory_class: MemoryClass,
@@ -1169,3 +1171,4 @@ fn literal_descriptor(family: &str, name: &str, seed: u32) -> KernelDescriptor {
         },
     }
 }
+

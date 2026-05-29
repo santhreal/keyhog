@@ -7,8 +7,8 @@ use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
 
 fn main() {
     println!("Probing Vulkan dispatch...");
-    let backend =
-        vyre_driver_spirv::SpirvBackendRegistration::acquire().expect("Failed to acquire backend");
+    let backend = vyre_driver_spirv::SpirvBackendRegistration::acquire()
+        .expect("Fix: Failed to acquire backend");
 
     println!("Building program...");
     let program = Program::wrapped(
@@ -32,8 +32,8 @@ fn main() {
     let b = vec![10u8, 0, 0, 0, 20, 0, 0, 0, 30, 0, 0, 0, 40, 0, 0, 0];
 
     println!("Lowering to SPIR-V...");
-    let spv =
-        vyre_driver_spirv::SpirvBackend::program_to_spv(&program).expect("SPIR-V lowering failed");
+    let spv = vyre_driver_spirv::SpirvBackend::program_to_spv(&program)
+        .expect("Fix: SPIR-V lowering failed");
     println!("SPIR-V: {} words", spv.len());
 
     println!("Dispatching...");

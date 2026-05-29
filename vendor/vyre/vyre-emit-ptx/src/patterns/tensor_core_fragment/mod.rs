@@ -50,7 +50,7 @@ impl FragmentTile {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TensorCoreCandidate {
     pub fragment: FragmentTile,
-    /// FMA op count in the kernel — the higher this is, the more
+    /// FMA op count in the kernel  -  the higher this is, the more
     /// accumulation work goes through tensor cores.
     pub fma_op_count: u32,
     /// Estimated speedup over scalar FMA chain. Conservative

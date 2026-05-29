@@ -85,7 +85,7 @@ fn walk_body(
         };
 
         // We only flag accesses whose target binding is in the Shared
-        // memory class — guards against a future emitter using
+        // memory class  -  guards against a future emitter using
         // LoadShared on a non-shared binding (which would be invalid
         // but the analysis stays robust).
         let slot_pos = 0usize;
@@ -224,7 +224,7 @@ fn classify_mul(
     };
 
     if stride == 0 {
-        // tid * 0 = 0 — all threads same address → broadcast.
+        // tid * 0 = 0  -  all threads same address → broadcast.
         return BankConflictKind::BroadcastSafe;
     }
     let g = gcd_u32(stride, bank_count);
@@ -448,6 +448,7 @@ mod tests {
             r.sites[0].conflict,
             BankConflictKind::Conflict { way_count: 32 }
         );
+
         assert_eq!(r.problematic_count(), 1);
         assert_eq!(r.critical_count(), 1);
     }
@@ -518,7 +519,7 @@ mod tests {
 
     #[test]
     fn negative_global_load_not_analyzed() {
-        // LoadGlobal — not LoadShared. Bank-conflict analysis is
+        // LoadGlobal  -  not LoadShared. Bank-conflict analysis is
         // only for shared memory.
         let kk = KernelDescriptor {
             id: "k".into(),
@@ -701,3 +702,4 @@ mod tests {
         assert_eq!(super::gcd_u32(12, 18), 6);
     }
 }
+

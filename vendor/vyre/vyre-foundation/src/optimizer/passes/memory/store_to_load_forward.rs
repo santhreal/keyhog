@@ -1,11 +1,11 @@
-//! ROADMAP A22 — store-to-load forwarding under the conservative
+//! ROADMAP A22  -  store-to-load forwarding under the conservative
 //! same-block / structurally-equal-index alias proof.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::store_to_load_forward`.
 //! Soundness: `Exact` when the rule fires. A `Node::Store(b, i, v)`
 //! followed in the same sibling Vec by `Node::Let(name, Load(b, i))`
 //! with no intervening write or barrier to `b` lets us replace the
-//! Load with a direct copy of `v` — the bytes the Load would observe
+//! Load with a direct copy of `v`  -  the bytes the Load would observe
 //! are exactly the bytes the prior Store wrote. Cost direction:
 //! monotone-down on `node_count` (one fewer Load expression) and on
 //! per-iteration memory traffic. Preserves: every analysis.
@@ -37,7 +37,7 @@
 //!   same predicate `dead_store_elim` uses (`node_observes_buffer`).
 //! - The forwarded `v` is `Expr::clone()`d into the Let. If `v` itself
 //!   is observably side-effecting (e.g. contains an Atomic), forwarding
-//!   would duplicate the side effect — `value_is_observably_free`
+//!   would duplicate the side effect  -  `value_is_observably_free`
 //!   rejects that case.
 
 use crate::ir::{Expr, Ident, Node, Program};
@@ -107,7 +107,7 @@ fn forward_in_body(body: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     // Take `body` by value and walk it once, moving each node into `out`
     // unchanged unless it's a forwardable Let. The previous shape iterated
     // by reference (`body.iter().enumerate()`) and unconditionally cloned
-    // every Node into `out` even when no forwarding fired — so a body of
+    // every Node into `out` even when no forwarding fired  -  so a body of
     // 1000 nodes with no opportunities still paid 1000 deep clones.
     //
     // Forwarding lookback now scans the partially-built `out` instead of
@@ -204,6 +204,15 @@ fn node_blocks_forwarding(node: &Node, buffer: &Ident) -> bool {
         }
         Node::Block(body) => body.iter().any(|n| node_blocks_forwarding(n, buffer)),
         Node::Region { body, .. } => body.iter().any(|n| node_blocks_forwarding(n, buffer)),
+        Node::AllReduce {
+            buffer: collective, ..
+        }
+        | Node::Broadcast {
+            buffer: collective, ..
+        } => collective == buffer,
+        Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+            input == buffer || output == buffer
+        }
         Node::Barrier { .. }
         | Node::AsyncWait { .. }
         | Node::Resume { .. }
@@ -293,7 +302,7 @@ fn expr_touches_buffer(expr: &Expr, buffer: &Ident) -> bool {
     }
 }
 
-/// True iff `value` is safe to clone into the forwarded Let — no
+/// True iff `value` is safe to clone into the forwarded Let  -  no
 /// embedded Atomic, Call, Opaque, or Load whose ordering could matter.
 fn value_is_observably_free(value: &Expr) -> bool {
     match value {
@@ -436,15 +445,16 @@ mod tests {
         ];
         let result = StoreToLoadForward::transform(program(entry));
         // The forwarder finds the SECOND Store as the most recent one
-        // — it is the same buffer/index, so the load forwards from `9`,
+        //  -  it is the same buffer/index, so the load forwards from `9`,
         // not the original `7`. That IS a valid forwarding (the value
-        // the Load would observe) — assert it fired.
+        // the Load would observe)  -  assert it fired.
+
         assert!(result.changed);
     }
 
     #[test]
     fn does_not_forward_when_intervening_store_clobbers_same_buffer_different_index() {
-        // Store(a, 0, 7); Store(a, 1, 9); Load(a, 0)  — forwarding
+        // Store(a, 0, 7); Store(a, 1, 9); Load(a, 0)   -  forwarding
         // should still find the (a, 0) Store, but the intervening
         // (a, 1) Store is on the same buffer and our conservative
         // walker bails out the moment it sees a same-buffer Store
@@ -475,7 +485,7 @@ mod tests {
     #[test]
     fn does_not_forward_when_value_contains_load() {
         // Forwarding a value that itself reads memory would duplicate
-        // the read — different observable behavior under relaxed memory.
+        // the read  -  different observable behavior under relaxed memory.
         let entry = vec![
             Node::store("a", Expr::u32(0), Expr::load("b", Expr::u32(0))),
             Node::let_bind("x", Expr::load("a", Expr::u32(0))),
@@ -542,3 +552,4 @@ mod tests {
         );
     }
 }
+

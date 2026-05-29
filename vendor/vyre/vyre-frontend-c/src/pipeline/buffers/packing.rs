@@ -1,24 +1,8 @@
 pub(crate) fn fast_pack_u32_le(words: &[u32]) -> Vec<u8> {
-    let byte_capacity = words.len().checked_mul(4).unwrap_or_else(|| {
-        panic!(
-            "fast_pack_u32_le word count {} overflows byte capacity. Fix: shard the GPU parser buffer before packing.",
-            words.len()
-        )
-    });
-    #[cfg(target_endian = "little")]
-    {
-        let bytes = bytemuck::cast_slice(words);
-        debug_assert_eq!(bytes.len(), byte_capacity);
-        return bytes.to_vec();
-    }
-    #[cfg(target_endian = "big")]
-    {
-        let mut out = Vec::with_capacity(byte_capacity);
-        for w in words {
-            out.extend_from_slice(&w.to_le_bytes());
-        }
-        out
-    }
+    // Canonical LEGO: vyre-primitives::wire owns the LE host bytemuck
+    // fast path. Local duplicate removed 2026-05-23 (Cargo grep confirmed
+    // wire primitive is on the same dep edge).
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 pub(crate) fn read_u32_at(buf: &[u8], off: usize) -> Result<u32, String> {
@@ -38,19 +22,24 @@ pub(crate) fn read_u32_at(buf: &[u8], off: usize) -> Result<u32, String> {
 }
 
 pub(crate) fn pack_haystack(source: &str) -> Result<(Vec<u8>, u32), String> {
-    let haystack_u32_count = u32::try_from(source.len())
-        .map_err(|_| {
-            format!(
-                "C frontend source length {} exceeds the u32 GPU index space. Fix: shard the translation unit before packing the haystack.",
-                source.len()
-            )
-        })?
-        .max(1);
-    let mut bytes = vec![0u8; haystack_u32_count as usize * 4];
-    for (i, byte) in source.bytes().enumerate() {
-        bytes[i * 4] = byte;
-    }
-    Ok((bytes, haystack_u32_count))
+    // Canonical LEGO: vyre-primitives::wire::pack_bytes_as_u32_slice_min_words
+    // owns the lane-per-byte u32 layout (byte at lane[0], lanes[1..3] = 0)
+    // padded to at least 1 word. The frontend just translates the
+    // word-count to the u32 GPU index space.
+    let _ = u32::try_from(source.len()).map_err(|_| {
+        format!(
+            "C frontend source length {} exceeds the u32 GPU index space. Fix: shard the translation unit before packing the haystack.",
+            source.len()
+        )
+    })?;
+    let (bytes, words) =
+        vyre_primitives::wire::pack_bytes_as_u32_slice_min_words(source.as_bytes(), 1)?;
+    let count = u32::try_from(words).map_err(|_| {
+        format!(
+            "C frontend haystack word count {words} exceeds the u32 GPU index space. Fix: shard the translation unit before packing."
+        )
+    })?;
+    Ok((bytes, count))
 }
 
 pub(crate) fn cuda_lexer_haystack_view(source: &[u8]) -> Result<(Vec<u8>, u32), String> {
@@ -71,61 +60,24 @@ pub(crate) fn cuda_lexer_haystack_view(source: &[u8]) -> Result<(Vec<u8>, u32), 
     Ok((packed, logical_len))
 }
 pub(crate) fn read_u32_stream(buf: &[u8], words: usize, label: &str) -> Result<Vec<u32>, String> {
-    let byte_len = words.checked_mul(4).ok_or_else(|| {
-        format!("{label}: word count {words} overflows byte length. Fix: shard parser readback before decoding.")
-    })?;
-    if byte_len > buf.len() {
-        return Err(format!(
-            "{label}: need {byte_len} bytes for {words} u32 words, have {}",
-            buf.len()
-        ));
-    }
+    // Canonical LEGO: vyre-primitives::wire::unpack_u32_slice_into owns
+    // the LE host fast path (one `bytemuck::cast_slice_mut` copy on LE).
     let mut out = Vec::with_capacity(words);
-    for chunk in buf[..byte_len].chunks_exact(4) {
-        out.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
+    vyre_primitives::wire::unpack_u32_slice_into(buf, words, label, &mut out)?;
     Ok(out)
 }
 
 pub(crate) fn vec_u32_le_bytes(words: &[u32]) -> Vec<u8> {
-    // Same single-memcpy fast path as `fast_pack_u32_le`. The
-    // upstream `pack_u32` in vyre-primitives::bracket_match still
-    // uses the iter/flat_map pattern; we shortcut it here on the
-    // hot pipeline path. Replace the upstream when it lands.
-    fast_pack_u32_le(words)
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 pub(crate) fn vec_u32_le_bytes_min_words(words: &[u32], min_words: u32) -> Result<Vec<u8>, String> {
-    let min_words = usize::try_from(min_words).map_err(|_| {
-        format!(
-            "u32 byte pack minimum word count {min_words} exceeds host usize. Fix: shard the token stream before GPU dispatch."
-        )
-    })?;
-    if words.len() >= min_words {
-        return Ok(vec_u32_le_bytes(words));
-    }
-    let byte_len = min_words.checked_mul(4).ok_or_else(|| {
-        format!(
-            "u32 byte pack minimum word count {min_words} overflows host byte indexing. Fix: shard the token stream before GPU dispatch."
-        )
-    })?;
-    let packed_len = words.len().checked_mul(4).ok_or_else(|| {
-        format!(
-            "u32 byte pack word count {} overflows host byte indexing. Fix: shard the token stream before GPU dispatch.",
-            words.len()
-        )
-    })?;
-    debug_assert!(packed_len <= byte_len);
-    let mut out = vec![0u8; byte_len];
-    #[cfg(target_endian = "little")]
-    {
-        out[..packed_len].copy_from_slice(bytemuck::cast_slice(words));
-    }
-    #[cfg(target_endian = "big")]
-    for (index, word) in words.iter().enumerate() {
-        let start = index * 4;
-        out[start..start + 4].copy_from_slice(&word.to_le_bytes());
-    }
+    // Canonical LEGO: vyre-primitives::wire::pack_u32_slice_min_words_into
+    // owns the padded-pack fast path. Wrapper allocates the owned Vec
+    // because every existing caller takes `Vec<u8>` by value; the `_into`
+    // variant is still the right choice when the caller can reuse storage.
+    let mut out = Vec::new();
+    vyre_primitives::wire::pack_u32_slice_min_words_into(words, min_words, &mut out)?;
     Ok(out)
 }
 

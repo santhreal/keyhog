@@ -1,157 +1,3 @@
-    Blocking waiting for file lock on artifact directory
-   Compiling proc-macro2 v1.0.106
-   Compiling unicode-ident v1.0.24
-   Compiling quote v1.0.45
-   Compiling serde_core v1.0.228
-    Checking cfg-if v1.0.4
-   Compiling serde v1.0.228
-   Compiling libc v0.2.186
-    Checking allocator-api2 v0.2.21
-    Checking once_cell v1.21.4
-    Checking equivalent v1.0.2
-   Compiling parking_lot_core v0.9.12
-   Compiling version_check v0.9.5
-   Compiling cfg_aliases v0.2.1
-   Compiling libm v0.2.15
-    Checking foldhash v0.2.0
-   Compiling zerocopy v0.8.48
-    Checking scopeguard v1.2.0
-    Checking lock_api v0.4.14
-    Checking hashbrown v0.17.0
-   Compiling thiserror v2.0.18
-   Compiling rustversion v1.0.22
-   Compiling crossbeam-utils v0.8.21
-    Checking arrayvec v0.7.6
-   Compiling ahash v0.8.12
-    Checking rustc-hash v1.1.0
-   Compiling syn v2.0.117
-   Compiling find-msvc-tools v0.1.9
-   Compiling shlex v1.3.0
-   Compiling cc v1.2.61
-    Checking indexmap v2.14.0
-    Checking typenum v1.20.0
-   Compiling autocfg v1.5.0
-   Compiling zmij v1.0.21
-   Compiling im v15.1.0
-    Checking pin-project-lite v0.2.17
-    Checking rand_core v0.6.4
-   Compiling serde_json v1.0.149
-   Compiling num-traits v0.2.19
-    Checking rand_xoshiro v0.6.0
-    Checking tracing-core v0.1.36
-    Checking memchr v2.8.0
-    Checking termcolor v1.4.1
-   Compiling heck v0.5.0
-    Checking bitmaps v2.1.0
-    Checking cpufeatures v0.3.0
-    Checking itoa v1.0.18
-    Checking arrayref v0.3.9
-    Checking constant_time_eq v0.4.2
-    Checking log v0.4.29
-    Checking inventory v0.3.17
-    Checking bitflags v2.11.1
-    Checking bit-vec v0.8.0
-    Checking foldhash v0.1.5
-    Checking bumpalo v3.20.2
-    Checking hashbrown v0.15.5
-    Checking bit-set v0.8.0
-    Checking sized-chunks v0.6.5
-    Checking spirv v0.3.0+sdk-1.3.268.0
-    Checking hexf-parse v0.2.1
-   Compiling blake3 v1.8.4
-   Compiling naga v24.0.0
-    Checking libloading v0.8.9
-   Compiling ash v0.38.0+1.3.281
-   Compiling khronos-egl v6.0.0
-    Checking unicode-width v0.1.14
-    Checking gpu-alloc-types v0.3.0
-    Checking gpu-descriptor-types v0.2.0
-   Compiling wgpu-hal v24.0.4
-    Checking codespan-reporting v0.11.1
-    Checking winnow v0.7.15
-    Checking unicode-xid v0.2.6
-    Checking toml_write v0.1.2
-    Checking gpu-alloc v0.6.0
-    Checking gpu-descriptor v0.3.2
-    Checking ordered-float v4.6.0
-    Checking wgpu-types v24.0.0
-   Compiling wgpu-core v24.0.5
-   Compiling naga v25.0.1
-    Checking unicode-width v0.2.2
-    Checking profiling v1.0.17
-    Checking raw-window-handle v0.6.2
-    Checking glow v0.16.0
-    Checking renderdoc-sys v1.1.0
-   Compiling thiserror v1.0.69
-   Compiling litrs v1.0.0
-    Checking codespan-reporting v0.12.0
-    Checking arc-swap v1.9.1
-    Checking errno v0.3.14
-   Compiling wgpu v24.0.5
-   Compiling document-features v0.2.12
-   Compiling crc32fast v1.5.0
-    Checking signal-hook-registry v1.4.8
-    Checking socket2 v0.6.3
-    Checking mio v1.2.0
-    Checking bytes v1.11.1
-   Compiling vyre-driver-wgpu v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-driver-wgpu)
-    Checking static_assertions v1.1.0
-    Checking crossbeam-channel v0.5.15
-    Checking crossbeam-queue v0.3.12
-    Checking fs2 v0.4.3
-    Checking pollster v0.4.0
-   Compiling serde_derive v1.0.228
-   Compiling zerocopy-derive v0.8.48
-   Compiling thiserror-impl v2.0.18
-   Compiling bytemuck_derive v1.10.2
-   Compiling tracing-attributes v0.1.31
-   Compiling vyre-macros v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-macros)
-   Compiling strum_macros v0.26.4
-   Compiling thiserror-impl v1.0.69
-    Checking bytemuck v1.25.0
-    Checking tracing v0.1.44
-   Compiling tokio-macros v2.7.0
-    Checking strum v0.26.3
-    Checking smallvec v1.14.0
-    Checking toml_datetime v0.6.11
-    Checking serde_spanned v0.6.9
-    Checking toml_edit v0.22.27
-    Checking vyre-spec v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-spec)
-    Checking parking_lot v0.12.5
-    Checking tokio v1.51.1
-    Checking toml v0.8.23
-    Checking half v2.7.1
-    Checking hashbrown v0.14.5
-    Checking dashmap v6.1.0
-    Checking lasso v0.7.3
-    Checking vyre-foundation v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-foundation)
-    Checking vyre-primitives v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-primitives)
-    Checking vyre-lower v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-lower)
-    Checking vyre-emit-naga v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-emit-naga)
-    Checking vyre-self-substrate v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-self-substrate)
-    Checking vyre-driver v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-driver)
-    Checking vyre-runtime v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-runtime)
- Documenting vyre-driver-wgpu v0.6.0 (/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre/vyre-driver-wgpu)
-warning: public documentation for `StagingBufferPool` links to private item `GpuBufferHandle::readback_until`
-  --> vyre-driver-wgpu/src/buffer/handle.rs:53:32
-   |
-53 | /// Hot dispatch paths (e.g. [`GpuBufferHandle::readback_until`]) acquire
-   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this item is private
-   |
-   = note: this link will resolve properly if you pass `--document-private-items`
-   = note: requested on the command line with `-W rustdoc::private-intra-doc-links`
-
-warning: unresolved link to `\BackendError\`
-   --> vyre-driver-wgpu/src/runtime/readback_ring.rs:384:18
-    |
-384 |     /// Returns [\`BackendError\`] if encoder or queue submission fails.
-    |                  ^^^^^^^^^^^^^^^ no item named `\BackendError\` in scope
-    |
-    = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
-    = note: requested on the command line with `-D rustdoc::broken-intra-doc-links`
-
-warning: `vyre-driver-wgpu` (lib doc) generated 2 warnings
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.13s
 pub mod vyre_driver_wgpu
 pub mod vyre_driver_wgpu::buffer
 pub struct vyre_driver_wgpu::buffer::BindGroupCache
@@ -170,6 +16,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::BindGroupCache
 impl core::marker::Send for vyre_driver_wgpu::buffer::BindGroupCache
 impl core::marker::Sync for vyre_driver_wgpu::buffer::BindGroupCache
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::BindGroupCache
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::BindGroupCache
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::BindGroupCache
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::BindGroupCache
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::buffer::BindGroupCache where U: core::convert::From<T>
@@ -225,6 +72,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::marker::Send for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::marker::Sync for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::BindGroupCacheStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::buffer::BindGroupCacheStats where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -270,11 +118,11 @@ pub struct vyre_driver_wgpu::buffer::BufferPool
 impl vyre_driver_wgpu::buffer::BufferPool
 pub fn vyre_driver_wgpu::buffer::BufferPool::acquire(&self, len: u64, usage: wgpu_types::BufferUsages) -> core::result::Result<vyre_driver_wgpu::buffer::GpuBufferHandle, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::buffer::BufferPool::device(&self) -> &wgpu::api::device::Device
-pub fn vyre_driver_wgpu::buffer::BufferPool::new(device: wgpu::api::device::Device, queue: wgpu::api::queue::Queue, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> Self
+pub fn vyre_driver_wgpu::buffer::BufferPool::new(device: wgpu::api::device::Device, queue: wgpu::api::queue::Queue, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> Self
 pub fn vyre_driver_wgpu::buffer::BufferPool::queue(&self) -> &wgpu::api::queue::Queue
 pub fn vyre_driver_wgpu::buffer::BufferPool::release(&self, handle: vyre_driver_wgpu::buffer::GpuBufferHandle)
 pub fn vyre_driver_wgpu::buffer::BufferPool::stats(&self) -> vyre_driver_wgpu::buffer::BufferPoolStats
-pub fn vyre_driver_wgpu::buffer::BufferPool::with_tiering(device: wgpu::api::device::Device, queue: wgpu::api::queue::Queue, config: &vyre_driver::backend::vyre_backend::DispatchConfig, tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::buffer::BufferPool::with_tiering(device: wgpu::api::device::Device, queue: wgpu::api::queue::Queue, config: &vyre_driver::backend::dispatch_config::DispatchConfig, tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::clone::Clone for vyre_driver_wgpu::buffer::BufferPool
 pub fn vyre_driver_wgpu::buffer::BufferPool::clone(&self) -> vyre_driver_wgpu::buffer::BufferPool
 impl core::fmt::Debug for vyre_driver_wgpu::buffer::BufferPool
@@ -283,6 +131,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::BufferPool
 impl core::marker::Send for vyre_driver_wgpu::buffer::BufferPool
 impl core::marker::Sync for vyre_driver_wgpu::buffer::BufferPool
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::BufferPool
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::BufferPool
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::BufferPool
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::BufferPool
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::buffer::BufferPool where U: core::convert::From<T>
@@ -339,6 +188,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::BufferPoolStats
 impl core::marker::Send for vyre_driver_wgpu::buffer::BufferPoolStats
 impl core::marker::Sync for vyre_driver_wgpu::buffer::BufferPoolStats
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::BufferPoolStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::BufferPoolStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::BufferPoolStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::BufferPoolStats
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::buffer::BufferPoolStats where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -392,6 +242,7 @@ pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::from_resident_id(id: u64) -> c
 pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::id(&self) -> u64
 pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::readback(&self, device: &wgpu::api::device::Device, queue: &wgpu::api::queue::Queue, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::readback_prefix(&self, device: &wgpu::api::device::Device, queue: &wgpu::api::queue::Queue, len: u64, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::readback_range(&self, device: &wgpu::api::device::Device, queue: &wgpu::api::queue::Queue, byte_offset: u64, len: u64, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::upload(device: &wgpu::api::device::Device, queue: &wgpu::api::queue::Queue, bytes: &[u8], usage: wgpu_types::BufferUsages) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::buffer::GpuBufferHandle::usage(&self) -> wgpu_types::BufferUsages
 impl core::clone::Clone for vyre_driver_wgpu::buffer::GpuBufferHandle
@@ -404,6 +255,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::GpuBufferHandle
 impl core::marker::Send for vyre_driver_wgpu::buffer::GpuBufferHandle
 impl core::marker::Sync for vyre_driver_wgpu::buffer::GpuBufferHandle
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::GpuBufferHandle
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::GpuBufferHandle
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::GpuBufferHandle
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::GpuBufferHandle
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::buffer::GpuBufferHandle where U: core::convert::From<T>
@@ -455,6 +307,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::StagingBufferPool
 impl core::marker::Send for vyre_driver_wgpu::buffer::StagingBufferPool
 impl core::marker::Sync for vyre_driver_wgpu::buffer::StagingBufferPool
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::StagingBufferPool
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::StagingBufferPool
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::StagingBufferPool
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::StagingBufferPool
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::buffer::StagingBufferPool where U: core::convert::From<T>
@@ -508,6 +361,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::StagingBufferPoolStats
 impl core::marker::Send for vyre_driver_wgpu::buffer::StagingBufferPoolStats
 impl core::marker::Sync for vyre_driver_wgpu::buffer::StagingBufferPoolStats
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::StagingBufferPoolStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::StagingBufferPoolStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::StagingBufferPoolStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::StagingBufferPoolStats
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::buffer::StagingBufferPoolStats where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -550,10 +404,6 @@ impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::buffer::Staging
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::buffer::StagingBufferPoolStats where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::buffer::StagingBufferPoolStats where T: core::marker::Sync
 pub mod vyre_driver_wgpu::emit
-pub mod vyre_driver_wgpu::emit::naga_emit
-pub fn vyre_driver_wgpu::emit::naga_emit::emit_module(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig, workgroup_size: [u32; 3]) -> core::result::Result<naga::ir::Module, vyre_foundation::lower::LoweringError>
-pub fn vyre_driver_wgpu::emit::naga_emit::emit_module_with_features(program: &vyre_foundation::ir_inner::model::program::core::Program, _config: &vyre_driver::backend::vyre_backend::DispatchConfig, workgroup_size: [u32; 3], enabled_features: &vyre_driver_wgpu::runtime::device::EnabledFeatures) -> core::result::Result<naga::ir::Module, vyre_foundation::lower::LoweringError>
-pub fn vyre_driver_wgpu::emit::naga_emit::prepared_program(program: &vyre_foundation::ir_inner::model::program::core::Program) -> core::result::Result<vyre_foundation::ir_inner::model::program::core::Program, vyre_foundation::lower::LoweringError>
 pub struct vyre_driver_wgpu::emit::WgpuBindingAssignment
 pub vyre_driver_wgpu::emit::WgpuBindingAssignment::access: vyre_spec::buffer_access::BufferAccess
 pub vyre_driver_wgpu::emit::WgpuBindingAssignment::binding: u32
@@ -573,6 +423,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::emit::WgpuBindingAssignment
 impl core::marker::Send for vyre_driver_wgpu::emit::WgpuBindingAssignment
 impl core::marker::Sync for vyre_driver_wgpu::emit::WgpuBindingAssignment
 impl core::marker::Unpin for vyre_driver_wgpu::emit::WgpuBindingAssignment
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::emit::WgpuBindingAssignment
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::emit::WgpuBindingAssignment
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::emit::WgpuBindingAssignment
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::emit::WgpuBindingAssignment where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -630,6 +481,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::emit::WgpuDispatchGeometry
 impl core::marker::Send for vyre_driver_wgpu::emit::WgpuDispatchGeometry
 impl core::marker::Sync for vyre_driver_wgpu::emit::WgpuDispatchGeometry
 impl core::marker::Unpin for vyre_driver_wgpu::emit::WgpuDispatchGeometry
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::emit::WgpuDispatchGeometry
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::emit::WgpuDispatchGeometry
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::emit::WgpuDispatchGeometry
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::emit::WgpuDispatchGeometry where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -677,7 +529,7 @@ pub vyre_driver_wgpu::emit::WgpuProgram::dispatch_geometry: vyre_driver_wgpu::em
 pub vyre_driver_wgpu::emit::WgpuProgram::module: naga::ir::Module
 pub vyre_driver_wgpu::emit::WgpuProgram::workgroup_size: [u32; 3]
 impl vyre_driver_wgpu::emit::WgpuProgram
-pub fn vyre_driver_wgpu::emit::WgpuProgram::from_program(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig, enabled_features: &vyre_driver_wgpu::runtime::device::EnabledFeatures) -> core::result::Result<Self, vyre_foundation::lower::LoweringError>
+pub fn vyre_driver_wgpu::emit::WgpuProgram::from_program(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::dispatch_config::DispatchConfig, enabled_features: &vyre_driver_wgpu::runtime::device::EnabledFeatures) -> core::result::Result<Self, vyre_foundation::lower::LoweringError>
 impl core::clone::Clone for vyre_driver_wgpu::emit::WgpuProgram
 pub fn vyre_driver_wgpu::emit::WgpuProgram::clone(&self) -> vyre_driver_wgpu::emit::WgpuProgram
 impl core::fmt::Debug for vyre_driver_wgpu::emit::WgpuProgram
@@ -686,6 +538,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::emit::WgpuProgram
 impl core::marker::Send for vyre_driver_wgpu::emit::WgpuProgram
 impl core::marker::Sync for vyre_driver_wgpu::emit::WgpuProgram
 impl core::marker::Unpin for vyre_driver_wgpu::emit::WgpuProgram
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::emit::WgpuProgram
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::emit::WgpuProgram
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::emit::WgpuProgram
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::emit::WgpuProgram where U: core::convert::From<T>
@@ -722,7 +575,7 @@ impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::emit::WgpuProgr
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::emit::WgpuProgram where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::emit::WgpuProgram where T: core::marker::Sync
 pub fn vyre_driver_wgpu::emit::lower(program: &vyre_foundation::ir_inner::model::program::core::Program) -> core::result::Result<alloc::string::String, vyre_foundation::lower::LoweringError>
-pub fn vyre_driver_wgpu::emit::lower_with_config(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::string::String, vyre_foundation::lower::LoweringError>
+pub fn vyre_driver_wgpu::emit::lower_with_config(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::string::String, vyre_foundation::lower::LoweringError>
 pub mod vyre_driver_wgpu::engine
 pub mod vyre_driver_wgpu::engine::graph
 pub enum vyre_driver_wgpu::engine::graph::GpuResource
@@ -738,6 +591,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::graph::GpuResource
 impl core::marker::Send for vyre_driver_wgpu::engine::graph::GpuResource
 impl core::marker::Sync for vyre_driver_wgpu::engine::graph::GpuResource
 impl core::marker::Unpin for vyre_driver_wgpu::engine::graph::GpuResource
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::graph::GpuResource
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::graph::GpuResource
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::graph::GpuResource
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::graph::GpuResource where U: core::convert::From<T>
@@ -775,7 +629,7 @@ impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::gra
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::graph::GpuResource where T: core::marker::Sync
 pub struct vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl vyre_driver_wgpu::engine::graph::GpuDispatchGraph
-pub fn vyre_driver_wgpu::engine::graph::GpuDispatchGraph::dispatch(&self, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::engine::graph::GpuDispatchGraph::dispatch(&self, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::engine::graph::GpuDispatchGraph::is_empty(&self) -> bool
 pub fn vyre_driver_wgpu::engine::graph::GpuDispatchGraph::len(&self) -> usize
 pub fn vyre_driver_wgpu::engine::graph::GpuDispatchGraph::new() -> Self
@@ -786,6 +640,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl core::marker::Send for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl core::marker::Sync for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl core::marker::Unpin for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::graph::GpuDispatchGraph
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::graph::GpuDispatchGraph where U: core::convert::From<T>
@@ -833,6 +688,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::graph::LaunchAccounting
 impl core::marker::Send for vyre_driver_wgpu::engine::graph::LaunchAccounting
 impl core::marker::Sync for vyre_driver_wgpu::engine::graph::LaunchAccounting
 impl core::marker::Unpin for vyre_driver_wgpu::engine::graph::LaunchAccounting
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::graph::LaunchAccounting
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::graph::LaunchAccounting
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::graph::LaunchAccounting
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::graph::LaunchAccounting where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -877,7 +733,7 @@ impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::graph::
 pub fn vyre_driver_wgpu::engine::graph::launch_accounting(op_count: usize) -> vyre_driver_wgpu::engine::graph::LaunchAccounting
 pub mod vyre_driver_wgpu::engine::multi_gpu
 pub struct vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
-pub vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem::config: &'a vyre_driver::backend::vyre_backend::DispatchConfig
+pub vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem::config: &'a vyre_driver::backend::dispatch_config::DispatchConfig
 pub vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem::cost: u64
 pub vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem::id: usize
 pub vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem::inputs: &'a [&'a [u8]]
@@ -886,6 +742,7 @@ impl<'a> core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::BorrowedG
 impl<'a> core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
 impl<'a> core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
 impl<'a> core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
+impl<'a> core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a>
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::BorrowedGpuWorkItem<'a> where U: core::convert::From<T>
@@ -930,6 +787,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -972,7 +830,7 @@ impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::multi_g
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::multi_gpu::DeviceLoad where T: core::marker::Sync
 pub struct vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
-pub vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem::config: vyre_driver::backend::vyre_backend::DispatchConfig
+pub vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem::config: vyre_driver::backend::dispatch_config::DispatchConfig
 pub vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem::cost: u64
 pub vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem::id: usize
 pub vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem::inputs: alloc::vec::Vec<alloc::vec::Vec<u8>>
@@ -981,6 +839,7 @@ impl !core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::GpuWorkItem where U: core::convert::From<T>
@@ -1020,6 +879,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::GpuWorkOutput where U: core::convert::From<T>
@@ -1064,6 +924,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::LiveGpu
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::LiveGpu where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1119,6 +980,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecu
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::MultiGpuExecutor where U: core::convert::From<T>
@@ -1164,6 +1026,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::Partition
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::Partition
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::Partition
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::Partition
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::Partition
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::Partition
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::Partition
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::Partition where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1207,14 +1070,15 @@ impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::mul
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::multi_gpu::Partition where T: core::marker::Sync
 pub struct vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
-pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::assign(&mut self, key: &[u8], cost: u64) -> core::option::Option<u32>
+pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::assign(&mut self, key: &[u8], cost: u64) -> core::result::Result<core::option::Option<u32>, vyre_driver_wgpu::engine::multi_gpu::stream_shard::StreamShardError>
 pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::load(&self) -> &[u64]
-pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::new(n_gpus: u32, spill_threshold: u64) -> Self
-pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::seed_load(&mut self, device: u32, cost: u64)
+pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::new(n_gpus: u32, spill_threshold: u64) -> core::result::Result<Self, vyre_driver_wgpu::engine::multi_gpu::stream_shard::StreamShardError>
+pub fn vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::seed_load(&mut self, device: u32, cost: u64) -> core::result::Result<(), vyre_driver_wgpu::engine::multi_gpu::stream_shard::StreamShardError>
 impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator where U: core::convert::From<T>
@@ -1244,65 +1108,66 @@ pub type vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::multi_gpu::StreamShardAllocator where T: core::marker::Sync
-pub struct vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub vyre_driver_wgpu::engine::multi_gpu::WorkItem::cost: u64
-pub vyre_driver_wgpu::engine::multi_gpu::WorkItem::id: usize
-impl core::clone::Clone for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::clone(&self) -> vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::cmp::Eq for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::cmp::PartialEq for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::eq(&self, other: &vyre_driver_wgpu::engine::multi_gpu::WorkItem) -> bool
-impl core::fmt::Debug for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::equivalent(&self, key: &K) -> bool
-impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::equivalent(&self, key: &K) -> bool
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::engine::multi_gpu::WorkItem::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::engine::multi_gpu::WorkItem::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: core::clone::Clone
-pub type vyre_driver_wgpu::engine::multi_gpu::WorkItem::Owned = T
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::clone_into(&self, target: &mut T)
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: core::clone::Clone
-pub unsafe fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub fn vyre_driver_wgpu::engine::multi_gpu::WorkItem::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::engine::multi_gpu::WorkItem
-pub type vyre_driver_wgpu::engine::multi_gpu::WorkItem::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::multi_gpu::WorkItem where T: core::marker::Sync
+pub struct vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::cost: u64
+pub vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::id: usize
+impl core::clone::Clone for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::clone(&self) -> vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::cmp::Eq for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::cmp::PartialEq for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::eq(&self, other: &vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem) -> bool
+impl core::fmt::Debug for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::marker::Freeze for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::marker::Send for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::marker::Sync for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::marker::Unpin for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::equivalent(&self, key: &K) -> bool
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::equivalent(&self, key: &K) -> bool
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where U: core::convert::From<T>
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where U: core::convert::Into<T>
+pub type vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::Error = core::convert::Infallible
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where U: core::convert::TryFrom<T>
+pub type vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: core::clone::Clone
+pub type vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::Owned = T
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::clone_into(&self, target: &mut T)
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: 'static + ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: core::clone::Clone
+pub unsafe fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::from(t: T) -> T
+impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::downcast(&self) -> &T
+impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub fn vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::upcast(&self) -> core::option::Option<&T>
+impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+impl<T> typenum::type_operators::Same for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem
+pub type vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem::Output = T
+impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: core::marker::Send
+impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
+impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem where T: core::marker::Sync
 pub fn vyre_driver_wgpu::engine::multi_gpu::live_gpu_loads() -> core::result::Result<alloc::vec::Vec<vyre_driver_wgpu::engine::multi_gpu::DeviceLoad>, alloc::string::String>
-pub fn vyre_driver_wgpu::engine::multi_gpu::partition_work_stealing(devices: &[vyre_driver_wgpu::engine::multi_gpu::DeviceLoad], items: &[vyre_driver_wgpu::engine::multi_gpu::WorkItem]) -> core::result::Result<alloc::vec::Vec<vyre_driver_wgpu::engine::multi_gpu::Partition>, alloc::string::String>
-pub fn vyre_driver_wgpu::engine::multi_gpu::shard_by_blake3(key: &[u8], n_gpus: u32) -> u32
+pub fn vyre_driver_wgpu::engine::multi_gpu::partition_work_stealing(devices: &[vyre_driver_wgpu::engine::multi_gpu::DeviceLoad], items: &[vyre_driver_wgpu::engine::multi_gpu::WeightedWorkItem]) -> core::result::Result<alloc::vec::Vec<vyre_driver_wgpu::engine::multi_gpu::Partition>, alloc::string::String>
+pub fn vyre_driver_wgpu::engine::multi_gpu::shard_by_blake3(key: &[u8], n_gpus: u32) -> core::result::Result<u32, vyre_driver_wgpu::engine::multi_gpu::stream_shard::StreamShardError>
 pub mod vyre_driver_wgpu::engine::persistent
 pub struct vyre_driver_wgpu::engine::persistent::PersistentKernelReport
 pub vyre_driver_wgpu::engine::persistent::PersistentKernelReport::kernel_launches: u32
@@ -1319,6 +1184,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::persistent::PersistentKe
 impl core::marker::Send for vyre_driver_wgpu::engine::persistent::PersistentKernelReport
 impl core::marker::Sync for vyre_driver_wgpu::engine::persistent::PersistentKernelReport
 impl core::marker::Unpin for vyre_driver_wgpu::engine::persistent::PersistentKernelReport
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::persistent::PersistentKernelReport
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::persistent::PersistentKernelReport
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::persistent::PersistentKernelReport
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::persistent::PersistentKernelReport where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1360,12 +1226,69 @@ pub type vyre_driver_wgpu::engine::persistent::PersistentKernelReport::Output = 
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::persistent::PersistentKernelReport where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::persistent::PersistentKernelReport where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::persistent::PersistentKernelReport where T: core::marker::Sync
+pub struct vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::id: u32
+pub vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::payload: alloc::vec::Vec<u8>
+impl core::clone::Clone for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::clone(&self) -> vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::cmp::Eq for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::cmp::PartialEq for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::eq(&self, other: &vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem) -> bool
+impl core::fmt::Debug for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::marker::Freeze for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::marker::Send for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::marker::Sync for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::marker::Unpin for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::equivalent(&self, key: &K) -> bool
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::equivalent(&self, key: &K) -> bool
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where U: core::convert::From<T>
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where U: core::convert::Into<T>
+pub type vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::Error = core::convert::Infallible
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where U: core::convert::TryFrom<T>
+pub type vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: core::clone::Clone
+pub type vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::Owned = T
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::clone_into(&self, target: &mut T)
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: 'static + ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: core::clone::Clone
+pub unsafe fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::from(t: T) -> T
+impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::downcast(&self) -> &T
+impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub fn vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::upcast(&self) -> core::option::Option<&T>
+impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+impl<T> typenum::type_operators::Same for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem
+pub type vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem::Output = T
+impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: core::marker::Send
+impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
+impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem where T: core::marker::Sync
 pub struct vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl vyre_driver_wgpu::engine::persistent::PersistentQueue
 pub fn vyre_driver_wgpu::engine::persistent::PersistentQueue::is_empty(&self) -> bool
 pub fn vyre_driver_wgpu::engine::persistent::PersistentQueue::len(&self) -> usize
 pub fn vyre_driver_wgpu::engine::persistent::PersistentQueue::new() -> Self
-pub fn vyre_driver_wgpu::engine::persistent::PersistentQueue::push(&mut self, item: vyre_driver_wgpu::engine::persistent::WorkItem)
+pub fn vyre_driver_wgpu::engine::persistent::PersistentQueue::push(&mut self, item: vyre_driver_wgpu::engine::persistent::PersistentPayloadWorkItem)
 impl core::clone::Clone for vyre_driver_wgpu::engine::persistent::PersistentQueue
 pub fn vyre_driver_wgpu::engine::persistent::PersistentQueue::clone(&self) -> vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl core::cmp::Eq for vyre_driver_wgpu::engine::persistent::PersistentQueue
@@ -1380,6 +1303,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::persistent::PersistentQu
 impl core::marker::Send for vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl core::marker::Sync for vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl core::marker::Unpin for vyre_driver_wgpu::engine::persistent::PersistentQueue
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::persistent::PersistentQueue
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::persistent::PersistentQueue where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1421,62 +1345,6 @@ pub type vyre_driver_wgpu::engine::persistent::PersistentQueue::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::persistent::PersistentQueue where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::persistent::PersistentQueue where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::persistent::PersistentQueue where T: core::marker::Sync
-pub struct vyre_driver_wgpu::engine::persistent::WorkItem
-pub vyre_driver_wgpu::engine::persistent::WorkItem::id: u32
-pub vyre_driver_wgpu::engine::persistent::WorkItem::payload: alloc::vec::Vec<u8>
-impl core::clone::Clone for vyre_driver_wgpu::engine::persistent::WorkItem
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::clone(&self) -> vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::cmp::Eq for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::cmp::PartialEq for vyre_driver_wgpu::engine::persistent::WorkItem
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::eq(&self, other: &vyre_driver_wgpu::engine::persistent::WorkItem) -> bool
-impl core::fmt::Debug for vyre_driver_wgpu::engine::persistent::WorkItem
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::marker::Freeze for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::marker::Send for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::marker::Sync for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::marker::Unpin for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::persistent::WorkItem
-impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::persistent::WorkItem
-impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::persistent::WorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::equivalent(&self, key: &K) -> bool
-impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::persistent::WorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::engine::persistent::WorkItem where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::equivalent(&self, key: &K) -> bool
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::persistent::WorkItem where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::engine::persistent::WorkItem where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::engine::persistent::WorkItem::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::engine::persistent::WorkItem where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::engine::persistent::WorkItem::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::engine::persistent::WorkItem where T: core::clone::Clone
-pub type vyre_driver_wgpu::engine::persistent::WorkItem::Owned = T
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::clone_into(&self, target: &mut T)
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_driver_wgpu::engine::persistent::WorkItem where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::engine::persistent::WorkItem where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::engine::persistent::WorkItem where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::engine::persistent::WorkItem where T: core::clone::Clone
-pub unsafe fn vyre_driver_wgpu::engine::persistent::WorkItem::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_driver_wgpu::engine::persistent::WorkItem
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::engine::persistent::WorkItem
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::engine::persistent::WorkItem
-pub fn vyre_driver_wgpu::engine::persistent::WorkItem::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::engine::persistent::WorkItem
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::engine::persistent::WorkItem
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::engine::persistent::WorkItem
-pub type vyre_driver_wgpu::engine::persistent::WorkItem::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::persistent::WorkItem where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::persistent::WorkItem where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::persistent::WorkItem where T: core::marker::Sync
 pub struct vyre_driver_wgpu::engine::persistent::WorkResult
 pub vyre_driver_wgpu::engine::persistent::WorkResult::id: u32
 pub vyre_driver_wgpu::engine::persistent::WorkResult::payload: alloc::vec::Vec<u8>
@@ -1492,6 +1360,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::persistent::WorkResult
 impl core::marker::Send for vyre_driver_wgpu::engine::persistent::WorkResult
 impl core::marker::Sync for vyre_driver_wgpu::engine::persistent::WorkResult
 impl core::marker::Unpin for vyre_driver_wgpu::engine::persistent::WorkResult
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::persistent::WorkResult
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::persistent::WorkResult
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::persistent::WorkResult
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::engine::persistent::WorkResult where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1533,7 +1402,7 @@ pub type vyre_driver_wgpu::engine::persistent::WorkResult::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::persistent::WorkResult where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::engine::persistent::WorkResult where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::engine::persistent::WorkResult where T: core::marker::Sync
-pub fn vyre_driver_wgpu::engine::persistent::run_persistent_kernel(backend: &vyre_driver_wgpu::WgpuBackend, program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig, queue: vyre_driver_wgpu::engine::persistent::PersistentQueue) -> core::result::Result<vyre_driver_wgpu::engine::persistent::PersistentKernelReport, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::engine::persistent::run_persistent_kernel(backend: &vyre_driver_wgpu::WgpuBackend, program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::dispatch_config::DispatchConfig, queue: vyre_driver_wgpu::engine::persistent::PersistentQueue) -> core::result::Result<vyre_driver_wgpu::engine::persistent::PersistentKernelReport, vyre_driver::backend::error::BackendError>
 pub mod vyre_driver_wgpu::engine::streaming
 pub mod vyre_driver_wgpu::engine::streaming::async_copy
 pub struct vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
@@ -1550,8 +1419,9 @@ impl core::marker::Freeze for vyre_driver_wgpu::engine::streaming::async_copy::A
 impl core::marker::Send for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
 impl !core::marker::Sync for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
 impl core::marker::Unpin for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
-impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
+impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams where U: core::convert::From<T>
 pub fn vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::engine::streaming::async_copy::AsyncCopyStreams where U: core::convert::Into<T>
@@ -1580,13 +1450,14 @@ impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::engine::streami
 pub struct vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl vyre_driver_wgpu::engine::streaming::HostIngressStream
 pub fn vyre_driver_wgpu::engine::streaming::HostIngressStream::finish(&mut self) -> core::result::Result<core::option::Option<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::engine::streaming::HostIngressStream::from_runner<F>(runner: F, config: vyre_driver::backend::vyre_backend::DispatchConfig) -> Self where F: core::ops::function::Fn(alloc::vec::Vec<u8>, vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError> + core::marker::Send + core::marker::Sync + 'static
-pub fn vyre_driver_wgpu::engine::streaming::HostIngressStream::new(pipeline: vyre_driver_wgpu::pipeline::WgpuPipeline, config: vyre_driver::backend::vyre_backend::DispatchConfig) -> Self
+pub fn vyre_driver_wgpu::engine::streaming::HostIngressStream::from_runner<F>(runner: F, config: vyre_driver::backend::dispatch_config::DispatchConfig) -> Self where F: core::ops::function::Fn(alloc::vec::Vec<u8>, vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError> + core::marker::Send + core::marker::Sync + 'static
+pub fn vyre_driver_wgpu::engine::streaming::HostIngressStream::new(pipeline: vyre_driver_wgpu::pipeline::WgpuPipeline, config: vyre_driver::backend::dispatch_config::DispatchConfig) -> Self
 pub fn vyre_driver_wgpu::engine::streaming::HostIngressStream::push_chunk(&mut self, bytes: alloc::vec::Vec<u8>) -> core::result::Result<core::option::Option<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
 impl core::marker::Freeze for vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl core::marker::Send for vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl core::marker::Sync for vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl core::marker::Unpin for vyre_driver_wgpu::engine::streaming::HostIngressStream
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::engine::streaming::HostIngressStream
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::engine::streaming::HostIngressStream where U: core::convert::From<T>
@@ -1620,16 +1491,17 @@ pub mod vyre_driver_wgpu::ext
 pub mod vyre_driver_wgpu::megakernel
 pub struct vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<'a> vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
-pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>::dispatch_megakernel(&self, work_items: &[vyre_runtime::megakernel::planner::caps::WorkItem], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>::dispatch_megakernel(&self, work_items: &[vyre_runtime::megakernel::planner::caps::MegakernelWorkItem], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>::dispatch_megakernel_bytes(&self, work_queue_bytes: &[u8], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>::dispatch_megakernel_with_io_queue(&self, work_items: &[vyre_runtime::megakernel::planner::caps::WorkItem], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig, io_queue_bytes: alloc::vec::Vec<u8>) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>::dispatch_megakernel_with_io_queue(&self, work_items: &[vyre_runtime::megakernel::planner::caps::MegakernelWorkItem], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig, io_queue_bytes: alloc::vec::Vec<u8>) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>::new(backend: &'a dyn vyre_driver::backend::vyre_backend::VyreBackend) -> Self
 impl vyre_runtime::megakernel::MegakernelDispatch for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'_>
-pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'_>::dispatch_megakernel(&self, work_queue: &[vyre_runtime::megakernel::planner::caps::WorkItem], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'_>::dispatch_megakernel(&self, work_queue: &[vyre_runtime::megakernel::planner::caps::MegakernelWorkItem], config: &vyre_runtime::megakernel::planner::config::MegakernelConfig) -> core::result::Result<vyre_runtime::megakernel::planner::caps::MegakernelReport, vyre_driver::backend::error::BackendError>
 impl<'a> core::marker::Freeze for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<'a> core::marker::Send for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<'a> core::marker::Sync for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<'a> core::marker::Unpin for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
+impl<'a> core::marker::UnsafeUnpin for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a>
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::megakernel::WgpuMegakernelDispatcher<'a> where U: core::convert::From<T>
@@ -1673,6 +1545,7 @@ impl<'a> core::marker::Freeze for vyre_driver_wgpu::pipeline::persistent::Dispat
 impl<'a> core::marker::Send for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> core::marker::Sync for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> core::marker::Unpin for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
+impl<'a> core::marker::UnsafeUnpin for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a> where U: core::convert::From<T>
@@ -1722,6 +1595,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::marker::Send for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::marker::Sync for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::marker::Unpin for vyre_driver_wgpu::buffer::BindGroupCacheStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::buffer::BindGroupCacheStats
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::buffer::BindGroupCacheStats where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1772,6 +1646,7 @@ impl<'a> core::marker::Freeze for vyre_driver_wgpu::pipeline::persistent::Dispat
 impl<'a> core::marker::Send for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> core::marker::Sync for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> core::marker::Unpin for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
+impl<'a> core::marker::UnsafeUnpin for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a>
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::pipeline::persistent::DispatchItem<'a> where U: core::convert::From<T>
@@ -1809,12 +1684,13 @@ pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_batched(&se
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_borrowed(&self, inputs: &[&vyre_driver_wgpu::buffer::GpuBufferHandle], outputs: &[&vyre_driver_wgpu::buffer::GpuBufferHandle], params: core::option::Option<&vyre_driver_wgpu::buffer::GpuBufferHandle>, workgroups: [u32; 3]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 impl vyre_driver_wgpu::pipeline::WgpuPipeline
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::compile(program: &vyre_foundation::ir_inner::model::program::core::Program) -> core::result::Result<alloc::sync::Arc<Self>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::compile_with_config(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::sync::Arc<Self>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::compile_with_config(program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::sync::Arc<Self>, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::execution_plan(&self) -> &vyre_foundation::execution_plan::ExecutionPlan
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::push_chunk(&self, bytes: &[u8], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::push_chunk(&self, bytes: &[u8], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
 impl vyre_driver_wgpu::pipeline::WgpuPipeline
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_coalesced(&self, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_compound_v2(requests: &[(&vyre_driver_wgpu::pipeline::WgpuPipeline, vyre_driver::backend::vyre_backend::Resource)], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_coalesced(&self, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_coalesced_borrowed(&self, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_compound_v2(requests: &[(&vyre_driver_wgpu::pipeline::WgpuPipeline, vyre_driver::backend::resource::Resource)], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<u8>>>, vyre_driver::backend::error::BackendError>
 impl vyre_driver_wgpu::pipeline::WgpuPipeline
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::prerecord_borrowed_dispatch(&self, inputs: &[&[u8]], workgroups: [u32; 3]) -> core::result::Result<vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::prerecord_persistent_dispatch(&self, inputs: &[vyre_driver_wgpu::buffer::GpuBufferHandle], outputs: &[vyre_driver_wgpu::buffer::GpuBufferHandle], params: core::option::Option<&vyre_driver_wgpu::buffer::GpuBufferHandle>, workgroups: [u32; 3]) -> core::result::Result<vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch, vyre_driver::backend::error::BackendError>
@@ -1823,16 +1699,23 @@ pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::clone(&self) -> vyre_driver_wgp
 impl core::fmt::Debug for vyre_driver_wgpu::pipeline::WgpuPipeline
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl vyre_driver::backend::compiled_pipeline::CompiledPipeline for vyre_driver_wgpu::pipeline::WgpuPipeline
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch(&self, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_borrowed(&self, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_borrowed_into(&self, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig, outputs: &mut vyre_driver::backend::vyre_backend::OutputBuffers) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_handles(&self, inputs: &[vyre_driver::backend::vyre_backend::Resource], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<vyre_driver::backend::vyre_backend::OutputBuffers, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch(&self, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_borrowed(&self, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_borrowed_batched(&self, batches: &[&[&[u8]]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::dispatch_result::OutputBuffers>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_borrowed_batched_into(&self, batches: &[&[&[u8]]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, batch_outputs: &mut alloc::vec::Vec<vyre_driver::backend::dispatch_result::OutputBuffers>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_borrowed_into(&self, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, outputs: &mut vyre_driver::backend::dispatch_result::OutputBuffers) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_handles(&self, inputs: &[vyre_driver::backend::resource::Resource], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<vyre_driver::backend::dispatch_result::OutputBuffers, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_handles_batched(&self, batches: &[&[vyre_driver::backend::resource::Resource]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::dispatch_result::OutputBuffers>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_handles_batched_into(&self, batches: &[&[vyre_driver::backend::resource::Resource]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, batch_outputs: &mut alloc::vec::Vec<vyre_driver::backend::dispatch_result::OutputBuffers>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_handles_into(&self, inputs: &[vyre_driver::backend::resource::Resource], config: &vyre_driver::backend::dispatch_config::DispatchConfig, outputs: &mut vyre_driver::backend::dispatch_result::OutputBuffers) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::dispatch_persistent_resource_outputs(&self, inputs: &[vyre_driver::backend::resource::Resource], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::resource::Resource>, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::pipeline::WgpuPipeline::id(&self) -> &str
 impl vyre_driver::backend::private::Sealed for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl core::marker::Freeze for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl core::marker::Send for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl core::marker::Sync for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl core::marker::Unpin for vyre_driver_wgpu::pipeline::WgpuPipeline
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::pipeline::WgpuPipeline
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::pipeline::WgpuPipeline where U: core::convert::From<T>
@@ -1891,6 +1774,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::aot::AotArtifact
 impl core::marker::Send for vyre_driver_wgpu::runtime::aot::AotArtifact
 impl core::marker::Sync for vyre_driver_wgpu::runtime::aot::AotArtifact
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::aot::AotArtifact
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::aot::AotArtifact
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::aot::AotArtifact
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::aot::AotArtifact
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::aot::AotArtifact where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -1936,160 +1820,8 @@ pub fn vyre_driver_wgpu::runtime::aot::backend_fingerprint() -> alloc::string::S
 pub fn vyre_driver_wgpu::runtime::aot::cache_dir() -> std::path::PathBuf
 pub fn vyre_driver_wgpu::runtime::aot::cache_key(spec_hash: &str, backend_fingerprint: &str) -> alloc::string::String
 pub fn vyre_driver_wgpu::runtime::aot::load_or_compile(program: &vyre_foundation::ir_inner::model::program::core::Program, fingerprint: &str) -> core::result::Result<vyre_driver_wgpu::runtime::aot::AotArtifact, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::runtime::aot::load_or_compile_with_config(program: &vyre_foundation::ir_inner::model::program::core::Program, fingerprint: &str, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<vyre_driver_wgpu::runtime::aot::AotArtifact, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::runtime::aot::load_or_compile_with_config(program: &vyre_foundation::ir_inner::model::program::core::Program, fingerprint: &str, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<vyre_driver_wgpu::runtime::aot::AotArtifact, vyre_driver::backend::error::BackendError>
 pub mod vyre_driver_wgpu::runtime::cache
-pub mod vyre_driver_wgpu::runtime::cache::buffer_pool
-pub struct vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::acquire(&self, device: &wgpu::api::device::Device, label: &'static str, size: u64, usage: wgpu_types::BufferUsages) -> vyre_foundation::error::Result<vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::global() -> &'static Self
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::new() -> Self
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::release(&self, buffer: vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer)
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::with_buffer<R>(&self, device: &wgpu::api::device::Device, label: &'static str, size: u64, usage: wgpu_types::BufferUsages, f: impl core::ops::function::FnOnce(&wgpu::api::buffer::Buffer) -> R) -> vyre_foundation::error::Result<R>
-impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::clone(&self) -> vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::default::Default for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::default() -> vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Send for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::clone::Clone
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Owned = T
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::clone_into(&self, target: &mut T)
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::clone::Clone
-pub unsafe fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::marker::Sync
-pub struct vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::clone(&self) -> vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::cmp::Eq for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::cmp::PartialEq for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::eq(&self, other: &vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError) -> bool
-impl core::convert::From<vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError> for vyre_foundation::error::Error
-pub fn vyre_foundation::error::Error::from(error: vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError) -> Self
-impl core::error::Error for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::fmt::Debug for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::marker::Send for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::equivalent(&self, key: &K) -> bool
-impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::equivalent(&self, key: &K) -> bool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: core::clone::Clone
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::Owned = T
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::clone_into(&self, target: &mut T)
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::to_owned(&self) -> T
-impl<T> alloc::string::ToString for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: core::fmt::Display + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::to_string(&self) -> alloc::string::String
-impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: core::clone::Clone
-pub unsafe fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError where T: core::marker::Sync
-pub struct vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::buffer(&self) -> core::result::Result<&wgpu::api::buffer::Buffer, vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::buffer_id(&self) -> u64
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::size(&self) -> u64
-impl core::ops::drop::Drop for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::drop(&mut self)
-impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl core::marker::Send for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: core::marker::Sync
 pub mod vyre_driver_wgpu::runtime::cache::lru
 pub struct vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 pub vyre_driver_wgpu::runtime::cache::lru::AccessMeta::frequency: u32
@@ -2106,6 +1838,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessMeta
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::lru::AccessMeta where U: core::convert::From<T>
@@ -2147,12 +1880,14 @@ pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::hot_set(&self, n: u
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::new() -> Self
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::record(&mut self, key: u64)
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::stats(&self, key: u64) -> core::option::Option<vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats>
+pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::try_new() -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::default::Default for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::default() -> Self
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::lru::AccessTracker where U: core::convert::From<T>
@@ -2193,13 +1928,18 @@ pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::iter_hottest(&
 pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::new() -> Self
 pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::remove(&mut self, key: &K)
 pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::touch(&mut self, key: K)
+pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::try_new() -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::try_with_capacity(capacity: usize) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::try_with_reserved_capacity(capacity: usize) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::with_capacity(capacity: usize) -> Self
+pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::with_reserved_capacity(capacity: usize) -> Self
 impl<K, V> core::default::Default for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::hash::Hash + core::cmp::Eq + core::marker::Copy, V: core::default::Default
 pub fn vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::default() -> Self
 impl<K, V> core::marker::Freeze for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>
 impl<K, V> core::marker::Send for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::marker::Send, V: core::marker::Send
 impl<K, V> core::marker::Sync for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::marker::Sync, V: core::marker::Sync
 impl<K, V> core::marker::Unpin for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::marker::Unpin, V: core::marker::Unpin
+impl<K, V> core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V>
 impl<K, V> core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::panic::unwind_safe::RefUnwindSafe, V: core::panic::unwind_safe::RefUnwindSafe
 impl<K, V> core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::panic::unwind_safe::UnwindSafe, V: core::panic::unwind_safe::UnwindSafe
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where U: core::convert::From<T>
@@ -2232,6 +1972,7 @@ impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache:
 pub const vyre_driver_wgpu::runtime::cache::lru::DEFAULT_INTRUSIVE_LRU_CAPACITY: usize
 pub mod vyre_driver_wgpu::runtime::cache::tiered_cache
 #[non_exhaustive] pub enum vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
+pub vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError::CapacityAccountingOverflow
 pub vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError::EntryTooLarge
 pub vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError::KeyNotFound
 impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
@@ -2250,6 +1991,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ca
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -2301,6 +2043,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ac
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats where U: core::convert::From<T>
@@ -2347,6 +2090,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ca
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -2394,10 +2138,12 @@ pub vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier::name: alloc::stri
 pub vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier::used: u64
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier::new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> Self
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier::try_new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier where U: core::convert::From<T>
@@ -2432,14 +2178,30 @@ pub vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::promote_threshold
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub const vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone(&self) -> vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::cmp::Eq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::cmp::PartialEq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::eq(&self, other: &vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> bool
 impl core::default::Default for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl core::fmt::Debug for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::StructuralPartialEq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::From<T>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::Into<T>
@@ -2448,12 +2210,18 @@ pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::try_from(value
 impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::TryFrom<T>
 pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Error = <U as core::convert::TryFrom<T>>::Error
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::clone::Clone
+pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Owned = T
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone_into(&self, target: &mut T)
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::to_owned(&self) -> T
 impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: 'static + ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::type_id(&self) -> core::any::TypeId
 impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::borrow(&self) -> &T
 impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::clone::Clone
+pub unsafe fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::from(t: T) -> T
 impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
@@ -2475,13 +2243,16 @@ pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::get(&self, k
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::insert(&mut self, key: u64, size: u64) -> core::result::Result<(), vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::promote(&mut self, key: u64) -> core::result::Result<(), vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::record_access(&mut self, key: u64)
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::try_with_policy(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>, policy: vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::with_policy(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>, policy: vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> Self
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::new(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>) -> Self
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::try_new(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache where U: core::convert::From<T>
@@ -2512,6 +2283,7 @@ impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache:
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache where T: core::marker::Sync
 #[non_exhaustive] pub enum vyre_driver_wgpu::runtime::cache::CacheError
+pub vyre_driver_wgpu::runtime::cache::CacheError::CapacityAccountingOverflow
 pub vyre_driver_wgpu::runtime::cache::CacheError::EntryTooLarge
 pub vyre_driver_wgpu::runtime::cache::CacheError::KeyNotFound
 impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
@@ -2530,6 +2302,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ca
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -2581,6 +2354,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ac
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats where U: core::convert::From<T>
@@ -2616,12 +2390,14 @@ pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::hot_set(&self, n: u
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::new() -> Self
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::record(&mut self, key: u64)
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::stats(&self, key: u64) -> core::option::Option<vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats>
+pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::try_new() -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::default::Default for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::default() -> Self
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::lru::AccessTracker where U: core::convert::From<T>
@@ -2651,56 +2427,6 @@ pub type vyre_driver_wgpu::runtime::cache::lru::AccessTracker::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::lru::AccessTracker where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::lru::AccessTracker where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::lru::AccessTracker where T: core::marker::Sync
-pub struct vyre_driver_wgpu::runtime::cache::BufferPool
-impl vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::acquire(&self, device: &wgpu::api::device::Device, label: &'static str, size: u64, usage: wgpu_types::BufferUsages) -> vyre_foundation::error::Result<vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::global() -> &'static Self
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::new() -> Self
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::release(&self, buffer: vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer)
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::with_buffer<R>(&self, device: &wgpu::api::device::Device, label: &'static str, size: u64, usage: wgpu_types::BufferUsages, f: impl core::ops::function::FnOnce(&wgpu::api::buffer::Buffer) -> R) -> vyre_foundation::error::Result<R>
-impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::clone(&self) -> vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::default::Default for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::default() -> vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Send for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::clone::Clone
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Owned = T
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::clone_into(&self, target: &mut T)
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::clone::Clone
-pub unsafe fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPool where T: core::marker::Sync
 #[non_exhaustive] pub struct vyre_driver_wgpu::runtime::cache::CacheEntry
 pub vyre_driver_wgpu::runtime::cache::CacheEntry::key: u64
 pub vyre_driver_wgpu::runtime::cache::CacheEntry::size: u64
@@ -2718,6 +2444,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ca
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheEntry where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -2765,10 +2492,12 @@ pub vyre_driver_wgpu::runtime::cache::CacheTier::name: alloc::string::String
 pub vyre_driver_wgpu::runtime::cache::CacheTier::used: u64
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier::new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> Self
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier::try_new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier where U: core::convert::From<T>
@@ -2803,14 +2532,30 @@ pub vyre_driver_wgpu::runtime::cache::LruPolicy::promote_threshold: u32
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub const vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone(&self) -> vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::cmp::Eq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::cmp::PartialEq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::eq(&self, other: &vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> bool
 impl core::default::Default for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl core::fmt::Debug for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::StructuralPartialEq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::From<T>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::Into<T>
@@ -2819,12 +2564,18 @@ pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::try_from(value
 impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::TryFrom<T>
 pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Error = <U as core::convert::TryFrom<T>>::Error
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::clone::Clone
+pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Owned = T
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone_into(&self, target: &mut T)
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::to_owned(&self) -> T
 impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: 'static + ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::type_id(&self) -> core::any::TypeId
 impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::borrow(&self) -> &T
 impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::clone::Clone
+pub unsafe fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::from(t: T) -> T
 impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
@@ -2838,46 +2589,6 @@ pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::marker::Sync
-pub struct vyre_driver_wgpu::runtime::cache::PooledBuffer
-impl vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::buffer(&self) -> core::result::Result<&wgpu::api::buffer::Buffer, vyre_driver_wgpu::runtime::cache::buffer_pool::BufferPoolError>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::buffer_id(&self) -> u64
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::size(&self) -> u64
-impl core::ops::drop::Drop for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::drop(&mut self)
-impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl core::marker::Send for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where U: core::convert::From<T>
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where U: core::convert::Into<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::Error = core::convert::Infallible
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where U: core::convert::TryFrom<T>
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: 'static + ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: ?core::marker::Sized
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::from(t: T) -> T
-impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::downcast(&self) -> &T
-impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub fn vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::upcast(&self) -> core::option::Option<&T>
-impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-impl<T> typenum::type_operators::Same for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer
-pub type vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer::Output = T
-impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: core::marker::Send
-impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
-impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::cache::buffer_pool::PooledBuffer where T: core::marker::Sync
 #[non_exhaustive] pub struct vyre_driver_wgpu::runtime::cache::TieredCache
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::demote(&mut self, key: u64) -> core::result::Result<(), vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError>
@@ -2886,13 +2597,16 @@ pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::get(&self, k
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::insert(&mut self, key: u64, size: u64) -> core::result::Result<(), vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::promote(&mut self, key: u64) -> core::result::Result<(), vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::record_access(&mut self, key: u64)
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::try_with_policy(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>, policy: vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::with_policy(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>, policy: vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> Self
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::new(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>) -> Self
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache::try_new(tiers: alloc::vec::Vec<vyre_driver_wgpu::runtime::cache::tiered_cache::CacheTier>) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::TieredCache where U: core::convert::From<T>
@@ -2941,6 +2655,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::device::AdapterCriteria
 impl core::marker::Send for vyre_driver_wgpu::runtime::device::AdapterCriteria
 impl core::marker::Sync for vyre_driver_wgpu::runtime::device::AdapterCriteria
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::device::AdapterCriteria
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::device::AdapterCriteria
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::device::AdapterCriteria
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::device::AdapterCriteria
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::device::AdapterCriteria where U: core::convert::From<T>
@@ -2976,6 +2691,65 @@ pub type vyre_driver_wgpu::runtime::device::AdapterCriteria::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::device::AdapterCriteria where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::device::AdapterCriteria where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::device::AdapterCriteria where T: core::marker::Sync
+pub struct vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub vyre_driver_wgpu::runtime::device::AdapterProbeReport::missing: alloc::vec::Vec<alloc::string::String>
+pub vyre_driver_wgpu::runtime::device::AdapterProbeReport::probed: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::clone(&self) -> vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::cmp::Eq for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::cmp::PartialEq for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::eq(&self, other: &vyre_driver_wgpu::runtime::device::AdapterProbeReport) -> bool
+impl core::default::Default for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::default() -> vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::fmt::Debug for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::marker::Freeze for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::marker::Send for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::marker::Sync for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::marker::Unpin for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::equivalent(&self, key: &K) -> bool
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::equivalent(&self, key: &K) -> bool
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where U: core::convert::From<T>
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where U: core::convert::Into<T>
+pub type vyre_driver_wgpu::runtime::device::AdapterProbeReport::Error = core::convert::Infallible
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where U: core::convert::TryFrom<T>
+pub type vyre_driver_wgpu::runtime::device::AdapterProbeReport::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: core::clone::Clone
+pub type vyre_driver_wgpu::runtime::device::AdapterProbeReport::Owned = T
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::clone_into(&self, target: &mut T)
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: 'static + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: core::clone::Clone
+pub unsafe fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::from(t: T) -> T
+impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::downcast(&self) -> &T
+impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub fn vyre_driver_wgpu::runtime::device::AdapterProbeReport::upcast(&self) -> core::option::Option<&T>
+impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+impl<T> typenum::type_operators::Same for vyre_driver_wgpu::runtime::device::AdapterProbeReport
+pub type vyre_driver_wgpu::runtime::device::AdapterProbeReport::Output = T
+impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: core::marker::Send
+impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
+impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::device::AdapterProbeReport where T: core::marker::Sync
 pub struct vyre_driver_wgpu::runtime::device::EnabledFeatures
 pub vyre_driver_wgpu::runtime::device::EnabledFeatures::indirect_first_instance: bool
 pub vyre_driver_wgpu::runtime::device::EnabledFeatures::max_storage_buffer_binding_size: u64
@@ -3004,6 +2778,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::device::EnabledFeatures
 impl core::marker::Send for vyre_driver_wgpu::runtime::device::EnabledFeatures
 impl core::marker::Sync for vyre_driver_wgpu::runtime::device::EnabledFeatures
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::device::EnabledFeatures
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::device::EnabledFeatures
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::device::EnabledFeatures
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::device::EnabledFeatures
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::device::EnabledFeatures where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -3047,10 +2822,13 @@ impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::de
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::device::EnabledFeatures where T: core::marker::Sync
 pub async fn vyre_driver_wgpu::runtime::device::acquire_gpu() -> vyre_foundation::error::Result<((wgpu::api::device::Device, wgpu::api::queue::Queue), wgpu_types::AdapterInfo, vyre_driver_wgpu::runtime::device::EnabledFeatures)>
 pub async fn vyre_driver_wgpu::runtime::device::acquire_gpu_for_adapter(index: usize) -> vyre_foundation::error::Result<((wgpu::api::device::Device, wgpu::api::queue::Queue), wgpu_types::AdapterInfo, vyre_driver_wgpu::runtime::device::EnabledFeatures)>
-pub fn vyre_driver_wgpu::runtime::device::adapter_index_from_env() -> core::option::Option<usize>
+pub fn vyre_driver_wgpu::runtime::device::adapter_for_info(expected: &wgpu_types::AdapterInfo) -> vyre_foundation::error::Result<wgpu::api::adapter::Adapter>
+pub fn vyre_driver_wgpu::runtime::device::adapter_index_from_env() -> vyre_foundation::error::Result<core::option::Option<usize>>
+pub fn vyre_driver_wgpu::runtime::device::adapter_probe_report() -> vyre_driver_wgpu::runtime::device::AdapterProbeReport
 pub fn vyre_driver_wgpu::runtime::device::cached_adapter_info() -> vyre_foundation::error::Result<&'static wgpu_types::AdapterInfo>
 pub fn vyre_driver_wgpu::runtime::device::cached_device() -> vyre_foundation::error::Result<alloc::sync::Arc<(wgpu::api::device::Device, wgpu::api::queue::Queue)>>
 pub fn vyre_driver_wgpu::runtime::device::enumerate_adapters() -> alloc::vec::Vec<wgpu_types::AdapterInfo>
+pub fn vyre_driver_wgpu::runtime::device::has_real_gpu_adapter() -> bool
 pub fn vyre_driver_wgpu::runtime::device::init_device() -> vyre_foundation::error::Result<((wgpu::api::device::Device, wgpu::api::queue::Queue), wgpu_types::AdapterInfo, vyre_driver_wgpu::runtime::device::EnabledFeatures)>
 pub fn vyre_driver_wgpu::runtime::device::init_device_for_adapter(index: usize) -> vyre_foundation::error::Result<((wgpu::api::device::Device, wgpu::api::queue::Queue), wgpu_types::AdapterInfo, vyre_driver_wgpu::runtime::device::EnabledFeatures)>
 pub fn vyre_driver_wgpu::runtime::device::select_adapter(criteria: &vyre_driver_wgpu::runtime::device::AdapterCriteria) -> vyre_foundation::error::Result<(usize, wgpu_types::AdapterInfo)>
@@ -3064,6 +2842,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::indirect::IndirectArgs
 impl core::marker::Send for vyre_driver_wgpu::runtime::indirect::IndirectArgs
 impl core::marker::Sync for vyre_driver_wgpu::runtime::indirect::IndirectArgs
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::indirect::IndirectArgs
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::indirect::IndirectArgs
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::indirect::IndirectArgs
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::indirect::IndirectArgs
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::indirect::IndirectArgs where U: core::convert::From<T>
@@ -3111,6 +2890,7 @@ impl !core::marker::Freeze for vyre_driver_wgpu::runtime::prerecorded::Prerecord
 impl core::marker::Send for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch
 impl core::marker::Sync for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::prerecorded::PrerecordedDispatch where U: core::convert::From<T>
@@ -3159,6 +2939,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::readback_ring::SlotStat
 impl core::marker::Send for vyre_driver_wgpu::runtime::readback_ring::SlotState
 impl core::marker::Sync for vyre_driver_wgpu::runtime::readback_ring::SlotState
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::readback_ring::SlotState
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::readback_ring::SlotState
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::readback_ring::SlotState
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::readback_ring::SlotState
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::readback_ring::SlotState where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -3207,6 +2988,7 @@ impl !core::marker::Freeze for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
 impl core::marker::Send for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
 impl core::marker::Sync for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::readback_ring::GpuSlot
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::readback_ring::GpuSlot where U: core::convert::From<T>
@@ -3241,7 +3023,7 @@ impl vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::arm_ticket(&self, ticket: &vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket) -> core::result::Result<(crossbeam_channel::channel::Receiver<vyre_driver_wgpu::runtime::readback_ring::MapResult>, alloc::sync::Arc<core::sync::atomic::AtomicBool>), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::collect_slot(&self, device: &wgpu::api::device::Device, idx: usize) -> core::result::Result<core::option::Option<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::collect_slot_into(&self, device: &wgpu::api::device::Device, idx: usize, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<core::option::Option<usize>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::new(device: &wgpu::api::device::Device, size: usize, buffer_size: u64) -> Self
+pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::new(device: &wgpu::api::device::Device, size: usize, buffer_size: u64) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::record_copy(&self, device: &wgpu::api::device::Device, encoder: &mut wgpu::api::command_encoder::CommandEncoder, src_buffer: &wgpu::api::buffer::Buffer, src_offset: u64, byte_len: u64) -> core::result::Result<vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::submit_readback(&self, device: &wgpu::api::device::Device, queue: &wgpu::api::queue::Queue, src_buffer: &wgpu::api::buffer::Buffer, byte_len: u64) -> core::result::Result<usize, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRing::with_mapped_ticket<R>(&self, ticket: &vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket, visitor: impl core::ops::function::FnOnce(&[u8]) -> core::result::Result<R, vyre_driver::backend::error::BackendError>) -> core::result::Result<R, vyre_driver::backend::error::BackendError>
@@ -3249,6 +3031,7 @@ impl !core::marker::Freeze for vyre_driver_wgpu::runtime::readback_ring::Readbac
 impl core::marker::Send for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
 impl core::marker::Sync for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::readback_ring::ReadbackRing where U: core::convert::From<T>
@@ -3283,12 +3066,15 @@ impl vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet::existing_ring_for(&self, byte_len: u64) -> core::result::Result<core::option::Option<alloc::sync::Arc<vyre_driver_wgpu::runtime::readback_ring::ReadbackRing>>, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet::new() -> Self
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet::ring_for(&self, device: &wgpu::api::device::Device, byte_len: u64) -> core::result::Result<alloc::sync::Arc<vyre_driver_wgpu::runtime::readback_ring::ReadbackRing>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet::slots_per_ring(&self) -> usize
+pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet::with_requested_slots(raw_slots: core::option::Option<&str>) -> Self
 impl core::default::Default for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 pub fn vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet::default() -> Self
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 impl core::marker::Send for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 impl core::marker::Sync for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::readback_ring::ReadbackRingSet where U: core::convert::From<T>
@@ -3323,6 +3109,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::readback_ring::Readback
 impl core::marker::Send for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket
 impl core::marker::Sync for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::readback_ring::ReadbackTicket where U: core::convert::From<T>
@@ -3368,6 +3155,7 @@ impl !core::marker::Freeze for vyre_driver_wgpu::runtime::readback_ring::RingSta
 impl core::marker::Send for vyre_driver_wgpu::runtime::readback_ring::RingStats
 impl core::marker::Sync for vyre_driver_wgpu::runtime::readback_ring::RingStats
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::readback_ring::RingStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::readback_ring::RingStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::readback_ring::RingStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::readback_ring::RingStats
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::readback_ring::RingStats where U: core::convert::From<T>
@@ -3412,6 +3200,7 @@ impl<'a> core::marker::Freeze for vyre_driver_wgpu::runtime::router::Override<'a
 impl<'a> core::marker::Send for vyre_driver_wgpu::runtime::router::Override<'a>
 impl<'a> core::marker::Sync for vyre_driver_wgpu::runtime::router::Override<'a>
 impl<'a> core::marker::Unpin for vyre_driver_wgpu::runtime::router::Override<'a>
+impl<'a> core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::router::Override<'a>
 impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::router::Override<'a>
 impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::router::Override<'a>
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::router::Override<'a> where U: core::convert::From<T>
@@ -3463,6 +3252,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::router::Reason
 impl core::marker::Send for vyre_driver_wgpu::runtime::router::Reason
 impl core::marker::Sync for vyre_driver_wgpu::runtime::router::Reason
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::router::Reason
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::router::Reason
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::router::Reason
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::router::Reason
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::router::Reason where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -3506,7 +3296,7 @@ impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::runtime::ro
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::runtime::router::Reason where T: core::marker::Sync
 pub struct vyre_driver_wgpu::runtime::router::BackendRouter
 impl vyre_driver_wgpu::runtime::router::BackendRouter
-pub fn vyre_driver_wgpu::runtime::router::BackendRouter::enumerate_by_precedence() -> alloc::vec::Vec<&'static vyre_driver::backend::registry::BackendRegistration>
+pub fn vyre_driver_wgpu::runtime::router::BackendRouter::enumerate_by_precedence() -> alloc::vec::Vec<&'static vyre_driver::backend::registry::inventory_streams::BackendRegistration>
 pub fn vyre_driver_wgpu::runtime::router::BackendRouter::new() -> Self
 pub fn vyre_driver_wgpu::runtime::router::BackendRouter::pick(&self, program: &vyre_foundation::ir_inner::model::program::core::Program) -> core::result::Result<vyre_driver_wgpu::runtime::router::RouterDecision, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::runtime::router::BackendRouter::pick_with_override(&self, _program: &vyre_foundation::ir_inner::model::program::core::Program, source: vyre_driver_wgpu::runtime::router::Override<'_>) -> core::result::Result<vyre_driver_wgpu::runtime::router::RouterDecision, vyre_driver::backend::error::BackendError>
@@ -3516,6 +3306,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::router::BackendRouter
 impl core::marker::Send for vyre_driver_wgpu::runtime::router::BackendRouter
 impl core::marker::Sync for vyre_driver_wgpu::runtime::router::BackendRouter
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::router::BackendRouter
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::router::BackendRouter
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::router::BackendRouter
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::router::BackendRouter
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::router::BackendRouter where U: core::convert::From<T>
@@ -3556,6 +3347,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::router::RouterDecision
 impl core::marker::Send for vyre_driver_wgpu::runtime::router::RouterDecision
 impl core::marker::Sync for vyre_driver_wgpu::runtime::router::RouterDecision
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::router::RouterDecision
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::router::RouterDecision
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::router::RouterDecision
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::router::RouterDecision
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::router::RouterDecision where U: core::convert::From<T>
@@ -3605,6 +3397,7 @@ pub mod vyre_driver_wgpu::runtime::shader::compile_compute_pipeline
 pub fn vyre_driver_wgpu::runtime::shader::compile_compute_pipeline::compile_compute_pipeline(device: &wgpu::api::device::Device, label: &str, wgsl_source: &str, entry_point: &str) -> vyre_foundation::error::Result<wgpu::api::compute_pipeline::ComputePipeline>
 pub fn vyre_driver_wgpu::runtime::shader::compile_compute_pipeline::compile_compute_pipeline_with_layout(device: &wgpu::api::device::Device, label: &str, wgsl_source: &str, entry_point: &str, layout: core::option::Option<&wgpu::api::pipeline_layout::PipelineLayout>) -> vyre_foundation::error::Result<wgpu::api::compute_pipeline::ComputePipeline>
 #[non_exhaustive] pub enum vyre_driver_wgpu::runtime::CacheError
+pub vyre_driver_wgpu::runtime::CacheError::CapacityAccountingOverflow
 pub vyre_driver_wgpu::runtime::CacheError::EntryTooLarge
 pub vyre_driver_wgpu::runtime::CacheError::KeyNotFound
 impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
@@ -3623,6 +3416,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ca
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError
 impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::CacheError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
@@ -3674,6 +3468,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::Ac
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats where U: core::convert::From<T>
@@ -3709,12 +3504,14 @@ pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::hot_set(&self, n: u
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::new() -> Self
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::record(&mut self, key: u64)
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::stats(&self, key: u64) -> core::option::Option<vyre_driver_wgpu::runtime::cache::tiered_cache::AccessStats>
+pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::try_new() -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 impl core::default::Default for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 pub fn vyre_driver_wgpu::runtime::cache::lru::AccessTracker::default() -> Self
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::lru::AccessTracker
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::lru::AccessTracker where U: core::convert::From<T>
@@ -3749,14 +3546,30 @@ pub vyre_driver_wgpu::runtime::LruPolicy::promote_threshold: u32
 impl vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub const vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::clone::Clone for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone(&self) -> vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::cmp::Eq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::cmp::PartialEq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::eq(&self, other: &vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy) -> bool
 impl core::default::Default for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl core::fmt::Debug for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::StructuralPartialEq for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Freeze for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Send for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Sync for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::marker::Unpin for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl<Q, K> equivalent::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+impl<Q, K> hashbrown::Equivalent<K> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::equivalent(&self, key: &K) -> bool
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::From<T>
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::Into<T>
@@ -3765,12 +3578,18 @@ pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::try_from(value
 impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where U: core::convert::TryFrom<T>
 pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Error = <U as core::convert::TryFrom<T>>::Error
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::clone::Clone
+pub type vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::Owned = T
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone_into(&self, target: &mut T)
+pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::to_owned(&self) -> T
 impl<T> core::any::Any for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: 'static + ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::type_id(&self) -> core::any::TypeId
 impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::borrow(&self) -> &T
 impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: ?core::marker::Sized
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy where T: core::clone::Clone
+pub unsafe fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
 pub fn vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy::from(t: T) -> T
 impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::runtime::cache::tiered_cache::LruPolicy
@@ -3799,6 +3618,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::spirv_backend::SpirvEmitter
 impl core::marker::Send for vyre_driver_wgpu::spirv_backend::SpirvEmitter
 impl core::marker::Sync for vyre_driver_wgpu::spirv_backend::SpirvEmitter
 impl core::marker::Unpin for vyre_driver_wgpu::spirv_backend::SpirvEmitter
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::spirv_backend::SpirvEmitter
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::spirv_backend::SpirvEmitter
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::spirv_backend::SpirvEmitter
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::spirv_backend::SpirvEmitter where U: core::convert::From<T>
@@ -3831,17 +3651,16 @@ impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::spirv_backend::
 pub const vyre_driver_wgpu::spirv_backend::SPIRV_BACKEND_ID: &str
 pub struct vyre_driver_wgpu::DispatchArena
 impl vyre_driver_wgpu::DispatchArena
-pub fn vyre_driver_wgpu::DispatchArena::new() -> Self
+pub fn vyre_driver_wgpu::DispatchArena::new(device: wgpu::api::device::Device, queue: wgpu::api::queue::Queue, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> Self
 impl core::clone::Clone for vyre_driver_wgpu::DispatchArena
 pub fn vyre_driver_wgpu::DispatchArena::clone(&self) -> vyre_driver_wgpu::DispatchArena
-impl core::default::Default for vyre_driver_wgpu::DispatchArena
-pub fn vyre_driver_wgpu::DispatchArena::default() -> vyre_driver_wgpu::DispatchArena
 impl core::fmt::Debug for vyre_driver_wgpu::DispatchArena
 pub fn vyre_driver_wgpu::DispatchArena::fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for vyre_driver_wgpu::DispatchArena
 impl core::marker::Send for vyre_driver_wgpu::DispatchArena
 impl core::marker::Sync for vyre_driver_wgpu::DispatchArena
 impl core::marker::Unpin for vyre_driver_wgpu::DispatchArena
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::DispatchArena
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::DispatchArena
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::DispatchArena
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::DispatchArena where U: core::convert::From<T>
@@ -3882,20 +3701,20 @@ impl vyre_driver_wgpu::WgpuBackend
 pub fn vyre_driver_wgpu::WgpuBackend::acquire() -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::acquire_adapter(index: usize) -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::adapter_info(&self) -> &wgpu_types::AdapterInfo
-pub fn vyre_driver_wgpu::WgpuBackend::compile_persistent(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::sync::Arc<vyre_driver_wgpu::pipeline::WgpuPipeline>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::compile_streaming(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, config: vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<vyre_driver_wgpu::engine::streaming::HostIngressStream, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::compile_persistent(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::sync::Arc<vyre_driver_wgpu::pipeline::WgpuPipeline>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::compile_streaming(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, config: vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<vyre_driver_wgpu::engine::streaming::HostIngressStream, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::device_limits(&self) -> &wgpu_types::Limits
 pub fn vyre_driver_wgpu::WgpuBackend::device_queue(&self) -> alloc::sync::Arc<(wgpu::api::device::Device, wgpu::api::queue::Queue)>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_batch(&self, jobs: &[(vyre_foundation::ir_inner::model::program::core::Program, alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::vyre_backend::DispatchConfig)]) -> core::result::Result<alloc::vec::Vec<core::result::Result<vyre_driver::backend::vyre_backend::OutputBuffers, vyre_driver::backend::error::BackendError>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_batch(&self, jobs: &[(&vyre_foundation::ir_inner::model::program::core::Program, &[&[u8]], &vyre_driver::backend::vyre_backend::DispatchConfig)]) -> core::result::Result<alloc::vec::Vec<core::result::Result<vyre_driver::backend::vyre_backend::OutputBuffers, vyre_driver::backend::error::BackendError>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_batch_into(&self, jobs: &[(&vyre_foundation::ir_inner::model::program::core::Program, &[&[u8]], &vyre_driver::backend::vyre_backend::DispatchConfig)], outputs: &mut [vyre_driver::backend::vyre_backend::OutputBuffers]) -> core::result::Result<alloc::vec::Vec<core::result::Result<(), vyre_driver::backend::error::BackendError>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_for_each_mapped_output<F>(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig, visitor: F) -> core::result::Result<(), vyre_driver::backend::error::BackendError> where F: core::ops::function::FnMut(usize, &[u8]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_for_each_pod_output<T, F>(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig, visitor: F) -> core::result::Result<(), vyre_driver::backend::error::BackendError> where T: bytemuck::pod::Pod, F: core::ops::function::FnMut(usize, &[T]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_speculative_prefilter_confirm<F>(&self, speculator: &vyre_driver::speculate::AdaptiveSpeculator, plan: vyre_driver::speculate::SpeculativeDispatchPlan<'_>, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig, confirm_serial: F) -> core::result::Result<vyre_driver::speculate::SpeculativeDispatchOutcome, vyre_driver::backend::error::BackendError> where F: core::ops::function::FnMut(vyre_driver::backend::vyre_backend::OutputBuffers) -> core::result::Result<vyre_driver::backend::vyre_backend::OutputBuffers, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_batch(&self, jobs: &[(vyre_foundation::ir_inner::model::program::core::Program, alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::dispatch_config::DispatchConfig)]) -> core::result::Result<alloc::vec::Vec<core::result::Result<vyre_driver::backend::dispatch_result::OutputBuffers, vyre_driver::backend::error::BackendError>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_batch(&self, jobs: &[(&vyre_foundation::ir_inner::model::program::core::Program, &[&[u8]], &vyre_driver::backend::dispatch_config::DispatchConfig)]) -> core::result::Result<alloc::vec::Vec<core::result::Result<vyre_driver::backend::dispatch_result::OutputBuffers, vyre_driver::backend::error::BackendError>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_batch_into(&self, jobs: &[(&vyre_foundation::ir_inner::model::program::core::Program, &[&[u8]], &vyre_driver::backend::dispatch_config::DispatchConfig)], outputs: &mut [vyre_driver::backend::dispatch_result::OutputBuffers]) -> core::result::Result<alloc::vec::Vec<core::result::Result<(), vyre_driver::backend::error::BackendError>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_for_each_mapped_output<F>(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, visitor: F) -> core::result::Result<(), vyre_driver::backend::error::BackendError> where F: core::ops::function::FnMut(usize, &[u8]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_for_each_pod_output<T, F>(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, visitor: F) -> core::result::Result<(), vyre_driver::backend::error::BackendError> where T: bytemuck::pod::Pod, F: core::ops::function::FnMut(usize, &[T]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_speculative_prefilter_confirm<F>(&self, speculator: &vyre_driver::speculate::AdaptiveSpeculator, plan: vyre_driver::speculate::SpeculativeDispatchPlan<'_>, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, confirm_serial: F) -> core::result::Result<vyre_driver::speculate::SpeculativeDispatchOutcome, vyre_driver::backend::error::BackendError> where F: core::ops::function::FnMut(vyre_driver::backend::dispatch_result::OutputBuffers) -> core::result::Result<vyre_driver::backend::dispatch_result::OutputBuffers, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::force_device_lost(&self) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::invalidate_impacted_disk_cache(&self, intervention_mask: &[u32], rule_adj: &[u32], state: &[u32], join_rules: &[u32], n: u32, max_iterations: u32, pipeline_lineage_cell: &[u32], cache_keys: &[alloc::string::String]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::invalidate_impacted_pipeline_cache(&self, intervention_mask: &[u32], rule_adj: &[u32], state: &[u32], join_rules: &[u32], n: u32, max_iterations: u32, pipeline_lineage_cell: &[u32], pipeline_keys: &[[u8; 32]])
-pub fn vyre_driver_wgpu::WgpuBackend::invalidate_pipeline_cache_for_changed_op(&self, changed_op_handle: u32, pipeline_lineage_cell: &[u32], pipeline_keys: &[[u8; 32]])
+pub fn vyre_driver_wgpu::WgpuBackend::invalidate_impacted_pipeline_cache(&self, intervention_mask: &[u32], rule_adj: &[u32], state: &[u32], join_rules: &[u32], n: u32, max_iterations: u32, pipeline_lineage_cell: &[u32], pipeline_keys: &[[u8; 32]]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::invalidate_pipeline_cache_for_changed_op(&self, changed_op_handle: u32, pipeline_lineage_cell: &[u32], pipeline_keys: &[[u8; 32]]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::new() -> core::result::Result<Self, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::shared() -> core::result::Result<alloc::sync::Arc<Self>, vyre_driver::backend::error::BackendError>
 impl vyre_driver_wgpu::WgpuBackend
@@ -3903,8 +3722,13 @@ pub fn vyre_driver_wgpu::WgpuBackend::adapter_caps(&self) -> vyre_foundation::op
 pub fn vyre_driver_wgpu::WgpuBackend::device_profile(&self) -> vyre_driver::device_profile::DeviceProfile
 pub fn vyre_driver_wgpu::WgpuBackend::stats(&self) -> vyre_driver_wgpu::WgpuBackendStats
 impl vyre_driver_wgpu::WgpuBackend
+pub fn vyre_driver_wgpu::WgpuBackend::allocate_wgpu_device_buffer(&self, byte_len: usize) -> core::result::Result<alloc::boxed::Box<dyn vyre_driver::backend::device_buffer::DeviceBuffer>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_wgpu_device_buffer(&self, buffer: &dyn vyre_driver::backend::device_buffer::DeviceBuffer) -> core::result::Result<alloc::vec::Vec<u8>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::free_wgpu_device_buffer(&self, buffer: alloc::boxed::Box<dyn vyre_driver::backend::device_buffer::DeviceBuffer>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::upload_wgpu_device_buffer(&self, buffer: &mut dyn vyre_driver::backend::device_buffer::DeviceBuffer, bytes: &[u8]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+impl vyre_driver_wgpu::WgpuBackend
 pub fn vyre_driver_wgpu::WgpuBackend::compile(&self, program: &vyre_foundation::ir_inner::model::program::core::Program) -> core::result::Result<vyre_driver_wgpu::WgpuIR, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_compiled(&self, compiled: &vyre_driver_wgpu::WgpuIR, inputs: &[vyre_driver::backend::capability::MemoryRef<'_>], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::capability::Memory>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_compiled(&self, compiled: &vyre_driver_wgpu::WgpuIR, inputs: &[vyre_driver::backend::capability::MemoryRef<'_>], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::capability::Memory>, vyre_driver::backend::error::BackendError>
 impl vyre_driver_wgpu::WgpuBackend
 pub fn vyre_driver_wgpu::WgpuBackend::dispatch_wgsl(&self, wgsl: &str, input: &[u8], output_size: usize, workgroup_size: u32) -> core::result::Result<alloc::vec::Vec<u8>, alloc::string::String>
 impl vyre_driver_wgpu::WgpuBackend
@@ -3915,18 +3739,31 @@ pub fn vyre_driver_wgpu::WgpuBackend::clone(&self) -> vyre_driver_wgpu::WgpuBack
 impl core::fmt::Debug for vyre_driver_wgpu::WgpuBackend
 pub fn vyre_driver_wgpu::WgpuBackend::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl vyre_driver::backend::capability::Executable for vyre_driver_wgpu::WgpuBackend
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[vyre_driver::backend::capability::MemoryRef<'_>], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::capability::Memory>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[vyre_driver::backend::capability::MemoryRef<'_>], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<vyre_driver::backend::capability::Memory>, vyre_driver::backend::error::BackendError>
 impl vyre_driver::backend::private::Sealed for vyre_driver_wgpu::WgpuBackend
 impl vyre_driver::backend::vyre_backend::VyreBackend for vyre_driver_wgpu::WgpuBackend
-pub fn vyre_driver_wgpu::WgpuBackend::compile_native(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<core::option::Option<alloc::sync::Arc<dyn vyre_driver::backend::compiled_pipeline::CompiledPipeline>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::allocate_device_buffer(&self, byte_len: usize) -> core::result::Result<alloc::boxed::Box<dyn vyre_driver::backend::device_buffer::DeviceBuffer>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::allocate_resident(&self, byte_len: usize) -> core::result::Result<vyre_driver::backend::resource::Resource, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::compile_native(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<core::option::Option<alloc::sync::Arc<dyn vyre_driver::backend::compiled_pipeline::CompiledPipeline>>, vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::device_lost(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::device_profile(&self) -> vyre_driver::device_profile::DeviceProfile
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_async(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::boxed::Box<dyn vyre_driver::backend::pending_dispatch::PendingDispatch>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_async(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig) -> core::result::Result<alloc::boxed::Box<dyn vyre_driver::backend::pending_dispatch::PendingDispatch>, vyre_driver::backend::error::BackendError>
-pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_into(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::vyre_backend::DispatchConfig, outputs: &mut vyre_driver::backend::vyre_backend::OutputBuffers) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_async(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[alloc::vec::Vec<u8>], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::boxed::Box<dyn vyre_driver::backend::pending_dispatch::PendingDispatch>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_async(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<alloc::boxed::Box<dyn vyre_driver::backend::pending_dispatch::PendingDispatch>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_into(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig, outputs: &mut vyre_driver::backend::dispatch_result::OutputBuffers) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_borrowed_timed(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&[u8]], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<vyre_driver::backend::dispatch_result::TimedDispatchResult, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_resident_timed(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, resources: &[vyre_driver::backend::resource::Resource], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<vyre_driver::backend::dispatch_result::TimedDispatchResult, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch_with_device_buffers(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[&dyn vyre_driver::backend::device_buffer::DeviceBuffer], outputs: &mut [&mut dyn vyre_driver::backend::device_buffer::DeviceBuffer], config: &vyre_driver::backend::dispatch_config::DispatchConfig) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_device_buffer(&self, buffer: &dyn vyre_driver::backend::device_buffer::DeviceBuffer) -> core::result::Result<alloc::vec::Vec<u8>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_resident(&self, resource: &vyre_driver::backend::resource::Resource) -> core::result::Result<alloc::vec::Vec<u8>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_resident_into(&self, resource: &vyre_driver::backend::resource::Resource, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_resident_range(&self, resource: &vyre_driver::backend::resource::Resource, byte_offset: usize, byte_len: usize) -> core::result::Result<alloc::vec::Vec<u8>, vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_resident_range_into(&self, resource: &vyre_driver::backend::resource::Resource, byte_offset: usize, byte_len: usize, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::download_resident_ranges_into(&self, ranges: &[(&vyre_driver::backend::resource::Resource, usize, usize)], outputs: &mut [&mut alloc::vec::Vec<u8>]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::flush(&self) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::free_device_buffer(&self, buffer: alloc::boxed::Box<dyn vyre_driver::backend::device_buffer::DeviceBuffer>) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::free_resident(&self, resource: vyre_driver::backend::resource::Resource) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::id(&self) -> &'static str
 pub fn vyre_driver_wgpu::WgpuBackend::is_distributed(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::max_compute_invocations_per_workgroup(&self) -> u32
@@ -3945,17 +3782,26 @@ pub fn vyre_driver_wgpu::WgpuBackend::supports_speculation(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::supports_subgroup_ops(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::supports_tensor_cores(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::try_recover(&self) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::upload_device_buffer(&self, buffer: &mut dyn vyre_driver::backend::device_buffer::DeviceBuffer, bytes: &[u8]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::upload_resident(&self, resource: &vyre_driver::backend::resource::Resource, bytes: &[u8]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::upload_resident_at(&self, resource: &vyre_driver::backend::resource::Resource, dst_offset_bytes: usize, bytes: &[u8]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::upload_resident_at_many(&self, uploads: &[(&vyre_driver::backend::resource::Resource, usize, &[u8])]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
+pub fn vyre_driver_wgpu::WgpuBackend::upload_resident_many(&self, uploads: &[(&vyre_driver::backend::resource::Resource, &[u8])]) -> core::result::Result<(), vyre_driver::backend::error::BackendError>
 pub fn vyre_driver_wgpu::WgpuBackend::version(&self) -> &'static str
 impl vyre_foundation::validate::options::BackendValidationCapabilities for vyre_driver_wgpu::WgpuBackend
 pub fn vyre_driver_wgpu::WgpuBackend::backend_name(&self) -> &'static str
 pub fn vyre_driver_wgpu::WgpuBackend::supports_cast_target(&self, target: &vyre_spec::data_type::DataType) -> bool
+pub fn vyre_driver_wgpu::WgpuBackend::supports_distributed_collectives(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::supports_indirect_dispatch(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::supports_specialization_constants(&self) -> bool
 pub fn vyre_driver_wgpu::WgpuBackend::supports_subgroup_ops(&self) -> bool
+impl vyre_self_substrate::optimizer::dispatcher::OptimizerDispatcher for vyre_driver_wgpu::WgpuBackend
+pub fn vyre_driver_wgpu::WgpuBackend::dispatch(&self, program: &vyre_foundation::ir_inner::model::program::core::Program, inputs: &[alloc::vec::Vec<u8>], grid_override: core::option::Option<[u32; 3]>) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, vyre_self_substrate::optimizer::dispatcher::DispatchError>
 impl core::marker::Freeze for vyre_driver_wgpu::WgpuBackend
 impl core::marker::Send for vyre_driver_wgpu::WgpuBackend
 impl core::marker::Sync for vyre_driver_wgpu::WgpuBackend
 impl core::marker::Unpin for vyre_driver_wgpu::WgpuBackend
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::WgpuBackend
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::WgpuBackend
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::WgpuBackend
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::WgpuBackend where U: core::convert::From<T>
@@ -4016,6 +3862,7 @@ impl core::marker::Freeze for vyre_driver_wgpu::WgpuBackendStats
 impl core::marker::Send for vyre_driver_wgpu::WgpuBackendStats
 impl core::marker::Sync for vyre_driver_wgpu::WgpuBackendStats
 impl core::marker::Unpin for vyre_driver_wgpu::WgpuBackendStats
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::WgpuBackendStats
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::WgpuBackendStats
 impl core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::WgpuBackendStats
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::WgpuBackendStats where U: core::convert::From<T>
@@ -4051,12 +3898,58 @@ pub type vyre_driver_wgpu::WgpuBackendStats::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::WgpuBackendStats where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::WgpuBackendStats where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::WgpuBackendStats where T: core::marker::Sync
+pub struct vyre_driver_wgpu::WgpuDeviceBuffer
+impl vyre_driver_wgpu::WgpuDeviceBuffer
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::handle(&self) -> &vyre_driver_wgpu::buffer::GpuBufferHandle
+impl core::fmt::Debug for vyre_driver_wgpu::WgpuDeviceBuffer
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl vyre_driver::backend::device_buffer::DeviceBuffer for vyre_driver_wgpu::WgpuDeviceBuffer
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::as_any(&self) -> &dyn core::any::Any
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::as_any_mut(&mut self) -> &mut dyn core::any::Any
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::backend_id(&self) -> &'static str
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::byte_len(&self) -> usize
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::debug_label(&self) -> core::option::Option<&str>
+impl core::marker::Freeze for vyre_driver_wgpu::WgpuDeviceBuffer
+impl core::marker::Send for vyre_driver_wgpu::WgpuDeviceBuffer
+impl core::marker::Sync for vyre_driver_wgpu::WgpuDeviceBuffer
+impl core::marker::Unpin for vyre_driver_wgpu::WgpuDeviceBuffer
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::WgpuDeviceBuffer
+impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::WgpuDeviceBuffer
+impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::WgpuDeviceBuffer
+impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::WgpuDeviceBuffer where U: core::convert::From<T>
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_driver_wgpu::WgpuDeviceBuffer where U: core::convert::Into<T>
+pub type vyre_driver_wgpu::WgpuDeviceBuffer::Error = core::convert::Infallible
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_driver_wgpu::WgpuDeviceBuffer where U: core::convert::TryFrom<T>
+pub type vyre_driver_wgpu::WgpuDeviceBuffer::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_driver_wgpu::WgpuDeviceBuffer where T: 'static + ?core::marker::Sized
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_driver_wgpu::WgpuDeviceBuffer where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_driver_wgpu::WgpuDeviceBuffer where T: ?core::marker::Sized
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_driver_wgpu::WgpuDeviceBuffer
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::from(t: T) -> T
+impl<T> khronos_egl::Downcast<T> for vyre_driver_wgpu::WgpuDeviceBuffer
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::downcast(&self) -> &T
+impl<T> khronos_egl::Upcast<T> for vyre_driver_wgpu::WgpuDeviceBuffer
+pub fn vyre_driver_wgpu::WgpuDeviceBuffer::upcast(&self) -> core::option::Option<&T>
+impl<T> tracing::instrument::Instrument for vyre_driver_wgpu::WgpuDeviceBuffer
+impl<T> tracing::instrument::WithSubscriber for vyre_driver_wgpu::WgpuDeviceBuffer
+impl<T> typenum::type_operators::Same for vyre_driver_wgpu::WgpuDeviceBuffer
+pub type vyre_driver_wgpu::WgpuDeviceBuffer::Output = T
+impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::WgpuDeviceBuffer where T: core::marker::Send
+impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::WgpuDeviceBuffer where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
+impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::WgpuDeviceBuffer where T: core::marker::Sync
 pub struct vyre_driver_wgpu::WgpuIR
 pub vyre_driver_wgpu::WgpuIR::pipeline: vyre_driver_wgpu::pipeline::WgpuPipeline
 impl core::marker::Freeze for vyre_driver_wgpu::WgpuIR
 impl core::marker::Send for vyre_driver_wgpu::WgpuIR
 impl core::marker::Sync for vyre_driver_wgpu::WgpuIR
 impl core::marker::Unpin for vyre_driver_wgpu::WgpuIR
+impl core::marker::UnsafeUnpin for vyre_driver_wgpu::WgpuIR
 impl !core::panic::unwind_safe::RefUnwindSafe for vyre_driver_wgpu::WgpuIR
 impl !core::panic::unwind_safe::UnwindSafe for vyre_driver_wgpu::WgpuIR
 impl<T, U> core::convert::Into<U> for vyre_driver_wgpu::WgpuIR where U: core::convert::From<T>
@@ -4086,3 +3979,4 @@ pub type vyre_driver_wgpu::WgpuIR::Output = T
 impl<T> wgpu_types::send_sync::WasmNotSend for vyre_driver_wgpu::WgpuIR where T: core::marker::Send
 impl<T> wgpu_types::send_sync::WasmNotSendSync for vyre_driver_wgpu::WgpuIR where T: wgpu_types::send_sync::WasmNotSend + wgpu_types::send_sync::WasmNotSync
 impl<T> wgpu_types::send_sync::WasmNotSync for vyre_driver_wgpu::WgpuIR where T: core::marker::Sync
+pub const vyre_driver_wgpu::WGPU_BACKEND_ID: &str

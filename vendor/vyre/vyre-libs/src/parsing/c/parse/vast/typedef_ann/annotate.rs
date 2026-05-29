@@ -312,15 +312,23 @@ pub(super) fn c11_annotate_typedef_names_impl(
     // where `typedef int S;` is later reused as `struct S { ... }`). The
     // scan produces a per-row result via the carrier; gating it here
     // diverged from the CPU contract on every tag spot.
-    identifier_annotation.extend(emit_typedef_visibility_scan(
-        vast_nodes,
-        haystack,
-        decl_contexts,
-        &haystack_len,
-        &num_nodes,
-        t.clone(),
-        packed_haystack,
-    ));
+    if let Some(decl_contexts) = decl_contexts {
+        identifier_annotation.extend(emit_typedef_visibility_scan_precomputed_context(
+            vast_nodes,
+            decl_contexts,
+            t.clone(),
+        ));
+    } else {
+        identifier_annotation.extend(emit_typedef_visibility_scan(
+            vast_nodes,
+            haystack,
+            decl_contexts,
+            &haystack_len,
+            &num_nodes,
+            t.clone(),
+            packed_haystack,
+        ));
+    }
     identifier_annotation.extend([
         Node::let_bind(
             "possible_declarator",
@@ -355,15 +363,38 @@ pub(super) fn c11_annotate_typedef_names_impl(
             ),
         ),
     ]);
-    let mut declaration_annotation = emit_current_declaration_annotation(
-        vast_nodes,
-        haystack,
-        &haystack_len,
-        t.clone(),
-        &num_nodes,
-        packed_haystack,
-        decl_contexts,
-    );
+    let mut declaration_annotation = if let Some(decl_contexts) = decl_contexts {
+        let mut nodes = emit_precomputed_declaration_kind_for_index(
+            vast_nodes,
+            decl_contexts,
+            t.clone(),
+            "current_decl_result_kind",
+            "current_decl_precomputed",
+        );
+        nodes.push(Node::assign(
+            "current_decl_flags",
+            Expr::select(
+                Expr::eq(Expr::var("current_decl_result_kind"), Expr::u32(1)),
+                Expr::u32(C_TYPEDEF_FLAG_TYPEDEF_DECLARATOR),
+                Expr::select(
+                    Expr::eq(Expr::var("current_decl_result_kind"), Expr::u32(2)),
+                    Expr::u32(C_TYPEDEF_FLAG_ORDINARY_DECLARATOR),
+                    Expr::u32(0),
+                ),
+            ),
+        ));
+        nodes
+    } else {
+        emit_current_declaration_annotation(
+            vast_nodes,
+            haystack,
+            &haystack_len,
+            t.clone(),
+            &num_nodes,
+            packed_haystack,
+            decl_contexts,
+        )
+    };
 
     declaration_annotation.extend([
         Node::if_then(
@@ -417,6 +448,7 @@ pub(super) fn c11_annotate_typedef_names_impl(
             Expr::bitor(
                 Expr::var("typedef_flags"),
                 Expr::u32(C_TYPEDEF_FLAG_VISIBLE_TYPEDEF_NAME),
+
             ),
         )],
     ));
@@ -470,3 +502,4 @@ pub(super) fn c11_annotate_typedef_names_impl(
     .with_entry_op_id(ANNOTATE_TYPEDEF_OP_ID)
     .with_non_composable_with_self(true)
 }
+

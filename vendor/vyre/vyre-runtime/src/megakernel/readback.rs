@@ -208,7 +208,7 @@ mod tests {
         let mut readback = MegakernelReadback::default();
 
         MegakernelReadback::drain_outputs_into(&mut outputs, 4, &mut readback)
-            .expect("valid megakernel outputs must decode");
+            .expect("Fix: valid megakernel outputs must decode");
 
         assert_eq!(outputs.len(), 4);
         assert!(outputs.iter().all(Vec::is_empty));
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn readback_counters_report_total_volume() {
         let readback = MegakernelReadback::from_outputs(valid_outputs(4), 4)
-            .expect("valid megakernel outputs must decode");
+            .expect("Fix: valid megakernel outputs must decode");
         let counters = readback.counters();
 
         assert_eq!(counters.control_bytes, readback.control_bytes.len());

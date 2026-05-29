@@ -7,6 +7,7 @@
 //! boundary.
 
 use crate::analyses::common_subexpr;
+use crate::operand_semantics::operand_is_result_reference;
 use crate::{KernelBody, KernelDescriptor, KernelOp};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -142,34 +143,6 @@ fn collect_result_refs(body: &KernelBody) -> FxHashSet<u32> {
         refs.extend(collect_result_refs(child));
     }
     refs
-}
-
-fn operand_is_result_reference(kind: &crate::KernelOpKind, pos: usize) -> bool {
-    use crate::KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | Select | Cast { .. } => true,
-        MatrixMma { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
 }
 
 #[cfg(test)]

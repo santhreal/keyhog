@@ -198,7 +198,7 @@ mod tests {
         let h = analyze(&desc);
         // Note: the linear_chain helper interleaves literals so the
         // chain detection sees: lit(r0); lit(r101); add(r0, r101)→r1;
-        // lit(r102); add(r1, r102)→r2; ... — chain reads previous
+        // lit(r102); add(r1, r102)→r2; ...  -  chain reads previous
         // hop's result through the Add op. The dependency-chain
         // detector should find at least one long chain.
         assert!(!h.long_chains.is_empty());

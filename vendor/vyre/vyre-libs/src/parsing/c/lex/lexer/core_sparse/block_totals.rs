@@ -51,14 +51,14 @@ mod tests {
             .buffers()
             .iter()
             .find(|buffer| buffer.name() == "block_totals")
-            .expect("block totals output buffer must be declared");
+            .expect("Fix: block totals output buffer must be declared");
         assert!(block_totals.is_output());
         for name in ["sparse_types", "sparse_starts", "sparse_lens"] {
             let buffer = program
                 .buffers()
                 .iter()
                 .find(|buffer| buffer.name() == name)
-                .expect("sparse token stream must be declared");
+                .expect("Fix: sparse token stream must be declared");
             assert!(
                 buffer.is_output(),
                 "{name} must be an explicit output because the block-total compact pass consumes it"

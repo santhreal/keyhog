@@ -1,4 +1,4 @@
-//! `sink_intersection` — count how many of a query set are also in
+//! `sink_intersection`  -  count how many of a query set are also in
 //! a sink-family bitset. Used by rules that want a fractional
 //! confidence ("X% of nodes reachable from source landed in sinks").
 

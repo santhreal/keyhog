@@ -1,4 +1,31 @@
 pub mod vyre_primitives
+pub mod vyre_primitives::prelude
+pub fn vyre_primitives::prelude::append_f32_slice_le_bytes(values: &[f32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::append_packed_byte_lane(bytes: &[u8], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::append_u32_slice_le_bytes(words: &[u32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::decode_f32_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<f32>
+pub fn vyre_primitives::prelude::decode_i32_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<i32>
+pub fn vyre_primitives::prelude::decode_u16_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<u16>
+pub fn vyre_primitives::prelude::decode_u32_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<u32>
+pub fn vyre_primitives::prelude::decode_u64_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<u64>
+pub fn vyre_primitives::prelude::pack_bytes_as_u32_slice(bytes: &[u8]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_bytes_as_u32_slice_min_words(bytes: &[u8], min_words: usize) -> core::result::Result<(alloc::vec::Vec<u8>, usize), alloc::string::String>
+pub fn vyre_primitives::prelude::pack_f32_slice(values: &[f32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_f32_slice_into(values: &[f32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::pack_f32_slice_into_uninit(values: &[f32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_i32_slice(values: &[i32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_i32_slice_into(values: &[i32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::pack_u16_slice(values: &[u16]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_u16_slice_into(values: &[u16], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::pack_u32_slice(words: &[u32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_u32_slice_into(words: &[u32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::pack_u32_slice_into_uninit(words: &[u32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_u32_slice_min_words_into(words: &[u32], min_words: u32, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::prelude::pack_u64_slice(values: &[u64]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::prelude::pack_u64_slice_into(values: &[u64], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::prelude::unpack_f32_slice(bytes: &[u8], count: usize, label: &str) -> core::result::Result<alloc::vec::Vec<f32>, alloc::string::String>
+pub fn vyre_primitives::prelude::unpack_f32_slice_into(bytes: &[u8], count: usize, label: &str, out: &mut alloc::vec::Vec<f32>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::prelude::unpack_u32_slice_into(bytes: &[u8], count: usize, label: &str, out: &mut alloc::vec::Vec<u32>) -> core::result::Result<(), alloc::string::String>
 pub mod vyre_primitives::range
 #[non_exhaustive] #[repr(C)] pub struct vyre_primitives::range::ByteRange
 pub vyre_primitives::range::ByteRange::end: u32
@@ -29,6 +56,7 @@ impl core::marker::Freeze for vyre_primitives::range::ByteRange
 impl core::marker::Send for vyre_primitives::range::ByteRange
 impl core::marker::Sync for vyre_primitives::range::ByteRange
 impl core::marker::Unpin for vyre_primitives::range::ByteRange
+impl core::marker::UnsafeUnpin for vyre_primitives::range::ByteRange
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::range::ByteRange
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::range::ByteRange
 impl<T, U> core::convert::Into<U> for vyre_primitives::range::ByteRange where U: core::convert::From<T>
@@ -53,6 +81,41 @@ impl<T> core::clone::CloneToUninit for vyre_primitives::range::ByteRange where T
 pub unsafe fn vyre_primitives::range::ByteRange::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_primitives::range::ByteRange
 pub fn vyre_primitives::range::ByteRange::from(t: T) -> T
+pub mod vyre_primitives::wire
+pub fn vyre_primitives::wire::append_f32_slice_le_bytes(values: &[f32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::append_packed_byte_lane(bytes: &[u8], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::append_u32_slice_le_bytes(words: &[u32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::decode_f32_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<f32>
+pub fn vyre_primitives::wire::decode_i32_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<i32>
+pub fn vyre_primitives::wire::decode_u16_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<u16>
+pub fn vyre_primitives::wire::decode_u32_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<u32>
+pub fn vyre_primitives::wire::decode_u32x8_le_bytes(bytes: &[u8; 32]) -> [u32; 8]
+pub fn vyre_primitives::wire::decode_u64_le_bytes_all(bytes: &[u8]) -> alloc::vec::Vec<u64>
+pub fn vyre_primitives::wire::pack_bytes_as_u32_slice(bytes: &[u8]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_bytes_as_u32_slice_into(bytes: &[u8], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::pack_bytes_as_u32_slice_min_words(bytes: &[u8], min_words: usize) -> core::result::Result<(alloc::vec::Vec<u8>, usize), alloc::string::String>
+pub fn vyre_primitives::wire::pack_bytes_as_u32_slice_min_words_into(bytes: &[u8], min_words: usize, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<usize, alloc::string::String>
+pub fn vyre_primitives::wire::pack_f32_slice(values: &[f32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_f32_slice_into(values: &[f32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::pack_f32_slice_into_uninit(values: &[f32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_i32_slice(values: &[i32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_i32_slice_into(values: &[i32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::pack_u16_slice(values: &[u16]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_u16_slice_into(values: &[u16], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::pack_u32_iter<I>(words: I) -> alloc::vec::Vec<u8> where I: core::iter::traits::collect::IntoIterator<Item = u32>
+pub fn vyre_primitives::wire::pack_u32_slice(words: &[u32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_u32_slice_into(words: &[u32], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::pack_u32_slice_into_uninit(words: &[u32]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_u32_slice_min_words_into(words: &[u32], min_words: u32, out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::wire::pack_u64_slice(values: &[u64]) -> alloc::vec::Vec<u8>
+pub fn vyre_primitives::wire::pack_u64_slice_into(values: &[u64], out: &mut alloc::vec::Vec<u8>)
+pub fn vyre_primitives::wire::read_u32_le_word(bytes: &[u8], word_index: usize, label: &str) -> core::result::Result<u32, alloc::string::String>
+pub fn vyre_primitives::wire::try_pack_bytes_as_u32_slice_into(bytes: &[u8], out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::wire::try_pack_f32_slice_into(values: &[f32], out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::wire::try_pack_u32_slice_into(words: &[u32], out: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::wire::unpack_f32_slice(bytes: &[u8], count: usize, label: &str) -> core::result::Result<alloc::vec::Vec<f32>, alloc::string::String>
+pub fn vyre_primitives::wire::unpack_f32_slice_into(bytes: &[u8], count: usize, label: &str, out: &mut alloc::vec::Vec<f32>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_primitives::wire::unpack_u32_slice_into(bytes: &[u8], count: usize, label: &str, out: &mut alloc::vec::Vec<u32>) -> core::result::Result<(), alloc::string::String>
 #[non_exhaustive] pub enum vyre_primitives::CombineOp
 pub vyre_primitives::CombineOp::Add
 pub vyre_primitives::CombineOp::BitAnd
@@ -78,6 +141,7 @@ impl core::marker::Freeze for vyre_primitives::CombineOp
 impl core::marker::Send for vyre_primitives::CombineOp
 impl core::marker::Sync for vyre_primitives::CombineOp
 impl core::marker::Unpin for vyre_primitives::CombineOp
+impl core::marker::UnsafeUnpin for vyre_primitives::CombineOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::CombineOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::CombineOp
 impl<T, U> core::convert::Into<U> for vyre_primitives::CombineOp where U: core::convert::From<T>
@@ -120,6 +184,7 @@ impl core::marker::Freeze for vyre_primitives::ArithAdd
 impl core::marker::Send for vyre_primitives::ArithAdd
 impl core::marker::Sync for vyre_primitives::ArithAdd
 impl core::marker::Unpin for vyre_primitives::ArithAdd
+impl core::marker::UnsafeUnpin for vyre_primitives::ArithAdd
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::ArithAdd
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::ArithAdd
 impl<T, U> core::convert::Into<U> for vyre_primitives::ArithAdd where U: core::convert::From<T>
@@ -162,6 +227,7 @@ impl core::marker::Freeze for vyre_primitives::ArithMul
 impl core::marker::Send for vyre_primitives::ArithMul
 impl core::marker::Sync for vyre_primitives::ArithMul
 impl core::marker::Unpin for vyre_primitives::ArithMul
+impl core::marker::UnsafeUnpin for vyre_primitives::ArithMul
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::ArithMul
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::ArithMul
 impl<T, U> core::convert::Into<U> for vyre_primitives::ArithMul where U: core::convert::From<T>
@@ -204,6 +270,7 @@ impl core::marker::Freeze for vyre_primitives::BitwiseAnd
 impl core::marker::Send for vyre_primitives::BitwiseAnd
 impl core::marker::Sync for vyre_primitives::BitwiseAnd
 impl core::marker::Unpin for vyre_primitives::BitwiseAnd
+impl core::marker::UnsafeUnpin for vyre_primitives::BitwiseAnd
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::BitwiseAnd
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::BitwiseAnd
 impl<T, U> core::convert::Into<U> for vyre_primitives::BitwiseAnd where U: core::convert::From<T>
@@ -246,6 +313,7 @@ impl core::marker::Freeze for vyre_primitives::BitwiseOr
 impl core::marker::Send for vyre_primitives::BitwiseOr
 impl core::marker::Sync for vyre_primitives::BitwiseOr
 impl core::marker::Unpin for vyre_primitives::BitwiseOr
+impl core::marker::UnsafeUnpin for vyre_primitives::BitwiseOr
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::BitwiseOr
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::BitwiseOr
 impl<T, U> core::convert::Into<U> for vyre_primitives::BitwiseOr where U: core::convert::From<T>
@@ -288,6 +356,7 @@ impl core::marker::Freeze for vyre_primitives::BitwiseXor
 impl core::marker::Send for vyre_primitives::BitwiseXor
 impl core::marker::Sync for vyre_primitives::BitwiseXor
 impl core::marker::Unpin for vyre_primitives::BitwiseXor
+impl core::marker::UnsafeUnpin for vyre_primitives::BitwiseXor
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::BitwiseXor
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::BitwiseXor
 impl<T, U> core::convert::Into<U> for vyre_primitives::BitwiseXor where U: core::convert::From<T>
@@ -330,6 +399,7 @@ impl core::marker::Freeze for vyre_primitives::Clz
 impl core::marker::Send for vyre_primitives::Clz
 impl core::marker::Sync for vyre_primitives::Clz
 impl core::marker::Unpin for vyre_primitives::Clz
+impl core::marker::UnsafeUnpin for vyre_primitives::Clz
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Clz
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Clz
 impl<T, U> core::convert::Into<U> for vyre_primitives::Clz where U: core::convert::From<T>
@@ -372,6 +442,7 @@ impl core::marker::Freeze for vyre_primitives::CompareEq
 impl core::marker::Send for vyre_primitives::CompareEq
 impl core::marker::Sync for vyre_primitives::CompareEq
 impl core::marker::Unpin for vyre_primitives::CompareEq
+impl core::marker::UnsafeUnpin for vyre_primitives::CompareEq
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::CompareEq
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::CompareEq
 impl<T, U> core::convert::Into<U> for vyre_primitives::CompareEq where U: core::convert::From<T>
@@ -414,6 +485,7 @@ impl core::marker::Freeze for vyre_primitives::CompareLt
 impl core::marker::Send for vyre_primitives::CompareLt
 impl core::marker::Sync for vyre_primitives::CompareLt
 impl core::marker::Unpin for vyre_primitives::CompareLt
+impl core::marker::UnsafeUnpin for vyre_primitives::CompareLt
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::CompareLt
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::CompareLt
 impl<T, U> core::convert::Into<U> for vyre_primitives::CompareLt where U: core::convert::From<T>
@@ -456,6 +528,7 @@ impl core::marker::Freeze for vyre_primitives::Gather
 impl core::marker::Send for vyre_primitives::Gather
 impl core::marker::Sync for vyre_primitives::Gather
 impl core::marker::Unpin for vyre_primitives::Gather
+impl core::marker::UnsafeUnpin for vyre_primitives::Gather
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Gather
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Gather
 impl<T, U> core::convert::Into<U> for vyre_primitives::Gather where U: core::convert::From<T>
@@ -498,6 +571,7 @@ impl core::marker::Freeze for vyre_primitives::HashBlake3
 impl core::marker::Send for vyre_primitives::HashBlake3
 impl core::marker::Sync for vyre_primitives::HashBlake3
 impl core::marker::Unpin for vyre_primitives::HashBlake3
+impl core::marker::UnsafeUnpin for vyre_primitives::HashBlake3
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::HashBlake3
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::HashBlake3
 impl<T, U> core::convert::Into<U> for vyre_primitives::HashBlake3 where U: core::convert::From<T>
@@ -540,6 +614,7 @@ impl core::marker::Freeze for vyre_primitives::HashFnv1a
 impl core::marker::Send for vyre_primitives::HashFnv1a
 impl core::marker::Sync for vyre_primitives::HashFnv1a
 impl core::marker::Unpin for vyre_primitives::HashFnv1a
+impl core::marker::UnsafeUnpin for vyre_primitives::HashFnv1a
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::HashFnv1a
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::HashFnv1a
 impl<T, U> core::convert::Into<U> for vyre_primitives::HashFnv1a where U: core::convert::From<T>
@@ -582,6 +657,7 @@ impl core::marker::Freeze for vyre_primitives::PatternMatchDfa
 impl core::marker::Send for vyre_primitives::PatternMatchDfa
 impl core::marker::Sync for vyre_primitives::PatternMatchDfa
 impl core::marker::Unpin for vyre_primitives::PatternMatchDfa
+impl core::marker::UnsafeUnpin for vyre_primitives::PatternMatchDfa
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::PatternMatchDfa
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::PatternMatchDfa
 impl<T, U> core::convert::Into<U> for vyre_primitives::PatternMatchDfa where U: core::convert::From<T>
@@ -624,6 +700,7 @@ impl core::marker::Freeze for vyre_primitives::PatternMatchLiteral
 impl core::marker::Send for vyre_primitives::PatternMatchLiteral
 impl core::marker::Sync for vyre_primitives::PatternMatchLiteral
 impl core::marker::Unpin for vyre_primitives::PatternMatchLiteral
+impl core::marker::UnsafeUnpin for vyre_primitives::PatternMatchLiteral
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::PatternMatchLiteral
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::PatternMatchLiteral
 impl<T, U> core::convert::Into<U> for vyre_primitives::PatternMatchLiteral where U: core::convert::From<T>
@@ -666,6 +743,7 @@ impl core::marker::Freeze for vyre_primitives::Popcount
 impl core::marker::Send for vyre_primitives::Popcount
 impl core::marker::Sync for vyre_primitives::Popcount
 impl core::marker::Unpin for vyre_primitives::Popcount
+impl core::marker::UnsafeUnpin for vyre_primitives::Popcount
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Popcount
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Popcount
 impl<T, U> core::convert::Into<U> for vyre_primitives::Popcount where U: core::convert::From<T>
@@ -709,6 +787,7 @@ impl core::marker::Freeze for vyre_primitives::Reduce
 impl core::marker::Send for vyre_primitives::Reduce
 impl core::marker::Sync for vyre_primitives::Reduce
 impl core::marker::Unpin for vyre_primitives::Reduce
+impl core::marker::UnsafeUnpin for vyre_primitives::Reduce
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Reduce
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Reduce
 impl<T, U> core::convert::Into<U> for vyre_primitives::Reduce where U: core::convert::From<T>
@@ -753,6 +832,7 @@ impl core::marker::Freeze for vyre_primitives::RegionId
 impl core::marker::Send for vyre_primitives::RegionId
 impl core::marker::Sync for vyre_primitives::RegionId
 impl core::marker::Unpin for vyre_primitives::RegionId
+impl core::marker::UnsafeUnpin for vyre_primitives::RegionId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::RegionId
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::RegionId
 impl<T, U> core::convert::Into<U> for vyre_primitives::RegionId where U: core::convert::From<T>
@@ -796,6 +876,7 @@ impl core::marker::Freeze for vyre_primitives::Scan
 impl core::marker::Send for vyre_primitives::Scan
 impl core::marker::Sync for vyre_primitives::Scan
 impl core::marker::Unpin for vyre_primitives::Scan
+impl core::marker::UnsafeUnpin for vyre_primitives::Scan
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Scan
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Scan
 impl<T, U> core::convert::Into<U> for vyre_primitives::Scan where U: core::convert::From<T>
@@ -838,6 +919,7 @@ impl core::marker::Freeze for vyre_primitives::Scatter
 impl core::marker::Send for vyre_primitives::Scatter
 impl core::marker::Sync for vyre_primitives::Scatter
 impl core::marker::Unpin for vyre_primitives::Scatter
+impl core::marker::UnsafeUnpin for vyre_primitives::Scatter
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Scatter
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Scatter
 impl<T, U> core::convert::Into<U> for vyre_primitives::Scatter where U: core::convert::From<T>
@@ -880,6 +962,7 @@ impl core::marker::Freeze for vyre_primitives::ShiftLeft
 impl core::marker::Send for vyre_primitives::ShiftLeft
 impl core::marker::Sync for vyre_primitives::ShiftLeft
 impl core::marker::Unpin for vyre_primitives::ShiftLeft
+impl core::marker::UnsafeUnpin for vyre_primitives::ShiftLeft
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::ShiftLeft
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::ShiftLeft
 impl<T, U> core::convert::Into<U> for vyre_primitives::ShiftLeft where U: core::convert::From<T>
@@ -922,6 +1005,7 @@ impl core::marker::Freeze for vyre_primitives::ShiftRight
 impl core::marker::Send for vyre_primitives::ShiftRight
 impl core::marker::Sync for vyre_primitives::ShiftRight
 impl core::marker::Unpin for vyre_primitives::ShiftRight
+impl core::marker::UnsafeUnpin for vyre_primitives::ShiftRight
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::ShiftRight
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::ShiftRight
 impl<T, U> core::convert::Into<U> for vyre_primitives::ShiftRight where U: core::convert::From<T>
@@ -964,6 +1048,7 @@ impl core::marker::Freeze for vyre_primitives::Shuffle
 impl core::marker::Send for vyre_primitives::Shuffle
 impl core::marker::Sync for vyre_primitives::Shuffle
 impl core::marker::Unpin for vyre_primitives::Shuffle
+impl core::marker::UnsafeUnpin for vyre_primitives::Shuffle
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_primitives::Shuffle
 impl core::panic::unwind_safe::UnwindSafe for vyre_primitives::Shuffle
 impl<T, U> core::convert::Into<U> for vyre_primitives::Shuffle where U: core::convert::From<T>

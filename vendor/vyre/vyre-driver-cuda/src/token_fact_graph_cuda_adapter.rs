@@ -1,5 +1,9 @@
 //! CUDA adapter for the unified resident token/fact graph.
 
+use crate::backend::accounting::{
+    checked_add_u64_count as checked_add, checked_mul_u64_count as checked_mul,
+    CudaArithmeticOverflow,
+};
 use crate::megakernel_scheduler::CudaMegakernelGraphShape;
 use vyre_self_substrate::device_resident_token_fact_graph::DeviceResidentTokenFactGraph;
 
@@ -54,6 +58,12 @@ impl std::fmt::Display for CudaTokenFactGraphLayoutError {
 
 impl std::error::Error for CudaTokenFactGraphLayoutError {}
 
+impl CudaArithmeticOverflow for CudaTokenFactGraphLayoutError {
+    fn arithmetic_overflow(field: &'static str) -> Self {
+        Self::ByteCountOverflow { field }
+    }
+}
+
 /// Convert the unified token/fact graph into CUDA scheduler shape and bytes.
 pub fn adapt_token_fact_graph_to_cuda_layout(
     graph: &DeviceResidentTokenFactGraph,
@@ -103,24 +113,6 @@ pub fn adapt_token_fact_graph_to_cuda_layout(
     })
 }
 
-fn checked_mul(
-    lhs: u64,
-    rhs: u64,
-    field: &'static str,
-) -> Result<u64, CudaTokenFactGraphLayoutError> {
-    lhs.checked_mul(rhs)
-        .ok_or(CudaTokenFactGraphLayoutError::ByteCountOverflow { field })
-}
-
-fn checked_add(
-    lhs: u64,
-    rhs: u64,
-    field: &'static str,
-) -> Result<u64, CudaTokenFactGraphLayoutError> {
-    lhs.checked_add(rhs)
-        .ok_or(CudaTokenFactGraphLayoutError::ByteCountOverflow { field })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +121,17 @@ mod tests {
         plan_device_resident_token_fact_graph, TokenFactEdge, TokenFactEdgeKind, TokenFactNode,
         TokenFactNodeKind,
     };
+
+    #[test]
+    fn token_fact_adapter_uses_shared_typed_cuda_arithmetic() {
+        let source = include_str!("token_fact_graph_cuda_adapter.rs");
+
+        assert!(source.contains("checked_add_u64_count as checked_add"));
+        assert!(source.contains("checked_mul_u64_count as checked_mul"));
+        assert!(source.contains("impl CudaArithmeticOverflow for CudaTokenFactGraphLayoutError"));
+        assert!(!source.contains(concat!("fn checked_", "mul(")));
+        assert!(!source.contains(concat!("fn checked_", "add(")));
+    }
 
     #[test]
     fn adapter_accounts_for_cuda_resident_token_fact_layout() {
@@ -144,10 +147,10 @@ mod tests {
             ],
             24,
         )
-        .expect("token/fact graph should pack");
+        .expect("Fix: token/fact graph should pack");
 
         let cuda = adapt_token_fact_graph_to_cuda_layout(&graph, 32, 16)
-            .expect("token/fact graph should adapt to CUDA layout");
+            .expect("Fix: token/fact graph should adapt to CUDA layout");
 
         assert_eq!(cuda.graph_shape.node_count, 3);
         assert_eq!(cuda.graph_shape.edge_count, 2);
@@ -164,14 +167,14 @@ mod tests {
             16,
             512,
         )
-        .expect("adapted token/fact graph should feed CUDA memory planning");
+        .expect("Fix: adapted token/fact graph should feed CUDA memory planning");
         assert_eq!(memory.graph_bytes, 128);
     }
 
     #[test]
     fn adapter_rejects_missing_abi_widths() {
         let graph = plan_device_resident_token_fact_graph(&[], &[], 0)
-            .expect("empty graph still has a valid resident layout");
+            .expect("Fix: empty graph still has a valid resident layout");
 
         assert_eq!(
             adapt_token_fact_graph_to_cuda_layout(&graph, 0, 8)

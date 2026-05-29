@@ -23,7 +23,6 @@
 //! No host-reference escape in production. `OptimizerDispatcher` injects the
 //! backend; the same kernel runs unchanged on wgpu + CUDA.
 
-use std::sync::Arc;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::dispatch_buffers::{
@@ -41,7 +40,7 @@ struct PatternKernelScratch {
 
 /// Per-Expr rewrite-action discriminants written by the kernel.
 pub mod rewrite_action {
-    /// No rewrite applies — keep the Expr as-is.
+    /// No rewrite applies  -  keep the Expr as-is.
     pub const NONE: u32 = 0;
     /// Replace the Expr with its left child (the operand at `arg1`).
     pub const REPLACE_WITH_LEFT: u32 = 1;
@@ -266,7 +265,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
         "operands_equal",
         Expr::eq(Expr::var("can_l"), Expr::var("can_r")),
     ));
-    // Min/Max/AbsDiff op tag flags — needed for the next rule batch.
+    // Min/Max/AbsDiff op tag flags  -  needed for the next rule batch.
     body.push(Node::let_bind(
         "is_min",
         Expr::eq(Expr::var("op"), Expr::u32(0x15)),
@@ -317,7 +316,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
             Expr::u32(rewrite_action::REPLACE_WITH_LIT_ZERO),
         )],
     ));
-    // (Min ?x ?x) → ?x  — idempotent under operand equality.
+    // (Min ?x ?x) → ?x   -  idempotent under operand equality.
     body.push(Node::if_then(
         Expr::and(Expr::var("is_min"), Expr::var("operands_equal")),
         vec![Node::store(
@@ -326,7 +325,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
             Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
         )],
     ));
-    // (Max ?x ?x) → ?x  — idempotent under operand equality.
+    // (Max ?x ?x) → ?x   -  idempotent under operand equality.
     body.push(Node::if_then(
         Expr::and(Expr::var("is_max"), Expr::var("operands_equal")),
         vec![Node::store(
@@ -335,7 +334,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
             Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
         )],
     ));
-    // (AbsDiff ?x ?x) → 0u32  — |x - x| = 0.
+    // (AbsDiff ?x ?x) → 0u32   -  |x - x| = 0.
     body.push(Node::if_then(
         Expr::and(Expr::var("is_absdiff"), Expr::var("operands_equal")),
         vec![Node::store(
@@ -380,7 +379,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
             Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
         )],
     ));
-    // (And ?x ?x) → ?x  — bool-level idempotency.
+    // (And ?x ?x) → ?x   -  bool-level idempotency.
     body.push(Node::if_then(
         Expr::and(Expr::var("is_bool_and"), Expr::var("operands_equal")),
         vec![Node::store(
@@ -389,7 +388,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
             Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
         )],
     ));
-    // (Or ?x ?x) → ?x  — bool-level idempotency.
+    // (Or ?x ?x) → ?x   -  bool-level idempotency.
     body.push(Node::if_then(
         Expr::and(Expr::var("is_bool_or"), Expr::var("operands_equal")),
         vec![Node::store(
@@ -398,7 +397,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
             Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
         )],
     ));
-    // (Add ?x ?x): no canonical simplification — keep as-is
+    // (Add ?x ?x): no canonical simplification  -  keep as-is
     //   (no rewrite). Skipped here intentionally so other passes
     //   that prefer doubling-as-shift can inspect the pattern.
 
@@ -435,7 +434,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
 
     // Sub-Add cancellation: `(Sub (Add a b) c)` where canonical
     // identifies `a == c` or `b == c` collapses to the unmatched
-    // operand. Detect by inspecting the left child (`l`) — if its
+    // operand. Detect by inspecting the left child (`l`)  -  if its
     // kind is BIN_OP with op == 0x01 (Add), and one of its
     // canonical operand-children matches `canonical[r]`, fire.
     body.push(Node::let_bind(
@@ -841,6 +840,7 @@ fn bin_op_match_body_with_cse() -> Vec<Node> {
 /// Build the pattern-match analysis Program. Parallel kernel: each
 /// GPU thread handles one Expr id via `gid_x()`. The orchestrator
 /// dispatches `ceil(expr_count / 256)` workgroups.
+
 pub fn build_pattern_match_program(expr_count: u32) -> Program {
     let buffers = vec![
         BufferDecl::storage("arena_kinds", 0, BufferAccess::ReadOnly, DataType::U32)
@@ -1175,7 +1175,7 @@ fn bin_op_match_body() -> Vec<Node> {
                 Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
             )],
         ),
-        // (Div ?x 1) → ?x  — division by 1 is identity. Op tag for
+        // (Div ?x 1) → ?x   -  division by 1 is identity. Op tag for
         // Div is 0x04. Reject divisor zero (no rule fires there).
         Node::let_bind("is_div", Expr::eq(Expr::var("op"), Expr::u32(0x04))),
         Node::if_then(
@@ -1192,7 +1192,7 @@ fn bin_op_match_body() -> Vec<Node> {
                 Expr::u32(rewrite_action::REPLACE_WITH_LEFT),
             )],
         ),
-        // (Mod ?x 1) → 0  — modulo 1 is always zero. Op tag 0x05.
+        // (Mod ?x 1) → 0   -  modulo 1 is always zero. Op tag 0x05.
         Node::let_bind("is_mod", Expr::eq(Expr::var("op"), Expr::u32(0x05))),
         Node::if_then(
             Expr::and(
@@ -1397,124 +1397,11 @@ fn bin_op_match_body() -> Vec<Node> {
     ]
 }
 
+
 fn rewrite_program_with_actions(program: Program, actions: &[u32]) -> Program {
-    let body: Vec<Node> = match program.entry() {
-        [Node::Region { body, .. }] => body.as_ref().clone(),
-        entry => entry.to_vec(),
-    };
-
-    let mut counter = 0u32;
-    let rebuilt = rewrite_scope(&body, actions, &mut counter);
-
-    let new_entry = match program.entry() {
-        [Node::Region {
-            generator,
-            source_region,
-            ..
-        }] => vec![Node::Region {
-            generator: generator.clone(),
-            source_region: source_region.clone(),
-            body: Arc::new(rebuilt),
-        }],
-        _ => rebuilt,
-    };
-    program.with_rewritten_entry(new_entry)
-}
-
-fn rewrite_scope(body: &[Node], actions: &[u32], counter: &mut u32) -> Vec<Node> {
-    let prefix_len = super::encode::reachable_prefix_len(body);
-    let mut out = Vec::with_capacity(prefix_len);
-    for node in &body[..prefix_len] {
-        out.push(rewrite_node(node, actions, counter));
-    }
-    out
-}
-
-fn rewrite_node(node: &Node, actions: &[u32], counter: &mut u32) -> Node {
-    match node {
-        Node::Let { name, value } => {
-            Node::let_bind(name.clone(), rewrite_expr(value, actions, counter))
-        }
-        Node::Assign { name, value } => {
-            Node::assign(name.clone(), rewrite_expr(value, actions, counter))
-        }
-        Node::Store {
-            buffer,
-            index,
-            value,
-        } => Node::store(
-            buffer.clone(),
-            rewrite_expr(index, actions, counter),
-            rewrite_expr(value, actions, counter),
-        ),
-        Node::If {
-            cond,
-            then,
-            otherwise,
-        } => Node::if_then_else(
-            rewrite_expr(cond, actions, counter),
-            rewrite_scope(then, actions, counter),
-            rewrite_scope(otherwise, actions, counter),
-        ),
-        Node::Loop {
-            var,
-            from,
-            to,
-            body,
-        } => Node::loop_for(
-            var.clone(),
-            rewrite_expr(from, actions, counter),
-            rewrite_expr(to, actions, counter),
-            rewrite_scope(body, actions, counter),
-        ),
-        Node::AsyncLoad {
-            source,
-            destination,
-            offset,
-            size,
-            tag,
-        } => Node::AsyncLoad {
-            source: source.clone(),
-            destination: destination.clone(),
-            offset: Box::new(rewrite_expr(offset, actions, counter)),
-            size: Box::new(rewrite_expr(size, actions, counter)),
-            tag: tag.clone(),
-        },
-        Node::AsyncStore {
-            source,
-            destination,
-            offset,
-            size,
-            tag,
-        } => Node::AsyncStore {
-            source: source.clone(),
-            destination: destination.clone(),
-            offset: Box::new(rewrite_expr(offset, actions, counter)),
-            size: Box::new(rewrite_expr(size, actions, counter)),
-            tag: tag.clone(),
-        },
-        Node::Trap { address, tag } => Node::Trap {
-            address: Box::new(rewrite_expr(address, actions, counter)),
-            tag: tag.clone(),
-        },
-        Node::Block(body) => Node::Block(rewrite_scope(body, actions, counter)),
-        Node::Region {
-            generator,
-            source_region,
-            body,
-        } => Node::Region {
-            generator: generator.clone(),
-            source_region: source_region.clone(),
-            body: Arc::new(rewrite_scope(body.as_slice(), actions, counter)),
-        },
-        Node::Return
-        | Node::Barrier { .. }
-        | Node::IndirectDispatch { .. }
-        | Node::AsyncWait { .. }
-        | Node::Resume { .. }
-        | Node::Opaque(_) => node.clone(),
-        _ => node.clone(),
-    }
+    super::rewrite_walk::rewrite_program_with_expr_rewriter(program, |expr, counter| {
+        rewrite_expr(expr, actions, counter)
+    })
 }
 
 fn rewrite_expr(expr: &Expr, actions: &[u32], counter: &mut u32) -> Expr {
@@ -1645,7 +1532,7 @@ mod tests {
         let mut actions = Vec::with_capacity(4);
         let ptr = actions.as_ptr();
         run_pattern_kernel_into(&one_expr_arena(), &dispatcher, &mut actions)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
         assert_eq!(actions, vec![rewrite_action::NONE]);
         assert_eq!(actions.as_ptr(), ptr);
     }
@@ -1660,13 +1547,13 @@ mod tests {
         let mut actions = Vec::with_capacity(1);
 
         run_pattern_kernel_with_scratch_into(&arena, &dispatcher, &mut scratch, &mut actions)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let actions_capacity = actions.capacity();
 
         run_pattern_kernel_with_scratch_into(&arena, &dispatcher, &mut scratch, &mut actions)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
@@ -1704,3 +1591,4 @@ mod tests {
         );
     }
 }
+

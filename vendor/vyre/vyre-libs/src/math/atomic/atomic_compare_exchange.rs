@@ -25,7 +25,7 @@ inventory::submit! {
         id: OP_ID,
         build: || atomic_compare_exchange_u32("expected", "desired", "state", "trace", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[10u32, 99, 20, 30]),
                 to_bytes(&[11u32, 88, 21, 31]),
@@ -39,7 +39,7 @@ inventory::submit! {
             //   i=2: exp=20, no match. trace[2]=11.
             //   i=3: exp=30, no match. trace[3]=11.
             // Final state=11, trace=[10,11,11,11].
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[11u32]),
                 to_bytes(&[10u32, 11, 11, 11]),

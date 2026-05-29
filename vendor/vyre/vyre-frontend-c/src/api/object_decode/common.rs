@@ -7,14 +7,12 @@ pub(super) fn checked_count_u64(count: usize, label: &str) -> Result<u64, String
 }
 
 pub(super) fn decode_u32_words(bytes: &[u8]) -> Result<Vec<u32>, String> {
-    if bytes.len() % 4 != 0 {
-        return Err(format!(
-            "vyre-frontend-c object section payload has {} bytes, not u32-aligned. Fix: regenerate the object.",
-            bytes.len()
-        ));
-    }
-    Ok(bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect())
+    crate::api::word_decode::decode_u32_words_for_section(bytes, "object section payload")
+}
+
+pub(super) fn decode_u32_words_for_section(
+    bytes: &[u8],
+    section_name: &str,
+) -> Result<Vec<u32>, String> {
+    crate::api::word_decode::decode_u32_words_for_section(bytes, section_name)
 }

@@ -22,7 +22,7 @@ pub struct TraceJitInputs {
     /// in the recent window. The trace JIT only considers shapes
     /// that have already proven hot.
     pub shader_hit_count: u32,
-    /// Confidence — out of 10000 — that the next miss will be on
+    /// Confidence  -  out of 10000  -  that the next miss will be on
     /// the predicted shape. Computed by the runtime from a sliding
     /// window over recent miss patterns.
     pub prediction_confidence_bps: u32,
@@ -38,7 +38,7 @@ pub struct TraceJitInputs {
 /// Verdict from [`decide_trace_jit_speculation`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceJitDecision {
-    /// Don't speculate — either the shape isn't hot enough,
+    /// Don't speculate  -  either the shape isn't hot enough,
     /// confidence is too low, or the speculative cost won't amortise.
     HoldSteady,
     /// Fire a speculative spec on the predicted shape now. The
@@ -76,10 +76,10 @@ pub fn decide_trace_jit_speculation(inputs: TraceJitInputs) -> TraceJitDecision 
     if inputs.miss_cost_ns == 0 {
         return TraceJitDecision::HoldSteady;
     }
-    // Weighted-savings = miss_cost * confidence / 10000. Widen before
-    // multiplying so release-path adoption decisions never clamp.
-    let weighted = (u128::from(inputs.miss_cost_ns) * u128::from(inputs.prediction_confidence_bps))
-        / 10_000u128;
+    let weighted = crate::numeric::weighted_u64_by_basis_points_u128(
+        inputs.miss_cost_ns,
+        inputs.prediction_confidence_bps,
+    );
     let speculative_spec_cost_ns = u128::from(inputs.speculative_spec_cost_ns);
     if weighted <= speculative_spec_cost_ns {
         return TraceJitDecision::HoldSteady;
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn at_threshold_speculates_when_other_inputs_pass() {
         // Hit count exactly at threshold (8) is the minimum that
-        // qualifies — strict `<` for cold check.
+        // qualifies  -  strict `<` for cold check.
         let dec = decide_trace_jit_speculation(inp(8, 10_000, 1_000, 100_000));
         match dec {
             TraceJitDecision::Speculate { .. } => {}
@@ -208,8 +208,7 @@ mod tests {
             "Fix: trace-JIT speculation policy must use exact widened arithmetic, not saturating math that hides cost corruption."
         );
         assert!(
-            source.contains("u128::from(inputs.miss_cost_ns)")
-                && source.contains("u128::from(inputs.prediction_confidence_bps)")
+            source.contains("crate::numeric::weighted_u64_by_basis_points_u128")
                 && source.contains("weighted - speculative_spec_cost_ns"),
             "Fix: trace-JIT expected savings must stay widened through the decision."
         );

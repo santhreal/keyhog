@@ -1,4 +1,4 @@
-//! ROADMAP A13 — escape facts into scratch reuse across megakernel
+//! ROADMAP A13  -  escape facts into scratch reuse across megakernel
 //! arms.
 //!
 //! Foundation-side substrate. Walks every `Node::Region` in the
@@ -6,7 +6,7 @@
 //! `ProgramFacts::buffer_escapes` (A13 fact) to identify per-arm
 //! buffers whose contents do NOT need to survive past the arm.
 //! Non-escaping buffers can share storage with other non-escaping
-//! buffers from disjoint arms — the runtime allocator can recycle
+//! buffers from disjoint arms  -  the runtime allocator can recycle
 //! one underlying allocation across arms as long as the arms don't
 //! execute in parallel.
 //!
@@ -160,11 +160,11 @@ mod tests {
     }
 
     /// Read-only buffers don't escape and aren't written → not
-    /// recyclable (they're inputs). Wait — actually non-escaping
+    /// recyclable (they're inputs). Wait  -  actually non-escaping
     /// = no writes ever = the runtime CAN reuse storage between
     /// arms, but only if subsequent arms don't read the original
     /// content. For inputs that the host produced and the arm
-    /// just reads, recycling means clobbering the input — not
+    /// just reads, recycling means clobbering the input  -  not
     /// what we want. So the plan should EXCLUDE buffers that are
     /// only read.
     ///

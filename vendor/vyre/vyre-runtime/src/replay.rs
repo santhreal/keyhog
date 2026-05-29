@@ -4,28 +4,28 @@
 //! appended to a circular log on disk. A later replay run can feed
 //! the log into a fresh megakernel + backend pair and diff the
 //! epoch-by-epoch observable stream against the original. This
-//! catches schedule-dependent bugs — GPU nondeterminism, atomic
-//! ordering hazards, cache-line races — that unit tests cannot hit
+//! catches schedule-dependent bugs  -  GPU nondeterminism, atomic
+//! ordering hazards, cache-line races  -  that unit tests cannot hit
 //! by construction.
 //!
 //! ## Layout
 //!
 //! ```text
 //! header (32 bytes, aligned to 4 KiB):
-//!     magic:          b"VRRL0001"        (8 bytes)   — "Vyre Ring-Replay Log"
+//!     magic:          b"VRRL0001"        (8 bytes)    -  "Vyre Ring-Replay Log"
 //!     version:        u32 = 1            (4 bytes)
 //!     flags:          u32 = 0            (4 bytes)
-//!     capacity:       u64                (8 bytes)   — total record slots
-//!     next_slot:      u64                (8 bytes)   — write cursor (mod capacity)
+//!     capacity:       u64                (8 bytes)    -  total record slots
+//!     next_slot:      u64                (8 bytes)    -  write cursor (mod capacity)
 //! records:                                          (capacity × RECORD_BYTES)
-//!     magic:          u32 = 0xDEADBEEF  (4 bytes)  — sync marker for forward scan
+//!     magic:          u32 = 0xDEADBEEF  (4 bytes)   -  sync marker for forward scan
 //!     timestamp_ns:   u64                (8 bytes)
 //!     slot_idx:       u32                (4 bytes)
 //!     tenant_id:      u32                (4 bytes)
 //!     opcode:         u32                (4 bytes)
 //!     args:           [u32; 4]           (16 bytes)
-//!     epoch:          u32                (4 bytes)  — observed at publish time
-//!     reserved:       u32                (4 bytes)  — future use; zero for v1
+//!     epoch:          u32                (4 bytes)   -  observed at publish time
+//!     reserved:       u32                (4 bytes)   -  future use; zero for v1
 //! ```
 //!
 //! Record size = 52 bytes ≤ 64. Aligning to 64 by padding the reserved
@@ -69,7 +69,7 @@ pub struct RecordedSlot {
     pub args: [u32; 4],
     /// Megakernel EPOCH word observed at publish time. A replay run
     /// on the same backend must reach the same epoch in the same
-    /// order — divergence is the load-bearing signal.
+    /// order  -  divergence is the load-bearing signal.
     pub epoch: u32,
 }
 
@@ -95,7 +95,7 @@ pub enum ReplayLogError {
         /// Log path.
         path: Arc<str>,
     },
-    /// Capacity of `0` is rejected — a zero-capacity log never accepts writes.
+    /// Capacity of `0` is rejected  -  a zero-capacity log never accepts writes.
     #[error("replay log capacity must be > 0. Fix: construct with at least one slot.")]
     ZeroCapacity,
     /// Record capacity exceeds the replay-log bound. Capping here
@@ -264,7 +264,7 @@ impl RingLog {
         buf[32..36].copy_from_slice(&slot.args[2].to_le_bytes());
         buf[36..40].copy_from_slice(&slot.args[3].to_le_bytes());
         buf[40..44].copy_from_slice(&slot.epoch.to_le_bytes());
-        // bytes 44..64 reserved — explicitly zeroed by the buf init.
+        // bytes 44..64 reserved  -  explicitly zeroed by the buf init.
         self.file
             .write_all(&buf)
             .map_err(|e| self.io_err("write", e))?;
@@ -285,8 +285,8 @@ impl RingLog {
     /// Walk the log in publish order starting at the record
     /// immediately after the current cursor (oldest still-live
     /// record). Stops at the first record whose magic differs from
-    /// the crate-private `RECORD_MAGIC` sentinel — meaning the log
-    /// is still before wraparound at that position — unless every record
+    /// the crate-private `RECORD_MAGIC` sentinel  -  meaning the log
+    /// is still before wraparound at that position  -  unless every record
     /// has been written.
     ///
     /// # Errors
@@ -311,7 +311,7 @@ impl RingLog {
                 .map_err(|e| self.io_err("read", e))?;
             let magic = read_u32(&buf, 0);
             if magic == 0 {
-                // Untouched record — log has not wrapped past this slot yet.
+                // Untouched record  -  log has not wrapped past this slot yet.
                 continue;
             }
             if magic != RECORD_MAGIC {
@@ -337,7 +337,7 @@ impl RingLog {
     }
 
     /// Flush + sync the file to durable storage. Callers invoke this
-    /// when they want the log guaranteed on disk — the hot-path
+    /// when they want the log guaranteed on disk  -  the hot-path
     /// `append` does not fsync per-record.
     ///
     /// # Errors
@@ -371,23 +371,28 @@ fn validate_capacity(capacity: u64) -> Result<(), ReplayLogError> {
 }
 
 fn log_file_len(capacity: u64) -> Result<u64, ReplayLogError> {
-    capacity
-        .checked_mul(RECORD_BYTES)
-        .and_then(|record_bytes| HEADER_BYTES.checked_add(record_bytes))
-        .ok_or(ReplayLogError::CapacityOverflow {
-            count: capacity,
-            max: MAX_REPLAY_RECORDS,
-        })
+    log_record_position(capacity)
 }
 
 fn log_record_offset(slot_index: u64) -> Result<u64, ReplayLogError> {
-    slot_index
-        .checked_mul(RECORD_BYTES)
-        .and_then(|record_bytes| HEADER_BYTES.checked_add(record_bytes))
-        .ok_or(ReplayLogError::CapacityOverflow {
-            count: slot_index,
-            max: MAX_REPLAY_RECORDS,
-        })
+    log_record_position(slot_index)
+}
+
+fn log_record_position(record_index: u64) -> Result<u64, ReplayLogError> {
+    let record_bytes =
+        vyre_driver::accounting::checked_mul_u64_lazy(record_index, RECORD_BYTES, || {
+            replay_capacity_overflow(record_index)
+        })?;
+    vyre_driver::accounting::checked_add_u64_lazy(HEADER_BYTES, record_bytes, || {
+        replay_capacity_overflow(record_index)
+    })
+}
+
+fn replay_capacity_overflow(count: u64) -> ReplayLogError {
+    ReplayLogError::CapacityOverflow {
+        count,
+        max: MAX_REPLAY_RECORDS,
+    }
 }
 
 fn read_u32(buf: &[u8], offset: usize) -> u32 {
@@ -442,6 +447,7 @@ mod tests {
         log.append(rec(1, 10)).unwrap();
         log.append(rec(2, 11)).unwrap();
         log.sync().unwrap();
+
 
         let replay = log
             .replay_all()
@@ -564,3 +570,4 @@ mod tests {
         ));
     }
 }
+

@@ -111,7 +111,7 @@ fn visit(producers: &ProducerMap<'_>, operand_id: u32, visited: &mut FxHashSet<u
         | KernelOpKind::WorkgroupId
         | KernelOpKind::SubgroupSize
         | KernelOpKind::BufferLength => {
-            // Workgroup-scope constants — uniform across all threads in
+            // Workgroup-scope constants  -  uniform across all threads in
             // the workgroup. No thread-id dependency.
         }
         KernelOpKind::LoadGlobal | KernelOpKind::LoadShared | KernelOpKind::LoadConstant => {
@@ -123,7 +123,7 @@ fn visit(producers: &ProducerMap<'_>, operand_id: u32, visited: &mut FxHashSet<u
                 info.has_thread_id |= sub.has_thread_id;
                 info.has_unknown |= sub.has_unknown;
             }
-            // Even with non-thread-id index, the loaded VALUE could vary —
+            // Even with non-thread-id index, the loaded VALUE could vary  -
             // loads aren't compile-time uniform. Mark unknown.
             info.has_unknown = true;
         }
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn nested_arithmetic_propagates_divergence() {
-        // (tid + 5) > 0 — divergent because tid is in the chain.
+        // (tid + 5) > 0  -  divergent because tid is in the chain.
         let kernel = KernelDescriptor {
             id: "nested".into(),
             bindings: BindingLayout { slots: vec![] },
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn condition_from_load_is_unknown() {
         // We can't know at compile time whether two threads read the
-        // same value from memory — phase 1 marks load-derived
+        // same value from memory  -  phase 1 marks load-derived
         // conditions as Unknown.
         use crate::{BindingSlot, BindingVisibility, MemoryClass};
         use vyre_foundation::ir::DataType;

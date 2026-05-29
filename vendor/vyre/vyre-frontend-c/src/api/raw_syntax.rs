@@ -23,7 +23,7 @@ use common::read_u32_at;
 use lexer_stage::{
     mark_raw_sparse_lexer_outputs, raw_sparse_lexer_readbacks, RAW_SPARSE_LEXER_ABI_BUFFERS,
 };
-use sparse_compact::{compact_sparse_token_types_ordered_gpu, compact_sparse_tokens_ordered_gpu};
+use sparse_compact::compact_sparse_token_types_ordered_gpu;
 use sparse_programs::{
     sparse_token_block_compact_program, sparse_token_block_totals_program,
     sparse_token_type_block_compact_program,
@@ -32,9 +32,7 @@ use sparse_programs::{
 type SummaryAdapter = fn(String, CParseSummary, u32, u64) -> SyntaxParseSummary;
 
 #[derive(Default)]
-struct RawSyntaxScratch {
-    lex_outputs: Vec<Vec<u8>>,
-}
+struct RawSyntaxScratch;
 
 thread_local! {
     static RAW_SYNTAX_SCRATCH: RefCell<RawSyntaxScratch> =
@@ -66,7 +64,7 @@ fn parse_regular_sparse_syntax_bytes_gpu_with_scratch(
     backend: &dyn vyre::VyreBackend,
     backend_id: String,
     summarize: SummaryAdapter,
-    scratch: &mut RawSyntaxScratch,
+    _scratch: &mut RawSyntaxScratch,
 ) -> Result<SyntaxParseSummary, String> {
     let trace = std::env::var_os("VYRE_STAGE_TRACE").is_some();
     let stage_start = std::time::Instant::now();
@@ -80,7 +78,7 @@ fn parse_regular_sparse_syntax_bytes_gpu_with_scratch(
             last_t = now;
         }
     };
-    let quote_free = !prepared.source.as_ref().contains(&b'"');
+    let quote_free = prepared.quote_free;
     let lex_prog = if quote_free {
         c11_lexer_regular_sparse_no_directives_no_backscan(
             "haystack",
@@ -108,56 +106,34 @@ fn parse_regular_sparse_syntax_bytes_gpu_with_scratch(
     let mut config = DispatchConfig::default();
     config.label = Some("vyre-frontend-c raw-byte sparse syntax lexer".to_string());
     let lex_input: &[u8] = prepared.haystack.as_ref();
-    crate::pipeline::dispatch_borrowed_cached_into(
+    let mut lex_outputs = crate::pipeline::dispatch_resident_stage_cached(
         backend,
-        &lex_prog,
-        &[lex_input],
+        crate::pipeline::stage_pipeline_cache_key(
+            "raw_sparse_syntax_lexer",
+            &[u64::from(quote_free), u64::from(prepared.haystack_len)],
+        ),
+        || Ok(lex_prog),
+        &[crate::pipeline::ResidentStageInput::Host(lex_input)],
         &config,
-        &mut scratch.lex_outputs,
     )
     .map_err(|e| format!("raw-byte sparse syntax lexer dispatch failed: {e}"))?;
-    crate::pipeline::drop_suppressed_readbacks(&mut scratch.lex_outputs);
     log("dispatch sparse lexer");
-    let expected_lex_outputs = if quote_free { 1 } else { 3 };
-    if scratch.lex_outputs.len() != expected_lex_outputs {
+    let required_lex_outputs = 1;
+    if lex_outputs.len() < required_lex_outputs {
+        let actual = lex_outputs.len();
+        let _ = crate::pipeline::free_resident_blobs(backend, lex_outputs);
         return Err(format!(
-            "raw-byte sparse syntax lexer returned {} outputs, expected exactly {expected_lex_outputs} buffer(s) for this source shape. Fix: backend must return the declared GPU lexer ABI readbacks and no extras.",
-            scratch.lex_outputs.len(),
+            "raw-byte sparse syntax lexer returned {actual} resident outputs, expected at least {required_lex_outputs} buffer(s) for this source shape. Fix: backend must return the declared GPU lexer ABI resources.",
         ));
     }
-    let (dense_types, counts) = if quote_free {
-        let sparse_types = scratch.lex_outputs.pop().ok_or_else(|| {
-            "raw-byte sparse syntax lexer returned no sparse type buffer after ABI validation"
-                .to_string()
-        })?;
-        compact_sparse_token_types_ordered_gpu(
-            backend,
-            sparse_types,
-            prepared.haystack_len,
-            &mut config,
-        )?
-    } else {
-        let sparse_lens = scratch.lex_outputs.pop().ok_or_else(|| {
-            "raw-byte sparse syntax lexer returned no sparse len buffer after ABI validation"
-                .to_string()
-        })?;
-        let sparse_starts = scratch.lex_outputs.pop().ok_or_else(|| {
-            "raw-byte sparse syntax lexer returned no sparse start buffer after ABI validation"
-                .to_string()
-        })?;
-        let sparse_types = scratch.lex_outputs.pop().ok_or_else(|| {
-            "raw-byte sparse syntax lexer returned no sparse type buffer after ABI validation"
-                .to_string()
-        })?;
-        compact_sparse_tokens_ordered_gpu(
-            backend,
-            sparse_types,
-            sparse_starts,
-            sparse_lens,
-            prepared.haystack_len,
-            &mut config,
-        )?
-    };
+    let sparse_types = lex_outputs.remove(0);
+    let _ = crate::pipeline::free_resident_blobs(backend, lex_outputs);
+    let (dense_types, counts) = compact_sparse_token_types_ordered_gpu(
+        backend,
+        sparse_types,
+        prepared.haystack_len,
+        &mut config,
+    )?;
     log("compact sparse tokens");
     let token_count = read_u32_at(&counts, 0, "raw-byte dense token count")?;
     let (ast_bytes, ast_node_count) =

@@ -62,16 +62,17 @@ pub(crate) fn record_missing_invocation_provenance(
             if !mac.is_function_like {
                 continue;
             }
-            let mut recorded_arg_spans =
-                SpanDedupe::from_iter(token_provenance_events[dedupe_start..].iter().filter_map(
-                    |event| {
+            let mut recorded_arg_spans = SpanDedupe::try_from_iter(
+                token_provenance_events[dedupe_start..]
+                    .iter()
+                    .filter_map(|event| {
                         if event.macro_name == mac.name && event.expansion_start as usize == start {
                             Some((event.spelling_start as usize, event.spelling_len as usize))
                         } else {
                             None
                         }
-                    },
-                ));
+                    }),
+            )?;
             record_missing_parameter_substitution_provenance(
                 file_path,
                 include_stack,
@@ -87,9 +88,13 @@ pub(crate) fn record_missing_invocation_provenance(
                 0,
                 token_provenance_events,
             )?;
-            token_provenance_events.reserve(arg_spans.len());
+            reserve_token_provenance_events(
+                token_provenance_events,
+                arg_spans.len(),
+                "function invocation argument provenance",
+            )?;
             for (arg_start, arg_len) in arg_spans {
-                if !recorded_arg_spans.insert((arg_start, arg_len)) {
+                if !recorded_arg_spans.insert((arg_start, arg_len))? {
                     continue;
                 }
                 token_provenance_events.push(TokenProvenanceEvent {

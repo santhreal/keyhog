@@ -483,6 +483,7 @@ pub fn select_fused_subset_compact_checked_into(
 /// Compute a cost-ordered maximal fusion subset with the same output contract
 /// as [`select_fused_subset`].
 #[must_use]
+
 pub fn select_optimal_fused_subset(costs: &[f64], n: u32, exchange_adj: &[u32]) -> Vec<u32> {
     select_fused_subset(costs, n, exchange_adj)
 }
@@ -543,7 +544,7 @@ pub fn select_fused_subset_pruned_into(
 /// mask buffer is all-zero for this batch, dispatch can elide arm 1
 /// entirely. Without this elision the GPU launches a full kernel that
 /// reads both buffers, computes the multiplication, and writes a
-/// zero-result back — pure waste.
+/// zero-result back  -  pure waste.
 pub fn prune_dead_arms_inplace(selection: &mut [u32], dead_mask: &[bool]) -> u32 {
     if selection.len() != dead_mask.len() {
         return 0;
@@ -833,3 +834,4 @@ fn select_ordered_maximal(
 
 #[cfg(test)]
 mod tests;
+

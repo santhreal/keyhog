@@ -1,5 +1,6 @@
 use crate::ir::AtomicOp;
 use crate::serial::wire::encode::WireEncodeErr;
+use crate::serial::wire::tags::op_tag_decode::{encode_tag, ATOMIC_OP_TAGS};
 
 /// Encode an [`AtomicOp`] into its stable VIR0 wire-format tag byte.
 ///
@@ -19,19 +20,5 @@ use crate::serial::wire::encode::WireEncodeErr;
 /// registered tag. This prevents silent data loss on round-trip.
 #[inline]
 pub(crate) fn atomic_op_tag(value: AtomicOp) -> Result<u8, WireEncodeErr> {
-    let tag = match value {
-        AtomicOp::Add => 0x01,
-        AtomicOp::Or => 0x02,
-        AtomicOp::And => 0x03,
-        AtomicOp::Xor => 0x04,
-        AtomicOp::Min => 0x05,
-        AtomicOp::Max => 0x06,
-        AtomicOp::Exchange => 0x07,
-        AtomicOp::CompareExchange => 0x08,
-        AtomicOp::CompareExchangeWeak => 0x09,
-        AtomicOp::FetchNand => 0x0A,
-        AtomicOp::LruUpdate => 0x0B,
-        _ => return Err(WireEncodeErr::static_msg("unknown AtomicOp variant")),
-    };
-    Ok(tag)
+    encode_tag(&value, ATOMIC_OP_TAGS, "unknown AtomicOp variant")
 }

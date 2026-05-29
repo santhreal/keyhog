@@ -23,7 +23,8 @@ fn classified_round_trip_through_encode_decode() {
         directive_count: 1,
         source: std::sync::Arc::from(&b"int main(void){return 0;}"[..]),
     };
-    let encoded = encode_classified(&key, &original);
+    let encoded = encode_classified(&key, &original)
+        .expect("Fix: classified cache encoding must reserve exactly.");
     let decoded = decode_classified(&encoded, &key)
         .expect("Fix: classified cache encoding must round-trip for a matching key.");
     assert_eq!(decoded, original);
@@ -49,7 +50,8 @@ fn decode_rejects_mismatched_key() {
         directive_count: 0,
         source: std::sync::Arc::from([]),
     };
-    let encoded = encode_classified(&key, &classified);
+    let encoded = encode_classified(&key, &classified)
+        .expect("Fix: classified cache encoding must reserve exactly.");
     assert!(matches!(
         decode_classified(&encoded, &other),
         Err(DecodeError::KeyMismatch)
@@ -149,7 +151,8 @@ fn sample_payloads() -> Vec<DirectivePayload> {
 fn payloads_round_trip_through_encode_decode() {
     let key = sample_payload_key();
     let payloads = sample_payloads();
-    let encoded = encode_payloads(&key, &payloads);
+    let encoded = encode_payloads(&key, &payloads)
+        .expect("Fix: payload cache encoding must reserve exactly.");
     let decoded = decode_payloads(&encoded, &key)
         .expect("Fix: payload cache encoding must round-trip for a matching key.");
     assert_eq!(decoded, payloads);
@@ -160,7 +163,8 @@ fn payloads_decode_rejects_macro_fingerprint_change() {
     let key = sample_payload_key();
     let mut other = sample_payload_key();
     other.macro_fingerprint[0] ^= 1;
-    let encoded = encode_payloads(&key, &sample_payloads());
+    let encoded = encode_payloads(&key, &sample_payloads())
+        .expect("Fix: payload cache encoding must reserve exactly.");
     assert!(matches!(
         decode_payloads(&encoded, &other),
         Err(DecodeError::KeyMismatch)
@@ -172,7 +176,8 @@ fn payloads_decode_rejects_path_change() {
     let key = sample_payload_key();
     let mut other = sample_payload_key();
     other.path = PathBuf::from("/tmp/vyre-payloads-fixture/other.h");
-    let encoded = encode_payloads(&key, &sample_payloads());
+    let encoded = encode_payloads(&key, &sample_payloads())
+        .expect("Fix: payload cache encoding must reserve exactly.");
     assert!(matches!(
         decode_payloads(&encoded, &other),
         Err(DecodeError::KeyMismatch)
@@ -252,7 +257,7 @@ fn payload_memory_cache_reuses_arc_entries_and_evicts_lru() {
     let a_payloads = cached_payloads(1);
     cache.insert(a.clone(), std::sync::Arc::clone(&a_payloads));
     cache.insert(b.clone(), cached_payloads(2));
-    let hit = cache.lookup(&a).expect("payload cache should hit");
+    let hit = cache.lookup(&a).expect("Fix: payload cache should hit");
     assert!(std::sync::Arc::ptr_eq(&a_payloads, &hit));
     cache.insert(c.clone(), cached_payloads(3));
     assert!(cache.contains_key(&a));

@@ -8,7 +8,7 @@
 //! - **17b.3a (this commit):** prefix tolerance (`L`, `u`, `U`, `u8`),
 //!   single-char constants, and the simple escape table
 //!   (`\\ \' \" \? \a \b \f \n \r \t \v \0` and `\<otherbyte> → otherbyte`).
-//! - **17b.3b (follow-up):** numeric escapes — octal (`\012`), hex
+//! - **17b.3b (follow-up):** numeric escapes  -  octal (`\012`), hex
 //!   (`\xff`), and universal-character escapes (`A`, `\U00000041`).
 //!   Land in the same kernel by extending the escape branch.
 //!
@@ -17,7 +17,7 @@
 //! `value` is `u32` with wrapping arithmetic, mirroring the
 //! `gpu_int_literal_scan` contract. Multi-char concatenation
 //! (`'ABCD'`) is supported via `value = (value << 8) | (byte & 0xff)`
-//! — this matches the CPU `consume_char_constant`'s `wrapping_shl(8)`
+//!  -  this matches the CPU `consume_char_constant`'s `wrapping_shl(8)`
 //! semantics on a u64 truncated to u32.
 //!
 //! ## Wire layout
@@ -33,7 +33,7 @@
 //!     was scanned; `0` if no constant at this position OR it was
 //!     malformed (unterminated, embedded newline, empty `''`).
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::{Expr, Node, Program};
 
 mod abi;
 mod builder;

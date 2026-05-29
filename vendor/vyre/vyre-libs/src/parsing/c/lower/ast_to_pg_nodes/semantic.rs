@@ -1,5 +1,6 @@
 //! Semantic-edge classification helpers shared by the GPU + CPU paths.
 
+use crate::parsing::c::parse::vast::c_vast_word_at;
 use crate::parsing::c::parse::vast::*;
 use vyre_primitives::predicate::node_kind;
 
@@ -15,15 +16,7 @@ pub(super) fn related_kind(vast_nodes: &[u32], related_idx: u32, node_count: usi
     if related_idx >= node_count {
         return 0;
     }
-    let word_idx = related_idx
-        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
-        .and_then(|base| base.checked_add(IDX_KIND))
-        .expect("related VAST node kind index overflow. Fix: pass a bounded complete VAST table to AST-to-PG semantic lowering.");
-    *vast_nodes.get(word_idx).unwrap_or_else(|| {
-        panic!(
-            "related VAST node {related_idx} is missing kind field. Fix: pass complete VAST rows to AST-to-PG semantic lowering."
-        )
-    })
+    c_vast_word_at(vast_nodes, related_idx, IDX_KIND)
 }
 
 pub(super) fn semantic_role(

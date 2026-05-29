@@ -34,7 +34,7 @@ impl<'a> StageTrace<'a> {
         let now = Instant::now();
         let stage = now.duration_since(self.last_t).as_micros();
         let total = now.duration_since(self.stage_start).as_micros();
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] +{stage}us (total {total}us): gpu-preprocess depth={} bytes={} {} {label}",
             self.depth,
             self.source_len,

@@ -1,4 +1,4 @@
-//! `taint_pollution` — "did taint reach a label-tagged node?"
+//! `taint_pollution`  -  "did taint reach a label-tagged node?"
 //!
 //! The CodeQL `globalAllowingExtras` shape compressed to one
 //! Region. Composes a one-step BFS with intersection against a
@@ -68,7 +68,7 @@ inventory::submit! {
         id: OP_ID,
         build: || taint_pollution(ProgramGraphShape::new(4, 3), "source", "label_set", "reach", "hits", "out_scalar"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0, 0, 0, 0]),          // pg_nodes
                 to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets
@@ -87,7 +87,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0b0011]),              // reach = {0,1}
                 to_bytes(&[0b0010]),              // hits = {1}
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn unreachable_label_returns_zero() {
-        // 0 -> 1, label = {0} — source 0 doesn't taint itself.
+        // 0 -> 1, label = {0}  -  source 0 doesn't taint itself.
         let off = vec![0u32, 1, 1];
         let tgt = vec![1u32];
         let msk = vec![edge_kind::ASSIGNMENT];

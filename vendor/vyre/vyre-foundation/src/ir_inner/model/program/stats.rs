@@ -9,6 +9,7 @@ const CAP_ASYNC_DISPATCH: u32 = 1 << 4;
 const CAP_INDIRECT_DISPATCH: u32 = 1 << 5;
 const CAP_TENSOR_OPS: u32 = 1 << 6;
 const CAP_TRAP: u32 = 1 << 7;
+const CAP_DISTRIBUTED_COLLECTIVES: u32 = 1 << 8;
 
 // Bit positions for `ProgramStats::node_kinds_present`. Mirrors the
 // variant declaration order in `ir_inner::model::generated::Node` and
@@ -47,7 +48,15 @@ pub const NODE_KIND_BLOCK: u32 = 1 << 13;
 /// `Node::Region`.
 pub const NODE_KIND_REGION: u32 = 1 << 14;
 /// `Node::Opaque`.
-pub const NODE_KIND_OPAQUE: u32 = 1 << 15;
+pub const NODE_KIND_ALL_REDUCE: u32 = 1 << 15;
+/// `Node::AllGather`.
+pub const NODE_KIND_ALL_GATHER: u32 = 1 << 16;
+/// `Node::ReduceScatter`.
+pub const NODE_KIND_REDUCE_SCATTER: u32 = 1 << 17;
+/// `Node::Broadcast`.
+pub const NODE_KIND_BROADCAST: u32 = 1 << 18;
+/// `Node::Opaque`.
+pub const NODE_KIND_OPAQUE: u32 = 1 << 19;
 
 /// Mask covering every node kind that owns an `Expr` tree, i.e. every
 /// kind a generic expression-rewriting pass (`canonicalize`, `const_fold`,
@@ -340,6 +349,26 @@ fn walk_node(
             ir.control_flow();
             walk_expr(address, nodes, regions, calls, opaque, bits, kinds, ir);
         }
+        Node::AllReduce { .. } => {
+            *kinds |= NODE_KIND_ALL_REDUCE;
+            *bits |= CAP_DISTRIBUTED_COLLECTIVES;
+            ir.memory();
+        }
+        Node::AllGather { .. } => {
+            *kinds |= NODE_KIND_ALL_GATHER;
+            *bits |= CAP_DISTRIBUTED_COLLECTIVES;
+            ir.memory();
+        }
+        Node::ReduceScatter { .. } => {
+            *kinds |= NODE_KIND_REDUCE_SCATTER;
+            *bits |= CAP_DISTRIBUTED_COLLECTIVES;
+            ir.memory();
+        }
+        Node::Broadcast { .. } => {
+            *kinds |= NODE_KIND_BROADCAST;
+            *bits |= CAP_DISTRIBUTED_COLLECTIVES;
+            ir.memory();
+        }
         Node::Opaque(_) => {
             *kinds |= NODE_KIND_OPAQUE;
             *opaque = opaque.saturating_add(1);
@@ -465,6 +494,7 @@ fn walk_expr(
     }
 }
 
+
 fn is_subgroup_intrinsic_id(op_id: &str) -> bool {
     const MARKERS: &[&str] = &[
         "subgroup_",
@@ -477,3 +507,4 @@ fn is_subgroup_intrinsic_id(op_id: &str) -> bool {
     ];
     MARKERS.iter().any(|marker| op_id.contains(marker))
 }
+

@@ -54,7 +54,7 @@ pub(super) fn scan_atomic_targets_into(
 /// Recursively walk a Node tree (without going through the visitor
 /// trait) and collect every buffer name that appears as the
 /// destination of `Node::Store`, `Node::AsyncStore` (`dest_buffer`),
-/// `Node::AsyncLoad` (`destination` — DMA target buffer that the
+/// `Node::AsyncLoad` (`destination`  -  DMA target buffer that the
 /// shader writes into via the synthesized in-shader copy loop in
 /// `emit_synchronous_async_load`), or `Node::IndirectDispatch`
 /// (the dispatch buffer is written by
@@ -71,7 +71,7 @@ fn collect_node_store_buffers(node: &Node, out: &mut FxHashSet<Ident>) {
         }
         N::AsyncLoad { destination, .. } => {
             // The destination of AsyncLoad is the buffer that receives
-            // the remote bytes — it IS a write target. Without this,
+            // the remote bytes  -  it IS a write target. Without this,
             // BufferAccess auto-inference downgrades it to ReadOnly,
             // naga emits `var<storage, read>`, and the in-shader Store
             // synthesized by emit_synchronous_async_load is rejected
@@ -313,7 +313,7 @@ mod tests {
         let mut atomic = FxHashSet::default();
         let mut writes = FxHashSet::default();
         scan_atomic_targets_into(node, &mut atomic, &mut writes)
-            .expect("scan_atomic_targets_into must succeed for these IR shapes");
+            .expect("Fix: scan_atomic_targets_into must succeed for these IR shapes");
         writes
     }
 

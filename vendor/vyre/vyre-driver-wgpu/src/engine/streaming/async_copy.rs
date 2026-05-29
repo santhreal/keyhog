@@ -144,7 +144,7 @@ impl AsyncCopyStreams {
                             }
                         };
                     if completion_tx.send(completion).is_err() {
-                        eprintln!(
+                        tracing::warn!(
                             "Fix: async-copy completion receiver was dropped before the blocking copy reported completion."
                         );
                     }

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 // Every lint below is allowed for a documented reason. New lints from
-// nursery/pedantic/restriction are NOT auto-allowed — broad blanket allows
+// nursery/pedantic/restriction are NOT auto-allowed  -  broad blanket allows
 // were removed deliberately so that future clippy findings surface as CI
 // warnings instead of being silently swallowed.
 #![allow(
@@ -22,7 +22,7 @@
     // Three-branch comparisons are natural in range-check oracles.
     clippy::comparison_chain,
     // Vyre uses explicit invariant violations (expect/unwrap) with `Fix:`
-    // prose — not graceful degradation — per the engineering standard.
+    // prose  -  not graceful degradation  -  per the engineering standard.
     clippy::expect_used,
     // Generic collections take external hashers by design.
     clippy::implicit_hasher,
@@ -73,7 +73,7 @@
     clippy::doc_markdown
 )]
 #![cfg_attr(not(test), deny(clippy::todo, clippy::unimplemented))]
-//! # vyre — LLVM-for-GPU
+//! # vyre  -  LLVM-for-GPU
 //!
 //! Vyre is a GPU compute substrate centered on the `Program` type. Just as
 //! LLVM lets frontends emit a single IR that lowers to many processor targets,
@@ -99,7 +99,7 @@ pub use vyre_foundation::ir;
 /// Soundness lattice for dataflow primitives. Canonical home is
 /// `vyre-foundation`; re-exported here so vyre-libs (and any downstream
 /// consumer) reaches it via `vyre::soundness`. Per the LEGO discipline,
-/// vyre never imports from domain dataflow crates — this is the originating definition.
+/// vyre never imports from domain dataflow crates  -  this is the originating definition.
 pub use vyre_foundation::soundness;
 
 // Layer 1 and Layer 2 operation specifications live in vyre-libs.
@@ -157,7 +157,7 @@ pub use vyre_driver::error;
 /// Public API re-export.
 pub use vyre_driver::diagnostics;
 
-/// Backend trait surface — `VyreBackend`, `Executable`,
+/// Backend trait surface  -  `VyreBackend`, `Executable`,
 /// `Streamable`, `DispatchConfig`, `BackendError`,
 /// `ErrorCode`. The whole backend contract every driver crate
 /// implements against.
@@ -174,7 +174,7 @@ pub use vyre_foundation::match_result;
 /// Public API re-export.
 pub use vyre_driver::pipeline;
 
-// Previously: pub mod bytecode — a 637-LOC stack-machine VM publicly
+// Previously: pub mod bytecode  -  a 637-LOC stack-machine VM publicly
 // re-exported from core. Deleted 2026-04-17. The NFA scan micro-interpreter
 // that carried the remaining bytecode was deleted 2026-04-19. Rule evaluators
 // compose ops in vyre IR directly. No interpreter surface remains in core.
@@ -210,8 +210,8 @@ pub use vyre_foundation::ByteRange;
 /// Bundles the canonical pre-lowering pipeline so every consumer wires one
 /// function instead of three. Today consumers separately call
 /// `pre_lowering::optimize`, then `vyre_lower::lower`, then a
-/// backend-specific emit. This wrapper keeps the optimization stage —
-/// the part that's stable across backends — behind one symbol so
+/// backend-specific emit. This wrapper keeps the optimization stage  -
+/// the part that's stable across backends  -  behind one symbol so
 /// adding a new substrate row does not require N consumer changes.
 ///
 /// The lowering and emit stages remain backend-specific and are
@@ -223,13 +223,13 @@ pub use vyre_foundation::ByteRange;
 /// inputs (same `program.fingerprint()`) skip the substrate stack
 /// entirely. The cache is process-local, bounded to
 /// [`OPTIMIZE_CACHE_CAPACITY`] entries, and uses O(1) fingerprint lookup
-/// with FIFO eviction — long-running daemons get the cache without
+/// with FIFO eviction  -  long-running daemons get the cache without
 /// unbounded memory.
 /// On a cache hit, `optimize` clones the cached `Program` instead of
 /// re-running the (canonicalize + region_inline + scheduler fixpoint
 /// + CSE + DCE + phase-4) pipeline. The substrate stack is purely
 /// functional in `Program`, so caching by structural fingerprint is
-/// safe — same input bytes, same output bytes.
+/// safe  -  same input bytes, same output bytes.
 ///
 /// # Example
 ///
@@ -309,7 +309,7 @@ fn device_optimize_key(program: &Program, profile: &vyre_driver::DeviceProfile) 
 }
 
 /// N9 cache capacity (entries). Sized to hold the working set of a
-/// long-running scanner without unbounded growth — each entry is
+/// long-running scanner without unbounded growth  -  each entry is
 /// roughly the size of one optimized `Program`. 256 entries is
 /// `~10MB` worst-case for typical scanner-shaped Programs.
 pub const OPTIMIZE_CACHE_CAPACITY: usize = 256;
@@ -321,20 +321,58 @@ mod optimize_cache {
     use std::collections::{HashMap, VecDeque};
     use std::sync::Mutex;
 
-    struct Cache {
+    struct ProgramCacheShard {
         entries: HashMap<[u8; 32], Program>,
         fifo: VecDeque<[u8; 32]>,
-        device_entries: HashMap<[u8; 32], Program>,
-        device_fifo: VecDeque<[u8; 32]>,
+    }
+
+    impl ProgramCacheShard {
+        fn new() -> Self {
+            Self {
+                entries: HashMap::with_capacity(OPTIMIZE_CACHE_CAPACITY),
+                fifo: VecDeque::with_capacity(OPTIMIZE_CACHE_CAPACITY),
+            }
+        }
+
+        fn get(&self, key: &[u8; 32]) -> Option<Program> {
+            self.entries.get(key).cloned()
+        }
+
+        fn put(&mut self, key: [u8; 32], program: &Program) {
+            if self.entries.contains_key(&key) {
+                return;
+            }
+            if self.entries.len() >= OPTIMIZE_CACHE_CAPACITY {
+                if let Some(evicted) = self.fifo.pop_front() {
+                    self.entries.remove(&evicted);
+                }
+            }
+            self.fifo.push_back(key);
+            self.entries.insert(key, program.clone());
+        }
+
+        #[cfg(test)]
+        fn clear(&mut self) {
+            self.entries.clear();
+            self.fifo.clear();
+        }
+
+        #[cfg(test)]
+        fn len(&self) -> usize {
+            self.entries.len()
+        }
+    }
+
+    struct Cache {
+        host: ProgramCacheShard,
+        device: ProgramCacheShard,
     }
 
     impl Cache {
         fn new() -> Self {
             Self {
-                entries: HashMap::with_capacity(OPTIMIZE_CACHE_CAPACITY),
-                fifo: VecDeque::with_capacity(OPTIMIZE_CACHE_CAPACITY),
-                device_entries: HashMap::with_capacity(OPTIMIZE_CACHE_CAPACITY),
-                device_fifo: VecDeque::with_capacity(OPTIMIZE_CACHE_CAPACITY),
+                host: ProgramCacheShard::new(),
+                device: ProgramCacheShard::new(),
             }
         }
     }
@@ -347,64 +385,44 @@ mod optimize_cache {
 
     pub(super) fn get(key: &[u8; 32]) -> Option<Program> {
         let cache = cache().lock().ok()?;
-        cache.entries.get(key).cloned()
+        cache.host.get(key)
     }
 
     pub(super) fn put(key: [u8; 32], program: &Program) {
         let Ok(mut cache) = cache().lock() else {
             return;
         };
-        if cache.entries.contains_key(&key) {
-            return;
-        }
-        if cache.entries.len() >= OPTIMIZE_CACHE_CAPACITY {
-            if let Some(evicted) = cache.fifo.pop_front() {
-                cache.entries.remove(&evicted);
-            }
-        }
-        cache.fifo.push_back(key);
-        cache.entries.insert(key, program.clone());
+        cache.host.put(key, program);
     }
 
     pub(super) fn get_device(key: &[u8; 32]) -> Option<Program> {
         let cache = cache().lock().ok()?;
-        cache.device_entries.get(key).cloned()
+        cache.device.get(key)
     }
 
     pub(super) fn put_device(key: [u8; 32], program: &Program) {
         let Ok(mut cache) = cache().lock() else {
             return;
         };
-        if cache.device_entries.contains_key(&key) {
-            return;
-        }
-        if cache.device_entries.len() >= OPTIMIZE_CACHE_CAPACITY {
-            if let Some(evicted) = cache.device_fifo.pop_front() {
-                cache.device_entries.remove(&evicted);
-            }
-        }
-        cache.device_fifo.push_back(key);
-        cache.device_entries.insert(key, program.clone());
+        cache.device.put(key, program);
     }
 
     #[cfg(test)]
     pub(super) fn clear() {
         if let Ok(mut cache) = cache().lock() {
-            cache.entries.clear();
-            cache.fifo.clear();
-            cache.device_entries.clear();
-            cache.device_fifo.clear();
+            cache.host.clear();
+            cache.device.clear();
         }
     }
 
     #[cfg(test)]
     pub(super) fn len() -> usize {
-        cache().lock().map(|c| c.entries.len()).unwrap_or(0)
+        cache().lock().map(|c| c.host.len()).unwrap_or(0)
     }
 
     #[cfg(test)]
     pub(super) fn len_device() -> usize {
-        cache().lock().map(|c| c.device_entries.len()).unwrap_or(0)
+        cache().lock().map(|c| c.device.len()).unwrap_or(0)
     }
 }
 
@@ -439,13 +457,13 @@ mod optimize_tests {
         optimize_cache::clear();
         let p1 = sample_program();
         let p2 = sample_program();
-        let first = optimize(p1).expect("optimize must succeed on sample_program");
+        let first = optimize(p1).expect("Fix: optimize must succeed on sample_program");
         assert!(
             !first.entry().is_empty(),
             "optimized program must retain work"
         );
         let before = optimize_cache::len();
-        let second = optimize(p2).expect("optimize must succeed on cache-hit path");
+        let second = optimize(p2).expect("Fix: optimize must succeed on cache-hit path");
         assert!(
             !second.entry().is_empty(),
             "cached optimized program must retain work"
@@ -463,8 +481,8 @@ mod optimize_tests {
         let _g = serial();
         optimize_cache::clear();
         let p = sample_program();
-        let first = optimize(p.clone()).expect("optimize must succeed on sample_program");
-        let second = optimize(p).expect("optimize must succeed on cache-hit path");
+        let first = optimize(p.clone()).expect("Fix: optimize must succeed on sample_program");
+        let second = optimize(p).expect("Fix: optimize must succeed on cache-hit path");
         assert_eq!(
             first.fingerprint(),
             second.fingerprint(),
@@ -477,14 +495,15 @@ mod optimize_tests {
         let _g = serial();
         optimize_cache::clear();
         // Build OPTIMIZE_CACHE_CAPACITY + 1 distinct programs by
-        // varying the stored literal — each gets a unique fingerprint.
+        // varying the stored literal  -  each gets a unique fingerprint.
         for i in 0..(OPTIMIZE_CACHE_CAPACITY + 1) {
             let prog = Program::wrapped(
                 vec![BufferDecl::output("out", 0, DataType::U32).with_count(1)],
                 [1, 1, 1],
                 vec![Node::store("out", Expr::u32(0), Expr::u32(i as u32))],
             );
-            let optimized = optimize(prog).expect("optimize must succeed on cache-eviction probe");
+            let optimized =
+                optimize(prog).expect("Fix: optimize must succeed on cache-eviction probe");
             assert!(
                 !optimized.entry().is_empty(),
                 "optimized cache-entry program must retain work"
@@ -506,9 +525,10 @@ mod optimize_tests {
         profile.max_invocations_per_workgroup = 256;
         let p1 = sample_program();
         let p2 = sample_program();
-        let first = optimize_for_device(p1, &profile).expect("optimize_for_device must succeed");
+        let first =
+            optimize_for_device(p1, &profile).expect("Fix: optimize_for_device must succeed");
         let second = optimize_for_device(p2, &profile)
-            .expect("optimize_for_device must succeed on cache hit");
+            .expect("Fix: optimize_for_device must succeed on cache hit");
         assert_eq!(first.fingerprint(), second.fingerprint());
         assert_eq!(
             optimize_cache::len_device(),
@@ -522,3 +542,26 @@ mod optimize_tests {
         );
     }
 }
+
+#[cfg(test)]
+
+mod optimize_cache_structure_tests {
+    #[test]
+    fn host_and_device_optimize_caches_share_one_bounded_shard_type() {
+        let source = include_str!("lib.rs");
+        let release_path = source
+            .split("\n#[cfg(test)]\nmod optimize_tests")
+            .next()
+            .expect("Fix: optimize cache release source must be visible");
+
+        assert!(
+            release_path.contains("struct ProgramCacheShard"),
+            "Fix: optimize cache must centralize bounded cache behavior in one shard type."
+        );
+        assert!(
+            !release_path.contains("device_entries") && !release_path.contains("device_fifo"),
+            "Fix: host/device optimize caches must not duplicate eviction fields."
+        );
+    }
+}
+

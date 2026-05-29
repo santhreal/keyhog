@@ -184,6 +184,8 @@ pub struct ProgramValidationCaps {
     pub supports_bf16: bool,
     /// Indirect dispatch is lowered.
     pub supports_indirect_dispatch: bool,
+    /// Distributed collective communication nodes are lowered.
+    pub supports_distributed_collectives: bool,
     /// `Node::Trap` is lowered with backend-visible trap semantics.
     pub supports_trap_propagation: bool,
     /// Maximum supported workgroup dimensions.
@@ -200,6 +202,7 @@ impl ProgramValidationCaps {
             supports_f16: backend.supports_f16(),
             supports_bf16: backend.supports_bf16(),
             supports_indirect_dispatch: backend.supports_indirect_dispatch(),
+            supports_distributed_collectives: backend.supports_distributed_collectives(),
             supports_trap_propagation: true,
             max_workgroup_size: backend.max_workgroup_size(),
         }
@@ -218,6 +221,16 @@ pub fn validate_program_contract(
     supported_ops: &HashSet<OpId>,
     caps: ProgramValidationCaps,
 ) -> Result<(), BackendError> {
+    let lowered_program = if caps.supports_distributed_collectives {
+        None
+    } else {
+        vyre_foundation::transform::collectives::lower_single_rank_collectives(program).map_err(
+            |error| BackendError::InvalidProgram {
+                fix: error.to_string(),
+            },
+        )?
+    };
+    let program = lowered_program.as_ref().unwrap_or(program);
     let report = vyre_foundation::validate::validate_with_options(program, validation_options);
     if let Some(first) = report.errors.into_iter().next() {
         return Err(BackendError::InvalidProgram {
@@ -239,6 +252,7 @@ pub fn validate_program_contract(
         caps.supports_bf16,
         caps.supports_indirect_dispatch,
         caps.supports_trap_propagation,
+        caps.supports_distributed_collectives,
         caps.max_workgroup_size,
         &required,
     )

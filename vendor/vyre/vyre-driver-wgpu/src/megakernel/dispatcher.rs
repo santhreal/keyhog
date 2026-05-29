@@ -841,25 +841,18 @@ impl BatchDispatcher {
     }
 }
 
+
 fn occupancy_proxy_bps(items_processed: u32, worker_groups: u32, workgroup_size_x: u32) -> u16 {
     let lanes = u64::from(worker_groups.max(1))
         .checked_mul(u64::from(workgroup_size_x.max(1)))
-        .unwrap_or_else(|| {
-            panic!(
-                "WGPU batch occupancy lane count overflowed u64. Fix: reduce worker_groups or workgroup_size_x before telemetry."
-            )
-        });
-    let bps = u64::from(items_processed)
-        .checked_mul(10_000)
-        .unwrap_or_else(|| {
-            panic!(
-                "WGPU batch occupancy numerator overflowed u64. Fix: shard batch telemetry before occupancy reporting."
-            )
-        })
-        .checked_div(lanes.max(1))
-        .unwrap_or(10_000)
-        .min(10_000);
-    bps as u16
+        .unwrap_or(u64::MAX);
+    crate::numeric::ratio_basis_points_u64_wide(
+        u64::from(items_processed),
+        lanes.max(1),
+        0,
+        "batch occupancy proxy",
+    )
+    .min(10_000) as u16
 }
 
 fn validate_u32_readback_words(bytes: &[u8], label: &'static str) -> Result<usize, PipelineError> {
@@ -899,9 +892,11 @@ fn wait_for_persistent_dispatch(
 ) -> Result<(), PipelineError> {
     let mut backoff = crate::wait_backoff::AdaptiveWaitBackoff::from_micros(64, 5, 50, 8);
     loop {
-        match device.poll(wgpu::Maintain::Poll) {
-            wgpu::MaintainResult::SubmissionQueueEmpty => return Ok(()),
-            wgpu::MaintainResult::Ok => {}
+        if crate::runtime::device::poll_device_once(device)
+            .map_err(|error| PipelineError::Backend(error.to_string()))?
+            .is_queue_empty()
+        {
+            return Ok(());
         }
         let elapsed = start.elapsed();
         if elapsed >= timeout {
@@ -1243,7 +1238,7 @@ fn decode_hits_from_readback_into(
         hits.clear();
     }
     if hits.capacity() < hit_count {
-        hits.try_reserve_exact(hit_count - hits.capacity())
+        hits.try_reserve_exact(hit_count - hits.len())
             .map_err(|source| {
                 PipelineError::Backend(format!(
                     "hit-ring decode could not reserve {hit_count} HitRecord slots: {source}. Fix: lower hit_capacity or shard the batch."
@@ -1456,6 +1451,7 @@ mod tests {
         assert_eq!(occupancy_proxy_bps(32, 1, 64), 5_000);
         assert_eq!(occupancy_proxy_bps(128, 1, 64), 10_000);
         assert_eq!(occupancy_proxy_bps(0, 0, 0), 0);
+        assert_eq!(occupancy_proxy_bps(u32::MAX, 1, 1), 10_000);
     }
 
     #[test]
@@ -1483,3 +1479,4 @@ mod tests {
         }
     }
 }
+

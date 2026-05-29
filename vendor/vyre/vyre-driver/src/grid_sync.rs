@@ -10,7 +10,7 @@
 //! `Node::Barrier { ordering: GridSync }`: split the program at the
 //! barrier, dispatch each segment as its own kernel launch, and
 //! re-feed the prior segment's outputs as inputs to the next. The
-//! kernel-launch boundary itself is the grid-level fence — every
+//! kernel-launch boundary itself is the grid-level fence  -  every
 //! prior write becomes globally visible before the next launch reads.
 //!
 //! Backends route through [`crate::grid_sync::dispatch_with_grid_sync_split`] when
@@ -34,7 +34,7 @@
 //! ## Soundness
 //!
 //! - Atomicity preserved: every `atomic_or` that fired in segment N
-//!   has flushed to global memory by the time segment N+1 launches —
+//!   has flushed to global memory by the time segment N+1 launches  -
 //!   backend launch APIs issue an implicit grid-level fence at
 //!   submission boundaries.
 //! - Ordering preserved: the original program's host-visible output
@@ -57,7 +57,7 @@ use crate::backend::{
 /// outer Region around the user's entry sequence; the split logic
 /// must operate on the inner sequence so a `GridSync` barrier inside
 /// the wrapper actually splits the program. Programs constructed
-/// via `Program::new` use the entry sequence directly — in that
+/// via `Program::new` use the entry sequence directly  -  in that
 /// case we just return it unchanged.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum EntryWrapper {
@@ -140,7 +140,7 @@ fn node_contains_grid_sync(node: &Node) -> bool {
 /// Split `program` at every top-level `Node::Barrier { GridSync }`.
 ///
 /// Returns a vector of segments in execution order. The barrier nodes
-/// themselves are dropped from the segments — the kernel-launch
+/// themselves are dropped from the segments  -  the kernel-launch
 /// boundary between segments takes their place.
 ///
 /// Each returned segment is a complete `Program` that shares the
@@ -151,8 +151,10 @@ fn node_contains_grid_sync(node: &Node) -> bool {
 /// outputs).
 #[must_use]
 pub fn split_on_grid_sync(program: &Program) -> Vec<Program> {
-    try_split_on_grid_sync(program)
-        .expect("grid-sync split allocation failed in legacy infallible caller")
+    match try_split_on_grid_sync(program) {
+        Ok(segments) => segments,
+        Err(_error) => Vec::new(),
+    }
 }
 
 /// Fallible variant of [`split_on_grid_sync`] for production dispatch paths.
@@ -482,6 +484,7 @@ fn propagate_let_bindings(segments: &mut [Vec<Node>], hoisted_inner: &[Node]) {
 /// # Errors
 /// Returns an actionable [`BackendError`] if segment storage cannot be
 /// reserved or if split accounting overflows.
+
 pub fn try_split_on_grid_sync(program: &Program) -> Result<Vec<Program>, BackendError> {
     let (wrappers, inner) = peel_entry_wrappers(program);
     let hoisted_inner = hoist_grid_sync_barriers(inner);
@@ -577,7 +580,7 @@ fn wrap_split_segment(program: &Program, wrappers: &[EntryWrapper], entry: Vec<N
 /// each segment as its own kernel launch.
 ///
 /// Backends with native cooperative-launch grid sync (advertised via
-/// [`VyreBackend::supports_grid_sync`]) bypass the split — the
+/// [`VyreBackend::supports_grid_sync`]) bypass the split  -  the
 /// program is dispatched once. Backends without it route here so the
 /// kernel-launch boundary becomes the grid-level fence: every prior
 /// write is globally visible to subsequent launches.
@@ -650,7 +653,7 @@ pub fn dispatch_resident_with_grid_sync_split_timed(
     if segments.is_empty() {
         return Err(BackendError::InvalidProgram {
             fix: "Fix: program contains GridSync barrier but split_on_grid_sync produced 0 \
-                  segments. This is a grid_sync invariant bug — split_on_grid_sync must \
+                  segments. This is a grid_sync invariant bug  -  split_on_grid_sync must \
                   always return at least one segment."
                 .to_string(),
         });
@@ -724,7 +727,7 @@ pub fn dispatch_with_grid_sync_split_into(
     if segments.is_empty() {
         return Err(BackendError::InvalidProgram {
             fix: "Fix: program contains GridSync barrier but split_on_grid_sync produced 0 \
-                  segments. This is a grid_sync invariant bug — split_on_grid_sync must \
+                  segments. This is a grid_sync invariant bug  -  split_on_grid_sync must \
                   always return at least one segment."
                 .to_string(),
         });
@@ -771,15 +774,13 @@ fn reserve_grid_sync_vec<T>(
     capacity: usize,
     field: &'static str,
 ) -> Result<(), BackendError> {
-    if vec.capacity() >= capacity {
-        return Ok(());
-    }
-    vec.try_reserve_exact(capacity - vec.capacity())
-        .map_err(|error| BackendError::InvalidProgram {
+    crate::allocation::try_reserve_vec_to_capacity(vec, capacity).map_err(|error| {
+        BackendError::InvalidProgram {
             fix: format!(
                 "Fix: failed to reserve {field} for {capacity} entries during grid-sync dispatch splitting: {error}. Split the program into fewer grid-sync segments or run on a backend with native grid sync."
             ),
-        })
+        }
+    })
 }
 
 fn borrowed_grid_sync_inputs<'a>(
@@ -854,7 +855,7 @@ fn refresh_readwrite_inputs(
     inputs: &mut [GridSyncInput<'_>],
 ) -> Result<(), BackendError> {
     use vyre_foundation::ir::BufferAccess;
-    // Walk the segment's buffer table twice in lockstep — once for the
+    // Walk the segment's buffer table twice in lockstep  -  once for the
     // input slice, once for the output readback. Both paths must
     // mirror the convention `dispatch_borrowed` uses: input position
     // skips Workgroup AND `is_output` buffers; output position emits
@@ -870,7 +871,7 @@ fn refresh_readwrite_inputs(
 
         // Refresh the input slot from the readback if this buffer
         // appears in BOTH input and output positions (i.e. ReadWrite
-        // and NOT is_output — the rule scratch / `gets` case).
+        // and NOT is_output  -  the rule scratch / `gets` case).
         if is_readwrite && !is_output_buffer {
             if let (Some(slot), Some(bytes)) =
                 (inputs.get_mut(input_idx), outputs.get_mut(output_idx))
@@ -884,7 +885,7 @@ fn refresh_readwrite_inputs(
             input_idx += 1;
         }
         // Advance the output cursor for every ReadWrite buffer (output
-        // or not — the backend includes them all in the readback).
+        // or not  -  the backend includes them all in the readback).
         if is_readwrite {
             output_idx += 1;
         }
@@ -919,12 +920,12 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("grid-sync production source must precede tests");
+            .expect("Fix: grid-sync production source must precede tests");
 
         assert!(
             production.contains("pub fn try_split_on_grid_sync")
                 && production.contains("fn reserve_grid_sync_vec")
-                && production.contains("try_reserve_exact"),
+                && production.contains("try_reserve_vec_to_capacity"),
             "Fix: grid-sync splitting must expose fallible segment/input/output scratch reservation."
         );
         assert!(
@@ -1067,7 +1068,7 @@ mod tests {
         outputs[0].extend_from_slice(&[2, 0, 0, 0]);
 
         refresh_readwrite_inputs(&segment, &mut outputs, &mut inputs)
-            .expect("test readwrite refresh should fit borrowed promotion storage");
+            .expect("Fix: test readwrite refresh should fit borrowed promotion storage");
 
         let first_owned_ptr = match &inputs[0] {
             GridSyncInput::Owned(bytes) => {
@@ -1082,7 +1083,7 @@ mod tests {
         outputs[0].extend_from_slice(&[3, 0, 0, 0]);
         let second_output_ptr = outputs[0].as_ptr() as usize;
         refresh_readwrite_inputs(&segment, &mut outputs, &mut inputs)
-            .expect("test readwrite refresh should reuse owned storage");
+            .expect("Fix: test readwrite refresh should reuse owned storage");
 
         match &inputs[0] {
             GridSyncInput::Owned(bytes) => {
@@ -1177,7 +1178,7 @@ mod tests {
             &DispatchConfig::default(),
             &mut outputs,
         )
-        .expect("grid-sync split should write into caller-owned output storage");
+        .expect("Fix: grid-sync split should write into caller-owned output storage");
 
         assert_eq!(backend.calls.load(Ordering::SeqCst), 2);
         assert_eq!(outputs, vec![vec![8, 0, 0, 0]]);
@@ -1251,7 +1252,7 @@ mod tests {
             &[input.as_slice()],
             &DispatchConfig::default(),
         )
-        .expect("owned grid-sync split should reserve and return final outputs");
+        .expect("Fix: owned grid-sync split should reserve and return final outputs");
 
         assert_eq!(backend.calls.load(Ordering::SeqCst), 2);
         assert_eq!(outputs, vec![vec![6, 0, 0, 0]]);
@@ -1286,7 +1287,7 @@ mod tests {
             &DispatchConfig::default(),
             &mut outputs,
         )
-        .expect("grid-sync split should dispatch every segment");
+        .expect("Fix: grid-sync split should dispatch every segment");
 
         let after = crate::observability::snapshot_dispatch_telemetry();
         assert_eq!(backend.calls.load(Ordering::SeqCst), 3);
@@ -1378,7 +1379,7 @@ mod tests {
             &DispatchConfig::default(),
             &mut outputs,
         )
-        .expect("grid-sync split should reuse intermediate output scratch");
+        .expect("Fix: grid-sync split should reuse intermediate output scratch");
 
         assert_eq!(backend.calls.load(Ordering::SeqCst), 3);
         assert_eq!(outputs, vec![vec![4, 0, 0, 0]]);
@@ -1458,7 +1459,7 @@ mod tests {
             &[Resource::Resident(11), Resource::Resident(22)],
             &DispatchConfig::default(),
         )
-        .expect("resident grid-sync split should run each segment on the same device handles");
+        .expect("Fix: resident grid-sync split should run each segment on the same device handles");
 
         assert_eq!(backend.calls.load(Ordering::SeqCst), 3);
         assert_eq!(timed.outputs, vec![vec![2]]);
@@ -1467,3 +1468,4 @@ mod tests {
         assert_eq!(timed.wait_ns, Some(12));
     }
 }
+

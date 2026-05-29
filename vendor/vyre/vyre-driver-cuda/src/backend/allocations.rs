@@ -5,14 +5,20 @@ use std::sync::{
     Arc,
 };
 
-use crossbeam_queue::SegQueue;
-use cudarc::driver::sys::{CUresult, CU_MEMHOSTALLOC_PORTABLE};
+use crossbeam_queue::ArrayQueue;
+use cudarc::driver::sys::CUresult;
 use dashmap::DashMap;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
+use vyre_driver::accounting::{
+    checked_add_usize_lazy, checked_atomic_add_usize_guarded_with_order,
+    checked_atomic_add_usize_with_order, checked_atomic_sub_usize,
+    repair_atomic_sub_usize_with_order,
+};
 use vyre_driver::BackendError;
 
-use super::staging_reserve::{reserve_vec, resize_vec_slots};
+use super::host_memory;
+use super::staging_reserve::{reserve_smallvec, reserve_vec, resize_vec_slots};
 
 pub(crate) fn cuda_check(result: CUresult, operation: &str) -> Result<(), BackendError> {
     if result == CUresult::CUDA_SUCCESS {
@@ -28,6 +34,35 @@ pub(crate) fn cuda_result_code(result: CUresult) -> i32 {
     result as i32
 }
 
+pub(crate) fn alloc_cuda_ptr(byte_len: usize, operation: &str) -> Result<u64, BackendError> {
+    if byte_len == 0 {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: {operation} cannot allocate zero device bytes through cuMemAlloc_v2. Keep zero-sized CUDA buffers as null sentinels or allocate at least one byte when a captured graph needs a stable address."
+            ),
+        });
+    }
+    let mut ptr = 0u64;
+    // SAFETY: FFI to libcuda.so cuMemAlloc_v2. &mut ptr is a valid
+    // *mut CUdeviceptr output parameter and byte_len is non-zero by the
+    // guard above. cuda_check propagates non-success CUresult values.
+    unsafe {
+        cuda_check(
+            cudarc::driver::sys::cuMemAlloc_v2(&mut ptr, byte_len),
+            operation,
+        )?;
+    }
+    if ptr == 0 {
+        return Err(BackendError::DispatchFailed {
+            code: None,
+            message: format!(
+                "{operation} returned a null device pointer after reporting success for {byte_len} byte(s). Fix: update the CUDA driver or avoid this allocation shape."
+            ),
+        });
+    }
+    Ok(ptr)
+}
+
 #[derive(Debug)]
 pub(crate) struct DispatchAllocations {
     pool: Arc<DeviceAllocationPool>,
@@ -41,13 +76,7 @@ impl DispatchAllocations {
         pool: Arc<DeviceAllocationPool>,
     ) -> Result<Self, BackendError> {
         let mut ptrs = SmallVec::new();
-        ptrs.try_reserve_exact(buffer_count).map_err(|error| {
-            BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: CUDA dispatch allocation table could not reserve {buffer_count} buffer pointer slots: {error}. Shard the dispatch before launch."
-                ),
-            }
-        })?;
+        reserve_smallvec(&mut ptrs, buffer_count, "dispatch allocation pointer")?;
         ptrs.extend((0..buffer_count).map(|_| DeviceAllocation::default()));
         Ok(Self {
             pool,
@@ -62,6 +91,10 @@ impl DispatchAllocations {
 
     pub(crate) fn ptr(&self, index: usize) -> u64 {
         self.ptrs[index].ptr
+    }
+
+    pub(crate) fn byte_len(&self, index: usize) -> usize {
+        self.ptrs[index].byte_len
     }
 
     pub(crate) fn set_params(&mut self, allocation: DeviceAllocation) {
@@ -80,11 +113,11 @@ pub(crate) struct PinnedHostAllocation {
 // cuMemHostAlloc with CU_MEMHOSTALLOC_PORTABLE so it is addressable
 // from every CUDA context on this process; the Rust-level
 // PinnedHostAllocationPool synchronises bucket-cache access with
-// DashMap + SegQueue so concurrent take/release is safe. Send + Sync
+// DashMap + bounded ArrayQueue so concurrent take/release is safe. Send + Sync
 // are sound because no thread can produce a torn read of the raw
 // pointer (it is just an address) or the byte_len.
 unsafe impl Send for PinnedHostAllocation {}
-// SAFETY: see the Send impl above — same reasoning applies for
+// SAFETY: see the Send impl above  -  same reasoning applies for
 // shared (&) access; PinnedHostAllocation is Copy and never holds
 // thread-local state.
 unsafe impl Sync for PinnedHostAllocation {}
@@ -131,6 +164,39 @@ impl PinnedHostAllocation {
         Ok(())
     }
 
+    pub(crate) fn zero_range(
+        &mut self,
+        byte_offset: usize,
+        byte_len: usize,
+    ) -> Result<(), BackendError> {
+        let end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+            byte_offset,
+            byte_len,
+            self.byte_len,
+            || BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA pinned-host zero-fill overflowed usize at offset {byte_offset} len {byte_len}."
+                ),
+            },
+            |end| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA pinned-host zero-fill requested byte range [{byte_offset}..{end}) from a {} byte allocation.",
+                    self.byte_len
+                ),
+            },
+        )?;
+        if end == byte_offset {
+            return Ok(());
+        }
+        // SAFETY: checked range validation proves byte_offset..end lies
+        // inside this pinned-host allocation; &mut self prevents
+        // concurrent readers while the DMA padding tail is initialised.
+        unsafe {
+            std::ptr::write_bytes(self.ptr.add(byte_offset), 0, byte_len);
+        }
+        Ok(())
+    }
+
     pub(crate) fn copy_u32_le_words(&mut self, words: &[u32]) -> Result<(), BackendError> {
         let byte_len = std::mem::size_of_val(words);
         if byte_len > self.byte_len {
@@ -145,7 +211,7 @@ impl PinnedHostAllocation {
             return Ok(());
         }
         #[cfg(target_endian = "little")]
-        // SAFETY: same as copy_from_slice — words.as_ptr() is a valid
+        // SAFETY: same as copy_from_slice  -  words.as_ptr() is a valid
         // &[u32] source for byte_len bytes (size_of_val); self.ptr owns
         // self.byte_len ≥ byte_len bytes of pinned-host memory by the
         // checked guard above; cast to
@@ -182,6 +248,40 @@ impl PinnedHostAllocation {
         }
         copy_raw_bytes_into_vec(self.ptr, byte_len, dst)
     }
+
+    pub(crate) fn copy_range_into(
+        &self,
+        byte_offset: usize,
+        byte_len: usize,
+        dst: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        let end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+            byte_offset,
+            byte_len,
+            self.byte_len,
+            || {
+                BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA pinned-host readback range overflowed usize at offset {byte_offset} len {byte_len}. Recompute output transfer slicing before collecting results."
+                ),
+            }
+            },
+            |end| {
+                BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA pinned-host readback attempted to copy byte range [{byte_offset}..{end}) from a {} byte allocation. Recompute fused output transfer slicing before collecting results.",
+                    self.byte_len
+                ),
+            }
+            },
+        )?;
+        if byte_len == 0 {
+            dst.clear();
+            return Ok(());
+        }
+        let src = self.ptr.wrapping_add(byte_offset);
+        copy_raw_bytes_into_vec(src, byte_len, dst)
+    }
 }
 
 fn copy_raw_bytes_into_vec(
@@ -189,15 +289,16 @@ fn copy_raw_bytes_into_vec(
     byte_len: usize,
     dst: &mut Vec<u8>,
 ) -> Result<(), BackendError> {
-    dst.clear();
     if byte_len == 0 {
+        dst.clear();
         return Ok(());
     }
     if dst.capacity() < byte_len {
         reserve_vec(dst, byte_len, "CUDA readback output bytes")?;
     }
+    dst.clear();
     // SAFETY: src is a non-null pointer to byte_len readable bytes
-    // (caller's contract — every internal call site passes a CUDA-host
+    // (caller's contract  -  every internal call site passes a CUDA-host
     // allocation pointer). dst.as_mut_ptr() points to dst's owned
     // capacity which is ≥ byte_len after the fallible reservation above.
     // dst is freshly cleared so set_len(byte_len) leaves the new
@@ -211,7 +312,7 @@ fn copy_raw_bytes_into_vec(
 
 #[derive(Debug)]
 pub(crate) struct PinnedHostAllocationPool {
-    free: DashMap<usize, SegQueue<usize>, BuildHasherDefault<FxHasher>>,
+    free: DashMap<usize, ArrayQueue<usize>, BuildHasherDefault<FxHasher>>,
     cached_bytes: AtomicUsize,
     max_cached_bytes: usize,
 }
@@ -233,18 +334,10 @@ impl PinnedHostAllocationPool {
                 byte_len: bucket,
             });
         }
-        self.free.entry(bucket).or_default();
-        let mut ptr = std::ptr::null_mut::<c_void>();
-        // SAFETY: FFI to libcuda.so cuMemHostAlloc. &mut ptr is a valid
-        // *mut *mut c_void output param; bucket is the byte size; the
-        // PORTABLE flag is documented driver API. cuda_check propagates
-        // a non-success CUresult as BackendError.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuMemHostAlloc(&mut ptr, bucket, CU_MEMHOSTALLOC_PORTABLE),
-                "cuMemHostAlloc",
-            )?;
-        }
+        self.free.entry(bucket).or_insert_with(|| {
+            ArrayQueue::new(allocation_bucket_cache_slots(bucket, self.max_cached_bytes))
+        });
+        let ptr = host_memory::alloc_pinned_host_buffer(bucket, "cuMemHostAlloc")?;
         Ok(PinnedHostAllocation {
             ptr: ptr.cast(),
             byte_len: bucket,
@@ -254,7 +347,10 @@ impl PinnedHostAllocationPool {
     pub(crate) fn clear(&self) -> Result<(), BackendError> {
         for entry in &self.free {
             while let Some(ptr) = entry.value().pop() {
-                free_pinned_host_ptr(ptr as *mut c_void);
+                host_memory::free_pinned_host_buffer(
+                    ptr as *mut c_void,
+                    "cuMemFreeHost (pinned host pool clear)",
+                );
             }
         }
         self.free.clear();
@@ -287,7 +383,10 @@ impl PinnedHostAllocationPool {
             return;
         }
         let Some(queue) = self.free.get(&allocation.byte_len) else {
-            free_pinned_host_ptr(allocation.ptr.cast());
+            host_memory::free_pinned_host_buffer(
+                allocation.ptr.cast(),
+                "cuMemFreeHost (pinned host pool release without bucket)",
+            );
             return;
         };
         if !reserve_cached_bytes(
@@ -295,11 +394,24 @@ impl PinnedHostAllocationPool {
             self.max_cached_bytes,
             allocation.byte_len,
         ) {
-            free_pinned_host_ptr(allocation.ptr.cast());
+            host_memory::free_pinned_host_buffer(
+                allocation.ptr.cast(),
+                "cuMemFreeHost (pinned host pool cache over budget)",
+            );
             return;
         }
 
-        queue.push(allocation.ptr.addr());
+        if let Err(ptr) = queue.push(allocation.ptr.addr()) {
+            subtract_cached_bytes_or_repair(
+                &self.cached_bytes,
+                allocation.byte_len,
+                "CUDA pinned-host allocation-pool cached bytes",
+            );
+            host_memory::free_pinned_host_buffer(
+                ptr as *mut c_void,
+                "cuMemFreeHost (pinned host pool queue full)",
+            );
+        }
     }
 }
 
@@ -307,7 +419,10 @@ impl Drop for PinnedHostAllocationPool {
     fn drop(&mut self) {
         for entry in &self.free {
             while let Some(ptr) = entry.value().pop() {
-                free_pinned_host_ptr(ptr as *mut c_void);
+                host_memory::free_pinned_host_buffer(
+                    ptr as *mut c_void,
+                    "cuMemFreeHost (pinned host pool drop)",
+                );
             }
         }
         self.cached_bytes.store(0, Ordering::Release);
@@ -334,21 +449,9 @@ impl HostTransferAllocations {
         output_capacity: usize,
     ) -> Result<Self, BackendError> {
         let mut allocations = SmallVec::new();
-        allocations
-            .try_reserve_exact(transfer_capacity)
-            .map_err(|error| BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: CUDA pinned-host transfer table could not reserve {transfer_capacity} transfer slot(s): {error}. Shard the transfer batch before launch."
-                ),
-            })?;
+        reserve_smallvec(&mut allocations, transfer_capacity, "pinned-host transfer")?;
         let mut outputs = SmallVec::new();
-        outputs
-            .try_reserve_exact(output_capacity)
-            .map_err(|error| BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: CUDA pinned-host output table could not reserve {output_capacity} readback slot(s): {error}. Shard the readback batch before launch."
-                ),
-            })?;
+        reserve_smallvec(&mut outputs, output_capacity, "pinned-host output")?;
         Ok(Self {
             pool,
             allocations,
@@ -367,6 +470,30 @@ impl HostTransferAllocations {
         Ok(ptr)
     }
 
+    pub(crate) fn push_upload_padded(
+        &mut self,
+        bytes: &[u8],
+        transfer_byte_len: usize,
+    ) -> Result<*const c_void, BackendError> {
+        if bytes.is_empty() {
+            return Ok(std::ptr::null());
+        }
+        if transfer_byte_len < bytes.len() {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA padded upload length {transfer_byte_len} is smaller than logical upload length {}.",
+                    bytes.len()
+                ),
+            });
+        }
+        let mut allocation = self.pool.acquire(transfer_byte_len)?;
+        allocation.copy_from_slice(bytes)?;
+        allocation.zero_range(bytes.len(), transfer_byte_len - bytes.len())?;
+        let ptr = allocation.as_ptr();
+        self.allocations.push(allocation);
+        Ok(ptr)
+    }
+
     pub(crate) fn push_u32_words(&mut self, words: &[u32]) -> Result<*const c_void, BackendError> {
         let byte_len = std::mem::size_of_val(words);
         if byte_len == 0 {
@@ -374,6 +501,30 @@ impl HostTransferAllocations {
         }
         let mut allocation = self.pool.acquire(byte_len)?;
         allocation.copy_u32_le_words(words)?;
+        let ptr = allocation.as_ptr();
+        self.allocations.push(allocation);
+        Ok(ptr)
+    }
+
+    pub(crate) fn push_u32_words_padded(
+        &mut self,
+        words: &[u32],
+        transfer_byte_len: usize,
+    ) -> Result<*const c_void, BackendError> {
+        let byte_len = std::mem::size_of_val(words);
+        if byte_len == 0 {
+            return Ok(std::ptr::null());
+        }
+        if transfer_byte_len < byte_len {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA padded parameter upload length {transfer_byte_len} is smaller than logical parameter length {byte_len}."
+                ),
+            });
+        }
+        let mut allocation = self.pool.acquire(transfer_byte_len)?;
+        allocation.copy_u32_le_words(words)?;
+        allocation.zero_range(byte_len, transfer_byte_len - byte_len)?;
         let ptr = allocation.as_ptr();
         self.allocations.push(allocation);
         Ok(ptr)
@@ -398,24 +549,46 @@ impl HostTransferAllocations {
         Ok(ptr)
     }
 
+    pub(crate) fn push_output_padded(
+        &mut self,
+        byte_len: usize,
+        transfer_byte_len: usize,
+    ) -> Result<*mut c_void, BackendError> {
+        if byte_len == 0 {
+            self.outputs.push(HostOutputTransfer {
+                allocation_index: None,
+                byte_len,
+            });
+            return Ok(std::ptr::null_mut());
+        }
+        if transfer_byte_len < byte_len {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA padded output readback length {transfer_byte_len} is smaller than logical output length {byte_len}."
+                ),
+            });
+        }
+        let mut allocation = self.pool.acquire(transfer_byte_len)?;
+        let ptr = allocation.as_mut_ptr();
+        let index = self.allocations.len();
+        self.allocations.push(allocation);
+        self.outputs.push(HostOutputTransfer {
+            allocation_index: Some(index),
+            byte_len,
+        });
+        Ok(ptr)
+    }
+
     pub(crate) fn collect_outputs_into(
         &self,
         outputs: &mut Vec<Vec<u8>>,
     ) -> Result<(), BackendError> {
-        reserve_vec(
-            outputs,
-            self.outputs.len(),
-            "CUDA host transfer output vector",
-        )?;
         resize_vec_slots(
             outputs,
             self.outputs.len(),
             "CUDA host transfer output vector",
         )?;
-        for output_index in 0..self.outputs.len() {
-            self.collect_output_into(output_index, &mut outputs[output_index])?;
-        }
-        Ok(())
+        self.collect_output_slots_into(outputs.iter_mut().enumerate())
     }
 
     pub(crate) fn collect_borrowed_outputs_into(
@@ -431,8 +604,20 @@ impl HostTransferAllocations {
                 ),
             });
         }
-        for (output_index, output) in outputs.iter_mut().enumerate() {
-            self.collect_output_into(output_index, *output)?;
+        self.collect_output_slots_into(
+            outputs
+                .iter_mut()
+                .enumerate()
+                .map(|(output_index, output)| (output_index, &mut **output)),
+        )
+    }
+
+    fn collect_output_slots_into<'a>(
+        &self,
+        outputs: impl IntoIterator<Item = (usize, &'a mut Vec<u8>)>,
+    ) -> Result<(), BackendError> {
+        for (output_index, output) in outputs {
+            self.collect_output_into(output_index, output)?;
         }
         Ok(())
     }
@@ -465,6 +650,57 @@ impl HostTransferAllocations {
         }
         Ok(())
     }
+
+    pub(crate) fn collect_output_range_into(
+        &self,
+        output_index: usize,
+        byte_offset: usize,
+        byte_len: usize,
+        output: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        let Some(&transfer) = self.outputs.get(output_index) else {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA ranged output collection requested output index {output_index}, but only {} output transfer(s) exist.",
+                    self.outputs.len()
+                ),
+            });
+        };
+        let end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+            byte_offset,
+            byte_len,
+            transfer.byte_len,
+            || {
+                BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA ranged output collection overflowed usize at offset {byte_offset} len {byte_len}."
+                ),
+            }
+            },
+            |end| {
+                BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA ranged output collection requested byte range [{byte_offset}..{end}) from output transfer {output_index}, but that transfer has {} byte(s).",
+                    transfer.byte_len
+                ),
+            }
+            },
+        )?;
+        if let Some(allocation_index) = transfer.allocation_index {
+            let Some(allocation) = self.allocations.get(allocation_index) else {
+                return Err(BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA ranged output transfer {output_index} references allocation index {allocation_index}, but only {} allocation(s) exist.",
+                        self.allocations.len()
+                    ),
+                });
+            };
+            allocation.copy_range_into(byte_offset, byte_len, output)?;
+        } else {
+            output.clear();
+        }
+        Ok(())
+    }
 }
 
 impl Drop for HostTransferAllocations {
@@ -492,7 +728,7 @@ pub(crate) struct DeviceAllocation {
 
 #[derive(Debug)]
 pub(crate) struct DeviceAllocationPool {
-    free: DashMap<usize, SegQueue<u64>, BuildHasherDefault<FxHasher>>,
+    free: DashMap<usize, ArrayQueue<u64>, BuildHasherDefault<FxHasher>>,
     cached_bytes: AtomicUsize,
     allocated_bytes: AtomicUsize,
     max_cached_bytes: usize,
@@ -516,18 +752,10 @@ impl DeviceAllocationPool {
                 byte_len: bucket,
             });
         }
-        self.free.entry(bucket).or_default();
-        let mut ptr = 0u64;
-        // SAFETY: FFI to libcuda.so cuMemAlloc_v2. &mut ptr is a valid
-        // *mut CUdeviceptr output param; bucket is the byte size to
-        // allocate. cuda_check propagates a non-success CUresult as a
-        // BackendError so the returned ptr is only consumed on success.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuMemAlloc_v2(&mut ptr, bucket),
-                "cuMemAlloc_v2",
-            )?;
-        }
+        self.free.entry(bucket).or_insert_with(|| {
+            ArrayQueue::new(allocation_bucket_cache_slots(bucket, self.max_cached_bytes))
+        });
+        let ptr = alloc_cuda_ptr(bucket, "cuMemAlloc_v2")?;
         if let Err(error) = add_cached_bytes(
             &self.allocated_bytes,
             bucket,
@@ -555,13 +783,12 @@ impl DeviceAllocationPool {
         for entry in &self.free {
             while let Some(ptr) = entry.value().pop() {
                 free_cuda_ptr(ptr);
-                freed_bytes =
-                    freed_bytes
-                        .checked_add(*entry.key())
-                        .ok_or_else(|| BackendError::InvalidProgram {
-                            fix: "Fix: CUDA allocation-pool clear byte accounting overflowed usize; allocator state is corrupt."
-                                .to_string(),
-                        })?;
+                freed_bytes = checked_add_usize_lazy(freed_bytes, *entry.key(), || {
+                    BackendError::InvalidProgram {
+                        fix: "Fix: CUDA allocation-pool clear byte accounting overflowed usize; allocator state is corrupt."
+                            .to_string(),
+                    }
+                })?;
             }
         }
         self.free.clear();
@@ -596,7 +823,7 @@ impl DeviceAllocationPool {
         let Some(queue) = self.free.get(&allocation.byte_len) else {
             free_cuda_ptr(allocation.ptr);
             if let Err(error) = subtract_cached_bytes(&self.allocated_bytes, allocation.byte_len) {
-                eprintln!("{error}");
+                tracing::error!("{error}");
             }
             return;
         };
@@ -607,12 +834,22 @@ impl DeviceAllocationPool {
         ) {
             free_cuda_ptr(allocation.ptr);
             if let Err(error) = subtract_cached_bytes(&self.allocated_bytes, allocation.byte_len) {
-                eprintln!("{error}");
+                tracing::error!("{error}");
             }
             return;
         }
 
-        queue.push(allocation.ptr);
+        if let Err(ptr) = queue.push(allocation.ptr) {
+            subtract_cached_bytes_or_repair(
+                &self.cached_bytes,
+                allocation.byte_len,
+                "CUDA allocation-pool cached device bytes",
+            );
+            free_cuda_ptr(ptr);
+            if let Err(error) = subtract_cached_bytes(&self.allocated_bytes, allocation.byte_len) {
+                tracing::error!("{error}");
+            }
+        }
     }
 }
 
@@ -640,20 +877,32 @@ fn allocation_bucket(byte_len: usize, label: &'static str) -> Result<usize, Back
         })
 }
 
+fn allocation_bucket_cache_slots(bucket: usize, max_cached_bytes: usize) -> usize {
+    const ALLOCATION_BUCKET_MAX_SLOTS: usize = 1024;
+    let slots_by_budget = max_cached_bytes
+        .checked_div(bucket.max(1))
+        .unwrap_or(0)
+        .max(1);
+    slots_by_budget.min(ALLOCATION_BUCKET_MAX_SLOTS)
+}
+
 fn reserve_cached_bytes(counter: &AtomicUsize, max_cached_bytes: usize, bytes: usize) -> bool {
-    let mut observed = counter.load(Ordering::Acquire);
-    loop {
-        let Some(next) = observed.checked_add(bytes) else {
-            return false;
-        };
-        if next > max_cached_bytes {
-            return false;
-        }
-        match counter.compare_exchange_weak(observed, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return true,
-            Err(actual) => observed = actual,
-        }
-    }
+    checked_atomic_add_usize_guarded_with_order(
+        counter,
+        bytes,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |_, _| (),
+        |next| {
+            if next > max_cached_bytes {
+                Err(())
+            } else {
+                Ok(())
+            }
+        },
+    )
+    .is_ok()
 }
 
 fn add_cached_bytes(
@@ -661,99 +910,68 @@ fn add_cached_bytes(
     bytes: usize,
     label: &'static str,
 ) -> Result<(), BackendError> {
-    let mut observed = counter.load(Ordering::Acquire);
-    loop {
-        let next = observed.checked_add(bytes).ok_or_else(|| {
+    checked_atomic_add_usize_with_order(
+        counter,
+        bytes,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |observed, attempted| {
             BackendError::InvalidProgram {
                 fix: format!(
-                    "Fix: {label} accounting overflowed while adding {bytes} to observed {observed}; shard the allocation workload before enqueueing more CUDA work."
+                    "Fix: {label} accounting overflowed while adding {attempted} to observed {observed}; shard the allocation workload before enqueueing more CUDA work."
                 ),
             }
-        })?;
-        match counter.compare_exchange_weak(observed, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return Ok(()),
-            Err(actual) => observed = actual,
-        }
-    }
+        },
+    )
 }
 
 fn subtract_cached_bytes(counter: &AtomicUsize, bytes: usize) -> Result<(), BackendError> {
-    let mut observed = counter.load(Ordering::Acquire);
-    loop {
-        let next = observed.checked_sub(bytes).ok_or_else(|| {
-            BackendError::InvalidProgram {
+    checked_atomic_sub_usize(counter, bytes, |observed, attempted| {
+        BackendError::InvalidProgram {
                 fix: format!(
-                    "Fix: CUDA allocation-pool byte accounting underflowed while subtracting {bytes} from observed {observed}; allocator state is corrupt."
+                    "Fix: CUDA allocation-pool byte accounting underflowed while subtracting {attempted} from observed {observed}; allocator state is corrupt."
                 ),
             }
-        })?;
-        match counter.compare_exchange_weak(observed, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return Ok(()),
-            Err(actual) => observed = actual,
-        }
-    }
+    })
 }
 
 fn subtract_cached_bytes_or_repair(counter: &AtomicUsize, bytes: usize, label: &'static str) {
-    let mut observed = counter.load(Ordering::Acquire);
-    loop {
-        let Some(next) = observed.checked_sub(bytes) else {
-            match counter.compare_exchange_weak(observed, 0, Ordering::AcqRel, Ordering::Acquire) {
-                Ok(_) => {
-                    tracing::error!(
-                        "{label} underflowed while subtracting {bytes} from observed {observed}; repaired accounting to zero."
-                    );
-                    return;
-                }
-                Err(actual) => {
-                    observed = actual;
-                    continue;
-                }
-            }
-        };
-        match counter.compare_exchange_weak(observed, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return,
-            Err(actual) => observed = actual,
-        }
-    }
+    repair_atomic_sub_usize_with_order(
+        counter,
+        bytes,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |observed, attempted| {
+            tracing::error!(
+                "{label} underflowed while subtracting {attempted} from observed {observed}; repaired accounting to zero."
+            );
+        },
+    );
 }
 
-pub(crate) fn free_cuda_ptr(ptr: u64) {
+pub(crate) fn free_cuda_ptr_with_label(ptr: u64, label: &str) {
     if ptr == 0 {
         return;
     }
     // SAFETY: FFI to libcuda.so cuMemFree_v2. ptr was returned by a
     // matching cuMemAlloc_v2 call (the pool owns the lifetime); the
-    // null guard above ensures we never pass 0. CUDA_SUCCESS check
-    // surfaces unexpected failures via stderr without propagating
-    // (free runs on Drop / pool clear paths where ?-propagation is
-    // not available).
+    // null guard above ensures we never pass 0. CUDA_SUCCESS check records
+    // unexpected failures without propagating (free runs on Drop / pool clear
+    // paths where ?-propagation is not available).
     unsafe {
         let result = cudarc::driver::sys::cuMemFree_v2(ptr);
         if result != CUresult::CUDA_SUCCESS {
-            eprintln!(
-                "Fix: cuMemFree_v2 failed while releasing CUDA allocation with {result:?}; ensure all launches using the allocation have completed."
+            tracing::error!(
+                "Fix: cuMemFree_v2 failed while releasing {label} with {result:?}; ensure all launches using the allocation have completed."
             );
         }
     }
 }
 
-fn free_pinned_host_ptr(ptr: *mut c_void) {
-    if ptr.is_null() {
-        return;
-    }
-    // SAFETY: FFI to libcuda.so cuMemFreeHost. ptr was returned by a
-    // matching cuMemHostAlloc call; the null guard above ensures we
-    // never pass nullptr. Same Drop-path stderr fallback as
-    // free_cuda_ptr above.
-    unsafe {
-        let result = cudarc::driver::sys::cuMemFreeHost(ptr);
-        if result != CUresult::CUDA_SUCCESS {
-            eprintln!(
-                "Fix: cuMemFreeHost failed while releasing pinned host allocation with {result:?}; ensure all DMA using the allocation has completed."
-            );
-        }
-    }
+pub(crate) fn free_cuda_ptr(ptr: u64) {
+    free_cuda_ptr_with_label(ptr, "CUDA allocation");
 }
 
 #[cfg(test)]
@@ -786,14 +1004,31 @@ mod tests {
     }
 
     #[test]
+    fn copy_raw_bytes_into_vec_preserves_last_good_output_when_reservation_fails() {
+        let src = std::ptr::NonNull::<u8>::dangling().as_ptr();
+        let mut dst = vec![7, 8, 9];
+        let capacity = dst.capacity();
+
+        let error = copy_raw_bytes_into_vec(src, usize::MAX, &mut dst)
+            .expect_err("Fix: impossible CUDA readback reservation must fail before clobbering");
+
+        assert!(
+            error.to_string().contains("CUDA readback output bytes"),
+            "error should identify the failed readback reservation: {error}"
+        );
+        assert_eq!(dst, vec![7, 8, 9]);
+        assert_eq!(dst.capacity(), capacity);
+    }
+
+    #[test]
     fn zero_byte_output_readback_does_not_acquire_pinned_host_memory() {
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let mut transfers = HostTransferAllocations::with_capacity(Arc::clone(&pool), 0, 1)
-            .expect("host transfer table should reserve");
+            .expect("Fix: host transfer table should reserve");
 
         let ptr = transfers
             .push_output(0)
-            .expect("zero-byte output reservation must not touch CUDA allocation APIs");
+            .expect("Fix: zero-byte output reservation must not touch CUDA allocation APIs");
 
         assert!(ptr.is_null());
         assert!(transfers.allocations.is_empty());
@@ -812,10 +1047,10 @@ mod tests {
     fn borrowed_zero_byte_output_readback_preserves_caller_capacity() {
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let mut transfers = HostTransferAllocations::with_capacity(Arc::clone(&pool), 0, 1)
-            .expect("host transfer table should reserve");
-        let ptr = transfers
-            .push_output(0)
-            .expect("zero-byte borrowed output reservation must not touch CUDA allocation APIs");
+            .expect("Fix: host transfer table should reserve");
+        let ptr = transfers.push_output(0).expect(
+            "Fix: zero-byte borrowed output reservation must not touch CUDA allocation APIs",
+        );
         let mut output = Vec::with_capacity(32);
         output.extend_from_slice(&[7, 7, 7, 7]);
         let capacity = output.capacity();
@@ -831,17 +1066,45 @@ mod tests {
     }
 
     #[test]
+    fn owned_and_borrowed_output_collection_share_one_slot_iterator() {
+        let source = include_str!("allocations.rs");
+        let host_transfer_impl = source
+            .split("impl HostTransferAllocations {")
+            .nth(1)
+            .expect("Fix: HostTransferAllocations impl must exist")
+            .split("impl Drop for HostTransferAllocations")
+            .next()
+            .expect("Fix: HostTransferAllocations impl must precede Drop impl");
+
+        assert!(
+            host_transfer_impl.contains("fn collect_output_slots_into"),
+            "Fix: CUDA host-transfer output collection must expose one shared slot iterator."
+        );
+        assert_eq!(
+            host_transfer_impl
+                .matches(concat!("self.collect_output_slots_", "into("))
+                .count(),
+            2,
+            "Fix: owned and borrowed CUDA output collection must both use the shared slot iterator."
+        );
+        assert!(
+            !host_transfer_impl.contains("for output_index in 0..self.outputs.len()"),
+            "Fix: owned CUDA output collection must not carry a separate index loop from borrowed collection."
+        );
+    }
+
+    #[test]
     fn zero_byte_uploads_do_not_acquire_pinned_host_memory() {
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let mut transfers = HostTransferAllocations::with_capacity(Arc::clone(&pool), 2, 0)
-            .expect("host transfer table should reserve");
+            .expect("Fix: host transfer table should reserve");
 
         let bytes_ptr = transfers
             .push_upload(&[])
-            .expect("empty byte upload must not touch CUDA allocation APIs");
+            .expect("Fix: empty byte upload must not touch CUDA allocation APIs");
         let words_ptr = transfers
             .push_u32_words(&[])
-            .expect("empty parameter upload must not touch CUDA allocation APIs");
+            .expect("Fix: empty parameter upload must not touch CUDA allocation APIs");
 
         assert!(bytes_ptr.is_null());
         assert!(words_ptr.is_null());
@@ -883,10 +1146,54 @@ mod tests {
     }
 
     #[test]
+    fn pinned_host_readback_range_copies_exact_slice_without_reallocating_output() {
+        let source = [10u8, 11, 12, 13, 14, 15];
+        let allocation = PinnedHostAllocation {
+            ptr: source.as_ptr().cast_mut(),
+            byte_len: source.len(),
+        };
+        let mut output = Vec::with_capacity(16);
+        output.extend_from_slice(&[99, 99, 99]);
+        let capacity = output.capacity();
+
+        allocation
+            .copy_range_into(2, 3, &mut output)
+            .expect("Fix: pinned-host ranged readback should copy the requested slice.");
+
+        assert_eq!(output, vec![12, 13, 14]);
+        assert_eq!(
+            output.capacity(),
+            capacity,
+            "Fix: ranged readback collection must preserve caller-owned output capacity when it is sufficient."
+        );
+    }
+
+    #[test]
+    fn pinned_host_readback_range_rejects_out_of_bounds_slice_without_clobbering_output() {
+        let allocation = PinnedHostAllocation {
+            ptr: std::ptr::NonNull::<u8>::dangling().as_ptr(),
+            byte_len: 4,
+        };
+        let mut output = vec![1, 2, 3];
+        let capacity = output.capacity();
+
+        let error = allocation
+            .copy_range_into(3, 2, &mut output)
+            .expect_err("Fix: out-of-bounds pinned-host ranged readback must fail.");
+
+        assert!(
+            error.to_string().contains("byte range [3..5)"),
+            "error should describe the invalid ranged readback: {error}"
+        );
+        assert_eq!(output, vec![1, 2, 3]);
+        assert_eq!(output.capacity(), capacity);
+    }
+
+    #[test]
     fn borrowed_output_collection_rejects_slot_count_mismatch() {
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let mut transfers = HostTransferAllocations::with_capacity(pool, 0, 1)
-            .expect("host transfer table should reserve");
+            .expect("Fix: host transfer table should reserve");
         transfers.outputs.push(HostOutputTransfer {
             allocation_index: None,
             byte_len: 0,
@@ -904,10 +1211,34 @@ mod tests {
     }
 
     #[test]
+    fn ranged_output_collection_rejects_out_of_bounds_transfer_slice() {
+        let pool = Arc::new(PinnedHostAllocationPool::new(0));
+        let mut transfers = HostTransferAllocations::with_capacity(pool, 0, 1)
+            .expect("Fix: host transfer table should reserve");
+        transfers.outputs.push(HostOutputTransfer {
+            allocation_index: None,
+            byte_len: 0,
+        });
+        let mut output = vec![9, 9, 9];
+        let capacity = output.capacity();
+
+        let error = transfers
+            .collect_output_range_into(0, 1, 1, &mut output)
+            .expect_err("Fix: ranged output collection must reject out-of-bounds transfer slices.");
+
+        assert!(
+            error.to_string().contains("byte range [1..2)"),
+            "error should describe the invalid output transfer slice: {error}"
+        );
+        assert_eq!(output, vec![9, 9, 9]);
+        assert_eq!(output.capacity(), capacity);
+    }
+
+    #[test]
     fn output_collection_rejects_out_of_range_transfer_index() {
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let transfers = HostTransferAllocations::with_capacity(pool, 0, 0)
-            .expect("host transfer table should reserve");
+            .expect("Fix: host transfer table should reserve");
         let mut output = Vec::new();
         let error = transfers
             .collect_output_into(0, &mut output)
@@ -949,7 +1280,7 @@ mod tests {
             .split("pub(crate) fn acquire(&self, byte_len: usize) -> Result<DeviceAllocation, BackendError>")
             .nth(1)
             .and_then(|tail| tail.split("pub(crate) fn cached_bytes").next())
-            .expect("DeviceAllocationPool::acquire source must be discoverable");
+            .expect("Fix: DeviceAllocationPool::acquire source must be discoverable");
         assert!(
             acquire.contains("if let Err(error) = add_cached_bytes(")
                 && acquire.contains("free_cuda_ptr(ptr);")
@@ -963,13 +1294,50 @@ mod tests {
     }
 
     #[test]
+    fn cuda_device_alloc_and_free_use_single_checked_ffi_boundary() {
+        let allocations = include_str!("allocations.rs");
+        let resident = include_str!("resident.rs");
+        let cuda_graph = include_str!("cuda_graph.rs");
+        let alloc_ffi = concat!("cudarc::driver::sys::", "cuMemAlloc_v2(");
+        let free_ffi = concat!("cudarc::driver::sys::", "cuMemFree_v2(");
+
+        assert_eq!(
+            allocations.matches(alloc_ffi).count(),
+            1,
+            "Fix: CUDA device allocation must keep raw cuMemAlloc_v2 behind alloc_cuda_ptr."
+        );
+        assert_eq!(
+            allocations.matches(free_ffi).count(),
+            1,
+            "Fix: CUDA device free must keep raw cuMemFree_v2 behind free_cuda_ptr_with_label."
+        );
+        assert_eq!(
+            resident.matches(alloc_ffi).count() + cuda_graph.matches(alloc_ffi).count(),
+            0,
+            "Fix: resident and cudaGraph allocation paths must route through alloc_cuda_ptr."
+        );
+        assert_eq!(
+            resident.matches(free_ffi).count() + cuda_graph.matches(free_ffi).count(),
+            0,
+            "Fix: resident and cudaGraph free paths must route through free_cuda_ptr."
+        );
+        assert!(
+            allocations.contains("fn alloc_cuda_ptr(")
+                && allocations.contains("cannot allocate zero device bytes")
+                && allocations.contains("returned a null device pointer after reporting success"),
+            "Fix: shared CUDA allocation helper must validate zero-byte requests and impossible null success returns."
+        );
+    }
+
+    #[test]
     fn cuda_dispatch_and_host_transfer_tables_reserve_fallibly() {
         let source = include_str!("allocations.rs");
         assert!(
-            source.contains("ptrs.try_reserve_exact(buffer_count)")
+            source.contains("reserve_smallvec")
+                && source.contains("buffer_count")
                 && source.contains("allocations")
-                && source.contains("try_reserve_exact(transfer_capacity)")
-                && source.contains("try_reserve_exact(output_capacity)"),
+                && source.contains("transfer_capacity")
+                && source.contains("output_capacity"),
             "Fix: CUDA dispatch and host-transfer staging tables must reserve fallibly before launch."
         );
         assert!(
@@ -993,17 +1361,17 @@ mod tests {
         let pinned_allocation = source
             .split("impl PinnedHostAllocation {")
             .nth(1)
-            .expect("pinned-host allocation impl must be present")
+            .expect("Fix: pinned-host allocation impl must be present")
             .split("#[derive(Debug)]\npub(crate) struct PinnedHostAllocationPool")
             .next()
-            .expect("pinned-host allocation impl must precede pool type");
+            .expect("Fix: pinned-host allocation impl must precede pool type");
         let host_transfers = source
             .split("impl HostTransferAllocations {")
             .nth(1)
-            .expect("host transfer impl must be present")
+            .expect("Fix: host transfer impl must be present")
             .split("impl Drop for HostTransferAllocations")
             .next()
-            .expect("host transfer impl must precede Drop impl");
+            .expect("Fix: host transfer impl must precede Drop impl");
 
         assert!(
             pinned_allocation.contains("pub(crate) fn copy_from_slice(&mut self, bytes: &[u8]) -> Result<(), BackendError>")

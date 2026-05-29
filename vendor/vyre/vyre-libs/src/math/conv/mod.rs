@@ -1,6 +1,6 @@
 //! 2D convolution sub-dialect.
 //!
-//! ROADMAP H3 — Im2col/direct-conv decision by shape and memory
+//! ROADMAP H3  -  Im2col/direct-conv decision by shape and memory
 //! budget. Substrate ships `conv2d_3x3_direct`: direct 2D
 //! convolution with a fixed 3x3 kernel and unit stride. Im2col
 //! variant + the shape-driven decision wrapper land beside this
@@ -28,7 +28,7 @@ pub use im2col::im2col_3x3;
 /// (vs `H·W` for the input), so it pays an extra `8·H·W·sizeof(f32)`
 /// of memory traffic. The matmul tile/vectorisation win recovers
 /// that cost once the per-pixel work amortises across enough output
-/// pixels — empirically the crossover is around 64x64 (4096
+/// pixels  -  empirically the crossover is around 64x64 (4096
 /// pixels). Below that threshold direct conv wins.
 ///
 /// Returns the same Program as `conv2d_3x3_direct(input, kernel,

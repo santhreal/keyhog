@@ -46,7 +46,7 @@ pub const MAX_OPAQUE_PAYLOAD_LEN: usize = MAX_ARGS * 1024;
 /// The limit is applied to the **shared** recursion counter in `Reader`
 /// that `Reader::node` and `Reader::expr` both increment on entry and
 /// decrement on exit. A hostile blob cannot evade the cap by alternating
-/// statement and expression nesting — every nested decode call, whether it
+/// statement and expression nesting  -  every nested decode call, whether it
 /// descends into a `Node::If`/`Loop`/`Block` body or into a nested
 /// [`Expr`] argument tree, counts against the same budget. Depth ≥
 /// `MAX_DECODE_DEPTH` is rejected with a `Fix:`-prefixed error before any
@@ -130,7 +130,7 @@ impl Program {
     /// Returns [`crate::error::Error::VersionMismatch`] when the
     /// payload advertises a schema version this runtime does not
     /// understand. Returns [`crate::error::Error::WireFormatValidation`]
-    /// for any other decode failure — truncated bytes, unknown enum
+    /// for any other decode failure  -  truncated bytes, unknown enum
     /// tag, integrity digest mismatch, or malformed structural
     /// section.
     #[inline]
@@ -253,7 +253,7 @@ mod tests {
     /// the encode/decode walk down a `MAX_DECODE_DEPTH + 1`-deep Block
     /// tree uses ~3–4× the native frames the default 2 MiB test stack
     /// allocates. Without the explicit stack, the test itself
-    /// stack-overflows before the decode guard ever fires — masking
+    /// stack-overflows before the decode guard ever fires  -  masking
     /// the real assertion.
     #[test]
     pub(crate) fn decode_depth_cap_rejects_deeply_nested_blocks() {

@@ -1,4 +1,4 @@
-//! `interpreter.bytecode.dispatch.10m` — Threaded bytecode interpreter.
+//! `interpreter.bytecode.dispatch.10m`  -  Threaded bytecode interpreter.
 //!
 //! Executes a 10M-instruction trace of a simple stack-based bytecode VM.
 //! GPU kernel interprets opcodes in parallel over independent program instances.
@@ -14,7 +14,7 @@ use crate::api::case::{
 };
 use crate::api::metric::BenchMetrics;
 use crate::api::suite::SuiteKind;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// Number of independent program instances to run in parallel.
@@ -101,16 +101,16 @@ impl BenchCase for BytecodeDispatch {
         // Generate random instruction trace
         let mut instrs = vec![0u32; TOTAL_INSTRS as usize];
         for instr in &mut instrs {
-            let op = rng.gen_range(0..5u32);
+            let op = rng.random_range(0..5u32);
             let imm = if op == OP_PUSH {
-                rng.gen_range(1..256u32)
+                rng.random_range(1..256u32)
             } else {
                 0
             };
             *instr = op | (imm << 8);
         }
 
-        let instrs_bytes: Vec<u8> = instrs.iter().flat_map(|i| i.to_le_bytes()).collect();
+        let instrs_bytes = vyre_primitives::wire::pack_u32_slice(&instrs);
         let inputs = vec![instrs_bytes];
 
         // GPU dispatch
@@ -153,7 +153,7 @@ impl BenchCase for BytecodeDispatch {
 fn bytecode_program(instance_count: u32, instrs_per_instance: u32) -> Program {
     let total_instrs = instance_count
         .checked_mul(instrs_per_instance)
-        .expect("bytecode benchmark dimensions must fit u32");
+        .expect("Fix: bytecode benchmark dimensions must fit u32");
     Program::wrapped(
         vec![
             BufferDecl::storage("instrs", 0, BufferAccess::ReadOnly, DataType::U32)
@@ -237,7 +237,7 @@ fn bytecode_program(instance_count: u32, instrs_per_instance: u32) -> Program {
     )
 }
 
-/// CPU interpreter — processes bytecode with a simple switch loop.
+/// CPU interpreter  -  processes bytecode with a simple switch loop.
 fn cpu_interpret(instrs: &[u32], instances: usize, instrs_per: usize) -> Vec<u8> {
     let mut results = vec![0u32; instances];
     for instance in 0..instances {
@@ -284,7 +284,7 @@ fn cpu_interpret(instrs: &[u32], instances: usize, instrs_per: usize) -> Vec<u8>
         }
         results[instance] = s[0];
     }
-    results.iter().flat_map(|r| r.to_le_bytes()).collect()
+    vyre_primitives::wire::pack_u32_slice(&results)
 }
 
 inventory::submit! {
@@ -319,11 +319,11 @@ mod tests {
             OP_SWAP,
             OP_MUL,
         ];
-        let inputs = vec![instrs.iter().flat_map(|i| i.to_le_bytes()).collect()];
+        let inputs = vec![vyre_primitives::wire::pack_u32_slice(&instrs)];
         let program = bytecode_program(1, instrs.len() as u32);
         let outputs = vyre_driver_reference::CpuRefBackend
             .dispatch(&program, &inputs, &DispatchConfig::default())
-            .expect("cpu-ref bytecode VM dispatch must succeed");
+            .expect("Fix: cpu-ref bytecode VM dispatch must succeed");
         let expected = cpu_interpret(&instrs, 1, instrs.len());
 
         assert_eq!(
@@ -337,12 +337,12 @@ mod tests {
     fn bytecode_program_wgpu_matches_seeded_cpu_trace() {
         let instrs = stack_carrier_snapshot_instrs();
         let backend = vyre_driver_wgpu::WgpuBackend::new()
-            .expect("wgpu backend must initialize on the release GPU machine");
-        let inputs = vec![instrs.iter().flat_map(|i| i.to_le_bytes()).collect()];
+            .expect("Fix: wgpu backend must initialize on the release GPU machine");
+        let inputs = vec![vyre_primitives::wire::pack_u32_slice(&instrs)];
         let program = bytecode_program(1, instrs.len() as u32);
         let outputs = backend
             .dispatch(&program, &inputs, &DispatchConfig::default())
-            .expect("wgpu bytecode VM dispatch must succeed");
+            .expect("Fix: wgpu bytecode VM dispatch must succeed");
         let expected = cpu_interpret(&instrs, 1, instrs.len());
 
         assert_eq!(
@@ -356,12 +356,12 @@ mod tests {
     fn bytecode_program_cuda_matches_seeded_cpu_trace() {
         let instrs = stack_carrier_snapshot_instrs();
         let backend = vyre_driver_cuda::CudaBackend::acquire()
-            .expect("CUDA backend must initialize on the release GPU machine");
-        let inputs = vec![instrs.iter().flat_map(|i| i.to_le_bytes()).collect()];
+            .expect("Fix: CUDA backend must initialize on the release GPU machine");
+        let inputs = vec![vyre_primitives::wire::pack_u32_slice(&instrs)];
         let program = bytecode_program(1, instrs.len() as u32);
         let outputs = backend
             .dispatch(&program, &inputs, &DispatchConfig::default())
-            .expect("CUDA bytecode VM dispatch must succeed");
+            .expect("Fix: CUDA bytecode VM dispatch must succeed");
         let expected = cpu_interpret(&instrs, 1, instrs.len());
 
         assert_eq!(

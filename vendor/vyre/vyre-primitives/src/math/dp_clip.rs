@@ -79,7 +79,14 @@ pub fn dp_clip_per_sample(
         );
     }
 
-    let cells = b * d;
+    let Some(cells) = b.checked_mul(d) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            clipped,
+            DataType::U32,
+            format!("Fix: dp_clip_per_sample b*d overflows u32: b={b}, d={d}."),
+        );
+    };
     let t = Expr::InvocationId { axis: 0 };
     let i_expr = Expr::div(t.clone(), Expr::u32(d));
 
@@ -87,7 +94,7 @@ pub fn dp_clip_per_sample(
     let n = Expr::load(norms, i_expr);
     let c = Expr::load(clip_norm, Expr::u32(0));
 
-    // safe_norm = max(n, 1) — avoid divide-by-zero.
+    // safe_norm = max(n, 1)  -  avoid divide-by-zero.
     let safe_norm = Expr::select(Expr::eq(n.clone(), Expr::u32(0)), Expr::u32(1), n.clone());
 
     // scale = min(C, n)  → fixed-point
@@ -128,10 +135,67 @@ pub fn dp_clip_per_sample_cpu(
     b: u32,
     d: u32,
 ) -> Vec<f64> {
-    let b = b as usize;
-    let d = d as usize;
+    let mut out = Vec::new();
+    try_dp_clip_per_sample_cpu_into(grads, norms, clip_norm, b, d, &mut out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - dp_clip_per_sample_cpu failed: invalid batch/dimension shape");
+    out
+}
 
-    let mut out = vec![0.0; b * d];
+/// Fallible CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_dp_clip_per_sample_cpu(
+    grads: &[f64],
+    norms: &[f64],
+    clip_norm: f64,
+    b: u32,
+    d: u32,
+) -> Result<Vec<f64>, String> {
+    let mut out = Vec::new();
+    try_dp_clip_per_sample_cpu_into(grads, norms, clip_norm, b, d, &mut out)?;
+    Ok(out)
+}
+
+/// CPU reference into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn dp_clip_per_sample_cpu_into(
+    grads: &[f64],
+    norms: &[f64],
+    clip_norm: f64,
+    b: u32,
+    d: u32,
+    out: &mut Vec<f64>,
+) {
+    try_dp_clip_per_sample_cpu_into(grads, norms, clip_norm, b, d, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - dp_clip_per_sample_cpu_into failed: invalid batch/dimension shape");
+}
+
+/// Fallible CPU reference into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_dp_clip_per_sample_cpu_into(
+    grads: &[f64],
+    norms: &[f64],
+    clip_norm: f64,
+    b: u32,
+    d: u32,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    let b = usize::try_from(b)
+        .map_err(|_| format!("dp_clip_per_sample CPU oracle b={b} does not fit usize."))?;
+    let d = usize::try_from(d)
+        .map_err(|_| format!("dp_clip_per_sample CPU oracle d={d} does not fit usize."))?;
+    let cells = b.checked_mul(d).ok_or_else(|| {
+        format!("dp_clip_per_sample CPU oracle b*d overflows usize: b={b}, d={d}.")
+    })?;
+    if cells > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            cells - out.len(),
+            "DP clip CPU oracle",
+            "clipped output",
+        )?;
+    }
+    out.clear();
+    out.resize(cells, 0.0);
     for i in 0..b {
         let n = norms.get(i).copied().unwrap_or(0.0);
         let factor = if n > clip_norm { clip_norm / n } else { 1.0 };
@@ -140,7 +204,7 @@ pub fn dp_clip_per_sample_cpu(
             out[addr] = grads.get(addr).copied().unwrap_or(0.0) * factor;
         }
     }
-    out
+    Ok(())
 }
 
 #[cfg(test)]
@@ -205,6 +269,51 @@ mod tests {
     }
 
     #[test]
+    fn cpu_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(8);
+        out.extend([99.0; 8]);
+        let ptr = out.as_ptr();
+
+        try_dp_clip_per_sample_cpu_into(&[3.0, 4.0], &[5.0], 1.0, 1, 2, &mut out).unwrap();
+
+        assert_eq!(out.len(), 2);
+        assert!(approx_eq(out[0], 0.6));
+        assert!(approx_eq(out[1], 0.8));
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_cpu_clip_matches_independent_reference() {
+        for case in 0..72 {
+            let b = 1 + (case % 5);
+            let d = 1 + (case % 7);
+            let cells = (b * d) as usize;
+            let grads: Vec<f64> = (0..cells).map(|idx| idx as f64 * 0.125 - 1.0).collect();
+            let norms: Vec<f64> = (0..b)
+                .map(|idx| 0.25 + (idx + case) as f64 * 0.125)
+                .collect();
+            let clip_norm = 0.5 + (case % 4) as f64 * 0.25;
+            let mut out = Vec::with_capacity(cells + 3);
+
+            try_dp_clip_per_sample_cpu_into(&grads, &norms, clip_norm, b, d, &mut out).unwrap();
+
+            for i in 0..b as usize {
+                let n = norms[i];
+                let factor = if n > clip_norm { clip_norm / n } else { 1.0 };
+                for j in 0..d as usize {
+                    let addr = i * d as usize + j;
+                    let expected = grads[addr] * factor;
+                    assert!(
+                        approx_eq(out[addr], expected),
+                        "case {case} addr {addr}: expected {expected}, got {}",
+                        out[addr]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn ir_program_buffer_layout() {
         let p = dp_clip_per_sample("g", "n", "c", "out", 4, 8);
         assert_eq!(p.workgroup_size, [256, 1, 1]);
@@ -225,6 +334,12 @@ mod tests {
     #[test]
     fn zero_d_traps() {
         let p = dp_clip_per_sample("g", "n", "c", "o", 1, 0);
+        assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn cell_count_overflow_traps() {
+        let p = dp_clip_per_sample("g", "n", "c", "o", u32::MAX, 2);
         assert!(p.stats().trap());
     }
 }

@@ -5,6 +5,9 @@ use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
 use vyre_foundation::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use crate::math::dot_partial::{dot_partial, OP_ID as DOT_PARTIAL_OP_ID};
+use crate::nn::attention_stability::{
+    bounded_exp_arg, bounded_score, finite_or, flush_tiny, positive_denominator,
+};
 
 /// Stable op id for the max-score pass.
 pub const ATTENTION_MAX_PASS_OP_ID: &str = "vyre-primitives::nn::attention_max_pass";
@@ -12,43 +15,6 @@ pub const ATTENTION_MAX_PASS_OP_ID: &str = "vyre-primitives::nn::attention_max_p
 pub const ATTENTION_SUM_PASS_OP_ID: &str = "vyre-primitives::nn::attention_sum_pass";
 /// Stable op id for the weighted-value write pass.
 pub const ATTENTION_WRITE_PASS_OP_ID: &str = "vyre-primitives::nn::attention_write_pass";
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn bounded_exp_arg(value: Expr) -> Expr {
-    let finite = finite_or(value, Expr::f32(-80.0));
-    let upper_bounded = Expr::select(
-        Expr::gt(finite.clone(), Expr::f32(0.0)),
-        Expr::f32(0.0),
-        finite,
-    );
-    Expr::select(
-        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
-        Expr::f32(-80.0),
-        upper_bounded,
-    )
-}
-
-fn positive_denominator(value: Expr) -> Expr {
-    Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value,
-        Expr::f32(f32::MIN_POSITIVE),
-    )
-}
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 fn direct_score_expr(q: &str, k: &str, row: u32, col: u32, d: u32, scale_expr: Expr) -> Expr {
     let mut dot = Expr::f32(0.0);
@@ -61,7 +27,7 @@ fn direct_score_expr(q: &str, k: &str, row: u32, col: u32, d: u32, scale_expr: E
             ),
         );
     }
-    Expr::mul(dot, scale_expr)
+    bounded_score(Expr::mul(dot, scale_expr))
 }
 
 /// Emit the attention max-reduction pass for one query row `i`.
@@ -87,7 +53,10 @@ pub fn attention_max_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) ->
                     Expr::mul(Expr::var("j"), Expr::u32(d)),
                     d,
                 ),
-                Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
+                Node::let_bind(
+                    "score",
+                    bounded_score(Expr::mul(Expr::var("dot_val"), scale_expr)),
+                ),
                 Node::let_bind(
                     "finite_score",
                     finite_or(Expr::var("score"), Expr::f32(f32::MIN)),
@@ -181,7 +150,10 @@ pub fn attention_sum_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) ->
                     Expr::mul(Expr::var("j"), Expr::u32(d)),
                     d,
                 ),
-                Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
+                Node::let_bind(
+                    "score",
+                    bounded_score(Expr::mul(Expr::var("dot_val"), scale_expr)),
+                ),
                 Node::let_bind(
                     "exp_arg",
                     bounded_exp_arg(Expr::sub(Expr::var("score"), Expr::var("max_val"))),
@@ -302,7 +274,10 @@ pub fn attention_write_pass(
                             Expr::mul(Expr::var("j"), Expr::u32(d)),
                             d,
                         ),
-                        Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
+                        Node::let_bind(
+                            "score",
+                            bounded_score(Expr::mul(Expr::var("dot_val"), scale_expr)),
+                        ),
                         Node::let_bind(
                             "exp_arg",
                             bounded_exp_arg(Expr::sub(Expr::var("score"), Expr::var("max_val"))),
@@ -454,8 +429,7 @@ inventory::submit! {
         ATTENTION_MAX_PASS_OP_ID,
         || attention_max_pass_program("q", "k", "out", 2, 2),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32_bytes(&[0.0, 0.0]),
                 to_f32_bytes(&[1.0, 0.0, 2.0, 0.0]),
@@ -463,8 +437,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![to_f32_bytes(&[0.0])]]
         }),
     )
@@ -476,8 +449,7 @@ inventory::submit! {
         ATTENTION_SUM_PASS_OP_ID,
         || attention_sum_pass_program("q", "k", "max", "out", 2, 2),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32_bytes(&[0.0, 0.0]),
                 to_f32_bytes(&[1.0, 0.0, 2.0, 0.0]),
@@ -486,8 +458,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![to_f32_bytes(&[2.0])]]
         }),
     )
@@ -510,8 +481,7 @@ inventory::submit! {
             })
         },
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32_bytes(&[0.0]),
                 to_f32_bytes(&[1.0, 1.0]),
@@ -522,8 +492,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![to_f32_bytes(&[20.0])]]
         }),
     )

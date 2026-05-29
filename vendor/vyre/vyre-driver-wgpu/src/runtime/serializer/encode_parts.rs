@@ -12,7 +12,7 @@ pub(crate) const MAX_PART_COUNT: usize = 1_048_576;
 /// Maximum size of one serialized part accepted by the runtime framing layer.
 ///
 /// I10: this rejects a single oversized part before total frame sizing and
-/// `Vec::with_capacity(total)`. The 256 MiB cap matches bounded GPU payload
+/// fallible output reservation. The 256 MiB cap matches bounded GPU payload
 /// staging and keeps malformed frames from driving unbounded host allocation.
 /// Prevents OOM by capping memory used during serialization.
 pub const MAX_SERIALIZED_PART_BYTES: usize = 256 * 1024 * 1024;
@@ -67,7 +67,8 @@ pub fn encode_parts(parts: &[&[u8]]) -> Result<Vec<u8>> {
     let total = MAGIC.len().checked_add(payload_len).ok_or_else(|| Error::Serialization {
         message: "SerializationOverflow: framed output size calculation overflow. Fix: split the payload into smaller encode_parts calls.".to_string(),
     })?;
-    let mut out = Vec::with_capacity(total);
+    let mut out = Vec::new();
+    reserve_encoded_frame(&mut out, total)?;
     out.extend_from_slice(&MAGIC);
     for part in parts {
         let len = u64::try_from(part.len()).map_err(|source| Error::Serialization {
@@ -77,4 +78,48 @@ pub fn encode_parts(parts: &[&[u8]]) -> Result<Vec<u8>> {
         out.extend_from_slice(part);
     }
     Ok(out)
+}
+
+fn reserve_encoded_frame(out: &mut Vec<u8>, total: usize) -> Result<()> {
+    out.try_reserve_exact(total).map_err(|source| Error::Serialization {
+        message: format!(
+            "could not reserve {total} encoded frame bytes exactly: {source}. Fix: split the payload into smaller encode_parts calls."
+        ),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_parts_uses_fallible_exact_reservation() {
+        let production = include_str!("encode_parts.rs")
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: serializer encoder production section should precede tests");
+
+        assert!(
+            !production.contains("Vec::with_capacity"),
+            "Fix: encode_parts must not use infallible frame allocation."
+        );
+        assert!(
+            production.contains("try_reserve_exact(total)"),
+            "Fix: encode_parts should reserve the validated frame length fallibly before appending."
+        );
+    }
+
+    #[test]
+    fn encode_parts_capacity_matches_validated_frame_size() {
+        let parts = [b"abc".as_slice(), b"defgh".as_slice()];
+        let encoded = encode_parts(&parts).expect("Fix: small frame should encode");
+        let expected = MAGIC.len() + 8 + 3 + 8 + 5;
+
+        assert_eq!(encoded.len(), expected);
+        assert_eq!(
+            encoded.capacity(),
+            expected,
+            "Fix: encode_parts should reserve exactly the validated frame length."
+        );
+    }
 }

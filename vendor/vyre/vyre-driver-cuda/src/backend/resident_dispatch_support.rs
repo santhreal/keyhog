@@ -1,11 +1,15 @@
 //! Shared resident-dispatch contracts and checked accounting helpers.
 
 use smallvec::SmallVec;
+use vyre_driver::transfer_accounting::TransferAccountingPolicy;
 use vyre_driver::{BackendError, DispatchConfig};
 use vyre_foundation::ir::Program;
 
 use super::output_range::CudaOutputReadback;
 use super::resident::CudaResidentBuffer;
+
+const CUDA_RESIDENT_DISPATCH_ACCOUNTING: TransferAccountingPolicy =
+    TransferAccountingPolicy::new("CUDA resident", "split the resident dispatch");
 
 pub(crate) struct CudaResidentDispatchStep<'a> {
     pub(crate) program: &'a Program,
@@ -30,11 +34,7 @@ pub(crate) fn checked_resident_dispatch_capacity_mul(
     rhs: usize,
     label: &str,
 ) -> Result<usize, BackendError> {
-    lhs.checked_mul(rhs).ok_or_else(|| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA resident {label} capacity overflowed usize for {lhs} x {rhs}; split the resident batch."
-        ),
-    })
+    CUDA_RESIDENT_DISPATCH_ACCOUNTING.mul_usize_capacity(lhs, rhs, label)
 }
 
 pub(crate) fn checked_resident_dispatch_capacity_add(
@@ -42,11 +42,7 @@ pub(crate) fn checked_resident_dispatch_capacity_add(
     rhs: usize,
     label: &str,
 ) -> Result<usize, BackendError> {
-    lhs.checked_add(rhs).ok_or_else(|| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA resident {label} capacity overflowed usize for {lhs} + {rhs}; split the resident sequence."
-        ),
-    })
+    CUDA_RESIDENT_DISPATCH_ACCOUNTING.add_usize_capacity(lhs, rhs, label)
 }
 
 pub(crate) fn add_resident_dispatch_bytes(
@@ -54,45 +50,19 @@ pub(crate) fn add_resident_dispatch_bytes(
     bytes: usize,
     label: &str,
 ) -> Result<(), BackendError> {
-    let bytes = u64::try_from(bytes).map_err(|_| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA resident {label} byte count exceeds u64; split the resident dispatch."
-        ),
-    })?;
-    *total = total
-        .checked_add(bytes)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA resident {label} byte accounting overflowed u64; split the resident dispatch."
-            ),
-        })?;
-    Ok(())
+    CUDA_RESIDENT_DISPATCH_ACCOUNTING.add_bytes(total, bytes, label)
 }
 
 pub(crate) fn add_resident_dispatch_usize_count(
     total: &mut usize,
     label: &str,
 ) -> Result<(), BackendError> {
-    *total = total
-        .checked_add(1)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA resident {label} count overflowed usize; split the resident dispatch."
-            ),
-        })?;
-    Ok(())
+    CUDA_RESIDENT_DISPATCH_ACCOUNTING.add_usize_counter(total, 1, label, "count")
 }
 
 pub(crate) fn add_resident_dispatch_u64_count(
     total: &mut u64,
     label: &str,
 ) -> Result<(), BackendError> {
-    *total = total
-        .checked_add(1)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA resident {label} operation count overflowed u64; split the resident dispatch."
-            ),
-        })?;
-    Ok(())
+    CUDA_RESIDENT_DISPATCH_ACCOUNTING.add_u64_counter(total, 1, label, "operation count")
 }

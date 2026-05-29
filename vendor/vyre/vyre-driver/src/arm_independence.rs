@@ -4,13 +4,13 @@
 //! portable queues if and only if their writes are disjoint and neither
 //! reads what the other writes. The dispatcher uses this to fan out
 //! N concurrent stream submissions instead of serialising on one
-//! queue — wins on backends with multiple async-engine count > 1
+//! queue  -  wins on backends with multiple async-engine count > 1
 //! (every modern discrete GPU + every portable adapter).
 //!
 //! This module owns the *decision*: given two `BindingPlan`s
 //! (or any structure that names input/output binding slots), are
 //! they safe to dispatch concurrently? Pure analysis, no Program
-//! walking — the caller passes the already-derived input/output
+//! walking  -  the caller passes the already-derived input/output
 //! sets.
 
 use smallvec::SmallVec;
@@ -106,7 +106,7 @@ pub enum ArmIndependenceVerdict {
     /// would race on concurrent dispatch. Caller must serialise
     /// (single stream, or stream A then sync then stream B).
     SerializeRequired {
-        /// Why serialisation is required — names the offending
+        /// Why serialisation is required  -  names the offending
         /// access pattern so telemetry and diagnostics can attribute
         /// the missed concurrency.
         reason: ArmConflict,
@@ -116,21 +116,21 @@ pub enum ArmIndependenceVerdict {
 /// Reason two arms cannot launch concurrently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArmConflict {
-    /// Both arms write the same slot — the second write would race
+    /// Both arms write the same slot  -  the second write would race
     /// with the first.
     WriteWriteConflict,
-    /// Arm A writes a slot that arm B reads — read-after-write.
+    /// Arm A writes a slot that arm B reads  -  read-after-write.
     /// B would see either the old or new value depending on stream
     /// order; observable nondeterminism.
     ReadAfterWrite,
-    /// Arm A reads a slot that arm B writes — write-after-read.
+    /// Arm A reads a slot that arm B writes  -  write-after-read.
     /// Symmetric of the above; equally observable.
     WriteAfterRead,
 }
 
 /// Decide whether two arms (described by their `ArmBindingSummary`s)
 /// can dispatch concurrently on independent streams. Pure set
-/// arithmetic — no IR walk, no Program clone, and no heap allocation
+/// arithmetic  -  no IR walk, no Program clone, and no heap allocation
 /// for the common <= 8 binding-slot case.
 ///
 /// Read-only ↔ read-only on the same slot is always safe and does
@@ -193,7 +193,7 @@ mod tests {
     fn shared_read_only_slot_is_independent() {
         let a = summary(&[7], &[1]);
         let b = summary(&[7], &[2]);
-        // Both READ slot 7; neither writes it — no race.
+        // Both READ slot 7; neither writes it  -  no race.
         assert_eq!(
             can_dispatch_concurrently(&a, &b),
             ArmIndependenceVerdict::Independent

@@ -71,14 +71,32 @@ impl<K> LruIndex<K> {
     where
         I: IntoIterator<Item = (K, u64)>,
     {
-        if self.heap.len() <= live_entries.saturating_mul(4).max(8) {
+        let Some(compaction_threshold) = live_entries.checked_mul(4).map(|value| value.max(8))
+        else {
+            tracing::error!(
+                "vyre-libs gpu preprocessor LRU index live-entry count {live_entries} overflowed compaction threshold. Fix: shard process-local preprocessor caches."
+            );
+            return;
+        };
+        if self.heap.len() <= compaction_threshold {
             return;
         }
-        self.heap.clear();
-        self.heap.reserve(live_entries);
-        for (key, last_access) in entries {
-            self.record(key, last_access);
+        let mut compacted = BinaryHeap::new();
+        if let Err(error) = compacted.try_reserve(live_entries) {
+            tracing::error!(
+                "vyre-libs gpu preprocessor LRU index could not reserve {live_entries} compacted entries: {error:?}. Fix: shard process-local preprocessor caches."
+            );
+            return;
         }
+        for (key, last_access) in entries {
+            let serial = self.next_serial();
+            compacted.push(Reverse(LruTouch {
+                last_access,
+                serial,
+                key,
+            }));
+        }
+        self.heap = compacted;
     }
 
     #[cfg(test)]

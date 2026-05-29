@@ -1,11 +1,11 @@
 //! Vyre IR Region tree as a string diagram (#53 self-consumer).
 //!
-//! Closes the recursion thesis for #53 — string-diagram tensor
+//! Closes the recursion thesis for #53  -  string-diagram tensor
 //! compilation ships to user dialects (quantum circuits, monoidal
 //! tensor networks, ZX-calculus) AND IS the substrate semantics for
 //! vyre's IR.
 //!
-//! # The legendary self-use
+//! # The release self-use
 //!
 //! Selinger's (2010) string diagrams are the visual + algebraic
 //! language of monoidal categories. Each diagram is built from:
@@ -21,7 +21,7 @@
 //! Vyre's Region tree IS a string diagram in
 //! `Cat(GPU buffers, Programs)`. Making this explicit means every
 //! optimizer rewrite (region_inline, fusion, fission) is a
-//! string-diagram rewrite — the equational laws of monoidal
+//! string-diagram rewrite  -  the equational laws of monoidal
 //! categories give us free correctness proofs.
 //!
 //! # Concrete payoffs
@@ -40,7 +40,7 @@
 //!
 //! # Algorithm
 //!
-//! `monoidal_compose(f, g)` is sequential composition `g ∘ f` —
+//! `monoidal_compose(f, g)` is sequential composition `g ∘ f`  -
 //! exactly the matrix-product semantics over the buffer-passing
 //! contract between two Regions. For 0.6 we ship the per-arrow
 //! composition step. The full ZX-calculus rewrite engine ships in
@@ -232,7 +232,7 @@ pub fn compose_ir_arrows_fixed_via_with_scratch_into(
 }
 
 /// Identity arrow on dimension `n`. Composes with any arrow as the
-/// identity — `id ∘ f = f` and `f ∘ id = f`.
+/// identity  -  `id ∘ f = f` and `f ∘ id = f`.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn identity_arrow(n: u32) -> Vec<f64> {
@@ -388,8 +388,8 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 2);
-            let f = read_u32s(&inputs[0]);
-            let g = read_u32s(&inputs[1]);
+            let f = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let g = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
             assert_eq!(f.len(), 4);
             assert_eq!(g.len(), 4);
             let mut out = vec![0u32; 4];
@@ -457,10 +457,10 @@ mod tests {
         let source = include_str!("string_diagram_ir_rewrite.rs");
         let start = source
             .find("pub fn compose_ir_arrows_fixed_via")
-            .expect("fixed path marker must exist");
+            .expect("Fix: fixed path marker must exist");
         let end = source
             .find("\n/// Identity arrow on dimension")
-            .expect("test-only CPU path marker must exist");
+            .expect("Fix: test-only CPU path marker must exist");
         let release_path = &source[start..end];
         assert!(!release_path.contains("_cpu"));
         assert!(!release_path.contains("reference_"));
@@ -473,12 +473,5 @@ mod tests {
             compose_ir_arrows_fixed_via(&ComposeDispatcher, &[1, 2, 3], &[1, 2, 3, 4], 2, 2, 2)
                 .unwrap_err();
         assert!(matches!(err, DispatchError::BadInputs(_)));
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 }

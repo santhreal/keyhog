@@ -1,7 +1,7 @@
 //! Common-subexpression detection on `KernelDescriptor`.
 //!
-//! Detects pairs of ops that compute the same value — same `KernelOpKind`,
-//! same operand list — and could share a single result instead of
+//! Detects pairs of ops that compute the same value  -  same `KernelOpKind`,
+//! same operand list  -  and could share a single result instead of
 //! recomputing.
 //!
 //! Returns groups of equivalent ops. The descriptor CSE rewrite picks a
@@ -101,7 +101,7 @@ fn walk_ops(body: &KernelBody, buckets: &mut FxHashMap<OpKey, Vec<usize>>, next_
         let op_index = *next_index;
         *next_index = next_index.saturating_add(1);
         // Side-effect ops (stores, barriers, etc.) are NEVER candidates
-        // for CSE — repeating them is the user's intent, not redundancy.
+        // for CSE  -  repeating them is the user's intent, not redundancy.
         if !is_eligible(&op.kind) {
             continue;
         }
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn store_ops_not_grouped_even_if_identical() {
-        // Two identical stores must NOT be CSE'd — they're side effects.
+        // Two identical stores must NOT be CSE'd  -  they're side effects.
         use crate::{BindingSlot, BindingVisibility, MemoryClass};
         use vyre_foundation::ir::DataType;
         let desc = KernelDescriptor {
@@ -448,6 +448,7 @@ mod tests {
                         kind: KernelOpKind::Literal,
                         operands: vec![0],
                         result: Some(2),
+
                     },
                 ],
                 child_bodies: vec![],
@@ -551,3 +552,4 @@ mod tests {
         assert!(shallow.groups.is_empty());
     }
 }
+

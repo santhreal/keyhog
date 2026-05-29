@@ -317,7 +317,14 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     slice.map_async(wgpu::MapMode::Read, move |result| {
         let _ = sender.send(result);
     });
-    device.poll(wgpu::Maintain::Wait);
+    // wgpu 25 replaced `Maintain::Wait` (infallible) with `PollType::Wait`
+    // returning `Result<PollStatus, PollError>`. A poll error here means the
+    // device was lost or the wait timed out, so the map callback below would
+    // never fire — surface it and fall back to CPU MoE rather than block.
+    if let Err(error) = device.poll(wgpu::PollType::Wait) {
+        tracing::warn!(?error, "GPU MoE device.poll() failed; falling back to CPU MoE for this scan");
+        return None;
+    }
 
     // GPU MoE staging-buffer read. The double `.ok()?` here used
     // to swallow BOTH the channel `recv` failure (the wgpu callback

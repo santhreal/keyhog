@@ -224,7 +224,7 @@ pub fn validate_gpu_probe_artifacts(
         (
             hidden_fallback_workspace_test,
             "Dataflow sibling production scan root",
-            concat!("../../../dataflow/", "we", "ir/src"),
+            "workspace.join(\"../../../dataflow\")",
         ),
         (
             hidden_fallback_workspace_test,
@@ -273,8 +273,8 @@ pub fn validate_gpu_probe_artifacts(
         ),
         (
             wgpu_dispatch_no_fallback_test,
-            "dispatch never CPU fallback contract",
-            "Dispatch-level CPU fallback rejection tests",
+            "dispatch rejects CPU demotion contract",
+            "Dispatch-level CPU demotion rejection tests",
         ),
         (
             wgpu_dispatch_no_fallback_test,
@@ -385,7 +385,7 @@ mod tests {
             gpu_discovered: true,
             skipped: false,
         }])
-        .expect("discovered GPU record should pass");
+        .expect("Fix: discovered GPU record should pass");
 
         assert_eq!(proof.record_count, 1);
         assert_eq!(proof.discovered_count, 1);
@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn gpu_probe_contract_accepts_committed_loud_probe_artifacts() {
         let proof = committed_artifact_proof()
-            .expect("committed GPU probe/fallback artifacts should prove loud probe behavior");
+            .expect("Fix: committed GPU probe/fallback artifacts should prove loud probe behavior");
 
         assert_eq!(proof.artifact_count, 7);
         assert!(proof.fix_diagnostic_count >= 40);
@@ -451,7 +451,7 @@ mod tests {
                 include_str!("../../../vyre-driver-cuda/tests/capability_contracts.rs"),
                 include_str!("../../../vyre-driver-wgpu/tests/no_cpu_fallback.rs"),
                 include_str!("../../../vyre-driver-wgpu/tests/dispatch_never_cpu_fallback.rs"),
-                include_str!("../release/release_validation_matrix.rs"),
+                include_str!("../integration/release/release_validation_matrix.rs"),
             )
             .expect_err("missing live nvidia-smi probe must fail"),
             GpuProbeContractError::ArtifactMissingEvidence {
@@ -476,7 +476,7 @@ mod tests {
                 &cuda_capability_contracts,
                 include_str!("../../../vyre-driver-wgpu/tests/no_cpu_fallback.rs"),
                 include_str!("../../../vyre-driver-wgpu/tests/dispatch_never_cpu_fallback.rs"),
-                include_str!("../release/release_validation_matrix.rs"),
+                include_str!("../integration/release/release_validation_matrix.rs"),
             )
             .expect_err("missing CUDA preferred backend proof must fail"),
             GpuProbeContractError::ArtifactMissingEvidence {
@@ -493,7 +493,7 @@ mod tests {
             include_str!("../../../vyre-driver-cuda/tests/capability_contracts.rs"),
             include_str!("../../../vyre-driver-wgpu/tests/no_cpu_fallback.rs"),
             include_str!("../../../vyre-driver-wgpu/tests/dispatch_never_cpu_fallback.rs"),
-            include_str!("../release/release_validation_matrix.rs"),
+            include_str!("../integration/release/release_validation_matrix.rs"),
         )
     }
 }

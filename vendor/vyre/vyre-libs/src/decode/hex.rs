@@ -1,10 +1,17 @@
 //! GPU hex decode composition.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+#[cfg(test)]
+use vyre_primitives::decode::hex::hex_decode_reference_packed;
+use vyre_primitives::decode::hex::{
+    hex_decode_child, hex_decode_pair_expr, hex_decoded_capacity, HEX_DECODE_TABLE_WORDS,
+    HEX_WORKGROUP_SIZE,
+};
+pub use vyre_primitives::decode::hex::{hex_decode_table, hex_decode_table_ref};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
-use crate::buffer_names::scoped_generic_name;
+use crate::decode::buffers::{scoped_decode_input_buffer, scoped_decoded_output_buffer};
 use crate::decode::scan::tiled_decode_aho_scan_body;
 use crate::region::wrap_anonymous;
 
@@ -14,68 +21,7 @@ const FAMILY_PREFIX: &str = "decode_hex";
 /// Fixed buffer name carrying the ASCII hex decode lookup table.
 pub const HEX_DECODE_TABLE_BUFFER: &str = "__vyre_decode_hex_table";
 
-fn scoped_input_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
-}
-
-fn scoped_output_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "decoded", name, &["decoded", "output"])
-}
-
-fn pack_words(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
-}
-
-/// Return the canonical 256-entry ASCII hex decode table.
-#[must_use]
-pub fn hex_decode_table() -> [u32; 256] {
-    let mut table = [0u32; 256];
-    let mut byte = b'0';
-    while byte <= b'9' {
-        table[byte as usize] = u32::from(byte - b'0');
-        byte += 1;
-    }
-    byte = b'A';
-    while byte <= b'F' {
-        table[byte as usize] = u32::from(byte - b'A' + 10);
-        byte += 1;
-    }
-    byte = b'a';
-    while byte <= b'f' {
-        table[byte as usize] = u32::from(byte - b'a' + 10);
-        byte += 1;
-    }
-    table
-}
-
-fn nibble_expr(byte: Expr, table: &str) -> Expr {
-    Expr::load(table, Expr::bitand(byte, Expr::u32(0xFF)))
-}
-
-fn decode_body(input: &str, output: &str, table: &str, input_len: u32) -> Vec<Node> {
-    let output_len = input_len / 2;
-    vec![
-        Node::let_bind("pair", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(Expr::var("pair"), Expr::u32(output_len)),
-            vec![
-                Node::let_bind("in_base", Expr::mul(Expr::var("pair"), Expr::u32(2))),
-                Node::store(
-                    output,
-                    Expr::var("pair"),
-                    decode_pair_expr(input, table, Expr::var("pair")),
-                ),
-            ],
-        ),
-    ]
-}
-
-fn decode_pair_expr(input: &str, table: &str, pair: Expr) -> Expr {
-    let in_base = Expr::mul(pair, Expr::u32(2));
-    let hi = nibble_expr(Expr::load(input, in_base.clone()), table);
-    let lo = nibble_expr(Expr::load(input, Expr::add(in_base, Expr::u32(1))), table);
-    Expr::bitor(Expr::shl(hi, Expr::u32(4)), lo)
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_words;
 
 /// Build a Program that decodes ASCII hex bytes from `input` into `output`,
 /// storing one decoded byte per `u32` slot.
@@ -88,23 +34,30 @@ fn decode_pair_expr(input: &str, table: &str, pair: Expr) -> Expr {
 /// ```
 #[must_use]
 pub fn hex_decode(input: &str, output: &str, input_len: u32) -> Program {
-    let input = scoped_input_buffer(input);
-    let output = scoped_output_buffer(output);
-    let body = decode_body(&input, &output, HEX_DECODE_TABLE_BUFFER, input_len);
+    let input = scoped_decode_input_buffer(FAMILY_PREFIX, input);
+    let output = scoped_decoded_output_buffer(FAMILY_PREFIX, output);
+    let body = vec![hex_decode_child(
+        OP_ID,
+        &input,
+        &output,
+        HEX_DECODE_TABLE_BUFFER,
+        input_len,
+    )];
     Program::wrapped(
         vec![
             BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(input_len),
-            BufferDecl::output(&output, 1, DataType::U32).with_count(input_len / 2),
+            BufferDecl::output(&output, 1, DataType::U32)
+                .with_count(hex_decoded_capacity(input_len)),
             BufferDecl::storage(
                 HEX_DECODE_TABLE_BUFFER,
                 2,
                 BufferAccess::ReadOnly,
                 DataType::U32,
             )
-            .with_count(256),
+            .with_count(HEX_DECODE_TABLE_WORDS),
         ],
-        [64, 1, 1],
+        HEX_WORKGROUP_SIZE,
         vec![wrap_anonymous(OP_ID, body)],
     )
 }
@@ -137,16 +90,16 @@ pub fn hex_decode_then_aho_corasick(
     input_len: u32,
     state_count: u32,
 ) -> Program {
-    let input = scoped_input_buffer(input);
-    let decoded = scoped_output_buffer(decoded);
-    let decoded_len = input_len / 2;
+    let input = scoped_decode_input_buffer(FAMILY_PREFIX, input);
+    let decoded = scoped_decoded_output_buffer(FAMILY_PREFIX, decoded);
+    let decoded_len = hex_decoded_capacity(input_len);
     let body = tiled_decode_aho_scan_body(
         transitions,
         accept,
         matches,
         Expr::u32(decoded_len),
         64,
-        |pair| decode_pair_expr(&input, HEX_DECODE_TABLE_BUFFER, pair),
+        |pair| hex_decode_pair_expr(&input, HEX_DECODE_TABLE_BUFFER, pair),
         |pair, byte| Some(Node::store(&decoded, pair, byte)),
     );
     Program::wrapped(
@@ -165,33 +118,16 @@ pub fn hex_decode_then_aho_corasick(
                 BufferAccess::ReadOnly,
                 DataType::U32,
             )
-            .with_count(256),
+            .with_count(HEX_DECODE_TABLE_WORDS),
         ],
-        [64, 1, 1],
+        HEX_WORKGROUP_SIZE,
         vec![wrap_anonymous(FUSED_SCAN_OP_ID, body)],
     )
 }
 
 #[cfg(test)]
 fn cpu_ref(input: &[u8]) -> Vec<u32> {
-    input
-        .chunks_exact(2)
-        .map(|pair| {
-            let hi = match pair[0] {
-                b'0'..=b'9' => pair[0] - b'0',
-                b'A'..=b'F' => pair[0] - b'A' + 10,
-                b'a'..=b'f' => pair[0] - b'a' + 10,
-                _ => 0,
-            };
-            let lo = match pair[1] {
-                b'0'..=b'9' => pair[1] - b'0',
-                b'A'..=b'F' => pair[1] - b'A' + 10,
-                b'a'..=b'f' => pair[1] - b'a' + 10,
-                _ => 0,
-            };
-            u32::from((hi << 4) | lo)
-        })
-        .collect()
+    hex_decode_reference_packed(input)
 }
 
 fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
@@ -206,7 +142,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'E'),
             ]),
             pack_words(&[0, 0, 0]),
-            pack_words(&hex_decode_table()),
+            pack_words(hex_decode_table_ref()),
         ],
         vec![
             pack_words(&[
@@ -218,7 +154,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'A'),
             ]),
             pack_words(&[0, 0, 0]),
-            pack_words(&hex_decode_table()),
+            pack_words(hex_decode_table_ref()),
         ],
         vec![
             pack_words(&[
@@ -230,7 +166,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'0'),
             ]),
             pack_words(&[0, 0, 0]),
-            pack_words(&hex_decode_table()),
+            pack_words(hex_decode_table_ref()),
         ],
     ]
 }
@@ -268,15 +204,11 @@ mod tests {
                     .collect::<Vec<_>>(),
             )),
             Value::from(vec![0u8; (input.len() / 2) * 4]),
-            Value::from(pack_words(&hex_decode_table())),
+            Value::from(pack_words(hex_decode_table_ref())),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: hex decode must run; restore this invariant before continuing.");
-        outputs[0]
-            .to_bytes()
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
+        vyre_primitives::wire::decode_u32_le_bytes_all(&outputs[0].to_bytes())
     }
 
     #[test]
@@ -302,6 +234,23 @@ mod tests {
     #[test]
     fn invalid_nibble_clamps_to_zero() {
         assert_eq!(run(b"7aZ100"), vec![122, 1, 0]);
+    }
+
+    #[test]
+    fn generated_pairs_match_primitive_reference_for_invalid_and_mixed_case() {
+        const ALPHABET: &[u8] = b"0123456789abcdefABCDEFXz*#\n";
+
+        for seed in 0u32..4096 {
+            let pairs = 1 + (seed % 16);
+            let mut state = seed ^ 0x48EC_DECD;
+            let mut input = Vec::with_capacity(pairs as usize * 2);
+            for _ in 0..(pairs * 2) {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                input.push(ALPHABET[(state as usize) % ALPHABET.len()]);
+            }
+
+            assert_eq!(run(&input), cpu_ref(&input), "hex wrapper seed {seed}");
+        }
     }
 
     #[test]

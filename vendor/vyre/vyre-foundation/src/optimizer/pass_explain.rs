@@ -44,6 +44,12 @@ pub struct PassMetricDelta {
     pub ir_heap_allocations: i128,
     /// `ir_heap_bytes_after - ir_heap_bytes_before`.
     pub ir_heap_bytes: i128,
+    /// `effect_bits_after - effect_bits_before`.
+    pub effect_bits: i128,
+    /// `linear_type_violations_after - linear_type_violations_before`.
+    pub linear_type_violations: i128,
+    /// `shape_predicate_violations_after - shape_predicate_violations_before`.
+    pub shape_predicate_violations: i128,
 }
 
 impl PassMetricDelta {
@@ -74,6 +80,15 @@ impl PassMetricDelta {
                 metric.ir_heap_allocations_after,
             ),
             ir_heap_bytes: delta(metric.ir_heap_bytes_before, metric.ir_heap_bytes_after),
+            effect_bits: delta(metric.effect_bits_before, metric.effect_bits_after),
+            linear_type_violations: delta(
+                metric.linear_type_violations_before,
+                metric.linear_type_violations_after,
+            ),
+            shape_predicate_violations: delta(
+                metric.shape_predicate_violations_before,
+                metric.shape_predicate_violations_after,
+            ),
         }
     }
 }
@@ -205,6 +220,15 @@ fn decision_reason(decision: PassRunDecision) -> &'static str {
         PassRunDecision::CostReverted => {
             "pass produced a cost-increasing rewrite, so cost-monotone enforcement reverted it"
         }
+        PassRunDecision::EffectReverted => {
+            "pass introduced undeclared effects, so effects-handler enforcement reverted it"
+        }
+        PassRunDecision::LinearTypeReverted => {
+            "pass introduced a new linear-type violation, so linear enforcement reverted it"
+        }
+        PassRunDecision::ShapePredicateReverted => {
+            "pass introduced a new shape-predicate violation, so liquid-shape enforcement reverted it"
+        }
         PassRunDecision::Refused => {
             "pass explicitly refused to rewrite and reported a structured refusal kind"
         }
@@ -233,11 +257,20 @@ mod tests {
                 PassRunDecision::RanUnchanged
                     | PassRunDecision::Changed
                     | PassRunDecision::CostReverted
+                    | PassRunDecision::EffectReverted
+                    | PassRunDecision::LinearTypeReverted
+                    | PassRunDecision::ShapePredicateReverted
                     | PassRunDecision::Refused
             ),
             changed: decision == PassRunDecision::Changed,
             decision,
             refusal_kind: (decision == PassRunDecision::Refused).then_some("cost_increase"),
+            effect_bits_before: 0b001,
+            effect_bits_after: 0b101,
+            linear_type_violations_before: 0,
+            linear_type_violations_after: 1,
+            shape_predicate_violations_before: 1,
+            shape_predicate_violations_after: 0,
             runtime_ns: 17,
             nodes_before: 10,
             nodes_after: 7,
@@ -268,6 +301,9 @@ mod tests {
             PassRunDecision::RanUnchanged,
             PassRunDecision::Changed,
             PassRunDecision::CostReverted,
+            PassRunDecision::EffectReverted,
+            PassRunDecision::LinearTypeReverted,
+            PassRunDecision::ShapePredicateReverted,
             PassRunDecision::Refused,
         ] {
             let reason = decision_reason(decision);
@@ -280,11 +316,11 @@ mod tests {
 
     #[test]
     fn explanation_records_catalog_contract_and_metric_delta() {
-        let catalog = optimization_catalog().expect("optimizer catalog must build");
+        let catalog = optimization_catalog().expect("Fix: optimizer catalog must build");
         let entry = catalog
             .iter()
             .find(|entry| entry.name == "megakernel.allocation_reuse")
-            .expect("release catalog must contain megakernel allocation reuse");
+            .expect("Fix: release catalog must contain megakernel allocation reuse");
         let explanation = PassExplanation::from_metric(
             &metric("megakernel.allocation_reuse", PassRunDecision::Changed),
             Some(entry),
@@ -299,6 +335,9 @@ mod tests {
         );
         assert_eq!(explanation.delta.nodes, -3);
         assert_eq!(explanation.delta.control_flow_count, 2);
+        assert_eq!(explanation.delta.effect_bits, 4);
+        assert_eq!(explanation.delta.linear_type_violations, 1);
+        assert_eq!(explanation.delta.shape_predicate_violations, -1);
         assert_eq!(
             explanation.reason,
             decision_reason(PassRunDecision::Changed)
@@ -336,7 +375,7 @@ mod tests {
         };
         let explanations = report
             .explanations()
-            .expect("run report explanations must build from live catalog");
+            .expect("Fix: run report explanations must build from live catalog");
 
         assert_eq!(explanations.len(), 1);
         assert_eq!(

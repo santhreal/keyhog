@@ -1,10 +1,10 @@
 //! 2× nearest-neighbor upsample for the half-resolution blur path.
 //!
 //! Each input pixel maps to a 2×2 block in the output. This is intentionally
-//! nearest-neighbor (no bilinear) because the input is already blurred —
+//! nearest-neighbor (no bilinear) because the input is already blurred  -
 //! the blur itself provides the smoothing that bilinear would add.
 //!
-//! Category A composition — pure IR. No Tier 2.5 primitives.
+//! Category A composition  -  pure IR. No Tier 2.5 primitives.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -12,8 +12,8 @@ const OP_ID: &str = "vyre-libs::visual::upsample";
 
 /// Build a Program that 2× upsamples `input` into `output`.
 ///
-/// - `input`:  `[u32; (width/2) * (height/2)]` — source pixels (packed RGBA)
-/// - `output`: `[u32; width * height]` — upsampled result
+/// - `input`:  `[u32; (width/2) * (height/2)]`  -  source pixels (packed RGBA)
+/// - `output`: `[u32; width * height]`  -  upsampled result
 /// - `width`, `height`: the FULL output dimensions (must be even).
 #[must_use]
 pub fn upsample_2x(input: &str, output: &str, width: u32, height: u32) -> Program {

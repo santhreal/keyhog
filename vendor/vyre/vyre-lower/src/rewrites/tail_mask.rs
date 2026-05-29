@@ -13,6 +13,7 @@ use rustc_hash::FxHashSet as HashSet;
 
 use vyre_foundation::ir::BinOp;
 
+use super::literal::ResultAllocator;
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
 
 /// Predicate eligible stores with `index < logical_element_count`.
@@ -28,12 +29,12 @@ pub fn apply_tail_mask(desc: &KernelDescriptor, logical_element_count: u32) -> K
         return desc.clone();
     }
     let mut out = desc.clone();
-    let mut next_result = next_result_id(&out.body);
+    let mut allocator = ResultAllocator::for_body_tree(&out.body);
     let inherited = HashSet::default();
     apply_to_body(
         &mut out.body,
         logical_element_count,
-        &mut next_result,
+        &mut allocator,
         &inherited,
     );
     out
@@ -42,7 +43,7 @@ pub fn apply_tail_mask(desc: &KernelDescriptor, logical_element_count: u32) -> K
 fn apply_to_body(
     body: &mut KernelBody,
     logical_element_count: u32,
-    next_result: &mut u32,
+    allocator: &mut ResultAllocator,
     inherited_tainted_ids: &HashSet<u32>,
 ) {
     let mut tainted_ids = inherited_tainted_ids.clone();
@@ -57,29 +58,23 @@ fn apply_to_body(
     let original_ops = std::mem::take(&mut body.ops);
     let mut rewritten = Vec::with_capacity(original_ops.len());
     for op in original_ops {
-        // Capture taint metadata before consuming `op` — the if-branch
+        // Capture taint metadata before consuming `op`  -  the if-branch
         // moves `op` into a child body, so we cannot borrow it afterwards.
         let taint_kind = op.kind.clone();
         let taint_operands = op.operands.clone();
         let taint_result = op.result;
 
         if let Some(index_id) = tail_mask_index(&op, &tainted_ids) {
-            let limit_lit_idx = body.literals.len() as u32;
-            body.literals.push(LiteralValue::U32(logical_element_count));
-
-            let limit_id = fresh_result(next_result);
-            rewritten.push(KernelOp {
-                kind: KernelOpKind::Literal,
-                operands: vec![limit_lit_idx],
-                result: Some(limit_id),
-            });
-
-            let cond_id = fresh_result(next_result);
-            rewritten.push(KernelOp {
-                kind: KernelOpKind::BinOpKind(BinOp::Lt),
-                operands: vec![index_id, limit_id],
-                result: Some(cond_id),
-            });
+            let limit_id = allocator.push_literal(
+                &mut rewritten,
+                &mut body.literals,
+                LiteralValue::U32(logical_element_count),
+            );
+            let cond_id = allocator.push_result(
+                &mut rewritten,
+                KernelOpKind::BinOpKind(BinOp::Lt),
+                vec![index_id, limit_id],
+            );
 
             let child_idx = body.child_bodies.len() as u32;
             body.child_bodies.push(KernelBody {
@@ -101,7 +96,7 @@ fn apply_to_body(
     body.ops = rewritten;
 
     for child in body.child_bodies[..original_child_count].iter_mut() {
-        apply_to_body(child, logical_element_count, next_result, &tainted_ids);
+        apply_to_body(child, logical_element_count, allocator, &tainted_ids);
     }
 }
 
@@ -139,28 +134,6 @@ fn mark_tainted_from_parts(
             tainted_ids.insert(result);
         }
     }
-}
-
-fn next_result_id(body: &KernelBody) -> u32 {
-    fn walk(body: &KernelBody, max_seen: &mut u32) {
-        for op in &body.ops {
-            for result in op.result_ids() {
-                *max_seen = (*max_seen).max(result.saturating_add(1));
-            }
-        }
-        for child in &body.child_bodies {
-            walk(child, max_seen);
-        }
-    }
-    let mut next = 0;
-    walk(body, &mut next);
-    next
-}
-
-fn fresh_result(next: &mut u32) -> u32 {
-    let id = *next;
-    *next = next.saturating_add(1);
-    id
 }
 
 #[cfg(test)]
@@ -260,7 +233,7 @@ mod tests {
         // Adversarial: catches the prior infinite-recursion in
         // apply_to_body where the freshly-pushed StructuredIfThen wrapper
         // body inherited the tainted index id from the parent and re-wrapped
-        // its sole StoreGlobal forever. Single mask, single nested level —
+        // its sole StoreGlobal forever. Single mask, single nested level  -
         // not nested wrappers all the way down.
         let desc = desc_with_store_index(KernelOpKind::GlobalInvocationId);
         let out = apply_tail_mask(&desc, 100);
@@ -272,7 +245,7 @@ mod tests {
         let wrapper = &out.body.child_bodies[0];
         assert!(
             wrapper.child_bodies.is_empty(),
-            "wrapper body must contain no nested wrapper child — re-masking would have appended one"
+            "wrapper body must contain no nested wrapper child  -  re-masking would have appended one"
         );
         assert_eq!(
             wrapper.ops.len(),

@@ -1,4 +1,5 @@
 use super::*;
+pub(super) use vyre_primitives::hash::fnv1a::fnv1a32;
 
 pub(super) fn identifier_lexeme<'a>(
     vast_nodes: &[u32],
@@ -11,15 +12,6 @@ pub(super) fn identifier_lexeme<'a>(
     let start = vast_field_at(vast_nodes, node_idx, 5) as usize;
     let len = vast_field_at(vast_nodes, node_idx, 6) as usize;
     haystack.get(start..start.saturating_add(len))
-}
-
-pub(super) fn fnv1a32(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    for byte in bytes {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    hash
 }
 
 pub(super) fn is_gnu_typeof_hash_raw(hash: u32) -> bool {

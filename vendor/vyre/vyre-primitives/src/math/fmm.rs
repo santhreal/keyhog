@@ -1,4 +1,4 @@
-//! Fast Multipole Method primitives — `p2m`, `m2l`, `l2p`.
+//! Fast Multipole Method primitives  -  `p2m`, `m2l`, `l2p`.
 //!
 //! FMM (Greengard-Rokhlin 1987) evaluates n-body sums in O(n log n)
 //! or O(n) via hierarchical multipole expansions:
@@ -73,7 +73,7 @@ const MIN_DISTANCE_F32: f32 = 1.0e-12;
 /// Inputs:
 /// - `particles`: `n_particles · PARTICLE_STRIDE` u32. Per-particle
 ///   `(x, y, charge, _)` in 16.16.
-/// - `cell_assignment`: length-`n_particles` u32 — which cell index
+/// - `cell_assignment`: length-`n_particles` u32  -  which cell index
 ///   each particle is in.
 /// - `cell_centers`: `n_cells · CELL_STRIDE` u32 (`(cx, cy, _, _)`).
 ///
@@ -401,13 +401,14 @@ pub fn l2p_zeroth_f32_step(
     )
 }
 
-/// CPU reference for `p2m_step` — sums particle charges into per-cell
+/// CPU reference for `p2m_step`  -  sums particle charges into per-cell
 /// total charge (zeroth-order moment).
 #[cfg(test)]
 #[must_use]
 pub fn p2m_zeroth_moment_cpu(charges: &[f64], cell_assignment: &[u32]) -> Vec<f64> {
     let mut moments = Vec::new();
-    p2m_zeroth_moment_cpu_into(charges, cell_assignment, &mut moments);
+    try_p2m_zeroth_moment_cpu_into(charges, cell_assignment, &mut moments)
+        .unwrap_or_else(|error| panic!("{error}"));
     moments
 }
 
@@ -418,30 +419,51 @@ pub fn p2m_zeroth_moment_cpu_into(
     cell_assignment: &[u32],
     moments: &mut Vec<f64>,
 ) {
+    try_p2m_zeroth_moment_cpu_into(charges, cell_assignment, moments)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference for `p2m_step` using caller-owned moment storage.
+#[cfg(test)]
+pub fn try_p2m_zeroth_moment_cpu_into(
+    charges: &[f64],
+    cell_assignment: &[u32],
+    moments: &mut Vec<f64>,
+) -> Result<(), String> {
     if charges.is_empty() {
         debug_assert!(cell_assignment.is_empty());
         moments.clear();
-        return;
+        return Ok(());
     }
     let n_cells = cell_assignment.iter().max().copied().unwrap_or(0) as usize + 1;
+    if n_cells > moments.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            moments,
+            n_cells - moments.len(),
+            "FMM CPU oracle",
+            "p2m zeroth moments",
+        )?;
+    }
     moments.clear();
     moments.resize(n_cells, 0.0);
-    for (i, &c) in cell_assignment.iter().enumerate() {
-        moments[c as usize] += charges[i];
+    for (&charge, &cell) in charges.iter().zip(cell_assignment.iter()) {
+        moments[cell as usize] += charge;
     }
+    Ok(())
 }
 
-/// CPU reference for **L2P** evaluation — given a cell's local
+/// CPU reference for **L2P** evaluation  -  given a cell's local
 /// expansion (zeroth-order = total far-field potential) and a target
 /// particle position, return the contributed potential. For the
 /// zeroth-order primitive, this is just the local moment value.
 #[cfg(test)]
 #[must_use]
+
 pub fn l2p_zeroth_eval_cpu(local_moment: f64, _target_x: f64, _target_y: f64) -> f64 {
     local_moment
 }
 
-/// CPU reference for **M2L** translation — given a source cell's
+/// CPU reference for **M2L** translation  -  given a source cell's
 /// multipole expansion (zeroth-order = total source charge), the
 /// distance to the target cell, return the target cell's local
 /// expansion contribution. For Coulomb 2D: `local_0 = source_0 / r`.
@@ -485,11 +507,62 @@ mod tests {
         let charges = vec![1.0, 2.0, 3.0, 10.0, 20.0, 30.0];
         let cells = vec![0u32, 0, 0, 1, 1, 1];
         let mut moments = Vec::with_capacity(8);
+        moments.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
         let ptr = moments.as_ptr();
-        p2m_zeroth_moment_cpu_into(&charges, &cells, &mut moments);
+        let capacity = moments.capacity();
+        try_p2m_zeroth_moment_cpu_into(&charges, &cells, &mut moments)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - FMM P2M CPU oracle should reuse caller-owned moment storage");
         assert!(approx_eq(moments[0], 6.0));
         assert!(approx_eq(moments[1], 60.0));
         assert_eq!(moments.as_ptr(), ptr);
+        assert_eq!(moments.capacity(), capacity);
+
+        try_p2m_zeroth_moment_cpu_into(&[5.0], &[0], &mut moments)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - FMM P2M CPU oracle should truncate stale moments");
+        assert_eq!(moments, vec![5.0]);
+        assert_eq!(moments.as_ptr(), ptr);
+        assert_eq!(moments.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_p2m_matches_independent_reference_and_truncates_mismatches() {
+        let mut moments = Vec::new();
+        for case in 0..1024usize {
+            let charge_len = case % 97;
+            let assign_len = (case * 7) % 97;
+            let charges: Vec<f64> = (0..charge_len)
+                .map(|idx| ((idx * 13 + case) % 31) as f64 / 7.0 - 2.0)
+                .collect();
+            let assignments: Vec<u32> = (0..assign_len)
+                .map(|idx| ((idx * 17 + case) % 11) as u32)
+                .collect();
+
+            try_p2m_zeroth_moment_cpu_into(&charges, &assignments, &mut moments)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated FMM P2M CPU oracle should evaluate");
+            let expected = independent_p2m(&charges, &assignments);
+
+            assert_eq!(moments.len(), expected.len(), "case {case}: output length");
+            for idx in 0..moments.len() {
+                assert!(
+                    approx_eq(moments[idx], expected[idx]),
+                    "case {case} idx {idx}: expected {}, got {}",
+                    expected[idx],
+                    moments[idx]
+                );
+            }
+        }
+    }
+
+    fn independent_p2m(charges: &[f64], assignments: &[u32]) -> Vec<f64> {
+        if charges.is_empty() {
+            return Vec::new();
+        }
+        let max_cell = assignments.iter().max().copied().unwrap_or(0);
+        let mut out = vec![0.0; max_cell as usize + 1];
+        for (&charge, &cell) in charges.iter().zip(assignments.iter()) {
+            out[cell as usize] += charge;
+        }
+        out
     }
 
     #[test]
@@ -500,7 +573,7 @@ mod tests {
 
     #[test]
     fn cpu_m2l_zero_distance_clamps() {
-        // Avoid division by zero — clamp to small positive distance.
+        // Avoid division by zero  -  clamp to small positive distance.
         assert!(m2l_zeroth_translate_cpu(1.0, 0.0).is_finite());
     }
 
@@ -532,3 +605,4 @@ mod tests {
         assert!(p.stats().trap());
     }
 }
+

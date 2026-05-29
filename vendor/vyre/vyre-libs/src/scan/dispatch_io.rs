@@ -17,7 +17,7 @@
 //! Each of those was duplicated 2x as I added the second matcher
 //! (`RulePipeline::scan`). Centralising them here makes the *next*
 //! matcher (parser combinators, taint-flow scan, custom regex
-//! compositions in `frontend`) free to compose — write the unique
+//! compositions in downstream crates) free to compose  -  write the unique
 //! plumbing, reuse the shared four.
 //!
 //! The output-unpacking step is intentionally **not** centralised:
@@ -31,6 +31,20 @@ use std::borrow::Cow;
 
 use vyre::{BackendError, DispatchConfig};
 
+/// Reusable host-side staging for scan dispatches.
+///
+/// Engines that repeatedly scan many haystacks can keep one scratch value per
+/// worker thread and pass it through `*_with_scratch` APIs. This removes the
+/// fixed haystack-packing allocation from every dispatch while preserving the
+/// same borrowed-input backend contract.
+#[derive(Debug, Default)]
+pub struct ScanDispatchScratch {
+    /// Packed little-endian `u32` haystack bytes.
+    pub haystack_bytes: Vec<u8>,
+    /// Optional zeroed hit-buffer staging used by single-buffer hit layouts.
+    pub hit_bytes: Vec<u8>,
+}
+
 /// Pack a haystack of bytes into `u32` little-endian words ready for an
 /// input storage buffer. Each 4 input bytes become one little-endian
 /// `u32`; a tail less than 4 bytes is zero-padded into the high lanes.
@@ -39,25 +53,107 @@ use vyre::{BackendError, DispatchConfig};
 /// DataType::U32, ReadOnly)` haystack input expects.
 #[must_use]
 pub fn pack_haystack_u32(haystack: &[u8]) -> Vec<u8> {
-    let padded_len = haystack.len().div_ceil(4) * 4;
-    let mut packed = Vec::with_capacity(padded_len);
+    match try_pack_haystack_u32(haystack) {
+        Ok(packed) => packed,
+        Err(error) => {
+            eprintln!("vyre-libs scan dispatch pack_haystack_u32 failed: {error}");
+            Vec::new()
+        }
+    }
+}
+
+/// Fallible owned variant of [`pack_haystack_u32`].
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when padded length arithmetic or allocation fails.
+pub fn try_pack_haystack_u32(haystack: &[u8]) -> Result<Vec<u8>, BackendError> {
+    let mut packed = Vec::new();
+    pack_haystack_u32_into(haystack, &mut packed)?;
+    Ok(packed)
+}
+
+/// Pack a haystack into caller-owned scratch.
+///
+/// Clears `packed`, reserves the exact padded byte capacity, copies
+/// `haystack`, and appends zero padding up to the next `u32` word boundary.
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when padded length arithmetic or allocation fails.
+pub fn pack_haystack_u32_into(haystack: &[u8], packed: &mut Vec<u8>) -> Result<(), BackendError> {
+    let padded_len = haystack_padded_u32_byte_len(haystack.len())?;
+    packed.clear();
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(packed, padded_len).map_err(
+        |source| {
+            BackendError::new(format!(
+                "scan dispatch could not reserve {padded_len} packed haystack byte(s): {source}. Fix: split the haystack before dispatch."
+            ))
+        },
+    )?;
     packed.extend_from_slice(haystack);
     packed.resize(padded_len, 0);
-    packed
+    Ok(())
+}
+
+fn haystack_padded_u32_byte_len(byte_len: usize) -> Result<usize, BackendError> {
+    byte_len
+        .checked_add(3)
+        .map(|len| (len / 4) * 4)
+        .ok_or_else(|| {
+            BackendError::new(
+                "scan dispatch haystack padding overflows host usize. Fix: split the haystack before dispatch.",
+            )
+        })
+}
+
+#[cfg(test)]
+mod scratch_reuse_tests {
+    use super::{
+        haystack_padded_u32_byte_len, pack_haystack_u32, pack_haystack_u32_into,
+        try_pack_haystack_u32, ScanDispatchScratch,
+    };
+
+    #[test]
+    fn pack_haystack_into_reuses_capacity_and_matches_owned_helper() {
+        let mut scratch = ScanDispatchScratch::default();
+        pack_haystack_u32_into(b"abcdef", &mut scratch.haystack_bytes)
+            .expect("Fix: packed haystack scratch should reserve");
+        let retained = scratch.haystack_bytes.capacity();
+        assert_eq!(scratch.haystack_bytes, pack_haystack_u32(b"abcdef"));
+
+        pack_haystack_u32_into(b"xy", &mut scratch.haystack_bytes)
+            .expect("Fix: smaller packed haystack should reuse scratch");
+
+        assert_eq!(scratch.haystack_bytes, vec![b'x', b'y', 0, 0]);
+        assert!(scratch.haystack_bytes.capacity() >= retained);
+    }
+
+    #[test]
+    fn try_pack_haystack_owned_matches_compat_helper() {
+        let packed = try_pack_haystack_u32(b"abcde")
+            .expect("Fix: small owned haystack packing must reserve");
+
+        assert_eq!(packed, pack_haystack_u32(b"abcde"));
+        assert_eq!(packed, vec![b'a', b'b', b'c', b'd', b'e', 0, 0, 0]);
+    }
+
+    #[test]
+    fn haystack_padding_overflow_reports_split_fix() {
+        let error = haystack_padded_u32_byte_len(usize::MAX)
+            .expect_err("Fix: usize::MAX padding must overflow instead of wrapping");
+        let message = format!("{error}");
+
+        assert!(message.contains("padding overflows host usize"));
+        assert!(message.contains("Fix: split the haystack"));
+    }
 }
 
 /// Pack a `&[u32]` into a little-endian `Vec<u8>` suitable for upload
 /// to a storage buffer of type `DataType::U32`.
 #[must_use]
 pub fn pack_u32_slice(words: &[u32]) -> Vec<u8> {
-    if cfg!(target_endian = "little") {
-        return bytemuck::cast_slice(words).to_vec();
-    }
-    let mut out = Vec::with_capacity(words.len() * 4);
-    for &w in words {
-        out.extend_from_slice(&w.to_le_bytes());
-    }
-    out
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 /// Borrow a `u32` slice as little-endian bytes on little-endian hosts,
@@ -93,7 +189,7 @@ pub fn haystack_len_u32(haystack: &[u8], context: &str) -> Result<u32, BackendEr
 
 /// Default scan-guard ceiling. Picked at 1 GiB on the assumption that
 /// a single GPU dispatch over more than 1 GiB of haystack is almost
-/// always a caller bug — fragmenting at this granularity keeps device
+/// always a caller bug  -  fragmenting at this granularity keeps device
 /// allocations bounded and lets failed segments retry independently.
 /// Callers that genuinely need the full u32 range pass `u32::MAX` to
 /// [`scan_guard`].
@@ -105,7 +201,7 @@ pub const DEFAULT_MAX_SCAN_BYTES: u32 = 1 << 30;
 /// callers don't need a separate `u32::try_from` site.
 ///
 /// This is the single source of truth for "how big a haystack will
-/// vyre accept on this dispatch?" — every matcher in `vyre-libs` is
+/// vyre accept on this dispatch?"  -  every matcher in `vyre-libs` is
 /// expected to call it before assembling input buffers, so the
 /// surface message on overflow is uniform across engines.
 ///
@@ -166,10 +262,27 @@ pub fn unpack_match_triples(
     triples_bytes: &[u8],
     count: u32,
 ) -> Vec<vyre_foundation::match_result::Match> {
-    let n = decoded_match_triple_count(triples_bytes, count);
-    let mut results = Vec::with_capacity(n);
-    unpack_match_triples_into(triples_bytes, count, &mut results);
-    results
+    match try_unpack_match_triples(triples_bytes, count) {
+        Ok(results) => results,
+        Err(error) => {
+            eprintln!("vyre-libs scan dispatch unpack_match_triples failed: {error}");
+            Vec::new()
+        }
+    }
+}
+
+/// Fallible owned variant of [`unpack_match_triples`].
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when decoded match storage cannot be reserved.
+pub fn try_unpack_match_triples(
+    triples_bytes: &[u8],
+    count: u32,
+) -> Result<Vec<vyre_foundation::match_result::Match>, BackendError> {
+    let mut results = Vec::new();
+    try_unpack_match_triples_into(triples_bytes, count, &mut results)?;
+    Ok(results)
 }
 
 /// Caller-owned variant of [`unpack_match_triples`].
@@ -185,9 +298,29 @@ pub fn unpack_match_triples_into(
     count: u32,
     results: &mut Vec<vyre_foundation::match_result::Match>,
 ) {
-    results.clear();
+    if let Err(error) = try_unpack_match_triples_into(triples_bytes, count, results) {
+        eprintln!("vyre-libs scan dispatch unpack_match_triples_into failed: {error}");
+        results.clear();
+    }
+}
+
+/// Fallible caller-owned variant of [`unpack_match_triples_into`].
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when decoded match storage cannot be reserved.
+pub fn try_unpack_match_triples_into(
+    triples_bytes: &[u8],
+    count: u32,
+    results: &mut Vec<vyre_foundation::match_result::Match>,
+) -> Result<(), BackendError> {
     let n = decoded_match_triple_count(triples_bytes, count);
-    results.reserve(n);
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(results, n).map_err(|source| {
+        BackendError::new(format!(
+            "scan dispatch could not reserve {n} decoded match record(s): {source}. Fix: lower max_matches or split the scan before dispatch."
+        ))
+    })?;
+    results.clear();
     for i in 0..n {
         let off = i * 12;
         let pid = u32::from_le_bytes([
@@ -211,6 +344,7 @@ pub fn unpack_match_triples_into(
         results.push(vyre_foundation::match_result::Match::new(pid, start, end));
     }
     results.sort_unstable();
+    Ok(())
 }
 
 #[inline]
@@ -299,7 +433,12 @@ mod tests {
     #[test]
     fn scan_guard_zero_ceiling_rejects_nonempty() {
         let buf = vec![0u8; 1];
-        assert!(scan_guard(&buf, "ctx", 0).is_err());
+        let err = scan_guard(&buf, "ctx", 0).expect_err("nonempty haystack with zero ceiling");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("scan-guard ceiling") && msg.contains('0'),
+            "zero-ceiling rejection must name the ceiling: {msg}"
+        );
     }
 
     #[test]
@@ -354,6 +493,36 @@ mod tests {
         assert_eq!(matches.len(), 2);
         assert_eq!(matches.as_ptr(), ptr);
         assert!(matches[0].start <= matches[1].start);
+    }
+
+    #[test]
+    fn try_unpack_match_triples_into_keeps_fallible_hot_path_reusable() {
+        let bytes = [
+            9, 0, 0, 0, 40, 0, 0, 0, 44, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 8, 0, 0, 0,
+        ];
+        let mut matches = Vec::with_capacity(4);
+        let ptr = matches.as_ptr();
+
+        try_unpack_match_triples_into(&bytes, 2, &mut matches)
+            .expect("Fix: small decoded match buffer must reserve");
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches.as_ptr(), ptr);
+        assert_eq!(matches[0].pattern_id, 3);
+        assert_eq!(matches[1].pattern_id, 9);
+    }
+
+    #[test]
+    fn try_unpack_match_triples_owned_matches_compat_helper() {
+        let bytes = [
+            5, 0, 0, 0, 11, 0, 0, 0, 13, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 7, 0, 0, 0,
+        ];
+
+        assert_eq!(
+            try_unpack_match_triples(&bytes, 2)
+                .expect("Fix: small decoded match buffer must reserve"),
+            unpack_match_triples(&bytes, 2)
+        );
     }
 
     /// Adversarial / regression: a bogus or truncated readback may pair a

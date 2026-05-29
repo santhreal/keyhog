@@ -5,7 +5,7 @@ use super::MegakernelWorkItem;
 /// Returns the length of the longest identical prefix shared by every
 /// item in `arm_prologues`. The dispatcher uses this to extract a
 /// single shared prologue at the top of the megakernel instead of
-/// running the same prologue ops once per arm — saves N-1 redundant
+/// running the same prologue ops once per arm  -  saves N-1 redundant
 /// prologue executions when N arms agree on the first K ops.
 ///
 /// Returns `0` when:

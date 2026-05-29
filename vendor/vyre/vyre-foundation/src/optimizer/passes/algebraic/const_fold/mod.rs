@@ -3,11 +3,11 @@
 // This pass is organized into submodules by rule category so contributors
 // can work on different rule families in parallel without merge conflicts:
 //
-//   binop_identities — binary operator algebraic identities (Add/Sub/Mul/…)
-//   unary_rules      — unary operator simplifications (involutions, idempotent)
-//   select_rules     — Select node optimizations (branch flip, cast canon.)
-//   fma_rules        — FMA synthesis and simplification
-//   cast_rules       — compile-time literal Cast folding
+//   binop_identities  -  binary operator algebraic identities (Add/Sub/Mul/…)
+//   unary_rules       -  unary operator simplifications (involutions, idempotent)
+//   select_rules      -  Select node optimizations (branch flip, cast canon.)
+//   fma_rules         -  FMA synthesis and simplification
+//   cast_rules        -  compile-time literal Cast folding
 //
 // To add a new rule:
 //   1. Identify the rule category (unary, binop, select, fma, cast).
@@ -18,7 +18,7 @@
 pub(crate) mod binop_identities;
 mod cast_rules;
 mod fma_rules;
-/// ROADMAP A11 — cross-control-flow literal Let propagation built on
+/// ROADMAP A11  -  cross-control-flow literal Let propagation built on
 /// the A2 `ProgramFacts` substrate. Propagates literal-valued Lets
 /// whose name is unique program-wide to every Var read site, even
 /// across sibling control-flow branches.

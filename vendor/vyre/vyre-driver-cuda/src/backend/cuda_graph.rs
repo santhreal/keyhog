@@ -25,7 +25,7 @@
 //!   so callers can write new bytes into them without changing the address.
 //! - **Shape-bound.** A cached graph captures one specific input/output
 //!   byte layout. Calling `dispatch_via_cuda_graph` with mismatched input
-//!   sizes returns `BackendError::InvalidProgram` — the caller must record
+//!   sizes returns `BackendError::InvalidProgram`  -  the caller must record
 //!   a fresh graph for each shape.
 //!
 //! ## Lifecycle
@@ -49,31 +49,35 @@ use std::sync::Arc;
 use cudarc::driver::sys::{CUgraphExec_st, CUgraph_st, CUstream_st};
 use smallvec::SmallVec;
 use vyre_driver::binding::BindingRole;
+use vyre_driver::graph_capture::plan_graph_capture_bindings;
+use vyre_driver::transfer_accounting::TransferAccountingPolicy;
 use vyre_driver::{BackendError, DispatchConfig};
 use vyre_foundation::ir::Program;
 
 use super::allocations::{
-    cuda_check, HostTransferAllocations, PinnedHostAllocation, PinnedHostAllocationPool,
+    alloc_cuda_ptr, cuda_check, free_cuda_ptr_with_label, HostTransferAllocations,
+    PinnedHostAllocation, PinnedHostAllocationPool,
 };
 use super::dispatch::CudaBackend;
 use super::output_range::cuda_output_readback;
-use super::plan::CudaDispatchPlan;
 use super::staging_reserve::reserve_smallvec;
+use crate::input_identity::{exact_input_key, ExactInputKey};
+use crate::backend::copy::aligned_async_copy_len;
+use crate::numeric::CUDA_NUMERIC;
+
+const CUDA_GRAPH_REPLAY_ACCOUNTING: TransferAccountingPolicy =
+    TransferAccountingPolicy::new("CUDA graph", "record a smaller graph shape");
 
 fn log_cuda_drop_result(op: &str, result: cudarc::driver::sys::CUresult) {
     if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-        eprintln!(
+        tracing::error!(
             "Fix: {op} failed while releasing CUDA graph resources with {result:?}; ensure graph work has completed before resource drop."
         );
     }
 }
 
 fn cuda_graph_usize_to_u64(value: usize, label: &'static str) -> Result<u64, BackendError> {
-    u64::try_from(value).map_err(|_| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: {label} value of {value} bytes cannot fit u64 CUDA graph telemetry. Shard the graph dispatch or widen accounting."
-        ),
-    })
+    CUDA_NUMERIC.usize_to_u64(value, label)
 }
 
 /// CUDA driver constant: stream-capture-mode thread-local. Only the calling
@@ -102,15 +106,7 @@ impl DevicePtrGuard {
 
 impl Drop for DevicePtrGuard {
     fn drop(&mut self) {
-        if self.ptr != 0 {
-            // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-            // matching alloc / store API; lifetimes are documented in the
-            // surrounding function. cuda_check (or matching CUresult guard)
-            // propagates non-success codes as BackendError.
-            unsafe {
-                log_cuda_drop_result("cuMemFree_v2", cudarc::driver::sys::cuMemFree_v2(self.ptr));
-            }
-        }
+        free_cuda_ptr_with_label(self.ptr, "CUDA graph device buffer");
     }
 }
 
@@ -132,18 +128,69 @@ impl StreamGuard {
 impl Drop for StreamGuard {
     fn drop(&mut self) {
         if self.stream != NonNull::dangling() {
-            // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-            // matching alloc / store API; lifetimes are documented in the
-            // surrounding function. cuda_check (or matching CUresult guard)
-            // propagates non-success codes as BackendError.
-            unsafe {
-                log_cuda_drop_result(
-                    "cuStreamDestroy_v2",
-                    cudarc::driver::sys::cuStreamDestroy_v2(self.stream.as_ptr()),
-                );
-            }
+            crate::stream::destroy_raw_stream(
+                self.stream.as_ptr(),
+                "cuStreamDestroy_v2 (cuda_graph dedicated stream)",
+            );
         }
     }
+}
+
+fn create_cuda_graph_stream() -> Result<StreamGuard, BackendError> {
+    let _nonblocking_flag_contract = cudarc::driver::sys::CUstream_flags::CU_STREAM_NON_BLOCKING;
+    crate::stream::create_non_blocking_raw_stream("cuStreamCreate (cuda_graph dedicated stream)")
+        .map(StreamGuard::new)
+}
+
+fn synchronize_cuda_graph_param_init_stream(stream: &StreamGuard) -> Result<(), BackendError> {
+    // The shared stream boundary validates non-null ownership before issuing
+    // cuStreamSynchronize(stream.ptr().as_ptr()), keeping graph capture off
+    // CUDA's legacy default stream while preserving one raw FFI implementation.
+    crate::stream::synchronize_raw_stream(
+        stream.ptr().as_ptr(),
+        "cuStreamSynchronize (cuda_graph param init)",
+    )
+}
+
+fn record_cuda_graph_output_readbacks(
+    host_buffers: &mut [PinnedHostAllocation],
+    output_lens: &[usize],
+    readback_device_ptrs: &[u64],
+    stream: &StreamGuard,
+    label: &'static str,
+) -> Result<(), BackendError> {
+    if host_buffers.len() != output_lens.len() || output_lens.len() != readback_device_ptrs.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA graph output readback capture has {} host buffer(s), {} output length(s), and {} device pointer(s). Rebuild graph capture staging from one BindingPlan.",
+                host_buffers.len(),
+                output_lens.len(),
+                readback_device_ptrs.len()
+            ),
+        });
+    }
+    for ((host_buf, output_len), device_ptr) in host_buffers
+        .iter_mut()
+        .zip(output_lens.iter())
+        .zip(readback_device_ptrs.iter())
+    {
+        if *output_len == 0 {
+            continue;
+        }
+        // SAFETY: The host buffer is pinned and retained by CachedCudaGraph
+        // for the captured graph lifetime; device_ptr was validated from the
+        // output allocation plus checked readback offset before capture.
+        unsafe {
+            super::copy::d2h_async_checked_with_label(
+                host_buf.as_mut_ptr() as *mut std::ffi::c_void,
+                *device_ptr,
+                *output_len,
+                stream.ptr().as_ptr(),
+                label,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 struct CaptureGuard {
@@ -159,6 +206,16 @@ impl CaptureGuard {
         }
     }
 
+    fn finish(
+        &mut self,
+        label: &'static str,
+        null_message: &'static str,
+    ) -> Result<GraphGuard, BackendError> {
+        let graph = end_cuda_graph_capture(self.stream, label, null_message);
+        self.disarm();
+        graph
+    }
+
     fn disarm(&mut self) {
         self.active = false;
     }
@@ -167,21 +224,15 @@ impl CaptureGuard {
 impl Drop for CaptureGuard {
     fn drop(&mut self) {
         if self.active {
-            // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-            // matching alloc / store API; lifetimes are documented in the
-            // surrounding function. cuda_check (or matching CUresult guard)
-            // propagates non-success codes as BackendError.
-            unsafe {
-                let mut graph_ptr: cudarc::driver::sys::CUgraph = std::ptr::null_mut();
-                if cudarc::driver::sys::cuStreamEndCapture(self.stream.as_ptr(), &mut graph_ptr)
-                    == cudarc::driver::sys::CUresult::CUDA_SUCCESS
-                    && !graph_ptr.is_null()
-                {
-                    log_cuda_drop_result(
-                        "cuGraphDestroy",
-                        cudarc::driver::sys::cuGraphDestroy(graph_ptr),
-                    );
-                }
+            match end_cuda_graph_capture(
+                self.stream,
+                "cuStreamEndCapture (capture guard drop)",
+                "cuStreamEndCapture returned a null graph while dropping an active capture guard. Fix: ensure graph capture is finished explicitly before resource cleanup.",
+            ) {
+                Ok(graph) => drop(graph),
+                Err(error) => tracing::error!(
+                    "Fix: failed to end CUDA graph capture during guard drop: {error}"
+                ),
             }
         }
     }
@@ -205,16 +256,7 @@ impl GraphGuard {
 impl Drop for GraphGuard {
     fn drop(&mut self) {
         if self.graph != NonNull::dangling() {
-            // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-            // matching alloc / store API; lifetimes are documented in the
-            // surrounding function. cuda_check (or matching CUresult guard)
-            // propagates non-success codes as BackendError.
-            unsafe {
-                log_cuda_drop_result(
-                    "cuGraphDestroy",
-                    cudarc::driver::sys::cuGraphDestroy(self.graph.as_ptr()),
-                );
-            }
+            destroy_cuda_graph_or_log(self.graph.as_ptr(), "CUDA graph guard drop");
         }
     }
 }
@@ -237,35 +279,111 @@ impl GraphExecGuard {
 impl Drop for GraphExecGuard {
     fn drop(&mut self) {
         if self.graph_exec != NonNull::dangling() {
-            // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-            // matching alloc / store API; lifetimes are documented in the
-            // surrounding function. cuda_check (or matching CUresult guard)
-            // propagates non-success codes as BackendError.
-            unsafe {
-                log_cuda_drop_result(
-                    "cuGraphExecDestroy",
-                    cudarc::driver::sys::cuGraphExecDestroy(self.graph_exec.as_ptr()),
-                );
-            }
+            destroy_cuda_graph_exec_or_log(self.graph_exec.as_ptr(), "CUDA graph exec guard drop");
         }
     }
 }
 
-fn cuda_graph_binding_capacities(prepared: &CudaDispatchPlan) -> (usize, usize) {
-    let mut input_capacity = 0usize;
-    let mut output_capacity = 0usize;
-    for binding in &prepared.bindings.bindings {
-        if binding.role == BindingRole::Shared {
-            continue;
-        }
-        if binding.input_index.is_some() {
-            input_capacity += 1;
-        }
-        if binding.output_index.is_some() {
-            output_capacity += 1;
-        }
+fn begin_cuda_graph_capture(
+    stream: &StreamGuard,
+    label: &'static str,
+) -> Result<CaptureGuard, BackendError> {
+    // SAFETY: stream is a backend-owned non-blocking stream; CUDA validates
+    // the opaque handle and returns a CUresult.
+    unsafe {
+        cuda_check(
+            cudarc::driver::sys::cuStreamBeginCapture_v2(
+                stream.ptr().as_ptr(),
+                cudarc::driver::sys::CUstreamCaptureMode_enum::CU_STREAM_CAPTURE_MODE_THREAD_LOCAL,
+            ),
+            label,
+        )?;
     }
-    (input_capacity, output_capacity)
+    Ok(CaptureGuard::armed(stream.ptr()))
+}
+
+fn end_cuda_graph_capture(
+    stream: NonNull<CUstream_st>,
+    label: &'static str,
+    null_message: &'static str,
+) -> Result<GraphGuard, BackendError> {
+    let mut graph_ptr: cudarc::driver::sys::CUgraph = std::ptr::null_mut();
+    let status = {
+        // SAFETY: stream is in capture mode for normal callers; guard-drop callers
+        // are best-effort cleanup paths and CUDA returns a status if capture ended.
+        unsafe { cudarc::driver::sys::cuStreamEndCapture(stream.as_ptr(), &mut graph_ptr) }
+    };
+    if status != cudarc::driver::sys::CUresult::CUDA_SUCCESS && !graph_ptr.is_null() {
+        destroy_cuda_graph_or_log(graph_ptr, label);
+    }
+    cuda_check(status, label)?;
+    let graph = NonNull::new(graph_ptr).ok_or_else(|| BackendError::DispatchFailed {
+        code: None,
+        message: null_message.to_string(),
+    })?;
+    Ok(GraphGuard::new(graph))
+}
+
+fn instantiate_cuda_graph(
+    graph: &GraphGuard,
+    label: &'static str,
+    null_message: &'static str,
+) -> Result<GraphExecGuard, BackendError> {
+    let mut graph_exec_ptr: cudarc::driver::sys::CUgraphExec = std::ptr::null_mut();
+    // SAFETY: graph is a valid captured graph handle; flags = 0 selects CUDA's
+    // default executable graph instantiation policy.
+    unsafe {
+        cuda_check(
+            cudarc::driver::sys::cuGraphInstantiateWithFlags(
+                &mut graph_exec_ptr,
+                graph.ptr().as_ptr(),
+                0,
+            ),
+            label,
+        )?;
+    }
+    let graph_exec = NonNull::new(graph_exec_ptr).ok_or_else(|| BackendError::DispatchFailed {
+        code: None,
+        message: null_message.to_string(),
+    })?;
+    Ok(GraphExecGuard::new(graph_exec))
+}
+
+fn upload_cuda_graph_exec(
+    graph_exec: &GraphExecGuard,
+    stream: &StreamGuard,
+    label: &'static str,
+) -> Result<(), BackendError> {
+    // SAFETY: both handles are owned by CachedCudaGraph and remain live for
+    // the upload call.
+    unsafe {
+        cuda_check(
+            cudarc::driver::sys::cuGraphUpload(graph_exec.ptr().as_ptr(), stream.ptr().as_ptr()),
+            label,
+        )
+    }
+}
+
+fn destroy_cuda_graph_or_log(graph: cudarc::driver::sys::CUgraph, label: &str) {
+    if graph.is_null() {
+        return;
+    }
+    // SAFETY: graph is an owned CUDA graph handle; destroy is used from Drop
+    // and cleanup paths so failures are logged.
+    unsafe {
+        log_cuda_drop_result(label, cudarc::driver::sys::cuGraphDestroy(graph));
+    }
+}
+
+fn destroy_cuda_graph_exec_or_log(graph_exec: cudarc::driver::sys::CUgraphExec, label: &str) {
+    if graph_exec.is_null() {
+        return;
+    }
+    // SAFETY: graph_exec is an owned CUDA executable graph handle; destroy is
+    // used from Drop paths so failures are logged.
+    unsafe {
+        log_cuda_drop_result(label, cudarc::driver::sys::cuGraphExecDestroy(graph_exec));
+    }
 }
 
 fn add_cuda_graph_replay_bytes(
@@ -273,38 +391,11 @@ fn add_cuda_graph_replay_bytes(
     bytes: usize,
     label: &str,
 ) -> Result<(), BackendError> {
-    let bytes = u64::try_from(bytes).map_err(|_| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA graph {label} byte count exceeds u64; record a smaller graph shape."
-        ),
-    })?;
-    *total = total
-        .checked_add(bytes)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA graph {label} byte accounting overflowed u64; record a smaller graph shape."
-            ),
-        })?;
-    Ok(())
+    CUDA_GRAPH_REPLAY_ACCOUNTING.add_bytes(total, bytes, label)
 }
 
 fn add_cuda_graph_replay_operation(total: &mut u64, label: &str) -> Result<(), BackendError> {
-    *total = total
-        .checked_add(1)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA graph {label} operation accounting overflowed u64; record a smaller graph shape."
-            ),
-        })?;
-    Ok(())
-}
-
-fn cuda_graph_capacity_add(lhs: usize, rhs: usize, label: &str) -> Result<usize, BackendError> {
-    lhs.checked_add(rhs).ok_or_else(|| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA graph {label} capacity overflowed usize for {lhs} + {rhs}; record a smaller graph shape."
-        ),
-    })
+    CUDA_GRAPH_REPLAY_ACCOUNTING.add_u64_counter(total, 1, label, "operation accounting")
 }
 
 struct GraphHostBuffers {
@@ -348,6 +439,33 @@ impl GraphHostBuffers {
         Ok(())
     }
 
+    fn push_input_padded(
+        &mut self,
+        bytes: &[u8],
+        transfer_byte_len: usize,
+    ) -> Result<(), BackendError> {
+        if bytes.is_empty() {
+            self.input.push(PinnedHostAllocation::default());
+            return Ok(());
+        }
+        if transfer_byte_len < bytes.len() {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA graph transfer length {} is smaller than logical input length {}.",
+                    transfer_byte_len,
+                    bytes.len()
+                ),
+            });
+        }
+        let mut allocation = self.pool.acquire(transfer_byte_len)?;
+        allocation.copy_from_slice(bytes)?;
+        if transfer_byte_len > bytes.len() {
+            allocation.zero_range(bytes.len(), transfer_byte_len - bytes.len())?;
+        }
+        self.input.push(allocation);
+        Ok(())
+    }
+
     fn push_output(&mut self, byte_len: usize) -> Result<(), BackendError> {
         if byte_len == 0 {
             self.output.push(PinnedHostAllocation::default());
@@ -369,6 +487,7 @@ impl GraphHostBuffers {
     }
 }
 
+
 impl Drop for GraphHostBuffers {
     fn drop(&mut self) {
         for allocation in self.input.drain(..).chain(self.output.drain(..)) {
@@ -379,114 +498,46 @@ impl Drop for GraphHostBuffers {
 
 #[cfg(test)]
 mod tests {
-    use super::{cuda_graph_binding_capacities, GraphHostBuffers};
-    use crate::backend::CudaDispatchPlan;
+    use super::GraphHostBuffers;
     use crate::backend::PinnedHostAllocationPool;
-    use smallvec::smallvec;
     use std::sync::Arc;
-    use vyre_driver::binding::{Binding, BindingPlan, BindingRole};
-    use vyre_driver::LaunchPlan;
-
-    #[test]
-    fn cuda_graph_binding_capacities_count_only_runtime_buffers() {
-        let plan = CudaDispatchPlan {
-            bindings: BindingPlan {
-                bindings: vec![
-                    Binding {
-                        name: Arc::from("input"),
-                        binding: 0,
-                        buffer_index: 0,
-                        role: BindingRole::Input,
-                        element_size: 4,
-                        preferred_alignment: 4,
-                        element_count: 16,
-                        static_byte_len: Some(64),
-                        input_index: Some(0),
-                        output_index: None,
-                    },
-                    Binding {
-                        name: Arc::from("shared"),
-                        binding: 1,
-                        buffer_index: 1,
-                        role: BindingRole::Shared,
-                        element_size: 4,
-                        preferred_alignment: 4,
-                        element_count: 16,
-                        static_byte_len: Some(64),
-                        input_index: None,
-                        output_index: None,
-                    },
-                    Binding {
-                        name: Arc::from("output"),
-                        binding: 2,
-                        buffer_index: 2,
-                        role: BindingRole::Output,
-                        element_size: 4,
-                        preferred_alignment: 4,
-                        element_count: 16,
-                        static_byte_len: Some(64),
-                        input_index: None,
-                        output_index: Some(0),
-                    },
-                ],
-                input_indices: vec![0],
-                output_indices: vec![2],
-                shared_indices: vec![1],
-            },
-            output_binding_indices: smallvec![2],
-            launch: LaunchPlan::new(),
-            cooperative: false,
-            fixpoint_iterations: 1,
-        };
-
-        assert_eq!(cuda_graph_binding_capacities(&plan), (1, 1));
-    }
-
-    #[test]
-    fn cuda_graph_binding_capacities_count_input_output_twice() {
-        let plan = CudaDispatchPlan {
-            bindings: BindingPlan {
-                bindings: vec![Binding {
-                    name: Arc::from("state"),
-                    binding: 0,
-                    buffer_index: 0,
-                    role: BindingRole::InputOutput,
-                    element_size: 4,
-                    preferred_alignment: 4,
-                    element_count: 16,
-                    static_byte_len: Some(64),
-                    input_index: Some(0),
-                    output_index: Some(0),
-                }],
-                input_indices: vec![0],
-                output_indices: vec![0],
-                shared_indices: vec![],
-            },
-            output_binding_indices: smallvec![0],
-            launch: LaunchPlan::new(),
-            cooperative: false,
-            fixpoint_iterations: 1,
-        };
-
-        assert_eq!(cuda_graph_binding_capacities(&plan), (1, 1));
-    }
 
     #[test]
     fn cuda_graph_zero_byte_host_buffers_do_not_acquire_pinned_memory() {
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let mut buffers = GraphHostBuffers::try_with_capacity(Arc::clone(&pool), 1, 1)
-            .expect("graph host buffers should reserve tiny test capacities");
+            .expect("Fix: graph host buffers should reserve tiny test capacities");
 
         buffers
             .push_input(&[])
-            .expect("zero-byte graph input must not call CUDA host allocation APIs");
+            .expect("Fix: zero-byte graph input must not call CUDA host allocation APIs");
         buffers
             .push_output(0)
-            .expect("zero-byte graph output must not call CUDA host allocation APIs");
+            .expect("Fix: zero-byte graph output must not call CUDA host allocation APIs");
 
         assert!(buffers.input[0].as_ptr().is_null());
         assert!(buffers.output[0].as_ptr().is_null());
         assert_eq!(pool.cached_bytes(), 0);
+    }
+
+    #[test]
+    fn cuda_graph_padded_input_upload_zero_fills_tail() {
+        let pool = Arc::new(PinnedHostAllocationPool::new(0));
+        let mut buffers = GraphHostBuffers::try_with_capacity(Arc::clone(&pool), 1, 1)
+            .expect("Fix: padded input staging should use fallible pinned buffer acquisition");
+
+        buffers
+            .push_input_padded(&[1_u8, 2, 3], 16)
+            .expect("Fix: padded input staging should allocate enough capacity for async DMA copies");
+
+        let mut out = Vec::new();
+        buffers
+            .input[0]
+            .copy_prefix_into(16, &mut out)
+            .expect("Fix: copy back staged input staging bytes to verify alignment padding");
+
+        assert_eq!(out, &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(pool.cached_bytes() >= 16);
     }
 
     #[test]
@@ -522,14 +573,60 @@ mod tests {
     }
 
     #[test]
+    fn cuda_graph_lifecycle_ffi_is_single_sourced() {
+        let source = include_str!("cuda_graph.rs");
+        let begin = concat!("cudarc::driver::sys::", "cuStreamBeginCapture_v2(");
+        let end = concat!("cudarc::driver::sys::", "cuStreamEndCapture(");
+        let instantiate = concat!("cudarc::driver::sys::", "cuGraphInstantiateWithFlags(");
+        let destroy_graph = concat!("cudarc::driver::sys::", "cuGraphDestroy(");
+        let destroy_exec = concat!("cudarc::driver::sys::", "cuGraphExecDestroy(");
+        let upload = concat!("cudarc::driver::sys::", "cuGraphUpload(");
+
+        assert_eq!(source.matches(begin).count(), 1);
+        assert_eq!(source.matches(end).count(), 1);
+        assert_eq!(source.matches(instantiate).count(), 1);
+        assert_eq!(source.matches(destroy_graph).count(), 1);
+        assert_eq!(source.matches(destroy_exec).count(), 1);
+        assert_eq!(source.matches(upload).count(), 1);
+        assert!(
+            source.contains("fn begin_cuda_graph_capture(")
+                && source.contains("fn end_cuda_graph_capture(")
+                && source.contains("fn instantiate_cuda_graph(")
+                && source.contains("fn upload_cuda_graph_exec(")
+                && source.contains("capture_guard.finish(")
+                && source.contains("resident_capture_guard.finish("),
+            "Fix: CUDA graph capture, instantiate, upload, and cleanup paths must route through shared lifecycle helpers."
+        );
+    }
+
+    #[test]
+    fn cuda_graph_output_readbacks_are_single_sourced_for_full_and_resident_captures() {
+        let source = include_str!("cuda_graph.rs");
+
+        assert_eq!(
+            source
+                .matches(concat!("record_cuda_graph_output_", "readbacks("))
+                .count(),
+            3,
+            "Fix: full and resident-input CUDA graph captures must share one output D2H capture helper."
+        );
+        assert_eq!(
+            source
+                .matches(concat!("super::copy::", "d2h_async_checked_with_label"))
+                .count(),
+            1,
+            "Fix: CUDA graph output D2H capture FFI must stay behind the shared readback helper."
+        );
+    }
+
+    #[test]
     fn cuda_graph_capture_argument_tables_use_checked_fallible_reservation() {
         let source = include_str!("cuda_graph.rs");
 
         assert!(
             source.contains("launch_pointer_capacity")
                 && source.contains("kernel_arg_capacity")
-                && source.contains("try_reserve_exact(launch_pointer_capacity)")
-                && source.contains("try_reserve_exact(kernel_arg_capacity)"),
+                && source.contains("reserve_smallvec("),
             "Fix: CUDA graph capture must use checked capacity math and fallible reservation for launch pointer and kernel argument tables."
         );
         assert!(
@@ -543,12 +640,46 @@ mod tests {
     }
 
     #[test]
+    fn cuda_graph_binding_planning_is_shared_driver_logic() {
+        let source = include_str!("cuda_graph.rs");
+        let planner_import = concat!(
+            "use vyre_driver::graph_capture::",
+            "plan_graph_capture_bindings;"
+        );
+        let planner_call = concat!("plan_graph_capture_", "bindings(&prepared.bindings)");
+
+        assert!(source.contains(planner_import));
+        assert_eq!(source.matches(planner_call).count(), 1);
+        assert!(!source.contains(concat!("fn cuda_graph_binding_", "capacities")));
+        assert!(!source.contains(concat!("fn cuda_graph_capacity_", "add")));
+        assert!(!source.contains(concat!("checked_add_", "usize_lazy")));
+        assert!(
+            source.contains("output_device_capacity")
+                && source.contains("output_readback_capacity")
+                && source.contains("kernel_pointer_capacity")
+                && source.contains("kernel_argument_capacity"),
+            "Fix: CUDA graph capture must use the shared driver capture plan instead of re-deriving backend-local capacities."
+        );
+    }
+
+    #[test]
     fn cuda_graph_capture_uses_shared_fallible_smallvec_staging_reservation() {
         let source = include_str!("cuda_graph.rs");
 
         assert!(source.contains("use super::staging_reserve::reserve_smallvec;"));
         assert!(source.contains("fn try_with_capacity("));
         assert!(!source.contains(concat!("SmallVec", "::with_capacity")));
+    }
+
+    #[test]
+    fn cuda_graph_telemetry_uses_shared_numeric_policy() {
+        let source = include_str!("cuda_graph.rs");
+        assert!(
+            source.contains("use crate::numeric::CUDA_NUMERIC;")
+                && source.contains("CUDA_NUMERIC.usize_to_u64(value, label)")
+                && !source.contains(concat!("u64::try_from", "(value)")),
+            "Fix: CUDA graph telemetry byte conversions must use the shared backend numeric policy."
+        );
     }
 }
 
@@ -567,7 +698,7 @@ mod tests {
 /// On drop, all CUDA resources are released in the right order.
 #[derive(Debug)]
 pub struct CachedCudaGraph {
-    /// Backend reference — keeps the CUDA context alive for the cached
+    /// Backend reference  -  keeps the CUDA context alive for the cached
     /// graph's lifetime.
     pub(crate) backend: CudaBackend,
     /// Instantiated graph executable (owned). Destroyed in `drop` BEFORE
@@ -575,6 +706,12 @@ pub struct CachedCudaGraph {
     pub(crate) graph_exec: GraphExecGuard,
     /// Captured graph (owned). Destroyed in `drop`.
     pub(crate) graph: GraphGuard,
+    /// Steady-state graph executable that reuses resident device inputs when
+    /// the caller replays the same bytes and no input buffer is also an
+    /// output buffer.
+    pub(crate) resident_input_graph_exec: GraphExecGuard,
+    /// Captured steady-state graph without host-to-device input copy nodes.
+    pub(crate) resident_input_graph: GraphGuard,
     /// Dedicated stream used for capture + replay (owned). Destroyed in
     /// `drop` AFTER graph + graph_exec.
     pub(crate) stream: StreamGuard,
@@ -602,9 +739,25 @@ pub struct CachedCudaGraph {
     /// Non-empty device-to-host copy operations captured in each replay.
     pub(crate) replay_device_readback_operations: u64,
     /// Expected input byte lengths. `dispatch_via_cuda_graph` validates
-    /// the caller's input sizes match these — a mismatch means the graph
+    /// the caller's input sizes match these  -  a mismatch means the graph
     /// is wrong-shape for the input and must be re-recorded.
     pub(crate) expected_input_lens: SmallVec<[usize; 8]>,
+    /// Host-side transfer lengths used for async input uploads during capture
+    /// and replay updates.
+    pub(crate) input_transfer_lens: SmallVec<[usize; 8]>,
+    /// Exact tuple-boundary-preserving key for bytes currently stored in
+    /// `input_host_bufs`.
+    pub(crate) cached_input_key: ExactInputKey,
+    /// Whether the no-upload steady-state graph is semantically safe. It is
+    /// disabled for input-output bindings because the kernel mutates the
+    /// resident input buffer.
+    pub(crate) resident_input_replay_safe: bool,
+    /// Whether resident device inputs are known to match the cached host
+    /// input bytes.
+    pub(crate) device_inputs_initialized: bool,
+    /// Whether pinned host output buffers contain a completed replay result
+    /// for the cached host input bytes.
+    pub(crate) host_outputs_initialized: bool,
     /// Param-buffer device pointer (single allocation; freed in `drop`).
     /// The kernel reads launch parameters (workgroup-related constants)
     /// from this buffer.
@@ -622,12 +775,13 @@ impl Drop for CachedCudaGraph {
     fn drop(&mut self) {
         let _owned_cuda_resource_counts = (
             self.graph.ptr().as_ptr(),
+            self.resident_input_graph.ptr().as_ptr(),
             self.input_device_ptrs.len(),
             self.output_device_ptrs.len(),
             self.params_device_ptr.ptr(),
         );
         if let Err(error) = self.backend.warmup() {
-            eprintln!(
+            tracing::error!(
                 "Fix: CUDA backend warmup failed before graph resource drop: {error}. Cleanup will continue, but the CUDA context may be unhealthy."
             );
         }
@@ -710,8 +864,8 @@ impl CudaBackend {
         // binding plan, validates the program. All allocations / launches
         // below assume this succeeded.
         let prepared = self.prepare_host_dispatch(program, sample_inputs, config)?;
-        let ptx_src = self.ptx_for_program_cached(program, config)?;
-        let module_key = self.module_cache_key(&ptx_src);
+        let (ptx_src, ptx_source_key) = self.ptx_for_program_cached_with_key(program, config)?;
+        let module_key = self.module_cache_key_for_ptx_source_key(ptx_source_key)?;
         let func = self.resolve_launch_function(&ptx_src, module_key, &prepared.launch, false)?;
         self.validate_transient_dispatch_memory_budget(
             &prepared,
@@ -722,7 +876,10 @@ impl CudaBackend {
         // Allocate all device buffers BEFORE capture. cuMemAlloc returns
         // CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED inside capture; allocating
         // up front is the only way to make capture work.
-        let (input_capacity, output_capacity) = cuda_graph_binding_capacities(&prepared);
+        let capture_binding_plan = plan_graph_capture_bindings(&prepared.bindings)?;
+        let input_capacity = capture_binding_plan.input_device_capacity;
+        let output_device_capacity = capture_binding_plan.output_device_capacity;
+        let output_readback_capacity = capture_binding_plan.output_readback_capacity;
         let mut input_device_ptrs = SmallVec::<[DevicePtrGuard; 8]>::new();
         reserve_smallvec(
             &mut input_device_ptrs,
@@ -732,19 +889,19 @@ impl CudaBackend {
         let mut output_device_ptrs = SmallVec::<[DevicePtrGuard; 8]>::new();
         reserve_smallvec(
             &mut output_device_ptrs,
-            output_capacity,
+            output_device_capacity,
             "cuda graph output device pointer guards",
         )?;
         let mut readback_device_ptrs = SmallVec::<[u64; 8]>::new();
         reserve_smallvec(
             &mut readback_device_ptrs,
-            output_capacity,
+            output_readback_capacity,
             "cuda graph readback device pointers",
         )?;
         let mut host_buffers = GraphHostBuffers::try_with_capacity(
             Arc::clone(&self.host_pool),
             input_capacity,
-            output_capacity,
+            output_readback_capacity,
         )?;
         let mut expected_input_lens = SmallVec::<[usize; 8]>::new();
         reserve_smallvec(
@@ -752,16 +909,24 @@ impl CudaBackend {
             input_capacity,
             "cuda graph expected input byte lengths",
         )?;
+        let mut input_transfer_lens = SmallVec::<[usize; 8]>::new();
+        reserve_smallvec(
+            &mut input_transfer_lens,
+            input_capacity,
+            "cuda graph input transfer byte lengths",
+        )?;
         let mut output_lens = SmallVec::<[usize; 8]>::new();
         reserve_smallvec(
             &mut output_lens,
-            output_capacity,
+            output_readback_capacity,
             "cuda graph output byte lengths",
         )?;
         let mut replay_input_bytes = 0_u64;
         let mut replay_output_bytes = 0_u64;
         let mut replay_host_upload_operations = 0_u64;
         let mut replay_device_readback_operations = 0_u64;
+        let resident_input_replay_safe = capture_binding_plan.resident_input_replay_safe;
+        let cached_input_key = exact_input_key(sample_inputs)?;
 
         // Walk binding plan in order, allocating + classifying input vs output.
         for binding in &prepared.bindings.bindings {
@@ -772,32 +937,34 @@ impl CudaBackend {
                 Some(input_index) => sample_inputs[input_index].len(),
                 None => binding
                     .static_byte_len
-                    .ok_or_else(|| BackendError::InvalidProgram {
-                        fix: format!(
-                            "Fix: CUDA-graph output `{}` needs a static byte length to be \
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA-graph output `{}` needs a static byte length to be \
                              cached. Set BufferDecl::with_count or output_byte_range before \
                              recording.",
                             binding.name
                         ),
                     })?,
             };
-            let mut device_ptr: u64 = 0;
-            // SAFETY: byte_len > 0 enforced by allocate-before-capture invariant.
-            // cuMemAlloc returns ENOMEM if it can't satisfy; cuda_check converts.
-            unsafe {
-                cuda_check(
-                    cudarc::driver::sys::cuMemAlloc_v2(&mut device_ptr, byte_len.max(1)),
-                    "cuMemAlloc_v2 (cuda_graph input/output buffer)",
-                )?;
-            }
+            let device_byte_len = if byte_len == 0 { 1 } else { aligned_async_copy_len(byte_len)? };
+            let device_ptr = alloc_cuda_ptr(
+                device_byte_len,
+                "cuMemAlloc_v2 (cuda_graph input/output buffer)",
+            )?;
             self.telemetry
                 .record_transient_allocation_bytes(cuda_graph_usize_to_u64(
-                    byte_len.max(1),
+                    device_byte_len,
                     "cudaGraph input/output allocation bytes",
                 )?);
             if let Some(input_index) = binding.input_index {
                 let input_len = sample_inputs[input_index].len();
+                let input_transfer_len = if input_len == 0 {
+                    0
+                } else {
+                    aligned_async_copy_len(input_len)?
+                };
                 expected_input_lens.push(input_len);
+                input_transfer_lens.push(input_transfer_len);
                 add_cuda_graph_replay_bytes(&mut replay_input_bytes, input_len, "input replay")?;
                 if input_len != 0 {
                     add_cuda_graph_replay_operation(
@@ -805,7 +972,7 @@ impl CudaBackend {
                         "host upload replay",
                     )?;
                 }
-                host_buffers.push_input(sample_inputs[input_index])?;
+                host_buffers.push_input_padded(sample_inputs[input_index], input_transfer_len)?;
                 input_device_ptrs.push(DevicePtrGuard::new(device_ptr));
             } else {
                 output_device_ptrs.push(DevicePtrGuard::new(device_ptr));
@@ -826,18 +993,26 @@ impl CudaBackend {
                         "device readback replay",
                     )?;
                 }
-                let readback_device_offset = cuda_graph_usize_to_u64(
+                let readback_ptr = vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+                    device_ptr,
                     readback.device_offset,
-                    "cudaGraph output readback device offset",
-                )?;
-                let readback_ptr = device_ptr
-                    .checked_add(readback_device_offset)
-                    .ok_or_else(|| BackendError::InvalidProgram {
+                    || {
+                        BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA graph output readback device offset {} for `{}` does not fit CUdeviceptr arithmetic.",
+                            readback.device_offset, binding.name
+                        ),
+                    }
+                    },
+                    || {
+                        BackendError::InvalidProgram {
                         fix: format!(
                             "Fix: CUDA graph readback pointer overflowed for output `{}` at device_ptr={device_ptr} offset={}. Re-record with a valid output range or split the output buffer.",
                             binding.name, readback.device_offset
                         ),
-                    })?;
+                    }
+                    },
+                )?;
                 readback_device_ptrs.push(readback_ptr);
             }
         }
@@ -847,42 +1022,27 @@ impl CudaBackend {
             &prepared.launch.param_words,
             "cudaGraph capture",
         )?;
-        let mut params_device_ptr: u64 = 0;
-        if param_bytes != 0 {
-            // SAFETY: param_bytes is u32-aligned and non-zero in this branch.
-            unsafe {
-                cuda_check(
-                    cudarc::driver::sys::cuMemAlloc_v2(&mut params_device_ptr, param_bytes),
-                    "cuMemAlloc_v2 (cuda_graph param buffer)",
-                )?;
-            }
+        let param_copy_bytes = if param_bytes == 0 {
+            0
+        } else {
+            aligned_async_copy_len(param_bytes)?
+        };
+        let params_device_ptr = if param_bytes != 0 {
+            let params_device_ptr =
+                alloc_cuda_ptr(param_copy_bytes, "cuMemAlloc_v2 (cuda_graph param buffer)")?;
             self.telemetry
                 .record_transient_allocation_bytes(cuda_graph_usize_to_u64(
-                    param_bytes,
+                    param_copy_bytes,
                     "cudaGraph parameter allocation bytes",
                 )?);
-        }
+            params_device_ptr
+        } else {
+            0
+        };
         let params_device_ptr = DevicePtrGuard::new(params_device_ptr);
 
         // Create dedicated stream for capture + replay.
-        let mut stream_ptr: cudarc::driver::sys::CUstream = std::ptr::null_mut();
-        // SAFETY: stream_ptr is a valid out-pointer; the graph stream is
-        // explicitly non-blocking so capture/replay never inherits CUDA's
-        // legacy default-stream ordering.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuStreamCreate(
-                    &mut stream_ptr,
-                    cudarc::driver::sys::CUstream_flags::CU_STREAM_NON_BLOCKING as u32,
-                ),
-                "cuStreamCreate (cuda_graph dedicated stream)",
-            )?;
-        }
-        let stream = NonNull::new(stream_ptr).ok_or_else(|| BackendError::DispatchFailed {
-            code: None,
-            message: "cuStreamCreate returned a null stream after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.".to_string(),
-        })?;
-        let stream = StreamGuard::new(stream);
+        let stream = create_cuda_graph_stream()?;
         // SAFETY: FFI to libcuda.so. Pointer args were validated by the
         // matching alloc / store API; lifetimes are documented in the
         // surrounding function. cuda_check (or matching CUresult guard)
@@ -890,26 +1050,23 @@ impl CudaBackend {
         if param_bytes != 0 {
             let mut param_host_transfer =
                 HostTransferAllocations::with_capacity(Arc::clone(&self.host_pool), 1, 0)?;
-            let param_host_ptr =
-                param_host_transfer.push_u32_words(&prepared.launch.param_words)?;
-            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+            let param_host_ptr = param_host_transfer.push_u32_words_padded(
+                &prepared.launch.param_words,
+                param_copy_bytes,
+            )?;
+            // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
             unsafe {
                 // Upload the param words once; the kernel reads them on every replay.
                 // The async copy targets the dedicated stream so recording cannot
                 // create an implicit dependency on CUDA's legacy default stream.
-                cuda_check(
-                    cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                        params_device_ptr.ptr(),
-                        param_host_ptr,
-                        param_bytes,
-                        stream.ptr().as_ptr(),
-                    ),
+                super::copy::h2d_async_checked_with_label(
+                    params_device_ptr.ptr(),
+                    param_host_ptr,
+                    param_copy_bytes,
+                    stream.ptr().as_ptr(),
                     "cuMemcpyHtoDAsync_v2 (cuda_graph param init)",
                 )?;
-                cuda_check(
-                    cudarc::driver::sys::cuStreamSynchronize(stream.ptr().as_ptr()),
-                    "cuStreamSynchronize (cuda_graph param init)",
-                )?;
+                synchronize_cuda_graph_param_init_stream(&stream)?;
             }
             self.telemetry.record_sync_point();
         }
@@ -920,43 +1077,37 @@ impl CudaBackend {
                                                      //
                                                      // SAFETY: stream is freshly created. The capture mode is constructed
                                                      // directly via the typed enum variant (THREAD_LOCAL) rather than
-                                                     // `std::mem::transmute::<u32, _>(1)` — the old transmute would have
+                                                     // `std::mem::transmute::<u32, _>(1)`  -  the old transmute would have
                                                      // been UB if the local u32 constant ever drifted away from a valid
                                                      // variant value (the enum has gaps at 3..). The typed variant is
                                                      // compile-time-checked and just as efficient.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuStreamBeginCapture_v2(
-                    stream.ptr().as_ptr(),
-                    cudarc::driver::sys::CUstreamCaptureMode_enum::CU_STREAM_CAPTURE_MODE_THREAD_LOCAL,
-                ),
-                "cuStreamBeginCapture_v2",
-            )?;
-        }
-        let mut capture_guard = CaptureGuard::armed(stream.ptr());
+        let mut capture_guard = begin_cuda_graph_capture(&stream, "cuStreamBeginCapture_v2")?;
 
         // Record HtoD memcpys for each input.
-        for ((host_buf, input_len), device_ptr) in host_buffers
+        for ((host_buf, input_len), (input_transfer_len, device_ptr)) in host_buffers
             .input
             .iter()
             .zip(expected_input_lens.iter())
-            .zip(input_device_ptrs.iter())
+            .zip(input_transfer_lens.iter().zip(input_device_ptrs.iter()))
         {
             if *input_len == 0 {
                 continue;
             }
+            let copy_len = if *input_transfer_len == 0 {
+                *input_len
+            } else {
+                *input_transfer_len
+            };
             // SAFETY: host_buf.as_ptr() is stable for the lifetime of CachedCudaGraph
-            // (the Vec is owned by CachedCudaGraph and never reallocated — capacity is
+            // (the Vec is owned by CachedCudaGraph and never reallocated  -  capacity is
             // set at construction). device_ptr was allocated above. Both pointers
             // outlive the captured graph.
             unsafe {
-                cuda_check(
-                    cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                        device_ptr.ptr(),
-                        host_buf.as_ptr(),
-                        *input_len,
-                        stream.ptr().as_ptr(),
-                    ),
+                super::copy::h2d_async_checked_with_label(
+                    device_ptr.ptr(),
+                    host_buf.as_ptr(),
+                    copy_len,
+                    stream.ptr().as_ptr(),
                     "cuMemcpyHtoDAsync_v2 (capture input)",
                 )?;
             }
@@ -964,19 +1115,13 @@ impl CudaBackend {
 
         // Record kernel launch. Build kernel_args mirroring the production
         // launch_module path: per-buffer u64 ptr-of-ptr, then param ptr.
-        let launch_pointer_capacity = cuda_graph_capacity_add(
-            input_device_ptrs.len(),
-            output_device_ptrs.len(),
-            "launch pointer",
-        )?;
+        let launch_pointer_capacity = capture_binding_plan.kernel_pointer_capacity;
         let mut all_ptrs = SmallVec::<[u64; 16]>::new();
-        all_ptrs
-            .try_reserve_exact(launch_pointer_capacity)
-            .map_err(|error| BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: CUDA graph capture launch pointer table could not reserve {launch_pointer_capacity} slot(s): {error:?}. Record a smaller graph shape or split the dispatch."
-                ),
-            })?;
+        reserve_smallvec(
+            &mut all_ptrs,
+            launch_pointer_capacity,
+            "graph capture launch pointer",
+        )?;
         let mut input_iter = input_device_ptrs.iter();
         let mut output_iter = output_device_ptrs.iter();
         for binding in &prepared.bindings.bindings {
@@ -1006,15 +1151,13 @@ impl CudaBackend {
             };
             all_ptrs.push(ptr);
         }
-        let kernel_arg_capacity = cuda_graph_capacity_add(all_ptrs.len(), 1, "kernel argument")?;
+        let kernel_arg_capacity = capture_binding_plan.kernel_argument_capacity;
         let mut kernel_args: SmallVec<[*mut std::ffi::c_void; 16]> = SmallVec::new();
-        kernel_args
-            .try_reserve_exact(kernel_arg_capacity)
-            .map_err(|error| BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: CUDA graph capture kernel argument table could not reserve {kernel_arg_capacity} pointer slot(s): {error:?}. Record a smaller graph shape or split the dispatch."
-                ),
-            })?;
+        reserve_smallvec(
+            &mut kernel_args,
+            kernel_arg_capacity,
+            "graph capture kernel argument",
+        )?;
         for ptr in &mut all_ptrs {
             if *ptr == 0 {
                 return Err(BackendError::InvalidProgram {
@@ -1028,99 +1171,80 @@ impl CudaBackend {
         kernel_args.push(&mut params_ref as *mut _ as *mut std::ffi::c_void);
 
         for _ in 0..prepared.fixpoint_iterations {
-            // SAFETY: launch geometry validated by prepare. kernel_args pointers
-            // are stable until the cuLaunchKernel call returns; capture records
-            // by value.
-            unsafe {
-                cuda_check(
-                    cudarc::driver::sys::cuLaunchKernel(
-                        func,
-                        prepared.launch.grid[0],
-                        prepared.launch.grid[1],
-                        prepared.launch.grid[2],
-                        prepared.launch.workgroup[0],
-                        prepared.launch.workgroup[1],
-                        prepared.launch.workgroup[2],
-                        0,
-                        stream.ptr().as_ptr(),
-                        kernel_args.as_mut_ptr(),
-                        std::ptr::null_mut(),
-                    ),
-                    "cuLaunchKernel (capture)",
-                )?;
-            }
-        }
-
-        // Record DtoH memcpys for each output.
-        for ((host_buf, output_len), device_ptr) in host_buffers
-            .output
-            .iter_mut()
-            .zip(output_lens.iter())
-            .zip(readback_device_ptrs.iter())
-        {
-            if *output_len == 0 {
-                continue;
-            }
-            // SAFETY: same as input memcpy — pointers stable for graph lifetime.
-            unsafe {
-                cuda_check(
-                    cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
-                        host_buf.as_mut_ptr(),
-                        *device_ptr,
-                        *output_len,
-                        stream.ptr().as_ptr(),
-                    ),
-                    "cuMemcpyDtoHAsync_v2 (capture output)",
-                )?;
-            }
-        }
-
-        // End capture and instantiate.
-        let mut graph_ptr: cudarc::driver::sys::CUgraph = std::ptr::null_mut();
-        // SAFETY: stream is in capture mode (we started it above).
-        let end_capture_status = unsafe {
-            cudarc::driver::sys::cuStreamEndCapture(stream.ptr().as_ptr(), &mut graph_ptr)
-        };
-        capture_guard.disarm();
-        if end_capture_status != cudarc::driver::sys::CUresult::CUDA_SUCCESS && !graph_ptr.is_null()
-        {
-            // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-            // matching alloc / store API; lifetimes are documented in the
-            // surrounding function. cuda_check (or matching CUresult guard)
-            // propagates non-success codes as BackendError.
-            unsafe {
-                log_cuda_drop_result(
-                    "cuGraphDestroy",
-                    cudarc::driver::sys::cuGraphDestroy(graph_ptr),
-                );
-            }
-        }
-        cuda_check(end_capture_status, "cuStreamEndCapture")?;
-        let graph = NonNull::new(graph_ptr).ok_or_else(|| BackendError::DispatchFailed {
-            code: None,
-            message: "cuStreamEndCapture returned a null graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.".to_string(),
-        })?;
-        let graph = GraphGuard::new(graph);
-
-        let mut graph_exec_ptr: cudarc::driver::sys::CUgraphExec = std::ptr::null_mut();
-        // SAFETY: graph is the freshly captured graph; flags = 0 selects default execution.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuGraphInstantiateWithFlags(
-                    &mut graph_exec_ptr,
-                    graph.ptr().as_ptr(),
-                    0,
-                ),
-                "cuGraphInstantiateWithFlags",
+            super::launch::launch_cuda_function(
+                func,
+                kernel_args.as_mut_slice(),
+                &prepared.launch,
+                stream.ptr().as_ptr(),
+                false,
+                self.ptx_target_sm(),
+                "cuLaunchKernel (capture)",
             )?;
         }
-        let graph_exec = NonNull::new(graph_exec_ptr).ok_or_else(|| {
-            BackendError::DispatchFailed {
-                code: None,
-                message: "cuGraphInstantiateWithFlags returned a null executable graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.".to_string(),
-            }
-        })?;
-        let graph_exec = GraphExecGuard::new(graph_exec);
+
+        record_cuda_graph_output_readbacks(
+            &mut host_buffers.output,
+            &output_lens,
+            &readback_device_ptrs,
+            &stream,
+            "cuMemcpyDtoHAsync_v2 (capture output)",
+        )?;
+
+        // End capture and instantiate.
+        let graph = capture_guard.finish(
+            "cuStreamEndCapture",
+            "cuStreamEndCapture returned a null graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.",
+        )?;
+
+        let graph_exec = instantiate_cuda_graph(
+            &graph,
+            "cuGraphInstantiateWithFlags",
+            "cuGraphInstantiateWithFlags returned a null executable graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.",
+        )?;
+
+        // Capture a second steady-state graph for repeated identical inputs.
+        // The full graph above remains the correctness path whenever input
+        // bytes change; this graph removes only HtoD nodes after the device
+        // input buffers are known-current.
+        let mut resident_capture_guard = begin_cuda_graph_capture(
+            &stream,
+            "cuStreamBeginCapture_v2 (resident input cuda_graph)",
+        )?;
+        for _ in 0..prepared.fixpoint_iterations {
+            super::launch::launch_cuda_function(
+                func,
+                kernel_args.as_mut_slice(),
+                &prepared.launch,
+                stream.ptr().as_ptr(),
+                false,
+                self.ptx_target_sm(),
+                "cuLaunchKernel (resident input capture)",
+            )?;
+        }
+        record_cuda_graph_output_readbacks(
+            &mut host_buffers.output,
+            &output_lens,
+            &readback_device_ptrs,
+            &stream,
+            "cuMemcpyDtoHAsync_v2 (resident input capture output)",
+        )?;
+        let resident_input_graph = resident_capture_guard.finish(
+            "cuStreamEndCapture (resident input cuda_graph)",
+            "cuStreamEndCapture returned a null resident-input graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.",
+        )?;
+
+        let resident_input_graph_exec = instantiate_cuda_graph(
+            &resident_input_graph,
+            "cuGraphInstantiateWithFlags (resident input cuda_graph)",
+            "cuGraphInstantiateWithFlags returned a null resident-input executable graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.",
+        )?;
+
+        upload_cuda_graph_exec(&graph_exec, &stream, "cuGraphUpload")?;
+        upload_cuda_graph_exec(
+            &resident_input_graph_exec,
+            &stream,
+            "cuGraphUpload (resident input cuda_graph)",
+        )?;
 
         let (input_host_bufs, output_host_bufs) = host_buffers.into_raw();
 
@@ -1128,17 +1252,24 @@ impl CudaBackend {
             backend: self.clone(),
             graph_exec,
             graph,
+            resident_input_graph_exec,
+            resident_input_graph,
             stream,
             input_host_bufs,
             input_device_ptrs,
             output_device_ptrs,
             output_host_bufs,
             output_lens,
+            input_transfer_lens,
             replay_input_bytes,
             replay_output_bytes,
             replay_host_upload_operations,
             replay_device_readback_operations,
             expected_input_lens,
+            cached_input_key,
+            resident_input_replay_safe,
+            device_inputs_initialized: false,
+            host_outputs_initialized: false,
             params_device_ptr,
         })
     }

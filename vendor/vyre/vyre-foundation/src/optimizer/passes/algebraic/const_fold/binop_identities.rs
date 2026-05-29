@@ -74,7 +74,7 @@ pub(super) fn is_simple_pure(expr: &Expr) -> bool {
 }
 
 /// Algebraic identity simplifications for binary operators.
-/// These rewrites are always valid and don't require literal operands —
+/// These rewrites are always valid and don't require literal operands  -
 /// they fire when one operand is a literal identity/annihilator element.
 ///
 /// Critical for GPU kernels where loop unrolling and index arithmetic
@@ -543,7 +543,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
         BinOp::BitOr if left == right => Some(left.clone()),
 
         // ─── Comparison self-identities ──────────────────────
-        // x == x → true,  x != x → false  — only when `x` is purely
+        // x == x → true,  x != x → false   -  only when `x` is purely
         // value-deterministic. Two `Load` reads of the same buffer can
         // observe distinct values under relaxed memory ordering, so
         // folding `Eq(Load, Load) → true` would be unsound. The
@@ -552,7 +552,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
         // free.
         BinOp::Eq if left == right && is_simple_pure(left) => Some(Expr::bool(true)),
         BinOp::Ne if left == right && is_simple_pure(left) => Some(Expr::bool(false)),
-        // x < x → false,  x > x → false  — same purity caveat applies.
+        // x < x → false,  x > x → false   -  same purity caveat applies.
         BinOp::Lt if left == right && is_simple_pure(left) => Some(Expr::bool(false)),
         BinOp::Gt if left == right && is_simple_pure(left) => Some(Expr::bool(false)),
         // x <= x → true,  x >= x → true
@@ -592,7 +592,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
         // Comparison with extremes: x < 0 → false, 0 <= x → true,
         // x <= u32::MAX → true, u32::MAX < x → false. These come up
         // after const-fold normalises a runtime check that always
-        // succeeds (e.g. `if (lane >= 0)` — true for u32 by type).
+        // succeeds (e.g. `if (lane >= 0)`  -  true for u32 by type).
         BinOp::Lt if matches!(right, Expr::LitU32(0)) => Some(Expr::bool(false)),
         BinOp::Ge if matches!(right, Expr::LitU32(0)) => Some(Expr::bool(true)),
         BinOp::Le if matches!(right, Expr::LitU32(u32::MAX)) => Some(Expr::bool(true)),
@@ -605,7 +605,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
 
         // u32 modulo by `u32::MAX + 1` (which is just `0` literal in
         // u32) is undefined; mod by 1 already handled above; mod by
-        // 2^32 is unrepresentable as a literal — no extra rule needed.
+        // 2^32 is unrepresentable as a literal  -  no extra rule needed.
 
         // ─── Wrapping arithmetic identities ──────────────────
         // wrapping_add(x, 0) → x,  wrapping_sub(x, 0) → x
@@ -672,7 +672,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
             Some(right.clone())
         }
         // (Reflexive Eq/Ne handled in the comparison-self-identities
-        // section above — guarded by `is_simple_pure` for soundness
+        // section above  -  guarded by `is_simple_pure` for soundness
         // under relaxed memory ordering.)
 
         // ─── BitAnd with all-ones mask → identity ────────────
@@ -696,6 +696,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
         _ => None,
     }
 }
+
 
 fn expr_scalar_literal(expr: &Expr) -> Option<ScalarLiteral> {
     match expr {
@@ -839,3 +840,4 @@ fn rewrite_expr_for_mod(
 fn lit_f32_eq(value: f32, expected: f32) -> bool {
     value.to_bits() == expected.to_bits()
 }
+

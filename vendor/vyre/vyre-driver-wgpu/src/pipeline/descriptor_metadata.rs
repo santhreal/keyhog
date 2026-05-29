@@ -12,6 +12,9 @@ use vyre_driver::{BackendError, BackendLayoutClass, BackendLayoutFingerprint, Ba
 use vyre_emit_naga::program::TrapTag;
 use vyre_lower::TRAP_SIDECAR_NAME;
 
+use crate::descriptor_mapping::{
+    descriptor_bind_group, descriptor_buffer_access, descriptor_memory_kind,
+};
 use crate::pipeline::element_size_bytes;
 
 /// Metadata for one buffer binding derived from a `Program` at compile time.
@@ -49,9 +52,11 @@ pub(crate) fn descriptor_buffer_bindings(
     pipeline_live_out_bindings: &FxHashSet<u32>,
 ) -> Result<Vec<BufferBindingInfo>, BackendError> {
     let mut bindings = Vec::new();
-    bindings
-        .try_reserve_exact(descriptor.bindings.slots.len())
-        .map_err(|source| {
+    vyre_driver::allocation::try_reserve_vec_to_capacity(
+        &mut bindings,
+        descriptor.bindings.slots.len(),
+    )
+    .map_err(|source| {
             BackendError::new(format!(
                 "descriptor buffer binding allocation failed for {} slots: {source}. Fix: split the lowered kernel before WGPU pipeline metadata extraction.",
                 descriptor.bindings.slots.len()
@@ -61,7 +66,7 @@ pub(crate) fn descriptor_buffer_bindings(
         let Some(group) = descriptor_bind_group(slot.memory_class) else {
             continue;
         };
-        let access = descriptor_access(slot.visibility);
+        let access = descriptor_buffer_access(slot.visibility);
         let internal_trap = slot.name == TRAP_SIDECAR_NAME;
         let is_output = public_output_bindings.contains(&slot.slot) && !internal_trap;
         let explicit_output = explicit_output_bindings.contains(&slot.slot);
@@ -98,7 +103,7 @@ pub(crate) fn bind_group_layout_fingerprint(
     bindings: &[BufferBindingInfo],
 ) -> Result<BackendLayoutFingerprint, BackendError> {
     let mut slots = Vec::new();
-    slots.try_reserve_exact(bindings.len()).map_err(|source| {
+    vyre_driver::allocation::try_reserve_vec_to_capacity(&mut slots, bindings.len()).map_err(|source| {
         BackendError::new(format!(
             "bind-group layout fingerprint allocation failed for {} bindings: {source}. Fix: split the lowered kernel before WGPU pipeline metadata extraction.",
             bindings.len()
@@ -144,7 +149,7 @@ pub(crate) fn create_bind_group_layouts(
         ))
     })?;
     let mut layouts: Vec<Arc<wgpu::BindGroupLayout>> = Vec::new();
-    layouts.try_reserve_exact(group_count).map_err(|source| {
+    vyre_driver::allocation::try_reserve_vec_to_capacity(&mut layouts, group_count).map_err(|source| {
         BackendError::new(format!(
             "bind-group layout vector allocation failed for {group_count} groups: {source}. Fix: split the lowered kernel before WGPU pipeline creation."
         ))
@@ -155,7 +160,7 @@ pub(crate) fn create_bind_group_layouts(
             .filter(|binding| binding.group == group_index)
             .count();
         let mut entries = Vec::new();
-        entries.try_reserve_exact(group_binding_count).map_err(|source| {
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut entries, group_binding_count).map_err(|source| {
             BackendError::new(format!(
                 "bind-group layout entry allocation failed for group {group_index} with {group_binding_count} bindings: {source}. Fix: split the lowered kernel before WGPU pipeline creation."
             ))
@@ -201,36 +206,6 @@ pub(crate) fn create_bind_group_layouts(
         )));
     }
     Ok(layouts.into())
-}
-
-fn descriptor_bind_group(memory_class: vyre_lower::MemoryClass) -> Option<u32> {
-    match memory_class {
-        vyre_lower::MemoryClass::Shared | vyre_lower::MemoryClass::Scratch => None,
-        vyre_lower::MemoryClass::Uniform => Some(1),
-        vyre_lower::MemoryClass::Global | vyre_lower::MemoryClass::Constant => Some(0),
-    }
-}
-
-fn descriptor_access(
-    visibility: vyre_lower::BindingVisibility,
-) -> vyre_foundation::ir::BufferAccess {
-    match visibility {
-        vyre_lower::BindingVisibility::ReadOnly => vyre_foundation::ir::BufferAccess::ReadOnly,
-        vyre_lower::BindingVisibility::WriteOnly => vyre_foundation::ir::BufferAccess::WriteOnly,
-        vyre_lower::BindingVisibility::ReadWrite => vyre_foundation::ir::BufferAccess::ReadWrite,
-    }
-}
-
-fn descriptor_memory_kind(
-    memory_class: vyre_lower::MemoryClass,
-) -> vyre_foundation::ir::MemoryKind {
-    match memory_class {
-        vyre_lower::MemoryClass::Shared => vyre_foundation::ir::MemoryKind::Shared,
-        vyre_lower::MemoryClass::Constant => vyre_foundation::ir::MemoryKind::Readonly,
-        vyre_lower::MemoryClass::Uniform => vyre_foundation::ir::MemoryKind::Uniform,
-        vyre_lower::MemoryClass::Global => vyre_foundation::ir::MemoryKind::Global,
-        vyre_lower::MemoryClass::Scratch => vyre_foundation::ir::MemoryKind::Local,
-    }
 }
 
 pub(crate) fn descriptor_trap_tags(
@@ -280,13 +255,13 @@ pub(crate) fn descriptor_trap_tags(
 
     let op_count = recursive_op_count(&descriptor.body)?;
     let mut seen = FxHashSet::default();
-    seen.try_reserve(op_count).map_err(|source| {
+    vyre_foundation::allocation::try_reserve_hash_set_to_capacity(&mut seen, op_count).map_err(|source| {
         BackendError::new(format!(
             "trap-tag dedup allocation failed for {op_count} descriptor ops: {source}. Fix: split nested kernel bodies before descriptor metadata extraction."
         ))
     })?;
     let mut out = Vec::new();
-    out.try_reserve_exact(op_count).map_err(|source| {
+    vyre_driver::allocation::try_reserve_vec_to_capacity(&mut out, op_count).map_err(|source| {
         BackendError::new(format!(
             "trap-tag output allocation failed for {op_count} descriptor ops: {source}. Fix: split nested kernel bodies before descriptor metadata extraction."
         ))
@@ -303,7 +278,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("descriptor metadata production source must precede tests");
+            .expect("Fix: descriptor metadata production source must precede tests");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".expect(")
@@ -313,7 +288,8 @@ mod tests {
             "Fix: WGPU descriptor metadata extraction must reject oversized lowered kernels with BackendError instead of aborting."
         );
         assert!(
-            production.contains("try_reserve_exact")
+            production.contains("try_reserve_vec_to_capacity")
+                && production.contains("try_reserve_hash_set_to_capacity")
                 && production.contains("Result<Vec<BufferBindingInfo>, BackendError>")
                 && production.contains("Result<Arc<[Arc<wgpu::BindGroupLayout>]>, BackendError>")
                 && production.contains("Result<Vec<TrapTag>, BackendError>"),

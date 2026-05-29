@@ -1,4 +1,4 @@
-//! Open-IR extension surface — traits and inventory registration for
+//! Open-IR extension surface  -  traits and inventory registration for
 //! third-party Expr / Node / DataType / BinOp / UnOp / AtomicOp /
 //! RuleCondition variants.
 //!
@@ -13,7 +13,7 @@
 //!
 //! Every resolver is a `LazyLock<FxHashMap<ExtensionXxxId, &'static dyn
 //! ExtensionXxx>>`. First call walks the inventory once. Every subsequent
-//! call is one hash + one table probe — sub-ns, no allocation, no lock.
+//! call is one hash + one table probe  -  sub-ns, no allocation, no lock.
 //! The prior implementation called `inventory::iter` per lookup which
 //! scaled linearly with the registration count and violated the
 //! hot-path invariant documented in `docs/inventory-contract.md`.
@@ -31,7 +31,7 @@ use vyre_spec::extension::{
 /// Generic extension id used by the `Expr::Opaque` and `Node::Opaque`
 /// surfaces (introduced in the 0.5.x cycle before the per-kind ids in
 /// vyre-spec were finalized). New extensions should prefer the per-kind
-/// ids — this generic id stays for the existing `ExprExtensionNode` /
+/// ids  -  this generic id stays for the existing `ExprExtensionNode` /
 /// `NodeNode` traits until their migration to per-kind surfaces lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExtensionId(pub u32);
@@ -68,7 +68,7 @@ pub trait NodeNode: Debug + Send + Sync + 'static {
     fn display(&self) -> String;
 }
 
-/// Opaque rule condition extension — lets third-party rule-engine crates
+/// Opaque rule condition extension  -  lets third-party rule-engine crates
 /// compose bespoke predicates without editing vyre-core's `RuleCondition`.
 pub trait RuleConditionExt: Debug + Send + Sync + 'static {
     /// Stable extension id.
@@ -93,7 +93,7 @@ pub trait RuleConditionExt: Debug + Send + Sync + 'static {
 
 /// Link-time registration for an extension-declared `DataType`.
 ///
-/// The `vtable` pointer is what `resolve_data_type` returns — it bypasses
+/// The `vtable` pointer is what `resolve_data_type` returns  -  it bypasses
 /// any further registry lookup on subsequent accesses.
 pub struct ExtensionDataTypeRegistration {
     /// Stable id this registration serves.
@@ -176,7 +176,7 @@ pub type NodeExtensionDeserializer =
 /// deserializer. Wire tag `0x80` on an `Expr` discriminant triggers a
 /// kind-keyed lookup against these records.
 pub struct OpaqueExprResolver {
-    /// Stable extension kind — must match [`crate::ir::ExprNode::extension_kind`].
+    /// Stable extension kind  -  must match [`crate::ir::ExprNode::extension_kind`].
     pub kind: &'static str,
     /// Deserializer for the extension's `wire_payload` bytes.
     pub deserialize: ExprExtensionDeserializer,
@@ -184,7 +184,7 @@ pub struct OpaqueExprResolver {
 
 /// Inventory record pairing a `NodeExtension` extension kind to its decoder.
 pub struct OpaqueNodeResolver {
-    /// Stable extension kind — must match [`crate::ir::NodeExtension::extension_kind`].
+    /// Stable extension kind  -  must match [`crate::ir::NodeExtension::extension_kind`].
     pub kind: &'static str,
     /// Deserializer for the extension's `wire_payload` bytes.
     pub deserialize: NodeExtensionDeserializer,

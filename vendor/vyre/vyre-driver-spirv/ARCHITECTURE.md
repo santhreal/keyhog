@@ -1,4 +1,4 @@
-# vyre-driver-spirv — architecture
+# vyre-driver-spirv  -  architecture
 
 SPIR-V backend. Lowers `vyre::ir::Program` to SPIR-V binary,
 validates against `spirv-tools`, and dispatches via Vulkan.
@@ -17,8 +17,8 @@ without explicit linking.
 
 ## Public types
 
-- **`SpirvBackend`** — backend-trait implementation.
-- **`SpirvBackendRegistration`** — the inventory token.
+- **`SpirvBackend`**  -  backend-trait implementation.
+- **`SpirvBackendRegistration`**  -  the inventory token.
 
 ## Integration points
 

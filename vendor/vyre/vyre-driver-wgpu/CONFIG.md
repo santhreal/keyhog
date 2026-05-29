@@ -1,9 +1,9 @@
-# vyre-driver-wgpu — Configurability
+# vyre-driver-wgpu  -  Configurability
 
 The `vyre-wgpu` binary and the wgpu backend library expose a small,
 explicit Tier A surface and consume the workspace Tier-B op corpus.
 
-## Tier A — operational config
+## Tier A  -  operational config
 
 CLI flags + environment variables. Compiled defaults < env < CLI.
 
@@ -23,7 +23,7 @@ Every env var has a documented default in `vyre-driver-wgpu/src/runtime/`
 and an integration test that round-trips parsing through the public
 `WgpuBackendStats` surface.
 
-## Tier B — community knowledge
+## Tier B  -  community knowledge
 
 The wgpu backend consumes the workspace op corpus at `rules/op/*.toml`.
 Each op rule names a backend lowering (wgpu / spirv / cuda / reference)

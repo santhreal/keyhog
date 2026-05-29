@@ -1,4 +1,4 @@
-//! `taint_kill` — one-Region set-difference dataflow primitive.
+//! `taint_kill`  -  one-Region set-difference dataflow primitive.
 //!
 //! Given a `frontier_in` bitset of currently-tainted nodes and a
 //! `kill_set` bitset of nodes whose taint must be dropped (e.g.

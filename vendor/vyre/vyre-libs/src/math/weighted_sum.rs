@@ -1,6 +1,6 @@
 //! Block-FMA weighted-sum reduction: `y = sum_i weights[i] * values[i]`.
 //!
-//! ROADMAP G7 — block-FMA reductions. The naive form
+//! ROADMAP G7  -  block-FMA reductions. The naive form
 //! `acc = acc + weights[i] * values[i]` performs two rounded
 //! IEEE-754 operations per element (mul, add). Replacing with
 //! `acc = Fma(weights[i], values[i], acc)` collapses to a single
@@ -84,19 +84,13 @@ inventory::submit! {
             })
         },
         test_inputs: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
-            let weights = f32_bytes(&[0.5, 0.25, 0.125, 0.125]);
-            let values = f32_bytes(&[1.0, 2.0, 4.0, 8.0]);
+            let weights = crate::test_support::byte_pack::f32_bytes(&[0.5, 0.25, 0.125, 0.125]);
+            let values = crate::test_support::byte_pack::f32_bytes(&[1.0, 2.0, 4.0, 8.0]);
             vec![vec![weights, values]]
         }),
         expected_output: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             // 0.5*1 + 0.25*2 + 0.125*4 + 0.125*8 = 0.5 + 0.5 + 0.5 + 1.0 = 2.5
-            vec![vec![f32_bytes(&[2.5_f32])]]
+            vec![vec![crate::test_support::byte_pack::f32_bytes(&[2.5_f32])]]
         }),
         category: Some("math"),
     }
@@ -105,19 +99,13 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32_one as decode_one;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_one(bytes: &[u8]) -> f32 {
-        f32::from_le_bytes(bytes[0..4].try_into().unwrap())
-    }
 
     fn run(weights: &[f32], values: &[f32]) -> f32 {
         let n = weights.len() as u32;
-        let prog = weighted_sum_fma_f32("weights", "values", "output", n).expect("build");
+        let prog = weighted_sum_fma_f32("weights", "values", "output", n).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[

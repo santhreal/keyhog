@@ -1,8 +1,8 @@
-//! `if_constant_branch_eliminate` — replace `Node::If` with a constant
+//! `if_constant_branch_eliminate`  -  replace `Node::If` with a constant
 //! condition by inlining the surviving arm.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::if_constant_branch_eliminate`.
-//! Soundness: `Exact` — when the condition is a compile-time-known boolean,
+//! Soundness: `Exact`  -  when the condition is a compile-time-known boolean,
 //! exactly one arm executes; the other is provably dead. Inlining the live
 //! arm into the parent sequence preserves observable semantics. Cost-direction:
 //! monotone-down on every tracked dimension (drops the dead arm + the
@@ -20,7 +20,7 @@
 //! following `empty_block_collapse` pass (or `canonicalize`) flattens the
 //! Block into the parent sequence when there's no scoping concern. We
 //! emit the Block instead of splicing because:
-//!   1. Splicing requires the parent sequence's mutable handle — our pass
+//!   1. Splicing requires the parent sequence's mutable handle  -  our pass
 //!      walks one node at a time.
 //!   2. The Block-then-collapse approach is local and composable; downstream
 //!      passes can rely on the post-condition that no `Node::If` has a
@@ -31,7 +31,7 @@
 //! `const_fold` rewrites `Expr::BinOp { op: Eq, left: LitU32(7), right: LitU32(7) }`
 //! → `Expr::LitBool(true)`. The constant condition then sits inside the
 //! `Node::If`. This pass's job is to react: drop the now-dead arm. Without
-//! it, the IR carries the dead arm forward through lowering — backend
+//! it, the IR carries the dead arm forward through lowering  -  backend
 //! emits unreachable code, codegen pays for the branch.
 
 use crate::ir::{Expr, Node, Program};

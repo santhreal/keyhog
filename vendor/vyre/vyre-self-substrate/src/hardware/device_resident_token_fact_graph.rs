@@ -310,7 +310,7 @@ mod tests {
             ],
             32,
         )
-        .expect("valid token/fact graph should pack");
+        .expect("Fix: valid token/fact graph should pack");
 
         assert_eq!(graph.node_ids, vec![10, 20, 30]);
         assert_eq!(
@@ -347,7 +347,7 @@ mod tests {
             ],
             8,
         )
-        .expect("duplicate edges should deduplicate inside a resident row");
+        .expect("Fix: duplicate edges should deduplicate inside a resident row");
 
         assert_eq!(graph.row_offsets, vec![0, 1, 1]);
         assert_eq!(graph.column_indices, vec![1]);
@@ -421,7 +421,7 @@ mod tests {
         }
 
         let graph = plan_device_resident_token_fact_graph(&nodes, &edges, 1024)
-            .expect("large unsorted token/fact graph should pack deterministically");
+            .expect("Fix: large unsorted token/fact graph should pack deterministically");
 
         assert_eq!(graph.node_ids[0], 0);
         assert_eq!(graph.node_ids[1023], 1023);
@@ -443,14 +443,14 @@ mod tests {
             edge(2, 3, TokenFactEdgeKind::FactDependency),
         ];
         plan_device_resident_token_fact_graph_with_scratch(&nodes, &edges, 3, &mut scratch)
-            .expect("first scratch-backed token/fact graph should pack");
+            .expect("Fix: first scratch-backed token/fact graph should pack");
         let ordered_capacity = scratch.ordered_nodes.capacity();
         let staged_capacity = scratch.staged_edges.capacity();
         let index_capacity = scratch.index_by_id.capacity();
 
         let graph =
             plan_device_resident_token_fact_graph_with_scratch(&nodes[..2], &[], 3, &mut scratch)
-                .expect("smaller scratch-backed token/fact graph should reuse staging");
+                .expect("Fix: smaller scratch-backed token/fact graph should reuse staging");
 
         assert_eq!(scratch.ordered_nodes.capacity(), ordered_capacity);
         assert_eq!(scratch.staged_edges.capacity(), staged_capacity);

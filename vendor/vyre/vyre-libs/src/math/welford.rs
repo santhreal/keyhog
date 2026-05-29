@@ -105,18 +105,9 @@ fn welford_invalid_program(input: &str, sum_out: &str, sum_sq_out: &str) -> Prog
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32_one as decode_one;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_one(bytes: &[u8]) -> f32 {
-        f32::from_le_bytes(bytes[0..4].try_into().unwrap())
-    }
 
     #[test]
     fn welford_small_dataset() {

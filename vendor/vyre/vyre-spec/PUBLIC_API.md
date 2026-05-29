@@ -17,6 +17,7 @@ impl core::marker::Freeze for vyre_spec::adversarial_input::AdversarialInput
 impl core::marker::Send for vyre_spec::adversarial_input::AdversarialInput
 impl core::marker::Sync for vyre_spec::adversarial_input::AdversarialInput
 impl core::marker::Unpin for vyre_spec::adversarial_input::AdversarialInput
+impl core::marker::UnsafeUnpin for vyre_spec::adversarial_input::AdversarialInput
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::adversarial_input::AdversarialInput
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::adversarial_input::AdversarialInput
 impl<T, U> core::convert::Into<U> for vyre_spec::adversarial_input::AdversarialInput where U: core::convert::From<T>
@@ -49,6 +50,8 @@ pub vyre_spec::algebraic_law::AlgebraicLaw::Associative
 pub vyre_spec::algebraic_law::AlgebraicLaw::Bounded
 pub vyre_spec::algebraic_law::AlgebraicLaw::Bounded::hi: u32
 pub vyre_spec::algebraic_law::AlgebraicLaw::Bounded::lo: u32
+pub vyre_spec::algebraic_law::AlgebraicLaw::CategoricalAssociative
+pub vyre_spec::algebraic_law::AlgebraicLaw::CategoricalIdentity
 pub vyre_spec::algebraic_law::AlgebraicLaw::Commutative
 pub vyre_spec::algebraic_law::AlgebraicLaw::Complement
 pub vyre_spec::algebraic_law::AlgebraicLaw::Complement::complement_op: &'static str
@@ -104,6 +107,7 @@ impl core::marker::Freeze for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::marker::Send for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::marker::Sync for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::marker::Unpin for vyre_spec::algebraic_law::AlgebraicLaw
+impl core::marker::UnsafeUnpin for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::algebraic_law::AlgebraicLaw
 impl<T, U> core::convert::Into<U> for vyre_spec::algebraic_law::AlgebraicLaw where U: core::convert::From<T>
@@ -145,6 +149,8 @@ pub vyre_spec::atomic_op::AtomicOp::Min
 pub vyre_spec::atomic_op::AtomicOp::Opaque(vyre_spec::extension::ExtensionAtomicOpId)
 pub vyre_spec::atomic_op::AtomicOp::Or
 pub vyre_spec::atomic_op::AtomicOp::Xor
+impl vyre_spec::atomic_op::AtomicOp
+pub const fn vyre_spec::atomic_op::AtomicOp::builtin_wire_tag(&self) -> core::option::Option<u8>
 impl core::clone::Clone for vyre_spec::atomic_op::AtomicOp
 pub fn vyre_spec::atomic_op::AtomicOp::clone(&self) -> vyre_spec::atomic_op::AtomicOp
 impl core::cmp::Eq for vyre_spec::atomic_op::AtomicOp
@@ -164,6 +170,7 @@ impl core::marker::Freeze for vyre_spec::atomic_op::AtomicOp
 impl core::marker::Send for vyre_spec::atomic_op::AtomicOp
 impl core::marker::Sync for vyre_spec::atomic_op::AtomicOp
 impl core::marker::Unpin for vyre_spec::atomic_op::AtomicOp
+impl core::marker::UnsafeUnpin for vyre_spec::atomic_op::AtomicOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::atomic_op::AtomicOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::atomic_op::AtomicOp
 impl<T, U> core::convert::Into<U> for vyre_spec::atomic_op::AtomicOp where U: core::convert::From<T>
@@ -208,6 +215,7 @@ pub vyre_spec::bin_op::BinOp::Max
 pub vyre_spec::bin_op::BinOp::Min
 pub vyre_spec::bin_op::BinOp::Mod
 pub vyre_spec::bin_op::BinOp::Mul
+pub vyre_spec::bin_op::BinOp::MulHigh
 pub vyre_spec::bin_op::BinOp::Ne
 pub vyre_spec::bin_op::BinOp::Opaque(vyre_spec::extension::ExtensionBinOpId)
 pub vyre_spec::bin_op::BinOp::Or
@@ -222,6 +230,12 @@ pub vyre_spec::bin_op::BinOp::Shuffle
 pub vyre_spec::bin_op::BinOp::Sub
 pub vyre_spec::bin_op::BinOp::WaveBroadcast
 pub vyre_spec::bin_op::BinOp::WaveReduce
+pub vyre_spec::bin_op::BinOp::WrappingAdd
+pub vyre_spec::bin_op::BinOp::WrappingSub
+impl vyre_spec::bin_op::BinOp
+pub const fn vyre_spec::bin_op::BinOp::builtin_wire_tag(&self) -> core::option::Option<u8>
+impl vyre_spec::bin_op::BinOp
+pub fn vyre_spec::bin_op::BinOp::intensity(&self) -> vyre_spec::bin_op::OpIntensity
 impl core::clone::Clone for vyre_spec::bin_op::BinOp
 pub fn vyre_spec::bin_op::BinOp::clone(&self) -> vyre_spec::bin_op::BinOp
 impl core::cmp::Eq for vyre_spec::bin_op::BinOp
@@ -241,6 +255,7 @@ impl core::marker::Freeze for vyre_spec::bin_op::BinOp
 impl core::marker::Send for vyre_spec::bin_op::BinOp
 impl core::marker::Sync for vyre_spec::bin_op::BinOp
 impl core::marker::Unpin for vyre_spec::bin_op::BinOp
+impl core::marker::UnsafeUnpin for vyre_spec::bin_op::BinOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::bin_op::BinOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::bin_op::BinOp
 impl<T, U> core::convert::Into<U> for vyre_spec::bin_op::BinOp where U: core::convert::From<T>
@@ -266,6 +281,60 @@ pub unsafe fn vyre_spec::bin_op::BinOp::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::bin_op::BinOp
 pub fn vyre_spec::bin_op::BinOp::from(t: T) -> T
 impl<T> serde_core::de::DeserializeOwned for vyre_spec::bin_op::BinOp where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum vyre_spec::bin_op::OpIntensity
+pub vyre_spec::bin_op::OpIntensity::Free
+pub vyre_spec::bin_op::OpIntensity::Heavy
+pub vyre_spec::bin_op::OpIntensity::Light
+pub vyre_spec::bin_op::OpIntensity::Medium
+impl core::clone::Clone for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::clone(&self) -> vyre_spec::bin_op::OpIntensity
+impl core::cmp::Eq for vyre_spec::bin_op::OpIntensity
+impl core::cmp::Ord for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::cmp(&self, other: &vyre_spec::bin_op::OpIntensity) -> core::cmp::Ordering
+impl core::cmp::PartialEq for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::eq(&self, other: &vyre_spec::bin_op::OpIntensity) -> bool
+impl core::cmp::PartialOrd for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::partial_cmp(&self, other: &vyre_spec::bin_op::OpIntensity) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::bin_op::OpIntensity
+impl core::marker::StructuralPartialEq for vyre_spec::bin_op::OpIntensity
+impl serde_core::ser::Serialize for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::bin_op::OpIntensity
+impl core::marker::Send for vyre_spec::bin_op::OpIntensity
+impl core::marker::Sync for vyre_spec::bin_op::OpIntensity
+impl core::marker::Unpin for vyre_spec::bin_op::OpIntensity
+impl core::marker::UnsafeUnpin for vyre_spec::bin_op::OpIntensity
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::bin_op::OpIntensity
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::bin_op::OpIntensity
+impl<T, U> core::convert::Into<U> for vyre_spec::bin_op::OpIntensity where U: core::convert::From<T>
+pub fn vyre_spec::bin_op::OpIntensity::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::bin_op::OpIntensity where U: core::convert::Into<T>
+pub type vyre_spec::bin_op::OpIntensity::Error = core::convert::Infallible
+pub fn vyre_spec::bin_op::OpIntensity::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::bin_op::OpIntensity where U: core::convert::TryFrom<T>
+pub type vyre_spec::bin_op::OpIntensity::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::bin_op::OpIntensity::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::bin_op::OpIntensity where T: core::clone::Clone
+pub type vyre_spec::bin_op::OpIntensity::Owned = T
+pub fn vyre_spec::bin_op::OpIntensity::clone_into(&self, target: &mut T)
+pub fn vyre_spec::bin_op::OpIntensity::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::bin_op::OpIntensity where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::bin_op::OpIntensity::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::bin_op::OpIntensity where T: ?core::marker::Sized
+pub fn vyre_spec::bin_op::OpIntensity::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::bin_op::OpIntensity where T: ?core::marker::Sized
+pub fn vyre_spec::bin_op::OpIntensity::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::bin_op::OpIntensity where T: core::clone::Clone
+pub unsafe fn vyre_spec::bin_op::OpIntensity::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::bin_op::OpIntensity
+pub fn vyre_spec::bin_op::OpIntensity::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::bin_op::OpIntensity where T: for<'de> serde_core::de::Deserialize<'de>
 pub mod vyre_spec::buffer_access
 #[non_exhaustive] pub enum vyre_spec::buffer_access::BufferAccess
 pub vyre_spec::buffer_access::BufferAccess::ReadOnly
@@ -291,6 +360,7 @@ impl core::marker::Freeze for vyre_spec::buffer_access::BufferAccess
 impl core::marker::Send for vyre_spec::buffer_access::BufferAccess
 impl core::marker::Sync for vyre_spec::buffer_access::BufferAccess
 impl core::marker::Unpin for vyre_spec::buffer_access::BufferAccess
+impl core::marker::UnsafeUnpin for vyre_spec::buffer_access::BufferAccess
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::buffer_access::BufferAccess
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::buffer_access::BufferAccess
 impl<T, U> core::convert::Into<U> for vyre_spec::buffer_access::BufferAccess where U: core::convert::From<T>
@@ -343,6 +413,7 @@ impl core::marker::Freeze for vyre_spec::category::Category
 impl core::marker::Send for vyre_spec::category::Category
 impl core::marker::Sync for vyre_spec::category::Category
 impl core::marker::Unpin for vyre_spec::category::Category
+impl core::marker::UnsafeUnpin for vyre_spec::category::Category
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::category::Category
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::category::Category
 impl<T, U> core::convert::Into<U> for vyre_spec::category::Category where U: core::convert::From<T>
@@ -382,6 +453,7 @@ impl core::marker::Freeze for vyre_spec::category::BackendAvailabilityPredicate
 impl core::marker::Send for vyre_spec::category::BackendAvailabilityPredicate
 impl core::marker::Sync for vyre_spec::category::BackendAvailabilityPredicate
 impl core::marker::Unpin for vyre_spec::category::BackendAvailabilityPredicate
+impl core::marker::UnsafeUnpin for vyre_spec::category::BackendAvailabilityPredicate
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::category::BackendAvailabilityPredicate
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::category::BackendAvailabilityPredicate
 impl<T, U> core::convert::Into<U> for vyre_spec::category::BackendAvailabilityPredicate where U: core::convert::From<T>
@@ -412,6 +484,111 @@ impl vyre_spec::category::BackendAvailability for vyre_spec::category::BackendAv
 pub fn vyre_spec::category::BackendAvailabilityPredicate::available(&self, op: &str) -> bool
 impl<F> vyre_spec::category::BackendAvailability for F where F: core::ops::function::Fn(&str) -> bool + core::marker::Send + core::marker::Sync
 pub fn F::available(&self, op: &str) -> bool
+pub mod vyre_spec::collective_op
+#[non_exhaustive] pub enum vyre_spec::collective_op::CollectiveOp
+pub vyre_spec::collective_op::CollectiveOp::BitAnd
+pub vyre_spec::collective_op::CollectiveOp::BitOr
+pub vyre_spec::collective_op::CollectiveOp::BitXor
+pub vyre_spec::collective_op::CollectiveOp::Max
+pub vyre_spec::collective_op::CollectiveOp::Min
+pub vyre_spec::collective_op::CollectiveOp::Sum
+impl vyre_spec::collective_op::CollectiveOp
+pub const fn vyre_spec::collective_op::CollectiveOp::builtin_wire_tag(self) -> u8
+pub fn vyre_spec::collective_op::CollectiveOp::from_wire_tag(tag: u8) -> core::result::Result<Self, alloc::string::String>
+impl core::clone::Clone for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::clone(&self) -> vyre_spec::collective_op::CollectiveOp
+impl core::cmp::Eq for vyre_spec::collective_op::CollectiveOp
+impl core::cmp::PartialEq for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::eq(&self, other: &vyre_spec::collective_op::CollectiveOp) -> bool
+impl core::fmt::Debug for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::collective_op::CollectiveOp
+impl core::marker::StructuralPartialEq for vyre_spec::collective_op::CollectiveOp
+impl serde_core::ser::Serialize for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::collective_op::CollectiveOp
+impl core::marker::Send for vyre_spec::collective_op::CollectiveOp
+impl core::marker::Sync for vyre_spec::collective_op::CollectiveOp
+impl core::marker::Unpin for vyre_spec::collective_op::CollectiveOp
+impl core::marker::UnsafeUnpin for vyre_spec::collective_op::CollectiveOp
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::collective_op::CollectiveOp
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::collective_op::CollectiveOp
+impl<T, U> core::convert::Into<U> for vyre_spec::collective_op::CollectiveOp where U: core::convert::From<T>
+pub fn vyre_spec::collective_op::CollectiveOp::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::collective_op::CollectiveOp where U: core::convert::Into<T>
+pub type vyre_spec::collective_op::CollectiveOp::Error = core::convert::Infallible
+pub fn vyre_spec::collective_op::CollectiveOp::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::collective_op::CollectiveOp where U: core::convert::TryFrom<T>
+pub type vyre_spec::collective_op::CollectiveOp::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::collective_op::CollectiveOp::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::collective_op::CollectiveOp where T: core::clone::Clone
+pub type vyre_spec::collective_op::CollectiveOp::Owned = T
+pub fn vyre_spec::collective_op::CollectiveOp::clone_into(&self, target: &mut T)
+pub fn vyre_spec::collective_op::CollectiveOp::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::collective_op::CollectiveOp where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::collective_op::CollectiveOp::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::collective_op::CollectiveOp where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CollectiveOp::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::collective_op::CollectiveOp where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CollectiveOp::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::collective_op::CollectiveOp where T: core::clone::Clone
+pub unsafe fn vyre_spec::collective_op::CollectiveOp::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::collective_op::CollectiveOp where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct vyre_spec::collective_op::CommGroup(pub u32)
+impl vyre_spec::collective_op::CommGroup
+pub const vyre_spec::collective_op::CommGroup::WORLD: Self
+pub const fn vyre_spec::collective_op::CommGroup::as_u32(self) -> u32
+impl core::clone::Clone for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::clone(&self) -> vyre_spec::collective_op::CommGroup
+impl core::cmp::Eq for vyre_spec::collective_op::CommGroup
+impl core::cmp::PartialEq for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::eq(&self, other: &vyre_spec::collective_op::CommGroup) -> bool
+impl core::fmt::Debug for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::collective_op::CommGroup
+impl core::marker::StructuralPartialEq for vyre_spec::collective_op::CommGroup
+impl serde_core::ser::Serialize for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::collective_op::CommGroup
+impl core::marker::Send for vyre_spec::collective_op::CommGroup
+impl core::marker::Sync for vyre_spec::collective_op::CommGroup
+impl core::marker::Unpin for vyre_spec::collective_op::CommGroup
+impl core::marker::UnsafeUnpin for vyre_spec::collective_op::CommGroup
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::collective_op::CommGroup
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::collective_op::CommGroup
+impl<T, U> core::convert::Into<U> for vyre_spec::collective_op::CommGroup where U: core::convert::From<T>
+pub fn vyre_spec::collective_op::CommGroup::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::collective_op::CommGroup where U: core::convert::Into<T>
+pub type vyre_spec::collective_op::CommGroup::Error = core::convert::Infallible
+pub fn vyre_spec::collective_op::CommGroup::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::collective_op::CommGroup where U: core::convert::TryFrom<T>
+pub type vyre_spec::collective_op::CommGroup::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::collective_op::CommGroup::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::collective_op::CommGroup where T: core::clone::Clone
+pub type vyre_spec::collective_op::CommGroup::Owned = T
+pub fn vyre_spec::collective_op::CommGroup::clone_into(&self, target: &mut T)
+pub fn vyre_spec::collective_op::CommGroup::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::collective_op::CommGroup where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::collective_op::CommGroup::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::collective_op::CommGroup where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CommGroup::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::collective_op::CommGroup where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CommGroup::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::collective_op::CommGroup where T: core::clone::Clone
+pub unsafe fn vyre_spec::collective_op::CommGroup::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::collective_op::CommGroup where T: for<'de> serde_core::de::Deserialize<'de>
 pub mod vyre_spec::convention
 #[non_exhaustive] pub enum vyre_spec::convention::Convention
 pub vyre_spec::convention::Convention::V1
@@ -437,6 +614,7 @@ impl core::marker::Freeze for vyre_spec::convention::Convention
 impl core::marker::Send for vyre_spec::convention::Convention
 impl core::marker::Sync for vyre_spec::convention::Convention
 impl core::marker::Unpin for vyre_spec::convention::Convention
+impl core::marker::UnsafeUnpin for vyre_spec::convention::Convention
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::convention::Convention
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::convention::Convention
 impl<T, U> core::convert::Into<U> for vyre_spec::convention::Convention where U: core::convert::From<T>
@@ -485,6 +663,10 @@ pub vyre_spec::data_type::DataType::I64
 pub vyre_spec::data_type::DataType::I8
 pub vyre_spec::data_type::DataType::NF4
 pub vyre_spec::data_type::DataType::Opaque(vyre_spec::extension::ExtensionDataTypeId)
+pub vyre_spec::data_type::DataType::Quantized
+pub vyre_spec::data_type::DataType::Quantized::scale: vyre_spec::data_type::QuantizationScale
+pub vyre_spec::data_type::DataType::Quantized::storage: alloc::boxed::Box<Self>
+pub vyre_spec::data_type::DataType::Quantized::zero_point: vyre_spec::data_type::QuantizationZeroPoint
 pub vyre_spec::data_type::DataType::SparseBsr
 pub vyre_spec::data_type::DataType::SparseBsr::block_cols: u32
 pub vyre_spec::data_type::DataType::SparseBsr::block_rows: u32
@@ -507,11 +689,19 @@ pub vyre_spec::data_type::DataType::Vec::element: alloc::boxed::Box<Self>
 pub vyre_spec::data_type::DataType::Vec2U32
 pub vyre_spec::data_type::DataType::Vec4U32
 impl vyre_spec::data_type::DataType
+pub const fn vyre_spec::data_type::DataType::bit_width(&self) -> core::option::Option<usize>
 pub const fn vyre_spec::data_type::DataType::element_size(&self) -> core::option::Option<usize>
-pub const fn vyre_spec::data_type::DataType::is_float_family(&self) -> bool
 pub const fn vyre_spec::data_type::DataType::max_bytes(&self) -> core::option::Option<usize>
 pub const fn vyre_spec::data_type::DataType::min_bytes(&self) -> usize
+pub fn vyre_spec::data_type::DataType::packed_size_bytes(&self, element_count: usize) -> core::result::Result<core::option::Option<usize>, alloc::string::String>
 pub const fn vyre_spec::data_type::DataType::size_bytes(&self) -> core::option::Option<usize>
+impl vyre_spec::data_type::DataType
+pub const fn vyre_spec::data_type::DataType::builtin_wire_tag(&self) -> core::option::Option<u8>
+pub const fn vyre_spec::data_type::DataType::is_float_family(&self) -> bool
+pub const fn vyre_spec::data_type::DataType::is_quantized(&self) -> bool
+pub const fn vyre_spec::data_type::DataType::is_quantized_storage(&self) -> bool
+impl vyre_spec::data_type::DataType
+pub fn vyre_spec::data_type::DataType::validate_layout(&self) -> core::result::Result<(), alloc::string::String>
 impl core::clone::Clone for vyre_spec::data_type::DataType
 pub fn vyre_spec::data_type::DataType::clone(&self) -> vyre_spec::data_type::DataType
 impl core::cmp::Eq for vyre_spec::data_type::DataType
@@ -532,6 +722,7 @@ impl core::marker::Freeze for vyre_spec::data_type::DataType
 impl core::marker::Send for vyre_spec::data_type::DataType
 impl core::marker::Sync for vyre_spec::data_type::DataType
 impl core::marker::Unpin for vyre_spec::data_type::DataType
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::DataType
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::DataType
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::DataType
 impl<T, U> core::convert::Into<U> for vyre_spec::data_type::DataType where U: core::convert::From<T>
@@ -559,6 +750,115 @@ pub unsafe fn vyre_spec::data_type::DataType::clone_to_uninit(&self, dest: *mut 
 impl<T> core::convert::From<T> for vyre_spec::data_type::DataType
 pub fn vyre_spec::data_type::DataType::from(t: T) -> T
 impl<T> serde_core::de::DeserializeOwned for vyre_spec::data_type::DataType where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum vyre_spec::data_type::QuantizationScale
+pub vyre_spec::data_type::QuantizationScale::PerChannel
+pub vyre_spec::data_type::QuantizationScale::PerChannel::axis: u32
+pub vyre_spec::data_type::QuantizationScale::PerGroup
+pub vyre_spec::data_type::QuantizationScale::PerGroup::group_size: u32
+pub vyre_spec::data_type::QuantizationScale::PerTensor
+impl core::clone::Clone for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::clone(&self) -> vyre_spec::data_type::QuantizationScale
+impl core::cmp::Eq for vyre_spec::data_type::QuantizationScale
+impl core::cmp::PartialEq for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::eq(&self, other: &vyre_spec::data_type::QuantizationScale) -> bool
+impl core::fmt::Debug for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::data_type::QuantizationScale
+impl serde_core::ser::Serialize for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::data_type::QuantizationScale
+impl core::marker::Send for vyre_spec::data_type::QuantizationScale
+impl core::marker::Sync for vyre_spec::data_type::QuantizationScale
+impl core::marker::Unpin for vyre_spec::data_type::QuantizationScale
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::QuantizationScale
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::QuantizationScale
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::QuantizationScale
+impl<T, U> core::convert::Into<U> for vyre_spec::data_type::QuantizationScale where U: core::convert::From<T>
+pub fn vyre_spec::data_type::QuantizationScale::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::data_type::QuantizationScale where U: core::convert::Into<T>
+pub type vyre_spec::data_type::QuantizationScale::Error = core::convert::Infallible
+pub fn vyre_spec::data_type::QuantizationScale::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::data_type::QuantizationScale where U: core::convert::TryFrom<T>
+pub type vyre_spec::data_type::QuantizationScale::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::data_type::QuantizationScale::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::data_type::QuantizationScale where T: core::clone::Clone
+pub type vyre_spec::data_type::QuantizationScale::Owned = T
+pub fn vyre_spec::data_type::QuantizationScale::clone_into(&self, target: &mut T)
+pub fn vyre_spec::data_type::QuantizationScale::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_spec::data_type::QuantizationScale where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_spec::data_type::QuantizationScale where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::data_type::QuantizationScale where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::data_type::QuantizationScale where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::data_type::QuantizationScale where T: core::clone::Clone
+pub unsafe fn vyre_spec::data_type::QuantizationScale::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::data_type::QuantizationScale where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum vyre_spec::data_type::QuantizationZeroPoint
+pub vyre_spec::data_type::QuantizationZeroPoint::Absent
+pub vyre_spec::data_type::QuantizationZeroPoint::PerChannel
+pub vyre_spec::data_type::QuantizationZeroPoint::PerChannel::axis: u32
+pub vyre_spec::data_type::QuantizationZeroPoint::PerGroup
+pub vyre_spec::data_type::QuantizationZeroPoint::PerGroup::group_size: u32
+pub vyre_spec::data_type::QuantizationZeroPoint::PerTensor
+impl core::clone::Clone for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::clone(&self) -> vyre_spec::data_type::QuantizationZeroPoint
+impl core::cmp::Eq for vyre_spec::data_type::QuantizationZeroPoint
+impl core::cmp::PartialEq for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::eq(&self, other: &vyre_spec::data_type::QuantizationZeroPoint) -> bool
+impl core::fmt::Debug for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::data_type::QuantizationZeroPoint
+impl serde_core::ser::Serialize for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::Send for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::Sync for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::Unpin for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::QuantizationZeroPoint
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::QuantizationZeroPoint
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::QuantizationZeroPoint
+impl<T, U> core::convert::Into<U> for vyre_spec::data_type::QuantizationZeroPoint where U: core::convert::From<T>
+pub fn vyre_spec::data_type::QuantizationZeroPoint::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::data_type::QuantizationZeroPoint where U: core::convert::Into<T>
+pub type vyre_spec::data_type::QuantizationZeroPoint::Error = core::convert::Infallible
+pub fn vyre_spec::data_type::QuantizationZeroPoint::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::data_type::QuantizationZeroPoint where U: core::convert::TryFrom<T>
+pub type vyre_spec::data_type::QuantizationZeroPoint::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::data_type::QuantizationZeroPoint::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::data_type::QuantizationZeroPoint where T: core::clone::Clone
+pub type vyre_spec::data_type::QuantizationZeroPoint::Owned = T
+pub fn vyre_spec::data_type::QuantizationZeroPoint::clone_into(&self, target: &mut T)
+pub fn vyre_spec::data_type::QuantizationZeroPoint::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_spec::data_type::QuantizationZeroPoint where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_spec::data_type::QuantizationZeroPoint where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::data_type::QuantizationZeroPoint where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::data_type::QuantizationZeroPoint where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::data_type::QuantizationZeroPoint where T: core::clone::Clone
+pub unsafe fn vyre_spec::data_type::QuantizationZeroPoint::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::data_type::QuantizationZeroPoint where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct vyre_spec::data_type::TypeId(pub u32)
 impl vyre_spec::data_type::TypeId
 pub const fn vyre_spec::data_type::TypeId::as_u32(self) -> u32
@@ -581,6 +881,7 @@ impl core::marker::Freeze for vyre_spec::data_type::TypeId
 impl core::marker::Send for vyre_spec::data_type::TypeId
 impl core::marker::Sync for vyre_spec::data_type::TypeId
 impl core::marker::Unpin for vyre_spec::data_type::TypeId
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::TypeId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::TypeId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::TypeId
 impl<T, U> core::convert::Into<U> for vyre_spec::data_type::TypeId where U: core::convert::From<T>
@@ -647,6 +948,7 @@ impl core::marker::Freeze for vyre_spec::engine_invariant::EngineInvariant
 impl core::marker::Send for vyre_spec::engine_invariant::EngineInvariant
 impl core::marker::Sync for vyre_spec::engine_invariant::EngineInvariant
 impl core::marker::Unpin for vyre_spec::engine_invariant::EngineInvariant
+impl core::marker::UnsafeUnpin for vyre_spec::engine_invariant::EngineInvariant
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::engine_invariant::EngineInvariant
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::engine_invariant::EngineInvariant
 impl<T, U> core::convert::Into<U> for vyre_spec::engine_invariant::EngineInvariant where U: core::convert::From<T>
@@ -682,6 +984,7 @@ impl vyre_spec::extension::ExtensionAtomicOpId
 pub const vyre_spec::extension::ExtensionAtomicOpId::EXTENSION_RANGE_MASK: u32
 pub const fn vyre_spec::extension::ExtensionAtomicOpId::as_u32(self) -> u32
 pub const fn vyre_spec::extension::ExtensionAtomicOpId::from_name(name: &str) -> Self
+pub const fn vyre_spec::extension::ExtensionAtomicOpId::is_extension(self) -> bool
 impl core::clone::Clone for vyre_spec::extension::ExtensionAtomicOpId
 pub fn vyre_spec::extension::ExtensionAtomicOpId::clone(&self) -> vyre_spec::extension::ExtensionAtomicOpId
 impl core::cmp::Eq for vyre_spec::extension::ExtensionAtomicOpId
@@ -701,6 +1004,7 @@ impl core::marker::Freeze for vyre_spec::extension::ExtensionAtomicOpId
 impl core::marker::Send for vyre_spec::extension::ExtensionAtomicOpId
 impl core::marker::Sync for vyre_spec::extension::ExtensionAtomicOpId
 impl core::marker::Unpin for vyre_spec::extension::ExtensionAtomicOpId
+impl core::marker::UnsafeUnpin for vyre_spec::extension::ExtensionAtomicOpId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::extension::ExtensionAtomicOpId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::extension::ExtensionAtomicOpId
 impl<T, U> core::convert::Into<U> for vyre_spec::extension::ExtensionAtomicOpId where U: core::convert::From<T>
@@ -731,6 +1035,7 @@ impl vyre_spec::extension::ExtensionBinOpId
 pub const vyre_spec::extension::ExtensionBinOpId::EXTENSION_RANGE_MASK: u32
 pub const fn vyre_spec::extension::ExtensionBinOpId::as_u32(self) -> u32
 pub const fn vyre_spec::extension::ExtensionBinOpId::from_name(name: &str) -> Self
+pub const fn vyre_spec::extension::ExtensionBinOpId::is_extension(self) -> bool
 impl core::clone::Clone for vyre_spec::extension::ExtensionBinOpId
 pub fn vyre_spec::extension::ExtensionBinOpId::clone(&self) -> vyre_spec::extension::ExtensionBinOpId
 impl core::cmp::Eq for vyre_spec::extension::ExtensionBinOpId
@@ -750,6 +1055,7 @@ impl core::marker::Freeze for vyre_spec::extension::ExtensionBinOpId
 impl core::marker::Send for vyre_spec::extension::ExtensionBinOpId
 impl core::marker::Sync for vyre_spec::extension::ExtensionBinOpId
 impl core::marker::Unpin for vyre_spec::extension::ExtensionBinOpId
+impl core::marker::UnsafeUnpin for vyre_spec::extension::ExtensionBinOpId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::extension::ExtensionBinOpId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::extension::ExtensionBinOpId
 impl<T, U> core::convert::Into<U> for vyre_spec::extension::ExtensionBinOpId where U: core::convert::From<T>
@@ -800,6 +1106,7 @@ impl core::marker::Freeze for vyre_spec::extension::ExtensionDataTypeId
 impl core::marker::Send for vyre_spec::extension::ExtensionDataTypeId
 impl core::marker::Sync for vyre_spec::extension::ExtensionDataTypeId
 impl core::marker::Unpin for vyre_spec::extension::ExtensionDataTypeId
+impl core::marker::UnsafeUnpin for vyre_spec::extension::ExtensionDataTypeId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::extension::ExtensionDataTypeId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::extension::ExtensionDataTypeId
 impl<T, U> core::convert::Into<U> for vyre_spec::extension::ExtensionDataTypeId where U: core::convert::From<T>
@@ -830,6 +1137,7 @@ impl vyre_spec::extension::ExtensionRuleConditionId
 pub const vyre_spec::extension::ExtensionRuleConditionId::EXTENSION_RANGE_MASK: u32
 pub const fn vyre_spec::extension::ExtensionRuleConditionId::as_u32(self) -> u32
 pub const fn vyre_spec::extension::ExtensionRuleConditionId::from_name(name: &str) -> Self
+pub const fn vyre_spec::extension::ExtensionRuleConditionId::is_extension(self) -> bool
 impl core::clone::Clone for vyre_spec::extension::ExtensionRuleConditionId
 pub fn vyre_spec::extension::ExtensionRuleConditionId::clone(&self) -> vyre_spec::extension::ExtensionRuleConditionId
 impl core::cmp::Eq for vyre_spec::extension::ExtensionRuleConditionId
@@ -849,6 +1157,7 @@ impl core::marker::Freeze for vyre_spec::extension::ExtensionRuleConditionId
 impl core::marker::Send for vyre_spec::extension::ExtensionRuleConditionId
 impl core::marker::Sync for vyre_spec::extension::ExtensionRuleConditionId
 impl core::marker::Unpin for vyre_spec::extension::ExtensionRuleConditionId
+impl core::marker::UnsafeUnpin for vyre_spec::extension::ExtensionRuleConditionId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::extension::ExtensionRuleConditionId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::extension::ExtensionRuleConditionId
 impl<T, U> core::convert::Into<U> for vyre_spec::extension::ExtensionRuleConditionId where U: core::convert::From<T>
@@ -879,6 +1188,7 @@ impl vyre_spec::extension::ExtensionTernaryOpId
 pub const vyre_spec::extension::ExtensionTernaryOpId::EXTENSION_RANGE_MASK: u32
 pub const fn vyre_spec::extension::ExtensionTernaryOpId::as_u32(self) -> u32
 pub const fn vyre_spec::extension::ExtensionTernaryOpId::from_name(name: &str) -> Self
+pub const fn vyre_spec::extension::ExtensionTernaryOpId::is_extension(self) -> bool
 impl core::clone::Clone for vyre_spec::extension::ExtensionTernaryOpId
 pub fn vyre_spec::extension::ExtensionTernaryOpId::clone(&self) -> vyre_spec::extension::ExtensionTernaryOpId
 impl core::cmp::Eq for vyre_spec::extension::ExtensionTernaryOpId
@@ -898,6 +1208,7 @@ impl core::marker::Freeze for vyre_spec::extension::ExtensionTernaryOpId
 impl core::marker::Send for vyre_spec::extension::ExtensionTernaryOpId
 impl core::marker::Sync for vyre_spec::extension::ExtensionTernaryOpId
 impl core::marker::Unpin for vyre_spec::extension::ExtensionTernaryOpId
+impl core::marker::UnsafeUnpin for vyre_spec::extension::ExtensionTernaryOpId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::extension::ExtensionTernaryOpId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::extension::ExtensionTernaryOpId
 impl<T, U> core::convert::Into<U> for vyre_spec::extension::ExtensionTernaryOpId where U: core::convert::From<T>
@@ -928,6 +1239,7 @@ impl vyre_spec::extension::ExtensionUnOpId
 pub const vyre_spec::extension::ExtensionUnOpId::EXTENSION_RANGE_MASK: u32
 pub const fn vyre_spec::extension::ExtensionUnOpId::as_u32(self) -> u32
 pub const fn vyre_spec::extension::ExtensionUnOpId::from_name(name: &str) -> Self
+pub const fn vyre_spec::extension::ExtensionUnOpId::is_extension(self) -> bool
 impl core::clone::Clone for vyre_spec::extension::ExtensionUnOpId
 pub fn vyre_spec::extension::ExtensionUnOpId::clone(&self) -> vyre_spec::extension::ExtensionUnOpId
 impl core::cmp::Eq for vyre_spec::extension::ExtensionUnOpId
@@ -947,6 +1259,7 @@ impl core::marker::Freeze for vyre_spec::extension::ExtensionUnOpId
 impl core::marker::Send for vyre_spec::extension::ExtensionUnOpId
 impl core::marker::Sync for vyre_spec::extension::ExtensionUnOpId
 impl core::marker::Unpin for vyre_spec::extension::ExtensionUnOpId
+impl core::marker::UnsafeUnpin for vyre_spec::extension::ExtensionUnOpId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::extension::ExtensionUnOpId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::extension::ExtensionUnOpId
 impl<T, U> core::convert::Into<U> for vyre_spec::extension::ExtensionUnOpId where U: core::convert::From<T>
@@ -1011,6 +1324,7 @@ impl core::marker::Freeze for vyre_spec::float_type::FloatType
 impl core::marker::Send for vyre_spec::float_type::FloatType
 impl core::marker::Sync for vyre_spec::float_type::FloatType
 impl core::marker::Unpin for vyre_spec::float_type::FloatType
+impl core::marker::UnsafeUnpin for vyre_spec::float_type::FloatType
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::float_type::FloatType
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::float_type::FloatType
 impl<T, U> core::convert::Into<U> for vyre_spec::float_type::FloatType where U: core::convert::From<T>
@@ -1055,6 +1369,7 @@ impl core::marker::Freeze for vyre_spec::golden_sample::GoldenSample
 impl core::marker::Send for vyre_spec::golden_sample::GoldenSample
 impl core::marker::Sync for vyre_spec::golden_sample::GoldenSample
 impl core::marker::Unpin for vyre_spec::golden_sample::GoldenSample
+impl core::marker::UnsafeUnpin for vyre_spec::golden_sample::GoldenSample
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::golden_sample::GoldenSample
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::golden_sample::GoldenSample
 impl<T, U> core::convert::Into<U> for vyre_spec::golden_sample::GoldenSample where U: core::convert::From<T>
@@ -1080,21 +1395,23 @@ pub unsafe fn vyre_spec::golden_sample::GoldenSample::clone_to_uninit(&self, des
 impl<T> core::convert::From<T> for vyre_spec::golden_sample::GoldenSample
 pub fn vyre_spec::golden_sample::GoldenSample::from(t: T) -> T
 pub mod vyre_spec::intrinsic_descriptor
-#[non_exhaustive] pub enum vyre_spec::intrinsic_descriptor::Backend
-pub vyre_spec::intrinsic_descriptor::Backend::Cuda
-pub vyre_spec::intrinsic_descriptor::Backend::Extension(vyre_spec::intrinsic_descriptor::ExtensionBackend)
-pub vyre_spec::intrinsic_descriptor::Backend::Metal
-pub vyre_spec::intrinsic_descriptor::Backend::SpirV
-pub vyre_spec::intrinsic_descriptor::Backend::Wgsl
+pub struct vyre_spec::intrinsic_descriptor::Backend
 impl vyre_spec::intrinsic_descriptor::Backend
 pub fn vyre_spec::intrinsic_descriptor::Backend::id(&self) -> &str
+pub fn vyre_spec::intrinsic_descriptor::Backend::name(&self) -> &str
+pub fn vyre_spec::intrinsic_descriptor::Backend::named(id: impl core::convert::Into<vyre_spec::intrinsic_descriptor::BackendId>, name: impl core::convert::Into<alloc::sync::Arc<str>>) -> Self
+pub fn vyre_spec::intrinsic_descriptor::Backend::new(id: impl core::convert::Into<vyre_spec::intrinsic_descriptor::BackendId>) -> Self
 impl core::clone::Clone for vyre_spec::intrinsic_descriptor::Backend
 pub fn vyre_spec::intrinsic_descriptor::Backend::clone(&self) -> vyre_spec::intrinsic_descriptor::Backend
 impl core::cmp::Eq for vyre_spec::intrinsic_descriptor::Backend
 impl core::cmp::PartialEq for vyre_spec::intrinsic_descriptor::Backend
 pub fn vyre_spec::intrinsic_descriptor::Backend::eq(&self, other: &vyre_spec::intrinsic_descriptor::Backend) -> bool
+impl core::convert::From<&str> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(id: &str) -> Self
 impl core::convert::From<&vyre_spec::intrinsic_descriptor::Backend> for vyre_spec::intrinsic_descriptor::BackendId
 pub fn vyre_spec::intrinsic_descriptor::BackendId::from(backend: &vyre_spec::intrinsic_descriptor::Backend) -> Self
+impl core::convert::From<vyre_spec::intrinsic_descriptor::BackendId> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(id: vyre_spec::intrinsic_descriptor::BackendId) -> Self
 impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::Backend
 pub fn vyre_spec::intrinsic_descriptor::Backend::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for vyre_spec::intrinsic_descriptor::Backend
@@ -1104,8 +1421,9 @@ impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::Backend
 impl core::marker::Send for vyre_spec::intrinsic_descriptor::Backend
 impl core::marker::Sync for vyre_spec::intrinsic_descriptor::Backend
 impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::Backend
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::Backend
-impl !core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::Backend
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_descriptor::Backend
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::Backend
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::Backend
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::From<T>
 pub fn vyre_spec::intrinsic_descriptor::Backend::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::Into<T>
@@ -1143,6 +1461,8 @@ impl core::convert::From<&vyre_spec::intrinsic_descriptor::Backend> for vyre_spe
 pub fn vyre_spec::intrinsic_descriptor::BackendId::from(backend: &vyre_spec::intrinsic_descriptor::Backend) -> Self
 impl core::convert::From<alloc::string::String> for vyre_spec::intrinsic_descriptor::BackendId
 pub fn vyre_spec::intrinsic_descriptor::BackendId::from(name: alloc::string::String) -> Self
+impl core::convert::From<vyre_spec::intrinsic_descriptor::BackendId> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(id: vyre_spec::intrinsic_descriptor::BackendId) -> Self
 impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::BackendId
 pub fn vyre_spec::intrinsic_descriptor::BackendId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for vyre_spec::intrinsic_descriptor::BackendId
@@ -1153,6 +1473,7 @@ impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::BackendId
 impl core::marker::Send for vyre_spec::intrinsic_descriptor::BackendId
 impl core::marker::Sync for vyre_spec::intrinsic_descriptor::BackendId
 impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::BackendId
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_descriptor::BackendId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::BackendId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::BackendId
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::BackendId where U: core::convert::From<T>
@@ -1179,44 +1500,6 @@ impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::BackendI
 pub unsafe fn vyre_spec::intrinsic_descriptor::BackendId::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::BackendId
 pub fn vyre_spec::intrinsic_descriptor::BackendId::from(t: T) -> T
-pub struct vyre_spec::intrinsic_descriptor::ExtensionBackend(pub alloc::sync::Arc<dyn vyre_spec::intrinsic_descriptor::BackendKind>)
-impl core::clone::Clone for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::clone(&self) -> vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::cmp::Eq for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::cmp::PartialEq for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::eq(&self, other: &Self) -> bool
-impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::hash<H: core::hash::Hasher>(&self, state: &mut H)
-impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::marker::Send for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::marker::Sync for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl !core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::ExtensionBackend where U: core::convert::From<T>
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_descriptor::ExtensionBackend where U: core::convert::Into<T>
-pub type vyre_spec::intrinsic_descriptor::ExtensionBackend::Error = core::convert::Infallible
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_spec::intrinsic_descriptor::ExtensionBackend where U: core::convert::TryFrom<T>
-pub type vyre_spec::intrinsic_descriptor::ExtensionBackend::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: core::clone::Clone
-pub type vyre_spec::intrinsic_descriptor::ExtensionBackend::Owned = T
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::clone_into(&self, target: &mut T)
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: 'static + ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: core::clone::Clone
-pub unsafe fn vyre_spec::intrinsic_descriptor::ExtensionBackend::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::from(t: T) -> T
 #[non_exhaustive] pub struct vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 pub const fn vyre_spec::intrinsic_descriptor::IntrinsicDescriptor::contract(&self) -> core::option::Option<&vyre_spec::op_contract::OperationContract>
@@ -1233,6 +1516,7 @@ impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::IntrinsicDescript
 impl core::marker::Send for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::marker::Sync for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor where U: core::convert::From<T>
@@ -1257,18 +1541,55 @@ impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::Intrinsi
 pub unsafe fn vyre_spec::intrinsic_descriptor::IntrinsicDescriptor::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 pub fn vyre_spec::intrinsic_descriptor::IntrinsicDescriptor::from(t: T) -> T
-pub trait vyre_spec::intrinsic_descriptor::BackendKind: core::fmt::Debug + core::marker::Send + core::marker::Sync + 'static
-pub fn vyre_spec::intrinsic_descriptor::BackendKind::id(&self) -> &str
-pub fn vyre_spec::intrinsic_descriptor::BackendKind::name(&self) -> &str
 pub type vyre_spec::intrinsic_descriptor::CpuFn = fn(input: &[u8], output: &mut alloc::vec::Vec<u8>)
 pub mod vyre_spec::intrinsic_table
+pub struct vyre_spec::intrinsic_table::IntrinsicLowering
+pub vyre_spec::intrinsic_table::IntrinsicLowering::backend: vyre_spec::intrinsic_descriptor::BackendId
+pub vyre_spec::intrinsic_table::IntrinsicLowering::name: &'static str
+impl vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::new(backend: impl core::convert::Into<vyre_spec::intrinsic_descriptor::BackendId>, name: &'static str) -> Self
+impl core::clone::Clone for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::clone(&self) -> vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::cmp::Eq for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::cmp::PartialEq for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::eq(&self, other: &vyre_spec::intrinsic_table::IntrinsicLowering) -> bool
+impl core::fmt::Debug for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Freeze for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Send for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Sync for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Unpin for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_table::IntrinsicLowering
+impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_table::IntrinsicLowering where U: core::convert::From<T>
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_table::IntrinsicLowering where U: core::convert::Into<T>
+pub type vyre_spec::intrinsic_table::IntrinsicLowering::Error = core::convert::Infallible
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::intrinsic_table::IntrinsicLowering where U: core::convert::TryFrom<T>
+pub type vyre_spec::intrinsic_table::IntrinsicLowering::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::intrinsic_table::IntrinsicLowering where T: core::clone::Clone
+pub type vyre_spec::intrinsic_table::IntrinsicLowering::Owned = T
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::clone_into(&self, target: &mut T)
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::intrinsic_table::IntrinsicLowering where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::intrinsic_table::IntrinsicLowering where T: ?core::marker::Sized
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::intrinsic_table::IntrinsicLowering where T: ?core::marker::Sized
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_table::IntrinsicLowering where T: core::clone::Clone
+pub unsafe fn vyre_spec::intrinsic_table::IntrinsicLowering::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::from(t: T) -> T
 pub struct vyre_spec::intrinsic_table::IntrinsicTable
-pub vyre_spec::intrinsic_table::IntrinsicTable::cuda: core::option::Option<&'static str>
-pub vyre_spec::intrinsic_table::IntrinsicTable::native_module: core::option::Option<&'static str>
-pub vyre_spec::intrinsic_table::IntrinsicTable::spirv: core::option::Option<&'static str>
-pub vyre_spec::intrinsic_table::IntrinsicTable::wgsl: core::option::Option<&'static str>
+pub vyre_spec::intrinsic_table::IntrinsicTable::lowerings: alloc::vec::Vec<vyre_spec::intrinsic_table::IntrinsicLowering>
 impl vyre_spec::intrinsic_table::IntrinsicTable
-pub fn vyre_spec::intrinsic_table::IntrinsicTable::missing_backends(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'static str> + '_
+pub fn vyre_spec::intrinsic_table::IntrinsicTable::has_backend(&self, backend: &vyre_spec::intrinsic_descriptor::BackendId) -> bool
+pub fn vyre_spec::intrinsic_table::IntrinsicTable::missing_backends<'a>(&'a self, required: &'a [vyre_spec::intrinsic_descriptor::BackendId]) -> impl core::iter::traits::iterator::Iterator<Item = &'a str> + 'a
 impl core::clone::Clone for vyre_spec::intrinsic_table::IntrinsicTable
 pub fn vyre_spec::intrinsic_table::IntrinsicTable::clone(&self) -> vyre_spec::intrinsic_table::IntrinsicTable
 impl core::cmp::Eq for vyre_spec::intrinsic_table::IntrinsicTable
@@ -1283,6 +1604,7 @@ impl core::marker::Freeze for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::marker::Send for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::marker::Sync for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::marker::Unpin for vyre_spec::intrinsic_table::IntrinsicTable
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_table::IntrinsicTable
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_table::IntrinsicTable where U: core::convert::From<T>
@@ -1322,6 +1644,7 @@ impl core::marker::Freeze for vyre_spec::invariant::Invariant
 impl core::marker::Send for vyre_spec::invariant::Invariant
 impl core::marker::Sync for vyre_spec::invariant::Invariant
 impl core::marker::Unpin for vyre_spec::invariant::Invariant
+impl core::marker::UnsafeUnpin for vyre_spec::invariant::Invariant
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::invariant::Invariant
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::invariant::Invariant
 impl<T, U> core::convert::Into<U> for vyre_spec::invariant::Invariant where U: core::convert::From<T>
@@ -1367,6 +1690,7 @@ impl core::marker::Freeze for vyre_spec::invariant_category::InvariantCategory
 impl core::marker::Send for vyre_spec::invariant_category::InvariantCategory
 impl core::marker::Sync for vyre_spec::invariant_category::InvariantCategory
 impl core::marker::Unpin for vyre_spec::invariant_category::InvariantCategory
+impl core::marker::UnsafeUnpin for vyre_spec::invariant_category::InvariantCategory
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::invariant_category::InvariantCategory
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::invariant_category::InvariantCategory
 impl<T, U> core::convert::Into<U> for vyre_spec::invariant_category::InvariantCategory where U: core::convert::From<T>
@@ -1413,6 +1737,7 @@ impl core::marker::Freeze for vyre_spec::kat_vector::KatVector
 impl core::marker::Send for vyre_spec::kat_vector::KatVector
 impl core::marker::Sync for vyre_spec::kat_vector::KatVector
 impl core::marker::Unpin for vyre_spec::kat_vector::KatVector
+impl core::marker::UnsafeUnpin for vyre_spec::kat_vector::KatVector
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::kat_vector::KatVector
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::kat_vector::KatVector
 impl<T, U> core::convert::Into<U> for vyre_spec::kat_vector::KatVector where U: core::convert::From<T>
@@ -1468,6 +1793,7 @@ impl core::marker::Freeze for vyre_spec::layer::Layer
 impl core::marker::Send for vyre_spec::layer::Layer
 impl core::marker::Sync for vyre_spec::layer::Layer
 impl core::marker::Unpin for vyre_spec::layer::Layer
+impl core::marker::UnsafeUnpin for vyre_spec::layer::Layer
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::layer::Layer
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::layer::Layer
 impl<T, U> core::convert::Into<U> for vyre_spec::layer::Layer where U: core::convert::From<T>
@@ -1519,6 +1845,7 @@ impl core::marker::Freeze for vyre_spec::metadata_category::MetadataCategory
 impl core::marker::Send for vyre_spec::metadata_category::MetadataCategory
 impl core::marker::Sync for vyre_spec::metadata_category::MetadataCategory
 impl core::marker::Unpin for vyre_spec::metadata_category::MetadataCategory
+impl core::marker::UnsafeUnpin for vyre_spec::metadata_category::MetadataCategory
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::metadata_category::MetadataCategory
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::metadata_category::MetadataCategory
 impl<T, U> core::convert::Into<U> for vyre_spec::metadata_category::MetadataCategory where U: core::convert::From<T>
@@ -1561,6 +1888,7 @@ impl core::marker::Freeze for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::marker::Send for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::marker::Sync for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::marker::Unpin for vyre_spec::monotonic_direction::MonotonicDirection
+impl core::marker::UnsafeUnpin for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::monotonic_direction::MonotonicDirection
 impl<T, U> core::convert::Into<U> for vyre_spec::monotonic_direction::MonotonicDirection where U: core::convert::From<T>
@@ -1610,6 +1938,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::CostHint
 impl core::marker::Send for vyre_spec::op_contract::CostHint
 impl core::marker::Sync for vyre_spec::op_contract::CostHint
 impl core::marker::Unpin for vyre_spec::op_contract::CostHint
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::CostHint
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::CostHint
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::CostHint
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::CostHint where U: core::convert::From<T>
@@ -1658,6 +1987,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::DeterminismClass
 impl core::marker::Send for vyre_spec::op_contract::DeterminismClass
 impl core::marker::Sync for vyre_spec::op_contract::DeterminismClass
 impl core::marker::Unpin for vyre_spec::op_contract::DeterminismClass
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::DeterminismClass
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::DeterminismClass
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::DeterminismClass
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::DeterminismClass where U: core::convert::From<T>
@@ -1708,6 +2038,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::SideEffectClass
 impl core::marker::Send for vyre_spec::op_contract::SideEffectClass
 impl core::marker::Sync for vyre_spec::op_contract::SideEffectClass
 impl core::marker::Unpin for vyre_spec::op_contract::SideEffectClass
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::SideEffectClass
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::SideEffectClass
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::SideEffectClass
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::SideEffectClass where U: core::convert::From<T>
@@ -1755,6 +2086,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::CapabilityId
 impl core::marker::Send for vyre_spec::op_contract::CapabilityId
 impl core::marker::Sync for vyre_spec::op_contract::CapabilityId
 impl core::marker::Unpin for vyre_spec::op_contract::CapabilityId
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::CapabilityId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::CapabilityId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::CapabilityId
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::CapabilityId where U: core::convert::From<T>
@@ -1807,6 +2139,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::OperationContract
 impl core::marker::Send for vyre_spec::op_contract::OperationContract
 impl core::marker::Sync for vyre_spec::op_contract::OperationContract
 impl core::marker::Unpin for vyre_spec::op_contract::OperationContract
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::OperationContract
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::OperationContract
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::OperationContract
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::OperationContract where U: core::convert::From<T>
@@ -1855,6 +2188,7 @@ impl core::marker::Freeze for vyre_spec::op_metadata::OpMetadata
 impl core::marker::Send for vyre_spec::op_metadata::OpMetadata
 impl core::marker::Sync for vyre_spec::op_metadata::OpMetadata
 impl core::marker::Unpin for vyre_spec::op_metadata::OpMetadata
+impl core::marker::UnsafeUnpin for vyre_spec::op_metadata::OpMetadata
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_metadata::OpMetadata
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_metadata::OpMetadata
 impl<T, U> core::convert::Into<U> for vyre_spec::op_metadata::OpMetadata where U: core::convert::From<T>
@@ -1906,6 +2240,7 @@ impl core::marker::Freeze for vyre_spec::op_signature::OpSignature
 impl core::marker::Send for vyre_spec::op_signature::OpSignature
 impl core::marker::Sync for vyre_spec::op_signature::OpSignature
 impl core::marker::Unpin for vyre_spec::op_signature::OpSignature
+impl core::marker::UnsafeUnpin for vyre_spec::op_signature::OpSignature
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_signature::OpSignature
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_signature::OpSignature
 impl<T, U> core::convert::Into<U> for vyre_spec::op_signature::OpSignature where U: core::convert::From<T>
@@ -1953,6 +2288,7 @@ impl core::marker::Freeze for vyre_spec::op_signature::SignatureParam
 impl core::marker::Send for vyre_spec::op_signature::SignatureParam
 impl core::marker::Sync for vyre_spec::op_signature::SignatureParam
 impl core::marker::Unpin for vyre_spec::op_signature::SignatureParam
+impl core::marker::UnsafeUnpin for vyre_spec::op_signature::SignatureParam
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_signature::SignatureParam
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_signature::SignatureParam
 impl<T, U> core::convert::Into<U> for vyre_spec::op_signature::SignatureParam where U: core::convert::From<T>
@@ -2021,6 +2357,7 @@ impl core::marker::Freeze for vyre_spec::pg_node_kind::PgNodeKind
 impl core::marker::Send for vyre_spec::pg_node_kind::PgNodeKind
 impl core::marker::Sync for vyre_spec::pg_node_kind::PgNodeKind
 impl core::marker::Unpin for vyre_spec::pg_node_kind::PgNodeKind
+impl core::marker::UnsafeUnpin for vyre_spec::pg_node_kind::PgNodeKind
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::pg_node_kind::PgNodeKind
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::pg_node_kind::PgNodeKind
 impl<T, U> core::convert::Into<U> for vyre_spec::pg_node_kind::PgNodeKind where U: core::convert::From<T>
@@ -2046,11 +2383,70 @@ pub unsafe fn vyre_spec::pg_node_kind::PgNodeKind::clone_to_uninit(&self, dest: 
 impl<T> core::convert::From<T> for vyre_spec::pg_node_kind::PgNodeKind
 pub fn vyre_spec::pg_node_kind::PgNodeKind::from(t: T) -> T
 impl<T> serde_core::de::DeserializeOwned for vyre_spec::pg_node_kind::PgNodeKind where T: for<'de> serde_core::de::Deserialize<'de>
+pub mod vyre_spec::semiring
+pub enum vyre_spec::semiring::Semiring
+pub vyre_spec::semiring::Semiring::BoolAnd
+pub vyre_spec::semiring::Semiring::BoolOr
+pub vyre_spec::semiring::Semiring::Gf2
+pub vyre_spec::semiring::Semiring::Lineage
+pub vyre_spec::semiring::Semiring::MaxPlus
+pub vyre_spec::semiring::Semiring::MaxTimes
+pub vyre_spec::semiring::Semiring::MinPlus
+pub vyre_spec::semiring::Semiring::Real
+impl vyre_spec::semiring::Semiring
+pub const fn vyre_spec::semiring::Semiring::identity(self) -> u32
+impl core::clone::Clone for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::clone(&self) -> vyre_spec::semiring::Semiring
+impl core::cmp::Eq for vyre_spec::semiring::Semiring
+impl core::cmp::PartialEq for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::eq(&self, other: &vyre_spec::semiring::Semiring) -> bool
+impl core::fmt::Debug for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::semiring::Semiring
+impl core::marker::StructuralPartialEq for vyre_spec::semiring::Semiring
+impl serde_core::ser::Serialize for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::semiring::Semiring
+impl core::marker::Send for vyre_spec::semiring::Semiring
+impl core::marker::Sync for vyre_spec::semiring::Semiring
+impl core::marker::Unpin for vyre_spec::semiring::Semiring
+impl core::marker::UnsafeUnpin for vyre_spec::semiring::Semiring
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::semiring::Semiring
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::semiring::Semiring
+impl<T, U> core::convert::Into<U> for vyre_spec::semiring::Semiring where U: core::convert::From<T>
+pub fn vyre_spec::semiring::Semiring::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::semiring::Semiring where U: core::convert::Into<T>
+pub type vyre_spec::semiring::Semiring::Error = core::convert::Infallible
+pub fn vyre_spec::semiring::Semiring::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::semiring::Semiring where U: core::convert::TryFrom<T>
+pub type vyre_spec::semiring::Semiring::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::semiring::Semiring::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::semiring::Semiring where T: core::clone::Clone
+pub type vyre_spec::semiring::Semiring::Owned = T
+pub fn vyre_spec::semiring::Semiring::clone_into(&self, target: &mut T)
+pub fn vyre_spec::semiring::Semiring::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::semiring::Semiring where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::semiring::Semiring::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::semiring::Semiring where T: ?core::marker::Sized
+pub fn vyre_spec::semiring::Semiring::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::semiring::Semiring where T: ?core::marker::Sized
+pub fn vyre_spec::semiring::Semiring::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::semiring::Semiring where T: core::clone::Clone
+pub unsafe fn vyre_spec::semiring::Semiring::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::semiring::Semiring where T: for<'de> serde_core::de::Deserialize<'de>
 pub mod vyre_spec::ternary_op
 #[non_exhaustive] pub enum vyre_spec::ternary_op::TernaryOp
 pub vyre_spec::ternary_op::TernaryOp::Fma
 pub vyre_spec::ternary_op::TernaryOp::Opaque(vyre_spec::extension::ExtensionTernaryOpId)
 pub vyre_spec::ternary_op::TernaryOp::Select
+impl vyre_spec::ternary_op::TernaryOp
+pub const fn vyre_spec::ternary_op::TernaryOp::builtin_wire_tag(&self) -> core::option::Option<u8>
 impl core::clone::Clone for vyre_spec::ternary_op::TernaryOp
 pub fn vyre_spec::ternary_op::TernaryOp::clone(&self) -> vyre_spec::ternary_op::TernaryOp
 impl core::cmp::Eq for vyre_spec::ternary_op::TernaryOp
@@ -2070,6 +2466,7 @@ impl core::marker::Freeze for vyre_spec::ternary_op::TernaryOp
 impl core::marker::Send for vyre_spec::ternary_op::TernaryOp
 impl core::marker::Sync for vyre_spec::ternary_op::TernaryOp
 impl core::marker::Unpin for vyre_spec::ternary_op::TernaryOp
+impl core::marker::UnsafeUnpin for vyre_spec::ternary_op::TernaryOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::ternary_op::TernaryOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::ternary_op::TernaryOp
 impl<T, U> core::convert::Into<U> for vyre_spec::ternary_op::TernaryOp where U: core::convert::From<T>
@@ -2112,6 +2509,7 @@ impl core::marker::Freeze for vyre_spec::test_descriptor::TestDescriptor
 impl core::marker::Send for vyre_spec::test_descriptor::TestDescriptor
 impl core::marker::Sync for vyre_spec::test_descriptor::TestDescriptor
 impl core::marker::Unpin for vyre_spec::test_descriptor::TestDescriptor
+impl core::marker::UnsafeUnpin for vyre_spec::test_descriptor::TestDescriptor
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::test_descriptor::TestDescriptor
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::test_descriptor::TestDescriptor
 impl<T, U> core::convert::Into<U> for vyre_spec::test_descriptor::TestDescriptor where U: core::convert::From<T>
@@ -2161,6 +2559,7 @@ pub vyre_spec::un_op::UnOp::LogicalNot
 pub vyre_spec::un_op::UnOp::Negate
 pub vyre_spec::un_op::UnOp::Opaque(vyre_spec::extension::ExtensionUnOpId)
 pub vyre_spec::un_op::UnOp::Popcount
+pub vyre_spec::un_op::UnOp::Reciprocal
 pub vyre_spec::un_op::UnOp::ReverseBits
 pub vyre_spec::un_op::UnOp::Round
 pub vyre_spec::un_op::UnOp::Sign
@@ -2174,6 +2573,8 @@ pub vyre_spec::un_op::UnOp::Unpack4High
 pub vyre_spec::un_op::UnOp::Unpack4Low
 pub vyre_spec::un_op::UnOp::Unpack8High
 pub vyre_spec::un_op::UnOp::Unpack8Low
+impl vyre_spec::un_op::UnOp
+pub const fn vyre_spec::un_op::UnOp::builtin_wire_tag(&self) -> core::option::Option<u8>
 impl core::clone::Clone for vyre_spec::un_op::UnOp
 pub fn vyre_spec::un_op::UnOp::clone(&self) -> vyre_spec::un_op::UnOp
 impl core::cmp::Eq for vyre_spec::un_op::UnOp
@@ -2192,6 +2593,7 @@ impl core::marker::Freeze for vyre_spec::un_op::UnOp
 impl core::marker::Send for vyre_spec::un_op::UnOp
 impl core::marker::Sync for vyre_spec::un_op::UnOp
 impl core::marker::Unpin for vyre_spec::un_op::UnOp
+impl core::marker::UnsafeUnpin for vyre_spec::un_op::UnOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::un_op::UnOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::un_op::UnOp
 impl<T, U> core::convert::Into<U> for vyre_spec::un_op::UnOp where U: core::convert::From<T>
@@ -2240,6 +2642,7 @@ impl core::marker::Freeze for vyre_spec::verification::Verification
 impl core::marker::Send for vyre_spec::verification::Verification
 impl core::marker::Sync for vyre_spec::verification::Verification
 impl core::marker::Unpin for vyre_spec::verification::Verification
+impl core::marker::UnsafeUnpin for vyre_spec::verification::Verification
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::verification::Verification
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::verification::Verification
 impl<T, U> core::convert::Into<U> for vyre_spec::verification::Verification where U: core::convert::From<T>
@@ -2271,6 +2674,8 @@ pub vyre_spec::AlgebraicLaw::Associative
 pub vyre_spec::AlgebraicLaw::Bounded
 pub vyre_spec::AlgebraicLaw::Bounded::hi: u32
 pub vyre_spec::AlgebraicLaw::Bounded::lo: u32
+pub vyre_spec::AlgebraicLaw::CategoricalAssociative
+pub vyre_spec::AlgebraicLaw::CategoricalIdentity
 pub vyre_spec::AlgebraicLaw::Commutative
 pub vyre_spec::AlgebraicLaw::Complement
 pub vyre_spec::AlgebraicLaw::Complement::complement_op: &'static str
@@ -2326,6 +2731,7 @@ impl core::marker::Freeze for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::marker::Send for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::marker::Sync for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::marker::Unpin for vyre_spec::algebraic_law::AlgebraicLaw
+impl core::marker::UnsafeUnpin for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::algebraic_law::AlgebraicLaw
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::algebraic_law::AlgebraicLaw
 impl<T, U> core::convert::Into<U> for vyre_spec::algebraic_law::AlgebraicLaw where U: core::convert::From<T>
@@ -2363,6 +2769,8 @@ pub vyre_spec::AtomicOp::Min
 pub vyre_spec::AtomicOp::Opaque(vyre_spec::extension::ExtensionAtomicOpId)
 pub vyre_spec::AtomicOp::Or
 pub vyre_spec::AtomicOp::Xor
+impl vyre_spec::atomic_op::AtomicOp
+pub const fn vyre_spec::atomic_op::AtomicOp::builtin_wire_tag(&self) -> core::option::Option<u8>
 impl core::clone::Clone for vyre_spec::atomic_op::AtomicOp
 pub fn vyre_spec::atomic_op::AtomicOp::clone(&self) -> vyre_spec::atomic_op::AtomicOp
 impl core::cmp::Eq for vyre_spec::atomic_op::AtomicOp
@@ -2382,6 +2790,7 @@ impl core::marker::Freeze for vyre_spec::atomic_op::AtomicOp
 impl core::marker::Send for vyre_spec::atomic_op::AtomicOp
 impl core::marker::Sync for vyre_spec::atomic_op::AtomicOp
 impl core::marker::Unpin for vyre_spec::atomic_op::AtomicOp
+impl core::marker::UnsafeUnpin for vyre_spec::atomic_op::AtomicOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::atomic_op::AtomicOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::atomic_op::AtomicOp
 impl<T, U> core::convert::Into<U> for vyre_spec::atomic_op::AtomicOp where U: core::convert::From<T>
@@ -2407,54 +2816,6 @@ pub unsafe fn vyre_spec::atomic_op::AtomicOp::clone_to_uninit(&self, dest: *mut 
 impl<T> core::convert::From<T> for vyre_spec::atomic_op::AtomicOp
 pub fn vyre_spec::atomic_op::AtomicOp::from(t: T) -> T
 impl<T> serde_core::de::DeserializeOwned for vyre_spec::atomic_op::AtomicOp where T: for<'de> serde_core::de::Deserialize<'de>
-#[non_exhaustive] pub enum vyre_spec::Backend
-pub vyre_spec::Backend::Cuda
-pub vyre_spec::Backend::Extension(vyre_spec::intrinsic_descriptor::ExtensionBackend)
-pub vyre_spec::Backend::Metal
-pub vyre_spec::Backend::SpirV
-pub vyre_spec::Backend::Wgsl
-impl vyre_spec::intrinsic_descriptor::Backend
-pub fn vyre_spec::intrinsic_descriptor::Backend::id(&self) -> &str
-impl core::clone::Clone for vyre_spec::intrinsic_descriptor::Backend
-pub fn vyre_spec::intrinsic_descriptor::Backend::clone(&self) -> vyre_spec::intrinsic_descriptor::Backend
-impl core::cmp::Eq for vyre_spec::intrinsic_descriptor::Backend
-impl core::cmp::PartialEq for vyre_spec::intrinsic_descriptor::Backend
-pub fn vyre_spec::intrinsic_descriptor::Backend::eq(&self, other: &vyre_spec::intrinsic_descriptor::Backend) -> bool
-impl core::convert::From<&vyre_spec::intrinsic_descriptor::Backend> for vyre_spec::intrinsic_descriptor::BackendId
-pub fn vyre_spec::intrinsic_descriptor::BackendId::from(backend: &vyre_spec::intrinsic_descriptor::Backend) -> Self
-impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::Backend
-pub fn vyre_spec::intrinsic_descriptor::Backend::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for vyre_spec::intrinsic_descriptor::Backend
-pub fn vyre_spec::intrinsic_descriptor::Backend::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
-impl core::marker::StructuralPartialEq for vyre_spec::intrinsic_descriptor::Backend
-impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::Backend
-impl core::marker::Send for vyre_spec::intrinsic_descriptor::Backend
-impl core::marker::Sync for vyre_spec::intrinsic_descriptor::Backend
-impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::Backend
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::Backend
-impl !core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::Backend
-impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::From<T>
-pub fn vyre_spec::intrinsic_descriptor::Backend::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::Into<T>
-pub type vyre_spec::intrinsic_descriptor::Backend::Error = core::convert::Infallible
-pub fn vyre_spec::intrinsic_descriptor::Backend::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::TryFrom<T>
-pub type vyre_spec::intrinsic_descriptor::Backend::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_spec::intrinsic_descriptor::Backend::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_spec::intrinsic_descriptor::Backend where T: core::clone::Clone
-pub type vyre_spec::intrinsic_descriptor::Backend::Owned = T
-pub fn vyre_spec::intrinsic_descriptor::Backend::clone_into(&self, target: &mut T)
-pub fn vyre_spec::intrinsic_descriptor::Backend::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_spec::intrinsic_descriptor::Backend where T: 'static + ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::Backend::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_spec::intrinsic_descriptor::Backend where T: ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::Backend::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_spec::intrinsic_descriptor::Backend where T: ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::Backend::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::Backend where T: core::clone::Clone
-pub unsafe fn vyre_spec::intrinsic_descriptor::Backend::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::Backend
-pub fn vyre_spec::intrinsic_descriptor::Backend::from(t: T) -> T
 #[non_exhaustive] pub enum vyre_spec::BinOp
 pub vyre_spec::BinOp::AbsDiff
 pub vyre_spec::BinOp::Add
@@ -2473,6 +2834,7 @@ pub vyre_spec::BinOp::Max
 pub vyre_spec::BinOp::Min
 pub vyre_spec::BinOp::Mod
 pub vyre_spec::BinOp::Mul
+pub vyre_spec::BinOp::MulHigh
 pub vyre_spec::BinOp::Ne
 pub vyre_spec::BinOp::Opaque(vyre_spec::extension::ExtensionBinOpId)
 pub vyre_spec::BinOp::Or
@@ -2487,6 +2849,12 @@ pub vyre_spec::BinOp::Shuffle
 pub vyre_spec::BinOp::Sub
 pub vyre_spec::BinOp::WaveBroadcast
 pub vyre_spec::BinOp::WaveReduce
+pub vyre_spec::BinOp::WrappingAdd
+pub vyre_spec::BinOp::WrappingSub
+impl vyre_spec::bin_op::BinOp
+pub const fn vyre_spec::bin_op::BinOp::builtin_wire_tag(&self) -> core::option::Option<u8>
+impl vyre_spec::bin_op::BinOp
+pub fn vyre_spec::bin_op::BinOp::intensity(&self) -> vyre_spec::bin_op::OpIntensity
 impl core::clone::Clone for vyre_spec::bin_op::BinOp
 pub fn vyre_spec::bin_op::BinOp::clone(&self) -> vyre_spec::bin_op::BinOp
 impl core::cmp::Eq for vyre_spec::bin_op::BinOp
@@ -2506,6 +2874,7 @@ impl core::marker::Freeze for vyre_spec::bin_op::BinOp
 impl core::marker::Send for vyre_spec::bin_op::BinOp
 impl core::marker::Sync for vyre_spec::bin_op::BinOp
 impl core::marker::Unpin for vyre_spec::bin_op::BinOp
+impl core::marker::UnsafeUnpin for vyre_spec::bin_op::BinOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::bin_op::BinOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::bin_op::BinOp
 impl<T, U> core::convert::Into<U> for vyre_spec::bin_op::BinOp where U: core::convert::From<T>
@@ -2555,6 +2924,7 @@ impl core::marker::Freeze for vyre_spec::buffer_access::BufferAccess
 impl core::marker::Send for vyre_spec::buffer_access::BufferAccess
 impl core::marker::Sync for vyre_spec::buffer_access::BufferAccess
 impl core::marker::Unpin for vyre_spec::buffer_access::BufferAccess
+impl core::marker::UnsafeUnpin for vyre_spec::buffer_access::BufferAccess
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::buffer_access::BufferAccess
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::buffer_access::BufferAccess
 impl<T, U> core::convert::Into<U> for vyre_spec::buffer_access::BufferAccess where U: core::convert::From<T>
@@ -2600,6 +2970,7 @@ impl core::marker::Freeze for vyre_spec::category::Category
 impl core::marker::Send for vyre_spec::category::Category
 impl core::marker::Sync for vyre_spec::category::Category
 impl core::marker::Unpin for vyre_spec::category::Category
+impl core::marker::UnsafeUnpin for vyre_spec::category::Category
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::category::Category
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::category::Category
 impl<T, U> core::convert::Into<U> for vyre_spec::category::Category where U: core::convert::From<T>
@@ -2624,6 +2995,61 @@ impl<T> core::clone::CloneToUninit for vyre_spec::category::Category where T: co
 pub unsafe fn vyre_spec::category::Category::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::category::Category
 pub fn vyre_spec::category::Category::from(t: T) -> T
+#[non_exhaustive] pub enum vyre_spec::CollectiveOp
+pub vyre_spec::CollectiveOp::BitAnd
+pub vyre_spec::CollectiveOp::BitOr
+pub vyre_spec::CollectiveOp::BitXor
+pub vyre_spec::CollectiveOp::Max
+pub vyre_spec::CollectiveOp::Min
+pub vyre_spec::CollectiveOp::Sum
+impl vyre_spec::collective_op::CollectiveOp
+pub const fn vyre_spec::collective_op::CollectiveOp::builtin_wire_tag(self) -> u8
+pub fn vyre_spec::collective_op::CollectiveOp::from_wire_tag(tag: u8) -> core::result::Result<Self, alloc::string::String>
+impl core::clone::Clone for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::clone(&self) -> vyre_spec::collective_op::CollectiveOp
+impl core::cmp::Eq for vyre_spec::collective_op::CollectiveOp
+impl core::cmp::PartialEq for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::eq(&self, other: &vyre_spec::collective_op::CollectiveOp) -> bool
+impl core::fmt::Debug for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::collective_op::CollectiveOp
+impl core::marker::StructuralPartialEq for vyre_spec::collective_op::CollectiveOp
+impl serde_core::ser::Serialize for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::collective_op::CollectiveOp
+impl core::marker::Send for vyre_spec::collective_op::CollectiveOp
+impl core::marker::Sync for vyre_spec::collective_op::CollectiveOp
+impl core::marker::Unpin for vyre_spec::collective_op::CollectiveOp
+impl core::marker::UnsafeUnpin for vyre_spec::collective_op::CollectiveOp
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::collective_op::CollectiveOp
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::collective_op::CollectiveOp
+impl<T, U> core::convert::Into<U> for vyre_spec::collective_op::CollectiveOp where U: core::convert::From<T>
+pub fn vyre_spec::collective_op::CollectiveOp::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::collective_op::CollectiveOp where U: core::convert::Into<T>
+pub type vyre_spec::collective_op::CollectiveOp::Error = core::convert::Infallible
+pub fn vyre_spec::collective_op::CollectiveOp::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::collective_op::CollectiveOp where U: core::convert::TryFrom<T>
+pub type vyre_spec::collective_op::CollectiveOp::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::collective_op::CollectiveOp::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::collective_op::CollectiveOp where T: core::clone::Clone
+pub type vyre_spec::collective_op::CollectiveOp::Owned = T
+pub fn vyre_spec::collective_op::CollectiveOp::clone_into(&self, target: &mut T)
+pub fn vyre_spec::collective_op::CollectiveOp::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::collective_op::CollectiveOp where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::collective_op::CollectiveOp::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::collective_op::CollectiveOp where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CollectiveOp::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::collective_op::CollectiveOp where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CollectiveOp::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::collective_op::CollectiveOp where T: core::clone::Clone
+pub unsafe fn vyre_spec::collective_op::CollectiveOp::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::collective_op::CollectiveOp
+pub fn vyre_spec::collective_op::CollectiveOp::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::collective_op::CollectiveOp where T: for<'de> serde_core::de::Deserialize<'de>
 #[non_exhaustive] pub enum vyre_spec::Convention
 pub vyre_spec::Convention::V1
 pub vyre_spec::Convention::V2
@@ -2648,6 +3074,7 @@ impl core::marker::Freeze for vyre_spec::convention::Convention
 impl core::marker::Send for vyre_spec::convention::Convention
 impl core::marker::Sync for vyre_spec::convention::Convention
 impl core::marker::Unpin for vyre_spec::convention::Convention
+impl core::marker::UnsafeUnpin for vyre_spec::convention::Convention
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::convention::Convention
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::convention::Convention
 impl<T, U> core::convert::Into<U> for vyre_spec::convention::Convention where U: core::convert::From<T>
@@ -2697,6 +3124,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::CostHint
 impl core::marker::Send for vyre_spec::op_contract::CostHint
 impl core::marker::Sync for vyre_spec::op_contract::CostHint
 impl core::marker::Unpin for vyre_spec::op_contract::CostHint
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::CostHint
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::CostHint
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::CostHint
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::CostHint where U: core::convert::From<T>
@@ -2744,6 +3172,10 @@ pub vyre_spec::DataType::I64
 pub vyre_spec::DataType::I8
 pub vyre_spec::DataType::NF4
 pub vyre_spec::DataType::Opaque(vyre_spec::extension::ExtensionDataTypeId)
+pub vyre_spec::DataType::Quantized
+pub vyre_spec::DataType::Quantized::scale: vyre_spec::data_type::QuantizationScale
+pub vyre_spec::DataType::Quantized::storage: alloc::boxed::Box<Self>
+pub vyre_spec::DataType::Quantized::zero_point: vyre_spec::data_type::QuantizationZeroPoint
 pub vyre_spec::DataType::SparseBsr
 pub vyre_spec::DataType::SparseBsr::block_cols: u32
 pub vyre_spec::DataType::SparseBsr::block_rows: u32
@@ -2766,11 +3198,19 @@ pub vyre_spec::DataType::Vec::element: alloc::boxed::Box<Self>
 pub vyre_spec::DataType::Vec2U32
 pub vyre_spec::DataType::Vec4U32
 impl vyre_spec::data_type::DataType
+pub const fn vyre_spec::data_type::DataType::bit_width(&self) -> core::option::Option<usize>
 pub const fn vyre_spec::data_type::DataType::element_size(&self) -> core::option::Option<usize>
-pub const fn vyre_spec::data_type::DataType::is_float_family(&self) -> bool
 pub const fn vyre_spec::data_type::DataType::max_bytes(&self) -> core::option::Option<usize>
 pub const fn vyre_spec::data_type::DataType::min_bytes(&self) -> usize
+pub fn vyre_spec::data_type::DataType::packed_size_bytes(&self, element_count: usize) -> core::result::Result<core::option::Option<usize>, alloc::string::String>
 pub const fn vyre_spec::data_type::DataType::size_bytes(&self) -> core::option::Option<usize>
+impl vyre_spec::data_type::DataType
+pub const fn vyre_spec::data_type::DataType::builtin_wire_tag(&self) -> core::option::Option<u8>
+pub const fn vyre_spec::data_type::DataType::is_float_family(&self) -> bool
+pub const fn vyre_spec::data_type::DataType::is_quantized(&self) -> bool
+pub const fn vyre_spec::data_type::DataType::is_quantized_storage(&self) -> bool
+impl vyre_spec::data_type::DataType
+pub fn vyre_spec::data_type::DataType::validate_layout(&self) -> core::result::Result<(), alloc::string::String>
 impl core::clone::Clone for vyre_spec::data_type::DataType
 pub fn vyre_spec::data_type::DataType::clone(&self) -> vyre_spec::data_type::DataType
 impl core::cmp::Eq for vyre_spec::data_type::DataType
@@ -2791,6 +3231,7 @@ impl core::marker::Freeze for vyre_spec::data_type::DataType
 impl core::marker::Send for vyre_spec::data_type::DataType
 impl core::marker::Sync for vyre_spec::data_type::DataType
 impl core::marker::Unpin for vyre_spec::data_type::DataType
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::DataType
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::DataType
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::DataType
 impl<T, U> core::convert::Into<U> for vyre_spec::data_type::DataType where U: core::convert::From<T>
@@ -2841,6 +3282,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::DeterminismClass
 impl core::marker::Send for vyre_spec::op_contract::DeterminismClass
 impl core::marker::Sync for vyre_spec::op_contract::DeterminismClass
 impl core::marker::Unpin for vyre_spec::op_contract::DeterminismClass
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::DeterminismClass
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::DeterminismClass
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::DeterminismClass
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::DeterminismClass where U: core::convert::From<T>
@@ -2906,6 +3348,7 @@ impl core::marker::Freeze for vyre_spec::engine_invariant::EngineInvariant
 impl core::marker::Send for vyre_spec::engine_invariant::EngineInvariant
 impl core::marker::Sync for vyre_spec::engine_invariant::EngineInvariant
 impl core::marker::Unpin for vyre_spec::engine_invariant::EngineInvariant
+impl core::marker::UnsafeUnpin for vyre_spec::engine_invariant::EngineInvariant
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::engine_invariant::EngineInvariant
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::engine_invariant::EngineInvariant
 impl<T, U> core::convert::Into<U> for vyre_spec::engine_invariant::EngineInvariant where U: core::convert::From<T>
@@ -2948,6 +3391,7 @@ impl core::marker::Freeze for vyre_spec::float_type::FloatType
 impl core::marker::Send for vyre_spec::float_type::FloatType
 impl core::marker::Sync for vyre_spec::float_type::FloatType
 impl core::marker::Unpin for vyre_spec::float_type::FloatType
+impl core::marker::UnsafeUnpin for vyre_spec::float_type::FloatType
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::float_type::FloatType
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::float_type::FloatType
 impl<T, U> core::convert::Into<U> for vyre_spec::float_type::FloatType where U: core::convert::From<T>
@@ -2992,6 +3436,7 @@ impl core::marker::Freeze for vyre_spec::invariant_category::InvariantCategory
 impl core::marker::Send for vyre_spec::invariant_category::InvariantCategory
 impl core::marker::Sync for vyre_spec::invariant_category::InvariantCategory
 impl core::marker::Unpin for vyre_spec::invariant_category::InvariantCategory
+impl core::marker::UnsafeUnpin for vyre_spec::invariant_category::InvariantCategory
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::invariant_category::InvariantCategory
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::invariant_category::InvariantCategory
 impl<T, U> core::convert::Into<U> for vyre_spec::invariant_category::InvariantCategory where U: core::convert::From<T>
@@ -3044,6 +3489,7 @@ impl core::marker::Freeze for vyre_spec::layer::Layer
 impl core::marker::Send for vyre_spec::layer::Layer
 impl core::marker::Sync for vyre_spec::layer::Layer
 impl core::marker::Unpin for vyre_spec::layer::Layer
+impl core::marker::UnsafeUnpin for vyre_spec::layer::Layer
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::layer::Layer
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::layer::Layer
 impl<T, U> core::convert::Into<U> for vyre_spec::layer::Layer where U: core::convert::From<T>
@@ -3094,6 +3540,7 @@ impl core::marker::Freeze for vyre_spec::metadata_category::MetadataCategory
 impl core::marker::Send for vyre_spec::metadata_category::MetadataCategory
 impl core::marker::Sync for vyre_spec::metadata_category::MetadataCategory
 impl core::marker::Unpin for vyre_spec::metadata_category::MetadataCategory
+impl core::marker::UnsafeUnpin for vyre_spec::metadata_category::MetadataCategory
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::metadata_category::MetadataCategory
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::metadata_category::MetadataCategory
 impl<T, U> core::convert::Into<U> for vyre_spec::metadata_category::MetadataCategory where U: core::convert::From<T>
@@ -3135,6 +3582,7 @@ impl core::marker::Freeze for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::marker::Send for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::marker::Sync for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::marker::Unpin for vyre_spec::monotonic_direction::MonotonicDirection
+impl core::marker::UnsafeUnpin for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::monotonic_direction::MonotonicDirection
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::monotonic_direction::MonotonicDirection
 impl<T, U> core::convert::Into<U> for vyre_spec::monotonic_direction::MonotonicDirection where U: core::convert::From<T>
@@ -3201,6 +3649,7 @@ impl core::marker::Freeze for vyre_spec::pg_node_kind::PgNodeKind
 impl core::marker::Send for vyre_spec::pg_node_kind::PgNodeKind
 impl core::marker::Sync for vyre_spec::pg_node_kind::PgNodeKind
 impl core::marker::Unpin for vyre_spec::pg_node_kind::PgNodeKind
+impl core::marker::UnsafeUnpin for vyre_spec::pg_node_kind::PgNodeKind
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::pg_node_kind::PgNodeKind
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::pg_node_kind::PgNodeKind
 impl<T, U> core::convert::Into<U> for vyre_spec::pg_node_kind::PgNodeKind where U: core::convert::From<T>
@@ -3226,6 +3675,171 @@ pub unsafe fn vyre_spec::pg_node_kind::PgNodeKind::clone_to_uninit(&self, dest: 
 impl<T> core::convert::From<T> for vyre_spec::pg_node_kind::PgNodeKind
 pub fn vyre_spec::pg_node_kind::PgNodeKind::from(t: T) -> T
 impl<T> serde_core::de::DeserializeOwned for vyre_spec::pg_node_kind::PgNodeKind where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum vyre_spec::QuantizationScale
+pub vyre_spec::QuantizationScale::PerChannel
+pub vyre_spec::QuantizationScale::PerChannel::axis: u32
+pub vyre_spec::QuantizationScale::PerGroup
+pub vyre_spec::QuantizationScale::PerGroup::group_size: u32
+pub vyre_spec::QuantizationScale::PerTensor
+impl core::clone::Clone for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::clone(&self) -> vyre_spec::data_type::QuantizationScale
+impl core::cmp::Eq for vyre_spec::data_type::QuantizationScale
+impl core::cmp::PartialEq for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::eq(&self, other: &vyre_spec::data_type::QuantizationScale) -> bool
+impl core::fmt::Debug for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::data_type::QuantizationScale
+impl serde_core::ser::Serialize for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::data_type::QuantizationScale
+impl core::marker::Send for vyre_spec::data_type::QuantizationScale
+impl core::marker::Sync for vyre_spec::data_type::QuantizationScale
+impl core::marker::Unpin for vyre_spec::data_type::QuantizationScale
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::QuantizationScale
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::QuantizationScale
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::QuantizationScale
+impl<T, U> core::convert::Into<U> for vyre_spec::data_type::QuantizationScale where U: core::convert::From<T>
+pub fn vyre_spec::data_type::QuantizationScale::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::data_type::QuantizationScale where U: core::convert::Into<T>
+pub type vyre_spec::data_type::QuantizationScale::Error = core::convert::Infallible
+pub fn vyre_spec::data_type::QuantizationScale::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::data_type::QuantizationScale where U: core::convert::TryFrom<T>
+pub type vyre_spec::data_type::QuantizationScale::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::data_type::QuantizationScale::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::data_type::QuantizationScale where T: core::clone::Clone
+pub type vyre_spec::data_type::QuantizationScale::Owned = T
+pub fn vyre_spec::data_type::QuantizationScale::clone_into(&self, target: &mut T)
+pub fn vyre_spec::data_type::QuantizationScale::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_spec::data_type::QuantizationScale where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_spec::data_type::QuantizationScale where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::data_type::QuantizationScale where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::data_type::QuantizationScale where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationScale::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::data_type::QuantizationScale where T: core::clone::Clone
+pub unsafe fn vyre_spec::data_type::QuantizationScale::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::data_type::QuantizationScale
+pub fn vyre_spec::data_type::QuantizationScale::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::data_type::QuantizationScale where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum vyre_spec::QuantizationZeroPoint
+pub vyre_spec::QuantizationZeroPoint::Absent
+pub vyre_spec::QuantizationZeroPoint::PerChannel
+pub vyre_spec::QuantizationZeroPoint::PerChannel::axis: u32
+pub vyre_spec::QuantizationZeroPoint::PerGroup
+pub vyre_spec::QuantizationZeroPoint::PerGroup::group_size: u32
+pub vyre_spec::QuantizationZeroPoint::PerTensor
+impl core::clone::Clone for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::clone(&self) -> vyre_spec::data_type::QuantizationZeroPoint
+impl core::cmp::Eq for vyre_spec::data_type::QuantizationZeroPoint
+impl core::cmp::PartialEq for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::eq(&self, other: &vyre_spec::data_type::QuantizationZeroPoint) -> bool
+impl core::fmt::Debug for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::data_type::QuantizationZeroPoint
+impl serde_core::ser::Serialize for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::Send for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::Sync for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::Unpin for vyre_spec::data_type::QuantizationZeroPoint
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::QuantizationZeroPoint
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::QuantizationZeroPoint
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::QuantizationZeroPoint
+impl<T, U> core::convert::Into<U> for vyre_spec::data_type::QuantizationZeroPoint where U: core::convert::From<T>
+pub fn vyre_spec::data_type::QuantizationZeroPoint::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::data_type::QuantizationZeroPoint where U: core::convert::Into<T>
+pub type vyre_spec::data_type::QuantizationZeroPoint::Error = core::convert::Infallible
+pub fn vyre_spec::data_type::QuantizationZeroPoint::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::data_type::QuantizationZeroPoint where U: core::convert::TryFrom<T>
+pub type vyre_spec::data_type::QuantizationZeroPoint::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::data_type::QuantizationZeroPoint::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::data_type::QuantizationZeroPoint where T: core::clone::Clone
+pub type vyre_spec::data_type::QuantizationZeroPoint::Owned = T
+pub fn vyre_spec::data_type::QuantizationZeroPoint::clone_into(&self, target: &mut T)
+pub fn vyre_spec::data_type::QuantizationZeroPoint::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_spec::data_type::QuantizationZeroPoint where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_spec::data_type::QuantizationZeroPoint where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::data_type::QuantizationZeroPoint where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::data_type::QuantizationZeroPoint where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::QuantizationZeroPoint::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::data_type::QuantizationZeroPoint where T: core::clone::Clone
+pub unsafe fn vyre_spec::data_type::QuantizationZeroPoint::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::data_type::QuantizationZeroPoint
+pub fn vyre_spec::data_type::QuantizationZeroPoint::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::data_type::QuantizationZeroPoint where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum vyre_spec::Semiring
+pub vyre_spec::Semiring::BoolAnd
+pub vyre_spec::Semiring::BoolOr
+pub vyre_spec::Semiring::Gf2
+pub vyre_spec::Semiring::Lineage
+pub vyre_spec::Semiring::MaxPlus
+pub vyre_spec::Semiring::MaxTimes
+pub vyre_spec::Semiring::MinPlus
+pub vyre_spec::Semiring::Real
+impl vyre_spec::semiring::Semiring
+pub const fn vyre_spec::semiring::Semiring::identity(self) -> u32
+impl core::clone::Clone for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::clone(&self) -> vyre_spec::semiring::Semiring
+impl core::cmp::Eq for vyre_spec::semiring::Semiring
+impl core::cmp::PartialEq for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::eq(&self, other: &vyre_spec::semiring::Semiring) -> bool
+impl core::fmt::Debug for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::semiring::Semiring
+impl core::marker::StructuralPartialEq for vyre_spec::semiring::Semiring
+impl serde_core::ser::Serialize for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::semiring::Semiring
+impl core::marker::Send for vyre_spec::semiring::Semiring
+impl core::marker::Sync for vyre_spec::semiring::Semiring
+impl core::marker::Unpin for vyre_spec::semiring::Semiring
+impl core::marker::UnsafeUnpin for vyre_spec::semiring::Semiring
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::semiring::Semiring
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::semiring::Semiring
+impl<T, U> core::convert::Into<U> for vyre_spec::semiring::Semiring where U: core::convert::From<T>
+pub fn vyre_spec::semiring::Semiring::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::semiring::Semiring where U: core::convert::Into<T>
+pub type vyre_spec::semiring::Semiring::Error = core::convert::Infallible
+pub fn vyre_spec::semiring::Semiring::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::semiring::Semiring where U: core::convert::TryFrom<T>
+pub type vyre_spec::semiring::Semiring::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::semiring::Semiring::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::semiring::Semiring where T: core::clone::Clone
+pub type vyre_spec::semiring::Semiring::Owned = T
+pub fn vyre_spec::semiring::Semiring::clone_into(&self, target: &mut T)
+pub fn vyre_spec::semiring::Semiring::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::semiring::Semiring where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::semiring::Semiring::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::semiring::Semiring where T: ?core::marker::Sized
+pub fn vyre_spec::semiring::Semiring::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::semiring::Semiring where T: ?core::marker::Sized
+pub fn vyre_spec::semiring::Semiring::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::semiring::Semiring where T: core::clone::Clone
+pub unsafe fn vyre_spec::semiring::Semiring::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::semiring::Semiring
+pub fn vyre_spec::semiring::Semiring::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::semiring::Semiring where T: for<'de> serde_core::de::Deserialize<'de>
 #[non_exhaustive] pub enum vyre_spec::SideEffectClass
 pub vyre_spec::SideEffectClass::Atomic
 pub vyre_spec::SideEffectClass::Pure
@@ -3251,6 +3865,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::SideEffectClass
 impl core::marker::Send for vyre_spec::op_contract::SideEffectClass
 impl core::marker::Sync for vyre_spec::op_contract::SideEffectClass
 impl core::marker::Unpin for vyre_spec::op_contract::SideEffectClass
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::SideEffectClass
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::SideEffectClass
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::SideEffectClass
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::SideEffectClass where U: core::convert::From<T>
@@ -3280,6 +3895,8 @@ impl<T> serde_core::de::DeserializeOwned for vyre_spec::op_contract::SideEffectC
 pub vyre_spec::TernaryOp::Fma
 pub vyre_spec::TernaryOp::Opaque(vyre_spec::extension::ExtensionTernaryOpId)
 pub vyre_spec::TernaryOp::Select
+impl vyre_spec::ternary_op::TernaryOp
+pub const fn vyre_spec::ternary_op::TernaryOp::builtin_wire_tag(&self) -> core::option::Option<u8>
 impl core::clone::Clone for vyre_spec::ternary_op::TernaryOp
 pub fn vyre_spec::ternary_op::TernaryOp::clone(&self) -> vyre_spec::ternary_op::TernaryOp
 impl core::cmp::Eq for vyre_spec::ternary_op::TernaryOp
@@ -3299,6 +3916,7 @@ impl core::marker::Freeze for vyre_spec::ternary_op::TernaryOp
 impl core::marker::Send for vyre_spec::ternary_op::TernaryOp
 impl core::marker::Sync for vyre_spec::ternary_op::TernaryOp
 impl core::marker::Unpin for vyre_spec::ternary_op::TernaryOp
+impl core::marker::UnsafeUnpin for vyre_spec::ternary_op::TernaryOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::ternary_op::TernaryOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::ternary_op::TernaryOp
 impl<T, U> core::convert::Into<U> for vyre_spec::ternary_op::TernaryOp where U: core::convert::From<T>
@@ -3348,6 +3966,7 @@ pub vyre_spec::UnOp::LogicalNot
 pub vyre_spec::UnOp::Negate
 pub vyre_spec::UnOp::Opaque(vyre_spec::extension::ExtensionUnOpId)
 pub vyre_spec::UnOp::Popcount
+pub vyre_spec::UnOp::Reciprocal
 pub vyre_spec::UnOp::ReverseBits
 pub vyre_spec::UnOp::Round
 pub vyre_spec::UnOp::Sign
@@ -3361,6 +3980,8 @@ pub vyre_spec::UnOp::Unpack4High
 pub vyre_spec::UnOp::Unpack4Low
 pub vyre_spec::UnOp::Unpack8High
 pub vyre_spec::UnOp::Unpack8Low
+impl vyre_spec::un_op::UnOp
+pub const fn vyre_spec::un_op::UnOp::builtin_wire_tag(&self) -> core::option::Option<u8>
 impl core::clone::Clone for vyre_spec::un_op::UnOp
 pub fn vyre_spec::un_op::UnOp::clone(&self) -> vyre_spec::un_op::UnOp
 impl core::cmp::Eq for vyre_spec::un_op::UnOp
@@ -3379,6 +4000,7 @@ impl core::marker::Freeze for vyre_spec::un_op::UnOp
 impl core::marker::Send for vyre_spec::un_op::UnOp
 impl core::marker::Sync for vyre_spec::un_op::UnOp
 impl core::marker::Unpin for vyre_spec::un_op::UnOp
+impl core::marker::UnsafeUnpin for vyre_spec::un_op::UnOp
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::un_op::UnOp
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::un_op::UnOp
 impl<T, U> core::convert::Into<U> for vyre_spec::un_op::UnOp where U: core::convert::From<T>
@@ -3426,6 +4048,7 @@ impl core::marker::Freeze for vyre_spec::verification::Verification
 impl core::marker::Send for vyre_spec::verification::Verification
 impl core::marker::Sync for vyre_spec::verification::Verification
 impl core::marker::Unpin for vyre_spec::verification::Verification
+impl core::marker::UnsafeUnpin for vyre_spec::verification::Verification
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::verification::Verification
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::verification::Verification
 impl<T, U> core::convert::Into<U> for vyre_spec::verification::Verification where U: core::convert::From<T>
@@ -3467,6 +4090,7 @@ impl core::marker::Freeze for vyre_spec::adversarial_input::AdversarialInput
 impl core::marker::Send for vyre_spec::adversarial_input::AdversarialInput
 impl core::marker::Sync for vyre_spec::adversarial_input::AdversarialInput
 impl core::marker::Unpin for vyre_spec::adversarial_input::AdversarialInput
+impl core::marker::UnsafeUnpin for vyre_spec::adversarial_input::AdversarialInput
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::adversarial_input::AdversarialInput
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::adversarial_input::AdversarialInput
 impl<T, U> core::convert::Into<U> for vyre_spec::adversarial_input::AdversarialInput where U: core::convert::From<T>
@@ -3491,6 +4115,57 @@ impl<T> core::clone::CloneToUninit for vyre_spec::adversarial_input::Adversarial
 pub unsafe fn vyre_spec::adversarial_input::AdversarialInput::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::adversarial_input::AdversarialInput
 pub fn vyre_spec::adversarial_input::AdversarialInput::from(t: T) -> T
+pub struct vyre_spec::Backend
+impl vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::id(&self) -> &str
+pub fn vyre_spec::intrinsic_descriptor::Backend::name(&self) -> &str
+pub fn vyre_spec::intrinsic_descriptor::Backend::named(id: impl core::convert::Into<vyre_spec::intrinsic_descriptor::BackendId>, name: impl core::convert::Into<alloc::sync::Arc<str>>) -> Self
+pub fn vyre_spec::intrinsic_descriptor::Backend::new(id: impl core::convert::Into<vyre_spec::intrinsic_descriptor::BackendId>) -> Self
+impl core::clone::Clone for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::clone(&self) -> vyre_spec::intrinsic_descriptor::Backend
+impl core::cmp::Eq for vyre_spec::intrinsic_descriptor::Backend
+impl core::cmp::PartialEq for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::eq(&self, other: &vyre_spec::intrinsic_descriptor::Backend) -> bool
+impl core::convert::From<&str> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(id: &str) -> Self
+impl core::convert::From<&vyre_spec::intrinsic_descriptor::Backend> for vyre_spec::intrinsic_descriptor::BackendId
+pub fn vyre_spec::intrinsic_descriptor::BackendId::from(backend: &vyre_spec::intrinsic_descriptor::Backend) -> Self
+impl core::convert::From<vyre_spec::intrinsic_descriptor::BackendId> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(id: vyre_spec::intrinsic_descriptor::BackendId) -> Self
+impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::intrinsic_descriptor::Backend
+impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::Backend
+impl core::marker::Send for vyre_spec::intrinsic_descriptor::Backend
+impl core::marker::Sync for vyre_spec::intrinsic_descriptor::Backend
+impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::Backend
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_descriptor::Backend
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::Backend
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::Backend
+impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::From<T>
+pub fn vyre_spec::intrinsic_descriptor::Backend::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::Into<T>
+pub type vyre_spec::intrinsic_descriptor::Backend::Error = core::convert::Infallible
+pub fn vyre_spec::intrinsic_descriptor::Backend::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::intrinsic_descriptor::Backend where U: core::convert::TryFrom<T>
+pub type vyre_spec::intrinsic_descriptor::Backend::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::intrinsic_descriptor::Backend::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::intrinsic_descriptor::Backend where T: core::clone::Clone
+pub type vyre_spec::intrinsic_descriptor::Backend::Owned = T
+pub fn vyre_spec::intrinsic_descriptor::Backend::clone_into(&self, target: &mut T)
+pub fn vyre_spec::intrinsic_descriptor::Backend::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::intrinsic_descriptor::Backend where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::intrinsic_descriptor::Backend::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::intrinsic_descriptor::Backend where T: ?core::marker::Sized
+pub fn vyre_spec::intrinsic_descriptor::Backend::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::intrinsic_descriptor::Backend where T: ?core::marker::Sized
+pub fn vyre_spec::intrinsic_descriptor::Backend::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::Backend where T: core::clone::Clone
+pub unsafe fn vyre_spec::intrinsic_descriptor::Backend::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(t: T) -> T
 pub struct vyre_spec::BackendAvailabilityPredicate
 impl vyre_spec::category::BackendAvailabilityPredicate
 pub fn vyre_spec::category::BackendAvailabilityPredicate::available(&self, op: &str) -> bool
@@ -3506,6 +4181,7 @@ impl core::marker::Freeze for vyre_spec::category::BackendAvailabilityPredicate
 impl core::marker::Send for vyre_spec::category::BackendAvailabilityPredicate
 impl core::marker::Sync for vyre_spec::category::BackendAvailabilityPredicate
 impl core::marker::Unpin for vyre_spec::category::BackendAvailabilityPredicate
+impl core::marker::UnsafeUnpin for vyre_spec::category::BackendAvailabilityPredicate
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::category::BackendAvailabilityPredicate
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::category::BackendAvailabilityPredicate
 impl<T, U> core::convert::Into<U> for vyre_spec::category::BackendAvailabilityPredicate where U: core::convert::From<T>
@@ -3545,6 +4221,8 @@ impl core::convert::From<&vyre_spec::intrinsic_descriptor::Backend> for vyre_spe
 pub fn vyre_spec::intrinsic_descriptor::BackendId::from(backend: &vyre_spec::intrinsic_descriptor::Backend) -> Self
 impl core::convert::From<alloc::string::String> for vyre_spec::intrinsic_descriptor::BackendId
 pub fn vyre_spec::intrinsic_descriptor::BackendId::from(name: alloc::string::String) -> Self
+impl core::convert::From<vyre_spec::intrinsic_descriptor::BackendId> for vyre_spec::intrinsic_descriptor::Backend
+pub fn vyre_spec::intrinsic_descriptor::Backend::from(id: vyre_spec::intrinsic_descriptor::BackendId) -> Self
 impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::BackendId
 pub fn vyre_spec::intrinsic_descriptor::BackendId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for vyre_spec::intrinsic_descriptor::BackendId
@@ -3555,6 +4233,7 @@ impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::BackendId
 impl core::marker::Send for vyre_spec::intrinsic_descriptor::BackendId
 impl core::marker::Sync for vyre_spec::intrinsic_descriptor::BackendId
 impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::BackendId
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_descriptor::BackendId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::BackendId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::BackendId
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::BackendId where U: core::convert::From<T>
@@ -3603,6 +4282,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::CapabilityId
 impl core::marker::Send for vyre_spec::op_contract::CapabilityId
 impl core::marker::Sync for vyre_spec::op_contract::CapabilityId
 impl core::marker::Unpin for vyre_spec::op_contract::CapabilityId
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::CapabilityId
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::CapabilityId
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::CapabilityId
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::CapabilityId where U: core::convert::From<T>
@@ -3628,44 +4308,55 @@ pub unsafe fn vyre_spec::op_contract::CapabilityId::clone_to_uninit(&self, dest:
 impl<T> core::convert::From<T> for vyre_spec::op_contract::CapabilityId
 pub fn vyre_spec::op_contract::CapabilityId::from(t: T) -> T
 impl<T> serde_core::de::DeserializeOwned for vyre_spec::op_contract::CapabilityId where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct vyre_spec::ExtensionBackend(pub alloc::sync::Arc<dyn vyre_spec::intrinsic_descriptor::BackendKind>)
-impl core::clone::Clone for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::clone(&self) -> vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::cmp::Eq for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::cmp::PartialEq for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::eq(&self, other: &Self) -> bool
-impl core::fmt::Debug for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::hash<H: core::hash::Hasher>(&self, state: &mut H)
-impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::marker::Send for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::marker::Sync for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl !core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl !core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::ExtensionBackend
-impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::ExtensionBackend where U: core::convert::From<T>
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_descriptor::ExtensionBackend where U: core::convert::Into<T>
-pub type vyre_spec::intrinsic_descriptor::ExtensionBackend::Error = core::convert::Infallible
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_spec::intrinsic_descriptor::ExtensionBackend where U: core::convert::TryFrom<T>
-pub type vyre_spec::intrinsic_descriptor::ExtensionBackend::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: core::clone::Clone
-pub type vyre_spec::intrinsic_descriptor::ExtensionBackend::Owned = T
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::clone_into(&self, target: &mut T)
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: 'static + ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: ?core::marker::Sized
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::ExtensionBackend where T: core::clone::Clone
-pub unsafe fn vyre_spec::intrinsic_descriptor::ExtensionBackend::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::ExtensionBackend
-pub fn vyre_spec::intrinsic_descriptor::ExtensionBackend::from(t: T) -> T
+pub struct vyre_spec::CommGroup(pub u32)
+impl vyre_spec::collective_op::CommGroup
+pub const vyre_spec::collective_op::CommGroup::WORLD: Self
+pub const fn vyre_spec::collective_op::CommGroup::as_u32(self) -> u32
+impl core::clone::Clone for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::clone(&self) -> vyre_spec::collective_op::CommGroup
+impl core::cmp::Eq for vyre_spec::collective_op::CommGroup
+impl core::cmp::PartialEq for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::eq(&self, other: &vyre_spec::collective_op::CommGroup) -> bool
+impl core::fmt::Debug for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::collective_op::CommGroup
+impl core::marker::StructuralPartialEq for vyre_spec::collective_op::CommGroup
+impl serde_core::ser::Serialize for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::collective_op::CommGroup
+impl core::marker::Send for vyre_spec::collective_op::CommGroup
+impl core::marker::Sync for vyre_spec::collective_op::CommGroup
+impl core::marker::Unpin for vyre_spec::collective_op::CommGroup
+impl core::marker::UnsafeUnpin for vyre_spec::collective_op::CommGroup
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::collective_op::CommGroup
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::collective_op::CommGroup
+impl<T, U> core::convert::Into<U> for vyre_spec::collective_op::CommGroup where U: core::convert::From<T>
+pub fn vyre_spec::collective_op::CommGroup::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::collective_op::CommGroup where U: core::convert::Into<T>
+pub type vyre_spec::collective_op::CommGroup::Error = core::convert::Infallible
+pub fn vyre_spec::collective_op::CommGroup::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::collective_op::CommGroup where U: core::convert::TryFrom<T>
+pub type vyre_spec::collective_op::CommGroup::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::collective_op::CommGroup::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::collective_op::CommGroup where T: core::clone::Clone
+pub type vyre_spec::collective_op::CommGroup::Owned = T
+pub fn vyre_spec::collective_op::CommGroup::clone_into(&self, target: &mut T)
+pub fn vyre_spec::collective_op::CommGroup::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::collective_op::CommGroup where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::collective_op::CommGroup::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::collective_op::CommGroup where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CommGroup::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::collective_op::CommGroup where T: ?core::marker::Sized
+pub fn vyre_spec::collective_op::CommGroup::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::collective_op::CommGroup where T: core::clone::Clone
+pub unsafe fn vyre_spec::collective_op::CommGroup::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::collective_op::CommGroup
+pub fn vyre_spec::collective_op::CommGroup::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::collective_op::CommGroup where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct vyre_spec::GoldenSample
 pub vyre_spec::GoldenSample::expected: &'static [u8]
 pub vyre_spec::GoldenSample::input: &'static [u8]
@@ -3685,6 +4376,7 @@ impl core::marker::Freeze for vyre_spec::golden_sample::GoldenSample
 impl core::marker::Send for vyre_spec::golden_sample::GoldenSample
 impl core::marker::Sync for vyre_spec::golden_sample::GoldenSample
 impl core::marker::Unpin for vyre_spec::golden_sample::GoldenSample
+impl core::marker::UnsafeUnpin for vyre_spec::golden_sample::GoldenSample
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::golden_sample::GoldenSample
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::golden_sample::GoldenSample
 impl<T, U> core::convert::Into<U> for vyre_spec::golden_sample::GoldenSample where U: core::convert::From<T>
@@ -3725,6 +4417,7 @@ impl core::marker::Freeze for vyre_spec::intrinsic_descriptor::IntrinsicDescript
 impl core::marker::Send for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::marker::Sync for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::marker::Unpin for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor where U: core::convert::From<T>
@@ -3749,13 +4442,53 @@ impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_descriptor::Intrinsi
 pub unsafe fn vyre_spec::intrinsic_descriptor::IntrinsicDescriptor::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::IntrinsicDescriptor
 pub fn vyre_spec::intrinsic_descriptor::IntrinsicDescriptor::from(t: T) -> T
+pub struct vyre_spec::IntrinsicLowering
+pub vyre_spec::IntrinsicLowering::backend: vyre_spec::intrinsic_descriptor::BackendId
+pub vyre_spec::IntrinsicLowering::name: &'static str
+impl vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::new(backend: impl core::convert::Into<vyre_spec::intrinsic_descriptor::BackendId>, name: &'static str) -> Self
+impl core::clone::Clone for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::clone(&self) -> vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::cmp::Eq for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::cmp::PartialEq for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::eq(&self, other: &vyre_spec::intrinsic_table::IntrinsicLowering) -> bool
+impl core::fmt::Debug for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Freeze for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Send for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Sync for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::Unpin for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_table::IntrinsicLowering
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_table::IntrinsicLowering
+impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_table::IntrinsicLowering where U: core::convert::From<T>
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::intrinsic_table::IntrinsicLowering where U: core::convert::Into<T>
+pub type vyre_spec::intrinsic_table::IntrinsicLowering::Error = core::convert::Infallible
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::intrinsic_table::IntrinsicLowering where U: core::convert::TryFrom<T>
+pub type vyre_spec::intrinsic_table::IntrinsicLowering::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::intrinsic_table::IntrinsicLowering where T: core::clone::Clone
+pub type vyre_spec::intrinsic_table::IntrinsicLowering::Owned = T
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::clone_into(&self, target: &mut T)
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::intrinsic_table::IntrinsicLowering where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::intrinsic_table::IntrinsicLowering where T: ?core::marker::Sized
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::intrinsic_table::IntrinsicLowering where T: ?core::marker::Sized
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::intrinsic_table::IntrinsicLowering where T: core::clone::Clone
+pub unsafe fn vyre_spec::intrinsic_table::IntrinsicLowering::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::intrinsic_table::IntrinsicLowering
+pub fn vyre_spec::intrinsic_table::IntrinsicLowering::from(t: T) -> T
 pub struct vyre_spec::IntrinsicTable
-pub vyre_spec::IntrinsicTable::cuda: core::option::Option<&'static str>
-pub vyre_spec::IntrinsicTable::native_module: core::option::Option<&'static str>
-pub vyre_spec::IntrinsicTable::spirv: core::option::Option<&'static str>
-pub vyre_spec::IntrinsicTable::wgsl: core::option::Option<&'static str>
+pub vyre_spec::IntrinsicTable::lowerings: alloc::vec::Vec<vyre_spec::intrinsic_table::IntrinsicLowering>
 impl vyre_spec::intrinsic_table::IntrinsicTable
-pub fn vyre_spec::intrinsic_table::IntrinsicTable::missing_backends(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'static str> + '_
+pub fn vyre_spec::intrinsic_table::IntrinsicTable::has_backend(&self, backend: &vyre_spec::intrinsic_descriptor::BackendId) -> bool
+pub fn vyre_spec::intrinsic_table::IntrinsicTable::missing_backends<'a>(&'a self, required: &'a [vyre_spec::intrinsic_descriptor::BackendId]) -> impl core::iter::traits::iterator::Iterator<Item = &'a str> + 'a
 impl core::clone::Clone for vyre_spec::intrinsic_table::IntrinsicTable
 pub fn vyre_spec::intrinsic_table::IntrinsicTable::clone(&self) -> vyre_spec::intrinsic_table::IntrinsicTable
 impl core::cmp::Eq for vyre_spec::intrinsic_table::IntrinsicTable
@@ -3770,6 +4503,7 @@ impl core::marker::Freeze for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::marker::Send for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::marker::Sync for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::marker::Unpin for vyre_spec::intrinsic_table::IntrinsicTable
+impl core::marker::UnsafeUnpin for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::intrinsic_table::IntrinsicTable
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::intrinsic_table::IntrinsicTable
 impl<T, U> core::convert::Into<U> for vyre_spec::intrinsic_table::IntrinsicTable where U: core::convert::From<T>
@@ -3808,6 +4542,7 @@ impl core::marker::Freeze for vyre_spec::invariant::Invariant
 impl core::marker::Send for vyre_spec::invariant::Invariant
 impl core::marker::Sync for vyre_spec::invariant::Invariant
 impl core::marker::Unpin for vyre_spec::invariant::Invariant
+impl core::marker::UnsafeUnpin for vyre_spec::invariant::Invariant
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::invariant::Invariant
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::invariant::Invariant
 impl<T, U> core::convert::Into<U> for vyre_spec::invariant::Invariant where U: core::convert::From<T>
@@ -3850,6 +4585,7 @@ impl core::marker::Freeze for vyre_spec::kat_vector::KatVector
 impl core::marker::Send for vyre_spec::kat_vector::KatVector
 impl core::marker::Sync for vyre_spec::kat_vector::KatVector
 impl core::marker::Unpin for vyre_spec::kat_vector::KatVector
+impl core::marker::UnsafeUnpin for vyre_spec::kat_vector::KatVector
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::kat_vector::KatVector
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::kat_vector::KatVector
 impl<T, U> core::convert::Into<U> for vyre_spec::kat_vector::KatVector where U: core::convert::From<T>
@@ -3896,6 +4632,7 @@ impl core::marker::Freeze for vyre_spec::op_metadata::OpMetadata
 impl core::marker::Send for vyre_spec::op_metadata::OpMetadata
 impl core::marker::Sync for vyre_spec::op_metadata::OpMetadata
 impl core::marker::Unpin for vyre_spec::op_metadata::OpMetadata
+impl core::marker::UnsafeUnpin for vyre_spec::op_metadata::OpMetadata
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_metadata::OpMetadata
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_metadata::OpMetadata
 impl<T, U> core::convert::Into<U> for vyre_spec::op_metadata::OpMetadata where U: core::convert::From<T>
@@ -3946,6 +4683,7 @@ impl core::marker::Freeze for vyre_spec::op_signature::OpSignature
 impl core::marker::Send for vyre_spec::op_signature::OpSignature
 impl core::marker::Sync for vyre_spec::op_signature::OpSignature
 impl core::marker::Unpin for vyre_spec::op_signature::OpSignature
+impl core::marker::UnsafeUnpin for vyre_spec::op_signature::OpSignature
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_signature::OpSignature
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_signature::OpSignature
 impl<T, U> core::convert::Into<U> for vyre_spec::op_signature::OpSignature where U: core::convert::From<T>
@@ -3998,6 +4736,7 @@ impl core::marker::Freeze for vyre_spec::op_contract::OperationContract
 impl core::marker::Send for vyre_spec::op_contract::OperationContract
 impl core::marker::Sync for vyre_spec::op_contract::OperationContract
 impl core::marker::Unpin for vyre_spec::op_contract::OperationContract
+impl core::marker::UnsafeUnpin for vyre_spec::op_contract::OperationContract
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::op_contract::OperationContract
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::op_contract::OperationContract
 impl<T, U> core::convert::Into<U> for vyre_spec::op_contract::OperationContract where U: core::convert::From<T>
@@ -4039,6 +4778,7 @@ impl core::marker::Freeze for vyre_spec::test_descriptor::TestDescriptor
 impl core::marker::Send for vyre_spec::test_descriptor::TestDescriptor
 impl core::marker::Sync for vyre_spec::test_descriptor::TestDescriptor
 impl core::marker::Unpin for vyre_spec::test_descriptor::TestDescriptor
+impl core::marker::UnsafeUnpin for vyre_spec::test_descriptor::TestDescriptor
 impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::test_descriptor::TestDescriptor
 impl core::panic::unwind_safe::UnwindSafe for vyre_spec::test_descriptor::TestDescriptor
 impl<T, U> core::convert::Into<U> for vyre_spec::test_descriptor::TestDescriptor where U: core::convert::From<T>
@@ -4063,15 +4803,60 @@ impl<T> core::clone::CloneToUninit for vyre_spec::test_descriptor::TestDescripto
 pub unsafe fn vyre_spec::test_descriptor::TestDescriptor::clone_to_uninit(&self, dest: *mut u8)
 impl<T> core::convert::From<T> for vyre_spec::test_descriptor::TestDescriptor
 pub fn vyre_spec::test_descriptor::TestDescriptor::from(t: T) -> T
+pub struct vyre_spec::TypeId(pub u32)
+impl vyre_spec::data_type::TypeId
+pub const fn vyre_spec::data_type::TypeId::as_u32(self) -> u32
+impl core::clone::Clone for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::clone(&self) -> vyre_spec::data_type::TypeId
+impl core::cmp::Eq for vyre_spec::data_type::TypeId
+impl core::cmp::PartialEq for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::eq(&self, other: &vyre_spec::data_type::TypeId) -> bool
+impl core::fmt::Debug for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::data_type::TypeId
+impl core::marker::StructuralPartialEq for vyre_spec::data_type::TypeId
+impl serde_core::ser::Serialize for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::data_type::TypeId
+impl core::marker::Send for vyre_spec::data_type::TypeId
+impl core::marker::Sync for vyre_spec::data_type::TypeId
+impl core::marker::Unpin for vyre_spec::data_type::TypeId
+impl core::marker::UnsafeUnpin for vyre_spec::data_type::TypeId
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::data_type::TypeId
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::data_type::TypeId
+impl<T, U> core::convert::Into<U> for vyre_spec::data_type::TypeId where U: core::convert::From<T>
+pub fn vyre_spec::data_type::TypeId::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_spec::data_type::TypeId where U: core::convert::Into<T>
+pub type vyre_spec::data_type::TypeId::Error = core::convert::Infallible
+pub fn vyre_spec::data_type::TypeId::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_spec::data_type::TypeId where U: core::convert::TryFrom<T>
+pub type vyre_spec::data_type::TypeId::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_spec::data_type::TypeId::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_spec::data_type::TypeId where T: core::clone::Clone
+pub type vyre_spec::data_type::TypeId::Owned = T
+pub fn vyre_spec::data_type::TypeId::clone_into(&self, target: &mut T)
+pub fn vyre_spec::data_type::TypeId::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_spec::data_type::TypeId where T: 'static + ?core::marker::Sized
+pub fn vyre_spec::data_type::TypeId::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_spec::data_type::TypeId where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::TypeId::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_spec::data_type::TypeId where T: ?core::marker::Sized
+pub fn vyre_spec::data_type::TypeId::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_spec::data_type::TypeId where T: core::clone::Clone
+pub unsafe fn vyre_spec::data_type::TypeId::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_spec::data_type::TypeId
+pub fn vyre_spec::data_type::TypeId::from(t: T) -> T
+impl<T> serde_core::de::DeserializeOwned for vyre_spec::data_type::TypeId where T: for<'de> serde_core::de::Deserialize<'de>
 pub trait vyre_spec::BackendAvailability: core::marker::Send + core::marker::Sync
 pub fn vyre_spec::BackendAvailability::available(&self, op: &str) -> bool
 impl vyre_spec::category::BackendAvailability for vyre_spec::category::BackendAvailabilityPredicate
 pub fn vyre_spec::category::BackendAvailabilityPredicate::available(&self, op: &str) -> bool
 impl<F> vyre_spec::category::BackendAvailability for F where F: core::ops::function::Fn(&str) -> bool + core::marker::Send + core::marker::Sync
 pub fn F::available(&self, op: &str) -> bool
-pub trait vyre_spec::BackendKind: core::fmt::Debug + core::marker::Send + core::marker::Sync + 'static
-pub fn vyre_spec::BackendKind::id(&self) -> &str
-pub fn vyre_spec::BackendKind::name(&self) -> &str
 pub fn vyre_spec::all_algebraic_laws() -> &'static [vyre_spec::algebraic_law::AlgebraicLaw]
 pub fn vyre_spec::by_category(category: vyre_spec::invariant_category::InvariantCategory) -> impl core::iter::traits::iterator::Iterator<Item = &'static vyre_spec::invariant::Invariant>
 pub fn vyre_spec::by_id(id: vyre_spec::engine_invariant::InvariantId) -> core::option::Option<&'static vyre_spec::invariant::Invariant>

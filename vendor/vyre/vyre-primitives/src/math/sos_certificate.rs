@@ -7,7 +7,7 @@
 //! `Q ⪰ 0`. Modern low-rank ADMM SDP solvers (Yurtsever-Tropp 2019,
 //! cuSOLVER + per-block updates) make this GPU-friendly.
 //!
-//! This file ships the **Gram matrix construction** primitive — given
+//! This file ships the **Gram matrix construction** primitive  -  given
 //! the polynomial coefficients and a monomial basis, populate the
 //! Gram matrix `Q` such that `m(x)ᵀ Q m(x) = p(x)`. The downstream
 //! SDP feasibility check (Newton-Schulz on Q's PSD projection or a
@@ -37,11 +37,11 @@ pub const OP_ID: &str = "vyre-primitives::math::sos_gram_construct";
 ///   Caller precomputes (host-side) the multiplication-table mapping
 ///   pairs of basis monomials to their indices in the target
 ///   polynomial's coefficient vector.
-/// - `p_coeffs`: u32 buffer of length `coeff_count` — the target
+/// - `p_coeffs`: u32 buffer of length `coeff_count`  -  the target
 ///   polynomial's coefficient vector indexed by monomial index.
 ///
 /// Output:
-/// - `gram`: `m × m` u32 — `gram[i, j] = p_coeffs[monomial_pairs[i, j]]`.
+/// - `gram`: `m × m` u32  -  `gram[i, j] = p_coeffs[monomial_pairs[i, j]]`.
 ///   This Q satisfies `mᵀ Q m = p` IF Q is also constrained to be
 ///   PSD, which the downstream SDP solver enforces.
 #[must_use]
@@ -69,7 +69,14 @@ pub fn sos_gram_construct(
         );
     }
 
-    let cells = m * m;
+    let Some(cells) = m.checked_mul(m) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            gram,
+            DataType::U32,
+            format!("Fix: sos_gram_construct m*m overflows u32 for m={m}."),
+        );
+    };
     let t = Expr::InvocationId { axis: 0 };
 
     let body = vec![Node::if_then(
@@ -103,8 +110,21 @@ pub fn sos_gram_construct(
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn sos_gram_construct_cpu(monomial_pairs: &[u32], p_coeffs: &[u32], m: u32) -> Vec<u32> {
     let mut out = Vec::new();
-    sos_gram_construct_cpu_into(monomial_pairs, p_coeffs, m, &mut out);
+    try_sos_gram_construct_cpu_into(monomial_pairs, p_coeffs, m, &mut out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sos_gram_construct_cpu failed: invalid Gram-matrix shape");
     out
+}
+
+/// Fallible CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_sos_gram_construct_cpu(
+    monomial_pairs: &[u32],
+    p_coeffs: &[u32],
+    m: u32,
+) -> Result<Vec<u32>, String> {
+    let mut out = Vec::new();
+    try_sos_gram_construct_cpu_into(monomial_pairs, p_coeffs, m, &mut out)?;
+    Ok(out)
 }
 
 /// CPU reference into caller-owned storage.
@@ -115,10 +135,34 @@ pub fn sos_gram_construct_cpu_into(
     m: u32,
     out: &mut Vec<u32>,
 ) {
-    let m = m as usize;
+    try_sos_gram_construct_cpu_into(monomial_pairs, p_coeffs, m, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sos_gram_construct_cpu_into failed: invalid Gram-matrix shape");
+}
+
+/// Fallible CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_sos_gram_construct_cpu_into(
+    monomial_pairs: &[u32],
+    p_coeffs: &[u32],
+    m: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    let m = usize::try_from(m).map_err(|_| {
+        format!("sos_gram_construct CPU oracle m={m} does not fit usize. Fix: shard the monomial basis.")
+    })?;
+    let cells = m.checked_mul(m).ok_or_else(|| {
+        format!("sos_gram_construct CPU oracle m={m} overflows dense Gram indexing. Fix: shard the monomial basis.")
+    })?;
+    if cells > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            cells - out.len(),
+            "SOS Gram CPU oracle",
+            "Gram output",
+        )?;
+    }
     out.clear();
-    out.reserve(m * m);
-    for pair_idx in 0..(m * m) {
+    for pair_idx in 0..cells {
         let value = monomial_pairs
             .get(pair_idx)
             .and_then(|&idx| p_coeffs.get(idx as usize))
@@ -126,6 +170,7 @@ pub fn sos_gram_construct_cpu_into(
             .unwrap_or(0);
         out.push(value);
     }
+    Ok(())
 }
 
 /// CPU helper: PSD check on a small `n × n` symmetric matrix via
@@ -233,6 +278,43 @@ mod tests {
     }
 
     #[test]
+    fn cpu_gram_into_truncates_stale_tail_without_reallocating() {
+        let pairs = vec![0u32];
+        let p = vec![7u32];
+        let mut out = Vec::with_capacity(8);
+        out.extend([99u32; 8]);
+        let ptr = out.as_ptr();
+
+        try_sos_gram_construct_cpu_into(&pairs, &p, 1, &mut out).unwrap();
+
+        assert_eq!(out, vec![7]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_cpu_gram_matches_independent_reference() {
+        for m in 1usize..=8 {
+            let cells = m * m;
+            let coeff_count = cells + 3;
+            let pairs: Vec<u32> = (0..cells)
+                .map(|idx| ((idx * 7 + m) % coeff_count) as u32)
+                .collect();
+            let coeffs: Vec<u32> = (0..coeff_count)
+                .map(|idx| (idx as u32).wrapping_mul(17).wrapping_add(5))
+                .collect();
+            let mut out = Vec::with_capacity(cells + 5);
+
+            try_sos_gram_construct_cpu_into(&pairs, &coeffs, m as u32, &mut out).unwrap();
+            let expected: Vec<u32> = pairs
+                .iter()
+                .map(|&idx| coeffs.get(idx as usize).copied().unwrap_or(0))
+                .collect();
+
+            assert_eq!(out, expected, "generated SOS Gram case m={m}");
+        }
+    }
+
+    #[test]
     fn cpu_gram_malformed_inputs_fill_missing_coefficients_with_zero() {
         let g = sos_gram_construct_cpu(&[0, 4], &[7], 2);
         assert_eq!(g, vec![7, 0, 0, 0]);
@@ -283,6 +365,12 @@ mod tests {
     #[test]
     fn zero_m_traps() {
         let p = sos_gram_construct("pairs", "p", "g", 0, 1);
+        assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn gram_cell_overflow_traps() {
+        let p = sos_gram_construct("pairs", "p", "g", u32::MAX, 1);
         assert!(p.stats().trap());
     }
 

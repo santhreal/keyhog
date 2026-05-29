@@ -46,13 +46,24 @@ pub(super) struct LiveConditionalScratch {
 }
 
 impl LiveConditionalScratch {
-    fn prepare_scalar(&mut self, row_bytes: &[u8], row_len: u32, directive_kind: u32) {
-        pack_u32_words_into(&mut self.row_start_b, &[0], 1);
-        pack_u32_words_into(&mut self.row_len_b, &[row_len], 1);
-        pack_u32_words_into(&mut self.directive_kind_b, &[directive_kind], 1);
-        pad_to_u32_words_into(&mut self.row_padded, row_bytes);
+    fn prepare_scalar(
+        &mut self,
+        row_bytes: &[u8],
+        row_len: u32,
+        directive_kind: u32,
+    ) -> Result<(), String> {
+        pack_u32_words_into(&mut self.row_start_b, &[0], 1)?;
+        pack_u32_words_into(&mut self.row_len_b, &[row_len], 1)?;
+        pack_u32_words_into(&mut self.directive_kind_b, &[directive_kind], 1)?;
+        pad_to_u32_words_into(&mut self.row_padded, row_bytes)?;
         self.out_scalar.clear();
+        reserve_live_vec(
+            &mut self.out_scalar,
+            4,
+            "live conditional scalar output bytes",
+        )?;
         self.out_scalar.resize(4, 0);
+        Ok(())
     }
 }
 
@@ -66,6 +77,26 @@ fn insert_live_conditional_cache_value(
         .map_err(|error| format!("{label} conditional cache lock poisoned: {error}"))?;
     cache.insert(key, value);
     Ok(())
+}
+
+fn reserve_live_vec<T>(
+    out: &mut Vec<T>,
+    additional: usize,
+    label: &'static str,
+) -> Result<(), String> {
+    out.try_reserve_exact(additional).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {additional} {label}: {error:?}. Fix: shard preprocessing before live conditional evaluation."
+        )
+    })
+}
+
+fn live_word_bytes(word_count: usize, label: &'static str) -> Result<usize, String> {
+    word_count.checked_mul(4).ok_or_else(|| {
+        format!(
+            "vyre-libs::gpu_pipeline: live conditional {label} word count {word_count} overflows host byte sizing. Fix: shard preprocessing before live conditional evaluation."
+        )
+    })
 }
 
 pub(super) struct LiveMacroNameBuffers {
@@ -82,11 +113,25 @@ fn live_macro_name_buffers(macros: &[MacroDef]) -> Result<LiveMacroNameBuffers, 
     // Pre-size names from the sum of macro-name byte lengths so a
     // 1k-macro defines table grows in one allocation rather than
     // doubling repeatedly during the build.
-    let total_name_bytes: usize = macros.iter().map(|m| m.name.len()).sum();
-    let mut names = Vec::with_capacity(total_name_bytes);
-    let mut offsets = Vec::with_capacity(macros.len() + 1);
+    let total_name_bytes = macros.iter().try_fold(0usize, |total, mac| {
+        total.checked_add(mac.name.len()).ok_or_else(|| {
+            "vyre-libs::gpu_pipeline: live macro-name byte total overflows usize. Fix: shard preprocessing before live conditional evaluation.".to_string()
+        })
+    })?;
+    let mut names = Vec::new();
+    reserve_live_vec(&mut names, total_name_bytes, "live macro-name bytes")?;
+    let offset_slots = macros.len().checked_add(1).ok_or_else(|| {
+        "vyre-libs::gpu_pipeline: live macro-offset slot count overflows usize. Fix: shard preprocessing before live conditional evaluation.".to_string()
+    })?;
+    let mut offsets = Vec::new();
+    reserve_live_vec(&mut offsets, offset_slots, "live macro offsets")?;
     let mut seen_names = HashSet::default();
-    seen_names.reserve(macros.len());
+    seen_names.try_reserve(macros.len()).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {} live macro-name dedupe slots: {error:?}. Fix: shard preprocessing before live conditional evaluation.",
+            macros.len()
+        )
+    })?;
     offsets.push(0);
     for mac in macros {
         if mac.name.is_empty() {
@@ -107,12 +152,12 @@ fn live_macro_name_buffers(macros: &[MacroDef]) -> Result<LiveMacroNameBuffers, 
             names.len(),
         )?);
     }
-    let values = macro_values::macro_integer_values_with_builtin_prefix(macros);
+    let values = macro_values::macro_integer_values_with_builtin_prefix(macros)?;
     let names_len = checked_gpu_u32("live conditional macro-name table byte length", names.len())?;
     let num_macros = checked_gpu_u32("live conditional macro definition count", macros.len())?;
-    let names = pad_to_u32_words(&names);
-    let offsets = pack_u32_words(&offsets, offsets.len());
-    let values = pack_u32_words(&values, values.len().max(1));
+    let names = pad_to_u32_words(&names)?;
+    let offsets = pack_u32_words(&offsets, offsets.len())?;
+    let values = pack_u32_words(&values, values.len().max(1))?;
     let defined_fingerprint = live_macro_buffer_fingerprint(&[
         names.as_slice(),
         offsets.as_slice(),
@@ -221,7 +266,7 @@ mod live_macro_tests {
             macros
                 .iter()
                 .find(|mac| mac.name.as_slice() == b"FEATURE")
-                .expect("FEATURE must exist")
+                .expect("Fix: FEATURE must exist")
                 .body,
             b"1"
         );
@@ -236,14 +281,16 @@ mod live_macro_tests {
         replace_live_macro_indexed(&mut macros, &mut index, object_macro(b"A", b"3"));
         assert_eq!(macros.len(), 2);
         assert_eq!(index.len(), 2);
-        let a_index = *index.get(b"A".as_slice()).expect("A must remain indexed");
+        let a_index = *index
+            .get(b"A".as_slice())
+            .expect("Fix: A must remain indexed");
         assert_eq!(macros[a_index].body, b"3");
         remove_live_macro_indexed(&mut macros, &mut index, b"B");
         assert_eq!(macros.len(), 1);
         assert!(!index.contains_key(b"B".as_slice()));
         let a_index = *index
             .get(b"A".as_slice())
-            .expect("A index must be repaired");
+            .expect("Fix: A index must be repaired");
         assert_eq!(macros[a_index].name, b"A");
     }
 }
@@ -278,9 +325,9 @@ pub(super) fn recompute_ifdef_truth_gpu_with_scratch(
     }
     // gpu_ifdef_value reads num_macros and macro_names_len at runtime
     // via Expr::buf_len, so no construction-time bucketing is needed
-    // for those dimensions — the kernel program shape is constant.
+    // for those dimensions  -  the kernel program shape is constant.
     let program = live_ifdef_program();
-    scratch.prepare_scalar(row_bytes, row_len, directive_kind);
+    scratch.prepare_scalar(row_bytes, row_len, directive_kind)?;
     let inputs: [&[u8]; 7] = [
         &scratch.row_start_b,
         &scratch.row_len_b,
@@ -325,9 +372,31 @@ pub(super) fn recompute_ifdef_truths_gpu_with_scratch<'a>(
     scratch.batch_row_lens.clear();
     scratch.batch_directive_kinds.clear();
     scratch.batch_source.clear();
-    scratch.batch_row_starts.reserve(row_count_bucket);
-    scratch.batch_row_lens.reserve(row_count_bucket);
-    scratch.batch_directive_kinds.reserve(row_count_bucket);
+    reserve_live_vec(
+        &mut scratch.batch_row_starts,
+        row_count_bucket,
+        "batched live ifdef row starts",
+    )?;
+    reserve_live_vec(
+        &mut scratch.batch_row_lens,
+        row_count_bucket,
+        "batched live ifdef row lengths",
+    )?;
+    reserve_live_vec(
+        &mut scratch.batch_directive_kinds,
+        row_count_bucket,
+        "batched live ifdef directive kinds",
+    )?;
+    let batch_source_bytes = rows.iter().try_fold(0usize, |total, row| {
+        total.checked_add(row.row_bytes.len()).ok_or_else(|| {
+            "vyre-libs::gpu_pipeline: batched live ifdef source bytes overflow usize. Fix: shard preprocessing before live conditional evaluation.".to_string()
+        })
+    })?;
+    reserve_live_vec(
+        &mut scratch.batch_source,
+        batch_source_bytes,
+        "batched live ifdef source bytes",
+    )?;
     for row in rows {
         scratch.batch_row_starts.push(checked_gpu_u32(
             "batched live ifdef directive row start",
@@ -345,20 +414,26 @@ pub(super) fn recompute_ifdef_truths_gpu_with_scratch<'a>(
         &mut scratch.row_start_b,
         &scratch.batch_row_starts,
         row_count_bucket,
-    );
+    )?;
     pack_u32_words_into(
         &mut scratch.row_len_b,
         &scratch.batch_row_lens,
         row_count_bucket,
-    );
+    )?;
     pack_u32_words_into(
         &mut scratch.directive_kind_b,
         &scratch.batch_directive_kinds,
         row_count_bucket,
-    );
-    pad_to_u32_words_into(&mut scratch.row_padded, &scratch.batch_source);
+    )?;
+    pad_to_u32_words_into(&mut scratch.row_padded, &scratch.batch_source)?;
+    let out_scalar_bytes = live_word_bytes(row_count_bucket, "batched ifdef output")?;
     scratch.out_scalar.clear();
-    scratch.out_scalar.resize(row_count_bucket * 4, 0);
+    reserve_live_vec(
+        &mut scratch.out_scalar,
+        out_scalar_bytes,
+        "batched live ifdef output bytes",
+    )?;
+    scratch.out_scalar.resize(out_scalar_bytes, 0);
     let inputs: [&[u8]; 7] = [
         &scratch.row_start_b,
         &scratch.row_len_b,
@@ -373,6 +448,7 @@ pub(super) fn recompute_ifdef_truths_gpu_with_scratch<'a>(
         .map_err(|e| format!("gpu_ifdef_value batched live conditional: {e}"))?;
     if scratch.dispatch_outputs.len() != 1 {
         return Err(format!(
+
             "gpu_ifdef_value batched live conditional: expected exactly 1 output, got {}. Fix: backend must return only the defined flags.",
             scratch.dispatch_outputs.len()
         ));
@@ -423,7 +499,7 @@ pub(super) fn recompute_if_expr_truth_gpu_with_scratch(
     }
     // Same runtime-bound treatment as recompute_ifdef_truth_gpu.
     let program = live_if_expression_program();
-    scratch.prepare_scalar(row_bytes, row_len, directive_kind);
+    scratch.prepare_scalar(row_bytes, row_len, directive_kind)?;
     let inputs: [&[u8]; 8] = [
         &scratch.row_start_b,
         &scratch.row_len_b,
@@ -458,3 +534,4 @@ pub(super) fn recompute_if_expr_truth_gpu_with_scratch(
     insert_live_conditional_cache_value(cache_key, value, "live if-expression")?;
     Ok(value)
 }
+

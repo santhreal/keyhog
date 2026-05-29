@@ -1,7 +1,7 @@
 //! Differential compilation via wire-content-hash Merkle.
 //!
 //! Op id: `vyre-foundation::optimizer::diff_compile`. Soundness: `Exact` over
-//! the canonical wire-encoding contract. Cost-direction: read-only — never
+//! the canonical wire-encoding contract. Cost-direction: read-only  -  never
 //! mutates the IR, only computes content hashes. Preserves: every analysis.
 //! Invalidates: nothing.
 //!
@@ -10,7 +10,7 @@
 //! When the optimizer rewrites a 100k-op Program, downstream backend compilation
 //! (target emission / pipeline cache lookup) typically re-traverses the
 //! whole Program from scratch. With ~250 passes landing in the catalog, the
-//! same subtrees survive most rewrites unchanged — but without a stable
+//! same subtrees survive most rewrites unchanged  -  but without a stable
 //! per-subtree fingerprint, the backend can't tell what's actually different
 //! and pays the full traversal cost on every recompile.
 //!
@@ -27,7 +27,7 @@
 //! `ProgramPass::transform` boundary, walk the new Program; for each top-level
 //! Region (or any subtree boundary), compute the hash; on cache hit, reuse the
 //! compiled bytes; on miss, compile + cache. The end-to-end win is proportional
-//! to the fraction of subtrees that survive each rewrite — for typical optimizer
+//! to the fraction of subtrees that survive each rewrite  -  for typical optimizer
 //! workloads where one peephole touches < 1% of nodes, this drops recompile
 //! time by 99%+.
 //!
@@ -44,7 +44,7 @@
 //!
 //! The recursion is implicit in the canonical wire encoding: `put_node` on a
 //! Region serializes its body inline, so the hash of a parent depends on the
-//! bytes of every child. This is the Merkle property — change any leaf and
+//! bytes of every child. This is the Merkle property  -  change any leaf and
 //! every ancestor's hash changes.
 //!
 //! ## Why not hash IR pointers
@@ -64,7 +64,7 @@ use crate::serial::wire::encode::{put_node, put_nodes};
 /// # Errors
 ///
 /// Returns `Err(String)` only when the underlying canonical wire encoder
-/// rejects `node` — every shipped `Node` variant has a defined encoding, so
+/// rejects `node`  -  every shipped `Node` variant has a defined encoding, so
 /// this signals a substrate bug, not a normal failure mode.
 ///
 /// # Examples
@@ -80,7 +80,7 @@ pub fn node_subtree_hash(node: &Node) -> Result<[u8; 32], String> {
 /// 32-byte BLAKE3 content hash of an entire `Node` slice as a single unit.
 ///
 /// Use this when you want one hash that covers a body's exact ordered
-/// contents — the natural granularity for hashing a `Node::Region`'s
+/// contents  -  the natural granularity for hashing a `Node::Region`'s
 /// inner body, an `If` branch arm, or a `Loop` body without wrapping it
 /// in a synthetic enclosing Node. The hash matches the canonical wire
 /// encoding of the slice (length prefix + per-node serialization), so
@@ -163,7 +163,7 @@ pub fn program_diff(before: &Program, after: &Program) -> Result<Vec<Diff>, Stri
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Diff {
-    /// Same hash at the same entry index — backend may reuse the cached
+    /// Same hash at the same entry index  -  backend may reuse the cached
     /// compiled artifact for this entry.
     Unchanged {
         /// Entry-position index within `program.entry()`.
@@ -171,7 +171,7 @@ pub enum Diff {
         /// Content hash shared by `before` and `after`.
         hash: [u8; 32],
     },
-    /// Different hash at the same entry index — backend must recompile.
+    /// Different hash at the same entry index  -  backend must recompile.
     Changed {
         /// Entry-position index within `program.entry()`.
         index: usize,
@@ -180,7 +180,7 @@ pub enum Diff {
         /// Content hash from the `after` Program.
         after_hash: [u8; 32],
     },
-    /// Entry index present in `before` but not in `after` — backend may
+    /// Entry index present in `before` but not in `after`  -  backend may
     /// release the cached artifact (or keep it for future reuse, the diff
     /// simply names the absence).
     Removed {
@@ -189,7 +189,7 @@ pub enum Diff {
         /// Content hash from the `before` Program.
         hash: [u8; 32],
     },
-    /// Entry index present in `after` but not in `before` — backend must
+    /// Entry index present in `after` but not in `before`  -  backend must
     /// compile fresh.
     Added {
         /// Entry-position index within `after.entry()`.
@@ -218,8 +218,8 @@ mod tests {
     fn identical_nodes_share_hash() {
         let n1 = Node::store("buf", Expr::u32(0), Expr::u32(7));
         let n2 = Node::store("buf", Expr::u32(0), Expr::u32(7));
-        let h1 = node_subtree_hash(&n1).expect("encoding must succeed for valid Node");
-        let h2 = node_subtree_hash(&n2).expect("encoding must succeed for valid Node");
+        let h1 = node_subtree_hash(&n1).expect("Fix: encoding must succeed for valid Node");
+        let h2 = node_subtree_hash(&n2).expect("Fix: encoding must succeed for valid Node");
         assert_eq!(h1, h2, "identical nodes must produce identical hashes");
     }
 
@@ -233,8 +233,8 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::u32(7)),
             Node::store("buf", Expr::u32(1), Expr::u32(8)),
         ];
-        let h_a = nodes_subtree_hash(&body_a).expect("encoding must succeed");
-        let h_b = nodes_subtree_hash(&body_b).expect("encoding must succeed");
+        let h_a = nodes_subtree_hash(&body_a).expect("Fix: encoding must succeed");
+        let h_b = nodes_subtree_hash(&body_b).expect("Fix: encoding must succeed");
         assert_eq!(h_a, h_b);
     }
 
@@ -248,11 +248,11 @@ mod tests {
             Node::store("buf", Expr::u32(1), Expr::u32(8)),
             Node::store("buf", Expr::u32(0), Expr::u32(7)),
         ];
-        let h_in_order = nodes_subtree_hash(&body_in_order).expect("encoding must succeed");
-        let h_swapped = nodes_subtree_hash(&body_swapped).expect("encoding must succeed");
+        let h_in_order = nodes_subtree_hash(&body_in_order).expect("Fix: encoding must succeed");
+        let h_swapped = nodes_subtree_hash(&body_swapped).expect("Fix: encoding must succeed");
         assert_ne!(
             h_in_order, h_swapped,
-            "ordered slice contents must affect the hash — backends rely on body order being load-bearing"
+            "ordered slice contents must affect the hash  -  backends rely on body order being load-bearing"
         );
     }
 
@@ -260,8 +260,8 @@ mod tests {
     fn differing_nodes_differ_in_hash() {
         let n1 = Node::store("buf", Expr::u32(0), Expr::u32(7));
         let n2 = Node::store("buf", Expr::u32(0), Expr::u32(8));
-        let h1 = node_subtree_hash(&n1).expect("encoding must succeed for valid Node");
-        let h2 = node_subtree_hash(&n2).expect("encoding must succeed for valid Node");
+        let h1 = node_subtree_hash(&n1).expect("Fix: encoding must succeed for valid Node");
+        let h2 = node_subtree_hash(&n2).expect("Fix: encoding must succeed for valid Node");
         assert_ne!(
             h1, h2,
             "Nodes that differ in any field must produce different hashes (Merkle property)"
@@ -276,11 +276,11 @@ mod tests {
         let inner2 = vec![Node::store("buf", Expr::u32(0), Expr::u32(8))];
         let outer1 = Node::if_then(Expr::bool(true), inner1);
         let outer2 = Node::if_then(Expr::bool(true), inner2);
-        let h1 = node_subtree_hash(&outer1).expect("encoding must succeed");
-        let h2 = node_subtree_hash(&outer2).expect("encoding must succeed");
+        let h1 = node_subtree_hash(&outer1).expect("Fix: encoding must succeed");
+        let h2 = node_subtree_hash(&outer2).expect("Fix: encoding must succeed");
         assert_ne!(
             h1, h2,
-            "changing a leaf must change the parent's hash — without this the cache would \
+            "changing a leaf must change the parent's hash  -  without this the cache would \
              return stale compiled artifacts after a deep rewrite"
         );
     }
@@ -292,8 +292,8 @@ mod tests {
         // depends on the body inside.
         let p1 = program_with(Node::store("buf", Expr::u32(0), Expr::u32(7)));
         let p2 = program_with(Node::store("buf", Expr::u32(0), Expr::u32(8)));
-        let hs1 = program_subtree_hashes(&p1).expect("encoding must succeed");
-        let hs2 = program_subtree_hashes(&p2).expect("encoding must succeed");
+        let hs1 = program_subtree_hashes(&p1).expect("Fix: encoding must succeed");
+        let hs2 = program_subtree_hashes(&p2).expect("Fix: encoding must succeed");
         assert_eq!(
             hs1.len(),
             1,
@@ -311,7 +311,7 @@ mod tests {
     fn program_diff_marks_unchanged_entries() {
         let p1 = program_with(Node::store("buf", Expr::u32(0), Expr::u32(7)));
         let p2 = program_with(Node::store("buf", Expr::u32(0), Expr::u32(7)));
-        let diffs = program_diff(&p1, &p2).expect("encoding must succeed");
+        let diffs = program_diff(&p1, &p2).expect("Fix: encoding must succeed");
         assert_eq!(diffs.len(), 1);
         assert!(matches!(diffs[0], Diff::Unchanged { index: 0, .. }));
     }
@@ -320,7 +320,7 @@ mod tests {
     fn program_diff_marks_changed_entries() {
         let p1 = program_with(Node::store("buf", Expr::u32(0), Expr::u32(7)));
         let p2 = program_with(Node::store("buf", Expr::u32(0), Expr::u32(99)));
-        let diffs = program_diff(&p1, &p2).expect("encoding must succeed");
+        let diffs = program_diff(&p1, &p2).expect("Fix: encoding must succeed");
         assert_eq!(diffs.len(), 1);
         match &diffs[0] {
             Diff::Changed {
@@ -342,9 +342,9 @@ mod tests {
         // Same Node, same input bytes, same hash on every call. Without this
         // contract, cache lookups would silently miss on repeat queries.
         let node = Node::store("buf", Expr::u32(0), Expr::u32(7));
-        let h1 = node_subtree_hash(&node).expect("encoding must succeed");
-        let h2 = node_subtree_hash(&node).expect("encoding must succeed");
-        let h3 = node_subtree_hash(&node).expect("encoding must succeed");
+        let h1 = node_subtree_hash(&node).expect("Fix: encoding must succeed");
+        let h2 = node_subtree_hash(&node).expect("Fix: encoding must succeed");
+        let h3 = node_subtree_hash(&node).expect("Fix: encoding must succeed");
         assert_eq!(h1, h2);
         assert_eq!(h2, h3);
     }

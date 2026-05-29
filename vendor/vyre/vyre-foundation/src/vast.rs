@@ -1,4 +1,4 @@
-//! **VAST** — packed AST wire layout (host validator + tree walks).
+//! **VAST**  -  packed AST wire layout (host validator + tree walks).
 //!
 //! Matches the buffer contract in `docs/parsing-and-frontends.md` in the
 //! vyre workspace (magic `VAST`, fixed `Node` rows). GPU `ast_walk_*`

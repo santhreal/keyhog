@@ -2,21 +2,13 @@
 //!
 //! Category A composition.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
-
-use crate::region::wrap_anonymous;
+use vyre::ir::{Expr, Program, UnOp};
 
 const GELU_SQRT_2_OVER_PI: f32 = 0.797_884_6;
 const GELU_COEF: f32 = 0.044715;
+const OP_ID: &str = "vyre-libs::nn::gelu";
 
-/// Build a Program that applies GELU element-wise from `input` into
-/// `output`. `n` is the element count of both buffers.
-#[must_use]
-pub fn gelu(input: &str, output: &str, n: u32) -> Program {
-    let i = Expr::var("i");
-    let x = Expr::load(input, i.clone());
-
-    // tanh approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+fn gelu_expr(x: Expr) -> Expr {
     let x3 = Expr::mul(Expr::mul(x.clone(), x.clone()), x.clone());
     let inner = Expr::mul(
         Expr::f32(GELU_SQRT_2_OVER_PI),
@@ -26,38 +18,25 @@ pub fn gelu(input: &str, output: &str, n: u32) -> Program {
         op: UnOp::Tanh,
         operand: Box::new(inner),
     };
-    let gelu_val = Expr::mul(
+    Expr::mul(
         Expr::f32(0.5),
-        Expr::mul(x.clone(), Expr::add(Expr::f32(1.0), tanh_inner)),
-    );
-
-    let body = vec![
-        Node::let_bind("i", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(i.clone(), Expr::buf_len(input)),
-            vec![Node::Store {
-                buffer: output.into(),
-                index: i,
-                value: gelu_val,
-            }],
-        ),
-    ];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::F32).with_count(n),
-            BufferDecl::output(output, 1, DataType::F32).with_count(n),
-        ],
-        [64, 1, 1],
-        vec![wrap_anonymous("vyre-libs::nn::gelu", body)],
+        Expr::mul(x, Expr::add(Expr::f32(1.0), tanh_inner)),
     )
+}
+
+/// Build a Program that applies GELU element-wise from `input` into
+/// `output`. `n` is the element count of both buffers.
+#[must_use]
+pub fn gelu(input: &str, output: &str, n: u32) -> Program {
+    super::unary::f32_unary_activation_program(OP_ID, input, output, n, gelu_expr)
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::nn::gelu",
+        id: OP_ID,
         build: || gelu("input", "output", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[0.0_f32, 1.0, -1.0, 2.0]), // input
             ]]
@@ -72,10 +51,7 @@ inventory::submit! {
                     0.5 * x * (1.0 + inner.tanh())
                 })
                 .collect();
-            let bytes = out
-                .iter()
-                .flat_map(|v| v.to_bits().to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -85,18 +61,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     fn gelu_ref(x: f32) -> f32 {
         let x3 = x * x * x;
@@ -181,5 +148,33 @@ mod tests {
         .expect("Fix: gelu must not panic on NaN input");
         let out = decode_f32(&outputs[0].to_bytes());
         assert!(out[0].is_nan(), "gelu(NaN) must be NaN");
+    }
+
+    #[test]
+    fn generated_gelu_matches_scalar_reference() {
+        let input = (0..2048u32)
+            .map(|i| ((i as f32) * 0.017).sin() * 6.0 - 3.0)
+            .collect::<Vec<_>>();
+        let program = gelu("input", "output", input.len() as u32);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&input)),
+                Value::from(vec![0u8; input.len() * core::mem::size_of::<f32>()]),
+            ],
+        )
+        .expect("Fix: generated gelu corpus must execute");
+        let out = decode_f32(&outputs[0].to_bytes());
+        for (index, (actual, expected)) in out
+            .iter()
+            .copied()
+            .zip(input.iter().copied().map(gelu_ref))
+            .enumerate()
+        {
+            assert!(
+                (actual - expected).abs() <= 1.0e-5,
+                "generated gelu mismatch at {index}: {actual} != {expected}"
+            );
+        }
     }
 }

@@ -21,9 +21,11 @@ use crate::validate::shadowing;
 use crate::validate::typecheck::expr_type;
 #[cfg(test)]
 use crate::validate::uniformity::is_uniform;
-use crate::validate::{err, Binding, ValidationError};
 #[cfg(test)]
-use crate::validate::{ValidationOptions, ValidationReport};
+use crate::validate::ValidationOptions;
+#[cfg(test)]
+use crate::validate::ValidationReport;
+use crate::validate::{err, Binding, ValidationError};
 use rustc_hash::FxHashMap;
 #[cfg(test)]
 use rustc_hash::FxHashSet;
@@ -285,8 +287,8 @@ fn validate_node_inner(
             shadowing::check_local(var, scope, options, &mut report.errors);
             // The loop body is divergent only when its parent already is
             // OR when either bound varies across the workgroup. Uniform
-            // bounds keep every invocation in lockstep — same iteration
-            // count, same loop-var value at each step — so a barrier
+            // bounds keep every invocation in lockstep  -  same iteration
+            // count, same loop-var value at each step  -  so a barrier
             // inside is reached by every lane simultaneously.
             let bounds_uniform = is_uniform(from, scope) && is_uniform(to, scope);
             let body_divergent = divergent || !bounds_uniform;
@@ -358,10 +360,32 @@ fn validate_node_inner(
             }
         }
         Node::Trap { .. } | Node::Resume { .. } => {}
+        Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+            validate_collective_support(options, &mut report.errors);
+            validate_collective_buffer(buffer, buffers, &mut report.errors);
+        }
+        Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+            validate_collective_support(options, &mut report.errors);
+            validate_collective_buffer(input, buffers, &mut report.errors);
+            validate_collective_buffer(output, buffers, &mut report.errors);
+            if let (Some(input), Some(output)) =
+                (buffers.get(input.as_str()), buffers.get(output.as_str()))
+            {
+                if input.element != output.element {
+                    report.errors.push(err(format!(
+                        "V046: collective input/output element mismatch: `{}` is `{}`, `{}` is `{}`. Fix: use matching element types before collective lowering.",
+                        input.name(),
+                        input.element,
+                        output.name(),
+                        output.element
+                    )));
+                }
+            }
+        }
         Node::Region { body, .. } => {
             // Region is a tracing / grouping marker (emitted by
             // `crate::region::wrap_anonymous` / `wrap_child` so traces
-            // and op-id breadcrumbs surface compositionally) — NOT a
+            // and op-id breadcrumbs surface compositionally)  -  NOT a
             // variable-scoping construct. Builders all over vyre-libs
             // assume `Node::let_bind("acc", …)` declared at one
             // if_then level remains visible to a `wrap_child(...)`
@@ -379,7 +403,7 @@ fn validate_node_inner(
             //
             // True scoping constructs (Block, If/Else branches, Loop
             // body) keep their `validate_scoped_nested_nodes` call
-            // sites — Region is the one that was misclassified.
+            // sites  -  Region is the one that was misclassified.
             let mut region_bindings = FxHashSet::default();
             validate_nodes_inner(
                 body,
@@ -414,6 +438,35 @@ fn validate_node_inner(
                 )));
             }
         }
+    }
+}
+
+#[cfg(test)]
+fn validate_collective_support(options: ValidationOptions<'_>, errors: &mut Vec<ValidationError>) {
+    if !options.supports_distributed_collectives() {
+        errors.push(err(
+            "V046: distributed collective nodes require backend collective support. Fix: validate with BackendCapabilities { supports_distributed_collectives: true, .. } or lower collectives before this backend.".to_string(),
+        ));
+    }
+}
+
+#[cfg(test)]
+
+fn validate_collective_buffer(
+    name: &Ident,
+    buffers: &FxHashMap<&str, &BufferDecl>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let Some(buffer) = buffers.get(name.as_str()) else {
+        errors.push(err(format!(
+            "V046: collective references unknown buffer `{name}`. Fix: declare the collective buffer before validation."
+        )));
+        return;
+    };
+    if buffer.access == BufferAccess::Workgroup {
+        errors.push(err(format!(
+            "V046: collective buffer `{name}` is workgroup-local. Fix: use device/global storage visible to the distributed backend."
+        )));
     }
 }
 
@@ -603,3 +656,4 @@ mod tests {
         assert!(errors.is_empty(), "dynamic index must be accepted");
     }
 }
+

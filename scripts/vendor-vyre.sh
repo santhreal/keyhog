@@ -142,8 +142,11 @@ COMMIT_SUBJECT=$(git -C "${GIT_TOPLEVEL}" show -s --format=%s "${SHA}")
 # Enumerate the vyre-* subdirs that exist at the chosen ref. Anything
 # else under vendor/vyre/ (workspace Cargo.toml, READMEs, AGENTS.md,
 # helper scripts, weir/, shared/, etc.) is preserved as-is.
+# When vyre is its OWN git repo the subpath is empty; passing "" to
+# `git ls-tree` is an invalid pathspec. Only constrain to the subpath
+# when vyre actually lives under one (monorepo layout).
 mapfile -t SUBDIRS < <(
-    git -C "${GIT_TOPLEVEL}" ls-tree -d --name-only "${SHA}" "${PATH_PREFIX}" \
+    git -C "${GIT_TOPLEVEL}" ls-tree -d --name-only "${SHA}" ${PATH_PREFIX:+"${PATH_PREFIX}"} \
         | sed "s|^${PATH_PREFIX}||" \
         | grep '^vyre-' \
         | sort

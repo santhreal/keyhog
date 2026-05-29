@@ -26,6 +26,7 @@ pub mod descriptor_dump;
 pub mod fixtures;
 pub mod naga_dump;
 pub mod naga_trace;
+pub(crate) mod path_map_serde;
 pub mod source_walker;
 pub mod wgsl;
 

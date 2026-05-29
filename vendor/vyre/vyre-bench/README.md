@@ -157,4 +157,4 @@ Concrete evidence anchors:
 - `release/evidence/benchmarks/release-workload-matrix.json`
 - `release/evidence/benchmarks/cuda-release-suite.json`
 - `release/evidence/benchmarks/wgpu-fallback-suite.json`
-- `release/evidence/benchmarks/bench-legendary-axes.json`
+- `release/evidence/benchmarks/bench-release-axes.json`

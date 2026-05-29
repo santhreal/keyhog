@@ -1,7 +1,7 @@
 //! CSS-compatible linear gradient rasterization.
 //!
 //! Rasterizes a linear gradient with up to 16 color stops.
-//! Category A composition — pure IR expressions.
+//! Category A composition  -  pure IR expressions.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_foundation::ir::model::expr::GeneratorRef;
@@ -19,7 +19,7 @@ pub struct ColorStop {
 
 /// Build a Program that rasterizes a linear gradient into `output`.
 ///
-/// - `output`: `[u32; width * height]` — rasterized gradient (packed RGBA)
+/// - `output`: `[u32; width * height]`  -  rasterized gradient (packed RGBA)
 /// - `angle_deg`: CSS angle (0 = bottom-to-top, 90 = left-to-right)
 /// - `stops`: color stops (must be sorted by position, 2..=16)
 #[must_use]

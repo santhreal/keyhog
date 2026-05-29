@@ -4,7 +4,7 @@
 //!
 //! Today the megakernel scheduler uses
 //! [`super::matroid_megakernel_scheduler::max_fusion_subset`] which is
-//! a discrete BFS-augmenting heuristic — fast and bounded but not
+//! a discrete BFS-augmenting heuristic  -  fast and bounded but not
 //! provably optimal for graphs with non-trivial exchange structure.
 //! This consumer wraps the substrate's full Edmonds augmenting-path
 //! solver, which is **provably optimal** (max independent set in the
@@ -12,7 +12,7 @@
 //!
 //! # When to use
 //!
-//! - **Production hot path**: stick with `max_fusion_subset` — its
+//! - **Production hot path**: stick with `max_fusion_subset`  -  its
 //!   constant-factor advantage at small n (< 64 work items) outweighs
 //!   the asymptotic difference, and its API is simpler.
 //! - **Benchmark / certification path**: use `select_optimal_subset`
@@ -33,9 +33,13 @@ use crate::dispatch_buffers::u32_slice_to_le_bytes;
 use crate::dispatch_buffers::{
     decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes, write_zero_bytes,
 };
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::hardware::scratch::{reserve_hash_set_capacity_or_panic, reserve_vec_capacity_or_panic};
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use rustc_hash::FxHashSet;
+#[cfg(any(test, feature = "cpu-parity"))]
+use vyre_primitives::math::matroid_intersection_full::cpu_ref_into as matroid_cpu_ref_into;
 use vyre_primitives::math::matroid_intersection_full::matroid_intersection_full;
 
 /// Caller-owned dispatch scratch for exact megakernel matroid certification.
@@ -45,7 +49,7 @@ pub struct ExactMatroidDispatchScratch {
 }
 
 /// Reusable buffers for the exact megakernel matroid solver.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 #[derive(Debug, Default)]
 pub struct ExactMatroidScratch {
     current: Vec<u32>,
@@ -57,7 +61,7 @@ pub struct ExactMatroidScratch {
     seen_states: FxHashSet<Vec<u64>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 impl ExactMatroidScratch {
     /// Current selected 0/1 vector from the last solver invocation.
     #[must_use]
@@ -77,69 +81,17 @@ impl ExactMatroidScratch {
         self.next.clear();
         self.next.resize(n, 0);
         self.packed_state.clear();
-        self.packed_state.reserve(n.div_ceil(64));
+        reserve_vec_capacity_or_panic(
+            &mut self.packed_state,
+            n.div_ceil(64),
+            "exact matroid packed-state scratch",
+        );
         self.seen_states.clear();
-        self.seen_states.reserve(max_augmentations as usize + 1);
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::too_many_arguments)]
-fn matroid_cpu_ref_into(
-    exchange_adj: &[u32],
-    sources: &[u32],
-    sinks: &[u32],
-    set_x: &[u32],
-    n: usize,
-    out: &mut Vec<u32>,
-    parent: &mut Vec<u32>,
-    visited: &mut Vec<u32>,
-    queue: &mut Vec<usize>,
-) {
-    out.clear();
-    out.extend_from_slice(set_x);
-    parent.clear();
-    parent.resize(n, 0);
-    visited.clear();
-    visited.resize(n, 0);
-    queue.clear();
-
-    for i in 0..n {
-        if sources[i] != 0 {
-            queue.push(i);
-            visited[i] = 1;
-            parent[i] = i as u32;
-        }
-    }
-
-    let mut found_sink = None;
-    let mut head = 0;
-    while head < queue.len() {
-        let u = queue[head];
-        head += 1;
-        if sinks[u] != 0 {
-            found_sink = Some(u);
-            break;
-        }
-        for v in 0..n {
-            if visited[v] == 0 && exchange_adj[u * n + v] != 0 {
-                visited[v] = 1;
-                parent[v] = u as u32;
-                queue.push(v);
-            }
-        }
-    }
-
-    if let Some(sink) = found_sink {
-        let mut curr = sink;
-        loop {
-            out[curr] = 1 - out[curr];
-            let next = parent[curr] as usize;
-            if next == curr {
-                break;
-            }
-            curr = next;
-        }
+        reserve_hash_set_capacity_or_panic(
+            &mut self.seen_states,
+            max_augmentations as usize + 1,
+            "exact matroid seen-state scratch",
+        );
     }
 }
 
@@ -405,14 +357,14 @@ pub fn select_optimal_subset_via_with_scratch_into(
 /// `sources[i] != 0` marks items eligible to start an augmenting path
 /// (ready to fuse, no exchange-graph blocker on the input side).
 /// `sinks[i] != 0` marks the corresponding sink-side items. `seed_x`
-/// is the initial independent set as a 0/1 vector — pass an empty
+/// is the initial independent set as a 0/1 vector  -  pass an empty
 /// (all-zero) seed for "find max from scratch", or a partial seed
 /// (e.g. the cheapest singleton) to bootstrap.
 ///
 /// Returns the maximum independent set as a 0/1 vector of length n.
 ///
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_select_optimal_subset(
     exchange_adj: &[u32],
     sources: &[u32],
@@ -435,7 +387,7 @@ pub fn reference_select_optimal_subset(
 }
 
 /// Compute the optimal subset into caller-owned solver scratch.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_select_optimal_subset_into<'a>(
     exchange_adj: &[u32],
     sources: &[u32],
@@ -488,7 +440,7 @@ pub fn reference_select_optimal_subset_into<'a>(
 /// [`reference_select_optimal_subset`] semantics for `sources = sinks = vec![1; n]`
 /// without allocating those all-ones vectors on every call.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_select_optimal_subset_all_eligible(
     exchange_adj: &[u32],
     seed_x: &[u32],
@@ -509,7 +461,8 @@ pub fn reference_select_optimal_subset_all_eligible(
 /// Compute the all-eligible optimal subset into caller-owned solver scratch.
 ///
 /// Returns a view into `scratch.result()`.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
+
 pub fn reference_select_optimal_subset_all_eligible_into<'a>(
     exchange_adj: &[u32],
     seed_x: &[u32],
@@ -543,7 +496,7 @@ pub fn reference_select_optimal_subset_all_eligible_into<'a>(
     Ok(scratch.result())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 fn pack_binary_state(state: &[u32], out: &mut Vec<u64>) {
     out.clear();
     out.resize(state.len().div_ceil(64), 0);
@@ -554,7 +507,7 @@ fn pack_binary_state(state: &[u32], out: &mut Vec<u64>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_ref_all_eligible_into(exchange_adj: &[u32], set_x: &[u32], n: usize, out: &mut Vec<u32>) {
     debug_assert_eq!(exchange_adj.len(), n * n);
     debug_assert_eq!(set_x.len(), n);
@@ -718,10 +671,10 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 12);
-            let exchange_adj = read_u32s(&inputs[0]);
-            let sources = read_u32s(&inputs[1]);
-            let sinks = read_u32s(&inputs[2]);
-            let seed_x = read_u32s(&inputs[3]);
+            let exchange_adj = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let sources = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let sinks = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+            let seed_x = crate::hardware::dispatch_buffers::read_u32s(&inputs[3]);
             let n = seed_x.len();
             assert_eq!(exchange_adj.len(), n * n);
             assert_eq!(sources.len(), n);
@@ -742,13 +695,6 @@ mod tests {
             }
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     #[test]
@@ -842,13 +788,14 @@ mod tests {
         let via_section = source
             .split("pub fn select_optimal_subset_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[cfg(test)]\n#[must_use]\npub fn reference_select_optimal_subset")
             .next()
-            .expect("test-only reference marker should exist");
+            .expect("Fix: test-only reference marker should exist");
 
         assert!(!via_section.contains("cpu_ref"));
         assert!(!via_section.contains("matroid_cpu_ref"));
         assert!(!via_section.contains("reference_select"));
     }
 }
+

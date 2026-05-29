@@ -1,4 +1,4 @@
-//! ROADMAP M2 — per-op kernel-time table emitter.
+//! ROADMAP M2  -  per-op kernel-time table emitter.
 //!
 //! Lane: `bench_harness`. Op id: `vyre-bench::report::kernel_time_table`.
 //!
@@ -98,7 +98,7 @@ pub fn kernel_time_table_json(report: &ReportSchema) -> String {
 
         entries.push(entry);
     }
-    serde_json::to_string(&entries).expect("JSON serialization cannot fail for basic types")
+    serde_json::to_string(&entries).expect("Fix: JSON serialization cannot fail for basic types")
 }
 
 #[cfg(test)]

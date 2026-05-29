@@ -1,8 +1,8 @@
-//! Conformal prediction primitives — finite-sample, distribution-free
+//! Conformal prediction primitives  -  finite-sample, distribution-free
 //! uncertainty intervals.
 //!
 //! Conformal prediction (Vovk 2005, Angelopoulos 2023) gives
-//! prediction intervals with a guaranteed coverage probability — no
+//! prediction intervals with a guaranteed coverage probability  -  no
 //! distributional assumptions on the data, no asymptotic arguments.
 //! For split conformal:
 //!
@@ -15,7 +15,7 @@
 //! Coverage guarantee: P(y_new ∈ interval) ≥ 1 - α, exactly,
 //! finite-sample, distribution-free.
 //!
-//! This file ships the **threshold** primitive — given calibration
+//! This file ships the **threshold** primitive  -  given calibration
 //! scores already computed by the caller, find q̂. The
 //! prediction-interval expansion is one elementwise add (no primitive
 //! needed). Score computation is application-specific.
@@ -38,7 +38,7 @@ pub const OP_ID: &str = "vyre-primitives::math::conformal_threshold";
 
 /// Compute the conformal threshold q̂ given pre-sorted calibration
 /// scores and target rank `k = ⌈(1 - α)(n + 1)⌉`. Single-lane primitive
-/// — lane 0 reads `scores[k - 1]` and writes it to `q_hat[0]`.
+///  -  lane 0 reads `scores[k - 1]` and writes it to `q_hat[0]`.
 ///
 /// Note: callers must sort the scores BEFORE dispatching (compose with
 /// any sort primitive). Unsorted input gives an arbitrary value.
@@ -140,8 +140,15 @@ inventory::submit! {
         || {
             conformal_threshold("scores", "q_hat", 4, 2)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[10, 20, 30, 40]),
+                crate::wire::pack_u32_slice(&[0]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[20])]]
+        }),
     )
 }
 

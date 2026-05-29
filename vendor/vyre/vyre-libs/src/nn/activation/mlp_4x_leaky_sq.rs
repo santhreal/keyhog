@@ -184,7 +184,7 @@ inventory::submit! {
                 .unwrap_or_else(|error| crate::invalid_program(OP_ID, format!("Fix: mlp_4x_leaky_sq fixture must build: {error}")))
         },
         test_inputs: Some(|| {
-            let f = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let f = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 f(&[1.0, 2.0]),
                 f(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
@@ -216,7 +216,7 @@ inventory::submit! {
             let out: Vec<f32> = (0..model_dim).map(|i| {
                 b2[i] + (0..hidden_dim).map(|j| act[j] * w2[j * model_dim + i]).sum::<f32>()
             }).collect();
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -224,10 +224,7 @@ inventory::submit! {
 }
 
 fn f32_fixture(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_bits().to_le_bytes())
-        .collect()
+    vyre_primitives::wire::pack_f32_slice(values)
 }
 
 fn hidden_projection_program() -> Program {
@@ -326,21 +323,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_bits().to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_bits(u32::from_le_bytes(chunk.try_into().unwrap())))
-            .collect()
-    }
 
     #[test]
     fn mlp_materializes_hidden_once_and_matches_reference() {

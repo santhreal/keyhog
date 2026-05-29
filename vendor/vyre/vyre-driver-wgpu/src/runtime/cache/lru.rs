@@ -1,6 +1,6 @@
-use std::hash::BuildHasherDefault;
+use rustc_hash::FxHashMap;
 
-use rustc_hash::{FxHashMap, FxHasher};
+use crate::allocation::{reserve_hash_map_to_capacity, reserve_vec_to_capacity};
 
 /// Default initial node reservation used by [`IntrusiveLru`].
 pub const DEFAULT_INTRUSIVE_LRU_CAPACITY: usize = 65_536;
@@ -33,7 +33,27 @@ where
     /// Create an LRU with the default live-node capacity.
     #[inline]
     pub fn new() -> Self {
-        Self::with_reserved_capacity(DEFAULT_INTRUSIVE_LRU_CAPACITY)
+        match Self::try_new() {
+            Ok(lru) => lru,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "wgpu intrusive LRU default reservation failed; continuing with grow-on-use storage"
+                );
+                Self::empty_with_policy(None)
+            }
+        }
+    }
+
+    /// Fallible version of [`Self::new`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if default LRU backing storage
+    /// cannot be reserved.
+    #[inline]
+    pub fn try_new() -> Result<Self, vyre_driver::BackendError> {
+        Self::try_with_reserved_capacity(DEFAULT_INTRUSIVE_LRU_CAPACITY)
     }
 
     /// Create an LRU with a fixed live-node capacity.
@@ -42,20 +62,32 @@ where
     /// capacity budgets cannot disable the LRU by accident.
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
+        let capacity = capacity.max(1);
+        match Self::try_with_capacity(capacity) {
+            Ok(lru) => lru,
+            Err(error) => {
+                tracing::error!(
+                    capacity,
+                    error = %error,
+                    "wgpu intrusive LRU bounded reservation failed; continuing with grow-on-use storage"
+                );
+                Self::empty_with_policy(Some(capacity))
+            }
+        }
+    }
+
+    /// Fallible version of [`Self::with_capacity`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if LRU backing storage cannot be
+    /// reserved.
+    #[inline]
+    pub fn try_with_capacity(capacity: usize) -> Result<Self, vyre_driver::BackendError> {
         // Defensive: a capacity of 0 would make the LRU unusable; clamp to 1
         // so callers that compute capacity from external config never panic.
         let capacity = capacity.max(1);
-        Self {
-            nodes: Vec::with_capacity(capacity),
-            indices: FxHashMap::with_capacity_and_hasher(
-                capacity,
-                BuildHasherDefault::<FxHasher>::default(),
-            ),
-            free: Vec::with_capacity(capacity),
-            head: None,
-            tail: None,
-            live_limit: Some(capacity),
-        }
+        Self::try_with_capacity_policy(capacity, Some(capacity))
     }
 
     /// Create an LRU that reserves `capacity` slots but does not silently evict
@@ -67,17 +99,77 @@ where
     /// force cold-path scans at scale.
     #[inline]
     pub fn with_reserved_capacity(capacity: usize) -> Self {
+        match Self::try_with_reserved_capacity(capacity) {
+            Ok(lru) => lru,
+            Err(error) => {
+                tracing::error!(
+                    capacity,
+                    error = %error,
+                    "wgpu intrusive LRU reservation failed; continuing with grow-on-use storage"
+                );
+                Self::empty_with_policy(None)
+            }
+        }
+    }
+
+    /// Fallible version of [`Self::with_reserved_capacity`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if LRU backing storage cannot be
+    /// reserved.
+    #[inline]
+    pub fn try_with_reserved_capacity(capacity: usize) -> Result<Self, vyre_driver::BackendError> {
         let capacity = capacity.max(1);
-        Self {
-            nodes: Vec::with_capacity(capacity),
-            indices: FxHashMap::with_capacity_and_hasher(
-                capacity,
-                BuildHasherDefault::<FxHasher>::default(),
-            ),
-            free: Vec::with_capacity(capacity),
+        Self::try_with_capacity_policy(capacity, None)
+    }
+
+    fn try_with_capacity_policy(
+        capacity: usize,
+        live_limit: Option<usize>,
+    ) -> Result<Self, vyre_driver::BackendError> {
+        let mut nodes = Vec::new();
+        reserve_vec_to_capacity(
+            &mut nodes,
+            capacity,
+            "wgpu intrusive LRU",
+            "node slot",
+            "reduce runtime cache capacity or shard cache metadata",
+        )?;
+        let mut indices = FxHashMap::default();
+        reserve_hash_map_to_capacity(
+            &mut indices,
+            capacity,
+            "wgpu intrusive LRU",
+            "index entry",
+            "reduce runtime cache capacity or shard cache metadata",
+        )?;
+        let mut free = Vec::new();
+        reserve_vec_to_capacity(
+            &mut free,
+            capacity,
+            "wgpu intrusive LRU",
+            "free-list slot",
+            "reduce runtime cache capacity or shard cache metadata",
+        )?;
+        Ok(Self {
+            nodes,
+            indices,
+            free,
             head: None,
             tail: None,
-            live_limit: None,
+            live_limit,
+        })
+    }
+
+    fn empty_with_policy(live_limit: Option<usize>) -> Self {
+        Self {
+            nodes: Vec::new(),
+            indices: FxHashMap::default(),
+            free: Vec::new(),
+            head: None,
+            tail: None,
+            live_limit,
         }
     }
 
@@ -277,10 +369,33 @@ impl AccessTracker {
     /// Create a new empty tracker.
     #[inline]
     pub fn new() -> Self {
-        Self {
-            lru: IntrusiveLru::new(),
-            tick: 0,
+        match Self::try_new() {
+            Ok(tracker) => tracker,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "wgpu access tracker reservation failed; continuing with grow-on-use storage"
+                );
+                Self {
+                    lru: IntrusiveLru::empty_with_policy(None),
+                    tick: 0,
+                }
+            }
         }
+    }
+
+    /// Fallible version of [`Self::new`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if tracker backing storage cannot
+    /// be reserved.
+    #[inline]
+    pub fn try_new() -> Result<Self, vyre_driver::BackendError> {
+        Ok(Self {
+            lru: IntrusiveLru::try_new()?,
+            tick: 0,
+        })
     }
 
     /// Record an access for the given key.
@@ -374,6 +489,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn intrusive_lru_constructors_use_shared_fallible_reservation() {
+        let bounded = IntrusiveLru::<u64, AccessMeta>::try_with_capacity(4)
+            .expect("Fix: bounded LRU capacity should reserve");
+        let reserved = IntrusiveLru::<u64, AccessMeta>::try_with_reserved_capacity(4)
+            .expect("Fix: reserved LRU capacity should reserve");
+
+        assert!(bounded.reserved_capacity_for_diagnostics().0 >= 4);
+        assert!(reserved.reserved_capacity_for_diagnostics().0 >= 4);
+
+        let production = include_str!("lru.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: lru.rs must contain production section");
+        assert!(
+            production.contains("fn try_with_capacity_policy")
+                && production.contains("reserve_vec_to_capacity")
+                && production.contains("reserve_hash_map_to_capacity")
+                && production.contains("pub fn try_new()")
+                && !production.contains("Vec::with_capacity")
+                && !production.contains("FxHashMap::with_capacity_and_hasher"),
+            "Fix: WGPU runtime LRU constructors must share fallible reservation rather than duplicating infallible capacity constructors."
+        );
+        assert!(
+            !production.contains(".expect("),
+            "Fix: WGPU runtime LRU production constructors must not panic on allocation pressure."
+        );
+    }
+
+    #[test]
     fn access_tracker_rebases_ticks_in_lru_order_instead_of_panicking() {
         let mut tracker = AccessTracker::new();
         tracker.record(10);
@@ -384,9 +528,13 @@ mod tests {
         tracker.record(20);
 
         assert_eq!(tracker.hot_set(3), vec![20, 30, 10]);
-        let hot = tracker.stats(20).expect("hot key must remain tracked");
-        let warm = tracker.stats(30).expect("warm key must remain tracked");
-        let cold = tracker.stats(10).expect("cold key must remain tracked");
+        let hot = tracker.stats(20).expect("Fix: hot key must remain tracked");
+        let warm = tracker
+            .stats(30)
+            .expect("Fix: warm key must remain tracked");
+        let cold = tracker
+            .stats(10)
+            .expect("Fix: cold key must remain tracked");
         assert!(hot.last_access > warm.last_access);
         assert!(warm.last_access > cold.last_access);
     }
@@ -402,7 +550,7 @@ mod tests {
         assert_eq!(
             tracker
                 .stats(7)
-                .expect("tracked key must have stats")
+                .expect("Fix: tracked key must have stats")
                 .frequency,
             u32::MAX
         );
@@ -414,7 +562,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("LRU production source must precede tests");
+            .expect("Fix: LRU production source must precede tests");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".unwrap_or_else("),

@@ -1,4 +1,4 @@
-//! Cross-scope expression CSE — hoists common subexpressions to
+//! Cross-scope expression CSE  -  hoists common subexpressions to
 //! shared `let` bindings.
 //!
 //! Complements `apply_cse_let_dedupe` (which dedupes only `let`-RHS
@@ -10,7 +10,7 @@
 //! rewrite each occurrence to `Var(__cse_<n>)`.
 //!
 //! Walker uses the arena's `node_top_level_exprs` to identify per-
-//! Node arena ids — robust to upstream rewrites that change inner
+//! Node arena ids  -  robust to upstream rewrites that change inner
 //! Expr shape, since Node-level structure is preserved.
 
 use std::sync::Arc;
@@ -18,6 +18,7 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 use vyre_foundation::ir::{Expr, Ident, Node, Program};
 
+use super::cse_via_encoded::CanonicalLookup;
 use super::expr_arena::ExprArenaEncoding;
 
 /// Apply same-scope expression CSE. For each scope, identifies
@@ -28,6 +29,15 @@ pub fn apply_cross_scope_cse(
     program: &Program,
     arena: &ExprArenaEncoding,
     canonical: &[u32],
+) -> Program {
+    apply_cross_scope_cse_with_lookup(program, arena, canonical)
+}
+
+/// Sparse/dense-agnostic variant of [`apply_cross_scope_cse`].
+pub fn apply_cross_scope_cse_with_lookup<C: CanonicalLookup + ?Sized>(
+    program: &Program,
+    arena: &ExprArenaEncoding,
+    canonical: &C,
 ) -> Program {
     if canonical.is_empty() || arena.expr_count == 0 {
         return program.clone();
@@ -58,10 +68,10 @@ pub fn apply_cross_scope_cse(
     program.with_rewritten_entry(new_entry)
 }
 
-struct CseWalker<'a> {
+struct CseWalker<'a, C: CanonicalLookup + ?Sized> {
     arena: &'a ExprArenaEncoding,
-    canonical: &'a [u32],
-    /// Mirrors the arena's `node_top_level_exprs` index — increments
+    canonical: &'a C,
+    /// Mirrors the arena's `node_top_level_exprs` index  -  increments
     /// by one per Node visited in DFS prefix order.
     node_index: usize,
     /// Monotonic suffix for fresh `__cse_N` names.
@@ -75,7 +85,7 @@ struct Occurrence {
     expr: Expr,
 }
 
-impl CseWalker<'_> {
+impl<C: CanonicalLookup + ?Sized> CseWalker<'_, C> {
     fn rewrite_scope(&mut self, body: &[Node]) -> Vec<Node> {
         let prefix_len = super::encode::reachable_prefix_len(body);
 
@@ -184,11 +194,7 @@ impl CseWalker<'_> {
             Some(id) => id,
             None => return,
         };
-        let canon = self
-            .canonical
-            .get(arena_id as usize)
-            .copied()
-            .unwrap_or(arena_id);
+        let canon = self.canonical.canonical_of(arena_id);
         occs.push(Occurrence {
             canon,
             expr: expr.clone(),
@@ -297,11 +303,7 @@ impl CseWalker<'_> {
             Some(id) => id,
             None => return expr.clone(),
         };
-        let canon = self
-            .canonical
-            .get(arena_id as usize)
-            .copied()
-            .unwrap_or(arena_id);
+        let canon = self.canonical.canonical_of(arena_id);
         if let Some(name) = plan.get(&canon) {
             return Expr::var(name.clone());
         }
@@ -309,7 +311,7 @@ impl CseWalker<'_> {
     }
 }
 
-/// Decide if an Expr is worth hoisting. Skip leaves — duplicating
+/// Decide if an Expr is worth hoisting. Skip leaves  -  duplicating
 /// those is cheaper than an extra Var indirection.
 fn is_hoist_worthy(expr: &Expr) -> bool {
     !matches!(
@@ -328,7 +330,7 @@ fn is_hoist_worthy(expr: &Expr) -> bool {
     )
 }
 
-/// True iff `expr` contains no `Expr::Atomic` anywhere — hoisting
+/// True iff `expr` contains no `Expr::Atomic` anywhere  -  hoisting
 /// past an atomic op would change observable order.
 fn expr_no_atomic(expr: &Expr) -> bool {
     match expr {

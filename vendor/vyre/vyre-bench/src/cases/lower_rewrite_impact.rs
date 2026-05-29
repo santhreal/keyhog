@@ -4,6 +4,7 @@ use crate::api::case::{
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::suite::SuiteKind;
+use crate::cases::byte_pack::decode_u64_words;
 use std::time::Instant;
 use vyre::lower::analyses::{
     analyze_bank_conflict, analyze_coalesce, analyze_layout_aos_to_soa, analyze_shared_mem_promote,
@@ -230,7 +231,7 @@ impl BenchCase for LowerRewriteImpact {
                 "lower rewrite impact produced no metric output".to_string(),
             )
         })?;
-        let words = decode_u64_words(output)?;
+        let words = decode_u64_words(output, "lower rewrite")?;
         let ops_before = words[0];
         let ops_after = words[1];
         let ops_eliminated = words[2];
@@ -271,22 +272,6 @@ impl BenchCase for LowerRewriteImpact {
         }
         Ok(Correctness::Exact)
     }
-}
-
-fn decode_u64_words(bytes: &[u8]) -> Result<Vec<u64>, BenchError> {
-    if bytes.len() % 8 != 0 {
-        return Err(BenchError::CorrectnessViolation(
-            "lower rewrite metric output length is not u64-aligned".to_string(),
-        ));
-    }
-    Ok(bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            u64::from_le_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
-            ])
-        })
-        .collect())
 }
 
 #[derive(Default)]
@@ -473,6 +458,7 @@ fn vec_pack_corpus() -> KernelDescriptor {
     )
 }
 
+
 fn descriptor(
     id: &str,
     slots: Vec<BindingSlot>,
@@ -543,3 +529,4 @@ fn local_x(result: u32) -> KernelOp {
 inventory::submit! {
     &LowerRewriteImpact as &'static dyn BenchCase
 }
+

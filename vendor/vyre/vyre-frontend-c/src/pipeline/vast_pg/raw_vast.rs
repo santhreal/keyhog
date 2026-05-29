@@ -55,7 +55,7 @@ fn build_raw_vast_with_scratch(
     scratch: &mut RawVastScratch,
 ) -> Result<(Vec<u8>, u32), String> {
     cfg.label = Some(format!("vyre-frontend-c vast {}", path.display()));
-    let vast_key = super::stage_pipeline_cache_key("c11_build_vast_nodes", &[nt as u64]);
+    let vast_key = super::stage_pipeline_cache_key("c11_build_vast_nodes_v2", &[nt as u64]);
     let use_global_last_child = c11_build_vast_nodes_uses_global_last_child(nt);
     if use_global_last_child {
         let scratch_len = usize::try_from(nt.max(1))
@@ -84,6 +84,7 @@ fn build_raw_vast_with_scratch(
     } else {
         &inputs3
     };
+    scratch.outputs.clear();
     super::dispatch_borrowed_stage_cached_into(
         backend,
         vast_key,

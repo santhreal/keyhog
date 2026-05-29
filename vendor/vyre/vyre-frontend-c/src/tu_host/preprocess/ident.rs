@@ -1,4 +1,3 @@
-use super::*;
 pub(super) fn is_ident_start(byte: u8) -> bool {
     byte == b'_' || byte.is_ascii_alphabetic()
 }

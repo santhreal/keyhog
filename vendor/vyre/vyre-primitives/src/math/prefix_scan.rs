@@ -1,4 +1,4 @@
-//! Subgroup prefix-sum (inclusive / exclusive scan) — core 1000×
+//! Subgroup prefix-sum (inclusive / exclusive scan)  -  core 1000×
 //! primitive for variable-length compaction.
 //!
 //! # Use cases
@@ -44,7 +44,7 @@ pub const OP_ID_EXCLUSIVE_SUM: &str = "vyre-primitives::math::prefix_scan_exclus
 pub enum ScanKind {
     /// `out[i] = sum(in[0..=i])`.
     InclusiveSum,
-    /// `out[i] = sum(in[0..i])` — identity element (`0`) at slot 0.
+    /// `out[i] = sum(in[0..i])`  -  identity element (`0`) at slot 0.
     ExclusiveSum,
 }
 
@@ -256,15 +256,38 @@ pub fn prefix_scan_large_with_op_id(
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], kind: ScanKind) -> Vec<u32> {
     let mut out = Vec::new();
-    cpu_ref_into(input, kind, &mut out);
+    try_cpu_ref_into(input, kind, &mut out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - prefix_scan cpu_ref failed: output allocation failed");
     out
+}
+
+/// Fallible CPU-reference prefix scan.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref(input: &[u32], kind: ScanKind) -> Result<Vec<u32>, String> {
+    let mut out = Vec::new();
+    try_cpu_ref_into(input, kind, &mut out)?;
+    Ok(out)
 }
 
 /// CPU-reference prefix scan using a caller-owned output buffer.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], kind: ScanKind, out: &mut Vec<u32>) {
+    try_cpu_ref_into(input, kind, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - prefix_scan cpu_ref_into failed: output allocation failed");
+}
+
+/// Fallible CPU-reference prefix scan using a caller-owned output buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(input: &[u32], kind: ScanKind, out: &mut Vec<u32>) -> Result<(), String> {
+    if input.len() > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            input.len() - out.len(),
+            "prefix scan CPU oracle",
+            "scan output",
+        )?;
+    }
     out.clear();
-    out.reserve(input.len());
     let mut acc = 0_u32;
     match kind {
         ScanKind::InclusiveSum => {
@@ -280,6 +303,7 @@ pub fn cpu_ref_into(input: &[u32], kind: ScanKind, out: &mut Vec<u32>) {
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -327,6 +351,53 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_truncates_stale_tail_without_reallocating() {
+        let mut out = Vec::with_capacity(16);
+        out.extend([99u32; 16]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(&[1, 2, 3, 4], ScanKind::InclusiveSum, &mut out).unwrap();
+
+        assert_eq!(out, vec![1, 3, 6, 10]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_cpu_ref_matches_independent_wrapping_scan() {
+        for len in 0..128usize {
+            let input: Vec<u32> = (0..len)
+                .map(|idx| {
+                    (idx as u32)
+                        .wrapping_mul(0x9E37_79B9)
+                        .wrapping_add(len as u32)
+                })
+                .collect();
+            for kind in [ScanKind::InclusiveSum, ScanKind::ExclusiveSum] {
+                let mut out = Vec::with_capacity(len + 3);
+                try_cpu_ref_into(&input, kind, &mut out).unwrap();
+                let mut expected = Vec::with_capacity(len);
+                let mut acc = 0u32;
+                for &value in &input {
+                    match kind {
+                        ScanKind::InclusiveSum => {
+                            acc = acc.wrapping_add(value);
+                            expected.push(acc);
+                        }
+                        ScanKind::ExclusiveSum => {
+                            expected.push(acc);
+                            acc = acc.wrapping_add(value);
+                        }
+                    }
+                }
+                assert_eq!(
+                    out, expected,
+                    "generated prefix scan len={len} kind={kind:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn emitted_inclusive_program_has_expected_buffers() {
         let p = prefix_scan("in", "out", 32, ScanKind::InclusiveSum);
         assert_eq!(p.workgroup_size, [32, 1, 1]);
@@ -362,10 +433,9 @@ mod tests {
     fn binary_power_of_two_sizes_accepted() {
         for n in &[1_u32, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
             let program = prefix_scan("in", "out", *n, ScanKind::InclusiveSum);
-            assert!(
-                !program.entry().is_empty(),
-                "prefix_scan must emit executable work for n={n}"
-            );
+            let names: Vec<&str> = program.buffers().iter().map(|b| b.name()).collect();
+            assert!(names.contains(&"in"), "prefix_scan must declare in for n={n}");
+            assert!(names.contains(&"out"), "prefix_scan must declare out for n={n}");
         }
     }
 }

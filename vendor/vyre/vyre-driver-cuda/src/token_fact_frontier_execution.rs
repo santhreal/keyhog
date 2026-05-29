@@ -426,9 +426,9 @@ mod tests {
             ],
             48,
         )
-        .expect("token/fact graph should pack");
+        .expect("Fix: token/fact graph should pack");
         let graph_layout = adapt_token_fact_graph_to_cuda_layout(&graph, 32, 16)
-            .expect("token/fact graph should adapt");
+            .expect("Fix: token/fact graph should adapt");
         let frontier_plan = plan_frontier_typed_ir(
             &[
                 frontier_node(10, FrontierDomain::Parser, 4),
@@ -446,9 +446,10 @@ mod tests {
                 },
             ],
         )
-        .expect("frontier plan should build");
+        .expect("Fix: frontier plan should build");
         let frontier_input = adapt_frontier_typed_ir_to_cuda(&frontier_plan, 8, 16, 8)
-            .expect("frontier plan should adapt");
+
+            .expect("Fix: frontier plan should adapt");
         let mut cache = CudaMegakernelPlanCache::new();
 
         let plan = plan_cuda_token_fact_frontier_execution(
@@ -467,7 +468,7 @@ mod tests {
             1_000.0,
             0.0,
         )
-        .expect("token/fact frontier execution should plan");
+        .expect("Fix: token/fact frontier execution should plan");
 
         assert_eq!(plan.frontier.barriers.global_barriers, 2);
         assert_eq!(plan.work_queue.queue_bytes, 12 * 4);
@@ -483,9 +484,9 @@ mod tests {
             &[],
             64,
         )
-        .expect("token/fact graph should pack");
+        .expect("Fix: token/fact graph should pack");
         let graph_layout = adapt_token_fact_graph_to_cuda_layout(&graph, 32, 16)
-            .expect("token/fact graph should adapt");
+            .expect("Fix: token/fact graph should adapt");
         let frontier_input = CudaFrontierTypedIrInput {
             waves: Vec::new(),
             active_items: Vec::new(),
@@ -599,9 +600,9 @@ mod tests {
             &[],
             16,
         )
-        .expect("token/fact graph should pack");
+        .expect("Fix: token/fact graph should pack");
         let graph_layout = adapt_token_fact_graph_to_cuda_layout(&graph, 32, 16)
-            .expect("token/fact graph should adapt");
+            .expect("Fix: token/fact graph should adapt");
         let frontier_input = CudaFrontierTypedIrInput {
             waves: Vec::new(),
             active_items: Vec::new(),
@@ -626,7 +627,7 @@ mod tests {
             0.0,
             0.0,
         )
-        .expect("cold token/fact graph should plan");
+        .expect("Fix: cold token/fact graph should plan");
         let warm = plan_cuda_token_fact_frontier_execution_envelope(
             &mut cache,
             0xfeed,
@@ -644,7 +645,7 @@ mod tests {
             0.0,
             0.0,
         )
-        .expect("warm token/fact graph should plan");
+        .expect("Fix: warm token/fact graph should plan");
 
         assert_eq!(cold.resident_graph_bytes, 32);
         assert_eq!(cold.graph_upload_bytes, 32);
@@ -670,9 +671,9 @@ mod tests {
             &[],
             16,
         )
-        .expect("token/fact graph should pack");
+        .expect("Fix: token/fact graph should pack");
         let graph_layout = adapt_token_fact_graph_to_cuda_layout(&graph, 32, 16)
-            .expect("token/fact graph should adapt");
+            .expect("Fix: token/fact graph should adapt");
         let frontier_input = CudaFrontierTypedIrInput {
             waves: vec![
                 crate::megakernel_barrier_planner::CudaMegakernelFrontierWave {
@@ -718,9 +719,9 @@ mod tests {
             &[],
             16,
         )
-        .expect("token/fact graph should pack");
+        .expect("Fix: token/fact graph should pack");
         let graph_layout = adapt_token_fact_graph_to_cuda_layout(&graph, 32, 16)
-            .expect("token/fact graph should adapt");
+            .expect("Fix: token/fact graph should adapt");
         let frontier_input = CudaFrontierTypedIrInput {
             waves: Vec::new(),
             active_items: Vec::new(),
@@ -744,7 +745,7 @@ mod tests {
             0.0,
             0.0,
         )
-        .expect("empty frontier should not need a resident work queue");
+        .expect("Fix: empty frontier should not need a resident work queue");
 
         assert_eq!(plan.work_queue.queue_bytes, 0);
         assert_eq!(plan.work_queue.control_bytes, 0);
@@ -789,3 +790,4 @@ mod tests {
         }
     }
 }
+

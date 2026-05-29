@@ -1,4 +1,4 @@
-//! `bitset_test_bit` — scalar query: write 1 to `out_scalar` iff
+//! `bitset_test_bit`  -  scalar query: write 1 to `out_scalar` iff
 //! the bit at `bit_idx` of `buf` is set, else 0.
 
 use std::sync::Arc;
@@ -56,14 +56,14 @@ inventory::submit! {
         OP_ID,
         || bitset_test_bit("buf", 0, "out"),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[1]),
                 to_bytes(&[0]),
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1])]]
         }),
     )
@@ -96,7 +96,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Adversarial fixtures — empty, single-word all-bits, cross-word boundary.
+    // Adversarial fixtures  -  empty, single-word all-bits, cross-word boundary.
     // ------------------------------------------------------------------
 
     #[test]

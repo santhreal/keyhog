@@ -1,10 +1,10 @@
-//! `level_wave_program` — GPU-resident depth-wave dispatcher for
+//! `level_wave_program`  -  GPU-resident depth-wave dispatcher for
 //! bottom-up callee-before-caller computations.
 //!
 //! Semantically distinct from
 //! [`fixpoint::persistent_fixpoint`](crate::fixpoint::persistent_fixpoint):
 //! - **persistent_fixpoint**: re-run a transfer step until convergence.
-//!   No depth ordering — every lane runs the step every iteration.
+//!   No depth ordering  -  every lane runs the step every iteration.
 //! - **level_wave**: deterministic ordered traversal. Each lane runs
 //!   the step only when `current_depth == depth`lane``. Used for
 //!   bottom-up summary computations where children must complete
@@ -13,13 +13,13 @@
 //! ## LEGO discipline
 //!
 //! Composes:
-//! - [`crate::graph::toposort::toposort()`] — CPU reference for the depth
+//! - [`crate::graph::toposort::toposort()`]  -  CPU reference for the depth
 //!   assignment (caller computes `depth[node]` from the topological
 //!   ordering before invoking this primitive).
-//! - `Node::Loop` (vyre-foundation IR primitive) — outer per-depth
+//! - `Node::Loop` (vyre-foundation IR primitive)  -  outer per-depth
 //!   loop.
-//! - `Node::Barrier { ordering: vyre_foundation::MemoryOrdering::SeqCst }` — synchronisation between depth waves.
-//! - `Expr::eq` + `Node::if_then` — depth predicate per lane.
+//! - `Node::Barrier { ordering: vyre_foundation::MemoryOrdering::SeqCst }`  -  synchronisation between depth waves.
+//! - `Expr::eq` + `Node::if_then`  -  depth predicate per lane.
 //!
 //! No new sub-op invented. The caller composes its own per-lane work
 //! body; this primitive provides the wave harness.

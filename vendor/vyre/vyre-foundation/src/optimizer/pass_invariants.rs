@@ -1,7 +1,7 @@
-//! Pass-invariant verifier — sanity-check every registered pass.
+//! Pass-invariant verifier  -  sanity-check every registered pass.
 //!
 //! Op id: `vyre-foundation::optimizer::pass_invariants`. Soundness: `Exact`
-//! over the documented invariants below. Cost-direction: read-only —
+//! over the documented invariants below. Cost-direction: read-only  -
 //! verifies but never mutates passes. Preserves: every analysis. Invalidates:
 //! nothing.
 //!
@@ -35,11 +35,11 @@
 //! ## Synthetic corpus
 //!
 //! Three Programs cover the bulk of pass-rewrite shapes:
-//!   - `trivial_program` — single store, scalar literal RHS. Tests the
+//!   - `trivial_program`  -  single store, scalar literal RHS. Tests the
 //!     no-op path of every pass.
-//!   - `arithmetic_program` — `out = in + 1` with constant fold opportunity.
+//!   - `arithmetic_program`  -  `out = in + 1` with constant fold opportunity.
 //!     Tests every arithmetic-rewriting pass.
-//!   - `divergent_program` — `if invocation_id == 0 { store }`. Tests
+//!   - `divergent_program`  -  `if invocation_id == 0 { store }`. Tests
 //!     effect-lattice-aware passes.
 //!
 //! The same verifier accepts larger fixture corpora as they are promoted
@@ -162,7 +162,7 @@ fn synthetic_corpus() -> Vec<(&'static str, Program)> {
 ///
 /// # Errors
 ///
-/// Returns the list of findings — never panics on a pass-side failure.
+/// Returns the list of findings  -  never panics on a pass-side failure.
 /// Caller decides whether non-empty findings warrant a hard error.
 #[must_use]
 pub fn audit_registered_passes() -> Vec<PassInvariantFinding> {
@@ -196,7 +196,7 @@ fn audit_pass_on_program(
     let pre_cost = CostCertificate::for_program(&program);
     let pass_name = pass.metadata().name;
 
-    // Run try_transform — if the pass returns Err, it's an explicit refusal,
+    // Run try_transform  -  if the pass returns Err, it's an explicit refusal,
     // which is fine and means no further checks on this run.
     let result = match pass.try_transform(program) {
         Ok(result) => result,
@@ -216,7 +216,7 @@ fn audit_pass_on_program(
         });
     }
 
-    // Invariant 1: structurally valid. We probe via stats() — that walks
+    // Invariant 1: structurally valid. We probe via stats()  -  that walks
     // the entry tree and returns counts; a panic-free, non-overflowing run
     // is a strong signal the IR is valid.
     let stats = result.program.stats();
@@ -268,11 +268,11 @@ mod tests {
             .iter()
             .find(|(n, _)| *n == "divergent")
             .map(|(_, p)| p)
-            .expect("divergent program must be in corpus");
+            .expect("Fix: divergent program must be in corpus");
         let cost = CostCertificate::for_program(divergent);
         assert!(
             cost.divergence_score >= 1,
-            "the divergent program must register divergence — without this, the verifier \
+            "the divergent program must register divergence  -  without this, the verifier \
              can't catch effect-lattice-related regressions"
         );
     }
@@ -284,20 +284,20 @@ mod tests {
             .iter()
             .find(|(n, _)| *n == "trivial")
             .map(|(_, p)| p)
-            .expect("trivial must be in corpus");
+            .expect("Fix: trivial must be in corpus");
         let cost = CostCertificate::for_program(trivial);
         assert_eq!(cost.divergence_score, 0);
     }
 
     #[test]
     fn audit_runs_to_completion_without_panic() {
-        // The contract: audit_registered_passes never panics — it surfaces
+        // The contract: audit_registered_passes never panics  -  it surfaces
         // pass-side problems as `PassInvariantFinding` entries.
         let _findings = audit_registered_passes();
     }
 
     /// Passes that legitimately add nodes/instructions in exchange for a
-    /// runtime safety guarantee — `autotune` adds bounds-check guards
+    /// runtime safety guarantee  -  `autotune` adds bounds-check guards
     /// around dispatched indices to avoid out-of-range writes when the
     /// problem size doesn't divide evenly into the workgroup. The added
     /// branches are NOT a contract violation; they're the pass's contract.
@@ -311,7 +311,7 @@ mod tests {
         // the synthetic corpus, EXCEPT those listed in `COST_INCREASE_EXEMPT`
         // (passes that intentionally trade cost for safety/correctness).
         // A non-exempt violation here means the pass landed a cost-up rewrite
-        // without declaring `RefusalReason::CostIncrease` — a real bug. The
+        // without declaring `RefusalReason::CostIncrease`  -  a real bug. The
         // scheduler gate rejects it at runtime; this test catches it at
         // PR-review time instead.
         let findings = audit_registered_passes();

@@ -20,7 +20,7 @@ pub struct NoAliasFact {
     pub right_index: u32,
 }
 
-/// Alias facts imported from Weir points-to/may-alias analysis.
+/// Alias facts imported from external points-to/may-alias analysis.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AliasFactSet {
     no_alias: BTreeSet<NoAliasFact>,

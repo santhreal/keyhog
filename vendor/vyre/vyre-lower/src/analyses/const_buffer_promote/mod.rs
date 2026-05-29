@@ -10,7 +10,7 @@
 //!
 //! Eligibility (phase 1):
 //! - `memory_class == Global` and `visibility == ReadOnly`
-//! - `element_count.is_some()` (fixed size — constant buffers have a
+//! - `element_count.is_some()` (fixed size  -  constant buffers have a
 //!   compile-time size limit, typically 64 KiB)
 //! - Total bytes ≤ const-buffer budget (default 64 KiB)
 //! - Multiple loads against the binding (single-load doesn't repay
@@ -274,7 +274,7 @@ mod tests {
     fn custom_budget_changes_eligibility() {
         let p = analyze_with_budget(
             &loads_kernel(0, 2, vec![ro_global_with_size(0, 16, DataType::F32)]),
-            32, // 32 byte budget — 64-byte binding doesn't fit
+            32, // 32 byte budget  -  64-byte binding doesn't fit
         );
         assert!(p.candidates.is_empty());
     }

@@ -1,13 +1,13 @@
 [package]
 name = "vyre-intrinsics"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Cat-C hardware intrinsics for vyre — ops that require a dedicated Naga emitter arm and dedicated vyre-reference eval arm. Pure fn(...) -> Program builders over vyre::ir::* live in vyre-libs or user crates, not here."
+description = "Cat-C hardware intrinsics for vyre  -  ops that require a dedicated Naga emitter arm and dedicated vyre-reference eval arm. Pure fn(...) -> Program builders over vyre::ir::* live in vyre-libs or user crates, not here."
 readme = "README.md"
 keywords = ["gpu", "intrinsic", "ir", "vyre", "wgsl"]
 categories = ["algorithms", "compilers", "hardware-support"]
@@ -18,8 +18,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-vyre-foundation = { workspace = true }
-vyre-driver = { workspace = true }
+vyre-primitives.workspace = true
+vyre-foundation.workspace = true
+vyre-driver.workspace = true
 vyre-spec.workspace = true
 vyre-macros.workspace = true
 serde.workspace = true
@@ -32,7 +33,7 @@ inventory.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 vyre = { workspace = true }
-vyre-reference = { workspace = true }
+vyre-reference.workspace = true
 
 [features]
 default = ["all", "subgroup-ops"]
@@ -42,4 +43,3 @@ subgroup-ops = ["vyre-reference/subgroup-ops"]
 
 [lints]
 workspace = true
-

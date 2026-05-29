@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn proves_non_empty_through_conjunction() {
-        // (count >= 8) && (count % 4 == 0) — first disjunct proves
+        // (count >= 8) && (count % 4 == 0)  -  first disjunct proves
         // non-empty.
         let f = ShapeFormula::And(
             Box::new(ShapeFormula::AtLeast(8)),
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn proves_non_empty_no_lower_bound() {
-        // (count <= 256) && (count % 4 == 0) — neither bounds count > 0.
+        // (count <= 256) && (count % 4 == 0)  -  neither bounds count > 0.
         let f = ShapeFormula::And(
             Box::new(ShapeFormula::AtMost(256)),
             Box::new(ShapeFormula::MultipleOf(4)),

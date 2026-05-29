@@ -1,4 +1,4 @@
-//! `reduce_histogram` — parallel atomic histogram over a u32 ValueSet.
+//! `reduce_histogram`  -  parallel atomic histogram over a u32 ValueSet.
 //!
 //! Each global invocation owns one output bin and scans the input stream,
 //! storing that bin's count. Used by radix_sort, frequency analysis, and label
@@ -149,21 +149,45 @@ pub fn histogram_atomic_scatter(input: &str, output: &str, count: u32, num_bins:
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], num_bins: u32) -> Vec<u32> {
     let mut out = Vec::new();
-    cpu_ref_into(input, num_bins, &mut out);
-    out
+    match try_cpu_ref_into(input, num_bins, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives histogram CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], num_bins: u32, out: &mut Vec<u32>) {
+    if let Err(error) = try_cpu_ref_into(input, num_bins, out) {
+        eprintln!("vyre-primitives histogram CPU reference failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(input: &[u32], num_bins: u32, out: &mut Vec<u32>) -> Result<(), String> {
+    let num_bins = usize::try_from(num_bins)
+        .map_err(|_| format!("histogram bin count {num_bins} does not fit host usize"))?;
+    if num_bins > out.capacity() {
+        out.try_reserve_exact(num_bins - out.capacity())
+            .map_err(|err| {
+                format!("histogram CPU reference could not reserve {num_bins} bins: {err}")
+            })?;
+    }
     out.clear();
-    out.resize(num_bins as usize, 0);
+    out.resize(num_bins, 0);
     for &bin in input {
-        let b = bin as usize;
-        if b < out.len() {
-            out[b] = out[b].wrapping_add(1);
+        if let Ok(bin) = usize::try_from(bin) {
+            if let Some(slot) = out.get_mut(bin) {
+                *slot = slot.wrapping_add(1);
+            }
         }
     }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -172,14 +196,14 @@ inventory::submit! {
         OP_ID,
         || histogram("input", "output", 8, 4),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 1, 2, 3, 0, 1, 2, 3]),
                 to_bytes(&[0, 0, 0, 0]),
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[2, 2, 2, 2])]]
         }),
     )
@@ -210,6 +234,46 @@ mod tests {
     fn out_of_bounds_ignored() {
         let input = &[0u32, 1, 99, 2, 3, 100];
         assert_eq!(cpu_ref(input, 4), vec![1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn try_cpu_ref_into_reuses_output_and_clears_stale_tail() {
+        let input = &[0u32, 1, 99, 2, 3, 100];
+        let mut out = Vec::with_capacity(16);
+        out.extend_from_slice(&[u32::MAX; 16]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(input, 4, &mut out).unwrap();
+
+        assert_eq!(out, vec![1, 1, 1, 1]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let input = &[0u32, 1, 99, 2, 3, 100];
+        let mut compat = Vec::with_capacity(16);
+        let mut fallible = Vec::with_capacity(16);
+
+        cpu_ref_into(input, 4, &mut compat);
+        try_cpu_ref_into(input, 4, &mut fallible)
+            .expect("Fix: small histogram CPU reference must reserve");
+
+        assert_eq!(cpu_ref(input, 4), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_cpu_ref_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("histogram.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: histogram.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: histogram CPU parity wrappers must not panic in production."
+        );
     }
 
     #[test]

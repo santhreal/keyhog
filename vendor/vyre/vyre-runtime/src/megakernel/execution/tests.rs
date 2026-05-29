@@ -469,6 +469,7 @@ fn persistent_handle_dispatch_never_reenters_host_byte_path() {
 }
 
 #[test]
+
 fn persistent_handle_dispatch_into_reuses_caller_output_storage() {
     let backend = Arc::new(PersistentHandleBackend::default());
     let kernel = Megakernel::bootstrap_sharded(backend, 1, 1, Vec::new())
@@ -792,3 +793,4 @@ fn recovery_retry_preserves_caller_output_slots() {
     assert_eq!(outputs.as_ptr() as usize, outputs_addr);
     assert_eq!(outputs[0].as_ptr() as usize, slot_addr);
 }
+

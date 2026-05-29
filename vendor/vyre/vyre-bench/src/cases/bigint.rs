@@ -1,4 +1,4 @@
-//! `bigint.modexp.4096` — 4096-bit modular exponentiation (RSA-style).
+//! `bigint.modexp.4096`  -  4096-bit modular exponentiation (RSA-style).
 //!
 //! GPU kernel: parallelized Montgomery multiplication ladder across
 //! independent modexp instances. Each thread computes one modexp.
@@ -13,11 +13,11 @@ use crate::api::case::{
 };
 use crate::api::metric::BenchMetrics;
 use crate::api::suite::SuiteKind;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// We use 128-bit (4-word) modular arithmetic for the GPU kernel.
-/// A full 4096-bit implementation would need 128 words — too large for IR.
+/// A full 4096-bit implementation would need 128 words  -  too large for IR.
 /// Instead we do 1024 instances of 128-bit modexp (same compute profile).
 const LIMB_COUNT: u32 = 4; // 4 × 32-bit = 128-bit numbers
 const INSTANCE_COUNT: u32 = 1024;
@@ -201,14 +201,14 @@ impl BenchCase for BigintModexp {
         let mut mods = vec![0u32; words];
         for i in 0..INSTANCE_COUNT as usize {
             let off = i * LIMB_COUNT as usize;
-            bases[off] = rng.gen_range(2..1_000_000);
-            exps[off] = rng.gen_range(1..1_000_000);
-            mods[off] = rng.gen_range(3..1_000_000_000) | 1; // odd modulus
+            bases[off] = rng.random_range(2..1_000_000);
+            exps[off] = rng.random_range(1..1_000_000);
+            mods[off] = rng.random_range(3..1_000_000_000) | 1; // odd modulus
         }
 
-        let bases_bytes: Vec<u8> = bases.iter().flat_map(|v| v.to_le_bytes()).collect();
-        let exps_bytes: Vec<u8> = exps.iter().flat_map(|v| v.to_le_bytes()).collect();
-        let mods_bytes: Vec<u8> = mods.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let bases_bytes = vyre_primitives::wire::pack_u32_slice(&bases);
+        let exps_bytes = vyre_primitives::wire::pack_u32_slice(&exps);
+        let mods_bytes = vyre_primitives::wire::pack_u32_slice(&mods);
         let inputs = vec![bases_bytes, exps_bytes, mods_bytes];
 
         let timed = ctx
@@ -249,7 +249,7 @@ impl BenchCase for BigintModexp {
     }
 }
 
-/// CPU modular exponentiation — square-and-multiply.
+/// CPU modular exponentiation  -  square-and-multiply.
 fn cpu_modexp(
     bases: &[u32],
     exps: &[u32],
@@ -276,7 +276,7 @@ fn cpu_modexp(
         }
         results[off] = result;
     }
-    results.iter().flat_map(|v| v.to_le_bytes()).collect()
+    vyre_primitives::wire::pack_u32_slice(&results)
 }
 
 inventory::submit! {

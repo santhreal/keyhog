@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use super::body_index::BodyIndex;
 use crate::{
     BindingLayout, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue, MemoryClass,
 };
@@ -91,7 +92,7 @@ struct SwizzleUpdate {
 
 fn plan_body(body: &KernelBody, bindings: &BindingLayout, bank_count: u32) -> Option<PaddingPlan> {
     let mut plan = PaddingPlan::default();
-    let ctx = PlanCtx::new(body);
+    let index = BodyIndex::new(body);
     let shared_slots = bindings
         .slots
         .iter()
@@ -100,7 +101,7 @@ fn plan_body(body: &KernelBody, bindings: &BindingLayout, bank_count: u32) -> Op
         .collect::<Vec<_>>();
 
     for (slot, element_count) in shared_slots {
-        let accesses = shared_accesses_for_slot(body, &ctx, slot)?;
+        let accesses = shared_accesses_for_slot(body, &index, slot)?;
         if accesses.is_empty() {
             continue;
         }
@@ -123,7 +124,7 @@ fn plan_body(body: &KernelBody, bindings: &BindingLayout, bank_count: u32) -> Op
         let mut updated_stride_for_slot = false;
         if gcd_u32(padded_stride, bank_count) == 1 {
             for (literal_result_id, target_mul_results) in target_mul_results_by_literal {
-                if ctx.operand_use_count(literal_result_id) != target_mul_results.len() {
+                if index.use_count_of(literal_result_id) as usize != target_mul_results.len() {
                     continue;
                 }
                 plan.literal_updates
@@ -170,47 +171,9 @@ fn plan_body(body: &KernelBody, bindings: &BindingLayout, bank_count: u32) -> Op
     Some(plan)
 }
 
-struct PlanCtx<'a> {
-    producers: FxHashMap<u32, (usize, &'a KernelOp)>,
-    operand_use_counts: FxHashMap<u32, usize>,
-}
-
-impl<'a> PlanCtx<'a> {
-    fn new(body: &'a KernelBody) -> Self {
-        let mut producers = FxHashMap::with_capacity_and_hasher(body.ops.len(), Default::default());
-        let mut operand_use_counts = FxHashMap::with_capacity_and_hasher(
-            body.ops.len().saturating_mul(2),
-            Default::default(),
-        );
-        for (op_index, op) in body.ops.iter().enumerate() {
-            for result in op.result_ids() {
-                producers.insert(result, (op_index, op));
-            }
-            for operand in &op.operands {
-                *operand_use_counts.entry(*operand).or_default() += 1;
-            }
-        }
-        Self {
-            producers,
-            operand_use_counts,
-        }
-    }
-
-    fn find_producer(&self, result_id: u32) -> Option<(usize, &'a KernelOp)> {
-        self.producers.get(&result_id).copied()
-    }
-
-    fn operand_use_count(&self, result_id: u32) -> usize {
-        self.operand_use_counts
-            .get(&result_id)
-            .copied()
-            .unwrap_or(0)
-    }
-}
-
 fn shared_accesses_for_slot(
     body: &KernelBody,
-    ctx: &PlanCtx<'_>,
+    index: &BodyIndex,
     slot: u32,
 ) -> Option<Vec<StrideUse>> {
     let mut accesses = Vec::new();
@@ -221,7 +184,7 @@ fn shared_accesses_for_slot(
                     continue;
                 }
                 let index_id = *op.operands.get(1)?;
-                match parse_stride_index(body, ctx, index_id) {
+                match parse_stride_index(body, index, index_id) {
                     Some(stride_use) => accesses.push(StrideUse {
                         access_op_index: op_index,
                         index_result_id: index_id,
@@ -236,16 +199,17 @@ fn shared_accesses_for_slot(
     Some(accesses)
 }
 
-fn parse_stride_index(body: &KernelBody, ctx: &PlanCtx<'_>, result_id: u32) -> Option<StrideUse> {
-    let (_, op) = ctx.find_producer(result_id)?;
+fn parse_stride_index(body: &KernelBody, index: &BodyIndex, result_id: u32) -> Option<StrideUse> {
+    let op = index.producer(body, result_id)?;
     match &op.kind {
         KernelOpKind::BinOpKind(BinOp::Add | BinOp::WrappingAdd) if op.operands.len() == 2 => {
-            parse_stride_index(body, ctx, op.operands[0])
-                .or_else(|| parse_stride_index(body, ctx, op.operands[1]))
+            parse_stride_index(body, index, op.operands[0])
+                .or_else(|| parse_stride_index(body, index, op.operands[1]))
         }
         KernelOpKind::BinOpKind(BinOp::Mul) if op.operands.len() == 2 => {
-            parse_mul_stride(body, ctx, result_id, op.operands[0], op.operands[1])
-                .or_else(|| parse_mul_stride(body, ctx, result_id, op.operands[1], op.operands[0]))
+            parse_mul_stride(body, index, result_id, op.operands[0], op.operands[1]).or_else(
+                || parse_mul_stride(body, index, result_id, op.operands[1], op.operands[0]),
+            )
         }
         KernelOpKind::LocalInvocationId => None,
         KernelOpKind::Literal => None,
@@ -255,24 +219,16 @@ fn parse_stride_index(body: &KernelBody, ctx: &PlanCtx<'_>, result_id: u32) -> O
 
 fn parse_mul_stride(
     body: &KernelBody,
-    ctx: &PlanCtx<'_>,
+    index: &BodyIndex,
     mul_result_id: u32,
     id_operand: u32,
     literal_operand: u32,
 ) -> Option<StrideUse> {
-    let (_, id_op) = ctx.find_producer(id_operand)?;
+    let id_op = index.producer(body, id_operand)?;
     if !matches!(id_op.kind, KernelOpKind::LocalInvocationId) {
         return None;
     }
-    let (_, literal_op) = ctx.find_producer(literal_operand)?;
-    if !matches!(literal_op.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_index = *literal_op.operands.first()? as usize;
-    let stride = match body.literals.get(pool_index)? {
-        LiteralValue::U32(value) => *value,
-        _ => return None,
-    };
+    let stride = index.u32_lit(body, literal_operand)?;
     Some(StrideUse {
         access_op_index: 0,
         index_result_id: 0,

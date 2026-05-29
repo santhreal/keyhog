@@ -34,6 +34,15 @@ impl BodyCtx<'_> {
         elem_ty: PtxType,
     ) -> Result<Reg, EmitError> {
         match element_type {
+            DataType::Bool => {
+                let word = self.alloc(PtxType::U32);
+                let out = self.alloc(PtxType::Bool);
+                let _ = write!(self.text, "    ld.{load_space}.u32    {word}, ");
+                self.write_mem_operand(address.operand)?;
+                self.text.push_str(";\n");
+                let _ = writeln!(self.text, "    setp.ne.u32    {out}, {word}, 0;");
+                Ok(out)
+            }
             DataType::F16 => {
                 let packed = self.alloc(PtxType::B16);
                 let out = self.alloc(PtxType::F32);
@@ -61,7 +70,7 @@ impl BodyCtx<'_> {
                 );
                 self.write_mem_operand(address.operand)?;
                 self.text.push_str(";\n");
-                Ok(val_reg)
+                Ok(self.canonicalize_f32(val_reg))
             }
         }
     }
@@ -74,6 +83,12 @@ impl BodyCtx<'_> {
         value_reg: Reg,
     ) -> Result<(), EmitError> {
         match element_type {
+            DataType::Bool => {
+                let pred = self.pred_from_boolish(value_reg);
+                let word = self.alloc(PtxType::U32);
+                let _ = writeln!(self.text, "    selp.u32    {word}, 1, 0, {pred};");
+                self.emit_raw_store(guard, address, "u32", word)
+            }
             DataType::F16 => {
                 let f32_value = self.ensure_f32_store_operand(value_reg);
                 let packed = self.alloc(PtxType::B16);
@@ -88,6 +103,11 @@ impl BodyCtx<'_> {
             }
             _ => {
                 let elem_ty = PtxType::from_dtype(element_type)?;
+                let value_reg = if elem_ty == PtxType::F32 {
+                    self.canonicalize_f32(value_reg)
+                } else {
+                    value_reg
+                };
                 self.emit_raw_store(guard, address, elem_ty.ptx_type_str(), value_reg)
             }
         }
@@ -101,7 +121,14 @@ impl BodyCtx<'_> {
                 let _ = writeln!(self.text, "    cvt.rn.f32.s32    {out}, {value_reg};");
                 out
             }
-            PtxType::Bool | PtxType::B16 | PtxType::U32 => {
+            PtxType::Bool => {
+                let word = self.alloc(PtxType::U32);
+                let out = self.alloc(PtxType::F32);
+                let _ = writeln!(self.text, "    selp.u32    {word}, 1, 0, {value_reg};");
+                let _ = writeln!(self.text, "    cvt.rn.f32.u32    {out}, {word};");
+                out
+            }
+            PtxType::B16 | PtxType::U32 => {
                 let out = self.alloc(PtxType::F32);
                 let _ = writeln!(self.text, "    cvt.rn.f32.u32    {out}, {value_reg};");
                 out
@@ -323,7 +350,7 @@ impl BodyCtx<'_> {
     /// inside the buffer. PTX has no built-in bounds checking; without
     /// this, speculative loads emitted by `Expr::select` arms can fault
     /// with `CUDA_ERROR_ILLEGAL_ADDRESS`. WGSL/naga does an equivalent
-    /// clamp via its bounds-check policy — this matches the contract
+    /// clamp via its bounds-check policy  -  this matches the contract
     /// across backends.
     ///
     /// Lowered as: `safe = (idx < len) ? idx : 0`. When `len == 0` the

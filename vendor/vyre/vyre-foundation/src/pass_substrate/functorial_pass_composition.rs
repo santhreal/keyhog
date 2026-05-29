@@ -1,5 +1,7 @@
 //! Functorial composition helpers for optimizer pass rows.
 
+#![allow(deprecated)]
+
 use crate::cpu_references::functor_apply_cpu;
 
 /// Apply a pass functor mapping to a row vector.

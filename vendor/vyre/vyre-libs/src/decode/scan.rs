@@ -73,6 +73,7 @@ where
     StoreDecoded: FnMut(Expr, Expr) -> Option<Node>,
 {
     let tile_width = tile_width.max(1).next_power_of_two();
+    let tile_count = tiled_scan_tile_count_expr(valid_len.clone(), tile_width);
     vec![Node::if_then(
         Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
         vec![
@@ -80,18 +81,15 @@ where
             Node::let_bind("decode_scan_ping", Expr::u32(0)),
             Node::let_bind("decode_scan_pong", Expr::u32(0)),
             Node::loop_for(
-                "decode_scan_tile_base",
+                "decode_scan_tile_index",
                 Expr::u32(0),
-                valid_len.clone(),
-                vec![Node::if_then(
-                    Expr::eq(
-                        Expr::bitand(
-                            Expr::sub(Expr::var("decode_scan_tile_base"), Expr::u32(0)),
-                            Expr::u32(tile_width - 1),
-                        ),
-                        Expr::u32(0),
+                tile_count,
+                vec![
+                    Node::let_bind(
+                        "decode_scan_tile_base",
+                        Expr::mul(Expr::var("decode_scan_tile_index"), Expr::u32(tile_width)),
                     ),
-                    vec![Node::loop_for(
+                    Node::loop_for(
                         "decode_scan_tile_lane",
                         Expr::u32(0),
                         Expr::u32(tile_width),
@@ -103,11 +101,23 @@ where
                             &mut byte_at,
                             &mut store_decoded,
                         ),
-                    )],
-                )],
+                    ),
+                ],
             ),
         ],
     )]
+}
+
+fn tiled_scan_tile_count_expr(valid_len: Expr, tile_width: u32) -> Expr {
+    let tile_width = tile_width.max(1).next_power_of_two();
+    Expr::select(
+        Expr::eq(valid_len.clone(), Expr::u32(0)),
+        Expr::u32(0),
+        Expr::add(
+            Expr::div(Expr::sub(valid_len, Expr::u32(1)), Expr::u32(tile_width)),
+            Expr::u32(1),
+        ),
+    )
 }
 
 fn tiled_lane_body<ByteAt, StoreDecoded>(
@@ -162,4 +172,31 @@ where
         ),
     ]);
     vec![Node::if_then(Expr::lt(index, valid_len), body)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tiled_decode_scan_uses_tile_count_loop_not_byte_count_gate() {
+        let body = tiled_decode_aho_scan_body(
+            "transitions",
+            "accept",
+            "matches",
+            Expr::u32(1024),
+            8,
+            |index| Expr::load("decoded", index),
+            |_index, _byte| None,
+        );
+        let rendered = format!("{body:?}");
+        assert!(
+            rendered.contains("decode_scan_tile_index"),
+            "fused decode-scan must loop over tile indices, not every byte offset"
+        );
+        assert!(
+            rendered.contains("decode_scan_tile_base"),
+            "fused decode-scan must derive a tile base from the tile index"
+        );
+    }
 }

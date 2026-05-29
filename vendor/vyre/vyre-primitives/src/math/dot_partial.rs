@@ -86,8 +86,7 @@ inventory::submit! {
         OP_ID,
         || dot_partial_program("q", "k", "out", 2),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32_bytes(&[2.0, 3.0]),
                 to_f32_bytes(&[4.0, 5.0]),
@@ -95,8 +94,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![to_f32_bytes(&[23.0])]]
         }),
     )

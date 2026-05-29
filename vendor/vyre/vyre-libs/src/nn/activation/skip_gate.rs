@@ -2,29 +2,22 @@
 //!
 //! `out = sigmoid(g) * branch + (1 - sigmoid(g)) * skip`
 //!
-//! Category A composition — sigmoid + mul + add. Used in the recipe
+//! Category A composition  -  sigmoid + mul + add. Used in the recipe
 //! for U-Net skip connections between encoder and decoder layers.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::f32_stability::flush_tiny;
 
 const OP_ID: &str = "vyre-libs::nn::skip_gate";
 
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
-
 /// Build a Program for sigmoid-gated skip connection.
 ///
-/// `gate[n]` (F32) — raw gate logits (sigmoid applied here).
-/// `branch[n]` (F32) — output of the transformer block.
-/// `skip[n]` (F32) — skip connection from encoder.
-/// `output[n]` (F32) — gated combination.
+/// `gate[n]` (F32)  -  raw gate logits (sigmoid applied here).
+/// `branch[n]` (F32)  -  output of the transformer block.
+/// `skip[n]` (F32)  -  skip connection from encoder.
+/// `output[n]` (F32)  -  gated combination.
 #[must_use]
 pub fn skip_gate(gate: &str, branch: &str, skip: &str, output: &str, n: u32) -> Program {
     let i = Expr::var("i");
@@ -82,7 +75,7 @@ inventory::submit! {
         id: OP_ID,
         build: || skip_gate("gate", "branch", "skip", "output", 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[0.0, 100.0]),  // gate logits (sigmoid(0)=0.5, sigmoid(100)≈1)
                 to_f32(&[10.0, 20.0]),  // branch
@@ -95,7 +88,7 @@ inventory::submit! {
                 sigmoid(0.0) * 10.0 + (1.0 - sigmoid(0.0)) * 30.0,   // 0.5*10 + 0.5*30 = 20
                 sigmoid(100.0) * 20.0 + (1.0 - sigmoid(100.0)) * 40.0, // ≈ 20
             ];
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -105,18 +98,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     fn sigmoid(x: f32) -> f32 {
         1.0 / (1.0 + (-x).exp())

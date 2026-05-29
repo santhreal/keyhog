@@ -1,5 +1,6 @@
 //! Output type for the texture-memory promotion analysis.
 
+use crate::analyses::candidate_plan::CandidatePlan;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12,31 +13,11 @@ pub struct TextureCandidate {
     pub estimated_speedup_factor: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TexturePromotionPlan {
-    pub kernel_id: String,
-    pub candidates: Vec<TextureCandidate>,
-}
-
-impl TexturePromotionPlan {
-    #[must_use]
-    pub fn candidate_count(&self) -> usize {
-        self.candidates.len()
-    }
-}
+pub type TexturePromotionPlan = CandidatePlan<TextureCandidate>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn empty_plan_has_zero_candidates() {
-        let p = TexturePromotionPlan {
-            kernel_id: "empty".into(),
-            candidates: vec![],
-        };
-        assert_eq!(p.candidate_count(), 0);
-    }
 
     #[test]
     fn candidate_speedup_grows_with_log_load_count() {

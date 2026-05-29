@@ -2,7 +2,7 @@
 //!
 //! GPU drivers differ on what happens when a shader indexes past the end of a
 //! buffer: some clamp, some return zero, some crash. The reference interpreter
-//! eliminates that ambiguity by defining one deterministic behavior — defined-type
+//! eliminates that ambiguity by defining one deterministic behavior  -  defined-type
 //! zero-fill for scalar loads, empty slice for `Bytes`, and silent no-op for stores.
 //! Any backend that diverges from these rules fails the conform gate.
 
@@ -76,13 +76,16 @@ impl Buffer {
             .fill(0);
     }
 
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
+        std::sync::Arc::try_unwrap(self.bytes)
+            .map(|rw| rw.into_inner().unwrap_or_else(|error| error.into_inner()))
+            .unwrap_or_else(|a| a.read().unwrap_or_else(|error| error.into_inner()).clone())
+    }
+
     /// Consume this buffer and return its contents as a Value.
     #[must_use]
     pub fn to_value(self) -> crate::value::Value {
-        let vec = std::sync::Arc::try_unwrap(self.bytes)
-            .map(|rw| rw.into_inner().unwrap_or_else(|error| error.into_inner()))
-            .unwrap_or_else(|a| a.read().unwrap_or_else(|error| error.into_inner()).clone());
-        crate::value::Value::from(vec)
+        crate::value::Value::from(self.into_bytes())
     }
 }
 
@@ -106,7 +109,7 @@ pub(crate) fn load(buffer: &Buffer, index: u32) -> Value {
     if stride == 0 || offset + stride > bytes_guard.len() {
         return Value::try_zero_for(ty).unwrap_or_else(|| Value::from(Vec::new()));
     }
-    Value::from_element_bytes(ty.clone(), &bytes_guard[offset..offset + stride])
+    read_element(ty.clone(), &bytes_guard[offset..offset + stride])
         .unwrap_or_else(|_| Value::try_zero_for(ty).unwrap_or_else(|| Value::from(Vec::new())))
 }
 
@@ -175,17 +178,16 @@ fn byte_offset(index: u32, stride: usize) -> Option<usize> {
 fn write_element(element: IrDataType, target: &mut [u8], value: &Value) {
     match element {
         IrDataType::U32 => {
-            target.copy_from_slice(&value.to_bytes_width(4)[..4]);
+            value.write_bytes_width_into(target);
         }
         IrDataType::I32 => {
-            target.copy_from_slice(&value.to_bytes_width(4)[..4]);
+            value.write_bytes_width_into(target);
         }
         IrDataType::Bool => {
-            target.copy_from_slice(&value.to_bytes_width(4)[..4]);
+            value.write_bytes_width_into(target);
         }
         IrDataType::U64 => {
-            let bytes = value.to_bytes_width(8);
-            target.copy_from_slice(&bytes[..8]);
+            value.write_bytes_width_into(target);
         }
         IrDataType::F32 => {
             // Value::Float carries an f64; the GPU buffer is four bytes
@@ -197,21 +199,20 @@ fn write_element(element: IrDataType, target: &mut [u8], value: &Value) {
                 Value::U32(v) => f32::from_bits(*v),
                 _ => 0.0,
             };
+            let v = crate::execution::typed_ops::canonical_f32(v);
             target.copy_from_slice(&v.to_le_bytes());
         }
         IrDataType::Bytes | IrDataType::Vec2U32 | IrDataType::Vec4U32 => {
-            let bytes = value.to_bytes_width(target.len());
-            let len = target.len().min(bytes.len());
-            target[..len].copy_from_slice(&bytes[..len]);
-            target[len..].fill(0);
+            value.write_bytes_width_into(target);
         }
         _ => {
-            let bytes = value.to_bytes_width(target.len());
-            let len = target.len().min(bytes.len());
-            target[..len].copy_from_slice(&bytes[..len]);
-            target[len..].fill(0);
+            value.write_bytes_width_into(target);
         }
     }
+}
+
+fn read_element(ty: DataType, bytes: &[u8]) -> Result<Value, String> {
+    Value::from_element_bytes(ty, bytes)
 }
 
 fn read_u32(bytes: &[u8]) -> u32 {
@@ -234,5 +235,47 @@ fn ir_to_conform_type(ty: IrDataType) -> DataType {
         IrDataType::Bool => DataType::U32,
         IrDataType::Bytes => DataType::Bytes,
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f32_bits(value: Value) -> u32 {
+        match value {
+            Value::Float(value) => (value as f32).to_bits(),
+            other => {
+                let bytes = other.to_bytes();
+                u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+            }
+        }
+    }
+
+    #[test]
+    fn f32_load_canonicalizes_subnormal_and_nan_payloads() {
+        let positive_subnormal = Buffer::new(1u32.to_le_bytes().to_vec(), DataType::F32);
+        assert_eq!(f32_bits(load(&positive_subnormal, 0)), 0x0000_0000);
+
+        let negative_subnormal = Buffer::new(0x8000_0001u32.to_le_bytes().to_vec(), DataType::F32);
+        assert_eq!(f32_bits(load(&negative_subnormal, 0)), 0x8000_0000);
+
+        let payload_nan = Buffer::new(0x7fa0_0001u32.to_le_bytes().to_vec(), DataType::F32);
+        assert_eq!(f32_bits(load(&payload_nan, 0)), 0x7fc0_0000);
+    }
+
+    #[test]
+    fn f32_store_canonicalizes_subnormal_and_nan_payloads() {
+        let mut subnormal = Buffer::new(vec![0; 4], DataType::F32);
+        store(
+            &mut subnormal,
+            0,
+            &Value::Float(f64::from(f32::from_bits(0x8000_0001))),
+        );
+        assert_eq!(f32_bits(subnormal.to_value()), 0x8000_0000);
+
+        let mut payload_nan = Buffer::new(vec![0; 4], DataType::F32);
+        store(&mut payload_nan, 0, &Value::U32(0x7fa0_0001));
+        assert_eq!(f32_bits(payload_nan.to_value()), 0x7fc0_0000);
     }
 }

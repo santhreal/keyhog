@@ -2,7 +2,7 @@
 //!
 //! Blocking readback submits a copy + device.poll(Wait) that stalls
 //! the submit queue. Under high dispatch rate this ruins latency and
-//! throughput — the GPU goes idle while the CPU waits.
+//! throughput  -  the GPU goes idle while the CPU waits.
 //!
 //! The readback ring threads N staging buffers. Dispatch \`i\` writes
 //! to \`ring[i % N]\`; the copy submits immediately and readback
@@ -16,7 +16,10 @@ use rustc_hash::FxHasher;
 use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use vyre_driver::accounting::{atomic_max_u64, rebasing_atomic_next_u64};
 use vyre_driver::backend::BackendError;
+
+use crate::staging_reserve::reserve_backend_vec;
 
 const MIN_RING_SIZE: usize = 2;
 const MAX_RING_SIZE: usize = 256;
@@ -44,28 +47,39 @@ pub struct RingStats {
 impl RingStats {
     /// Record one dispatch; returns the monotonic dispatch index.
     pub fn record_dispatch(&self) -> u64 {
-        rebasing_atomic_increment_u64(&self.dispatches, "readback ring dispatch counter")
+        rebasing_atomic_next_u64(
+            &self.dispatches,
+            0,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |_, _| {
+                tracing::error!(
+                    "readback ring dispatch counter reached u64::MAX and was rebased to zero. Fix: shard readback rings or scrape counters before wrap."
+                );
+            },
+        )
     }
 
     /// Record a stall.
     pub fn record_stall(&self) {
-        rebasing_atomic_increment_u64(&self.readback_stalls, "readback ring stall counter");
+        rebasing_atomic_next_u64(
+            &self.readback_stalls,
+            0,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |_, _| {
+                tracing::error!(
+                    "readback ring stall counter reached u64::MAX and was rebased to zero. Fix: shard readback rings or scrape counters before wrap."
+                );
+            },
+        );
     }
 
     /// Update the peak-in-flight watermark.
     pub fn update_peak(&self, current: u64) {
-        let mut prev = self.peak_inflight.load(Ordering::Relaxed);
-        while current > prev {
-            match self.peak_inflight.compare_exchange_weak(
-                prev,
-                current,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(now) => prev = now,
-            }
-        }
+        atomic_max_u64(&self.peak_inflight, current, Ordering::AcqRel);
     }
 }
 
@@ -119,6 +133,19 @@ impl ReadbackRingSet {
         Self {
             rings: DashMap::with_hasher(BuildHasherDefault::<FxHasher>::default()),
             slots_per_ring: readback_ring_slots_from_env(),
+        }
+    }
+
+    /// Construct an empty ring set from a raw slot-count setting.
+    ///
+    /// Passing `None` uses the production default. This keeps test and embedded
+    /// callers off process-global environment mutation while preserving the same
+    /// parser and clamping semantics as [`Self::new`].
+    #[must_use]
+    pub fn with_requested_slots(raw_slots: Option<&str>) -> Self {
+        Self {
+            rings: DashMap::with_hasher(BuildHasherDefault::<FxHasher>::default()),
+            slots_per_ring: readback_ring_slots_from_raw(raw_slots),
         }
     }
 
@@ -210,7 +237,8 @@ impl ReadbackRing {
     pub fn new(device: &wgpu::Device, size: usize, buffer_size: u64) -> Result<Self, BackendError> {
         let size = size.clamp(MIN_RING_SIZE, MAX_RING_SIZE);
         let capacity = staging_capacity(buffer_size)?;
-        let mut slots = Vec::with_capacity(size);
+        let mut slots = Vec::new();
+        reserve_backend_vec(&mut slots, size, "readback ring slot table")?;
         for i in 0..size {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("vyre readback ring slot {i}")),
@@ -265,9 +293,7 @@ impl ReadbackRing {
 
         if slot.state.load(Ordering::Acquire) == SLOT_PENDING {
             self.stats.record_stall();
-            match device.poll(wgpu::Maintain::Poll) {
-                wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-            }
+            crate::runtime::device::poll_device_once(device)?;
         }
         if slot.state.load(Ordering::Acquire) != SLOT_FREE {
             return Err(BackendError::new(format!(
@@ -436,9 +462,7 @@ impl ReadbackRing {
 
         if slot.state.load(Ordering::Acquire) == SLOT_PENDING {
             self.stats.record_stall();
-            match device.poll(wgpu::Maintain::Poll) {
-                wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-            }
+            crate::runtime::device::poll_device_once(device)?;
         }
         if slot.state.load(Ordering::Acquire) != SLOT_FREE {
             return Err(BackendError::new(format!(
@@ -536,9 +560,7 @@ impl ReadbackRing {
                 ))
             }
             _ => {
-                match device.poll(wgpu::Maintain::Poll) {
-                    wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-                }
+                crate::runtime::device::poll_device_once(device)?;
                 Ok(None)
             }
         }
@@ -594,7 +616,18 @@ impl ReadbackRing {
                 "readback ring has zero slots. Fix: construct rings with at least two slots.",
             ));
         }
-        let next = rebasing_atomic_increment_u64(&self.next_idx, "readback ring slot counter");
+        let next = rebasing_atomic_next_u64(
+            &self.next_idx,
+            0,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |_, _| {
+                tracing::error!(
+                    "readback ring slot counter reached u64::MAX and was rebased to zero. Fix: shard readback rings or scrape counters before wrap."
+                );
+            },
+        );
         usize::try_from(next % slot_len).map_err(|source| {
             BackendError::new(format!(
                 "readback ring slot index cannot fit usize: {source}. Fix: reduce readback ring slot count."
@@ -603,25 +636,8 @@ impl ReadbackRing {
     }
 }
 
-fn rebasing_atomic_increment_u64(counter: &AtomicU64, label: &'static str) -> u64 {
-    let mut current = counter.load(Ordering::Relaxed);
-    loop {
-        let next = current.checked_add(1).unwrap_or(0);
-        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(previous) => {
-                if previous == u64::MAX {
-                    tracing::error!(
-                        "{label} reached u64::MAX and was rebased to zero. Fix: shard readback rings or scrape counters before wrap."
-                    );
-                }
-                return previous;
-            }
-            Err(observed) => current = observed,
-        }
-    }
-}
-
 #[inline]
+
 fn staging_capacity(byte_len: u64) -> Result<u64, BackendError> {
     aligned_copy_len(byte_len).map_err(|error| {
         tracing::warn!(
@@ -646,18 +662,16 @@ fn ring_capacity_class(byte_len: u64) -> Result<u64, BackendError> {
 
 #[inline]
 fn aligned_copy_len(byte_len: u64) -> Result<u64, BackendError> {
-    if byte_len == 0 {
-        return Ok(0);
-    }
-    byte_len.checked_add(3).map(|len| len & !3).ok_or_else(|| {
-        BackendError::new(
-            "readback byte length overflows wgpu's 4-byte copy alignment. Fix: split the readback before submitting it to the ring.",
-        )
-    })
+    crate::numeric::align_up_u64(byte_len, 0, "readback byte length")
 }
 
 fn readback_ring_slots_from_env() -> usize {
-    let Some(raw) = std::env::var("VYRE_WGPU_READBACK_RING_SLOTS").ok() else {
+    let raw = std::env::var("VYRE_WGPU_READBACK_RING_SLOTS").ok();
+    readback_ring_slots_from_raw(raw.as_deref())
+}
+
+fn readback_ring_slots_from_raw(raw: Option<&str>) -> usize {
+    let Some(raw) = raw else {
         return DEFAULT_RING_SLOTS;
     };
     let slots = match raw.parse::<usize>() {
@@ -713,11 +727,29 @@ mod tests {
         let ring_set = ReadbackRingSet::new();
         let from_raw = ring_set
             .existing_ring_for(16)
-            .expect("lookup with raw byte length should not fail");
+            .expect("Fix: lookup with raw byte length should not fail");
         let from_class = ring_set.existing_ring_for_capacity(4096);
         assert!(
             from_raw.is_none() && from_class.is_none(),
             "raw and capacity-based lookups should agree on an empty set"
         );
     }
+
+    #[test]
+    fn production_ring_construction_uses_fallible_slot_reservation() {
+        let production = include_str!("readback_ring.rs")
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: readback ring production section should precede tests");
+
+        assert!(
+            !production.contains("Vec::with_capacity(size)"),
+            "Fix: readback ring construction must not allocate slot tables infallibly."
+        );
+        assert!(
+            production.contains("reserve_backend_vec(&mut slots, size, \"readback ring slot table\")?"),
+            "Fix: readback ring construction should reserve slot tables through the shared WGPU staging helper."
+        );
+    }
 }
+

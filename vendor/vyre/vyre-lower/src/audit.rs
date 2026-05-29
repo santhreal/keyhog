@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn coalesced_kernel_has_zero_waste() {
-        // Single coalesced load — perfect.
+        // Single coalesced load  -  perfect.
         let kk = KernelDescriptor {
             id: "perfect".into(),
             bindings: BindingLayout {
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn shared_mem_promotion_candidate_appears_in_recommendations() {
-        // Two LoadGlobal of same slot — promotion candidate.
+        // Two LoadGlobal of same slot  -  promotion candidate.
         let kk = KernelDescriptor {
             id: "promote".into(),
             bindings: BindingLayout {
@@ -448,6 +448,7 @@ mod tests {
                         visibility: BindingVisibility::ReadWrite,
                         name: "s".into(),
                     },
+
                 ],
             },
             dispatch: Dispatch::new(32, 1, 1),
@@ -707,3 +708,4 @@ mod tests {
         assert_eq!(r.kernel_id, "audit_opt");
     }
 }
+

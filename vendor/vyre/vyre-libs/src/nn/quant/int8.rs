@@ -82,8 +82,8 @@ inventory::submit! {
         id: UNPACK_OP_ID,
         build: || int8_unpack("packed", "scales", "output", 4, 2),
         test_inputs: Some(|| {
-            let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_u32 = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_u32(&[10, 20, 30, 40]),
                 to_f32(&[0.5, 2.0]),  // 2 rows
@@ -92,7 +92,7 @@ inventory::submit! {
         expected_output: Some(|| {
             // row0: [10*0.5, 20*0.5]=[5,10], row1: [30*2, 40*2]=[60,80]
             let out = [5.0_f32, 10.0, 60.0, 80.0];
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -104,13 +104,13 @@ inventory::submit! {
         id: PACK_OP_ID,
         build: || int8_pack("input", "output", 4),
         test_inputs: Some(|| {
-            let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_u32 = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![
                 to_u32(&[255, 256, 1, 0]),
             ]]
         }),
         expected_output: Some(|| {
-            let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_u32 = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![to_u32(&[255, 0, 1, 0])]]
         }),
         category: Some("nn"),

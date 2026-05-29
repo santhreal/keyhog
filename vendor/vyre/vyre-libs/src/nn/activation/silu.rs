@@ -5,23 +5,11 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::f32_stability::flush_tiny;
 
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
-
-/// Build a Program that applies SiLU element-wise from `input` into
-/// `output`. `n` is the element count of both buffers.
-#[must_use]
-pub fn silu(input: &str, output: &str, n: u32) -> Program {
-    let i = Expr::var("i");
-    let x = Expr::load(input, i.clone());
-
-    // sigmoid(x) = 1.0 / (1.0 + exp(-x))
+/// Shared SiLU expression with the same tiny-value stabilization used by
+/// standalone and fused activation builders.
+pub(crate) fn silu_expr(x: Expr) -> Expr {
     let sigmoid_x = Expr::div(
         Expr::f32(1.0),
         Expr::add(
@@ -35,6 +23,15 @@ pub fn silu(input: &str, output: &str, n: u32) -> Program {
             },
         ),
     );
+    flush_tiny(Expr::mul(x, sigmoid_x))
+}
+
+/// Build a Program that applies SiLU element-wise from `input` into
+/// `output`. `n` is the element count of both buffers.
+#[must_use]
+pub fn silu(input: &str, output: &str, n: u32) -> Program {
+    let i = Expr::var("i");
+    let x = Expr::load(input, i.clone());
 
     let body = vec![
         Node::let_bind("i", Expr::InvocationId { axis: 0 }),
@@ -43,7 +40,7 @@ pub fn silu(input: &str, output: &str, n: u32) -> Program {
             vec![Node::Store {
                 buffer: output.into(),
                 index: i,
-                value: flush_tiny(Expr::mul(x, sigmoid_x)),
+                value: silu_expr(x),
             }],
         ),
     ];
@@ -62,7 +59,7 @@ inventory::submit! {
         id: "vyre-libs::nn::silu",
         build: || silu("input", "output", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[0.0_f32, 1.0, -1.0, 2.0]), // input
             ]]
@@ -77,10 +74,7 @@ inventory::submit! {
                 .iter()
                 .map(|x| x / (1.0 + (-x).exp()))
                 .collect();
-            let bytes = out
-                .iter()
-                .flat_map(|v| v.to_bits().to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -90,18 +84,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     fn silu_ref(x: f32) -> f32 {
         x / (1.0 + (-x).exp())

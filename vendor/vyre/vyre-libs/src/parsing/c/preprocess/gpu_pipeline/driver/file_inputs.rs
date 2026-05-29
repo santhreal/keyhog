@@ -72,7 +72,7 @@ pub(super) fn prepare_file_inputs(
                 )?,
             );
             trace.log("tokenize and classify");
-            store_classified_to_disk(&classified_key, classified.as_ref());
+            store_classified_to_disk(&classified_key, classified.as_ref())?;
             insert_classified_tokens(classified_key, Arc::clone(&classified))?;
             classified
         };
@@ -93,7 +93,7 @@ pub(super) fn prepare_file_inputs(
                 &mut run.directive_extraction_scratch,
             )?;
             trace.log("extract directive payloads");
-            store_payloads_to_disk(&payloads_key, &payloads);
+            store_payloads_to_disk(&payloads_key, &payloads)?;
             let payloads = Arc::from(payloads.into_boxed_slice());
             insert_payloads(payloads_key, Arc::clone(&payloads))?;
             payloads

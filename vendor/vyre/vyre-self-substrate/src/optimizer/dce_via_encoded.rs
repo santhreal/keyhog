@@ -9,7 +9,7 @@
 //! the caller must either extend the encoder or produce a Program the
 //! encoder accepts.
 //!
-//! The dispatcher trait inverts the dependency on a concrete backend —
+//! The dispatcher trait inverts the dependency on a concrete backend  -
 //! production callers wire `vyre-driver-wgpu` or `-cuda`; tests in this
 //! crate use the in-tree `CpuOracleDispatcher` (test-only).
 
@@ -166,7 +166,7 @@ mod tests {
         let test_input = wrapped_program(entry);
 
         let oracle_out = oracle_cpu_dce(oracle_input);
-        let gpu_out = gpu_dce(test_input, &dispatcher).expect("encoder accepts program");
+        let gpu_out = gpu_dce(test_input, &dispatcher).expect("Fix: encoder accepts program");
         assert_eq!(
             fingerprint_program(&oracle_out),
             fingerprint_program(&gpu_out),
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn dce_rejects_trailing_changed_bytes() {
         let program = wrapped_program(vec![Node::store("buf", Expr::u32(0), Expr::u32(1))]);
-        let encoded = encode_program(&program).expect("encoder accepts store");
+        let encoded = encode_program(&program).expect("Fix: encoder accepts store");
         let words = bitset_words(encoded.node_count) as usize;
         let dispatcher = MalformedDispatcher {
             outputs: vec![u32_slice_to_le_bytes(&vec![1; words]), vec![0, 0, 0, 0, 1]],
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn live_mask_with_scratch_reuses_dispatch_decode_and_output_storage() {
         let program = wrapped_program(vec![Node::store("buf", Expr::u32(0), Expr::u32(1))]);
-        let encoded = encode_program(&program).expect("encoder accepts store");
+        let encoded = encode_program(&program).expect("Fix: encoder accepts store");
         let words = bitset_words(encoded.node_count) as usize;
         let dispatcher = MalformedDispatcher {
             outputs: vec![
@@ -243,7 +243,7 @@ mod tests {
         let mut live = Vec::with_capacity(encoded.node_count as usize);
 
         compute_live_mask_with_scratch_into(&encoded, &dispatcher, &mut scratch, &mut live)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let seed_capacity = scratch.seed.capacity();
@@ -252,7 +252,7 @@ mod tests {
         let live_capacity = live.capacity();
 
         compute_live_mask_with_scratch_into(&encoded, &dispatcher, &mut scratch, &mut live)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),

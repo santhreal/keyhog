@@ -1,4 +1,4 @@
-//! Built-in opcode handler bodies — STORE_U32, ATOMIC_ADD, PRINTF, SHUTDOWN.
+//! Built-in opcode handler bodies  -  STORE_U32, ATOMIC_ADD, PRINTF, SHUTDOWN.
 //!
 //! Each function returns a `Vec<Node>` that executes when the opcode
 //! matches in the claimed-slot dispatch. Variables `arg0`, `arg1`,
@@ -52,7 +52,7 @@ pub(crate) fn shutdown_body() -> Vec<Node> {
 pub(crate) fn printf_body() -> Vec<Node> {
     // Reserve 4 u32 words at debug_log[cursor..cursor+4] atomically,
     // then write (fmt_id=arg0, arg1, arg2, slot_base) into them.
-    // atomic_add returns the pre-increment value — our reservation
+    // atomic_add returns the pre-increment value  -  our reservation
     // base.
     vec![
         Node::let_bind(
@@ -137,7 +137,7 @@ pub(crate) fn compare_swap_body() -> Vec<Node> {
 }
 
 /// MEMCPY: copy `control[arg0..arg0+arg2]` → `control[arg1..arg1+arg2]`.
-/// Sequential loop — fine for small copies within the control buffer.
+/// Sequential loop  -  fine for small copies within the control buffer.
 pub(crate) fn memcpy_body() -> Vec<Node> {
     vec![Node::loop_for(
         "copy_i",
@@ -174,7 +174,7 @@ pub(crate) fn batch_fence_body() -> Vec<Node> {
 /// Reads the consumer's `resource_id` from `arg0` and `prefetch_flag` from
 /// `arg1`, scans the IO queue for an empty slot, writes a READ request,
 /// and spins until the host/runtime marks it OK. vyre is opaque to the
-/// resource identifier — it's just a u32 the consumer uses to look up
+/// resource identifier  -  it's just a u32 the consumer uses to look up
 /// the source and destination of the read.
 pub(crate) fn load_miss_body() -> Vec<Node> {
     let io_slot_count = super::io::IO_SLOT_COUNT;
@@ -577,4 +577,6 @@ pub(crate) fn claimed_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
 }
 
 #[cfg(test)]
+
 mod tests;
+

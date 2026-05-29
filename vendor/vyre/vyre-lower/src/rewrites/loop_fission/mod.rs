@@ -1,5 +1,6 @@
 //! Conservative loop fission for two independent disjoint stores.
 
+use super::dataflow_facts::resolve_reaching_def_id as resolve;
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind};
 
 /// Split a loop containing exactly two independent disjoint writes into
@@ -114,28 +115,6 @@ fn write_target(
             Some((1, op.operands[0], resolve(op.operands[1], reaching_defs)))
         }
         _ => None,
-    }
-}
-
-fn resolve(
-    id: u32,
-    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
-) -> u32 {
-    let Some(facts) = reaching_defs else {
-        return id;
-    };
-    let mut cur = id;
-    let mut hops = 0usize;
-    loop {
-        let reaching = facts.reaching_defs(cur);
-        if reaching.len() != 1 || reaching[0] == cur {
-            return cur;
-        }
-        cur = reaching[0];
-        hops += 1;
-        if hops > facts.len() + 1 {
-            return cur;
-        }
     }
 }
 

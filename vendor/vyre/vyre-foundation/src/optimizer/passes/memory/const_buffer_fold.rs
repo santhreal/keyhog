@@ -118,7 +118,12 @@ fn fold_node(node: &Node, constant: &ConstBuffer) -> Node {
             source_region: source_region.clone(),
             body: std::sync::Arc::clone(body),
         },
-        Node::Trap { .. } | Node::Resume { .. } => node.clone(),
+        Node::Trap { .. }
+        | Node::Resume { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. } => node.clone(),
         Node::Opaque(ext) => Node::Opaque(ext.clone()),
     }
 }

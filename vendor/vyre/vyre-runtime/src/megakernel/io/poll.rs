@@ -304,12 +304,10 @@ fn reserve_target_capacity<T>(
     out: &mut Vec<T>,
     target_capacity: usize,
 ) -> Result<(), PipelineError> {
-    if out.capacity() < target_capacity {
-        out.try_reserve_exact(target_capacity - out.capacity())
-            .map_err(|_| PipelineError::QueueFull {
-                queue: "io_poll_requests",
-                fix: "host IO polling could not reserve request records; reduce IO_SLOT_COUNT or drain the megakernel IO queue more frequently",
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(out, target_capacity).map_err(|_| {
+        PipelineError::QueueFull {
+            queue: "io_poll_requests",
+            fix: "host IO polling could not reserve request records; reduce IO_SLOT_COUNT or drain the megakernel IO queue more frequently",
+        }
+    })
 }

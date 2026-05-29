@@ -383,10 +383,7 @@ mod tests {
         ]
         .concat();
         let out = append_scope_source_spans_in_place(gpu_rows, &[4, 9], &[3, 1], 2).unwrap();
-        let words: Vec<u32> = out
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect();
+        let words: Vec<u32> = vyre_primitives::wire::decode_u32_le_bytes_all(&out);
         assert_eq!(
             words,
             vec![1, u32::MAX, 2, 0xfeed, 4, 3, 1, u32::MAX, 3, 0xbeef, 9, 1,]

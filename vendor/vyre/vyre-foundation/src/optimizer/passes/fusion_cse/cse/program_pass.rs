@@ -1,4 +1,4 @@
-//! Common-subexpression elimination — registered ProgramPass.
+//! Common-subexpression elimination  -  registered ProgramPass.
 //!
 //! The engine itself lives at `super::engine`; this module hooks it
 //! into the scheduler's fixpoint loop and invalidation tracking.
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn cse_handles_nested_identical_subtrees() {
-        // add( add(x, y), add(x, y) ) — the inner add(x,y) appears twice
+        // add( add(x, y), add(x, y) )  -  the inner add(x,y) appears twice
         let x = Expr::var("x");
         let y = Expr::var("y");
         let inner1 = Expr::add(x.clone(), y.clone());
@@ -189,7 +189,7 @@ mod tests {
         let r2 = CsePass::transform(Clone::clone(&r1.program));
         assert!(
             !r2.changed,
-            "CSE must be idempotent — second pass must not change output"
+            "CSE must be idempotent  -  second pass must not change output"
         );
         assert_eq!(
             r1.program.entry().len(),
@@ -214,7 +214,7 @@ mod tests {
         let result = CsePass::transform(p);
         assert!(
             !result.changed,
-            "CSE must NOT merge expressions across If branches — scoped separately"
+            "CSE must NOT merge expressions across If branches  -  scoped separately"
         );
     }
 }

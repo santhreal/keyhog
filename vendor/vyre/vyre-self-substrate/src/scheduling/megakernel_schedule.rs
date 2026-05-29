@@ -7,6 +7,8 @@
 //! pressure. The solver is deterministic, allocation-reusable, and rejects
 //! malformed cost vectors through the `try_` entry points.
 
+use crate::hardware::scratch::try_reserve_vec_capacity;
+
 /// Input-shape or numeric error from the homotopy megakernel scheduler.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MegakernelScheduleError {
@@ -325,15 +327,13 @@ fn reserve_schedule_output(
     capacity: usize,
     field: &'static str,
 ) -> Result<(), MegakernelScheduleError> {
-    if out.capacity() >= capacity {
-        return Ok(());
-    }
-    out.try_reserve_exact(capacity - out.capacity())
-        .map_err(|error| MegakernelScheduleError::OutputReserveFailed {
+    try_reserve_vec_capacity(out, capacity).map_err(|message| {
+        MegakernelScheduleError::OutputReserveFailed {
             capacity,
             field,
-            message: error.to_string(),
-        })
+            message,
+        }
+    })
 }
 
 fn validate_schedule_inputs(
@@ -448,6 +448,7 @@ mod tests {
 
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-2 * (1.0 + a.abs() + b.abs())
+
     }
 
     #[test]
@@ -522,7 +523,7 @@ mod tests {
             launch_overhead_ns: 0.0,
         };
         let result = try_schedule_via_scale_aware_telemetry(&[10.0, 10.0], telemetry, 2, 64, 0.25)
-            .expect("valid scale telemetry must schedule");
+            .expect("Fix: valid scale telemetry must schedule");
         assert!(
             result[1] > result[0],
             "dense-frontier candidate should receive stronger fusion pressure"
@@ -537,7 +538,7 @@ mod tests {
             launch_overhead_ns: 0.0,
         };
         let result = try_schedule_via_scale_aware_telemetry(&[10.0, 10.0], telemetry, 2, 64, 0.25)
-            .expect("valid readback telemetry must schedule");
+            .expect("Fix: valid readback telemetry must schedule");
         assert!(
             result[1] > result[0],
             "readback-heavy candidate should receive stronger fusion pressure"
@@ -553,7 +554,7 @@ mod tests {
         };
         let result =
             try_schedule_via_scale_aware_telemetry(&[1.0, 4.0, 2.0], telemetry, 3, 64, 0.25)
-                .expect("zero runtime pressure must still schedule by cost");
+                .expect("Fix: zero runtime pressure must still schedule by cost");
         assert!(result[1] > result[2]);
         assert!(result[2] > result[0]);
     }
@@ -608,8 +609,9 @@ mod tests {
             0.25,
             &mut out,
         )
-        .expect("valid scale telemetry must schedule into caller output");
+        .expect("Fix: valid scale telemetry must schedule into caller output");
         assert_eq!(out.len(), 3);
         assert_eq!(out.as_ptr(), ptr);
     }
 }
+

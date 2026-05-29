@@ -5,7 +5,7 @@
 //! Workgroup-shared memory is roughly 100x faster than global memory on
 //! modern GPUs. When the same data is read multiple times by threads in
 //! the same workgroup, promoting it to shared memory eliminates the
-//! repeated global transactions — typical speedup is 5-50x on tiled ops
+//! repeated global transactions  -  typical speedup is 5-50x on tiled ops
 //! (matmul, conv, attention).
 //!
 //! This crate detects promotion candidates. A buffer is a candidate

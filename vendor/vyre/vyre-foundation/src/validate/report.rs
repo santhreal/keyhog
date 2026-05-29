@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn empty_report_is_ok() {
         let report = ValidationReport::default();
-        assert!(report.is_ok());
+        assert_eq!(report.errors.len(), 0);
     }
 
     #[test]

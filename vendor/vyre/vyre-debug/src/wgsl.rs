@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use vyre_foundation::ir::Program;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WgslDump {
     pub text: String,
     pub variable_lines: BTreeMap<String, usize>,

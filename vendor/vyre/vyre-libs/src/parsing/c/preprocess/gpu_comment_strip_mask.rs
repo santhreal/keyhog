@@ -19,10 +19,10 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `bytes_in` (U8) — raw source bytes.
+//!   - `bytes_in` (U8)  -  raw source bytes.
 //!
 //! Outputs:
-//!   - `comment_mask_out` (U32) — one entry per byte. `0` for ordinary
+//!   - `comment_mask_out` (U32)  -  one entry per byte. `0` for ordinary
 //!     source, `1` for comment bytes to drop, `2` for the first comment
 //!     byte that must materialize as one replacement space.
 

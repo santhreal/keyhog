@@ -1,7 +1,10 @@
-//! Optimizer registry, release-pass, and cross-crate performance contracts.
+//! Compatibility facade for optimizer contract modules.
+//!
+//! The implementation lives under `optimizer::contracts` so the optimizer has
+//! one owning domain. This module preserves the historic
+//! `vyre_self_substrate::optimization::*` import path for downstream crates.
 
-pub mod cross_crate_perf_contracts;
-pub mod optimization_composition_contracts;
-pub mod optimization_pass_selection;
-pub mod optimization_registry;
-pub mod optimization_release_passes;
+pub use crate::optimizer::contracts::{
+    cross_crate_perf_contracts, optimization_composition_contracts, optimization_pass_selection,
+    optimization_registry, optimization_release_passes,
+};

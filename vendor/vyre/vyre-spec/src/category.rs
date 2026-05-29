@@ -49,8 +49,8 @@ impl BackendAvailability for BackendAvailabilityPredicate {
 
 /// vyre operation category in the frozen data contract.
 ///
-/// Category B — runtime opcode dispatch, stack-machine VMs, and eval engines
-/// — is intentionally absent from this enum. vyre has no opcode interpreter
+/// Category B  -  runtime opcode dispatch, stack-machine VMs, and eval engines
+///  -  is intentionally absent from this enum. vyre has no opcode interpreter
 /// and no execution path that is not a lowered IR program on a backend, so
 /// Category B is forbidden by the conformance model rather than specified
 /// as a valid operation category. Example: `Category::Intrinsic` records that an op is

@@ -108,7 +108,7 @@ impl Megakernel {
                 queue: "submission",
                 fix: "work item publish slot index exceeds u32::MAX; split the publish batch",
             })?;
-            write_work_item_unchecked(ring_bytes, view, slot_idx, tenant_id, item);
+            write_work_item_unchecked(ring_bytes, view, slot_idx, tenant_id, item)?;
         }
         Ok(())
     }
@@ -166,7 +166,7 @@ impl Megakernel {
                     queue: "submission",
                     fix: "work item publish slot index overflowed u32; split the publish batch",
                 })?;
-            write_work_item_unchecked(ring_bytes, view, slot_idx, tenant_id, item);
+            write_work_item_unchecked(ring_bytes, view, slot_idx, tenant_id, item)?;
         }
         Ok(item_count)
     }
@@ -277,7 +277,7 @@ impl Megakernel {
         for (i, arg) in args.iter().enumerate() {
             write_word(ring_bytes, ARG0_WORD_USIZE + i, *arg);
         }
-        // Status last — PUBLISH is the publish barrier.
+        // Status last  -  PUBLISH is the publish barrier.
         write_word(ring_bytes, STATUS_WORD_USIZE, slot::PUBLISHED);
 
         Ok(())
@@ -414,7 +414,7 @@ impl Megakernel {
         )
     }
 
-    /// Publish multiple slots atomically — the final slot is a
+    /// Publish multiple slots atomically  -  the final slot is a
     /// `BATCH_FENCE` that signals completion to the host. This is
     /// the high-throughput entry point for scanner pipelines: publish
     /// N work items + 1 fence in one call.
@@ -478,7 +478,7 @@ impl Megakernel {
                 tenant_id,
                 *opcode,
                 args.as_ref(),
-            );
+            )?;
         }
         let fence_slot = start_slot
             .checked_add(item_count)
@@ -493,7 +493,7 @@ impl Megakernel {
             tenant_id,
             protocol::opcode::BATCH_FENCE,
             &[item_count, batch_tag],
-        );
+        )?;
         fence_slot
             .checked_add(1)
             .and_then(|end| end.checked_sub(start_slot))
@@ -503,6 +503,7 @@ impl Megakernel {
             })
     }
 }
+
 
 fn validate_publish_payload(opcode: u32, args: &[u32]) -> Result<(), PipelineError> {
     if args.len() > ARGS_PER_SLOT_USIZE {
@@ -581,9 +582,8 @@ fn write_slot_unchecked(
     tenant_id: u32,
     opcode: u32,
     args: &[u32],
-) {
-    let base = slot_base(slot_idx, view)
-        .expect("validated publish slot must fit the host byte address space");
+) -> Result<(), PipelineError> {
+    let base = slot_base(slot_idx, view)?;
     write_slot_word(ring_bytes, base, OPCODE_WORD_USIZE, opcode);
     write_slot_word(ring_bytes, base, TENANT_WORD_USIZE, tenant_id);
     write_slot_word(
@@ -599,6 +599,7 @@ fn write_slot_unchecked(
         write_slot_word(ring_bytes, base, ARG0_WORD_USIZE + index, *arg);
     }
     write_slot_word(ring_bytes, base, STATUS_WORD_USIZE, slot::PUBLISHED);
+    Ok(())
 }
 
 fn write_work_item_unchecked(
@@ -607,9 +608,8 @@ fn write_work_item_unchecked(
     slot_idx: u32,
     tenant_id: u32,
     item: &MegakernelWorkItem,
-) {
-    let base = slot_base(slot_idx, view)
-        .expect("validated work-item slot must fit the host byte address space");
+) -> Result<(), PipelineError> {
+    let base = slot_base(slot_idx, view)?;
     write_slot_word(ring_bytes, base, OPCODE_WORD_USIZE, item.op_handle);
     write_slot_word(ring_bytes, base, TENANT_WORD_USIZE, tenant_id);
     write_slot_word(
@@ -625,6 +625,7 @@ fn write_work_item_unchecked(
     write_slot_word(ring_bytes, base, ARG0_WORD_USIZE + 1, item.output_handle);
     write_slot_word(ring_bytes, base, ARG0_WORD_USIZE + 2, item.param);
     write_slot_word(ring_bytes, base, STATUS_WORD_USIZE, slot::PUBLISHED);
+    Ok(())
 }
 
 fn validate_work_item_batch(
@@ -695,3 +696,4 @@ fn write_packed_metadata_byte(args: &mut [u32; ARGS_PER_SLOT_USIZE], byte_index:
     });
     args[word_index] |= u32::from(value) << shift;
 }
+

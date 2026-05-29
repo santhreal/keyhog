@@ -1,28 +1,14 @@
 //! GPTQ-SDClip: Full-Hessian GPTQ with standard-deviation clipping.
 //!
-//! `clip_threshold = k * std(row)` — int6 uses k=12.85, int8 uses k=20.0.
+//! `clip_threshold = k * std(row)`  -  int6 uses k=12.85, int8 uses k=20.0.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::f32_stability::{finite_or, positive_finite_or_min as positive_scale};
 
 const ROUND_OP_ID: &str = "vyre-libs::quant::gptq_round";
 const SDCLIP_OP_ID: &str = "vyre-libs::quant::gptq_sdclip";
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn positive_scale(value: Expr) -> Expr {
-    Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value,
-        Expr::f32(f32::MIN_POSITIVE),
-    )
-}
 
 fn clamp_f32(value: Expr, lo: f32, hi: f32) -> Expr {
     let finite = finite_or(value, Expr::f32(lo));
@@ -108,7 +94,7 @@ inventory::submit! {
         id: ROUND_OP_ID,
         build: || gptq_round("input", "scale", "output", 4, 63.0),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[100.0, 200.0, 50.0, 10.0]),
                 to_f32(&[2.0, 3.0, 1.0, 5.0]),
@@ -117,7 +103,7 @@ inventory::submit! {
         expected_output: Some(|| {
             // 100/2=50, 200/3=66.7→63(clamped), 50/1=50, 10/5=2
             let out = [50.0_f32, 63.0, 50.0, 2.0];
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -129,7 +115,7 @@ inventory::submit! {
         id: SDCLIP_OP_ID,
         build: || gptq_sdclip("input", "output", 4, 30.0),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[10.0, 50.0, -40.0, 25.0]),
             ]]
@@ -137,7 +123,7 @@ inventory::submit! {
         expected_output: Some(|| {
             // clamp: 10, 30, -30, 25
             let out = [10.0_f32, 30.0, -30.0, 25.0];
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),

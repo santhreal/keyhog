@@ -1,7 +1,7 @@
-//! `noop_assign_eliminate` — drop `Node::Assign { name, value: Var(name) }`.
+//! `noop_assign_eliminate`  -  drop `Node::Assign { name, value: Var(name) }`.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::noop_assign_eliminate`.
-//! Soundness: `Exact` — assigning a variable to itself is a no-op. Cost
+//! Soundness: `Exact`  -  assigning a variable to itself is a no-op. Cost
 //! direction: monotone-down on node_count + control_flow_count.
 //! Preserves: every analysis. Invalidates: nothing.
 //!

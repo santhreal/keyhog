@@ -1,18 +1,18 @@
-//! `flows_to` — Tier-3 shim over
+//! `flows_to`  -  Tier-3 shim over
 //! [`vyre_primitives::graph::csr_forward_traverse`].
 //!
 //! The taint-reachability semantics (*does taint flow from source
 //! NodeSet to sink NodeSet given this ProgramGraph?*) live in the
-//! source-query dialect stdlib at `frontend/rules/stdlib/flows_to.srg`:
+//! generic rule-dialect stdlib:
 //!
 //! ```text
 //! rec reached = source ∪ csr_forward_traverse(reached, all_edges)
 //!   where fixpoint on reached
 //! ```
 //!
-//! vyre-libs ships one dispatch step that a downstream frontend's fixpoint driver
+//! vyre-libs ships one dispatch step that an analysis-stage fixpoint driver
 //! iterates. Op id stays stable; the dead v2 edges_from/edges_to
-//! signature from the inert v2 API has been deleted — the shim
+//! signature from the inert v2 API has been deleted  -  the shim
 //! now takes only the canonical frontier / sink buffer names.
 
 use vyre::ir::Program;
@@ -26,8 +26,8 @@ const OP_ID: &str = "vyre-libs::security::flows_to";
 /// Per AUDIT_2026-04-24 F-FT-01 (kimi) a previous `0xFFFF_FFFF`
 /// over-approximation caused taint to propagate along CONTROL and
 /// DOMINANCE edges, producing massive false-positive noise at
-/// internet scale. Restricted now to the set surge's stdlib
-/// flows_to.srg explicitly enumerates.
+/// internet scale. Restricted now to the set the generic taint-flow
+/// standard library explicitly enumerates.
 pub const FLOWS_TO_MASK: u32 = edge_kind::ASSIGNMENT
     | edge_kind::CALL_ARG
     | edge_kind::RETURN
@@ -41,11 +41,11 @@ pub const FLOWS_TO_MASK: u32 = edge_kind::ASSIGNMENT
 /// (same memory cell, not just "data flowed through this op").
 /// Aliasing is a strict subset of `FLOWS_TO_MASK`:
 ///
-/// - `ASSIGNMENT` (`a = b`) — `a` aliases `b`'s referenced cell.
-/// - `ALIAS` (init-decl, init-alias-bridge, etc.) — explicit alias
+/// - `ASSIGNMENT` (`a = b`)  -  `a` aliases `b`'s referenced cell.
+/// - `ALIAS` (init-decl, init-alias-bridge, etc.)  -  explicit alias
 ///   edge emitted by the walker.
-/// - `MUT_REF` (`&mut x`) — the reference aliases `x`.
-/// - `PHI` — SSA phi result aliases each incoming source.
+/// - `MUT_REF` (`&mut x`)  -  the reference aliases `x`.
+/// - `PHI`  -  SSA phi result aliases each incoming source.
 ///
 /// `CALL_ARG` / `RETURN` / `MEM_STORE` / `MEM_LOAD` are EXCLUDED:
 /// passing a value into a function or storing it to memory does NOT
@@ -96,7 +96,7 @@ inventory::submit! {
         id: OP_ID,
         build: || flows_to(ProgramGraphShape::new(4, 3), "fin", "fout"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // Linear chain 0 → 1 → 2 → 3. Starting frontier {0}.
             // `fout` starts as the accumulator frontier so the
             // convergence lens monotonically grows {0,1,2,3}.
@@ -108,14 +108,14 @@ inventory::submit! {
                     edge_kind::ASSIGNMENT,
                     edge_kind::ASSIGNMENT,
                     edge_kind::ASSIGNMENT,
-                ]),                               // pg_edge_kind_mask — all dataflow
+                ]),                               // pg_edge_kind_mask  -  all dataflow
                 to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
                 to_bytes(&[0b0001]),              // fin = {0}
                 to_bytes(&[0b0001]),              // fout accumulator seed = {0}
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // One forward-reach step from {0}: the step writes {1}
             // into the accumulator. A no-op that leaves fout at {0}
             // fails this oracle.
@@ -177,7 +177,7 @@ mod tests {
             .buffers
             .iter()
             .find(|b| b.name() == "fin")
-            .expect("fin buffer");
+            .expect("Fix: fin buffer");
         assert!(
             fin_buf.count >= 2,
             "bitset_words(64) = 2; count {} suggests degenerate shape",
@@ -187,16 +187,16 @@ mod tests {
 
     #[test]
     fn flows_to_and_taint_flow_convergence_contracts_match_intentionally() {
-        // taint_flow is the frontend-facing predicate name; flows_to is the
-        // vyre-side primitive. Both close the same FLOWS_TO_MASK forward
-        // closure and therefore share the same convergence regime —
+        // taint_flow is an alternate API-facing predicate name; flows_to is the
+        // core primitive. Both close the same FLOWS_TO_MASK forward
+        // closure and therefore share the same convergence regime  -
         // matching `max_iterations` is the contract, not a hygiene gap.
         // Their IR differs (distinct OP_ID tags) but their fixpoint
         // depths are identical by construction.
         let c_flows = crate::harness::convergence_contract("vyre-libs::security::flows_to")
-            .expect("flows_to must have a ConvergenceContract");
+            .expect("Fix: flows_to must have a ConvergenceContract");
         let c_taint = crate::harness::convergence_contract("vyre-libs::security::taint_flow")
-            .expect("taint_flow must have a ConvergenceContract");
+            .expect("Fix: taint_flow must have a ConvergenceContract");
         assert_eq!(
             c_flows.max_iterations, c_taint.max_iterations,
             "flows_to and taint_flow MUST share max_iterations: they close the \
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn flows_to_edge_count_exceeds_actual_edges_traps_in_reference() {
         let p = flows_to(ProgramGraphShape::new(4, 10), "fin", "fout");
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![
             to_bytes(&[0, 0, 0, 0]),    // pg_nodes
             to_bytes(&[0, 1, 2, 3, 3]), // pg_edge_offsets (only 3 edges)
@@ -238,10 +238,13 @@ mod tests {
             .into_iter()
             .map(vyre_reference::value::Value::from)
             .collect();
-        let result = vyre_reference::reference_eval(&p, &values);
+        let error = vyre_reference::reference_eval(&p, &values).expect_err(
+            "edge_count (10) exceeds actual edges (3) must trap or error in reference_eval",
+        );
+        let msg = error.to_string();
         assert!(
-            result.is_err(),
-            "edge_count (10) exceeds actual edges (3) must trap or error in reference_eval, not silently succeed"
+            msg.contains("trap") || msg.contains("Fix:") || msg.contains("edge"),
+            "flows_to edge-count mismatch error must be actionable: {msg}"
         );
     }
 }

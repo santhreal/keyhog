@@ -32,7 +32,7 @@ impl HashmapMemory {
 }
 
 pub(crate) fn output_value(buffer: Buffer, decl: &BufferDecl) -> Value {
-    let mut bytes = buffer.to_value().to_bytes();
+    let mut bytes = buffer.into_bytes();
     if let Some(range) = decl.output_byte_range() {
         if range.start <= range.end && range.end <= bytes.len() {
             bytes.truncate(range.end);
@@ -196,6 +196,20 @@ mod tests {
         assert!(
             !std::sync::Arc::ptr_eq(&before, &after),
             "Fix: changed workgroup byte length must allocate a correctly-sized buffer."
+        );
+    }
+
+    #[test]
+    fn output_value_slices_declared_byte_range_from_buffer_bytes() {
+        let decl = BufferDecl::output("out", 0, DataType::U32)
+            .with_count(4)
+            .with_output_byte_range(4..12);
+        let buffer = Buffer::new((0u8..16).collect(), DataType::U32);
+
+        assert_eq!(
+            output_value(buffer, &decl).to_bytes(),
+            vec![4, 5, 6, 7, 8, 9, 10, 11],
+            "Fix: output byte ranges must slice the buffer payload without changing bytes."
         );
     }
 }

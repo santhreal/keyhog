@@ -1,6 +1,7 @@
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
+use vyre_foundation::memory_model::MemoryOrdering;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// Compact C11 statement spans for AST construction.
@@ -135,11 +136,20 @@ pub fn c11_statement_bounds(
         [256, 1, 1],
         vec![wrap_anonymous(
             "vyre-libs::parsing::c11_statement_bounds",
-            vec![child_phase(
-                "vyre-libs::parsing::c11_statement_bounds",
-                vyre_primitives::bitset::select::OP_ID,
-                vec![Node::if_then(Expr::lt(t.clone(), scan_count), stmt_body)],
-            )],
+            vec![
+                Node::if_then(
+                    Expr::eq(t.clone(), Expr::u32(0)),
+                    vec![Node::store(out_counts, Expr::u32(0), Expr::u32(0))],
+                ),
+                Node::Barrier {
+                    ordering: MemoryOrdering::SeqCst,
+                },
+                child_phase(
+                    "vyre-libs::parsing::c11_statement_bounds",
+                    vyre_primitives::bitset::select::OP_ID,
+                    vec![Node::if_then(Expr::lt(t.clone(), scan_count), stmt_body)],
+                ),
+            ],
         )],
     )
     .with_entry_op_id("vyre-libs::parsing::c11_statement_bounds")
@@ -163,7 +173,7 @@ mod tests {
             .buffers
             .iter()
             .find(|buffer| buffer.name() == "out_statements")
-            .expect("out_statements buffer must exist");
+            .expect("Fix: out_statements buffer must exist");
         assert_eq!(out_statements.count, token_window.saturating_mul(2));
     }
 
@@ -186,6 +196,19 @@ mod tests {
         assert!(
             message.contains("requires a literal token-window count"),
             "{message}"
+        );
+    }
+
+    #[test]
+    fn statement_bounds_initializes_atomic_count_inside_kernel() {
+        let source = include_str!("structure_statement.rs");
+        assert!(
+            source.contains("Node::store(out_counts, Expr::u32(0), Expr::u32(0))"),
+            "Fix: statement bounds must zero out_counts in-kernel before atomic_add."
+        );
+        assert!(
+            source.contains("MemoryOrdering::SeqCst"),
+            "Fix: statement bounds must synchronize after zeroing out_counts before worker lanes append records."
         );
     }
 }

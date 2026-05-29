@@ -116,9 +116,10 @@ fn claimed_slot_body_includes_custom_handlers() {
 #[test]
 fn packed_slot_body_is_nonempty() {
     let body = packed_slot_body(&[]);
-    assert!(
-        !body.is_empty(),
-        "packed_slot_body must produce loop structure even with no custom opcodes"
+    assert_eq!(
+        body.len(),
+        1,
+        "packed_slot_body must emit the packed opcode dispatch root even with no custom opcodes"
     );
 }
 

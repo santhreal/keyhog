@@ -25,9 +25,11 @@ pub fn default_priority_offsets(total_slots: u32) -> Vec<u32> {
 /// compatibility vector used by legacy callers.
 pub fn try_default_priority_offsets(total_slots: u32) -> Result<Vec<u32>, PipelineError> {
     let mut offsets = Vec::new();
-    offsets
-        .try_reserve_exact(PRIORITY_OFFSETS_WITH_SENTINEL)
-        .map_err(|source| {
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(
+        &mut offsets,
+        PRIORITY_OFFSETS_WITH_SENTINEL,
+    )
+    .map_err(|source| {
             PipelineError::Backend(format!(
                 "priority offset vector reservation failed for {PRIORITY_OFFSETS_WITH_SENTINEL} words: {source}. Fix: use default_priority_offsets_array in hot paths or reduce host memory pressure."
             ))

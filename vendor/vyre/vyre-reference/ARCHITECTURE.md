@@ -1,4 +1,4 @@
-# vyre-reference — architecture
+# vyre-reference  -  architecture
 
 The CPU oracle. Every IR construct lowered onto a GPU backend has
 a corresponding CPU-evaluator branch here. The conform suite uses
@@ -20,7 +20,7 @@ Operation-call evaluator. Looks up the op in the registry and
 executes the CPU reference.
 
 ### `eval_expr_cast.rs`
-`Expr::Cast` arm — type-cast semantics for the supported
+`Expr::Cast` arm  -  type-cast semantics for the supported
 DataTypes.
 
 ### `cpu_op.rs`
@@ -33,7 +33,7 @@ Routes an op call to the right dialect's CPU reference. Used
 when extension dialects ship their own CPU oracles.
 
 ### `atomics.rs`
-`Expr::Atomic` arm — implements all `AtomicOp` variants with
+`Expr::Atomic` arm  -  implements all `AtomicOp` variants with
 single-thread sequential consistency (the multi-thread path is
 the GPU's responsibility, the CPU oracle just defines the answer
 for sequenced execution).
@@ -53,9 +53,9 @@ whose output is float-valued.
 
 ## Public types
 
-- **`Reference`** — the CPU evaluator entry point.
-- **`EvalCtx`** — running per-buffer state.
-- **`DualRunner`** — GPU+CPU parallel runner that emits
+- **`Reference`**  -  the CPU evaluator entry point.
+- **`EvalCtx`**  -  running per-buffer state.
+- **`DualRunner`**  -  GPU+CPU parallel runner that emits
   divergence reports.
 
 ## Integration points

@@ -9,7 +9,7 @@ use vyre_driver::backend::{
     core_supported_ops, BackendCapability, BackendError, BackendPrecedence, BackendRegistration,
 };
 use vyre_driver::{DispatchConfig, VyreBackend};
-use vyre_foundation::ir::{BufferAccess, Program};
+use vyre_foundation::ir::{BufferAccess, BufferDecl, Program};
 use vyre_reference::value::Value;
 
 /// Stable backend id for the pure-Rust reference interpreter.
@@ -51,7 +51,7 @@ impl VyreBackend for CpuRefBackend {
     }
 
     fn max_workgroup_size(&self) -> [u32; 3] {
-        [u32::MAX, u32::MAX, u32::MAX]
+        [1024, 1, 1]
     }
 
     fn max_compute_workgroups_per_dimension(&self) -> u32 {
@@ -67,42 +67,12 @@ fn reference_values(program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Value>,
             continue;
         }
         let bytes = if buffer.is_output() {
-            let element_size = buffer.element().size_bytes().ok_or_else(|| {
-                BackendError::new(format!(
-                    "cpu-ref cannot synthesize output buffer `{}` because its element type is unsized. Fix: declare a fixed-width output element type.",
-                    buffer.name()
-                ))
-            })?;
-            let byte_len = usize::try_from(buffer.count())
-                .ok()
-                .and_then(|count| count.checked_mul(element_size))
-                .ok_or_else(|| {
-                    BackendError::new(format!(
-                        "cpu-ref output buffer `{}` size overflows usize. Fix: use a representable output buffer size.",
-                        buffer.name()
-                    ))
-                })?;
-            vec![0u8; byte_len]
+            synthesized_zero_buffer(buffer, "output")?
         } else if let Some(input) = inputs.get(next_input) {
             next_input += 1;
             input.clone()
         } else {
-            let element_size = buffer.element().size_bytes().ok_or_else(|| {
-                BackendError::new(format!(
-                    "cpu-ref cannot synthesize missing buffer `{}` because its element type is unsized. Fix: pass an explicit input buffer.",
-                    buffer.name()
-                ))
-            })?;
-            let byte_len = usize::try_from(buffer.count())
-                .ok()
-                .and_then(|count| count.checked_mul(element_size))
-                .ok_or_else(|| {
-                    BackendError::new(format!(
-                        "cpu-ref missing buffer `{}` size overflows usize. Fix: pass an explicit input buffer.",
-                        buffer.name()
-                    ))
-                })?;
-            vec![0u8; byte_len]
+            synthesized_zero_buffer(buffer, "missing input")?
         };
         values.push(Value::Bytes(Arc::from(bytes)));
     }
@@ -113,6 +83,25 @@ fn reference_values(program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Value>,
         )));
     }
     Ok(values)
+}
+
+fn synthesized_zero_buffer(buffer: &BufferDecl, role: &'static str) -> Result<Vec<u8>, BackendError> {
+    let element_size = buffer.element().size_bytes().ok_or_else(|| {
+        BackendError::new(format!(
+            "cpu-ref cannot synthesize {role} buffer `{}` because its element type is unsized. Fix: declare fixed-width buffers or pass an explicit input buffer.",
+            buffer.name()
+        ))
+    })?;
+    let byte_len = usize::try_from(buffer.count())
+        .ok()
+        .and_then(|count| count.checked_mul(element_size))
+        .ok_or_else(|| {
+            BackendError::new(format!(
+                "cpu-ref {role} buffer `{}` size overflows usize. Fix: use a representable buffer size.",
+                buffer.name()
+            ))
+        })?;
+    Ok(vec![0u8; byte_len])
 }
 
 fn acquire_cpu_ref() -> Result<Box<dyn VyreBackend>, BackendError> {

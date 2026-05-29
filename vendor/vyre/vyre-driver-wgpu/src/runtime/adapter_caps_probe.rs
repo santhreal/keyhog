@@ -44,6 +44,7 @@ pub fn probe_profile(adapter: &wgpu::Adapter) -> DeviceProfile {
             u64::from(limits.max_storage_buffer_binding_size),
             max_workgroup_size,
         ),
+        supports_distributed_collectives: false,
         supports_specialization_constants: true,
         supports_f16: false,
         supports_bf16: false,
@@ -104,6 +105,7 @@ pub fn from_backend_profile(
             adapter_info,
             enabled,
         ),
+        supports_distributed_collectives: false,
         supports_specialization_constants: true,
         supports_f16: false,
         supports_bf16: false,
@@ -142,7 +144,7 @@ fn backend_id_for(backend: wgpu::Backend) -> &'static str {
         wgpu::Backend::Dx12 => "dx12",
         wgpu::Backend::Gl => "gl",
         wgpu::Backend::BrowserWebGpu => "webgpu",
-        wgpu::Backend::Empty => "unknown",
+        wgpu::Backend::Noop => "noop",
     }
 }
 
@@ -157,7 +159,7 @@ mod tests {
         assert_eq!(backend_id_for(wgpu::Backend::Dx12), "dx12");
         assert_eq!(backend_id_for(wgpu::Backend::Gl), "gl");
         assert_eq!(backend_id_for(wgpu::Backend::BrowserWebGpu), "webgpu");
-        assert_eq!(backend_id_for(wgpu::Backend::Empty), "unknown");
+        assert_eq!(backend_id_for(wgpu::Backend::Noop), "noop");
     }
 
     #[test]

@@ -2,14 +2,14 @@
 //!
 //! Two passes operating on the canonical 5-buffer arena:
 //!
-//! 1. **structural_hash** — level-parallel bottom-up. Each Expr's hash
+//! 1. **structural_hash**  -  level-parallel bottom-up. Each Expr's hash
 //!    is `mix(kind, payload, child_hashes...)` so that two arena rows
 //!    representing the same syntactic Expr collapse to the same hash.
 //!    Runs in a single fused kernel with workgroup-scope barriers
 //!    between levels (same single-workgroup pattern as the fused
 //!    const-fold). One dispatch.
 //!
-//! 2. **canonical_id** — for each hash bucket, the smallest expr id
+//! 2. **canonical_id**  -  for each hash bucket, the smallest expr id
 //!    with that hash wins. Implemented as a length-`2*expr_count`
 //!    open-addressed direct map with atomic-min on the value slot.
 //!    Linear probing on hash collision. Capacity > 2× ensures load
@@ -28,7 +28,9 @@
 
 use std::sync::Arc;
 
+use rustc_hash::FxHashMap;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node, Program};
+use vyre_primitives::hash::fnv1a::{fnv1a32_initial_expr, fnv1a32_mix_word_expr};
 
 use crate::dispatch_buffers::{
     decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes, write_zero_bytes,
@@ -71,16 +73,118 @@ impl std::error::Error for CseError {}
 /// optimizer keystone for cache coherence on per-Expr passes.
 pub const WORKGROUP_X: u32 = 256;
 
-/// FNV-1a 32-bit prime — used by the substrate's `hash::fnv1a` and
-/// reused here for cross-pass mixing consistency.
-const FNV_PRIME: u32 = 0x0100_0193;
-/// FNV-1a offset basis.
-const FNV_OFFSET: u32 = 0x811c_9dc5;
-
 /// Capacity multiplier for the canonical-id direct-map. Must stay
 /// strictly above `1` so the table's load factor stays bounded; `2`
 /// keeps probe length to a small constant in expectation.
 pub const CANONICAL_TABLE_MULT: u32 = 2;
+
+/// Lookup contract for CSE canonical ids.
+///
+/// Dense GPU CSE returns `canonical[id]` for every arena id. Resident
+/// CUDA pipelines can instead read back only non-identity pairs from a
+/// device-side compaction kernel; consumers should not care which
+/// representation produced the lookup.
+pub trait CanonicalLookup {
+    /// True when no non-identity canonical mappings exist.
+    fn is_empty(&self) -> bool;
+
+    /// Return the canonical id for `id`, defaulting to identity.
+    fn canonical_of(&self, id: u32) -> u32;
+}
+
+impl CanonicalLookup for [u32] {
+    fn is_empty(&self) -> bool {
+        <[u32]>::is_empty(self)
+    }
+
+    fn canonical_of(&self, id: u32) -> u32 {
+        self.get(id as usize).copied().unwrap_or(id)
+    }
+}
+
+/// Sparse canonical map decoded from `(expr_id, canonical_id)` pairs.
+#[derive(Debug, Clone, Default)]
+pub struct SparseCanonicalMap {
+    expr_count: u32,
+    overrides: FxHashMap<u32, u32>,
+}
+
+impl SparseCanonicalMap {
+    /// Decode compacted pair words emitted by
+    /// [`build_canonical_delta_compact_program`].
+    pub fn from_compacted_pair_words(
+        expr_count: u32,
+        pair_count: u32,
+        pair_words: &[u32],
+        context: &str,
+    ) -> Result<Self, DispatchError> {
+        let count = pair_count as usize;
+        let expected_words = count.checked_mul(2).ok_or_else(|| {
+            DispatchError::BadInputs(format!(
+                "Fix: {context} compact canonical pair count overflows usize: {pair_count}."
+            ))
+        })?;
+        if pair_words.len() != expected_words {
+            return Err(DispatchError::BadInputs(format!(
+                "Fix: {context} compact canonical expected {expected_words} pair word(s) for {pair_count} pair(s), got {}.",
+                pair_words.len()
+            )));
+        }
+
+        let mut overrides = FxHashMap::default();
+        overrides.try_reserve(count).map_err(|error| {
+            DispatchError::BackendError(format!(
+                "Fix: reserve {context} compact canonical map for {count} pair(s): {error}."
+            ))
+        })?;
+        for pair in pair_words.chunks_exact(2) {
+            let id = pair[0];
+            let canonical = pair[1];
+            if id >= expr_count || canonical >= expr_count {
+                return Err(DispatchError::BadInputs(format!(
+                    "Fix: {context} compact canonical pair ({id}, {canonical}) exceeds expr_count {expr_count}."
+                )));
+            }
+            if canonical > id {
+                return Err(DispatchError::BadInputs(format!(
+                    "Fix: {context} compact canonical pair ({id}, {canonical}) is not monotonic; canonical ids must be <= source ids."
+                )));
+            }
+            if canonical == id {
+                continue;
+            }
+            if let Some(previous) = overrides.insert(id, canonical) {
+                return Err(DispatchError::BadInputs(format!(
+                    "Fix: {context} compact canonical emitted duplicate source id {id} with values {previous} and {canonical}."
+                )));
+            }
+        }
+
+        Ok(Self {
+            expr_count,
+            overrides,
+        })
+    }
+
+    /// Number of non-identity canonical overrides.
+    #[must_use]
+    pub fn override_count(&self) -> usize {
+        self.overrides.len()
+    }
+}
+
+impl CanonicalLookup for SparseCanonicalMap {
+    fn is_empty(&self) -> bool {
+        self.overrides.is_empty()
+    }
+
+    fn canonical_of(&self, id: u32) -> u32 {
+        if id >= self.expr_count {
+            return id;
+        }
+        self.overrides.get(&id).copied().unwrap_or(id)
+    }
+}
 
 /// Run CSE analysis. Returns a `canonical` vector where `canonical[i]`
 /// is the smallest expr id structurally equivalent to `i`. Identity
@@ -215,17 +319,14 @@ pub fn build_structural_hash_program(expr_count: u32, max_depth_iter_cap: u32) -
 
     // Per-Expr body: structural-hash mixer. Critical invariant:
     // mix child HASHES (h0/h1/h2), never raw arg slots (a0/a1/a2)
-    // for parent kinds — raw args carry arena-position-dependent
+    // for parent kinds  -  raw args carry arena-position-dependent
     // child ids that break canonical-equivalence across duplicates.
     // For leaves the raw a0/a1/a2 carry the actual payload (literal
     // value, name id, axis, buffer name id) and ARE structural.
     let mix = |var_name: &str| -> Vec<Node> {
         vec![Node::assign(
             "h",
-            Expr::mul(
-                Expr::bitxor(Expr::var("h"), Expr::var(var_name)),
-                Expr::u32(FNV_PRIME),
-            ),
+            fnv1a32_mix_word_expr(Expr::var("h"), Expr::var(var_name)),
         )]
     };
     let per_expr_body = vec![
@@ -244,13 +345,10 @@ pub fn build_structural_hash_program(expr_count: u32, max_depth_iter_cap: u32) -
         Node::let_bind("h1", Expr::load("hash", Expr::var("a1"))),
         Node::let_bind("h2", Expr::load("hash", Expr::var("a2"))),
         // Mix kind first (the family discriminator).
-        Node::let_bind("h", Expr::u32(FNV_OFFSET)),
+        Node::let_bind("h", fnv1a32_initial_expr()),
         Node::assign(
             "h",
-            Expr::mul(
-                Expr::bitxor(Expr::var("h"), Expr::var("kind")),
-                Expr::u32(FNV_PRIME),
-            ),
+            fnv1a32_mix_word_expr(Expr::var("h"), Expr::var("kind")),
         ),
         // Leaves with a payload in a0: literals, vars, buf_len,
         // invocation/workgroup/local id (axis lives in a0).
@@ -284,7 +382,7 @@ pub fn build_structural_hash_program(expr_count: u32, max_depth_iter_cap: u32) -
         ),
         // BIN_OP: a0 = op_tag (structural), a1/a2 = child ids (NOT
         // structural). Mix op_tag + child hashes in position order.
-        // (Commutative-friendly mixing was tried and reverted — the
+        // (Commutative-friendly mixing was tried and reverted  -  the
         // extra Selects + tag-flag chain doubled the per-Expr kernel
         // runtime and the speculative CSE gain didn't justify it.)
         Node::if_then(Expr::eq(Expr::var("kind"), Expr::u32(expr_kind::BIN_OP)), {
@@ -378,6 +476,7 @@ pub fn build_structural_hash_program(expr_count: u32, max_depth_iter_cap: u32) -
 ///   1: canonical (RW)
 ///   2: table_canonical (RW; init `u32::MAX`)
 #[must_use]
+
 pub fn build_canonical_id_program(expr_count: u32, capacity: u32) -> Program {
     let buffers = vec![
         BufferDecl::storage("hash", 0, BufferAccess::ReadOnly, DataType::U32)
@@ -403,14 +502,14 @@ pub fn build_canonical_id_program(expr_count: u32, capacity: u32) -> Program {
     //
     // For simplicity, the insert+lookup use a single combined slot
     // word: `slot = min(seen_so_far_for_this_hash)`. Empty = MAX.
-    // Probe until we find a slot whose value's hash matches — but we
+    // Probe until we find a slot whose value's hash matches  -  but we
     // can't store both hash and id in one u32.
     //
     // Workaround: index into table by `hash % capacity` directly. For
     // ≤ 0.5 load factor and well-distributed hash, expected probe
     // length is ~1.5. We accept hash collisions on the bucket index
     // (different hashes mapping to same bucket) by keeping a probe
-    // chain — to verify "this slot is mine" we'd need to store the
+    // chain  -  to verify "this slot is mine" we'd need to store the
     // hash too. Simpler V1: store the hash in even slots and the id
     // in odd slots. Capacity then represents bucket count, real array
     // size is `2 * capacity`.
@@ -473,6 +572,53 @@ pub fn build_canonical_id_program(expr_count: u32, capacity: u32) -> Program {
     Program::wrapped(buffers, [WORKGROUP_X, 1, 1], body)
 }
 
+/// Build a compact readback Program for CSE canonical ids.
+///
+/// Buffer layout:
+///   0: canonical (RO)
+///   1: canonical_delta (RW), where word 0 is an atomic pair count and
+///      words `1 + 2*k .. 3 + 2*k` are `(expr_id, canonical_id)`.
+#[must_use]
+pub fn build_canonical_delta_compact_program(expr_count: u32) -> Program {
+    let delta_words = expr_count.saturating_mul(2).saturating_add(1).max(1);
+    let buffers = vec![
+        BufferDecl::storage("canonical", 0, BufferAccess::ReadOnly, DataType::U32)
+            .with_count(expr_count.max(1)),
+        BufferDecl::storage("canonical_delta", 1, BufferAccess::ReadWrite, DataType::U32)
+            .with_count(delta_words),
+    ];
+    let body = vec![
+        Node::let_bind("i", Expr::gid_x()),
+        Node::if_then(
+            Expr::lt(Expr::var("i"), Expr::u32(expr_count)),
+            vec![
+                Node::let_bind("canonical_id", Expr::load("canonical", Expr::var("i"))),
+                Node::if_then(
+                    Expr::ne(Expr::var("canonical_id"), Expr::var("i")),
+                    vec![
+                        Node::let_bind(
+                            "slot",
+                            Expr::atomic_add("canonical_delta", Expr::u32(0), Expr::u32(1)),
+                        ),
+                        Node::let_bind(
+                            "base",
+                            Expr::add(Expr::u32(1), Expr::mul(Expr::var("slot"), Expr::u32(2))),
+                        ),
+                        Node::store("canonical_delta", Expr::var("base"), Expr::var("i")),
+                        Node::store(
+                            "canonical_delta",
+                            Expr::add(Expr::var("base"), Expr::u32(1)),
+                            Expr::var("canonical_id"),
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ];
+
+    Program::wrapped(buffers, [WORKGROUP_X, 1, 1], body)
+}
+
 /// Apply `canonical[i]` to rewrite `program`. Replaces every Expr
 /// whose canonical is a different (smaller) expr id with a reference
 /// to the canonical's value. Implemented as a CPU walk in the same
@@ -507,7 +653,7 @@ pub fn apply_cse_canonicals(
 /// Apply a let-level CSE rewrite: when an entire `Node::Let { name,
 /// value: V }` has a value-Expr structurally equivalent to an earlier
 /// Let's value in the SAME scope, replace `V` with `Expr::Var(orig)`.
-/// This is the safe-by-construction subset of CSE rewrite — no
+/// This is the safe-by-construction subset of CSE rewrite  -  no
 /// cross-scope hoisting needed.
 ///
 /// Walks the program in the same DFS order the arena encoder uses.
@@ -518,6 +664,15 @@ pub fn apply_cse_let_dedupe(
     program: &Program,
     arena: &ExprArenaEncoding,
     canonical: &[u32],
+) -> Program {
+    apply_cse_let_dedupe_with_lookup(program, arena, canonical)
+}
+
+/// Sparse/dense-agnostic variant of [`apply_cse_let_dedupe`].
+pub fn apply_cse_let_dedupe_with_lookup<C: CanonicalLookup + ?Sized>(
+    program: &Program,
+    arena: &ExprArenaEncoding,
+    canonical: &C,
 ) -> Program {
     if canonical.is_empty() {
         return program.clone();
@@ -549,15 +704,15 @@ pub fn apply_cse_let_dedupe(
     program.with_rewritten_entry(new_entry)
 }
 
-struct LetDedupeWalker<'a> {
-    canonical: &'a [u32],
+struct LetDedupeWalker<'a, C: CanonicalLookup + ?Sized> {
+    canonical: &'a C,
     /// Mirrors the encoder's `node_top_level_exprs` allocation order.
     /// Increments by exactly one per `encode_node` call.
     node_index: usize,
     node_top_level_exprs: &'a [Vec<u32>],
 }
 
-impl LetDedupeWalker<'_> {
+impl<C: CanonicalLookup + ?Sized> LetDedupeWalker<'_, C> {
     fn rewrite_scope(&mut self, body: &[Node]) -> Vec<Node> {
         let prefix_len = super::encode::reachable_prefix_len(body);
         let mut out = Vec::with_capacity(prefix_len);
@@ -589,15 +744,11 @@ impl LetDedupeWalker<'_> {
                     .and_then(|v| v.first())
                     .copied();
                 if let Some(top_id) = top_id {
-                    let canon = self
-                        .canonical
-                        .get(top_id as usize)
-                        .copied()
-                        .unwrap_or(top_id);
+                    let canon = self.canonical.canonical_of(top_id);
                     if canon != top_id {
                         if let Some(orig_name) = expr_to_name.get(&canon).cloned() {
                             // Duplicate: replace value with `Var(orig)`.
-                            // Don't update the map — `name` is bound to
+                            // Don't update the map  -  `name` is bound to
                             // the same value, but we keep the original
                             // canonical mapping for further duplicates.
                             return Node::let_bind(name.clone(), Expr::var(orig_name));
@@ -638,7 +789,7 @@ impl LetDedupeWalker<'_> {
                 body: Arc::new(self.rewrite_scope(body.as_slice())),
             },
             // No-Expr-payload Nodes pass through. Assign-style Nodes
-            // are intentionally not deduplicated — they reassign an
+            // are intentionally not deduplicated  -  they reassign an
             // existing binding, so the value substitution would change
             // observable behaviour at runtime.
             other => other.clone(),
@@ -712,7 +863,7 @@ fn rewrite_node(node: &Node, canonical: &[u32], counter: &mut u32) -> Node {
 
 fn rewrite_expr(expr: &Expr, canonical: &[u32], counter: &mut u32) -> Expr {
     // Walk children first to keep the post-order id assignment in sync
-    // with the arena encoder. We don't apply canonical mappings yet —
+    // with the arena encoder. We don't apply canonical mappings yet  -
     // V1 ships the analysis, not the rewrite. The id walk is preserved
     // so future versions can fold canonical id back into the IR.
     match expr {
@@ -788,6 +939,7 @@ fn rewrite_expr(expr: &Expr, canonical: &[u32], counter: &mut u32) -> Expr {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::dispatch_buffers::u32_slice_to_le_bytes;
@@ -836,6 +988,39 @@ mod tests {
     }
 
     #[test]
+    fn canonical_delta_compact_program_carries_sparse_output_buffer() {
+        let p = build_canonical_delta_compact_program(8);
+        assert!(p.buffers().iter().any(|b| b.name() == "canonical"));
+        assert!(p.buffers().iter().any(|b| b.name() == "canonical_delta"));
+    }
+
+    #[test]
+    fn sparse_canonical_map_defaults_identity_and_overrides_duplicates() {
+        let map = SparseCanonicalMap::from_compacted_pair_words(
+            8,
+            2,
+            &[3, 1, 7, 2],
+            "test sparse canonical",
+        )
+        .expect("Fix: valid compact canonical pairs decode");
+        assert_eq!(map.override_count(), 2);
+        assert_eq!(map.canonical_of(0), 0);
+        assert_eq!(map.canonical_of(3), 1);
+        assert_eq!(map.canonical_of(7), 2);
+    }
+
+    #[test]
+    fn sparse_canonical_map_rejects_malformed_pair_count() {
+        let err =
+            SparseCanonicalMap::from_compacted_pair_words(8, 2, &[3, 1], "test sparse canonical")
+                .expect_err("compact canonical pair count must match pair words exactly");
+        assert!(
+            matches!(err, DispatchError::BadInputs(_)),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
     fn cse_kernels_decode_exact_canonical_into_reused_buffer() {
         let dispatcher = CseDispatcher {
             outputs: RefCell::new(vec![
@@ -846,7 +1031,7 @@ mod tests {
         let mut canonical = Vec::with_capacity(4);
         let ptr = canonical.as_ptr();
         run_cse_kernels_into(&one_expr_arena(), &dispatcher, &mut canonical)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
         assert_eq!(canonical, vec![0]);
         assert_eq!(canonical.as_ptr(), ptr);
     }
@@ -866,7 +1051,7 @@ mod tests {
         let mut canonical = Vec::with_capacity(1);
 
         run_cse_kernels_with_scratch_into(&arena, &dispatcher, &mut scratch, &mut canonical)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
 
         let hash_input_capacities = scratch
             .hash_inputs
@@ -883,7 +1068,7 @@ mod tests {
         let canonical_capacity = canonical.capacity();
 
         run_cse_kernels_with_scratch_into(&arena, &dispatcher, &mut scratch, &mut canonical)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch
@@ -940,4 +1125,23 @@ mod tests {
             "unexpected error: {err:?}"
         );
     }
+
+    #[test]
+    fn structural_hash_uses_canonical_fnv_mix_helpers() {
+        let source = include_str!("cse_via_encoded.rs");
+        let release_path = source
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: optimizer CSE release source must be visible.");
+        assert!(
+            release_path.contains("fnv1a32_initial_expr")
+                && release_path.contains("fnv1a32_mix_word_expr"),
+            "Fix: optimizer CSE structural hashing must use canonical primitive FNV helpers."
+        );
+        assert!(
+            !release_path.contains("const FNV_PRIME") && !release_path.contains("const FNV_OFFSET"),
+            "Fix: optimizer CSE must not redefine FNV constants."
+        );
+    }
 }
+

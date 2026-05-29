@@ -71,9 +71,10 @@ fn barrier_inserted_for_read_then_atomic() {
         .filter(|(_, n)| matches!(n, Node::Barrier { .. }))
         .map(|(i, _)| i)
         .collect();
-    assert!(
-        !barrier_positions.is_empty(),
-        "Fix: fusion must insert Node::Barrier between a read arm and an atomic-write arm"
+    assert_eq!(
+        barrier_positions.len(),
+        1,
+        "Fix: fusion must insert exactly one barrier between read and atomic arms"
     );
 }
 

@@ -2,7 +2,7 @@
 
 use super::{put_expr, put_nodes};
 use crate::serial::wire::encode::WireEncodeErr;
-use crate::serial::wire::framing::{put_len_u32, put_string, put_u8};
+use crate::serial::wire::framing::{put_len_u32, put_string, put_u32, put_u8};
 use crate::serial::wire::{Node, MAX_OPAQUE_PAYLOAD_LEN};
 
 /// Append the wire-format tag and payload for one [`Node`] to `out`.
@@ -145,6 +145,44 @@ pub fn put_node(out: &mut Vec<u8>, node: &Node) -> Result<(), WireEncodeErr> {
         Node::Resume { tag } => {
             put_u8(out, 14);
             put_string(out, tag.as_str())?;
+        }
+        Node::AllReduce { buffer, op, group } => {
+            put_u8(out, 15);
+            put_string(out, buffer.as_str())?;
+            put_u8(out, op.builtin_wire_tag());
+            put_u32(out, group.as_u32());
+        }
+        Node::AllGather {
+            input,
+            output,
+            group,
+        } => {
+            put_u8(out, 16);
+            put_string(out, input.as_str())?;
+            put_string(out, output.as_str())?;
+            put_u32(out, group.as_u32());
+        }
+        Node::ReduceScatter {
+            input,
+            output,
+            op,
+            group,
+        } => {
+            put_u8(out, 17);
+            put_string(out, input.as_str())?;
+            put_string(out, output.as_str())?;
+            put_u8(out, op.builtin_wire_tag());
+            put_u32(out, group.as_u32());
+        }
+        Node::Broadcast {
+            buffer,
+            root,
+            group,
+        } => {
+            put_u8(out, 18);
+            put_string(out, buffer.as_str())?;
+            put_u32(out, *root);
+            put_u32(out, group.as_u32());
         }
         Node::AsyncWait { tag } => {
             put_u8(out, 10);

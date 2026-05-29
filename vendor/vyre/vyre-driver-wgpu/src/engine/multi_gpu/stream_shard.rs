@@ -145,17 +145,18 @@ impl StreamShardAllocator {
         let gpus = n_gpus;
         let gpu_capacity = u32_to_usize(gpus, "GPU count")?;
         let mut least_loaded = BinaryHeap::new();
-        least_loaded.try_reserve_exact(gpu_capacity).map_err(|_| {
-            StreamShardError::AllocationFailed {
-                label: "least-loaded heap",
-            }
+        vyre_foundation::allocation::try_reserve_binary_heap_to_capacity(
+            &mut least_loaded,
+            gpu_capacity,
+        )
+        .map_err(|_| StreamShardError::AllocationFailed {
+            label: "least-loaded heap",
         })?;
         for device in 0..gpus {
             least_loaded.push(Reverse(ShardHeapEntry { cost: 0, device }));
         }
         let mut per_device_cost = Vec::new();
-        per_device_cost
-            .try_reserve_exact(gpu_capacity)
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut per_device_cost, gpu_capacity)
             .map_err(|_| StreamShardError::AllocationFailed {
                 label: "per-device cost vector",
             })?;
@@ -252,13 +253,13 @@ impl StreamShardAllocator {
             return Ok(());
         }
         self.least_loaded.clear();
-        if self.least_loaded.capacity() < live {
-            self.least_loaded
-                .try_reserve_exact(live - self.least_loaded.capacity())
-                .map_err(|_| StreamShardError::AllocationFailed {
-                    label: "least-loaded heap compaction",
-                })?;
-        }
+        vyre_foundation::allocation::try_reserve_binary_heap_to_capacity(
+            &mut self.least_loaded,
+            live,
+        )
+        .map_err(|_| StreamShardError::AllocationFailed {
+            label: "least-loaded heap compaction",
+        })?;
         for (device, &cost) in self.per_device_cost.iter().enumerate() {
             self.least_loaded.push(Reverse(ShardHeapEntry {
                 cost,
@@ -300,11 +301,11 @@ fn ensure_heap_spare(
     additional: usize,
     label: &'static str,
 ) -> Result<(), StreamShardError> {
-    let spare = heap.capacity().saturating_sub(heap.len());
-    if spare >= additional {
-        return Ok(());
-    }
-    heap.try_reserve_exact(additional - spare)
+    let target_capacity = heap
+        .len()
+        .checked_add(additional)
+        .ok_or(StreamShardError::HeapLimitOverflow)?;
+    vyre_foundation::allocation::try_reserve_binary_heap_to_capacity(heap, target_capacity)
         .map_err(|_| StreamShardError::AllocationFailed { label })
 }
 
@@ -315,8 +316,8 @@ mod tests {
     #[test]
     fn shard_by_blake3_is_deterministic() {
         let key = b"src/foo.rs";
-        let a = shard_by_blake3(key, 4).expect("non-zero GPU count should shard");
-        let b = shard_by_blake3(key, 4).expect("non-zero GPU count should shard");
+        let a = shard_by_blake3(key, 4).expect("Fix: non-zero GPU count should shard");
+        let b = shard_by_blake3(key, 4).expect("Fix: non-zero GPU count should shard");
         assert_eq!(a, b);
         assert!(a < 4);
     }
@@ -328,7 +329,8 @@ mod tests {
             .collect();
         let mut hits = [0u32; 4];
         for k in &keys {
-            hits[shard_by_blake3(k, 4).expect("non-zero GPU count should shard") as usize] += 1;
+            hits[shard_by_blake3(k, 4).expect("Fix: non-zero GPU count should shard") as usize] +=
+                1;
         }
         for h in &hits {
             assert!(*h > 0, "blake3 sharding must hit every device: {hits:?}");
@@ -349,12 +351,12 @@ mod tests {
     #[test]
     fn stream_allocator_initial_placement_matches_hash() {
         let mut allocator =
-            StreamShardAllocator::new(4, 100).expect("non-zero GPU count should construct");
+            StreamShardAllocator::new(4, 100).expect("Fix: non-zero GPU count should construct");
         let key = b"cold/file.bin";
-        let initial = shard_by_blake3(key, 4).expect("non-zero GPU count should shard");
+        let initial = shard_by_blake3(key, 4).expect("Fix: non-zero GPU count should shard");
         let assigned = allocator
             .assign(key, 10)
-            .expect("stream sharding should not overflow")
+            .expect("Fix: stream sharding should not overflow")
             .expect("Fix: non-zero cost accepted; restore this invariant before continuing.");
         assert_eq!(assigned, initial);
         assert_eq!(allocator.load()[initial as usize], 10);
@@ -363,26 +365,28 @@ mod tests {
     #[test]
     fn stream_allocator_rejects_zero_cost() {
         let mut allocator =
-            StreamShardAllocator::new(2, 0).expect("non-zero GPU count should construct");
+            StreamShardAllocator::new(2, 0).expect("Fix: non-zero GPU count should construct");
         assert!(allocator
             .assign(b"x", 0)
-            .expect("zero-cost assignment should not overflow")
+            .expect("Fix: zero-cost assignment should not overflow")
             .is_none());
     }
 
     #[test]
     fn stream_allocator_spills_when_imbalance_exceeds_threshold() {
         let mut allocator =
-            StreamShardAllocator::new(2, 5).expect("non-zero GPU count should construct");
+            StreamShardAllocator::new(2, 5).expect("Fix: non-zero GPU count should construct");
         let mut key = vec![0u8; 4];
-        while shard_by_blake3(&key, 2).expect("non-zero GPU count should shard") != 0 {
+        while shard_by_blake3(&key, 2).expect("Fix: non-zero GPU count should shard") != 0 {
             key[0] = key[0].wrapping_add(1);
         }
-        allocator.seed_load(0, 100).expect("seed load should fit");
+        allocator
+            .seed_load(0, 100)
+            .expect("Fix: seed load should fit");
 
         let target = allocator
             .assign(&key, 1)
-            .expect("stream sharding should not overflow")
+            .expect("Fix: stream sharding should not overflow")
             .expect("Fix: assigned; restore this invariant before continuing.");
         assert_eq!(target, 1, "heavy initial must spill to least-loaded");
     }
@@ -390,15 +394,17 @@ mod tests {
     #[test]
     fn stream_allocator_stays_affine_under_threshold() {
         let mut allocator =
-            StreamShardAllocator::new(2, 100).expect("non-zero GPU count should construct");
+            StreamShardAllocator::new(2, 100).expect("Fix: non-zero GPU count should construct");
         let mut key = vec![0u8; 4];
-        while shard_by_blake3(&key, 2).expect("non-zero GPU count should shard") != 0 {
+        while shard_by_blake3(&key, 2).expect("Fix: non-zero GPU count should shard") != 0 {
             key[0] = key[0].wrapping_add(1);
         }
-        allocator.seed_load(0, 50).expect("seed load should fit");
+        allocator
+            .seed_load(0, 50)
+            .expect("Fix: seed load should fit");
         let target = allocator
             .assign(&key, 1)
-            .expect("stream sharding should not overflow")
+            .expect("Fix: stream sharding should not overflow")
             .expect("Fix: assigned; restore this invariant before continuing.");
         assert_eq!(target, 0, "affinity wins when imbalance <= spill_threshold");
     }
@@ -406,12 +412,12 @@ mod tests {
     #[test]
     fn stream_allocator_load_monotone() {
         let mut allocator =
-            StreamShardAllocator::new(3, 0).expect("non-zero GPU count should construct");
+            StreamShardAllocator::new(3, 0).expect("Fix: non-zero GPU count should construct");
         for i in 0..30 {
             let key = format!("path{i}").into_bytes();
             allocator
                 .assign(&key, 1)
-                .expect("stream sharding should not overflow")
+                .expect("Fix: stream sharding should not overflow")
                 .expect("Fix: assigned; restore this invariant before continuing.");
         }
         let total: u64 = allocator.load().iter().sum();
@@ -421,18 +427,18 @@ mod tests {
     #[test]
     fn stream_allocator_heap_compacts_stale_updates_to_gpu_count_scale() {
         let mut allocator =
-            StreamShardAllocator::new(4, 0).expect("non-zero GPU count should construct");
+            StreamShardAllocator::new(4, 0).expect("Fix: non-zero GPU count should construct");
         for i in 0..128 {
             allocator
                 .assign(format!("path{i}").as_bytes(), 1)
-                .expect("stream sharding should not overflow")
+                .expect("Fix: stream sharding should not overflow")
                 .expect("Fix: non-zero work must assign to a GPU");
         }
         let load_before = allocator.load().to_vec();
 
         allocator
             .assign(b"trigger-stale-pop", 1)
-            .expect("stream sharding should not overflow")
+            .expect("Fix: stream sharding should not overflow")
             .expect("Fix: non-zero work must assign to a GPU");
 
         assert_eq!(
@@ -452,7 +458,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("stream-shard production source must precede tests");
+            .expect("Fix: stream-shard production source must precede tests");
         assert!(
             !production.contains("BinaryHeap::with_capacity")
                 && !production.contains("vec![0u64; gpu_capacity]")
@@ -460,7 +466,8 @@ mod tests {
             "Fix: WGPU stream sharding must report allocation pressure instead of aborting on infallible scheduler allocation."
         );
         assert!(
-            production.contains("try_reserve_exact")
+            production.contains("try_reserve_binary_heap_to_capacity")
+                && production.contains("try_reserve_vec_to_capacity")
                 && production.contains("ensure_heap_spare")
                 && production.contains("AllocationFailed"),
             "Fix: WGPU stream sharding must reserve scheduler state fallibly before GPU assignment."

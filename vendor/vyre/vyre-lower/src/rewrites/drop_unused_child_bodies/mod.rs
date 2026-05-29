@@ -10,7 +10,7 @@
 //!
 //! After `branch_collapse` inlines a `StructuredIfThen{Else}` arm or
 //! `loop_unroll` inlines a `StructuredForLoop` body, the child body
-//! sits orphaned in `body.child_bodies` — no op references it. Without
+//! sits orphaned in `body.child_bodies`  -  no op references it. Without
 //! this pass, every emitter still has to walk the orphaned subtree
 //! during lowering (and load_forwarding/descriptor_dce/etc all recurse into it
 //! every iteration of run_all_once). Stripping eliminates that work
@@ -96,7 +96,7 @@ fn drop_unused_child_bodies_body(mut body: KernelBody) -> KernelBody {
     body
 }
 
-/// Per-kind classifier — which positions carry a child-body index.
+/// Per-kind classifier  -  which positions carry a child-body index.
 /// Matches the `ChildBodyIdx` arm in `vyre_lower::verify`.
 fn is_child_body_idx(kind: &KernelOpKind, pos: usize) -> bool {
     use KernelOpKind::*;
@@ -183,7 +183,7 @@ mod tests {
                     operands: vec![0],
                     result: Some(0),
                 },
-                // Only references child 1 — child 0 is orphaned.
+                // Only references child 1  -  child 0 is orphaned.
                 KernelOp {
                     kind: KernelOpKind::StructuredIfThen,
                     operands: vec![0, 1],
@@ -209,12 +209,12 @@ mod tests {
                 },
                 KernelOp {
                     kind: KernelOpKind::StructuredIfThen,
-                    operands: vec![0, 0], // body 0 — keep
+                    operands: vec![0, 0], // body 0  -  keep
                     result: None,
                 },
                 KernelOp {
                     kind: KernelOpKind::StructuredIfThen,
-                    operands: vec![0, 2], // body 2 — keep
+                    operands: vec![0, 2], // body 2  -  keep
                     result: None,
                 },
                 // body 1 is unused
@@ -248,7 +248,7 @@ mod tests {
             vec![tiny_body(), tiny_body()],
         );
         let out = drop_unused_child_bodies(&desc);
-        // Both children referenced — neither dropped.
+        // Both children referenced  -  neither dropped.
         assert_eq!(out.body.child_bodies.len(), 2);
     }
 
@@ -300,7 +300,7 @@ mod tests {
             vec![tiny_body(), tiny_body()],
         );
         let out = drop_unused_child_bodies(&desc);
-        // child 0 unused — dropped; child 1 was the only ref → renumbered to 0.
+        // child 0 unused  -  dropped; child 1 was the only ref → renumbered to 0.
         assert_eq!(out.body.child_bodies.len(), 1);
         assert_eq!(out.body.ops[2].operands, vec![0, 1, 0]);
     }

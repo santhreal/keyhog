@@ -7,6 +7,7 @@
 mod build;
 mod build_declaration_kind_inner;
 mod classify;
+mod decl_context_common;
 mod expr_shape;
 mod helpers;
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -110,7 +111,7 @@ pub use super::vast_kinds::{
     C_EXPR_SHAPE_STRIDE_U32,
 };
 
-const BUILD_VAST_OP_ID: &str = "vyre-libs::parsing::c11_build_vast_nodes";
+const BUILD_VAST_OP_ID: &str = "vyre-libs::parsing::c11_build_vast_nodes_v2";
 const PREHASH_VAST_IDENTIFIERS_OP_ID: &str = "vyre-libs::parsing::c11_prehash_vast_identifiers";
 const PRECOMPUTE_VAST_SCOPES_OP_ID: &str = "vyre-libs::parsing::c11_precompute_vast_scopes";
 const LINK_VAST_TYPEDEF_SYMBOLS_OP_ID: &str = "vyre-libs::parsing::c11_link_vast_typedef_symbols";
@@ -136,6 +137,16 @@ const VAST_PREVIOUS_SIBLING_FIELD: u32 = VAST_SRC_FILE_FIELD;
 const C_TYPEDEF_FLAG_VISIBLE_TYPEDEF_NAME: u32 = 1;
 const C_TYPEDEF_FLAG_TYPEDEF_DECLARATOR: u32 = 1 << 1;
 const C_TYPEDEF_FLAG_ORDINARY_DECLARATOR: u32 = 1 << 2;
+
+#[inline]
+pub(crate) fn c_vast_word_at(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
+    node_idx
+        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
+        .and_then(|base| base.checked_add(field_idx))
+        .and_then(|word_idx| vast_nodes.get(word_idx))
+        .copied()
+        .unwrap_or(0)
+}
 
 const C_GNU_TYPEOF_HASHES: &[u32] = &[
     0x9a90_a8a0, // typeof
@@ -262,7 +273,7 @@ mod attribute_hash_tests {
     /// Every attribute name in `expected_pairs` must be present in
     /// `C_ATTRIBUTE_KIND_HASHES` mapped to the expected kind, in BOTH
     /// `name` and `__name__` spellings. Real C headers (libc, kernel,
-    /// OpenSSL, sqlite) use both forms — missing either spelling silently
+    /// OpenSSL, sqlite) use both forms  -  missing either spelling silently
     /// drops attribute classification on millions of lines of source.
     #[test]
     fn attribute_table_recognises_both_spellings_for_every_supported_name() {
@@ -362,7 +373,7 @@ mod attribute_hash_tests {
                 assert_eq!(
                     prev, *kind,
                     "hash {hash:#010x} maps to two distinct attribute kinds: \
-                     {prev:#010x} and {kind:#010x} — rename one or change the hash"
+                     {prev:#010x} and {kind:#010x}  -  rename one or change the hash"
                 );
             }
         }

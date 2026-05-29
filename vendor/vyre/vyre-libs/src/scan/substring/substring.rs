@@ -1,4 +1,4 @@
-//! Brute-force substring search — each invocation checks whether the
+//! Brute-force substring search  -  each invocation checks whether the
 //! needle matches at its starting byte offset, writes `1` to the
 //! match bitmap at that offset on hit.
 //!
@@ -10,12 +10,37 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::region::wrap_anonymous;
 
+/// Canonical scan op id.
+pub const SCAN_SUBSTRING_OP_ID: &str = "vyre-libs::scan::substring_search";
+/// Deprecated matching op id retained only by the matching compatibility path.
+pub(crate) const LEGACY_MATCHING_SUBSTRING_OP_ID: &str = "vyre-libs::matching::substring_search";
+
 /// Build a Program that writes `1` to `matches[i]` when `haystack[i..]`
 /// starts with `needle`, else `0`. Both buffers are u32 byte arrays
 /// packed one byte per u32 for simplicity (a future packed-u8 version
 /// is Category A over `DataType::U8`).
 #[must_use]
 pub fn substring_search(
+    haystack: &str,
+    needle: &str,
+    matches: &str,
+    haystack_len: u32,
+    needle_len: u32,
+) -> Program {
+    substring_search_with_op_id(
+        SCAN_SUBSTRING_OP_ID,
+        haystack,
+        needle,
+        matches,
+        haystack_len,
+        needle_len,
+    )
+}
+
+/// Build a substring Program with an explicit compatibility op id.
+#[must_use]
+pub(crate) fn substring_search_with_op_id(
+    op_id: &str,
     haystack: &str,
     needle: &str,
     matches: &str,
@@ -41,7 +66,7 @@ pub fn substring_search(
     // byte mismatch AND-s in 0 and latches the match bit off.
     let mut check_body: Vec<Node> = vec![Node::let_bind("ok", Expr::u32(1))];
     // Walk the needle one byte at a time. bytes are packed u32/byte for
-    // simplicity — a packed-u8 variant is Category A over DataType::U8.
+    // simplicity  -  a packed-u8 variant is Category A over DataType::U8.
     check_body.push(Node::loop_for(
         "k",
         Expr::u32(0),
@@ -102,7 +127,7 @@ pub fn substring_search(
                     // haystack_len the first conjunct already short-
                     // circuits, so this sub-expression is evaluated only
                     // on the safe branch (eager vs lazy evaluation is
-                    // the job of the optimizer's short-circuit pass —
+                    // the job of the optimizer's short-circuit pass  -
                     // here the conjunct ordering gives a safe guard).
                     Expr::sub(Expr::var("haystack_len"), Expr::u32(needle_len)),
                 ),
@@ -117,16 +142,13 @@ pub fn substring_search(
             output,
         ],
         [64, 1, 1],
-        vec![wrap_anonymous(
-            "vyre-libs::matching::substring_search",
-            body,
-        )],
+        vec![wrap_anonymous(op_id, body)],
     )
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::matching::substring_search",
+        id: SCAN_SUBSTRING_OP_ID,
         build: || substring_search("haystack", "needle", "matches", 8, 3),
         test_inputs: Some(|| {
             let to_u32_vec = |s: &str| s.bytes().map(u32::from).collect::<Vec<_>>();
@@ -153,5 +175,74 @@ inventory::submit! {
             vec![vec![case0], vec![case1]]
         }),
         category: Some("scan"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_scan_builder_uses_scan_op_id_not_matching_id() {
+        let program = substring_search("haystack", "needle", "matches", 8, 3);
+        let [Node::Region { generator, .. }] = program.entry() else {
+            panic!("expected substring search to emit one scan region");
+        };
+
+        assert_eq!(generator.as_str(), SCAN_SUBSTRING_OP_ID);
+        assert_ne!(generator.as_str(), LEGACY_MATCHING_SUBSTRING_OP_ID);
+    }
+
+    #[test]
+    fn explicit_compatibility_builder_preserves_legacy_op_id() {
+        let program = substring_search_with_op_id(
+            LEGACY_MATCHING_SUBSTRING_OP_ID,
+            "haystack",
+            "needle",
+            "matches",
+            8,
+            3,
+        );
+        let [Node::Region { generator, .. }] = program.entry() else {
+            panic!("expected substring compatibility search to emit one region");
+        };
+
+        assert_eq!(generator.as_str(), LEGACY_MATCHING_SUBSTRING_OP_ID);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_matching_public_path_preserves_old_id_without_polluting_scan_identity() {
+        let program =
+            crate::matching::substring::substring_search("haystack", "needle", "matches", 8, 3);
+        let [Node::Region { generator, .. }] = program.entry() else {
+            panic!("expected legacy substring search to emit one region");
+        };
+
+        assert_eq!(generator.as_str(), LEGACY_MATCHING_SUBSTRING_OP_ID);
+        assert_eq!(
+            crate::matching::substring::substring::CANONICAL_SUBSTRING_MODULE,
+            "vyre_libs::scan::substring"
+        );
+        assert_eq!(
+            crate::matching::substring::substring::LEGACY_SUBSTRING_MODULE,
+            "vyre_libs::matching::substring"
+        );
+    }
+
+    #[test]
+    fn source_boundary_keeps_matching_identity_out_of_canonical_builder() {
+        let source = include_str!("substring.rs");
+        let canonical_builder = source
+            .split("pub fn substring_search(")
+            .nth(1)
+            .expect("Fix: canonical substring builder must exist")
+            .split("/// Build a substring Program with an explicit compatibility op id.")
+            .next()
+            .expect("Fix: compatibility builder must follow canonical substring builder");
+
+        assert!(canonical_builder.contains("SCAN_SUBSTRING_OP_ID"));
+        assert!(!canonical_builder.contains("LEGACY_MATCHING_SUBSTRING_OP_ID"));
+        assert!(!canonical_builder.contains("vyre-libs::matching::substring_search"));
     }
 }

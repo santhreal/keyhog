@@ -187,7 +187,7 @@ impl MegakernelIoLoop {
                     }
                 }
                 // Bug fix: same hazard as the per-request submit error
-                // — if flush_submissions fails, every slot we just
+                //  -  if flush_submissions fails, every slot we just
                 // claimed is stranded in CLAIMED. Mark every still-
                 // claimed slot failed before propagating.
                 if let Err(e) = stream.flush_submissions() {

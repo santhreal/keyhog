@@ -3,12 +3,12 @@
 //! When two `StoreGlobal` (or `StoreShared`) ops in sequence write to
 //! the same binding-slot AND the same index-operand-id, AND no
 //! intervening op reads that location (or any aliased location), the
-//! first store is dead — its value gets immediately overwritten and
+//! first store is dead  -  its value gets immediately overwritten and
 //! never observed.
 //!
 //! Phase-1 conservative rules:
 //! - Same binding slot for overwrite proof.
-//! - Same index operand id (textual equality — no commutative-index
+//! - Same index operand id (textual equality  -  no commutative-index
 //!   normalization).
 //! - No intervening LoadGlobal/LoadShared from the same binding.
 //! - No intervening structured-control-flow op (an if/loop body might
@@ -20,9 +20,13 @@
 //! unrelated reads from invalidating pending stores, and single
 //! reaching-def facts canonicalize equivalent descriptor index ids.
 
-use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
+use super::dataflow_facts::resolve_reaching_def_id as resolve;
+use super::literal::u32_literals_by_result;
+use super::memory_address::{
+    address_key, locations_may_alias, MemoryLocation, MemorySpace, MemoryTarget, SlotAliasPolicy,
+};
+use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind};
 use rustc_hash::FxHashMap;
-use std::hash::{Hash, Hasher};
 
 #[must_use]
 pub fn dead_store(desc: &KernelDescriptor) -> KernelDescriptor {
@@ -62,8 +66,8 @@ fn dead_store_body(
     reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelBody {
     let mut keep = vec![true; body.ops.len()];
-    let mut pending_stores = FxHashMap::<StoreKey, usize>::default();
-    let literal_values = literal_u32_by_result(&body);
+    let mut pending_stores = FxHashMap::<MemoryLocation, usize>::default();
+    let literal_values = u32_literals_by_result(&body);
 
     for (op_index, op) in body.ops.iter().enumerate() {
         match store_key(op, &literal_values, reaching_defs) {
@@ -98,61 +102,26 @@ fn dead_store_body(
     body
 }
 
-#[derive(Debug, Clone, Copy, Eq)]
-struct StoreKey {
-    space: StoreSpace,
-    slot: u32,
-    index_operand: u32,
-    address: AddressKey,
-}
-
-impl PartialEq for StoreKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.space == other.space && self.slot == other.slot && self.address == other.address
-    }
-}
-
-impl Hash for StoreKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.space.hash(state);
-        self.slot.hash(state);
-        self.address.hash(state);
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum AddressKey {
-    Const(u32),
-    Result(u32),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum StoreSpace {
-    Global,
-    Shared,
-}
-
 fn store_key(
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
     reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
-) -> Option<StoreKey> {
-    let space = match op.kind {
-        KernelOpKind::StoreGlobal => StoreSpace::Global,
-        KernelOpKind::StoreShared => StoreSpace::Shared,
+) -> Option<MemoryLocation> {
+    let target = match op.kind {
+        KernelOpKind::StoreGlobal => MemoryTarget::global(*op.operands.first()?),
+        KernelOpKind::StoreShared => MemoryTarget::shared(*op.operands.first()?),
         _ => return None,
     };
     let index = resolve(*op.operands.get(1)?, reaching_defs);
-    Some(StoreKey {
-        space,
-        slot: *op.operands.first()?,
-        index_operand: index,
-        address: address_key(index, literal_values),
-    })
+    Some(MemoryLocation::new(
+        target,
+        index,
+        address_key(index, literal_values),
+    ))
 }
 
 fn invalidate_pending_stores(
-    pending_stores: &mut FxHashMap<StoreKey, usize>,
+    pending_stores: &mut FxHashMap<MemoryLocation, usize>,
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
     alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
@@ -161,10 +130,17 @@ fn invalidate_pending_stores(
     match invalidated_store_scope(op, literal_values, reaching_defs) {
         Invalidation::None => {}
         Invalidation::OnlySpace(space) => {
-            pending_stores.retain(|key, _| key.space != space);
+            pending_stores.retain(|key, _| key.target.space != space);
         }
         Invalidation::OnlyAddress(probe) => {
-            pending_stores.retain(|key, _| !may_alias(key, &probe, alias_facts));
+            pending_stores.retain(|key, _| {
+                !locations_may_alias(
+                    *key,
+                    probe,
+                    alias_facts,
+                    SlotAliasPolicy::DistinctSlotsMayAlias,
+                )
+            });
         }
         Invalidation::All => pending_stores.clear(),
     }
@@ -173,8 +149,8 @@ fn invalidate_pending_stores(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Invalidation {
     None,
-    OnlySpace(StoreSpace),
-    OnlyAddress(StoreKey),
+    OnlySpace(MemorySpace),
+    OnlyAddress(MemoryLocation),
     All,
 }
 
@@ -185,17 +161,17 @@ fn invalidated_store_scope(
 ) -> Invalidation {
     use KernelOpKind::*;
     match &op.kind {
-        LoadGlobal => memory_probe(StoreSpace::Global, op, literal_values, reaching_defs)
+        LoadGlobal => memory_probe(MemorySpace::Global, op, literal_values, reaching_defs)
             .map(Invalidation::OnlyAddress)
-            .unwrap_or(Invalidation::OnlySpace(StoreSpace::Global)),
-        LoadShared => memory_probe(StoreSpace::Shared, op, literal_values, reaching_defs)
+            .unwrap_or(Invalidation::OnlySpace(MemorySpace::Global)),
+        LoadShared => memory_probe(MemorySpace::Shared, op, literal_values, reaching_defs)
             .map(Invalidation::OnlyAddress)
-            .unwrap_or(Invalidation::OnlySpace(StoreSpace::Shared)),
+            .unwrap_or(Invalidation::OnlySpace(MemorySpace::Shared)),
         // Atomics on the same slot also use/may-use the value.
         Atomic { .. } => op
             .operands
             .get(1)
-            .and_then(|_| memory_probe(StoreSpace::Global, op, literal_values, reaching_defs))
+            .and_then(|_| memory_probe(MemorySpace::Global, op, literal_values, reaching_defs))
             .map(Invalidation::OnlyAddress)
             .unwrap_or(Invalidation::All),
         // Structured control flow may read.
@@ -218,93 +194,23 @@ fn invalidated_store_scope(
 }
 
 fn memory_probe(
-    space: StoreSpace,
+    space: MemorySpace,
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
     reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
-) -> Option<StoreKey> {
+) -> Option<MemoryLocation> {
     let slot = *op.operands.first()?;
     let index = resolve(*op.operands.get(1)?, reaching_defs);
-    Some(StoreKey {
-        space,
-        slot,
-        index_operand: index,
-        address: address_key(index, literal_values),
-    })
-}
-
-fn resolve(
-    id: u32,
-    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
-) -> u32 {
-    let Some(facts) = reaching_defs else {
-        return id;
+    let target = match space {
+        MemorySpace::Global => MemoryTarget::global(slot),
+        MemorySpace::Shared => MemoryTarget::shared(slot),
+        MemorySpace::Constant => MemoryTarget::constant(slot),
     };
-    let mut cur = id;
-    let mut hops = 0usize;
-    loop {
-        let reaching = facts.reaching_defs(cur);
-        if reaching.len() != 1 || reaching[0] == cur {
-            return cur;
-        }
-        cur = reaching[0];
-        hops += 1;
-        if hops > facts.len() + 1 {
-            return cur;
-        }
-    }
-}
-
-fn address_key(index: u32, literal_values: &FxHashMap<u32, u32>) -> AddressKey {
-    literal_values
-        .get(&index)
-        .copied()
-        .map(AddressKey::Const)
-        .unwrap_or(AddressKey::Result(index))
-}
-
-fn literal_u32_by_result(body: &KernelBody) -> FxHashMap<u32, u32> {
-    let mut out = FxHashMap::default();
-    for op in &body.ops {
-        if !matches!(op.kind, KernelOpKind::Literal) {
-            continue;
-        }
-        let Some(result) = op.result else {
-            continue;
-        };
-        let Some(pool_index) = op.operands.first() else {
-            continue;
-        };
-        let Some(LiteralValue::U32(value)) = body.literals.get(*pool_index as usize) else {
-            continue;
-        };
-        out.insert(result, *value);
-    }
-    out
-}
-
-fn may_alias(
-    a: &StoreKey,
-    b: &StoreKey,
-    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
-) -> bool {
-    if a.space != b.space {
-        return false;
-    }
-    match (a.address, b.address) {
-        (AddressKey::Const(left), AddressKey::Const(right)) if a.slot == b.slot => {
-            return left == right;
-        }
-        (AddressKey::Result(left), AddressKey::Result(right))
-            if a.slot == b.slot && left == right =>
-        {
-            return true;
-        }
-        _ => {}
-    }
-    !alias_facts.is_some_and(|facts| {
-        facts.proves_no_alias(a.slot, a.index_operand, b.slot, b.index_operand)
-    })
+    Some(MemoryLocation::new(
+        target,
+        index,
+        address_key(index, literal_values),
+    ))
 }
 
 #[cfg(test)]
@@ -379,7 +285,7 @@ mod tests {
                     },
                     KernelOp {
                         kind: KernelOpKind::StoreGlobal,
-                        operands: vec![0, 0, 2], // store value 2 at index 0 — kills the prev store
+                        operands: vec![0, 0, 2], // store value 2 at index 0  -  kills the prev store
                         result: None,
                     },
                 ],
@@ -542,6 +448,7 @@ mod tests {
             .filter(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
             .count();
         assert_eq!(alias_aware_store_count, 1);
+
     }
 
     #[test]
@@ -725,7 +632,7 @@ mod tests {
                     },
                     KernelOp {
                         kind: KernelOpKind::StoreGlobal,
-                        operands: vec![0, 1, 2], // index = result-id 1 — DIFFERENT
+                        operands: vec![0, 1, 2], // index = result-id 1  -  DIFFERENT
                         result: None,
                     },
                 ],
@@ -932,7 +839,7 @@ mod tests {
             },
         };
         let out = dead_store(&desc);
-        // Barrier serializes visibility — first store is observable by other threads.
+        // Barrier serializes visibility  -  first store is observable by other threads.
         let store_count = out
             .body
             .ops
@@ -991,3 +898,4 @@ mod tests {
         assert_eq!(once.body.ops.len(), twice.body.ops.len());
     }
 }
+

@@ -1,6 +1,7 @@
 use super::binding_lookup::BindingLookup;
 use super::readback::{SubmittedMap, SubmittedReadback};
 use super::{pool_backend_error, GpuBuffers, RecordAndReadback};
+use crate::allocation::reserve_smallvec_to_capacity;
 use crate::numeric::usize_to_u64;
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -31,11 +32,25 @@ pub(super) fn record_readback_copies(
     let trap_readback_size = u64::from(TRAP_SIDECAR_WORDS) * 4;
     let use_readback_rings = request.readback_rings.is_some();
     let readback_rings = request.readback_rings;
-    let mut readback_buffers: SmallVec<[SubmittedMap; 4]> = SmallVec::with_capacity(readback_count);
+    let mut readback_buffers = SmallVec::<[SubmittedMap; 4]>::new();
+    reserve_smallvec_to_capacity(
+        &mut readback_buffers,
+        readback_count,
+        "readback staging",
+        "submitted readback descriptor",
+        "split the output set before recording GPU readbacks",
+    )?;
     if let Some(ring_set) = readback_rings {
         let mut readback_rings_by_class: SmallVec<
             [(u64, Arc<crate::runtime::readback_ring::ReadbackRing>); 4],
-        > = SmallVec::with_capacity(readback_count);
+        > = SmallVec::new();
+        reserve_smallvec_to_capacity(
+            &mut readback_rings_by_class,
+            readback_count,
+            "readback staging",
+            "readback-ring class descriptor",
+            "split the output set before recording GPU readbacks",
+        )?;
         let mut ring_for_size = |byte_len: u64| -> Result<
             Arc<crate::runtime::readback_ring::ReadbackRing>,
             BackendError,

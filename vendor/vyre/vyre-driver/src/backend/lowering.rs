@@ -9,7 +9,7 @@ use vyre_foundation::ir::Program;
 /// Represents context provided to an operation during target expression generation.
 pub trait TargetGenCtx {
     /// Register a target expression for the op being lowered. The
-    /// `format` string is opaque to the trait — backends interpret it
+    /// `format` string is opaque to the trait  -  backends interpret it
     /// per their own emit conventions.
     fn register_expression(&mut self, format: &str) -> Result<(), ()>;
 }

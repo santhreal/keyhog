@@ -1,8 +1,9 @@
-//! Detect read-only bindings with multiple LoadGlobal sites — the
+//! Detect read-only bindings with multiple LoadGlobal sites  -  the
 //! basic precondition for texture-memory promotion.
 
 use super::plan::{TextureCandidate, TexturePromotionPlan};
-use crate::{BindingVisibility, KernelBody, KernelDescriptor, KernelOpKind, MemoryClass};
+use crate::analyses::load_counts::count_global_loads_by_slot;
+use crate::{BindingVisibility, KernelDescriptor, MemoryClass};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 #[must_use]
@@ -21,7 +22,7 @@ pub fn analyze(desc: &KernelDescriptor) -> TexturePromotionPlan {
 
     let mut load_counts: FxHashMap<u32, u32> =
         FxHashMap::with_capacity_and_hasher(eligible.len(), Default::default());
-    count_loads(&desc.body, &eligible, &mut load_counts);
+    count_global_loads_by_slot(&desc.body, &|slot| eligible.contains(&slot), &mut load_counts);
 
     let mut candidates = Vec::new();
     for (slot, count) in load_counts {
@@ -40,36 +41,6 @@ pub fn analyze(desc: &KernelDescriptor) -> TexturePromotionPlan {
         kernel_id: desc.id.clone(),
         candidates,
     }
-}
-
-fn count_loads(body: &KernelBody, eligible: &FxHashSet<u32>, counts: &mut FxHashMap<u32, u32>) {
-    for op in &body.ops {
-        if matches!(op.kind, KernelOpKind::LoadGlobal) {
-            if let Some(slot) = op.operands.first() {
-                if eligible.contains(slot) {
-                    *counts.entry(*slot).or_insert(0) += 1;
-                }
-            }
-        }
-        for child_id in child_body_operands(&op.kind, &op.operands) {
-            if let Some(child) = body.child_bodies.get(child_id as usize) {
-                count_loads(child, eligible, counts);
-            }
-        }
-    }
-}
-
-fn child_body_operands<'a>(
-    kind: &KernelOpKind,
-    operands: &'a [u32],
-) -> impl Iterator<Item = u32> + 'a {
-    let start = match kind {
-        KernelOpKind::StructuredIfThen | KernelOpKind::StructuredIfThenElse => 1,
-        KernelOpKind::StructuredForLoop { .. } => 2,
-        KernelOpKind::StructuredBlock | KernelOpKind::Region { .. } => 0,
-        _ => operands.len(),
-    };
-    operands.iter().skip(start).copied()
 }
 
 #[cfg(test)]

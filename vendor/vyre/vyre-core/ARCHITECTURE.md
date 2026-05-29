@@ -1,4 +1,4 @@
-# vyre — architecture
+# vyre  -  architecture
 
 The meta-shim crate. Re-exports the public-facing names of every
 internal vyre crate so consumers write `vyre::ir::Program` instead
@@ -16,16 +16,16 @@ internal crates are sliced.
 The full re-export catalogue lives in the lib.rs, but the
 canonical entry points consumers reach for are:
 
-- **`vyre::ir`** — `Program`, `Node`, `Expr`, `BufferDecl`,
+- **`vyre::ir`**  -  `Program`, `Node`, `Expr`, `BufferDecl`,
   `Ident`, `BinOp`, `UnOp`, `AtomicOp`, `BufferAccess`,
   `DataType`. From `vyre_foundation::ir`.
-- **`vyre::backend`** — `VyreBackend`, `BackendError`,
+- **`vyre::backend`**  -  `VyreBackend`, `BackendError`,
   `DispatchConfig`. From `vyre_driver::backend`.
-- **`vyre::execution_plan`** — `fuse_programs`, `fuse_programs_vec`,
+- **`vyre::execution_plan`**  -  `fuse_programs`, `fuse_programs_vec`,
   `FusionError`. From `vyre_foundation::execution_plan`.
-- **`vyre::lower`** — `inline_calls`, `optimize`. From the
+- **`vyre::lower`**  -  `inline_calls`, `optimize`. From the
   foundation transform stack.
-- **`vyre::backend::private`** — sealed-trait gate; consumers
+- **`vyre::backend::private`**  -  sealed-trait gate; consumers
   implement `VyreBackend` only by going through this private
   marker.
 

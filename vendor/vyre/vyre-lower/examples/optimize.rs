@@ -10,7 +10,7 @@ use vyre_lower::{
 };
 
 fn main() {
-    // Three bindings — `output` is used; `scratch_a` and `scratch_b`
+    // Three bindings  -  `output` is used; `scratch_a` and `scratch_b`
     // are declared but never touched. drop_unused_bindings will strip
     // them.
     let bindings = vec![
@@ -65,44 +65,44 @@ fn main() {
             operands: vec![3],
             result: Some(3),
         },
-        // r4 = Add(r2, r0) — identity_elim → r2
+        // r4 = Add(r2, r0)  -  identity_elim → r2
         KernelOp {
             kind: KernelOpKind::BinOpKind(BinOp::Add),
             operands: vec![2, 0],
             result: Some(4),
         },
-        // r5 = Mul(r2, r1) — identity_elim → r2
+        // r5 = Mul(r2, r1)  -  identity_elim → r2
         KernelOp {
             kind: KernelOpKind::BinOpKind(BinOp::Mul),
             operands: vec![2, 1],
             result: Some(5),
         },
-        // r6 = Mul(r2, r0) — absorbing zero → r0
+        // r6 = Mul(r2, r0)  -  absorbing zero → r0
         KernelOp {
             kind: KernelOpKind::BinOpKind(BinOp::Mul),
             operands: vec![2, 0],
             result: Some(6),
         },
-        // r7 = Mul(r2, r3) — strength_reduce → Shl(r2, 3) → const_fold → Lit(56)
+        // r7 = Mul(r2, r3)  -  strength_reduce → Shl(r2, 3) → const_fold → Lit(56)
         KernelOp {
             kind: KernelOpKind::BinOpKind(BinOp::Mul),
             operands: vec![2, 3],
             result: Some(7),
         },
-        // Store to slot 0 — overwrites the next store at the same idx
+        // Store to slot 0  -  overwrites the next store at the same idx
         KernelOp {
             kind: KernelOpKind::StoreGlobal,
             operands: vec![0, 0, 4], // slot 0, idx r0, val r4 (=r2 after identity_elim)
             result: None,
         },
-        // Reload — load_forwarding will turn this into a ref to the
+        // Reload  -  load_forwarding will turn this into a ref to the
         // just-stored val, then DCE drops it
         KernelOp {
             kind: KernelOpKind::LoadGlobal,
             operands: vec![0, 0],
             result: Some(8),
         },
-        // Final store — same slot, same idx — dead_store will drop the
+        // Final store  -  same slot, same idx  -  dead_store will drop the
         // earlier store
         KernelOp {
             kind: KernelOpKind::StoreGlobal,

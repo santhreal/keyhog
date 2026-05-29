@@ -10,15 +10,15 @@
 //!
 //! Per-slot tracking. Any of these intervening ops invalidate mutable-cache
 //! entries for the relevant slot (or all mutable slots, when scope is unknown):
-//! - `Store*` to the same slot at a different index — may alias the
+//! - `Store*` to the same slot at a different index  -  may alias the
 //!   tracked index, so the cached value is no longer guaranteed.
-//! - `Atomic` — read-modify-writes can change the value.
-//! - `Barrier` — re-publishes other threads' writes.
-//! - `Async{Load,Store,Wait}` — staged writes may land asynchronously.
-//! - Structured control flow (`If`/`ForLoop`/`Block`/`Region`) — body
+//! - `Atomic`  -  read-modify-writes can change the value.
+//! - `Barrier`  -  re-publishes other threads' writes.
+//! - `Async{Load,Store,Wait}`  -  staged writes may land asynchronously.
+//! - Structured control flow (`If`/`ForLoop`/`Block`/`Region`)  -  body
 //!   could write anywhere.
-//! - `Trap`/`Resume`/`Return` — terminator.
-//! - `Call`/`OpaqueExpr`/`OpaqueNode` — opaque side effects.
+//! - `Trap`/`Resume`/`Return`  -  terminator.
+//! - `Call`/`OpaqueExpr`/`OpaqueNode`  -  opaque side effects.
 //!
 //! ## Why two flavors at once
 //!
@@ -26,7 +26,14 @@
 //! (`load r1; load r2 → r2 := r1`) share the same per-slot cache; doing
 //! one without the other would leave easy redundancy on the table.
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
+use super::dataflow_facts::resolve_remapped_reaching_def_id as resolve;
+use super::literal::u32_literals_by_result;
+use super::memory_address::{
+    address_key, locations_may_alias, AddressKey, MemoryLocation, MemorySpace, MemoryTarget,
+    SlotAliasPolicy,
+};
+use crate::operand_semantics::operand_is_result_reference;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 use rustc_hash::FxHashMap;
 
 #[must_use]
@@ -66,7 +73,7 @@ fn load_forwarding_body(
     alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
     reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelBody {
-    let literal_values = literal_u32_by_result(&body);
+    let literal_values = u32_literals_by_result(&body);
     // Per memory-space + slot map: (space, slot_id) → (address → val_id).
     let mut cache: FxHashMap<MemoryTarget, FxHashMap<AddressKey, CachedValue>> =
         FxHashMap::default();
@@ -79,12 +86,8 @@ fn load_forwarding_body(
                     continue;
                 }
                 let target = match &op.kind {
-                    KernelOpKind::StoreGlobal => {
-                        MemoryTarget::new(MemorySpace::Global, op.operands[0])
-                    }
-                    KernelOpKind::StoreShared => {
-                        MemoryTarget::new(MemorySpace::Shared, op.operands[0])
-                    }
+                    KernelOpKind::StoreGlobal => MemoryTarget::global(op.operands[0]),
+                    KernelOpKind::StoreShared => MemoryTarget::shared(op.operands[0]),
                     _ => continue,
                 };
                 let idx = resolve(op.operands[1], &id_remap, reaching_defs);
@@ -104,12 +107,8 @@ fn load_forwarding_body(
                     continue;
                 }
                 let target = match &op.kind {
-                    KernelOpKind::LoadGlobal => {
-                        MemoryTarget::new(MemorySpace::Global, op.operands[0])
-                    }
-                    KernelOpKind::LoadShared => {
-                        MemoryTarget::new(MemorySpace::Shared, op.operands[0])
-                    }
+                    KernelOpKind::LoadGlobal => MemoryTarget::global(op.operands[0]),
+                    KernelOpKind::LoadShared => MemoryTarget::shared(op.operands[0]),
                     _ => continue,
                 };
                 let idx = resolve(op.operands[1], &id_remap, reaching_defs);
@@ -122,7 +121,7 @@ fn load_forwarding_body(
                         // Forward: rewrite this load's result-id refs to point
                         // at the cached value.
                         id_remap.insert(load_result, cached.value_id);
-                        // Don't update the cache — the cached value is the
+                        // Don't update the cache  -  the cached value is the
                         // canonical id; this load is now redundant.
                         continue;
                     }
@@ -146,11 +145,11 @@ fn load_forwarding_body(
                 }
             }
             KernelOpKind::LoadConstant => {
-                // Constants are immutable — perfectly safe to forward.
+                // Constants are immutable  -  perfectly safe to forward.
                 if op.operands.len() < 2 {
                     continue;
                 }
-                let target = MemoryTarget::new(MemorySpace::Constant, op.operands[0]);
+                let target = MemoryTarget::constant(op.operands[0]);
                 let idx = resolve(op.operands[1], &id_remap, reaching_defs);
                 let address = address_key(idx, &literal_values);
                 let Some(load_result) = op.result else {
@@ -186,19 +185,19 @@ fn load_forwarding_body(
                     let address = address_key(resolved_idx, &literal_values);
                     invalidate_cache_for_write(
                         &mut cache,
-                        MemoryTarget::new(MemorySpace::Global, slot),
+                        MemoryTarget::global(slot),
                         resolved_idx,
                         address,
                         alias_facts,
                     );
                 } else if let Some(&slot) = op.operands.first() {
-                    cache.remove(&MemoryTarget::new(MemorySpace::Global, slot));
+                    cache.remove(&MemoryTarget::global(slot));
                 } else {
                     clear_mutable_cache(&mut cache);
                 }
             }
             KernelOpKind::Barrier { .. } => {
-                // Barrier republishes other threads' writes — keep constant forwarding.
+                // Barrier republishes other threads' writes  -  keep constant forwarding.
                 clear_mutable_cache(&mut cache);
             }
             KernelOpKind::AsyncLoad { .. }
@@ -221,7 +220,7 @@ fn load_forwarding_body(
             | KernelOpKind::OpaqueNode(..) => {
                 clear_mutable_cache(&mut cache);
             }
-            // Pure ops — no memory effect.
+            // Pure ops  -  no memory effect.
             _ => {}
         }
     }
@@ -252,130 +251,6 @@ struct CachedValue {
     value_id: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct MemoryTarget {
-    space: MemorySpace,
-    slot: u32,
-}
-
-impl MemoryTarget {
-    const fn new(space: MemorySpace, slot: u32) -> Self {
-        Self { space, slot }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum MemorySpace {
-    Global,
-    Shared,
-    Constant,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum AddressKey {
-    Const(u32),
-    Result(u32),
-}
-
-fn resolve(
-    id: u32,
-    remap: &FxHashMap<u32, u32>,
-    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
-) -> u32 {
-    let mut cur = id;
-    let mut hops = 0usize;
-    while let Some(&next) = remap.get(&cur) {
-        if next == cur {
-            break;
-        }
-        cur = next;
-        hops += 1;
-        if hops > remap.len() + 1 {
-            break;
-        }
-    }
-    if let Some(facts) = reaching_defs {
-        let reaching = facts.reaching_defs(cur);
-        if reaching.len() == 1 {
-            return reaching[0];
-        }
-    }
-    cur
-}
-
-fn address_key(index: u32, literal_values: &FxHashMap<u32, u32>) -> AddressKey {
-    literal_values
-        .get(&index)
-        .copied()
-        .map(AddressKey::Const)
-        .unwrap_or(AddressKey::Result(index))
-}
-
-fn literal_u32_by_result(body: &KernelBody) -> FxHashMap<u32, u32> {
-    let mut out = FxHashMap::default();
-    for op in &body.ops {
-        if !matches!(op.kind, KernelOpKind::Literal) {
-            continue;
-        }
-        let Some(result) = op.result else {
-            continue;
-        };
-        let Some(pool_index) = op.operands.first() else {
-            continue;
-        };
-        let Some(LiteralValue::U32(value)) = body.literals.get(*pool_index as usize) else {
-            continue;
-        };
-        out.insert(result, *value);
-    }
-    out
-}
-
-fn may_alias(
-    left_target: MemoryTarget,
-    left_index_operand: u32,
-    left_address: AddressKey,
-    right_target: MemoryTarget,
-    right_index_operand: u32,
-    right_address: AddressKey,
-    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
-) -> bool {
-    if left_target.space != right_target.space {
-        return false;
-    }
-    if matches!(left_target.space, MemorySpace::Constant) {
-        return false;
-    }
-    // Different binding slots in the same memory space are guaranteed
-    // non-aliasing by the GPU memory model — each slot is a distinct
-    // buffer allocation. A store to slot 1 cannot invalidate a cached
-    // load from slot 0.
-    if left_target.slot != right_target.slot {
-        return false;
-    }
-    match (left_address, right_address) {
-        (AddressKey::Const(left), AddressKey::Const(right))
-            if left_target.slot == right_target.slot =>
-        {
-            return left == right;
-        }
-        (AddressKey::Result(left), AddressKey::Result(right))
-            if left_target.slot == right_target.slot && left == right =>
-        {
-            return true;
-        }
-        _ => {}
-    }
-    !alias_facts.is_some_and(|facts| {
-        facts.proves_no_alias(
-            left_target.slot,
-            left_index_operand,
-            right_target.slot,
-            right_index_operand,
-        )
-    })
-}
-
 fn invalidate_cache_for_write(
     cache: &mut FxHashMap<MemoryTarget, FxHashMap<AddressKey, CachedValue>>,
     write_target: MemoryTarget,
@@ -388,14 +263,21 @@ fn invalidate_cache_for_write(
     };
 
     entries.retain(|cached_address, cached| {
-        !may_alias(
+        let cached_location = MemoryLocation::new(
             write_target,
             cached.index_operand,
             *cached_address,
+        );
+        let write_location = MemoryLocation::new(
             write_target,
             write_index,
             write_address,
+        );
+        !locations_may_alias(
+            cached_location,
+            write_location,
             alias_facts,
+            SlotAliasPolicy::DistinctSlotsNeverAlias,
         )
     });
 
@@ -406,34 +288,6 @@ fn invalidate_cache_for_write(
 
 fn clear_mutable_cache(cache: &mut FxHashMap<MemoryTarget, FxHashMap<AddressKey, CachedValue>>) {
     cache.retain(|target, _| matches!(target.space, MemorySpace::Constant));
-}
-
-/// Mirror — must stay in sync with the others.
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
 }
 
 #[cfg(test)]
@@ -594,6 +448,7 @@ mod tests {
                     KernelOp {
                         kind: KernelOpKind::Literal,
                         operands: vec![1],
+
                         result: Some(1),
                     },
                     KernelOp {
@@ -631,7 +486,7 @@ mod tests {
             },
         };
 
-        // Slot 0 and slot 1 are distinct GPU buffer bindings — a store
+        // Slot 0 and slot 1 are distinct GPU buffer bindings  -  a store
         // to slot 1 cannot alias slot 0. The load at ops[5] (LoadGlobal
         // slot 0, idx 0) should forward to the earlier Load result r3,
         // making ops[6] use r3 instead of r4.
@@ -1004,12 +859,12 @@ mod tests {
                     },
                     KernelOp {
                         kind: KernelOpKind::StoreGlobal,
-                        operands: vec![1, 0, 2], // slot 1 — different slot, doesn't invalidate slot 0
+                        operands: vec![1, 0, 2], // slot 1  -  different slot, doesn't invalidate slot 0
                         result: None,
                     },
                     KernelOp {
                         kind: KernelOpKind::LoadGlobal,
-                        operands: vec![0, 0], // slot 0, idx 0 — should forward to val_a (r1)
+                        operands: vec![0, 0], // slot 0, idx 0  -  should forward to val_a (r1)
                         result: Some(3),
                     },
                     KernelOp {
@@ -1044,6 +899,7 @@ mod tests {
                         kind: KernelOpKind::Literal,
                         operands: vec![0],
                         result: Some(0),
+
                     },
                     KernelOp {
                         kind: KernelOpKind::Literal,
@@ -1200,7 +1056,7 @@ mod tests {
                     },
                     KernelOp {
                         kind: KernelOpKind::LoadConstant,
-                        operands: vec![0, 0], // same (slot, idx) — should forward
+                        operands: vec![0, 0], // same (slot, idx)  -  should forward
                         result: Some(2),
                     },
                     KernelOp {
@@ -1377,3 +1233,4 @@ mod tests {
         assert_eq!(out.body.ops[5].operands, vec![0, 0, 1]);
     }
 }
+

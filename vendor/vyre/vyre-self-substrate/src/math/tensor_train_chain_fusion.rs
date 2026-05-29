@@ -14,6 +14,7 @@ use crate::dispatch_buffers::{
     ceil_div_u32, decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes,
     write_zero_bytes,
 };
+use crate::hardware::scratch::reserve_vec_capacity;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::math::tensor_train::tt_contract_step;
 #[cfg(test)]
@@ -111,8 +112,16 @@ pub fn fusion_pressure_via_with_scratch(
         .filter(|&rank| rank != 0)
         .max()
         .unwrap_or(1) as usize;
-    reserve_at_least(&mut scratch.acc, max_rank);
-    reserve_at_least(&mut scratch.step_out, max_rank);
+    reserve_vec_capacity(
+        &mut scratch.acc,
+        max_rank,
+        "tensor-train accumulator scratch",
+    )?;
+    reserve_vec_capacity(
+        &mut scratch.step_out,
+        max_rank,
+        "tensor-train output scratch",
+    )?;
     let mut exact_product = 1u128;
     for &r_next in shared_buffer_ranks {
         if r_next == 0 {
@@ -224,12 +233,6 @@ fn checked_cells(left: u32, right: u32, label: &str) -> Result<usize, DispatchEr
     Ok(value as usize)
 }
 
-fn reserve_at_least<T>(buffer: &mut Vec<T>, capacity: usize) {
-    if buffer.capacity() < capacity {
-        buffer.reserve(capacity - buffer.len());
-    }
-}
-
 /// Decide whether to fuse a chain based on its TT fusion pressure.
 ///
 /// A chain should be fused if its total intermediate volume (pressure)
@@ -277,8 +280,14 @@ mod tests {
                     inputs.len()
                 )));
             };
-            let acc = bytes_to_u32(acc_bytes)?;
-            let core = bytes_to_u32(core_bytes)?;
+            let acc = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+                acc_bytes,
+                "TT test dispatcher",
+            )?;
+            let core = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+                core_bytes,
+                "TT test dispatcher",
+            )?;
             let out_len = out_bytes.len() / 4;
             if out_len == 0 || acc.is_empty() || core.len() != acc.len() * out_len {
                 return Err(DispatchError::BadInputs(format!(
@@ -299,19 +308,6 @@ mod tests {
             }
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn bytes_to_u32(bytes: &[u8]) -> Result<Vec<u32>, DispatchError> {
-        if bytes.len() % 4 != 0 {
-            return Err(DispatchError::BadInputs(format!(
-                "Fix: TT test dispatcher input byte length must be u32-aligned, got {}.",
-                bytes.len()
-            )));
-        }
-        Ok(bytes
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect())
     }
 
     #[test]
@@ -358,7 +354,7 @@ mod tests {
         let production_source = source
             .split("#[cfg(test)]")
             .next()
-            .expect("source prefix exists");
+            .expect("Fix: source prefix exists");
         assert!(
             !production_source.contains("tt_contract_step_cpu")
                 && !production_source.contains("reference_fusion_pressure(shared_buffer_ranks)"),
@@ -370,7 +366,7 @@ mod tests {
     fn via_pressure_matches_unit_core_reference() {
         let dispatcher = ReferenceDispatcher;
         let ranks = vec![2, 3, 5];
-        let pressure = fusion_pressure_via(&dispatcher, &ranks).expect("TT dispatch succeeds");
+        let pressure = fusion_pressure_via(&dispatcher, &ranks).expect("Fix: TT dispatch succeeds");
         assert!(approx_eq(pressure, reference_fusion_pressure(&ranks)));
     }
 
@@ -406,11 +402,11 @@ mod tests {
         let dispatcher = ReferenceDispatcher;
         let ranks = vec![8, 8, 8];
         assert_eq!(
-            should_fuse_chain_via(&dispatcher, &ranks, 16.0).expect("TT dispatch succeeds"),
+            should_fuse_chain_via(&dispatcher, &ranks, 16.0).expect("Fix: TT dispatch succeeds"),
             should_fuse_chain(&ranks, 16.0)
         );
         assert_eq!(
-            should_fuse_chain_via(&dispatcher, &ranks, 4.0).expect("TT dispatch succeeds"),
+            should_fuse_chain_via(&dispatcher, &ranks, 4.0).expect("Fix: TT dispatch succeeds"),
             should_fuse_chain(&ranks, 4.0)
         );
     }

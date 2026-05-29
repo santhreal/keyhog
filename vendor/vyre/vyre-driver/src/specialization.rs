@@ -10,7 +10,7 @@ use vyre_spec::data_type::DataType;
 /// Not `Copy` because the `DType(DataType)` variant carries a
 /// `vyre_spec::DataType` whose payload-bearing variants
 /// (`Array { element_size }`, `Vec { .. }`, `Handle(_)`) are not
-/// trivially copyable. Cloning is cheap regardless — the enum is
+/// trivially copyable. Cloning is cheap regardless  -  the enum is
 /// small and tag-discriminated.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -23,7 +23,7 @@ pub enum SpecValue {
     F32(f32),
     /// Boolean flag.
     Bool(bool),
-    /// Element data type. ROADMAP F3 — dtype-specialized kernel variants
+    /// Element data type. ROADMAP F3  -  dtype-specialized kernel variants
     /// flow through the same `SpecMap` cache as tile-size and unroll
     /// choices, so the F1 specialization-cache key already separates
     /// (matmul, F32) from (matmul, F16) without any backend-specific
@@ -103,7 +103,7 @@ fn dtype_tag(dtype: &DataType) -> u32 {
         DataType::NF4 => 0x1D,
         DataType::DeviceMesh { .. } => 0x1E,
         DataType::Opaque(_) => 0x80,
-        // Truly unknown variant — sentinel collision is a soundness
+        // Truly unknown variant  -  sentinel collision is a soundness
         // bug at the spec-cache layer (different DType values would
         // collapse onto one cache key and serve the wrong shader),
         // so any future variant MUST get an explicit tag here.
@@ -449,7 +449,7 @@ mod tests {
             let tag = dtype_tag(&dtype);
             assert_ne!(
                 tag, 0xFFFF_FFFF,
-                "Fix: dtype_tag missing arm for {dtype:?} — extend specialization.rs::dtype_tag."
+                "Fix: dtype_tag missing arm for {dtype:?}  -  extend specialization.rs::dtype_tag."
             );
             assert!(
                 tags.insert(tag),

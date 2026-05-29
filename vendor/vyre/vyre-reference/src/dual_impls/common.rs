@@ -97,6 +97,32 @@ pub(crate) fn scalar(value: u32) -> Memory {
     Memory::from_bytes(value.to_le_bytes().to_vec())
 }
 
+pub(crate) fn unary_u32_scalar(
+    inputs: &[Memory],
+    id: &str,
+    op: impl FnOnce(u32) -> u32,
+) -> Result<Memory, EvalError> {
+    let input = one_input(inputs, id)?;
+    Ok(scalar(op(read_u32(input, id)?)))
+}
+
+pub(crate) fn binary_u32_scalar(
+    inputs: &[Memory],
+    id: &str,
+    op: impl FnOnce(u32, u32) -> u32,
+) -> Result<Memory, EvalError> {
+    let (left, right) = two_inputs(inputs, id)?;
+    Ok(scalar(op(read_u32(left, id)?, read_u32(right, id)?)))
+}
+
+pub(crate) fn binary_u32_predicate(
+    inputs: &[Memory],
+    id: &str,
+    op: impl FnOnce(u32, u32) -> bool,
+) -> Result<Memory, EvalError> {
+    binary_u32_scalar(inputs, id, |left, right| u32::from(op(left, right)))
+}
+
 pub(crate) fn combine(op: CombineOp, left: u32, right: u32) -> Result<u32, EvalError> {
     Ok(match op {
         CombineOp::Add => left.wrapping_add(right),
@@ -148,5 +174,40 @@ mod tests {
         for (op, left, right, expected) in cases {
             assert_eq!(combine(op, left, right), Ok(expected), "{op:?}");
         }
+    }
+
+    #[test]
+    fn scalar_helpers_preserve_contract_checks() {
+        let left = Memory::from_bytes(7u32.to_le_bytes().to_vec());
+        let right = Memory::from_bytes(5u32.to_le_bytes().to_vec());
+        let malformed = Memory::from_bytes(vec![1, 2, 3]);
+
+        assert_eq!(
+            binary_u32_scalar(
+                &[left.clone(), right.clone()],
+                "test_add",
+                u32::wrapping_add
+            )
+            .expect("Fix: valid binary scalar inputs must evaluate")
+            .bytes(),
+            12u32.to_le_bytes().to_vec()
+        );
+        assert_eq!(
+            binary_u32_predicate(&[left.clone(), right.clone()], "test_gt", |a, b| a > b)
+                .expect("Fix: valid binary predicate inputs must evaluate")
+                .bytes(),
+            1u32.to_le_bytes().to_vec()
+        );
+        assert_eq!(
+            unary_u32_scalar(std::slice::from_ref(&left), "test_not", |value| !value)
+                .expect("Fix: valid unary scalar input must evaluate")
+                .bytes(),
+            (!7u32).to_le_bytes().to_vec()
+        );
+
+        assert!(
+            binary_u32_scalar(std::slice::from_ref(&left), "test_add", u32::wrapping_add).is_err()
+        );
+        assert!(unary_u32_scalar(&[malformed], "test_not", |value| !value).is_err());
     }
 }

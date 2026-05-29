@@ -2,7 +2,7 @@
 //!
 //! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section D item D7.
 //!
-//! WGSL / SPIR-V / Vulkan support push constants — a small block of
+//! WGSL / SPIR-V / Vulkan support push constants  -  a small block of
 //! scalar values stored in dedicated GPU registers rather than in a
 //! uniform buffer. Reads from push constants are roughly 5-10x faster
 //! than uniform buffer reads.

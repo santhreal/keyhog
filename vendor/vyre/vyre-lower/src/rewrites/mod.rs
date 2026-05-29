@@ -1,6 +1,6 @@
 //! Real rewrite passes on `KernelDescriptor`.
 //!
-//! Until this module, every analysis in `vyre-lower` was read-only —
+//! Until this module, every analysis in `vyre-lower` was read-only  -
 //! they detected patterns and returned reports. This module's passes
 //! are the OTHER side of that line: they take a `KernelDescriptor`,
 //! apply a transformation, and return an improved equivalent.
@@ -12,43 +12,56 @@
 //! ```
 //!
 //! Every pass:
-//! - Is total (no `Result`) — if a pass can't apply, it returns the
+//! - Is total (no `Result`)  -  if a pass can't apply, it returns the
 //!   input unchanged.
-//! - Preserves semantic equivalence — running both the input and the
+//! - Preserves semantic equivalence  -  running both the input and the
 //!   output through `audit()` gives compatible reports for surviving
 //!   ops.
 //! - Renumbers operand ids when needed; the output's ids are dense
 //!   `0..N` for operand id space.
-//! - Is idempotent — applying twice gives the same result as once.
+//! - Is idempotent  -  applying twice gives the same result as once.
 //!
 //! Descriptor-cleanup passes use a `descriptor_*` prefix so they are not
 //! confused with foundation's Program-IR semantic optimizer passes.
 //! Phase 1 shipped three descriptor cleanups:
-//! - `descriptor_dce` — dead-op elimination
-//! - `descriptor_cse` — common-subexpression elimination
-//! - `descriptor_const_fold` — fold compile-time-constant arithmetic
+//! - `descriptor_dce`  -  dead-op elimination
+//! - `descriptor_cse`  -  common-subexpression elimination
+//! - `descriptor_const_fold`  -  fold compile-time-constant arithmetic
 //!
 //! The canonical release pipeline includes memory-layout rewrites,
-//! Weir-aware dataflow rewrites, and bounded e-graph-family algebraic
+//! external dataflow-aware rewrites, and bounded e-graph-family algebraic
 //! saturation. Saturation is followed by immediate cleanup so a single
 //! pass application does not leave reassociated inner chains alive until
 //! a later fixed-point iteration.
 
 use std::hash::{Hash, Hasher};
 
-pub mod add_combine;
 pub mod add_sub_cancel;
+mod arithmetic_combine;
 pub mod aos_to_soa_promote;
 pub mod bank_conflict_pad;
 pub mod bitwise_combine;
-pub mod bitwise_idemp;
+mod body_index;
+/// Bitwise idempotence: fold `BitAnd(x, x)` and `BitOr(x, x)` into `Copy(x)`.
+pub mod bitwise_idemp {
+    use crate::KernelDescriptor;
+    use crate::rewrites::self_binop::rewrite_self_binops;
+    use vyre_foundation::ir::BinOp;
+
+    #[must_use]
+    pub fn bitwise_idemp(desc: &KernelDescriptor) -> KernelDescriptor {
+        rewrite_self_binops(desc, |bin| matches!(bin, BinOp::BitAnd | BinOp::BitOr))
+    }
+}
 pub mod boolean_simplify;
 pub mod branch_collapse;
 pub mod canonicalize;
 pub mod cmp_normalize;
 pub mod cmp_self_false;
+mod commutative_lit_chain;
 pub mod const_buffer_promote;
 pub mod dead_store;
+mod dataflow_facts;
 pub mod descriptor_const_fold;
 pub mod descriptor_cse;
 pub mod descriptor_dce;
@@ -60,16 +73,29 @@ pub mod egraph_saturation;
 pub mod emit_order;
 pub mod identity_elim;
 pub mod licm;
+mod literal;
+mod memory_address;
+mod rhs_lit_chain;
+mod self_binop;
 pub mod load_forwarding;
 pub mod loop_fission;
 pub mod loop_fusion;
 pub mod loop_unroll;
 pub mod loop_zero_iter;
 pub mod matmul_promote;
-pub mod min_max_idemp;
+/// Min/max idempotence: fold `Min(x, x)` and `Max(x, x)` into `Copy(x)`.
+pub mod min_max_idemp {
+    use crate::KernelDescriptor;
+    use crate::rewrites::self_binop::rewrite_self_binops;
+    use vyre_foundation::ir::BinOp;
+
+    #[must_use]
+    pub fn min_max_idemp(desc: &KernelDescriptor) -> KernelDescriptor {
+        rewrite_self_binops(desc, |bin| matches!(bin, BinOp::Min | BinOp::Max))
+    }
+}
 pub mod mod_idemp;
 pub mod mul_add_to_fma;
-pub mod mul_combine;
 pub mod negate_cancel;
 pub mod select_fold;
 pub mod shared_mem_promote;
@@ -80,8 +106,10 @@ pub mod tail_mask;
 pub mod unary_idemp;
 pub mod xor_self_zero;
 
-pub use add_combine::add_combine;
 pub use add_sub_cancel::add_sub_cancel;
+pub use arithmetic_combine::{add_combine, mul_combine};
+pub use arithmetic_combine::add_combine::add_combine;
+pub use arithmetic_combine::mul_combine::mul_combine;
 pub use aos_to_soa_promote::{promote as aos_to_soa_promote, LayoutHint as AosSoaLayoutHint};
 pub use bank_conflict_pad::bank_conflict_pad;
 pub use bitwise_combine::bitwise_combine;
@@ -116,7 +144,6 @@ pub use matmul_promote::{infer_matmul_tile_loops, matmul_promote, MatmulTileLoop
 pub use min_max_idemp::min_max_idemp;
 pub use mod_idemp::mod_idemp;
 pub use mul_add_to_fma::mul_add_to_fma;
-pub use mul_combine::mul_combine;
 pub use negate_cancel::negate_cancel;
 pub use select_fold::select_fold;
 pub use shared_mem_promote::shared_mem_promote;
@@ -346,7 +373,7 @@ pub const fn canonical_rewrite_passes() -> &'static [DescriptorRewritePass] {
 
 /// Cheap descriptor fingerprint for convergence checks.
 ///
-/// Uses FxHasher for speed — collision resistance isn't needed because
+/// Uses FxHasher for speed  -  collision resistance isn't needed because
 /// a hash match is always confirmed by one final deep equality check
 /// before declaring convergence.
 fn descriptor_hash(desc: &crate::KernelDescriptor) -> u64 {
@@ -376,50 +403,51 @@ fn run_descriptor_passes(
 /// Apply every shipped rewrite in canonical order. The ordering is
 /// chosen so that each pass exposes work for the passes that follow:
 ///
-/// 1. `strength_reduce` — turns `mul/div/mod` by power-of-2 into
+/// 1. `strength_reduce`  -  turns `mul/div/mod` by power-of-2 into
 ///    shift/and. Synthesizes new Literal ops for the shift counts.
-/// 2. `shared_mem_promote` — stages proven repeated U32 global tile loads
+/// 2. `shared_mem_promote`  -  stages proven repeated U32 global tile loads
 ///    through workgroup memory.
-/// 3. `bank_conflict_pad` — pads simple shared-memory strided layouts whose
+/// 3. `bank_conflict_pad`  -  pads simple shared-memory strided layouts whose
 ///    pitch aliases shared-memory banks.
-/// 4. `const_buffer_promote` — promotes small fixed-size read-only global
+/// 4. `const_buffer_promote`  -  promotes small fixed-size read-only global
 ///    buffers with repeated loads to constant bindings.
-/// 5. `descriptor_const_fold` — folds `BinOp(Lit, Lit)` into a single Literal.
+/// 5. `descriptor_const_fold`  -  folds `BinOp(Lit, Lit)` into a single Literal.
 ///    Catches both the original literal-pair arithmetic and any new
 ///    constant-shift produced by strength_reduce.
-/// 6. `identity_elim` — substitutes `Add(x, 0)`, `Mul(x, 1)`, etc. with
+/// 6. `identity_elim`  -  substitutes `Add(x, 0)`, `Mul(x, 1)`, etc. with
 ///    `x` (and absorbing-zero patterns with `0`). Runs after descriptor_const_fold
 ///    so its left/right-identity rules see the post-folded literals.
-/// 7. `branch_collapse` — replaces `If(Lit_bool, then, else)` with the
+/// 7. `branch_collapse`  -  replaces `If(Lit_bool, then, else)` with the
 ///    selected arm inlined. Runs after descriptor_const_fold + identity_elim so
 ///    conditions like `Add(x, 0) != 0` simplify down to literals first.
-/// 8. `loop_fusion` — canonical launch/loop overhead reducer for
+/// 8. `loop_fusion`  -  canonical launch/loop overhead reducer for
 ///    safe disjoint-write loops. `loop_fission` is exposed as an
 ///    explicit cost-model transform, but is not run unconditionally
 ///    because it intentionally opposes fusion.
-/// 9. `loop_unroll` — unrolls small constant-bound loops. Runs after
+/// 9. `loop_unroll`  -  unrolls small constant-bound loops. Runs after
 ///    branch_collapse (which often removes the guards that prevented
 ///    unrolling) but before licm (no point hoisting from a loop that
 ///    will get unrolled away).
-/// 10. `licm` — hoists loop-invariant ops out of remaining loops.
-/// 11. `load_forwarding` — store-to-load + load-to-load forwarding.
+/// 10. `licm`  -  hoists loop-invariant ops out of remaining loops.
+/// 11. `load_forwarding`  -  store-to-load + load-to-load forwarding.
 ///    Runs after licm because hoisted loads may reveal new forwardable
 ///    pairs in straight-line code.
-/// 12. `dead_store` — drops stores whose value is overwritten before any
+/// 12. `dead_store`  -  drops stores whose value is overwritten before any
 ///    observation. Runs after load_forwarding (forwarded loads may have
 ///    removed the only observers that kept stores alive).
-/// 13. `descriptor_dce` — drops result-producing ops with no users. Cleans up
+/// 13. `descriptor_dce`  -  drops result-producing ops with no users. Cleans up
 ///    everything orphaned by the substitutions in (3) and (7).
-/// 14. `descriptor_cse` — merges remaining structurally-equivalent ops before
+/// 14. `descriptor_cse`  -  merges remaining structurally-equivalent ops before
 ///     saturation so the equality surface is canonical.
-/// 15. `egraph_saturation` — reassociates algebraic constant chains under a
+/// 15. `egraph_saturation`  -  reassociates algebraic constant chains under a
 ///     bounded saturation contract.
-/// 16. post-saturation fold/DCE/CSE cleanup — immediately removes dead inner
+/// 16. post-saturation fold/DCE/CSE cleanup  -  immediately removes dead inner
 ///     chain ops and merges the final reassociated shape.
-/// Single application of the canonical pass sequence — see [`run_all`]
+/// Single application of the canonical pass sequence  -  see [`run_all`]
 /// for the iterating wrapper. This exists so callers that want exactly
 /// one pass (e.g. for diagnostics) can have it.
 #[must_use]
+
 pub fn run_all_once(desc: &crate::KernelDescriptor) -> crate::KernelDescriptor {
     run_descriptor_passes(desc, canonical_rewrite_passes())
 }
@@ -431,7 +459,7 @@ pub fn run_all_once(desc: &crate::KernelDescriptor) -> crate::KernelDescriptor {
 fn debug_verify_after_rewrite(desc: &crate::KernelDescriptor, pass: &str) {
     if let Err(errors) = crate::verify::verify(desc) {
         panic!(
-            "rewrite pass `{pass}` produced an invalid KernelDescriptor — {} violation(s):\n{errors:#?}",
+            "rewrite pass `{pass}` produced an invalid KernelDescriptor  -  {} violation(s):\n{errors:#?}",
             errors.len()
         );
     }
@@ -490,7 +518,7 @@ pub fn run_all(desc: &crate::KernelDescriptor) -> crate::KernelDescriptor {
     run_all_with_stats(desc).0
 }
 
-/// Apply the canonical fixed-point rewrite pipeline with Weir facts.
+/// Apply the canonical fixed-point rewrite pipeline with external dataflow facts.
 #[must_use]
 pub fn run_all_with_dataflow_facts(
     desc: &crate::KernelDescriptor,
@@ -539,7 +567,7 @@ impl OptimizationStats {
         self.bindings_before.saturating_sub(self.bindings_after)
     }
 
-    /// True iff the pipeline made no change at all — no ops eliminated,
+    /// True iff the pipeline made no change at all  -  no ops eliminated,
     /// no bindings dropped, no literals dropped, AND op count is
     /// stable. The kernel was either already optimal or out of the
     /// pipeline's reach. Useful for tooling that wants to skip emit
@@ -755,7 +783,7 @@ mod tests {
 
     #[test]
     fn run_all_collapses_kitchen_sink_kernel() {
-        // Inefficiency stack — every shipped pass should contribute:
+        // Inefficiency stack  -  every shipped pass should contribute:
         //
         //   r0 = Lit(0)            // literal pool idx 0 → U32(0) (zero,
         //                           //   identity for Add, absorbing for Mul)
@@ -866,7 +894,7 @@ mod tests {
         let before_op_count = desc.body.ops.len();
         let out = run_all(&desc);
 
-        // Op count should drop — multiple ops eliminated, but the
+        // Op count should drop  -  multiple ops eliminated, but the
         // exact final count depends on pass interaction. Be specific
         // about WHICH ops are gone:
 
@@ -913,7 +941,7 @@ mod tests {
         // 3. strength_reduce: Mul(_, 8) became Shl(_, 3). Both operands
         //    of THIS Mul happened to be literals (r3=Lit(7), r2=Lit(8)),
         //    so descriptor_const_fold runs after strength_reduce and folds the new
-        //    Shl(Lit, Lit) into a Lit(56). Either outcome is acceptable —
+        //    Shl(Lit, Lit) into a Lit(56). Either outcome is acceptable  -
         //    what matters is "no Mul, no Add, no Sub". Already asserted.
 
         // 4. Op count must drop by at least 5 (5 dead ops eliminated).
@@ -1393,3 +1421,4 @@ mod tests {
         assert_eq!(stats.bindings_dropped(), 0);
     }
 }
+

@@ -16,7 +16,7 @@ use super::helpers::{byte_at_or_zero, byte_eq, set_token};
 /// that read the runtime `byte`/`next_byte`/`next2_byte` IR variables.
 #[must_use]
 pub(super) fn operator_punct_pushes() -> Vec<Node> {
-    // Pre-size — the table emits ~45 set_token nodes (2 three-byte
+    // Pre-size  -  the table emits ~45 set_token nodes (2 three-byte
     // ops + 20 two-byte ops + 1 ellipsis + ~22 single-byte tokens).
     // Capacity 64 fits with headroom and avoids 6 grow-by-doublings
     // while the lexer is being assembled.
@@ -124,7 +124,7 @@ pub(super) fn operator_punct_pushes() -> Vec<Node> {
 
 /// Store-token + line-allows-directive update + cursor-advance epilogue.
 /// This is the per-iteration tail of the lexer's `classify_at_pos` Vec
-/// — it persists the classified token to the output buffers and moves
+///  -  it persists the classified token to the output buffers and moves
 /// `cursor` by `tok_len` (or 1 if no token was emitted).
 #[must_use]
 pub(super) fn store_token_and_advance_pushes(

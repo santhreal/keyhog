@@ -73,7 +73,7 @@ pub type NativeModuleBuilder = fn(&LoweringCtx<'_>) -> NativeModule;
 /// Extension lowerings register a function that reads the shared
 /// [`LoweringCtx`] and writes backend-specific bytes into an opaque
 /// output buffer. The caller backend owns the payload format; the
-/// core dialect registry does not interpret the bytes — it only
+/// core dialect registry does not interpret the bytes  -  it only
 /// dispatches to the right builder by `BackendId`.
 ///
 /// This is the extensibility lever: a concrete backend appends a new
@@ -145,8 +145,10 @@ impl LoweringTable {
     /// a production fallback path.
     #[must_use]
     pub fn empty() -> Self {
+        #[allow(deprecated)]
+        let cpu_ref = crate::cpu_op::structured_intrinsic_cpu;
         Self {
-            cpu_ref: crate::cpu_op::structured_intrinsic_cpu,
+            cpu_ref,
             primary_text: None,
             primary_binary: None,
             secondary_text: None,
@@ -341,7 +343,7 @@ pub trait DialectLookup: private::Sealed + Send + Sync {
     /// Stable identifier naming the provider implementation.
     ///
     /// Two installs sharing the same `provider_id` are treated as the same
-    /// logical provider — a second install is an idempotent no-op. Two
+    /// logical provider  -  a second install is an idempotent no-op. Two
     /// installs with different ids are a conflict returned from
     /// [`install_dialect_lookup`] so callers can fail their own setup without
     /// panicking inside foundation.

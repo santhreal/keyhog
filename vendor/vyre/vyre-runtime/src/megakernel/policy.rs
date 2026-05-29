@@ -4,6 +4,7 @@ use vyre_driver::backend::BackendError;
 
 mod cache;
 use super::planner::{MegakernelGridLimits, MegakernelGridRequest, MegakernelLaunchGeometry};
+use super::staging_reserve::try_reserve_vec_capacity;
 
 /// Host-side pressure classification for one megakernel launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -191,7 +192,7 @@ impl PriorityRequeueAccounting {
 /// via sheaf diffusion (P-RUNTIME-3). Higher-priority siblings pull
 /// neighbors toward higher priority; lower-priority siblings drag
 /// down. After a few diffusion steps, each item's priority reflects
-/// both its own age and its neighborhood pressure — letting requeue
+/// both its own age and its neighborhood pressure  -  letting requeue
 /// decisions be group-aware without hand-rolling a propagation pass.
 ///
 /// `priority_stalks` is the per-item priority value (caller's choice
@@ -858,7 +859,7 @@ impl MegakernelLaunchPolicy {
     ///
     /// P-DRIVER-8: every continuous autotune knob (workgroup size,
     /// hit-capacity, fixpoint iteration count, …) should follow the
-    /// natural-gradient direction by default — Fisher-preconditioned
+    /// natural-gradient direction by default  -  Fisher-preconditioned
     /// descent converges 5-10× faster than plain gradient on the
     /// elongated-valley latency surfaces typical of GPU autotuning.
     #[must_use]
@@ -950,6 +951,7 @@ impl MegakernelLaunchPolicy {
     }
 }
 
+
 fn diffuse_step_into(
     stalks: &[f64],
     restriction_diag: &[f64],
@@ -974,15 +976,11 @@ fn reserve_target_capacity<T>(
     target_capacity: usize,
     label: &'static str,
 ) -> Result<(), BackendError> {
-    if out.capacity() < target_capacity {
-        out.try_reserve_exact(target_capacity - out.capacity())
-            .map_err(|source| {
-                BackendError::new(format!(
-                    "megakernel {label} reservation failed for {target_capacity} element(s): {source}. Fix: shard the policy input before launch-policy math."
-                ))
-            })?;
-    }
-    Ok(())
+    try_reserve_vec_capacity(out, target_capacity).map_err(|source| {
+        BackendError::new(format!(
+            "megakernel {label} reservation failed for {target_capacity} element(s): {source}. Fix: shard the policy input before launch-policy math."
+        ))
+    })
 }
 
 fn best_cost_index(costs: &[f64]) -> usize {
@@ -1052,3 +1050,4 @@ fn classify_pressure(
 
 #[cfg(test)]
 mod tests;
+

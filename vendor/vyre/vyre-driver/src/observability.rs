@@ -45,7 +45,7 @@ pub struct SubstrateAuditEvent {
 pub struct DriverObservability {
     /// Per-substrate-module call counts.
     pub substrate_calls: Vec<(&'static str, u64)>,
-    /// Sum across all substrate counters — single-number health signal.
+    /// Sum across all substrate counters  -  single-number health signal.
     pub substrate_total_calls: u64,
     /// Substrate-decision histogram buckets (fusion / eviction /
     /// provenance) from
@@ -449,7 +449,7 @@ fn sum_output_bytes(outputs: &[Vec<u8>]) -> u64 {
 }
 
 /// Trait every backend implements to surface backend-specific metrics
-/// alongside the common driver-tier ones. Optional — backends not
+/// alongside the common driver-tier ones. Optional  -  backends not
 /// implementing it still get the substrate-counter view.
 pub trait BackendObservabilityProvider {
     /// Backend-specific metrics, formatted as a flat list of
@@ -457,6 +457,7 @@ pub trait BackendObservabilityProvider {
     /// the substrate counters into a unified snapshot.
     fn backend_metrics(&self) -> Vec<(&'static str, u64)>;
 }
+
 
 fn trace_events() -> &'static Mutex<VecDeque<SubstrateAuditEvent>> {
     static EVENTS: OnceLock<Mutex<VecDeque<SubstrateAuditEvent>>> = OnceLock::new();
@@ -525,6 +526,21 @@ pub(crate) fn record_substrate_audit_event_for_test(event: SubstrateAuditEvent) 
 }
 
 #[cfg(test)]
+pub(crate) fn snapshot_for_test() -> DriverObservability {
+    let audit_events = trace_events()
+        .lock()
+        .map(|events| events.iter().cloned().collect())
+        .unwrap_or_default();
+    DriverObservability {
+        substrate_calls: Vec::new(),
+        substrate_total_calls: 0,
+        decision_buckets: Vec::new(),
+        audit_events,
+        dispatch: snapshot_dispatch_telemetry(),
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn clear_substrate_audit_events_for_test() {
     if let Ok(mut events) = trace_events().lock() {
         events.clear();
@@ -547,7 +563,12 @@ mod tests {
     #[cfg(feature = "self-substrate-adapters")]
     fn snapshot_yields_nonempty_substrate_list() {
         let snap = DriverObservability::snapshot();
-        assert!(!snap.substrate_calls.is_empty());
+        assert!(
+            snap.substrate_calls
+                .iter()
+                .any(|(module, count)| *count > 0 && !module.is_empty()),
+            "snapshot must record at least one substrate module with nonzero calls"
+        );
     }
 
     #[test]
@@ -672,3 +693,4 @@ mod tests {
             .contains("kind=\"sync_points\""));
     }
 }
+

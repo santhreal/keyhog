@@ -13,6 +13,7 @@ pub struct UncarrieredAssign {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CarrierSummary {
+    pub assigns_observed: usize,
     pub carrier_reads: BTreeMap<String, usize>,
     pub carrier_writes: BTreeMap<String, usize>,
     pub carrier_finals: BTreeMap<String, usize>,
@@ -86,6 +87,7 @@ pub fn carrier_summary(desc: &KernelDescriptor) -> CarrierSummary {
     }
 
     CarrierSummary {
+        assigns_observed: desc.ops_iter().count(),
         carrier_reads,
         carrier_writes,
         carrier_finals,

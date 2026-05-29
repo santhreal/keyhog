@@ -167,7 +167,7 @@ pub fn cpu_ref(
     let mut u = Vec::new();
     let mut v_mut = Vec::new();
     let mut u_old = Vec::new();
-    let iters = cpu_ref_into(
+    let iters = try_cpu_ref_into(
         k,
         k_t,
         a,
@@ -180,8 +180,43 @@ pub fn cpu_ref(
         &mut u,
         &mut v_mut,
         &mut u_old,
-    );
+    )
+    .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sinkhorn_iterate cpu_ref failed: invalid fixed-point Sinkhorn buffers");
     (u, v_mut, iters)
+}
+
+/// Fallible CPU reference for iterative Sinkhorn.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(clippy::too_many_arguments)]
+pub fn try_cpu_ref(
+    k: &[u32],
+    k_t: &[u32],
+    a: &[u32],
+    b: &[u32],
+    u_curr: &[u32],
+    v: &[u32],
+    m: u32,
+    n: u32,
+    max_iterations: u32,
+) -> Result<(Vec<u32>, Vec<u32>, u32), String> {
+    let mut u = Vec::new();
+    let mut v_mut = Vec::new();
+    let mut u_old = Vec::new();
+    let iters = try_cpu_ref_into(
+        k,
+        k_t,
+        a,
+        b,
+        u_curr,
+        v,
+        m,
+        n,
+        max_iterations,
+        &mut u,
+        &mut v_mut,
+        &mut u_old,
+    )?;
+    Ok((u, v_mut, iters))
 }
 
 /// CPU reference for iterative Sinkhorn using caller-owned buffers.
@@ -204,12 +239,55 @@ pub fn cpu_ref_into(
     v_out: &mut Vec<u32>,
     u_old: &mut Vec<u32>,
 ) -> u32 {
+    try_cpu_ref_into(
+        k,
+        k_t,
+        a,
+        b,
+        u_curr,
+        v,
+        m,
+        n,
+        max_iterations,
+        u_out,
+        v_out,
+        u_old,
+    )
+    .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sinkhorn_iterate cpu_ref_into failed: invalid fixed-point Sinkhorn buffers")
+}
+
+/// Fallible CPU reference for iterative Sinkhorn using caller-owned buffers.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(clippy::too_many_arguments)]
+pub fn try_cpu_ref_into(
+    k: &[u32],
+    k_t: &[u32],
+    a: &[u32],
+    b: &[u32],
+    u_curr: &[u32],
+    v: &[u32],
+    m: u32,
+    n: u32,
+    max_iterations: u32,
+    u_out: &mut Vec<u32>,
+    v_out: &mut Vec<u32>,
+    u_old: &mut Vec<u32>,
+) -> Result<u32, String> {
+    let (m_usize, n_usize, matrix_cells) = checked_fixed_sinkhorn_shape(m, n)?;
+    require_fixed_len("k", k.len(), matrix_cells)?;
+    require_fixed_len("k_t", k_t.len(), matrix_cells)?;
+    require_fixed_len("a", a.len(), m_usize)?;
+    require_fixed_len("b", b.len(), n_usize)?;
+    require_fixed_len("u_curr", u_curr.len(), m_usize)?;
+    require_fixed_len("v", v.len(), n_usize)?;
+    reserve_u32_vec(u_out, m_usize, "u output")?;
+    reserve_u32_vec(v_out, n_usize, "v output")?;
+    reserve_u32_vec(u_old, m_usize, "u convergence scratch")?;
+
     u_out.clear();
-    u_out.extend_from_slice(u_curr);
+    u_out.extend_from_slice(&u_curr[..m_usize]);
     v_out.clear();
-    v_out.extend_from_slice(v);
-    let m_usize = m as usize;
-    let n_usize = n as usize;
+    v_out.extend_from_slice(&v[..n_usize]);
 
     let mut iters = 0;
     for iter in 0..max_iterations {
@@ -237,11 +315,52 @@ pub fn cpu_ref_into(
         }
 
         if u_out == u_old {
-            return iter;
+            return Ok(iter);
         }
         iters = iter + 1;
     }
-    iters
+    Ok(iters)
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn checked_fixed_sinkhorn_shape(m: u32, n: u32) -> Result<(usize, usize, usize), String> {
+    if m == 0 || n == 0 {
+        return Err(format!(
+            "sinkhorn_iterate CPU oracle requires non-zero dimensions, got m={m}, n={n}."
+        ));
+    }
+    let m_usize =
+        usize::try_from(m).map_err(|_| format!("sinkhorn_iterate m={m} does not fit usize."))?;
+    let n_usize =
+        usize::try_from(n).map_err(|_| format!("sinkhorn_iterate n={n} does not fit usize."))?;
+    let matrix_cells = m_usize.checked_mul(n_usize).ok_or_else(|| {
+        format!("sinkhorn_iterate CPU oracle matrix cells overflow: m={m}, n={n}.")
+    })?;
+    Ok((m_usize, n_usize, matrix_cells))
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn require_fixed_len(name: &str, got: usize, need: usize) -> Result<(), String> {
+    if got < need {
+        Err(format!(
+            "sinkhorn_iterate CPU oracle buffer `{name}` is too short: got {got}, need {need}."
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn reserve_u32_vec(out: &mut Vec<u32>, len: usize, name: &str) -> Result<(), String> {
+    if len > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "Sinkhorn iterate CPU oracle",
+            name,
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -250,7 +369,7 @@ inventory::submit! {
         OP_ID,
         || sinkhorn_iterate("k", "kt", "a", "b", "uc", "un", "v", "kv", "ktu", "c", 2, 2, 5),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[65536, 65536]), // u_curr
                 to_bytes(&[0, 0]), // u_next
@@ -265,7 +384,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[32768, 32768]), // u_curr
                 to_bytes(&[32768, 32768]), // u_next
@@ -279,161 +398,14 @@ inventory::submit! {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sinkhorn_cpu_ref_trivial() {
-        let (u, v, _iters) = cpu_ref(
-            &[65536],
-            &[65536],
-            &[65536],
-            &[65536],
-            &[65536],
-            &[65536],
-            1,
-            1,
-            10,
-        );
-        assert_eq!(u, vec![65536]);
-        assert_eq!(v, vec![65536]);
-    }
-
-    #[test]
-    fn test_sinkhorn_cpu_ref_edge() {
-        // u = a / (k * v) = 65536 / (32768 * 65536) = 65536 / 2^31 = 0
-        let (u, _, _) = cpu_ref(
-            &[32768],
-            &[32768],
-            &[65536],
-            &[65536],
-            &[65536],
-            &[65536],
-            1,
-            1,
-            10,
-        );
-        assert_eq!(u, vec![0]);
-    }
-
-    #[test]
-    fn test_sinkhorn_cpu_ref_normal() {
-        let k = vec![65536, 65536, 65536, 65536];
-        let k_t = vec![65536, 65536, 65536, 65536];
-        let a = vec![32768, 32768];
-        let b = vec![32768, 32768];
-        let u_c = vec![65536, 65536];
-        let v_in = vec![65536, 65536];
-        let (u, _v, _) = cpu_ref(&k, &k_t, &a, &b, &u_c, &v_in, 2, 2, 5);
-        // Kv = [0, 0] wrapped. u = a/1 = 32768.
-        assert_eq!(u, vec![32768, 32768]);
-    }
-
-    #[test]
-    fn test_sinkhorn_cpu_ref_large() {
-        let k = vec![65536; 9];
-        let a = vec![65536; 3];
-        let b = vec![65536; 3];
-        let u_c = vec![65536; 3];
-        let v_in = vec![65536; 3];
-        let (u, _, _) = cpu_ref(&k, &k, &a, &b, &u_c, &v_in, 3, 3, 5);
-        assert_eq!(u.len(), 3);
-    }
-
-    #[test]
-    fn test_sinkhorn_cpu_ref_asym() {
-        let k = vec![65536, 0, 0, 65536, 65536, 65536];
-        let k_t = vec![65536, 0, 65536, 0, 65536, 65536];
-        let a = vec![32768, 32768, 65536];
-        let b = vec![65536, 65536];
-        let u_c = vec![65536, 65536, 65536];
-        let v_in = vec![65536, 65536];
-        let (u, v, _) = cpu_ref(&k, &k_t, &a, &b, &u_c, &v_in, 3, 2, 5);
-        assert_eq!(u.len(), 3);
-        assert_eq!(v.len(), 2);
-    }
-
-    #[test]
-    fn test_sinkhorn_cpu_ref_into_reuses_buffers() {
-        let k = vec![65536, 65536, 65536, 65536];
-        let a = vec![32768, 32768];
-        let b = vec![32768, 32768];
-        let u_c = vec![65536, 65536];
-        let v_in = vec![65536, 65536];
-        let mut u = Vec::with_capacity(8);
-        let mut v = Vec::with_capacity(8);
-        let mut u_old = Vec::with_capacity(8);
-        let u_ptr = u.as_ptr();
-        let v_ptr = v.as_ptr();
-        let old_ptr = u_old.as_ptr();
-        let _iters = cpu_ref_into(
-            &k, &k, &a, &b, &u_c, &v_in, 2, 2, 5, &mut u, &mut v, &mut u_old,
-        );
-        assert_eq!(u, vec![32768, 32768]);
-        assert_eq!(u.as_ptr(), u_ptr);
-        assert_eq!(v.as_ptr(), v_ptr);
-        assert_eq!(u_old.as_ptr(), old_ptr);
-    }
-
-    #[test]
-    fn test_sinkhorn_program_parity() {
-        let k = vec![1, 1, 1, 1];
-        let a = vec![10, 10];
-        let b = vec![10, 10];
-        let u_c = vec![1, 1];
-        let v_in = vec![1, 1];
-
-        let p = sinkhorn_iterate(
-            "k", "kt", "a", "b", "uc", "un", "v", "kv", "ktu", "c", 2, 2, 1,
-        );
-
-        let (expected_u, _, _) = cpu_ref(&k, &k, &a, &b, &u_c, &v_in, 2, 2, 1);
-
-        use vyre_reference::reference_eval;
-        use vyre_reference::value::Value;
-
-        let to_value = |data: &[u32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
-            Value::Bytes(Arc::from(bytes))
-        };
-
-        let inputs = vec![
-            to_value(&u_c),
-            to_value(&[0_u32, 0]),
-            to_value(&[0]),
-            to_value(&k),
-            to_value(&k),
-            to_value(&a),
-            to_value(&b),
-            to_value(&v_in),
-            to_value(&[0_u32, 0]),
-            to_value(&[0_u32, 0]),
-        ];
-
-        let results = reference_eval(&p, &inputs).expect("Fix: interpreter failed");
-        let actual_bytes = results[0].to_bytes();
-        let actual_u: Vec<u32> = actual_bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-            .collect();
-        assert_eq!(actual_u, expected_u);
-    }
-
-    #[test]
-    fn program_declares_ten_buffers() {
-        let p = sinkhorn_iterate(
-            "k", "kt", "a", "b", "uc", "un", "v", "kv", "ktu", "c", 2, 2, 5,
-        );
-        assert_eq!(p.buffers().len(), 10);
-    }
-}
+mod tests;
 
 // ===== P-PRIM-11: Full iterative-balance Sinkhorn (f64) ===========
 //
 // The fixed-point u32 cpu_ref above is the GPU-targeted reference;
 // the math operates on quantized fractions. This block ships an
 // f64 reference that performs the canonical Sinkhorn-Knopp iterative
-// matrix-balancing algorithm with tolerance-based convergence —
+// matrix-balancing algorithm with tolerance-based convergence  -
 // the operation many user dialects ask for when they say "balanced
 // transport plan."
 
@@ -453,7 +425,7 @@ mod tests {
 /// Pre/post conditions:
 /// * Caller guarantees `sum(a) == sum(b)` (mass-conservation;
 ///   Sinkhorn-Knopp converges only on balanced marginals).
-/// * Returns the iteration that stopped — < `max_iterations` means
+/// * Returns the iteration that stopped  -  < `max_iterations` means
 ///   tolerance reached, == `max_iterations` means cap hit.
 ///
 /// # Panics
@@ -484,6 +456,32 @@ pub fn sinkhorn_iterate_f64(
     (u, v, iters)
 }
 
+/// Fallible tolerance-based Sinkhorn-Knopp iterative balancing in f64.
+#[cfg(any(test, feature = "cpu-parity"))]
+
+pub fn try_sinkhorn_iterate_f64(
+    k: &[f64],
+    a: &[f64],
+    b: &[f64],
+    tolerance: f64,
+    max_iterations: u32,
+) -> Result<(Vec<f64>, Vec<f64>, u32), String> {
+    let mut u = Vec::new();
+    let mut v = Vec::new();
+    let mut u_old = Vec::new();
+    let iters = try_sinkhorn_iterate_f64_into(
+        k,
+        a,
+        b,
+        tolerance,
+        max_iterations,
+        &mut u,
+        &mut v,
+        &mut u_old,
+    )?;
+    Ok((u, v, iters))
+}
+
 /// Tolerance-based Sinkhorn-Knopp iterative balancing in f64 using
 /// caller-owned buffers.
 #[allow(clippy::too_many_arguments)]
@@ -498,15 +496,46 @@ pub fn sinkhorn_iterate_f64_into(
     v: &mut Vec<f64>,
     u_old: &mut Vec<f64>,
 ) -> u32 {
+    match try_sinkhorn_iterate_f64_into(k, a, b, tolerance, max_iterations, u, v, u_old) {
+        Ok(iters) => iters,
+        Err(_) => {
+            u.clear();
+            v.clear();
+            u_old.clear();
+            0
+        }
+    }
+}
+
+/// Fallible tolerance-based Sinkhorn-Knopp iterative balancing in f64 using
+/// caller-owned buffers.
+#[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_sinkhorn_iterate_f64_into(
+    k: &[f64],
+    a: &[f64],
+    b: &[f64],
+    tolerance: f64,
+    max_iterations: u32,
+    u: &mut Vec<f64>,
+    v: &mut Vec<f64>,
+    u_old: &mut Vec<f64>,
+) -> Result<u32, String> {
     let m = a.len();
     let n = b.len();
+    if k.len() != m * n || tolerance <= 0.0 || !tolerance.is_finite() {
+        return Err(format!(
+            "sinkhorn_iterate_f64 requires k.len()==a.len()*b.len() and finite positive tolerance, got k={}, m={m}, n={n}, tolerance={tolerance}.",
+            k.len()
+        ));
+    }
+    reserve_f64_vec(u, m, "u output")?;
+    reserve_f64_vec(v, n, "v output")?;
+    reserve_f64_vec(u_old, m, "u convergence scratch")?;
+
     u.clear();
     v.clear();
     u_old.clear();
-    if k.len() != m * n || tolerance <= 0.0 || !tolerance.is_finite() {
-        return 0;
-    }
-
     u.resize(m, 1.0_f64);
     v.resize(n, 1.0_f64);
 
@@ -520,7 +549,7 @@ pub fn sinkhorn_iterate_f64_into(
             for j in 0..n {
                 sum += k[i * n + j] * v[j];
             }
-            // Guard against division by zero — sinkhorn requires k > 0,
+            // Guard against division by zero  -  sinkhorn requires k > 0,
             // but defensive callers benefit from a non-NaN result.
             u[i] = if sum == 0.0 { 0.0 } else { a[i] / sum };
         }
@@ -542,10 +571,23 @@ pub fn sinkhorn_iterate_f64_into(
             .map(|(new, old)| (new - old).abs())
             .fold(0.0_f64, f64::max);
         if max_delta < tolerance {
-            return iter + 1;
+            return Ok(iter + 1);
         }
     }
-    max_iterations
+    Ok(max_iterations)
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn reserve_f64_vec(out: &mut Vec<f64>, len: usize, name: &str) -> Result<(), String> {
+    if len > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "Sinkhorn iterate f64 CPU oracle",
+            name,
+        )?;
+    }
+    Ok(())
 }
 
 /// Compute the row-sum residual `||row_sum(diag(u) · k · diag(v)) - a||_∞`.
@@ -594,142 +636,5 @@ pub fn sinkhorn_col_residual(k: &[f64], u: &[f64], v: &[f64], b: &[f64]) -> f64 
 }
 
 #[cfg(test)]
-mod f64_tests {
-    use super::*;
+mod f64_tests;
 
-    #[test]
-    fn one_by_one_trivial_converges_immediately() {
-        let (u, v, iters) = sinkhorn_iterate_f64(&[1.0], &[1.0], &[1.0], 1e-12, 100);
-        assert!((u[0] * 1.0 * v[0] - 1.0).abs() < 1e-9);
-        assert!(
-            iters <= 2,
-            "trivial should converge in <=2 iters, got {iters}"
-        );
-    }
-
-    #[test]
-    fn two_by_two_balanced_converges() {
-        // k = ones(2,2). a = [1, 1], b = [1, 1]. Total mass = 2 on both sides.
-        let k = vec![1.0, 1.0, 1.0, 1.0];
-        let a = vec![1.0, 1.0];
-        let b = vec![1.0, 1.0];
-        let (u, v, iters) = sinkhorn_iterate_f64(&k, &a, &b, 1e-9, 100);
-        assert!(iters < 100);
-        let row_err = sinkhorn_row_residual(&k, &u, &v, &a);
-        let col_err = sinkhorn_col_residual(&k, &u, &v, &b);
-        assert!(row_err < 1e-7, "row residual {row_err} > 1e-7");
-        assert!(col_err < 1e-7, "col residual {col_err} > 1e-7");
-    }
-
-    #[test]
-    fn f64_into_reuses_work_buffers() {
-        let k = vec![1.0, 1.0, 1.0, 1.0];
-        let a = vec![1.0, 1.0];
-        let b = vec![1.0, 1.0];
-        let mut u = Vec::with_capacity(8);
-        let mut v = Vec::with_capacity(8);
-        let mut old = Vec::with_capacity(8);
-        let u_ptr = u.as_ptr();
-        let v_ptr = v.as_ptr();
-        let old_ptr = old.as_ptr();
-        let iters = sinkhorn_iterate_f64_into(&k, &a, &b, 1e-9, 100, &mut u, &mut v, &mut old);
-        assert!(iters < 100);
-        assert_eq!(u.as_ptr(), u_ptr);
-        assert_eq!(v.as_ptr(), v_ptr);
-        assert_eq!(old.as_ptr(), old_ptr);
-    }
-
-    #[test]
-    fn asymmetric_marginals_still_balance() {
-        // 2x3 kernel, marginals a=[2, 4] b=[1, 2, 3].
-        // Total mass = 6 on both sides.
-        let k = vec![1.0, 2.0, 3.0, 2.0, 1.0, 1.0];
-        let a = vec![2.0, 4.0];
-        let b = vec![1.0, 2.0, 3.0];
-        let (u, v, iters) = sinkhorn_iterate_f64(&k, &a, &b, 1e-10, 1000);
-        assert!(iters < 1000);
-        let row_err = sinkhorn_row_residual(&k, &u, &v, &a);
-        let col_err = sinkhorn_col_residual(&k, &u, &v, &b);
-        assert!(row_err < 1e-7);
-        assert!(col_err < 1e-7);
-    }
-
-    #[test]
-    fn cap_hit_returns_max_iterations() {
-        // With max_iterations=1 we always return iter=1 (one full
-        // pass executed but tolerance not met).
-        let k = vec![1.0, 1.0, 1.0, 1.0];
-        let a = vec![1.0, 3.0];
-        let b = vec![1.0, 3.0];
-        let (_u, _v, iters) = sinkhorn_iterate_f64(&k, &a, &b, 1e-15, 1);
-        assert_eq!(iters, 1);
-    }
-
-    #[test]
-    fn diagonal_kernel_is_pre_balanced() {
-        // k = I. a = b = [2, 3]. Solution is u = a, v = 1/a (after
-        // one iteration u settles to a/v0 = a/1 = a; then v = b/u·k_col
-        // = b/(u_i for diag) gives 1; further iters fixed.
-        let k = vec![1.0, 0.0, 0.0, 1.0];
-        let a = vec![2.0, 3.0];
-        let b = vec![2.0, 3.0];
-        let (u, v, _iters) = sinkhorn_iterate_f64(&k, &a, &b, 1e-10, 100);
-        let row_err = sinkhorn_row_residual(&k, &u, &v, &a);
-        let col_err = sinkhorn_col_residual(&k, &u, &v, &b);
-        assert!(row_err < 1e-9);
-        assert!(col_err < 1e-9);
-    }
-
-    #[test]
-    fn residual_helpers_are_zero_on_perfect_balance() {
-        // Construct u, v, k such that diag(u) k diag(v) has row=a, col=b.
-        // Simplest: k = ones(2,2), u = [a/2; a/2 ... ] actually
-        // run sinkhorn and check.
-        let k = vec![1.0, 1.0, 1.0, 1.0];
-        let a = vec![1.0, 1.0];
-        let b = vec![1.0, 1.0];
-        let (u, v, _) = sinkhorn_iterate_f64(&k, &a, &b, 1e-12, 200);
-        assert!(sinkhorn_row_residual(&k, &u, &v, &a) < 1e-9);
-        assert!(sinkhorn_col_residual(&k, &u, &v, &b) < 1e-9);
-    }
-
-    #[test]
-    fn convergence_iters_decrease_as_tolerance_relaxes() {
-        let k = vec![1.0, 2.0, 3.0, 4.0];
-        let a = vec![3.0, 7.0];
-        let b = vec![4.0, 6.0];
-        let (_, _, tight) = sinkhorn_iterate_f64(&k, &a, &b, 1e-10, 10_000);
-        let (_, _, loose) = sinkhorn_iterate_f64(&k, &a, &b, 1e-3, 10_000);
-        assert!(
-            loose <= tight,
-            "looser tolerance should converge no slower (loose={loose}, tight={tight})"
-        );
-    }
-
-    #[test]
-    fn three_by_three_uniform_kernel() {
-        let k = vec![1.0; 9];
-        let a = vec![1.0, 2.0, 3.0];
-        let b = vec![2.0, 2.0, 2.0];
-        let (u, v, iters) = sinkhorn_iterate_f64(&k, &a, &b, 1e-9, 1000);
-        assert!(iters < 1000);
-        assert!(sinkhorn_row_residual(&k, &u, &v, &a) < 1e-7);
-        assert!(sinkhorn_col_residual(&k, &u, &v, &b) < 1e-7);
-    }
-
-    #[test]
-    fn zero_tolerance_returns_empty_state() {
-        let (u, v, iters) = sinkhorn_iterate_f64(&[1.0], &[1.0], &[1.0], 0.0, 10);
-        assert!(u.is_empty());
-        assert!(v.is_empty());
-        assert_eq!(iters, 0);
-    }
-
-    #[test]
-    fn shape_mismatch_returns_empty_state() {
-        let (u, v, iters) = sinkhorn_iterate_f64(&[1.0, 2.0], &[1.0, 1.0], &[1.0, 1.0], 1e-6, 10);
-        assert!(u.is_empty());
-        assert!(v.is_empty());
-        assert_eq!(iters, 0);
-    }
-}

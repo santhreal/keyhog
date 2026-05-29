@@ -1,4 +1,4 @@
-//! Prefix-sum scan — inclusive scan over a u32 buffer.
+//! Prefix-sum scan  -  inclusive scan over a u32 buffer.
 //!
 //! Category A composition backed by the Tier-2.5 workgroup scan
 //! primitive for one-workgroup inputs.
@@ -38,11 +38,11 @@ inventory::submit! {
         id: OP_ID,
         build: || scan_prefix_sum("input", "output", 4),
         test_inputs: Some(|| vec![vec![
-            [1u32, 2, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            vyre_primitives::wire::pack_u32_slice(&[1u32, 2, 3, 4]),
         ]]),
         expected_output: Some(|| vec![vec![
             // Only ReadWrite buffer: prefix sum [1, 3, 6, 10]
-            [1u32, 3, 6, 10].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            vyre_primitives::wire::pack_u32_slice(&[1u32, 3, 6, 10]),
         ]]),
         category: Some("math"),
     }
@@ -51,18 +51,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::{bytes_to_u32 as decode_u32_words, u32_bytes};
     use vyre_reference::value::Value;
-
-    fn u32_bytes(values: &[u32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     fn run_scan(n: u32, input: &[u32]) -> Vec<u32> {
         let program = scan_prefix_sum("input", "output", n);
@@ -73,7 +63,7 @@ mod tests {
                 Value::from(vec![0u8; (n as usize).saturating_mul(4)]),
             ],
         )
-        .expect("prefix sum must execute");
+        .expect("Fix: prefix sum must execute");
         decode_u32_words(&outputs[0].to_bytes())
     }
 
@@ -87,13 +77,15 @@ mod tests {
     #[test]
     fn prefix_sum_empty_n_zero_should_trap() {
         let program = scan_prefix_sum("input", "output", 0);
-        let result = vyre_reference::reference_eval(
+        let error = vyre_reference::reference_eval(
             &program,
             &[Value::from(vec![0u8; 0]), Value::from(vec![0u8; 0])],
-        );
+        )
+        .expect_err("n=0 prefix_sum must trap instead of returning empty");
+        let msg = error.to_string();
         assert!(
-            result.is_err(),
-            "n=0 prefix_sum must trap instead of returning empty"
+            msg.contains("trap") || msg.contains("Fix:"),
+            "n=0 prefix_sum error must be actionable: {msg}"
         );
     }
 

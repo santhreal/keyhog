@@ -86,6 +86,18 @@ pub fn update_dispatch_policy_cache_hash(hasher: &mut blake3::Hasher, config: &D
     };
 }
 
+/// Return the dispatch-policy digest used inside backend cache keys.
+///
+/// This keeps policy serialization single-sourced while letting backend cache
+/// identities use the shared tuple-boundary-preserving key envelope instead of
+/// owning a second ad hoc hasher sequence.
+#[must_use]
+pub fn dispatch_policy_cache_digest(config: &DispatchConfig) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    update_dispatch_policy_cache_hash(&mut hasher, config);
+    *hasher.finalize().as_bytes()
+}
+
 /// Human-readable dispatch policy fingerprint for cache metadata.
 #[must_use]
 pub fn dispatch_policy_cache_string(config: &DispatchConfig) -> String {
@@ -158,6 +170,37 @@ impl PipelineDeviceFingerprint {
         hasher.update(b"\0driver\0");
         hasher.update(&self.driver_digest);
         *hasher.finalize().as_bytes()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dispatch_policy_cache_digest, update_dispatch_policy_cache_hash};
+    use crate::backend::DispatchConfig;
+
+    #[test]
+    fn dispatch_policy_cache_digest_matches_shared_hasher_for_generated_configs() {
+        for case in 0..4096u32 {
+            let mut config = DispatchConfig::default();
+            if case & 1 != 0 {
+                config.ulp_budget = Some((case as u8).wrapping_mul(17).wrapping_add(1));
+            }
+            if case & 2 != 0 {
+                config.workgroup_override = Some([
+                    1 + (case & 255),
+                    1 + ((case.rotate_left(7) >> 3) & 31),
+                    1 + ((case.rotate_right(5) >> 2) & 7),
+                ]);
+            }
+
+            let mut hasher = blake3::Hasher::new();
+            update_dispatch_policy_cache_hash(&mut hasher, &config);
+            assert_eq!(
+                dispatch_policy_cache_digest(&config),
+                *hasher.finalize().as_bytes(),
+                "Fix: dispatch-policy digest must stay single-sourced through update_dispatch_policy_cache_hash for generated case {case}."
+            );
+        }
     }
 }
 

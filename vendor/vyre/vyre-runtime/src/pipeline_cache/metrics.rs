@@ -3,6 +3,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use vyre_driver::accounting::{checked_add_u64_lazy, checked_mul_u64_lazy};
+
 /// Pipeline-cache instrumentation counters.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PipelineCacheMetrics {
@@ -37,9 +39,10 @@ impl PipelineCacheMetrics {
         if self.lookups == 0 {
             return 0;
         }
-        let Some(numerator) = self.hits.checked_mul(1_000_000) else {
-            panic!("pipeline cache hit-rate numerator overflowed u64. Fix: reset cache metrics before counters wrap.");
-        };
+        let numerator = checked_mul_u64_lazy(self.hits, 1_000_000, || {
+            "pipeline cache hit-rate numerator overflowed u64. Fix: reset cache metrics before counters wrap."
+        })
+        .unwrap_or_else(|message| panic!("{message}"));
         let value = numerator / self.lookups;
         if value > u64::from(u32::MAX) {
             panic!("pipeline cache hit-rate ppm cannot fit u32. Fix: reset cache metrics before counters wrap.");
@@ -77,11 +80,12 @@ impl PipelineCacheMetrics {
 }
 
 fn checked_metric_add(lhs: u64, rhs: u64, label: &'static str) -> u64 {
-    lhs.checked_add(rhs).unwrap_or_else(|| {
-        panic!(
+    checked_add_u64_lazy(lhs, rhs, || {
+        format!(
             "pipeline cache metric {label} overflowed u64. Fix: reset or shard pipeline cache metrics before aggregation."
         )
     })
+    .unwrap_or_else(|message| panic!("{message}"))
 }
 
 #[derive(Debug, Default)]
@@ -103,22 +107,19 @@ impl PipelineCacheCounters {
     }
 
     pub(super) fn add(counter: &AtomicU64, value: u64, label: &'static str) {
-        if value == 0 {
-            return;
-        }
-        let mut current = counter.load(Ordering::Relaxed);
-        loop {
-            let next = current.checked_add(value).unwrap_or_else(|| {
-                panic!(
+        vyre_driver::accounting::checked_atomic_add_u64_with_order(
+            counter,
+            value,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |_, _| {
+                format!(
                     "pipeline cache counter {label} overflowed u64. Fix: reset cache metrics before counters wrap."
                 )
-            });
-            match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
-            {
-                Ok(_) => return,
-                Err(observed) => current = observed,
-            }
-        }
+            },
+        )
+        .unwrap_or_else(|message| panic!("{message}"));
     }
 
     pub(super) fn snapshot(&self, cached_bytes: u64, entries: u64) -> PipelineCacheMetrics {
@@ -135,5 +136,48 @@ impl PipelineCacheCounters {
             cached_bytes,
             entries,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicU64;
+
+    use super::{PipelineCacheCounters, PipelineCacheMetrics};
+
+    #[test]
+    fn pipeline_cache_metrics_generated_hit_rates_are_exact_ppm() {
+        for hits in 0..=1024_u64 {
+            let metrics = PipelineCacheMetrics {
+                lookups: 2048,
+                hits,
+                ..PipelineCacheMetrics::default()
+            };
+            assert_eq!(metrics.hit_rate_ppm(), ((hits * 1_000_000) / 2048) as u32);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "pipeline cache metric cached bytes overflowed u64")]
+    fn pipeline_cache_metric_aggregation_rejects_overflow() {
+        let lhs = PipelineCacheMetrics {
+            cached_bytes: u64::MAX,
+            ..PipelineCacheMetrics::default()
+        };
+        let rhs = PipelineCacheMetrics {
+            cached_bytes: 1,
+            ..PipelineCacheMetrics::default()
+        };
+
+        let _ = lhs.checked_add(rhs);
+    }
+
+    #[test]
+    fn pipeline_cache_counter_add_uses_checked_shared_arithmetic() {
+        let counter = AtomicU64::new(41);
+
+        PipelineCacheCounters::add(&counter, 1, "generated counter");
+
+        assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), 42);
     }
 }

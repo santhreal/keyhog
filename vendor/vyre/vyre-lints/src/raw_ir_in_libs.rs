@@ -1,6 +1,6 @@
 //! `raw_ir_in_libs`: forbid raw `Node::*` / `Expr::*` construction in
-//! `vyre-libs/src/**`. Construction sites — struct literals, tuple
-//! constructors, and associated-function calls — are flagged. Pattern
+//! `vyre-libs/src/**`. Construction sites  -  struct literals, tuple
+//! constructors, and associated-function calls  -  are flagged. Pattern
 //! matching against the same enum variants is allowed (it's read, not
 //! construct). Test modules are allowed (`#[cfg(test)]` or `mod tests`).
 
@@ -91,7 +91,7 @@ fn last_segment(path: &syn::Path) -> Option<String> {
     path.segments.last().map(|s| s.ident.to_string())
 }
 
-/// `Node::Foo` or `Expr::Bar` — exactly two segments where the first
+/// `Node::Foo` or `Expr::Bar`  -  exactly two segments where the first
 /// is a forbidden type. Sub-paths like `vyre::ir::Node::Foo` also count.
 fn forbidden_path(path: &syn::Path) -> Option<(String, String)> {
     if path.segments.len() < 2 {
@@ -192,7 +192,7 @@ impl<'ast> Visit<'ast> for LegoBlockVisitor {
 
     fn visit_expr_path(&mut self, _node: &'ast syn::ExprPath) {
         // Tuple-variant constructors used as values (e.g. as a function
-        // pointer): `let f = Node::Store;` — also a construction site.
+        // pointer): `let f = Node::Store;`  -  also a construction site.
         // But `Node::Store` standalone is rare; we rely on visit_expr_call
         // and visit_expr_struct for the common cases. Skip here to avoid
         // false positives on type-paths used in turbofish or trait calls.

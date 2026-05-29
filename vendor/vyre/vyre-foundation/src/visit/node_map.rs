@@ -6,7 +6,7 @@
 //! cleanup catalog (`empty_block_collapse`, `region_promote_singleton_block`,
 //! `loop_trip_zero_eliminate`, `if_constant_branch_eliminate`,
 //! `noop_assign_eliminate`, `loop_redundant_bound_check_elide`) used to
-//! carry near-identical 4-arm `If/Loop/Block/Region` walkers — all those
+//! carry near-identical 4-arm `If/Loop/Block/Region` walkers  -  all those
 //! files now compose this helper plus a per-pass rewrite predicate.
 //!
 //! ## Why an owning map (not a `&mut Node` mutator)

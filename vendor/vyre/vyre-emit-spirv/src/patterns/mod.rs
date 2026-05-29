@@ -91,13 +91,13 @@ impl SpirvAuditReport {
         )
     }
 
-    /// True iff no SPIR-V-specific findings — no required capabilities,
+    /// True iff no SPIR-V-specific findings  -  no required capabilities,
     /// no workgroup-size violations.
     pub fn is_clean(&self) -> bool {
         !self.requires_action()
     }
 
-    /// Identity element for `merge` — no required caps, no
+    /// Identity element for `merge`  -  no required caps, no
     /// violations, baseline workgroup limits.
     pub fn zero() -> Self {
         Self {

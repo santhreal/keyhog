@@ -210,10 +210,7 @@ pub fn impacted_entries(
 }
 
 fn reserve_impact_mask(out: &mut Vec<u32>, len: usize) -> Result<(), CacheInvalidationError> {
-    if out.capacity() >= len {
-        return Ok(());
-    }
-    out.try_reserve_exact(len - out.capacity()).map_err(|error| {
+    crate::allocation::try_reserve_vec_to_capacity(out, len).map_err(|error| {
         CacheInvalidationError::new(format!(
             "pipeline cache invalidation could not reserve {len} impact-mask slot(s): {error}. Fix: split lineage cells across smaller cache-invalidation shards."
         ))
@@ -265,7 +262,7 @@ mod tests {
             16,
             &[1, 2],
         )
-        .expect("test dispatcher must return one state output");
+        .expect("Fix: test dispatcher must return one state output");
         assert_eq!(mask, vec![1, 0]);
     }
 

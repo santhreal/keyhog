@@ -1,5 +1,8 @@
 //! DFA rule catalog packing for batched megakernel dispatch.
 
+use super::staging_reserve::{
+    reserve_hash_map_capacity as reserve_catalog_map, reserve_vec_capacity as reserve_catalog_vec,
+};
 use crate::PipelineError;
 use rustc_hash::FxHashMap;
 
@@ -341,40 +344,6 @@ pub fn pack_rule_catalog_into(
     Ok(())
 }
 
-fn reserve_catalog_vec<T>(
-    values: &mut Vec<T>,
-    capacity: usize,
-    label: &'static str,
-) -> Result<(), PipelineError> {
-    if values.capacity() < capacity {
-        values
-            .try_reserve_exact(capacity - values.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel rule catalog {label} reservation failed for {capacity} slot(s): {source}. Fix: split the DFA rule catalog before packing."
-                ))
-            })?;
-    }
-    Ok(())
-}
-
-fn reserve_catalog_map(
-    values: &mut FxHashMap<[u8; 32], (u32, u32, u32)>,
-    capacity: usize,
-    label: &'static str,
-) -> Result<(), PipelineError> {
-    if values.capacity() < capacity {
-        values
-            .try_reserve(capacity - values.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel rule catalog {label} reservation failed for {capacity} entry(s): {source}. Fix: split the DFA rule catalog before packing."
-                ))
-            })?;
-    }
-    Ok(())
-}
-
 fn validate_rule_shape(
     rule_idx: u32,
     transitions: &[u32],
@@ -493,6 +462,7 @@ fn extend_missing_rejections(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -591,3 +561,4 @@ mod tests {
         assert_eq!(packed.accept[0], 0);
     }
 }
+

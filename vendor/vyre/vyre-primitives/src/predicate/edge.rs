@@ -1,4 +1,4 @@
-//! `edge` — raw forward traversal with caller-supplied edge mask.
+//! `edge`  -  raw forward traversal with caller-supplied edge mask.
 //!
 //! Primitive escape hatch for rules that match on non-canonical
 //! edge-kind combinations. Downstream analyzer lowers arbitrary
@@ -8,7 +8,9 @@ use vyre_foundation::ir::Program;
 
 #[cfg(any(test, feature = "cpu-parity"))]
 use crate::graph::csr_forward_traverse::cpu_ref as csr_forward_cpu_ref;
-use crate::graph::csr_forward_traverse::csr_forward_traverse;
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::graph::csr_forward_traverse::cpu_ref_into as csr_forward_cpu_ref_into;
+use crate::graph::csr_forward_traverse::csr_forward_traverse_with_op_id;
 use crate::graph::program_graph::ProgramGraphShape;
 
 /// Canonical op id.
@@ -16,7 +18,7 @@ pub const OP_ID: &str = "vyre-primitives::predicate::edge";
 
 /// Build a Program. The body is a `Region { generator: edge::OP_ID }`
 /// wrapping the underlying `csr_forward_traverse` so callers (the
-/// frontend motif lowerer in particular) can locate the edge dispatch
+/// external analyzer motif lowerer in particular) can locate the edge dispatch
 /// by its own op id rather than the delegate's.
 #[must_use]
 pub fn edge(
@@ -25,26 +27,10 @@ pub fn edge(
     frontier_out: &str,
     edge_kind_mask: u32,
 ) -> Program {
-    use std::sync::Arc;
-    use vyre_foundation::ir::model::expr::Ident;
-    use vyre_foundation::ir::Node;
-
-    let inner = csr_forward_traverse(shape, frontier_in, frontier_out, edge_kind_mask);
-    let inner_body: Vec<Node> = inner.entry.iter().cloned().collect();
-    let buffers = inner.buffers.to_vec();
-    let workgroup = inner.workgroup_size;
-    Program::wrapped(
-        buffers,
-        workgroup,
-        vec![Node::Region {
-            generator: Ident::new(OP_ID.into()),
-            source_region: None,
-            body: Arc::new(inner_body),
-        }],
-    )
+    csr_forward_traverse_with_op_id(OP_ID, shape, frontier_in, frontier_out, edge_kind_mask)
 }
 
-/// CPU reference — delegates to `csr_forward_traverse::cpu_ref`.
+/// CPU reference  -  delegates to `csr_forward_traverse::cpu_ref`.
 ///
 /// AUDIT_2026-04-24 F-PE-01: the inventory fixture used to ship
 /// without a `cpu_ref`, leaving the conform harness unable to
@@ -69,6 +55,59 @@ pub fn cpu_ref(
         frontier_in,
         allow_mask,
     )
+}
+
+/// CPU reference using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_into(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    frontier_in: &[u32],
+    allow_mask: u32,
+    out: &mut Vec<u32>,
+) {
+    csr_forward_cpu_ref_into(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        frontier_in,
+        allow_mask,
+        out,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_foundation::ir::Node;
+
+    #[test]
+    fn preserves_wrapper_op_id() {
+        let program = edge(ProgramGraphShape::new(4, 2), "fin", "fout", 0xFFFF_FFFF);
+        let generator = match &program.entry[0] {
+            Node::Region { generator, .. } => generator.to_string(),
+            other => panic!("Fix: edge must build a Region entry, got {other:?}."),
+        };
+        assert_eq!(generator, OP_ID);
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_forward_edge_nodeset() {
+        let mut out = Vec::with_capacity(4);
+        cpu_ref_into(
+            4,
+            &[0, 1, 2, 2, 2],
+            &[1, 2],
+            &[1, 1],
+            &[0b0001],
+            0xFFFF_FFFF,
+            &mut out,
+        );
+        assert_eq!(out, vec![0b0010]);
+    }
 }
 
 #[cfg(feature = "inventory-registry")]

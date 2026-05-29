@@ -1,4 +1,4 @@
-# vyre-harness — architecture
+# vyre-harness  -  architecture
 
 Test + bench harness shared across vyre crates. Owns
 `region::tag_program` (the conformance-region wrapper helper) and
@@ -11,14 +11,14 @@ Public re-exports. The test corpora and helpers downstream crates
 need.
 
 ### `region.rs`
-`tag_program(op_id, program) → Program` — wraps a Program's entry
+`tag_program(op_id, program) → Program`  -  wraps a Program's entry
 in a `Node::Region { generator: op_id, source_region: ..., body }`
 so the conform runner knows which op produced which output.
 
 ## Public types
 
-- **`region::tag_program`** — region-wrapping helper.
-- **(future)** `corpora::standard` — the standard fixture set
+- **`region::tag_program`**  -  region-wrapping helper.
+- **(future)** `corpora::standard`  -  the standard fixture set
   every bench/test consumes. Currently expected by per-pass
   benches; lands as the surface stabilises.
 

@@ -63,9 +63,7 @@ pub fn try_read_debug_log_into(
             fix: "build debug-log bytes with encode_empty_debug_log",
         });
     }
-    let capacity_words = total_word_capacity
-        .checked_sub(records_start)
-        .expect("debug-log capacity precheck must guarantee records_start is in range");
+    let capacity_words = total_word_capacity - records_start;
     let cursor = usize::try_from(cursor).map_err(|_| ProtocolError::ByteLengthOverflow {
         buffer: "debug_log",
         fix: "debug-log cursor does not fit host usize; keep protocol buffers within host addressable range",
@@ -145,12 +143,10 @@ fn try_reserve_record_capacity(
     out: &mut Vec<DebugRecord>,
     target_capacity: usize,
 ) -> Result<(), ProtocolError> {
-    if out.capacity() < target_capacity {
-        out.try_reserve_exact(target_capacity - out.capacity())
-            .map_err(|_| ProtocolError::ByteLengthOverflow {
-                buffer: "debug_log",
-                fix: "host debug-log decode could not reserve output records; reduce debug-log capacity or decode into a reused scratch vector",
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(out, target_capacity).map_err(|_| {
+        ProtocolError::ByteLengthOverflow {
+            buffer: "debug_log",
+            fix: "host debug-log decode could not reserve output records; reduce debug-log capacity or decode into a reused scratch vector",
+        }
+    })
 }

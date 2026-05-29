@@ -1,12 +1,12 @@
-//! Comparison normalization — fold `Gt(a, b)` to `Lt(b, a)` and
+//! Comparison normalization  -  fold `Gt(a, b)` to `Lt(b, a)` and
 //! `Ge(a, b)` to `Le(b, a)` so structurally-equivalent comparisons
 //! collapse to a single canonical form.
 //!
-//! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4 — the
+//! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4  -  the
 //! "canonicalization for CSE" sub-family. Companion to `canonicalize`
 //! (which sorts commutative-op operands) for the inverse-relation
 //! family that canonicalize cannot touch (Gt and Lt are NOT
-//! commutative — `Gt(a,b) ≠ Gt(b,a)` — so canonicalize leaves them
+//! commutative  -  `Gt(a,b) ≠ Gt(b,a)`  -  so canonicalize leaves them
 //! alone, but `Gt(a,b) ≡ Lt(b,a)` so this pass collapses them).
 //!
 //! The win is a CSE multiplier: a kernel that hand-codes the same
@@ -217,7 +217,7 @@ mod tests {
         lit_u32(&mut body, 7, 0);
         lit_u32(&mut body, 9, 1);
         binop(&mut body, BinOp::Gt, 0, 1, 2); // Gt(7, 9)
-        binop(&mut body, BinOp::Lt, 1, 0, 3); // Lt(9, 7) — same answer
+        binop(&mut body, BinOp::Lt, 1, 0, 3); // Lt(9, 7)  -  same answer
         let desc = cmp_normalize(&descriptor_with(body));
         // Both ops should now have kind=Lt and operands=[1, 0].
         let op_a = op_at(&desc, 2);

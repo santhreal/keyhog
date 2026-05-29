@@ -5,9 +5,10 @@
 //! bounded saturation contract used by release evidence and future
 //! equality-saturation engines.
 
-use rustc_hash::FxHashMap;
 use vyre_foundation::ir::BinOp;
 
+use super::body_index::BodyIndex;
+use super::literal::ResultAllocator;
 use crate::{rewrites, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
 
 /// Saturation execution limits.
@@ -145,24 +146,14 @@ fn saturate_body(mut body: KernelBody, stats: &mut AlgebraicStats) -> KernelBody
         .map(|child| saturate_body(child, stats))
         .collect();
 
-    let literals = literal_u32_by_result(&body);
-    let bool_literals = literal_bool_by_result(&body);
-    let producers = producers_by_result(&body);
-    let mut next_id = next_result_id(&body);
+    let index = BodyIndex::new(&body);
+    let mut allocator = ResultAllocator::for_body_tree(&body);
     let mut new_ops = Vec::with_capacity(body.ops.len());
-    for mut op in body.ops {
-        if let Some(rewrite) =
-            reassociate_constant_chain(&op, &producers, &literals, &bool_literals)
-        {
-            let literal_result = next_id;
-            next_id = next_id.wrapping_add(1);
-            let literal_index = body.literals.len() as u32;
-            body.literals.push(rewrite.literal);
-            new_ops.push(KernelOp {
-                kind: KernelOpKind::Literal,
-                operands: vec![literal_index],
-                result: Some(literal_result),
-            });
+    for current_op in &body.ops {
+        let mut op = current_op.clone();
+        if let Some(rewrite) = reassociate_constant_chain(&op, &body, &index) {
+            let literal_result =
+                allocator.push_literal(&mut new_ops, &mut body.literals, rewrite.literal);
             op.operands = vec![rewrite.base, literal_result];
             stats.equality_classes = stats.equality_classes.saturating_add(1);
             stats.applied_rewrites = stats.applied_rewrites.saturating_add(1);
@@ -180,9 +171,8 @@ struct Reassociated {
 
 fn reassociate_constant_chain(
     op: &KernelOp,
-    producers: &FxHashMap<u32, KernelOp>,
-    literals: &FxHashMap<u32, u32>,
-    bool_literals: &FxHashMap<u32, bool>,
+    body: &KernelBody,
+    index: &BodyIndex,
 ) -> Option<Reassociated> {
     let KernelOpKind::BinOpKind(
         kind @ (BinOp::Add
@@ -200,11 +190,11 @@ fn reassociate_constant_chain(
     let left = *op.operands.first()?;
     let right = *op.operands.get(1)?;
     if matches!(kind, BinOp::And | BinOp::Or) {
-        return reassociate_bool_constant_chain(kind, left, right, producers, bool_literals);
+        return reassociate_bool_constant_chain(kind, left, right, body, index);
     }
-    let (inner_result, outer_const) = split_value_const(left, right, literals)
-        .or_else(|| split_value_const(right, left, literals))?;
-    let inner = producers.get(&inner_result)?;
+    let (inner_result, outer_const) =
+        split_value_const(left, right, body, index).or_else(|| split_value_const(right, left, body, index))?;
+    let inner = index.producer(body, inner_result)?;
     let KernelOpKind::BinOpKind(inner_kind) = &inner.kind else {
         return None;
     };
@@ -213,8 +203,8 @@ fn reassociate_constant_chain(
     }
     let inner_left = *inner.operands.first()?;
     let inner_right = *inner.operands.get(1)?;
-    let (base, inner_const) = split_value_const(inner_left, inner_right, literals)
-        .or_else(|| split_value_const(inner_right, inner_left, literals))?;
+    let (base, inner_const) = split_value_const(inner_left, inner_right, body, index)
+        .or_else(|| split_value_const(inner_right, inner_left, body, index))?;
     let constant = match kind {
         BinOp::Add => inner_const.checked_add(outer_const)?,
         BinOp::Mul => inner_const.checked_mul(outer_const)?,
@@ -232,24 +222,22 @@ fn reassociate_constant_chain(
 fn split_value_const(
     value: u32,
     maybe_const: u32,
-    literals: &FxHashMap<u32, u32>,
+    body: &KernelBody,
+    index: &BodyIndex,
 ) -> Option<(u32, u32)> {
-    literals
-        .get(&maybe_const)
-        .copied()
-        .map(|constant| (value, constant))
+    index.u32_lit(body, maybe_const).map(|constant| (value, constant))
 }
 
 fn reassociate_bool_constant_chain(
     kind: BinOp,
     left: u32,
     right: u32,
-    producers: &FxHashMap<u32, KernelOp>,
-    bool_literals: &FxHashMap<u32, bool>,
+    body: &KernelBody,
+    index: &BodyIndex,
 ) -> Option<Reassociated> {
-    let (inner_result, outer_const) = split_value_bool(left, right, bool_literals)
-        .or_else(|| split_value_bool(right, left, bool_literals))?;
-    let inner = producers.get(&inner_result)?;
+    let (inner_result, outer_const) =
+        split_value_bool(left, right, body, index).or_else(|| split_value_bool(right, left, body, index))?;
+    let inner = index.producer(body, inner_result)?;
     let KernelOpKind::BinOpKind(inner_kind) = &inner.kind else {
         return None;
     };
@@ -258,8 +246,8 @@ fn reassociate_bool_constant_chain(
     }
     let inner_left = *inner.operands.first()?;
     let inner_right = *inner.operands.get(1)?;
-    let (base, inner_const) = split_value_bool(inner_left, inner_right, bool_literals)
-        .or_else(|| split_value_bool(inner_right, inner_left, bool_literals))?;
+    let (base, inner_const) = split_value_bool(inner_left, inner_right, body, index)
+        .or_else(|| split_value_bool(inner_right, inner_left, body, index))?;
     let literal = match kind {
         BinOp::And => LiteralValue::Bool(inner_const && outer_const),
         BinOp::Or => LiteralValue::Bool(inner_const || outer_const),
@@ -271,70 +259,10 @@ fn reassociate_bool_constant_chain(
 fn split_value_bool(
     value: u32,
     maybe_const: u32,
-    literals: &FxHashMap<u32, bool>,
+    body: &KernelBody,
+    index: &BodyIndex,
 ) -> Option<(u32, bool)> {
-    literals
-        .get(&maybe_const)
-        .copied()
-        .map(|constant| (value, constant))
-}
-
-fn literal_u32_by_result(body: &KernelBody) -> FxHashMap<u32, u32> {
-    let mut out = FxHashMap::default();
-    for op in &body.ops {
-        if !matches!(op.kind, KernelOpKind::Literal) {
-            continue;
-        }
-        let Some(result) = op.result else {
-            continue;
-        };
-        let Some(pool_index) = op.operands.first() else {
-            continue;
-        };
-        if let Some(LiteralValue::U32(value)) = body.literals.get(*pool_index as usize) {
-            out.insert(result, *value);
-        }
-    }
-    out
-}
-
-fn literal_bool_by_result(body: &KernelBody) -> FxHashMap<u32, bool> {
-    let mut out = FxHashMap::default();
-    for op in &body.ops {
-        if !matches!(op.kind, KernelOpKind::Literal) {
-            continue;
-        }
-        let Some(result) = op.result else {
-            continue;
-        };
-        let Some(pool_index) = op.operands.first() else {
-            continue;
-        };
-        if let Some(LiteralValue::Bool(value)) = body.literals.get(*pool_index as usize) {
-            out.insert(result, *value);
-        }
-    }
-    out
-}
-
-fn producers_by_result(body: &KernelBody) -> FxHashMap<u32, KernelOp> {
-    let mut out = FxHashMap::default();
-    for op in &body.ops {
-        if let Some(result) = op.result {
-            out.insert(result, op.clone());
-        }
-    }
-    out
-}
-
-fn next_result_id(body: &KernelBody) -> u32 {
-    let mut max_id = None::<u32>;
-    for op in &body.ops {
-        for id in op.result_ids() {
-            max_id = Some(max_id.map_or(id, |current| current.max(id)));
-        }
-    }
-    max_id.map(|id| id.wrapping_add(1)).unwrap_or(0)
+    index.bool_lit(body, maybe_const).map(|constant| (value, constant))
 }
 
 #[cfg(test)]

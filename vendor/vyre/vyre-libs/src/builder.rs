@@ -8,7 +8,7 @@
 //! 3. Verifies every [`TensorRef`]'s dtype against the op's expected dtype.
 //! 4. Verifies element-count overflow.
 //! 5. Allows chained overrides (workgroup size, region generator,
-//!    tenant id) without churning the function signature — extension
+//!    tenant id) without churning the function signature  -  extension
 //!    fields live inside a `#[non_exhaustive]` options struct so new
 //!    knobs never break existing call sites.
 //!
@@ -30,6 +30,8 @@ use crate::tensor_ref::{TensorRef, TensorRefError};
 pub(crate) const INDEXED_MAP_OP_ID: &str = "vyre-libs::substrate::indexed_map";
 /// Shared child region for strided per-lane workgroup accumulators.
 pub(crate) const STRIDED_ACCUMULATE_OP_ID: &str = "vyre-libs::substrate::strided_accumulate";
+/// Shared child region for strided writeback after a tiled row reduction.
+pub(crate) const STRIDED_WRITEBACK_OP_ID: &str = "vyre-libs::substrate::strided_writeback";
 
 /// Shared options every Cat-A builder threads through. Lives here so
 /// every op agrees on the same surface.
@@ -49,7 +51,7 @@ pub struct BuildOptions {
 }
 
 impl BuildOptions {
-    /// Fluent constructor — start with defaults and chain overrides.
+    /// Fluent constructor  -  start with defaults and chain overrides.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -76,6 +78,35 @@ impl BuildOptions {
         self
     }
 }
+
+macro_rules! impl_cat_a_builder_options {
+    ($builder:ident) => {
+        impl $builder {
+            /// Override the generated Program workgroup size.
+            #[must_use]
+            pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
+                self.options = self.options.with_workgroup_size(size);
+                self
+            }
+
+            /// Override the Region generator id.
+            #[must_use]
+            pub fn with_region_generator(mut self, name: &'static str) -> Self {
+                self.options = self.options.with_region_generator(name);
+                self
+            }
+
+            /// Stamp the Region metadata with a tenant id.
+            #[must_use]
+            pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
+                self.options = self.options.with_tenant_id(tenant_id);
+                self
+            }
+        }
+    };
+}
+
+pub(crate) use impl_cat_a_builder_options;
 
 /// Validate a slice of `TensorRef`s against an expected `DataType`
 /// for each position, plus name-uniqueness across the whole slice.
@@ -105,6 +136,40 @@ pub fn check_tensors(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod cat_a_builder_option_macro_tests {
+    #![allow(unreachable_pub)]
+
+    use super::BuildOptions;
+
+    #[derive(Debug, Clone)]
+    struct DemoBuilder {
+        options: BuildOptions,
+    }
+
+    impl DemoBuilder {
+        fn new() -> Self {
+            Self {
+                options: BuildOptions::default(),
+            }
+        }
+    }
+
+    super::impl_cat_a_builder_options!(DemoBuilder);
+
+    #[test]
+    fn generated_option_surface_threads_every_shared_knob() {
+        let builder = DemoBuilder::new()
+            .with_workgroup_size([8, 4, 2])
+            .with_region_generator("custom::generator")
+            .with_tenant_id(17);
+
+        assert_eq!(builder.options.workgroup_size, Some([8, 4, 2]));
+        assert_eq!(builder.options.region_generator, Some("custom::generator"));
+        assert_eq!(builder.options.tenant_id, Some(17));
+    }
 }
 
 /// Build the canonical one-output indexed-map skeleton.
@@ -229,6 +294,41 @@ where
     )];
 
     child_region(parent_op_id, STRIDED_ACCUMULATE_OP_ID, child_body)
+}
+
+/// Build a shared strided writeback child region.
+///
+/// The parent must bind `local = LocalId(0)` before this child. Optional
+/// `prelude` nodes run once in workgroup zero before the strided write loop,
+/// which lets row reductions load reduced scalars exactly once per lane.
+pub(crate) fn strided_writeback_child<F>(
+    parent_op_id: &'static str,
+    tile: u32,
+    chunks: u32,
+    n: u32,
+    output: &str,
+    prelude: Vec<Node>,
+    value: F,
+) -> Node
+where
+    F: Fn(Expr) -> Expr,
+{
+    let idx = Expr::var("idx");
+    let mut guarded = prelude;
+    guarded.push(strided_loop(
+        tile,
+        chunks,
+        n,
+        vec![Node::store(output, idx.clone(), value(idx))],
+    ));
+    child_region(
+        parent_op_id,
+        STRIDED_WRITEBACK_OP_ID,
+        vec![Node::if_then(
+            Expr::eq(Expr::WorkgroupId { axis: 0 }, Expr::u32(0)),
+            guarded,
+        )],
+    )
 }
 
 fn strided_loop(tile: u32, chunks: u32, n: u32, guarded_body: Vec<Node>) -> Node {
@@ -443,6 +543,7 @@ where
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -469,7 +570,10 @@ mod tests {
     fn check_tensors_passes_on_clean_inputs() {
         let a = TensorRef::u32_1d("a", 4);
         let b = TensorRef::u32_1d("b", 4);
-        assert!(check_tensors("op", &[(&a, DataType::U32), (&b, DataType::U32)]).is_ok());
+        assert!(matches!(
+            check_tensors("op", &[(&a, DataType::U32), (&b, DataType::U32)]),
+            Ok(())
+        ));
     }
 
     #[test]
@@ -514,4 +618,33 @@ mod tests {
             "Fix: indexed-map users must share the same child region instead of copying loop skeletons: {rendered}"
         );
     }
+
+    #[test]
+    fn strided_writeback_builder_emits_shared_child_region() {
+        let program = Program::wrapped(
+            vec![BufferDecl::output("out", 0, DataType::F32).with_count(4)],
+            [4, 1, 1],
+            vec![crate::region::wrap_anonymous(
+                "vyre-libs::test::row_reduction_user",
+                vec![
+                    Node::let_bind("local", Expr::LocalId { axis: 0 }),
+                    strided_writeback_child(
+                        "vyre-libs::test::row_reduction_user",
+                        4,
+                        1,
+                        4,
+                        "out",
+                        vec![Node::let_bind("scale", Expr::f32(0.5))],
+                        |_idx| Expr::var("scale"),
+                    ),
+                ],
+            )],
+        );
+        let rendered = format!("{:?}", program.entry());
+        assert!(
+            rendered.contains(STRIDED_WRITEBACK_OP_ID),
+            "Fix: row-reduction writeback users must share the same child region instead of copying loop skeletons: {rendered}"
+        );
+    }
 }
+

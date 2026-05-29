@@ -2,39 +2,39 @@
 
 ## Table of Contents
 
-- [V001 — Validation error V001](#v001)
-- [V008 — duplicate local binding `...` shadows an outer scope](#v008)
-- [V009 — atomic `...` targets unsupported buffer access `...` on `...`](#v009)
-- [V010 — barrier may be reached by only part of a workgroup](#v010)
-- [V011 — assignment to loop variable `...`](#v011)
-- [V012 — unsupported cast from `...` to `...`](#v012)
-- [V013 — load from buffer `...` with element type `bytes` is not supported](#v013)
-- [V014 — atomic on buffer `...` with non-u32 element type `...`](#v014)
-- [V016 — call references unknown op `...`](#v016)
-- [V018 — program nesting depth ... exceeds max ...](#v018)
-- [V019 — program has more than ... statement nodes](#v019)
-- [V020 — call `...` has ... arguments but signature expects ...](#v020)
-- [V021 — call `...` signature input `...` uses unknown type spelling `...`](#v021)
-- [V022 — program declares ... output buffers](#v022)
-- [V023 — cast to Bytes is unsupported in target-text lowering](#v023)
-- [V025 — atomic `...` on workgroup buffer `...` is rejected by the current memory model](#v025)
-- [V027 — atomic index on buffer `...` has type `...`, must be `u32`](#v027)
-- [V028 — Fma operand `...` has type `...`, must be `f32`](#v028)
-- [V029 — Select branches have mismatched types: true=`...`, false=`...`](#v029)
-- [V030 — opaque expression extension `...`/`...` failed validation: ...](#v030)
-- [V031 — opaque node extension `...`/`...` failed validation: ...](#v031)
-- [V032 — duplicate sibling let binding `...` in the same region](#v032)
-- [V033 — expression nesting depth ... exceeds max ...](#v033)
-- [V034 — backend `...` does not support cast target `...`](#v034)
-- [V035 — narrowing cast from `...` to `...` may truncate high bits](#v035)
-- [V036 — store index ... overflows buffer `...` with count ...](#v036)
-- [V041 — subgroup expressions require backend subgroup-ops support](#v041)
-- [V042 — atomic `...` on buffer `...` uses invalid memory ordering `...`](#v042)
-- [V043 — barrier uses memory ordering `...`, but barriers must synchronize memory](#v043)
-- [V044 — binary operation `Mod` has a statically-zero divisor](#v044)
-- [V045 — assignment to `...` has type `...` but the binding was declared as `...`](#v045)
+- [V001  -  Validation error V001](#v001)
+- [V008  -  duplicate local binding `...` shadows an outer scope](#v008)
+- [V009  -  atomic `...` targets unsupported buffer access `...` on `...`](#v009)
+- [V010  -  barrier may be reached by only part of a workgroup](#v010)
+- [V011  -  assignment to loop variable `...`](#v011)
+- [V012  -  unsupported cast from `...` to `...`](#v012)
+- [V013  -  load from buffer `...` with element type `bytes` is not supported](#v013)
+- [V014  -  atomic on buffer `...` with non-u32 element type `...`](#v014)
+- [V016  -  call references unknown op `...`](#v016)
+- [V018  -  program nesting depth ... exceeds max ...](#v018)
+- [V019  -  program has more than ... statement nodes](#v019)
+- [V020  -  call `...` has ... arguments but signature expects ...](#v020)
+- [V021  -  call `...` signature input `...` uses unknown type spelling `...`](#v021)
+- [V022  -  program declares ... output buffers](#v022)
+- [V023  -  cast to Bytes is unsupported in target-text lowering](#v023)
+- [V025  -  atomic `...` on workgroup buffer `...` is rejected by the current memory model](#v025)
+- [V027  -  atomic index on buffer `...` has type `...`, must be `u32`](#v027)
+- [V028  -  Fma operand `...` has type `...`, must be `f32`](#v028)
+- [V029  -  Select branches have mismatched types: true=`...`, false=`...`](#v029)
+- [V030  -  opaque expression extension `...`/`...` failed validation: ...](#v030)
+- [V031  -  opaque node extension `...`/`...` failed validation: ...](#v031)
+- [V032  -  duplicate sibling let binding `...` in the same region](#v032)
+- [V033  -  expression nesting depth ... exceeds max ...](#v033)
+- [V034  -  backend `...` does not support cast target `...`](#v034)
+- [V035  -  narrowing cast from `...` to `...` may truncate high bits](#v035)
+- [V036  -  store index ... overflows buffer `...` with count ...](#v036)
+- [V041  -  subgroup expressions require backend subgroup-ops support](#v041)
+- [V042  -  atomic `...` on buffer `...` uses invalid memory ordering `...`](#v042)
+- [V043  -  barrier uses memory ordering `...`, but barriers must synchronize memory](#v043)
+- [V044  -  binary operation `Mod` has a statically-zero divisor](#v044)
+- [V045  -  assignment to `...` has type `...` but the binding was declared as `...`](#v045)
 
-## V001 — Validation error V001
+## V001  -  Validation error V001
 
 **Description**: Validation error V001
 
@@ -54,7 +54,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V008 — duplicate local binding `...` shadows an outer scope
+## V008  -  duplicate local binding `...` shadows an outer scope
 
 **Description**: duplicate local binding `{name}` shadows an outer scope.
 
@@ -74,7 +74,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V009 — atomic `...` targets unsupported buffer access `...` on `...`
+## V009  -  atomic `...` targets unsupported buffer access `...` on `...`
 
 **Description**: atomic `{op:?}` targets unsupported buffer access `{other:?}` on `{buffer}`.
 
@@ -94,7 +94,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V010 — barrier may be reached by only part of a workgroup
+## V010  -  barrier may be reached by only part of a workgroup
 
 **Description**: barrier may be reached by only part of a workgroup.
 
@@ -114,7 +114,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V011 — assignment to loop variable `...`
+## V011  -  assignment to loop variable `...`
 
 **Description**: assignment to loop variable `{name}`.
 
@@ -134,7 +134,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V012 — unsupported cast from `...` to `...`
+## V012  -  unsupported cast from `...` to `...`
 
 **Description**: unsupported cast from `{src}` to `{target}`. Source type `{src}` legal targets are {legal_targets}. Choose one of those targets or rewrite this cast expression before validation.
 
@@ -154,7 +154,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V013 — load from buffer `...` with element type `bytes` is not supported
+## V013  -  load from buffer `...` with element type `bytes` is not supported
 
 **Description**: load from buffer `{buffer}` with element type `bytes` is not supported.
 
@@ -174,7 +174,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V014 — atomic on buffer `...` with non-u32 element type `...`
+## V014  -  atomic on buffer `...` with non-u32 element type `...`
 
 **Description**: atomic on buffer `{buffer}` with non-u32 element type `{elem}`.
 
@@ -194,7 +194,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V016 — call references unknown op `...`
+## V016  -  call references unknown op `...`
 
 **Description**: call references unknown op `{op_id}`.
 
@@ -214,7 +214,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V018 — program nesting depth ... exceeds max ...
+## V018  -  program nesting depth ... exceeds max ...
 
 **Description**: program nesting depth {depth} exceeds max {DEFAULT_MAX_NESTING_DEPTH}.
 
@@ -234,7 +234,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V019 — program has more than ... statement nodes
+## V019  -  program has more than ... statement nodes
 
 **Description**: program has more than {DEFAULT_MAX_NODE_COUNT} statement nodes.
 
@@ -254,7 +254,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V020 — call `...` has ... arguments but signature expects ...
+## V020  -  call `...` has ... arguments but signature expects ...
 
 **Description**: call `{op_id}` has {} arguments but signature expects {expected}.
 
@@ -274,7 +274,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V021 — call `...` signature input `...` uses unknown type spelling `...`
+## V021  -  call `...` signature input `...` uses unknown type spelling `...`
 
 **Description**: call `{op_id}` signature input `{}` uses unknown type spelling `{}`.
 
@@ -294,7 +294,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V022 — program declares ... output buffers
+## V022  -  program declares ... output buffers
 
 **Description**: program declares {outputs} output buffers.
 
@@ -314,7 +314,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V023 — cast to Bytes is unsupported in target-text lowering
+## V023  -  cast to Bytes is unsupported in target-text lowering
 
 **Description**: cast to Bytes is unsupported in target-text lowering.
 
@@ -334,7 +334,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V025 — atomic `...` on workgroup buffer `...` is rejected by the current memory model
+## V025  -  atomic `...` on workgroup buffer `...` is rejected by the current memory model
 
 **Description**: atomic `{op:?}` on workgroup buffer `{buffer}` is rejected by the current memory model.
 
@@ -354,7 +354,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V027 — atomic index on buffer `...` has type `...`, must be `u32`
+## V027  -  atomic index on buffer `...` has type `...`, must be `u32`
 
 **Description**: atomic index on buffer `{buffer}` has type `{index_ty}`, must be `u32`.
 
@@ -374,7 +374,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V028 — Fma operand `...` has type `...`, must be `f32`
+## V028  -  Fma operand `...` has type `...`, must be `f32`
 
 **Description**: Fma operand `{slot}` has type `{ty}`, must be `f32`.
 
@@ -394,7 +394,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V029 — Select branches have mismatched types: true=`...`, false=`...`
+## V029  -  Select branches have mismatched types: true=`...`, false=`...`
 
 **Description**: Select branches have mismatched types: true=`{t}`, false=`{f}`.
 
@@ -414,7 +414,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V030 — opaque expression extension `...`/`...` failed validation: ...
+## V030  -  opaque expression extension `...`/`...` failed validation: ...
 
 **Description**: opaque expression extension `{}`/`{}` failed validation: {message}
 
@@ -434,7 +434,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V031 — opaque node extension `...`/`...` failed validation: ...
+## V031  -  opaque node extension `...`/`...` failed validation: ...
 
 **Description**: opaque node extension `{}`/`{}` failed validation: {message}
 
@@ -454,7 +454,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V032 — duplicate sibling let binding `...` in the same region
+## V032  -  duplicate sibling let binding `...` in the same region
 
 **Description**: duplicate sibling let binding `{name}` in the same region.
 
@@ -474,7 +474,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V033 — expression nesting depth ... exceeds max ...
+## V033  -  expression nesting depth ... exceeds max ...
 
 **Description**: expression nesting depth {depth} exceeds max {DEFAULT_MAX_EXPR_DEPTH}.
 
@@ -494,7 +494,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V034 — backend `...` does not support cast target `...`
+## V034  -  backend `...` does not support cast target `...`
 
 **Description**: backend `{}` does not support cast target `{target}`.
 
@@ -514,7 +514,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V035 — narrowing cast from `...` to `...` may truncate high bits
+## V035  -  narrowing cast from `...` to `...` may truncate high bits
 
 **Description**: narrowing cast from `{src}` to `{target}` may truncate high bits. Source type `{src}` legal targets are {legal_targets}. Use a non-narrowing target or prove the source value fits before casting.
 
@@ -534,7 +534,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V036 — store index ... overflows buffer `...` with count ...
+## V036  -  store index ... overflows buffer `...` with count ...
 
 **Description**: store index {value} overflows buffer `{buffer_name}` with count {}.
 
@@ -554,7 +554,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V041 — subgroup expressions require backend subgroup-ops support
+## V041  -  subgroup expressions require backend subgroup-ops support
 
 **Description**: subgroup expressions require backend subgroup-ops support.
 
@@ -574,7 +574,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V042 — atomic `...` on buffer `...` uses invalid memory ordering `...`
+## V042  -  atomic `...` on buffer `...` uses invalid memory ordering `...`
 
 **Description**: atomic `{op:?}` on buffer `{buffer}` uses invalid memory ordering `{ordering:?}`.
 
@@ -594,7 +594,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V043 — barrier uses memory ordering `...`, but barriers must synchronize memory
+## V043  -  barrier uses memory ordering `...`, but barriers must synchronize memory
 
 **Description**: barrier uses memory ordering `{ordering:?}`, but barriers must synchronize memory.
 
@@ -614,7 +614,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V044 — binary operation `Mod` has a statically-zero divisor
+## V044  -  binary operation `Mod` has a statically-zero divisor
 
 **Description**: binary operation `Mod` has a statically-zero divisor.
 
@@ -634,7 +634,7 @@ let bad_ir = ...;
 let good_ir = ...;
 ```
 
-## V045 — assignment to `...` has type `...` but the binding was declared as `...`
+## V045  -  assignment to `...` has type `...` but the binding was declared as `...`
 
 **Description**: assignment to `{name}` has type `{value_ty}` but the binding was declared as `{declared}`.
 

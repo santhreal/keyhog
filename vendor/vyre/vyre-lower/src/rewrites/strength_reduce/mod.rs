@@ -4,49 +4,29 @@
 //!
 //! Patterns rewritten:
 //! - `Mul(x, lit_pow2)` → `Shl(x, lit_log2)` (u32/i32; left-or-right operand)
-//! - `Div(x, lit_pow2)` → `Shr(x, lit_log2)` (u32 only — signed div has rounding issues)
+//! - `Div(x, lit_pow2)` → `Shr(x, lit_log2)` (u32 only  -  signed div has rounding issues)
 //! - `Mod(x, lit_pow2)` → `BitAnd(x, lit_minus_1)` (u32 only; same reason)
 //!
 //! Phase-1 conservative: only u32 unsigned forms. Float versions and
 //! signed Div/Mod power-of-2 reductions are phase-2 territory because
 //! they need additional checks for negative-input semantics.
 
-use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use super::literal::ResultAllocator;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
 use vyre_foundation::ir::BinOp;
 use vyre_foundation::optimizer::algebraic_rules::strength_reduce_power_of_two_shift;
 
 #[must_use]
 pub fn strength_reduce(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    out.body = strength_reduce_body(out.body);
+    let mut allocator = ResultAllocator::for_body_tree(&out.body);
+    out.body = strength_reduce_body(out.body, &mut allocator);
     out
 }
 
-fn strength_reduce_body(mut body: KernelBody) -> KernelBody {
-    // Map result-id → (literal value if op was Literal-u32).
-    let result_to_lit_u32: FxHashMap<u32, u32> = body
-        .ops
-        .iter()
-        .filter_map(|op| match (&op.kind, op.result, op.operands.first()) {
-            (KernelOpKind::Literal, Some(r), Some(pool_idx)) => {
-                match body.literals.get(*pool_idx as usize) {
-                    Some(LiteralValue::U32(v)) => Some((r, *v)),
-                    _ => None,
-                }
-            }
-            _ => None,
-        })
-        .collect();
-
-    // Pre-allocate next free result-id (for synthesized Literal ops).
-    let mut next_id: u32 = body
-        .ops
-        .iter()
-        .filter_map(|o| o.result)
-        .max()
-        .map(|m| m + 1)
-        .unwrap_or(0);
+fn strength_reduce_body(mut body: KernelBody, allocator: &mut ResultAllocator) -> KernelBody {
+    let index = BodyIndex::new(&body);
 
     // Two-pass: first decide the rewrite per op, then apply.
     enum Rewrite {
@@ -65,8 +45,8 @@ fn strength_reduce_body(mut body: KernelBody) -> KernelBody {
         }
         let lhs = op.operands[0];
         let rhs = op.operands[1];
-        let lhs_lit = result_to_lit_u32.get(&lhs).copied();
-        let rhs_lit = result_to_lit_u32.get(&rhs).copied();
+        let lhs_lit = index.u32_lit(&body, lhs);
+        let rhs_lit = index.u32_lit(&body, rhs);
         match bin {
             BinOp::Mul => {
                 if let Some((other_id, lit)) = either_lit(lhs, rhs, lhs_lit, rhs_lit) {
@@ -101,14 +81,8 @@ fn strength_reduce_body(mut body: KernelBody) -> KernelBody {
             Rewrite::Div(lhs, log2, idx) => (BinOp::Shr, lhs, log2, idx),
             Rewrite::Mod(lhs, mask, idx) => (BinOp::BitAnd, lhs, mask, idx),
         };
-        let pool_idx = push_lit(&mut body.literals, LiteralValue::U32(lit_value));
-        let synth_id = next_id;
-        next_id += 1;
-        body.ops.push(KernelOp {
-            kind: KernelOpKind::Literal,
-            operands: vec![pool_idx],
-            result: Some(synth_id),
-        });
+        let synth_id =
+            allocator.push_literal(&mut body.ops, &mut body.literals, LiteralValue::U32(lit_value));
         body.ops[op_idx as usize].kind = KernelOpKind::BinOpKind(kind);
         body.ops[op_idx as usize].operands = vec![other_id, synth_id];
     }
@@ -116,7 +90,7 @@ fn strength_reduce_body(mut body: KernelBody) -> KernelBody {
     body.child_bodies = body
         .child_bodies
         .into_iter()
-        .map(strength_reduce_body)
+        .map(|child| strength_reduce_body(child, allocator))
         .collect();
 
     body
@@ -146,12 +120,6 @@ fn either_lit(
 
 fn power_of_2_log(v: u32) -> Option<u32> {
     strength_reduce_power_of_two_shift(v)
-}
-
-fn push_lit(literals: &mut Vec<LiteralValue>, lit: LiteralValue) -> u32 {
-    let idx = literals.len() as u32;
-    literals.push(lit);
-    idx
 }
 
 #[cfg(test)]
@@ -288,7 +256,7 @@ mod tests {
 
     #[test]
     fn div_constant_on_lhs_unchanged() {
-        // 16 / x — can't strength-reduce (constant on wrong side).
+        // 16 / x  -  can't strength-reduce (constant on wrong side).
         let desc = KernelDescriptor {
             id: "k".into(),
             bindings: BindingLayout { slots: vec![] },

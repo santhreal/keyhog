@@ -123,6 +123,10 @@ pub(crate) fn eliminate_dead_lets(nodes: Vec<Node>, live_after: HashSet<Ident>) 
                     tag,
                 });
             }
+            Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. } => kept.push(node),
             Node::AsyncWait { tag } => kept.push(Node::AsyncWait { tag }),
             Node::Region {
                 generator,

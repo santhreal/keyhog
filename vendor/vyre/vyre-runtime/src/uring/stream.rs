@@ -1,4 +1,4 @@
-//! `AsyncUringStream` — drives io_uring reads into GPU-visible memory
+//! `AsyncUringStream`  -  drives io_uring reads into GPU-visible memory
 //! and advances the megakernel tail pointer on each completion.
 //!
 //! The critical safety contract: every byte read lands in a
@@ -22,11 +22,11 @@ pub struct Iovec {
     pub iov_len: usize,
 }
 
-/// `IORING_OP_READV` — scatter-read into an array of iovecs.
+/// `IORING_OP_READV`  -  scatter-read into an array of iovecs.
 pub const IORING_OP_READV: u8 = 1;
-/// `IORING_OP_READ_FIXED` — read into a pre-registered buffer.
+/// `IORING_OP_READ_FIXED`  -  read into a pre-registered buffer.
 pub const IORING_OP_READ_FIXED: u8 = 22;
-/// `IORING_OP_URING_CMD` — vendor-specific passthrough (NVMe). Kernel 6.0+.
+/// `IORING_OP_URING_CMD`  -  vendor-specific passthrough (NVMe). Kernel 6.0+.
 pub const IORING_OP_URING_CMD: u8 = 46;
 
 /// GPU-visible memory region that io_uring is allowed to DMA into.
@@ -42,7 +42,7 @@ pub struct GpuMappedBuffer<'a> {
 
 // SAFETY: Send + Sync because (a) the constructor's safety contract
 // requires the caller to commit the lifetime invariant, and (b) the
-// raw pointer is only dereferenced by the kernel via io_uring —
+// raw pointer is only dereferenced by the kernel via io_uring  -
 // vyre-runtime never reads through it directly.
 unsafe impl Send for GpuMappedBuffer<'_> {}
 unsafe impl Sync for GpuMappedBuffer<'_> {}
@@ -117,16 +117,19 @@ impl<'a> GpuMappedBuffer<'a> {
     /// Returns [`PipelineError::QueueFull`] when `offset + len`
     /// exceeds the mapped buffer bounds.
     pub fn sub_region(&self, offset: usize, len: usize) -> Result<Self, crate::PipelineError> {
-        let end = offset.checked_add(len).ok_or(crate::PipelineError::QueueFull {
-            queue: "submission",
-            fix: "GpuMappedBuffer::sub_region offset + len overflows usize; reduce slot size or enlarge the staging buffer",
-        })?;
-        if end > self.len {
-            return Err(crate::PipelineError::QueueFull {
+        let _end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+            offset,
+            len,
+            self.len,
+            || crate::PipelineError::QueueFull {
+                queue: "submission",
+                fix: "GpuMappedBuffer::sub_region offset + len overflows usize; reduce slot size or enlarge the staging buffer",
+            },
+            |_| crate::PipelineError::QueueFull {
                 queue: "submission",
                 fix: "GpuMappedBuffer::sub_region exceeds the mapped allocation; reduce slot size or enlarge the staging buffer",
-            });
-        }
+            },
+        )?;
         Ok(Self {
             ptr: self.ptr.wrapping_add(offset),
             len,
@@ -158,7 +161,7 @@ impl<'a> GpuMappedBuffer<'a> {
     /// The caller must ensure exclusive mutable access to the region for the
     /// lifetime of the returned slice.
     pub unsafe fn as_mut_slice(&mut self) -> &mut [u8] {
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 
@@ -258,7 +261,7 @@ impl<'a> AsyncUringStream<'a> {
             });
         }
         let target_offset = checked_chunk_target_offset(chunk_idx, len)?;
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe { self.submit_read_to_gpu_at(fd, offset, len, target_offset, iovs_storage) }
     }
 
@@ -396,7 +399,7 @@ impl<'a> AsyncUringStream<'a> {
     /// Returns [`PipelineError::IoUringSyscall`] on the first CQE
     /// reporting `res < 0`. Remaining CQEs are still drained so the
     /// ring does not overflow, but only the first failure is
-    /// returned — caller re-polls to pick up subsequent errors or
+    /// returned  -  caller re-polls to pick up subsequent errors or
     /// successes.
     pub fn poll(&mut self) -> Result<u32, PipelineError> {
         self.flush_submissions()?;
@@ -422,10 +425,14 @@ impl<'a> AsyncUringStream<'a> {
             // Successful DMA: bytes landed in GPU-visible memory. Tail
             // publication is batched after CQ drain so one poll with N
             // completions performs one release atomic instead of N.
-            completed = completed.checked_add(1).ok_or(PipelineError::QueueFull {
-                queue: "completion",
-                fix: "io_uring completion count overflowed u32; drain completions more frequently",
-            })?;
+            completed = vyre_driver::accounting::checked_add_u32_value(
+                completed,
+                1,
+                PipelineError::QueueFull {
+                    queue: "completion",
+                    fix: "io_uring completion count overflowed u32; drain completions more frequently",
+                },
+            )?;
         }
 
         if completed != 0 {
@@ -463,7 +470,7 @@ impl<'a> AsyncUringStream<'a> {
     /// Requires the `uring-cmd-nvme` feature and Linux kernel 6.0+.
     ///
     /// The NVMe SQE layout is encoded by the caller in `nvme_sqe_bytes`
-    /// (64 bytes) — the SQE is memcpy'd into the `addr3`+`addr` slots
+    /// (64 bytes)  -  the SQE is memcpy'd into the `addr3`+`addr` slots
     /// the kernel forwards to the NVMe driver. `user_data` is returned
     /// on the matching CQE so the caller can correlate completions.
     ///
@@ -481,7 +488,7 @@ impl<'a> AsyncUringStream<'a> {
     ///
     /// - `fd` must be an open character device the caller has
     ///   `IORING_SETUP_CQE32`-compatible access to (e.g. `/dev/ng0n1`).
-    /// - `nvme_sqe_bytes` must encode a valid NVMe command — kernel
+    /// - `nvme_sqe_bytes` must encode a valid NVMe command  -  kernel
     ///   rejection returns an errno on the CQE, but a forged payload
     ///   can still trigger device-level misbehavior.
     #[cfg(feature = "uring-cmd-nvme")]
@@ -546,7 +553,7 @@ impl<'a> AsyncUringStream<'a> {
     /// The `buf_index` must reference a still-registered iovec whose
     /// region overlaps `chunk_idx * len .. (chunk_idx + 1) * len`
     /// inside the [`GpuMappedBuffer`]. Mis-indexing produces a kernel
-    /// DMA into the wrong region — silent data corruption.
+    /// DMA into the wrong region  -  silent data corruption.
     pub unsafe fn submit_read_fixed(
         &mut self,
         fd: i32,
@@ -556,7 +563,7 @@ impl<'a> AsyncUringStream<'a> {
         buf_index: u16,
     ) -> Result<(), PipelineError> {
         let target_offset = checked_chunk_target_offset(chunk_idx, len)?;
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe {
             self.submit_read_fixed_at(
                 fd,
@@ -637,7 +644,7 @@ impl<'a> AsyncUringStream<'a> {
 
     /// Submit a read using a registered-file-table index instead of a
     /// live fd. Use with
-    /// [`super::ring::IoUringState::register_files`] — avoids the
+    /// [`super::ring::IoUringState::register_files`]  -  avoids the
     /// per-SQE file refcount bump.
     ///
     /// # Errors
@@ -722,37 +729,45 @@ impl<'a> AsyncUringStream<'a> {
     }
 }
 
+
 fn checked_chunk_target_offset(chunk_idx: usize, len: u32) -> Result<u64, PipelineError> {
-    usize_to_u64(chunk_idx, "chunk index")?
-        .checked_mul(u64::from(len))
-        .ok_or(PipelineError::QueueFull {
+    let chunk_idx = usize_to_u64(chunk_idx, "chunk index")?;
+    vyre_driver::accounting::checked_mul_u64_lazy(chunk_idx, u64::from(len), || {
+        PipelineError::QueueFull {
             queue: "submission",
             fix: "chunk_idx * len overflows u64; split the IO batch before submission",
-        })
+        }
+    })
 }
 
 fn checked_target_end(target_offset: u64, len: u32) -> Result<u64, PipelineError> {
-    target_offset
-        .checked_add(u64::from(len))
-        .ok_or(PipelineError::QueueFull {
+    vyre_driver::accounting::checked_add_u64_lazy(target_offset, u64::from(len), || {
+        PipelineError::QueueFull {
             queue: "submission",
             fix: "target_offset + len overflows u64; split the IO batch before submission",
-        })
+        }
+    })
 }
 
 fn increment_queue_counter(counter: &mut u32, label: &'static str) -> Result<(), PipelineError> {
-    *counter = counter.checked_add(1).ok_or(PipelineError::QueueFull {
-        queue: "submission",
-        fix: match label {
-            "inflight SQE count" => {
-                "inflight SQE count overflowed u32; poll completions before submitting more work"
-            }
-            "pending submission count" => {
-                "pending submission count overflowed u32; flush submissions before queuing more work"
-            }
-            _ => "io_uring queue counter overflowed u32; drain the queue before submitting more work",
+    *counter = vyre_driver::accounting::checked_add_u32_value(
+        *counter,
+        1,
+        PipelineError::QueueFull {
+            queue: "submission",
+            fix: match label {
+                "inflight SQE count" => {
+                    "inflight SQE count overflowed u32; poll completions before submitting more work"
+                }
+                "pending submission count" => {
+                    "pending submission count overflowed u32; flush submissions before queuing more work"
+                }
+                _ => {
+                    "io_uring queue counter overflowed u32; drain the queue before submitting more work"
+                }
+            },
         },
-    })?;
+    )?;
     Ok(())
 }
 
@@ -824,3 +839,4 @@ mod tests {
         assert_eq!(backing, [9, 2, 3, 7]);
     }
 }
+

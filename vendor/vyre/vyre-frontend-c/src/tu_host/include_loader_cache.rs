@@ -446,8 +446,9 @@ mod tests {
 
         let hit = cache
             .lookup(Path::new("/tmp/includes"), false, true, b"shared.h")
-            .expect("borrowed key material must hit the owned cache entry")
-            .expect("cached include must resolve");
+            .expect("Fix: borrowed key material must hit the owned cache entry")
+            .expect("Fix: cached include must resolve");
+
 
         assert_eq!(hit, PathBuf::from("/tmp/includes/shared.h"));
         assert!(cache.contains_key(&key));
@@ -499,10 +500,10 @@ mod tests {
 
         let first = cache
             .lookup(PathBuf::from("shared.h").as_path())
-            .expect("cached include must be present");
+            .expect("Fix: cached include must be present");
         let second = cache
             .lookup(PathBuf::from("shared.h").as_path())
-            .expect("cached include must still be present");
+            .expect("Fix: cached include must still be present");
         let missing = cache.lookup(PathBuf::from("missing.h").as_path());
 
         assert!(std::sync::Arc::ptr_eq(&bytes, &first.0));
@@ -583,3 +584,4 @@ mod tests {
         }
     }
 }
+

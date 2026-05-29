@@ -1,6 +1,6 @@
 //! Decomposable-NNF (d-DNNF) compiler primitive (P-PRIM-6).
 //!
-//! d-DNNF is the canonical knowledge-compilation target — every
+//! d-DNNF is the canonical knowledge-compilation target  -  every
 //! Boolean formula is rewritten into a directed acyclic graph of
 //! AND/OR gates over literals such that:
 //!
@@ -13,7 +13,7 @@
 //! linear in the gate count. The optimizer's
 //! `knowledge_compile_pass_precondition` substrate consumer uses
 //! a d-DNNF to evaluate which optimizer-pass-precondition
-//! formulae a given Program satisfies — pass-precondition
+//! formulae a given Program satisfies  -  pass-precondition
 //! evaluation drops from exponential (per pass × per Program)
 //! to linear (per pass × per d-DNNF gate).
 //!

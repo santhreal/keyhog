@@ -1,4 +1,5 @@
 use super::*;
+use super::super::decl_context_common;
 
 pub fn c11_precompute_vast_decl_contexts(
     vast_nodes: &str,
@@ -29,28 +30,15 @@ pub fn c11_precompute_vast_decl_contexts(
         Node::let_bind("decl_ctx_prefix_start", Expr::u32(0)),
     ];
 
-    let row_context_base = Expr::mul(
-        Expr::var("decl_ctx_row"),
-        Expr::u32(VAST_DECL_CONTEXT_STRIDE_U32),
-    );
+    let row_context_base = decl_context_common::decl_context_base(Expr::var("decl_ctx_row"));
     let row_body = vec![
-        Node::let_bind(
-            "decl_ctx_row_base",
-            Expr::mul(Expr::var("decl_ctx_row"), Expr::u32(VAST_NODE_STRIDE_U32)),
-        ),
-        Node::let_bind(
-            "decl_ctx_kind",
-            Expr::load(vast_nodes, Expr::var("decl_ctx_row_base")),
-        ),
-        Node::let_bind(
+        decl_context_common::bind_vast_node_base("decl_ctx_row_base", Expr::var("decl_ctx_row")),
+        decl_context_common::bind_vast_node_kind("decl_ctx_kind", vast_nodes, "decl_ctx_row_base"),
+        decl_context_common::bind_vast_node_field(
             "decl_ctx_hash",
-            Expr::load(
-                vast_nodes,
-                Expr::add(
-                    Expr::var("decl_ctx_row_base"),
-                    Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
-                ),
-            ),
+            vast_nodes,
+            "decl_ctx_row_base",
+            VAST_TYPEDEF_SYMBOL_FIELD,
         ),
         Node::let_bind("decl_ctx_bucket_prev_encoded", Expr::u32(SENTINEL)),
         Node::let_bind("decl_ctx_exact_prev_encoded", Expr::u32(SENTINEL)),
@@ -99,29 +87,21 @@ pub fn c11_precompute_vast_decl_contexts(
                             Expr::lt(Expr::var("decl_ctx_exact_cursor"), num_nodes.clone()),
                         ),
                         vec![
-                            Node::let_bind(
+                            decl_context_common::bind_vast_node_base(
                                 "decl_ctx_exact_cursor_base",
-                                Expr::mul(
-                                    Expr::var("decl_ctx_exact_cursor"),
-                                    Expr::u32(VAST_NODE_STRIDE_U32),
-                                ),
+                                Expr::var("decl_ctx_exact_cursor"),
                             ),
-                            Node::let_bind(
+                            decl_context_common::bind_vast_node_field(
                                 "decl_ctx_exact_cursor_hash",
-                                Expr::load(
-                                    vast_nodes,
-                                    Expr::add(
-                                        Expr::var("decl_ctx_exact_cursor_base"),
-                                        Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
-                                    ),
-                                ),
+                                vast_nodes,
+                                "decl_ctx_exact_cursor_base",
+                                VAST_TYPEDEF_SYMBOL_FIELD,
                             ),
                             Node::let_bind(
                                 "decl_ctx_exact_cursor_context_base",
-                                Expr::mul(
-                                    Expr::var("decl_ctx_exact_cursor"),
-                                    Expr::u32(VAST_DECL_CONTEXT_STRIDE_U32),
-                                ),
+                                decl_context_common::decl_context_base(Expr::var(
+                                    "decl_ctx_exact_cursor",
+                                )),
                             ),
                             Node::if_then(
                                 Expr::eq(
@@ -136,15 +116,13 @@ pub fn c11_precompute_vast_decl_contexts(
                                     Node::assign(
                                         "decl_ctx_exact_chain_len",
                                         Expr::add(
-                                            Expr::load(
-                                                out_decl_contexts,
-                                                Expr::add(
-                                                    Expr::var("decl_ctx_exact_cursor_context_base"),
-                                                    Expr::u32(
-                                                        VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD,
+                                                decl_context_common::load_decl_context_field(
+                                                    out_decl_contexts,
+                                                    Expr::var(
+                                                        "decl_ctx_exact_cursor_context_base",
                                                     ),
+                                                    VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD,
                                                 ),
-                                            ),
                                             Expr::u32(1),
                                         ),
                                     ),
@@ -152,12 +130,10 @@ pub fn c11_precompute_vast_decl_contexts(
                             ),
                             Node::let_bind(
                                 "decl_ctx_exact_cursor_bucket_link",
-                                Expr::load(
+                                decl_context_common::load_decl_context_field(
                                     out_decl_contexts,
-                                    Expr::add(
-                                        Expr::var("decl_ctx_exact_cursor_context_base"),
-                                        Expr::u32(VAST_DECL_CONTEXT_PREV_BUCKET_LINK_FIELD),
-                                    ),
+                                    Expr::var("decl_ctx_exact_cursor_context_base"),
+                                    VAST_DECL_CONTEXT_PREV_BUCKET_LINK_FIELD,
                                 ),
                             ),
                             Node::assign(
@@ -201,11 +177,10 @@ pub fn c11_precompute_vast_decl_contexts(
                             Expr::add(Expr::var("decl_ctx_row"), Expr::u32(1)),
                             num_nodes.clone(),
                         ),
-                        Expr::load(
+                        decl_context_common::load_vast_node_kind(
                             vast_nodes,
-                            Expr::mul(
+                            decl_context_common::vast_node_base(
                                 Expr::var("decl_ctx_next_idx"),
-                                Expr::u32(VAST_NODE_STRIDE_U32),
                             ),
                         ),
                         Expr::u32(SENTINEL),
@@ -213,19 +188,7 @@ pub fn c11_precompute_vast_decl_contexts(
                 ),
                 Node::let_bind(
                     "decl_ctx_possible_declarator",
-                    any_token_eq(
-                        Expr::var("decl_ctx_next_kind"),
-                        &[
-                            TOK_SEMICOLON,
-                            TOK_COMMA,
-                            TOK_ASSIGN,
-                            TOK_LPAREN,
-                            TOK_LBRACKET,
-                            TOK_COLON,
-                            TOK_RPAREN,
-                            TOK_RBRACKET,
-                        ],
-                    ),
+                    is_typedef_symbol_link_follower_token(Expr::var("decl_ctx_next_kind")),
                 ),
                 Node::if_then(
                     Expr::var("decl_ctx_possible_declarator"),
@@ -244,36 +207,28 @@ pub fn c11_precompute_vast_decl_contexts(
                 ),
             ],
         ),
-        Node::store(
+        decl_context_common::store_decl_context_field(
             out_decl_contexts,
-            Expr::add(
-                row_context_base.clone(),
-                Expr::u32(VAST_DECL_CONTEXT_PREFIX_START_FIELD),
-            ),
+            row_context_base.clone(),
+            VAST_DECL_CONTEXT_PREFIX_START_FIELD,
             Expr::var("decl_ctx_prefix_start"),
         ),
-        Node::store(
+        decl_context_common::store_decl_context_field(
             out_decl_contexts,
-            Expr::add(
-                row_context_base.clone(),
-                Expr::u32(VAST_DECL_CONTEXT_PREV_BUCKET_LINK_FIELD),
-            ),
+            row_context_base.clone(),
+            VAST_DECL_CONTEXT_PREV_BUCKET_LINK_FIELD,
             Expr::var("decl_ctx_bucket_prev_encoded"),
         ),
-        Node::store(
+        decl_context_common::store_decl_context_field(
             out_decl_contexts,
-            Expr::add(
-                row_context_base.clone(),
-                Expr::u32(VAST_DECL_CONTEXT_PREV_DECL_LINK_FIELD),
-            ),
+            row_context_base.clone(),
+            VAST_DECL_CONTEXT_PREV_DECL_LINK_FIELD,
             Expr::var("decl_ctx_exact_prev_encoded"),
         ),
-        Node::store(
+        decl_context_common::store_decl_context_field(
             out_decl_contexts,
-            Expr::add(
-                row_context_base,
-                Expr::u32(VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD),
-            ),
+            row_context_base,
+            VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD,
             Expr::var("decl_ctx_exact_chain_len"),
         ),
         Node::if_then(

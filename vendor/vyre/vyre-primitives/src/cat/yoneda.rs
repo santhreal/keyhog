@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 /// pair. `hom_size[s * n + t]` is `|Hom(s, t)|`.
 ///
 /// Identity morphisms are implicit (every Hom(X, X) has at least one).
-/// Composition is not modeled here — Yoneda only needs the Hom
+/// Composition is not modeled here  -  Yoneda only needs the Hom
 /// cardinality + the F-image cardinality, which is enough for the
 /// natural-isomorphism count.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +71,7 @@ pub fn yoneda_embedding(category: &FiniteCategory, x: u32) -> Vec<u32> {
 /// `|Nat(Hom(-, x), F)| = |F(x)|`. The substrate primitive is
 /// therefore a one-line forward of the F-image, and the reason for
 /// having it as a primitive is that the optimizer can call this
-/// without needing to know about the rest of the category — it
+/// without needing to know about the rest of the category  -  it
 /// only needs the F-cardinality at the chosen object.
 #[must_use]
 pub fn yoneda_natural_iso(_category: &FiniteCategory, _x: u32, f_at_x: u32) -> u32 {
@@ -117,9 +117,12 @@ mod tests {
     #[test]
     fn yoneda_iso_equals_f_image_cardinality() {
         let cat = FiniteCategory::discrete(3);
-        for &f_at_x in &[0u32, 1, 2, 5, 100, u32::MAX] {
-            assert_eq!(yoneda_natural_iso(&cat, 0, f_at_x), f_at_x);
-        }
+        assert_eq!(yoneda_natural_iso(&cat, 0, 0), 0);
+        assert_eq!(yoneda_natural_iso(&cat, 0, 1), 1);
+        assert_eq!(yoneda_natural_iso(&cat, 0, 2), 2);
+        assert_eq!(yoneda_natural_iso(&cat, 0, 5), 5);
+        assert_eq!(yoneda_natural_iso(&cat, 0, 100), 100);
+        assert_eq!(yoneda_natural_iso(&cat, 0, u32::MAX), u32::MAX);
     }
 
     /// Adversarial: non-discrete category with multi-morphism Hom-sets.

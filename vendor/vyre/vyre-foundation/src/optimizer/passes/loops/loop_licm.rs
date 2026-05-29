@@ -1,7 +1,7 @@
-//! ROADMAP A17 — Loop-invariant code motion.
+//! ROADMAP A17  -  Loop-invariant code motion.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_licm`.
-//! Soundness: `Exact` — a `Node::Let` inside a loop body whose value
+//! Soundness: `Exact`  -  a `Node::Let` inside a loop body whose value
 //! expression depends on neither the loop induction variable nor any
 //! variable mutated inside the loop, AND whose evaluation has no
 //! observable side effect, computes the same value on every iteration
@@ -36,7 +36,7 @@
 //! - Hoists only `Node::Let` (single-assignment binding). `Node::Assign`
 //!   inside a loop is by definition loop-carrying and cannot be hoisted.
 //! - Skips Lets whose value expression contains `Expr::Load`, `Expr::Atomic`,
-//!   `Expr::Call`, `Expr::Opaque`, or `Expr::BufLen` — these can be
+//!   `Expr::Call`, `Expr::Opaque`, or `Expr::BufLen`  -  these can be
 //!   side-effecting or order-sensitive. `expr_is_pure_constant_in_loop`
 //!   below names every variant explicitly.
 //! - Skips Lets whose value references the loop var, any other Let
@@ -372,7 +372,7 @@ fn expr_references_any(expr: &Expr, mutated: &FxHashSet<Ident>) -> bool {
 /// True iff `expr` evaluates to the same value on every iteration AND
 /// produces no observable side effect when evaluated more or fewer
 /// times. Loads, Atomics, Calls, Opaque, `BufLen`, and Subgroup ops are
-/// rejected — relaxed memory ordering or per-invocation lane state
+/// rejected  -  relaxed memory ordering or per-invocation lane state
 /// could make repeated evaluation observably different from single
 /// evaluation when the loop is hoisted to outer scope.
 fn expr_is_observably_free(expr: &Expr) -> bool {
@@ -464,6 +464,7 @@ fn has_hoistable_let_in_any_loop(node: &Node) -> bool {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node};
@@ -502,7 +503,7 @@ mod tests {
 
     #[test]
     fn hoists_pure_let_above_loop() {
-        // Loop body has Let("k", 7) — k doesn't depend on the loop var
+        // Loop body has Let("k", 7)  -  k doesn't depend on the loop var
         // and is observably free. Hoist above the loop.
         let entry = vec![Node::loop_for(
             "i",
@@ -545,7 +546,7 @@ mod tests {
 
     #[test]
     fn does_not_hoist_let_that_loads_buffer() {
-        // Load is observably non-free in a loop — repeated reads under
+        // Load is observably non-free in a loop  -  repeated reads under
         // relaxed memory ordering may observe distinct values. Conservative:
         // do not hoist.
         let entry = vec![Node::loop_for(
@@ -724,3 +725,4 @@ mod tests {
         assert!(matches!(&inner_body[0], Node::Store { .. }));
     }
 }
+

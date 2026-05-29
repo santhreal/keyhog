@@ -4,7 +4,7 @@
 //! This is the cross-dispatch fusion layer that the megakernel builder and
 //! rule-composition pipeline use to collapse sibling dispatches into one
 //! kernel body.  It is **not** the expression-level fusion pass
-//! (`optimizer::passes::fusion`) — that pass lives inside one Program.
+//! (`optimizer::passes::fusion`)  -  that pass lives inside one Program.
 //!
 //! Audit-fix A31 split this module into:
 //!  - `mod.rs`: crate-level attribute + error types + module decls/re-exports

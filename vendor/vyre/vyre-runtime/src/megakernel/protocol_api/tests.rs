@@ -115,27 +115,36 @@ fn publish_slot_rejects_inflight_slot() {
     let mut ring = Megakernel::encode_empty_ring(4).unwrap();
     // Publish once (now status = PUBLISHED).
     Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::STORE_U32, &[1]).unwrap();
-    // Try to publish again — slot is PUBLISHED (not EMPTY/DONE).
-    let result = Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::STORE_U32, &[2]);
+    // Try to publish again  -  slot is PUBLISHED (not EMPTY/DONE).
+    let err = Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::STORE_U32, &[2])
+        .expect_err("must reject publishing to an in-flight slot");
     assert!(
-        result.is_err(),
-        "must reject publishing to an in-flight slot"
+        err.to_string().contains("not publishable"),
+        "unexpected error: {err}"
     );
 }
 
 #[test]
 fn publish_slot_rejects_out_of_bounds() {
     let mut ring = Megakernel::encode_empty_ring(2).unwrap();
-    let result = Megakernel::publish_slot(&mut ring, 99, 1, protocol::opcode::STORE_U32, &[1]);
-    assert!(result.is_err(), "must reject slot_idx beyond ring capacity");
+    let err = Megakernel::publish_slot(&mut ring, 99, 1, protocol::opcode::STORE_U32, &[1])
+        .expect_err("must reject slot_idx beyond ring capacity");
+    assert!(
+        err.to_string().contains("slot_idx exceeds ring slot count"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
 fn publish_slot_rejects_too_many_args() {
     let mut ring = Megakernel::encode_empty_ring(2).unwrap();
     let too_many = vec![0u32; ARGS_PER_SLOT as usize + 1];
-    let result = Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::STORE_U32, &too_many);
-    assert!(result.is_err(), "must reject args exceeding ARGS_PER_SLOT");
+    let err = Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::STORE_U32, &too_many)
+        .expect_err("must reject args exceeding ARGS_PER_SLOT");
+    assert!(
+        err.to_string().contains("too many args for one slot"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -144,7 +153,7 @@ fn publish_slot_allows_republish_after_done() {
     // Publish, then manually mark as DONE.
     Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::STORE_U32, &[1]).unwrap();
     write_word(&mut ring, 0, STATUS_WORD as usize, slot::DONE);
-    // Should succeed — DONE slots are recyclable.
+    // Should succeed  -  DONE slots are recyclable.
     Megakernel::publish_slot(&mut ring, 0, 1, protocol::opcode::ATOMIC_ADD, &[2]).unwrap();
     let op = read_word(&ring, 0, OPCODE_WORD as usize);
     assert_eq!(op, protocol::opcode::ATOMIC_ADD);
@@ -433,35 +442,44 @@ fn read_metrics_on_fresh_control_returns_empty() {
 
 #[test]
 fn validate_control_bytes_rejects_too_short() {
-    let result = validate_control_bytes(&[0u8; 4]);
-    assert!(result.is_err(), "must reject undersized control buffer");
-}
-
-#[test]
-fn validate_control_bytes_rejects_misaligned() {
-    let result = validate_control_bytes(&[0u8; 101]);
+    let err = validate_control_bytes(&[0u8; 4])
+        .expect_err("must reject undersized control buffer");
     assert!(
-        result.is_err(),
-        "must reject non-4-byte-aligned control buffer"
+        err.to_string().contains("expected at least"),
+        "unexpected error: {err}"
     );
 }
 
 #[test]
+fn validate_control_bytes_rejects_misaligned() {
+    let err = validate_control_bytes(&[0u8; 101])
+        .expect_err("must reject non-4-byte-aligned control buffer");
+    assert!(
+        err.to_string().contains("4-byte alignment"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+
 fn validate_control_bytes_accepts_valid() {
     let control = Megakernel::encode_control(false, 1, 0).unwrap();
-    validate_control_bytes(&control).expect("valid control buffer must pass validation");
+    validate_control_bytes(&control).expect("Fix: valid control buffer must pass validation");
 }
 
 #[test]
 fn validate_debug_log_bytes_rejects_wrong_size() {
-    let result = validate_debug_log_bytes(&[0u8; 4]);
-    assert!(result.is_err(), "must reject undersized debug log");
+    let err = validate_debug_log_bytes(&[0u8; 4]).expect_err("must reject undersized debug log");
+    assert!(
+        err.to_string().contains("expected exactly"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
 fn validate_debug_log_bytes_accepts_valid() {
     let log = Megakernel::encode_empty_debug_log(protocol::debug::RECORD_CAPACITY).unwrap();
-    validate_debug_log_bytes(&log).expect("valid debug log must pass validation");
+    validate_debug_log_bytes(&log).expect("Fix: valid debug log must pass validation");
 }
 
 #[test]
@@ -485,10 +503,11 @@ fn packed_slot_rejects_overflow() {
     let mut ring = Megakernel::encode_empty_ring(4).unwrap();
     // Each op gets 3 arg words, so 5 ops × 3 args = 15 words > 12 budget.
     let ops: Vec<(u8, Vec<u32>)> = (0..5).map(|i| (i as u8, vec![1, 2, 3])).collect();
-    let result = Megakernel::publish_packed_slot(&mut ring, 0, 1, &ops);
+    let err = Megakernel::publish_packed_slot(&mut ring, 0, 1, &ops)
+        .expect_err("must reject packed slot exceeding arg budget");
     assert!(
-        result.is_err(),
-        "must reject packed slot exceeding arg budget"
+        err.to_string().contains("exceeds the 12-word slot argument budget"),
+        "unexpected error: {err}"
     );
 }
 
@@ -510,3 +529,4 @@ fn write_word(ring: &mut [u8], slot_idx: usize, word_idx: usize, value: u32) {
     let off = base + word_idx * 4;
     ring[off..off + 4].copy_from_slice(&value.to_le_bytes());
 }
+

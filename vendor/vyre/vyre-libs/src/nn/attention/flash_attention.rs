@@ -1,4 +1,4 @@
-//! Flash-attention tiled fusion — `softmax(Q·Kᵀ / √d) · V` computed
+//! Flash-attention tiled fusion  -  `softmax(Q·Kᵀ / √d) · V` computed
 //! in a single pass per query row via online-softmax tiling.
 //!
 //! ROADMAP H4. The standard `attention` primitive in this crate
@@ -9,8 +9,8 @@
 //! `3 * 4096 * 128 * 4 bytes = 6 MiB` of redundant reads per row.
 //!
 //! Flash-attention's contribution is the **online-softmax** trick:
-//! maintain a running `(m, l, o)` state — running max, running
-//! softmax denominator, running weighted-V sum — and update them
+//! maintain a running `(m, l, o)` state  -  running max, running
+//! softmax denominator, running weighted-V sum  -  and update them
 //! per-K-row in a single pass:
 //!
 //! ```text
@@ -51,48 +51,11 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use super::attention::direct_attention_program;
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::attention_stability::{
+    bounded_exp_arg, bounded_score, flush_tiny, positive_denominator,
+};
 
 const OP_ID: &str = "vyre-libs::nn::flash_attention";
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn bounded_exp_arg(value: Expr) -> Expr {
-    let value_is_nan = Expr::is_nan(value.clone());
-    let finite = finite_or(value.clone(), Expr::f32(-80.0));
-    let upper_bounded = Expr::select(
-        Expr::gt(finite.clone(), Expr::f32(0.0)),
-        Expr::f32(0.0),
-        finite,
-    );
-    let clamped = Expr::select(
-        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
-        Expr::f32(-80.0),
-        upper_bounded,
-    );
-    Expr::select(value_is_nan, value, clamped)
-}
-
-fn positive_denominator(value: Expr) -> Expr {
-    let repaired = Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value.clone(),
-        Expr::f32(f32::MIN_POSITIVE),
-    );
-    Expr::select(Expr::is_nan(value.clone()), value, repaired)
-}
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 /// Build a Program that computes scaled dot-product attention via
 /// the online-softmax (flash-attention) recurrence. Tensors are
@@ -196,13 +159,7 @@ pub fn flash_attention(
                 // case is repaired.
                 Node::let_bind("score", {
                     let raw = Expr::mul(Expr::var("dot_val"), scale_expr.clone());
-                    // is_finite is false for both inf and NaN; we
-                    // want clamp-inf-keep-NaN, so guard with NaN.
-                    Expr::select(
-                        Expr::is_nan(raw.clone()),
-                        raw.clone(),
-                        finite_or(raw, Expr::f32(-80.0)),
-                    )
+                    bounded_score(raw)
                 }),
                 // m_new = max(m, score)
                 Node::let_bind(
@@ -213,7 +170,7 @@ pub fn flash_attention(
                         Expr::var("flash_m"),
                     ),
                 ),
-                // rescale = exp(m - m_new) — clamped to [0, 1]
+                // rescale = exp(m - m_new)  -  clamped to [0, 1]
                 Node::let_bind(
                     "flash_rescale",
                     Expr::UnOp {
@@ -321,7 +278,7 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::nn::flash_attention",
         build: || {
-            flash_attention("q", "k", "v", "out", 2, 4).unwrap_or_else(|error| {
+            flash_attention("q", "k", "v", "out", 9, 1).unwrap_or_else(|error| {
                 crate::builder::invalid_output_program(
                     "vyre-libs::nn::flash_attention",
                     "out",
@@ -331,26 +288,22 @@ inventory::submit! {
             })
         },
         test_inputs: Some(|| {
-            let q = [0.5_f32, -1.0, 1.5, 0.25, -0.75, 0.5, 1.0, -0.5];
-            let k = [1.0_f32, 0.25, -0.5, 1.5, 0.75, -1.25, 0.5, 0.5];
-            let v = [2.0_f32, -1.0, 0.5, 1.25, -0.25, 0.75, 1.5, -0.5];
+            let q = [0.0_f32; 9];
+            let k = [0.0_f32; 9];
+            let v = [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
             vec![vec![
-                q.iter().flat_map(|value| value.to_le_bytes()).collect(),
-                k.iter().flat_map(|value| value.to_le_bytes()).collect(),
-                v.iter().flat_map(|value| value.to_le_bytes()).collect(),
-                vec![0u8; 8 * core::mem::size_of::<f32>()],
+                vyre_primitives::wire::pack_f32_slice(&q),
+                vyre_primitives::wire::pack_f32_slice(&k),
+                vyre_primitives::wire::pack_f32_slice(&v),
+                vec![0u8; 9 * core::mem::size_of::<f32>()],
             ]]
         }),
-        // Same expected output as `attention` on the same fixture —
-        // online and offline softmax must agree.
+        // This deliberately uses s=9 so `direct_attention_program` declines
+        // the tiny-shape specialization and the registered op covers the real
+        // online-softmax flash kernel. With zero Q/K, every row has uniform
+        // weights and returns mean(V)=4.0.
         expected_output: Some(|| {
-            vec![vec![
-                vec![
-                    0x46, 0x9b, 0x68, 0x3e, 0x82, 0xfc, 0xc1, 0x3e, 0xee, 0xda, 0xa4, 0x3f,
-                    0x02, 0xf9, 0x03, 0xbe, 0x9c, 0xb5, 0x1d, 0x3f, 0x90, 0x79, 0x9c, 0x3d,
-                    0x33, 0xbb, 0x8e, 0x3f, 0x38, 0xc3, 0x31, 0x3e,
-                ],
-            ]]
+            vec![vec![vyre_primitives::wire::pack_f32_slice(&[4.0_f32; 9])]]
         }),
         category: Some("nn"),
     }
@@ -359,27 +312,15 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
-    }
 
     /// Online-softmax flash-attention agrees with the offline 3-pass
     /// `attention_reference` on a non-trivial fixture.
     #[test]
     fn flash_attention_matches_attention_reference() {
-        let s = 5_u32;
+        let s = 9_u32;
         let d = 7_u32;
         let elements = (s * d) as usize;
         let q: Vec<f32> = (0..elements)
@@ -397,7 +338,7 @@ mod tests {
                 .iter()
                 .find(|b| b.name() == "out")
                 .map(|b| b.count() as usize * core::mem::size_of::<f32>())
-                .expect("output buffer present");
+                .expect("Fix: output buffer present");
             let outputs = vyre_reference::reference_eval(
                 &program,
                 &[
@@ -410,7 +351,7 @@ mod tests {
             .expect("Fix: flash_attention must execute in the reference interpreter.");
             decode_f32(&outputs[0].to_bytes())
         };
-        let actual = run(flash_attention("q", "k", "v", "out", s, d).expect("build"));
+        let actual = run(flash_attention("q", "k", "v", "out", s, d).expect("Fix: build"));
         let expected = run(crate::nn::attention::attention_reference(
             "q", "k", "v", "out", s, d,
         ));
@@ -419,6 +360,39 @@ mod tests {
             assert!(
                 (a - e).abs() <= 1.0e-4,
                 "flash_attention vs attention_reference mismatch at index {i}: {a} != {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn flash_attention_online_kernel_uniform_scores_return_value_mean() {
+        let s = 9_u32;
+        let d = 1_u32;
+        let q = vec![0.0_f32; s as usize];
+        let k = vec![0.0_f32; s as usize];
+        let v: Vec<f32> = (0..s).map(|idx| idx as f32).collect();
+        let program = flash_attention("q", "k", "v", "out", s, d).expect("Fix: build");
+        assert_eq!(
+            program.workgroup_size(),
+            [128, 1, 1],
+            "Fix: s=9 must bypass direct_attention_program and use the online flash kernel."
+        );
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&q)),
+                Value::from(f32_bytes(&k)),
+                Value::from(f32_bytes(&v)),
+                Value::from(vec![0u8; (s * d) as usize * 4]),
+            ],
+        )
+        .expect("Fix: flash_attention online kernel must execute in the reference interpreter.");
+        let actual = decode_f32(&outputs[0].to_bytes());
+        assert_eq!(actual.len(), s as usize);
+        for (idx, value) in actual.iter().enumerate() {
+            assert!(
+                (*value - 4.0).abs() <= 1.0e-5,
+                "uniform-score flash attention row {idx} should return mean(V)=4.0, got {value}"
             );
         }
     }
@@ -446,7 +420,7 @@ mod tests {
         let q = vec![1.0_f32, 2.0, 3.0, 4.0];
         let k = vec![0.5_f32, 1.5, 2.5, 3.5];
         let v = vec![10.0_f32, 20.0, 30.0, 40.0];
-        let prog = flash_attention("q", "k", "v", "out", 1, d).expect("build");
+        let prog = flash_attention("q", "k", "v", "out", 1, d).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -456,7 +430,7 @@ mod tests {
                 Value::from(vec![0u8; (d as usize) * 4]),
             ],
         )
-        .expect("eval");
+        .expect("Fix: eval");
         let actual = decode_f32(&outputs[0].to_bytes());
         for (a, e) in actual.iter().zip(v.iter()) {
             assert!(
@@ -474,7 +448,7 @@ mod tests {
         let q = [1e20f32, 1e20, 1e20, 1e20];
         let k = [1e20f32, 1e20, 1e20, 1e20];
         let v = [1.0f32, 2.0, 3.0, 4.0];
-        let prog = flash_attention("q", "k", "v", "out", s, d).expect("build");
+        let prog = flash_attention("q", "k", "v", "out", s, d).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -501,7 +475,7 @@ mod tests {
         let q = [f32::NAN, 0.0];
         let k = [0.0f32, 0.0];
         let v = [1.0f32, 2.0];
-        let prog = flash_attention("q", "k", "v", "out", s, d).expect("build");
+        let prog = flash_attention("q", "k", "v", "out", s, d).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[

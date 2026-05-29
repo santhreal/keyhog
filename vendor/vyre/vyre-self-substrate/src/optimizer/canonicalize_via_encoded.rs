@@ -1,6 +1,6 @@
 //! Canonicalize as a dispatched compute kernel.
 //!
-//! V1 scope: the load-bearing rewrite — for every commutative `BinOp`
+//! V1 scope: the load-bearing rewrite  -  for every commutative `BinOp`
 //! whose left operand is a literal and right operand is not, swap them
 //! so literals end up on the right. Other canonicalize rules (the
 //! non-literal sort tie-break and the `x == x` self-equality fold)
@@ -11,7 +11,6 @@
 //! swap. The decoder walks the IR in lockstep with the encoder and
 //! applies the swap when reconstructing each BinOp. No host-reference escape.
 
-use std::sync::Arc;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::dispatch_buffers::{
@@ -132,7 +131,7 @@ pub fn build_canonicalize_program(expr_count: u32) -> Program {
 
     // Parallel body: bind `i = gid_x()`, bound-check against
     // expr_count, then run the per-Expr logic. Each lane handles one
-    // Expr id independently — no inter-lane dependencies for
+    // Expr id independently  -  no inter-lane dependencies for
     // canonicalize.
     let body = vec![
         Node::let_bind("i", Expr::gid_x()),
@@ -160,7 +159,7 @@ fn bin_op_body() -> Vec<Node> {
     // Commutative op tags: Add(0x01), Mul(0x03), BitAnd(0x06),
     // BitOr(0x07), BitXor(0x08), Eq(0x0B), Ne(0x0C), And(0x12),
     // Or(0x13), AbsDiff(0x14), Min(0x15), Max(0x16). `Min`/`Max`
-    // and `AbsDiff` are mathematically commutative — including them
+    // and `AbsDiff` are mathematically commutative  -  including them
     // here means literal-on-right canonicalization fires for them
     // too, lining up `(Min 5 x)` and `(Min x 5)` for CSE.
     vec![
@@ -268,123 +267,9 @@ fn bin_op_body() -> Vec<Node> {
 }
 
 fn rewrite_program_with_swap_mask(program: Program, swap_mask: &[u32]) -> Program {
-    let body: Vec<Node> = match program.entry() {
-        [Node::Region { body, .. }] => body.as_ref().clone(),
-        entry => entry.to_vec(),
-    };
-
-    let mut counter = 0u32;
-    let rebuilt = rewrite_scope(&body, swap_mask, &mut counter);
-
-    let new_entry = match program.entry() {
-        [Node::Region {
-            generator,
-            source_region,
-            ..
-        }] => vec![Node::Region {
-            generator: generator.clone(),
-            source_region: source_region.clone(),
-            body: Arc::new(rebuilt),
-        }],
-        _ => rebuilt,
-    };
-    program.with_rewritten_entry(new_entry)
-}
-
-fn rewrite_scope(body: &[Node], swap_mask: &[u32], counter: &mut u32) -> Vec<Node> {
-    let prefix_len = super::encode::reachable_prefix_len(body);
-    let mut out = Vec::with_capacity(prefix_len);
-    for node in &body[..prefix_len] {
-        out.push(rewrite_node(node, swap_mask, counter));
-    }
-    out
-}
-
-fn rewrite_node(node: &Node, swap_mask: &[u32], counter: &mut u32) -> Node {
-    match node {
-        Node::Let { name, value } => {
-            Node::let_bind(name.clone(), rewrite_expr(value, swap_mask, counter))
-        }
-        Node::Assign { name, value } => {
-            Node::assign(name.clone(), rewrite_expr(value, swap_mask, counter))
-        }
-        Node::Store {
-            buffer,
-            index,
-            value,
-        } => Node::store(
-            buffer.clone(),
-            rewrite_expr(index, swap_mask, counter),
-            rewrite_expr(value, swap_mask, counter),
-        ),
-        Node::If {
-            cond,
-            then,
-            otherwise,
-        } => Node::if_then_else(
-            rewrite_expr(cond, swap_mask, counter),
-            rewrite_scope(then, swap_mask, counter),
-            rewrite_scope(otherwise, swap_mask, counter),
-        ),
-        Node::Loop {
-            var,
-            from,
-            to,
-            body,
-        } => Node::loop_for(
-            var.clone(),
-            rewrite_expr(from, swap_mask, counter),
-            rewrite_expr(to, swap_mask, counter),
-            rewrite_scope(body, swap_mask, counter),
-        ),
-        Node::AsyncLoad {
-            source,
-            destination,
-            offset,
-            size,
-            tag,
-        } => Node::AsyncLoad {
-            source: source.clone(),
-            destination: destination.clone(),
-            offset: Box::new(rewrite_expr(offset, swap_mask, counter)),
-            size: Box::new(rewrite_expr(size, swap_mask, counter)),
-            tag: tag.clone(),
-        },
-        Node::AsyncStore {
-            source,
-            destination,
-            offset,
-            size,
-            tag,
-        } => Node::AsyncStore {
-            source: source.clone(),
-            destination: destination.clone(),
-            offset: Box::new(rewrite_expr(offset, swap_mask, counter)),
-            size: Box::new(rewrite_expr(size, swap_mask, counter)),
-            tag: tag.clone(),
-        },
-        Node::Trap { address, tag } => Node::Trap {
-            address: Box::new(rewrite_expr(address, swap_mask, counter)),
-            tag: tag.clone(),
-        },
-        Node::Block(body) => Node::Block(rewrite_scope(body, swap_mask, counter)),
-        Node::Region {
-            generator,
-            source_region,
-            body,
-        } => Node::Region {
-            generator: generator.clone(),
-            source_region: source_region.clone(),
-            body: Arc::new(rewrite_scope(body.as_slice(), swap_mask, counter)),
-        },
-        Node::Return
-        | Node::Barrier { .. }
-        | Node::IndirectDispatch { .. }
-        | Node::AsyncWait { .. }
-        | Node::Resume { .. }
-        | Node::Opaque(_) => node.clone(),
-        _ => node.clone(),
-    }
+    super::rewrite_walk::rewrite_program_with_expr_rewriter(program, |expr, counter| {
+        rewrite_expr(expr, swap_mask, counter)
+    })
 }
 
 fn rewrite_expr(expr: &Expr, swap_mask: &[u32], counter: &mut u32) -> Expr {
@@ -516,7 +401,7 @@ mod tests {
         let mut swap_mask = Vec::with_capacity(4);
         let ptr = swap_mask.as_ptr();
         run_canonicalize_kernel_into(&arena, &dispatcher, &mut swap_mask)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
         assert_eq!(swap_mask, vec![1]);
         assert_eq!(swap_mask.as_ptr(), ptr);
     }
@@ -536,7 +421,7 @@ mod tests {
             &mut scratch,
             &mut swap_mask,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let swap_capacity = swap_mask.capacity();
@@ -547,7 +432,7 @@ mod tests {
             &mut scratch,
             &mut swap_mask,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),

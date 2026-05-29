@@ -1,4 +1,4 @@
-//! Marker types — unit structs the reference interpreter and backend
+//! Marker types  -  unit structs the reference interpreter and backend
 //! emitters dispatch on. Always compiled (zero deps); unrelated to
 //! the feature-gated Tier 2.5 subsystems.
 

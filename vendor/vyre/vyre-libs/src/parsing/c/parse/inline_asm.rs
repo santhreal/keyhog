@@ -1,11 +1,12 @@
+use crate::compiler::atomic_collect::atomic_collect_u32;
 use crate::parsing::c::lex::tokens::{
     TOK_COLON, TOK_GNU_ASM, TOK_GOTO, TOK_LPAREN, TOK_RPAREN, TOK_STRING, TOK_VOLATILE,
 };
-use crate::region::wrap_anonymous;
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::{Expr, Program};
 
 /// Front-end opcode for a GNU inline-asm AST row.
 pub const GNU_INLINE_ASM_OPCODE: u32 = 0x4153_4D00;
+const OP_ID: &str = "vyre-libs::parsing::c11_gnu_inline_asm_pass";
 
 /// Token-level summary for a GNU inline assembly statement or declaration alias.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,56 +139,23 @@ pub fn c11_gnu_inline_asm_pass(
     out_asm_blocks: &str,
     num_ast_nodes: Expr,
 ) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-
-    let loop_body = vec![
-        Node::let_bind("opcode", Expr::load(ast_opcodes, t.clone())),
-        Node::if_then(
-            Expr::eq(Expr::var("opcode"), Expr::u32(GNU_INLINE_ASM_OPCODE)),
-            vec![
-                // Claim a slot in the asm registry for ELF lowering bypassing standard SSA tree evaluation.
-                Node::let_bind(
-                    "asm_id",
-                    Expr::atomic_add("out_asm_counts", Expr::u32(0), Expr::u32(1)),
-                ),
-                Node::if_then(
-                    Expr::ge(Expr::var("asm_id"), num_ast_nodes.clone()),
-                    vec![Node::trap(
-                        Expr::var("asm_id"),
-                        "inline-asm-registry-overflow",
-                    )],
-                ),
-                Node::store(out_asm_blocks, Expr::var("asm_id"), t.clone()),
-            ],
-        ),
-    ];
-
-    let ast_count = match &num_ast_nodes {
-        Expr::LitU32(n) => *n,
-        _ => 1,
-    };
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(ast_opcodes, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(ast_count),
-            BufferDecl::storage(out_asm_blocks, 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(ast_count),
-            BufferDecl::storage("out_asm_counts", 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
-        ],
-        [256, 1, 1],
-        vec![wrap_anonymous(
-            "vyre-libs::parsing::c11_gnu_inline_asm_pass",
-            vec![Node::if_then(Expr::lt(t.clone(), num_ast_nodes), loop_body)],
-        )],
+    atomic_collect_u32(
+        OP_ID,
+        ast_opcodes,
+        out_asm_blocks,
+        "out_asm_counts",
+        num_ast_nodes,
+        1,
+        Some("inline-asm-registry-overflow"),
+        |opcode, _t| Expr::eq(opcode, Expr::u32(GNU_INLINE_ASM_OPCODE)),
+        |_t, asm_id| asm_id,
+        |t, _asm_id| t,
     )
-    .with_entry_op_id("vyre-libs::parsing::c11_gnu_inline_asm_pass")
-    .with_non_composable_with_self(true)
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::parsing::c11_gnu_inline_asm_pass",
+        id: OP_ID,
         build: || c11_gnu_inline_asm_pass("ast", "out_asm", Expr::u32(4)),
         // ast: 4 u32 opcodes including one ASM tag (0x41534D00) at
         // index 2. out_asm: 4 u32 slots. out_asm_counts: 1 u32 slot
@@ -195,10 +163,7 @@ inventory::submit! {
         // out_asm[0] and leaves non-ASM slots untouched.
         test_inputs: Some(|| {
             let ast = [0u32, 1, GNU_INLINE_ASM_OPCODE, 3];
-            let ast_bytes = ast
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let ast_bytes = vyre_primitives::wire::pack_u32_slice(&ast);
             vec![vec![ast_bytes, vec![0u8; 4 * 4], vec![0u8; 4]]]
         }),
         expected_output: Some(|| {

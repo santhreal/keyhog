@@ -243,24 +243,17 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 6);
-            let dist = read_u32s(&inputs[0]);
-            let next_dist = read_u32s(&inputs[1]);
-            let changed = read_u32s(&inputs[2]);
-            let src = read_u32s(&inputs[3]);
-            let dst = read_u32s(&inputs[4]);
-            let weight = read_u32s(&inputs[5]);
+            let dist = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let next_dist = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let changed = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+            let src = crate::hardware::dispatch_buffers::read_u32s(&inputs[3]);
+            let dst = crate::hardware::dispatch_buffers::read_u32s(&inputs[4]);
+            let weight = crate::hardware::dispatch_buffers::read_u32s(&inputs[5]);
             assert_eq!(dist, next_dist);
             assert_eq!(changed, vec![0]);
             let (out, _) = cpu_ref(&src, &dst, &weight, &dist, dist.len() as u32, 10);
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     #[test]
@@ -333,15 +326,7 @@ mod tests {
         let p2 = bellman_tn_order_program("s", "d", "w", "dist2", "nd2", "c2", 4, 4, 5);
         let p3 = bellman_tn_order_program("s", "d", "w", "dist3", "nd3", "c3", 4, 4, 5);
 
-        let mut entry = p1.entry().to_vec();
-        entry.extend(p2.entry().to_vec());
-        entry.extend(p3.entry().to_vec());
-
-        let mut buffers = p1.buffers().to_vec();
-        buffers.extend(p2.buffers().to_vec());
-        buffers.extend(p3.buffers().to_vec());
-
-        let final_p = Program::wrapped(buffers, [256, 1, 1], entry);
+        let final_p = crate::test_support::wrap_program_sequence(&[&p1, &p2, &p3], [256, 1, 1]);
         // Assert we have at least 3 regions
         let region_count = final_p
             .entry()
@@ -368,7 +353,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[u32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = vyre_primitives::wire::pack_u32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 

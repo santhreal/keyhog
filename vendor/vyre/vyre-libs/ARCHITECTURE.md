@@ -1,4 +1,4 @@
-# vyre-libs — architecture
+# vyre-libs  -  architecture
 
 Tier-3 compositions: every `fn(...) -> Program` that lowers via
 existing IR ops + intrinsics. No hardware-specific arms.
@@ -48,7 +48,7 @@ String/Ident interning helpers + the perfect-hash table for
 canonical lookups.
 
 ### `logical/`
-Boolean primitives — `and`, `or`, `xor`, `nand`, `nor`. Each
+Boolean primitives  -  `and`, `or`, `xor`, `nand`, `nor`. Each
 declares its `Commutative`/`Associative`/`Idempotent` markers
 for the algebraic-law registry.
 
@@ -63,7 +63,7 @@ Per-op contract types (precondition/postcondition pairs the
 conform suite checks).
 
 ### `harness.rs`
-Discovery surface — `vyre-libs::harness::iter()` enumerates every
+Discovery surface  -  `vyre-libs::harness::iter()` enumerates every
 shipped op.
 
 ### `representation/`
@@ -75,10 +75,10 @@ Sorted-range helpers used by the matching + dataflow stacks.
 
 ## Public types
 
-- **`security::*`** — downstream analyzers consume these: `flows_to`,
+- **`security::*`**  -  downstream analyzers consume these: `flows_to`,
   `sanitized_by`, `bounded_by_comparison`, `dominator_tree`,
   `label_by_family`, `path_reconstruct`, `aliases_dataflow`.
-- **`matching::CompiledDfa`** — DFA build result.
+- **`matching::CompiledDfa`**  -  DFA build result.
 - Per-domain types are documented in their respective module
   rustdoc.
 

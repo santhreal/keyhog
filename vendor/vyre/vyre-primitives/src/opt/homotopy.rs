@@ -9,9 +9,9 @@
 //!
 //! tracking solutions as `t` advances from 0 to 1. Recent parallel
 //! variants (Bertini, HomotopyContinuation.jl, Lazard 2023) follow
-//! many independent paths simultaneously — embarrassingly GPU-shaped.
+//! many independent paths simultaneously  -  embarrassingly GPU-shaped.
 //!
-//! This file ships the **Euler predictor step** primitive — given the
+//! This file ships the **Euler predictor step** primitive  -  given the
 //! current solution `x_t` and the Jacobian-vector product `J · v`
 //! (where `v = -∂H/∂t`), advance to `x_{t + Δt}`:
 //!
@@ -45,8 +45,8 @@ pub const OP_ID: &str = "vyre-primitives::opt::homotopy_euler_predictor";
 ///
 /// Inputs:
 /// - `x_curr`: `n_paths * n_dim` u32 (16.16 fp).
-/// - `v`: `n_paths * n_dim` u32 — Jacobian-vector product.
-/// - `dt_scaled`: 1-element u32 — `Δt` in 16.16 fp.
+/// - `v`: `n_paths * n_dim` u32  -  Jacobian-vector product.
+/// - `dt_scaled`: 1-element u32  -  `Δt` in 16.16 fp.
 ///
 /// Output:
 /// - `x_pred`: `n_paths * n_dim` u32.
@@ -79,15 +79,12 @@ pub fn homotopy_euler_predictor(
     let cells = n_paths * n_dim;
     let t = Expr::InvocationId { axis: 0 };
 
-    // x_pred[i] = x_curr[i] + (dt · v[i]) >> 16
+    // x_pred[i] = x_curr[i] + fixed_mul_16_16(dt, v[i])
     let value = Expr::add(
         Expr::load(x_curr, t.clone()),
-        Expr::shr(
-            Expr::mul(
-                Expr::load(dt_scaled, Expr::u32(0)),
-                Expr::load(v, t.clone()),
-            ),
-            Expr::u32(16),
+        crate::fixed_mul_16_16_expr(
+            Expr::load(dt_scaled, Expr::u32(0)),
+            Expr::load(v, t.clone()),
         ),
     );
 
@@ -134,6 +131,28 @@ pub fn linear_homotopy_cpu(g_x: &[f64], f_x: &[f64], t: f64) -> Vec<f64> {
         .zip(f_x.iter())
         .map(|(&g, &f)| s * g + t * f)
         .collect()
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || homotopy_euler_predictor("x_curr", "v", "dt_scaled", "x_pred", 1, 2),
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[5u32 << 16, 7u32 << 16]),
+                crate::wire::pack_u32_slice(&[2u32 << 16, 3u32 << 16]),
+                crate::wire::pack_u32_slice(&[1u32 << 16]),
+                crate::wire::pack_u32_slice(&[0, 0]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[
+                7u32 << 16,
+                10u32 << 16,
+            ])]]
+        }),
+    )
 }
 
 #[cfg(test)]

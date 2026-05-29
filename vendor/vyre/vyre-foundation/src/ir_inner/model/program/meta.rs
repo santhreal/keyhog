@@ -86,6 +86,44 @@ impl NodeVisitor for FallbackWireHasher<'_> {
                 h.update(b"n:Resume\0");
                 h.update(tag.as_bytes());
             }
+            Node::AllReduce { buffer, op, group } => {
+                h.update(b"n:AllReduce\0");
+                h.update(buffer.as_bytes());
+                h.update(&op.builtin_wire_tag().to_le_bytes());
+                h.update(&group.as_u32().to_le_bytes());
+            }
+            Node::AllGather {
+                input,
+                output,
+                group,
+            } => {
+                h.update(b"n:AllGather\0");
+                h.update(input.as_bytes());
+                h.update(output.as_bytes());
+                h.update(&group.as_u32().to_le_bytes());
+            }
+            Node::ReduceScatter {
+                input,
+                output,
+                op,
+                group,
+            } => {
+                h.update(b"n:ReduceScatter\0");
+                h.update(input.as_bytes());
+                h.update(output.as_bytes());
+                h.update(&op.builtin_wire_tag().to_le_bytes());
+                h.update(&group.as_u32().to_le_bytes());
+            }
+            Node::Broadcast {
+                buffer,
+                root,
+                group,
+            } => {
+                h.update(b"n:Broadcast\0");
+                h.update(buffer.as_bytes());
+                h.update(&root.to_le_bytes());
+                h.update(&group.as_u32().to_le_bytes());
+            }
             Node::Return => {
                 h.update(b"n:Return\0");
             }
@@ -324,7 +362,7 @@ impl Program {
 
     /// Set the workgroup dimensions in place. Used by harnesses that
     /// need to clone-and-rewrite a program's workgroup size for fallback
-    /// dispatch — the alternative was to reconstruct the entire Program,
+    /// dispatch  -  the alternative was to reconstruct the entire Program,
     /// which is unnecessarily expensive when only one field changes.
     #[inline]
     pub fn set_workgroup_size(&mut self, workgroup_size: [u32; 3]) {
@@ -410,6 +448,7 @@ impl Program {
     #[must_use]
     #[inline]
     pub fn fingerprint(&self) -> [u8; 32] {
+
         *self.fingerprint.get_or_init(|| {
             let hash = self.compute_wire_hash();
             let _ = self.hash.set(hash);
@@ -427,7 +466,7 @@ impl Program {
     /// [`Self::fingerprint`] for exact-match lookups.
     ///
     /// Wires the substrate's #29 hypervector primitive into Program
-    /// itself — every Program now carries its own VSA fingerprint
+    /// itself  -  every Program now carries its own VSA fingerprint
     /// without callers having to reach into the substrate explicitly.
     #[must_use]
     pub fn vsa_fingerprint(&self) -> Vec<u32> {
@@ -493,6 +532,10 @@ impl Program {
                     Node::Let { .. }
                     | Node::Assign { .. }
                     | Node::Store { .. }
+                    | Node::AllReduce { .. }
+                    | Node::AllGather { .. }
+                    | Node::ReduceScatter { .. }
+                    | Node::Broadcast { .. }
                     | Node::Return
                     | Node::Barrier { .. }
                     | Node::AsyncLoad { .. }
@@ -829,6 +872,10 @@ impl Program {
             Node::AsyncWait { .. } => "AsyncWait",
             Node::Trap { .. } => "Trap",
             Node::Resume { .. } => "Resume",
+            Node::AllReduce { .. } => "AllReduce",
+            Node::AllGather { .. } => "AllGather",
+            Node::ReduceScatter { .. } => "ReduceScatter",
+            Node::Broadcast { .. } => "Broadcast",
             Node::Opaque(_) => "Opaque",
         }
     }
@@ -851,6 +898,7 @@ pub(crate) fn buffers_equal_ignoring_declaration_order(
     if left == right {
         return true;
     }
+
 
     let mut left_keys = Vec::with_capacity(left.len());
     left_keys.extend(left.iter().map(buffer_decl_canonical_key));
@@ -937,3 +985,4 @@ pub(super) fn buffer_decl_canonical_key(buffer: &super::BufferDecl) -> Vec<u8> {
     put_u8(&mut key, u8::from(buffer.bytes_extraction));
     key
 }
+

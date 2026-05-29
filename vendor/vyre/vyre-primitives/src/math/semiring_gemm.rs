@@ -1,7 +1,7 @@
-//! Generic-semiring matrix multiply — the spine of the LEGO substrate.
+//! Generic-semiring matrix multiply  -  the spine of the LEGO substrate.
 //!
 //! `semiring_gemm` is one Program builder parameterized by a closed semiring
-//! choice. It emits IR specialized to that semiring at build time — the
+//! choice. It emits IR specialized to that semiring at build time  -  the
 //! emitted body contains zero runtime branches over the semiring tag, so
 //! Tensor Cores and subgroup-mat-mul intrinsics see the same shape they
 //! would for a standard `(×, +)` gemm.
@@ -18,10 +18,10 @@
 //! | `MaxPlus` (+, max) | scheduling, rate analysis | critical-path of dispatch graph for #22 megakernel scheduler |
 //! | `BoolOr` (∧, ∨) | reachability in `vyre-libs::dataflow` | Region-tree reachability for #26 dataflow fixpoint |
 //! | `MaxTimes` (×, max) | Viterbi/HMM forward in ML consumers | rule-conflict probability resolution |
-//! | `Provenance` | `vyre-libs::scallop_join` (#39) | rule provenance tracking in frontend |
+//! | `Provenance` | `vyre-libs::scallop_join` (#39) | rule provenance tracking in external analyzer |
 //! | `Gf2` (∧, ⊕) | crypto / linear-code dialects | bitset adjacency under XOR closure |
 //!
-//! Six self-consumers, six user-dialect consumers — clears the recursion-thesis
+//! Six self-consumers, six user-dialect consumers  -  clears the recursion-thesis
 //! bar from day 1.
 //!
 //! # Algorithm
@@ -42,11 +42,10 @@
 //! dense enum-specialized semiring GEMM over the seven well-known
 //! semirings.
 
-use std::sync::Arc;
-
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{DataType, Expr, Program};
 pub use vyre_spec::Semiring;
+
+use crate::fixed_u32_matmul::u32_matmul_program;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::math::semiring_gemm";
@@ -71,7 +70,7 @@ fn semiring_combine_expr(semiring: Semiring, a: Expr, b: Expr) -> Expr {
             // Zero-absorbing OR: if either operand is 0 (no edge),
             // the join is 0. Otherwise OR the fact bitsets along
             // the path step. Distinguishes "no edge" from
-            // "edge with empty fact-set" — single-u32 lineage.
+            // "edge with empty fact-set"  -  single-u32 lineage.
             let either_zero = Expr::or(
                 Expr::eq(a.clone(), Expr::u32(0)),
                 Expr::eq(b.clone(), Expr::u32(0)),
@@ -162,53 +161,24 @@ pub fn semiring_gemm(
             format!("Fix: semiring_gemm B buffer cells overflow u32: k={k}, n={n}."),
         );
     };
-    let t = Expr::InvocationId { axis: 0 };
-
-    // Decode flat invocation into (i, j): t = i*n + j.
-    // i = t / n, j = t mod n.
-    let i_expr = Expr::div(t.clone(), Expr::u32(n));
-    let j_expr = Expr::rem(t.clone(), Expr::u32(n));
-
-    // a_idx = i*k + kk ; b_idx = kk*n + j
-    let a_idx = Expr::add(Expr::mul(Expr::var("i"), Expr::u32(k)), Expr::var("kk"));
-    let b_idx = Expr::add(Expr::mul(Expr::var("kk"), Expr::u32(n)), Expr::var("j"));
-
-    let combine = semiring_combine_expr(semiring, Expr::load(a, a_idx), Expr::load(b, b_idx));
-    let accumulate = semiring_accumulate_expr(semiring, Expr::var("acc"), combine);
-
-    let body = vec![Node::if_then(
-        Expr::lt(t.clone(), Expr::u32(cell_count)),
-        vec![
-            Node::let_bind("i", i_expr),
-            Node::let_bind("j", j_expr),
-            Node::let_bind("acc", Expr::u32(semiring.identity())),
-            Node::loop_for(
-                "kk",
-                Expr::u32(0),
-                Expr::u32(k),
-                vec![Node::assign("acc", accumulate)],
-            ),
-            Node::store(c, t, Expr::var("acc")),
-        ],
-    )];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32).with_count(a_count),
-            BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32).with_count(b_count),
-            BufferDecl::storage(c, 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(cell_count),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
+    u32_matmul_program(
+        OP_ID,
+        a,
+        b,
+        c,
+        m,
+        k,
+        n,
+        a_count,
+        b_count,
+        cell_count,
+        semiring.identity(),
+        |lhs, rhs| semiring_combine_expr(semiring, lhs, rhs),
+        |acc, value| semiring_accumulate_expr(semiring, acc, value),
     )
 }
 
-/// CPU reference — exact byte-for-byte target the GPU dispatch must hit.
+/// CPU reference  -  exact byte-for-byte target the GPU dispatch must hit.
 ///
 /// `a` is `m × k`, `b` is `k × n`, output is `m × n`, all row-major.
 #[must_use]
@@ -222,8 +192,24 @@ pub fn semiring_gemm_cpu(
     semiring: Semiring,
 ) -> Vec<u32> {
     let mut c = Vec::new();
-    semiring_gemm_cpu_into(a, b, m, n, k, semiring, &mut c);
+    try_semiring_gemm_cpu_into(a, b, m, n, k, semiring, &mut c)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - semiring_gemm_cpu failed: invalid GEMM shape");
     c
+}
+
+/// Fallible CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_semiring_gemm_cpu(
+    a: &[u32],
+    b: &[u32],
+    m: u32,
+    n: u32,
+    k: u32,
+    semiring: Semiring,
+) -> Result<Vec<u32>, String> {
+    let mut c = Vec::new();
+    try_semiring_gemm_cpu_into(a, b, m, n, k, semiring, &mut c)?;
+    Ok(c)
 }
 
 /// CPU reference using a caller-owned output buffer.
@@ -241,12 +227,30 @@ pub fn semiring_gemm_cpu_into(
     semiring: Semiring,
     c: &mut Vec<u32>,
 ) {
-    let m_usize = m as usize;
-    let n_usize = n as usize;
-    let k_usize = k as usize;
-    let cell_count = m_usize
-        .checked_mul(n_usize)
-        .expect("Fix: semiring_gemm_cpu_into output cells overflow usize.");
+    try_semiring_gemm_cpu_into(a, b, m, n, k, semiring, c)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - semiring_gemm_cpu_into failed: invalid GEMM shape");
+}
+
+/// Fallible CPU reference using a caller-owned output buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_semiring_gemm_cpu_into(
+    a: &[u32],
+    b: &[u32],
+    m: u32,
+    n: u32,
+    k: u32,
+    semiring: Semiring,
+    c: &mut Vec<u32>,
+) -> Result<(), String> {
+    let (m_usize, n_usize, k_usize, cell_count) = checked_cpu_gemm_shape(m, n, k)?;
+    if cell_count > c.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            c,
+            cell_count - c.len(),
+            "semiring GEMM CPU oracle",
+            "output matrix",
+        )?;
+    }
     c.clear();
     c.resize(cell_count, semiring.identity());
     for i in 0..m_usize {
@@ -267,6 +271,32 @@ pub fn semiring_gemm_cpu_into(
             c[i * n_usize + j] = acc;
         }
     }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn checked_cpu_gemm_shape(m: u32, n: u32, k: u32) -> Result<(usize, usize, usize, usize), String> {
+    if m == 0 || n == 0 || k == 0 {
+        return Err(format!(
+            "semiring_gemm CPU oracle requires non-zero dimensions, got m={m}, n={n}, k={k}."
+        ));
+    }
+    let m_usize =
+        usize::try_from(m).map_err(|_| format!("semiring_gemm m={m} does not fit usize."))?;
+    let n_usize =
+        usize::try_from(n).map_err(|_| format!("semiring_gemm n={n} does not fit usize."))?;
+    let k_usize =
+        usize::try_from(k).map_err(|_| format!("semiring_gemm k={k} does not fit usize."))?;
+    let cell_count = m_usize
+        .checked_mul(n_usize)
+        .ok_or_else(|| format!("semiring_gemm CPU oracle output cells overflow: m={m}, n={n}."))?;
+    m_usize.checked_mul(k_usize).ok_or_else(|| {
+        format!("semiring_gemm CPU oracle A buffer cells overflow: m={m}, k={k}.")
+    })?;
+    k_usize.checked_mul(n_usize).ok_or_else(|| {
+        format!("semiring_gemm CPU oracle B buffer cells overflow: k={k}, n={n}.")
+    })?;
+    Ok((m_usize, n_usize, k_usize, cell_count))
 }
 
 #[inline]
@@ -309,7 +339,7 @@ fn semiring_accumulate_cpu(s: Semiring, acc: u32, val: u32) -> u32 {
 
 #[cfg(feature = "inventory-registry")]
 fn fixture_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    crate::wire::pack_u32_slice(words)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -327,205 +357,4 @@ inventory::submit! {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cpu_real_2x2() {
-        // [[1,2],[3,4]] · [[5,6],[7,8]] = [[19,22],[43,50]]
-        let a = vec![1, 2, 3, 4];
-        let b = vec![5, 6, 7, 8];
-        let c = semiring_gemm_cpu(&a, &b, 2, 2, 2, Semiring::Real);
-        assert_eq!(c, vec![19, 22, 43, 50]);
-    }
-
-    #[test]
-    fn cpu_real_identity() {
-        // A · I = A
-        let a = vec![3, 5, 7, 11];
-        let i = vec![1, 0, 0, 1];
-        let c = semiring_gemm_cpu(&a, &i, 2, 2, 2, Semiring::Real);
-        assert_eq!(c, a);
-    }
-
-    #[test]
-    fn cpu_min_plus_shortest_path_step() {
-        // MinPlus matmul = one Bellman-Ford relaxation step.
-        // Adjacency: 0→1 cost 5, 1→2 cost 3, 0→2 cost MAX (no direct edge).
-        let inf = u32::MAX;
-        let a = vec![
-            inf, 5, inf, // row 0: from 0
-            inf, inf, 3, // row 1: from 1
-            inf, inf, inf, // row 2: from 2
-        ];
-        // A · A — squaring under min-plus = paths of length ≤ 2.
-        let c = semiring_gemm_cpu(&a, &a, 3, 3, 3, Semiring::MinPlus);
-        // 0→2 via 1: 5 + 3 = 8.
-        assert_eq!(c[0 * 3 + 2], 8);
-        // 0→1 has no length-exactly-2 path: MAX.
-        assert_eq!(c[0 * 3 + 1], inf);
-    }
-
-    #[test]
-    fn cpu_min_plus_saturating_no_overflow() {
-        // Two MAX entries combined must stay MAX, not wrap to MAX-1.
-        let inf = u32::MAX;
-        let a = vec![inf, inf, inf, inf];
-        let b = vec![inf, inf, inf, inf];
-        let c = semiring_gemm_cpu(&a, &b, 2, 2, 2, Semiring::MinPlus);
-        for v in c {
-            assert_eq!(v, inf);
-        }
-    }
-
-    #[test]
-    fn cpu_bool_or_reachability() {
-        // 3-node graph: 0→1, 1→2. Adjacency squared = 0→2 reachable in ≤2.
-        let a = vec![
-            0, 1, 0, // row 0
-            0, 0, 1, // row 1
-            0, 0, 0, // row 2
-        ];
-        let c = semiring_gemm_cpu(&a, &a, 3, 3, 3, Semiring::BoolOr);
-        assert_eq!(c[0 * 3 + 2], 1);
-        assert_eq!(c[0 * 3 + 1], 0); // length-exactly-2 from 0 to 1: none
-    }
-
-    #[test]
-    fn cpu_lineage_scallop_join() {
-        // Scallop-style which-facts-used provenance (#39).
-        // Each bit in a u32 names a clause / fact:
-        //   bit 0 = "fact f1 used", bit 1 = "fact f2 used".
-        //
-        // Edges (entry value = bitset of facts justifying that edge):
-        //   0→1 justified by {f1} = 0b01
-        //   1→2 justified by {f2} = 0b10
-        //
-        // One join step (matmul under Lineage) — path 0→2 should carry
-        // {f1, f2} = 0b11 (both facts contributed along the derivation).
-        let f1 = 0b01;
-        let f2 = 0b10;
-        let a = vec![
-            0, f1, 0, // 0
-            0, 0, f2, // 1
-            0, 0, 0, // 2
-        ];
-        let c = semiring_gemm_cpu(&a, &a, 3, 3, 3, Semiring::Lineage);
-        assert_eq!(c[0 * 3 + 2], f1 | f2, "lineage = union of facts along path");
-        // No path 0→1 of length exactly 2 → identity 0.
-        assert_eq!(c[0 * 3 + 1], 0);
-    }
-
-    #[test]
-    fn cpu_lineage_alternative_paths_union() {
-        // Two parallel routes 0→3, both length 2:
-        //   route via 1: edges {f1}, {f2}
-        //   route via 2: edges {f3}, {f4}
-        // After one join step (length-2 paths), c[0,3] should accumulate
-        // BOTH route's lineage sets via OR of OR.
-        let f1 = 0b0001;
-        let f2 = 0b0010;
-        let f3 = 0b0100;
-        let f4 = 0b1000;
-        let a = vec![
-            0, f1, f3, 0, // 0
-            0, 0, 0, f2, // 1
-            0, 0, 0, f4, // 2
-            0, 0, 0, 0, // 3
-        ];
-        let c = semiring_gemm_cpu(&a, &a, 4, 4, 4, Semiring::Lineage);
-        assert_eq!(
-            c[0 * 4 + 3],
-            f1 | f2 | f3 | f4,
-            "expected union over both paths"
-        );
-    }
-
-    #[test]
-    fn cpu_max_plus_longest_path() {
-        // 0→1 weight 5, 1→2 weight 3. (max,+) squared: longest path 0→2 = 8.
-        let a = vec![
-            0, 5, 0, // row 0
-            0, 0, 3, // row 1
-            0, 0, 0, // row 2
-        ];
-        let c = semiring_gemm_cpu(&a, &a, 3, 3, 3, Semiring::MaxPlus);
-        assert_eq!(c[0 * 3 + 2], 8);
-    }
-
-    #[test]
-    fn cpu_gf2_xor_closure() {
-        // GF(2): (×, +) over Z/2 = (∧, ⊕). Should be the boolean XOR-AND ring.
-        let a = vec![1, 0, 1, 1];
-        let b = vec![1, 1, 0, 1];
-        // c[0,0] = (1∧1) ⊕ (0∧0) = 1
-        // c[0,1] = (1∧1) ⊕ (0∧1) = 1
-        // c[1,0] = (1∧1) ⊕ (1∧0) = 1
-        // c[1,1] = (1∧1) ⊕ (1∧1) = 0
-        let c = semiring_gemm_cpu(&a, &b, 2, 2, 2, Semiring::Gf2);
-        assert_eq!(c, vec![1, 1, 1, 0]);
-    }
-
-    #[test]
-    fn cpu_max_times_viterbi() {
-        // (×, max): emission-times-transition along best path.
-        // start probs * trans probs over 1 step, 2 states:
-        // a = [0.5, 0.5] (as fixed-point u32: 50, 50)
-        // b = [[0.6, 0.4], [0.3, 0.7]] (60/40, 30/70)
-        let a = vec![50, 50];
-        let b = vec![60, 40, 30, 70];
-        // c[0,0] = max(50*60, 50*30) = max(3000, 1500) = 3000
-        // c[0,1] = max(50*40, 50*70) = max(2000, 3500) = 3500
-        let c = semiring_gemm_cpu(&a, &b, 1, 2, 2, Semiring::MaxTimes);
-        assert_eq!(c, vec![3000, 3500]);
-    }
-
-    #[test]
-    fn emitted_program_buffer_layout() {
-        let p = semiring_gemm("A", "B", "C", 4, 5, 3, Semiring::Real);
-        assert_eq!(p.workgroup_size, [256, 1, 1]);
-        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
-        assert_eq!(names, vec!["A", "B", "C"]);
-        assert_eq!(p.buffers[0].count(), 4 * 3); // m*k
-        assert_eq!(p.buffers[1].count(), 3 * 5); // k*n
-        assert_eq!(p.buffers[2].count(), 4 * 5); // m*n
-    }
-
-    #[test]
-    fn emitted_program_buffer_access_modes() {
-        let p = semiring_gemm("A", "B", "C", 2, 2, 2, Semiring::MinPlus);
-        assert_eq!(p.buffers[0].access(), BufferAccess::ReadOnly);
-        assert_eq!(p.buffers[1].access(), BufferAccess::ReadOnly);
-        assert_eq!(p.buffers[2].access(), BufferAccess::ReadWrite);
-    }
-
-    #[test]
-    fn zero_m_traps() {
-        let p = semiring_gemm("A", "B", "C", 0, 1, 1, Semiring::Real);
-        assert!(p.stats().trap());
-    }
-
-    #[test]
-    fn zero_n_traps() {
-        let p = semiring_gemm("A", "B", "C", 1, 0, 1, Semiring::Real);
-        assert!(p.stats().trap());
-    }
-
-    #[test]
-    fn zero_k_traps() {
-        let p = semiring_gemm("A", "B", "C", 1, 1, 0, Semiring::Real);
-        assert!(p.stats().trap());
-    }
-
-    #[test]
-    fn identity_table_matches_doc() {
-        assert_eq!(Semiring::Real.identity(), 0);
-        assert_eq!(Semiring::MinPlus.identity(), u32::MAX);
-        assert_eq!(Semiring::MaxPlus.identity(), 0);
-        assert_eq!(Semiring::MaxTimes.identity(), 0);
-        assert_eq!(Semiring::BoolOr.identity(), 0);
-        assert_eq!(Semiring::BoolAnd.identity(), u32::MAX);
-        assert_eq!(Semiring::Gf2.identity(), 0);
-        assert_eq!(Semiring::Lineage.identity(), 0);
-    }
-}
+mod tests;

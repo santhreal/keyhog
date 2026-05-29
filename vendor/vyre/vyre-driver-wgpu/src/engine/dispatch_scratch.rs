@@ -102,7 +102,7 @@ mod tests {
             }
             Ok(())
         })
-        .expect("dispatch scratch first borrow should succeed");
+        .expect("Fix: dispatch scratch first borrow should succeed");
 
         with_dispatch_scratch(|scratch| {
             assert!(scratch.clear_requests.is_empty());
@@ -128,7 +128,7 @@ mod tests {
             );
             Ok(())
         })
-        .expect("dispatch scratch second borrow should succeed");
+        .expect("Fix: dispatch scratch second borrow should succeed");
     }
 
     #[test]

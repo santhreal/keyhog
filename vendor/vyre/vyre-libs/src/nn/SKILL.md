@@ -1,6 +1,6 @@
 # vyre-libs::nn SKILL
 
-Neural-network primitives — activation, linear layers, normalization,
+Neural-network primitives  -  activation, linear layers, normalization,
 attention. Every op is a Cat-A composition over `vyre-ops` primitives
 and lower-level `vyre-libs::math` functions.
 
@@ -15,7 +15,7 @@ and lower-level `vyre-libs::math` functions.
 
 ## Witness sources
 
-- `relu`: trivial — identity for non-negative u32.
+- `relu`: trivial  -  identity for non-negative u32.
 - `layer_norm`: PyTorch's `torch.nn.LayerNorm` reference with
   `eps=1e-5`, plus a corpus of edge cases (constant input, zero
   variance, large variance).
@@ -45,4 +45,4 @@ and lower-level `vyre-libs::math` functions.
 - `layer_norm(input, output, n, eps)`: both 1-D F32 length `n`.
 - `attention(q, k, v, out, s, d)`: all four 2-D F32 shape `[s, d]`.
 - All builders route through `check_tensors` for collision, dtype,
-  and overflow — no op-specific shape logic lives outside the builder.
+  and overflow  -  no op-specific shape logic lives outside the builder.

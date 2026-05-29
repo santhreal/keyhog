@@ -194,7 +194,7 @@ pub fn binop_identity_replacement(
     }
 
     // Mul/SaturatingMul absorber is restricted to *integer* zero because
-    // float 0.0 × NaN = NaN, not 0.0 — folding would change semantics.
+    // float 0.0 × NaN = NaN, not 0.0  -  folding would change semantics.
     // BitAnd is fine with any zero (bitwise, type-safe).
     let lhs_is_int_zero = lhs_lit.is_some_and(ScalarLiteral::is_integer_zero);
     let rhs_is_int_zero = rhs_lit.is_some_and(ScalarLiteral::is_integer_zero);

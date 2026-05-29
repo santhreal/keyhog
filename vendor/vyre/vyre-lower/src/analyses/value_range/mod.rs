@@ -60,7 +60,7 @@ impl IntRange {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ValueRangeReport {
     /// `result_id → IntRange` for ids in the TOP-LEVEL body whose
-    /// range is statically derivable. Per-body id space — child
+    /// range is statically derivable. Per-body id space  -  child
     /// bodies are walked separately via `analyze_body` if callers
     /// need it.
     pub ranges: FxHashMap<u32, IntRange>,
@@ -139,7 +139,7 @@ pub fn analyze_body(body: &KernelBody) -> ValueRangeReport {
     }
 
     // Phase 1b: propagate through Min/Max BinOps where both operands
-    // have known ranges. The result range is the union — Min(a, b)
+    // have known ranges. The result range is the union  -  Min(a, b)
     // could be either, so the result is in [min(a.min, b.min),
     // min(a.max, b.max)] for Min, but a tighter union is safe.
     for op in &body.ops {
@@ -182,7 +182,7 @@ pub fn analyze_body(body: &KernelBody) -> ValueRangeReport {
                     BinOp::BitAnd => {
                         // x & mask: result is in [0, max_possible].
                         // The max_possible is the smaller of the two
-                        // operand maxes — neither operand can
+                        // operand maxes  -  neither operand can
                         // contribute bits the other doesn't have set.
                         // Conservative: refuse on negatives (sign bit
                         // makes the range non-trivial).
@@ -213,7 +213,7 @@ pub fn analyze_body(body: &KernelBody) -> ValueRangeReport {
                     BinOp::Shl if r.is_singleton() && r.min >= 0 && r.min < 32 => {
                         // x << k for known k: result range scales by 2^k.
                         // Use checked_shl to bail on overflow. l can be
-                        // negative — Shl on negatives is well-defined
+                        // negative  -  Shl on negatives is well-defined
                         // arithmetic-shift in Rust (multiplies by 2^k).
                         let k = r.min as u32;
                         match (l.min.checked_shl(k), l.max.checked_shl(k)) {
@@ -243,7 +243,7 @@ pub fn analyze_body(body: &KernelBody) -> ValueRangeReport {
     ValueRangeReport { ranges }
 }
 
-/// Range of `l * r` accounting for sign — the result range is the
+/// Range of `l * r` accounting for sign  -  the result range is the
 /// min/max of the four corner products (l.min*r.min, l.min*r.max,
 /// l.max*r.min, l.max*r.max). Bails on overflow.
 fn mul_range(l: IntRange, r: IntRange) -> Option<IntRange> {
@@ -448,6 +448,7 @@ mod tests {
     }
 
     #[test]
+
     fn bitand_with_mask_bounds_to_zero_through_mask() {
         // x & 0xFF where x is unknown but BitAnd(x, 0xFF) bounds to [0, 0xFF].
         // Phase 1 only knows x's range when x is itself a literal,
@@ -700,7 +701,7 @@ mod tests {
 
     #[test]
     fn non_lit_op_no_range() {
-        // LocalInvocationId — can't statically bound in phase 1.
+        // LocalInvocationId  -  can't statically bound in phase 1.
         let desc = build(
             vec![KernelOp {
                 kind: KernelOpKind::LocalInvocationId,
@@ -789,3 +790,4 @@ mod tests {
         assert_eq!(u, IntRange { min: 0, max: 10 });
     }
 }
+

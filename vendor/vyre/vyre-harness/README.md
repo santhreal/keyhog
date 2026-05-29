@@ -41,21 +41,22 @@ consumes.
   str`, every entry can live in a static `inventory::collect!` slot,
   which turns the registry into a zero-cost cold-start lookup.
 - **No opinion on home crate.** A primitive may live in `vyre-libs`,
-  `vyre-primitives`, `weir`, or any future external composition crate
-  : the harness is registry-only.
+  `vyre-primitives`, or any future external composition crate: the
+  harness is registry-only.
 
 ## Who uses it
 
 - `vyre-libs`: math / nn / crypto / matching / decode primitives.
 - `vyre-primitives`: the Tier-2.5 LEGO substrate.
-- `weir`: dataflow primitives that ride on top of vyre.
+- External composition crates: downstream domains that register their
+  own primitives without coupling this harness to their package names.
 - `vyre-conform-runner`: the consumer that walks every entry to
   produce a signed certificate per op × backend × adapter.
 
 ## Where to look
 
-- `src/lib.rs` — public type surface.
-- `tests/universal_harness.rs` — the integration test that proves the
+- `src/lib.rs`  -  public type surface.
+- `tests/universal_harness.rs`  -  the integration test that proves the
   registry is well-formed.
-- `OWNERSHIP.md` (workspace root) — boundary definition.
-- `audits/V7_api.toml` — frozen public-API contract for this crate.
+- `OWNERSHIP.md` (workspace root)  -  boundary definition.
+- `audits/V7_api.toml`  -  frozen public-API contract for this crate.

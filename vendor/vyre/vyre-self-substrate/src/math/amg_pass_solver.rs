@@ -5,7 +5,7 @@
 //! The matroid scheduler at
 //! [`super::matroid_megakernel_scheduler`] currently uses a single
 //! Jacobi smoothing step ([`super::multigrid_matroid_solver::matroid_solve_step`])
-//! to weight augmenting BFS layers. That's a 1-step relaxation —
+//! to weight augmenting BFS layers. That's a 1-step relaxation  -
 //! converges slowly on stiff exchange graphs (large condition number,
 //! deep dispatch chains).
 //!
@@ -34,7 +34,7 @@ use crate::dispatch_buffers::{
 };
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::math::amg_v_cycle::amg_v_cycle;
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::math::amg_v_cycle::{cpu_ref, cpu_ref_into, AmgVcycleScratch};
 
 /// Caller-owned dispatch scratch for fixed-point AMG V-cycle execution.
@@ -44,7 +44,7 @@ pub struct AmgPassGpuScratch {
     omega: Vec<u32>,
 }
 
-/// Default Jacobi relaxation parameter — 0.66 is the standard
+/// Default Jacobi relaxation parameter  -  0.66 is the standard
 /// damping factor for diagonally-dominant matrices arising in
 /// matroid-intersection LP relaxations.
 pub const DEFAULT_OMEGA: f64 = 0.66;
@@ -70,7 +70,7 @@ pub const DEFAULT_OMEGA_FIXED: u32 = 43_254;
 /// Panics on size mismatches between input arrays and `n_fine` /
 /// `n_coarse`.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 #[allow(clippy::too_many_arguments)]
 pub fn reference_smooth_matroid_flow(
     a: &[f64],
@@ -98,6 +98,10 @@ pub fn reference_smooth_matroid_flow(
         "Fix: p_mat must be n_fine x n_coarse."
     );
     assert_eq!(a_c.len(), nc * nc, "Fix: a_c must be n_coarse x n_coarse.");
+    if n_fine == 0 {
+        assert_eq!(n_coarse, 0, "Fix: empty fine grids require n_coarse = 0.");
+        return Vec::new();
+    }
 
     use crate::observability::{amg_pass_solver_calls, bump};
     bump(&amg_pass_solver_calls);
@@ -105,7 +109,7 @@ pub fn reference_smooth_matroid_flow(
 }
 
 /// Run one AMG V-cycle into caller-owned storage.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 #[allow(clippy::too_many_arguments)]
 pub fn reference_smooth_matroid_flow_into(
     a: &[f64],
@@ -135,6 +139,11 @@ pub fn reference_smooth_matroid_flow_into(
         "Fix: p_mat must be n_fine x n_coarse."
     );
     assert_eq!(a_c.len(), nc * nc, "Fix: a_c must be n_coarse x n_coarse.");
+    if n_fine == 0 {
+        assert_eq!(n_coarse, 0, "Fix: empty fine grids require n_coarse = 0.");
+        out.clear();
+        return;
+    }
 
     use crate::observability::{amg_pass_solver_calls, bump};
     bump(&amg_pass_solver_calls);
@@ -443,6 +452,7 @@ pub fn solve_to_tolerance_into(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::dispatch_buffers::u32_slice_to_le_bytes;
@@ -558,9 +568,12 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 11);
-            let b = read_u32s(&inputs[1]);
-            let x = read_u32s(&inputs[2]);
-            assert_eq!(read_u32s(&inputs[6])[0], DEFAULT_OMEGA_FIXED);
+            let b = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let x = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+            assert_eq!(
+                crate::hardware::dispatch_buffers::read_u32s(&inputs[6])[0],
+                DEFAULT_OMEGA_FIXED
+            );
             let out: Vec<u32> = x
                 .iter()
                 .zip(b.iter())
@@ -655,20 +668,14 @@ mod tests {
         let via_section = source
             .split("pub fn smooth_matroid_flow_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("/// Run V-cycles until residual norm")
             .next()
-            .expect("post-via marker should exist");
+            .expect("Fix: post-via marker should exist");
 
         assert!(!via_section.contains("cpu_ref"));
         assert!(!via_section.contains("reference_smooth"));
         assert!(!via_section.contains("vec![0u32"));
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

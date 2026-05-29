@@ -4,7 +4,7 @@
 //! The `demo` subcommand builds a minimal vyre IR Program (write the
 //! value 42 into an output buffer), dispatches it via the wgpu
 //! backend, and prints the resulting u32. This is the canonical
-//! "vyre works on this machine" smoke test — deliberately uses
+//! "vyre works on this machine" smoke test  -  deliberately uses
 //! vyre's IR + Program + VyreBackend surface, NOT raw wgpu. If the
 //! demo ever needs raw WGSL to work, that's a failure of vyre's
 //! abstraction, not the demo's shape.
@@ -57,7 +57,7 @@ fn print_help() {
 fn run_demo() -> Result<u32, String> {
     // Pure vyre IR: one read-write u32 buffer, one Store node writing
     // the literal 42 at index 0. No WGSL, no naga, no hand-written
-    // kernel — the backend lowers this to a compute pipeline and
+    // kernel  -  the backend lowers this to a compute pipeline and
     // returns the bytes.
     let program = Program::wrapped(
         vec![

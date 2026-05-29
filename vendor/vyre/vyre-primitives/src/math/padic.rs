@@ -5,7 +5,7 @@
 //! p-adic embeddings for stable training of deep networks. Hensel
 //! lifting is the algorithmic core.
 //!
-//! This file ships the **single Hensel lift step** primitive — given
+//! This file ships the **single Hensel lift step** primitive  -  given
 //! an approximate root x of `f(x) ≡ 0 (mod p^k)` and the formal
 //! derivative `f'(x)`, return a refined root accurate `mod p^{2k}`.
 
@@ -33,12 +33,9 @@ pub fn hensel_lift_step(x: &str, f_x: &str, inv_f_prime: &str, out: &str, n: u32
     let t = Expr::InvocationId { axis: 0 };
     let value = Expr::sub(
         Expr::load(x, t.clone()),
-        Expr::shr(
-            Expr::mul(
-                Expr::load(f_x, t.clone()),
-                Expr::load(inv_f_prime, t.clone()),
-            ),
-            Expr::u32(16),
+        crate::fixed_mul_16_16_expr(
+            Expr::load(f_x, t.clone()),
+            Expr::load(inv_f_prime, t.clone()),
         ),
     );
 
@@ -64,7 +61,7 @@ pub fn hensel_lift_step(x: &str, f_x: &str, inv_f_prime: &str, out: &str, n: u32
     )
 }
 
-/// CPU reference (f64) — Hensel iteration single step.
+/// CPU reference (f64)  -  Hensel iteration single step.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn hensel_lift_step_cpu(x: f64, f_x: f64, inv_f_prime: f64) -> f64 {
@@ -78,8 +75,17 @@ inventory::submit! {
         || {
             hensel_lift_step("x", "f_x", "inv_f_prime", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[10, 20, 30, 40]),
+                crate::wire::pack_u32_slice(&[2, 4, 6, 8]),
+                crate::wire::pack_u32_slice(&[1u32 << 16; 4]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[8, 16, 24, 32])]]
+        }),
     )
 }
 

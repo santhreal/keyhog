@@ -211,41 +211,73 @@ pub fn kfac_block_inverse(
 #[must_use]
 pub fn cpu_ref(blocks_in: &[f32], num_blocks: u32, n: u32) -> Vec<f32> {
     let n = n as usize;
-    let mut out = vec![0.0; blocks_in.len()];
+    let mut out = Vec::new();
+    let mut mat = Vec::new();
+    let mut inv = Vec::new();
+    cpu_ref_into(
+        blocks_in, num_blocks, n as u32, &mut out, &mut mat, &mut inv,
+    );
+    out
+}
+
+/// CPU reference using caller-owned output and per-block scratch buffers.
+///
+/// Uses flat `n*n` scratch matrices rather than allocating nested vectors for
+/// every block. `out` is overwritten with one inverse block per input block.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_into(
+    blocks_in: &[f32],
+    num_blocks: u32,
+    n: u32,
+    out: &mut Vec<f32>,
+    mat: &mut Vec<f32>,
+    inv: &mut Vec<f32>,
+) {
+    let n = n as usize;
+    out.clear();
+    out.resize(blocks_in.len(), 0.0);
+    let Some(block_cells) = n.checked_mul(n) else {
+        panic!(
+            "kfac_block_inverse CPU oracle n={n} overflows block cell count. Fix: shard K-FAC blocks before parity comparison."
+        );
+    };
+    mat.clear();
+    mat.resize(block_cells, 0.0);
+    inv.clear();
+    inv.resize(block_cells, 0.0);
     for b in 0..num_blocks as usize {
-        let block_offset = b * n * n;
-        let mut mat = vec![vec![0.0; n]; n];
-        let mut inv = vec![vec![0.0; n]; n];
+        let block_offset = b * block_cells;
         for i in 0..n {
             for j in 0..n {
-                mat[i][j] = blocks_in[block_offset + i * n + j];
-                inv[i][j] = if i == j { 1.0 } else { 0.0 };
+                let idx = i * n + j;
+                mat[idx] = blocks_in[block_offset + idx];
+                inv[idx] = if i == j { 1.0 } else { 0.0 };
             }
         }
         // Gauss-Jordan
         for i in 0..n {
-            let pivot = mat[i][i];
+            let pivot = mat[i * n + i];
             for j in 0..n {
-                mat[i][j] /= pivot;
-                inv[i][j] /= pivot;
+                mat[i * n + j] /= pivot;
+                inv[i * n + j] /= pivot;
             }
             for k in 0..n {
                 if k != i {
-                    let factor = mat[k][i];
+                    let factor = mat[k * n + i];
                     for j in 0..n {
-                        mat[k][j] -= factor * mat[i][j];
-                        inv[k][j] -= factor * inv[i][j];
+                        mat[k * n + j] -= factor * mat[i * n + j];
+                        inv[k * n + j] -= factor * inv[i * n + j];
                     }
                 }
             }
         }
         for i in 0..n {
             for j in 0..n {
-                out[block_offset + i * n + j] = inv[i][j];
+                let idx = i * n + j;
+                out[block_offset + idx] = inv[idx];
             }
         }
     }
-    out
 }
 
 #[cfg(test)]
@@ -297,6 +329,37 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_output_and_flat_scratch() {
+        let blocks_in = vec![2.0, 0.0, 0.0, 2.0, 4.0, 0.0, 0.0, 4.0];
+        let mut out = Vec::with_capacity(16);
+        let mut mat = Vec::with_capacity(8);
+        let mut inv = Vec::with_capacity(8);
+        out.extend_from_slice(&[99.0; 12]);
+        mat.extend_from_slice(&[77.0; 6]);
+        inv.extend_from_slice(&[55.0; 6]);
+        let out_capacity = out.capacity();
+        let mat_capacity = mat.capacity();
+        let inv_capacity = inv.capacity();
+
+        cpu_ref_into(&blocks_in, 2, 2, &mut out, &mut mat, &mut inv);
+
+        assert_eq!(out, vec![0.5, 0.0, 0.0, 0.5, 0.25, 0.0, 0.0, 0.25]);
+        assert_eq!(mat.len(), 4);
+        assert_eq!(inv.len(), 4);
+        assert_eq!(out.capacity(), out_capacity);
+        assert_eq!(mat.capacity(), mat_capacity);
+        assert_eq!(inv.capacity(), inv_capacity);
+
+        cpu_ref_into(&[2.0], 1, 1, &mut out, &mut mat, &mut inv);
+        assert_eq!(out, vec![0.5]);
+        assert_eq!(mat, vec![1.0]);
+        assert_eq!(inv, vec![0.5]);
+        assert_eq!(out.capacity(), out_capacity);
+        assert_eq!(mat.capacity(), mat_capacity);
+        assert_eq!(inv.capacity(), inv_capacity);
+    }
+
+    #[test]
     fn test_parity_2x2() {
         let blocks_in = vec![4.0, 0.0, 0.0, 2.0];
         let p = kfac_block_inverse("bo", "bi", "s", 1, 2);
@@ -307,7 +370,7 @@ mod tests {
         use vyre_reference::value::Value;
 
         let to_value = |data: &[f32]| {
-            let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let bytes = crate::wire::pack_f32_slice(data);
             Value::Bytes(Arc::from(bytes))
         };
 

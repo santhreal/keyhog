@@ -3,10 +3,10 @@ use std::collections::{BTreeSet, HashSet};
 
 #[test]
 fn catalog_entries_have_owner_invariant_and_benchmark_contracts() {
-    let catalog = optimization_catalog().expect("optimizer catalog must build");
+    let catalog = optimization_catalog().expect("Fix: optimizer catalog must build");
     assert!(
-        !catalog.is_empty(),
-        "Fix: optimizer catalog must expose registered passes."
+        catalog.iter().any(|e| e.name == "const_fold"),
+        "Fix: optimizer catalog must include const_fold."
     );
     for entry in &catalog {
         assert!(!entry.name.is_empty(), "catalog pass name must be stable");
@@ -24,7 +24,7 @@ fn catalog_entries_have_owner_invariant_and_benchmark_contracts() {
 
 #[test]
 fn catalog_names_are_unique() {
-    let catalog = optimization_catalog().expect("optimizer catalog must build");
+    let catalog = optimization_catalog().expect("Fix: optimizer catalog must build");
     let mut seen = BTreeSet::new();
     for entry in catalog {
         assert!(
@@ -39,7 +39,7 @@ fn catalog_names_are_unique() {
 fn release_catalog_exposes_100_plus_discoverable_optimizations() {
     const MIN_RELEASE_OPTIMIZATIONS: usize = 100;
 
-    let catalog = optimization_catalog().expect("optimizer catalog must build");
+    let catalog = optimization_catalog().expect("Fix: optimizer catalog must build");
     assert!(
             catalog.len() >= MIN_RELEASE_OPTIMIZATIONS,
             "Fix: optimizer catalog exposes only {} optimizations; release requires at least {MIN_RELEASE_OPTIMIZATIONS} discoverable optimizations with owner, phase, invariant, and benchmark contracts.",
@@ -67,7 +67,7 @@ fn release_catalog_exposes_100_plus_discoverable_optimizations() {
 
 #[test]
 fn catalog_names_plan_required_structural_optimization_families() {
-    let catalog = optimization_catalog().expect("optimizer catalog must build");
+    let catalog = optimization_catalog().expect("Fix: optimizer catalog must build");
     let names = catalog
         .iter()
         .map(|entry| entry.name)
@@ -89,7 +89,7 @@ fn catalog_names_plan_required_structural_optimization_families() {
 
 #[test]
 fn catalog_distinguishes_runnable_passes_from_supplemental_rules() {
-    let catalog = optimization_catalog().expect("optimizer catalog must build");
+    let catalog = optimization_catalog().expect("Fix: optimizer catalog must build");
     let executable_count = catalog
         .iter()
         .filter(|entry| entry.kind == OptimizationCatalogEntryKind::ExecutablePass)
@@ -99,7 +99,7 @@ fn catalog_distinguishes_runnable_passes_from_supplemental_rules() {
         .filter(|entry| entry.kind == OptimizationCatalogEntryKind::SupplementalRule)
         .count();
     let registered_count = registered_pass_registrations()
-        .expect("registered optimizer passes must schedule")
+        .expect("Fix: registered optimizer passes must schedule")
         .len();
 
     assert_eq!(
@@ -115,7 +115,7 @@ fn catalog_distinguishes_runnable_passes_from_supplemental_rules() {
 #[test]
 fn release_catalog_entries_are_fully_classified() {
     let catalog = optimization_catalog_for_profile(OptimizerProfile::Release)
-        .expect("release optimizer catalog must build");
+        .expect("Fix: release optimizer catalog must build");
     assert!(
         !catalog.is_empty(),
         "Fix: release optimizer profile must expose classified passes."

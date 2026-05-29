@@ -383,9 +383,7 @@ impl GpuBufferHandle {
         let mapping = if let Some(deadline) = deadline {
             let mut backoff = crate::wait_backoff::AdaptiveWaitBackoff::from_micros(64, 2, 50, 5);
             loop {
-                match device.poll(wgpu::Maintain::Poll) {
-                    wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-                }
+                crate::runtime::device::poll_device_once(device)?;
                 match receiver.try_recv() {
                     Ok(result) => break result,
                     Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -404,9 +402,7 @@ impl GpuBufferHandle {
                 backoff.idle_for(deadline.saturating_duration_since(now));
             }
         } else {
-            match device.poll(wgpu::Maintain::wait_for(submission)) {
-                wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-            }
+            crate::runtime::device::poll_device_wait_for(device, submission)?;
             receiver
                 .recv_timeout(std::time::Duration::from_secs(30))
                 .map_err(|source| {
@@ -499,7 +495,7 @@ impl GpuBufferHandle {
         &self.inner.buffer
     }
 
-    /// Clone the internal `Arc<wgpu::Buffer>` — cheap, reference-
+    /// Clone the internal `Arc<wgpu::Buffer>`  -  cheap, reference-
     /// count only. Used by the indirect dispatch path (C-B4) which
     /// needs to stash the buffer alongside other args.
     #[must_use]
@@ -553,6 +549,7 @@ impl GpuBufferHandle {
     }
 }
 
+
 impl std::fmt::Debug for GpuBufferHandle {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -590,29 +587,11 @@ pub(crate) fn aligned_len(len: usize) -> Result<u64, BackendError> {
 }
 
 fn aligned_len_u64(len: u64, label: &'static str) -> Result<u64, BackendError> {
-    let normalized = len.max(4);
-    let remainder = normalized % 4;
-    if remainder == 0 {
-        return Ok(normalized);
-    }
-    normalized.checked_add(4 - remainder).ok_or_else(|| {
-        BackendError::new(format!(
-            "{label} overflows u64 while padding to 4-byte WGPU alignment. Fix: split the buffer before allocation or readback."
-        ))
-    })
+    crate::numeric::align_up_u64(len, 4, label)
 }
 
 fn aligned_len_usize(len: usize, label: &'static str) -> Result<usize, BackendError> {
-    let normalized = len.max(4);
-    let remainder = normalized % 4;
-    if remainder == 0 {
-        return Ok(normalized);
-    }
-    normalized.checked_add(4 - remainder).ok_or_else(|| {
-        BackendError::new(format!(
-            "{label} overflows usize while padding to 4-byte WGPU alignment. Fix: split the buffer before allocation or upload."
-        ))
-    })
+    crate::numeric::align_up_usize(len, 4, label)
 }
 
 pub(crate) fn write_padded(
@@ -621,54 +600,7 @@ pub(crate) fn write_padded(
     bytes: &[u8],
     allocation_len: u64,
 ) -> Result<(), BackendError> {
-    let allocation_len = usize::try_from(allocation_len).map_err(|source| {
-        BackendError::new(format!(
-            "GPU allocation length {allocation_len} cannot fit usize: {source}. Fix: split the dispatch input."
-        ))
-    })?;
-    let aligned_len = bytes.len() & !3;
-    if aligned_len > 0 {
-        queue.write_buffer(buffer, 0, &bytes[..aligned_len]);
-    }
-    let tail_len = bytes.len() - aligned_len;
-    let mut zero_start = aligned_len;
-    if tail_len > 0 {
-        let mut tail = [0u8; 4];
-        tail[..tail_len].copy_from_slice(&bytes[aligned_len..]);
-        queue.write_buffer(
-            buffer,
-            u64::try_from(aligned_len).map_err(|source| {
-                BackendError::new(format!(
-                    "GPU padded tail offset cannot fit u64: {source}. Fix: split the dispatch input."
-                ))
-            })?,
-            &tail,
-        );
-        zero_start += 4;
-    }
-    if allocation_len > zero_start {
-        // This helper is used by standalone uploads that do not have a
-        // command encoder available. Encoder-backed dispatch paths should use
-        // clear_buffer for the tail; this path uses one static slab to avoid
-        // allocating a fresh zero Vec per upload.
-        static SCRATCH_ZEROS: [u8; 65_536] = [0u8; 65_536];
-        let mut offset = zero_start;
-        let end = allocation_len;
-        while offset < end {
-            let chunk = (end - offset).min(SCRATCH_ZEROS.len());
-            queue.write_buffer(
-                buffer,
-                u64::try_from(offset).map_err(|source| {
-                    BackendError::new(format!(
-                        "GPU zero-fill offset cannot fit u64: {source}. Fix: split the dispatch input."
-                    ))
-                })?,
-                &SCRATCH_ZEROS[..chunk],
-            );
-            offset += chunk;
-        }
-    }
-    Ok(())
+    crate::padded_upload::write_padded_and_zero_fill(queue, buffer, bytes, allocation_len)
 }
 
 /// Default cap for the [`BindGroupCache`] LRU.
@@ -1064,7 +996,7 @@ mod tests {
                 std::thread::spawn(move || {
                     for _ in 0..1_000 {
                         let resident = GpuBufferHandle::from_resident_id(id)
-                            .expect("resident id must resolve while handle is alive");
+                            .expect("Fix: resident id must resolve while handle is alive");
                         assert_eq!(resident.id(), id);
                     }
                 })
@@ -1098,7 +1030,7 @@ mod tests {
         std::panic::catch_unwind(|| {
             let _ = pool.stats();
         })
-        .expect("poisoned staging pool must recover so GPU readback pooling does not abort");
+        .expect("Fix: poisoned staging pool must recover so GPU readback pooling does not abort");
     }
 
     #[test]
@@ -1114,7 +1046,7 @@ mod tests {
         std::panic::catch_unwind(|| {
             let _ = cache.stats();
         })
-        .expect("poisoned bind-group cache must recover so GPU dispatch does not abort");
+        .expect("Fix: poisoned bind-group cache must recover so GPU dispatch does not abort");
     }
 
     #[test]
@@ -1163,3 +1095,4 @@ mod tests {
         );
     }
 }
+

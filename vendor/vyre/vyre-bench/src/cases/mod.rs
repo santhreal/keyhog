@@ -1,10 +1,13 @@
 #![allow(clippy::unnecessary_cast, clippy::needless_range_loop)]
+pub mod adaptive_routing;
 pub mod adversarial;
 pub mod alias_aware_optimizations;
 pub mod attention;
+pub(crate) mod byte_pack;
 pub mod bigint;
 pub mod binary_search;
 pub mod c_parser;
+pub mod compound_pipeline;
 pub mod conditional_batch;
 pub mod conditional_eval;
 pub mod cpu_baselines;
@@ -14,6 +17,8 @@ pub mod dfa_match;
 pub mod egraph_saturation;
 pub mod elementwise;
 pub mod gather;
+pub mod graph_frontier;
+pub(crate) mod gpu_case;
 pub mod hashtable;
 pub mod histogram;
 pub mod interpreter;
@@ -22,16 +27,16 @@ pub mod matmul;
 pub mod megakernel_condition;
 pub mod megakernel_latency;
 pub mod megakernel_truth;
+pub mod nvme_gpu_ingest;
 pub mod optimizer_impact;
+pub mod quantized_linear;
 pub mod reduce_sum;
 pub mod regex_bt;
 pub mod release_workloads;
 pub mod stencil;
 pub mod synthetic;
 pub mod transpose;
-// `weir_dataflow` directly imports `weir::*` for vyre↔weir parity benches.
-// Per the LEGO discipline (vyre never calls anything else), it is gated
-// behind the `external-baselines` feature so vyre-bench's default surface
-// is vyre-only.
+// External dataflow baselines live behind an opt-in feature so vyre-bench's
+// default surface stays platform-only.
 #[cfg(feature = "external-baselines")]
 pub mod dataflow_baseline;

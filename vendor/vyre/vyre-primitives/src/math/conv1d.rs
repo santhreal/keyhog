@@ -6,10 +6,10 @@
 //!
 //! # Wire format
 //!
-//! - `input`:   `[u32; count]` — source data
-//! - `output`:  `[u32; count]` — convolved result
-//! - `weights`: `[u32; diameter]` — kernel weights (fixed-point 16.16)
-//! - `params`:  `[u32; 4]` — `[count, stride, radius, _reserved]`
+//! - `input`:   `[u32; count]`  -  source data
+//! - `output`:  `[u32; count]`  -  convolved result
+//! - `weights`: `[u32; diameter]`  -  kernel weights (fixed-point 16.16)
+//! - `params`:  `[u32; 4]`  -  `[count, stride, radius, _reserved]`
 //!
 //! `stride` controls axis selection: for a 2D buffer of width W,
 //! `stride=1` convolves along rows (horizontal) and `stride=W`
@@ -126,7 +126,7 @@ pub fn conv1d_node(input: &str, output: &str, weights: &str, params: &str) -> No
                             ),
                         ],
                     ),
-                    // Write result (still in fixed-point — caller normalizes).
+                    // Write result (still in fixed-point  -  caller normalizes).
                     Node::store(output, Expr::var("idx"), Expr::var("acc")),
                 ],
             ),
@@ -198,7 +198,7 @@ inventory::submit! {
             let params = pack_params(8, 1, 1);
             // Simple averaging kernel: [0.25, 0.5, 0.25] in fixed-point 16.16.
             let weights: Vec<u32> = vec![16384, 32768, 16384];
-            let to_bytes = |v: &[u32]| v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |v: &[u32]| crate::wire::pack_u32_slice(v);
             vec![vec![
                 to_bytes(&input),
                 vec![0u8; 32],       // output (zeroed)
@@ -208,11 +208,121 @@ inventory::submit! {
         }),
         Some(|| {
             // Expected fixed-point accumulators before caller-side normalization.
-            let to_bytes = |v: &[u32]| v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |v: &[u32]| crate::wire::pack_u32_slice(v);
             vec![vec![to_bytes(&[
                 8_192_000, 13_107_200, 19_660_800, 26_214_400, 32_768_000, 39_321_600,
                 45_875_200, 50_790_400,
             ])]]
         }),
     )
+}
+
+// ---------------------------------------------------------------------------
+// CPU reference implementation
+// ---------------------------------------------------------------------------
+
+/// CPU reference: 1D convolution with clamped boundary, matching the GPU
+/// kernel's fixed-point accumulation. Weights are in 16.16 fixed-point.
+///
+/// Returns one output u32 per input element (pre-normalization accumulator).
+#[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_conv1d(input: &[u32], weights: &[u32], stride: u32) -> Vec<u32> {
+    let mut output = Vec::new();
+    cpu_conv1d_into(input, weights, stride, &mut output);
+    output
+}
+
+/// CPU reference writing into caller-owned output storage.
+///
+/// Reuses `output` across repeated convolution parity checks and preserves the
+/// same fixed-point, clamped-boundary semantics as [`cpu_conv1d`].
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_conv1d_into(input: &[u32], weights: &[u32], stride: u32, output: &mut Vec<u32>) {
+    output.clear();
+    let count = input.len();
+    if count == 0 {
+        return;
+    }
+    let diameter = weights.len();
+    let radius = diameter / 2;
+    output.reserve(count);
+
+    for idx in 0..count {
+        let mut acc: u32 = 0;
+        for k in 0..diameter {
+            let src_idx = if k >= radius {
+                let offset = (k - radius) as u32 * stride;
+                let raw = idx as u32 + offset;
+                raw.min(count as u32 - 1) as usize
+            } else {
+                let offset = (radius - k) as u32 * stride;
+                if idx as u32 >= offset {
+                    (idx as u32 - offset) as usize
+                } else {
+                    0
+                }
+            };
+            acc = acc.wrapping_add(input[src_idx].wrapping_mul(weights[k]));
+        }
+        output.push(acc);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpu_conv1d_identity_kernel() {
+        // Identity kernel: [0, 1.0, 0] in fixed-point = [0, 65536, 0]
+        let input = vec![10, 20, 30, 40, 50];
+        let weights = vec![0, 65536, 0];
+        let result = cpu_conv1d(&input, &weights, 1);
+        // Each output should be input[i] * 65536
+        let expected: Vec<u32> = input.iter().map(|&v| v * 65536).collect();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn cpu_conv1d_averaging_kernel_matches_inventory() {
+        // Must match the inventory expected output.
+        let input = vec![100u32, 200, 300, 400, 500, 600, 700, 800];
+        let weights = vec![16384u32, 32768, 16384]; // [0.25, 0.5, 0.25]
+        let result = cpu_conv1d(&input, &weights, 1);
+        let expected = vec![
+            8_192_000, 13_107_200, 19_660_800, 26_214_400, 32_768_000, 39_321_600, 45_875_200,
+            50_790_400,
+        ];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn cpu_conv1d_empty() {
+        let result = cpu_conv1d(&[], &[65536], 1);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn cpu_conv1d_single_element() {
+        let result = cpu_conv1d(&[42], &[16384, 32768, 16384], 1);
+        // Clamped boundaries: all lookups hit index 0 (value 42).
+        // acc = 42*16384 + 42*32768 + 42*16384 = 42*65536 = 2752512
+        assert_eq!(result, vec![42 * 65536]);
+    }
+
+    #[test]
+    fn cpu_conv1d_into_reuses_output_and_removes_stale_tail() {
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[1, 2, 3, 4, 5, 6]);
+        let capacity = out.capacity();
+
+        cpu_conv1d_into(&[10, 20, 30], &[0, 65536, 0], 1, &mut out);
+        assert_eq!(out, vec![655_360, 1_310_720, 1_966_080]);
+        assert_eq!(out.capacity(), capacity);
+
+        cpu_conv1d_into(&[7], &[65536], 1, &mut out);
+        assert_eq!(out, vec![458_752]);
+        assert_eq!(out.capacity(), capacity);
+    }
 }

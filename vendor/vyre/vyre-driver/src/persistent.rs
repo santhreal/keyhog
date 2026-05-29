@@ -14,7 +14,7 @@
 //!
 //! # Scope of this file
 //!
-//! This module owns the **host-side ring buffer** — the atomic
+//! This module owns the **host-side ring buffer**  -  the atomic
 //! head/tail pair, the lock-free claim protocol, and exhaustive
 //! tests. The actual persistent GPU kernel that consumes the queue
 //! lives behind the `persistent` cargo feature and talks to the owning
@@ -59,7 +59,7 @@ pub struct PersistentWorkItem {
     pub input_len: u32,
     /// Rule-set / fused-megakernel output-slot bank id.
     pub rule_set_id: u32,
-    /// Caller-opaque correlation id — echoed into the per-item
+    /// Caller-opaque correlation id  -  echoed into the per-item
     /// completion counter so the host can match results back to a
     /// scan job without a shadow map.
     pub correlation: u32,
@@ -84,15 +84,15 @@ impl RingAtomics {
     fn try_new(ring_size: u32) -> Result<Self, String> {
         let capacity = persistent_ring_capacity(ring_size)?;
         let mut ready = Vec::new();
-        ready.try_reserve_exact(capacity).map_err(|error| {
+        crate::allocation::try_reserve_vec_to_capacity(&mut ready, capacity).map_err(|error| {
             format!("Fix: persistent ring could not reserve {capacity} ready marker(s): {error}.")
         })?;
-        for _ in 0..ring_size {
-            ready.push(AtomicU64::new(0));
+        for slot in 0..ring_size {
+            ready.push(AtomicU64::new(u64::from(slot)));
         }
 
         let mut done = Vec::new();
-        done.try_reserve_exact(capacity).map_err(|error| {
+        crate::allocation::try_reserve_vec_to_capacity(&mut done, capacity).map_err(|error| {
             format!("Fix: persistent ring could not reserve {capacity} done marker(s): {error}.")
         })?;
         for _ in 0..ring_size {
@@ -192,9 +192,10 @@ impl PersistentEngine {
     }
 
     fn with_valid_ring_size(ring_size: u32) -> Self {
-        Self::try_with_valid_ring_size(ring_size).expect(
-            "Fix: persistent ring construction must reserve every slot before dispatch starts.",
-        )
+        match Self::try_with_valid_ring_size(ring_size) {
+            Ok(engine) => engine,
+            Err(error) => panic!("{error}"),
+        }
     }
 
     fn try_with_valid_ring_size(ring_size: u32) -> Result<Self, String> {
@@ -206,7 +207,7 @@ impl PersistentEngine {
         };
         let capacity = persistent_ring_capacity(ring_size)?;
         let mut slots = Vec::new();
-        slots.try_reserve_exact(capacity).map_err(|error| {
+        crate::allocation::try_reserve_vec_to_capacity(&mut slots, capacity).map_err(|error| {
             format!("Fix: persistent ring could not reserve {capacity} work slot(s): {error}.")
         })?;
         for _ in 0..ring_size {
@@ -231,9 +232,18 @@ impl PersistentEngine {
     pub fn enqueue(&self, item: PersistentWorkItem) -> Result<u32, QueueFull> {
         loop {
             let head = self.atomics.head.load(Ordering::Acquire);
-            let tail = self.atomics.tail.load(Ordering::Acquire);
-            if head.wrapping_sub(tail) >= u64::from(self.ring_size) {
+            let slot_idx = (head as u32) & (self.ring_size - 1);
+            let slot_offset = slot_idx as usize;
+            let Some(ready) = self.atomics.ready.get(slot_offset) else {
                 return Err(QueueFull);
+            };
+            match ring_sequence_order(ready.load(Ordering::Acquire), head) {
+                RingSequenceOrder::Free => {}
+                RingSequenceOrder::Behind => return Err(QueueFull),
+                RingSequenceOrder::Ahead => {
+                    std::hint::spin_loop();
+                    continue;
+                }
             }
             match self.atomics.head.compare_exchange(
                 head,
@@ -242,8 +252,6 @@ impl PersistentEngine {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    let slot_idx = (head as u32) & (self.ring_size - 1);
-                    let slot_offset = slot_idx as usize;
                     let Some(slot) = self.slots.get(slot_offset) else {
                         return Err(QueueFull);
                     };
@@ -262,10 +270,26 @@ impl PersistentEngine {
     /// consumers.
     pub fn claim(&self) -> Option<PersistentWorkItem> {
         loop {
-            let head = self.atomics.head.load(Ordering::Acquire);
             let tail = self.atomics.tail.load(Ordering::Acquire);
-            if tail >= head {
+            let slot_idx = (tail as u32) & (self.ring_size - 1);
+            let slot_offset = slot_idx as usize;
+            let published = tail.wrapping_add(1);
+            let Some(ready) = self.atomics.ready.get(slot_offset) else {
                 return None;
+            };
+            match ring_sequence_order(ready.load(Ordering::Acquire), published) {
+                RingSequenceOrder::Free => {}
+                RingSequenceOrder::Behind => {
+                    if tail >= self.atomics.head.load(Ordering::Acquire) {
+                        return None;
+                    }
+                    std::hint::spin_loop();
+                    continue;
+                }
+                RingSequenceOrder::Ahead => {
+                    std::hint::spin_loop();
+                    continue;
+                }
             }
             match self.atomics.tail.compare_exchange(
                 tail,
@@ -274,14 +298,11 @@ impl PersistentEngine {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    let slot_idx = (tail as u32) & (self.ring_size - 1);
-                    let slot_offset = slot_idx as usize;
-                    let published = tail.wrapping_add(1);
-                    while self.atomics.ready[slot_offset].load(Ordering::Acquire) != published {
-                        std::hint::spin_loop();
-                    }
                     let slot = self.slots.get(slot_offset)?;
-                    return Some(slot.load());
+                    let item = slot.load();
+                    self.atomics.ready[slot_offset]
+                        .store(tail.wrapping_add(u64::from(self.ring_size)), Ordering::Release);
+                    return Some(item);
                 }
                 Err(_) => continue,
             }
@@ -368,6 +389,21 @@ fn persistent_ring_capacity(ring_size: u32) -> Result<usize, String> {
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RingSequenceOrder {
+    Behind,
+    Free,
+    Ahead,
+}
+
+fn ring_sequence_order(sequence: u64, position: u64) -> RingSequenceOrder {
+    match (sequence.wrapping_sub(position) as i64).cmp(&0) {
+        std::cmp::Ordering::Less => RingSequenceOrder::Behind,
+        std::cmp::Ordering::Equal => RingSequenceOrder::Free,
+        std::cmp::Ordering::Greater => RingSequenceOrder::Ahead,
+    }
+}
+
 /// Enqueue attempted but the ring is full.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueueFull;
@@ -412,6 +448,7 @@ mod tests {
     fn enqueue_claim_fifo_single_thread() {
         let eng = PersistentEngine::new(8);
         for i in 0..8 {
+
             assert_eq!(eng.enqueue(item(i)).unwrap(), i);
         }
         for i in 0..8 {
@@ -577,3 +614,4 @@ mod tests {
         assert!(s.contains("ring buffer"));
     }
 }
+

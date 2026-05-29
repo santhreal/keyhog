@@ -2,7 +2,6 @@ use crate::api::case::{
     BenchCase, BenchContext, BenchError, BenchId, BenchLayer, BenchMetadata, BenchRequirements,
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
-use crate::api::metric::{BenchMetrics, MetricPoint};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 pub struct Transpose;
@@ -45,10 +44,9 @@ impl BenchCase for Transpose {
         let cols = 512u32;
         let prog = Program::wrapped(
             vec![
-                BufferDecl::storage("out", 0, BufferAccess::ReadWrite, DataType::F32)
+                BufferDecl::storage("input", 0, BufferAccess::ReadOnly, DataType::F32)
                     .with_count(rows * cols),
-                BufferDecl::storage("input", 1, BufferAccess::ReadOnly, DataType::F32)
-                    .with_count(rows * cols),
+                BufferDecl::output("out", 1, DataType::F32).with_count(rows * cols),
             ],
             [16, 16, 1],
             vec![
@@ -84,54 +82,26 @@ impl BenchCase for Transpose {
         ctx: &mut BenchContext,
         prepared: &mut PreparedCase,
     ) -> Result<BenchRun, BenchError> {
-        let prog = crate::api::case::prepared_program(prepared)?;
         let rows = 512usize;
         let cols = 512usize;
         let mut input = vec![0u8; rows * cols * 4];
         for i in 0..rows * cols {
             input[i * 4..i * 4 + 4].copy_from_slice(&((i % 251) as f32).to_le_bytes());
         }
-        let inputs = vec![vec![0u8; rows * cols * 4], input];
-
-        let timed = ctx
-            .dispatch_timed(prog, &inputs, &ctx.dispatch_config)
-            .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
-        let elapsed = timed.wall_ns;
-        let dispatch_ns = timed.device_ns;
-        let outputs = timed.outputs;
-
-        let start_ref = std::time::Instant::now();
-        let baseline_outputs = vec![crate::cases::cpu_baselines::transpose_f32_bytes(
-            &inputs[1], rows, cols,
-        )];
-        let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
+        let inputs = vec![input];
         let move_count = rows.saturating_mul(cols) as u64;
 
-        Ok(BenchRun {
-            metrics: BenchMetrics {
-                wall_ns: Some(elapsed),
-                dispatch_ns,
-                input_bytes: Some(inputs.iter().map(Vec::len).sum::<usize>() as u64),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                custom: vec![MetricPoint {
-                    name: "flop_count".to_string(),
-                    value: move_count,
-                }],
-                ..Default::default()
+        crate::cases::gpu_case::run_gpu_with_cpu_baseline(
+            ctx,
+            prepared,
+            inputs,
+            move_count,
+            |inputs| {
+                vec![crate::cases::cpu_baselines::transpose_f32_bytes(
+                    &inputs[0], rows, cols,
+                )]
             },
-            baseline_metrics: Some(BenchMetrics {
-                wall_ns: Some(elapsed_ref),
-                input_bytes: Some(inputs[1].len() as u64),
-                output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                custom: vec![MetricPoint {
-                    name: "flop_count".to_string(),
-                    value: move_count,
-                }],
-                ..Default::default()
-            }),
-            outputs,
-            baseline_outputs: Some(baseline_outputs),
-        })
+        )
     }
 
     fn verify(&self, _ctx: &mut BenchContext, run: &BenchRun) -> Result<Correctness, BenchError> {

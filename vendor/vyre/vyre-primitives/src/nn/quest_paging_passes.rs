@@ -249,8 +249,7 @@ inventory::submit! {
         QUEST_SCORE_PAGES_OP_ID,
         || quest_score_pages("q", "meta", "scores", 4, 2),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32_bytes(&[1.0, 0.0]),
                 to_f32_bytes(&[0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.5, 0.0]),
@@ -258,8 +257,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
             vec![vec![to_f32_bytes(&[0.0, 1.0, 2.0, 0.5])]]
         }),
     )
@@ -271,20 +269,16 @@ inventory::submit! {
         QUEST_SELECT_TOP_K_OP_ID,
         || quest_select_top_k("scores", "io", 4, 1, -1.0),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_u32_bytes =
-                |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
+            let to_u32_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_f32_bytes(&[0.0, 1.0, 2.0, 0.5]),
                 to_u32_bytes(&[0, 0, 0, 0]),
             ]]
         }),
         Some(|| {
-            let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_u32_bytes =
-                |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32_bytes = |w: &[f32]| crate::wire::pack_f32_slice(w);
+            let to_u32_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_f32_bytes(&[0.0, 1.0, -1.0, 0.5]),
                 to_u32_bytes(&[2, 0, 0, 0]),

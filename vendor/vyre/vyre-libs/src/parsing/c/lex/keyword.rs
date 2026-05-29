@@ -2,6 +2,7 @@ use crate::parsing::c::lex::tokens::*;
 use crate::parsing::c::source_bytes::{load_source_byte, source_haystack_words};
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+pub use vyre_primitives::hash::fnv1a::fnv1a32;
 
 /// C11 keyword table consumed by the GPU keyword promotion pass.
 pub const C_KEYWORDS: &[(&str, u32)] = &[
@@ -107,24 +108,13 @@ pub const C_KEYWORDS: &[(&str, u32)] = &[
     ("_Decimal64", TOK_DECIMAL64_KW),
     ("_Decimal128", TOK_DECIMAL128_KW),
     ("__forceinline", TOK_FORCEINLINE_KW),
-    // clang nullability qualifiers — folded onto one token id; the
+    // clang nullability qualifiers  -  folded onto one token id; the
     // identifier text disambiguates downstream.
     ("_Nonnull", TOK_NULLABILITY_KW),
     ("_Nullable", TOK_NULLABILITY_KW),
     ("_Nullable_result", TOK_NULLABILITY_KW),
     ("_Null_unspecified", TOK_NULLABILITY_KW),
 ];
-
-/// FNV-1a32 hash used by `c_keyword`.
-#[must_use]
-pub fn fnv1a32(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    for byte in bytes {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    hash
-}
 
 /// Packed `[hash, token_id]` table for the GPU keyword pass.
 #[must_use]
@@ -272,6 +262,7 @@ fn c_keyword_impl(
 
     let loop_body = vec![
         Node::let_bind("tok_type", Expr::load(tok_types, t.clone())),
+        Node::store(tok_types, t.clone(), Expr::var("tok_type")),
         Node::if_then(
             Expr::eq(Expr::var("tok_type"), Expr::u32(TOK_IDENTIFIER)),
             vec![
@@ -298,7 +289,7 @@ fn c_keyword_impl(
                     ],
                 ),
                 // keyword_map is [hash0, tok_id0, hash1, tok_id1, ...].
-                // `done_kw` is the soft-break flag — once a keyword
+                // `done_kw` is the soft-break flag  -  once a keyword
                 // match fires, subsequent iterations are no-ops.
                 Node::let_bind("done_kw", Expr::u32(0)),
                 Node::loop_for(

@@ -128,7 +128,7 @@ impl Program {
 
     /// Consume this program and rebuild it with `f` applied to the owned
     /// entry vec. Reuses the entry Arc when uniquely owned (the common
-    /// case under the optimizer fixpoint) — no deep clone of the entry
+    /// case under the optimizer fixpoint)  -  no deep clone of the entry
     /// body and no scaffold allocation. Equivalent to:
     ///
     /// ```ignore

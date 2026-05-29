@@ -9,6 +9,41 @@ use crate::reg::{PtxType, Reg};
 use crate::EmitError;
 
 impl BodyCtx<'_> {
+    pub(super) fn canonicalize_f32(&mut self, value: Reg) -> Reg {
+        if value.0 != PtxType::F32 {
+            return value;
+        }
+        let bits = self.alloc(PtxType::U32);
+        let abs_bits = self.alloc(PtxType::U32);
+        let sign_bits = self.alloc(PtxType::U32);
+        let subnormal_or_zero = self.alloc(PtxType::Bool);
+        let nan = self.alloc(PtxType::Bool);
+        let no_subnormal_bits = self.alloc(PtxType::U32);
+        let canonical_bits = self.alloc(PtxType::U32);
+        let out = self.alloc(PtxType::F32);
+        let _ = writeln!(self.text, "    mov.b32    {bits}, {value};");
+        let _ = writeln!(self.text, "    and.b32    {abs_bits}, {bits}, 0x7fffffff;");
+        let _ = writeln!(self.text, "    and.b32    {sign_bits}, {bits}, 0x80000000;");
+        let _ = writeln!(
+            self.text,
+            "    setp.lt.u32    {subnormal_or_zero}, {abs_bits}, 0x00800000;"
+        );
+        let _ = writeln!(
+            self.text,
+            "    setp.gt.u32    {nan}, {abs_bits}, 0x7f800000;"
+        );
+        let _ = writeln!(
+            self.text,
+            "    selp.u32    {no_subnormal_bits}, {sign_bits}, {bits}, {subnormal_or_zero};"
+        );
+        let _ = writeln!(
+            self.text,
+            "    selp.u32    {canonical_bits}, 0x7fc00000, {no_subnormal_bits}, {nan};"
+        );
+        let _ = writeln!(self.text, "    mov.b32    {out}, {canonical_bits};");
+        out
+    }
+
     pub(super) fn coerce_for_store(&mut self, value: Reg, elem_ty: PtxType) -> Reg {
         if value.0 != PtxType::Bool || elem_ty == PtxType::Bool {
             return value;
@@ -52,6 +87,7 @@ impl BodyCtx<'_> {
             let out = self.alloc(PtxType::Bool);
             let cmp = match op {
                 BinOp::Eq => "eq",
+                BinOp::Ne if ty == PtxType::F32 => "neu",
                 BinOp::Ne => "ne",
                 BinOp::Lt => "lt",
                 BinOp::Le => "le",
@@ -113,6 +149,22 @@ impl BodyCtx<'_> {
                 );
                 Ok((out, ty))
             }
+            BinOp::Shl | BinOp::Shr if ty == PtxType::U32 || ty == PtxType::I32 => {
+                let out = self.alloc(ty);
+                let masked_shift = self.alloc(PtxType::U32);
+                let mnemonic = if matches!(op, BinOp::Shl) {
+                    "shl"
+                } else {
+                    "shr"
+                };
+                let suffix = ptx_binop_suffix(op, ty);
+                let _ = writeln!(self.text, "    and.b32    {masked_shift}, {right}, 31;");
+                let _ = writeln!(
+                    self.text,
+                    "    {mnemonic}.{suffix}    {out}, {left}, {masked_shift};"
+                );
+                Ok((out, ty))
+            }
             BinOp::Div if ty == PtxType::U32 || ty == PtxType::Bool => {
                 let out = self.emit_total_u32_div(left, right);
                 Ok((out, PtxType::U32))
@@ -128,7 +180,7 @@ impl BodyCtx<'_> {
             BinOp::Div if ty == PtxType::F32 => {
                 let out = self.alloc(PtxType::F32);
                 let _ = writeln!(self.text, "    div.rn.f32    {out}, {left}, {right};");
-                Ok((out, PtxType::F32))
+                Ok((self.canonicalize_f32(out), PtxType::F32))
             }
             BinOp::Mod if ty == PtxType::I32 => {
                 let out = self.emit_total_i32_mod(left, right);
@@ -194,7 +246,7 @@ impl BodyCtx<'_> {
                     self.text,
                     "    {mnemonic}.{suffix}    {out}, {left}, {right};"
                 );
-                Ok((out, out_ty))
+                Ok((self.canonicalize_f32(out), out_ty))
             }
         }
     }
@@ -396,6 +448,7 @@ impl BodyCtx<'_> {
                 let out = self.alloc(PtxType::F32);
                 if self.options.ulp_budget.is_some_and(|budget| budget > 0) {
                     let _ = writeln!(self.text, "    rcp.approx.f32    {out}, {operand};");
+
                 } else {
                     let _ = writeln!(self.text, "    rcp.rn.f32    {out}, {operand};");
                 }
@@ -526,7 +579,7 @@ impl BodyCtx<'_> {
                 )));
             }
         };
-        Ok(out)
+        Ok(self.canonicalize_f32(out))
     }
 
     pub(super) fn emit_cast(&mut self, src: Reg, target: &DataType) -> Result<Reg, EmitError> {
@@ -536,11 +589,16 @@ impl BodyCtx<'_> {
         }
         let dst = self.alloc(dst_ty);
         match (src.0, dst_ty) {
-            (PtxType::U32 | PtxType::Bool, PtxType::F32) => {
+            (PtxType::U32, PtxType::F32) => {
                 let _ = writeln!(self.text, "    cvt.rn.f32.u32    {dst}, {src};");
             }
             (PtxType::I32, PtxType::F32) => {
                 let _ = writeln!(self.text, "    cvt.rn.f32.s32    {dst}, {src};");
+            }
+            (PtxType::Bool, PtxType::F32) => {
+                let word = self.alloc(PtxType::U32);
+                let _ = writeln!(self.text, "    selp.u32    {word}, 1, 0, {src};");
+                let _ = writeln!(self.text, "    cvt.rn.f32.u32    {dst}, {word};");
             }
             (PtxType::F32, PtxType::U32) => {
                 let _ = writeln!(self.text, "    cvt.rzi.u32.f32    {dst}, {src};");
@@ -551,8 +609,14 @@ impl BodyCtx<'_> {
             (PtxType::Bool, PtxType::U32) => {
                 let _ = writeln!(self.text, "    selp.u32    {dst}, 1, 0, {src};");
             }
+            (PtxType::Bool, PtxType::I32) => {
+                let _ = writeln!(self.text, "    selp.u32    {dst}, 1, 0, {src};");
+            }
             (PtxType::U32 | PtxType::I32, PtxType::Bool) => {
                 let _ = writeln!(self.text, "    setp.ne.u32    {dst}, {src}, 0;");
+            }
+            (PtxType::F32, PtxType::Bool) => {
+                let _ = writeln!(self.text, "    setp.neu.f32    {dst}, {src}, 0f00000000;");
             }
             (PtxType::U32, PtxType::I32) | (PtxType::I32, PtxType::U32) => {
                 let _ = writeln!(self.text, "    mov.b32    {dst}, {src};");
@@ -583,3 +647,4 @@ impl BodyCtx<'_> {
         result
     }
 }
+

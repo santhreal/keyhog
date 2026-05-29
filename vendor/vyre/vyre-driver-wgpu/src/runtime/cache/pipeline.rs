@@ -1,13 +1,20 @@
 //! Bounded cache for WGPU pipeline artifacts.
 
 use crate::pipeline::CachedPipelineArtifact;
+use crate::staging_reserve::reserve_backend_vec;
 use dashmap::DashMap;
 use rustc_hash::FxHasher;
 use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use vyre_driver::accounting::{
+    checked_atomic_add_u64_with_order, checked_atomic_add_usize_with_order,
+    checked_atomic_sub_usize_with_order, pinning_atomic_increment_u32,
+    pinning_atomic_increment_u64,
+};
 use vyre_driver::cache_eviction_heat::CacheEntryStats;
+use vyre_driver::BackendError;
 
 /// Bounded cache for WGPU pipeline artifacts using shared driver-tier
 /// retention policy. Despite the legacy name, this is not LRU.
@@ -62,18 +69,31 @@ impl LruPipelineCache {
     pub(crate) fn get(&self, fingerprint: &[u8; 32]) -> Option<Arc<CachedPipelineArtifact>> {
         if let Some(entry) = self.artifacts.get(fingerprint) {
             let artifact = Arc::clone(&entry.artifact);
-            let _ = entry
-                .gain
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |gain| {
-                    Some(if gain == u32::MAX { u32::MAX } else { gain + 1 })
-                });
+            pinning_atomic_increment_u32(&entry.gain, Ordering::Relaxed, Ordering::Relaxed, || {
+                tracing::error!(
+                        "pipeline cache gain reached u32::MAX and was pinned. Fix: shard pipeline-cache telemetry collection before wrap."
+                    );
+            });
             entry
                 .last_hit_time_s
                 .store(f64_to_atomic(now_seconds()), Ordering::Relaxed);
-            rebasing_atomic_add_u64(&self.hits, 1, "pipeline cache hits");
+            pinning_atomic_increment_u64(&self.hits, Ordering::Relaxed, Ordering::Relaxed, || {
+                tracing::error!(
+                        "pipeline cache hits reached u64::MAX and was pinned. Fix: shard pipeline-cache telemetry collection before wrap."
+                    );
+            });
             Some(artifact)
         } else {
-            rebasing_atomic_add_u64(&self.misses, 1, "pipeline cache misses");
+            pinning_atomic_increment_u64(
+                &self.misses,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                || {
+                    tracing::error!(
+                        "pipeline cache misses reached u64::MAX and was pinned. Fix: shard pipeline-cache telemetry collection before wrap."
+                    );
+                },
+            );
             None
         }
     }
@@ -124,7 +144,16 @@ impl LruPipelineCache {
         while self.artifacts.len() > self.max_entries()
             || self.cached_bytes.load(Ordering::Relaxed) > self.max_bytes
         {
-            let entries = self.eviction_snapshot();
+            let entries = match self.eviction_snapshot() {
+                Ok(entries) => entries,
+                Err(error) => {
+                    tracing::error!(
+                        "WGPU pipeline cache eviction snapshot allocation failed: {error}. Fix: lower pipeline-cache capacity or shard pipeline compilation."
+                    );
+                    self.clear();
+                    return;
+                }
+            };
             if entries.is_empty() {
                 self.artifacts.clear();
                 self.cached_bytes.store(0, Ordering::Relaxed);
@@ -132,7 +161,16 @@ impl LruPipelineCache {
             }
 
             let mut removed_count = 0u64;
-            let evict = self.eviction_keys(&entries);
+            let evict = match self.eviction_keys(&entries) {
+                Ok(evict) => evict,
+                Err(error) => {
+                    tracing::error!(
+                        "WGPU pipeline cache eviction ranking allocation failed: {error}. Fix: lower pipeline-cache capacity or shard pipeline compilation."
+                    );
+                    self.clear();
+                    return;
+                }
+            };
             for key in evict {
                 if let Some((_, removed)) = self.artifacts.remove(&key) {
                     if !try_atomic_sub_usize(&self.cached_bytes, removed.cost) {
@@ -159,8 +197,13 @@ impl LruPipelineCache {
         }
     }
 
-    fn eviction_snapshot(&self) -> Vec<EvictionEntry> {
-        let mut entries = Vec::with_capacity(self.artifacts.len());
+    fn eviction_snapshot(&self) -> Result<Vec<EvictionEntry>, BackendError> {
+        let mut entries = Vec::new();
+        reserve_backend_vec(
+            &mut entries,
+            self.artifacts.len(),
+            "pipeline cache eviction snapshot",
+        )?;
         for entry in self.artifacts.iter() {
             entries.push(EvictionEntry {
                 key: *entry.key(),
@@ -169,17 +212,22 @@ impl LruPipelineCache {
                 cost: entry.cost,
             });
         }
-        entries
+        Ok(entries)
     }
 
-    fn eviction_keys(&self, entries: &[EvictionEntry]) -> Vec<[u8; 32]> {
+    fn eviction_keys(&self, entries: &[EvictionEntry]) -> Result<Vec<[u8; 32]>, BackendError> {
         let mut retained_len = entries.len();
         let mut retained_bytes = entries
             .iter()
             .try_fold(0usize, |total, entry| total.checked_add(entry.cost))
             .unwrap_or(usize::MAX);
         let now = now_seconds();
-        let mut ranked = Vec::with_capacity(entries.len());
+        let mut ranked = Vec::new();
+        reserve_backend_vec(
+            &mut ranked,
+            entries.len(),
+            "pipeline cache eviction heat ranking",
+        )?;
         ranked.extend(entries.iter().enumerate().map(|(idx, entry)| {
             let id = u64::try_from(idx).unwrap_or(u64::MAX);
             let stats = CacheEntryStats {
@@ -194,7 +242,8 @@ impl LruPipelineCache {
                 .total_cmp(&right.1)
                 .then_with(|| left.0.cmp(&right.0))
         });
-        let mut keys = Vec::with_capacity(entries.len());
+        let mut keys = Vec::new();
+        reserve_backend_vec(&mut keys, entries.len(), "pipeline cache eviction key list")?;
         for (cold_idx, _) in ranked {
             if retained_len <= self.max_entries() && retained_bytes <= self.max_bytes {
                 break;
@@ -212,7 +261,7 @@ impl LruPipelineCache {
                 retained_bytes - entry.cost
             };
         }
-        keys
+        Ok(keys)
     }
 
     fn remove_key(&self, fingerprint: &[u8; 32]) {
@@ -343,7 +392,7 @@ mod tests {
             entry(2, 100, 100.0, 1),
             entry(3, 50, 100.0, 1),
         ];
-        assert_eq!(cache.eviction_keys(&entries), vec![key(1)]);
+        assert_eq!(cache.eviction_keys(&entries).unwrap(), vec![key(1)]);
     }
 
     #[test]
@@ -354,60 +403,80 @@ mod tests {
             entry(2, 2, 100.0, 8),
             entry(3, 100, 100.0, 2),
         ];
-        assert_eq!(cache.eviction_keys(&entries), vec![key(1)]);
+        assert_eq!(cache.eviction_keys(&entries).unwrap(), vec![key(1)]);
+    }
+
+    #[test]
+    fn production_pipeline_cache_uses_fallible_eviction_staging() {
+        let production = include_str!("pipeline.rs")
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("Fix: pipeline cache production section should precede tests");
+
+        assert!(
+            !production.contains("Vec::with_capacity"),
+            "Fix: pipeline-cache eviction must not allocate ranking/snapshot vectors infallibly."
+        );
+        assert!(
+            production.contains("reserve_backend_vec"),
+            "Fix: pipeline-cache eviction should reserve through the shared WGPU staging helper."
+        );
+        assert!(
+            production.contains("eviction_snapshot(&self) -> Result"),
+            "Fix: pipeline-cache eviction snapshot allocation failures must be represented explicitly."
+        );
     }
 }
 
 fn try_atomic_add_usize(counter: &AtomicUsize, value: usize) -> bool {
-    if value == 0 {
-        return true;
-    }
-    let mut current = counter.load(Ordering::Relaxed);
-    loop {
-        let Some(next) = current.checked_add(value) else {
-            return false;
-        };
-        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_) => return true,
-            Err(observed) => current = observed,
-        }
-    }
+    checked_atomic_add_usize_with_order(
+        counter,
+        value,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+        |_, _| (),
+    )
+    .is_ok()
 }
 
 fn try_atomic_sub_usize(counter: &AtomicUsize, value: usize) -> bool {
-    if value == 0 {
-        return true;
-    }
-    let mut current = counter.load(Ordering::Relaxed);
-    loop {
-        let Some(next) = current.checked_sub(value) else {
-            return false;
-        };
-        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_) => return true,
-            Err(observed) => current = observed,
-        }
-    }
+    checked_atomic_sub_usize_with_order(
+        counter,
+        value,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+        |_, _| (),
+    )
+    .is_ok()
 }
 
 fn rebasing_atomic_add_u64(counter: &AtomicU64, value: u64, label: &'static str) {
     if value == 0 {
         return;
     }
-    let mut current = counter.load(Ordering::Relaxed);
-    loop {
-        let sum = u128::from(current) + u128::from(value);
-        let next = sum as u64;
-        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_) => {
-                if sum > u128::from(u64::MAX) {
-                    tracing::error!(
-                        "{label} exceeded u64::MAX and was rebased modulo 2^64. Fix: shard pipeline-cache telemetry collection before wrap."
-                    );
-                }
-                return;
-            }
-            Err(observed) => current = observed,
-        }
+    if value == 1 {
+        pinning_atomic_increment_u64(counter, Ordering::Relaxed, Ordering::Relaxed, || {
+            tracing::error!(
+                "{label} reached u64::MAX and was pinned. Fix: shard pipeline-cache telemetry collection before wrap."
+            );
+        });
+        return;
+    }
+    if checked_atomic_add_u64_with_order(
+        counter,
+        value,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+        |_, _| (),
+    )
+    .is_err()
+    {
+        counter.store(u64::MAX, Ordering::Relaxed);
+        tracing::error!(
+            "{label} exceeded u64::MAX and was pinned at u64::MAX. Fix: shard pipeline-cache telemetry collection before wrap."
+        );
     }
 }

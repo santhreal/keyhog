@@ -209,8 +209,7 @@ fn oversized_pipeline_metadata_is_rejected_before_parse() {
     )
     .unwrap();
 
-    assert!(
-        read_metadata::<CompiledPipelineMetadata>(&meta_path).is_err(),
+    assert!(matches!(read_metadata::<CompiledPipelineMetadata>(&meta_path), Err(_)),
         "Fix: oversized compiled-pipeline metadata must be rejected before TOML parsing"
     );
 }

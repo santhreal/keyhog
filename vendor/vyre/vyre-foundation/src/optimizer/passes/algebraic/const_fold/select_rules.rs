@@ -5,7 +5,7 @@
 
 use crate::ir::Expr;
 
-/// Select simplifications — covers constant conditions, identical branches,
+/// Select simplifications  -  covers constant conditions, identical branches,
 /// condition inversion, and Select-to-Cast canonicalization.
 pub(super) fn simplify_select(cond: &Expr, true_val: &Expr, false_val: &Expr) -> Option<Expr> {
     use crate::ir::UnOp;

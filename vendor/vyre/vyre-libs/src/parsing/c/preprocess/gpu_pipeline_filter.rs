@@ -3,6 +3,8 @@ use crate::parsing::c::preprocess::gpu_pipeline::bucket_pow2;
 
 #[path = "gpu_filter/block_programs.rs"]
 mod block_programs;
+#[path = "gpu_filter/compact.rs"]
+mod compact;
 #[path = "gpu_filter/full_comment.rs"]
 mod full_comment;
 #[path = "gpu_filter/host.rs"]
@@ -13,6 +15,8 @@ mod line_programs;
 mod preflight;
 #[path = "gpu_filter/program_helpers.rs"]
 mod program_helpers;
+#[path = "gpu_filter/scratch.rs"]
+mod scratch;
 #[path = "gpu_filter/simple_block.rs"]
 mod simple_block;
 #[path = "gpu_filter/simple_line.rs"]
@@ -45,11 +49,20 @@ pub(super) struct FilterScratch {
 }
 
 impl FilterScratch {
-    fn prepare_splice_input(&mut self, raw: &[u8], target_len: usize) {
+    fn prepare_splice_input(&mut self, raw: &[u8], target_len: usize) -> Result<(), String> {
         self.splice_input.clear();
-        self.splice_input.reserve(target_len);
+        if self.splice_input.capacity() < target_len {
+            self.splice_input
+                .try_reserve_exact(target_len - self.splice_input.capacity())
+                .map_err(|e| {
+                    format!(
+                        "filter splice input: could not reserve {target_len} padded source bytes. Fix: reduce batch size or increase host memory: {e}"
+                    )
+                })?;
+        }
         self.splice_input.extend_from_slice(raw);
         self.splice_input.resize(target_len, 0);
+        Ok(())
     }
 
     fn prepare_n_real(&mut self, n: u32) {
@@ -57,9 +70,8 @@ impl FilterScratch {
         self.n_real_buf.extend_from_slice(&n.to_le_bytes());
     }
 
-    fn prepare_preflight_zero(&mut self, byte_len: usize) {
-        self.preflight_zero.clear();
-        self.preflight_zero.resize(byte_len, 0);
+    fn prepare_preflight_zero(&mut self, byte_len: usize) -> Result<(), String> {
+        scratch::write_zero_bytes(&mut self.preflight_zero, byte_len, "filter preflight zero")
     }
 }
 
@@ -85,10 +97,19 @@ pub(super) fn gpu_filter_source_bytes_with_scratch(
     let n_bucket_usize = bucket_pow2(cap, 1024);
     let n_bucket = checked_gpu_u32("filter bucketed length", n_bucket_usize)?;
     let cap_bucket = n_bucket as usize;
-    let byte_buf_pad = (cap_bucket.div_ceil(4) * 4).max(4);
-    scratch.prepare_splice_input(raw, byte_buf_pad);
+    let byte_buf_pad = cap_bucket
+        .div_ceil(4)
+        .checked_mul(4)
+        .ok_or_else(|| {
+            "filter byte buffer padding overflowed usize. Fix: reduce batch size.".to_string()
+        })?
+        .max(4);
+    let preflight_zero_bytes = cap_bucket.checked_mul(4).ok_or_else(|| {
+        "filter preflight zero bytes overflowed usize. Fix: reduce batch size.".to_string()
+    })?;
+    scratch.prepare_splice_input(raw, byte_buf_pad)?;
     scratch.prepare_n_real(n);
-    scratch.prepare_preflight_zero(n_bucket as usize * 4);
+    scratch.prepare_preflight_zero(preflight_zero_bytes)?;
 
     dispatcher
         .dispatch_borrowed_into(
@@ -125,7 +146,7 @@ pub(super) fn gpu_filter_source_bytes_with_scratch(
         == 0
     {
         return Ok(FilteredBytes {
-            bytes: raw.to_vec(),
+            bytes: scratch::copy_output_bytes(raw, "filter no-transform output")?,
         });
     }
     if transform_flags == TRANSFORM_LINE_COMMENT {

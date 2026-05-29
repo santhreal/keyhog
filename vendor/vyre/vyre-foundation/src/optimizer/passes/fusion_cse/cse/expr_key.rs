@@ -20,13 +20,13 @@ pub(crate) enum ExprKey {
     LocalId(u8),
     BinOp(u8, ExprId, ExprId),
     UnOp(u8, ExprId),
-    /// CSE key for `BinOp::Opaque(id)` — stores the extension u32 id so
+    /// CSE key for `BinOp::Opaque(id)`  -  stores the extension u32 id so
     /// two extensions with distinct ids hash to distinct keys. Without
     /// this, every `BinOp::Opaque(_)` collapsed onto a single key via
-    /// `bin_op_key`'s wildcard fallback — silently merging unrelated
+    /// `bin_op_key`'s wildcard fallback  -  silently merging unrelated
     /// extensions in CSE. (§1 injectivity contract.)
     BinOpOpaque(u32, ExprId, ExprId),
-    /// CSE key for `UnOp::Opaque(id)` — same rationale as `BinOpOpaque`.
+    /// CSE key for `UnOp::Opaque(id)`  -  same rationale as `BinOpOpaque`.
     UnOpOpaque(u32, ExprId),
     Call(Ident, SmallVec<[ExprId; 4]>),
     Fma(ExprId, ExprId, ExprId),

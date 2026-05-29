@@ -149,7 +149,7 @@ fn module_cache_hits_for_tests() -> usize {
 /// Emit a `naga::Module` from a `KernelDescriptor` after running the
 /// full `vyre_lower::rewrites::run_all` optimization pipeline.
 ///
-/// This is the recommended emission entry point — call this whenever
+/// This is the recommended emission entry point  -  call this whenever
 /// you don't have a specific reason to emit the raw descriptor. The
 /// optimized form has fewer ops (dead code dropped, identity ops
 /// eliminated, common subexpressions merged, redundant loads
@@ -166,7 +166,7 @@ pub fn emit_optimized(desc: &KernelDescriptor) -> Result<naga::Module, EmitError
 /// Like [`emit_optimized`] but also returns
 /// [`vyre_lower::rewrites::OptimizationStats`] so the caller can see
 /// what the rewrite stack did (op count delta, bindings dropped,
-/// fixed-point iterations needed). No duplicate work — `emit_optimized`
+/// fixed-point iterations needed). No duplicate work  -  `emit_optimized`
 /// is now a thin wrapper around this.
 pub fn emit_optimized_with_stats(
     desc: &KernelDescriptor,
@@ -174,7 +174,7 @@ pub fn emit_optimized_with_stats(
     let (optimized, stats) = vyre_lower::rewrites::run_all_with_stats(desc);
     debug_assert!(
         vyre_lower::verify::verify(&optimized).is_ok(),
-        "rewrite pipeline produced an invalid descriptor — see vyre_lower::verify for the contract"
+        "rewrite pipeline produced an invalid descriptor  -  see vyre_lower::verify for the contract"
     );
     let module = emit(&optimized)?;
     Ok((module, stats))
@@ -241,7 +241,6 @@ fn emit_many_with(
             scope.spawn(move || {
                 for (offset, desc) in chunk.iter().enumerate() {
                     if tx.send((start + offset, emit_one(desc))).is_err() {
-                        eprintln!("parallel Naga emission receiver dropped before all descriptors were sent");
                         break;
                     }
                 }

@@ -1,9 +1,9 @@
-//! `buffer_decl_sort` — canonicalize `BufferDecl` order by `(binding, name)`.
+//! `buffer_decl_sort`  -  canonicalize `BufferDecl` order by `(binding, name)`.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::buffer_decl_sort`. Soundness:
-//! `Exact` — the IR semantics are reference-by-name, not reference-by-index,
+//! `Exact`  -  the IR semantics are reference-by-name, not reference-by-index,
 //! so reordering BufferDecls is not observable in program behavior.
-//! Cost-direction: identity — node_count, instruction_count, all 8 cost dimensions are
+//! Cost-direction: identity  -  node_count, instruction_count, all 8 cost dimensions are
 //! unchanged. Preserves: every analysis. Invalidates: nothing.
 //!
 //! ## Why
@@ -21,7 +21,7 @@
 //! 2. **Deterministic backend emission.** Target emitters walk
 //!    `Program::buffers()` in slice order. Without a canonicalization
 //!    pass, generated source changes whenever a frontend rebuilds
-//!    the `Program` in a slightly different order — bad for shader cache,
+//!    the `Program` in a slightly different order  -  bad for shader cache,
 //!    bad for reproducible builds, bad for diffing emitted code.
 //!
 //! ## Rule
@@ -37,7 +37,7 @@
 //! ## Why this ordering
 //!
 //! Binding is the primary key because it is the canonical resource
-//! addressing identifier — sorting by it makes the lowered output's
+//! addressing identifier  -  sorting by it makes the lowered output's
 //! resource-table layout match the IR's BufferDecl table layout, which is
 //! what every target emitter already wants. Name is the tie-breaker because two
 //! BufferDecls SHOULD never share a binding (the validator catches this),
@@ -79,7 +79,7 @@ impl BufferDeclSortPass {
         }
         let mut buffers = program.buffers().to_vec();
         // (binding, name) is unique per buffer (the validator rejects
-        // duplicates), so the order of equal keys is irrelevant —
+        // duplicates), so the order of equal keys is irrelevant  -
         // unstable sort is faster than the stable sort_by and produces
         // the same canonical output.
         buffers
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn transform_preserves_entry_body_unchanged() {
-        // The IR entry body must be untouched — the pass only touches the
+        // The IR entry body must be untouched  -  the pass only touches the
         // BufferDecl table.
         let original_entry = entry();
         let program = Program::wrapped(

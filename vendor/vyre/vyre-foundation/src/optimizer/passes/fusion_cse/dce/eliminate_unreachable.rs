@@ -56,6 +56,10 @@ pub(crate) fn eliminate_unreachable(nodes: Vec<Node>) -> Vec<Node> {
                 count_buffer,
                 count_offset,
             }),
+            Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. } => out.push(node),
             Node::AsyncLoad {
                 source,
                 destination,

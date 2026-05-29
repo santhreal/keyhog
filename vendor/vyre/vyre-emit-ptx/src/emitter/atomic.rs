@@ -14,7 +14,7 @@ impl BodyCtx<'_> {
         atomic_op: AtomicOp,
     ) -> Result<(), EmitError> {
         // CompareExchange / CompareExchangeWeak take 4 operands and use a
-        // distinct PTX mnemonic — split out so the common single-value
+        // distinct PTX mnemonic  -  split out so the common single-value
         // RMW path stays clean.
         if matches!(
             atomic_op,

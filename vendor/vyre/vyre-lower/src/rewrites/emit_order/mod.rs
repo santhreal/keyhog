@@ -5,8 +5,7 @@
 //! only pure value producers before same-body consumers so emission can stay
 //! linear without changing memory, atomic, carrier, or control-flow ordering.
 
-use rustc_hash::FxHashMap;
-
+use super::body_index::BodyIndex;
 use crate::verify::{classify_operand, OperandClass};
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind};
 
@@ -21,24 +20,13 @@ fn schedule_body(body: &mut KernelBody) {
     for child in &mut body.child_bodies {
         schedule_body(child);
     }
+    let body_index = BodyIndex::new(body);
     let old_ops = std::mem::take(&mut body.ops);
-    let mut producer_by_result = FxHashMap::default();
-    for (index, op) in old_ops.iter().enumerate() {
-        if let Some(result) = op.result {
-            producer_by_result.insert(result, index);
-        }
-    }
 
     let mut emitted = vec![false; old_ops.len()];
     let mut new_ops = Vec::with_capacity(old_ops.len());
-    for index in 0..old_ops.len() {
-        emit_with_dependencies(
-            index,
-            &old_ops,
-            &producer_by_result,
-            &mut emitted,
-            &mut new_ops,
-        );
+    for op_index in 0..old_ops.len() {
+        emit_with_dependencies(op_index, &old_ops, &body_index, &mut emitted, &mut new_ops);
     }
     body.ops = new_ops;
 }
@@ -46,7 +34,7 @@ fn schedule_body(body: &mut KernelBody) {
 fn emit_with_dependencies(
     index: usize,
     old_ops: &[KernelOp],
-    producer_by_result: &FxHashMap<u32, usize>,
+    body_index: &BodyIndex,
     emitted: &mut [bool],
     new_ops: &mut Vec<KernelOp>,
 ) {
@@ -58,7 +46,7 @@ fn emit_with_dependencies(
         if classify_operand(&op.kind, operand_pos) != OperandClass::ResultRef {
             continue;
         }
-        let Some(&producer_index) = producer_by_result.get(&operand) else {
+        let Some(producer_index) = body_index.producer_index(operand) else {
             continue;
         };
         if producer_index == index || emitted[producer_index] {
@@ -68,7 +56,7 @@ fn emit_with_dependencies(
             emit_with_dependencies(
                 producer_index,
                 old_ops,
-                producer_by_result,
+                body_index,
                 emitted,
                 new_ops,
             );

@@ -11,14 +11,14 @@
 //! in `vyre-primitives::math` / `vyre-primitives::graph` /
 //! `vyre-primitives::opt`. Each side targets a different layer:
 //!
-//! - `vyre_primitives::*::*_cpu` — the canonical CPU references, used
+//! - `vyre_primitives::*::*_cpu`  -  the canonical CPU references, used
 //!   by every crate below `vyre-libs` (driver, runtime, aot, cc, libs).
-//! - `vyre_foundation::cpu_references::*` (this file) — foundation-local
+//! - `vyre_foundation::cpu_references::*` (this file)  -  foundation-local
 //!   references used only by `pass_substrate` modules. Bypasses the
 //!   primitives→foundation cycle.
 //!
 //! This is the pattern Linux uses for `arch/*/lib/memcpy` versus the
-//! generic `lib/string.c::memcpy` — each layer keeps a fit-for-purpose
+//! generic `lib/string.c::memcpy`  -  each layer keeps a fit-for-purpose
 //! copy rather than introducing acrobatics to dedupe a small kernel.
 //!
 //! # Parity contract
@@ -27,7 +27,7 @@
 //! `*_cpu` function in `vyre-primitives` with byte-equivalent output
 //! on byte-equivalent input. The
 //! `vyre-harness::tests::cpu_references_parity` test asserts this
-//! invariant — when these kernels drift, that test fails.
+//! invariant  -  when these kernels drift, that test fails.
 //!
 //! When you add a kernel here, also:
 //! 1. Confirm the matching primitive exists in `vyre-primitives::*`.
@@ -39,6 +39,9 @@
 use crate::cpu_op;
 
 /// Apply a column mapping to a row vector, writing values into `target_size` slots.
+///
+/// AUDIT_2026-05-23: Deprecated - CPU reference. Use GPU `functor_apply` primitive.
+#[deprecated(note = "CPU reference. Use GPU functor_apply primitive.")]
 #[must_use]
 pub fn functor_apply_cpu(source_row: &[u32], mapping: &[u32], target_size: u32) -> Vec<u32> {
     assert_eq!(source_row.len(), mapping.len());
@@ -53,7 +56,7 @@ pub fn functor_apply_cpu(source_row: &[u32], mapping: &[u32], target_size: u32) 
 /// `second[middle_dim,target_dim]` on the CPU.
 ///
 /// Uses row, scan, col loop order so the inner loop scans `second`
-/// sequentially in row-major layout — 2-4× faster than the naive
+/// sequentially in row-major layout  -  2-4× faster than the naive
 /// row, col, scan order on matrices that don't fit L1.
 #[must_use]
 pub fn monoidal_compose_cpu(
@@ -70,7 +73,7 @@ pub fn monoidal_compose_cpu(
     assert_eq!(second.len(), middle_dim * target_dim);
     let mut out = vec![0.0; source_dim * target_dim];
     // row, scan, col order: the inner col-loop touches output and second
-    // sequentially — both are consecutive in memory for row-major.
+    // sequentially  -  both are consecutive in memory for row-major.
     for row in 0..source_dim {
         let out_row = &mut out[row * target_dim..(row + 1) * target_dim];
         for scan in 0..middle_dim {
@@ -85,6 +88,9 @@ pub fn monoidal_compose_cpu(
 }
 
 /// Advance a homotopy state by one Euler predictor step.
+///
+/// AUDIT_2026-05-23: Deprecated - CPU reference. Use GPU homotopy primitive.
+#[deprecated(note = "CPU reference. Use GPU homotopy primitive.")]
 #[must_use]
 pub fn homotopy_euler_predictor_cpu(x_curr: &[f64], v: &[f64], dt: f64) -> Vec<f64> {
     x_curr
@@ -95,6 +101,9 @@ pub fn homotopy_euler_predictor_cpu(x_curr: &[f64], v: &[f64], dt: f64) -> Vec<f
 }
 
 /// Evaluate the linear homotopy `(1 - t) * g_x + t * f_x`.
+///
+/// AUDIT_2026-05-23: Deprecated - CPU reference. Use GPU homotopy primitive.
+#[deprecated(note = "CPU reference. Use GPU homotopy primitive.")]
 #[must_use]
 pub fn linear_homotopy_cpu(g_x: &[f64], f_x: &[f64], t: f64) -> Vec<f64> {
     let s = 1.0 - t;
@@ -109,6 +118,9 @@ pub fn linear_homotopy_cpu(g_x: &[f64], f_x: &[f64], t: f64) -> Vec<f64> {
 /// Frontier-driven: iterates only nodes in `f_in` as sources, then
 /// scans their adjacency row. For sparse frontiers this is O(|F|×n)
 /// instead of the previous O(n²) full scan.
+///
+/// AUDIT_2026-05-23: Deprecated - CPU reference. Use GPU matroid BFS primitive.
+#[deprecated(note = "CPU reference. Use GPU matroid BFS primitive.")]
 #[must_use]
 pub fn matroid_exchange_bfs_step_cpu(
     f_in: &[u32],
@@ -118,7 +130,7 @@ pub fn matroid_exchange_bfs_step_cpu(
 ) -> (Vec<u32>, bool) {
     let mut out = vec![0u32; n];
     let mut any = false;
-    // Collect frontier indices once — avoids the inner k-loop scan
+    // Collect frontier indices once  -  avoids the inner k-loop scan
     // for every candidate j. On realistic matroid graphs the frontier
     // is 1-5% of n, making this 20-100× faster.
     let frontier: Vec<usize> = (0..n).filter(|&k| f_in[k] != 0).collect();
@@ -139,6 +151,9 @@ pub fn matroid_exchange_bfs_step_cpu(
 /// Pre-extracts the diagonal reciprocals so the hot loop only does
 /// a fused multiply-add per element. For n>64 this is ~1.5× faster
 /// than recomputing `a[i*n+i]` with a branch per row.
+///
+/// AUDIT_2026-05-23: Deprecated - CPU reference. Use GPU Jacobi smooth primitive.
+#[deprecated(note = "CPU reference. Use GPU Jacobi smooth primitive.")]
 #[must_use]
 pub fn jacobi_smooth_step_cpu(
     matrix: &[f64],
@@ -195,6 +210,7 @@ pub(crate) fn cpu_fn_for_composition(id: &str) -> Option<cpu_op::CpuFn> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

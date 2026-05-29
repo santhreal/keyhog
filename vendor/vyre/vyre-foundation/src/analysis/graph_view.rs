@@ -1,7 +1,7 @@
-//! P7.5 — Graph-IR compatibility bridge.
+//! P7.5  -  Graph-IR compatibility bridge.
 //!
 //! Statement-IR (`Program` + `Node` + `Expr`) is the canonical
-//! form in 0.6 — wire-format stable, every backend speaks it.
+//! form in 0.6  -  wire-format stable, every backend speaks it.
 //! Graph-IR is a pure VIEW on top: lets whole-program optimization
 //! passes (kernel fusion, dead-subregion elimination) walk the IR
 //! as a DAG of `DataflowNode`s connected by `DataEdge`s.
@@ -202,7 +202,7 @@ impl NodeGraph {
         Self::from_program_owned(program.clone())
     }
 
-    /// Build the graph by consuming the Program — moves the entry
+    /// Build the graph by consuming the Program  -  moves the entry
     /// `Vec<Node>` out of its `Arc` when uniquely owned and avoids
     /// cloning each node. Use this whenever the caller holds the
     /// only `Program` reference.
@@ -334,13 +334,13 @@ impl NodeGraph {
     }
 }
 
-/// Convenience — `to_graph(program)` style call.
+/// Convenience  -  `to_graph(program)` style call.
 #[must_use]
 pub fn to_graph(program: &Program) -> NodeGraph {
     NodeGraph::from_program(program)
 }
 
-/// Convenience — `from_graph(graph)` style call.
+/// Convenience  -  `from_graph(graph)` style call.
 ///
 /// # Errors
 ///

@@ -73,7 +73,7 @@ mod tests {
         }
     }
 
-    /// Adversarial: MultipleOf(0) must never pass — module-by-zero
+    /// Adversarial: MultipleOf(0) must never pass  -  module-by-zero
     /// guarded by the primitive.
     #[test]
     fn multiple_of_zero_never_holds() {
@@ -99,7 +99,7 @@ mod tests {
     }
 
     /// Adversarial: non-empty proof must propagate through
-    /// conjunction — if EITHER conjunct proves non-empty, the AND
+    /// conjunction  -  if EITHER conjunct proves non-empty, the AND
     /// proves it.
     #[test]
     fn conjunction_inherits_non_empty_from_either_side() {

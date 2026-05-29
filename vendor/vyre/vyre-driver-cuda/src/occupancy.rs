@@ -120,12 +120,14 @@ pub fn estimate_occupancy(
         return OccupancyEstimate::ZERO;
     };
     let max_warps_per_sm = max_threads_sm / warp;
-    let occupancy_bps = if max_warps_per_sm == 0 {
-        0
-    } else {
-        let numerator = u64::from(warps_per_sm) * 10_000;
-        (numerator / u64::from(max_warps_per_sm)).min(10_000) as u32
-    };
+    let occupancy_bps = crate::numeric::CUDA_NUMERIC
+        .ratio_basis_points_u64(
+            u64::from(warps_per_sm),
+            u64::from(max_warps_per_sm),
+            0,
+            "occupancy estimator",
+        )
+        .min(10_000);
 
     OccupancyEstimate {
         blocks_per_sm,
@@ -216,7 +218,7 @@ pub enum ConcurrentLaunchBlocker {
 }
 
 /// Decide whether two kernels can launch concurrently on the same CUDA
-/// device under the same SM resources. Pure decision — does not perform
+/// device under the same SM resources. Pure decision  -  does not perform
 /// the launch, only validates that the device + measured per-kernel
 /// `KernelResourceUsage` would fit a co-resident schedule.
 ///
@@ -316,32 +318,7 @@ pub fn can_launch_concurrently(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::CudaDeviceCaps;
-
-    fn sm120_caps() -> CudaDeviceCaps {
-        CudaDeviceCaps {
-            name: "Test sm_120".into(),
-            ordinal: 0,
-            compute_capability: (12, 0),
-            total_memory: 32 * 1024 * 1024 * 1024,
-            max_threads_per_block: 1024,
-            max_block_dim: [1024, 1024, 64],
-            max_grid_dim: [i32::MAX, 65_535, 65_535],
-            shared_memory_per_block: 128 * 1024,
-            shared_memory_per_sm: 256 * 1024,
-            warp_size: 32,
-            cooperative_launch: true,
-            concurrent_kernels: true,
-            async_engine_count: 2,
-            multi_processor_count: 170,
-            l2_cache_bytes: 96 * 1024 * 1024,
-            memory_clock_rate_khz: 14_000_000,
-            global_memory_bus_width_bits: 512,
-            max_registers_per_block: 65_536,
-            max_registers_per_sm: 65_536,
-            max_threads_per_sm: 2048,
-        }
-    }
+    use crate::synthetic_device_caps::blackwell_sm120_caps_default;
 
     #[test]
     fn occupancy_production_paths_do_not_panic_on_release_capability_math() {
@@ -349,7 +326,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("occupancy source must contain production section");
+            .expect("Fix: occupancy source must contain production section");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".unwrap_or_else(")
@@ -366,7 +343,7 @@ mod tests {
 
     #[test]
     fn estimate_zero_when_workgroup_exceeds_max_threads_per_block() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let usage = KernelResourceUsage {
             regs_per_thread: 32,
             shared_bytes_per_block: 0,
@@ -377,7 +354,7 @@ mod tests {
 
     #[test]
     fn estimate_zero_when_register_pressure_too_high() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         // 256 regs/thread * 256 threads = 65_536 → fits exactly per block.
         // 256 regs/thread * 257 threads = 65_792 → busts per-block ceiling.
         let usage = KernelResourceUsage {
@@ -392,7 +369,7 @@ mod tests {
 
     #[test]
     fn estimate_zero_when_register_requirement_overflows() {
-        let mut caps = sm120_caps();
+        let mut caps = blackwell_sm120_caps_default();
         caps.max_threads_per_block = i32::MAX;
         caps.max_threads_per_sm = i32::MAX;
         caps.max_registers_per_block = i32::MAX;
@@ -411,7 +388,7 @@ mod tests {
 
     #[test]
     fn estimate_full_occupancy_on_lightweight_kernel() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         // 16 regs/thread, no shared. At 256 threads → blocks-by-regs =
         // 65_536 / (16*256) = 16; blocks-by-threads = 2048/256 = 8 →
         // 8 blocks/SM. Warps/SM = 8 * 8 = 64 = max_threads_per_sm/warp =
@@ -428,7 +405,7 @@ mod tests {
 
     #[test]
     fn picker_chooses_smaller_size_on_tie() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let usage = KernelResourceUsage {
             regs_per_thread: 16,
             shared_bytes_per_block: 0,
@@ -440,7 +417,7 @@ mod tests {
 
     #[test]
     fn picker_returns_none_when_no_candidate_runnable() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         // 65_537 regs/thread per block is impossible at any block size > 0.
         let usage = KernelResourceUsage {
             regs_per_thread: 65_537,
@@ -452,7 +429,7 @@ mod tests {
 
     #[test]
     fn estimate_zero_when_shared_memory_exceeds_per_block_limit() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let usage = KernelResourceUsage {
             regs_per_thread: 16,
             shared_bytes_per_block: 256 * 1024,
@@ -463,13 +440,14 @@ mod tests {
 
     #[test]
     fn estimate_uses_probed_per_sm_shared_memory_not_block_multiplier() {
-        let mut caps = sm120_caps();
+        let mut caps = blackwell_sm120_caps_default();
         caps.shared_memory_per_block = 128 * 1024;
         caps.shared_memory_per_sm = 192 * 1024;
         let usage = KernelResourceUsage {
             regs_per_thread: 16,
             shared_bytes_per_block: 96 * 1024,
         };
+
 
         let est = estimate_occupancy(&caps, usage, 256);
 
@@ -481,7 +459,7 @@ mod tests {
 
     #[test]
     fn occupancy_bps_is_proportional_to_warps_per_sm() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         // High-pressure kernel: 64 regs/thread, 256 threads. Blocks/SM =
         // min(2048/256, 65536/(64*256)) = min(8, 4) = 4.
         // Warps/SM = 4 * 8 = 32. max_warps_per_sm = 64.
@@ -498,7 +476,7 @@ mod tests {
 
     #[test]
     fn picker_prefers_higher_occupancy_over_smaller_size() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         // At 32 threads, 64 regs/thread → blocks_by_regs = 65536/2048 = 32,
         // blocks_by_threads = 2048/32 = 64 → 32 blocks * 1 warp = 32 warps/SM = 50%.
         // At 256 threads, 64 regs/thread → 32 warps/SM = 50% (computed above).
@@ -513,7 +491,7 @@ mod tests {
 
     #[test]
     fn cooperative_residency_limit_uses_sm_thread_ceiling() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         assert_eq!(
             cooperative_thread_residency_block_limit(&caps, 256),
             1_360,
@@ -526,7 +504,7 @@ mod tests {
 
     #[test]
     fn co_launch_two_kernels_with_headroom_fits_concurrently() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let light = KernelResourceUsage {
             regs_per_thread: 16,
             shared_bytes_per_block: 0,
@@ -537,7 +515,7 @@ mod tests {
 
     #[test]
     fn co_launch_two_full_occupancy_kernels_overflows_warp_cap() {
-        let mut caps = sm120_caps();
+        let mut caps = blackwell_sm120_caps_default();
         caps.max_threads_per_sm = 512;
         let full = KernelResourceUsage {
             regs_per_thread: 16,
@@ -554,7 +532,7 @@ mod tests {
 
     #[test]
     fn co_launch_register_heavy_kernels_serializes_on_register_pressure() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let heavy = KernelResourceUsage {
             regs_per_thread: 129,
             shared_bytes_per_block: 0,
@@ -570,7 +548,7 @@ mod tests {
 
     #[test]
     fn co_launch_with_unrunnable_kernel_returns_kernel_unrunnable() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let runnable = KernelResourceUsage {
             regs_per_thread: 16,
             shared_bytes_per_block: 0,
@@ -590,7 +568,7 @@ mod tests {
 
     #[test]
     fn co_launch_on_device_without_concurrency_short_circuits() {
-        let mut caps = sm120_caps();
+        let mut caps = blackwell_sm120_caps_default();
         caps.concurrent_kernels = false;
         let usage = KernelResourceUsage {
             regs_per_thread: 16,
@@ -607,7 +585,7 @@ mod tests {
 
     #[test]
     fn co_launch_with_shared_memory_headroom_fits() {
-        let caps = sm120_caps();
+        let caps = blackwell_sm120_caps_default();
         let shared = KernelResourceUsage {
             regs_per_thread: 16,
             shared_bytes_per_block: 96 * 1024,
@@ -618,7 +596,7 @@ mod tests {
 
     #[test]
     fn co_launch_shared_memory_uses_exact_per_sm_limit() {
-        let mut caps = sm120_caps();
+        let mut caps = blackwell_sm120_caps_default();
         caps.shared_memory_per_sm = 160 * 1024;
         let shared = KernelResourceUsage {
             regs_per_thread: 16,
@@ -647,3 +625,4 @@ mod tests {
         );
     }
 }
+

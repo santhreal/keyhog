@@ -10,14 +10,14 @@ post-processing pass.
 
 `vyre-debug` library + `vyre_dbg` CLI:
 
-- `dump_descriptor` / `DumpDescriptor` — vyre-IR (descriptor) pretty-print
-- `dump_wgsl` / `dump_wgsl_with_lines` / `DumpWgsl` — emits WGSL string
-- `find_dangling_refs` / `FindDangling` — vyre-side dangling SSA refs
-- `find_uncarriered_assigns` / `FindUncarriered` — Assigns inside loops not tagged
-- `carrier_summary` / `CarrierSummary` — vyre-IR carrier analysis
-- `bisect_rewrites` / `BisectRewrites` — find which rewrite pass breaks a descriptor
-- `diff_descriptors` / `DiffDescriptors` — diff two descriptors
-- `get_program` — hard-coded synthetic Programs (c11_lexer + a few others)
+- `dump_descriptor` / `DumpDescriptor`  -  vyre-IR (descriptor) pretty-print
+- `dump_wgsl` / `dump_wgsl_with_lines` / `DumpWgsl`  -  emits WGSL string
+- `find_dangling_refs` / `FindDangling`  -  vyre-side dangling SSA refs
+- `find_uncarriered_assigns` / `FindUncarriered`  -  Assigns inside loops not tagged
+- `carrier_summary` / `CarrierSummary`  -  vyre-IR carrier analysis
+- `bisect_rewrites` / `BisectRewrites`  -  find which rewrite pass breaks a descriptor
+- `diff_descriptors` / `DiffDescriptors`  -  diff two descriptors
+- `get_program`  -  hard-coded synthetic Programs (c11_lexer + a few others)
 
 Everything above is **vyre-IR-side**. Naga-side and runtime-failure-side coverage is missing.
 
@@ -133,7 +133,7 @@ struct BindResultEntry {
 ```
 
 `vyre_debug::load_bind_result_log(path) -> Vec<BindResultEntry>` lets
-the failure trace cross-reference naga handles with vyre op ids —
+the failure trace cross-reference naga handles with vyre op ids  - 
 the manual `eprintln!("[publish]…")` step I'm doing now.
 
 ### 5. Capture-on-failure for vyrec
@@ -217,7 +217,7 @@ serves stale WGSL across vyrec rebuilds and made me chase phantom
 - Type resolution: `module.types[handle]` exposes `TypeInner`. For
   `Scalar(Scalar { kind, width })` render as `Bool/U32/I32/F32/U64/F64`.
   For `Vector { size, scalar }`, `Atomic(scalar)`, `Array { base, size, stride }`,
-  `Struct { members, span }`, render structurally — those show up.
+  `Struct { members, span }`, render structurally  -  those show up.
 - The four canonical handles (`bool_ty/u32_ty/i32_ty/f32_ty`) are NOT
   the only typed locals. `loops.rs:131` allocates a local with
   `name: Some(loop_var.to_string()), ty: index_ty` where `index_ty`
@@ -249,7 +249,7 @@ serves stale WGSL across vyrec rebuilds and made me chase phantom
 
 ## Out of scope
 
-- Source-level vyre-IR rewrites or fixes — the agent works on
+- Source-level vyre-IR rewrites or fixes  -  the agent works on
   vyre-debug only.
 - Naga upstream patches.
 - Adding new kernels to the `get_program` helper unless trivially
