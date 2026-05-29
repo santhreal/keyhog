@@ -31,6 +31,7 @@ pub mod orchestrator_config;
 pub mod path_validation;
 pub mod reporting;
 pub mod sources;
+pub mod style;
 pub mod subcommands;
 pub mod test_fixture_suppressions;
 pub mod value_parsers;

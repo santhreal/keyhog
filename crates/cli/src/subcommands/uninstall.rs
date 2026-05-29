@@ -8,48 +8,56 @@
 
 use crate::args::UninstallArgs;
 use crate::installer;
+use crate::style::Palette;
 use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::process::ExitCode;
 
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const DIM: &str = "\x1b[2m";
-const BOLD: &str = "\x1b[1m";
-const RESET: &str = "\x1b[0m";
-
 pub fn run(args: UninstallArgs) -> Result<ExitCode> {
+    let palette = Palette::for_stdout();
+    // `dim` is used only by print_integration_hints, which reads it from the
+    // palette we pass in; run() itself uses the four below.
+    let Palette {
+        green,
+        yellow,
+        bold,
+        reset,
+        ..
+    } = palette;
     let exe = installer::current_binary()?;
-    println!("{BOLD}keyhog uninstall{RESET}");
+    println!("{bold}keyhog uninstall{reset}");
     println!("  binary         {}", exe.display());
 
     if !args.yes {
         println!(
-            "\n{YELLOW}{BOLD}dry run{RESET} - nothing removed. Re-run with {BOLD}--yes{RESET} to delete the binary above."
+            "\n{yellow}{bold}dry run{reset} - nothing removed. Re-run with {bold}--yes{reset} to delete the binary above."
         );
-        print_integration_hints(&exe);
+        print_integration_hints(&exe, &palette);
         return Ok(ExitCode::SUCCESS);
     }
 
     remove_binary(&exe)?;
-    println!("\n{GREEN}{BOLD}✓ removed {}{RESET}", exe.display());
-    print_integration_hints(&exe);
+    println!("\n{green}{bold}✓ removed {}{reset}", exe.display());
+    print_integration_hints(&exe, &palette);
     Ok(ExitCode::SUCCESS)
 }
 
 /// keyhog never silently mutates shell config; surface the integration points
 /// for the user to remove themselves.
-fn print_integration_hints(exe: &Path) {
+fn print_integration_hints(exe: &Path, palette: &Palette) {
+    let Palette {
+        dim, bold, reset, ..
+    } = *palette;
     let dir = exe
         .parent()
         .map(|d| d.display().to_string())
         .unwrap_or_else(|| "the install dir".into());
-    println!("\n{BOLD}manual cleanup (keyhog never edits your shell config):{RESET}");
+    println!("\n{bold}manual cleanup (keyhog never edits your shell config):{reset}");
     println!(
-        "  {DIM}- PATH export for {dir} in your shell rc (~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish){RESET}"
+        "  {dim}- PATH export for {dir} in your shell rc (~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish){reset}"
     );
-    println!("  {DIM}- shell completions you installed via `keyhog completion`{RESET}");
-    println!("  {DIM}- the pre-commit hook in any repo where you ran `keyhog hook install`{RESET}");
+    println!("  {dim}- shell completions you installed via `keyhog completion`{reset}");
+    println!("  {dim}- the pre-commit hook in any repo where you ran `keyhog hook install`{reset}");
 }
 
 #[cfg(unix)]
