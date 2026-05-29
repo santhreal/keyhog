@@ -221,6 +221,21 @@ def neg_version(rnd):
     return ".".join(str(rnd.randint(0, 99)) for _ in range(rnd.choice([3, 4])))
 
 
+def neg_bare_token(rnd):
+    # A random high-entropy base62 token with NO secret keyword: a session id,
+    # request id, nonce, cache key, content hash slug. This is the dominant
+    # real-world false positive for an entropy scanner and the exact shape of
+    # the mirror's "lorem-with-high-entropy" negative. Labelled negative and
+    # placed in neutral / prose context so the model learns that high entropy
+    # WITHOUT an anchor is not a credential.
+    return _rc(rnd, B62, rnd.randint(22, 44))
+
+
+def neg_prose_token(rnd):
+    # Same token, but the "context" embeds it in prose (the mirror shape).
+    return _rc(rnd, B62, rnd.randint(24, 48))
+
+
 def neg_jwt_rfc(rnd):
     # RFC 7519 specimen JWT, signature split so the full token is not a source
     # literal (it is a famous public example that secret scanners flag).
@@ -297,12 +312,28 @@ NEGATIVE_GENS = [
     ("identifier", neg_identifier, 6),
     ("version", neg_version, 3),
     ("jwt-rfc", neg_jwt_rfc, 2),
+    ("bare-token", neg_bare_token, 14),
+    ("prose-token", neg_prose_token, 8),
 ]
 
 # Hex-shaped negatives: bare hash/digest values. Placed in hash/checksum
 # contexts (no secret keyword) so the model learns hex is a credential ONLY
 # under a secret keyword, not by shape alone.
 HEX_NEGATIVE_KINDS = {"sha256", "sha1", "md5", "short-hex", "git-commit"}
+
+# Random high-entropy tokens with NO anchor. Must never sit under a secret
+# keyword in training: the whole point is to teach "entropy alone != secret".
+BARE_TOKEN_KINDS = {"bare-token"}
+
+# Prose-embedded random tokens (the mirror's lorem-with-high-entropy shape).
+PROSE_CONTEXTS = [
+    "Session opened with handle {}. See the docs for details.",
+    "// request_id={} (trace only, not a credential)",
+    "Cache miss for object {} — recomputing.",
+    "Generated nonce {} for this render pass.",
+    "Job {} queued; status will update shortly.",
+]
+PROSE_TOKEN_KINDS = {"prose-token"}
 
 
 def _fmt(template: str, cred: str) -> str:
@@ -336,9 +367,11 @@ def generate(n_per_unit: int, seed: int) -> list[dict]:
     for kind, gen, weight in POSITIVE_GENS:
         for _ in range(n_per_unit * weight):
             cred = gen(rnd)
-            # A bare hex string is a secret ONLY under a secret keyword, so hex
-            # keys always carry one; everything else is 80% keyword-anchored.
-            kw_prob = 1.0 if kind == "hex-key" else 0.8
+            # A bare high-entropy / hex string is a secret ONLY under a secret
+            # keyword (otherwise it is indistinguishable from a random session
+            # token / digest), so those always carry one. Provider-prefixed
+            # tokens (ghp_, AKIA, sk_live_) self-anchor, so 80% keyword is fine.
+            kw_prob = 1.0 if kind in ("hex-key", "generic-high-entropy") else 0.8
             ctx = _wrap_context(rnd, cred, secret_kw=rnd.random() < kw_prob)
             records.append({"text": cred, "context": ctx, "label": 1, "kind": kind})
 
@@ -348,6 +381,11 @@ def generate(n_per_unit: int, seed: int) -> list[dict]:
             cred = gen(rnd)
             if kind in HEX_NEGATIVE_KINDS:
                 ctx = _hash_context(rnd, cred)
+            elif kind in BARE_TOKEN_KINDS:
+                # Neutral context only - high entropy with no keyword anchor.
+                ctx = _fmt(rnd.choice(NEUTRAL_CONTEXTS), cred)
+            elif kind in PROSE_TOKEN_KINDS:
+                ctx = _fmt(rnd.choice(PROSE_CONTEXTS), cred)
             else:
                 # ~40% adversarially placed under a secret keyword
                 ctx = _wrap_context(rnd, cred, secret_kw=rnd.random() < 0.4)
