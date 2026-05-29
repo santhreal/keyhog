@@ -14,7 +14,7 @@
 #   -Uninstall       remove the binary
 #
 # Common flags:
-#   -Version v0.5.34      pin a release tag (default: latest release with assets)
+#   -Version v0.5.37      pin a release tag (default: latest release with assets)
 #   -InstallDir PATH      override $env:KEYHOG_INSTALL
 #   -Yes                  non-interactive: accept defaults, no prompts
 #   -NoColor              disable ANSI colors
@@ -131,7 +131,7 @@ function Resolve-Tag {
         $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=10"
     } catch {
         Err "Could not query GitHub releases API: $_"
-        Err "Try -Version v0.5.34 (or another known tag) explicitly."
+        Err "Try -Version v0.5.37 (or another known tag) explicitly."
         exit 1
     }
     foreach ($r in $releases) {
@@ -141,7 +141,7 @@ function Resolve-Tag {
         }
     }
     Err "No GitHub release in the last 10 has any assets uploaded."
-    Err "Try -Version v0.5.34 (or another known tag) explicitly."
+    Err "Try -Version v0.5.37 (or another known tag) explicitly."
     exit 1
 }
 

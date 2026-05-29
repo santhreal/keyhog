@@ -30,7 +30,7 @@ repos:
   # Requires keyhog already on PATH (the hook uses language: system; install
   # via the one-line installer in the README first).
   # - repo: https://github.com/santhsecurity/keyhog
-  #   rev: v0.5.35
+  #   rev: v0.5.37
   #   hooks:
   #     - id: keyhog
   #       args: ['--min-confidence', '0.5']
