@@ -47,7 +47,7 @@ impl CompiledScanner {
             if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
                 let literals = build_gpu_literals(&state.ac_literals);
                 let cuda_backend: Option<Arc<dyn vyre::VyreBackend>> = {
-                    #[cfg(feature = "cuda")]
+                    #[cfg(target_os = "linux")]
                     {
                         match vyre_driver_cuda::cuda_factory() {
                             Ok(boxed) => {
@@ -63,7 +63,7 @@ impl CompiledScanner {
                             }
                         }
                     }
-                    #[cfg(not(feature = "cuda"))]
+                    #[cfg(not(target_os = "linux"))]
                     {
                         None
                     }
@@ -209,7 +209,7 @@ impl CompiledScanner {
 /// exactly once per process, not on every recompile. The CUDA factory
 /// is called inside `compile()` and a binary that re-compiles a
 /// scanner per-job (daemon mode, watch mode) would otherwise spam.
-#[cfg(feature = "cuda")]
+#[cfg(target_os = "linux")]
 static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 /// Surface a CUDA-backend acquisition failure when the host looks
@@ -221,7 +221,7 @@ static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new(
 /// 5-10x slower wgpu path silently. KEYHOG_REQUIRE_GPU=1 turns the
 /// warning into a hard exit, matching the contract used by the MoE
 /// init and the scan dispatch paths.
-#[cfg(feature = "cuda")]
+#[cfg(target_os = "linux")]
 fn surface_cuda_acquisition_failure(error: &dyn std::fmt::Display) {
     let on_nvidia_host = nvidia_userland_present();
     let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
@@ -255,7 +255,7 @@ to hard-fail next time."
 /// decide whether this host appears to have an NVIDIA CUDA userland
 /// installed. Mirrors the probes install.sh uses so the runtime view
 /// matches the install-time view.
-#[cfg(feature = "cuda")]
+#[cfg(target_os = "linux")]
 fn nvidia_userland_present() -> bool {
     if std::path::Path::new("/proc/driver/nvidia").exists() {
         return true;

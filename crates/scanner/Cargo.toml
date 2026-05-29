@@ -29,13 +29,14 @@ simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds 
 simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
 gpu = []  # GPU stack is mandatory; feature exists for CLI compatibility
-# CUDA accelerator. NOT in default — requires libcuda.so + libnvrtc.so +
-# libcudart.so present at LINK time, which the average CI host (and macOS
-# entirely) lacks. Users on a CUDA-capable host opt in with
-# `cargo install keyhog --features cuda` to get the dedicated CUDA backend
-# alongside wgpu. Without this feature the runtime still routes to GPU via
-# wgpu on any compatible adapter (NVIDIA, AMD, Intel, Apple Silicon).
-cuda = ["dep:vyre-driver-cuda", "vyre-driver-cuda/cuda"]
+# CUDA is now the PRIMARY GPU backend on Linux and is always compiled there
+# (see the `[target.'cfg(target_os = "linux")'.dependencies]` block below) —
+# no feature flag needed. cudarc loads libcuda/libnvrtc DYNAMICALLY at runtime
+# (cudarc `dynamic-loading`), so the binary builds with no CUDA toolkit present
+# and a host without an NVIDIA driver simply falls back to wgpu. macOS / Windows
+# never compile CUDA and route through wgpu. This `cuda` feature is retained as
+# a no-op alias so existing `--features cuda` invocations keep working.
+cuda = []
 
 [dependencies]
 keyhog-core = { workspace = true }
@@ -65,7 +66,6 @@ hyperscan = { workspace = true, optional = true }
 vyre = { workspace = true }
 vyre_libs = { workspace = true, features = ["matching-nfa", "matching-regex", "intern"] }
 vyre-driver-wgpu = { workspace = true }
-vyre-driver-cuda = { workspace = true, optional = true }
 vyre-runtime = { workspace = true, features = ["megakernel-batch"] }
 
 simdsieve = { workspace = true, optional = true }
@@ -90,6 +90,10 @@ toml = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { workspace = true }
+# CUDA is the primary GPU backend on Linux: always compiled, loaded
+# dynamically at runtime (cudarc dynamic-loading) so no toolkit is needed to
+# build and a driverless host falls back to wgpu. macOS / Windows omit it.
+vyre-driver-cuda = { workspace = true, features = ["cuda"] }
 
 # Optional: Vectorscan SIMD backend
 

@@ -3252,7 +3252,7 @@ dependencies = [
  "log",
  "num-traits",
  "once_cell",
- "rustc-hash",
+ "rustc-hash 1.1.0",
  "spirv",
  "strum",
  "thiserror 2.0.18",
@@ -4077,6 +4077,12 @@ name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
+name = "rustc-hash"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
 name = "rustc_version"
@@ -5246,7 +5252,7 @@ dependencies = [
  "fs2",
  "inventory",
  "lasso",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "smallvec",
@@ -5271,7 +5277,7 @@ dependencies = [
  "dashmap",
  "inventory",
  "libc",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "smallvec",
  "tracing",
  "vyre-driver",
@@ -5299,7 +5305,7 @@ dependencies = [
  "libm",
  "naga",
  "pollster",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "smallvec",
  "thiserror 2.0.18",
@@ -5323,7 +5329,7 @@ dependencies = [
  "blake3",
  "inventory",
  "naga",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -5338,7 +5344,7 @@ dependencies = [
 name = "vyre-emit-ptx"
 version = "0.6.1"
 dependencies = [
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "smallvec",
  "thiserror 2.0.18",
@@ -5361,7 +5367,7 @@ dependencies = [
  "itoa",
  "lasso",
  "libm",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "ryu",
  "serde",
  "serde_json",
@@ -5393,7 +5399,7 @@ dependencies = [
  "rayon",
  "regex",
  "regex-syntax",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "smallvec",
  "thiserror 2.0.18",
  "tracing",
@@ -5411,7 +5417,7 @@ name = "vyre-lower"
 version = "0.6.1"
 dependencies = [
  "im",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "smallvec",
  "thiserror 2.0.18",
@@ -5446,7 +5452,7 @@ dependencies = [
  "bytemuck",
  "dashmap",
  "libc",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "smallvec",
  "thiserror 2.0.18",
  "tracing",
@@ -5459,7 +5465,7 @@ dependencies = [
 name = "vyre-self-substrate"
 version = "0.6.1"
 dependencies = [
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "tracing",
  "vyre-foundation",
  "vyre-primitives",
@@ -5686,7 +5692,7 @@ dependencies = [
  "portable-atomic",
  "profiling",
  "raw-window-handle",
- "rustc-hash",
+ "rustc-hash 1.1.0",
  "smallvec",
  "thiserror 2.0.18",
  "wgpu-core-deps-apple",
