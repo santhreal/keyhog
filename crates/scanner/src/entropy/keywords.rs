@@ -72,6 +72,7 @@ pub(super) fn extract_candidates(
     line: &str,
     min_length: usize,
     placeholder_keywords: &[String],
+    is_credential_context: bool,
 ) -> Vec<String> {
     let mut candidates = Vec::new();
     if is_likely_concatenation_fragment(line) {
@@ -82,7 +83,13 @@ pub(super) fn extract_candidates(
         let cleaned = line[sep_pos + 1..]
             .trim()
             .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',');
-        if cleaned.len() >= min_length && is_candidate_plausible(cleaned, placeholder_keywords) {
+        if cleaned.len() >= min_length
+            && is_candidate_plausible_with_context(
+                cleaned,
+                placeholder_keywords,
+                is_credential_context,
+            )
+        {
             candidates.push(cleaned.to_string());
         }
     }
@@ -96,7 +103,11 @@ pub(super) fn extract_candidates(
                     Some(begin) => {
                         let content = &line[begin..index];
                         if content.len() >= min_length
-                            && is_secret_plausible(content, placeholder_keywords)
+                            && is_secret_plausible_with_context(
+                                content,
+                                placeholder_keywords,
+                                is_credential_context,
+                            )
                         {
                             candidates.push(content.to_string());
                         }
@@ -150,7 +161,7 @@ enum PlausibilityMode {
     Strict,
 }
 
-fn is_known_non_secret(value: &str) -> bool {
+fn is_known_non_secret(value: &str, is_credential_context: bool) -> bool {
     if value.len() == 36 {
         let bytes = value.as_bytes();
         if bytes[8] == b'-'
@@ -166,9 +177,18 @@ fn is_known_non_secret(value: &str) -> bool {
         }
     }
 
-    let hex_len = value.len();
-    if [32, 40, 64, 128].contains(&hex_len) && value.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        return true;
+    // Pure-hex 32/40/64/128 char strings are usually file/commit/image digests
+    // (MD5/SHA1/SHA256/SHA512). Outside a credential-keyword anchor, drop them
+    // so the entropy fallback doesn't emit on `sha256: <hex>` / image digests.
+    // Inside a credential-keyword anchor (`token = <hex>`, `api_key: <hex>`),
+    // the keyword itself IS positive evidence - a 64-char hex assigned to
+    // `apiKey` is overwhelmingly the credential, not a checksum. Lifting the
+    // blanket drop here is the +60 TP / +0.03 F1 lever on the mirror benchmark.
+    if !is_credential_context {
+        let hex_len = value.len();
+        if [32, 40, 64, 128].contains(&hex_len) && value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return true;
+        }
     }
 
     value.starts_with("data:image/")
@@ -178,16 +198,19 @@ fn passes_plausibility_checks(
     value: &str,
     mode: PlausibilityMode,
     placeholder_keywords: &[String],
+    is_credential_context: bool,
 ) -> bool {
     if matches_universal_rejection(value)
-        || is_known_non_secret(value)
+        || is_known_non_secret(value, is_credential_context)
         || is_placeholder_ci(value.as_bytes(), placeholder_keywords)
         || has_low_alnum_ratio(value)
     {
         return false;
     }
 
-    if matches!(mode, PlausibilityMode::Strict) && !passes_strict_secret_checks(value) {
+    if matches!(mode, PlausibilityMode::Strict)
+        && !passes_strict_secret_checks(value, is_credential_context)
+    {
         return false;
     }
     true
@@ -229,8 +252,15 @@ fn has_low_alnum_ratio(value: &str) -> bool {
     alnum < 0.5
 }
 
-fn passes_strict_secret_checks(value: &str) -> bool {
-    if value.chars().all(|ch| ch.is_ascii_hexdigit()) && value.len() > 10 {
+fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
+    // Outside a credential-keyword anchor, any >10-char pure-hex value is a
+    // checksum/digest, not a credential. Inside one (`apiKey: <hex>`), the
+    // keyword is positive evidence the hex IS the credential - the entropy
+    // path's strict mode would otherwise drop every md5/sha1/sha256-shaped
+    // planted secret. Mirror v30 had 112 generic-high-entropy-string FNs
+    // driven by exactly this gate firing in credential context.
+    if !is_credential_context && value.chars().all(|ch| ch.is_ascii_hexdigit()) && value.len() > 10
+    {
         return false;
     }
     if value.len() > 4 {
@@ -310,11 +340,45 @@ fn second_half_entropy(value: &str) -> f64 {
 }
 
 pub fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-    passes_plausibility_checks(value, PlausibilityMode::Lenient, placeholder_keywords)
+    passes_plausibility_checks(value, PlausibilityMode::Lenient, placeholder_keywords, false)
 }
 
 pub fn is_secret_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-    passes_plausibility_checks(value, PlausibilityMode::Strict, placeholder_keywords)
+    passes_plausibility_checks(value, PlausibilityMode::Strict, placeholder_keywords, false)
+}
+
+/// Credential-context-aware plausibility check (Lenient mode).
+///
+/// Pass `is_credential_context = true` when the candidate came from a line
+/// containing a credential keyword (`token`, `api_key`, `password`, ...).
+/// In that case the hex-digest blacklist is skipped so md5/sha1/sha256-shaped
+/// values can surface as candidates - the credential keyword anchor provides
+/// the positive evidence that they're secrets, not digests.
+pub fn is_candidate_plausible_with_context(
+    value: &str,
+    placeholder_keywords: &[String],
+    is_credential_context: bool,
+) -> bool {
+    passes_plausibility_checks(
+        value,
+        PlausibilityMode::Lenient,
+        placeholder_keywords,
+        is_credential_context,
+    )
+}
+
+/// Credential-context-aware plausibility check (Strict mode, for quoted values).
+pub fn is_secret_plausible_with_context(
+    value: &str,
+    placeholder_keywords: &[String],
+    is_credential_context: bool,
+) -> bool {
+    passes_plausibility_checks(
+        value,
+        PlausibilityMode::Strict,
+        placeholder_keywords,
+        is_credential_context,
+    )
 }
 
 fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {

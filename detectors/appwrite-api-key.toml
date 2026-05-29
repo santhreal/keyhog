@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["appwrite", "X-Appwrite-Key", "APPWRITE_API_KEY", "APPWRITE_KEY"]
 
 [[detector.patterns]]
-regex = "(?:APPWRITE|appwrite)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+regex = "\\b(?:APPWRITE|appwrite)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
 description = "Appwrite API key with context anchor"
 group = 1
 

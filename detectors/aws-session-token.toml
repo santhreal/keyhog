@@ -11,13 +11,13 @@ severity = "high"
 keywords = ["AWS_SESSION_TOKEN", "aws_session_token", "X-Amz-Security-Token"]
 
 [[detector.patterns]]
-regex = "AWS_SESSION_TOKEN[ =:]+[A-Za-z0-9/+=]{80,}"
+regex = "\\bAWS_SESSION_TOKEN[=:\\s\"']+[A-Za-z0-9/+=]{80,}[\"']?"
 description = "AWS session token with uppercase environment variable anchor"
 
 [[detector.patterns]]
-regex = "aws_session_token[ =:]+[A-Za-z0-9/+=]{80,}"
+regex = "\\baws_session_token[=:\\s\"']+[A-Za-z0-9/+=]{80,}[\"']?"
 description = "AWS session token with lowercase environment variable anchor"
 
 [[detector.patterns]]
-regex = "X-Amz-Security-Token[ =:]+[A-Za-z0-9%/+_=-]{80,}"
+regex = "\\bX-Amz-Security-Token[=:\\s\"']+[A-Za-z0-9%/+_=-]{80,}[\"']?"
 description = "AWS session token with SigV4 header anchor"

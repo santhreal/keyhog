@@ -281,4 +281,9 @@ pub struct CompiledCompanion {
     pub required: bool,
 }
 
-pub use crate::scanner_config::{MlPendingMatch, ScanState, ScannerConfig};
+pub use crate::scanner_config::{ScanState, ScannerConfig};
+// `MlPendingMatch` only exists with the `ml` feature (it is the batch-deferral
+// record); re-export it under the same gate so the lean / `--no-default-features`
+// build resolves the import set instead of failing with E0432.
+#[cfg(feature = "ml")]
+pub use crate::scanner_config::MlPendingMatch;

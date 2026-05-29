@@ -18,3 +18,5 @@ cc 504dedb1ab7af7de4b9cb914efabbbaa4664ae765da199c827e05797bf067c24 # shrinks to
 cc 2edeb39d1f08943f6e0c886c766b44786e4975fd7aa232e02cf6cde826dde755 # shrinks to env = "socks5://q3q.hgj.7-v.k-4z.gd..jh-:42380"
 cc 2439c2bcdbff8a08f842bb81b439a802b19309ade5e2afe1ed2700f9cd2f6a4e # shrinks to value = "KhEGP9h"
 cc b991c1e89fd75922c5937862311099dfc45946cb723753e0fcffe20459c57d85 # shrinks to _seed = 703495909
+cc e74960cd7d504de6f9a83c7c18dc75298f2c253bc39e3ba1500164a66965df43 # shrinks to value = "1"
+cc 39f3c4424fce6f7ea901985db376f2a2ce2f17968400a698482f6fadf4c08539 # shrinks to _seed = 3355109561

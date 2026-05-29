@@ -249,6 +249,10 @@ impl CompiledScanner {
             }
             #[cfg(feature = "ml")]
             MlScoreResult::Pending { .. } => Some(score_result),
+            #[cfg(not(feature = "ml"))]
+            MlScoreResult::_Lifetime(_) => {
+                unreachable!("_Lifetime is a never-constructed placeholder variant")
+            }
         }
     }
 

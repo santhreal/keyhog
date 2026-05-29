@@ -8,8 +8,8 @@ pub(crate) use crate::suppression::{
     looks_like_vendored_minified_path, looks_like_word_separated_identifier,
 };
 pub use crate::suppression::{
-    should_suppress_known_example_credential, should_suppress_known_example_credential_with_source,
-    should_suppress_named_detector_finding,
+    should_suppress_known_example_credential, should_suppress_known_example_credential_with_anchor,
+    should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
 };
 
 use crate::types::*;

@@ -11,6 +11,6 @@ severity = "critical"
 keywords = ["ANROK", "anrok", "ANROK_API_KEY", "anrok_api_key"]
 
 [[detector.patterns]]
-regex = "(?:ANROK|anrok)[._]?(?:API|api)?[._]?(?:KEY|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = "\\b(?:ANROK|anrok)[._]?(?:API|api)?[._]?(?:KEY|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "Anrok API key with context anchor"
 group = 1

@@ -34,8 +34,14 @@ impl CompiledScanner {
             // Optional `[:=]` after a type segment for Rust. Value
             // capture as before. `:` stays in the value alphabet so
             // `nginx@sha256:<hex>` captures intact (defect #76).
+            // `.` is in the separator class alongside `_`/`-` so dotted
+            // property-key forms like `api.key`, `private.key`, `client.secret`
+            // are recognized. Common in `.properties`, `.toml`, helm-values,
+            // and TF locals. The dot is bounded inside the keyword shape; the
+            // value bridge still requires a `=`/`:` after, so this does not
+            // open up method-chain false-matches.
             regex::Regex::new(
-                r#"(?i)(?:secret|password|passwd|pwd|token|api[_-]?key|apikey|auth[_-]?token|auth[_-]?key|credential|private[_-]?key|signing[_-]?key|encryption[_-]?key|access[_-]?key|client[_-]?secret|app[_-]?secret|master[_-]?key|license[_-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
+                r#"(?i)(?:secret|password|passwd|pwd|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
             ).ok()
         });
         let Some(generic_re) = GENERIC_RE.as_ref() else {
@@ -343,7 +349,17 @@ impl CompiledScanner {
                     continue;
                 }
 
-                // Placeholder suppression
+                // Placeholder suppression. NOTE: the credential-anchor variant
+                // (`_with_anchor`) was tried here in v31 to lift the hash-digest
+                // and UUID-v4 shape gates for direct `TOKEN=<hex>` assignments.
+                // The SecretBench mirror plants `TOKEN=<32-hex>` in BOTH the
+                // label=true positive class AND the label=false sha256-hex /
+                // git-commit-sha / k8s-resource-uid negative classes - the
+                // syntax is identical, only the manifest's labelling differs.
+                // Lifting the shape gate added 5681 FPs (P 0.97 → 0.33) for
+                // a +14 TP recall gain. Net: catastrophic. Hold the strict
+                // variant: hash-digest / UUID values in credential slots are
+                // dominated by image digests and resource IDs in real source.
                 if crate::pipeline::should_suppress_known_example_credential_with_source(
                     value,
                     chunk.metadata.path.as_deref(),
