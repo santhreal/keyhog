@@ -136,7 +136,7 @@ fn scan_json_schema_carries_required_fields() {
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
     const README_DETECTOR_COUNT: usize = 891;
-    const README_PATTERN_COUNT: usize = 1647;
+    const README_PATTERN_COUNT: usize = 1648;
 
     let output = Command::new(binary())
         .arg("detectors")
