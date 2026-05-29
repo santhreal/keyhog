@@ -6,6 +6,7 @@ pub mod daemon_wire;
 pub mod file_gate;
 pub mod format;
 pub mod gates;
+pub mod installer;
 pub mod orchestrator;
 pub mod orchestrator_config;
 pub mod path_validation;

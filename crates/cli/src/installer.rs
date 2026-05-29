@@ -17,25 +17,25 @@ use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
 use std::path::Path;
 
-pub(crate) const REPO: &str = "santhsecurity/keyhog";
+pub const REPO: &str = "santhsecurity/keyhog";
 
 #[derive(Deserialize)]
-pub(crate) struct Release {
-    pub(crate) tag_name: String,
+pub struct Release {
+    pub tag_name: String,
     #[serde(default)]
-    pub(crate) assets: Vec<Asset>,
+    pub assets: Vec<Asset>,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct Asset {
-    pub(crate) name: String,
-    pub(crate) browser_download_url: String,
+pub struct Asset {
+    pub name: String,
+    pub browser_download_url: String,
 }
 
 /// GitHub release-asset name for `keyhog` on a given host. Mirrors the asset
 /// naming the release workflow + install.sh use. `None` for platforms without
 /// a prebuilt asset.
-pub(crate) fn asset_name(os: &str, arch: &str, cuda: bool) -> Option<String> {
+pub fn asset_name(os: &str, arch: &str, cuda: bool) -> Option<String> {
     match (os, arch) {
         ("linux", "x86_64") => Some(if cuda {
             "keyhog-linux-x86_64-cuda".into()
@@ -50,7 +50,7 @@ pub(crate) fn asset_name(os: &str, arch: &str, cuda: bool) -> Option<String> {
 
 /// Parse a `vMAJOR.MINOR.PATCH` (or bare) tag; pre-release/build suffixes after
 /// the patch number are ignored.
-pub(crate) fn parse_semver(tag: &str) -> Option<(u64, u64, u64)> {
+pub fn parse_semver(tag: &str) -> Option<(u64, u64, u64)> {
     let t = tag.trim().trim_start_matches('v');
     let mut it = t.split('.');
     let major = it.next()?.parse().ok()?;
@@ -66,7 +66,7 @@ pub(crate) fn parse_semver(tag: &str) -> Option<(u64, u64, u64)> {
 
 /// True if `latest` is a strictly newer semver than `current`. Unparseable
 /// versions compare as "not newer" (fail safe: never auto-install on garbage).
-pub(crate) fn is_newer(current: &str, latest: &str) -> bool {
+pub fn is_newer(current: &str, latest: &str) -> bool {
     match (parse_semver(current), parse_semver(latest)) {
         (Some(c), Some(l)) => l > c,
         _ => false,
@@ -75,7 +75,7 @@ pub(crate) fn is_newer(current: &str, latest: &str) -> bool {
 
 /// Cheap guard against installing a non-executable (404 HTML page, truncated
 /// download): check the platform's executable magic bytes.
-pub(crate) fn looks_like_native_executable(bytes: &[u8]) -> bool {
+pub fn looks_like_native_executable(bytes: &[u8]) -> bool {
     if bytes.len() < 4 {
         return false;
     }
@@ -95,7 +95,7 @@ pub(crate) fn looks_like_native_executable(bytes: &[u8]) -> bool {
 }
 
 /// An HTTP client with the keyhog User-Agent GitHub's API requires.
-pub(crate) fn http_client() -> Result<reqwest::Client> {
+pub fn http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(format!("keyhog/{}", env!("CARGO_PKG_VERSION")))
         .build()
@@ -105,7 +105,7 @@ pub(crate) fn http_client() -> Result<reqwest::Client> {
 /// Resolve the release to operate on. With `version`, fetch that exact tag;
 /// otherwise the most recent release that actually shipped assets (a release
 /// can exist with zero assets if the workflow failed mid-upload).
-pub(crate) async fn resolve_release(
+pub async fn resolve_release(
     client: &reqwest::Client,
     version: Option<&str>,
 ) -> Result<Release> {
@@ -141,7 +141,7 @@ pub(crate) async fn resolve_release(
 
 /// Pick the asset for this host. `want_cuda` selects the CUDA Linux build,
 /// falling back to the portable build if a release didn't ship the CUDA asset.
-pub(crate) fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset> {
+pub fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset> {
     let target = asset_name(std::env::consts::OS, std::env::consts::ARCH, want_cuda).ok_or_else(
         || {
             anyhow!(
@@ -172,7 +172,7 @@ pub(crate) fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset>
 /// Download an asset over HTTPS and confirm it's a native executable for this
 /// platform before handing the bytes back. The single seam where minisign
 /// signature verification will slot in.
-pub(crate) async fn download_verified_asset(
+pub async fn download_verified_asset(
     client: &reqwest::Client,
     asset: &Asset,
 ) -> Result<Vec<u8>> {
@@ -198,13 +198,13 @@ pub(crate) async fn download_verified_asset(
 }
 
 /// Resolve the running binary, following symlinks so we replace the real file.
-pub(crate) fn current_binary() -> Result<std::path::PathBuf> {
+pub fn current_binary() -> Result<std::path::PathBuf> {
     let exe = std::env::current_exe().context("locate current executable")?;
     Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
 }
 
 #[cfg(unix)]
-pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
+pub fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let dir = exe
         .parent()
@@ -237,7 +237,7 @@ pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub(crate) fn install_binary(_exe: &Path, _bytes: &[u8]) -> Result<()> {
+pub fn install_binary(_exe: &Path, _bytes: &[u8]) -> Result<()> {
     Err(anyhow!(
         "self-replace is not implemented on Windows yet (a running .exe can't \
          be replaced in place). Re-run install.ps1 to update."
@@ -248,7 +248,7 @@ pub(crate) fn install_binary(_exe: &Path, _bytes: &[u8]) -> Result<()> {
 /// plant a matching secret, and confirm it round-trips through compile -> scan
 /// -> extract -> report. Uses a unique non-generic prefix so it neither
 /// collides with a real detector nor trips example/placeholder suppression.
-pub(crate) fn scan_engine_self_test() -> Result<bool> {
+pub fn scan_engine_self_test() -> Result<bool> {
     const PLANTED: &str = "KHDOCTOR_A1b2C3d4E5f6";
     let detector = DetectorSpec {
         id: "kh-doctor-selftest".into(),
@@ -275,73 +275,4 @@ pub(crate) fn scan_engine_self_test() -> Result<bool> {
     };
     let matches = scanner.scan(&chunk);
     Ok(matches.iter().any(|m| m.credential.as_ref() == PLANTED))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn asset_name_matches_release_convention() {
-        assert_eq!(
-            asset_name("linux", "x86_64", false).as_deref(),
-            Some("keyhog-linux-x86_64")
-        );
-        assert_eq!(
-            asset_name("linux", "x86_64", true).as_deref(),
-            Some("keyhog-linux-x86_64-cuda")
-        );
-        assert_eq!(
-            asset_name("macos", "aarch64", false).as_deref(),
-            Some("keyhog-macos-aarch64")
-        );
-        assert_eq!(
-            asset_name("macos", "x86_64", false).as_deref(),
-            Some("keyhog-macos-x86_64")
-        );
-        // macOS has no CUDA build - cuda flag is ignored, no `-cuda` suffix.
-        assert_eq!(
-            asset_name("macos", "aarch64", true).as_deref(),
-            Some("keyhog-macos-aarch64")
-        );
-        assert_eq!(asset_name("windows", "x86_64", false), None);
-        assert_eq!(asset_name("linux", "riscv64", false), None);
-    }
-
-    #[test]
-    fn semver_parsing_handles_v_prefix_and_suffix() {
-        assert_eq!(parse_semver("v0.5.36"), Some((0, 5, 36)));
-        assert_eq!(parse_semver("0.5.36"), Some((0, 5, 36)));
-        assert_eq!(parse_semver("v1.2.3-rc1"), Some((1, 2, 3)));
-        assert_eq!(parse_semver("garbage"), None);
-        assert_eq!(parse_semver("v1.2"), None);
-    }
-
-    #[test]
-    fn is_newer_compares_correctly() {
-        assert!(is_newer("0.5.35", "v0.5.36"));
-        assert!(is_newer("0.5.35", "0.6.0"));
-        assert!(is_newer("0.5.35", "1.0.0"));
-        assert!(!is_newer("0.5.36", "v0.5.36"));
-        assert!(!is_newer("0.5.36", "v0.5.35"));
-        assert!(!is_newer("0.5.35", "garbage"));
-    }
-
-    #[test]
-    fn rejects_non_executable_download() {
-        assert!(!looks_like_native_executable(
-            b"<!DOCTYPE html><html>Not Found"
-        ));
-        assert!(!looks_like_native_executable(b""));
-        #[cfg(target_os = "linux")]
-        assert!(looks_like_native_executable(&[
-            0x7F, b'E', b'L', b'F', 2, 1, 1, 0
-        ]));
-    }
-
-    #[test]
-    fn self_test_detects_planted_secret() {
-        // The doctor/repair self-test must actually fire end-to-end.
-        assert!(scan_engine_self_test().expect("self-test runs"));
-    }
 }
