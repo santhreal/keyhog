@@ -46,6 +46,20 @@ fn default_status() -> String {
     "acknowledged".to_string()
 }
 
+/// Heuristic used only to turn an opaque serde error into an actionable hint:
+/// does this JSON look like a `scan` findings report rather than a baseline?
+/// A baseline is a JSON object carrying `version` + `entries`; a findings
+/// report is an array, or an object without that shape.
+fn looks_like_findings_report(content: &str) -> bool {
+    match serde_json::from_str::<serde_json::Value>(content) {
+        Ok(serde_json::Value::Array(_)) => true,
+        Ok(serde_json::Value::Object(map)) => {
+            !(map.contains_key("version") && map.contains_key("entries"))
+        }
+        _ => false,
+    }
+}
+
 impl Baseline {
     /// Create an empty baseline with the current timestamp.
     pub fn empty() -> Self {
@@ -61,8 +75,23 @@ impl Baseline {
     pub fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading baseline file {}", path.display()))?;
-        let baseline: Baseline = serde_json::from_str(&content)
-            .with_context(|| format!("parsing baseline file {}", path.display()))?;
+        let baseline: Baseline = serde_json::from_str(&content).map_err(|e| {
+            // The #1 mistake here is feeding a `scan --format json` FINDINGS
+            // report to `diff`, which wants a BASELINE file. The raw serde
+            // error ("invalid type: map, expected u32") sends people chasing a
+            // corruption bug that isn't there - detect the shape and point at
+            // the command that actually produces a baseline.
+            if looks_like_findings_report(&content) {
+                anyhow::anyhow!(
+                    "{p} is not a keyhog baseline file - it looks like a `scan` \
+                     findings report (e.g. `--format json` output).\n       \
+                     Create a baseline with:  keyhog scan <path> --create-baseline {p}",
+                    p = path.display(),
+                )
+            } else {
+                anyhow::Error::new(e).context(format!("parsing baseline file {}", path.display()))
+            }
+        })?;
         if baseline.version != BASELINE_VERSION {
             anyhow::bail!(
                 "unsupported baseline version {} (expected {})",
@@ -207,5 +236,60 @@ impl Baseline {
             })
             .cloned()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn findings_report_array_is_recognized() {
+        // `scan --format json` emits a top-level ARRAY of findings.
+        assert!(looks_like_findings_report(
+            r#"[{"detector_id":"hot-github_pat","line":1}]"#
+        ));
+    }
+
+    #[test]
+    fn findings_report_object_without_baseline_keys_is_recognized() {
+        // An object lacking version+entries is not a baseline.
+        assert!(looks_like_findings_report(r#"{"results":[],"summary":{}}"#));
+    }
+
+    #[test]
+    fn real_baseline_is_not_flagged_as_findings_report() {
+        assert!(!looks_like_findings_report(
+            r#"{"version":1,"created":"now","entries":[]}"#
+        ));
+    }
+
+    #[test]
+    fn load_of_scan_report_gives_actionable_error_not_serde_noise() {
+        // Regression: feeding a `scan --format json` report to `diff` used to
+        // surface "invalid type: map, expected u32", which reads like file
+        // corruption. It must instead name the right command.
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, r#"[{{"detector_id":"hot-github_pat","line":1}}]"#).unwrap();
+        let err = Baseline::load(tmp.path()).expect_err("a findings array is not a baseline");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("--create-baseline"),
+            "error must point at `--create-baseline`, got: {msg}"
+        );
+        assert!(
+            !msg.contains("expected u32"),
+            "raw serde noise must be suppressed, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_of_valid_baseline_roundtrips() {
+        let b = Baseline::empty();
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, "{}", serde_json::to_string(&b).unwrap()).unwrap();
+        let loaded = Baseline::load(tmp.path()).expect("valid baseline loads");
+        assert_eq!(loaded.version, BASELINE_VERSION);
     }
 }

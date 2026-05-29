@@ -57,7 +57,7 @@ impl CompiledScanner {
         // Fallback patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
         // bitmap, so they would never extract via the path above.
-        // Task #69 — these detectors were silently dead in EVERY hot
+        // Task #69 - these detectors were silently dead in EVERY hot
         // code path that builds a triggered bitmap. The keyword-AC
         // pre-filter inside `scan_fallback_patterns` keeps cost
         // bounded to detectors whose ≥4-char keyword appears in the
@@ -96,7 +96,7 @@ impl CompiledScanner {
     ) -> Vec<u64> {
         match backend {
             // MegaScan currently reuses the literal-set trigger
-            // collection — its own regex-NFA trigger pass is open and
+            // collection - its own regex-NFA trigger pass is open and
             // unfinished. The trigger bitmask shape is identical to
             // the literal-set output so upstream consumers don't
             // branch; the gap is precision, not correctness (extra

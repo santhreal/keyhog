@@ -18,7 +18,7 @@ pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> 
     // `AKia`) that the SimdCpu backend finds, producing per-backend
     // finding divergence visible in proptest gpu_proptest_invariants
     // P1b. Detector keywords also rely on caseless matching for env-var
-    // shapes like `AWS_KEY_ID` vs `aws_key_id` — the existing
+    // shapes like `AWS_KEY_ID` vs `aws_key_id` - the existing
     // fallback_keyword_ac at build_fallback_keyword_ac (this file)
     // already uses ascii_case_insensitive(true) for the same reason.
     Ok(Some(
@@ -167,7 +167,7 @@ pub fn compile_detector_pattern(
     // kimi-decode audit: the previous flow here built a fallback regex
     // shaped `^<expanded_prefix>` with NO body constraint, which would
     // match any string starting with the homoglyph variant of the
-    // prefix — the exact same flutterwave-FP bug the production path
+    // prefix - the exact same flutterwave-FP bug the production path
     // (`compile_pattern`, earlier in this file) was already fixed for
     // via `rewrite_alternation_prefix`. Since this `compile_detector_pattern`
     // entry point has zero internal call sites and is only retained as
@@ -204,17 +204,19 @@ pub fn compile_detector_pattern(
 
 pub fn compile_pattern(
     detector_index: usize,
-    pattern_index: usize,
+    _pattern_index: usize,
     spec: &PatternSpec,
-    detector_id: &str,
+    _detector_id: &str,
 ) -> Result<CompiledPattern> {
+    // The regex is NOT built here - it is deferred to first use via
+    // `LazyRegex` (see types.rs). Building the whole corpus up front cost
+    // ~450ms-2.3s per invocation; deferral lets a scan compile only the
+    // patterns the Aho-Corasick prefilter actually selects. `_pattern_index`
+    // / `_detector_id` are retained in the signature for call-site stability
+    // and for the structured error a compile failure now logs at first use.
     Ok(CompiledPattern {
         detector_index,
-        regex: shared_regex(&spec.regex).map_err(|e| ScanError::RegexCompile {
-            detector_id: detector_id.to_string(),
-            index: pattern_index,
-            source: e,
-        })?,
+        regex: LazyRegex::detector(spec.regex.as_str()),
         group: spec.group,
         client_safe: spec.client_safe,
     })
@@ -256,12 +258,14 @@ pub fn warm_shared_regex_cache(
 /// `Arc<Regex>` across every detector that uses it. The 889-detector corpus
 /// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
 /// each duplicate set into a single compiled instance, cutting startup
-/// compile time and resident memory proportionally — see audits/legendary-
+/// compile time and resident memory proportionally - see audits/legendary-
 /// 2026-04-26 sources_verifier_detectors_legendary.md.
 ///
 /// The cache is process-wide via a `parking_lot::RwLock<HashMap<...>>`.
 /// Lookup is lock-free and extremely high-performance during the main parallel compile.
-fn shared_regex(pattern: &str) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
+pub(crate) fn shared_regex(
+    pattern: &str,
+) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
     let cache =
         REGEX_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
     if let Some(hit) = cache.read().get(pattern) {

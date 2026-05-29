@@ -58,7 +58,7 @@ talks to:
 
 - `--proxy <url>` -- route all verification through an HTTPS proxy.
   Useful in corp networks. Same as `HTTPS_PROXY` env var.
-- `--insecure-tls` -- accept self-signed certs. ONLY use against
+- `--insecure` -- accept self-signed certs. ONLY use against
   internal endpoints you control. The default is strict TLS verify.
 
 The verifier never follows redirects (SSRF defense -- a 302 to a

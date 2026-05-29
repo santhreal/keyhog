@@ -24,7 +24,7 @@ impl CompiledScanner {
         // or unicode normalization changed the text length, raw-chunk
         // offsets no longer map 1:1 to preprocessed-text offsets and
         // anchored extraction would emit matches at the wrong column.
-        // For small drift (~hundreds of bytes on a 64 MiB chunk —
+        // For small drift (~hundreds of bytes on a 64 MiB chunk -
         // typical for Rust/Go/Python source after multiline string
         // reassembly), we still run the cheap-filter against
         // `chunk.data` (which IS the GPU's coordinate system) and let
@@ -39,17 +39,17 @@ impl CompiledScanner {
             .data
             .len()
             .abs_diff(prepared.preprocessed.text.len());
-        // ~10 KiB drift bound — covers heavy multiline reassembly on
+        // ~10 KiB drift bound - covers heavy multiline reassembly on
         // a 64 MiB file (vendor/vyre source drifts ~0.0005% of the
         // chunk).
         const MAX_TOLERATED_DRIFT: usize = 10 * 1024;
         let drift_tolerable = offset_drift <= MAX_TOLERATED_DRIFT;
         let scan_text = if prepared.preprocessed.text.len() == prepared.chunk.data.len() {
-            // Strict offset parity — scan the preprocessed text (the
+            // Strict offset parity - scan the preprocessed text (the
             // same one extract_confirmed_patterns will walk later).
             prepared.preprocessed.text.as_str()
         } else {
-            // Drift present — the cheap-filter needs to scan the
+            // Drift present - the cheap-filter needs to scan the
             // chunk.data coordinate system the GPU returned, so the
             // literal-hit positions land inside the right window.
             // Extraction still uses preprocessed.text downstream,
@@ -75,7 +75,7 @@ impl CompiledScanner {
                 // Cheap per-pattern pre-filter to shrink the bitmap
                 // before the (still whole-chunk) regex extraction
                 // pass. The GPU literal-set matches *prefixes* with
-                // weaker discrimination than Hyperscan's NFA match —
+                // weaker discrimination than Hyperscan's NFA match -
                 // on a 64 MiB random alphanumeric blob ~2 k distinct
                 // detector prefixes fire spuriously and feed
                 // `extract_confirmed_patterns` ~128 GB of redundant
@@ -88,7 +88,7 @@ impl CompiledScanner {
                 const PRE_MARGIN: u32 = 128;
                 const POST_MARGIN: u32 = 1024;
                 // A pattern's *first* literal hit may sit at a
-                // position where the full regex doesn't match yet —
+                // position where the full regex doesn't match yet -
                 // e.g. `z85` appearing in random alphanumerics at
                 // mid-line vs at end-of-line where the regex
                 // `(?:z85)[=:\s]+[…]{20,}` actually fires. Earlier
@@ -127,7 +127,7 @@ impl CompiledScanner {
                     let window = &text[snap_start..snap_end];
 
                     // The GPU AC DFA folds patterns that share a literal
-                    // prefix into one trie node — only one pid is emitted
+                    // prefix into one trie node - only one pid is emitted
                     // per literal hit. If that one's regex doesn't match,
                     // siblings (via same_prefix_patterns) never get
                     // checked. Task #56 reproducer: keyhog has both
@@ -136,7 +136,7 @@ impl CompiledScanner {
                     // first pid, and its regex doesn't match the
                     // stackblitz token. So we check `pid` AND every
                     // `same_prefix_patterns[pid]` sibling against this
-                    // hit's window — the first sibling whose regex
+                    // hit's window - the first sibling whose regex
                     // matches gets confirmed (its own bit), and the
                     // downstream `expand_triggered_patterns` then fans
                     // out to the rest of the sibling set. Correctness:
@@ -165,7 +165,7 @@ impl CompiledScanner {
                             }
                             &self.fallback[fb].0
                         };
-                        if entry.regex.is_match(window) {
+                        if entry.regex.get().is_match(window) {
                             tight_bitmap[cand_idx / 64] |= 1u64 << (cand_idx % 64);
                             confirmed[cand_idx] = true;
                         }
@@ -242,7 +242,7 @@ impl CompiledScanner {
         }
 
         // Patterns without a usable literal prefix live in `self.fallback`
-        // and never enter the cheap-filter trigger bitmap — task #69
+        // and never enter the cheap-filter trigger bitmap - task #69
         // caught asana-pat, mailchimp pattern 3, and likely a long tail
         // of similar prefix-less detectors silently failing here. Run
         // the keyword-AC-gated fallback sweep on every chunk; the AC

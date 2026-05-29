@@ -24,8 +24,9 @@ runtime error.
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--format <text\|json\|jsonl\|sarif>` | Output format. Default `text`.        |
-| `--quiet`                     | Suppress banner + footer. Findings only.       |
+| `--format <text\|json\|jsonl\|sarif>` | Output format. Default `text`. The machine formats (`json`/`jsonl`/`sarif`) are findings-only: the banner/summary go to stderr (or are omitted), so stdout stays a clean parseable document. |
+| `--output <FILE>`             | Write the report to `FILE` instead of stdout.  |
+| `--stream`                    | Stream a one-line redacted preview per finding to stderr as they're found; the full formatted report still lands on stdout/`--output` after verification. |
 | `--show-secrets`              | Show full credentials. Default redacts.        |
 | `--min-confidence <FLOAT>`    | Only emit findings >= confidence. 0.0..=1.0.   |
 | `--dogfood`                   | Surface suppression telemetry in output.       |
@@ -35,8 +36,8 @@ runtime error.
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--verify`                    | Call each detector's verify endpoint.          |
-| `--proxy <URL>`               | HTTPS proxy for verifier traffic.              |
-| `--insecure-tls`              | Accept self-signed certs (don't use outside lab). |
+| `--proxy <URL>`               | Route verifier traffic through a proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying (incl. env). |
+| `--insecure`                  | Skip TLS cert verification on verifier traffic (don't use outside a lab). Env: `KEYHOG_INSECURE_TLS=1`. |
 
 ### Performance
 
@@ -51,8 +52,7 @@ runtime error.
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--disable-detectors <ID,..>` | Drop findings from these detectors.            |
-| `--enable-detectors <ID,..>`  | Only run these detectors. Implies disable-rest. |
+| `--detectors <DIR>`           | Use the detector TOMLs in `DIR` instead of the embedded corpus. To run a curated subset, copy the detector TOMLs you want into a directory and point `--detectors` at it (there is no per-ID enable/disable flag). Env: `KEYHOG_DETECTORS`. |
 | `--no-suppress-test-fixtures` | Show findings on bundled example credentials.  |
 | `--baseline <FILE>`           | Compare against a prior scan; show only new.   |
 | `--hide-client-safe`          | Drop every `CLIENT-SAFE` finding (Sentry DSN, Stripe `pk_*`, Mapbox `pk.`, PostHog `phc_`, etc.) before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys public by design are noise. |

@@ -126,17 +126,113 @@ pub type ScannerPreprocessedText = crate::multiline::PreprocessedText;
 #[cfg(not(feature = "multiline"))]
 pub type ScannerPreprocessedText = PreprocessedText;
 
-/// A compiled entry: one pattern from one detector.
+/// A detector pattern whose `Regex` is compiled on first use, not at load.
 ///
-/// `regex` is `Arc<Regex>` so identical pattern strings compile once and
-/// share state across all detectors that use them. The 889-detector corpus
-/// has ~6-15% duplicate regex strings (especially around `AIza...`,
-/// `xoxb-...`, JWT shapes); de-duplicating cuts startup compile time and
-/// memory proportionally - see audits/legendary-2026-04-26.
+/// Building the full ~1000-pattern corpus up front cost ~450ms (Hyperscan
+/// path) to ~2.3s (portable regex path) on EVERY invocation - even to scan a
+/// one-line file where a single detector fires. The Aho-Corasick literal
+/// prefilter already decides which patterns a given input could match;
+/// deferring each pattern's `Regex::build` until that prefilter (or a
+/// keyword-gated fallback sweep) actually needs it means a typical scan
+/// compiles a handful of patterns instead of all of them. Startup drops to
+/// the cost of the AC automaton plus the few regexes that fire.
+///
+/// `as_str()` returns the source with no compilation, so the Hyperscan /
+/// GPU literal-set builders that only read pattern text stay zero-cost.
+///
+/// The compiled `Arc<Regex>` is shared across clones of the same pattern
+/// (the `cell` is `Arc`-shared) and, for the detector flavor, across all
+/// detectors with an identical pattern string via the process-wide regex
+/// cache (`compiler_compile::shared_regex`) - so the ~6-15% duplicate
+/// regexes in the corpus (`AIza...`, `xoxb-...`, JWT shapes) still compile
+/// at most once each.
+#[derive(Debug, Clone)]
+pub struct LazyRegex {
+    src: Arc<str>,
+    /// Detector patterns are case-insensitive + CRLF-aware + size-bounded
+    /// (the `shared_regex_compile` build); homoglyph-expanded fallback
+    /// variants use plain defaults (the old `Regex::new`). Tracked so the
+    /// deferred build reproduces the exact regex the eager path produced.
+    case_insensitive: bool,
+    cell: Arc<std::sync::OnceLock<Arc<Regex>>>,
+}
+
+impl LazyRegex {
+    /// A detector pattern: case-insensitive, CRLF-aware, DFA-size-bounded -
+    /// identical to the eager `shared_regex_compile` build, and routed
+    /// through the same process-wide dedup cache on first use.
+    pub fn detector(src: impl Into<Arc<str>>) -> Self {
+        Self {
+            src: src.into(),
+            case_insensitive: true,
+            cell: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    /// A plain pattern with default flags - matches the old `Regex::new`
+    /// used for homoglyph-expanded fallback variants.
+    pub fn plain(src: impl Into<Arc<str>>) -> Self {
+        Self {
+            src: src.into(),
+            case_insensitive: false,
+            cell: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    /// The regex source, without triggering compilation.
+    pub fn as_str(&self) -> &str {
+        &self.src
+    }
+
+    /// Compile-on-first-use. A pattern that fails to compile (impossible for
+    /// the curated corpus - the contracts suite compiles every embedded
+    /// detector on each CI run, and the `--detectors` quality gate
+    /// AST-parses + size-bounds user patterns) degrades to a never-matching
+    /// regex with a loud `error!` log rather than panicking: a scanner that
+    /// can't build one rule must still not crash the whole scan.
+    pub fn get(&self) -> &Regex {
+        self.cell
+            .get_or_init(|| {
+                let built = if self.case_insensitive {
+                    crate::compiler::compiler_compile::shared_regex(&self.src)
+                } else {
+                    Regex::new(&self.src).map(Arc::new)
+                };
+                match built {
+                    Ok(rx) => rx,
+                    Err(error) => {
+                        tracing::error!(
+                            pattern = %self.src,
+                            %error,
+                            "detector regex failed to compile on first use; \
+                             this pattern is disabled for this run"
+                        );
+                        never_match_regex()
+                    }
+                }
+            })
+            .as_ref()
+    }
+}
+
+/// A shared, process-wide regex that matches nothing. Returned by
+/// `LazyRegex::get` when a pattern fails to compile, so callers always get a
+/// usable `&Regex` (one that simply never fires) instead of a panic.
+/// `[^\s\S]` is the canonical empty-language pattern: no char is both
+/// non-whitespace and non-non-whitespace.
+fn never_match_regex() -> Arc<Regex> {
+    static NEVER: std::sync::OnceLock<Arc<Regex>> = std::sync::OnceLock::new();
+    NEVER
+        .get_or_init(|| Arc::new(Regex::new(r"[^\s\S]").expect("empty-language regex is valid")))
+        .clone()
+}
+
+/// A compiled entry: one pattern from one detector. The regex is compiled
+/// lazily on first use - see [`LazyRegex`].
 #[derive(Debug, Clone)]
 pub struct CompiledPattern {
     pub detector_index: usize,
-    pub regex: std::sync::Arc<Regex>,
+    pub regex: LazyRegex,
     pub group: Option<usize>,
     /// Mirrors `PatternSpec::client_safe` for the compiled side. A
     /// match against a pattern with this set collapses the finding's

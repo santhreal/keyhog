@@ -420,12 +420,12 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     // Early exit: very few unique bytes in the sample AND they're
     // clustered in a narrow range. With < 4 distinct values from a
     // ≤ 16-wide alphabet, maximum theoretical entropy is log2(4) = 2.0
-    // bits — any threshold ≥ 2.0 cannot be met regardless of the
+    // bits - any threshold ≥ 2.0 cannot be met regardless of the
     // full-data distribution. Skip the O(n) scan.
     if unique < 4 && spread < 16 && threshold >= 2.0 {
         return false;
     }
 
-    // Can't decide from the sample — do the full calculation.
+    // Can't decide from the sample - do the full calculation.
     shannon_entropy_simd(data) >= threshold
 }

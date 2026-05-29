@@ -18,9 +18,24 @@ use anyhow::{anyhow, Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub const REPO: &str = "santhsecurity/keyhog";
+
+/// GitHub API base, overridable via `KEYHOG_RELEASE_API_BASE` so the
+/// install/update/repair lifecycle can be driven end-to-end against a local
+/// mock server (httpmock) with no network. Production default is the real
+/// API. Asset download URLs are NOT derived from this: they come verbatim
+/// from the release JSON's `browser_download_url`, so a mock that returns
+/// asset URLs pointing at itself also controls the download + signature
+/// fetch. This is the single seam the offline integration matrix relies on.
+pub fn release_api_base() -> String {
+    std::env::var("KEYHOG_RELEASE_API_BASE")
+        .ok()
+        .map(|s| s.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://api.github.com".to_string())
+}
 
 /// minisign public key for keyhog release artifacts (key ID `DD4915EBE99F9CCF`).
 /// The matching secret signs each release binary in CI. Rotating the key means
@@ -66,6 +81,11 @@ pub fn asset_name(os: &str, arch: &str, cuda: bool) -> Option<String> {
         }),
         ("macos", "aarch64") => Some("keyhog-macos-aarch64".into()),
         ("macos", "x86_64") => Some("keyhog-macos-x86_64".into()),
+        // release.yml uploads keyhog-windows-x86_64.exe; without this arm
+        // `select_asset` returned None on Windows and `update`/`repair`
+        // could never resolve an asset there. CUDA has no Windows asset, so
+        // the flag is ignored on this target.
+        ("windows", "x86_64") => Some("keyhog-windows-x86_64.exe".into()),
         _ => None,
     }
 }
@@ -128,8 +148,9 @@ pub fn http_client() -> Result<reqwest::Client> {
 /// otherwise the most recent release that actually shipped assets (a release
 /// can exist with zero assets if the workflow failed mid-upload).
 pub async fn resolve_release(client: &reqwest::Client, version: Option<&str>) -> Result<Release> {
+    let api = release_api_base();
     if let Some(tag) = version {
-        let url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
+        let url = format!("{api}/repos/{REPO}/releases/tags/{tag}");
         return client
             .get(&url)
             .send()
@@ -141,7 +162,7 @@ pub async fn resolve_release(client: &reqwest::Client, version: Option<&str>) ->
             .await
             .context("parse release JSON");
     }
-    let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=10");
+    let url = format!("{api}/repos/{REPO}/releases?per_page=10");
     let releases: Vec<Release> = client
         .get(&url)
         .send()
@@ -279,12 +300,257 @@ pub fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-pub fn install_binary(_exe: &Path, _bytes: &[u8]) -> Result<()> {
+/// Where the prior binary is stashed during a rename-away replace. PID-scoped
+/// so concurrent updates don't collide; hidden + beside `exe` so the restore is
+/// an atomic same-filesystem rename.
+fn stash_path(exe: &Path) -> PathBuf {
+    let name = exe
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "keyhog".to_string());
+    let parent = exe.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!(".{name}.keyhog-old-{}", std::process::id()))
+}
+
+/// Write `bytes` to `path` and (on unix) mark it executable.
+fn write_executable(path: &Path, bytes: &[u8]) -> Result<()> {
+    std::fs::write(path, bytes).with_context(|| {
+        format!(
+            "write new binary to {} (the install dir must be writable; re-run with \
+             elevated permissions or reinstall if keyhog lives in a system path)",
+            path.display()
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+            .context("chmod the new binary")?;
+    }
+    Ok(())
+}
+
+/// Replace `exe` with `bytes` using the rename-away dance, verifying before
+/// committing and rolling back on failure. Returns the stash path of the prior
+/// binary on success (the caller reaps it; on Windows the still-running image
+/// stays locked until the process exits, so deletion is deferred).
+///
+/// Why rename-away: on Windows you cannot overwrite or delete the RUNNING
+/// `.exe`, but you CAN rename it within its directory - the running process
+/// keeps executing from the renamed file while the original name is freed for
+/// the new binary (the same mechanism rustup and the `self-replace` crate use).
+/// The dance is equally correct on Unix, so this single routine backs the
+/// Windows path while being exercised by tests on the Linux host - the Windows
+/// self-replace is NOT a separate, untested codepath.
+pub fn replace_running_binary<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<Option<PathBuf>>
+where
+    F: FnOnce(&Path) -> bool,
+{
+    let had_prior = exe.exists();
+    let stash = stash_path(exe);
+
+    if had_prior {
+        std::fs::rename(exe, &stash).with_context(|| {
+            format!(
+                "stash the current binary to {} before replacing it (the install dir \
+                 must be writable so a failed update can roll back)",
+                stash.display()
+            )
+        })?;
+    }
+
+    if let Err(e) = write_executable(exe, bytes) {
+        // Nothing new committed; put the original name back and bail.
+        if had_prior {
+            let _ = std::fs::rename(&stash, exe);
+        }
+        return Err(e);
+    }
+
+    if verify(exe) {
+        return Ok(had_prior.then_some(stash));
+    }
+
+    // The new binary doesn't work on this host. It is NOT the running image
+    // (the prior one, now at `stash`, is), so remove it and restore the stash.
+    let _ = std::fs::remove_file(exe);
+    if had_prior {
+        std::fs::rename(&stash, exe).with_context(|| {
+            format!(
+                "ROLLBACK FAILED: the new binary failed its health check and the stashed \
+                 working binary at {} could not be restored over {}. Restore it manually.",
+                stash.display(),
+                exe.display()
+            )
+        })?;
+        return Err(anyhow!(
+            "new binary failed its post-install health check; rolled back to the previous \
+             working binary. The release may be broken for this host (libc/GPU driver) - \
+             try `keyhog update --version <older-tag>` or report the release."
+        ));
+    }
     Err(anyhow!(
-        "self-replace is not implemented on Windows yet (a running .exe can't \
-         be replaced in place). Re-run install.ps1 to update."
+        "installed binary failed its post-install health check and was removed (no prior \
+         binary to roll back to). The release may be broken for this host."
     ))
+}
+
+/// Best-effort reap of stash files left by a prior `replace_running_binary`
+/// (e.g. a Windows update whose `.keyhog-old-*` stayed locked until the process
+/// exited). Cheap and silent; called only from `update`/`repair`, never the
+/// hot scan path, so it adds no per-scan cost.
+pub fn reap_stale_binaries(exe: &Path) {
+    let Some(parent) = exe.parent() else { return };
+    let name = exe
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "keyhog".to_string());
+    let prefix = format!(".{name}.keyhog-old-");
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(prefix.as_str())
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
+    // Rename-away replace without a health gate (that is install_with_rollback's
+    // job). Leaves the prior image stashed; reaped by `reap_stale_binaries` on
+    // the next update/repair once this process has exited and unlocked it.
+    let _ = replace_running_binary(exe, bytes, |_| true)?;
+    Ok(())
+}
+
+/// Path beside `exe` where the pre-overwrite binary is stashed so a broken or
+/// interrupted update/repair can roll back. PID-scoped so two concurrent
+/// updates don't clobber each other's backup. Same directory as `exe` so the
+/// restore is an atomic same-filesystem rename.
+pub fn backup_path(exe: &Path) -> PathBuf {
+    let name = exe
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "keyhog".to_string());
+    let parent = exe.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!(".{name}.keyhog-bak-{}", std::process::id()))
+}
+
+/// Run the freshly-installed binary's own `doctor` as the post-install health
+/// gate. Execs a separate process (not the in-proc self-test) so it catches a
+/// binary that is signed and a valid executable but won't actually run on THIS
+/// host (wrong glibc, missing shared lib). Inherits stdio so the user sees the
+/// doctor report as the verification. `true` only on exit code 0.
+pub fn verify_via_doctor(exe: &Path) -> bool {
+    matches!(
+        std::process::Command::new(exe).arg("doctor").status(),
+        Ok(status) if status.success()
+    )
+}
+
+/// Install `bytes` over `exe` and prove the result works before committing to
+/// it, with automatic rollback on failure. This is the recoverability
+/// invariant in code: no update/repair may leave the machine without a working
+/// binary.
+///
+/// 1. If `exe` already exists, copy it to [`backup_path`] FIRST. If that copy
+///    fails (read-only dir, no space), abort before touching `exe` - the
+///    working binary stays untouched.
+/// 2. Atomically replace `exe` with the new bytes (via [`install_binary`]).
+/// 3. Run `verify(exe)`. On success, delete the backup and return `Ok`.
+/// 4. On verify failure, restore the backup over `exe` (atomic rename) and
+///    return an error. If there was no prior binary (fresh install) and verify
+///    fails, remove the broken binary rather than leave it in place.
+///
+/// `verify` is injected so tests can drive the rollback path deterministically
+/// without execing a real binary; production callers pass [`verify_via_doctor`].
+#[cfg(unix)]
+pub fn install_with_rollback<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<()>
+where
+    F: FnOnce(&Path) -> bool,
+{
+    use std::os::unix::fs::PermissionsExt;
+    let had_prior = exe.exists();
+    let backup = backup_path(exe);
+
+    if had_prior {
+        std::fs::copy(exe, &backup).with_context(|| {
+            format!(
+                "back up the current binary to {} before updating (the install dir must be \
+                 writable so a failed update can roll back; re-run with sudo or reinstall if \
+                 keyhog lives in a system path)",
+                backup.display()
+            )
+        })?;
+        // Backup must itself be runnable for the rollback to restore a working
+        // tool; mirror the 0755 we set on installs.
+        let _ = std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o755));
+    }
+
+    // Atomic replace. On error `exe` is untouched (write/rename either fully
+    // succeed or leave the original), so just drop the backup and bail.
+    if let Err(e) = install_binary(exe, bytes) {
+        if had_prior {
+            let _ = std::fs::remove_file(&backup);
+        }
+        return Err(e);
+    }
+
+    if verify(exe) {
+        if had_prior {
+            let _ = std::fs::remove_file(&backup);
+        }
+        return Ok(());
+    }
+
+    // Verify failed: the new binary does not work on this host. Restore.
+    if had_prior {
+        std::fs::rename(&backup, exe).with_context(|| {
+            format!(
+                "ROLLBACK FAILED: the new binary failed its health check and the backup at {} \
+                 could not be restored over {}. Reinstall manually from {}",
+                backup.display(),
+                exe.display(),
+                backup.display()
+            )
+        })?;
+        Err(anyhow!(
+            "new binary failed its post-install health check; rolled back to the previous \
+             working binary. The release may be broken for this host (libc/GPU driver) - \
+             try `keyhog update --version <older-tag>` or report the release."
+        ))
+    } else {
+        // Fresh install with no prior binary: don't leave a broken executable.
+        let _ = std::fs::remove_file(exe);
+        Err(anyhow!(
+            "installed binary failed its post-install health check and was removed (no prior \
+             binary to roll back to). The release may be broken for this host."
+        ))
+    }
+}
+
+#[cfg(windows)]
+pub fn install_with_rollback<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<()>
+where
+    F: FnOnce(&Path) -> bool,
+{
+    // Rename-away self-replace with the new binary's `doctor` as the health
+    // gate and automatic rollback - the same recoverability invariant as unix,
+    // via the cross-platform `replace_running_binary` (covered by tests on the
+    // Linux host). The prior binary is the still-running image, locked by
+    // Windows until this process exits; best-effort reap now, then leave it for
+    // the next `update`/`repair` to clear via `reap_stale_binaries`.
+    let stash = replace_running_binary(exe, bytes, verify)?;
+    if let Some(stash) = stash {
+        let _ = std::fs::remove_file(&stash);
+    }
+    Ok(())
 }
 
 /// End-to-end scan-engine self-test: compile a synthetic one-detector scanner,
@@ -318,4 +584,84 @@ pub fn scan_engine_self_test() -> Result<bool> {
     };
     let matches = scanner.scan(&chunk);
     Ok(matches.iter().any(|m| m.credential.as_ref() == PLANTED))
+}
+
+#[cfg(test)]
+mod rename_away_tests {
+    //! Cross-platform coverage for the rename-away self-replace that backs
+    //! `keyhog update`/`repair` on Windows. The dance uses the same
+    //! `std::fs::rename` semantics on every OS, so running these on the Linux
+    //! host exercises the exact code Windows runs - the Windows self-replace is
+    //! not an untested branch.
+    use super::*;
+
+    #[test]
+    fn replace_success_installs_new_and_returns_stash() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("keyhog");
+        std::fs::write(&exe, b"OLD-WORKING-BINARY").unwrap();
+
+        let stash = replace_running_binary(&exe, b"NEW-GOOD-BINARY", |_| true)
+            .expect("replace should succeed when verify passes");
+
+        assert_eq!(std::fs::read(&exe).unwrap(), b"NEW-GOOD-BINARY");
+        let stash = stash.expect("a prior binary existed, so a stash is returned");
+        // The caller reaps the stash; until then it holds the old bytes.
+        assert_eq!(std::fs::read(&stash).unwrap(), b"OLD-WORKING-BINARY");
+        reap_stale_binaries(&exe);
+        assert!(!stash.exists(), "reap must remove the stash");
+    }
+
+    #[test]
+    fn replace_failure_rolls_back_byte_for_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("keyhog");
+        // Arbitrary bytes incl. NULs/high bytes: rollback must be exact.
+        let original: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
+        std::fs::write(&exe, &original).unwrap();
+
+        let err = replace_running_binary(&exe, b"NEW-BROKEN-BINARY", |_| false)
+            .expect_err("replace must fail when verify rejects the new binary");
+        assert!(format!("{err}").contains("rolled back"));
+        assert_eq!(
+            std::fs::read(&exe).unwrap(),
+            original,
+            "rollback must restore the original binary byte-for-byte"
+        );
+        // No stash left orphaned beside the exe after a rollback.
+        reap_stale_binaries(&exe);
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("keyhog-old"))
+            .collect();
+        assert!(leftovers.is_empty(), "rollback must not leave a stash");
+    }
+
+    #[test]
+    fn fresh_install_failure_removes_broken_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("keyhog");
+        // No prior binary: a failed verify must not leave a broken executable.
+        let err = replace_running_binary(&exe, b"BROKEN", |_| false)
+            .expect_err("fresh install must fail when verify rejects it");
+        assert!(format!("{err}").contains("no prior binary"));
+        assert!(!exe.exists(), "broken fresh install must be removed");
+    }
+
+    #[test]
+    fn reap_only_touches_this_binarys_stashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("keyhog");
+        std::fs::write(&exe, b"bin").unwrap();
+        let mine = dir.path().join(".keyhog.keyhog-old-99999");
+        let other = dir.path().join("unrelated.txt");
+        std::fs::write(&mine, b"old").unwrap();
+        std::fs::write(&other, b"keep").unwrap();
+
+        reap_stale_binaries(&exe);
+        assert!(!mine.exists(), "matching stash must be reaped");
+        assert!(other.exists(), "unrelated files must be left alone");
+        assert!(exe.exists(), "the live binary must never be reaped");
+    }
 }

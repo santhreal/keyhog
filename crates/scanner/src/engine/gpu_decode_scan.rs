@@ -118,13 +118,13 @@ pub fn build_fused_programs(state_count: u32, input_len: u32) -> FusedDecodeScan
     if base64_program.is_none() {
         tracing::debug!(
             target: "keyhog::gpu",
-            "fused base64 decode+scan program build failed — will use CPU decode path"
+            "fused base64 decode+scan program build failed - will use CPU decode path"
         );
     }
     if hex_program.is_none() {
         tracing::debug!(
             target: "keyhog::gpu",
-            "fused hex decode+scan program build failed — will use CPU decode path"
+            "fused hex decode+scan program build failed - will use CPU decode path"
         );
     }
 

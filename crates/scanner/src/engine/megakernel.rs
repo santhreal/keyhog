@@ -1,7 +1,7 @@
 //! Megakernel persistent runtime session for keyhog scan dispatch.
 //!
-//! [`MegakernelSession`] wraps the vyre megakernel lifecycle — bootstrap,
-//! submit, flush, shutdown — into a single value that [`CompiledScanner`] can
+//! [`MegakernelSession`] wraps the vyre megakernel lifecycle - bootstrap,
+//! submit, flush, shutdown - into a single value that [`CompiledScanner`] can
 //! hold behind an [`OnceLock`].  If the megakernel fails to initialize (no
 //! compatible adapter, backend compile failure, device loss) the constructor
 //! returns `None` so the caller transparently degrades to per-batch dispatch.
@@ -11,7 +11,7 @@
 //! The session owns:
 //!
 //! * A compiled [`Megakernel`] handle (the persistent GPU bytecode interpreter).
-//! * [`MegakernelResidentBuffers`] — host-side mirror of the four ABI buffers
+//! * [`MegakernelResidentBuffers`] - host-side mirror of the four ABI buffers
 //!   (control, ring, debug log, IO queue) kept resident across dispatches.
 //! * A [`MegakernelSessionConfig`] that controls slot geometry, work-item
 //!   sizing, and launch policy.
@@ -64,7 +64,7 @@ impl Default for MegakernelSessionConfig {
 ///
 /// Manages the full lifecycle of a vyre megakernel: bootstrap, resident-buffer
 /// allocation, work-item submission, dispatch, and readback.  If any step
-/// fails, the session degrades gracefully — callers receive `None` from
+/// fails, the session degrades gracefully - callers receive `None` from
 /// [`MegakernelSession::new`] and fall back to per-batch dispatch.
 pub struct MegakernelSession {
     kernel: Megakernel,
@@ -86,7 +86,7 @@ impl MegakernelSession {
     /// Bootstrap a megakernel session on the given backend.
     ///
     /// Returns `Ok(None)` when the backend cannot compile the megakernel
-    /// program — this is the graceful-degradation contract that lets
+    /// program - this is the graceful-degradation contract that lets
     /// [`CompiledScanner`] fall back to per-batch dispatch without logging
     /// an error.
     ///
@@ -111,7 +111,7 @@ impl MegakernelSession {
                 tracing::debug!(
                     target: "keyhog::gpu",
                     %error,
-                    "megakernel bootstrap failed — degrading to per-batch dispatch",
+                    "megakernel bootstrap failed - degrading to per-batch dispatch",
                 );
                 return Ok(None);
             }
@@ -152,7 +152,7 @@ impl MegakernelSession {
         // Publish items into the resident ring at the current cursor.
         let published = self.buffers.publish_work_items(
             self.next_slot,
-            0, // tenant_id — single-tenant for keyhog scan dispatch
+            0, // tenant_id - single-tenant for keyhog scan dispatch
             work_items,
         )?;
 
@@ -164,7 +164,7 @@ impl MegakernelSession {
 
         // Decode literal matches from the readback IO queue bytes.
         // The megakernel stores match triples in the IO-queue output buffer.
-        // For now, return an empty match set — the actual decoding depends on
+        // For now, return an empty match set - the actual decoding depends on
         // the opcode handlers wired into the megakernel program, which are
         // not yet configured for literal-set scanning.  This placeholder
         // ensures the session lifecycle is exercisable end-to-end while the

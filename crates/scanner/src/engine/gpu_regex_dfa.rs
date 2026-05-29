@@ -1,13 +1,13 @@
-//! GPU `RegexDfaPipeline` — regex sets compiled through DFA subset
+//! GPU `RegexDfaPipeline` - regex sets compiled through DFA subset
 //! construction into O(1)/byte Aho-Corasick scanning.
 //!
 //! # Motivation
 //!
 //! keyhog has two GPU matching tiers:
 //!
-//! 1. **Literal-set AC** (`GpuLiteralSet`) — O(1)/byte DFA scan over
+//! 1. **Literal-set AC** (`GpuLiteralSet`) - O(1)/byte DFA scan over
 //!    fixed literal patterns. Fast, but only handles exact byte strings.
-//! 2. **NFA `RulePipeline`** — O(states×n) NFA multimatch via the
+//! 2. **NFA `RulePipeline`** - O(states×n) NFA multimatch via the
 //!    `build_rule_pipeline_from_regex` path. Handles full regex syntax
 //!    but scales with NFA state count per byte.
 //!
@@ -23,15 +23,15 @@
 //!
 //! ```text
 //! regex strings
-//!   ↓  compile_regex_set()   — validates syntax, builds NFA
-//!   ↓  extract literal cores — per-pattern fixed byte prefixes/infixes
-//!   ↓  dfa_compile_with_budget() — AC DFA from extracted literals
+//!   ↓  compile_regex_set()   - validates syntax, builds NFA
+//!   ↓  extract literal cores - per-pattern fixed byte prefixes/infixes
+//!   ↓  dfa_compile_with_budget() - AC DFA from extracted literals
 //!   ↓  RegexDfaPipeline { dfa, regex_set, ... }
 //! ```
 //!
 //! Patterns that cannot be lowered (Unicode classes, lookaround,
 //! backrefs) or that exceed the DFA state budget produce
-//! `RegexDfaError` — callers fall back to the NFA `RulePipeline` or
+//! `RegexDfaError` - callers fall back to the NFA `RulePipeline` or
 //! literal-set path.
 //!
 //! # Caching
@@ -53,7 +53,7 @@ pub const REGEX_DFA_CACHE_VERSION: u32 = 1;
 /// (O(1)/byte transition table for GPU dispatch).
 #[derive(Debug, Clone)]
 pub struct RegexDfaPipeline {
-    /// The NFA compiled from the regex set — kept for `reference_scan`
+    /// The NFA compiled from the regex set - kept for `reference_scan`
     /// parity and for consumers that need accept-state metadata.
     pub regex_set: CompiledRegexSet,
     /// DFA transition table compiled from extracted literal cores.
@@ -78,7 +78,7 @@ pub enum RegexDfaError {
         /// Human-readable description of the budget failure.
         message: String,
     },
-    /// The pattern set is empty — nothing to compile.
+    /// The pattern set is empty - nothing to compile.
     EmptyPatternSet,
 }
 
@@ -149,7 +149,7 @@ pub fn extract_literal_core(pattern: &str) -> Vec<u8> {
                 escaped = true;
             }
             '[' | '(' | '|' | '*' | '+' | '?' | '{' | '^' | '$' | '.' => {
-                // Hit a metacharacter — stop literal extraction.
+                // Hit a metacharacter - stop literal extraction.
                 break;
             }
             _ => {
@@ -246,7 +246,7 @@ fn regex_dfa_cache_key(patterns: &[&str], input_len: u32) -> String {
 /// First call checks the on-disk cache at
 /// `~/.cache/keyhog/programs/dfa-<sha256>.bin`. Cache misses recompile
 /// via [`build_regex_dfa`] and persist the result. Returns `Err` when
-/// the regex compile or DFA construction itself fails — the caller is
+/// the regex compile or DFA construction itself fails - the caller is
 /// expected to log and fall back to the NFA `RulePipeline` or
 /// literal-set GPU dispatch.
 ///
@@ -281,7 +281,7 @@ pub fn regex_dfa_cached(
                             patterns = patterns.len(),
                             input_len,
                             elapsed_ms = started.elapsed().as_millis() as u64,
-                            "RegexDfaPipeline cache hit — skipped DFA compile"
+                            "RegexDfaPipeline cache hit - skipped DFA compile"
                         );
                         return Ok(RegexDfaPipeline {
                             regex_set,
@@ -298,10 +298,10 @@ pub fn regex_dfa_cached(
         }
     }
 
-    // Cache miss — full compile.
+    // Cache miss - full compile.
     let pipeline = build_regex_dfa(patterns, input_len)?;
 
-    // Persist the DFA to disk (NFA is not cached — recompile is cheap).
+    // Persist the DFA to disk (NFA is not cached - recompile is cheap).
     if let Some(path) = vyre_libs::scan::engine_cache_path(&cache_dir, &cache_key) {
         if let Ok(bytes) = pipeline.dfa.to_bytes() {
             let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
@@ -327,7 +327,7 @@ pub fn regex_dfa_cached(
         patterns = patterns.len(),
         input_len,
         elapsed_ms = started.elapsed().as_millis() as u64,
-        "RegexDfaPipeline cache miss — compiled and saved"
+        "RegexDfaPipeline cache miss - compiled and saved"
     );
     Ok(pipeline)
 }
@@ -335,13 +335,13 @@ pub fn regex_dfa_cached(
 impl RegexDfaPipeline {
     /// CPU reference scan using the NFA representation.
     ///
-    /// This matches the contract of `RulePipeline::reference_scan` —
+    /// This matches the contract of `RulePipeline::reference_scan` -
     /// walks the NFA for each start position in the haystack and
     /// collects all accepting states. Used for parity testing against
     /// the DFA fast path.
     #[must_use]
     pub fn reference_scan(&self, haystack: &[u8]) -> Vec<vyre_libs::scan::LiteralMatch> {
-        // Use the DFA for reference scanning — walk the transition
+        // Use the DFA for reference scanning - walk the transition
         // table and emit matches from output_records.
         let mut results = Vec::new();
         let mut state = 0_u32;

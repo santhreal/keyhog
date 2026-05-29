@@ -15,7 +15,7 @@ pub fn build_raw_match(
 ) -> RawMatch {
     // Diff-aware severity: a credential whose only sighting is in non-HEAD
     // git history (the developer already removed it from `main`) is still
-    // a leak — but it's strictly less urgent than a credential live in HEAD
+    // a leak - but it's strictly less urgent than a credential live in HEAD
     // that an attacker can grep right now. Drop one tier when the source
     // backend tagged this chunk as `git/history`. Everything else (live
     // filesystem, `git/head`, S3/Docker/Web/etc) keeps the detector's

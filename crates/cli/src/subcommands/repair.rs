@@ -50,33 +50,33 @@ pub async fn run(args: RepairArgs) -> Result<ExitCode> {
     println!("  downloading    {} ({})", asset.name, release.tag_name);
     let bytes = installer::download_verified_asset(&client, asset).await?;
     let exe = installer::current_binary()?;
-    installer::install_binary(&exe, &bytes)?;
-    println!("  reinstalled    {}", exe.display());
+    installer::reap_stale_binaries(&exe);
 
-    // 3. Verify the REINSTALLED binary (not the still-running old image): exec
-    //    its own `doctor`. On Unix the rename swapped the file on disk, so
-    //    `exe` now points at the new binary. Inherit stdio so the user sees
-    //    the doctor report as the repair verification.
-    println!("\n{dim}verifying reinstalled binary...{reset}\n");
-    match std::process::Command::new(&exe).arg("doctor").status() {
-        Ok(status) if status.success() => {
+    // 3. Install with the recoverability invariant: back up the current binary,
+    //    swap in the fresh one, then exec the NEW binary's `doctor` (inherits
+    //    stdio so the user sees the report). If the reinstalled binary still
+    //    can't run on this host, roll back to the backup. With `--force` on a
+    //    HEALTHY install this matters most: a broken release must not brick a
+    //    working tool. `install_with_rollback` returns Ok only when the new
+    //    binary passed its own health check.
+    println!("\n{dim}reinstalling and verifying the new binary...{reset}\n");
+    match installer::install_with_rollback(&exe, &bytes, installer::verify_via_doctor) {
+        Ok(()) => {
             println!(
                 "\n{green}{bold}✓ repaired: reinstalled {} and verified healthy.{reset}",
                 release.tag_name
             );
             Ok(ExitCode::SUCCESS)
         }
-        Ok(_) => {
-            eprintln!(
-                "\n{red}{bold}✗ reinstalled {} but it still reports issues above.{reset} \
-                 If a shared library is missing, install it (see the doctor/install output) and retry.",
-                release.tag_name
-            );
-            Ok(ExitCode::from(EXIT_REPAIR_FAILED))
-        }
+        // Health check failed (rolled back) or the install itself failed. Either
+        // way a working binary is preserved where one existed; fail closed with
+        // the dedicated code so CI/automation can branch on it.
         Err(e) => {
             eprintln!(
-                "\n{red}{bold}✗ reinstalled but could not run the new binary to verify:{reset} {e}"
+                "\n{red}{bold}✗ repair of {} did not produce a healthy binary:{reset} {e}\n\
+                 {dim}If a shared library is missing, install it (see the doctor output above) \
+                 and retry, or try `keyhog repair --version <older-tag>`.{reset}",
+                release.tag_name
             );
             Ok(ExitCode::from(EXIT_REPAIR_FAILED))
         }

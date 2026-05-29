@@ -194,15 +194,31 @@ pub mod testing {
     pub use crate::decode::util::take_hex_digits;
     pub use crate::gpu::{env_no_gpu, is_ci_environment};
 
+    /// Shannon entropy of `chunk` in bits/byte.
+    ///
     /// # Safety
     ///
-    /// Dispatches to the AVX-512 entropy kernel, which requires the running
-    /// CPU to support the `avx512f`/`avx512bw` target features. The caller
-    /// must only invoke this after confirming those features are present
-    /// (e.g. via `is_x86_feature_detected!`); calling it on a CPU without
-    /// them is undefined behavior.
+    /// On `x86_64` this dispatches straight to the AVX-512 kernel, which
+    /// requires the running CPU to support `avx512f`/`avx512bw`. The caller
+    /// must confirm those features first (e.g. via `is_x86_feature_detected!`);
+    /// calling it on a CPU without them is undefined behavior.
+    ///
+    /// On every other target (aarch64/macOS, wasm, …) the AVX-512 kernel does
+    /// not exist, so this routes to the portable feature-detecting dispatcher
+    /// (`entropy_fast::shannon_entropy_simd`), which is itself safe and always
+    /// correct. The `unsafe` marker is kept for one cross-platform signature.
+    /// Without this arch split the non-x86 build failed to compile
+    /// (`E0425: cannot find calculate_shannon_entropy`), breaking the portable
+    /// / macOS-arm64 build.
     pub unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
-        unsafe { crate::entropy_avx512::calculate_shannon_entropy(chunk) }
+        #[cfg(target_arch = "x86_64")]
+        {
+            unsafe { crate::entropy_avx512::calculate_shannon_entropy(chunk) }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            crate::entropy_fast::shannon_entropy_simd(chunk)
+        }
     }
 
     #[cfg(feature = "simd")]

@@ -89,6 +89,16 @@ impl ScanOrchestrator {
                 .with_config(scanner_config),
         );
 
+        // Detector regexes compile lazily on first use, which makes a one-shot
+        // scan of a single file (or stdin) start in milliseconds instead of
+        // paying the whole-corpus compile up front. For a DIRECTORY scan -
+        // many files where each detector fires repeatedly - warm them all in
+        // parallel now so no single file stalls on a detector's first-use
+        // compile; the cost amortizes immediately over the walk.
+        if args.path.as_deref().is_some_and(|p| p.is_dir()) {
+            scanner.warm();
+        }
+
         let signatures: std::collections::HashSet<Arc<str>> = detectors
             .iter()
             .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))

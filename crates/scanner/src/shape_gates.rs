@@ -31,7 +31,7 @@ pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
     // Prefixed-hash forms emitted by docker (`sha256:<64-hex>`), npm
     // package-lock integrity (`sha512-<base64>`), python requirements
     // (`sha256:<64-hex>`) and git-LFS pointers (`sha256:<64-hex>`).
-    // These are very common FP shapes — see secretbench mirror per-
+    // These are very common FP shapes - see secretbench mirror per-
     // category FP counts (docker-image-digest, npm-lock-integrity,
     // python-requirements-hash).
     if let Some(body) = strip_hash_algo_prefix(credential) {
@@ -58,7 +58,7 @@ pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
     // regexes (e.g. honeybadger-api-key `[a-f0-9]{32,48}`) greedy-
     // capture the FIRST 48 chars of a 64-char sha256 hex span,
     // producing a 48-char credential that is the prefix of a hash
-    // and not a real key. Same for 56 and 72 — common boundary
+    // and not a real key. Same for 56 and 72 - common boundary
     // lengths produced by detectors that quantify hex spans without
     // a non-hex terminator. The 64/128 already-covered cases catch
     // the full-length hash; the 48/56/72 extension covers the
@@ -67,7 +67,7 @@ pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
     matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
 }
 
-/// If `credential` begins with — OR contains — one of the well-known
+/// If `credential` begins with - OR contains - one of the well-known
 /// hash-algorithm labels (`sha256:`, `sha512:`, `sha512-`, `sha1:`,
 /// `md5:`), return the body after the label. Otherwise None.
 ///
@@ -107,15 +107,15 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// a credential token.
 ///
 /// Heuristics (all required):
-///   1. Length in `[40, 80]` chars — the window where the SecretBench
+///   1. Length in `[40, 80]` chars - the window where the SecretBench
 ///      protobuf negatives concentrate (30-60 random bytes → 40-80
 ///      base64 chars). Above 80 we leave to the decode-and-recheck
-///      gate (random binary doesn't decode to UTF-8 — no recheck
-///      fires — and real long-form positives like Azure storage key
+///      gate (random binary doesn't decode to UTF-8 - no recheck
+///      fires - and real long-form positives like Azure storage key
 ///      (88 chars) keep their recall). Below 40 we'd over-suppress
 ///      short tokens that happen to contain `+/`.
 ///   2. Alphabet limited to `[A-Za-z0-9+/=]` (standard base64).
-///   3. Contains at least one of `+` or `/` — the chars that
+///   3. Contains at least one of `+` or `/` - the chars that
 ///      distinguish standard base64 from base64url. Real provider
 ///      tokens use base64url (`-_`) or pure alphanumeric, never
 ///      standard `+/` in the bare-token form.
@@ -130,7 +130,7 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// hard bypass above (they start with `-----BEGIN`), so
 /// EC/RSA/PGP/OpenSSH private keys are unaffected even though
 /// their bodies are standard base64. The 86/88-char Azure storage
-/// key sits OUTSIDE the [40, 80] window — recall preserved.
+/// key sits OUTSIDE the [40, 80] window - recall preserved.
 pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     if !(40..=80).contains(&credential.len()) {
         return false;
@@ -183,7 +183,7 @@ pub(crate) fn is_uuid_v4_shape(s: &str) -> bool {
     }
     // Version-4 marker at position 14, variant marker at position 19
     // (8/9/a/b) per RFC 4122. We don't require the version digit so
-    // we also catch v1/v3/v5 — every standard-shaped UUID is FP.
+    // we also catch v1/v3/v5 - every standard-shaped UUID is FP.
     let mut saw_lower = false;
     let mut saw_upper = false;
     for (i, &c) in b.iter().enumerate() {

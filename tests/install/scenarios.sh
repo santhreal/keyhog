@@ -58,14 +58,18 @@ if [ -e /proc/driver/nvidia ] || ldconfig -p 2>/dev/null | grep -q "libcuda\.so"
     HOST_HAS_CUDA="yes"
 fi
 
-# build_sandbox <name> <os> <arch> <has_nvidia_smi> <has_libcuda>
+# build_sandbox <name> <os> <arch> <has_nvidia_smi> <has_libcuda> [has_toolkit]
 # Constructs a sandbox bin/ dir of mocks + symlinks to real coreutils.
+# has_toolkit (default no) mocks `nvcc` on PATH so detect_linux_cuda's
+# Gate 3 (CUDA toolkit present) is satisfied - required for a "yes" verdict
+# since task #57. Without it the strongest verdict is "driver-only".
 build_sandbox() {
     name=$1
     os=$2
     arch=$3
     nv=$4
     lib=$5
+    toolkit=${6:-no}
     sb=$(mktemp -d -t "kh-test-${name}-XXXXXX")
     mkdir -p "$sb/bin"
 
@@ -119,6 +123,15 @@ EOF
     fi
     chmod +x "$sb/bin/ldconfig"
 
+    # Mock nvcc (CUDA toolkit, detect_linux_cuda Gate 3) when requested.
+    if [ "$toolkit" = "yes" ]; then
+        cat > "$sb/bin/nvcc" <<'EOF'
+#!/bin/sh
+echo "Cuda compilation tools, release 12.0"
+EOF
+        chmod +x "$sb/bin/nvcc"
+    fi
+
     # curl: stub so resolve_tag short-circuits via KEYHOG_VERSION.
     # If the script does hit network we want to know.
     cat > "$sb/bin/curl" <<'EOF'
@@ -131,30 +144,40 @@ EOF
     echo "$sb"
 }
 
+# A throwaway HOME (with no keyhog installed) per call. Without this, a
+# real keyhog in the developer's $HOME/.local/bin makes --diagnose defer
+# to `keyhog doctor`, which never prints the "CUDA detection:" line these
+# scenarios assert - so the suite passed on clean CI but failed on any dev
+# box with keyhog installed.
+clean_home() { mktemp -d -t kh-diag-home-XXXXXX; }
+
 run_diagnose() {
     sb=$1
-    KEYHOG_VERSION=v0.5.29 \
-        env -i PATH="$sb/bin" HOME="${HOME:-/tmp}" \
+    ch=$(clean_home)
+    env -i PATH="$sb/bin" HOME="$ch" \
             KEYHOG_VERSION=v0.5.29 \
-            KEYHOG_INSTALL="${KEYHOG_INSTALL:-/tmp/kh-test-install}" \
+            KEYHOG_INSTALL="$ch/.local/bin" \
             sh "$INSTALL_SH" --diagnose --no-color 2>&1
+    rm -rf "$ch"
 }
 
 run_diagnose_variant() {
     sb=$1
     variant=$2
-    env -i PATH="$sb/bin" HOME="${HOME:-/tmp}" \
+    ch=$(clean_home)
+    env -i PATH="$sb/bin" HOME="$ch" \
             KEYHOG_VERSION=v0.5.29 \
             KEYHOG_VARIANT="$variant" \
-            KEYHOG_INSTALL="${KEYHOG_INSTALL:-/tmp/kh-test-install}" \
+            KEYHOG_INSTALL="$ch/.local/bin" \
             sh "$INSTALL_SH" --diagnose --no-color 2>&1
+    rm -rf "$ch"
 }
 
 # ============================================================
 # Scenario A: Linux x86_64, NVIDIA + libcuda
 # ============================================================
-printf '\n[A] Linux x86_64, NVIDIA + libcuda (the desktop case)\n'
-sb=$(build_sandbox "A" "Linux" "x86_64" "yes" "yes")
+printf '\n[A] Linux x86_64, NVIDIA + libcuda + toolkit (the desktop case)\n'
+sb=$(build_sandbox "A" "Linux" "x86_64" "yes" "yes" "yes")
 out=$(run_diagnose "$sb")
 expect "A.1 cuda variant picked"       "Would install: keyhog-linux-x86_64-cuda" "$out"
 expect "A.2 cuda state = yes"           "CUDA detection: yes"                     "$out"
@@ -167,12 +190,15 @@ rm -rf "$sb"
 printf '\n[B] Linux x86_64, NVIDIA GPU but libcuda.so missing\n'
 if [ "$HOST_HAS_CUDA" = "yes" ]; then
     skip "B.1 default variant picked" "host has real libcuda.so; need chroot"
-    skip "B.2 missing-lib state" "host has real libcuda.so; need chroot"
+    skip "B.2 driver-only state" "host has real libcuda.so; need chroot"
 else
     sb=$(build_sandbox "B" "Linux" "x86_64" "yes" "no")
     out=$(run_diagnose "$sb")
     expect "B.1 default variant picked"     "Would install: keyhog-linux-x86_64$"     "$out"
-    expect "B.2 missing-lib state"          "CUDA detection: missing-lib"             "$out"
+    # nvidia-smi reports a GPU but libcuda.so is absent: detect_linux_cuda
+    # returns "driver-only" (there is no "missing-lib" state - that was a
+    # stale assertion for an output string the script never emitted).
+    expect "B.2 driver-only state"          "CUDA detection: driver-only"             "$out"
     rm -rf "$sb"
 fi
 
@@ -232,8 +258,10 @@ rm -rf "$sb"
 # ============================================================
 printf '\n[H] Unsupported platform exits cleanly\n'
 sb=$(build_sandbox "H" "FreeBSD" "x86_64" "no" "no")
-out=$(env -i PATH="$sb/bin" HOME="${HOME:-/tmp}" KEYHOG_VERSION=v0.5.29 \
+hh=$(clean_home)
+out=$(env -i PATH="$sb/bin" HOME="$hh" KEYHOG_INSTALL="$hh/.local/bin" KEYHOG_VERSION=v0.5.29 \
       sh "$INSTALL_SH" --diagnose --no-color 2>&1) || true
+rm -rf "$hh"
 expect "H.1 reports unsupported"        "Unsupported platform"                    "$out"
 rm -rf "$sb"
 

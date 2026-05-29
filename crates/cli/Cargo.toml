@@ -132,3 +132,7 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 regex = { workspace = true }
 toml = { workspace = true }
+# Mock GitHub releases API for the installer/update lifecycle suite: drive the
+# real binary's release-resolution path against deliberately hostile responses
+# (malformed JSON, 500s, missing assets) with zero network.
+httpmock = { workspace = true }

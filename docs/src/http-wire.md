@@ -143,8 +143,10 @@ keyhog scan --stdin < response.txt
 convention; added in v0.5.28).
 
 `--stdin` reads up to ~1 GiB; beyond that, write to a temp file and
-scan the path. Use `--source-type wire` when you want findings
-tagged with a meaningful source instead of the default `stdin`.
+scan the path. Findings from stdin carry the `stdin` source. To get
+the richer `wire:har:request` / `wire:har:response` provenance tags,
+save the exchange as a `.har` file and scan that instead (see
+[HAR auto-expansion](#har-auto-expansion)).
 
 ## Headers, bodies, URL params - where the secret sits
 

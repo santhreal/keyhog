@@ -78,6 +78,11 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         CompiledScanner::compile(detectors)
             .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?,
     );
+    // System-wide scan touches every mounted drive and every git history:
+    // detector regexes compile lazily on first use, so warm them all up
+    // front (in parallel) rather than stalling the first file that hits each
+    // detector across a multi-hour, multi-TB walk.
+    scanner.warm();
 
     let mounts = enumerate_mounts(args.include_network)?;
     eprintln!("💾 will scan {} mount(s):", mounts.len());

@@ -162,6 +162,30 @@ impl CompiledScanner {
         self.ac_map.len() + self.fallback.len()
     }
 
+    /// Eagerly compile every pattern's regex, in parallel, up front.
+    ///
+    /// Patterns compile lazily on first use (see [`crate::types::LazyRegex`]),
+    /// which makes a one-shot CLI scan start in milliseconds instead of
+    /// paying ~450ms-2.3s to build the whole corpus. For a LONG-lived or
+    /// LARGE scan - the daemon, `watch`, `scan-system`, or a big repo where a
+    /// detector fires across thousands of files - it's better to pay the
+    /// compile once, in parallel, before the hot loop rather than stalling
+    /// the first file that touches each detector. Callers on those paths
+    /// should `warm()` after building the scanner.
+    ///
+    /// Idempotent and cheap to repeat: an already-compiled pattern is a
+    /// `OnceLock` hit. Also the correct setup for a per-scan perf benchmark,
+    /// which means to measure match throughput, not one-time compilation.
+    pub fn warm(&self) {
+        use rayon::prelude::*;
+        self.ac_map.par_iter().for_each(|p| {
+            let _ = p.regex.get();
+        });
+        self.fallback.par_iter().for_each(|(p, _)| {
+            let _ = p.regex.get();
+        });
+    }
+
     /// Iterator over the FINAL regex source strings (post anchoring /
     /// group extraction / normalization) the scanner uses.
     pub fn pattern_regex_strs(&self) -> Vec<&str> {

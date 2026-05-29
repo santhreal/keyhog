@@ -142,23 +142,63 @@ pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
 
 pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
     if path.exists() && path.is_dir() {
-        let cache_path = path.join(".keyhog-cache.json");
-        if let Some(cached) = keyhog_core::load_detector_cache(&cache_path, path) {
-            require_non_empty_detectors(&cached, path)?;
-            return Ok(cached);
+        // The parse cache lives in the user's XDG cache dir, NOT inside the
+        // detectors directory. A system install puts detectors under a
+        // root-owned, read-only tree (e.g. /opt/keyhog/detectors,
+        // /usr/share/keyhog/detectors); writing `.keyhog-cache.json` there
+        // failed with `Permission denied` on EVERY run, spamming two WARN
+        // lines and silently re-parsing each time. Keying the cache by the
+        // source dir keeps distinct detector directories from colliding;
+        // `load_detector_cache` still mtime-checks the source TOMLs for
+        // staleness regardless of where the cache file lives.
+        let cache_path = detector_cache_path(path);
+        if let Some(cache_path) = &cache_path {
+            if let Some(cached) = keyhog_core::load_detector_cache(cache_path, path) {
+                require_non_empty_detectors(&cached, path)?;
+                return Ok(cached);
+            }
         }
         let loaded = load_detectors(path)?;
         require_non_empty_detectors(&loaded, path)?;
-        if let Err(error) = keyhog_core::save_detector_cache(&loaded, &cache_path) {
-            tracing::warn!(
-                cache_path = %cache_path.display(),
-                %error,
-                "detector cache write failed; subsequent runs will re-parse TOML from disk"
-            );
+        if let Some(cache_path) = &cache_path {
+            if let Err(error) = keyhog_core::save_detector_cache(&loaded, cache_path) {
+                // A read-only or absent cache dir is not an error the operator
+                // can act on and not worth a per-run WARN: the scan proceeds,
+                // just without the (small) parse-cache speedup. Debug-level so
+                // `-v` still surfaces it for diagnosis.
+                tracing::debug!(
+                    cache_path = %cache_path.display(),
+                    %error,
+                    "detector parse cache not written (cache dir unwritable); \
+                     re-parsing TOML each run"
+                );
+            }
         }
         return Ok(loaded);
     }
     load_detectors_embedded_or_fail(path)
+}
+
+/// Path to the detector parse cache in the user's XDG cache dir, keyed by the
+/// source directory so multiple `--detectors` trees don't collide. Returns
+/// `None` when no cache dir is resolvable (cache simply disabled). The
+/// `.json` is created on first successful parse and revalidated against the
+/// source TOMLs' mtimes by `keyhog_core::load_detector_cache`.
+fn detector_cache_path(source_dir: &Path) -> Option<std::path::PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let canonical = std::fs::canonicalize(source_dir).unwrap_or_else(|_| source_dir.to_path_buf());
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    canonical.hash(&mut hasher);
+    // Version-scope the key: the embedded/default corpus shape can change
+    // across keyhog versions, so a stale cache from an old binary is never
+    // reused by a new one.
+    env!("CARGO_PKG_VERSION").hash(&mut hasher);
+    let key = hasher.finish();
+    Some(
+        dirs::cache_dir()?
+            .join("keyhog")
+            .join(format!("detectors-{key:016x}.json")),
+    )
 }
 
 /// Load detectors without writing or reading the on-disk

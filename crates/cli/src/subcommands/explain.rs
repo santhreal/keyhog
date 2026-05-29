@@ -11,35 +11,101 @@ use keyhog_core::DetectorSpec;
 pub fn run(args: ExplainArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
-    let needle = args.detector_id.to_lowercase();
+    let raw = args.detector_id.to_lowercase();
+    // `hot-*` ids are the SIMD fast-path's FINDING labels (see the scanner's
+    // simdsieve_prefilter HOT_PATTERN_DETECTOR_IDS), NOT registry detector ids.
+    // A user who copies an id straight out of `scan` output (`hot-github_pat`)
+    // into `explain` would otherwise hit a bare "no such detector" - the two
+    // commands would silently disagree. Resolve to the canonical registry spec
+    // and tell them what happened.
+    let (needle, hot_origin) = match canonical_for_hot_id(&raw) {
+        Some(canon) => (canon.to_string(), Some(raw.clone())),
+        None => (raw.clone(), None),
+    };
+
     let detector = detectors
         .iter()
         .find(|d| d.id.to_lowercase() == needle)
-        .ok_or_else(|| {
-            // Suggest near-matches by substring so a typo prints something
-            // useful instead of "not found".
-            let suggestions: Vec<&str> = detectors
-                .iter()
-                .filter(|d| d.id.to_lowercase().contains(&needle))
-                .map(|d| d.id.as_str())
-                .take(8)
-                .collect();
-            if suggestions.is_empty() {
-                anyhow::anyhow!(
-                    "no detector with id '{}' (use `keyhog detectors` to list available ids)",
-                    args.detector_id
-                )
-            } else {
-                anyhow::anyhow!(
-                    "no detector with id '{}'. Did you mean: {}?",
-                    args.detector_id,
-                    suggestions.join(", ")
-                )
-            }
-        })?;
+        .ok_or_else(|| explain_not_found(&detectors, &args.detector_id, &raw))?;
 
+    if let Some(hot) = &hot_origin {
+        println!(
+            "\u{2139} '{hot}' is keyhog's SIMD fast-path label; showing the \
+             canonical detector '{needle}'.\n"
+        );
+    }
     print_explanation(detector);
     Ok(())
+}
+
+/// Map a `hot-<name>` fast-path finding id to its canonical registry detector.
+/// Index-aligned with the scanner's `HOT_PATTERN_DETECTOR_IDS`. Kept here (CLI
+/// side, un-feature-gated) so `explain` resolves these ids in every build,
+/// including `--no-default-features` portable binaries that compile the hot
+/// labels out of the scanner but can still be fed a `hot-*` id by hand or from
+/// a baseline produced on a SIMD build.
+///
+/// `hot-square_secret` (Square `sq0csp-` OAuth) intentionally returns None:
+/// there is no standalone Square-payments detector in the registry yet (only
+/// `squarespace-api-key`, a different service), so it falls through to the
+/// tailored not-found path rather than mis-resolving to the wrong service.
+fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
+    match id {
+        "hot-github_pat" => Some("github-classic-pat"),
+        "hot-openai_key" => Some("openai-api-key"),
+        "hot-aws_key" => Some("aws-access-key"),
+        "hot-aws_session_key" => Some("aws-session-token"),
+        "hot-sendgrid_key" => Some("sendgrid-api-key"),
+        "hot-slack_bot_token" => Some("slack-bot-token"),
+        "hot-slack_user_token" => Some("slack-user-token"),
+        _ => None,
+    }
+}
+
+/// Build the "not found" error, with a tailored branch for `hot-*` ids that
+/// have no canonical registry detector so the user learns it's a real fast-path
+/// pattern rather than chasing a typo.
+fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str) -> anyhow::Error {
+    if let Some(stripped) = lowered.strip_prefix("hot-") {
+        let svc = stripped.split('_').next().unwrap_or(stripped);
+        let related: Vec<&str> = detectors
+            .iter()
+            .filter(|d| d.id.to_lowercase().contains(svc) || d.service.to_lowercase().contains(svc))
+            .map(|d| d.id.as_str())
+            .take(8)
+            .collect();
+        return if related.is_empty() {
+            anyhow::anyhow!(
+                "'{requested}' is a keyhog SIMD fast-path pattern with no standalone \
+                 registry detector yet - it still surfaces in scans, there is just no \
+                 separate spec to explain."
+            )
+        } else {
+            anyhow::anyhow!(
+                "'{requested}' is a keyhog SIMD fast-path label, not a registry detector id. \
+                 Related detectors you can explain: {}",
+                related.join(", ")
+            )
+        };
+    }
+    // Suggest near-matches by substring so a typo prints something useful
+    // instead of "not found".
+    let suggestions: Vec<&str> = detectors
+        .iter()
+        .filter(|d| d.id.to_lowercase().contains(lowered))
+        .map(|d| d.id.as_str())
+        .take(8)
+        .collect();
+    if suggestions.is_empty() {
+        anyhow::anyhow!(
+            "no detector with id '{requested}' (use `keyhog detectors` to list available ids)"
+        )
+    } else {
+        anyhow::anyhow!(
+            "no detector with id '{requested}'. Did you mean: {}?",
+            suggestions.join(", ")
+        )
+    }
 }
 
 fn print_explanation(d: &DetectorSpec) {
@@ -124,5 +190,60 @@ fn rotation_guide(service: &str) -> Option<&'static str> {
         s if s.contains("datadog") => Some("https://docs.datadoghq.com/account_management/api-app-keys/"),
         s if s.contains("snowflake") => Some("https://docs.snowflake.com/en/user-guide/key-pair-auth#configuring-key-pair-rotation"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn embedded() -> Vec<DetectorSpec> {
+        // A non-existent detectors dir forces the embedded-corpus fallback.
+        crate::orchestrator_config::load_detectors_or_embedded(Path::new(
+            "__keyhog_no_such_detectors_dir__",
+        ))
+        .expect("embedded detector corpus must load")
+    }
+
+    /// Coherence: every `hot-*` id keyhog can print in a finding must resolve
+    /// through `explain` to a registry detector that ACTUALLY EXISTS - the
+    /// exact gap a user hits when they copy `hot-github_pat` from scan output
+    /// into `keyhog explain`. A rename of any canonical detector fails this.
+    #[test]
+    fn hot_ids_resolve_to_real_detectors() {
+        let detectors = embedded();
+        let ids: std::collections::HashSet<String> =
+            detectors.iter().map(|d| d.id.to_lowercase()).collect();
+
+        // The 7 hot patterns with a canonical registry equivalent.
+        for hot in [
+            "hot-github_pat",
+            "hot-openai_key",
+            "hot-aws_key",
+            "hot-aws_session_key",
+            "hot-sendgrid_key",
+            "hot-slack_bot_token",
+            "hot-slack_user_token",
+        ] {
+            let canon = canonical_for_hot_id(hot)
+                .unwrap_or_else(|| panic!("{hot} must map to a canonical detector"));
+            assert!(
+                ids.contains(canon),
+                "{hot} maps to '{canon}', which is not in the embedded registry \
+                 (detector renamed? update canonical_for_hot_id)"
+            );
+        }
+
+        // Square (`sq0csp-`) has no standalone registry detector yet: it must
+        // map to None and the not-found path must say so without pretending it
+        // is a typo or mis-resolving to `squarespace-api-key`.
+        assert!(canonical_for_hot_id("hot-square_secret").is_none());
+        let err = explain_not_found(&detectors, "hot-square_secret", "hot-square_secret");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("fast-path"),
+            "hot-square_secret should explain it is a fast-path pattern, got: {msg}"
+        );
     }
 }

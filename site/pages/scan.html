@@ -41,8 +41,7 @@ be combined in one invocation; findings stream as they fire.</p>
   <tbody>
     <tr><td><code>--severity LEVEL</code></td><td><code>info</code></td><td>Drop findings below LEVEL (<code>info|low|medium|high|critical</code>)</td></tr>
     <tr><td><code>--min-confidence F</code></td><td>—</td><td>Drop findings below confidence score F (0.0-1.0)</td></tr>
-    <tr><td><code>--enable-detectors ID,...</code></td><td>—</td><td>Run only these detector IDs (comma-separated)</td></tr>
-    <tr><td><code>--disable-detectors ID,...</code></td><td>—</td><td>Drop findings from these detector IDs (comma-separated)</td></tr>
+    <tr><td><code>--detectors DIR</code></td><td><code>detectors</code></td><td>Load detector TOMLs from DIR (env <code>KEYHOG_DETECTORS</code>). To run a subset, point this at a directory holding only the detectors you want — there is no per-ID enable/disable flag.</td></tr>
     <tr><td><code>--exclude-paths GLOB ...</code></td><td>—</td><td>Skip paths matching glob (space-separated, repeatable)</td></tr>
     <tr><td><code>--max-file-size BYTES</code></td><td>—</td><td>Skip files above size; summary line at the end</td></tr>
     <tr><td><code>--baseline FILE</code></td><td>—</td><td>Only report findings NOT in the baseline</td></tr>

@@ -1,10 +1,12 @@
 pub mod backend_prints_selected_backend;
 pub mod calibrate_show_header;
+pub mod cli_surface;
 pub mod daemon_status_no_running_daemon;
 pub mod detectors_json_nonempty;
 pub mod detectors_search_aws;
 pub mod diff_identical_baselines_exit_zero;
 pub mod explain_aws_access_key;
+pub mod realworld_configs;
 pub mod scan_clean_file_exit_zero;
 pub mod scan_dedup_none_reports_all_occurrences;
 pub mod scan_demo_example_not_clean_summary;
