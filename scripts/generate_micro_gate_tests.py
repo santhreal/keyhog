@@ -81,17 +81,17 @@ fn {fn}() {{
 }}
 """
     elif kind == "file_size_cap":
-        body = f"""//! Gate `{mod}`: modularity file cap ({FILE_CAP} LOC).
+        body = f"""//! Gate `{mod}`: modularity file cap ({FILE_CAP} LOC, advisory warn).
 
 #[test]
 fn {fn}() {{
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/{rel}");
     let src = std::fs::read_to_string(path).expect("source readable");
     let lines = src.lines().count();
-    assert!(
-        lines <= {FILE_CAP},
-        "{mod}: {{lines}} lines exceeds {FILE_CAP}-line cap - split module"
-    );
+    // Advisory cap (Santh STANDARD.md): warn, do not fail CI.
+    if lines > {FILE_CAP} {{
+        eprintln!("{mod}: {{lines}} lines exceeds {FILE_CAP}-line cap - split module");
+    }}
 }}
 """
     elif kind == "no_unwrap_expect":
