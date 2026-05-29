@@ -6,7 +6,7 @@ credentials.
 
 ```text
 $ keyhog scan .
-keyhog v0.5.34 │ 891 detectors │ 1647 patterns │ avx-512 + hyperscan + cuda
+keyhog v0.5.37 │ 891 detectors │ 1647 patterns │ avx-512 + hyperscan + cuda
 
 scanned 12,841 files in 1.4 s
 3 findings · 0 verified live · 1041 example fixtures suppressed

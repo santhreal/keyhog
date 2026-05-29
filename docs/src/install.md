@@ -94,7 +94,7 @@ The installer auto-detects, but you can override:
 |-----------------------------------------|---------------------------------------------------------------|
 | `KEYHOG_VARIANT=cuda` (or `--variant=cuda`) | Force the CUDA-accelerated Linux build (requires libcuda.so). |
 | `KEYHOG_VARIANT=cpu`  (or `--variant=cpu`)  | Force the default WGPU + SIMD build, skip GPU detection.      |
-| `KEYHOG_VERSION=v0.5.34` (or `--version=v0.5.34`) | Pin a specific release tag (default: most recent release with assets attached). |
+| `KEYHOG_VERSION=v0.5.37` (or `--version=v0.5.37`) | Pin a specific release tag (default: most recent release with assets attached). |
 | `KEYHOG_INSTALL=/usr/local/bin` (or `--install-dir=...`) | Install into a different directory.            |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
