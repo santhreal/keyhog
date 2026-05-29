@@ -209,6 +209,13 @@ inherits = "release"
 lto = "thin"
 codegen-units = 16
 strip = "none"
+# Keep `debug_assert!`/`debug_assert_eq!` invariant checks ON under this
+# profile. Nearly all CI test execution (integration-tests, strict-runners,
+# e2e, property, sarif) runs under `release-fast`, which otherwise inherits
+# `release` -> debug_assertions OFF, so those checks went unexercised in CI
+# except the small dev `--lib` runs. The runtime cost is negligible vs the
+# coverage gained.
+debug-assertions = true
 
 # ── Bench profile: same as release but with debug symbols so flamegraphs
 # attribute samples to functions. Use with `cargo bench` automatically.
