@@ -156,16 +156,3 @@ pub fn assert_detector_silent_across_chunk_boundary(detector_id: &str, text: &st
             .collect::<Vec<_>>()
     );
 }
-
-pub fn parity_keys(results: &[Vec<RawMatch>]) -> std::collections::BTreeSet<(String, String)> {
-    results
-        .iter()
-        .flatten()
-        .map(|m| {
-            (
-                m.detector_id.as_ref().to_string(),
-                m.credential.as_ref().to_string(),
-            )
-        })
-        .collect()
-}

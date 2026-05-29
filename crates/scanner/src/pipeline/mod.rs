@@ -10,7 +10,6 @@ pub use context_window::{
 };
 pub use postprocess::{
     build_raw_match, should_suppress_known_example_credential,
-    should_suppress_known_example_credential_with_anchor,
     should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
 };
 pub(crate) use postprocess::{
