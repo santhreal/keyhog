@@ -1,0 +1,35 @@
+name: Docker integration matrix
+
+# Builds keyhog in a clean container per libc family and runs the scenario
+# battery (tests/docker/scenarios.sh) against the real binary under spoofed
+# hardware/env/edge cases. The (image x scenario) product is the matrix; see
+# tests/docker/ for how to add a row.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'detectors/**'
+      - 'tests/docker/**'
+      - 'Cargo.*'
+      - '.github/workflows/integration-docker.yml'
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'tests/docker/**'
+      - 'Cargo.*'
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    name: ${{ matrix.variant }} integration
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [glibc, musl]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ${{ matrix.variant }} Docker integration matrix
+        run: bash tests/docker/run.sh ${{ matrix.variant }}

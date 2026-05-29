@@ -1,0 +1,31 @@
+# glibc (Debian) integration image for the Docker test matrix.
+#
+# Builds the default-feature keyhog (Hyperscan-accelerated, the crates.io
+# release profile) and bakes in a small corpus under /test/corpus so the
+# scenario runner can drive the real binary under spoofed hardware/env.
+# Mirrors the production Dockerfile's build recipe so we test what ships.
+# Pin the builder to bookworm so its glibc matches the bookworm runtime
+# stage below. Plain `rust:1.89-slim` tracks Debian testing (trixie, glibc
+# 2.39+) and produces a binary that won't load on bookworm (glibc 2.36).
+FROM rust:1.89-slim-bookworm AS builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libhyperscan-dev pkg-config ca-certificates libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN cargo build --release -p keyhog
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates git libhyperscan5 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog
+COPY --from=builder /build/detectors /opt/keyhog/detectors
+COPY tests/docker/corpus /test/corpus
+ENV KEYHOG_DETECTORS=/opt/keyhog/detectors
+# Non-root, mirroring the production image: scans of mounted volumes must
+# not require root.
+RUN useradd --system --create-home --uid 1000 keyhog
+USER keyhog
+WORKDIR /test
+ENTRYPOINT []

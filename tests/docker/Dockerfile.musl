@@ -1,0 +1,27 @@
+# musl (Alpine) integration image for the Docker test matrix.
+#
+# Builds the `portable` feature set (no Hyperscan / Ghidra / CUDA system
+# libs - pure-Rust scan path) against musl libc, the configuration shipped
+# to users who run keyhog in minimal/static Alpine containers. Catches musl-
+# vs-glibc regressions (static linking, no glibc-specific syscalls) that the
+# glibc image can't.
+FROM rust:alpine AS builder
+WORKDIR /build
+# musl-dev: C runtime for build scripts. openssl-{dev,libs-static} + pkgconf:
+# reqwest's default TLS links openssl; OPENSSL_STATIC makes it link the
+# static archive so the musl binary stays self-contained. git: build-time.
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconf git
+ENV OPENSSL_STATIC=1
+COPY . .
+RUN cargo build --release -p keyhog --no-default-features --features portable
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates git libgcc
+COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog
+COPY --from=builder /build/detectors /opt/keyhog/detectors
+COPY tests/docker/corpus /test/corpus
+ENV KEYHOG_DETECTORS=/opt/keyhog/detectors
+RUN adduser -S -u 1000 keyhog
+USER keyhog
+WORKDIR /test
+ENTRYPOINT []

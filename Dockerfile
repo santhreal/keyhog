@@ -1,13 +1,19 @@
-FROM rust:1.89-slim AS builder
+# Pin to bookworm so the builder's glibc matches the bookworm runtime stage.
+# Plain `rust:1.89-slim` tracks Debian testing (trixie, glibc 2.39+) and
+# produces a binary that fails to load on the bookworm runtime with
+# `GLIBC_2.39 not found`.
+FROM rust:1.89-slim-bookworm AS builder
 WORKDIR /build
 
-# Build-time deps for the default `simd` feature: libhyperscan-dev links
-# against libhs at link time; pkg-config finds it. ca-certificates is
-# needed for any cargo registry fetches that happen during the build.
+# Build-time deps: libhyperscan-dev links the `simd` feature against libhs;
+# libssl-dev is required by reqwest's default (native-tls/openssl) TLS, used
+# by the verify/web/github/s3 backends - without it openssl-sys fails to
+# build. pkg-config locates both. ca-certificates covers cargo fetches.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libhyperscan-dev \
         pkg-config \
         ca-certificates \
+        libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .

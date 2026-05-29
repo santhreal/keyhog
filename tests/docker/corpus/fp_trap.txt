@@ -1,0 +1,3 @@
+AWS_ACCESS_KEY_ID=YOUR_KEY_HERE
+api_token=${API_TOKEN}
+stripe=sk_test_EXAMPLE
