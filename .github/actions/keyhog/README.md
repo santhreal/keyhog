@@ -5,7 +5,7 @@ GitHub code-scanning, and a copy of the report attaches as a workflow
 artifact for download.
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.35
 ```
 
 That's it. Defaults: scan the whole repo, fail on `high` or above, output
@@ -14,7 +14,7 @@ SARIF, upload to code-scanning.
 ## Full reference
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.35
   with:
     path: .                     # file or directory to scan
     severity: high              # info | low | medium | high | critical
@@ -38,7 +38,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 ```
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.35
   with:
     baseline: keyhog-baseline.json
 ```
@@ -47,7 +47,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 ```yaml
 - id: keyhog
-  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
+  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.35
   with:
     fail-on-findings: 'false'
 

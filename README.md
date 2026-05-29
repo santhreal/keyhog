@@ -248,7 +248,7 @@ your own fixtures.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.36
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.35
   with:
     path: .
     severity: high       # info | low | medium | high | critical
