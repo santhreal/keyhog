@@ -38,7 +38,13 @@ mod scan_postprocess;
 pub mod segment_attribution;
 mod windowed;
 
-pub(crate) use backend_prepared::{build_simd_scanner, PreparedChunk};
+// `build_simd_scanner` only exists under the `simd` (Hyperscan) feature; its
+// sole call site in compile.rs is `#[cfg(feature = "simd")]` too. Gate the
+// import to match, or non-simd builds (the `portable` feature used for the
+// macOS/Windows/musl release assets) fail with E0432.
+#[cfg(feature = "simd")]
+pub(crate) use backend_prepared::build_simd_scanner;
+pub(crate) use backend_prepared::PreparedChunk;
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
 pub use gpu_coalesce::coalesce_chunks;
 pub use gpu_regex_dfa::{build_regex_dfa, RegexDfaError};
