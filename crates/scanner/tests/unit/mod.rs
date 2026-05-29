@@ -63,6 +63,7 @@ pub mod context_test_directory_component;
 pub mod context_tokio_test_attribute;
 pub mod context_unknown_no_quotes_no_assignment;
 pub mod decode;
+pub mod decode_structure;
 pub mod engine;
 pub mod engine_a2_cases;
 pub mod engine_backend;

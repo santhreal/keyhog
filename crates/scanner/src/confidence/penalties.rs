@@ -142,6 +142,17 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         if max_repeat_run(credential) > 0.5 {
             adjusted *= 0.1;
         }
+        // Decode-through coherence (generic detectors only). A generic
+        // high-entropy candidate that base64/hex-decodes to an identifiable
+        // binary asset (PNG/gzip/zip/ELF/PDF/... magic bytes) or a full
+        // protobuf-wire message is embedded data, not a credential. These
+        // signals are definitional - real secrets carry no magic header and do
+        // not parse end-to-end as protobuf - so this never fires on a named
+        // detector (skipped here) and effectively never on a real generic
+        // secret. This is keyhog's decode-through advantage feeding scoring.
+        if crate::decode_structure::is_encoded_binary(credential) {
+            adjusted *= 0.02;
+        }
     }
     finalize_confidence(adjusted)
 }

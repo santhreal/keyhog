@@ -17,6 +17,9 @@ pub mod confidence;
 pub mod context;
 /// Decode-through pipeline for nested encodings (base64, hex, URL, etc.).
 pub mod decode;
+/// Decode-structure analysis: classify what a candidate base64/hex-decodes to
+/// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
+pub mod decode_structure;
 /// Core scan execution engine.
 pub mod engine;
 /// Shannon entropy analysis for secret detection.
