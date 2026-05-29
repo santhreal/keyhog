@@ -8,11 +8,19 @@ id = "lambdatest-access-key"
 name = "LambdaTest Access Key"
 service = "lambdatest"
 severity = "critical"
-keywords = ["LT_ACCESS_KEY", "LT_ACCESSKEY", "access_key", "access-key", "lambdatest"]
+keywords = ["LT_ACCESS_KEY", "LT_ACCESSKEY", "lambdatest"]
 
 [[detector.patterns]]
-regex = "(?:LT_ACCESS[_-]?KEY|access[_-]?key)[=:\\s\"']+([a-zA-Z0-9]{40,})"
-description = "LambdaTest access key with context anchor"
+# Anchor narrowed to LT_ACCESS_KEY only (2026-05-29). The previous
+# alternation included a bare `access_key=<40+>` arm with NO LambdaTest
+# prefix; mirror v22 showed 42 FPs across npm-lock-integrity, base62
+# session-token shapes, and 40-char random tokens in every wrapper that
+# emits `ACCESS_KEY=…`. Every contract positive / evasion anchors on
+# `LT_ACCESS_KEY`, so removing the generic `access_key` arm preserves
+# every contract shape. Keywords list narrowed in lockstep so the AC
+# pre-filter no longer admits chunks for `access_key`/`access-key`.
+regex = "LT_ACCESS[_-]?KEY[=:\\s\"']+([a-zA-Z0-9]{40,})"
+description = "LambdaTest access key (LT_ACCESS_KEY anchor only)"
 group = 1
 
 [[detector.companions]]
