@@ -8,7 +8,7 @@ use oracle_support::assert_detector_fires;
 fn top10_sendgrid_api_key_true_positive_must_fire() {
     assert_detector_fires(
         "sendgrid-api-key",
-        r"SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF",
-        "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF",
+        r"SG.0000000000000000000000.0000000000000000000000000000000000000000000",
+        "SG.0000000000000000000000.0000000000000000000000000000000000000000000",
     );
 }
