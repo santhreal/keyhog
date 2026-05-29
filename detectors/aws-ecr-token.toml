@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["AWS_ECR", "ecr.amazonaws.com", "get-login-password", "ECR_PASSWORD", "amazonaws"]
 
 [[detector.patterns]]
-regex = "(?:AWS_ECR|ECR|ecr)[\\w_]*(?:PASSWORD|TOKEN|auth)[=:\\s\"'']+([A-Za-z0-9+/=]{100,})"
+regex = "\\b(?:AWS_ECR|ECR|ecr)[\\w_]*(?:PASSWORD|TOKEN|auth)[=:\\s\"'']+([A-Za-z0-9+/=]{90,})"
 description = "AWS ECR authorization token (base64 encoded) with context anchor"
 group = 1
 

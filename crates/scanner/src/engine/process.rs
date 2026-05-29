@@ -201,6 +201,10 @@ impl CompiledScanner {
                 });
                 crate::telemetry::record_match_found();
             }
+            #[cfg(not(feature = "ml"))]
+            super::MlScoreResult::_Lifetime(_) => {
+                unreachable!("_Lifetime is a never-constructed placeholder variant")
+            }
         }
     }
 }

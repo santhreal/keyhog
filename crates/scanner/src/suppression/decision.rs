@@ -20,6 +20,35 @@ pub(super) fn should_suppress_inner(
     skip_b64_decode_recheck: bool,
     bypass_shape_gates: bool,
 ) -> bool {
+    should_suppress_inner_with_anchor(
+        credential,
+        path,
+        context,
+        source_type,
+        skip_b64_decode_recheck,
+        bypass_shape_gates,
+        false,
+    )
+}
+
+/// Inner suppression cascade with explicit credential-anchor signal.
+///
+/// `is_credential_anchor=true` means the caller has positive evidence the
+/// candidate is a credential (a `password=`/`token:`/`api_key=` keyword is
+/// directly attached to the value): the pure-hash-digest and UUID-v4 shape
+/// gates are SKIPPED because they would otherwise drop md5/sha1/sha256 / UUID
+/// secrets planted in those slots. All other gates (placeholders, masks,
+/// repetitions, paths, doc markers) still apply - those filter shapes that
+/// real credentials never have regardless of context.
+pub(super) fn should_suppress_inner_with_anchor(
+    credential: &str,
+    path: Option<&str>,
+    context: context::CodeContext,
+    source_type: Option<&str>,
+    skip_b64_decode_recheck: bool,
+    bypass_shape_gates: bool,
+    is_credential_anchor: bool,
+) -> bool {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
     let upper = credential.to_uppercase();
@@ -114,14 +143,16 @@ pub(super) fn should_suppress_inner(
     // Only suppress if the fake sequence is a DOMINANT part of the credential
     // (>50% of the non-prefix content). Substring matches in long credentials
     // produce false suppressions on real secrets.
-    const FAKE_SEQUENCES: &[&str] = &["1234567890", "0123456789", "ABCDEFGH", "ABCDEFGHIJ"];
-    for seq in FAKE_SEQUENCES {
-        if upper.contains(seq) {
-            // Only suppress short credentials dominated by the fake sequence,
-            // not long ones where it's a small substring.
-            let seq_ratio = seq.len() as f64 / credential.len().max(1) as f64;
-            if seq_ratio > 0.4 {
-                return true;
+    if !bypass_shape_gates {
+        const FAKE_SEQUENCES: &[&str] = &["1234567890", "0123456789", "ABCDEFGH", "ABCDEFGHIJ"];
+        for seq in FAKE_SEQUENCES {
+            if upper.contains(seq) {
+                // Only suppress short credentials dominated by the fake sequence,
+                // not long ones where it's a small substring.
+                let seq_ratio = seq.len() as f64 / credential.len().max(1) as f64;
+                if seq_ratio > 0.4 {
+                    return true;
+                }
             }
         }
     }
@@ -164,10 +195,13 @@ pub(super) fn should_suppress_inner(
     // Bench v19 confirmed both gates close the FP regression without
     // losing recall; the contracts_runner test caught the earlier
     // UUID over-suppression that prompted the split.
-    if !bypass_shape_gates && looks_like_hash_digest(credential) {
+    // Hash-digest + UUID gates also bypass when the caller signals a
+    // direct credential-keyword anchor: `TOKEN=<32-hex>` plants the hex
+    // AS the credential, not as a git SHA / image digest.
+    if !bypass_shape_gates && !is_credential_anchor && looks_like_hash_digest(credential) {
         return true;
     }
-    if !bypass_shape_gates && is_uuid_v4_shape(credential) {
+    if !bypass_shape_gates && !is_credential_anchor && is_uuid_v4_shape(credential) {
         return true;
     }
 

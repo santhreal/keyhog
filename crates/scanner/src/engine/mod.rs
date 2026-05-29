@@ -108,6 +108,13 @@ pub enum MlScoreResult<'a> {
         credential: std::borrow::Cow<'a, str>,
         ml_context: std::borrow::Cow<'a, str>,
     },
+    /// Zero-sized placeholder that keeps the `'a` lifetime live when ML batch
+    /// scoring is compiled out (lean / `--no-default-features` build). Never
+    /// constructed - it exists solely so the type still carries `'a` without
+    /// the `ml` feature, where only the borrowing `Pending` variant uses it.
+    #[cfg(not(feature = "ml"))]
+    #[doc(hidden)]
+    _Lifetime(std::marker::PhantomData<&'a ()>),
 }
 
 pub struct CompiledScanner {

@@ -183,7 +183,12 @@ fn collect_line_candidates(
         return;
     }
 
-    for candidate in extract_candidates(line, context.min_len, placeholder_keywords) {
+    for candidate in extract_candidates(
+        line,
+        context.min_len,
+        placeholder_keywords,
+        context.is_credential_context,
+    ) {
         let entropy = shannon_entropy(candidate.as_bytes());
         if !candidate_is_plausible(&candidate, entropy, context, placeholder_keywords)
             || !seen.insert(candidate.clone())

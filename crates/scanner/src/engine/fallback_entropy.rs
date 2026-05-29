@@ -99,6 +99,15 @@ impl CompiledScanner {
             // sha1-hex (61) + npm-lock-integrity (102) + others.
             // Calling the gate here closes the leak without
             // touching the other emit paths.
+            // Strict suppression here: entropy-fallback's "credential context"
+            // is keyword-PROXIMITY (any line within ±N lines of a credential
+            // keyword), which is too loose to bypass the hash-digest / UUID
+            // shape gates. A `# api_key` comment one line above a `sha256:`
+            // line would otherwise let the 64-hex digest through. The
+            // generic-secret path runs first on the same chunk and DOES use
+            // the credential-anchor variant (its regex requires the
+            // credential keyword directly adjacent to the value), so direct
+            // `TOKEN=<hex>` assignments still surface.
             if crate::pipeline::should_suppress_known_example_credential_with_source(
                 &entropy_match.value,
                 chunk.metadata.path.as_deref(),
