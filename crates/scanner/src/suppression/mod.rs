@@ -18,6 +18,6 @@ pub(crate) use shape::{
 };
 
 pub use api::{
-    should_suppress_known_example_credential, should_suppress_known_example_credential_with_anchor,
-    should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
+    should_suppress_known_example_credential, should_suppress_known_example_credential_with_source,
+    should_suppress_named_detector_finding,
 };
