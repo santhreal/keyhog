@@ -1,7 +1,14 @@
 - id: keyhog
   name: KeyHog Secret Scanner
   entry: keyhog scan --fast --git-staged
-  language: rust
+  # `language: system` runs the keyhog already on PATH. Install it first via
+  # the one-line installer (see README). The previous `language: rust` had
+  # pre-commit `cargo install` keyhog with default features, which links
+  # libhyperscan-dev (the `simd` feature) - absent on most dev machines, so
+  # the hook failed to BUILD on first use for nearly every adopter. Using the
+  # installed binary is fast, needs no toolchain, and matches the documented
+  # drop-in recipe (docs/DROP_IN_USAGE.md).
+  language: system
   # `keyhog --git-staged` self-discovers the staged blobs and scans their
   # STAGED content (not the working tree). The pre-commit framework otherwise
   # appends the changed filenames as positional args, and `keyhog scan` takes
