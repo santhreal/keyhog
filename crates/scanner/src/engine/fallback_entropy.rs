@@ -342,6 +342,25 @@ impl CompiledScanner {
                 continue;
             }
 
+            // Decode-through coherence (entropy-fallback path). The
+            // ML-pending pipeline calls `apply_post_ml_penalties`
+            // which gates on `decode_structure::is_encoded_binary`,
+            // but the entropy-fallback emits directly via
+            // `push_match` and skips that gate - so a generic
+            // high-entropy candidate that decodes to a PNG / gzip /
+            // PE / protobuf-wire message would surface here even
+            // though every named-detector and generic-secret emit
+            // would suppress it. This block closes the wiring gap
+            // so keyhog's decode-through advantage flows through
+            // every emit path, not just the ML-pending one. The
+            // verdict is definitional (magic bytes OR full
+            // protobuf-wire parse) so it never false-suppresses a
+            // real secret. Memoized in `decode_structure`, so the
+            // cost is a single bytes-hash + cache lookup.
+            if crate::decode_structure::is_encoded_binary(&entropy_match.value) {
+                continue;
+            }
+
             let detector_id = scan_state.intern_metadata(detector_id_value);
             let detector_name = scan_state.intern_metadata(detector_name_value);
             let service = scan_state.intern_metadata(service_value);
