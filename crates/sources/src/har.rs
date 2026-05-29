@@ -196,12 +196,30 @@ fn render_response(resp: &HarResponse) -> String {
         out.push('\n');
     }
     if let Some(content) = &resp.content {
-        if let Some(text) = &content.text {
+        if let Some(text) = decoded_content_text(content) {
             out.push('\n');
-            out.push_str(text);
+            out.push_str(&text);
         }
     }
     out
+}
+
+/// HAR `content.text` is base64-encoded when `content.encoding == "base64"`
+/// (HAR 1.2 spec). Decode it so credentials inside encoded response bodies
+/// are scanned instead of the opaque base64 blob. Malformed base64 (a
+/// truncated or corrupt encoding field) falls back to the raw text so a bad
+/// `encoding` value never drops the body from the scan entirely.
+fn decoded_content_text(content: &HarContent) -> Option<String> {
+    use base64::Engine as _;
+    let text = content.text.as_ref()?;
+    if content.encoding.as_deref() == Some("base64") {
+        match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
+            Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+            Err(_) => Some(text.clone()),
+        }
+    } else {
+        Some(text.clone())
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -260,6 +278,9 @@ struct HarPostData {
 struct HarContent {
     #[serde(default)]
     text: Option<String>,
+    /// HAR 1.2 `content.encoding`: when `"base64"`, `text` is base64.
+    #[serde(default)]
+    encoding: Option<String>,
 }
 
 #[cfg(test)]
@@ -334,5 +355,81 @@ mod tests {
         // Looks like HAR (has the markers) but JSON parser will reject.
         let half = br#"{"log": {"entries": [{"request": {"method": "GET", "url": "x"#;
         assert!(try_expand_har(half, "broken.har", 1024).is_none());
+    }
+
+    /// Build a one-entry HAR whose response body carries the given
+    /// `content.text` with the given optional `content.encoding`.
+    fn har_with_response_body(encoding: Option<&str>, text: &str) -> String {
+        let enc_field = match encoding {
+            Some(e) => format!(r#""encoding": "{e}","#),
+            None => String::new(),
+        };
+        format!(
+            r#"{{"log":{{"version":"1.2","creator":{{"name":"t","version":"1"}},
+            "entries":[{{"request":{{"method":"GET","url":"https://api.example.com/x",
+            "headers":[],"queryString":[]}},
+            "response":{{"status":200,"statusText":"OK","headers":[],
+            "content":{{"size":1,"mimeType":"application/json",{enc_field}"text":"{text}"}}}}}}]}}}}"#
+        )
+    }
+
+    #[test]
+    fn base64_encoded_response_body_is_decoded_before_scanning() {
+        // `{"aws_key":"AKIAQYLPMN5HFIQR7XYA"}` base64-encoded. Without
+        // decoding, the AWS key is invisible to the scanner: the response
+        // chunk holds only the opaque base64 blob. With encoding handling,
+        // the decoded JSON (and its key) lands in the scanned chunk.
+        let b64 = "eyJhd3Nfa2V5IjoiQUtJQVFZTFBNTjVIRklRUjdYWUEifQ==";
+        let har = har_with_response_body(Some("base64"), b64);
+        let chunks =
+            try_expand_har(har.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("HAR should parse");
+        let response = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:response")
+            .expect("a response chunk");
+        let body = response.data.as_ref();
+        assert!(
+            body.contains("AKIAQYLPMN5HFIQR7XYA"),
+            "decoded AWS key must be present in the scanned chunk; got: {body}"
+        );
+        assert!(
+            !body.contains(b64),
+            "raw base64 blob must not remain once decoded"
+        );
+    }
+
+    #[test]
+    fn malformed_base64_encoding_falls_back_to_raw_text() {
+        // `encoding: base64` but the text is not valid base64. The body must
+        // still be scanned (raw), never panic or get dropped.
+        let not_b64 = "AKIAQYLPMN5HFIQR7XYA not base64 @@@";
+        let har = har_with_response_body(Some("base64"), not_b64);
+        let chunks =
+            try_expand_har(har.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("HAR should parse");
+        let response = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:response")
+            .expect("a response chunk");
+        assert!(
+            response.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"),
+            "malformed base64 must fall back to scanning the raw text"
+        );
+    }
+
+    #[test]
+    fn plain_text_response_body_is_unchanged() {
+        // No encoding field: text is scanned verbatim (regression guard for
+        // the decode path not corrupting ordinary bodies).
+        let har = har_with_response_body(None, "AKIAQYLPMN5HFIQR7XYA");
+        let chunks =
+            try_expand_har(har.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("HAR should parse");
+        let response = chunks
+            .into_iter()
+            .map(|c| c.unwrap())
+            .find(|c| c.metadata.source_type == "wire:har:response")
+            .expect("a response chunk");
+        assert!(response.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"));
     }
 }

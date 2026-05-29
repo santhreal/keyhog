@@ -23,7 +23,7 @@ git = ["gix"]
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
 web = ["dep:reqwest", "dep:url"]
-github = ["dep:reqwest", "dep:tempfile", "dep:base64"]
+github = ["dep:reqwest", "dep:tempfile"]
 slack = ["dep:reqwest"]
 s3 = [
     "dep:reqwest",
@@ -73,7 +73,9 @@ features = ["blocking"]
 
 [dependencies.base64]
 workspace = true
-optional = true
+# Non-optional: har.rs decodes base64-encoded HAR response bodies
+# (`content.encoding == "base64"`, HAR 1.2 spec) on the always-on
+# filesystem path, same rationale as the unconditional serde dep below.
 
 [dependencies.serde]
 workspace = true
