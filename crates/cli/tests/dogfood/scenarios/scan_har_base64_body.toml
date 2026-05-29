@@ -1,0 +1,8 @@
+description = "Secret inside a base64-encoded HAR response body is decoded and detected, exit 1"
+corpus = ["har_base64.har"]
+args = ["scan", "--format", "json", "{corpus}/har_base64.har"]
+exit_code = 1
+max_ms = 20000
+
+[[expect]]
+detector_id = "aws-access-key"
