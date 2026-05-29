@@ -1,5 +1,5 @@
 # Docs: https://docs.anthropic.com/en/api/getting-started
-# Format: sk-ant-api03- followed by 93 alphanumeric/underscore/hyphen chars, hyphen, then 6 alphanumeric/underscore/hyphen chars ending in AA
+# Format: sk-ant-api03- followed by a variable-length URL-safe token body.
 # Verify: GET request to Anthropic messages endpoint with x-api-key header
 # Prefix: sk-ant-api03-
 
@@ -11,8 +11,9 @@ severity = "critical"
 keywords = ["sk-ant-", "anthropic"]
 
 [[detector.patterns]]
-regex = 'sk-ant-api03-[A-Za-z0-9_-]{93}-[A-Za-z0-9_-]{6}AA'
+regex = 'sk-ant-api03-[A-Za-z0-9_-]{80,120}'
 description = "Anthropic API key (sk-ant-api03-...)"
+group = 0
 
 [detector.verify]
 method = "GET"
@@ -27,5 +28,5 @@ template = "{{match}}"
 status = 200
 
 [[detector.tests]]
-test_positive = "ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-abc123AA"
+test_positive = "ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-abcdefghijklmnopqrstuvwx"
 test_negative = "SOME_RANDOM_KEY=not_anthropic_related"
