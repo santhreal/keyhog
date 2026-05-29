@@ -629,7 +629,7 @@ verify_install() {
                     err "    Fedora/RHEL:   sudo dnf install -y hyperscan"
                     err "    Arch:          sudo pacman -S vectorscan"
                     err "  Or rebuild from source with no Hyperscan dep:"
-                    err "    cargo install keyhog --no-default-features --features portable"
+                    err "    cargo install --git https://github.com/santhsecurity/keyhog --no-default-features --features portable"
                     ;;
                 *libssl*|*libcrypto*)
                     err "  Install OpenSSL runtime:"
