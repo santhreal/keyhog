@@ -214,6 +214,15 @@ def probe(model, num_features: int):
          "encryption_key = 9f8c2a1b4d6e7f80112233445566778899aabbccddeeff00", "high"),
         ("placeholder", "YOUR_API_KEY_HERE", "api_key = YOUR_API_KEY_HERE", "low"),
         ("base64 PNG", png, f"avatar = {png}", "low"),
+        # precision probes: bare/prose high-entropy tokens with NO anchor MUST
+        # read low (these were the mirror false positives).
+        ("bare token", "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2",
+         "value = Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2", "low"),
+        ("prose token", "aZ4kP9qR2sT7vW1xY6bC3dE8fG0hJ5mN",
+         "Session opened with handle aZ4kP9qR2sT7vW1xY6bC3dE8fG0hJ5mN. See docs.", "low"),
+        # recall probe: same shape WITH a secret keyword MUST read high.
+        ("anchored secret", "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2",
+         "api_key = Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2", "high"),
     ]
     model.eval()
     out = {}
