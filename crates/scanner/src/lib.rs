@@ -182,6 +182,10 @@ pub fn find_companion(
 pub mod testing {
     pub use crate::compiler::{rewrite_alternation_prefix, split_leading_inline_flag};
     pub use crate::confidence::penalties::finalize_confidence;
+    /// Full feature extractor (with detector-config keyword lists) exposed for
+    /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
+    /// must compute byte-identical features to the serve path.
+    pub use crate::ml_scorer::compute_features_with_config;
     pub use crate::engine::boundary::scan_chunk_boundaries;
     pub use crate::engine::gpu_postprocess::{
         attribute_matches_to_chunks, fold_overlapping_same_pid_inplace,

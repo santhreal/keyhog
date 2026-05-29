@@ -20,13 +20,16 @@ pub fn production_scanner() -> &'static CompiledScanner {
         let mut config = keyhog_scanner::ScannerConfig::default();
         config.unicode_normalization = true;
         config.min_confidence = 0.0;
-        CompiledScanner::compile(detectors).expect("compile scanner").with_config(config)
+        CompiledScanner::compile(detectors)
+            .expect("compile scanner")
+            .with_config(config)
     })
 }
 
 pub fn scan_text(text: &str, path: &str) -> Vec<RawMatch> {
+    let unescaped_text = unescape_rust_unicode(text);
     let chunk = Chunk {
-        data: text.into(),
+        data: unescaped_text.into(),
         metadata: ChunkMetadata {
             source_type: "adversarial".into(),
             path: Some(path.into()),
@@ -35,6 +38,53 @@ pub fn scan_text(text: &str, path: &str) -> Vec<RawMatch> {
         },
     };
     production_scanner().scan(&chunk)
+}
+
+fn unescape_rust_unicode(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek() == Some(&'u') {
+            chars.next(); // consume 'u'
+            if chars.peek() == Some(&'{') {
+                chars.next(); // consume '{'
+                let mut hex = String::new();
+                let mut valid = false;
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch == '}' {
+                        chars.next(); // consume '}'
+                        valid = true;
+                        break;
+                    } else if next_ch.is_ascii_hexdigit() {
+                        hex.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                if valid {
+                    if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                        if let Some(unicode_char) = char::from_u32(code) {
+                            output.push(unicode_char);
+                            continue;
+                        }
+                    }
+                }
+                output.push('\\');
+                output.push('u');
+                output.push('{');
+                output.push_str(&hex);
+                if valid {
+                    output.push('}');
+                }
+            } else {
+                output.push('\\');
+                output.push('u');
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 pub fn hits_for_detector<'a>(matches: &'a [RawMatch], detector_id: &str) -> Vec<&'a RawMatch> {
@@ -86,7 +136,7 @@ pub fn assert_detector_silent_across_chunk_boundary(detector_id: &str, text: &st
         },
     };
     let chunk_b = Chunk {
-        data: text.into(),
+        data: unescape_rust_unicode(text).into(),
         metadata: ChunkMetadata {
             source_type: "adversarial".into(),
             path: Some(path),
