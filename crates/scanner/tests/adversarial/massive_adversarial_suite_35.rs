@@ -70,10 +70,7 @@ fn adv35_flipt_normal_must_fire() {
 
 #[test]
 fn adv35_flipt_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "flipt-api-token",
-        "glipt_token = \"abcde12345abcde12345\"",
-    );
+    assert_detector_silent("flipt-api-token", "glipt_token = \"abcde12345abcde12345\"");
 }
 
 #[test]

@@ -70,10 +70,7 @@ fn adv21_cohere_normal_must_fire() {
 
 #[test]
 fn adv21_cohere_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "cohere-api-key",
-        "do_abcde12345abcde12345abcde12345",
-    );
+    assert_detector_silent("cohere-api-key", "do_abcde12345abcde12345abcde12345");
 }
 
 #[test]
