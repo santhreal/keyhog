@@ -177,12 +177,12 @@ impl CompiledScanner {
         Some(results)
     }
 
-    pub(crate) fn match_confidence(
+    pub(crate) fn match_confidence<'a>(
         &self,
         entry: &CompiledPattern,
         chunk: &Chunk,
-        credential: &str,
-        data: &str,
+        credential: &'a str,
+        data: &'a str,
         line: usize,
         entropy: f64,
         has_companion: bool,
@@ -205,7 +205,7 @@ impl CompiledScanner {
         // not bury it - see the rationale in `process_match`.
         is_named_detector: bool,
         scan_state: &mut ScanState,
-    ) -> Option<MlScoreResult> {
+    ) -> Option<MlScoreResult<'a>> {
         let raw_conf =
             crate::confidence::compute_confidence(&crate::confidence::ConfidenceSignals {
                 has_literal_prefix: extract_literal_prefix(entry.regex.as_str()).is_some(),
@@ -252,17 +252,17 @@ impl CompiledScanner {
         }
     }
 
-    fn calculate_final_score(
+    fn calculate_final_score<'a>(
         &self,
         heuristic_conf: f64,
         context: context::CodeContext,
-        credential: &str,
-        data: &str,
+        credential: &'a str,
+        data: &'a str,
         line: usize,
         chunk: &Chunk,
         is_named_detector: bool,
         _scan_state: &mut ScanState,
-    ) -> Option<MlScoreResult> {
+    ) -> Option<MlScoreResult<'a>> {
         #[cfg(not(feature = "ml"))]
         {
             let _ = (context, credential, data, line, chunk, is_named_detector);
@@ -311,8 +311,8 @@ impl CompiledScanner {
             Some(MlScoreResult::Pending {
                 heuristic_conf,
                 code_context: context,
-                credential: credential.to_string(),
-                ml_context,
+                credential: std::borrow::Cow::Borrowed(credential),
+                ml_context: std::borrow::Cow::Owned(ml_context),
             })
         }
     }

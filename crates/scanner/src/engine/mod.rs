@@ -97,7 +97,7 @@ fn env_per_chunk_deadline() -> Option<std::time::Instant> {
     ms.map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms))
 }
 
-pub enum MlScoreResult {
+pub enum MlScoreResult<'a> {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
     #[cfg(feature = "ml")]
@@ -105,8 +105,8 @@ pub enum MlScoreResult {
     Pending {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
-        credential: String,
-        ml_context: String,
+        credential: std::borrow::Cow<'a, str>,
+        ml_context: std::borrow::Cow<'a, str>,
     },
 }
 
@@ -141,6 +141,14 @@ pub struct CompiledScanner {
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]
     pub(crate) hs_index_map: Vec<Vec<usize>>,
+    /// Precise-regex validator per hot-pattern slot (index-parallel with
+    /// `simdsieve_prefilter::HOT_PATTERNS`). The hot fast-path runs each
+    /// literal-prefix candidate through these before emitting so it can never
+    /// surface a token the detector's own regex rejects (the length floor
+    /// alone let `ghp_…_…`/`xoxp-123-456-789-abc` through). `None` for the one
+    /// slot with no canonical detector (square).
+    #[cfg(feature = "simdsieve")]
+    pub(crate) hot_pattern_validators: Vec<Option<regex::Regex>>,
     pub config: ScannerConfig,
     pub alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
@@ -297,17 +305,20 @@ impl CompiledScanner {
                 || filename == ".keyhogignore"
                 || path.split(['/', '\\']).any(|c| c == "detectors")
             {
+                crate::telemetry::record_file_skipped();
                 return Vec::new();
             }
         }
 
         if let Some(screen) = &self.alphabet_screen {
             if !screen.screen(chunk.data.as_bytes()) {
+                crate::telemetry::record_file_skipped();
                 return Vec::new();
             }
         }
 
         if chunk.data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes()) {
+            crate::telemetry::record_file_skipped();
             return Vec::new();
         }
 
