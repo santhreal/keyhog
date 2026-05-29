@@ -165,14 +165,26 @@ path:scripts/
 # the example/regex tokens from each detector definition. The example
 # tokens are by-design tutorial content, not live credentials.
 path:site/
-# Source files that document detector regex shape in doc-comments.
-# Both contain illustrative AWS-access-key-shaped strings inside /// blocks
-# (regex literals and reverse-decoder fixtures). They are documentation,
-# not credentials, but the hot-pattern detector matches the shape every
-# CI run; suppress at the path level so the keyhog dog-food scan stays
-# at 0 findings.
+# Engine/parser source files that document detector regex shapes and
+# reverse-decoder fixtures inside /// doc-comments. They are documentation,
+# not credentials, but the hot-pattern fast path matches the shape every CI
+# run; suppress at the path level so the keyhog dog-food scan stays at 0.
+# (path_filter.rs moved out of pipeline/postprocess/ - keep the path current.)
 path:crates/scanner/src/decode/reverse.rs
-path:crates/scanner/src/pipeline/postprocess/suppression/path_filter.rs
+path:crates/scanner/src/suppression/path_filter.rs
+# Pinned v0.5.34 dog-food binary over-captures regex shapes and the
+# deliberate "this is NOT a token" counter-examples embedded in engine
+# doc-comments (simdsieve_prefilter, hot_patterns, engine/mod, har decode
+# fixture). The unreleased HEAD validator already rejects these. Suppress by
+# credential hash so the suppression is dedup-proof across every file that
+# quotes the same illustrative shape. Not live secrets.
+hash:01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2
+hash:76cae95dffa6aec51be9c44c76b13fbfe3e42733d0cc70029ad0d446363bea5a
+hash:a512490443708200a01b906808533c7805ee830c2af612b57e7ef47cbba8e1d7
+hash:d958bea220901fe230d4387420fc824757df47783f2d79ef7cfff99bff31ba0a
+hash:d87feb2a98b486e4ced10e33e459d82fad6df7083432ab2548e5d5e67f943e73
+hash:381a4f9e363361fe674d68bee7f8d38045d8a60e24f1aefb5b9e3bca7084163d
+hash:cd757e6a240a57d33e1c1daac2f2a1511ef635c9bee7eb88785d6498c9f5fe8a
 path:tailwind/
 path:target/
 path:test_extract
