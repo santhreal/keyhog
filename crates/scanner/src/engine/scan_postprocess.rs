@@ -393,8 +393,11 @@ impl CompiledScanner {
                 final_score *= pending.code_context.confidence_multiplier();
             }
 
-            let final_score =
-                crate::confidence::apply_post_ml_penalties(final_score, &pending.credential);
+            let final_score = crate::confidence::apply_post_ml_penalties(
+                final_score,
+                &pending.credential,
+                crate::confidence::is_service_anchored_detector(&pending.raw_match.detector_id),
+            );
             let final_score = crate::confidence::apply_path_confidence_penalties(
                 final_score,
                 pending.raw_match.location.file_path.as_deref(),

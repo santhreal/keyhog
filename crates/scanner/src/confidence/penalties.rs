@@ -93,8 +93,29 @@ pub fn max_repeat_run(credential: &str) -> f64 {
     max_run as f64 / len as f64
 }
 
+/// A detector is "service-anchored" when it is not a generic-* / entropy-* /
+/// private-key fallback. Such a detector's own regex (a service-specific
+/// keyword + shape) is positive evidence that the matched bytes ARE the
+/// credential, so the shape-based suspicion heuristics (probabilistic-promise
+/// gate, char-diversity / repeat-run penalties) that exist to filter the
+/// anchorless generic path must not bury it. This is the single predicate
+/// behind every "named anchor overrides shape" decision; keep it in one place.
+pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
+    !detector_id.starts_with("generic-")
+        && !detector_id.starts_with("entropy-")
+        && detector_id != "private-key"
+}
+
 /// Apply post-ML penalties based on hard-coded placeholder heuristics.
-pub fn apply_post_ml_penalties(score: f64, credential: &str) -> f64 {
+///
+/// `is_named` is true for service-anchored detectors. For those, the
+/// char-diversity and repeat-run SHAPE penalties are skipped: a 64-char hex
+/// Linode PAT or a UUID Heroku key has diversity ≤ 0.25 purely because hex/
+/// UUID alphabets are small, NOT because it is a false positive - the service
+/// anchor already proved it is real. The placeholder-WORD penalty still
+/// applies to everything (a named token literally containing "EXAMPLE" /
+/// "placeholder" is a doc sample regardless of which detector fired).
+pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
     if credential.is_empty() {
         return score;
     }
@@ -102,11 +123,25 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str) -> f64 {
     if contains_placeholder_word(credential) {
         adjusted *= 0.05;
     }
-    if char_diversity(credential) < 0.3 {
-        adjusted *= 0.1;
-    }
-    if max_repeat_run(credential) > 0.5 {
-        adjusted *= 0.1;
+    if is_named {
+        // Named detectors: a small-alphabet body (64-char hex has ≤ 16 distinct
+        // symbols → diversity ~0.25; base32 tokens similar) is a LEGIT
+        // credential, not an FP - the service anchor already proved it. Only
+        // penalize DEGENERATE values (effectively one repeated character), which
+        // no real key has, so a Linode 64-hex PAT survives but `aaaa…aaaa` dies.
+        if char_diversity(credential) < 0.1 {
+            adjusted *= 0.1;
+        }
+        if max_repeat_run(credential) > 0.8 {
+            adjusted *= 0.1;
+        }
+    } else {
+        if char_diversity(credential) < 0.3 {
+            adjusted *= 0.1;
+        }
+        if max_repeat_run(credential) > 0.5 {
+            adjusted *= 0.1;
+        }
     }
     finalize_confidence(adjusted)
 }

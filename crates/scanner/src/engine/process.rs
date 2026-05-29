@@ -123,6 +123,18 @@ impl CompiledScanner {
             return;
         }
 
+        // A named, service-anchored detector (anything that is not a
+        // generic-* / entropy-* / private-key fallback) carries positive
+        // evidence in its own regex: its match IS the credential. The
+        // probabilistic "looks_promising" gate in `calculate_final_score`
+        // is built to reject low-diversity / UUID / structured strings for
+        // the GENERIC entropy path - applied to a named detector it slams
+        // legitimate UUID/hex API keys (Heroku, Braze, Codecov, Consul,
+        // Linode, Databricks, +100 others) to 0.1, below the 0.3 report
+        // floor, silently deleting real secrets. Mirror the same anchor=
+        // positive-evidence rule the shape-gate bypass already uses so the
+        // gate stays load-bearing for generic-* but never buries a named hit.
+        let is_named_detector = crate::confidence::is_service_anchored_detector(&detector.id);
         let Some(score_result) = self.match_confidence(
             entry,
             chunk,
@@ -134,6 +146,7 @@ impl CompiledScanner {
             inferred_context,
             keyword_nearby,
             sensitive_file,
+            is_named_detector,
             scan_state,
         ) else {
             return;

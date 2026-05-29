@@ -13,6 +13,7 @@ pub use signals::ConfidenceSignals;
 
 use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
 pub use penalties::{char_diversity, contains_placeholder_word, max_repeat_run};
+pub(crate) use penalties::is_service_anchored_detector;
 pub use signals::is_sensitive_path;
 
 const SCORE_ZERO: f64 = 0.0;
