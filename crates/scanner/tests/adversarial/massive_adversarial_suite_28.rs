@@ -70,10 +70,7 @@ fn adv28_dune_normal_must_fire() {
 
 #[test]
 fn adv28_dune_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "dune-api-key",
-        "fune_api_key = \"abcde12345abcde12345\"",
-    );
+    assert_detector_silent("dune-api-key", "fune_api_key = \"abcde12345abcde12345\"");
 }
 
 #[test]

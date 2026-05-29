@@ -274,7 +274,7 @@ fn is_zero_width(ch: char) -> bool {
         '\u{180E}' | // Mongolian Vowel Separator
         '\u{200E}' | // Left-to-Right Mark
         '\u{200F}' | // Right-to-Left Mark
-        '\u{00AD}'   // Soft Hyphen
+        '\u{00AD}' // Soft Hyphen
     )
 }
 

@@ -70,10 +70,7 @@ fn adv19_chromadb_normal_must_fire() {
 
 #[test]
 fn adv19_chromadb_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "chromadb-api-key",
-        "DHROMA_AUTH_TOKEN = \"abcde12345\"",
-    );
+    assert_detector_silent("chromadb-api-key", "DHROMA_AUTH_TOKEN = \"abcde12345\"");
 }
 
 #[test]
@@ -166,10 +163,7 @@ fn adv19_clerk_normal_must_fire() {
 
 #[test]
 fn adv19_clerk_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "clerk-api-key",
-        "ak_live_00000000000000000000000000000000",
-    );
+    assert_detector_silent("clerk-api-key", "ak_live_00000000000000000000000000000000");
 }
 
 #[test]

@@ -118,10 +118,7 @@ fn adv30_epa_normal_must_fire() {
 
 #[test]
 fn adv30_epa_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "epa-api-key",
-        "fpa_key = \"abcde12345abcde12345\"",
-    );
+    assert_detector_silent("epa-api-key", "fpa_key = \"abcde12345abcde12345\"");
 }
 
 #[test]

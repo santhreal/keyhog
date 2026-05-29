@@ -531,7 +531,11 @@ fn git_staged_scan_finds_only_staged_secret() {
 fn baseline_suppresses_acknowledged_findings_on_rescan() {
     let dir = TempDir::new().expect("tempdir");
     let fixture = dir.path().join("planted.txt");
-    std::fs::write(&fixture, concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n")).unwrap();
+    std::fs::write(
+        &fixture,
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+    )
+    .unwrap();
     let baseline_path = dir.path().join("baseline.json");
 
     let create = Command::new(binary())
@@ -584,7 +588,11 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
 fn lockdown_bails_on_verify_flag() {
     let dir = TempDir::new().expect("tempdir");
     let fixture = dir.path().join("planted.txt");
-    std::fs::write(&fixture, concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n")).unwrap();
+    std::fs::write(
+        &fixture,
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+    )
+    .unwrap();
 
     // Lockdown requires RLIMIT_CORE=0 on Linux so coredump_filter checks
     // pass; `prlimit --core=0` sets that for the child without touching
@@ -651,7 +659,11 @@ fn daemon_wire_scan_path_finds_planted_secret() {
     let runtime = TempDir::new().expect("runtime dir");
     let dir = TempDir::new().expect("fixture dir");
     let fixture = dir.path().join("daemon_planted.txt");
-    std::fs::write(&fixture, concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n")).unwrap();
+    std::fs::write(
+        &fixture,
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+    )
+    .unwrap();
 
     let detectors = workspace_detectors();
     let mut daemon: Child = Command::new(binary())
