@@ -2,7 +2,8 @@
 
 #[cfg(feature = "binary")]
 mod capped {
-    use keyhog_sources::{BinarySource, Source};
+    use keyhog_core::Source;
+    use keyhog_sources::BinarySource;
     use std::io::Write;
 
     #[test]
