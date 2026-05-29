@@ -168,19 +168,27 @@ runs:
       shell: bash
       run: |
         set -uo pipefail
-        verify_flag=""
+        # Assemble args as an array so paths with spaces stay intact and
+        # optional flags are only appended when set.
+        args=(scan
+          --path "${{ inputs.path }}"
+          --severity "${{ inputs.severity }}"
+          --format "${{ inputs.format }}"
+          --output "${{ steps.outfile.outputs.name }}")
         if [[ "${{ inputs.verify }}" == "true" ]]; then
-          verify_flag="--verify"
+          args+=(--verify)
+        fi
+        # Wire the documented `baseline` input through to --baseline. Before
+        # this it was silently ignored, so adopters who set `baseline:` still
+        # had the job fail on every PRE-EXISTING finding instead of only NEW
+        # ones - the exact opposite of what the input promises.
+        if [[ -n "${{ inputs.baseline }}" ]]; then
+          args+=(--baseline "${{ inputs.baseline }}")
         fi
         # Run scan but DON'T exit on non-zero so we can count findings
         # before deciding whether to fail the job.
         set +e
-        keyhog scan \
-          --path "${{ inputs.path }}" \
-          --severity "${{ inputs.severity }}" \
-          --format "${{ inputs.format }}" \
-          $verify_flag \
-          --output "${{ steps.outfile.outputs.name }}"
+        keyhog "${args[@]}"
         keyhog_exit=$?
         set -e
 

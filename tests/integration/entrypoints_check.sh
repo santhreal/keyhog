@@ -47,14 +47,23 @@ fi
 
 ACT="$ROOT/.github/actions/keyhog/action.yml"
 if [ -f "$ACT" ]; then
-  # The Action's scan step must not use a nonexistent flag.
-  khlines=$(grep -nE 'keyhog scan' "$ACT")
-  if printf '%s' "$khlines" | grep -qE -- "$DENY"; then
-    echo "FAIL action.yml invokes keyhog with a nonexistent flag:"
-    printf '%s' "$khlines" | grep -E -- "$DENY" | sed 's/^/    /'
+  # Denylisted (nonexistent) flags must not appear anywhere in the Action -
+  # whole-file scan so it stays robust to how the invocation is assembled
+  # (inline `keyhog scan ...` or an `args=(scan ...)` array).
+  if grep -qE -- "$DENY" "$ACT"; then
+    echo "FAIL action.yml uses a nonexistent keyhog flag:"
+    grep -nE -- "$DENY" "$ACT" | sed 's/^/    /'
     fail=1
   else
-    note "OK   action.yml: keyhog invocation uses no denylisted flags"
+    note "OK   action.yml: no denylisted keyhog flags"
+  fi
+  # The Action must actually invoke the keyhog CLI: inline `keyhog scan` or the
+  # args-array form `keyhog "${args[@]}"`.
+  if grep -qE 'keyhog (scan|"\$\{args\[@\]\}")' "$ACT"; then
+    note "OK   action.yml: invokes the keyhog scan CLI"
+  else
+    echo "FAIL action.yml does not invoke 'keyhog scan' (inline or args-array)."
+    fail=1
   fi
   # SARIF upload should be guarded so a fork PR (no security-events:write) does
   # not hard-fail the whole workflow.

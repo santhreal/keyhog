@@ -22,7 +22,25 @@ SARIF, upload to code-scanning.
     verify: 'false'             # 'true' to live-verify credentials
     upload-sarif: 'true'        # 'false' to keep the report local-only
     fail-on-findings: 'true'    # 'false' to make findings advisory
+    baseline: ''                # path to a committed baseline file; only NEW
+                                # findings (absent from the baseline) fail the job
     version: ''                 # pin a specific release (default: action ref)
+```
+
+### Adopting on a repo that already has findings
+
+Generate a baseline once, commit it, then point the action at it. The job
+then blocks only **new** secrets instead of failing on the existing backlog:
+
+```bash
+keyhog scan --create-baseline keyhog-baseline.json
+git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
+```
+
+```yaml
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
+  with:
+    baseline: keyhog-baseline.json
 ```
 
 ## Outputs
