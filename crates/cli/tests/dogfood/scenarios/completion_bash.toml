@@ -1,0 +1,5 @@
+description = "completion emits a valid bash completion script, exit 0"
+args = ["completion", "bash"]
+exit_code = 0
+max_ms = 20000
+stdout_contains = ["_keyhog()", "COMPREPLY"]

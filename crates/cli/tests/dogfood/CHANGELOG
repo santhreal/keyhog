@@ -6,3 +6,4 @@
 # date        scenario                  why
 2026-05-28    (initial)                 Seed gate: aws-env, clean, fp-trap, multi-detector, json-envelope, sarif, detectors-list.
 2026-05-28    text-format, missing-path Add text-format render surface and the exit-2 missing-path usage-error surface.
+2026-05-28    explain, completion       Add explain-detector and bash-completion subcommand surfaces.
