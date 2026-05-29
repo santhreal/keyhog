@@ -198,6 +198,10 @@ impl CompiledScanner {
                             || has_secret_keyword_fast(chunk.data.as_bytes()))
                     {
                         let mut matches = self.scan_inner(chunk, ScanBackend::SimdCpu, None);
+                        // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing
+                        if matches.capacity() < 16 {
+                            matches.reserve(16 - matches.len());
+                        }
                         // Preserve cross-file fragment reassembly that
                         // the previous no-hit branch did. The fragment
                         // cache is mostly populated by named-detector
@@ -229,6 +233,11 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
+        // KH-116: Record scan metrics atomically
+        crate::telemetry::record_file_scanned(chunk.data.len());
+        if backend == crate::hw_probe::ScanBackend::Gpu || backend == crate::hw_probe::ScanBackend::MegaScan {
+            crate::telemetry::record_gpu_dispatch();
+        }
         let prepared = self.prepare_chunk(chunk);
         let triggered =
             self.collect_triggered_patterns_for_backend(&prepared.preprocessed.text, backend);
@@ -244,7 +253,8 @@ impl CompiledScanner {
     /// .env with AWS_SECRET in another.
     #[cfg(feature = "simd")]
     fn record_and_reassemble_for_no_hit_chunk(&self, chunk: &Chunk, matches: &mut Vec<RawMatch>) {
-        let mut reassembled_candidates = Vec::new();
+        // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing
+        let mut reassembled_candidates = Vec::with_capacity(16);
         // Pre-allocate the path Arc once per chunk: every match in a
         // single chunk shares the same path, so cloning an Arc<str>
         // reference is cheaper than cloning the owned String per-match.
@@ -253,6 +263,9 @@ impl CompiledScanner {
             .path
             .as_deref()
             .map(std::sync::Arc::<str>::from);
+        if matches.capacity() < matches.len() + 16 {
+            matches.reserve(16);
+        }
         for m in matches.iter() {
             if let Some(path) = path_arc.as_ref() {
                 let fragment = crate::fragment_cache::SecretFragment {
