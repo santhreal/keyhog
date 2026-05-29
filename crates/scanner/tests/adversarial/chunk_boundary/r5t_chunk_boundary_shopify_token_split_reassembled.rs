@@ -12,7 +12,7 @@ fn r5t_chunk_boundary_shopify_token_split_reassembled() {
     d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
-    let secret = "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";
+    let secret = "shpat_00000000000000000000000000000000";
     let split = 14;
     let pad = "z\n".repeat(4096);
     let mut data_a = pad.clone();

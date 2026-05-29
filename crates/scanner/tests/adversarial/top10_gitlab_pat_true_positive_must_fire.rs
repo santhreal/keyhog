@@ -8,7 +8,7 @@ use oracle_support::assert_detector_fires;
 fn top10_gitlab_pat_true_positive_must_fire() {
     assert_detector_fires(
         "gitlab-personal-access-token",
-        r"glpat-aB3kQp7VbT2hYRzNcMfW",
-        "glpat-aB3kQp7VbT2hYRzNcMfW",
+        r"glpat-00000000000000000000",
+        "glpat-00000000000000000000",
     );
 }

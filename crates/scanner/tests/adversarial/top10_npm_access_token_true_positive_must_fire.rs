@@ -8,7 +8,7 @@ use oracle_support::assert_detector_fires;
 fn top10_npm_access_token_true_positive_must_fire() {
     assert_detector_fires(
         "npm-access-token",
-        r"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",
-        "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",
+        r"npm_000000000000000000000000000000000000",
+        "npm_000000000000000000000000000000000000",
     );
 }
