@@ -1,0 +1,5 @@
+description = "Scanning a path that does not exist is a usage error: exit 2, no findings on stdout"
+args = ["scan", "--format", "json", "{corpus}/this_file_is_absent.env"]
+exit_code = 2
+max_ms = 20000
+stdout_excludes = ["detector_id"]
