@@ -284,7 +284,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-deny
-        run: cargo install --locked cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
       # `cargo deny check` walks up the directory tree looking for the
       # nearest deny.toml; without an explicit --config it would find
       # the Santh-monorepo policy at /media/.../Santh/deny.toml which
@@ -302,7 +304,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       # The four `--ignore` flags below match the four
       # accept-with-rationale advisories in `audit.toml` (the workspace
       # root file that documents the security review). Adding a fifth
@@ -326,7 +330,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
-      - run: cargo build --release -p keyhog
+      # release-fast (thin LTO, codegen-units=16) is the profile built for
+      # exactly this gate: -O3 validation + smoke without the multi-minute
+      # fat-LTO link. The shipped fat-LTO `--release` build is still gated on
+      # every PR by the macos-build job (portable variant) and produced for
+      # real at tag time by release.yml, so this loses no fat-LTO coverage.
+      - run: cargo build --profile release-fast -p keyhog
       - name: Smoke test
         run: |
           set +e
@@ -343,7 +352,7 @@ jobs:
           prefix="sk_$(printf live)"
           body="4eC39HqLyjWDarjtT1zdp7dc"
           printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
-            | ./target/release/keyhog scan --stdin --min-confidence 0.0 \
+            | ./target/release-fast/keyhog scan --stdin --min-confidence 0.0 \
                 --no-suppress-test-fixtures
           test $? -eq 1  # exit 1 = findings detected (expected)
 
