@@ -11,8 +11,14 @@ severity = "critical"
 keywords = ["SCW", "SCALEWAY_ACCESS_KEY", "scaleway"]
 
 [[detector.patterns]]
-regex = "(?:SCW_SECRET_KEY|scaleway_secret_key|secret[_-]key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
-description = "Scaleway secret key (UUID format)"
+# Anchor narrowed to SCW_SECRET_KEY / scaleway_secret_key only
+# (2026-05-29). The previous alternation included a bare `secret[_-]key`
+# arm with NO Scaleway prefix - any `secret_key=<uuid>` shape in any
+# Vault, Stripe, AWS, GCP, k8s config trip-fired Scaleway. Mirror v23:
+# 12 FPs. Every contract positive / evasion anchors on SCW_SECRET_KEY,
+# so the narrowed regex preserves recall on every contract shape.
+regex = "(?:SCW_SECRET_KEY|scaleway_secret_key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Scaleway secret key (SCW-anchored, UUID body)"
 group = 1
 
 [[detector.companions]]
