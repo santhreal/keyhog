@@ -4,8 +4,15 @@ use crate::entropy::shannon_entropy;
 /// 4 length features + 4 entropy features + 4 character class features +
 /// 4 prefix features + 4 context features + 4 placeholder features +
 /// 4 structure features + 6 file-type one-hot features + 3 extra features
-/// (comment, assignment, test-file) = 37 base + 4 padding = 41.
-pub const NUM_FEATURES: usize = 41;
+/// (comment, assignment, test-file) = 37 base + 4 padding = 41, plus the
+/// decode-structure feature (#41) = 42.
+///
+/// Feature 41 is keyhog's decode-through advantage fed to the model: 1.0 when
+/// the candidate base64/hex-decodes to an identifiable binary asset (magic
+/// bytes) or a full protobuf-wire message, else 0.0. Training showed it lifts
+/// held-out F1 0.924 -> 0.964 and drives the base64-of-binary false-flag rate
+/// from 18% to 0% with no recall loss (see ml/train_classifier.py).
+pub const NUM_FEATURES: usize = 42;
 
 /// Offset into the feature vector where the one-hot file-type encoding starts.
 const FILE_TYPE_OFFSET: usize = 32;
@@ -52,6 +59,8 @@ const BINARY_FILE_TYPE_INDEX: usize = 5;
 const COMMENT_CONTEXT_FEATURE_INDEX: usize = 38;
 const ASSIGNMENT_OPERATOR_FEATURE_INDEX: usize = 39;
 const TEST_FILE_CONTEXT_FEATURE_INDEX: usize = 40;
+/// Decode-structure verdict: candidate decodes to identifiable binary / protobuf.
+const DECODE_STRUCTURE_FEATURE_INDEX: usize = 41;
 
 const COMMENT_PREFIXES: &[&str] = &["#", "//", "/*", "--"];
 const BINARY_MARKERS: &[&str] = &[
@@ -123,8 +132,13 @@ pub fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES]
     compute_features_with_config(text, context, &[], &[], &[], &[])
 }
 
-/// Compute the 41-dimensional feature vector.
-pub(crate) fn compute_features_with_config(
+/// Compute the full feature vector with detector-config keyword lists.
+///
+/// Public so the ML training-pipeline parity harness (`ml/parity_check.py`,
+/// driven by the `dump_features` example) can compute byte-identical features
+/// to this serve path - a retrained `weights.bin` is only valid if the Python
+/// feature port matches this function exactly.
+pub fn compute_features_with_config(
     text: &str,
     context: &str,
     known_prefixes: &[String],
@@ -165,7 +179,19 @@ pub(crate) fn compute_features_with_config(
     apply_structure_features(&mut f, &text_summary, text_bytes);
     apply_file_type_feature(&mut f, context);
     apply_extra_features(&mut f, context, context_bytes);
+    apply_decode_structure_feature(&mut f, text);
     f
+}
+
+/// Feature 41: keyhog's decode-through advantage as a model input. Fires when
+/// the candidate base64/hex-decodes to an identifiable binary asset (PNG, gzip,
+/// zip, ELF, ...) or a full protobuf-wire message - signals that a generic
+/// high-entropy string is embedded data, not a credential. The model learns a
+/// strong negative weight, so base64-of-binary is filtered while real base64
+/// secrets (which carry no magic header and do not parse as protobuf) survive.
+fn apply_decode_structure_feature(features: &mut [f32; NUM_FEATURES], text: &str) {
+    features[DECODE_STRUCTURE_FEATURE_INDEX] =
+        binary_feature(crate::decode_structure::is_encoded_binary(text));
 }
 
 /// File-context fragments that imply this match is in test/fixture code.
