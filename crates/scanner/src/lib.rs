@@ -40,6 +40,8 @@ pub mod resolution;
 pub mod static_intern;
 /// Shared types for the scanner engine.
 pub mod types;
+/// Scanner configuration and state.
+pub mod scanner_config;
 
 // Internal modules.
 /// SIMD-accelerated alphabet pre-filtering.
@@ -53,6 +55,10 @@ pub mod bigram_bloom;
 pub(crate) mod entropy_avx512;
 /// Fast scalar entropy calculation.
 pub mod entropy_fast;
+#[cfg(target_arch = "x86_64")]
+pub(crate) mod entropy_fast_x86;
+#[cfg(target_arch = "aarch64")]
+pub(crate) mod entropy_fast_neon;
 /// JWT structural validation and anomaly detection.
 pub mod jwt;
 // `fragment_cache` lives under `multiline/` (its only call sites are there);
@@ -186,6 +192,20 @@ pub mod testing {
         pub use crate::ascii_ci::{ci_find, contains_path_segment, contains_path_segment_two};
     }
 
+    pub mod shape {
+        pub use crate::suppression::shape::{
+            looks_like_syntactic_punctuation_marker,
+            looks_like_credential_colliding_punctuation,
+            looks_like_punctuation_decorated_identifier,
+        };
+    }
+
+    pub mod compiler_prefix {
+        pub use crate::compiler::compiler_prefix::{
+            extract_literal_prefixes, strip_leading_boundary_guard, strip_leading_inline_flags,
+        };
+    }
+
     pub use crate::decode::caesar::{
         caesar_shift, is_source_code_path, looks_credential_shaped, CaesarDecoder,
     };
@@ -226,7 +246,7 @@ pub mod testing {
 
     #[cfg(feature = "simdsieve")]
     pub use crate::simdsieve_prefilter::{
-        HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
+        HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
     };
 
     pub use crate::structured::parsers::{

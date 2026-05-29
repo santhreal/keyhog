@@ -105,6 +105,7 @@ keyhog-verifier = { workspace = true }
 proptest = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
+md5 = "0.7"
 # `toml` moved to [dependencies] for the Tier-B disclaimer-phrase
 # loader in src/context/false_positive.rs.
 

@@ -457,6 +457,12 @@ path = "crates/scanner/src/entropy_avx512.rs"
 path = "crates/scanner/src/entropy_fast.rs"
 
 [[module]]
+path = "crates/scanner/src/entropy_fast_neon.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy_fast_x86.rs"
+
+[[module]]
 path = "crates/scanner/src/entropy/keywords.rs"
 
 [[module]]
