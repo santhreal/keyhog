@@ -1,0 +1,14 @@
+description = "Secrets nested inside JSON string values are extracted at multiple depths"
+corpus = ["json_envelope.json"]
+args = ["scan", "--format", "json", "{corpus}/json_envelope.json"]
+exit_code = 1
+max_ms = 20000
+expect_total = 2
+
+[[expect]]
+detector_id = "aws-access-key"
+line = 5
+
+[[expect]]
+detector_id = "hot-github_pat"
+line = 7

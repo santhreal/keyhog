@@ -1,0 +1,6 @@
+description = "Placeholder/example credentials must NOT fire: zero findings, exit 0"
+corpus = ["fp_trap.txt"]
+args = ["scan", "--format", "json", "{corpus}/fp_trap.txt"]
+exit_code = 0
+max_ms = 20000
+expect_total = 0

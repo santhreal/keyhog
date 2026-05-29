@@ -1,0 +1,11 @@
+description = "AWS access key in a .env: json output, exit 1, found at line 6"
+corpus = ["aws_leak.env"]
+args = ["scan", "--format", "json", "{corpus}/aws_leak.env"]
+exit_code = 1
+max_ms = 20000
+
+[[expect]]
+detector_id = "aws-access-key"
+line = 6
+
+forbid = ["github-pat", "hot-github_pat"]

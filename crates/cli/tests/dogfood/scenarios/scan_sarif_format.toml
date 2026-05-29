@@ -1,0 +1,6 @@
+description = "SARIF output is well-formed v2.1.0 and carries the finding rule id"
+corpus = ["aws_leak.env"]
+args = ["scan", "--format", "sarif", "{corpus}/aws_leak.env"]
+exit_code = 1
+max_ms = 20000
+stdout_contains = ["\"$schema\"", "2.1.0", "aws-access-key"]

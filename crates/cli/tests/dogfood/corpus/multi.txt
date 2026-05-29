@@ -1,0 +1,5 @@
+several distinct credential shapes, one per line, for multi-detector coverage
+github_pat=ghp_016C7f8a9B0c1D2e3F4g5H6i7J8k9L0m1N2o
+stripe_live=@@STRIPE@@
+slack_bot=@@SLACK@@
+google_api=AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q

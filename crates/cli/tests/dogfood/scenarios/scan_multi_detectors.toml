@@ -1,0 +1,22 @@
+description = "Four distinct credential shapes each fire their own detector at a fixed line"
+corpus = ["multi.txt"]
+args = ["scan", "--format", "json", "{corpus}/multi.txt"]
+exit_code = 1
+max_ms = 20000
+expect_total = 4
+
+[[expect]]
+detector_id = "hot-github_pat"
+line = 2
+
+[[expect]]
+detector_id = "stripe-secret-key"
+line = 3
+
+[[expect]]
+detector_id = "slack-bot-token"
+line = 4
+
+[[expect]]
+detector_id = "google-api-key"
+line = 5
