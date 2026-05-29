@@ -105,10 +105,7 @@ pub fn http_client() -> Result<reqwest::Client> {
 /// Resolve the release to operate on. With `version`, fetch that exact tag;
 /// otherwise the most recent release that actually shipped assets (a release
 /// can exist with zero assets if the workflow failed mid-upload).
-pub async fn resolve_release(
-    client: &reqwest::Client,
-    version: Option<&str>,
-) -> Result<Release> {
+pub async fn resolve_release(client: &reqwest::Client, version: Option<&str>) -> Result<Release> {
     if let Some(tag) = version {
         let url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
         return client
@@ -172,10 +169,7 @@ pub fn select_asset(release: &Release, want_cuda: bool) -> Result<&Asset> {
 /// Download an asset over HTTPS and confirm it's a native executable for this
 /// platform before handing the bytes back. The single seam where minisign
 /// signature verification will slot in.
-pub async fn download_verified_asset(
-    client: &reqwest::Client,
-    asset: &Asset,
-) -> Result<Vec<u8>> {
+pub async fn download_verified_asset(client: &reqwest::Client, asset: &Asset) -> Result<Vec<u8>> {
     let bytes = client
         .get(&asset.browser_download_url)
         .send()
