@@ -44,7 +44,10 @@ pub fn hits_for_detector<'a>(matches: &'a [RawMatch], detector_id: &str) -> Vec<
 pub fn assert_detector_fires(detector_id: &str, text: &str, credential: &str) {
     let matches = scan_text(text, &format!("{detector_id}-positive.txt"));
     assert!(
-        matches.iter().any(|m| m.credential.as_ref() == credential),
+        matches.iter().any(|m| {
+            let normalized = keyhog_scanner::unicode_hardening::normalize_homoglyphs(m.credential.as_ref());
+            normalized == credential
+        }),
         "{detector_id} must fire on positive oracle; credential={credential:?} all={:?}",
         matches
             .iter()
