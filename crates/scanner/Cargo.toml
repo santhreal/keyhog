@@ -69,6 +69,7 @@ vyre-driver-wgpu = { workspace = true }
 vyre-runtime = { workspace = true, features = ["megakernel-batch"] }
 
 simdsieve = { workspace = true, optional = true }
+dashmap = { workspace = true }
 parking_lot = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
