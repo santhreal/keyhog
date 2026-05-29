@@ -17,7 +17,10 @@ pub fn production_scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
     SCANNER.get_or_init(|| {
         let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
-        CompiledScanner::compile(detectors).expect("compile scanner")
+        let mut config = keyhog_scanner::ScannerConfig::default();
+        config.unicode_normalization = true;
+        config.min_confidence = 0.0;
+        CompiledScanner::compile(detectors).expect("compile scanner").with_config(config)
     })
 }
 
