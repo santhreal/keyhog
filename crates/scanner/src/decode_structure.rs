@@ -107,6 +107,120 @@ pub fn is_encoded_binary(candidate: &str) -> bool {
     })
 }
 
+/// Placeholder words that mark a credential as a documentation sample, not a
+/// real secret. Shared with `confidence::penalties::contains_placeholder_word`
+/// for the SURFACE form; this module's [`decoded_contains_placeholder`] runs
+/// the same check against the BASE64 / HEX decoded form so a base64-wrapped
+/// `AKIAEXAMPLEEXAMPLE12` (= `QUtJQUVYQU1QTEVFWEFNUExFMTI=`) is still caught.
+const DECODED_PLACEHOLDER_WORDS: &[&[u8]] = &[
+    b"example",
+    b"dummy",
+    b"fake",
+    b"sample",
+    b"placeholder",
+    b"changeme",
+];
+
+/// Shape-only check: does `value` look like a uniform base64 blob with no
+/// structure markers? Strict criteria - 60+ chars long, multiple-of-4 length
+/// or trailing `=` padding, every char in the standard base64 alphabet,
+/// AND contains at least one `+` / `/` punct or has padding. Matches the
+/// `random-base64-protobuf` corpus shape (random bytes base64-encoded into
+/// a `password=`/`secret=` slot) without firing on real service-anchored
+/// credentials:
+///   * AWS secret access keys (40 base62 chars, no +/, no padding) - skipped
+///   * GitHub PATs (40+ chars but contain `_`) - skipped
+///   * npm tokens (36 chars base62) - too short, skipped
+///   * Stripe keys (32 chars, `sk_`/`pk_` prefix with `_`) - skipped
+///   * Slack tokens (xox*-prefixed with `-`) - skipped
+///   * JWT tokens (`.` separators) - skipped
+///   * OAuth bearer tokens at 40-59 chars - skipped via 60-char floor
+///
+/// Used by `confidence::penalties::apply_post_ml_penalties` as the generic-
+/// detector branch's "this is a random base64 blob, not a credential" gate.
+/// Mirror v27 had 56 base64-protobuf FPs surviving every other suppression;
+/// this is the dedicated gate for that class.
+#[must_use]
+pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
+    if !(60..=300).contains(&value.len()) {
+        return false;
+    }
+    let has_padding = value.ends_with("==") || value.ends_with('=');
+    let length_mult_4 = value.len() % 4 == 0;
+    if !has_padding && !length_mult_4 {
+        return false;
+    }
+    let mut has_b64_punct = false;
+    for b in value.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'=' => {}
+            b'+' | b'/' => has_b64_punct = true,
+            _ => return false,
+        }
+    }
+    has_b64_punct || has_padding
+}
+
+/// Decode `candidate` (base64 / url-safe-base64 / hex) and check whether the
+/// decoded bytes contain any placeholder word case-insensitively. Composes
+/// keyhog's decode-through with the placeholder suppression: a docs sample
+/// that arrives base64-wrapped (e.g. AWS docs publishing AKIAEXAMPLEEXAMPLE12
+/// as the base64-encoded body of a yaml secret) is now recognized as a sample
+/// even though the surface form looks like high-entropy random bytes. Mirror
+/// v26: 9 docs-example-marker FPs (all `QUtJQUVYQU1QTEVFWEFNUExFMTI=`, base64
+/// of AKIA...EXAMPLE...12) collapsed by this gate. Memoized to match the
+/// existing `is_encoded_binary` call cadence.
+#[must_use]
+pub fn decoded_contains_placeholder(candidate: &str) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    const MAX_CACHE_ENTRIES: usize = 4096;
+
+    thread_local! {
+        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
+    }
+
+    // FNV-1a over the candidate bytes - keyed identically to is_encoded_binary
+    // so the two caches cost a single hash per credential.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in candidate.as_bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    CACHE.with(|cache| {
+        if let Some(&verdict) = cache.borrow().get(&hash) {
+            return verdict;
+        }
+        let verdict = compute_decoded_contains_placeholder(candidate);
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= MAX_CACHE_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(hash, verdict);
+        verdict
+    })
+}
+
+fn compute_decoded_contains_placeholder(candidate: &str) -> bool {
+    let trimmed = candidate.trim();
+    if trimmed.len() < MIN_DECODE_LEN {
+        return false;
+    }
+    let Some(bytes) = decode_candidate(trimmed) else {
+        return false;
+    };
+    if bytes.is_empty() {
+        return false;
+    }
+    DECODED_PLACEHOLDER_WORDS.iter().any(|word| {
+        bytes
+            .windows(word.len())
+            .any(|window| window.eq_ignore_ascii_case(word))
+    })
+}
+
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe
 /// the resulting bytes. Returns a default (non-decodable) structure when the
 /// candidate is too short or not a clean encoding.

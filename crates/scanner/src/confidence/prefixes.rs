@@ -89,7 +89,9 @@ pub const KNOWN_PREFIXES: &[&str] = &[
 /// all surfaced through this exact path; this single guard kills them.
 #[must_use]
 pub fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
-    if super::penalties::contains_placeholder_word(credential) {
+    if super::penalties::contains_placeholder_word(credential)
+        || crate::decode_structure::decoded_contains_placeholder(credential)
+    {
         return None;
     }
     if KNOWN_PREFIXES
