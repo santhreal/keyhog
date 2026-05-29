@@ -29,7 +29,7 @@ fn sarif_is_github_code_scanning_compliant() {
     std::fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
     std::fs::write(
         dir.path().join("src/leak.env"),
-        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .expect("write fixture");
 

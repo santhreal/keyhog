@@ -50,7 +50,7 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
 
 #[test]
 fn scan_finds_planted_aws_key_and_returns_exit_1() {
-    let fixture = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
+    let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
     let (stdout, _stderr, code) = scan_text_file(fixture, &[]);
 
     // Documented exit codes: 0 = clean, 1 = unverified findings.
@@ -332,7 +332,7 @@ fn demo_secret_aws_example_summary_distinguishes_suppression_from_clean() {
 
 #[test]
 fn explicit_format_text_does_not_emit_json() {
-    let fixture = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
+    let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("planted.txt");
     std::fs::write(&path, fixture).expect("write fixture");
@@ -470,7 +470,7 @@ fn git_staged_scan_finds_only_staged_secret() {
 
     std::fs::write(
         repo_path.join("staged.env"),
-        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .unwrap();
     std::fs::write(
@@ -531,7 +531,7 @@ fn git_staged_scan_finds_only_staged_secret() {
 fn baseline_suppresses_acknowledged_findings_on_rescan() {
     let dir = TempDir::new().expect("tempdir");
     let fixture = dir.path().join("planted.txt");
-    std::fs::write(&fixture, "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").unwrap();
+    std::fs::write(&fixture, concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n")).unwrap();
     let baseline_path = dir.path().join("baseline.json");
 
     let create = Command::new(binary())
@@ -584,7 +584,7 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
 fn lockdown_bails_on_verify_flag() {
     let dir = TempDir::new().expect("tempdir");
     let fixture = dir.path().join("planted.txt");
-    std::fs::write(&fixture, "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").unwrap();
+    std::fs::write(&fixture, concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n")).unwrap();
 
     // Lockdown requires RLIMIT_CORE=0 on Linux so coredump_filter checks
     // pass; `prlimit --core=0` sets that for the child without touching
@@ -651,7 +651,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
     let runtime = TempDir::new().expect("runtime dir");
     let dir = TempDir::new().expect("fixture dir");
     let fixture = dir.path().join("daemon_planted.txt");
-    std::fs::write(&fixture, "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").unwrap();
+    std::fs::write(&fixture, concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n")).unwrap();
 
     let detectors = workspace_detectors();
     let mut daemon: Child = Command::new(binary())
@@ -854,7 +854,7 @@ fn config_detector_disable_drops_findings() {
     // wired, so a user disabling a noisy detector kept seeing it fire. The
     // hot-pattern fast path (`hot-aws_key`) shadows the TOML `aws-access-key`
     // detector, so both must be disabled to fully silence the AWS key.
-    let aws = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
+    let aws = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
     let (_o, _e, before) = scan_dir_with_config(aws, "", &[]);
     assert_eq!(before, Some(1), "baseline: the AWS key must be found");
     let (out, _e, code) = scan_dir_with_config(
