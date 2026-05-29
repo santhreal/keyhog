@@ -8,7 +8,7 @@ use oracle_support::assert_detector_fires;
 fn top10_google_api_key_true_positive_must_fire() {
     assert_detector_fires(
         "google-api-key",
-        r"AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV",
-        "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV",
+        r"AIza00000000000000000000000000000000000",
+        "AIza00000000000000000000000000000000000",
     );
 }

@@ -8,7 +8,7 @@ use oracle_support::assert_detector_fires;
 fn top10_openai_api_key_true_positive_must_fire() {
     assert_detector_fires(
         "openai-api-key",
-        r"sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ",
-        "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ",
+        r"sk-proj-000000000000000000000000000000000000000000000000",
+        "sk-proj-000000000000000000000000000000000000000000000000",
     );
 }
