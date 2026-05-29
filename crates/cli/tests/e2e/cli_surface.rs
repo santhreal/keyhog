@@ -133,8 +133,11 @@ fn scan_json_is_valid_array_with_detector_id() {
     let v: serde_json::Value =
         serde_json::from_str(&so).expect("scan --format json must emit valid JSON");
     let arr = v.as_array().expect("findings is a JSON array");
+    // The high-precision hot-pattern fast path (`hot-aws_key`) is what fires
+    // on an `AKIA…` key and shadows the TOML `aws-access-key` detector; assert
+    // the id that actually fires, not the corpus twin.
     assert!(
-        arr.iter().any(|f| f["detector_id"] == "aws-access-key"),
+        arr.iter().any(|f| f["detector_id"] == "hot-aws_key"),
         "got: {so}"
     );
 }
@@ -240,7 +243,7 @@ fn scan_deep_mode_finds_aws_key() {
     let (so, _se, code) = out(&["scan", "--no-daemon", "--deep", "--format", "json", &p]);
     assert_eq!(code, Some(1));
     assert!(
-        so.contains("aws-access-key"),
+        so.contains("AKIA"),
         "deep mode missed the AWS key: {so}"
     );
 }

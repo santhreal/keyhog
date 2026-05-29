@@ -42,10 +42,44 @@ pub const FIRST_LINE_NUMBER: usize = 1;
 pub const PREVIOUS_LINE_DISTANCE: usize = 1;
 pub const MIN_LITERAL_PREFIX_CHARS: usize = 3;
 
-/// Compiled regex AST size limit. 10 MiB is large enough for complex detectors
-/// while preventing pathological patterns from consuming unbounded memory
-/// during regex compilation.
-pub const REGEX_SIZE_LIMIT_BYTES: usize = 1 << 20; // 1MB constraint on DFA compilation
+/// Default per-regex AST + lazy-DFA-cache size limit. 1 MiB is large enough for
+/// complex detectors while preventing pathological patterns from consuming
+/// unbounded memory during regex compilation.
+///
+/// NOTE: `dfa_size_limit` is a PER-THREAD, PER-REGEX cap on the lazy-DFA cache.
+/// Peak scan memory therefore scales as roughly `active_detectors × this_limit
+/// × worker_threads` - the dominant per-worker allocation on the CPU/SIMD
+/// confirmation path (profiled via `perf -e page-faults`: regex_automata
+/// hybrid `Cache::new`). Lower it on memory-constrained / many-core hosts at
+/// the cost of complex regexes falling back to slower NFA simulation; raise it
+/// for maximum throughput. Tunable at runtime via [`set_regex_dfa_limit`]
+/// (`keyhog scan --regex-dfa-limit`, or `regex_dfa_limit` in `.keyhog.toml`).
+pub const REGEX_SIZE_LIMIT_BYTES: usize = 1 << 20; // 1 MiB default
+
+/// Process-wide effective regex DFA limit, overridable from config/CLI. `0`
+/// means "unset - use [`REGEX_SIZE_LIMIT_BYTES`]". Set ONCE at scan startup
+/// (before any [`LazyRegex`] compiles) via [`set_regex_dfa_limit`]; read by the
+/// regex builders in `compiler_compile`. Mirrors the `megascan_input_len`
+/// process-global pattern so the per-detector lazy-compile path needs no
+/// per-call plumbing.
+static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Override the per-regex DFA size limit for this process. Call before scanning.
+/// `0` resets to the compiled default. Tier-A config knob (default → TOML → CLI).
+pub fn set_regex_dfa_limit(bytes: usize) {
+    REGEX_DFA_LIMIT_OVERRIDE.store(bytes, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The effective per-regex DFA size limit: the override if set, else the
+/// compiled default [`REGEX_SIZE_LIMIT_BYTES`].
+#[must_use]
+pub fn regex_dfa_limit() -> usize {
+    match REGEX_DFA_LIMIT_OVERRIDE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => REGEX_SIZE_LIMIT_BYTES,
+        n => n,
+    }
+}
 
 /// How many characters around a hex match to inspect for structural context
 /// (assignment operators, quotes, keywords).

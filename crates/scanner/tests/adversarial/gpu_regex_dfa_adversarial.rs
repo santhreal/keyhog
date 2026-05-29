@@ -128,15 +128,15 @@ fn pure_regex_no_literal_core_returns_error() {
 }
 
 #[test]
-fn regex_dfa_error_display_is_nonempty() {
+fn regex_dfa_error_display_matches_expected() {
     // Verify Display impl for all error variants.
     let e1 = RegexDfaError::EmptyPatternSet;
-    assert!(!format!("{e1}").is_empty());
+    assert_eq!(format!("{e1}"), "regex_dfa: empty pattern set");
 
     let e2 = RegexDfaError::DfaBudgetExceeded {
         message: "test".into(),
     };
-    assert!(!format!("{e2}").is_empty());
+    assert_eq!(format!("{e2}"), "regex_dfa: DFA budget exceeded: test");
 }
 
 #[test]

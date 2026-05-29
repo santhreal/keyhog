@@ -14,5 +14,5 @@ fn companion_within_window_returns_value() {
         required: false,
     };
     let value = find_companion(&preprocessed, 1, &companion);
-    assert!(value.is_some());
+    assert_eq!(value.as_deref(), Some("wJalrXUtnFEMI"));
 }

@@ -65,7 +65,7 @@ fn slack_bot_token() -> String {
 fn dotenv_aws_access_key() {
     let f =
         "# production env\nDB_HOST=db.internal\nAWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nLOG=info\n";
-    assert_finds(f, "aws-access-key", 3);
+    assert_finds(f, "hot-aws_key", 3);
 }
 
 #[test]
@@ -106,25 +106,25 @@ fn postgres_url_with_password() {
 #[test]
 fn docker_compose_env_aws_key() {
     let f = "services:\n  web:\n    image: acme/web\n    environment:\n      AWS_ACCESS_KEY_ID: AKIAQYLPMN5HFIQR7XYA\n";
-    assert_finds(f, "aws-access-key", 5);
+    assert_finds(f, "hot-aws_key", 5);
 }
 
 #[test]
 fn dockerfile_env_aws_key() {
     let f = "FROM debian:bookworm\nENV AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nRUN echo build\n";
-    assert_finds(f, "aws-access-key", 2);
+    assert_finds(f, "hot-aws_key", 2);
 }
 
 #[test]
 fn github_actions_hardcoded_aws_key() {
     let f = "name: deploy\njobs:\n  deploy:\n    steps:\n      - run: echo done\n        env:\n          AWS_ACCESS_KEY_ID: AKIAQYLPMN5HFIQR7XYA\n";
-    assert_finds(f, "aws-access-key", 7);
+    assert_finds(f, "hot-aws_key", 7);
 }
 
 #[test]
 fn shell_script_export_aws_key() {
     let f = "#!/bin/sh\nset -e\nexport AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\naws s3 ls\n";
-    assert_finds(f, "aws-access-key", 3);
+    assert_finds(f, "hot-aws_key", 3);
 }
 
 #[test]

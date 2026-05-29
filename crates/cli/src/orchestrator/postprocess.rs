@@ -78,6 +78,15 @@ impl ScanOrchestrator {
                 if self.signatures.contains(cred) {
                     return false;
                 }
+                // `.keyhog.toml` `[detector.<id>] enabled = false`. TOML
+                // detectors are already dropped at load; this also catches the
+                // hardcoded hot-pattern fast path (ids like `hot-aws_key`),
+                // which is not part of the loaded corpus.
+                if !self.disabled_detectors.is_empty()
+                    && self.disabled_detectors.contains(m.detector_id.as_ref())
+                {
+                    return false;
+                }
                 if self.test_fixture_suppressions.suppresses(cred) {
                     keyhog_scanner::telemetry::record_example_suppression(
                         m.detector_id.as_ref(),

@@ -54,6 +54,10 @@ pub struct ConfigFile {
     pub exclude_paths: Option<Vec<String>>,
     /// Maximum file size to scan (can be string like '1MB' or bytes).
     pub max_file_size: Option<String>,
+    /// Per-regex lazy-DFA cache size limit, e.g. "256KB" / "1MB" (default
+    /// 1 MiB). Bounds per-worker scan memory (≈ active_detectors × this ×
+    /// threads). The `--regex-dfa-limit` CLI flag overrides this.
+    pub regex_dfa_limit: Option<String>,
     /// ML weight for confidence scoring, 0.0-1.0 (default: 0.6).
     pub ml_weight: Option<f64>,
     /// Known secret prefixes used to boost confidence.
@@ -159,10 +163,30 @@ pub fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
     None
 }
 
+/// Outcome of merging `.keyhog.toml` into `ScanArgs`, beyond the in-place
+/// `args` mutations: the things the caller must still act on.
+#[derive(Debug, Default)]
+pub struct ConfigOutcome {
+    /// Detector ids disabled via `[detector.<id>] enabled = false`; the caller
+    /// drops these from the loaded corpus.
+    pub disabled_detectors: Vec<String>,
+    /// `[lockdown] require = true`: this repo's config DEMANDS lockdown mode.
+    /// The caller must refuse to run unless `--lockdown` was passed. Documented
+    /// in the README ("refuse to run without --lockdown") but, before this
+    /// wiring, parsed and silently ignored - a security control that looked
+    /// active but never enforced.
+    pub require_lockdown: bool,
+}
+
 /// Load and merge a `.keyhog.toml` config file into the parsed `ScanArgs`.
 /// CLI flags always take precedence over the config file.
+///
+/// Returns a [`ConfigOutcome`] the caller must act on: detector ids disabled
+/// via `[detector.<id>] enabled = false` (dropped from the corpus) and whether
+/// `[lockdown] require = true` demands `--lockdown`. Both are README-documented
+/// but were parsed-and-silently-ignored before this wiring.
 #[allow(clippy::collapsible_if, clippy::cmp_owned)]
-pub fn apply_config_file(args: &mut ScanArgs) {
+pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     let config_path = args
         .config
         .clone()
@@ -170,7 +194,7 @@ pub fn apply_config_file(args: &mut ScanArgs) {
 
     let config_path = match config_path {
         Some(path) => path,
-        None => return,
+        None => return ConfigOutcome::default(),
     };
 
     let raw = match std::fs::read_to_string(&config_path) {
@@ -180,7 +204,7 @@ pub fn apply_config_file(args: &mut ScanArgs) {
                 path = %config_path.display(),
                 "failed to read .keyhog.toml: {error}"
             );
-            return;
+            return ConfigOutcome::default();
         }
     };
 
@@ -196,7 +220,7 @@ pub fn apply_config_file(args: &mut ScanArgs) {
                 path = %config_path.display(),
                 "failed to parse .keyhog.toml: {error}"
             );
-            return;
+            return ConfigOutcome::default();
         }
     };
 
@@ -368,6 +392,14 @@ pub fn apply_config_file(args: &mut ScanArgs) {
         }
     }
 
+    if let Some(ref limit_str) = config.regex_dfa_limit {
+        if args.regex_dfa_limit.is_none() {
+            if let Ok(size) = crate::value_parsers::parse_byte_size(limit_str) {
+                args.regex_dfa_limit = Some(size);
+            }
+        }
+    }
+
     if let Some(paths) = config.exclude_paths {
         if args.exclude_paths.is_none() {
             args.exclude_paths = Some(paths);
@@ -385,5 +417,32 @@ pub fn apply_config_file(args: &mut ScanArgs) {
     }
     if let Some(keywords) = config.placeholder_keywords {
         args.placeholder_keywords = keywords;
+    }
+
+    // `[lockdown] require = true` -> the caller refuses to run unless
+    // `--lockdown` was passed (README: "refuse to run without --lockdown").
+    let require_lockdown = config
+        .lockdown
+        .as_ref()
+        .and_then(|l| l.require)
+        .unwrap_or(false);
+
+    // `[detector.<id>] enabled = false` -> the caller drops these detectors
+    // from the loaded corpus after `load_detectors`. (Per-detector
+    // `min_confidence` overrides are parsed into `DetectorSection` but applied
+    // separately in scan post-processing.)
+    let disabled_detectors = config
+        .detector
+        .map(|map| {
+            map.into_iter()
+                .filter(|(_, section)| section.enabled == Some(false))
+                .map(|(id, _)| id)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    ConfigOutcome {
+        disabled_detectors,
+        require_lockdown,
     }
 }

@@ -6,7 +6,7 @@ max_ms = 20000
 expect_total = 2
 
 [[expect]]
-detector_id = "aws-access-key"
+detector_id = "hot-aws_key"
 line = 5
 
 [[expect]]

@@ -3,4 +3,4 @@ corpus = ["aws_leak.env"]
 args = ["scan", "--format", "text", "{corpus}/aws_leak.env"]
 exit_code = 1
 max_ms = 20000
-stdout_contains = ["AWS Access Key", "1 secret found"]
+stdout_contains = ["Hot Pattern: aws_key", "1 secret found"]
