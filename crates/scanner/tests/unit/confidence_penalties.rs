@@ -27,12 +27,12 @@ fn max_repeat_run_values() {
 
 #[test]
 fn post_ml_penalties_crush_placeholders() {
-    let score = apply_post_ml_penalties(0.9, "ghp_example_0001_xxxxxxxxxxxxxxxxxxxx");
+    let score = apply_post_ml_penalties(0.9, "ghp_example_0001_xxxxxxxxxxxxxxxxxxxx", false);
     assert!(score < 0.1, "score was {}", score);
 
-    let score = apply_post_ml_penalties(0.9, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let score = apply_post_ml_penalties(0.9, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false);
     assert!(score < 0.1, "score was {}", score);
 
-    let score = apply_post_ml_penalties(0.9, "abc");
+    let score = apply_post_ml_penalties(0.9, "abc", false);
     assert!((score - 0.9).abs() < 1e-9, "score was {}", score);
 }
