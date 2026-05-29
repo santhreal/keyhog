@@ -380,6 +380,21 @@ impl MerkleIndex {
         );
     }
 
+    /// Remove `path` from the index so the next scan treats it as new and
+    /// re-reads + re-scans it.
+    ///
+    /// This is how incremental mode keeps its core safety guarantee: a file
+    /// that produced ANY finding is never cached, so a secret in an otherwise
+    /// unchanged file still surfaces on every later run instead of being
+    /// silently skipped (the failure this module's own header warns about).
+    /// Clean files - the 99% - stay cached, so the 10-100x speedup is
+    /// unaffected, and because we store the ABSENCE of an entry rather than the
+    /// finding, no secret value ever touches the on-disk index.
+    pub fn forget(&self, path: &Path) {
+        let i = shard_index(path);
+        self.shards[i].lock().remove(path);
+    }
+
     /// Number of indexed entries.
     pub fn len(&self) -> usize {
         self.shards.iter().map(|s| s.lock().len()).sum()
