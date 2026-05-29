@@ -2769,7 +2769,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog"
-version = "0.5.35"
+version = "0.5.36"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2800,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-core"
-version = "0.5.35"
+version = "0.5.36"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2832,7 +2832,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-scanner"
-version = "0.5.35"
+version = "0.5.36"
 dependencies = [
  "aho-corasick",
  "base64",
@@ -2879,7 +2879,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-sources"
-version = "0.5.35"
+version = "0.5.36"
 dependencies = [
  "base64",
  "chrono",
@@ -2920,7 +2920,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-verifier"
-version = "0.5.35"
+version = "0.5.36"
 dependencies = [
  "aes",
  "base64",
