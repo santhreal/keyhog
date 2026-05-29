@@ -199,6 +199,11 @@ impl CompiledScanner {
         // an Aho-Corasick scan over the path.
         keyword_nearby: bool,
         sensitive_file: bool,
+        // True when the firing detector is service-anchored (not generic-* /
+        // entropy-* / private-key). Such a detector's regex is itself the
+        // positive evidence, so the generic probabilistic-promise gate must
+        // not bury it - see the rationale in `process_match`.
+        is_named_detector: bool,
         scan_state: &mut ScanState,
     ) -> Option<MlScoreResult> {
         let raw_conf =
@@ -222,6 +227,7 @@ impl CompiledScanner {
             data,
             line,
             chunk,
+            is_named_detector,
             scan_state,
         )?;
 
@@ -254,11 +260,12 @@ impl CompiledScanner {
         data: &str,
         line: usize,
         chunk: &Chunk,
+        is_named_detector: bool,
         _scan_state: &mut ScanState,
     ) -> Option<MlScoreResult> {
         #[cfg(not(feature = "ml"))]
         {
-            let _ = (context, credential, data, line, chunk);
+            let _ = (context, credential, data, line, chunk, is_named_detector);
             Some(MlScoreResult::Final(heuristic_conf))
         }
 
@@ -268,8 +275,31 @@ impl CompiledScanner {
                 return Some(MlScoreResult::Final(heuristic_conf));
             }
 
+            // The probabilistic-promise gate fast-rejects low-diversity /
+            // UUID / structured strings to 0.1 (below the 0.3 report floor).
+            // That is correct for generic-* / entropy-* detectors - their
+            // only evidence is shape - but a NAMED service-anchored detector
+            // proved via its own regex that these bytes are the credential
+            // (Heroku / Braze / Codecov / Consul / Linode UUID & hex keys).
+            // generic-no-prefix-not-promising matches were already dropped
+            // upstream in `process_match`, so the only hits reaching here with
+            // `!looks_promising` are named detectors or known-prefix generics.
             if !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
-                return Some(MlScoreResult::Final(0.1));
+                // A named detector bypasses the 0.1 slam ONLY for genuinely
+                // structured secrets (UUID / hex / random tokens). A weak-prefix
+                // detector (e.g. stackblitz `sb_[A-Za-z0-9_-]{20,}`) can still
+                // match a CODE IDENTIFIER like `sb_get_string_descriptor` or
+                // `SB_ENDPOINT_ADDRESS_MASK` - those are never secrets, so they
+                // stay slammed even for named detectors. A UUID/hex credential
+                // is never identifier-shaped (digit-only segments, no `_`/`-`
+                // word structure), so the recall win for the 90+ real
+                // structured-key detectors is preserved.
+                let identifier_shaped =
+                    crate::pipeline::looks_like_word_separated_identifier(credential)
+                        || crate::pipeline::looks_like_pure_identifier(credential);
+                if !is_named_detector || identifier_shaped {
+                    return Some(MlScoreResult::Final(0.1));
+                }
             }
 
             let text_context = local_context_window(data, line, ML_CONTEXT_RADIUS_LINES);

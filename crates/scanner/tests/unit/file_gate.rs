@@ -220,11 +220,11 @@ fn confidence_mod_error() {
 // ── crates/scanner/src/confidence/penalties.rs ────────────────────────
 #[test]
 fn confidence_penalties_happy() {
-    assert!(apply_post_ml_penalties(0.9, "ghp_realistic_token_value_here") <= 0.9);
+    assert!(apply_post_ml_penalties(0.9, "ghp_realistic_token_value_here", false) <= 0.9);
 }
 #[test]
 fn confidence_penalties_error() {
-    assert!(apply_post_ml_penalties(0.9, "EXAMPLE") < 0.9);
+    assert!(apply_post_ml_penalties(0.9, "EXAMPLE", false) < 0.9);
 }
 
 // ── crates/scanner/src/confidence/prefixes.rs ─────────────────────────
