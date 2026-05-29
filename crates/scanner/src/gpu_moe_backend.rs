@@ -200,13 +200,17 @@ pub fn get_gpu() -> Option<&'static GpuContext> {
                 std::process::exit(2);
             }
             if !no_gpu {
+                // One concise line - enough to tell the user they're on the
+                // CPU path (no silent fallback) without dumping the entire
+                // multi-line wgpu adapter-probe error on every GPU-less run
+                // (the common case in CI, containers, and most laptops). The
+                // full diagnostic is available at debug level below.
                 eprintln!(
-                    "keyhog: GPU MoE init failed ({e}); falling back to CPU scoring. \
-Set KEYHOG_NO_GPU=1 to silence this warning, KEYHOG_REQUIRE_GPU=1 to hard-fail \
-on missing GPU instead."
+                    "keyhog: no usable GPU detected; using the CPU/SIMD scan path. \
+Set KEYHOG_NO_GPU=1 to silence this, or KEYHOG_REQUIRE_GPU=1 to fail instead."
                 );
             }
-            tracing::warn!("GPU MoE init failed, using CPU fallback: {e}");
+            tracing::debug!("GPU MoE init failed, using CPU fallback: {e}");
             None
         }
     })
