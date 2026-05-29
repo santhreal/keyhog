@@ -1,7 +1,8 @@
-//! Weir-provided reaching-definition facts for rewrite legality.
+//! External reaching-definition facts for rewrite legality.
 
 use rustc_hash::FxHashMap;
 
+use crate::operand_semantics::operand_is_result_reference;
 use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 
 /// Reaching definitions for a descriptor result id.
@@ -99,33 +100,6 @@ fn resolve_copy_alias(mut id: u32, copy_aliases: &FxHashMap<u32, u32>) -> u32 {
         id = next;
     }
     id
-}
-
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
 }
 
 #[cfg(test)]

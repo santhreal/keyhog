@@ -11,7 +11,7 @@
 //! time it folds a `BinOp(Lit, Lit)` (or `UnOp(Lit)` or `Cast(Lit)`)
 //! and never reclaims the now-orphaned source entries. After a few
 //! folding rounds, the pool can grow well beyond what's actually
-//! referenced — the `optimize` example shows literals growing 4 → 9
+//! referenced  -  the `optimize` example shows literals growing 4 → 9
 //! across two `run_all_once` iterations.
 //!
 //! ## Per-body
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn out_of_range_pool_index_treated_as_unreferenced() {
-        // A Literal op pointing at a non-existent pool index — verify
+        // A Literal op pointing at a non-existent pool index  -  verify
         // catches this; here we just confirm we don't crash.
         let desc = empty_desc(
             vec![KernelOp {

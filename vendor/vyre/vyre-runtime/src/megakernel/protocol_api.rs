@@ -179,7 +179,7 @@ impl Megakernel {
     }
 
     /// Read the epoch counter from a control buffer. The epoch
-    /// increments on each `BATCH_FENCE` execution — the host polls
+    /// increments on each `BATCH_FENCE` execution  -  the host polls
     /// this to detect batch completion without scanning the ring.
     #[must_use]
     pub fn read_epoch(control_bytes: &[u8]) -> u32 {

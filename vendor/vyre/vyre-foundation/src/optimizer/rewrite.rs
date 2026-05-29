@@ -142,6 +142,10 @@ fn rewrite_node_cow<'a>(
         | Node::IndirectDispatch { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncStore { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncWait { .. }
         | Node::Resume { .. }
         | Node::Opaque(_) => Cow::Borrowed(node),
@@ -460,6 +464,7 @@ fn rewrite_select<'a>(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::{BufferDecl, DataType};
@@ -547,3 +552,4 @@ mod tests {
         );
     }
 }
+

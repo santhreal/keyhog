@@ -1,4 +1,4 @@
-//! `ProgramDescriptor` — lightweight structural introspection of a
+//! `ProgramDescriptor`  -  lightweight structural introspection of a
 //! Cat-A composition's Program without running the full IR builder.
 //!
 //! The descriptor answers questions like "how many buffers does this

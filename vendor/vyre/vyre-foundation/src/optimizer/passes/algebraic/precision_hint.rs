@@ -1,4 +1,4 @@
-//! ROADMAP G1 / G5 foundation half — precision + transcendental
+//! ROADMAP G1 / G5 foundation half  -  precision + transcendental
 //! fast-path hints.
 //!
 //! Walks the entry tree and identifies expression contexts where
@@ -12,7 +12,7 @@
 //! ## Why a hint, not a rewrite
 //!
 //! Mixed-precision and transcendental fast paths are emitter
-//! concerns — the IR's `Expr` enum is typed at the F32 level and
+//! concerns  -  the IR's `Expr` enum is typed at the F32 level and
 //! the actual F16 / polynomial code lives in the backend's
 //! lowering. The foundation pass identifies *candidate sites* and
 //! the *contract* (range, ULP budget) the emitter must honour;
@@ -74,7 +74,7 @@ pub enum TranscendentalOp {
 }
 
 /// Expression-context key. The hint is keyed by a stable digest
-/// of the Expr's structural fingerprint — not the Expr pointer
+/// of the Expr's structural fingerprint  -  not the Expr pointer
 /// (which would change across pass reruns). The current digest is
 /// the BLAKE3 of the Expr's wire bytes; the lowering layer
 /// computes the same digest at emit time and looks up its hint.
@@ -103,7 +103,7 @@ impl PrecisionHints {
     }
 
     /// Look up the hint for an expression digest. Returns `None`
-    /// when no hint is recorded — the emitter must fall back to
+    /// when no hint is recorded  -  the emitter must fall back to
     /// the default F32 / device-transcendental lowering.
     #[must_use]
     pub fn lookup(&self, digest: ExprDigest) -> Option<PrecisionHint> {
@@ -448,6 +448,7 @@ mod tests {
             operand: Box::new(Expr::f32(0.5)),
         });
         assert!(matches!(
+
             hints.lookup(digest),
             Some(PrecisionHint::TranscendentalPolynomial {
                 op: TranscendentalOp::Exp,
@@ -482,7 +483,7 @@ mod tests {
     }
 
     /// `Sin(Var(theta))` (non-literal operand) doesn't get a
-    /// transcendental hint — the range can't be proven without
+    /// transcendental hint  -  the range can't be proven without
     /// further fact substrate.
     #[test]
     fn sin_non_literal_skips_g5() {
@@ -519,3 +520,4 @@ mod tests {
         assert_sync::<PrecisionHints>();
     }
 }
+

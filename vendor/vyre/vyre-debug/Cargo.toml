@@ -1,6 +1,6 @@
 [package]
 name = "vyre-debug"
-version = "0.4.2"
+version = "0.6.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Debugging CLI and inspection helpers for Vyre programs, lowering, and emitted shaders."
@@ -18,18 +18,18 @@ name = "vyre-dbg"
 path = "src/bin/vyre_dbg.rs"
 
 [dependencies]
-vyre = { workspace = true }
-vyre-foundation = { workspace = true }
-vyre-lower = { workspace = true }
-vyre-emit-naga = { workspace = true }
+vyre.workspace = true
+vyre-foundation.workspace = true
+vyre-lower.workspace = true
+vyre-emit-naga.workspace = true
 naga = { workspace = true, features = ["wgsl-out"] }
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 vyre-libs = { workspace = true, features = ["c-parser"] }
-vyre-primitives = { workspace = true }
-bincode = "1.3"
+vyre-primitives.workspace = true
+bincode = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = "2"
-predicates = "3"
+assert_cmd = { workspace = true }
+predicates = { workspace = true }

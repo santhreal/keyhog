@@ -1,4 +1,4 @@
-//! `sanitized_by` — Tier-3 sanitizer-gated forward taint step.
+//! `sanitized_by`  -  Tier-3 sanitizer-gated forward taint step.
 //!
 //! Semantics:
 //!
@@ -10,8 +10,8 @@
 //! Two stages, fused into one Program:
 //!
 //! 1. `frontier_clean = frontier_in & !sanitizers_in` via the new
-//!    `bitset_and_not` primitive — one Region instead of two
-//!    (`bitset_not` + `bitset_and`) — fewer scratch buffers, fewer
+//!    `bitset_and_not` primitive  -  one Region instead of two
+//!    (`bitset_not` + `bitset_and`)  -  fewer scratch buffers, fewer
 //!    dispatch-time bind-point allocations.
 //! 2. `frontier_out = csr_forward_traverse(frontier_clean, …)`
 //!    along genuine dataflow edges only (`FLOWS_TO_MASK`).
@@ -144,7 +144,7 @@ pub fn sanitized_by(
                                             // the `frontier_clean = fin \
                                             // sanitizers` step earlier in
                                             // the program. Don't double-
-                                            // gate at the dst — that would
+                                            // gate at the dst  -  that would
                                             // hide the sanitizer hit from
                                             // the output frontier and break
                                             // the witness fixture.
@@ -206,7 +206,7 @@ inventory::submit! {
         id: OP_ID,
         build: || sanitized_by(ProgramGraphShape::new(4, 3), "fin", "san", "fout"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // Linear 0→1→2→3 with node 1 marked sanitizer.
             vec![vec![
                 to_bytes(&[0b0001]),              // 0: fin = {0}
@@ -225,7 +225,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // One forward step from {0}: fout accumulator = {0,1}.
             vec![vec![
                 to_bytes(&[0b0001]),              // clean_buf = fin & !san
@@ -280,7 +280,7 @@ mod tests {
             .buffers()
             .iter()
             .find(|b| b.name() == "fin")
-            .expect("fin buffer");
+            .expect("Fix: fin buffer");
         assert!(
             fin_buf.count >= 2,
             "bitset_words(64) = 2; count {} suggests degenerate shape",
@@ -293,13 +293,13 @@ mod tests {
         // Linear 0->1->2->3, fin = {0}, san = {1}, fout seed = {0}.
         // After one forward step, the sanitizer node 1 IS marked in fout
         // (so audit/forensics consumers can answer "did taint reach this
-        // sanitizer?"). Propagation FROM the sanitizer is blocked — the
+        // sanitizer?"). Propagation FROM the sanitizer is blocked  -  the
         // separate test `sanitized_by_blocks_propagation_from_sanitizer_node`
         // proves that. The two tests together pin down the canonical
         // taint-with-sanitizer semantics: mark on arrival, cut on
         // departure. Matches CodeQL/Semgrep/Joern.
         let p = sanitized_by(ProgramGraphShape::new(4, 3), "fin", "san", "fout");
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![
             to_bytes(&[0b0001]),
             to_bytes(&[0b0010]),
@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(
             fout_word, 0b0011,
             "sanitized_by must mark the sanitizer when taint arrives at it; \
-             observability of 'taint hit this sanitizer' is the entire point — \
+             observability of 'taint hit this sanitizer' is the entire point  -  \
              without it, downstream SARIF/audit consumers cannot distinguish \
              'sanitized at node 1' from 'never reached node 1'."
         );
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn sanitized_by_blocks_propagation_from_sanitizer_node() {
         let p = sanitized_by(ProgramGraphShape::new(3, 2), "fin", "san", "fout");
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![
             to_bytes(&[0b0010]),     // fin = {1}
             to_bytes(&[0b0010]),     // san = {1}

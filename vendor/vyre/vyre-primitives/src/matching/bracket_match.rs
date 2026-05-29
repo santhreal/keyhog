@@ -1,4 +1,4 @@
-//! Tier 2.5 bracket-pair detector — bounded-stack scanner over a
+//! Tier 2.5 bracket-pair detector  -  bounded-stack scanner over a
 //! token-kind buffer.
 //!
 //! The op runs as a single invocation. It maintains a bounded stack
@@ -115,12 +115,31 @@ pub fn bracket_match(
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(kinds: &[u32], max_depth: u32) -> Vec<u32> {
-    let mut match_pairs = vec![MATCH_NONE; kinds.len()];
-    let mut stack = Vec::with_capacity(max_depth as usize);
+    let mut match_pairs = Vec::new();
+    let mut stack = Vec::new();
+    cpu_ref_into(kinds, max_depth, &mut match_pairs, &mut stack);
+    match_pairs
+}
 
+/// CPU reference writing into caller-owned output and stack scratch.
+///
+/// This is the allocation-free parity path for parser workloads that run
+/// bracket matching across thousands of token shards. `match_pairs` is fully
+/// overwritten on every call and `stack` is cleared before use.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_into(
+    kinds: &[u32],
+    max_depth: u32,
+    match_pairs: &mut Vec<u32>,
+    stack: &mut Vec<u32>,
+) {
+    match_pairs.clear();
+    match_pairs.resize(kinds.len(), MATCH_NONE);
+    stack.clear();
+    let max_depth = max_depth as usize;
     for (index, kind) in kinds.iter().copied().enumerate() {
         if kind == OPEN_BRACE {
-            if stack.len() < max_depth as usize {
+            if stack.len() < max_depth {
                 stack.push(index as u32);
             }
             continue;
@@ -132,18 +151,12 @@ pub fn cpu_ref(kinds: &[u32], max_depth: u32) -> Vec<u32> {
             }
         }
     }
-
-    match_pairs
 }
 
 /// Pack `[u32]` into the LE-byte layout the harness uses.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(words.len().saturating_mul(4));
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
-    bytes
+    crate::wire::pack_u32_slice(words)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -215,5 +228,37 @@ mod tests {
             ),
             vec![4, 3, MATCH_NONE, 1, 0, MATCH_NONE]
         );
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_output_and_stack_storage() {
+        let mut out = Vec::with_capacity(16);
+        out.extend_from_slice(&[7, 8, 9, 10, 11]);
+        let mut stack = Vec::with_capacity(8);
+        stack.extend_from_slice(&[99, 100, 101]);
+        let out_cap = out.capacity();
+        let stack_cap = stack.capacity();
+
+        cpu_ref_into(
+            &[OPEN_BRACE, OTHER, CLOSE_BRACE, OPEN_BRACE],
+            4,
+            &mut out,
+            &mut stack,
+        );
+
+        assert_eq!(out, vec![2, MATCH_NONE, 0, MATCH_NONE]);
+        assert_eq!(out.capacity(), out_cap);
+        assert_eq!(stack.capacity(), stack_cap);
+        assert_eq!(
+            stack,
+            vec![3],
+            "Fix: cpu_ref_into must clear stale stack entries before each run and leave only currently-unmatched opens."
+        );
+
+        cpu_ref_into(&[OTHER], 4, &mut out, &mut stack);
+        assert_eq!(out, vec![MATCH_NONE]);
+        assert!(stack.is_empty());
+        assert_eq!(out.capacity(), out_cap);
+        assert_eq!(stack.capacity(), stack_cap);
     }
 }

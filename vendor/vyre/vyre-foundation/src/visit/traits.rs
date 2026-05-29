@@ -9,7 +9,7 @@ use std::ops::ControlFlow;
 /// Anything that can be lowered to a target representation.
 ///
 /// Backends implement this trait for their target. The IR does not know
-/// what targets exist — it only knows that calling `.lower(&mut ctx)`
+/// what targets exist  -  it only knows that calling `.lower(&mut ctx)`
 /// walks the structure through the visitor contract.
 ///
 /// # Errors
@@ -131,6 +131,11 @@ pub trait NodeVisitor {
     fn visit_return(&mut self, node: &Node) -> ControlFlow<Self::Break>;
     /// Barrier node.
     fn visit_barrier(&mut self, node: &Node) -> ControlFlow<Self::Break>;
+    /// Distributed collective node.
+    fn visit_collective(&mut self, node: &Node) -> ControlFlow<Self::Break> {
+        let _ = node;
+        ControlFlow::Continue(())
+    }
     /// Block node.
     fn visit_block(&mut self, node: &Node, body: &[Node]) -> ControlFlow<Self::Break>;
     /// Region wrapper node.
@@ -323,6 +328,10 @@ pub(crate) fn dispatch_node<V: NodeVisitor>(visitor: &mut V, node: &Node) -> Con
         Node::AsyncWait { tag } => visitor.visit_async_wait(node, tag),
         Node::Trap { address, tag } => visitor.visit_trap(node, address, tag),
         Node::Resume { tag } => visitor.visit_resume(node, tag),
+        Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. } => visitor.visit_collective(node),
         Node::Return => visitor.visit_return(node),
         Node::Barrier { .. } => visitor.visit_barrier(node),
         Node::Block(body) => visitor.visit_block(node, body),

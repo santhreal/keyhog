@@ -1,4 +1,4 @@
-//! `integer_overflow_arith` — does this binary op overflow on
+//! `integer_overflow_arith`  -  does this binary op overflow on
 //! attacker input? CWE-190 supporting predicate.
 //!
 //! Per node `n`, write 1 iff `n` is a binary arithmetic node

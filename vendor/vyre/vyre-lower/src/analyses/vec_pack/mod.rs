@@ -2,7 +2,7 @@
 //!
 //! Detects chains of `LoadGlobal` ops on the same binding slot whose
 //! literal indices are consecutive (`i`, `i+1`, `i+2`, `i+3`). Such
-//! chains are candidates for vec2/vec4 packed loads — one wide
+//! chains are candidates for vec2/vec4 packed loads  -  one wide
 //! transaction instead of N narrow ones, saving (N-1) memory
 //! request slots and improving coalescing.
 //!
@@ -20,7 +20,7 @@ pub struct VecPackChain {
     /// The binding slot all loads in the chain target.
     pub slot: u32,
     /// Op indices in the body, in chain order. Length is the
-    /// chain length (always >= 2 — single loads are not a chain).
+    /// chain length (always >= 2  -  single loads are not a chain).
     pub op_indices: Vec<usize>,
     /// Starting literal index. Subsequent loads target
     /// `start_index + 1`, `+ 2`, ...

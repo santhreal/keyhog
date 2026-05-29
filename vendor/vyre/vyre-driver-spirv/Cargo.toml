@@ -1,6 +1,6 @@
 [package]
 name = "vyre-driver-spirv"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -28,7 +28,7 @@ vyre-lower = { workspace = true }
 vyre-emit-naga = { workspace = true }
 naga = { workspace = true, features = ["spv-out"] }
 inventory.workspace = true
-ash = "0.38.0"
+ash.workspace = true
 smallvec = { workspace = true }
 
 [dev-dependencies]

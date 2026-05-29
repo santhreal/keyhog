@@ -2,19 +2,11 @@
 //!
 //! Muon + `scale = max(1, rows/cols)^0.5` row normalization.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::Program;
 
-use crate::region::wrap_anonymous;
+use crate::nn::optim::muon_core::muon_step_program;
 
 const OP_ID: &str = "vyre-libs::optim::muoneq_r";
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 /// MuonEq-R step (F32).
 ///
@@ -34,46 +26,15 @@ pub fn muoneq_r(
     // scale = max(1, rows/cols)^0.5
     let ratio = (rows as f32) / (cols as f32);
     let scale = ratio.max(1.0).sqrt();
-
-    let i = Expr::var("i");
-    let g = flush_tiny(Expr::load(grads, i.clone()));
-    let m = flush_tiny(Expr::load(momentum_buf, i.clone()));
-    let p = flush_tiny(Expr::load(params, i.clone()));
-
-    let new_m = Expr::add(Expr::mul(Expr::f32(momentum), m), g.clone());
-    let nesterov = Expr::add(g, Expr::mul(Expr::f32(momentum), new_m.clone()));
-    let scaled_update = Expr::mul(Expr::f32(scale * lr), nesterov);
-    let new_p = Expr::sub(p, scaled_update);
-
-    let body = vec![
-        Node::let_bind("i", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(i.clone(), Expr::u32(n)),
-            vec![
-                Node::Store {
-                    buffer: momentum_buf.into(),
-                    index: i.clone(),
-                    value: flush_tiny(new_m),
-                },
-                Node::Store {
-                    buffer: output.into(),
-                    index: i,
-                    value: flush_tiny(new_p),
-                },
-            ],
-        ),
-    ];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(params, 0, BufferAccess::ReadOnly, DataType::F32).with_count(n),
-            BufferDecl::storage(grads, 1, BufferAccess::ReadOnly, DataType::F32).with_count(n),
-            BufferDecl::storage(momentum_buf, 2, BufferAccess::ReadWrite, DataType::F32)
-                .with_count(n),
-            BufferDecl::output(output, 3, DataType::F32).with_count(n),
-        ],
-        [64, 1, 1],
-        vec![wrap_anonymous(OP_ID, body)],
+    muon_step_program(
+        OP_ID,
+        params,
+        grads,
+        momentum_buf,
+        output,
+        n,
+        scale * lr,
+        momentum,
     )
 }
 
@@ -82,7 +43,7 @@ inventory::submit! {
         id: OP_ID,
         build: || muoneq_r("params", "grads", "momentum", "output", 4, 4, 2, 0.02, 0.95),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[1.0, 2.0, 3.0, 4.0]),
                 to_f32(&[0.1, 0.2, 0.3, 0.4]),

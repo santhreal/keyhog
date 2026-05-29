@@ -60,3 +60,7 @@ The promotion gate is backed by these checked-in artifacts:
 - `tests/preprocess_differential_benchmark.rs`
 - `tests/object_version_stability.rs`
 - `tests/cuda_first_no_host_paths.rs`
+- `tests/gpu_directive_kernels_real_gpu.rs`
+- `tests/gpu_prep_kernel_libc_shape.rs`
+- `tests/gpu_prepare_tu_source_e2e.rs`
+- `tests/linux_grade_constructs_gpu_e2e.rs`

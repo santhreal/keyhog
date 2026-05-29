@@ -1,4 +1,4 @@
-//! `path_reconstruct` — Tier-3 shim over
+//! `path_reconstruct`  -  Tier-3 shim over
 //! [`vyre_primitives::graph::path_reconstruct`].
 
 use vyre::ir::Program;
@@ -17,7 +17,7 @@ pub fn path_reconstruct(
 ) -> Program {
     // path_reconstruct does not consume a node count; max_depth is
     // the structural sizing parameter. Use it as the non-degenerate
-    // sentinel — a zero-depth reconstruction has no useful output.
+    // sentinel  -  a zero-depth reconstruction has no useful output.
     crate::security::assert_security_inputs(
         OP_ID,
         max_depth,
@@ -39,7 +39,7 @@ inventory::submit! {
         id: OP_ID,
         build: || path_reconstruct("parent", "target", "path_out", "path_len", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0, 1, 2]),
                 to_bytes(&[3]),
@@ -48,7 +48,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[3, 2, 1, 0]), to_bytes(&[4])]]
         }),
         category: Some("security"),
@@ -77,7 +77,7 @@ mod tests {
             .buffers()
             .iter()
             .find(|b| b.name() == "path_out")
-            .expect("path_out buffer");
+            .expect("Fix: path_out buffer");
         assert_eq!(path_out_buf.count, 8);
     }
 
@@ -118,7 +118,7 @@ mod tests {
         let target = 1u32;
         let max_depth = 4u32;
         let p = path_reconstruct("parent", "target", "path_out", "path_len", max_depth);
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
         let inputs = vec![
             to_bytes(&parent),
             to_bytes(&[target]),

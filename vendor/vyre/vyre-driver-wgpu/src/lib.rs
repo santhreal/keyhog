@@ -14,12 +14,14 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 
-//! # vyre-wgpu — wgpu backend for the vyre GPU compute specification
+//! # vyre-wgpu  -  wgpu backend for the vyre GPU compute specification
 
+mod allocation;
 mod async_dispatch;
 mod backend_impl;
 pub mod buffer;
 mod capabilities;
+mod descriptor_mapping;
 mod device_buffer;
 pub mod emit;
 pub mod engine;
@@ -27,11 +29,17 @@ mod executable_api;
 pub mod ext;
 pub mod megakernel;
 mod numeric;
+mod padded_upload;
 #[cfg(feature = "parity-testing")]
 mod parity_probe;
 pub mod pipeline;
+mod resident_dispatch;
+mod resident_download;
+mod resident_resource;
+mod resident_upload;
 pub mod runtime;
 pub mod spirv_backend;
+mod staging_reserve;
 mod stats;
 mod thread_pool;
 mod wait_backoff;
@@ -176,6 +184,10 @@ impl BackendValidationCapabilities for WgpuBackend {
 
     fn supports_specialization_constants(&self) -> bool {
         self.device_profile().supports_specialization_constants
+    }
+
+    fn supports_distributed_collectives(&self) -> bool {
+        self.device_profile().supports_distributed_collectives
     }
 }
 

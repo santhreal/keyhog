@@ -1,6 +1,6 @@
 //! Fast Fourier Transform sub-dialect.
 //!
-//! ROADMAP H2 — FFT convolution for large kernels. This module
+//! ROADMAP H2  -  FFT convolution for large kernels. This module
 //! ships the fixed-size 4-point base (`fft4_complex`), arbitrary
 //! power-of-two radix-2 FFT (`fft_radix2_complex`), and circular
 //! convolution wrapper (`fft_convolve_circular_complex`).
@@ -20,6 +20,7 @@
 //! ... powers of two; convolution then composes forward FFTs,
 //! pointwise complex multiply, and inverse FFT.
 
+mod common;
 pub mod convolution;
 pub mod fft4;
 pub mod fft_radix2;

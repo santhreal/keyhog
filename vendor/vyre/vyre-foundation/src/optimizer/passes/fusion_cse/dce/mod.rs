@@ -1,32 +1,32 @@
-//! Dead-code elimination — engine + ProgramPass registration colocated.
+//! Dead-code elimination  -  engine + ProgramPass registration colocated.
 //!
 //! Audit cleanup A7 (2026-04-30): hoisted from `transform/optimize/dce/`
 //! mirroring the A6 CSE consolidation. Engine + ProgramPass registration share one home.
 //!
 //! ## Layout
 //!
-//! - `engine` — the `dce(program)` entry point (runs
+//! - `engine`  -  the `dce(program)` entry point (runs
 //!   `eliminate_dead_lets` → `eliminate_unreachable` → `eliminate_dead_lets`
 //!   again to catch bindings that became dead after unreachable code was
 //!   stripped).
-//! - `eliminate_dead_lets.rs` — backward liveness pass that strips dead
+//! - `eliminate_dead_lets.rs`  -  backward liveness pass that strips dead
 //!   `let` bindings. Drops a `let` when its name is not live AND its value
 //!   is pure (effectful nodes always preserved).
-//! - `eliminate_unreachable.rs` — forward pass folding constant branches +
+//! - `eliminate_unreachable.rs`  -  forward pass folding constant branches +
 //!   truncating after `Return`.
-//! - `collect_expr_refs.rs` — iterative visitor accumulating every
+//! - `collect_expr_refs.rs`  -  iterative visitor accumulating every
 //!   `Expr::Var` name (conservative liveness over-approximation).
-//! - `const_truth.rs` — partial constant evaluator for boolean expressions.
-//! - `const_loop_empty.rs` — detects statically empty loops.
-//! - `live_result.rs` — result bundle returned by liveness pruning.
-//! - `reachable_prefix.rs` — slice the node list up to first unconditional
+//! - `const_truth.rs`  -  partial constant evaluator for boolean expressions.
+//! - `const_loop_empty.rs`  -  detects statically empty loops.
+//! - `live_result.rs`  -  result bundle returned by liveness pruning.
+//! - `reachable_prefix.rs`  -  slice the node list up to first unconditional
 //!   `Return`.
-//! - `program_pass.rs` — the registered `DcePass` (ProgramPass impl).
+//! - `program_pass.rs`  -  the registered `DcePass` (ProgramPass impl).
 //!
-//! `expr_has_effect` is shared with CSE — single source of truth in
+//! `expr_has_effect` is shared with CSE  -  single source of truth in
 //! `super::cse::expr_has_effect`.
 
-// `expr_has_effect` is shared with CSE — single source of truth in
+// `expr_has_effect` is shared with CSE  -  single source of truth in
 // `super::cse::expr_has_effect`. Re-exported here so the DCE engine can
 // say `super::expr_has_effect` without learning about the cse path.
 pub(crate) use super::cse::expr_has_effect;

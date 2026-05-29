@@ -1,15 +1,15 @@
 # vyre-libs::matching SKILL
 
-Byte/text scan primitives — substring search, DFA / Aho–Corasick. One ingredient inside larger vyre programs.
+Byte/text scan primitives  -  substring search, DFA / Aho–Corasick. One ingredient inside larger vyre programs.
 The DFA compilation produces a transition table as a u32 buffer; the
 runtime Program walks the table one byte per step.
 
 ## Coverage targets
 
-- `substring_search` — single-pattern brute-force match, one
+- `substring_search`  -  single-pattern brute-force match, one
   invocation per haystack offset.
-- `aho_corasick` — multi-pattern scanner consuming a pre-built DFA.
-- `dfa_compile` / `dfa_compile_with_budget` — CPU-side Aho-Corasick
+- `aho_corasick`  -  multi-pattern scanner consuming a pre-built DFA.
+- `dfa_compile` / `dfa_compile_with_budget`  -  CPU-side Aho-Corasick
   transition-table builder with size-budget enforcement.
 - Future: `regex_compile`, `hyperscan_compat`, `simd_fixed_match`.
 

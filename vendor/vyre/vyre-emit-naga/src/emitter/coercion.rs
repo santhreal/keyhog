@@ -1,6 +1,6 @@
 //! Pre-emit `Expression::Binary` operand-type unification + the
 //! `append_expr` shim every other emit path goes through. Plus the
-//! tiny `emit_builtin_axis` / `emit_scalar_builtin` wrappers — kept
+//! tiny `emit_builtin_axis` / `emit_scalar_builtin` wrappers  -  kept
 //! here because they're the simplest consumers of `append_expr`.
 
 use naga::{BinaryOperator, Expression, Span, Statement};
@@ -14,7 +14,7 @@ impl BodyBuilder<'_> {
     /// Naga's `Subtract` / `Add` / etc. require both operands to share
     /// scalar kind. Source builders (and emit-naga's own inserted
     /// comparisons) sometimes hand mixed types in. Coerce the right
-    /// operand to match the left when they differ — value-preserving
+    /// operand to match the left when they differ  -  value-preserving
     /// for bool↔u32 (via select) and integer↔integer (via As).
     fn unify_binary_operand_types(&mut self, expr: Expression) -> Expression {
         if let Expression::Binary { op, left, right } = expr {

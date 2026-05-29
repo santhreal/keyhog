@@ -5,5 +5,5 @@ pub(super) fn read_output_u32(bytes: &[u8], label: &str) -> Result<u32, String> 
             bytes.len()
         ));
     }
-    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    vyre_primitives::wire::read_u32_le_word(bytes, 0, label)
 }

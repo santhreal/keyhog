@@ -1,13 +1,13 @@
 [package]
 name = "vyre-driver-wgpu"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "wgpu backend for vyre IR — implements VyreBackend, owns GPU runtime, buffer pool, pipeline cache"
+description = "wgpu backend for vyre IR  -  implements VyreBackend, owns GPU runtime, buffer pool, pipeline cache"
 readme = "README.md"
 keywords = ["gpu", "wgpu", "ir", "backend", "vyre"]
 categories = ["graphics", "rendering::graphics-api", "hardware-support"]
@@ -35,14 +35,14 @@ vyre-self-substrate = { workspace = true }
 vyre-spec = { workspace = true }
 vyre-lower.workspace = true
 vyre-emit-naga.workspace = true
-naga = { workspace = true, features = ["wgsl-out"] }
+naga = { workspace = true, features = ["wgsl-out", "spv-out"] }
 wgpu.workspace = true
 pollster.workspace = true
 bytemuck.workspace = true
-crossbeam-queue = "0.3"
+crossbeam-queue = { workspace = true }
 crossbeam-channel.workspace = true
-arc-swap = "1.7"
-tokio.workspace = true
+arc-swap = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing.workspace = true
 thiserror.workspace = true
 rustc-hash.workspace = true
@@ -50,12 +50,12 @@ blake3.workspace = true
 serde.workspace = true
 toml.workspace = true
 inventory.workspace = true
-dashmap = "6.1.0"
+dashmap = { workspace = true }
 smallvec.workspace = true
-crc32fast = "1.5.0"
+crc32fast = { workspace = true }
 fs2.workspace = true
 libm.workspace = true
-bincode = "1.3"
+bincode = { workspace = true }
 
 [dev-dependencies]
 criterion.workspace = true
@@ -67,23 +67,16 @@ vyre.workspace = true
 vyre-harness.workspace = true
 vyre-self-substrate = { workspace = true }
 vyre-libs = { workspace = true, features = ["matching", "parsing", "c-parser", "nn-attention", "cpu-parity"] }
-vyre-primitives = { workspace = true, features = ["graph", "predicate", "cpu-parity"] }
+vyre-primitives = { workspace = true, default-features = false, features = ["graph", "predicate", "cpu-parity"] }
 vyre-reference = { workspace = true, features = ["subgroup-ops"] }
 vyre-runtime = { workspace = true, features = ["self-substrate-adapters"] }
 vyre-test-harness.workspace = true
 vyre-intrinsics.workspace = true
 tracing-subscriber.workspace = true
-libc = { version = "0.2", default-features = false }
-# LEGO-DEBT (test-only): surgec-grammar-gen is consumed by 7 C11
-# integration tests under tests/c_*. Per the LEGO discipline (vyre
-# never calls anything else), these tests should source their C lexer
-# from `vyre-frontend-c::lex` once that surface stabilises. The
-# dev-dep does not ship in the published crate (no runtime crossing),
-# but it is a test-time inversion to be closed by migration to
-# vyre-frontend-c when the C-frontend lane lands.
-surgec-grammar-gen = { version = "0.6.0", path = "../../../../shared/surgec-grammar-gen" }
-tree-sitter = "=0.26.8"
-tree-sitter-go = "=0.25.0"
+libc.workspace = true
+c-grammar-gen.workspace = true
+tree-sitter = { workspace = true }
+tree-sitter-go = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

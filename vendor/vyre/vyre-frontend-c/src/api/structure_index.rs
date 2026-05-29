@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use crate::object_format::{parse_embedded_vyrecob2, SectionTag, Vyrecob2};
+use super::object_io::{decode_embedded_object, read_object_file};
+use super::word_decode::decode_u32_words_for_section;
+use crate::object_format::{SectionTag, Vyrecob2};
 
 /// Decoded function and call-site records from a `vyre-frontend-c` object.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,8 +41,7 @@ pub struct CObjectCallRecord {
 
 /// Decode function and call-site records from object bytes.
 pub fn decode_object_structure_index(object_bytes: &[u8]) -> Result<CObjectStructureIndex, String> {
-    let container = parse_embedded_vyrecob2(object_bytes)?;
-    decode_object_structure_index_from_container(&container)
+    decode_embedded_object(object_bytes, decode_object_structure_index_from_container)
 }
 
 pub(crate) fn decode_object_structure_index_from_container(
@@ -66,13 +67,11 @@ pub(crate) fn decode_object_structure_index_from_container(
 
 /// Read and decode function/call records from an object path.
 pub fn decode_object_structure_index_file(path: &Path) -> Result<CObjectStructureIndex, String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("vyre-frontend-c: read object {}: {error}", path.display()))?;
-    decode_object_structure_index(&bytes)
+    read_object_file(path, decode_object_structure_index)
 }
 
 fn decode_function_records(section: &[u8]) -> Result<Vec<CObjectFunctionRecord>, String> {
-    let words = decode_u32_words(section, "Functions")?;
+    let words = decode_u32_words_for_section(section, "Functions")?;
     if words.len() % 3 != 0 {
         return Err(format!(
             "vyre-frontend-c Functions section has {} u32 words, not whole 3-word records. Fix: regenerate the object.",
@@ -99,7 +98,7 @@ fn decode_function_records(section: &[u8]) -> Result<Vec<CObjectFunctionRecord>,
 }
 
 fn decode_call_records(section: &[u8]) -> Result<Vec<CObjectCallRecord>, String> {
-    let words = decode_u32_words(section, "Calls")?;
+    let words = decode_u32_words_for_section(section, "Calls")?;
     if words.len() % 4 != 0 {
         return Err(format!(
             "vyre-frontend-c Calls section has {} u32 words, not whole 4-word records. Fix: regenerate the object.",
@@ -150,19 +149,6 @@ fn validate_structure_index(
     Ok(())
 }
 
-fn decode_u32_words(section: &[u8], section_name: &str) -> Result<Vec<u32>, String> {
-    if section.len() % 4 != 0 {
-        return Err(format!(
-            "vyre-frontend-c {section_name} section length {} is not u32-aligned. Fix: regenerate the object.",
-            section.len()
-        ));
-    }
-    Ok(section
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::decode_object_structure_index;
@@ -178,9 +164,9 @@ mod tests {
             (SectionTag::Functions, functions.as_slice()),
             (SectionTag::Calls, calls.as_slice()),
         ])
-        .expect("fixture object must serialize");
+        .expect("Fix: fixture object must serialize");
 
-        let decoded = decode_object_structure_index(&object).expect("fixture must decode");
+        let decoded = decode_object_structure_index(&object).expect("Fix: fixture must decode");
         assert_eq!(decoded.functions.len(), 1);
         assert_eq!(decoded.functions[0].name_token, 3);
         assert_eq!(decoded.functions[0].body_start_token, 10);
@@ -200,7 +186,7 @@ mod tests {
             (SectionTag::Functions, bad_functions.as_slice()),
             (SectionTag::Calls, calls.as_slice()),
         ])
-        .expect("fixture object must serialize");
+        .expect("Fix: fixture object must serialize");
 
         let err = decode_object_structure_index(&object)
             .expect_err("partial function row must be rejected");
@@ -215,7 +201,7 @@ mod tests {
             (SectionTag::Functions, functions.as_slice()),
             (SectionTag::Calls, calls.as_slice()),
         ])
-        .expect("fixture object must serialize");
+        .expect("Fix: fixture object must serialize");
         let err = decode_object_structure_index(&object)
             .expect_err("unordered function span must be rejected");
         assert!(err.contains("body_start_token"));
@@ -229,16 +215,11 @@ mod tests {
             (SectionTag::Functions, functions.as_slice()),
             (SectionTag::Calls, calls.as_slice()),
         ])
-        .expect("fixture object must serialize");
+        .expect("Fix: fixture object must serialize");
         let err =
             decode_object_structure_index(&object).expect_err("missing caller id must be rejected");
         assert!(err.contains("only 1 function records decoded"));
     }
 
-    fn pack_words(words: &[u32]) -> Vec<u8> {
-        words
-            .iter()
-            .flat_map(|word| word.to_le_bytes())
-            .collect::<Vec<_>>()
-    }
+    use vyre_primitives::wire::pack_u32_slice as pack_words;
 }

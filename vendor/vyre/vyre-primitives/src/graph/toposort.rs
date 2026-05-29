@@ -1,8 +1,8 @@
-//! Kahn-style topological sort with LIFO worklist — CPU reference +
+//! Kahn-style topological sort with LIFO worklist  -  CPU reference +
 //! single-invocation GPU `Program` builder.
 //!
-//! Consumed by the optimizer's reaching-defs pass, frontend
-//! `dominator_tree`, and graph-IR analyses that need a DAG walk.
+//! Consumed by optimizer reaching-defs, dominator-tree, and graph-IR analyses
+//! that need a DAG walk.
 //!
 //! AUDIT_2026-04-24 F-TS-04: `toposort_program` emits a single-invocation
 //! Program that runs Kahn's algorithm serially on lane 0. The serial
@@ -13,7 +13,7 @@
 //! AUDIT_2026-04-24 F-TS-02: the classical Kahn presentation uses a
 //! FIFO queue (BFS-ish). This module uses a stack (LIFO) via
 //! `Vec::pop` because it is O(1), has better cache locality on the
-//! worklist, and produces an equally valid topological order — both
+//! worklist, and produces an equally valid topological order  -  both
 //! orderings satisfy the Kahn invariant (a node is emitted only
 //! after all its prerequisites). If a caller needs stable BFS order
 //! for deterministic diffs, swap in a `VecDeque` worklist; the
@@ -26,12 +26,24 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::toposort";
+/// Canonical dispatch input label for CSR offsets.
+pub const TOPOSORT_OFFSETS_BUFFER: &str = "toposort offsets";
+/// Canonical dispatch input label for CSR targets.
+pub const TOPOSORT_TARGETS_BUFFER: &str = "toposort targets";
+/// Canonical dispatch scratch label for indegrees.
+pub const TOPOSORT_INDEGREE_SCRATCH_BUFFER: &str = "toposort indeg_scratch";
+/// Canonical dispatch scratch label for the work queue.
+pub const TOPOSORT_QUEUE_SCRATCH_BUFFER: &str = "toposort queue_scratch";
+/// Canonical dispatch output label for the emitted order.
+pub const TOPOSORT_ORDER_OUT_BUFFER: &str = "toposort order_out";
+/// Single-lane Kahn dispatch grid.
+pub const TOPOSORT_DISPATCH_GRID: [u32; 3] = [1, 1, 1];
 
 /// Errors from topological sorting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ToposortError {
-    /// The input graph contains a cycle — returned with the first
+    /// The input graph contains a cycle  -  returned with the first
     /// node id that participates in the cycle, for diagnostic use.
     Cycle {
         /// One node id on the cycle. Callers can walk the adjacency
@@ -91,6 +103,117 @@ pub struct ToposortCsrLayout {
     pub target_words: usize,
 }
 
+/// Primitive-owned dispatch plan for CSR topological sort.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToposortCsrDispatchPlan {
+    /// Validated CSR layout.
+    pub layout: ToposortCsrLayout,
+    /// Dispatch grid override.
+    pub grid: [u32; 3],
+    /// Words in the offsets input buffer.
+    pub offset_words: usize,
+    /// Words in the targets input buffer.
+    pub target_words: usize,
+    /// Words in each node-indexed scratch/output buffer.
+    pub node_words: usize,
+}
+
+/// Primitive-owned identity for reusable topological-sort static inputs.
+///
+/// Dispatch wrappers use this key to decide whether the CSR graph inputs can
+/// remain resident across calls. Keeping it in the primitive prevents each
+/// wrapper from inventing a private fingerprint contract for the same graph
+/// representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ToposortCsrStaticInputKey {
+    /// Number of nodes in the CSR graph.
+    pub node_count: u32,
+    /// Words in node-indexed scratch/output buffers.
+    pub node_words: usize,
+    /// Words in the CSR offsets buffer.
+    pub offset_words: usize,
+    /// Words in the CSR targets buffer.
+    pub target_words: usize,
+    /// Stable content fingerprint for CSR offsets.
+    pub offsets_hash: u64,
+    /// Stable content fingerprint for CSR targets.
+    pub targets_hash: u64,
+}
+
+impl ToposortCsrDispatchPlan {
+    /// Build the single-lane topological-sort program for this plan.
+    #[must_use]
+    pub fn program(&self) -> Program {
+        toposort_program(
+            self.layout.node_count,
+            TOPOSORT_OFFSETS_BUFFER,
+            TOPOSORT_TARGETS_BUFFER,
+            TOPOSORT_INDEGREE_SCRATCH_BUFFER,
+            TOPOSORT_QUEUE_SCRATCH_BUFFER,
+            TOPOSORT_ORDER_OUT_BUFFER,
+        )
+    }
+
+    /// Return the primitive-owned cache identity for this plan's static graph inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ToposortCsrError::BadCsr`] if the supplied CSR slices no
+    /// longer match the validated dispatch plan shape.
+    pub fn static_input_key(
+        &self,
+        offsets: &[u32],
+        targets: &[u32],
+    ) -> Result<ToposortCsrStaticInputKey, ToposortCsrError> {
+        if offsets.len() != self.offset_words {
+            return Err(ToposortCsrError::BadCsr {
+                message: format!(
+                    "Fix: toposort_csr static key expected {} offset words, got {}.",
+                    self.offset_words,
+                    offsets.len()
+                ),
+            });
+        }
+        if targets.len() != self.target_words {
+            return Err(ToposortCsrError::BadCsr {
+                message: format!(
+                    "Fix: toposort_csr static key expected {} target words, got {}.",
+                    self.target_words,
+                    targets.len()
+                ),
+            });
+        }
+        Ok(ToposortCsrStaticInputKey {
+            node_count: self.layout.node_count,
+            node_words: self.node_words,
+            offset_words: self.offset_words,
+            target_words: self.target_words,
+            offsets_hash: toposort_csr_slice_fingerprint(offsets),
+            targets_hash: toposort_csr_slice_fingerprint(targets),
+        })
+    }
+}
+
+/// Stable primitive-owned fingerprint for CSR topological-sort u32 slices.
+#[must_use]
+pub fn toposort_csr_slice_fingerprint(values: &[u32]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for byte in (values.len() as u64).to_le_bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    for value in values {
+        for byte in value.to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    hash
+}
+
 /// CPU reference over the primitive-native CSR adjacency shape.
 ///
 /// `offsets` has `node_count + 1` entries and `targets` stores outgoing
@@ -112,6 +235,27 @@ pub fn toposort_csr(
     Ok(order)
 }
 
+/// Caller-owned workspace for repeated CSR topological-sort CPU oracle runs.
+///
+/// The CPU oracle is used heavily by conformance and CUDA parity paths. Keeping
+/// indegree and queue storage outside the call lets proof runners amortize heap
+/// growth across thousands of generated graphs without changing the public
+/// allocating convenience API.
+#[derive(Debug, Default, Clone)]
+pub struct ToposortCsrScratch {
+    /// Per-node incoming-edge counts rebuilt for each run.
+    pub indeg: Vec<u32>,
+    /// Zero-indegree work queue consumed by Kahn traversal.
+    pub queue: Vec<u32>,
+}
+
+impl ToposortCsrScratch {
+    /// Create an empty reusable topological-sort workspace.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 /// CPU reference over primitive-native CSR adjacency, reusing caller storage.
 ///
 /// # Errors
@@ -125,17 +269,46 @@ pub fn toposort_csr_into(
     targets: &[u32],
     order: &mut Vec<u32>,
 ) -> Result<(), ToposortCsrError> {
-    validate_toposort_csr_inputs(node_count, offsets, targets)?;
+    let mut scratch = ToposortCsrScratch::default();
+    toposort_csr_into_with_scratch(node_count, offsets, targets, order, &mut scratch)
+}
+
+/// CPU reference over primitive-native CSR adjacency with caller-owned output
+/// and scratch storage.
+///
+/// # Errors
+///
+/// Returns [`ToposortCsrError::BadCsr`] when CSR validation fails and
+/// [`ToposortCsrError::BadOrder`] when the derived order violates the
+/// primitive contract. Validation happens before any caller-owned storage is
+/// cleared, so rejected inputs do not clobber reusable buffers.
+pub fn toposort_csr_into_with_scratch(
+    node_count: u32,
+    offsets: &[u32],
+    targets: &[u32],
+    order: &mut Vec<u32>,
+    scratch: &mut ToposortCsrScratch,
+) -> Result<(), ToposortCsrError> {
+    let layout = validate_toposort_csr_inputs(node_count, offsets, targets)?;
     order.clear();
+    scratch.indeg.clear();
+    scratch.queue.clear();
     if node_count == 0 {
         return Ok(());
     }
 
-    let node_words = node_count as usize;
-    let mut indeg = vec![0u32; node_words];
+    let node_words = layout.node_words;
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut scratch.indeg,
+        node_words,
+        "toposort CSR CPU oracle",
+        "toposort_csr indegree scratch",
+        toposort_csr_allocation,
+    )?;
+    scratch.indeg.resize(node_words, 0);
     for (idx, &target) in targets.iter().enumerate() {
-        indeg[target as usize] =
-            indeg[target as usize]
+        scratch.indeg[target as usize] =
+            scratch.indeg[target as usize]
                 .checked_add(1)
                 .ok_or_else(|| ToposortCsrError::BadCsr {
                     message: format!(
@@ -144,16 +317,31 @@ pub fn toposort_csr_into(
                 })?;
     }
 
-    let mut queue: Vec<u32> = (0..node_count)
-        .filter(|&node| indeg[node as usize] == 0)
-        .collect();
-    order.reserve(node_words);
-    while let Some(node) = queue.pop() {
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut scratch.queue,
+        node_words,
+        "toposort CSR CPU oracle",
+        "toposort_csr zero-indegree queue",
+        toposort_csr_allocation,
+    )?;
+    for node in 0..node_count {
+        if scratch.indeg[node as usize] == 0 {
+            scratch.queue.push(node);
+        }
+    }
+    crate::graph::scratch::reserve_graph_items_with(
+        order,
+        node_words,
+        "toposort CSR CPU oracle",
+        "toposort_csr output order",
+        toposort_csr_allocation,
+    )?;
+    while let Some(node) = scratch.queue.pop() {
         order.push(node);
         let start = offsets[node as usize] as usize;
         let end = offsets[node as usize + 1] as usize;
         for (edge_offset, &dependent) in targets[start..end].iter().enumerate() {
-            let slot = &mut indeg[dependent as usize];
+            let slot = &mut scratch.indeg[dependent as usize];
             *slot = slot
                 .checked_sub(1)
                 .ok_or_else(|| ToposortCsrError::BadOrder {
@@ -163,12 +351,12 @@ pub fn toposort_csr_into(
                 ),
                 })?;
             if *slot == 0 {
-                queue.push(dependent);
+                scratch.queue.push(dependent);
             }
         }
     }
 
-    validate_toposort_csr_order(node_count, offsets, targets, order)
+    validate_toposort_csr_order_with_layout(&layout, offsets, targets, order)
 }
 
 /// Validate primitive-native CSR input shape.
@@ -259,6 +447,110 @@ pub fn validate_toposort_csr_inputs(
     })
 }
 
+/// Validate primitive-native CSR inputs and return the full dispatch plan.
+
+pub fn plan_toposort_csr_dispatch(
+    node_count: u32,
+    offsets: &[u32],
+    targets: &[u32],
+) -> Result<ToposortCsrDispatchPlan, ToposortCsrError> {
+    let layout = validate_toposort_csr_inputs(node_count, offsets, targets)?;
+    Ok(ToposortCsrDispatchPlan {
+        offset_words: layout.offset_words,
+        target_words: layout.target_words,
+        node_words: layout.node_words,
+        layout,
+        grid: TOPOSORT_DISPATCH_GRID,
+    })
+}
+
+#[cfg(test)]
+mod dispatch_plan_tests {
+    use super::*;
+
+    #[test]
+    fn dispatch_plan_owns_scratch_sizes_and_grid() {
+        let plan = plan_toposort_csr_dispatch(3, &[0, 2, 3, 3], &[1, 2, 2])
+            .expect("Fix: valid DAG CSR should plan topological-sort dispatch");
+
+        assert_eq!(plan.grid, TOPOSORT_DISPATCH_GRID);
+        assert_eq!(plan.offset_words, 4);
+        assert_eq!(plan.target_words, 3);
+        assert_eq!(plan.node_words, 3);
+        assert_eq!(plan.layout.node_count, 3);
+    }
+
+    #[test]
+    fn empty_dispatch_plan_is_non_dispatchable_but_well_shaped() {
+        let plan = plan_toposort_csr_dispatch(0, &[0], &[])
+            .expect("Fix: canonical empty CSR should plan without dispatch");
+
+        assert_eq!(plan.grid, TOPOSORT_DISPATCH_GRID);
+        assert_eq!(plan.offset_words, 1);
+        assert_eq!(plan.target_words, 0);
+        assert_eq!(plan.node_words, 0);
+        assert_eq!(plan.layout.node_count, 0);
+    }
+
+    #[test]
+    fn csr_into_emits_order_accepted_by_public_validator() {
+        let offsets = [0, 2, 3, 3];
+        let targets = [1, 2, 2];
+        let mut order = Vec::with_capacity(3);
+
+        toposort_csr_into(3, &offsets, &targets, &mut order)
+            .expect("Fix: valid DAG CSR should topologically sort.");
+
+        validate_toposort_csr_order(3, &offsets, &targets, &order)
+            .expect("Fix: toposort_csr_into output must satisfy the public order validator.");
+        assert_eq!(order.len(), 3);
+    }
+
+    #[test]
+    fn csr_order_validator_rejects_dependency_inversion() {
+        let err = validate_toposort_csr_order(3, &[0, 2, 3, 3], &[1, 2, 2], &[2, 1, 0])
+            .expect_err("Fix: dependency-inverted CSR order must be rejected.");
+
+        assert!(matches!(err, ToposortCsrError::BadOrder { .. }));
+    }
+
+    #[test]
+    fn static_input_key_tracks_content_not_only_shape() {
+        let plan = plan_toposort_csr_dispatch(4, &[0, 2, 3, 3, 3], &[1, 2, 3])
+            .expect("Fix: valid CSR should plan topological-sort dispatch");
+        let first = plan
+            .static_input_key(&[0, 2, 3, 3, 3], &[1, 2, 3])
+            .expect("Fix: static key should accept matching slices");
+        let same = plan
+            .static_input_key(&[0, 2, 3, 3, 3], &[1, 2, 3])
+            .expect("Fix: identical CSR should produce identical key");
+        let changed_targets = plan
+            .static_input_key(&[0, 2, 3, 3, 3], &[2, 3, 3])
+            .expect("Fix: same-shape CSR content change should still key");
+
+        assert_eq!(first, same);
+        assert_eq!(first.node_count, 4);
+        assert_eq!(first.node_words, 4);
+        assert_eq!(first.offset_words, 5);
+        assert_eq!(first.target_words, 3);
+        assert_ne!(first, changed_targets);
+        assert_eq!(first.offsets_hash, changed_targets.offsets_hash);
+        assert_ne!(first.targets_hash, changed_targets.targets_hash);
+    }
+
+    #[test]
+    fn static_input_key_rejects_plan_slice_drift() {
+        let plan = plan_toposort_csr_dispatch(3, &[0, 1, 2, 2], &[1, 2])
+            .expect("Fix: valid CSR should plan topological-sort dispatch");
+
+        let err = plan
+            .static_input_key(&[0, 1, 2, 2], &[1])
+            .expect_err("Fix: stale plan must not accept mismatched target slices");
+
+        assert!(matches!(err, ToposortCsrError::BadCsr { .. }));
+    }
+}
+
 /// Validate that `order` is a full topological permutation for the
 /// primitive-native CSR adjacency shape.
 ///
@@ -273,7 +565,17 @@ pub fn validate_toposort_csr_order(
     targets: &[u32],
     order: &[u32],
 ) -> Result<(), ToposortCsrError> {
-    validate_toposort_csr_inputs(node_count, offsets, targets)?;
+    let layout = validate_toposort_csr_inputs(node_count, offsets, targets)?;
+    validate_toposort_csr_order_with_layout(&layout, offsets, targets, order)
+}
+
+fn validate_toposort_csr_order_with_layout(
+    layout: &ToposortCsrLayout,
+    offsets: &[u32],
+    targets: &[u32],
+    order: &[u32],
+) -> Result<(), ToposortCsrError> {
+    let node_count = layout.node_count;
     if order.len() != node_count as usize {
         return Err(ToposortCsrError::BadOrder {
             message: format!(
@@ -283,8 +585,15 @@ pub fn validate_toposort_csr_order(
             ),
         });
     }
-    let mut seen = vec![false; node_count as usize];
-    let mut pos = vec![0usize; node_count as usize];
+    let mut pos: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut pos,
+        layout.node_words,
+        "toposort CSR CPU oracle",
+        "toposort_csr order positions",
+        toposort_csr_allocation,
+    )?;
+    pos.resize(layout.node_words, usize::MAX);
     for (idx, &node) in order.iter().enumerate() {
         if node >= node_count {
             return Err(ToposortCsrError::BadOrder {
@@ -293,18 +602,21 @@ pub fn validate_toposort_csr_order(
                 ),
             });
         }
-        let slot = &mut seen[node as usize];
-        if *slot {
+        let slot = &mut pos[node as usize];
+        if *slot != usize::MAX {
             return Err(ToposortCsrError::BadOrder {
                 message: format!(
                     "Fix: toposort_csr order contains duplicate node {node}; graph may be cyclic or backend output is malformed."
                 ),
             });
         }
-        *slot = true;
-        pos[node as usize] = idx;
+        *slot = idx;
     }
-    if let Some((missing, _)) = seen.iter().enumerate().find(|(_, present)| !**present) {
+    if let Some((missing, _)) = pos
+        .iter()
+        .enumerate()
+        .find(|(_, position)| **position == usize::MAX)
+    {
         return Err(ToposortCsrError::BadOrder {
             message: format!(
                 "Fix: toposort_csr order omitted node {missing}; graph may be cyclic."
@@ -332,7 +644,7 @@ pub fn validate_toposort_csr_order(
 
 /// CPU reference: Kahn's algorithm over `(node_count, edges)`.
 ///
-/// `edges` is a slice of `(from, to)` u32 pairs — `from` depends on
+/// `edges` is a slice of `(from, to)` u32 pairs  -  `from` depends on
 /// `to`, so `to` comes first in the sort. Returns a `Vec<u32>` in
 /// topological order on success, or `ToposortError::Cycle` if the
 /// graph has a cycle.
@@ -345,28 +657,70 @@ pub fn validate_toposort_csr_order(
 pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, ToposortError> {
     const NONE: usize = usize::MAX;
 
-    let n = node_count as usize;
-    let mut indeg = vec![0u32; n];
-    let mut outgoing_head = vec![NONE; n];
-    let mut outgoing_to = Vec::with_capacity(edges.len());
-    let mut outgoing_next = Vec::with_capacity(edges.len());
-    let mut depends_head = vec![NONE; n];
-    let mut depends_to = Vec::with_capacity(edges.len());
-    let mut depends_next = Vec::with_capacity(edges.len());
+    validate_toposort_edge_ids(node_count, edges)?;
 
-    for (edge_idx, &(from, to)) in edges.iter().enumerate() {
-        if (from as usize) >= n {
-            return Err(ToposortError::UnknownNode {
-                edge: edge_idx,
-                node: from,
-            });
-        }
-        if (to as usize) >= n {
-            return Err(ToposortError::UnknownNode {
-                edge: edge_idx,
-                node: to,
-            });
-        }
+    let n = node_count as usize;
+    let mut indeg: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut indeg,
+        n,
+        "toposort CPU oracle",
+        "toposort indegree scratch",
+        toposort_allocation,
+    )?;
+    indeg.resize(n, 0);
+    let mut outgoing_head: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut outgoing_head,
+        n,
+        "toposort CPU oracle",
+        "toposort outgoing heads",
+        toposort_allocation,
+    )?;
+    outgoing_head.resize(n, NONE);
+    let mut outgoing_to: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut outgoing_to,
+        edges.len(),
+        "toposort CPU oracle",
+        "toposort outgoing targets",
+        toposort_allocation,
+    )?;
+    let mut outgoing_next: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut outgoing_next,
+        edges.len(),
+        "toposort CPU oracle",
+        "toposort outgoing links",
+        toposort_allocation,
+    )?;
+    let mut depends_head: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut depends_head,
+        n,
+        "toposort CPU oracle",
+        "toposort dependency heads",
+        toposort_allocation,
+    )?;
+    depends_head.resize(n, NONE);
+    let mut depends_to: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut depends_to,
+        edges.len(),
+        "toposort CPU oracle",
+        "toposort dependency targets",
+        toposort_allocation,
+    )?;
+    let mut depends_next: Vec<usize> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut depends_next,
+        edges.len(),
+        "toposort CPU oracle",
+        "toposort dependency links",
+        toposort_allocation,
+    )?;
+
+    for &(from, to) in edges {
         let outgoing_idx = outgoing_to.len();
         outgoing_to.push(from);
         outgoing_next.push(outgoing_head[to as usize]);
@@ -382,10 +736,27 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
             .ok_or(ToposortError::IndegreeOverflow { node: from })?;
     }
 
-    let mut queue: Vec<u32> = (0..node_count)
-        .filter(|&v| indeg[v as usize] == 0)
-        .collect();
-    let mut out = Vec::with_capacity(n);
+    let mut queue: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut queue,
+        n,
+        "toposort CPU oracle",
+        "toposort zero-indegree queue",
+        toposort_allocation,
+    )?;
+    for v in 0..node_count {
+        if indeg[v as usize] == 0 {
+            queue.push(v);
+        }
+    }
+    let mut out: Vec<u32> = Vec::new();
+    crate::graph::scratch::reserve_graph_items_with(
+        &mut out,
+        n,
+        "toposort CPU oracle",
+        "toposort output order",
+        toposort_allocation,
+    )?;
 
     while let Some(&v) = queue.last() {
         queue.pop();
@@ -410,10 +781,10 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
 
     if out.len() != n {
         // AUDIT_2026-04-24 F-TS-03: returning the first node with
-        // indeg > 0 is misleading — that node may be *downstream* of
+        // indeg > 0 is misleading  -  that node may be *downstream* of
         // a cycle (its predecessor is stuck, not itself). Instead,
         // walk outgoing "depends on" edges from any unemitted node
-        // until we revisit a node already on the walk — that revisit
+        // until we revisit a node already on the walk  -  that revisit
         // point is guaranteed to lie on the cycle.
         let seed = indeg
             .iter()
@@ -429,7 +800,15 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
                 }
             });
         let seed = seed?;
-        let mut on_stack = vec![false; n];
+        let mut on_stack: Vec<bool> = Vec::new();
+        crate::graph::scratch::reserve_graph_items_with(
+            &mut on_stack,
+            n,
+            "toposort CPU oracle",
+            "toposort cycle diagnosis stack",
+            toposort_allocation,
+        )?;
+        on_stack.resize(n, false);
         let mut cursor = seed;
         let cycle_node = loop {
             if on_stack[cursor as usize] {
@@ -460,6 +839,32 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
         return Err(ToposortError::Cycle { node: cycle_node });
     }
     Ok(out)
+}
+
+fn validate_toposort_edge_ids(node_count: u32, edges: &[(u32, u32)]) -> Result<(), ToposortError> {
+    for (edge_idx, &(from, to)) in edges.iter().enumerate() {
+        if from >= node_count {
+            return Err(ToposortError::UnknownNode {
+                edge: edge_idx,
+                node: from,
+            });
+        }
+        if to >= node_count {
+            return Err(ToposortError::UnknownNode {
+                edge: edge_idx,
+                node: to,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn toposort_csr_allocation(message: String) -> ToposortCsrError {
+    ToposortCsrError::BadCsr { message }
+}
+
+fn toposort_allocation(message: String) -> ToposortError {
+    ToposortError::InconsistentState { message }
 }
 
 /// Build a single-invocation Program that runs Kahn's algorithm
@@ -599,6 +1004,7 @@ pub fn toposort_program(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -637,7 +1043,7 @@ mod tests {
     fn cycle_diagnostic_names_node_on_cycle_not_downstream() {
         // AUDIT_2026-04-24 F-TS-03: graph where node 0 depends on
         // the cycle {1 → 2 → 3 → 1} but is not on it. Prior code
-        // reported the first `indeg > 0` node (node 0 — downstream of
+        // reported the first `indeg > 0` node (node 0  -  downstream of
         // the cycle), which was misleading because 0 itself is not on
         // any cycle. Diagnostic must name a node actually on a cycle.
         let err = toposort(4, &[(0, 1), (1, 2), (2, 3), (3, 1)])
@@ -663,6 +1069,29 @@ mod tests {
             }
             _ => panic!("expected UnknownNode"),
         }
+    }
+
+    #[test]
+    fn unknown_node_validation_runs_before_node_sized_allocations() {
+        let source = include_str!("toposort.rs");
+        let function_source = source
+            .split("pub fn toposort(")
+            .nth(1)
+            .expect("Fix: primitive topological sort source should contain toposort.");
+        let validation_pos = function_source
+            .find("validate_toposort_edge_ids(node_count, edges)?")
+            .expect("Fix: toposort should prevalidate edge ids.");
+        let first_node_scratch_pos = function_source
+            .find("vec![")
+            .expect("Fix: toposort source should contain node-sized scratch allocation.");
+        assert!(
+            validation_pos < first_node_scratch_pos,
+            "Fix: reject malformed edges before allocating node-sized topological-sort scratch."
+        );
+
+        let err = validate_toposort_edge_ids(3, &[(0, 1), (2, 3)])
+            .expect_err("edge target equal to node_count must be rejected");
+        assert_eq!(err, ToposortError::UnknownNode { edge: 1, node: 3 });
     }
 
     #[test]
@@ -711,6 +1140,111 @@ mod tests {
     }
 
     #[test]
+    fn csr_reference_with_scratch_reuses_storage_and_clears_stale_state() {
+        let mut order = Vec::with_capacity(8);
+        order.extend_from_slice(&[99, 98, 97]);
+        let mut queue = Vec::with_capacity(8);
+        queue.extend_from_slice(&[6, 5, 4]);
+        let mut scratch = ToposortCsrScratch {
+            indeg: vec![7; 8],
+            queue,
+        };
+        let order_capacity = order.capacity();
+        let indeg_capacity = scratch.indeg.capacity();
+        let queue_capacity = scratch.queue.capacity();
+
+        toposort_csr_into_with_scratch(4, &[0, 2, 3, 3, 3], &[1, 2, 3], &mut order, &mut scratch)
+            .expect("Fix: valid DAG must sort while reusing caller-owned scratch.");
+
+        validate_toposort_csr_order(4, &[0, 2, 3, 3, 3], &[1, 2, 3], &order)
+            .expect("Fix: scratch-backed topological order must satisfy the CSR contract.");
+        assert_eq!(order.capacity(), order_capacity);
+        assert_eq!(scratch.indeg.capacity(), indeg_capacity);
+        assert_eq!(scratch.queue.capacity(), queue_capacity);
+        assert_eq!(
+            scratch.indeg,
+            vec![0, 0, 0, 0],
+            "Fix: scratch-backed traversal must not retain stale indegree counts."
+        );
+        assert!(
+            scratch.queue.is_empty(),
+            "Fix: scratch-backed traversal must consume stale and live queue entries."
+        );
+
+        toposort_csr_into_with_scratch(2, &[0, 1, 1], &[1], &mut order, &mut scratch)
+            .expect("Fix: second smaller DAG must reuse the same workspace.");
+        validate_toposort_csr_order(2, &[0, 1, 1], &[1], &order)
+            .expect("Fix: reused workspace must not leak prior graph state.");
+        assert_eq!(order.capacity(), order_capacity);
+        assert_eq!(scratch.indeg.capacity(), indeg_capacity);
+        assert_eq!(scratch.queue.capacity(), queue_capacity);
+        assert_eq!(scratch.indeg, vec![0, 0]);
+        assert!(scratch.queue.is_empty());
+    }
+
+    #[test]
+    fn csr_reference_with_scratch_validates_before_mutating_reused_storage() {
+        let mut order = vec![9, 8, 7];
+        let mut scratch = ToposortCsrScratch {
+            indeg: vec![1, 2],
+            queue: vec![3],
+        };
+        let err = toposort_csr_into_with_scratch(2, &[0, 2, 1], &[1], &mut order, &mut scratch)
+            .expect_err("Fix: malformed CSR offsets must be rejected.");
+
+        assert!(matches!(err, ToposortCsrError::BadCsr { .. }));
+        assert_eq!(
+            order,
+            vec![9, 8, 7],
+            "Fix: validation failures must not clobber reusable output storage."
+        );
+        assert_eq!(
+            scratch.indeg,
+            vec![1, 2],
+            "Fix: validation failures must not clear reusable indegree scratch."
+        );
+        assert_eq!(
+            scratch.queue,
+            vec![3],
+            "Fix: validation failures must not clear reusable queue scratch."
+        );
+    }
+
+    #[test]
+    fn generated_csr_reference_with_scratch_matches_allocating_reference() {
+        let mut order = Vec::new();
+        let mut scratch = ToposortCsrScratch::new();
+
+        for case in 0..2048usize {
+            let n = case % 17;
+            let mut offsets = Vec::with_capacity(n + 1);
+            let mut targets = Vec::new();
+            offsets.push(0);
+            for src in 0..n {
+                for dst in src + 1..n {
+                    let mixed = case
+                        .wrapping_mul(31)
+                        .wrapping_add(src.wrapping_mul(17))
+                        .wrapping_add(dst.wrapping_mul(13));
+                    if mixed % 5 == 0 || (case % 11 == 0 && dst == src + 1) {
+                        targets.push(dst as u32);
+                    }
+                }
+                offsets.push(targets.len() as u32);
+            }
+
+            let expected = toposort_csr(n as u32, &offsets, &targets)
+                .expect("Fix: generated lower-triangular CSR graph must be a valid DAG.");
+            toposort_csr_into_with_scratch(n as u32, &offsets, &targets, &mut order, &mut scratch)
+                .expect("Fix: scratch-backed oracle must accept every generated valid DAG.");
+            assert_eq!(
+                order, expected,
+                "Fix: scratch-backed oracle diverged from allocating oracle at generated case {case}."
+            );
+        }
+    }
+
+    #[test]
     fn csr_validation_rejects_bad_shape() {
         let err = validate_toposort_csr_inputs(2, &[0, 2, 1], &[1]).unwrap_err();
         assert!(matches!(err, ToposortCsrError::BadCsr { .. }));
@@ -751,7 +1285,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Adversarial fixtures — empty/single/disconnected/self-loop/max-size.
+    // Adversarial fixtures  -  empty/single/disconnected/self-loop/max-size.
     // ------------------------------------------------------------------
 
     #[test]
@@ -761,7 +1295,7 @@ mod tests {
 
     #[test]
     fn self_loops_only_rejected() {
-        // Every node has a self-loop — each is a 1-cycle.
+        // Every node has a self-loop  -  each is a 1-cycle.
         let err = toposort(3, &[(0, 0), (1, 1), (2, 2)]).expect_err("self-loops are cycles");
         assert!(matches!(err, ToposortError::Cycle { .. }));
     }
@@ -808,10 +1342,10 @@ mod tests {
         let result_path = source
             .split("pub fn toposort(")
             .nth(1)
-            .expect("toposort implementation source must be present")
+            .expect("Fix: toposort implementation source must be present")
             .split("/// Build a single-invocation Program")
             .next()
-            .expect("toposort implementation source must precede program builder");
+            .expect("Fix: toposort implementation source must precede program builder");
 
         assert!(
             result_path.contains("ToposortError::IndegreeOverflow")
@@ -822,3 +1356,4 @@ mod tests {
         );
     }
 }
+

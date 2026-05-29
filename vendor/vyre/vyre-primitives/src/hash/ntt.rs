@@ -1,18 +1,18 @@
-//! Number-Theoretic Transform — FFT in a finite field.
+//! Number-Theoretic Transform  -  FFT in a finite field.
 //!
 //! NTT replaces FFT's complex roots of unity with primitive roots of
 //! a finite field GF(p). With prime `p ≡ 1 (mod 2N)`, an N-th root
 //! exists in GF(p) and the radix-2 Cooley-Tukey FFT structure carries
-//! over verbatim — but with EXACT integer arithmetic. No
+//! over verbatim  -  but with EXACT integer arithmetic. No
 //! floating-point error.
 //!
 //! Substrate for:
-//! - **FHE schemes** (BFV, BGV, CKKS) — polynomial multiplication
+//! - **FHE schemes** (BFV, BGV, CKKS)  -  polynomial multiplication
 //!   modulo `x^N + 1`,
-//! - **zk-SNARKs** (PLONK, Plonky2, STARK) — polynomial commitment
+//! - **zk-SNARKs** (PLONK, Plonky2, STARK)  -  polynomial commitment
 //!   schemes,
-//! - **Reed-Solomon codes** — error correction over GF(p),
-//! - **Lattice-based crypto** — Kyber, Dilithium core operations.
+//! - **Reed-Solomon codes**  -  error correction over GF(p),
+//! - **Lattice-based crypto**  -  Kyber, Dilithium core operations.
 //!
 //! As FHE & zk become production primitives (Apple PCC, Worldcoin,
 //! attested-compute markets), whoever ships the GPU NTT primitive
@@ -21,20 +21,21 @@
 //!
 //! # Why this primitive is dual-use
 //!
-//! | Consumer | Use |
+//! | Composition role | Use |
 //! |---|---|
-//! | `vyre-libs::crypto::fhe` consumers | BFV / CKKS polynomial multiply |
-//! | `vyre-libs::crypto::zk` consumers | PLONK polynomial commitment |
-//! | `vyre-libs::crypto::lattice` consumers | Kyber NTT-friendly multiply |
-//! | `vyre-libs::math::stable_polymul` consumers | exact-integer polynomial multiply (no FFT precision loss) |
+//! | homomorphic encryption | BFV / CKKS polynomial multiply |
+//! | zero-knowledge proving | PLONK polynomial commitment |
+//! | lattice cryptography | Kyber NTT-friendly multiply |
+//! | stable polynomial math | exact-integer polynomial multiply without FFT precision loss |
 //!
-//! Self-consumer is weak today; revisit when a vyre-internal crypto
-//! use materializes (e.g. attested-compute proof emission).
+//! The primitive is domain-neutral: higher-level cryptographic or numeric
+//! compositions supply scheme policy while this module owns finite-field
+//! transform mechanics.
 //!
 //! # Choice of prime
 //!
 //! Default to **Solinas prime `p = 0xFFFF_FFFF_0000_0001` = 2^64 - 2^32 + 1**
-//! a.k.a. **Goldilocks** — chosen by Plonky2. Properties:
+//! a.k.a. **Goldilocks**  -  chosen by Plonky2. Properties:
 //! - 2^64 - 2^32 + 1, 64-bit wide,
 //! - admits primitive root of order 2^32 → up to N=2^32 NTT lengths,
 //! - reductions exploit `2^96 ≡ -1 (mod p)` for fast Barrett-free
@@ -257,7 +258,7 @@ pub fn bit_reverse<T: Copy>(a: &mut [T]) {
 /// One butterfly per pair of lanes:
 ///   `(a, b) → (a + w · b mod p, a - w · b mod p)`
 ///
-/// `stage_log` is the log₂ of the current butterfly distance — used by
+/// `stage_log` is the log₂ of the current butterfly distance  -  used by
 /// the lane to index the correct twiddle.
 #[must_use]
 pub fn ntt_butterfly_stage(data: &str, twiddles: &str, n: u32, stage_log: u32) -> Program {
@@ -320,13 +321,25 @@ pub fn ntt_butterfly_stage(data: &str, twiddles: &str, n: u32, stage_log: u32) -
     // a[hi] = (u - v) mod p. Multiplication uses Montgomery reduction
     // built from u32 low/high products, so the GPU IR stays byte-identical
     // to the CPU reference without requiring native u64 arithmetic.
+    //
+    // For the first stage, butterfly_distance == 1 and the only valid
+    // stage-local twiddle is w^0 == 1. Specialize that case to `v = hi`
+    // instead of emitting the full Montgomery product. This removes a huge
+    // expression tree from catalog-scale proof fixtures and avoids WGPU
+    // spending release-gate time compiling arithmetic that is provably dead
+    // for the stage-0 butterfly.
+    let v_expr = if butterfly_distance == 1 {
+        Expr::var("hi")
+    } else {
+        mod_mul_expr(Expr::var("hi"), Expr::var("w"))
+    };
     let body = vec![Node::if_then(
         Expr::lt(t.clone(), Expr::u32(half)),
         vec![
             Node::let_bind("u", Expr::load(data, pair_lo.clone())),
             Node::let_bind("hi", Expr::load(data, pair_hi.clone())),
             Node::let_bind("w", Expr::load(twiddles, twiddle_idx)),
-            Node::let_bind("v", mod_mul_expr(Expr::var("hi"), Expr::var("w"))),
+            Node::let_bind("v", v_expr),
             Node::store(data, pair_lo, mod_add_expr(Expr::var("u"), Expr::var("v"))),
             Node::store(data, pair_hi, mod_sub_expr(Expr::var("u"), Expr::var("v"))),
         ],
@@ -353,13 +366,16 @@ inventory::submit! {
         OP_ID,
         || ntt_butterfly_stage("data", "twiddles", 4, 0),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[1, 2, 3, 4]),
                 to_bytes(&[1, mod_pow(GENERATOR_G, (PRIME_P - 1) / 4)]),
             ]]
         }),
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            vec![vec![to_bytes(&[3, PRIME_P - 1, 7, PRIME_P - 1])]]
+        }),
     )
 }
 
@@ -432,6 +448,7 @@ mod tests {
             .iter()
             .zip(b.iter())
             .map(|(&x, &y)| mod_mul(x, y))
+
             .collect();
         let mut c_mut = c;
         ntt_inverse_cpu(&mut c_mut);
@@ -461,6 +478,16 @@ mod tests {
     }
 
     #[test]
+    fn stage_zero_butterfly_avoids_dead_montgomery_multiply_tree() {
+        let p = ntt_butterfly_stage("data", "tw", 4, 0);
+        let rendered = format!("{:?}", p.entry());
+        assert!(
+            !rendered.contains("MulHi"),
+            "Fix: stage-0 NTT twiddle is 1, so release proof fixtures must not emit the giant Montgomery multiply expression tree that stalls WGPU compilation: {rendered}"
+        );
+    }
+
+    #[test]
     fn ir_butterfly_stage_matches_exact_modular_reference() {
         use vyre_reference::value::Value;
 
@@ -472,18 +499,8 @@ mod tests {
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
-                Value::from(
-                    input
-                        .iter()
-                        .flat_map(|word| word.to_le_bytes())
-                        .collect::<Vec<u8>>(),
-                ),
-                Value::from(
-                    twiddles
-                        .iter()
-                        .flat_map(|word| word.to_le_bytes())
-                        .collect::<Vec<u8>>(),
-                ),
+                Value::from(crate::wire::pack_u32_slice(&input)),
+                Value::from(crate::wire::pack_u32_slice(&twiddles)),
             ],
         )
         .expect("Fix: NTT butterfly stage must execute in the reference interpreter.");
@@ -513,3 +530,4 @@ mod tests {
         assert!(p.stats().trap());
     }
 }
+

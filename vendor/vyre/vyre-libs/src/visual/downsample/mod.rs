@@ -1,7 +1,7 @@
 //! 2× box-filter downsample for half-resolution blur.
 //!
 //! Averages each 2×2 block of pixels into one output pixel.
-//! Category A composition — pure IR. No Tier 2.5 primitives.
+//! Category A composition  -  pure IR. No Tier 2.5 primitives.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -9,8 +9,8 @@ const OP_ID: &str = "vyre-libs::visual::downsample";
 
 /// Build a Program that 2× downsamples `input` into `output`.
 ///
-/// - `input`:  `[u32; width * height]` — source pixels (packed RGBA)
-/// - `output`: `[u32; (width/2) * (height/2)]` — downsampled result
+/// - `input`:  `[u32; width * height]`  -  source pixels (packed RGBA)
+/// - `output`: `[u32; (width/2) * (height/2)]`  -  downsampled result
 /// - Width and height must be even.
 #[must_use]
 pub fn downsample_2x(input: &str, output: &str, width: u32, height: u32) -> Program {

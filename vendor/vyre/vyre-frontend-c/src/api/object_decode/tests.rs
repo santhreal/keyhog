@@ -39,9 +39,10 @@ fn decode_object_semantic_graph_reads_nodes_edges_and_builtin_role_count() {
         (SectionTag::SemanticProgramGraphNodes, node_bytes.as_slice()),
         (SectionTag::SemanticProgramGraphEdges, edge_bytes.as_slice()),
     ])
-    .expect("semantic graph fixture must serialize");
+    .expect("Fix: semantic graph fixture must serialize");
 
-    let graph = decode_object_semantic_graph(&object).expect("semantic graph fixture must decode");
+    let graph =
+        decode_object_semantic_graph(&object).expect("Fix: semantic graph fixture must decode");
     assert_eq!(graph.nodes.len(), 1);
     assert_eq!(graph.edges.len(), 1);
     assert_eq!(graph.nodes[0].role, C_AST_PG_ROLE_GNU_ATTRIBUTE_DETAIL);
@@ -87,7 +88,7 @@ fn decode_object_semantic_graph_rejects_out_of_range_tree_links() {
         (SectionTag::SemanticProgramGraphNodes, node_bytes.as_slice()),
         (SectionTag::SemanticProgramGraphEdges, edge_bytes.as_slice()),
     ])
-    .expect("semantic graph fixture must serialize");
+    .expect("Fix: semantic graph fixture must serialize");
     let err = decode_object_semantic_graph(&object)
         .expect_err("out-of-range semantic tree link must not decode");
     assert!(
@@ -130,7 +131,7 @@ fn decode_object_semantic_graph_rejects_out_of_range_edges() {
         (SectionTag::SemanticProgramGraphNodes, node_bytes.as_slice()),
         (SectionTag::SemanticProgramGraphEdges, edge_bytes.as_slice()),
     ])
-    .expect("semantic graph fixture must serialize");
+    .expect("Fix: semantic graph fixture must serialize");
     let err = decode_object_semantic_graph(&object)
         .expect_err("semantic edge outside node table must not decode");
     assert!(
@@ -161,8 +162,9 @@ fn decode_object_semantic_graph_names_aggregate_decl_role() {
         (SectionTag::SemanticProgramGraphNodes, node_bytes.as_slice()),
         (SectionTag::SemanticProgramGraphEdges, &[]),
     ])
-    .expect("semantic graph fixture must serialize");
-    let graph = decode_object_semantic_graph(&object).expect("aggregate role fixture must decode");
+    .expect("Fix: semantic graph fixture must serialize");
+    let graph =
+        decode_object_semantic_graph(&object).expect("Fix: aggregate role fixture must decode");
     assert_eq!(graph.role_name(0), Some("aggregate_decl"));
 }
 
@@ -188,7 +190,7 @@ fn decode_object_semantic_graph_rejects_unknown_node_role() {
         (SectionTag::SemanticProgramGraphNodes, node_bytes.as_slice()),
         (SectionTag::SemanticProgramGraphEdges, &[]),
     ])
-    .expect("semantic graph fixture must serialize");
+    .expect("Fix: semantic graph fixture must serialize");
     let err = decode_object_semantic_graph(&object)
         .expect_err("unknown semantic node role must not decode");
     assert!(
@@ -203,7 +205,7 @@ fn decode_object_semantic_graph_rejects_empty_node_section() {
         (SectionTag::SemanticProgramGraphNodes, &[]),
         (SectionTag::SemanticProgramGraphEdges, &[]),
     ])
-    .expect("semantic graph fixture must serialize");
+    .expect("Fix: semantic graph fixture must serialize");
     let err = decode_object_semantic_graph(&object)
         .expect_err("empty semantic node section must not decode");
     assert!(
@@ -225,9 +227,9 @@ fn decode_object_ast_reads_framed_windows() {
     ast_section.extend(ast_words.iter().flat_map(|word| word.to_le_bytes()));
     ast_section.extend(root_words.iter().flat_map(|word| word.to_le_bytes()));
     let object = serialize_vyrecob2(&[(SectionTag::Ast, ast_section.as_slice())])
-        .expect("AST fixture must serialize");
+        .expect("Fix: AST fixture must serialize");
 
-    let ast = decode_object_ast(&object).expect("AST fixture must decode");
+    let ast = decode_object_ast(&object).expect("Fix: AST fixture must decode");
     assert_eq!(ast.windows.len(), 1);
     assert_eq!(ast.ast_node_count, 1);
     assert_eq!(ast.windows[0].token_start, 32);
@@ -239,7 +241,7 @@ fn decode_object_ast_reads_framed_windows() {
 #[test]
 fn decode_object_ast_rejects_header_only_section() {
     let object = serialize_vyrecob2(&[(SectionTag::Ast, b"VYRAST1\0".as_slice())])
-        .expect("AST fixture must serialize");
+        .expect("Fix: AST fixture must serialize");
     let err = decode_object_ast(&object).expect_err("header-only AST must not decode");
     assert!(
         err.contains("contains no VYRAST1 windows"),
@@ -258,7 +260,7 @@ fn decode_object_ast_rejects_rootless_window() {
     ast_section.extend_from_slice(&0u32.to_le_bytes());
     ast_section.extend(ast_words.iter().flat_map(|word| word.to_le_bytes()));
     let object = serialize_vyrecob2(&[(SectionTag::Ast, ast_section.as_slice())])
-        .expect("AST fixture must serialize");
+        .expect("Fix: AST fixture must serialize");
     let err = decode_object_ast(&object).expect_err("rootless AST window must not decode");
     assert!(
         err.contains("has no root entries"),
@@ -274,9 +276,9 @@ fn decode_object_sema_scope_reads_scope_declaration_identifier_rows() {
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<u8>>();
     let object = serialize_vyrecob2(&[(SectionTag::SemaScope, scope_bytes.as_slice())])
-        .expect("sema scope fixture must serialize");
+        .expect("Fix: sema scope fixture must serialize");
 
-    let scope = decode_object_sema_scope(&object).expect("sema scope fixture must decode");
+    let scope = decode_object_sema_scope(&object).expect("Fix: sema scope fixture must decode");
     assert_eq!(scope.records.len(), 2);
     assert_eq!(scope.records[0].scope_id, 7);
     assert_eq!(scope.records[0].parent_scope_id, u32::MAX);
@@ -296,7 +298,7 @@ fn decode_object_sema_scope_rejects_missing_parent_scope() {
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<u8>>();
     let object = serialize_vyrecob2(&[(SectionTag::SemaScope, scope_bytes.as_slice())])
-        .expect("sema scope fixture must serialize");
+        .expect("Fix: sema scope fixture must serialize");
     let err = decode_object_sema_scope(&object).expect_err("missing parent scope must not decode");
     assert!(
         err.contains("references missing parent scope 3"),
@@ -312,9 +314,9 @@ fn decode_object_sema_scope_accepts_multiple_token_rows_per_scope() {
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<u8>>();
     let object = serialize_vyrecob2(&[(SectionTag::SemaScope, scope_bytes.as_slice())])
-        .expect("sema scope fixture must serialize");
-    let scope =
-        decode_object_sema_scope(&object).expect("multiple token rows in one scope must decode");
+        .expect("Fix: sema scope fixture must serialize");
+    let scope = decode_object_sema_scope(&object)
+        .expect("Fix: multiple token rows in one scope must decode");
     assert_eq!(scope.records.len(), 2);
     assert!(scope.records.iter().all(|record| record.scope_id == 7));
 }
@@ -327,7 +329,7 @@ fn decode_object_sema_scope_rejects_multiple_roots() {
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<u8>>();
     let object = serialize_vyrecob2(&[(SectionTag::SemaScope, scope_bytes.as_slice())])
-        .expect("sema scope fixture must serialize");
+        .expect("Fix: sema scope fixture must serialize");
     let err = decode_object_sema_scope(&object).expect_err("multiple root scopes must not decode");
     assert!(
         err.contains("root scope rows"),
@@ -343,7 +345,7 @@ fn decode_object_sema_scope_rejects_unknown_decl_kind() {
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<u8>>();
     let object = serialize_vyrecob2(&[(SectionTag::SemaScope, scope_bytes.as_slice())])
-        .expect("sema scope fixture must serialize");
+        .expect("Fix: sema scope fixture must serialize");
     let err =
         decode_object_sema_scope(&object).expect_err("unknown declaration kind must not decode");
     assert!(
@@ -355,7 +357,7 @@ fn decode_object_sema_scope_rejects_unknown_decl_kind() {
 #[test]
 fn decode_object_sema_scope_rejects_empty_section() {
     let object = serialize_vyrecob2(&[(SectionTag::SemaScope, &[])])
-        .expect("sema scope fixture must serialize");
+        .expect("Fix: sema scope fixture must serialize");
     let err =
         decode_object_sema_scope(&object).expect_err("empty SemaScope section must not decode");
     assert!(

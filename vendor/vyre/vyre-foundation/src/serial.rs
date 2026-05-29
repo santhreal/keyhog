@@ -30,6 +30,6 @@ pub mod output_set;
 /// downstream consumer-side caches compose this primitive
 /// instead of re-implementing magic / version / truncation handling.
 /// One implementation, one set of typed errors, one suite of round-trip
-/// tests — every consumer adopts it and its fixes propagate.
+/// tests  -  every consumer adopts it and its fixes propagate.
 pub mod envelope;
 pub use envelope::{EnvelopeError, WireReader, WireWriter};

@@ -35,27 +35,6 @@ impl Linear {
         }
     }
 
-    /// Override the generated Program workgroup size.
-    #[must_use]
-    pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
-        self.options = self.options.with_workgroup_size(size);
-        self
-    }
-
-    /// Override the Region generator id.
-    #[must_use]
-    pub fn with_region_generator(mut self, name: &'static str) -> Self {
-        self.options = self.options.with_region_generator(name);
-        self
-    }
-
-    /// Stamp the Region metadata with a tenant id.
-    #[must_use]
-    pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
-        self.options = self.options.with_tenant_id(tenant_id);
-        self
-    }
-
     /// Validate tensor metadata and materialize the linear Program.
     ///
     /// # Errors
@@ -147,10 +126,12 @@ impl Linear {
     }
 }
 
+crate::builder::impl_cat_a_builder_options!(Linear);
+
 /// Build a Program that computes `out[i] = sum_k x[k] * w[k, i] + b[i]`.
 ///
 /// Shapes: `x: [in_dim]`, `w: [in_dim, out_dim]`, `b: [out_dim]`,
-/// `out: [out_dim]`. Workgroup `[64, 1, 1]` — each invocation handles
+/// `out: [out_dim]`. Workgroup `[64, 1, 1]`  -  each invocation handles
 /// one output index.
 ///
 /// # Errors

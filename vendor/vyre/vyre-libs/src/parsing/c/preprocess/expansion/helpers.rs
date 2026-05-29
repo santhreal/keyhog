@@ -1,7 +1,9 @@
 //! Shared GPU macro-expansion helper builders.
 
+use crate::parsing::c::lex::tokens::{TOK_HASHHASH, TOK_IDENTIFIER, TOK_LPAREN};
 use crate::parsing::c::preprocess::synthesis::*;
 use vyre::ir::{Expr, Node};
+use vyre_primitives::hash::fnv1a::{fnv1a32_initial_expr, fnv1a32_update_byte_node};
 
 use super::*;
 
@@ -275,7 +277,7 @@ pub(super) fn emit_source_span_hash(
                 "macro-name-source-span-out-of-bounds",
             )],
         ),
-        Node::let_bind(output_var, Expr::u32(FNV1A32_OFFSET)),
+        Node::let_bind(output_var, fnv1a32_initial_expr()),
         Node::loop_for(
             byte_idx.clone(),
             Expr::u32(0),
@@ -291,15 +293,168 @@ pub(super) fn emit_source_span_hash(
                         Expr::u32(0xff),
                     ),
                 ),
-                Node::assign(
-                    output_var,
-                    Expr::bitxor(Expr::var(output_var), Expr::var(&byte)),
-                ),
-                Node::assign(
-                    output_var,
-                    Expr::mul(Expr::var(output_var), Expr::u32(FNV1A32_PRIME)),
-                ),
+                fnv1a32_update_byte_node(output_var, Expr::var(&byte)),
             ],
+        ),
+    ]
+}
+
+pub(super) struct NamedMacroScanSpec<'a> {
+    pub(super) in_tok_types: &'a str,
+    pub(super) in_tok_starts: &'a str,
+    pub(super) in_tok_lens: &'a str,
+    pub(super) source_words: &'a str,
+    pub(super) macro_name_hashes: &'a str,
+    pub(super) macro_name_starts: &'a str,
+    pub(super) macro_name_lens: &'a str,
+    pub(super) macro_name_words: &'a str,
+    pub(super) macro_vals: &'a str,
+    pub(super) macro_kinds: &'a str,
+    pub(super) macro_param_counts: &'a str,
+    pub(super) source_len: Expr,
+    pub(super) decode_variadic_param_count: bool,
+}
+
+pub(super) fn emit_named_macro_scan_prefix(spec: NamedMacroScanSpec<'_>) -> Vec<Node> {
+    let mut process_current = vec![
+        Node::let_bind(
+            "named_tok",
+            Expr::load(spec.in_tok_types, Expr::var("named_i")),
+        ),
+        Node::let_bind("named_macro_slot", Expr::u32(EMPTY_MACRO_SLOT)),
+        Node::let_bind("named_macro_idx", Expr::u32(EMPTY_MACRO_SLOT)),
+        Node::let_bind("named_macro_kind", Expr::u32(C_MACRO_KIND_OBJECT_LIKE)),
+        Node::let_bind("named_param_count", Expr::u32(0)),
+        Node::let_bind("named_is_variadic", Expr::u32(0)),
+        Node::let_bind("named_required_param_count", Expr::u32(0)),
+    ];
+
+    process_current.push(Node::if_then(
+        Expr::eq(Expr::var("named_tok"), Expr::u32(TOK_IDENTIFIER)),
+        {
+            let mut ident = emit_source_span_hash(
+                "named",
+                Expr::var("named_i"),
+                spec.in_tok_starts,
+                spec.in_tok_lens,
+                spec.source_words,
+                spec.source_len,
+                "named_name_hash",
+            );
+            ident.extend(emit_macro_hash_lookup(
+                "named_lookup",
+                Expr::var("named_name_hash"),
+                Expr::var("named_start"),
+                Expr::var("named_len"),
+                spec.source_words,
+                spec.macro_name_hashes,
+                spec.macro_name_starts,
+                spec.macro_name_lens,
+                spec.macro_name_words,
+                "named_macro_slot",
+            ));
+            ident
+        },
+    ));
+
+    let mut found_macro = vec![
+        Node::assign(
+            "named_macro_idx",
+            Expr::load(spec.macro_vals, Expr::var("named_macro_slot")),
+        ),
+        Node::assign(
+            "named_macro_kind",
+            Expr::load(spec.macro_kinds, Expr::var("named_macro_slot")),
+        ),
+    ];
+    if spec.decode_variadic_param_count {
+        found_macro.extend([
+            Node::let_bind(
+                "named_param_count_raw",
+                Expr::load(spec.macro_param_counts, Expr::var("named_macro_slot")),
+            ),
+            Node::assign(
+                "named_param_count",
+                Expr::bitand(Expr::var("named_param_count_raw"), Expr::u32(0x7fff_ffff)),
+            ),
+            Node::assign(
+                "named_is_variadic",
+                Expr::shr(Expr::var("named_param_count_raw"), Expr::u32(31)),
+            ),
+            Node::assign(
+                "named_required_param_count",
+                Expr::saturating_sub(
+                    Expr::var("named_param_count"),
+                    Expr::var("named_is_variadic"),
+                ),
+            ),
+        ]);
+    } else {
+        found_macro.extend([
+            Node::assign(
+                "named_param_count",
+                Expr::load(spec.macro_param_counts, Expr::var("named_macro_slot")),
+            ),
+            Node::assign("named_required_param_count", Expr::var("named_param_count")),
+        ]);
+    }
+    found_macro.push(Node::if_then(
+        Expr::and(
+            Expr::ne(
+                Expr::var("named_macro_kind"),
+                Expr::u32(C_MACRO_KIND_OBJECT_LIKE),
+            ),
+            Expr::ne(
+                Expr::var("named_macro_kind"),
+                Expr::u32(C_MACRO_KIND_FUNCTION_LIKE),
+            ),
+        ),
+        vec![Node::trap(
+            Expr::var("named_macro_kind"),
+            "named-macro-kind-invalid",
+        )],
+    ));
+    process_current.push(Node::if_then(
+        Expr::ne(Expr::var("named_macro_slot"), Expr::u32(EMPTY_MACRO_SLOT)),
+        found_macro,
+    ));
+    process_current
+}
+
+pub(super) fn emit_named_replacement_prelude(
+    macro_sizes: &str,
+    in_tok_types: &str,
+    num_tokens: Expr,
+) -> Vec<Node> {
+    vec![
+        Node::let_bind(
+            "named_repl_size",
+            Expr::load(macro_sizes, Expr::var("named_macro_idx")),
+        ),
+        Node::if_then(
+            Expr::gt(
+                Expr::add(Expr::var("named_macro_idx"), Expr::var("named_repl_size")),
+                Expr::u32(MACRO_TABLE_SLOTS),
+            ),
+            vec![Node::trap(
+                Expr::add(Expr::var("named_macro_idx"), Expr::var("named_repl_size")),
+                "named-macro-replacement-range-out-of-bounds",
+            )],
+        ),
+        Node::let_bind("named_has_open_paren", Expr::u32(0)),
+        Node::if_then(
+            Expr::lt(
+                Expr::add(Expr::var("named_i"), Expr::u32(1)),
+                num_tokens.clone(),
+            ),
+            vec![Node::if_then(
+
+                Expr::eq(
+                    Expr::load(in_tok_types, Expr::add(Expr::var("named_i"), Expr::u32(1))),
+                    Expr::u32(TOK_LPAREN),
+                ),
+                vec![Node::assign("named_has_open_paren", Expr::u32(1))],
+            )],
         ),
     ]
 }
@@ -346,6 +501,143 @@ pub(super) fn emit_one_output_token(
     ]
 }
 
+pub(super) fn emit_object_like_token_paste_prefix(
+    macro_vals: &str,
+    macro_replacement_params: &str,
+    out_tok_types: &str,
+    synth_failure_trap: &'static str,
+) -> Vec<Node> {
+    vec![
+        Node::if_then(
+            Expr::eq(Expr::var("named_out_idx"), Expr::u32(0)),
+            vec![Node::trap(
+                Expr::var("named_repl_i"),
+                "object-like-token-paste-missing-left-token",
+            )],
+        ),
+        Node::if_then(
+            Expr::ge(
+                Expr::add(Expr::var("named_repl_i"), Expr::u32(1)),
+                Expr::var("named_repl_size"),
+            ),
+            vec![Node::trap(
+                Expr::var("named_repl_i"),
+                "object-like-token-paste-missing-right-token",
+            )],
+        ),
+        Node::let_bind(
+            "macro_paste_next_offset",
+            Expr::add(
+                Expr::var("named_macro_idx"),
+                Expr::add(Expr::var("named_repl_i"), Expr::u32(1)),
+            ),
+        ),
+        Node::let_bind(
+            "macro_paste_next_param",
+            Expr::load(
+                macro_replacement_params,
+                Expr::var("macro_paste_next_offset"),
+            ),
+        ),
+        Node::if_then(
+            Expr::ne(
+                Expr::var("macro_paste_next_param"),
+                Expr::u32(C_MACRO_REPLACEMENT_LITERAL),
+            ),
+            vec![Node::trap(
+                Expr::var("macro_paste_next_param"),
+                "object-like-token-paste-cannot-reference-parameters",
+            )],
+        ),
+        Node::let_bind(
+            "macro_paste_left_tok",
+            Expr::load(
+                out_tok_types,
+                Expr::sub(Expr::var("named_out_idx"), Expr::u32(1)),
+            ),
+        ),
+        Node::let_bind(
+            "macro_paste_right_tok",
+            Expr::load(macro_vals, Expr::var("macro_paste_next_offset")),
+        ),
+        Node::let_bind(
+            "macro_paste_synth_tok",
+            synthesized_paste_token(
+                Expr::var("macro_paste_left_tok"),
+                Expr::var("macro_paste_right_tok"),
+            ),
+        ),
+        Node::if_then(
+            Expr::eq(
+                Expr::var("macro_paste_synth_tok"),
+                Expr::u32(EMPTY_MACRO_SLOT),
+            ),
+            vec![Node::trap(
+                Expr::var("macro_paste_right_tok"),
+                synth_failure_trap,
+            )],
+        ),
+        Node::store(
+            out_tok_types,
+            Expr::sub(Expr::var("named_out_idx"), Expr::u32(1)),
+            Expr::var("macro_paste_synth_tok"),
+        ),
+    ]
+}
+
+pub(super) fn emit_object_like_replacement_loop(
+    macro_vals: &str,
+    macro_replacement_params: &str,
+    paste_branch: Vec<Node>,
+    literal_branch: Vec<Node>,
+) -> Vec<Node> {
+    vec![
+        Node::let_bind("named_skip_repl", Expr::u32(0)),
+        Node::loop_for(
+            "named_repl_i",
+            Expr::u32(0),
+            Expr::var("named_repl_size"),
+            vec![Node::if_then_else(
+                Expr::eq(Expr::var("named_skip_repl"), Expr::u32(1)),
+                vec![Node::assign("named_skip_repl", Expr::u32(0))],
+                {
+                    let mut body = vec![
+                        Node::let_bind(
+                            "named_repl_offset",
+                            Expr::add(Expr::var("named_macro_idx"), Expr::var("named_repl_i")),
+                        ),
+                        Node::let_bind(
+                            "named_repl_param",
+                            Expr::load(macro_replacement_params, Expr::var("named_repl_offset")),
+                        ),
+                        Node::if_then(
+                            Expr::ne(
+                                Expr::var("named_repl_param"),
+                                Expr::u32(C_MACRO_REPLACEMENT_LITERAL),
+                            ),
+                            vec![Node::trap(
+                                Expr::var("named_repl_param"),
+                                "object-like-macro-replacement-cannot-reference-parameters",
+                            )],
+                        ),
+                        Node::let_bind(
+                            "named_repl_tok",
+                            Expr::load(macro_vals, Expr::var("named_repl_offset")),
+                        ),
+                    ];
+                    body.push(Node::if_then_else(
+                        Expr::eq(Expr::var("named_repl_tok"), Expr::u32(TOK_HASHHASH)),
+                        paste_branch,
+                        literal_branch,
+                    ));
+                    body
+                },
+            )],
+        ),
+        Node::assign("named_i", Expr::add(Expr::var("named_i"), Expr::u32(1))),
+    ]
+}
+
 pub(super) fn synthesized_paste_token(left: Expr, right: Expr) -> Expr {
     C_TOKEN_PASTE_RULES.iter().rev().fold(
         Expr::u32(EMPTY_MACRO_SLOT),
@@ -361,3 +653,4 @@ pub(super) fn synthesized_paste_token(left: Expr, right: Expr) -> Expr {
         },
     )
 }
+

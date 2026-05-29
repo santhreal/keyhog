@@ -67,9 +67,9 @@ is hit.
 
 ## See also
 
-- [`vyre::optimizer`](https://docs.rs/vyre/latest/vyre/optimizer/) — the trait
+- [`vyre::optimizer`](https://docs.rs/vyre/latest/vyre/optimizer/)  -  the trait
   definition, registry, and scheduler.
-- [`vyre-core/src/optimizer/passes/`](../vyre-core/src/optimizer/passes/) — reference
+- [`vyre-core/src/optimizer/passes/`](../vyre-core/src/optimizer/passes/)  -  reference
   passes (`const_fold`, `strength_reduce`, etc.).
 
 ## License

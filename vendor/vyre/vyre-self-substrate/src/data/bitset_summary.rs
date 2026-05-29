@@ -197,18 +197,11 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 2);
-            let input = read_u32s(&inputs[0]);
+            let input = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
             assert_eq!(inputs[1].len(), input.len() * std::mem::size_of::<u32>());
             let out: Vec<u32> = input.iter().map(|word| word.count_ones()).collect();
             Ok(vec![u32_slice_to_le_bytes(&out)])
         }
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     #[test]
@@ -344,10 +337,10 @@ mod tests {
         let via_section = source
             .split("pub fn per_word_popcount_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[cfg(test)]\nmod tests")
             .next()
-            .expect("test module marker should exist");
+            .expect("Fix: test module marker should exist");
 
         assert!(!via_section.contains("primitive_popcount"));
         assert!(!via_section.contains("cpu_ref"));

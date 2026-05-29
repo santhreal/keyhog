@@ -1,6 +1,6 @@
 //! Pure lookup tables: vyre IR ops → naga BinaryOperator / UnaryOperator
 //! / MathFunction handles, plus literal and barrier-flag conversion.
-//! No state — the contents are direct enum mappings.
+//! No state  -  the contents are direct enum mappings.
 
 use crate::EmitError;
 use naga::{BinaryOperator, Literal, ScalarKind, UnaryOperator};

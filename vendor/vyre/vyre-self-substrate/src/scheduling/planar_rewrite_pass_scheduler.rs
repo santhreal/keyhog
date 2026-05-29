@@ -1,19 +1,19 @@
 //! IR rewrite-batch scheduler via #11 planar_rewrite (#11 self-consumer).
 //!
-//! Closes the recursion thesis for #11 — planar grammar rewriting
+//! Closes the recursion thesis for #11  -  planar grammar rewriting
 //! ships to user dialects (visual-programming languages, 2D
 //! pattern-matching languages) AND schedules vyre's own batch IR
 //! rewrites for non-conflicting parallel application.
 //!
 //! # The self-use
 //!
-//! Vyre's optimizer applies many local rewrites per pass — fold a
+//! Vyre's optimizer applies many local rewrites per pass  -  fold a
 //! constant, inline a region, eliminate a dead store. When N
 //! candidate rewrites apply to the same Region, naive sequential
 //! application means N kernel launches and N validation steps.
 //!
 //! Most of those N rewrites operate on disjoint sub-trees of the
-//! Region tree. They could batch into ONE parallel application —
+//! Region tree. They could batch into ONE parallel application  -
 //! the only constraint is "two rewrites can't touch overlapping
 //! sub-trees in the same batch."
 //!
@@ -29,7 +29,7 @@
 //!    sibling order)
 //! 2. mark `candidates[i, j] = 1` for every (i, j) where a rewrite
 //!    pattern matches
-//! 3. schedule candidates with the planar rewrite primitive — k=2 means
+//! 3. schedule candidates with the planar rewrite primitive  -  k=2 means
 //!    each rewrite "covers" a 2×2 sub-region (parent + immediate
 //!    descendant). Returns the maximum non-conflicting subset.
 //! 4. apply the selected rewrites in ONE batched dispatch
@@ -185,7 +185,7 @@ pub fn count_scheduled(schedule: &[u32]) -> u32 {
 }
 
 /// Convenience: estimate batch reduction. Returns the speedup
-/// ratio (candidates / scheduled) — a 100× speedup means the
+/// ratio (candidates / scheduled)  -  a 100× speedup means the
 /// scheduler picked 1% of candidates per batch (others apply in
 /// later batches).
 #[must_use]
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn k_one_allows_every_candidate() {
-        // k=1 means each rewrite covers a 1x1 sub-region — no
+        // k=1 means each rewrite covers a 1x1 sub-region  -  no
         // overlap possible, so every candidate is selectable.
         let candidates = vec![1u32, 1, 1, 1];
         let schedule = schedule_disjoint_rewrites(&candidates, 2, 2, 1);
@@ -248,7 +248,7 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 2);
-            let candidates = read_u32s(&inputs[0]);
+            let candidates = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
             let n = integer_sqrt(candidates.len());
             let chosen = reference_planar_rewrite_schedule(&candidates, n as u32, n as u32, 2);
             Ok(vec![u32_slice_to_le_bytes(&chosen)])
@@ -314,20 +314,13 @@ mod tests {
         let source = include_str!("planar_rewrite_pass_scheduler.rs");
         let start = source
             .find("pub fn schedule_disjoint_rewrites_via")
-            .expect("via path marker must exist");
+            .expect("Fix: via path marker must exist");
         let end = source
             .find("\n/// Convenience: count")
-            .expect("convenience marker must exist");
+            .expect("Fix: convenience marker must exist");
         let release_path = &source[start..end];
         assert!(!release_path.contains("reference_planar_rewrite_schedule"));
         assert!(!release_path.contains("reference_"));
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 
     fn integer_sqrt(n: usize) -> usize {

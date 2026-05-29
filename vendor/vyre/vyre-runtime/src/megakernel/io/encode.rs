@@ -42,15 +42,11 @@ pub fn try_encode_empty_io_queue_into(
 }
 
 fn reserve_io_queue_bytes(dst: &mut Vec<u8>, byte_count: usize) -> Result<(), PipelineError> {
-    if dst.capacity() < byte_count {
-        dst.try_reserve_exact(byte_count - dst.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "megakernel io_queue byte reservation failed for {byte_count} bytes: {source}. Fix: shard IO queue encoding or reuse a larger caller-owned queue buffer."
-                ))
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(dst, byte_count).map_err(|source| {
+        PipelineError::Backend(format!(
+            "megakernel io_queue byte reservation failed for {byte_count} bytes: {source}. Fix: shard IO queue encoding or reuse a larger caller-owned queue buffer."
+        ))
+    })
 }
 
 pub(crate) fn empty_io_queue_byte_len(slot_count: u32) -> Result<usize, PipelineError> {

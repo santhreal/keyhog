@@ -288,7 +288,7 @@ pub fn python312_extract_imports(
                 Expr::u32(0),
                 Expr::u32(crate::parsing::python::MAX_DOTTED_SEGMENTS),
                 vec![
-                    // Reset per iteration via assign — the outer
+                    // Reset per iteration via assign  -  the outer
                     // let_bind lives BEFORE the loop_for so the
                     // validator doesn't see a re-declaration each
                     // pass (V008). search_next_token_into is the
@@ -468,7 +468,7 @@ pub fn python312_extract_with_blocks(
                 Expr::u32(0),
                 Expr::u32(crate::parsing::python::MAX_DOTTED_SEGMENTS),
                 vec![
-                    // Reset per iteration via assign — the outer
+                    // Reset per iteration via assign  -  the outer
                     // let_bind lives BEFORE the loop_for so the
                     // validator doesn't see a re-declaration each
                     // pass (V008). search_next_token_into is the
@@ -611,6 +611,7 @@ inventory::submit! {
     }
 }
 
+
 fn pack_sparse_tokens(tokens: &[(usize, u32, u32)]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut tok_types = vec![0u8; 16 * 4];
     let mut tok_starts = vec![0u8; 16 * 4];
@@ -696,3 +697,4 @@ fn with_fixture_expected() -> Vec<Vec<Vec<u8>>> {
     write_words(&mut records, &[11, 3, 6, 14, 1, 0]);
     vec![vec![records, WITH_RECORD_WORDS.to_le_bytes().to_vec()]]
 }
+

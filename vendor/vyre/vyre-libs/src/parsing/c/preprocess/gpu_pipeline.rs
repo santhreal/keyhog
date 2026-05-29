@@ -3,9 +3,9 @@
 //! Replaces the CPU helpers in `vyre-frontend-c::tu_host` with a chain
 //! of GPU dispatches. Host-side responsibilities are limited to:
 //!
-//! - File I/O initiation (`fs::read`) — the kernel-mode VFS work that
+//! - File I/O initiation (`fs::read`)  -  the kernel-mode VFS work that
 //!   has no GPU equivalent.
-//! - Recursive include scheduling — graph-traversal bookkeeping over
+//! - Recursive include scheduling  -  graph-traversal bookkeeping over
 //!   file paths after GPU directive classification emits the include
 //!   requests.
 //! - Macro / conditional-frame bookkeeping between dispatches. The
@@ -19,7 +19,7 @@
 //!
 //! ## Phase split (this module ships in chunks)
 //!
-//! - **18a (this commit):** `gpu_filter_source_bytes` — runs
+//! - **18a (this commit):** `gpu_filter_source_bytes`  -  runs
 //!   `line_splice_classify` + `comment_strip_mask` + element-wise AND
 //!   + prefix-scan + scatter-compact to produce the post-phase-2,
 //!   comment-free byte stream that the lexer consumes. Foundational
@@ -37,6 +37,8 @@ mod gpu_pipeline_filter;
 pub use gpu_pipeline_filter::{gpu_filter_source_bytes, FilteredBytes};
 #[path = "gpu_pipeline/buffers.rs"]
 mod buffers;
+#[path = "gpu_pipeline/byte_lru_cache.rs"]
+mod byte_lru_cache;
 #[path = "gpu_pipeline/cache.rs"]
 mod cache;
 #[cfg(test)]

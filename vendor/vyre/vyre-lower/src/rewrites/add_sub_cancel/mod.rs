@@ -1,4 +1,4 @@
-//! Add/Sub literal-cancel — fold:
+//! Add/Sub literal-cancel  -  fold:
 //!     `Add(Sub(x, Lit(a)), Lit(a))` → `x`
 //!     `Sub(Add(x, Lit(a)), Lit(a))` → `x`
 //! Wrap-safe for U32: `(x − a) + a ≡ x (mod 2^32)` and
@@ -20,14 +20,14 @@
 //! - Non-matching literal pairs (`add_combine` / `sub_combine`
 //!   already merge those when they can; otherwise they're not
 //!   cancellable here).
-//! - `Sub(Lit(a), Add(x, ...))` style — would need sign tracking.
+//! - `Sub(Lit(a), Add(x, ...))` style  -  would need sign tracking.
 //! - Multi-consumer inner ops.
 //!
 //! Recurses. Idempotent. Wired immediately after `sub_combine` in
 //! `CANONICAL_REWRITE_PASSES`.
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 use vyre_foundation::ir::BinOp;
 
 #[must_use]
@@ -38,19 +38,7 @@ pub fn add_sub_cancel(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn add_sub_cancel_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
-
-    let mut use_count: FxHashMap<u32, u32> = FxHashMap::default();
-    for op in &body.ops {
-        for operand in &op.operands {
-            *use_count.entry(*operand).or_insert(0) += 1;
-        }
-    }
+    let index = BodyIndex::new(&body);
 
     // (op_idx_to_replace, replacement_result_id_for_x)
     let mut rewrites: Vec<(usize, u32)> = Vec::new();
@@ -68,9 +56,9 @@ fn add_sub_cancel_body(mut body: KernelBody) -> KernelBody {
         match bin {
             BinOp::Add => {
                 // Add(Sub(x, Lit(a)), Lit(a)) → x
-                if let Some(a_outer) = u32_lit(&body, &result_to_idx, rhs) {
+                if let Some(a_outer) = index.u32_lit(&body, rhs) {
                     if let Some((x, a_inner)) =
-                        inner_with_rhs_lit(&body, &result_to_idx, &use_count, lhs, BinOp::Sub)
+                        inner_with_rhs_lit(&body, &index, lhs, BinOp::Sub)
                     {
                         if a_inner == a_outer {
                             rewrites.push((idx, x));
@@ -79,9 +67,9 @@ fn add_sub_cancel_body(mut body: KernelBody) -> KernelBody {
                     }
                 }
                 // Add(Lit(a), Sub(x, Lit(a))) → x  (commuted)
-                if let Some(a_outer) = u32_lit(&body, &result_to_idx, lhs) {
+                if let Some(a_outer) = index.u32_lit(&body, lhs) {
                     if let Some((x, a_inner)) =
-                        inner_with_rhs_lit(&body, &result_to_idx, &use_count, rhs, BinOp::Sub)
+                        inner_with_rhs_lit(&body, &index, rhs, BinOp::Sub)
                     {
                         if a_inner == a_outer {
                             rewrites.push((idx, x));
@@ -91,17 +79,17 @@ fn add_sub_cancel_body(mut body: KernelBody) -> KernelBody {
             }
             BinOp::Sub => {
                 // Sub(Add(x, Lit(a)), Lit(a)) → x
-                if let Some(a_outer) = u32_lit(&body, &result_to_idx, rhs) {
+                if let Some(a_outer) = index.u32_lit(&body, rhs) {
                     if let Some((x, a_inner)) =
-                        inner_with_rhs_lit(&body, &result_to_idx, &use_count, lhs, BinOp::Add)
+                        inner_with_rhs_lit(&body, &index, lhs, BinOp::Add)
                     {
                         if a_inner == a_outer {
                             rewrites.push((idx, x));
                         }
                     }
-                    // Also: Sub(Add(Lit(a), x), Lit(a)) → x — Add is commutative.
+                    // Also: Sub(Add(Lit(a), x), Lit(a)) → x  -  Add is commutative.
                     if let Some((x, a_inner)) =
-                        inner_with_lhs_lit(&body, &result_to_idx, &use_count, lhs, BinOp::Add)
+                        inner_with_lhs_lit(&body, &index, lhs, BinOp::Add)
                     {
                         if a_inner == a_outer {
                             rewrites.push((idx, x));
@@ -140,69 +128,52 @@ fn add_sub_cancel_body(mut body: KernelBody) -> KernelBody {
 
 fn inner_with_rhs_lit(
     body: &KernelBody,
-    result_to_idx: &FxHashMap<u32, usize>,
-    use_count: &FxHashMap<u32, u32>,
+    index: &BodyIndex,
     result_id: u32,
     inner_op: BinOp,
 ) -> Option<(u32, u32)> {
-    let producer_idx = *result_to_idx.get(&result_id)?;
-    let producer = body.ops.get(producer_idx)?;
+    let producer = index.producer(body, result_id)?;
     if !matches!(producer.kind, KernelOpKind::BinOpKind(b) if b == inner_op) {
         return None;
     }
     if producer.operands.len() != 2 {
         return None;
     }
-    if use_count.get(&result_id).copied().unwrap_or(0) != 1 {
+    if !index.has_single_consumer(result_id) {
         return None;
     }
     let lhs = producer.operands[0];
     let rhs = producer.operands[1];
-    let c = u32_lit(body, result_to_idx, rhs)?;
+    let c = index.u32_lit(body, rhs)?;
     Some((lhs, c))
 }
 
 fn inner_with_lhs_lit(
     body: &KernelBody,
-    result_to_idx: &FxHashMap<u32, usize>,
-    use_count: &FxHashMap<u32, u32>,
+    index: &BodyIndex,
     result_id: u32,
     inner_op: BinOp,
 ) -> Option<(u32, u32)> {
-    let producer_idx = *result_to_idx.get(&result_id)?;
-    let producer = body.ops.get(producer_idx)?;
+    let producer = index.producer(body, result_id)?;
     if !matches!(producer.kind, KernelOpKind::BinOpKind(b) if b == inner_op) {
         return None;
     }
     if producer.operands.len() != 2 {
         return None;
     }
-    if use_count.get(&result_id).copied().unwrap_or(0) != 1 {
+    if !index.has_single_consumer(result_id) {
         return None;
     }
     let lhs = producer.operands[0];
     let rhs = producer.operands[1];
-    let c = u32_lit(body, result_to_idx, lhs)?;
+    let c = index.u32_lit(body, lhs)?;
     Some((rhs, c))
-}
-
-fn u32_lit(body: &KernelBody, result_to_idx: &FxHashMap<u32, usize>, id: u32) -> Option<u32> {
-    let producer_idx = *result_to_idx.get(&id)?;
-    let producer = body.ops.get(producer_idx)?;
-    if !matches!(producer.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_idx = *producer.operands.first()? as usize;
-    match body.literals.get(pool_idx)? {
-        LiteralValue::U32(v) => Some(*v),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingLayout, Dispatch, KernelOp};
+    use crate::{BindingLayout, Dispatch, KernelOp, LiteralValue};
     use vyre_foundation::ir::BinOp;
 
     fn empty_body() -> KernelBody {
@@ -262,7 +233,7 @@ mod tests {
             .ops
             .iter()
             .find(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
-            .expect("store");
+            .expect("Fix: store");
         s.operands[2]
     }
 
@@ -324,7 +295,7 @@ mod tests {
 
     #[test]
     fn mismatched_literals_left_alone() {
-        // (x - 5) + 7 — different residue, must NOT cancel.
+        // (x - 5) + 7  -  different residue, must NOT cancel.
         let mut body = empty_body();
         nonliteral_source(&mut body, 0);
         lit_u32(&mut body, 5, 1);

@@ -2,7 +2,7 @@
 //!
 //! `q_out[h, s, d] = q_in[h, s, d] * gain[h]`
 //!
-//! Category A — broadcast mul. Recipe uses gain_init=5.25.
+//! Category A  -  broadcast mul. Recipe uses gain_init=5.25.
 
 use vyre::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -84,7 +84,7 @@ inventory::submit! {
         id: OP_ID,
         build: || qk_gain("q_in", "q_out", "gain", 2, 1, 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[1.0, 2.0, 3.0, 4.0]),  // q: 2 heads × 1 seq × 2 dim
                 vec![0u8; 4 * 4],                 // q_out
@@ -92,7 +92,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             // h0: [1*5.25, 2*5.25] = [5.25, 10.5]
             // h1: [3*3.0, 4*3.0] = [9.0, 12.0]
             vec![vec![to_f32(&[5.25, 10.5, 9.0, 12.0])]]
@@ -104,18 +104,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn qk_gain_nan_in_gain_propagates_nan() {

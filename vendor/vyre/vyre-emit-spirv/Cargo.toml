@@ -1,6 +1,6 @@
 [package]
 name = "vyre-emit-spirv"
-version = "0.4.2"
+version = "0.6.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "SPIR-V binary emitter for vyre KernelDescriptor. Routes through naga::Module → naga::back::spv to share substrate-neutral lowering with vyre-emit-naga."
@@ -21,7 +21,8 @@ vyre-lower = { workspace = true }
 naga = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-vyre-foundation = { workspace = true }
+vyre-foundation.workspace = true
 
 [dev-dependencies]
 vyre-emit-ptx = { workspace = true }
+proptest.workspace = true

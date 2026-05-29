@@ -178,7 +178,7 @@ pub fn dfa_vyre_match_count_bytes(text: &[u8]) -> Vec<u8> {
     let matches: u32 = memchr::memmem::find_iter(text, b"vyre")
         .count()
         .try_into()
-        .expect("DFA benchmark input length must fit in u32 matches");
+        .expect("Fix: DFA benchmark input length must fit in u32 matches");
     matches.to_le_bytes().to_vec()
 }
 

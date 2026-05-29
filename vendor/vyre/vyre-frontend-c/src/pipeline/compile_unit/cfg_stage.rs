@@ -5,6 +5,7 @@ use super::*;
 
 const CFG_LABEL_MAP_WORDS: usize = 4096;
 const CFG_LABEL_MAP_BYTES: usize = CFG_LABEL_MAP_WORDS * 4;
+const EMPTY_CFG_PUBLIC_OUTPUT_BYTES: usize = 2 * 4;
 
 fn cfg_label_map_zeroes() -> &'static [u8] {
     static ZEROES: OnceLock<Vec<u8>> = OnceLock::new();
@@ -51,10 +52,14 @@ fn build_object_cfg_with_scratch(
     scratch: &mut ObjectCfgScratch,
 ) -> Result<Vec<u8>, String> {
     let cfg_ssa = cfg_ssa_words_from_vast(vast_blob)?;
+    if cfg_ssa.as_slice() == [0] {
+        trace.log("skip c11_build_cfg_and_gotos; no labels or gotos");
+        return Ok(vec![0u8; EMPTY_CFG_PUBLIC_OUTPUT_BYTES]);
+    }
     let n_ssa = u32::try_from(cfg_ssa.len())
         .map_err(|_| "CFG SSA stream exceeds u32 count".to_string())?
         .max(1);
-    pack_u32_le_bytes_into(&cfg_ssa, &mut scratch.ssa_buf);
+    vyre_primitives::wire::pack_u32_slice_into(&cfg_ssa, &mut scratch.ssa_buf);
     let cfg_label_byte_len = usize::try_from(n_ssa)
         .ok()
         .and_then(|count| count.checked_mul(4))
@@ -90,32 +95,20 @@ fn build_object_cfg_with_scratch(
     )
     .map_err(|error| format!("c11_build_cfg_and_gotos dispatch failed: {error}"))?;
     trace.log("dispatch c11_build_cfg_and_gotos");
-    if scratch.outputs.len() != 4 {
+    if scratch.outputs.len() < 2 {
         return Err(format!(
-            "c11_build_cfg_and_gotos: expected exactly cfg/labels/label-key/label-value outputs, got {}. Fix: backend must return the declared GPU CFG ABI outputs and no extras.",
+            "c11_build_cfg_and_gotos: expected at least cfg/labels outputs, got {}. Fix: backend must return the declared GPU CFG ABI outputs.",
             scratch.outputs.len()
         ));
     }
     scratch.cfg_blob.clear();
     scratch
         .cfg_blob
-        .reserve(scratch.outputs.iter().map(Vec::len).sum());
-    for chunk in &scratch.outputs {
+        .reserve(scratch.outputs[..2].iter().map(Vec::len).sum());
+    for chunk in &scratch.outputs[..2] {
         scratch.cfg_blob.extend_from_slice(chunk);
     }
     let mut cfg_blob = Vec::new();
     mem::swap(&mut cfg_blob, &mut scratch.cfg_blob);
     Ok(cfg_blob)
-}
-
-fn pack_u32_le_bytes_into(words: &[u32], out: &mut Vec<u8>) {
-    out.clear();
-    let byte_len = words.len().saturating_mul(4);
-    out.reserve(byte_len);
-    #[cfg(target_endian = "little")]
-    out.extend_from_slice(bytemuck::cast_slice(words));
-    #[cfg(target_endian = "big")]
-    for word in words {
-        out.extend_from_slice(&word.to_le_bytes());
-    }
 }

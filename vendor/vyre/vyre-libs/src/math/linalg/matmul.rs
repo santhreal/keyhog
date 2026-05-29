@@ -1,4 +1,4 @@
-//! Matrix multiplication — row-major 2D `u32` multiply with atomic
+//! Matrix multiplication  -  row-major 2D `u32` multiply with atomic
 //! accumulation into an output matrix.
 //!
 //! Category A composition. Wraps the inner loop in a `Node::Region`
@@ -34,27 +34,6 @@ impl Matmul {
             out,
             options: BuildOptions::default(),
         }
-    }
-
-    /// Override workgroup size.
-    #[must_use]
-    pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
-        self.options = self.options.with_workgroup_size(size);
-        self
-    }
-
-    /// Override region generator name.
-    #[must_use]
-    pub fn with_region_generator(mut self, name: &'static str) -> Self {
-        self.options = self.options.with_region_generator(name);
-        self
-    }
-
-    /// Stamp tenant id.
-    #[must_use]
-    pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
-        self.options = self.options.with_tenant_id(tenant_id);
-        self
     }
 
     /// Validate + materialize.
@@ -151,6 +130,8 @@ impl Matmul {
     }
 }
 
+crate::builder::impl_cat_a_builder_options!(Matmul);
+
 /// Typed Cat-A builder for [`matmul_bias`].
 #[derive(Debug, Clone)]
 pub struct MatmulBias {
@@ -173,27 +154,6 @@ impl MatmulBias {
             out,
             options: BuildOptions::default(),
         }
-    }
-
-    /// Override workgroup size.
-    #[must_use]
-    pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
-        self.options = self.options.with_workgroup_size(size);
-        self
-    }
-
-    /// Override region generator name.
-    #[must_use]
-    pub fn with_region_generator(mut self, name: &'static str) -> Self {
-        self.options = self.options.with_region_generator(name);
-        self
-    }
-
-    /// Stamp tenant id.
-    #[must_use]
-    pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
-        self.options = self.options.with_tenant_id(tenant_id);
-        self
     }
 
     /// Validate + materialize.
@@ -312,6 +272,8 @@ impl MatmulBias {
         ))
     }
 }
+
+crate::builder::impl_cat_a_builder_options!(MatmulBias);
 
 const _: fn(&'static str, Vec<Node>) -> Node = wrap_anonymous;
 
@@ -475,18 +437,8 @@ fn linear_workgroup(size: [u32; 3]) -> [u32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::bytes_to_u32 as decode_u32_words;
     use vyre_reference::value::Value;
-
-    fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| {
-                u32::from_le_bytes(chunk.try_into().expect(
-                    "Fix: chunk must be aligned; restore this invariant before continuing.",
-                ))
-            })
-            .collect()
-    }
 
     fn next_u32(state: &mut u32) -> u32 {
         *state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -497,17 +449,11 @@ mod tests {
         (0..size).map(|_| next_u32(state)).collect()
     }
 
+
     fn run_u32_output(program: &Program, inputs: Vec<Vec<u32>>, out_bytes: usize) -> Vec<u32> {
         let packed_inputs = inputs
             .into_iter()
-            .map(|bytes| {
-                Value::from(
-                    bytes
-                        .iter()
-                        .flat_map(|v| v.to_le_bytes())
-                        .collect::<Vec<u8>>(),
-                )
-            })
+            .map(|bytes| Value::from(vyre_primitives::wire::pack_u32_slice(&bytes)))
             .collect::<Vec<_>>();
         let outputs = vyre_reference::reference_eval(program, &packed_inputs)
             .expect("Fix: program must execute; restore this invariant before continuing.");
@@ -587,25 +533,37 @@ mod tests {
 
     #[test]
     fn matmul_builder_rejects_zero_m() {
-        let result = Matmul::new(
+        let error = Matmul::new(
             TensorRef::u32_2d("a", 0, 4),
             TensorRef::u32_2d("b", 4, 4),
             TensorRef::u32_2d("out", 0, 4),
         )
-        .build();
-        assert!(result.is_err(), "Matmul builder must reject M=0");
+        .build()
+        .expect_err("Matmul builder must reject M=0");
+        assert!(
+            matches!(error, TensorRefError::ShapeMismatch { .. }),
+            "unexpected matmul zero-M error: {error:?}"
+        );
+        let msg = format!("{error:?}");
+        assert!(msg.contains('0'), "zero-M error must mention zero dimension: {msg}");
     }
 
     #[test]
     fn matmul_bias_builder_rejects_zero_m() {
-        let result = MatmulBias::new(
+        let error = MatmulBias::new(
             TensorRef::u32_2d("a", 0, 4),
             TensorRef::u32_2d("b", 4, 4),
             TensorRef::u32_1d("bias", 4),
             TensorRef::u32_2d("out", 0, 4),
         )
-        .build();
-        assert!(result.is_err(), "MatmulBias builder must reject M=0");
+        .build()
+        .expect_err("MatmulBias builder must reject M=0");
+        assert!(
+            matches!(error, TensorRefError::ShapeMismatch { .. }),
+            "unexpected matmul-bias zero-M error: {error:?}"
+        );
+        let msg = format!("{error:?}");
+        assert!(msg.contains('0'), "zero-M bias error must mention zero dimension: {msg}");
     }
 
     #[test]
@@ -613,15 +571,20 @@ mod tests {
         let a: Vec<u32> = vec![];
         let b: Vec<u32> = vec![];
         let program = matmul("a", "b", "out", 2, 0, 3);
-        let result = vyre_reference::reference_eval(
+        let error = vyre_reference::reference_eval(
             &program,
             &[
-                Value::from(a.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()),
-                Value::from(b.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()),
+                Value::from(vyre_primitives::wire::pack_u32_slice(&a)),
+                Value::from(vyre_primitives::wire::pack_u32_slice(&b)),
                 Value::from(vec![0u8; 6 * 4]),
             ],
+        )
+        .expect_err("zero-K matmul must trap");
+        let msg = error.to_string();
+        assert!(
+            msg.contains("trap") || msg.contains("Fix:"),
+            "zero-K matmul error must be actionable: {msg}"
         );
-        assert!(result.is_err(), "zero-K matmul must trap");
     }
 
     /// u32 wrapping overflow must be preserved.
@@ -766,7 +729,7 @@ inventory::submit! {
                     out.push(acc);
                 }
             }
-            let bytes = out.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("math"),
@@ -810,3 +773,4 @@ inventory::submit! {
         category: Some("math"),
     }
 }
+

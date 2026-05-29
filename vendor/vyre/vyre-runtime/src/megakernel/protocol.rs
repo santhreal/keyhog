@@ -1,4 +1,4 @@
-//! Ring-buffer protocol constants — slot layout, control words, opcodes, debug log.
+//! Ring-buffer protocol constants  -  slot layout, control words, opcodes, debug log.
 //!
 //! Pure data module. No logic, no imports beyond std. Every constant
 //! has a doc-comment that says what the GPU kernel does with it.
@@ -6,7 +6,7 @@
 /// A single PRINTF event decoded out of the debug-log buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DebugRecord {
-    /// Format-string id — resolved by the host against its
+    /// Format-string id  -  resolved by the host against its
     /// registered format table.
     pub fmt_id: u32,
     /// Three argument words in the order the kernel wrote them.
@@ -195,7 +195,7 @@ fn checked_slot_word(slot_base: usize, word: u32) -> Option<usize> {
 }
 
 /// Deprecated alias for [`encode_load_miss`]. The old MoE-specific
-/// parameter name was a boundary violation — vyre is a generic GPU
+/// parameter name was a boundary violation  -  vyre is a generic GPU
 /// substrate. New code must use [`encode_load_miss`]; this shim will
 /// be removed once consumers have migrated.
 #[deprecated(since = "0.5.0", note = "use `encode_load_miss`")]

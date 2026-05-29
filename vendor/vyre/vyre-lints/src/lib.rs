@@ -11,16 +11,16 @@
 //! - Egglog rule LHS patterns become brittle.
 //! - Tier-2.5 primitive bug fixes don't propagate.
 //!
-//! This crate ships one lint today: `raw_ir_in_libs` — flags raw
-//! `Node::*` and `Expr::*` *construction* sites in `vyre-libs/src/**`.
-//! Pattern matching against the same enums is fine; only construction
-//! is flagged. An allowlist (`vyre-lints/allowlist.toml`) lets the
-//! migration land incrementally — files in the allowlist are exempt
-//! during their lego-migration ticket and removed from the allowlist
-//! when the ticket lands.
+//! This crate ships focused lints for raw IR construction, production CPU
+//! fallbacks, consumer-name coupling, same-name module forks, and silent GPU
+//! validation skips.
 
 pub mod allowlist;
+pub mod consumer_coupling;
 pub mod drift;
+pub mod gpu_skip_guards;
+pub mod module_forks;
+mod paths;
 pub mod production_cpu_fallbacks;
 pub mod raw_ir_in_libs;
 
@@ -47,6 +47,12 @@ pub enum ViolationKind {
     /// Production code reached into CPU/reference execution instead of an
     /// explicit parity-test oracle.
     ProductionCpuFallback,
+    /// Platform docs/comments mention a downstream consumer by name.
+    ConsumerCoupling,
+    /// Same Rust module basename appears in multiple scanned authority roots.
+    ModuleFork,
+    /// GPU/CUDA validation path silently skipped instead of failing loudly.
+    GpuSkipGuard,
 }
 
 /// Run the `raw_ir_in_libs` lint over a directory tree.
@@ -67,7 +73,7 @@ pub fn run_raw_ir_in_libs(
     for root in roots {
         all.extend(raw_ir_in_libs::scan_tree(root, &allow)?);
     }
-    // Compare by (file, line) without cloning either field — the old
+    // Compare by (file, line) without cloning either field  -  the old
     // `(a.file.clone(), a.line).cmp(&(b.file.clone(), b.line))` cloned
     // two strings per compare (O(N log N) × 2 clones) which is wasted
     // work on a sort that fires on every audit.
@@ -79,11 +85,36 @@ pub fn run_raw_ir_in_libs(
 ///
 /// This is intentionally separate from `raw_ir_in_libs`: CPU/reference
 /// execution is allowed in explicit oracle crates and tests, but not in
-/// production Vyre, Weir, or Vyrec dispatch paths.
+/// production dispatch paths.
 pub fn run_production_cpu_fallbacks(roots: &[&Path]) -> Result<Vec<Violation>> {
     let mut all = Vec::new();
     for root in roots {
         all.extend(production_cpu_fallbacks::scan_tree(root)?);
+    }
+    all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+    Ok(all)
+}
+
+/// Run the consumer-name coupling guard over platform source/doc roots.
+pub fn run_consumer_coupling(roots: &[&Path]) -> Result<Vec<Violation>> {
+    let mut all = Vec::new();
+    for root in roots {
+        all.extend(consumer_coupling::scan_tree(root)?);
+    }
+    all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+    Ok(all)
+}
+
+/// Run the same-name module fork scanner over selected authority roots.
+pub fn run_module_forks(roots: &[&Path]) -> Result<Vec<Violation>> {
+    module_forks::scan_roots(roots)
+}
+
+/// Run the GPU skip guard over CUDA/WGPU/runtime source and test roots.
+pub fn run_gpu_skip_guards(roots: &[&Path]) -> Result<Vec<Violation>> {
+    let mut all = Vec::new();
+    for root in roots {
+        all.extend(gpu_skip_guards::scan_tree(root)?);
     }
     all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
     Ok(all)

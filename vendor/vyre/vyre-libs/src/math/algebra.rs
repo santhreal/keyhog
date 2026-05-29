@@ -1,11 +1,11 @@
-//! DF-11 — Abstract algebraic structures for dataflow, security, and scheduling.
+//! DF-11  -  Abstract algebraic structures for dataflow, security, and scheduling.
 //!
 //! This module provides reusable semiring and lattice primitives that support
 //! higher-level analyses (taint, range, reaching defs) and telemetry (sketching).
 //!
 //! Every op here is a pure Category A composition over vyre-ops primitives.
 
-use crate::builder::{build_elementwise_binary, build_elementwise_unary, BuildOptions};
+use crate::builder::{build_elementwise_unary, BuildOptions};
 use crate::region::wrap_anonymous;
 use crate::tensor_ref::{check_dtype, check_shape, check_unique_names, TensorRef, TensorRefError};
 use vyre::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -40,14 +40,7 @@ pub fn lattice_join(a: &str, b: &str, out: &str, size: u32) -> Program {
 /// Returns [`TensorRefError`] when buffer names alias, dtypes are wrong, or the
 /// element count cannot be represented by the IR.
 pub fn try_lattice_join(a: &str, b: &str, out: &str, size: u32) -> Result<Program, TensorRefError> {
-    build_elementwise_binary(
-        "vyre-libs::logical::or",
-        TensorRef::u32_1d(a, size),
-        TensorRef::u32_1d(b, size),
-        TensorRef::u32_1d(out, size),
-        BuildOptions::default(),
-        Expr::bitor,
-    )
+    super::elementwise::try_u32_elementwise_binary(JOIN_OP_ID, a, b, out, size, Expr::bitor)
 }
 
 /// Lattice Meet (Infimum) for u32.
@@ -74,14 +67,7 @@ pub fn lattice_meet(a: &str, b: &str, out: &str, size: u32) -> Program {
 /// Returns [`TensorRefError`] when buffer names alias, dtypes are wrong, or the
 /// element count cannot be represented by the IR.
 pub fn try_lattice_meet(a: &str, b: &str, out: &str, size: u32) -> Result<Program, TensorRefError> {
-    build_elementwise_binary(
-        "vyre-libs::logical::and",
-        TensorRef::u32_1d(a, size),
-        TensorRef::u32_1d(b, size),
-        TensorRef::u32_1d(out, size),
-        BuildOptions::default(),
-        Expr::bitand,
-    )
+    super::elementwise::try_u32_elementwise_binary(MEET_OP_ID, a, b, out, size, Expr::bitand)
 }
 
 /// Min-Plus Semiring Multiplication.
@@ -115,18 +101,13 @@ pub fn try_semiring_min_plus_mul(
     out: &str,
     size: u32,
 ) -> Result<Program, TensorRefError> {
-    build_elementwise_binary(
-        MINPLUS_MUL_OP_ID,
-        TensorRef::u32_1d(a, size),
-        TensorRef::u32_1d(b, size),
-        TensorRef::u32_1d(out, size),
-        BuildOptions::default(),
-        |lx, rx| Expr::BinOp {
+    super::elementwise::try_u32_elementwise_binary(MINPLUS_MUL_OP_ID, a, b, out, size, |lx, rx| {
+        Expr::BinOp {
             op: BinOp::SaturatingAdd,
             left: Box::new(lx),
             right: Box::new(rx),
-        },
-    )
+        }
+    })
 }
 
 /// Boolean-semiring dense matrix multiplication.
@@ -371,12 +352,12 @@ inventory::submit! {
         test_inputs: Some(|| {
             let a = [0x0000FFFFu32, 0xAAAAAAAA, 0x00000000, 0xFFFFFFFF];
             let b = [0xFFFF0000u32, 0x55555555, 0x00000000, 0x00000000];
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [0xFFFFFFFFu32, 0xFFFFFFFF, 0x00000000, 0xFFFFFFFF];
-            let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&expected);
             vec![vec![bytes]]
         }),
         category: Some("math"),
@@ -390,12 +371,12 @@ inventory::submit! {
         test_inputs: Some(|| {
             let a = [0x0000FFFFu32, 0xAAAAAAAA, 0x00000000, 0xFFFFFFFF];
             let b = [0xFFFF0000u32, 0x55555555, 0x00000000, 0x00000000];
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [0x00000000u32, 0x00000000, 0x00000000, 0x00000000];
-            let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&expected);
             vec![vec![bytes]]
         }),
         category: Some("math"),
@@ -409,12 +390,12 @@ inventory::submit! {
         test_inputs: Some(|| {
             let a = [10u32, 20, u32::MAX, u32::MAX - 1];
             let b = [1u32, 2, 3, 4];
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [11u32, 22, u32::MAX, u32::MAX];
-            let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&expected);
             vec![vec![bytes]]
         }),
         category: Some("math"),
@@ -428,12 +409,12 @@ inventory::submit! {
         test_inputs: Some(|| {
             let a = [1u32, 0, 1, 0, 1, 0];
             let b = [0u32, 1, 1, 0, 0, 0];
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [0u32, 1, 1, 0];
-            let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&expected);
             vec![vec![bytes]]
         }),
         category: Some("math"),
@@ -446,7 +427,7 @@ inventory::submit! {
         build: || sketch_mix("input", "out", 4),
         test_inputs: Some(|| {
             let input = [1u32, 2, 3, 4];
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&input)]]
         }),
         expected_output: Some(|| {
@@ -462,9 +443,102 @@ inventory::submit! {
                 h
             };
             let expected = [mix(1), mix(2), mix(3), mix(4)];
-            let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&expected);
             vec![vec![bytes]]
         }),
         category: Some("math"),
     }
 }
+
+#[cfg(test)]
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_u32_binary_builders_reject_aliasing() {
+        let program = try_lattice_join("a", "b", "out", 4).expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - valid lattice_join must build");
+        assert_eq!(program.buffers.len(), 3, "lattice_join must declare a, b, and out");
+
+        let join_err = try_lattice_join("a", "a", "out", 4).expect_err("aliased inputs");
+        assert!(
+            matches!(join_err, TensorRefError::NameCollision { .. }),
+            "lattice_join aliasing error: {join_err:?}"
+        );
+
+        let meet_err = try_lattice_meet("a", "b", "a", 4).expect_err("aliased output");
+        assert!(
+            matches!(meet_err, TensorRefError::NameCollision { .. }),
+            "lattice_meet aliasing error: {meet_err:?}"
+        );
+
+        let mul_err = try_semiring_min_plus_mul("a", "b", "b", 4).expect_err("aliased output");
+        assert!(
+            matches!(mul_err, TensorRefError::NameCollision { .. }),
+            "min-plus mul aliasing error: {mul_err:?}"
+        );
+    }
+
+    #[test]
+    fn generated_u32_binary_algebra_contracts_match_scalar_reference() {
+        let mut state = 0xA17E_BA5E_u32;
+        for case in 0..4096u32 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let a = match case % 17 {
+                0 => 0,
+                1 => u32::MAX,
+                2 => 1,
+                _ => state,
+            };
+            state = state.rotate_left(11) ^ case.wrapping_mul(0x9E37_79B9);
+            let b = match case % 19 {
+                0 => 0,
+                1 => u32::MAX,
+                2 => u32::MAX - 1,
+                _ => state,
+            };
+            let c = state.rotate_right((case % 31) + 1);
+
+            assert_eq!(a | b, b | a, "join must be commutative for case {case}");
+            assert_eq!(a & b, b & a, "meet must be commutative for case {case}");
+            assert_eq!(a | a, a, "join must be idempotent for case {case}");
+            assert_eq!(a & a, a, "meet must be idempotent for case {case}");
+            assert_eq!(
+                a | (a & b),
+                a,
+                "join/meet absorption failed for case {case}"
+            );
+            assert_eq!(
+                a & (a | b),
+                a,
+                "meet/join absorption failed for case {case}"
+            );
+            assert_eq!(
+                (a | b) | c,
+                a | (b | c),
+                "join must be associative for case {case}"
+            );
+            assert_eq!(
+                (a & b) & c,
+                a & (b & c),
+                "meet must be associative for case {case}"
+            );
+            assert_eq!(
+                a.saturating_add(b),
+                b.saturating_add(a),
+                "min-plus saturating multiply must be commutative for case {case}"
+            );
+            assert_eq!(
+                a.saturating_add(0),
+                a,
+                "min-plus zero identity failed for case {case}"
+            );
+            assert_eq!(
+                u32::MAX.saturating_add(a),
+                u32::MAX,
+                "min-plus infinity saturation failed for case {case}"
+            );
+        }
+    }
+}
+

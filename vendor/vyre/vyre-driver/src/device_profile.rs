@@ -17,6 +17,8 @@ pub struct DeviceProfile {
     pub supports_subgroup_ops: bool,
     /// The backend supports indirect dispatch.
     pub supports_indirect_dispatch: bool,
+    /// The backend lowers distributed collective communication nodes.
+    pub supports_distributed_collectives: bool,
     /// The backend supports compile-time specialization constants.
     pub supports_specialization_constants: bool,
     /// The backend lowers binary16 natively.
@@ -83,6 +85,7 @@ impl DeviceProfile {
             backend,
             supports_subgroup_ops: false,
             supports_indirect_dispatch: false,
+            supports_distributed_collectives: false,
             supports_specialization_constants: false,
             supports_f16: false,
             supports_bf16: false,
@@ -119,6 +122,7 @@ impl DeviceProfile {
             backend: backend.id(),
             supports_subgroup_ops: backend.supports_subgroup_ops(),
             supports_indirect_dispatch: backend.supports_indirect_dispatch(),
+            supports_distributed_collectives: backend.supports_distributed_collectives(),
             supports_specialization_constants: false,
             supports_f16: backend.supports_f16(),
             supports_bf16: backend.supports_bf16(),
@@ -161,6 +165,7 @@ impl DeviceProfile {
             has_warp_shuffle: self.has_subgroup_shuffle,
             has_shared_memory: self.has_shared_memory,
             has_transcendental_polynomial_emit: true,
+            supports_distributed_collectives: self.supports_distributed_collectives,
             max_native_int_width: self.max_native_int_width,
         }
     }
@@ -222,6 +227,7 @@ mod tests {
             backend: "test",
             supports_subgroup_ops: true,
             supports_indirect_dispatch: true,
+            supports_distributed_collectives: true,
             supports_specialization_constants: true,
             supports_f16: true,
             supports_bf16: false,
@@ -254,6 +260,7 @@ mod tests {
         let strategy = profile.strategy_capabilities();
 
         assert!(validation.supports_subgroup_ops);
+        assert!(validation.supports_distributed_collectives);
         assert!(adapter.supports_subgroup_ops);
         assert!(strategy.has_warp_shuffle);
         assert_eq!(adapter.max_invocations_per_workgroup, 256);

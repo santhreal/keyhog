@@ -3,7 +3,7 @@
 //! Computes the per-token attention score `score[i] = dot(q, dequant_k(i))`
 //! over a 3-bit-packed key matrix, and the linear-attention accumulator
 //! `out[d] = sum_i score[i] * dequant_v(i, d)` over a 3-bit-packed value
-//! matrix. No softmax — the softmax numerator / denominator pair is the job
+//! matrix. No softmax  -  the softmax numerator / denominator pair is the job
 //! of a separate `softmax_rowwise` composition that can stack on top of this
 //! op; keeping this kernel softmax-free makes the witness byte-deterministic.
 //!
@@ -38,7 +38,7 @@ pub fn turboquant_attention(
     let total_vals = seq_len.saturating_mul(d_head);
     let packed_words = total_vals.div_ceil(10);
 
-    // Unpack helper — emits an Expr that decodes `(flat_idx)`-th 3-bit value
+    // Unpack helper  -  emits an Expr that decodes `(flat_idx)`-th 3-bit value
     // from `buf` as an f32.
     //   word = buf[flat / 10]
     //   nib  = (word >> ((flat % 10) * 3)) & 0x7
@@ -203,7 +203,7 @@ inventory::submit! {
         build: || turboquant_attention("q", "kp", "vp", "out", 2, 2),
         test_inputs: Some(|| {
             let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+                |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
 
             // seq_len=2, d_head=2 → 4 packed values per buffer, 1 u32 holds them.
             // 3-bit layout (LSB first): shifts 0, 3, 6, 9.
@@ -223,7 +223,7 @@ inventory::submit! {
         }),
         expected_output: Some(|| {
             let to_f32_bytes =
-                |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+                |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             // score[0] = dot([1,1], [k00=1, k01=2]) = 3
             // score[1] = dot([1,1], [k10=3, k11=4]) = 7
             // out[0] = score[0]*v00 + score[1]*v10 = 3*1 + 7*0 = 3
@@ -237,18 +237,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn turboquant_nan_in_q_propagates_to_output() {

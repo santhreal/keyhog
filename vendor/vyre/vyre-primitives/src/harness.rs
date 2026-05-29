@@ -17,7 +17,7 @@
 //! The module is compiled only when `inventory-registry` is enabled
 //! (which pulls in `inventory` + `vyre-foundation`). Production
 //! builds that only want the `fn(...) -> Program` builders without
-//! the registry overhead leave the feature off — the primitives
+//! the registry overhead leave the feature off  -  the primitives
 //! still work, they just aren't listed in the inventory walk.
 
 // The enclosing `pub mod harness` in `lib.rs` already carries a
@@ -38,7 +38,7 @@ pub type ExpectedFn = fn() -> Vec<Vec<Vec<u8>>>;
 #[non_exhaustive]
 pub struct OpEntry {
     /// Stable op id. Convention:
-    /// `"vyre-primitives::<domain>::<name>"` — a grep tells any
+    /// `"vyre-primitives::<domain>::<name>"`  -  a grep tells any
     /// reader the op lives at Tier 2.5.
     pub id: &'static str,
 
@@ -54,7 +54,7 @@ pub struct OpEntry {
 
     /// Coarse-grained taxonomy tag (T028 / SEPARATION_AUDIT S2 prep).
     /// Examples: `"math"`, `"nn"`, `"crypto"`, `"graph"`, `"matching"`.
-    /// `None` means uncategorised — equivalent to the pre-T028 behaviour.
+    /// `None` means uncategorised  -  equivalent to the pre-T028 behaviour.
     pub category: Option<&'static str>,
 }
 

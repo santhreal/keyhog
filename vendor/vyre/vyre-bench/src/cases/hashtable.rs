@@ -1,4 +1,4 @@
-//! `hashtable.openaddr.probe.10m` — Open-addressing hash table probe.
+//! `hashtable.openaddr.probe.10m`  -  Open-addressing hash table probe.
 //!
 //! Probes a prebuilt 10M-key table with 1M random lookups. GPU uses
 //! open-addressing with linear probing on a power-of-2 table. CPU baseline uses
@@ -13,9 +13,12 @@ use crate::api::case::{
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::BenchMetrics;
+use crate::api::resident::{
+    dispatch_program_timed, input_bytes_total, transfer_accounting, ResidentInputSet,
+};
 use crate::api::suite::SuiteKind;
 use hashbrown::HashMap;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 const KEY_COUNT: u32 = 10_000_000;
@@ -34,8 +37,10 @@ pub struct HashtableProbe;
 struct HashtableProbePrepared {
     program: Program,
     inputs: Vec<Vec<u8>>,
+    input_bytes_total: u64,
     probe_keys: Vec<u32>,
     cpu_table: HashMap<u32, u32>,
+    resident: Option<ResidentInputSet>,
 }
 
 impl BenchCase for HashtableProbe {
@@ -91,7 +96,7 @@ impl BenchCase for HashtableProbe {
         (read, write)
     }
 
-    fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
+    fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         // GPU kernel: linear-probed open-addressing lookup.
         // Buffer layout:
         //   slot 0: table_keys[TABLE_SIZE]   (u32, 0 = empty)
@@ -167,7 +172,7 @@ impl BenchCase for HashtableProbe {
 
         let mut inserted_keys = Vec::with_capacity(KEY_COUNT as usize);
         for i in 0..KEY_COUNT {
-            let key = rng.gen_range(1..u32::MAX); // 0 = empty sentinel
+            let key = rng.random_range(1..u32::MAX); // 0 = empty sentinel
             let val = i + 1;
             let mut slot = key.wrapping_mul(2_654_435_761) & mask;
             for _ in 0..64 {
@@ -184,22 +189,26 @@ impl BenchCase for HashtableProbe {
 
         let mut probe_keys = vec![0u32; PROBE_COUNT as usize];
         for probe_key in &mut probe_keys {
-            if rng.gen_bool(0.8) && !inserted_keys.is_empty() {
-                *probe_key = inserted_keys[rng.gen_range(0..inserted_keys.len())];
+            if rng.random_bool(0.8) && !inserted_keys.is_empty() {
+                *probe_key = inserted_keys[rng.random_range(0..inserted_keys.len())];
             } else {
-                *probe_key = rng.gen_range(1..u32::MAX);
+                *probe_key = rng.random_range(1..u32::MAX);
             }
         }
 
-        let table_keys_bytes: Vec<u8> = table_keys.iter().flat_map(|k| k.to_le_bytes()).collect();
-        let table_vals_bytes: Vec<u8> = table_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
-        let probe_keys_bytes: Vec<u8> = probe_keys.iter().flat_map(|k| k.to_le_bytes()).collect();
+        let table_keys_bytes = vyre_primitives::wire::pack_u32_slice(&table_keys);
+        let table_vals_bytes = vyre_primitives::wire::pack_u32_slice(&table_vals);
+        let probe_keys_bytes = vyre_primitives::wire::pack_u32_slice(&probe_keys);
         let inputs = vec![table_keys_bytes, table_vals_bytes, probe_keys_bytes];
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputSet::upload_optional(ctx, &inputs, "hashtable probe bench")?;
         Ok(Box::new(HashtableProbePrepared {
             program,
             inputs,
+            input_bytes_total,
             probe_keys,
             cpu_table,
+            resident,
         }))
     }
 
@@ -220,9 +229,15 @@ impl BenchCase for HashtableProbe {
                 BenchError::ExecutionFailed("hashtable prepared payload type mismatch".to_string())
             })?;
 
-        let timed = ctx
-            .dispatch_timed(&prepared.program, &prepared.inputs, &ctx.dispatch_config)
-            .map_err(|e| BenchError::BackendFailed(e.to_string()))?;
+        let dispatch = dispatch_program_timed(
+            ctx,
+            &prepared.program,
+            prepared.resident.as_ref(),
+            &prepared.inputs,
+            &ctx.dispatch_config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let timed = dispatch.timed;
         let outputs = timed.outputs;
 
         let start_ref = std::time::Instant::now();
@@ -239,19 +254,25 @@ impl BenchCase for HashtableProbe {
             })
             .collect();
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
+        let output_bytes = outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let accounting =
+            transfer_accounting(prepared.input_bytes_total, output_bytes, resident_used);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
                 wall_ns: Some(timed.wall_ns),
                 dispatch_ns: timed.device_ns,
-                input_bytes: Some(prepared.inputs.iter().map(Vec::len).sum::<usize>() as u64),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                bytes_read: Some((TABLE_SIZE as u64) * 8 + (PROBE_COUNT as u64) * 4),
-                bytes_written: Some((PROBE_COUNT as u64) * 4),
+                input_bytes: Some(prepared.input_bytes_total),
+                output_bytes: Some(output_bytes),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
+                bytes_touched: Some(accounting.bytes_touched),
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(elapsed_ref),
+                input_bytes: Some(prepared.input_bytes_total),
+                output_bytes: Some(cpu_results.len() as u64),
                 ..Default::default()
             }),
             outputs,

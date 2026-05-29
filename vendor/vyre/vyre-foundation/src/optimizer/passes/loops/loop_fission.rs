@@ -1,4 +1,4 @@
-//! ROADMAP A27 — fission a `Node::Loop` whose body partitions cleanly
+//! ROADMAP A27  -  fission a `Node::Loop` whose body partitions cleanly
 //! into two consecutive halves that touch disjoint buffer sets.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_fission`.
@@ -32,7 +32,7 @@
 //!   the second loop's induction variable.
 //! - The split point is the first index where the prefix and suffix
 //!   touch disjoint buffer sets and no name-flow crosses the boundary.
-//!   This is a single split — multi-way fission falls out by repeated
+//!   This is a single split  -  multi-way fission falls out by repeated
 //!   application of the pass.
 //! - Barrier-bearing loops are rejected: a Barrier inside the body
 //!   sequences memory across iterations, and splitting it across two
@@ -224,6 +224,13 @@ fn collect_touched_buffers(nodes: &[Node], out: &mut FxHashSet<Ident>) {
             Node::Block(body) => collect_touched_buffers(body, out),
             Node::Region { body, .. } => collect_touched_buffers(body, out),
             Node::Trap { address, .. } => collect_buffers_in_expr(address, out),
+            Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+                out.insert(buffer.clone());
+            }
+            Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+                out.insert(input.clone());
+                out.insert(output.clone());
+            }
             Node::Barrier { .. }
             | Node::Return
             | Node::IndirectDispatch { .. }
@@ -306,7 +313,7 @@ fn collect_buffers_in_expr(expr: &Expr, out: &mut FxHashSet<Ident>) {
 }
 
 /// True iff any name introduced by `prefix` (via `Let`) is read in
-/// `suffix`. The loop induction `loop_var` is excluded — both halves
+/// `suffix`. The loop induction `loop_var` is excluded  -  both halves
 /// see it bound by their own loop header after the split, so the
 /// suffix's reference to `loop_var` is not a cross-half name flow.
 fn suffix_reads_prefix_names(prefix: &[Node], suffix: &[Node], loop_var: &Ident) -> bool {
@@ -516,6 +523,7 @@ fn rename_var_in_node(node: Node, from: &Ident, to: &Ident) -> Node {
     }
 }
 
+
 fn rename_var_in_expr(expr: Expr, from: &Ident, to: &Ident) -> Expr {
     match expr {
         Expr::Var(name) if name.as_str() == from.as_str() => Expr::Var(to.clone()),
@@ -692,7 +700,7 @@ mod tests {
         let result = LoopFission::transform(program);
         assert!(
             !result.changed,
-            "shared buffer must block fission — alias proof unavailable"
+            "shared buffer must block fission  -  alias proof unavailable"
         );
         assert_eq!(count_loops(result.program.entry()), 1);
     }
@@ -776,7 +784,7 @@ mod tests {
 
     /// Positive: a three-arm body (`a`, `b`, `c` writing distinct
     /// buffers) fissions in repeated applications. One pass picks the
-    /// earliest cleavable split — here the prefix `[a]` versus suffix
+    /// earliest cleavable split  -  here the prefix `[a]` versus suffix
     /// `[b; c]`. The resulting `[b; c]` body remains fissionable for a
     /// second pass invocation.
     #[test]
@@ -822,3 +830,4 @@ mod tests {
         }
     }
 }
+

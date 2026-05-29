@@ -23,7 +23,7 @@
 //! emitter-side rewrite that fuses the group into one packed op.
 //!
 //! Same shape as vyre-coalesce, vyre-shared-mem-promote, and
-//! vyre-bank-conflict — all four analyses operate on KernelDescriptor
+//! vyre-bank-conflict  -  all four analyses operate on KernelDescriptor
 //! and live one layer below the per-substrate emitters.
 
 pub mod analysis;

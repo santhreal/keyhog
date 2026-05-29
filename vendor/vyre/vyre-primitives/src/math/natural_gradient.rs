@@ -7,7 +7,7 @@
 //! matrix that needs `M^{-1/2}` via Newton-Schulz (#16
 //! [`crate::math::preconditioner`]).
 //!
-//! This file ships the **block-apply** primitive — apply a
+//! This file ships the **block-apply** primitive  -  apply a
 //! preconditioner block to one slice of the gradient. Composes with
 //! [`crate::math::preconditioner`] and [`crate::math::semiring_gemm`]
 //! for the full preconditioned-gradient pipeline.
@@ -58,14 +58,29 @@ pub fn natural_gradient_block_apply(
     grad_nat: &str,
     n: u32,
 ) -> Program {
-    if n == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            grad_nat,
-            DataType::U32,
-            format!("Fix: natural_gradient_block_apply requires n > 0, got {n}."),
-        );
+    match try_natural_gradient_block_apply(m_inv_sqrt, grad, grad_nat, n) {
+        Ok(program) => program,
+        Err(error) => crate::invalid_output_program(OP_ID, grad_nat, DataType::U32, error),
     }
+}
+
+/// Apply a precomputed `M^{-1/2}` block to a gradient slice with checked shape.
+pub fn try_natural_gradient_block_apply(
+    m_inv_sqrt: &str,
+    grad: &str,
+    grad_nat: &str,
+    n: u32,
+) -> Result<Program, String> {
+    if n == 0 {
+        return Err(format!(
+            "Fix: natural_gradient_block_apply requires n > 0, got {n}."
+        ));
+    }
+    let matrix_cells = n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "natural_gradient_block_apply n={n} overflows preconditioner block cell count. Fix: shard the gradient block before GPU dispatch."
+        )
+    })?;
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -96,10 +111,10 @@ pub fn natural_gradient_block_apply(
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(m_inv_sqrt, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n * n),
+                .with_count(matrix_cells),
             BufferDecl::storage(grad, 1, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(grad_nat, 2, BufferAccess::ReadWrite, DataType::U32).with_count(n),
         ],
@@ -109,7 +124,7 @@ pub fn natural_gradient_block_apply(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
 }
 
 /// CPU reference: `g_nat = M_inv_sqrt · g` in f64.
@@ -117,7 +132,8 @@ pub fn natural_gradient_block_apply(
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn natural_gradient_block_apply_cpu(m_inv_sqrt: &[f64], grad: &[f64], n: u32) -> Vec<f64> {
     let mut out = Vec::new();
-    natural_gradient_block_apply_cpu_into(m_inv_sqrt, grad, n, &mut out);
+    try_natural_gradient_block_apply_cpu_into(m_inv_sqrt, grad, n, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
     out
 }
 
@@ -129,7 +145,32 @@ pub fn natural_gradient_block_apply_cpu_into(
     n: u32,
     out: &mut Vec<f64>,
 ) {
+    try_natural_gradient_block_apply_cpu_into(m_inv_sqrt, grad, n, out)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference: `g_nat = M_inv_sqrt · g` in f64 using caller-owned output.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_natural_gradient_block_apply_cpu_into(
+    m_inv_sqrt: &[f64],
+    grad: &[f64],
+    n: u32,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let n = n as usize;
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "natural_gradient_block_apply CPU oracle n={n} overflows preconditioner block indexing. Fix: shard the gradient block before parity evaluation."
+        )
+    })?;
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "natural-gradient CPU oracle",
+            "natural_gradient_block_apply output",
+        )?;
+    }
     out.clear();
     out.resize(n, 0.0);
     for i in 0..n {
@@ -145,6 +186,7 @@ pub fn natural_gradient_block_apply_cpu_into(
         }
         out[i] = acc;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -190,11 +232,20 @@ mod tests {
         let m = vec![0.5, 0.0, 0.0, 2.0];
         let g = vec![4.0, 3.0];
         let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
         let ptr = out.as_ptr();
+        let capacity = out.capacity();
         natural_gradient_block_apply_cpu_into(&m, &g, 2, &mut out);
         assert!(approx_eq(out[0], 2.0));
         assert!(approx_eq(out[1], 6.0));
+        assert_eq!(out.len(), 2);
         assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        natural_gradient_block_apply_cpu_into(&[3.0], &[5.0], 1, &mut out);
+        assert_eq!(out, vec![15.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
     }
 
     #[test]
@@ -220,5 +271,16 @@ mod tests {
     fn zero_n_traps() {
         let p = natural_gradient_block_apply("M", "g", "gn", 0);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_builder_rejects_preconditioner_cell_overflow() {
+        let error = try_natural_gradient_block_apply("M", "g", "gn", u32::MAX)
+            .expect_err("checked natural-gradient builder must reject n*n overflow");
+
+        assert!(
+            error.contains("overflows preconditioner block cell count"),
+            "error should describe preconditioner shape overflow: {error}"
+        );
     }
 }

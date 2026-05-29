@@ -2,7 +2,7 @@
 //! `GpuBufferHandle`. Lets consumers allocate one persistent
 //! `Box<dyn DeviceBuffer>`, upload host bytes once, dispatch many
 //! times reusing the same device-resident allocation, and download
-//! when the loop ends — paying host↔device copy cost only at the
+//! when the loop ends  -  paying host↔device copy cost only at the
 //! boundary instead of per-dispatch.
 
 use crate::buffer::{write_padded, GpuBufferHandle};
@@ -164,7 +164,7 @@ impl WgpuBackend {
 
     /// Free a previously-allocated wgpu DeviceBuffer. The wgpu
     /// allocation is released when the underlying Arc<wgpu::Buffer>
-    /// reaches zero references — dropping the box here is sufficient.
+    /// reaches zero references  -  dropping the box here is sufficient.
     ///
     /// # Errors
     /// Returns a backend error when the buffer was not allocated by
@@ -271,7 +271,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("device buffer production source must precede tests");
+            .expect("Fix: device buffer production source must precede tests");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".unwrap_or_else(")

@@ -161,22 +161,23 @@ fn initial_selection_reason(
         return PassSelectionReason::HotPathTelemetry;
     }
     let stats = program.stats();
+    let reason_for = |above_threshold: bool| {
+        if above_threshold {
+            PassSelectionReason::ProgramShape
+        } else {
+            PassSelectionReason::BelowThreshold
+        }
+    };
     match metadata.cost_model_family {
-        CostModelFamily::Loop => (stats.node_count >= MIN_LOOP_NODES)
-            .then_some(PassSelectionReason::ProgramShape)
-            .unwrap_or(PassSelectionReason::BelowThreshold),
-        CostModelFamily::Memory => (program.estimate_peak_vram_bytes() >= MIN_MEMORY_BYTES)
-            .then_some(PassSelectionReason::ProgramShape)
-            .unwrap_or(PassSelectionReason::BelowThreshold),
-        CostModelFamily::Fusion => (stats.top_level_regions as usize >= MIN_FUSION_REGIONS)
-            .then_some(PassSelectionReason::ProgramShape)
-            .unwrap_or(PassSelectionReason::BelowThreshold),
-        CostModelFamily::Dataflow => (stats.node_count >= MIN_DATAFLOW_NODES)
-            .then_some(PassSelectionReason::ProgramShape)
-            .unwrap_or(PassSelectionReason::BelowThreshold),
-        CostModelFamily::Megakernel => (stats.node_count >= MIN_MEGAKERNEL_NODES)
-            .then_some(PassSelectionReason::ProgramShape)
-            .unwrap_or(PassSelectionReason::BelowThreshold),
+        CostModelFamily::Loop => reason_for(stats.node_count >= MIN_LOOP_NODES),
+        CostModelFamily::Memory => {
+            reason_for(program.estimate_peak_vram_bytes() >= MIN_MEMORY_BYTES)
+        }
+        CostModelFamily::Fusion => {
+            reason_for(stats.top_level_regions as usize >= MIN_FUSION_REGIONS)
+        }
+        CostModelFamily::Dataflow => reason_for(stats.node_count >= MIN_DATAFLOW_NODES),
+        CostModelFamily::Megakernel => reason_for(stats.node_count >= MIN_MEGAKERNEL_NODES),
         CostModelFamily::Scalar | CostModelFamily::Sync | CostModelFamily::Unknown => {
             PassSelectionReason::AlwaysOn
         }
@@ -297,10 +298,10 @@ mod tests {
             &program,
             &HotPathHints::default(),
         )
-        .expect("live registry selection must succeed");
+        .expect("Fix: live registry selection must succeed");
         let optimized = crate::optimizer::PassScheduler::with_passes(passes)
             .run(program)
-            .expect("selected release pass scheduler must converge");
+            .expect("Fix: selected release pass scheduler must converge");
         assert!(optimized.stats().node_count > 0);
     }
 }

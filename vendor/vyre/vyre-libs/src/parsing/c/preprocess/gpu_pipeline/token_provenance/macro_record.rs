@@ -14,7 +14,12 @@ pub(crate) fn record_macro_token_provenance(
 ) -> Result<(), String> {
     let segment_events_start = token_provenance_events.len();
     let mut macros_by_name: HashMap<&[u8], MacroBucket<'_>> = HashMap::default();
-    macros_by_name.reserve(macros.len());
+    macros_by_name.try_reserve(macros.len()).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {} macro provenance lookup buckets: {error:?}. Fix: shard preprocessing before macro provenance export.",
+            macros.len()
+        )
+    })?;
     for mac in macros {
         macros_by_name
             .entry(mac.name.as_slice())

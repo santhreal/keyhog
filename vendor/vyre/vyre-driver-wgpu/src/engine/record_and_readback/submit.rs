@@ -1,5 +1,6 @@
 use super::readback::{PendingMap, WgpuPendingReadback};
 use super::RecordedDispatch;
+use crate::allocation::{reserve_smallvec_to_capacity, reserve_vec_to_capacity};
 use smallvec::SmallVec;
 use std::sync::Arc;
 use vyre_driver::BackendError;
@@ -15,9 +16,7 @@ pub(crate) fn submit_recorded_dispatch(
         )
     })?;
     let _submission = queue.submit(std::iter::once(command_buffer));
-    match device.poll(wgpu::Maintain::Poll) {
-        wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-    }
+    crate::runtime::device::poll_device_once(device)?;
     if let Some(error) = crate::runtime::device::pop_error_scope_now(device).map_err(|message| {
         BackendError::DispatchFailed {
             code: None,
@@ -52,8 +51,14 @@ pub(crate) fn submit_recorded_batch(
     }
     let (device, queue) = &*device_queue;
     device.push_error_scope(wgpu::ErrorFilter::Validation);
-    let mut command_buffers: SmallVec<[wgpu::CommandBuffer; 8]> =
-        SmallVec::with_capacity(recorded.len());
+    let mut command_buffers = SmallVec::<[wgpu::CommandBuffer; 8]>::new();
+    reserve_smallvec_to_capacity(
+        &mut command_buffers,
+        recorded.len(),
+        "batched wgpu submit",
+        "command buffer slot",
+        "split the recorded dispatch batch before queue submission",
+    )?;
     for item in &mut recorded {
         command_buffers.push(item.command_buffer.take().ok_or_else(|| {
             BackendError::new(
@@ -62,9 +67,7 @@ pub(crate) fn submit_recorded_batch(
         })?);
     }
     let _submission = queue.submit(command_buffers);
-    match device.poll(wgpu::Maintain::Poll) {
-        wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-    }
+    crate::runtime::device::poll_device_once(device)?;
     if let Some(error) = crate::runtime::device::pop_error_scope_now(device).map_err(|message| {
         BackendError::DispatchFailed {
             code: None,
@@ -78,7 +81,14 @@ pub(crate) fn submit_recorded_batch(
             ),
         });
     }
-    let mut pending = Vec::with_capacity(recorded.len());
+    let mut pending = Vec::new();
+    reserve_vec_to_capacity(
+        &mut pending,
+        recorded.len(),
+        "batched wgpu submit",
+        "pending readback slot",
+        "split the recorded dispatch batch before collecting readbacks",
+    )?;
     for item in recorded {
         pending.push(pending_after_submission(item)?);
     }
@@ -88,8 +98,14 @@ pub(crate) fn submit_recorded_batch(
 fn pending_after_submission(
     recorded: RecordedDispatch,
 ) -> Result<WgpuPendingReadback, BackendError> {
-    let mut pending: smallvec::SmallVec<[PendingMap; 4]> =
-        smallvec::SmallVec::with_capacity(recorded.readback_buffers.len());
+    let mut pending = smallvec::SmallVec::<[PendingMap; 4]>::new();
+    reserve_smallvec_to_capacity(
+        &mut pending,
+        recorded.readback_buffers.len(),
+        "wgpu submit",
+        "pending map slot",
+        "split the dispatch output set before submission",
+    )?;
     for (output, readback) in recorded.readback_buffers {
         pending.push((output, readback.map_async()?));
     }
@@ -99,10 +115,19 @@ fn pending_after_submission(
         None
     };
 
+    let mut outputs = Vec::new();
+    reserve_vec_to_capacity(
+        &mut outputs,
+        recorded.output_count,
+        "wgpu submit",
+        "pending output slot",
+        "split the dispatch output set before submission",
+    )?;
+
     Ok(WgpuPendingReadback {
         device_queue: recorded.device_queue,
         pending,
-        outputs: Vec::with_capacity(recorded.output_count),
+        outputs,
         output_count: recorded.output_count,
         output_bindings: recorded.output_bindings,
         trap_tags: recorded.trap_tags,

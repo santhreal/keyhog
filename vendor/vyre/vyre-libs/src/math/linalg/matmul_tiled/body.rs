@@ -4,6 +4,7 @@
 use vyre::ir::{Expr, Node};
 
 use super::shape::{in_output_bounds, MatrixShape, TileShape};
+use super::tile_coords::{bind_output_tile_coordinates, OutputTileCoordNames};
 
 pub(crate) fn cooperative_matmul_body(
     a: &str,
@@ -21,54 +22,17 @@ pub(crate) fn cooperative_matmul_body(
     let in_bounds = in_output_bounds(row.clone(), col.clone(), shape);
     let out_index = Expr::add(Expr::mul(row.clone(), Expr::u32(shape.n)), col.clone());
 
-    let mut body = vec![
-        Node::let_bind(
-            "local",
-            Expr::add(
-                Expr::add(
-                    Expr::LocalId { axis: 0 },
-                    Expr::mul(Expr::LocalId { axis: 1 }, Expr::u32(tile.x_lanes)),
-                ),
-                Expr::mul(
-                    Expr::LocalId { axis: 2 },
-                    Expr::u32(tile.x_lanes.saturating_mul(tile.y_lanes)),
-                ),
-            ),
-        ),
-        Node::let_bind("tile_block", Expr::WorkgroupId { axis: 0 }),
-        Node::let_bind("tile_cols", Expr::u32(shape.n.div_ceil(tile.out_cols))),
-        Node::let_bind(
-            "tile_row_base",
-            Expr::mul(
-                Expr::div(Expr::var("tile_block"), Expr::var("tile_cols")),
-                Expr::u32(tile.out_rows),
-            ),
-        ),
-        Node::let_bind(
-            "tile_col_base",
-            Expr::mul(
-                Expr::rem(Expr::var("tile_block"), Expr::var("tile_cols")),
-                Expr::u32(tile.out_cols),
-            ),
-        ),
-        Node::let_bind(
-            "local_row",
-            Expr::div(local.clone(), Expr::u32(tile.out_cols)),
-        ),
-        Node::let_bind(
-            "local_col",
-            Expr::rem(local.clone(), Expr::u32(tile.out_cols)),
-        ),
-        Node::let_bind(
-            "row",
-            Expr::add(Expr::var("tile_row_base"), Expr::var("local_row")),
-        ),
-        Node::let_bind(
-            "col",
-            Expr::add(Expr::var("tile_col_base"), Expr::var("local_col")),
-        ),
-        Node::let_bind("acc", Expr::u32(0)),
-    ];
+    let mut body = bind_output_tile_coordinates(
+        shape,
+        tile,
+        OutputTileCoordNames {
+            lane_row: "local_row",
+            lane_col: "local_col",
+            row: "row",
+            col: "col",
+        },
+    );
+    body.push(Node::let_bind("acc", Expr::u32(0)));
     if let Some(bias) = bias {
         body.push(Node::if_then(
             in_bounds.clone(),

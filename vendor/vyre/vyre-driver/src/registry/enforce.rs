@@ -42,7 +42,7 @@ pub enum EnforceVerdict {
 /// a structured verdict. Implementations are composed into a pipeline via
 /// [`Chain`]; the full gate returns `Allow` only when every stage allows.
 pub trait EnforceGate: private::Sealed + Send + Sync {
-    /// Name of this gate — appears in verdicts and logs.
+    /// Name of this gate  -  appears in verdicts and logs.
     fn name(&self) -> &'static str;
 
     /// Evaluate the gate against `program`. Must be pure.
@@ -58,7 +58,7 @@ pub struct Chain<A, B> {
 impl<A: EnforceGate, B: EnforceGate> private::Sealed for Chain<A, B> {}
 
 impl<A: EnforceGate, B: EnforceGate> Chain<A, B> {
-    /// Pair two gates — `self` runs first, `other` runs only on Allow.
+    /// Pair two gates  -  `self` runs first, `other` runs only on Allow.
     pub fn new(first: A, second: B) -> Self {
         Self { first, second }
     }

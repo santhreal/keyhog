@@ -1,8 +1,8 @@
-//! Strassen 2x2 matmul — `C = A · B` for 2x2 row-major F32 matrices
+//! Strassen 2x2 matmul  -  `C = A · B` for 2x2 row-major F32 matrices
 //! using the Strassen recurrence (7 multiplications, 18 additions
 //! instead of naive 8 multiplications, 4 additions).
 //!
-//! ROADMAP H1 — Strassen-like matmul substitution where profitable
+//! ROADMAP H1  -  Strassen-like matmul substitution where profitable
 //! and numerically allowed.
 //!
 //! For 2x2 matrices `A = [[a,b],[c,d]]` and `B = [[e,f],[g,h]]`:
@@ -167,20 +167,14 @@ inventory::submit! {
         id: OP_ID,
         build: || matmul_strassen_2x2("a", "b", "c"),
         test_inputs: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             // A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]]
-            let a = f32_bytes(&[1.0, 2.0, 3.0, 4.0]);
-            let b = f32_bytes(&[5.0, 6.0, 7.0, 8.0]);
+            let a = crate::test_support::byte_pack::f32_bytes(&[1.0, 2.0, 3.0, 4.0]);
+            let b = crate::test_support::byte_pack::f32_bytes(&[5.0, 6.0, 7.0, 8.0]);
             vec![vec![a, b]]
         }),
         expected_output: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             // C = A · B = [[19, 22], [43, 50]]
-            vec![vec![f32_bytes(&[19.0, 22.0, 43.0, 50.0])]]
+            vec![vec![crate::test_support::byte_pack::f32_bytes(&[19.0, 22.0, 43.0, 50.0])]]
         }),
         category: Some("math"),
     }
@@ -484,13 +478,11 @@ pub fn matmul_strassen_one_level(a: &str, b: &str, c: &str, n: u32) -> Result<Pr
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
 
     fn decode(bytes: &[u8]) -> Vec<f32> {
         bytes
@@ -573,7 +565,7 @@ mod tests {
     }
 
     fn run_one_level(a: &[f32], b: &[f32], n: u32) -> Vec<f32> {
-        let prog = matmul_strassen_one_level("a", "b", "c", n).expect("build");
+        let prog = matmul_strassen_one_level("a", "b", "c", n).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -647,3 +639,4 @@ mod tests {
         }
     }
 }
+

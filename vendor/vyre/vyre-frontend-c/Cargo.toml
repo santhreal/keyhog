@@ -1,6 +1,6 @@
 [package]
 name = "vyre-frontend-c"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -23,34 +23,35 @@ default = []
 cpu-oracle = []
 
 [dependencies]
-vyre = { path = "../vyre-core" }
-vyre-driver = { path = "../vyre-driver" }
-vyre-lower = { path = "../vyre-lower" }
-vyre-self-substrate = { path = "../vyre-self-substrate" }
+vyre.workspace = true
+vyre-driver.workspace = true
+vyre-lower.workspace = true
+vyre-self-substrate.workspace = true
 vyre-libs = { path = "../vyre-libs", default-features = false, features = ["c-parser", "cpu-parity"] }
-vyre-primitives = { path = "../vyre-primitives", default-features = false, features = ["matching"] }
-surgec-grammar-gen = { path = "../../../../shared/surgec-grammar-gen" }
-vyre-runtime = { path = "../vyre-runtime" }
-vyre-foundation = { path = "../vyre-foundation" }
-object = { version = "0.36", default-features = false, features = ["write"] }
+vyre-primitives = { workspace = true, default-features = false, features = ["matching"] }
+c-grammar-gen.workspace = true
+vyre-runtime.workspace = true
+vyre-foundation.workspace = true
+object = { workspace = true, features = ["write"] }
 blake3 = { workspace = true }
 bytemuck = { workspace = true }
 smallvec = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 vyre-driver-cuda = { workspace = true }
-vyre-driver-wgpu = { path = "../vyre-driver-wgpu", features = ["c-parser"] }
-vyre-debug = { path = "../vyre-debug" }
-vyre-lower = { path = "../vyre-lower" }
-vyre-reference = { path = "../vyre-reference" }
-# S0 — AST equivalence oracle. clang's `-Xclang -ast-dump=json` is parsed in
+vyre-driver-wgpu = { workspace = true, features = ["c-parser"] }
+vyre-debug.workspace = true
+vyre-lower.workspace = true
+vyre-reference.workspace = true
+# S0  -  AST equivalence oracle. clang's `-Xclang -ast-dump=json` is parsed in
 # the test support layer; serde_json is a workspace dep used by other
 # vyre crates already, no new build-time cost.
 serde_json = { workspace = true }
 criterion = { workspace = true }
 toml = { workspace = true }
-tree-sitter = "=0.26.8"
-tree-sitter-c = "=0.24.2"
+tree-sitter = { workspace = true }
+tree-sitter-c = { workspace = true }
 
 [[bench]]
 name = "parser_pipeline"

@@ -53,4 +53,5 @@ use vyre_libs::parsing::c::sema::lookup::{
     DECL_KIND_NONE, DECL_KIND_TYPEDEF, DECL_KIND_VARIABLE,
 };
 
-use crate::object_format::{parse_embedded_vyrecob2, SectionTag, Vyrecob2};
+use crate::api::object_io::{decode_embedded_object, read_object_file};
+use crate::object_format::{SectionTag, Vyrecob2};

@@ -1,7 +1,7 @@
-//! `bitset_contains` — query one bit at a given index.
+//! `bitset_contains`  -  query one bit at a given index.
 //!
 //! `out[0] = (input[index / 32] >> (index % 32)) & 1`. Single-lane
-//! Program. Consumed by a downstream frontend's point-lookup predicates (e.g.
+//! Program. Consumed by a external analyzer's point-lookup predicates (e.g.
 //! `target ∈ frontier`).
 
 use std::sync::Arc;
@@ -80,11 +80,11 @@ inventory::submit! {
         OP_ID,
         || bitset_contains("input", "index", "out", 1),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0b1010]), to_bytes(&[1]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1])]]
         }),
     )

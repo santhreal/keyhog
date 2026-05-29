@@ -1,4 +1,4 @@
-//! `bigint_add_carry` — multi-limb big-integer addition with explicit
+//! `bigint_add_carry`  -  multi-limb big-integer addition with explicit
 //! carry-out propagation, packed as one u32-limb per element.
 //!
 //! Op id: `vyre-primitives::math::bigint_add_carry`. Soundness: `Exact` over
@@ -26,12 +26,12 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `a` — limb_count u32 limbs, little-endian (limb 0 = LSB).
-//!   - `b` — limb_count u32 limbs, little-endian.
+//!   - `a`  -  limb_count u32 limbs, little-endian (limb 0 = LSB).
+//!   - `b`  -  limb_count u32 limbs, little-endian.
 //!
 //! Outputs:
-//!   - `sum_partial` — limb_count u32 limbs: `(a[i] + b[i]) mod 2^32`.
-//!   - `carry_partial` — limb_count u32 limbs (each is 0 or 1): the
+//!   - `sum_partial`  -  limb_count u32 limbs: `(a[i] + b[i]) mod 2^32`.
+//!   - `carry_partial`  -  limb_count u32 limbs (each is 0 or 1): the
 //!     carry-out of `a[i] + b[i]`. Bit `i` of the final carry-resolved sum
 //!     comes from `sum_partial[i] + carry_in[i]` where `carry_in[i]` is
 //!     the prefix-or-style fold of `carry_partial[0..i]` adjusted for
@@ -75,6 +75,13 @@ pub enum BigIntAddCarryError {
         /// `carry_partial` length.
         carry_len: usize,
     },
+    /// Caller-owned storage could not be reserved.
+    AllocationFailed {
+        /// Operation that was reserving storage.
+        operation: &'static str,
+        /// Allocator or capacity diagnostic.
+        message: String,
+    },
 }
 
 /// Build the IR `Program` that emits `(sum_partial, carry_partial)` for
@@ -89,6 +96,15 @@ pub enum BigIntAddCarryError {
 /// `limb_count` must be > 0; the workgroup size is fixed at 256 lanes.
 #[must_use]
 pub fn bigint_add_carry(limb_count: u32) -> Program {
+    if limb_count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            "sum_partial",
+            DataType::U32,
+            "Fix: bigint_add_carry requires limb_count > 0, got 0.".to_string(),
+        );
+    }
+
     let body = vec![
         Node::let_bind("limb_idx", Expr::InvocationId { axis: 0 }),
         Node::if_then(
@@ -98,7 +114,7 @@ pub fn bigint_add_carry(limb_count: u32) -> Program {
                 Node::let_bind("b_limb", Expr::load("b", Expr::var("limb_idx"))),
                 // sum (mod 2^32). Hardware u32 add already wraps.
                 Node::let_bind("sum", Expr::add(Expr::var("a_limb"), Expr::var("b_limb"))),
-                // carry = (sum < a_limb) ? 1 : 0   — the canonical
+                // carry = (sum < a_limb) ? 1 : 0    -  the canonical
                 // detect-unsigned-overflow check.
                 Node::let_bind(
                     "carry_bool",
@@ -185,10 +201,10 @@ pub fn bigint_add_carry_cpu_into(
             b_len: b.len(),
         });
     }
+    reserve_bigint_output(sum_partial, a.len(), "sum_partial")?;
+    reserve_bigint_output(carry_partial, a.len(), "carry_partial")?;
     sum_partial.clear();
     carry_partial.clear();
-    sum_partial.reserve(a.len());
-    carry_partial.reserve(a.len());
     for (a_limb, b_limb) in a.iter().zip(b.iter()) {
         let (sum, overflow) = a_limb.overflowing_add(*b_limb);
         sum_partial.push(sum);
@@ -232,8 +248,8 @@ pub fn resolve_carry_chain_cpu_into(
             carry_len: carry_partial.len(),
         });
     }
+    reserve_bigint_output(final_sum, sum_partial.len(), "final_sum")?;
     final_sum.clear();
-    final_sum.reserve(sum_partial.len());
     let mut carry_in: u32 = 0;
     for (sum, carry) in sum_partial.iter().zip(carry_partial.iter()) {
         let (with_in, overflow_from_in) = sum.overflowing_add(carry_in);
@@ -247,13 +263,43 @@ pub fn resolve_carry_chain_cpu_into(
     Ok(carry_in)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
+fn reserve_bigint_output(
+    out: &mut Vec<u32>,
+    len: usize,
+    operation: &'static str,
+) -> Result<(), BigIntAddCarryError> {
+    if len > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "bigint add-carry CPU oracle",
+            operation,
+        )
+        .map_err(|message| BigIntAddCarryError::AllocationFailed { operation, message })?;
+    }
+    Ok(())
+}
+
 #[cfg(feature = "inventory-registry")]
 inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || bigint_add_carry(4),
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[1, u32::MAX, 5, u32::MAX]),
+                crate::wire::pack_u32_slice(&[2, 1, u32::MAX, u32::MAX]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[3, 0, 4, u32::MAX - 1]),
+                crate::wire::pack_u32_slice(&[0, 1, 1, 1]),
+            ]]
+        }),
     )
 }
 
@@ -264,7 +310,7 @@ mod tests {
     #[test]
     fn cpu_zero_plus_zero_returns_zero_with_no_carries() {
         let (sum, carry) =
-            bigint_add_carry_cpu(&[0, 0, 0, 0], &[0, 0, 0, 0]).expect("matching limbs");
+            bigint_add_carry_cpu(&[0, 0, 0, 0], &[0, 0, 0, 0]).expect("Fix: matching limbs");
         assert_eq!(sum, vec![0, 0, 0, 0]);
         assert_eq!(carry, vec![0, 0, 0, 0]);
     }
@@ -273,7 +319,7 @@ mod tests {
     fn cpu_no_overflow_per_limb_keeps_carries_zero() {
         let a = [1u32, 2, 3, 4];
         let b = [10u32, 20, 30, 40];
-        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
+        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
         assert_eq!(sum, vec![11, 22, 33, 44]);
         assert_eq!(carry, vec![0, 0, 0, 0]);
     }
@@ -284,7 +330,7 @@ mod tests {
         // limb 1: 0xFFFF_FFFF + 0 = 0xFFFF_FFFF, carry 0.
         let a = [0xFFFF_FFFFu32, 0xFFFF_FFFFu32];
         let b = [1u32, 0u32];
-        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
+        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
         assert_eq!(sum, vec![0, 0xFFFF_FFFF]);
         assert_eq!(carry, vec![1, 0]);
     }
@@ -293,7 +339,7 @@ mod tests {
     fn cpu_max_plus_max_emits_per_limb_carry_and_truncated_sum() {
         let a = [0xFFFF_FFFFu32; 4];
         let b = [0xFFFF_FFFFu32; 4];
-        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
+        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
         // 0xFFFF_FFFF + 0xFFFF_FFFF = 0x1_FFFF_FFFE (wraps to 0xFFFF_FFFE,
         // carry 1) for every limb.
         assert_eq!(sum, vec![0xFFFF_FFFEu32; 4]);
@@ -306,8 +352,8 @@ mod tests {
         // After resolve: limb 0 stays 0xFFFF_FFFF; carry 1 propagates upward.
         let sum_partial = vec![0xFFFF_FFFFu32, 0, 0, 0];
         let carry_partial = vec![1u32, 0, 0, 0];
-        let (final_sum, final_carry) =
-            resolve_carry_chain_cpu(&sum_partial, &carry_partial).expect("matching split limbs");
+        let (final_sum, final_carry) = resolve_carry_chain_cpu(&sum_partial, &carry_partial)
+            .expect("Fix: matching split limbs");
         // limb 0 has no carry-in → stays 0xFFFF_FFFF.
         assert_eq!(final_sum, vec![0xFFFF_FFFF, 1, 0, 0]);
         assert_eq!(
@@ -324,22 +370,24 @@ mod tests {
         // Expected final sum = [0, 0, 0, 1], final carry-out = 0.
         let a = [0xFFFF_FFFFu32, 0xFFFF_FFFFu32, 0xFFFF_FFFFu32, 0];
         let b = [1u32, 0, 0, 0];
-        let (sum_partial, carry_partial) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
-        let (final_sum, final_carry) =
-            resolve_carry_chain_cpu(&sum_partial, &carry_partial).expect("matching split limbs");
+        let (sum_partial, carry_partial) =
+            bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
+        let (final_sum, final_carry) = resolve_carry_chain_cpu(&sum_partial, &carry_partial)
+            .expect("Fix: matching split limbs");
         assert_eq!(final_sum, vec![0, 0, 0, 1]);
         assert_eq!(final_carry, 0);
     }
 
     #[test]
     fn resolve_carry_chain_emits_final_carry_out_at_top() {
-        // Adding the max two-limb integer to itself — the final carry-out
+        // Adding the max two-limb integer to itself  -  the final carry-out
         // must be 1 (the answer doesn't fit in 64 bits).
         let a = [0xFFFF_FFFFu32, 0xFFFF_FFFFu32];
         let b = [0xFFFF_FFFFu32, 0xFFFF_FFFFu32];
-        let (sum_partial, carry_partial) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
-        let (_final_sum, final_carry) =
-            resolve_carry_chain_cpu(&sum_partial, &carry_partial).expect("matching split limbs");
+        let (sum_partial, carry_partial) =
+            bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
+        let (_final_sum, final_carry) = resolve_carry_chain_cpu(&sum_partial, &carry_partial)
+            .expect("Fix: matching split limbs");
         assert_eq!(
             final_carry, 1,
             "max + max in 64 bits overflows into the 65th bit"
@@ -353,8 +401,8 @@ mod tests {
         // limb 1 → 0xFFFF_FFFF + 1 = 0, with overflow → next carry = 1.
         let sum_partial = vec![0xFFFF_FFFFu32, 0xFFFF_FFFFu32];
         let carry_partial = vec![1u32, 0];
-        let (final_sum, final_carry) =
-            resolve_carry_chain_cpu(&sum_partial, &carry_partial).expect("matching split limbs");
+        let (final_sum, final_carry) = resolve_carry_chain_cpu(&sum_partial, &carry_partial)
+            .expect("Fix: matching split limbs");
         assert_eq!(final_sum, vec![0xFFFF_FFFF, 0]);
         assert_eq!(
             final_carry, 1,
@@ -368,7 +416,7 @@ mod tests {
         // sizes used by ECDSA / X25519.
         let a = [0x1234_5678u32; 8];
         let b = [0x8765_4321u32; 8];
-        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
+        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
         // 0x1234_5678 + 0x8765_4321 = 0x9999_9999, no overflow.
         assert_eq!(sum, vec![0x9999_9999u32; 8]);
         assert_eq!(carry, vec![0u32; 8]);
@@ -380,7 +428,7 @@ mod tests {
         // sizes used by RSA-4096.
         let a = vec![0x5555_5555u32; 128];
         let b = vec![0xAAAA_AAAAu32; 128];
-        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("matching limbs");
+        let (sum, carry) = bigint_add_carry_cpu(&a, &b).expect("Fix: matching limbs");
         // 0x5555_5555 + 0xAAAA_AAAA = 0xFFFF_FFFF, no overflow.
         assert_eq!(sum, vec![0xFFFF_FFFFu32; 128]);
         assert_eq!(carry, vec![0u32; 128]);
@@ -400,15 +448,80 @@ mod tests {
     fn cpu_into_reuses_output_capacity() {
         let a = [1u32, u32::MAX];
         let b = [2u32, 1];
+
         let mut sum = Vec::with_capacity(32);
         let mut carry = Vec::with_capacity(32);
         let sum_cap = sum.capacity();
         let carry_cap = carry.capacity();
-        bigint_add_carry_cpu_into(&a, &b, &mut sum, &mut carry).expect("matching limbs");
+        bigint_add_carry_cpu_into(&a, &b, &mut sum, &mut carry).expect("Fix: matching limbs");
         assert_eq!(sum, vec![3, 0]);
         assert_eq!(carry, vec![0, 1]);
         assert_eq!(sum.capacity(), sum_cap);
         assert_eq!(carry.capacity(), carry_cap);
+    }
+
+    #[test]
+    fn cpu_into_truncates_stale_tail_without_reallocating() {
+        let a = [1u32, u32::MAX];
+        let b = [2u32, 1];
+        let mut sum = Vec::with_capacity(8);
+        let mut carry = Vec::with_capacity(8);
+        sum.extend([99u32; 8]);
+        carry.extend([99u32; 8]);
+        let sum_ptr = sum.as_ptr();
+        let carry_ptr = carry.as_ptr();
+
+        bigint_add_carry_cpu_into(&a, &b, &mut sum, &mut carry).unwrap();
+
+        assert_eq!(sum, vec![3, 0]);
+        assert_eq!(carry, vec![0, 1]);
+        assert_eq!(sum.as_ptr(), sum_ptr);
+        assert_eq!(carry.as_ptr(), carry_ptr);
+    }
+
+    #[test]
+    fn resolve_into_truncates_stale_tail_without_reallocating() {
+        let mut out = Vec::with_capacity(8);
+        out.extend([99u32; 8]);
+        let ptr = out.as_ptr();
+
+        let carry = resolve_carry_chain_cpu_into(&[u32::MAX, u32::MAX], &[1, 0], &mut out).unwrap();
+
+        assert_eq!(out, vec![u32::MAX, 0]);
+        assert_eq!(carry, 1);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_split_and_resolve_matches_ripple_reference() {
+        for len in 1usize..=24 {
+            let a: Vec<u32> = (0..len)
+                .map(|idx| {
+                    (idx as u32)
+                        .wrapping_mul(0x9E37_79B9)
+                        .wrapping_add(len as u32)
+                })
+                .collect();
+            let b: Vec<u32> = (0..len)
+                .map(|idx| (idx as u32).wrapping_mul(0x85EB_CA6B).wrapping_add(7))
+                .collect();
+            let (sum_partial, carry_partial) = bigint_add_carry_cpu(&a, &b).unwrap();
+            let (final_sum, final_carry) =
+                resolve_carry_chain_cpu(&sum_partial, &carry_partial).unwrap();
+            let mut expected = Vec::with_capacity(len);
+            let mut carry = 0u64;
+            for i in 0..len {
+                let total = a[i] as u64 + b[i] as u64 + carry;
+                expected.push(total as u32);
+                carry = total >> 32;
+            }
+
+            assert_eq!(final_sum, expected, "generated bigint case len={len}");
+            assert_eq!(
+                final_carry, carry as u32,
+                "generated bigint carry len={len}"
+            );
+        }
     }
 
     #[test]
@@ -432,6 +545,12 @@ mod tests {
             "a, b, sum_partial, carry_partial"
         );
         assert_eq!(program.workgroup_size(), [256, 1, 1]);
+    }
+
+    #[test]
+    fn zero_limb_count_traps() {
+        let program = bigint_add_carry(0);
+        assert!(program.stats().trap());
     }
 
     #[test]
@@ -463,3 +582,4 @@ mod tests {
         assert_eq!(BINDING_CARRY_PARTIAL_OUT, 3);
     }
 }
+

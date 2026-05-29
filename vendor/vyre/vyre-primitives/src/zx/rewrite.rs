@@ -25,7 +25,7 @@ impl ZxColor {
     }
 }
 
-/// One ZX spider — a graph vertex with color + phase numerator.
+/// One ZX spider  -  a graph vertex with color + phase numerator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ZxSpider {
     /// Z or X.
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn fusion_does_not_merge_cross_color() {
-        // Z—X edge: no fusion.
+        // Z - X edge: no fusion.
         let d = ZxDiagram {
             phase_denom: 8,
             spiders: vec![z(1), x(2)],
@@ -308,7 +308,7 @@ mod tests {
     /// Adversarial: Z and X mixed should NOT cause cross-fusion.
     #[test]
     fn mixed_diagram_preserves_cross_color_structure() {
-        // Z—Z—X chain: only the Z—Z merges; the X stays.
+        // Z - Z - X chain: only the Z - Z merges; the X stays.
         let d = ZxDiagram {
             phase_denom: 8,
             spiders: vec![z(1), z(2), x(3)],

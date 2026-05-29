@@ -4,17 +4,17 @@
 //! subdirs aligned with the Phase 4 catalog buckets so the directory scales
 //! to ~250 named transforms without becoming an unreviewable flat dir:
 //!
-//! - `algebraic/` (Phase 4A) — `const_fold`, `strength_reduce`,
+//! - `algebraic/` (Phase 4A)  -  `const_fold`, `strength_reduce`,
 //!   canonicalize, `normalize_atomics`
-//! - `loops/` (Phase 4B) — `loop_unroll`, `loop_trip_zero_eliminate`
-//! - `memory/` (Phase 4C) — `const_buffer_fold`, `dead_buffer_elim`,
+//! - `loops/` (Phase 4B)  -  `loop_unroll`, `loop_trip_zero_eliminate`
+//! - `memory/` (Phase 4C)  -  `const_buffer_fold`, `dead_buffer_elim`,
 //!   `read_only_load_hoist`, `vectorization`, `decode_scan_fuse`
-//! - `sync/` (Phase 4D) — `barrier_coalesce`
-//! - `fusion_cse/` — fusion, `fuse_cse`, cse, dce
-//! - `cleanup/` — `empty_block_collapse`, `region_inline`,
+//! - `sync/` (Phase 4D)  -  `barrier_coalesce`
+//! - `fusion_cse/`  -  fusion, `fuse_cse`, cse, dce
+//! - `cleanup/`  -  `empty_block_collapse`, `region_inline`,
 //!   `if_constant_branch_eliminate`, `noop_assign_eliminate`,
 //!   `region_promote_singleton_block`, `buffer_decl_sort`
-//! - `specialization/` (Phase 4G) — autotune
+//! - `specialization/` (Phase 4G)  -  autotune
 //!
 //! Backend-specific lowering strategy code belongs in the concrete driver
 //! crates. Foundation passes are math- and IR-structural rewrites that any

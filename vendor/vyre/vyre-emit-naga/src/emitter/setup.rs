@@ -300,9 +300,9 @@ mod tests {
             vec![Node::store("out", Expr::u32(0), Expr::buf_len("input"))],
         );
         let descriptor =
-            vyre_lower::lower(&program).expect("counted storage buf_len program must lower");
+            vyre_lower::lower(&program).expect("Fix: counted storage buf_len program must lower");
         let module =
-            emit_uncached(&descriptor).expect("counted storage buf_len descriptor must emit");
+            emit_uncached(&descriptor).expect("Fix: counted storage buf_len descriptor must emit");
         let function = &module.entry_points[0].function;
 
         assert!(
@@ -329,7 +329,7 @@ fn address_space(binding: &BindingSlot) -> AddressSpace {
     match binding.memory_class {
         MemoryClass::Shared => AddressSpace::WorkGroup,
         // True `var<uniform>` would require 16-byte (vec4) stride
-        // for any inner array — `array<u32>` alone fails Naga's
+        // for any inner array  -  `array<u32>` alone fails Naga's
         // alignment validation. Keep the WGSL address space as
         // storage(LOAD); `resource_binding` still routes uniforms
         // to group 1 so the layout-builder side is unambiguous.
@@ -451,6 +451,7 @@ fn descriptor_trap_sidecar_slot(desc: &KernelDescriptor) -> Result<Option<u32>, 
     Ok(Some(slot.slot))
 }
 
+
 fn descriptor_trap_tag_codes(body: &KernelBody) -> FxHashMap<vyre_lower::descriptor::Name, u32> {
     fn walk(
         body: &KernelBody,
@@ -527,3 +528,4 @@ pub(crate) fn emit_uncached(desc: &KernelDescriptor) -> Result<naga::Module, Emi
 // `lib.rs` calls into the cache layer first, then `emit_uncached` here.
 // Re-export the cache wrapper from this module so the `crate::emit`
 // boundary stays unchanged.
+

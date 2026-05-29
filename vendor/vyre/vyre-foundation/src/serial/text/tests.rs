@@ -163,7 +163,7 @@ pub(crate) fn parse_rejects_corrupted_wire_bytes() {
     let text = program.to_text().unwrap();
     let tampered = text.replace('a', "f"); // flip one nibble in the body
     if tampered == text {
-        // no 'a' in body — pick a different perturbation
+        // no 'a' in body  -  pick a different perturbation
         return;
     }
     let error = Program::from_text(&tampered);

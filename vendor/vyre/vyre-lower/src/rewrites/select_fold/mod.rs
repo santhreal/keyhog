@@ -1,16 +1,16 @@
-//! Select-fold rewrite — fold `Select(BoolLit, a, b)` to a Copy of
+//! Select-fold rewrite  -  fold `Select(BoolLit, a, b)` to a Copy of
 //! the chosen arm; fold `Select(c, x, x)` to a Copy of `x`.
 //!
 //! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4
 //! (predicate hoisting / phi-select coalescing family). Companion
 //! to `branch_collapse` which inlines literal-condition
-//! StructuredIfThen — that pass operates on structured control
+//! StructuredIfThen  -  that pass operates on structured control
 //! flow, this one on the value-level Select op.
 //!
 //! Patterns rewritten:
 //! - `Select(Lit(true),  a, _)` → `Copy(a)`
 //! - `Select(Lit(false), _, b)` → `Copy(b)`
-//! - `Select(c, x, x)`           → `Copy(x)` — both arms identical so
+//! - `Select(c, x, x)`           → `Copy(x)`  -  both arms identical so
 //!   the condition has no observable effect
 //!
 //! Recurses into nested control flow. Idempotent. Wired into
@@ -19,8 +19,8 @@
 //! those passes get the chance to fold here in the same fixpoint
 //! phase.
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 
 #[must_use]
 pub fn select_fold(desc: &KernelDescriptor) -> KernelDescriptor {
@@ -30,12 +30,7 @@ pub fn select_fold(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn select_fold_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
+    let index = BodyIndex::new(&body);
 
     // (op_idx, replace_id_to_copy)
     let mut rewrites: Vec<(usize, u32)> = Vec::new();
@@ -51,14 +46,14 @@ fn select_fold_body(mut body: KernelBody) -> KernelBody {
         let true_val = op.operands[1];
         let false_val = op.operands[2];
 
-        // Both arms identical — drop the condition.
+        // Both arms identical  -  drop the condition.
         if true_val == false_val {
             rewrites.push((idx, true_val));
             continue;
         }
 
-        // Literal cond — pick the live arm.
-        if let Some(value) = bool_lit(&body, &result_to_idx, cond) {
+        // Literal cond  -  pick the live arm.
+        if let Some(value) = index.bool_lit(&body, cond) {
             rewrites.push((idx, if value { true_val } else { false_val }));
         }
     }
@@ -76,23 +71,10 @@ fn select_fold_body(mut body: KernelBody) -> KernelBody {
     body
 }
 
-fn bool_lit(body: &KernelBody, result_to_idx: &FxHashMap<u32, usize>, id: u32) -> Option<bool> {
-    let producer_idx = *result_to_idx.get(&id)?;
-    let producer = body.ops.get(producer_idx)?;
-    if !matches!(producer.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_idx = *producer.operands.first()? as usize;
-    match body.literals.get(pool_idx)? {
-        LiteralValue::Bool(v) => Some(*v),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingLayout, Dispatch, KernelOp};
+    use crate::{BindingLayout, Dispatch, KernelOp, LiteralValue};
 
     fn empty_body() -> KernelBody {
         KernelBody {
@@ -175,7 +157,7 @@ mod tests {
     #[test]
     fn select_with_identical_arms_drops_cond() {
         let mut body = empty_body();
-        // cond is non-literal so bool_lit returns None — only the
+        // cond is non-literal so bool_lit returns None  -  only the
         // identical-arms rule should fire.
         lit_u32(&mut body, 7, 0); // dummy non-bool source for cond
         lit_u32(&mut body, 42, 1);
@@ -187,7 +169,7 @@ mod tests {
     #[test]
     fn select_with_non_literal_cond_unchanged() {
         let mut body = empty_body();
-        lit_u32(&mut body, 7, 0); // cond is u32 lit, not bool — bool_lit returns None
+        lit_u32(&mut body, 7, 0); // cond is u32 lit, not bool  -  bool_lit returns None
         lit_u32(&mut body, 100, 1);
         lit_u32(&mut body, 200, 2);
         select(&mut body, 0, 1, 2, 3);

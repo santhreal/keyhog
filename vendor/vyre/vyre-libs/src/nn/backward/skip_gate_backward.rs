@@ -75,7 +75,7 @@ inventory::submit! {
         id: OP_ID,
         build: || skip_gate_backward("gate", "branch", "skip", "grad_out", "grad_gate", 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[0.0, 100.0]),
                 to_f32(&[10.0, 20.0]),
@@ -90,7 +90,7 @@ inventory::submit! {
                 sigmoid(0.0) * (1.0 - sigmoid(0.0)) * (10.0 - 30.0),
                 sigmoid(100.0) * (1.0 - sigmoid(100.0)) * (20.0 - 40.0),
             ];
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),

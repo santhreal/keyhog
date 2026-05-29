@@ -1,7 +1,7 @@
 //! Composable per-pixel filter chain.
 //!
 //! Applies brightness, contrast, saturate, and invert in sequence.
-//! All math is integer fixed-point 16.16. Category A — pure IR.
+//! All math is integer fixed-point 16.16. Category A  -  pure IR.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_foundation::ir::model::expr::GeneratorRef;
@@ -10,7 +10,7 @@ const OP_ID: &str = "vyre-libs::visual::filter_chain";
 
 /// Build a Program that applies a filter chain to `pixels` in-place.
 ///
-/// - `pixels`: `[u32; count]` — packed RGBA, modified in-place
+/// - `pixels`: `[u32; count]`  -  packed RGBA, modified in-place
 /// - `brightness`, `contrast`, `saturate`: float ratios (1.0 = identity)
 /// - `invert`: 0.0 = no invert, 1.0 = full invert
 #[must_use]
@@ -85,24 +85,15 @@ pub fn filter_chain(
                             // 1. Brightness: channel = channel * brightness >> 16
                             Node::assign(
                                 "r",
-                                Expr::shr(
-                                    Expr::mul(Expr::var("r"), Expr::u32(br_fp)),
-                                    Expr::u32(16),
-                                ),
+                                super::fixed_mul_16_16_expr(Expr::var("r"), Expr::u32(br_fp)),
                             ),
                             Node::assign(
                                 "g",
-                                Expr::shr(
-                                    Expr::mul(Expr::var("g"), Expr::u32(br_fp)),
-                                    Expr::u32(16),
-                                ),
+                                super::fixed_mul_16_16_expr(Expr::var("g"), Expr::u32(br_fp)),
                             ),
                             Node::assign(
                                 "b",
-                                Expr::shr(
-                                    Expr::mul(Expr::var("b"), Expr::u32(br_fp)),
-                                    Expr::u32(16),
-                                ),
+                                super::fixed_mul_16_16_expr(Expr::var("b"), Expr::u32(br_fp)),
                             ),
                         ];
                         body.extend(clamp255("r"));
@@ -123,22 +114,16 @@ pub fn filter_chain(
                             vec![
                                 Node::let_bind(
                                     &delta_pos,
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::sub(Expr::var(ch), Expr::u32(128)),
-                                            Expr::u32(ct_fp),
-                                        ),
-                                        Expr::u32(16),
+                                    super::fixed_mul_16_16_expr(
+                                        Expr::sub(Expr::var(ch), Expr::u32(128)),
+                                        Expr::u32(ct_fp),
                                     ),
                                 ),
                                 Node::let_bind(
                                     &delta_neg,
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::sub(Expr::u32(128), Expr::var(ch)),
-                                            Expr::u32(ct_fp),
-                                        ),
-                                        Expr::u32(16),
+                                    super::fixed_mul_16_16_expr(
+                                        Expr::sub(Expr::u32(128), Expr::var(ch)),
+                                        Expr::u32(ct_fp),
                                     ),
                                 ),
                                 Node::assign(
@@ -165,15 +150,12 @@ pub fn filter_chain(
                         // 3. Saturate: luma + (channel - luma) * saturate
                         body.push(Node::let_bind(
                             "luma",
-                            Expr::shr(
+                            Expr::add(
                                 Expr::add(
-                                    Expr::add(
-                                        Expr::mul(Expr::var("r"), Expr::u32(luma_r)),
-                                        Expr::mul(Expr::var("g"), Expr::u32(luma_g)),
-                                    ),
-                                    Expr::mul(Expr::var("b"), Expr::u32(luma_b)),
+                                    super::fixed_mul_16_16_expr(Expr::var("r"), Expr::u32(luma_r)),
+                                    super::fixed_mul_16_16_expr(Expr::var("g"), Expr::u32(luma_g)),
                                 ),
-                                Expr::u32(16),
+                                super::fixed_mul_16_16_expr(Expr::var("b"), Expr::u32(luma_b)),
                             ),
                         ));
 
@@ -186,20 +168,14 @@ pub fn filter_chain(
                                     &delta,
                                     Expr::select(
                                         Expr::ge(Expr::var(ch), Expr::var("luma")),
-                                        Expr::shr(
-                                            Expr::mul(
-                                                Expr::sub(Expr::var(ch), Expr::var("luma")),
-                                                Expr::u32(sat_fp),
-                                            ),
-                                            Expr::u32(16),
+                                        super::fixed_mul_16_16_expr(
+                                            Expr::sub(Expr::var(ch), Expr::var("luma")),
+                                            Expr::u32(sat_fp),
                                         ),
                                         // channel < luma: negative delta
-                                        Expr::shr(
-                                            Expr::mul(
-                                                Expr::sub(Expr::var("luma"), Expr::var(ch)),
-                                                Expr::u32(sat_fp),
-                                            ),
-                                            Expr::u32(16),
+                                        super::fixed_mul_16_16_expr(
+                                            Expr::sub(Expr::var("luma"), Expr::var(ch)),
+                                            Expr::u32(sat_fp),
                                         ),
                                     ),
                                 ),
@@ -231,19 +207,13 @@ pub fn filter_chain(
                                 vec![Node::assign(
                                     ch,
                                     Expr::add(
-                                        Expr::shr(
-                                            Expr::mul(
-                                                Expr::var(ch),
-                                                Expr::sub(Expr::u32(65536), Expr::u32(inv_fp)),
-                                            ),
-                                            Expr::u32(16),
+                                        super::fixed_mul_16_16_expr(
+                                            Expr::var(ch),
+                                            Expr::sub(Expr::u32(65536), Expr::u32(inv_fp)),
                                         ),
-                                        Expr::shr(
-                                            Expr::mul(
-                                                Expr::sub(Expr::u32(255), Expr::var(ch)),
-                                                Expr::u32(inv_fp),
-                                            ),
-                                            Expr::u32(16),
+                                        super::fixed_mul_16_16_expr(
+                                            Expr::sub(Expr::u32(255), Expr::var(ch)),
+                                            Expr::u32(inv_fp),
                                         ),
                                     ),
                                 )]

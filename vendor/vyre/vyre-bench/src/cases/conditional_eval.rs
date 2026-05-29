@@ -1,4 +1,4 @@
-//! `conditions.yara_like.eval.1m` — branchy rule-condition evaluation.
+//! `conditions.yara_like.eval.1m`  -  branchy rule-condition evaluation.
 //!
 //! This is the release proof workload for vyre's core claim: evaluate a large
 //! set of conventional rule conditions faster than an optimized CPU path.
@@ -7,14 +7,17 @@
 //! and entropy-style metadata. The GPU path executes the same condition graph as
 //! vyre IR, one invocation per rule.
 
+use super::byte_pack::u32_bytes;
 use crate::api::case::{
     BenchCase, BenchContext, BenchError, BenchId, BenchLayer, BenchMetadata, BenchRequirements,
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::BenchMetrics;
+use crate::api::resident::{
+    dispatch_program_timed, input_bytes_total, transfer_accounting, ResidentInputSet,
+};
 use crate::api::suite::SuiteKind;
 use rayon::prelude::*;
-use vyre_driver::{BackendError, Resource};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 const RULE_COUNT: u32 = 1 << 20;
@@ -35,24 +38,10 @@ pub struct ConditionalEval;
 struct ConditionalEvalPrepared {
     program: Program,
     inputs: Vec<Vec<u8>>,
+    input_bytes_total: u64,
     baseline_output: Vec<Vec<u8>>,
     baseline_wall_ns: u64,
-    resident: Option<ResidentConditionalEval>,
-}
-
-struct ResidentConditionalEval {
-    backend: std::sync::Arc<dyn vyre::VyreBackend>,
-    resources: Vec<Resource>,
-}
-
-impl Drop for ResidentConditionalEval {
-    fn drop(&mut self) {
-        for resource in self.resources.drain(..) {
-            if let Err(error) = self.backend.free_resident(resource) {
-                eprintln!("conditional eval bench resident cleanup failed: {error}");
-            }
-        }
-    }
+    resident: Option<ResidentInputSet>,
 }
 
 impl BenchCase for ConditionalEval {
@@ -71,7 +60,7 @@ impl BenchCase for ConditionalEval {
                 "conditions".to_string(),
                 "rule-engine".to_string(),
                 "cpu-favorable".to_string(),
-                "weir-adjacent".to_string(),
+                "dataflow-adjacent".to_string(),
             ],
             layer: BenchLayer::Honest,
             workload: WorkloadClass::Honest,
@@ -105,7 +94,7 @@ impl BenchCase for ConditionalEval {
     fn bytes_touched(&self, prepared: &PreparedCase) -> (u64, u64) {
         let read = prepared
             .downcast_ref::<ConditionalEvalPrepared>()
-            .map(|prepared| prepared.inputs.iter().map(Vec::len).sum::<usize>() as u64)
+            .map(|prepared| prepared.input_bytes_total)
             .unwrap_or_else(|| u64::from(PATTERN_COUNT) * 12 + u64::from(RULE_COUNT) * 36 + 8);
         let write = u64::from(RULE_COUNT) * 4;
         (read, write)
@@ -138,8 +127,7 @@ impl BenchCase for ConditionalEval {
                     .with_count(RULE_COUNT),
                 BufferDecl::storage("entropy_limit", 11, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(RULE_COUNT),
-                BufferDecl::storage("fired_count", 12, BufferAccess::ReadWrite, DataType::U32)
-                    .with_count(1),
+                BufferDecl::output("fired_count", 12, DataType::U32).with_count(1),
                 BufferDecl::output("fired_rules", 13, DataType::U32).with_count(RULE_COUNT),
             ],
             [256, 1, 1],
@@ -264,18 +252,15 @@ impl BenchCase for ConditionalEval {
             u32_bytes(&min_size),
             u32_bytes(&max_size),
             u32_bytes(&entropy_limit),
-            vec![0u8; 4],
         ];
+        let input_bytes_total = input_bytes_total(&inputs);
 
-        let resident = match prepare_resident(ctx, &inputs) {
-            Ok(resident) => Some(resident),
-            Err(BackendError::UnsupportedFeature { name, .. })
-                if name == "resident buffer allocation" =>
-            {
-                None
-            }
-            Err(error) => return Err(BenchError::BackendFailed(error.to_string())),
-        };
+        let resident = ResidentInputSet::upload_with_zeroed_outputs_optional(
+            ctx,
+            &inputs,
+            &[4, RULE_COUNT as usize * 4],
+            "conditional eval bench",
+        )?;
 
         let baseline_start = std::time::Instant::now();
         let baseline_output = cpu_conditional_eval_raw(
@@ -297,6 +282,7 @@ impl BenchCase for ConditionalEval {
         Ok(Box::new(ConditionalEvalPrepared {
             program,
             inputs,
+            input_bytes_total,
             baseline_output,
             baseline_wall_ns,
             resident,
@@ -322,37 +308,32 @@ impl BenchCase for ConditionalEval {
                 )
             })?;
 
-        let timed = if let Some(resident) = &prepared.resident {
+        if let Some(resident) = &prepared.resident {
             reset_resident_fired_count(resident)?;
-            resident
-                .backend
-                .dispatch_resident_timed(
-                    &prepared.program,
-                    &resident.resources,
-                    &ctx.dispatch_config,
-                )
-                .map_err(|error| BenchError::BackendFailed(error.to_string()))?
-        } else {
-            ctx.dispatch_timed(&prepared.program, &prepared.inputs, &ctx.dispatch_config)
-                .map_err(|error| BenchError::BackendFailed(error.to_string()))?
-        };
+        }
+        let dispatch = dispatch_program_timed(
+            ctx,
+            &prepared.program,
+            prepared.resident.as_ref(),
+            &prepared.inputs,
+            &ctx.dispatch_config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let timed = dispatch.timed;
         let outputs = timed.outputs;
-        let input_bytes = prepared.inputs.iter().map(Vec::len).sum::<usize>() as u64;
-        let host_bytes_touched = if prepared.resident.is_some() {
-            0
-        } else {
-            input_bytes + outputs.iter().map(Vec::len).sum::<usize>() as u64
-        };
+        let input_bytes = prepared.input_bytes_total;
+        let output_bytes = outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let accounting = transfer_accounting(input_bytes, output_bytes, resident_used);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
                 wall_ns: Some(timed.wall_ns),
                 dispatch_ns: timed.device_ns,
                 input_bytes: Some(input_bytes),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                bytes_read: Some(input_bytes),
-                bytes_written: Some(u64::from(RULE_COUNT) * 4),
-                bytes_touched: Some(host_bytes_touched),
+                output_bytes: Some(output_bytes),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
+                bytes_touched: Some(accounting.bytes_touched),
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
@@ -419,15 +400,8 @@ fn verify_sparse_outputs(
 }
 
 fn read_le_u32(bytes: &[u8], word_index: usize) -> Result<u32, BenchError> {
-    let start = word_index.saturating_mul(4);
-    let end = start.saturating_add(4);
-    let chunk = bytes.get(start..end).ok_or_else(|| {
-        BenchError::CorrectnessViolation(format!(
-            "u32 read out of bounds at word {word_index}; buffer has {} bytes",
-            bytes.len()
-        ))
-    })?;
-    Ok(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    vyre_primitives::wire::read_u32_le_word(bytes, word_index, "conditional-eval output")
+        .map_err(BenchError::CorrectnessViolation)
 }
 
 fn read_u32_prefix(bytes: &[u8], count: usize) -> Result<Vec<u32>, BenchError> {
@@ -480,51 +454,8 @@ fn cpu_conditional_eval_raw(
     vec![u32_bytes(&[count]), u32_bytes(&fired_rules)]
 }
 
-fn prepare_resident(
-    ctx: &BenchContext,
-    inputs: &[Vec<u8>],
-) -> Result<ResidentConditionalEval, BackendError> {
-    let backend = std::sync::Arc::clone(&ctx.preferred_backend);
-    let mut resources = Vec::with_capacity(inputs.len() + 1);
-    let result = (|| {
-        for input in inputs {
-            let resource = backend.allocate_resident(input.len())?;
-            backend.upload_resident(&resource, input)?;
-            resources.push(resource);
-        }
-        let output = backend.allocate_resident(RULE_COUNT as usize * 4)?;
-        backend.upload_resident(&output, &vec![0u8; RULE_COUNT as usize * 4])?;
-        resources.push(output);
-        Ok(())
-    })();
-
-    if let Err(error) = result {
-        for resource in resources {
-            if let Err(cleanup_error) = backend.free_resident(resource) {
-                eprintln!(
-                    "conditional eval bench resident rollback cleanup failed: {cleanup_error}"
-                );
-            }
-        }
-        return Err(error);
-    }
-
-    Ok(ResidentConditionalEval { backend, resources })
-}
-
-fn reset_resident_fired_count(resident: &ResidentConditionalEval) -> Result<(), BenchError> {
-    let resource = resident
-        .resources
-        .get(FIRED_COUNT_RESOURCE_INDEX)
-        .ok_or_else(|| {
-            BenchError::ExecutionFailed(format!(
-                "conditional eval resident resources missing fired_count at index {FIRED_COUNT_RESOURCE_INDEX}"
-            ))
-        })?;
-    resident
-        .backend
-        .upload_resident(resource, &[0u8; 4])
-        .map_err(|error| BenchError::BackendFailed(error.to_string()))
+fn reset_resident_fired_count(resident: &ResidentInputSet) -> Result<(), BenchError> {
+    resident.upload_resource(FIRED_COUNT_RESOURCE_INDEX, &[0u8; 4], "conditional eval")
 }
 
 fn mix32(mut value: u32) -> u32 {
@@ -533,13 +464,6 @@ fn mix32(mut value: u32) -> u32 {
     value ^= value >> 15;
     value = value.wrapping_mul(0x846C_A68B);
     value ^ (value >> 16)
-}
-
-fn u32_bytes(values: &[u32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
 }
 
 inventory::submit! {

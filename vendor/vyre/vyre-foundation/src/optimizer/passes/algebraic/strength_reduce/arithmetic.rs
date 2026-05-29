@@ -401,7 +401,7 @@ pub(super) struct DivMagic {
 /// Compute Granlund-Montgomery magic numbers for unsigned 32-bit division.
 ///
 /// Panics if `d` is 0 or 1 or a power of two (use `power_of_two_shift`
-/// for those cases — they're even cheaper).
+/// for those cases  -  they're even cheaper).
 ///
 /// Algorithm D from Hacker's Delight, Chapter 10 (Henry S. Warren Jr.).
 /// Uses u32 wrapping arithmetic matching Warren's original C code.
@@ -413,7 +413,7 @@ pub(super) fn compute_div_magic(d: u32) -> DivMagic {
 
     let mut needs_fixup = false;
 
-    // nc = floor((2^32 - 1) / d) * d  — largest multiple of d ≤ 2^32 - 1
+    // nc = floor((2^32 - 1) / d) * d   -  largest multiple of d ≤ 2^32 - 1
     // Equivalent to C's: unsigned nc = -1 - (-d) % d;
     let nc = u32::MAX - (d.wrapping_neg() % d);
     let mut p: u32 = 31;
@@ -465,9 +465,9 @@ pub(super) fn compute_div_magic(d: u32) -> DivMagic {
 ///
 /// Returns `None` if `d` is 0, 1, or a power of two (handled elsewhere).
 ///
-/// For non-fixup: `mulhi(n, M) >> s` — 2 instructions, ~5 GPU cycles.
+/// For non-fixup: `mulhi(n, M) >> s`  -  2 instructions, ~5 GPU cycles.
 /// For fixup:     `t = mulhi(n, M); (t + ((n - t) >> 1)) >> (s - 1)`
-///                — 5 instructions, ~9 GPU cycles.
+///                 -  5 instructions, ~9 GPU cycles.
 /// Original `Div`: 1 instruction but ~50-100 GPU cycles (software).
 pub(super) fn granlund_montgomery_div(dividend: &Expr, d: u32) -> Option<Expr> {
     if d <= 1 || d.is_power_of_two() {
@@ -502,6 +502,7 @@ pub(super) fn granlund_montgomery_div(dividend: &Expr, d: u32) -> Option<Expr> {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -575,3 +576,4 @@ mod tests {
         }
     }
 }
+

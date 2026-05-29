@@ -4,20 +4,39 @@
 //! module owns dispatch entrypoints, CUDA graph replay selection, dynamic GPU
 //! dispatch when runtime policy changes, and persistent-resource output routing.
 
+use std::sync::MutexGuard;
+
 use smallvec::SmallVec;
 use vyre_driver::{
-    BackendError, BindingRole, CompiledPipeline, DispatchConfig, OutputBuffers, Resource,
+    borrowed_input_batch_shapes_match, dispatch_configs_share_launch_shape, BackendError,
+    BindingRole, CompiledPipeline, DispatchConfig, OutputBuffers, Resource,
 };
 
 use crate::backend::cuda_graph_replay::CudaGraphReplayStats;
 use crate::backend::resident_dispatch::CudaResidentDispatch;
 use crate::backend::staging_reserve::{reserve_smallvec, reserved_vec, resize_vec_slots};
 use crate::backend::CachedCudaGraph;
-use crate::numeric::{elapsed_nanos_u64, usize_to_u64};
+use crate::numeric::CUDA_NUMERIC;
+use crate::pipeline::materialized_cache::{materialized_input_key, MaterializedInputKey};
 use crate::pipeline::{
-    borrowed_input_shape_matches, cuda_graph_lane_count_for_batch, cuda_graph_replay_enabled,
-    same_launch_shape, CudaCompiledPipeline, MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE,
+    cuda_graph_lane_count_for_batch, cuda_graph_replay_enabled, CudaCompiledPipeline,
+    MaterializedPipelineOutputCache, MaterializedPipelineOutputCacheEntry,
+    MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE,
 };
+
+#[derive(Clone, Copy, Debug)]
+struct MaterializedBatchMiss {
+    batch_index: usize,
+    input_key: MaterializedInputKey,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LaunchedMaterializedBatch {
+    lane: usize,
+    batch_index: usize,
+    input_key: MaterializedInputKey,
+    replay_stats: CudaGraphReplayStats,
+}
 
 impl CompiledPipeline for CudaCompiledPipeline {
     fn id(&self) -> &str {
@@ -29,11 +48,7 @@ impl CompiledPipeline for CudaCompiledPipeline {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let mut borrowed = SmallVec::<[&[u8]; 8]>::new();
-        reserve_smallvec(&mut borrowed, inputs.len(), "borrowed input")?;
-        for input in inputs {
-            borrowed.push(input.as_slice());
-        }
+        let borrowed = vyre_driver::borrowed_input_slices(inputs, "cuda compiled borrowed input")?;
         self.dispatch_borrowed(&borrowed, config)
     }
 
@@ -42,7 +57,7 @@ impl CompiledPipeline for CudaCompiledPipeline {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        if !same_launch_shape(&self.compiled_config, config) {
+        if !dispatch_configs_share_launch_shape(&self.compiled_config, config) {
             return self
                 .backend
                 .dispatch_borrowed_async_with_ptx_key(
@@ -64,7 +79,9 @@ impl CompiledPipeline for CudaCompiledPipeline {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<vyre_driver::TimedDispatchResult, BackendError> {
-        if !same_launch_shape(&self.compiled_config, config) {
+        let _profiler_range =
+            crate::profiler::cuda_profiler_range(crate::profiler::CUDA_PIPELINE_DISPATCH_RANGE);
+        if !dispatch_configs_share_launch_shape(&self.compiled_config, config) {
             return self.backend.dispatch_borrowed_timed_with_ptx_key(
                 &self.program,
                 inputs,
@@ -84,6 +101,20 @@ impl CompiledPipeline for CudaCompiledPipeline {
         }
         let started = std::time::Instant::now();
         let mut outputs = reserved_vec(self.prepared.output_binding_indices.len(), "timed output")?;
+        if self.materialized_output_cache_hit_into(inputs, &mut outputs)? {
+            let wall_ns = CUDA_NUMERIC
+                .elapsed_nanos_u64(started, "cuda graph materialized timed hit wall latency")?;
+            self.backend
+                .telemetry
+                .record_timed_dispatch(wall_ns, Some(0), None, None);
+            return Ok(vyre_driver::TimedDispatchResult {
+                outputs,
+                wall_ns,
+                device_ns: Some(0),
+                enqueue_ns: None,
+                wait_ns: None,
+            });
+        }
         let mut cached = match self.take_cached_graph(inputs)? {
             Some(cached) => cached,
             None => self
@@ -95,11 +126,16 @@ impl CompiledPipeline for CudaCompiledPipeline {
                 .dispatch_via_cuda_graph_timed_into(&mut cached, inputs, &mut outputs);
         if replay_result.is_ok() {
             self.return_cached_graph(cached)?;
+            self.remember_materialized_output_cache(inputs, &outputs)?;
         }
         let device_ns = replay_result?;
+        let wall_ns = CUDA_NUMERIC.elapsed_nanos_u64(started, "cuda graph replay wall latency")?;
+        self.backend
+            .telemetry
+            .record_timed_dispatch(wall_ns, Some(device_ns), None, None);
         Ok(vyre_driver::TimedDispatchResult {
             outputs,
-            wall_ns: elapsed_nanos_u64(started, "cuda graph replay wall latency")?,
+            wall_ns,
             device_ns: Some(device_ns),
             enqueue_ns: None,
             wait_ns: None,
@@ -112,7 +148,9 @@ impl CompiledPipeline for CudaCompiledPipeline {
         config: &DispatchConfig,
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
-        if !same_launch_shape(&self.compiled_config, config) {
+        let _profiler_range =
+            crate::profiler::cuda_profiler_range(crate::profiler::CUDA_PIPELINE_DISPATCH_RANGE);
+        if !dispatch_configs_share_launch_shape(&self.compiled_config, config) {
             self.backend
                 .dispatch_borrowed_async_with_ptx_key(
                     &self.program,
@@ -136,6 +174,9 @@ impl CompiledPipeline for CudaCompiledPipeline {
                 .await_result_into(outputs)?;
             return Ok(());
         }
+        if self.materialized_output_cache_hit_into(inputs, outputs)? {
+            return Ok(());
+        }
         let mut cached = match self.take_cached_graph(inputs)? {
             Some(cached) => cached,
             None => self
@@ -147,6 +188,7 @@ impl CompiledPipeline for CudaCompiledPipeline {
             .dispatch_via_cuda_graph_into(&mut cached, inputs, outputs);
         if replay_result.is_ok() {
             self.return_cached_graph(cached)?;
+            self.remember_materialized_output_cache(inputs, outputs)?;
         }
         replay_result
     }
@@ -167,22 +209,23 @@ impl CompiledPipeline for CudaCompiledPipeline {
         config: &DispatchConfig,
         outputs: &mut Vec<OutputBuffers>,
     ) -> Result<(), BackendError> {
+        let _profiler_range = crate::profiler::cuda_profiler_range(
+            crate::profiler::CUDA_PIPELINE_BATCH_DISPATCH_RANGE,
+        );
         if batches.is_empty() {
             outputs.clear();
             return Ok(());
         }
         if cuda_graph_replay_enabled()
             && !self.prepared.cooperative
-            && same_launch_shape(&self.compiled_config, config)
-            && batches
-                .iter()
-                .all(|batch| borrowed_input_shape_matches(batches[0], batch))
+            && dispatch_configs_share_launch_shape(&self.compiled_config, config)
+            && borrowed_input_batch_shapes_match(batches)
         {
             return self.dispatch_borrowed_batched_via_cuda_graph_lanes(batches, config, outputs);
         }
         let mut pending = SmallVec::<[_; 8]>::new();
         reserve_smallvec(&mut pending, batches.len(), "pending dispatch")?;
-        if same_launch_shape(&self.compiled_config, config) {
+        if dispatch_configs_share_launch_shape(&self.compiled_config, config) {
             for inputs in batches {
                 pending.push(self.backend.dispatch_prepared_borrowed_async_with_ptx_key(
                     &self.program,
@@ -230,21 +273,26 @@ impl CompiledPipeline for CudaCompiledPipeline {
         config: &DispatchConfig,
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
+        let _profiler_range =
+            crate::profiler::cuda_profiler_range(crate::profiler::CUDA_PIPELINE_DISPATCH_RANGE);
         let handles = self.backend.resident_handles_from_resources(inputs)?;
-        if same_launch_shape(&self.compiled_config, config) {
-            let _ = (
+        if dispatch_configs_share_launch_shape(&self.compiled_config, config)
+            && !crate::instrumentation::cuda_resident_borrowed_fallback_enabled()
+        {
+            let dispatch = self.backend.dispatch_resident_async_concrete_with_ptx_key(
                 &self.program,
                 &handles,
                 config,
                 &self.ptx_src,
                 self.module_key,
-            );
-            return self.backend.dispatch_resident_via_borrowed_into(
-                &self.program,
-                &handles,
-                config,
-                outputs,
-            );
+                false,
+                (self.static_params.ptr != 0).then_some(self.static_params.ptr),
+                true,
+                &self.prepared,
+            )?;
+            let (dispatch_outputs, _) = dispatch.pending.await_timed_result()?;
+            vyre_driver::replace_output_buffers_preserving_slots(dispatch_outputs, outputs);
+            return Ok(());
         }
         self.backend.dispatch_resident_outputs_with_ptx_key_into(
             &self.program,
@@ -272,6 +320,9 @@ impl CompiledPipeline for CudaCompiledPipeline {
         config: &DispatchConfig,
         outputs: &mut Vec<OutputBuffers>,
     ) -> Result<(), BackendError> {
+        let _profiler_range = crate::profiler::cuda_profiler_range(
+            crate::profiler::CUDA_PIPELINE_BATCH_DISPATCH_RANGE,
+        );
         if batches.is_empty() {
             outputs.clear();
             return Ok(());
@@ -283,33 +334,7 @@ impl CompiledPipeline for CudaCompiledPipeline {
             resident_batches.push(self.backend.resident_handles_from_resources(batch)?);
         }
 
-        if !same_launch_shape(&self.compiled_config, config) {
-            return self.dispatch_dynamic_persistent_batches_concurrently(
-                &resident_batches,
-                config,
-                outputs,
-            );
-        }
-
-        let resident_dispatch = self
-            .backend
-            .dispatch_resident_batch_async_concrete_with_ptx_key(
-                &self.program,
-                &resident_batches,
-                config,
-                &self.ptx_src,
-                self.module_key,
-                (self.static_params.ptr != 0).then_some(self.static_params.ptr),
-                &self.prepared,
-            )?;
-        let output_handles = resident_dispatch.output_handles;
-        let output_readbacks = resident_dispatch.output_readbacks;
-        resident_dispatch.pending.await_timed_result()?;
-        self.backend.download_resident_readback_batches_many_into(
-            &output_handles,
-            &output_readbacks,
-            outputs,
-        )
+        self.dispatch_resident_batches_into(&resident_batches, config, outputs)
     }
 
     fn dispatch_persistent_handle_rows_into(
@@ -318,6 +343,9 @@ impl CompiledPipeline for CudaCompiledPipeline {
         config: &DispatchConfig,
         outputs: &mut Vec<OutputBuffers>,
     ) -> Result<(), BackendError> {
+        let _profiler_range = crate::profiler::cuda_profiler_range(
+            crate::profiler::CUDA_PIPELINE_BATCH_DISPATCH_RANGE,
+        );
         if rows.is_empty() {
             outputs.clear();
             return Ok(());
@@ -332,33 +360,7 @@ impl CompiledPipeline for CudaCompiledPipeline {
             );
         }
 
-        if !same_launch_shape(&self.compiled_config, config) {
-            return self.dispatch_dynamic_persistent_batches_concurrently(
-                &resident_batches,
-                config,
-                outputs,
-            );
-        }
-
-        let resident_dispatch = self
-            .backend
-            .dispatch_resident_batch_async_concrete_with_ptx_key(
-                &self.program,
-                &resident_batches,
-                config,
-                &self.ptx_src,
-                self.module_key,
-                (self.static_params.ptr != 0).then_some(self.static_params.ptr),
-                &self.prepared,
-            )?;
-        let output_handles = resident_dispatch.output_handles;
-        let output_readbacks = resident_dispatch.output_readbacks;
-        resident_dispatch.pending.await_timed_result()?;
-        self.backend.download_resident_readback_batches_many_into(
-            &output_handles,
-            &output_readbacks,
-            outputs,
-        )
+        self.dispatch_resident_batches_into(&resident_batches, config, outputs)
     }
 
     fn dispatch_persistent_resource_outputs(
@@ -366,19 +368,28 @@ impl CompiledPipeline for CudaCompiledPipeline {
         inputs: &[Resource],
         config: &DispatchConfig,
     ) -> Result<Vec<Resource>, BackendError> {
+        let _profiler_range =
+            crate::profiler::cuda_profiler_range(crate::profiler::CUDA_PIPELINE_DISPATCH_RANGE);
         let handles = self.backend.resident_handles_from_resources(inputs)?;
-        let prepared = if same_launch_shape(&self.compiled_config, config) {
-            &self.prepared
+        let borrowed_fallback = crate::instrumentation::cuda_resident_borrowed_fallback_enabled();
+        let same_shape = dispatch_configs_share_launch_shape(&self.compiled_config, config);
+        let prepared_storage;
+        let (prepared, static_params_ptr) = if same_shape {
+            (
+                &self.prepared,
+                (self.static_params.ptr != 0).then_some(self.static_params.ptr),
+            )
         } else {
-            &self
-                .backend
-                .prepare_resident_dispatch(&self.program, &handles, config)?
+            prepared_storage =
+                self.backend
+                    .prepare_resident_dispatch(&self.program, &handles, config)?;
+            (&prepared_storage, None)
         };
         let mut output_handles = SmallVec::<[crate::backend::CudaResidentBuffer; 8]>::new();
         reserve_smallvec(
             &mut output_handles,
             prepared.output_binding_indices.len(),
-            "compiled resident fallback output handle",
+            "compiled resident resource output handle",
         )?;
         let mut next_handle = 0usize;
         for binding in &prepared.bindings.bindings {
@@ -391,8 +402,25 @@ impl CompiledPipeline for CudaCompiledPipeline {
                 output_handles.push(handle);
             }
         }
-        self.backend
-            .dispatch_resident_via_borrowed(&self.program, &handles, config)?;
+        if borrowed_fallback {
+            self.backend
+                .dispatch_resident_via_borrowed(&self.program, &handles, config)?;
+        } else {
+            self.backend
+                .dispatch_resident_async_concrete_with_ptx_key(
+                    &self.program,
+                    &handles,
+                    config,
+                    &self.ptx_src,
+                    self.module_key,
+                    false,
+                    static_params_ptr,
+                    false,
+                    prepared,
+                )?
+                .pending
+                .await_timed_result()?;
+        }
         let mut resources = reserved_vec(output_handles.len(), "resource output")?;
         for handle in output_handles {
             resources.push(Resource::Resident(handle.id));
@@ -402,6 +430,47 @@ impl CompiledPipeline for CudaCompiledPipeline {
 }
 
 impl CudaCompiledPipeline {
+    fn dispatch_resident_batches_into(
+        &self,
+        resident_batches: &[SmallVec<[crate::backend::CudaResidentBuffer; 8]>],
+        config: &DispatchConfig,
+        outputs: &mut Vec<OutputBuffers>,
+    ) -> Result<(), BackendError> {
+        if resident_batches.is_empty() {
+            outputs.clear();
+            return Ok(());
+        }
+        if !dispatch_configs_share_launch_shape(&self.compiled_config, config) {
+            return self.dispatch_dynamic_persistent_batches_concurrently(
+                resident_batches,
+                config,
+                outputs,
+            );
+        }
+
+
+        let resident_dispatch = self
+            .backend
+            .dispatch_resident_batch_async_concrete_with_ptx_key(
+                &self.program,
+                resident_batches,
+                config,
+                &self.ptx_src,
+                self.module_key,
+                (self.static_params.ptr != 0).then_some(self.static_params.ptr),
+                &self.prepared,
+            );
+        let resident_dispatch = resident_dispatch?;
+        let output_handles = resident_dispatch.output_handles;
+        let output_readbacks = resident_dispatch.output_readbacks;
+        resident_dispatch.pending.await_timed_result()?;
+        self.backend.download_resident_readback_batches_many_into(
+            &output_handles,
+            &output_readbacks,
+            outputs,
+        )
+    }
+
     fn dispatch_dynamic_persistent_batches_concurrently(
         &self,
         resident_batches: &[SmallVec<[crate::backend::CudaResidentBuffer; 8]>],
@@ -451,76 +520,289 @@ impl CudaCompiledPipeline {
         config: &DispatchConfig,
         outputs: &mut Vec<OutputBuffers>,
     ) -> Result<(), BackendError> {
+        let miss_entries = self.materialized_output_batch_cache_partition_into(batches, outputs)?;
+        if miss_entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut miss_batches = SmallVec::<[&[&[u8]]; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>::new();
+        reserve_smallvec(
+            &mut miss_batches,
+            miss_entries.len(),
+            "cuda graph miss batch",
+        )?;
+        for miss in miss_entries.iter().copied() {
+            miss_batches.push(batches[miss.batch_index]);
+        }
         let lane_count =
-            cuda_graph_lane_count_for_batch(&self.backend.caps, &self.prepared, batches)?;
+            cuda_graph_lane_count_for_batch(&self.backend.caps, &self.prepared, &miss_batches)?;
         let mut lanes = SmallVec::<[CachedCudaGraph; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>::new();
         reserve_smallvec(&mut lanes, lane_count, "cuda graph lane")?;
         for _ in 0..lane_count {
-            lanes.push(match self.take_cached_graph(batches[0])? {
+            lanes.push(match self.take_cached_graph(miss_batches[0])? {
                 Some(cached) => cached,
-                None => {
-                    self.backend
-                        .record_cuda_graph_borrowed(&self.program, batches[0], config)?
-                }
+                None => self.backend.record_cuda_graph_borrowed(
+                    &self.program,
+                    miss_batches[0],
+                    config,
+                )?,
             });
         }
 
-        resize_vec_slots(outputs, batches.len(), "cuda graph batched output")?;
-
-        for (chunk_index, chunk) in batches.chunks(lane_count).enumerate() {
-            let base_index =
+        for (chunk_index, chunk) in miss_entries.chunks(lane_count).enumerate() {
+            let mut launched = SmallVec::<
+                [LaunchedMaterializedBatch; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE],
+            >::new();
+            let chunk_start =
                 chunk_index
                     .checked_mul(lane_count)
                     .ok_or_else(|| BackendError::InvalidProgram {
                         fix: format!(
-                            "Fix: CUDA graph replay batch index overflowed usize for chunk {chunk_index} with {lane_count} lane(s); split the batched dispatch."
+                            "Fix: CUDA graph replay chunk {chunk_index} with {lane_count} lane(s) overflowed miss-entry indexing; split the replay batch."
                         ),
                     })?;
-            let mut stats =
-                SmallVec::<[CudaGraphReplayStats; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>::new();
-            for (lane, inputs) in chunk.iter().enumerate() {
+            for lane in 0..chunk.len() {
+                let miss_entry_index =
+                    chunk_start
+                        .checked_add(lane)
+                        .ok_or_else(|| BackendError::InvalidProgram {
+                            fix: format!(
+                                "Fix: CUDA graph replay chunk {chunk_index} lane {lane} overflowed miss-entry indexing; split the replay batch."
+                            ),
+                        })?;
+                let miss = miss_entries.get(miss_entry_index).copied().ok_or_else(|| {
+                    BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA graph replay chunk {chunk_index} lane {lane} resolved outside the miss-entry table; rebuild the compiled pipeline."
+                        ),
+                    }
+                })?;
+                let batch_index = miss.batch_index;
+                let inputs = batches[batch_index];
+                let input_state = match self.backend.prepare_cuda_graph_replay_input_state_with_key(
+                    &lanes[lane],
+                    inputs,
+                    miss.input_key,
+                ) {
+                    Ok(input_state) => input_state,
+                    Err(error) => {
+                        self.finish_cuda_graph_indexed_lane_replays(
+                            &mut lanes, &launched, outputs,
+                        )?;
+                        let _ = self.return_cached_graph_lanes(lanes);
+                        return Err(error);
+                    }
+                };
                 match self
                     .backend
-                    .enqueue_cuda_graph_replay(&mut lanes[lane], inputs)
-                {
-                    Ok(replay_stats) => stats.push(replay_stats),
+                    .try_cuda_graph_materialized_cache_with_input_state_into(
+                        &mut lanes[lane],
+                        inputs,
+                        &input_state,
+                        &mut outputs[batch_index],
+                    ) {
+                    Ok(true) => {
+                        self.remember_materialized_output_cache_with_key(
+                            inputs,
+                            miss.input_key,
+                            &outputs[batch_index],
+                        )?;
+                        continue;
+                    }
+                    Ok(false) => {}
                     Err(error) => {
-                        for (launched_lane, replay_stats) in stats.iter().copied().enumerate() {
-                            self.backend.finish_cuda_graph_replay_into(
-                                &lanes[launched_lane],
-                                replay_stats,
-                                &mut outputs[base_index + launched_lane],
-                            )?;
-                        }
+                        self.finish_cuda_graph_indexed_lane_replays(
+                            &mut lanes, &launched, outputs,
+                        )?;
+                        let _ = self.return_cached_graph_lanes(lanes);
+                        return Err(error);
+                    }
+                }
+                match self.backend.enqueue_cuda_graph_replay_with_input_state(
+                    &mut lanes[lane],
+                    inputs,
+                    &input_state,
+                ) {
+                    Ok(replay_stats) => launched.push(LaunchedMaterializedBatch {
+                        lane,
+                        batch_index,
+                        input_key: miss.input_key,
+                        replay_stats,
+                    }),
+                    Err(error) => {
+                        self.finish_cuda_graph_indexed_lane_replays(
+                            &mut lanes, &launched, outputs,
+                        )?;
                         let _ = self.return_cached_graph_lanes(lanes);
                         return Err(error);
                     }
                 }
             }
-            self.backend
-                .record_cuda_graph_batched_replay_chunk(usize_to_u64(
-                    stats.len(),
-                    "cuda graph replay lane count",
-                )?);
-            let mut finish_error = None;
-            for (lane, replay_stats) in stats.iter().copied().enumerate() {
-                if let Err(error) = self.backend.finish_cuda_graph_replay_into(
-                    &lanes[lane],
-                    replay_stats,
-                    &mut outputs[base_index + lane],
-                ) {
-                    if finish_error.is_none() {
-                        finish_error = Some(error);
-                    }
-                }
+            if !launched.is_empty() {
+                self.backend.record_cuda_graph_batched_replay_chunk(
+                    CUDA_NUMERIC.usize_to_u64(launched.len(), "cuda graph replay lane count")?,
+                );
             }
-            if let Some(error) = finish_error {
+            if let Err(error) =
+                self.finish_cuda_graph_indexed_lane_replays(&mut lanes, &launched, outputs)
+            {
                 let _ = self.return_cached_graph_lanes(lanes);
                 return Err(error);
+            }
+            for launched_batch in launched.iter().copied() {
+                self.remember_materialized_output_cache_with_key(
+                    batches[launched_batch.batch_index],
+                    launched_batch.input_key,
+                    &outputs[launched_batch.batch_index],
+                )?;
             }
         }
 
         self.return_cached_graph_lanes(lanes)
+    }
+
+    fn materialized_output_batch_cache_partition_into(
+        &self,
+        batches: &[&[&[u8]]],
+        outputs: &mut Vec<OutputBuffers>,
+    ) -> Result<SmallVec<[MaterializedBatchMiss; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>, BackendError>
+    {
+        resize_vec_slots(
+            outputs,
+            batches.len(),
+            "cuda graph materialized batch output",
+        )?;
+        let mut input_keys = SmallVec::<
+            [(usize, MaterializedInputKey); MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE],
+        >::new();
+        reserve_smallvec(
+            &mut input_keys,
+            batches.len(),
+            "cuda graph materialized batch input key",
+        )?;
+        for (batch_index, inputs) in batches.iter().enumerate() {
+            input_keys.push((batch_index, materialized_input_key(inputs)?));
+        }
+        let mut miss_entries =
+            SmallVec::<[MaterializedBatchMiss; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>::new();
+        reserve_smallvec(
+            &mut miss_entries,
+            batches.len(),
+            "cuda graph materialized batch miss index",
+        )?;
+        let mut hit_snapshots = SmallVec::<[_; MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE]>::new();
+        reserve_smallvec(
+            &mut hit_snapshots,
+            batches.len(),
+            "cuda graph materialized batch hit snapshot",
+        )?;
+        {
+            let cache = self.lock_materialized_output_cache("during batch cache replay")?;
+            for (batch_index, input_key) in input_keys.iter().copied() {
+                let inputs = batches[batch_index];
+                if let Some(snapshot) = cache.snapshot_with_key(inputs, &input_key) {
+                    hit_snapshots.push((batch_index, snapshot));
+                } else {
+                    miss_entries.push(MaterializedBatchMiss {
+                        batch_index,
+                        input_key,
+                    });
+                }
+            }
+        }
+        for (batch_index, snapshot) in hit_snapshots {
+            snapshot.copy_into(&mut outputs[batch_index])?;
+            self.backend
+                .telemetry
+                .record_cuda_graph_materialized_cache_hit();
+        }
+        Ok(miss_entries)
+    }
+
+    fn materialized_output_cache_hit_into(
+        &self,
+        inputs: &[&[u8]],
+        outputs: &mut OutputBuffers,
+    ) -> Result<bool, BackendError> {
+        let snapshot = {
+            let cache = self.lock_materialized_output_cache("during single-dispatch replay")?;
+            cache.snapshot(inputs)?
+        };
+        let Some(snapshot) = snapshot else {
+            return Ok(false);
+        };
+        snapshot.copy_into(outputs)?;
+        self.backend
+            .telemetry
+            .record_cuda_graph_materialized_cache_hit();
+        Ok(true)
+    }
+
+    fn remember_materialized_output_cache(
+        &self,
+        inputs: &[&[u8]],
+        outputs: &OutputBuffers,
+    ) -> Result<(), BackendError> {
+        let Some(entry) = MaterializedPipelineOutputCacheEntry::new_if_cacheable(inputs, outputs)?
+        else {
+            return Ok(());
+        };
+        let mut cache = self.lock_materialized_output_cache("while storing replay output")?;
+        cache.remember_entry(entry)
+    }
+
+    fn remember_materialized_output_cache_with_key(
+        &self,
+        inputs: &[&[u8]],
+        input_key: MaterializedInputKey,
+        outputs: &OutputBuffers,
+    ) -> Result<(), BackendError> {
+        let Some(entry) = MaterializedPipelineOutputCacheEntry::new_with_key_if_cacheable(
+            inputs, &input_key, outputs,
+        )?
+        else {
+            return Ok(());
+        };
+        let mut cache = self.lock_materialized_output_cache("while storing keyed replay output")?;
+        cache.remember_entry(entry)
+    }
+
+    fn lock_materialized_output_cache(
+        &self,
+        action: &'static str,
+    ) -> Result<MutexGuard<'_, MaterializedPipelineOutputCache>, BackendError> {
+        self.materialized_output_cache.lock().map_err(|_| {
+            BackendError::DispatchFailed {
+                code: None,
+                message: format!(
+                    "CUDA compiled-pipeline materialized output cache lock poisoned {action}. Fix: rebuild the compiled pipeline after a panic during materialized cache access."
+                ),
+            }
+        })
+    }
+
+    fn finish_cuda_graph_indexed_lane_replays(
+        &self,
+        lanes: &mut [CachedCudaGraph],
+        launched: &[LaunchedMaterializedBatch],
+        outputs: &mut [OutputBuffers],
+    ) -> Result<(), BackendError> {
+        let mut finish_error = None;
+        for launched_batch in launched.iter().copied() {
+            if let Err(error) = self.backend.finish_cuda_graph_replay_into(
+                &mut lanes[launched_batch.lane],
+                launched_batch.replay_stats,
+                &mut outputs[launched_batch.batch_index],
+            ) {
+                if finish_error.is_none() {
+                    finish_error = Some(error);
+                }
+            }
+        }
+        if let Some(error) = finish_error {
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn take_cached_graph(&self, inputs: &[&[u8]]) -> Result<Option<CachedCudaGraph>, BackendError> {
@@ -530,10 +812,19 @@ impl CudaCompiledPipeline {
                 message: "CUDA compiled-pipeline graph cache lock poisoned. Fix: rebuild the compiled pipeline after a panic during graph replay.".to_string(),
             }
         })?;
-        Ok(graphs
-            .iter()
-            .position(|cached| cached.input_shape_matches(inputs))
-            .map(|index| graphs.swap_remove(index)))
+        let mut first_shape_match = None;
+        for (index, cached) in graphs.iter().enumerate() {
+            if !cached.input_shape_matches(inputs) {
+                continue;
+            }
+            if first_shape_match.is_none() {
+                first_shape_match = Some(index);
+            }
+            if cached.materialized_output_cache_matches(inputs)? {
+                return Ok(Some(graphs.swap_remove(index)));
+            }
+        }
+        Ok(first_shape_match.map(|index| graphs.swap_remove(index)))
     }
 
     fn return_cached_graph(&self, cached: CachedCudaGraph) -> Result<(), BackendError> {
@@ -568,3 +859,4 @@ impl CudaCompiledPipeline {
         Ok(())
     }
 }
+

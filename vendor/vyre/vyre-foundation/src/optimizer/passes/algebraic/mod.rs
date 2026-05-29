@@ -5,12 +5,12 @@
 //! canonical-form normalization, and atomic-shape normalization.
 
 /// Collapse identity-op Relaxed atomic RMW to plain `Expr::Load`
-/// (ROADMAP A36 — narrow atomic minimization that needs no alias
+/// (ROADMAP A36  -  narrow atomic minimization that needs no alias
 /// proof).
 pub mod atomic_minimize;
-/// Canonical-form rewrite (audit P0 #32 — registered ProgramPass).
+/// Canonical-form rewrite (audit P0 #32  -  registered ProgramPass).
 pub mod canonicalize;
-/// Canonicalization transform engine — pure IR-to-IR fn body used by the
+/// Canonicalization transform engine  -  pure IR-to-IR fn body used by the
 /// `CanonicalizePass` ProgramPass.
 pub mod canonicalize_engine;
 /// Compile-time constant folding.

@@ -140,7 +140,7 @@ mod tests {
                 FrontierConflictEdge { a: 2, b: 0 },
             ],
         )
-        .expect("triangle conflict should color");
+        .expect("Fix: triangle conflict should color");
 
         assert_eq!(plan.color_count, 3);
         assert_ne!(plan.colors[0].color, plan.colors[1].color);
@@ -159,7 +159,7 @@ mod tests {
                 FrontierConflictEdge { a: 1, b: 0 },
             ],
         )
-        .expect("duplicate conflicts should color");
+        .expect("Fix: duplicate conflicts should color");
 
         assert_eq!(plan.color_count, 2);
         assert_ne!(plan.colors[0].color, plan.colors[1].color);

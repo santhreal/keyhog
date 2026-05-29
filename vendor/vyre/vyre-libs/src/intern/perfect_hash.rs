@@ -2,7 +2,7 @@
 //!
 //! # Algorithm
 //!
-//! CHD (Compress, Hash, Displace) — Belazzougui, Botelho &
+//! CHD (Compress, Hash, Displace)  -  Belazzougui, Botelho &
 //! Dietzfelbinger 2009. Given `n` keys, produce a perfect hash table
 //! of size `~1.23n` with one level of per-bucket displacements so
 //! lookup is:
@@ -26,6 +26,7 @@
 //! evaluation.
 
 use rustc_hash::FxHashSet;
+use vyre_primitives::hash::fnv1a::{fnv1a64_initial_state, fnv1a64_update_byte};
 /// Space-factor α: table size = ⌈n × α⌉. 1.23 is the CHD paper's
 /// recommended sweet spot for 1k..1M-entry corpora.
 const ALPHA: f64 = 1.23;
@@ -91,17 +92,17 @@ impl PerfectHash {
         self.key_hashes.len()
     }
 
-    /// Displacement table — GPU ReadOnly buffer.
+    /// Displacement table  -  GPU ReadOnly buffer.
     pub fn displacement(&self) -> &[u32] {
         &self.displacement
     }
 
-    /// Key-hash verification table — GPU ReadOnly buffer.
+    /// Key-hash verification table  -  GPU ReadOnly buffer.
     pub fn key_hashes(&self) -> &[u64] {
         &self.key_hashes
     }
 
-    /// Value table — GPU ReadOnly buffer.
+    /// Value table  -  GPU ReadOnly buffer.
     pub fn values(&self) -> &[u32] {
         &self.values
     }
@@ -187,7 +188,7 @@ fn try_build_with_salt(pairs: &[(String, u32)], salt: u64) -> Option<PerfectHash
         bucket_cursor[bucket] += 1;
     }
 
-    // Process buckets in descending-size order — hardest first.
+    // Process buckets in descending-size order  -  hardest first.
     let mut bucket_order: Vec<usize> = (0..n_buckets).collect();
     bucket_order.sort_by_key(|&b| std::cmp::Reverse(bucket_offsets[b + 1] - bucket_offsets[b]));
 
@@ -270,10 +271,9 @@ pub enum BuildError {
 /// independent hash families cheap (just feed a different salt).
 #[inline]
 fn hash_with_seed(data: &[u8], seed: u64) -> u64 {
-    let mut h = seed ^ 0xcbf2_9ce4_8422_2325;
+    let mut h = seed ^ fnv1a64_initial_state();
     for &b in data {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h = fnv1a64_update_byte(h, b);
     }
     h
 }
@@ -407,7 +407,7 @@ mod tests {
     fn negative_lookups_are_rejected_by_verify_hash() {
         let entries: Vec<(String, u32)> = (0..200).map(|i| (format!("k_{i}"), i as u32)).collect();
         let ph = build_chd(entries);
-        // 500 strings that aren't in the set — all must miss.
+        // 500 strings that aren't in the set  -  all must miss.
         for i in 1000..1500 {
             assert_eq!(ph.lookup(&format!("q_{i}")), None, "false hit on q_{i}");
         }
@@ -448,6 +448,7 @@ mod tests {
             .enumerate()
             .map(|(i, f)| (f.to_string(), i as u32))
             .collect();
+
         let ph = build_chd(entries.clone());
         for (k, v) in entries {
             assert_eq!(ph.lookup(&k), Some(v));
@@ -508,3 +509,4 @@ mod tests {
         }
     }
 }
+

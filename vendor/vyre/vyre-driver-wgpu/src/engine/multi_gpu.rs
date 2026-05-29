@@ -13,7 +13,7 @@
 //!    (`shard_by_blake3` + `StreamShardAllocator`): caller yields
 //!    `(key, cost)` pairs one at a time from a walker. The initial
 //!    device is `blake3(key)[0] % n_gpus` for deterministic
-//!    affinity — files with the same path always land on the same
+//!    affinity  -  files with the same path always land on the same
 //!    GPU across runs, which enables cache-warm re-scans. Overflow
 //!    (queue on the target GPU is already loaded above threshold)
 //!    spills to the least-loaded neighbor to keep tail latency
@@ -22,21 +22,38 @@
 mod partition;
 mod stream_shard;
 
+use crate::staging_reserve::{reserve_multi_gpu_vec, reserve_smallvec, reserve_vec};
+
 pub use partition::{partition_work_stealing, DeviceLoad, Partition, WeightedWorkItem};
 pub use stream_shard::{shard_by_blake3, StreamShardAllocator};
 
 fn empty_gpu_work_result_slots(
     len: usize,
-) -> Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>> {
-    let mut slots = Vec::with_capacity(len);
+) -> Result<Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>>, vyre_driver::BackendError>
+{
+    let mut slots = Vec::new();
+    reserve_vec(
+        &mut slots,
+        len,
+        "multi-GPU executor",
+        "borrowed result slot",
+        "split the multi-GPU batch before dispatch",
+    )?;
     slots.resize_with(len, || None);
-    slots
+    Ok(slots)
 }
 
 fn finalize_gpu_work_results(
     slots: Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>>,
-) -> Vec<Result<GpuWorkOutput, vyre_driver::BackendError>> {
-    let mut results = Vec::with_capacity(slots.len());
+) -> Result<Vec<Result<GpuWorkOutput, vyre_driver::BackendError>>, vyre_driver::BackendError> {
+    let mut results = Vec::new();
+    reserve_vec(
+        &mut results,
+        slots.len(),
+        "multi-GPU executor",
+        "final borrowed result",
+        "split the multi-GPU batch before dispatch",
+    )?;
     for slot in slots {
         results.push(slot.unwrap_or_else(|| {
             Err(vyre_driver::BackendError::new(
@@ -44,7 +61,7 @@ fn finalize_gpu_work_results(
             ))
         }));
     }
-    results
+    Ok(results)
 }
 
 /// Enumerate live wgpu GPU adapters as zero-load scheduling targets.
@@ -55,7 +72,15 @@ fn finalize_gpu_work_results(
 /// production hosts that means adapter probing or driver setup is broken.
 pub fn live_gpu_loads() -> Result<Vec<DeviceLoad>, String> {
     let adapters = crate::runtime::device::enumerate_adapters();
-    let mut loads = Vec::with_capacity(adapters.len());
+    let mut loads = Vec::new();
+    vyre_driver::allocation::try_reserve_vec_to_capacity(&mut loads, adapters.len()).map_err(
+        |source| {
+            format!(
+                "live GPU load enumeration could not reserve {} adapter slot(s): {source}. Fix: reduce adapter fanout or repair driver memory pressure before scheduling.",
+                adapters.len()
+            )
+        },
+    )?;
     loads.extend(
         adapters
             .iter()
@@ -140,7 +165,14 @@ impl MultiGpuExecutor {
     #[must_use]
     pub fn enumerate_live_gpus() -> Vec<LiveGpu> {
         let adapters = crate::runtime::device::enumerate_adapters();
-        let mut live = Vec::with_capacity(adapters.len());
+        let mut live = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut live, adapters.len())
+            .unwrap_or_else(|source| {
+                panic!(
+                    "live GPU enumeration could not reserve {} adapter slot(s): {source}. Fix: reduce adapter fanout or repair driver memory pressure before scheduling.",
+                    adapters.len()
+                )
+            });
         for (adapter_index, info) in adapters.into_iter().enumerate() {
             if crate::capabilities::is_real_gpu(&info) {
                 live.push(LiveGpu {
@@ -165,7 +197,8 @@ impl MultiGpuExecutor {
                 "no real GPU adapters found for multi-GPU execution. Fix: expose at least one discrete, integrated, or virtual GPU through wgpu before calling MultiGpuExecutor::acquire_all.",
             ));
         }
-        let mut devices = Vec::with_capacity(live.len());
+        let mut devices = Vec::new();
+        reserve_multi_gpu_vec(&mut devices, live.len(), "executor device")?;
         for gpu in live {
             let backend = crate::WgpuBackend::acquire_adapter(gpu.adapter_index)?;
             devices.push(ExecutorDevice {
@@ -189,9 +222,16 @@ impl MultiGpuExecutor {
                 "no adapter indices supplied for multi-GPU execution. Fix: pass indices returned by runtime::device::enumerate_adapters().",
             ));
         }
-        let mut seen =
-            rustc_hash::FxHashSet::with_capacity_and_hasher(indices.len(), Default::default());
-        let mut devices = Vec::with_capacity(indices.len());
+        let mut seen = rustc_hash::FxHashSet::default();
+        vyre_foundation::allocation::try_reserve_hash_set_to_capacity(&mut seen, indices.len())
+            .map_err(|source| {
+                vyre_driver::BackendError::new(format!(
+                    "multi-GPU adapter-index validation could not reserve {} seen slot(s): {source}. Fix: reduce adapter fanout before acquisition.",
+                    indices.len()
+                ))
+            })?;
+        let mut devices = Vec::new();
+        reserve_multi_gpu_vec(&mut devices, indices.len(), "executor device")?;
         for &index in indices {
             if !seen.insert(index) {
                 return Err(vyre_driver::BackendError::new(format!(
@@ -223,7 +263,14 @@ impl MultiGpuExecutor {
     /// Adapter indices owned by this executor.
     #[must_use]
     pub fn adapter_indices(&self) -> Vec<usize> {
-        let mut indices = Vec::with_capacity(self.devices.len());
+        let mut indices = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut indices, self.devices.len())
+            .unwrap_or_else(|source| {
+                panic!(
+                    "multi-GPU adapter index snapshot could not reserve {} index slot(s): {source}. Fix: reduce adapter fanout before snapshotting.",
+                    self.devices.len()
+                )
+            });
         indices.extend(self.devices.iter().map(|device| device.adapter_index));
         indices
     }
@@ -237,24 +284,52 @@ impl MultiGpuExecutor {
         &mut self,
         items: Vec<GpuWorkItem>,
     ) -> Result<Vec<GpuWorkOutput>, vyre_driver::BackendError> {
-        let mut devices = smallvec::SmallVec::<[DeviceLoad; 8]>::with_capacity(self.devices.len());
+        let mut devices = smallvec::SmallVec::<[DeviceLoad; 8]>::new();
+        reserve_smallvec(
+            &mut devices,
+            self.devices.len(),
+            "multi-GPU executor",
+            "device-load descriptor",
+            "split the multi-GPU batch before dispatch",
+        )?;
         devices.extend(self.devices.iter().map(|device| DeviceLoad {
             device_index: device.adapter_index,
             queued_cost: device.queued_cost,
         }));
-        let mut work = smallvec::SmallVec::<[WeightedWorkItem; 32]>::with_capacity(items.len());
+        let mut work = smallvec::SmallVec::<[WeightedWorkItem; 32]>::new();
+        reserve_smallvec(
+            &mut work,
+            items.len(),
+            "multi-GPU executor",
+            "weighted work descriptor",
+            "split the multi-GPU batch before partitioning",
+        )?;
         work.extend(items.iter().map(|item| WeightedWorkItem {
             id: item.id,
             cost: item.cost,
         }));
         let partitions =
             partition_work_stealing(&devices, &work).map_err(vyre_driver::BackendError::new)?;
-        let mut by_id =
-            rustc_hash::FxHashMap::with_capacity_and_hasher(items.len(), Default::default());
+        let mut by_id = rustc_hash::FxHashMap::default();
+        vyre_foundation::allocation::try_reserve_hash_map_to_capacity(&mut by_id, items.len())
+            .map_err(|source| {
+                vyre_driver::BackendError::new(format!(
+                    "multi-GPU work-item lookup could not reserve {} owned item slot(s): {source}. Fix: split the multi-GPU batch.",
+                    items.len()
+                ))
+            })?;
         by_id.extend(items.into_iter().map(|item| (item.id, item)));
-        let mut outputs = Vec::with_capacity(by_id.len());
+        let mut outputs = Vec::new();
+        reserve_multi_gpu_vec(&mut outputs, by_id.len(), "owned output")?;
         std::thread::scope(|scope| {
-            let mut handles = smallvec::SmallVec::<[_; 8]>::with_capacity(partitions.len());
+            let mut handles = smallvec::SmallVec::<[_; 8]>::new();
+            reserve_smallvec(
+                &mut handles,
+                partitions.len(),
+                "multi-GPU executor",
+                "worker thread handle",
+                "split the multi-GPU batch before dispatch",
+            )?;
             for (partition, device) in partitions.into_iter().zip(self.devices.iter_mut()) {
                 if device.adapter_index != partition.device_index {
                     return Err(vyre_driver::BackendError::new(format!(
@@ -265,8 +340,14 @@ impl MultiGpuExecutor {
                 device.queued_cost = partition.total_cost;
                 let backend = device.backend.clone();
                 let adapter_index = device.adapter_index;
-                let mut assigned =
-                    smallvec::SmallVec::<[_; 8]>::with_capacity(partition.item_ids.len());
+                let mut assigned = smallvec::SmallVec::<[_; 8]>::new();
+                reserve_smallvec(
+                    &mut assigned,
+                    partition.item_ids.len(),
+                    "multi-GPU executor",
+                    "assigned owned work item",
+                    "split the multi-GPU batch before dispatch",
+                )?;
                 for id in partition.item_ids {
                     let item = by_id.remove(&id).ok_or_else(|| {
                         vyre_driver::BackendError::new(format!(
@@ -276,7 +357,8 @@ impl MultiGpuExecutor {
                     assigned.push(item);
                 }
                 handles.push(scope.spawn(move || {
-                    let mut local = Vec::with_capacity(assigned.len());
+                    let mut local = Vec::new();
+                    reserve_multi_gpu_vec(&mut local, assigned.len(), "worker-local output")?;
                     for item in assigned {
                         let outputs = vyre_driver::VyreBackend::dispatch(
                             &backend,
@@ -326,25 +408,52 @@ impl MultiGpuExecutor {
         if items.is_empty() {
             return Ok(Vec::new());
         }
-        let mut devices = smallvec::SmallVec::<[DeviceLoad; 8]>::with_capacity(self.devices.len());
+        let mut devices = smallvec::SmallVec::<[DeviceLoad; 8]>::new();
+        reserve_smallvec(
+            &mut devices,
+            self.devices.len(),
+            "multi-GPU executor",
+            "borrowed device-load descriptor",
+            "split the multi-GPU batch before dispatch",
+        )?;
         devices.extend(self.devices.iter().map(|device| DeviceLoad {
             device_index: device.adapter_index,
             queued_cost: device.queued_cost,
         }));
-        let mut work = smallvec::SmallVec::<[WeightedWorkItem; 32]>::with_capacity(items.len());
+        let mut work = smallvec::SmallVec::<[WeightedWorkItem; 32]>::new();
+        reserve_smallvec(
+            &mut work,
+            items.len(),
+            "multi-GPU executor",
+            "borrowed weighted work descriptor",
+            "split the multi-GPU batch before partitioning",
+        )?;
         work.extend(items.iter().map(|item| WeightedWorkItem {
             id: item.id,
             cost: item.cost,
         }));
         let partitions =
             partition_work_stealing(&devices, &work).map_err(vyre_driver::BackendError::new)?;
-        let mut by_id =
-            rustc_hash::FxHashMap::with_capacity_and_hasher(items.len(), Default::default());
+        let mut by_id = rustc_hash::FxHashMap::default();
+        vyre_foundation::allocation::try_reserve_hash_map_to_capacity(&mut by_id, items.len())
+            .map_err(|source| {
+                vyre_driver::BackendError::new(format!(
+                    "multi-GPU work-item lookup could not reserve {} borrowed item slot(s): {source}. Fix: split the multi-GPU batch.",
+                    items.len()
+                ))
+            })?;
         by_id.extend(items.iter().enumerate().map(|(slot, item)| (item.id, slot)));
-        let mut results = empty_gpu_work_result_slots(items.len());
+        let mut results = empty_gpu_work_result_slots(items.len())?;
 
         std::thread::scope(|scope| {
-            let mut handles = smallvec::SmallVec::<[_; 8]>::with_capacity(partitions.len());
+            let mut handles = smallvec::SmallVec::<[_; 8]>::new();
+            reserve_smallvec(
+                &mut handles,
+                partitions.len(),
+                "multi-GPU executor",
+                "borrowed worker thread handle",
+                "split the multi-GPU batch before dispatch",
+            )?;
             for (partition, device) in partitions.into_iter().zip(self.devices.iter_mut()) {
                 if device.adapter_index != partition.device_index {
                     return Err(vyre_driver::BackendError::new(format!(
@@ -355,8 +464,14 @@ impl MultiGpuExecutor {
                 device.queued_cost = partition.total_cost;
                 let backend = device.backend.clone();
                 let adapter_index = device.adapter_index;
-                let mut assigned_slots =
-                    smallvec::SmallVec::<[_; 8]>::with_capacity(partition.item_ids.len());
+                let mut assigned_slots = smallvec::SmallVec::<[_; 8]>::new();
+                reserve_smallvec(
+                    &mut assigned_slots,
+                    partition.item_ids.len(),
+                    "multi-GPU executor",
+                    "assigned borrowed work slot",
+                    "split the multi-GPU batch before dispatch",
+                )?;
                 for id in partition.item_ids {
                     let slot = by_id.remove(&id).ok_or_else(|| {
                         vyre_driver::BackendError::new(format!(
@@ -366,14 +481,20 @@ impl MultiGpuExecutor {
                     assigned_slots.push(slot);
                 }
                 handles.push(scope.spawn(move || {
-                    let mut backend_jobs =
-                        smallvec::SmallVec::<
-                            [(
-                                &vyre_foundation::ir::Program,
-                                &[&[u8]],
-                                &vyre_driver::DispatchConfig,
-                            ); 8],
-                        >::with_capacity(assigned_slots.len());
+                    let mut backend_jobs = smallvec::SmallVec::<
+                        [(
+                            &vyre_foundation::ir::Program,
+                            &[&[u8]],
+                            &vyre_driver::DispatchConfig,
+                        ); 8],
+                    >::new();
+                    reserve_smallvec(
+                        &mut backend_jobs,
+                        assigned_slots.len(),
+                        "multi-GPU executor",
+                        "backend-local borrowed job descriptor",
+                        "split the multi-GPU batch before dispatch",
+                    )?;
                     backend_jobs.extend(assigned_slots.iter().map(|&slot| {
                         let item = &items[slot];
                         (item.program, item.inputs, item.config)
@@ -412,11 +533,12 @@ impl MultiGpuExecutor {
             ));
         }
 
-        Ok(finalize_gpu_work_results(results))
+        finalize_gpu_work_results(results)
     }
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
@@ -452,4 +574,48 @@ mod tests {
             "Fix: duplicate-index diagnostic must be actionable, got: {error}"
         );
     }
+
+    #[test]
+    fn generated_borrowed_result_finalization_preserves_slots_and_reports_missing_work() {
+        for case in 0..4096usize {
+            let len = (case % 17) + 1;
+            let mut slots = empty_gpu_work_result_slots(len)
+                .expect("Fix: generated multi-GPU slot test must reserve result slots");
+            for slot in 0..len {
+                if (slot + case) % 5 == 0 {
+                    continue;
+                }
+                slots[slot] = Some(Ok(GpuWorkOutput {
+                    id: slot,
+                    adapter_index: case % 3,
+                    outputs: vec![vec![slot as u8, case as u8]],
+                }));
+            }
+
+            let finalized = finalize_gpu_work_results(slots)
+                .expect("Fix: generated multi-GPU finalization must reserve final results");
+            assert_eq!(
+                finalized.len(),
+                len,
+                "generated multi-GPU case {case} must preserve slot count"
+            );
+            for (slot, result) in finalized.into_iter().enumerate() {
+                if (slot + case) % 5 == 0 {
+                    let error = result
+                        .expect_err("Fix: unfilled generated multi-GPU slot must be an error");
+                    assert!(
+                        error.to_string().contains("result slot was not filled"),
+                        "Fix: missing generated multi-GPU slot must explain partition coverage, got {error}"
+                    );
+                } else {
+                    let output =
+                        result.expect("Fix: filled generated multi-GPU slot must stay successful");
+                    assert_eq!(output.id, slot);
+                    assert_eq!(output.adapter_index, case % 3);
+                    assert_eq!(output.outputs, vec![vec![slot as u8, case as u8]]);
+                }
+            }
+        }
+    }
 }
+

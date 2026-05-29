@@ -53,9 +53,7 @@ pub(super) fn brace_scope_id_for_node(tok_types: &[u32], node_idx: usize) -> u32
             TOK_RBRACE => depth = depth.saturating_add(1),
             TOK_LBRACE => {
                 if depth == 0 {
-                    return u32::try_from(scan_idx + 1).expect(
-                        "C semantic scope id exceeds u32. Fix: shard the token stream before semantic registry lowering.",
-                    );
+                    return u32::try_from(scan_idx + 1).unwrap_or(u32::MAX);
                 }
                 if depth > 0 {
                     depth = depth.saturating_sub(1);
@@ -97,9 +95,7 @@ pub(super) fn brace_scope_parent_id_for_node(
             TOK_LBRACE => {
                 if depth == 0 {
                     return if scan_idx < node_idx {
-                        u32::try_from(scan_idx + 1).expect(
-                            "C semantic parent scope id exceeds u32. Fix: shard the token stream before semantic registry lowering.",
-                        )
+                        u32::try_from(scan_idx + 1).unwrap_or(u32::MAX)
                     } else {
                         0
                     };
@@ -435,17 +431,15 @@ fn identifier_intern_id_for_node(
     if len == 0 {
         return 0;
     }
-    let end_u32 = start.checked_add(len).unwrap_or_else(|| {
-        panic!(
-            "C semantic identifier span overflows u32 at token {node_idx}: start {start}, len {len}. Fix: repair lexer span emission."
-        )
-    });
-    let start_usize = usize::try_from(start).expect(
-        "C semantic identifier span start exceeds usize. Fix: shard the source before semantic registry lowering.",
-    );
-    let end = usize::try_from(end_u32).expect(
-        "C semantic identifier span end exceeds usize. Fix: shard the source before semantic registry lowering.",
-    );
+    let Some(end_u32) = start.checked_add(len) else {
+        return 0;
+    };
+    let Ok(start_usize) = usize::try_from(start) else {
+        return 0;
+    };
+    let Ok(end) = usize::try_from(end_u32) else {
+        return 0;
+    };
     assert!(
         end <= haystack.len(),
         "C semantic identifier span {start_usize}..{end} exceeds haystack length {} at token {node_idx}. Fix: pass the same haystack used for lexing.",
@@ -456,9 +450,5 @@ fn identifier_intern_id_for_node(
         "C semantic identifier span is empty at token {node_idx}. Fix: repair lexer identifier lengths."
     );
 
-    let mut hash = 0x811c_9dc5u32;
-    for &byte in &haystack[start_usize..end] {
-        hash = (hash ^ byte).wrapping_mul(0x0100_0193);
-    }
-    hash
+    vyre_primitives::hash::fnv1a::fnv1a32_packed_u32_low8(&haystack[start_usize..end])
 }

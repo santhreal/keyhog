@@ -1,4 +1,4 @@
-//! ROADMAP A15 — buffer aliasing facts into load elision.
+//! ROADMAP A15  -  buffer aliasing facts into load elision.
 //!
 //! Read-only-buffer slice shipped here. When both arms of an
 //! `Node::If` begin with a `Let(name, Load(buf, idx))` whose
@@ -6,7 +6,7 @@
 //! same index, the Load is hoisted before the If. The ReadOnly
 //! declaration is the alias proof: a ReadOnly buffer is fully
 //! initialised by the host before kernel launch, so the Load is
-//! observably-safe to execute on the unconditional path — there
+//! observably-safe to execute on the unconditional path  -  there
 //! is no observable difference between "load was already issued"
 //! and "load was about to be issued in one arm only".
 //!
@@ -22,7 +22,7 @@
 //! per fired hoist) and monotone-down on per-arm dispatch overhead
 //! (the Load is issued once instead of once per branch).
 //!
-//! Preserves: every analysis. Invalidates: nothing — the hoisted
+//! Preserves: every analysis. Invalidates: nothing  -  the hoisted
 //! Load is the alias-proof-licensed counterpart of A18's
 //! observably-free prefix hoist for non-Load values.
 //!
@@ -384,7 +384,8 @@ mod tests {
         let prog = program(vec![ro_buf("ro"), rw_buf("rw")], entry);
         let result = ReadOnlyLoadHoistPass::transform(prog);
         assert!(result.changed, "ReadOnly Load prefix must hoist");
-        let siblings = find_siblings(result.program.entry()).expect("hoisted Let + If present");
+        let siblings =
+            find_siblings(result.program.entry()).expect("Fix: hoisted Let + If present");
         assert!(matches!(&siblings[0], Node::Let { name, value }
             if name.as_str() == "x" && matches!(value, Expr::Load { .. })));
         assert!(matches!(&siblings[1], Node::If { .. }));
@@ -447,6 +448,7 @@ mod tests {
             )],
         }];
         let prog = program(vec![ro_buf("ro"), rw_buf("rw")], entry);
+
         let result = ReadOnlyLoadHoistPass::transform(prog);
         assert!(!result.changed, "differing indices must not hoist");
     }
@@ -513,9 +515,11 @@ mod tests {
         let prog = program(vec![ro_buf("ro"), rw_buf("rw")], entry);
         let result = ReadOnlyLoadHoistPass::transform(prog);
         assert!(result.changed, "chain of ReadOnly Loads must hoist");
-        let siblings = find_siblings(result.program.entry()).expect("hoisted Lets + If present");
+        let siblings =
+            find_siblings(result.program.entry()).expect("Fix: hoisted Lets + If present");
         assert!(siblings.len() >= 3);
         assert!(matches!(&siblings[0], Node::Let { name, .. } if name.as_str() == "a"));
         assert!(matches!(&siblings[1], Node::Let { name, .. } if name.as_str() == "b"));
     }
 }
+

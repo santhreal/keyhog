@@ -1,9 +1,9 @@
-//! Byte and text scan helpers — substring search, DFA / Aho–Corasick. Used
+//! Byte and text scan helpers  -  substring search, DFA / Aho–Corasick. Used
 //! as components inside full `vyre::Program` values (decode, graph, heuristics).
 //!
 //! Sub-dialects:
-//! - `substring` — brute-force single-string scanner
-//! - `dfa` — DFA compiler + Aho-Corasick multi-string scanner
+//! - `substring`  -  brute-force single-string scanner
+//! - `dfa`  -  DFA compiler + Aho-Corasick multi-string scanner
 //!
 //! Flat re-exports preserved for back-compat.
 //!
@@ -11,9 +11,9 @@
 //!
 //! Every public surface in this module is enumerated in `API_INDEX`
 //! as a stable `(name, kind, feature)` triple. Consumers that need to
-//! discover the engine surface programmatically — consumer engine listings,
+//! discover the engine surface programmatically  -  consumer engine listings,
 //! the conformance harness's coverage check, the cargo-doc completeness test
-//! below — read this single const instead
+//! below  -  read this single const instead
 //! of grepping the module tree.
 
 /// Stable index of public exports under `vyre_libs::scan`. Each
@@ -52,7 +52,7 @@ pub const API_INDEX: &[(&str, ApiKind, Option<&str>)] = &[
     ("emit_hit_with_layout", ApiKind::Function, None),
     ("HIT_BUFFER_LIVE_LENGTH", ApiKind::Const, None),
     ("HIT_BUFFER_OVERFLOW_COUNT", ApiKind::Const, None),
-    // Literal-set engine — unconditional.
+    // Literal-set engine  -  unconditional.
     ("GpuLiteralSet", ApiKind::Struct, None),
     ("LiteralMatch", ApiKind::TypeAlias, None),
     ("LiteralSetWireError", ApiKind::Enum, None),
@@ -103,9 +103,21 @@ pub const API_INDEX: &[(&str, ApiKind, Option<&str>)] = &[
     ),
     ("CompiledRegexSet", ApiKind::Struct, Some("matching-regex")),
     ("RegexCompileError", ApiKind::Enum, Some("matching-regex")),
+    // regex-set → dense DFA → existing AC kernel composition.
+    // Gated on both matching-regex (for compile_regex_set) and
+    // matching-dfa (for build_ac_bounded_ranges_program). The single
+    // entry is reported under matching-regex so the existing index
+    // tooling that filters by one feature still finds it.
+    (
+        "build_regex_dfa_pipeline",
+        ApiKind::Function,
+        Some("matching-regex"),
+    ),
+    ("RegexDfaPipeline", ApiKind::Struct, Some("matching-regex")),
+    ("RegexDfaError", ApiKind::Enum, Some("matching-regex")),
 ];
 
-/// Item-kind tag for entries in `API_INDEX`. Coarse on purpose —
+/// Item-kind tag for entries in `API_INDEX`. Coarse on purpose  -
 /// the goal is "what's the symbol shape?" not full reflection.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ApiKind {
@@ -138,7 +150,7 @@ pub mod dispatch_io;
 ///
 /// Engines implement `MatchScan` (object-safe) and `MatchEngineCache`
 /// (typed errors). Consumers use `cached_load_or_compile` to wire on-
-/// disk caches generically — the per-engine cache wiring secret-scanning consumer
+/// disk caches generically  -  the per-engine cache wiring scan consumer
 /// previously hand-rolled is now a one-line call.
 pub mod engine;
 pub use dispatch_io::{
@@ -195,7 +207,7 @@ pub mod direct_gpu;
 /// commit + G7 persistent-engine work items + G8 content-hash
 /// cache key + G4 adaptive CSR/dense graph traversal + G9 CHD
 /// perfect hash + G10 differential scan file selection. One
-/// object frontend dispatches.
+/// object program-analysis consumer dispatches.
 #[cfg(feature = "matching-nfa")]
 pub mod mega_scan;
 
@@ -207,6 +219,15 @@ pub mod mega_scan;
 /// frontend skip the `regex-syntax` dep.
 #[cfg(feature = "matching-regex")]
 pub mod regex_compile;
+
+/// Regex set → dense `CompiledDfa` GPU pipeline. Composes
+/// `compile_regex_set` (NFA build) → `nfa_to_dfa` (subset construction,
+/// vyre-primitives) → `build_ac_bounded_ranges_program` (existing AC
+/// kernel) so regex pattern sets dispatch through the same O(1)-per-byte
+/// kernel that literal AC uses. Behind `matching-regex` + `matching-dfa`
+/// because both halves are required.
+#[cfg(all(feature = "matching-regex", feature = "matching-dfa"))]
+pub mod regex_dfa;
 
 #[cfg(feature = "matching-dfa")]
 pub use dfa::{
@@ -224,28 +245,32 @@ pub use literal_set::{GpuLiteralSet, LiteralSetWireError, Match as LiteralMatch}
 #[cfg(feature = "matching-nfa")]
 pub use mega_scan::{build as build_rule_pipeline, PipelineWireError, RulePipeline};
 pub use pipeline::{Pipeline, PostProcessFn};
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use post_process::{
     reference_post_process, shannon_entropy_bits_per_byte, try_reference_post_process,
-    try_reference_post_process_into, PostProcessError, PostProcessedMatch,
+    try_reference_post_process_into,
 };
+pub use post_process::{PostProcessError, PostProcessedMatch};
 #[cfg(feature = "matching-regex")]
 pub use regex_compile::{
     build_rule_pipeline_from_regex, compile_regex_set, CompiledRegexSet, RegexCompileError,
 };
+#[cfg(all(feature = "matching-regex", feature = "matching-dfa"))]
+pub use regex_dfa::{build_regex_dfa_pipeline, RegexDfaError, RegexDfaPipeline};
 #[cfg(feature = "matching-substring")]
-pub use substring::substring_search;
+pub use substring::{substring_search, SCAN_SUBSTRING_OP_ID};
 // Re-export the cross-program fusion API at the matching layer so consumers
 // don't have to reach into `vyre-foundation` directly.
 pub use vyre_foundation::execution_plan::fusion::{fuse_programs, fuse_programs_vec, FusionError};
 
 #[cfg(feature = "cpu-parity")]
 use vyre_primitives::matching::region::dedup_regions_cpu as primitive_dedup_regions_cpu;
+#[cfg(any(test, feature = "cpu-parity"))]
+pub use vyre_primitives::matching::region::dedup_regions_inplace;
 /// Re-export the region-dedup GPU program builders through the scan layer
 /// so consumers get the canonical span-coalescing helpers without taking a
 /// separate dependency on `vyre-primitives`.
-pub use vyre_primitives::matching::region::{
-    dedup_regions_flag_program, dedup_regions_inplace, RegionTriple,
-};
+pub use vyre_primitives::matching::region::{dedup_regions_flag_program, RegionTriple};
 
 /// Reference/parity region deduplication helper.
 ///

@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn tu_section_name_uses_128_bit_path_tag() {
         let name = section_name_for_tu(Path::new("src/main.c"));
-        let name = std::str::from_utf8(&name).expect("section name must be ASCII");
+        let name = std::str::from_utf8(&name).expect("Fix: section name must be ASCII");
         assert!(name.starts_with(".vyrecob2."));
         assert_eq!(name.len(), ".vyrecob2.".len() + 32);
     }

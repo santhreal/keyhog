@@ -18,7 +18,8 @@ use rustc_hash::FxHashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind};
+use crate::operand_semantics::operand_is_result_reference;
+use crate::{KernelBody, KernelDescriptor};
 
 /// Where in the descriptor a result-id is referenced.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,7 +35,7 @@ pub struct UseSite {
 
 /// Per-body chains. The map's key is a result-id; the value is every
 /// site within THIS body where that id is used. (Cross-body uses are
-/// not modeled — bodies have isolated id spaces in vyre's structured
+/// not modeled  -  bodies have isolated id spaces in vyre's structured
 /// IR.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PerBodyChains {
@@ -115,33 +116,6 @@ fn walk(body: &KernelBody, path: &mut Vec<usize>, report: &mut DefUseReport) {
         path.push(idx);
         walk(child, path, report);
         path.pop();
-    }
-}
-
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
     }
 }
 

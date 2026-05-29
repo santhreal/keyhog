@@ -1,5 +1,5 @@
 schema_version = "1"
-# P3.8 — single source of truth for every #[ignore] in vyre-libs.
+# P3.8  -  single source of truth for every #[ignore] in vyre-libs.
 # LAW 9 rule: every ignored test carries a finding entry with
 # date_opened, owner, blocker, and fix_plan. No floating ignores.
 
@@ -75,7 +75,7 @@ fix_plan = """
 2. Gate the 3 variant declarations behind `#[cfg(feature = "subgroup-ops")]`.
 3. Gate every match arm in vyre-foundation + backends behind the
    same cfg. All existing no-op handlers already treat the variants
-   as no-ops — only the gated path lowers them meaningfully.
+   as no-ops  -  only the gated path lowers them meaningfully.
 4. When Naga 25 + the feature ship together, the variants become
    first-class.
 """
@@ -87,7 +87,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_driver_wgpu::tests::cat_a_gpu_differential::*"
 status = "fixed"
-title = "Cat-A ops dispatched on wgpu require `BufferDecl::output(...)` — declared as `ReadWrite`"
+title = "Cat-A ops dispatched on wgpu require `BufferDecl::output(...)`  -  declared as `ReadWrite`"
 blocker = """
 Every vyre-libs Cat-A op declares its result buffer as
 `BufferDecl::read_write(...)`. The wgpu backend's
@@ -98,15 +98,15 @@ no output buffer. Fix: declare exactly one output buffer in
 the vyre Program.")`.
 
 Surfaced by the new tests/cat_a_gpu_differential.rs harness on a
-real 5090 run 2026-04-20 — every op (dot, matmul, scan_prefix_sum,
+real 5090 run 2026-04-20  -  every op (dot, matmul, scan_prefix_sum,
 broadcast, relu, linear, substring_search, aho_corasick, fnv1a32,
 blake3_compress) panics identically.
 
-This means surgec dispatching Cat-A ops over the wgpu backend
+This means a downstream security-analysis consumer dispatching Cat-A ops over the wgpu backend
 today would fail before the GPU even executes the shader.
 """
 fix_plan = """
-1. vyre-libs/src/*/*/*.rs — change every `BufferDecl::read_write`
+1. vyre-libs/src/*/*/*.rs  -  change every `BufferDecl::read_write`
    on the final write target to `BufferDecl::output` (keep all
    intermediate RW scratch buffers as read_write).
 2. Regenerate KAT fingerprints in tests/fingerprint_lock.rs
@@ -127,7 +127,7 @@ title = "WgpuBackend.dispatch rejects Cat-A programs before region_inline fires"
 blocker = """
 Cat-A ops wrap their body in `Node::Region` for debuggability.
 When dispatched directly via `WgpuBackend::dispatch`, the
-validator trips on Region with `vyre.node.unknown` — the backend
+validator trips on Region with `vyre.node.unknown`  -  the backend
 never reaches `transform::optimize::optimize` (which would have
 inlined the Region via `region_inline::run`).
 
@@ -138,7 +138,7 @@ boilerplate, which is hostile to the library contract.
 """
 fix_plan = """
 Option A (preferred): make Region a recognized structural node
-in vyre-driver's capability set — validator skips it, dispatch
+in vyre-driver's capability set  -  validator skips it, dispatch
 path runs optimize() before validation. Region becomes
 capability-neutral (any backend dispatching a program
 containing Region implicitly inlines).
@@ -149,7 +149,7 @@ through `optimize()` before `dispatch()`. Add a one-liner
 boilerplate is a single function call.
 
 Either path must land before 0.6 publishes, else downstream
-surgec + every community consumer will hit this the first time
+downstream security-analysis consumers and every community consumer will hit this the first time
 they try to run a Cat-A op on real hardware.
 """
 
@@ -160,7 +160,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_driver_wgpu::tests::cat_a_gpu_differential::*"
 status = "fixed"
-title = "wgpu Naga emitter missing Node::Loop — Cat-A ops can't lower to GPU"
+title = "wgpu Naga emitter missing Node::Loop  -  Cat-A ops can't lower to GPU"
 blocker = """
 `vyre-driver-wgpu/src/lowering/naga_emit/node.rs:107` currently
 returns `LoweringError::invalid("this statement kind is not
@@ -173,7 +173,7 @@ aho_corasick, substring_search, softmax (3-pass), layer_norm
 (3-pass), attention, blake3 (7 round loops), fnv1a32.
 
 Result: surfaced by tests/cat_a_gpu_differential.rs on a live
-5090 run 2026-04-20 — 8 of 10 Cat-A ops fail lowering with
+5090 run 2026-04-20  -  8 of 10 Cat-A ops fail lowering with
 this exact error. relu and broadcast fail differently (element
 count inference, under investigation).
 """
@@ -202,7 +202,7 @@ Node::Loop { body, break_if } => {
 }
 ```
 
-(Pseudocode — verify the Node::Loop variant shape against
+(Pseudocode  -  verify the Node::Loop variant shape against
 vyre-foundation before committing.)
 
 After this lands, FINDING-GPU-1 + GPU-2 should fully unblock
@@ -217,7 +217,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_driver_wgpu::tests::cat_a_gpu_differential::diff_math_broadcast"
 status = "fixed"
-title = "Cat-A output buffers lack `.with_count()` — GPU readback returns 0 bytes"
+title = "Cat-A output buffers lack `.with_count()`  -  GPU readback returns 0 bytes"
 blocker = """
 After FINDING-GPU-1 (BufferDecl::output) + FINDING-GPU-3
 (Node::Loop lowering) closed, `broadcast` now compiles + runs
@@ -228,7 +228,7 @@ the GPU returns `[]`.
 Root cause: `vyre-libs/src/math/broadcast/broadcast.rs` declares
 the output with `BufferDecl::output(dst, 1, DataType::U32)` but
 no `.with_count(N)`. The wgpu backend reads the output buffer
-as `count * element_size` bytes — count=0 → 0 bytes readback
+as `count * element_size` bytes  -  count=0 → 0 bytes readback
 even though the shader wrote correctly.
 
 Extends FINDING-GPU-1: not only must the target buffer be
@@ -347,7 +347,7 @@ Walk every Cat-A builder and add `.with_count(N)` on the output
 fnv1a32, substring_search, aho_corasick the `n` parameter is
 already a function argument; plumb it into `with_count`.
 
-Dot's output is one u32 (the reduced scalar) — `.with_count(1)`.
+Dot's output is one u32 (the reduced scalar)  -  `.with_count(1)`.
 
 After this closes, re-run tests/cat_a_gpu_differential.rs. Any
 remaining divergence is a true shader-semantics bug not a
@@ -361,7 +361,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_driver_wgpu::tests::cat_a_gpu_differential::diff_math_dot"
 status = "fixed"
-title = "vyre-libs::math::dot — atomic output rejected by Naga (InvalidAtomic)"
+title = "vyre-libs::math::dot  -  atomic output rejected by Naga (InvalidAtomic)"
 blocker = """
 After FINDING-GPU-1, GPU-3, GPU-4 closed, dot fails at Naga
 validation with `InvalidAtomic(InvalidPointer([22]))`. The dot
@@ -380,7 +380,7 @@ buffer? If yes: update vyre-libs/src/math/linalg/dot.rs and the
 CPU ref interpreter's atomic semantics. If no: debug why Naga's
 atomic store validation rejects the produced pointer.
 
-Simpler alternative: rewrite dot to not use atomics — one
+Simpler alternative: rewrite dot to not use atomics  -  one
 workgroup reduction into shared memory, then a single store.
 """
 
@@ -390,11 +390,11 @@ date_opened = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_driver_wgpu::tests::cat_a_gpu_differential::diff_math_matmul_small"
 status = "open"
-title = "matmul[4x4x4] — 5090 rows 1+2 diverge from CPU ref (stale accumulator)"
+title = "matmul[4x4x4]  -  5090 rows 1+2 diverge from CPU ref (stale accumulator)"
 blocker = """
 Row 0 (elements 0..3) matches between CPU and GPU byte-for-byte.
 Row 1 onward diverges. Diff looks like the GPU is using stale
-accumulator values across the (i,j) loop iterations — classic
+accumulator values across the (i,j) loop iterations  -  classic
 uninitialized-per-iteration-accumulator bug.
 
 This is a shader-semantics bug in the matmul body, not a
@@ -440,7 +440,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_driver_wgpu::tests::cat_a_gpu_differential::diff_crypto_blake3_compress"
 status = "fixed"
-title = "blake3_compress lowering — `vyre.node.unknown` at node 0"
+title = "blake3_compress lowering  -  `vyre.node.unknown` at node 0"
 blocker = """
 After FINDING-GPU-3 (Node::Loop) landed, blake3_compress still
 fails with `vyre.node.unknown at node 0`, suggesting the body
@@ -540,7 +540,7 @@ date_fixed = "2026-04-21"
 owner = "contactmukundthiru"
 test = "vyre_runtime::tests::adversarial_disk::symlink_attack_must_not_read_etc_passwd"
 status = "fixed"
-title = "DiskCache::get follows symlinks — symlink attack reads arbitrary files"
+title = "DiskCache::get follows symlinks  -  symlink attack reads arbitrary files"
 blocker = """
 Surfaced by the Kimi adversarial swarm 2026-04-20. `DiskCache::get`
 calls `fs::read(path)` which transparently follows symlinks. A
@@ -549,7 +549,7 @@ process with write access to the cache root can create a symlink
 /etc/passwd contents as if it were the cached artifact.
 
 At internet scale (LAW 8): one compromised cache root = billions
-of pipelines returning attacker-controlled bytes. A surgec scan
+of pipelines returning attacker-controlled bytes. A downstream scan
 that loads its cached pipeline from disk would execute whatever
 the attacker substituted.
 """
@@ -591,7 +591,7 @@ Two-layer defense:
 2. put uses `write + fsync + rename` (atomic replace) so a crash
    mid-write leaves either the prior file or nothing, never a
    torn state. Currently put is `write + rename` which drops
-   fsync — adding `tmp_file.sync_all()?` before rename closes
+   fsync  -  adding `tmp_file.sync_all()?` before rename closes
    this class of corruption on crash.
 """
 
@@ -602,7 +602,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_foundation::tests::extern_registry_adversarial::*"
 status = "fixed"
-title = "ExternDialect + ExternOp had no public constructors — #[non_exhaustive] blocked external crates"
+title = "ExternDialect + ExternOp had no public constructors  -  #[non_exhaustive] blocked external crates"
 blocker = """
 Surfaced by Kimi adversarial swarm 2026-04-20. `#[non_exhaustive]`
 on both structs meant external community packs could not write
@@ -615,7 +615,7 @@ Supply-chain blocker: no external crate could register a dialect.
 fix_plan = """
 Added `pub const fn ExternDialect::new(name, version, crate_repo)`
 and `pub const fn ExternOp::new(dialect, op_id)`. Community packs
-write `inventory::submit!(ExternDialect::new(...))` — forward-
+write `inventory::submit!(ExternDialect::new(...))`  -  forward-
 compatible under #[non_exhaustive].
 """
 
@@ -626,7 +626,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_foundation::tests::extern_registry_adversarial::duplicate_dialect_names_must_be_rejected_by_verifier"
 status = "fixed"
-title = "Duplicate ExternDialect::name silently accepted — no integrity check"
+title = "Duplicate ExternDialect::name silently accepted  -  no integrity check"
 blocker = """
 Two packs submitting `ExternDialect { name: "vyre-libs-dup", ... }`
 both linked silently. `ops_in_dialect` would yield ambiguous results.
@@ -643,7 +643,7 @@ date_fixed = "2026-04-20"
 owner = "contactmukundthiru"
 test = "vyre_foundation::tests::extern_registry_adversarial::malformed_dialect_name_must_emit_diagnostic"
 status = "fixed"
-title = "Dialects not prefixed `vyre-libs-` accepted silently — discovery contract broken"
+title = "Dialects not prefixed `vyre-libs-` accepted silently  -  discovery contract broken"
 blocker = """
 The `vyre-libs-` crate name prefix is the discovery contract; tools
 walk Cargo.lock relying on it. A dialect named `not-vyre-libs-bad`
@@ -680,19 +680,19 @@ date_closed = "2026-04-22"
 owner = "contactmukundthiru"
 test = "vyre_foundation::tests::adversarial_graph_canonical_laws::{malformed_cycle,malformed_dangling_edge,malformed_orphan_phi}_graph_is_rejected_without_panic"
 status = "fixed"
-title = "graph_view::from_graph silently accepts malformed graphs — cycles, dangling edges, orphan Phi"
+title = "graph_view::from_graph silently accepts malformed graphs  -  cycles, dangling edges, orphan Phi"
 blocker = """
 Surfaced by Codex adversarial swarm 2026-04-20. `from_graph`
 takes a NodeGraph and returns a Program without validating:
 - Cycles: GraphNode ids that reference one another form a loop;
   current impl silently materializes.
-- Dangling edges: an edge pointing at a non-existent node id —
+- Dangling edges: an edge pointing at a non-existent node id  - 
   accepted.
-- Orphan Phi: a Phi node with no incoming edges — accepted.
+- Orphan Phi: a Phi node with no incoming edges  -  accepted.
 
-At internet scale this means surgec feeding a generated graph
+At internet scale this means a downstream generated graph
 to `from_graph` can hit undefined-behavior lowering without a
-diagnostic — the kind of bug where compiled WGSL/SPIR-V becomes
+diagnostic  -  the kind of bug where compiled WGSL/SPIR-V becomes
 subtly nondeterministic.
 """
 fix_plan = """
@@ -784,7 +784,7 @@ status = "open"
 title = "wgpu bind-group-layout reflection drift breaks dispatch determinism"
 blocker = """
 The dispatch_is_deterministic test is #[ignore]d pending a fix to the
-wgpu bind-group-layout reflection path — two byte-identical Programs
+wgpu bind-group-layout reflection path  -  two byte-identical Programs
 can produce different BGL handles when the pipeline cache misses,
 which breaks the determinism invariant. Logged in V7-TEST-023.
 """

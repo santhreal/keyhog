@@ -45,7 +45,7 @@ pub(super) fn apply_include(
         resolution_residency,
     });
     if trace.enabled() {
-        eprintln!(
+        tracing::debug!(
             "[stage-trace] gpu-preprocess include depth={depth} from={} include={} bytes={}",
             file_path.display(),
             resolved.canonical_path.display(),

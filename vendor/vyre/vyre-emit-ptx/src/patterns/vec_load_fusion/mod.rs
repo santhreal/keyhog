@@ -10,7 +10,7 @@
 //! consecutive `LoadGlobal` ops in the body's flat op stream that:
 //!
 //! 1. Read from the same `binding_slot`.
-//! 2. Have indices `i, i+1, i+2, [i+3]` for the same base — detected
+//! 2. Have indices `i, i+1, i+2, [i+3]` for the same base  -  detected
 //!    when consecutive load's index_id is the result of an `Add(prev_index_id, Lit(1))`
 //!    op present in the body.
 //! 3. Have no intervening op (other than the index-increment Adds).
@@ -26,10 +26,11 @@
 //! reports vector widths PTX supports (`v2`, `v4`), alignment in
 //! bytes, and the expected register class.
 
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use vyre_foundation::ir::{BinOp, DataType};
-use vyre_lower::{BindingSlot, KernelBody, KernelDescriptor, KernelOpKind};
+use vyre_foundation::ir::DataType;
+use vyre_lower::KernelDescriptor;
+
+use super::vec_memory_fusion::{analyze_memory_fusion, MemoryFusionCandidate, MemoryFusionKind};
 
 /// One fusion candidate: a group of consecutive scalar loads that
 /// could be merged into a single PTX vector load.
@@ -37,12 +38,12 @@ use vyre_lower::{BindingSlot, KernelBody, KernelDescriptor, KernelOpKind};
 pub struct FusionCandidate {
     /// Op-index of the FIRST load in the group.
     pub first_load_idx: usize,
-    /// Number of loads in the group (2 or 4 only — PTX doesn't have
+    /// Number of loads in the group (2 or 4 only  -  PTX doesn't have
     /// `v3` loads).
     pub group_size: u8,
     /// Binding slot all loads share.
     pub binding_slot: u32,
-    /// Element type all loads share — must be same.
+    /// Element type all loads share  -  must be same.
     pub element_type: DataType,
     /// Required base-pointer alignment in bytes for the fused load
     /// to be valid: `group_size * element_size`. Host-side allocator
@@ -57,174 +58,30 @@ pub struct FusionPlan {
 
 #[must_use]
 pub fn analyze(desc: &KernelDescriptor) -> FusionPlan {
-    let mut plan = FusionPlan::default();
-    let binding_by_slot: FxHashMap<u32, &BindingSlot> = desc
-        .bindings
-        .slots
-        .iter()
-        .map(|binding| (binding.slot, binding))
-        .collect();
-    walk(&desc.body, &binding_by_slot, &mut plan);
-    plan
-}
-
-fn walk(body: &KernelBody, binding_by_slot: &FxHashMap<u32, &BindingSlot>, plan: &mut FusionPlan) {
-    // Build a result-id → producer-op map for index-arithmetic lookup.
-    // We need to recognize index_n+1 = Add(index_n, Lit(1)).
-    let mut producer: FxHashMap<u32, usize> =
-        FxHashMap::with_capacity_and_hasher(body.ops.len(), Default::default());
-    for (idx, op) in body.ops.iter().enumerate() {
-        if let Some(rid) = op.result {
-            producer.insert(rid, idx);
-        }
-    }
-
-    // Result-id → constant-int value (only for ops produced by
-    // `Literal` whose pool entry is U32 or I32).
-    let mut lit_value: FxHashMap<u32, u32> =
-        FxHashMap::with_capacity_and_hasher(body.literals.len(), Default::default());
-    for op in &body.ops {
-        if matches!(op.kind, KernelOpKind::Literal) {
-            if let (Some(rid), Some(&pool_idx)) = (op.result, op.operands.first()) {
-                if let Some(lit) = body.literals.get(pool_idx as usize) {
-                    use vyre_lower::LiteralValue;
-                    let v = match lit {
-                        LiteralValue::U32(v) => Some(*v),
-                        LiteralValue::I32(v) => Some(*v as u32),
-                        _ => None,
-                    };
-                    if let Some(v) = v {
-                        lit_value.insert(rid, v);
-                    }
-                }
-            }
-        }
-    }
-
-    // Walk consecutive loads.
-    let mut i = 0;
-    while i < body.ops.len() {
-        let op = &body.ops[i];
-        if !matches!(op.kind, KernelOpKind::LoadGlobal) {
-            i += 1;
-            continue;
-        }
-        let Some((slot, base_idx_id)) = load_slot_and_index(op) else {
-            i += 1;
-            continue;
-        };
-        let Some(binding) = binding_by_slot.get(&slot).copied() else {
-            i += 1;
-            continue;
-        };
-
-        // How many loads form a chain from this point? The natural
-        // pattern is `Load; Add(prev_idx, Lit(1)); Load; Add(...); ...`.
-        // We allow ONLY index-increment Add ops between the loads —
-        // anything else (Mul, Store, Barrier, etc.) breaks the chain.
-        let mut chain_len: u8 = 1;
-        let mut prev_idx_id = base_idx_id;
-        let mut j = i + 1;
-        while j < body.ops.len() && chain_len < 4 {
-            // Skip exactly one index-increment Add op if present.
-            let mut next = &body.ops[j];
-            if matches!(next.kind, KernelOpKind::BinOpKind(BinOp::Add)) {
-                if let Some(rid) = next.result {
-                    if is_index_plus_one(rid, prev_idx_id, body, &producer, &lit_value) {
-                        // This Add produces the next index — skip it
-                        // and look at the following op.
-                        j += 1;
-                        if j >= body.ops.len() {
-                            break;
-                        }
-                        next = &body.ops[j];
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-            if !matches!(next.kind, KernelOpKind::LoadGlobal) {
-                break;
-            }
-            let Some((next_slot, next_idx_id)) = load_slot_and_index(next) else {
-                break;
-            };
-            if next_slot != slot {
-                break;
-            }
-            if !is_index_plus_one(next_idx_id, prev_idx_id, body, &producer, &lit_value) {
-                break;
-            }
-            chain_len += 1;
-            prev_idx_id = next_idx_id;
-            j += 1;
-        }
-
-        // PTX supports v2 and v4 loads only.
-        if chain_len >= 2 {
-            let group_size = if chain_len >= 4 { 4 } else { 2 };
-            let elem_size = binding.element_type.size_bytes().unwrap_or(0) as u32;
-            plan.candidates.push(FusionCandidate {
-                first_load_idx: i,
-                group_size,
-                binding_slot: slot,
-                element_type: binding.element_type.clone(),
-                alignment_bytes: group_size as u32 * elem_size,
-            });
-            // Skip past the loads we just claimed (and the Adds between them).
-            // Each load (except the first) is preceded by one Add → 2*group_size - 1
-            // ops in total cover the chain. Advance by that many.
-            i += (group_size as usize) * 2 - 1;
-        } else {
-            i += 1;
-        }
-    }
-
-    // Recurse into children.
-    for child in &body.child_bodies {
-        walk(child, binding_by_slot, plan);
+    FusionPlan {
+        candidates: analyze_memory_fusion(desc, MemoryFusionKind::Load)
+            .into_iter()
+            .map(FusionCandidate::from)
+            .collect(),
     }
 }
 
-fn load_slot_and_index(op: &vyre_lower::KernelOp) -> Option<(u32, u32)> {
-    if op.operands.len() < 2 {
-        return None;
+impl From<MemoryFusionCandidate> for FusionCandidate {
+    fn from(candidate: MemoryFusionCandidate) -> Self {
+        Self {
+            first_load_idx: candidate.first_op_idx,
+            group_size: candidate.group_size,
+            binding_slot: candidate.binding_slot,
+            element_type: candidate.element_type,
+            alignment_bytes: candidate.alignment_bytes,
+        }
     }
-    Some((op.operands[0], op.operands[1]))
-}
-
-/// True iff `candidate_id` is produced by an op of the form
-/// `BinOpKind(Add)` with one operand `prev_id` and the other a
-/// Literal U32/I32 with value 1.
-fn is_index_plus_one(
-    candidate_id: u32,
-    prev_id: u32,
-    body: &KernelBody,
-    producer: &FxHashMap<u32, usize>,
-    lit_value: &FxHashMap<u32, u32>,
-) -> bool {
-    let Some(&op_idx) = producer.get(&candidate_id) else {
-        return false;
-    };
-    let op = &body.ops[op_idx];
-    let KernelOpKind::BinOpKind(BinOp::Add) = op.kind else {
-        return false;
-    };
-    if op.operands.len() != 2 {
-        return false;
-    }
-    let lhs = op.operands[0];
-    let rhs = op.operands[1];
-    let one_check = |id: u32| lit_value.get(&id) == Some(&1);
-    (lhs == prev_id && one_check(rhs)) || (rhs == prev_id && one_check(lhs))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vyre_foundation::ir::DataType;
+    use vyre_foundation::ir::{BinOp, DataType};
     use vyre_lower::{
         BindingLayout, BindingSlot, BindingVisibility, Dispatch, KernelBody, KernelDescriptor,
         KernelOp, KernelOpKind, LiteralValue, MemoryClass,
@@ -425,7 +282,7 @@ mod tests {
                         operands: vec![0, 1],
                         result: Some(3),
                     },
-                    // Different slot — chain breaks.
+                    // Different slot  -  chain breaks.
                     KernelOp {
                         kind: KernelOpKind::LoadGlobal,
                         operands: vec![1, 3],
@@ -442,7 +299,7 @@ mod tests {
 
     #[test]
     fn non_unit_stride_doesnt_chain() {
-        // Add by 2 instead of 1 — not a v-load candidate.
+        // Add by 2 instead of 1  -  not a v-load candidate.
         let desc = build(
             vec![
                 KernelOp {
@@ -478,8 +335,8 @@ mod tests {
     }
 
     #[test]
-    fn intervening_non_add_op_breaks_chain() {
-        // Load r2; non-Add intervening op; Add; Load.
+    fn intervening_memory_effect_breaks_chain() {
+        // Load r2; visible memory effect; Add; Load.
         let desc = build(
             vec![
                 KernelOp {
@@ -498,33 +355,32 @@ mod tests {
                     result: Some(2),
                 },
                 KernelOp {
-                    kind: KernelOpKind::BinOpKind(BinOp::Mul),
-                    operands: vec![2, 1],
-                    result: Some(3),
+                    kind: KernelOpKind::StoreGlobal,
+                    operands: vec![0, 0, 2],
+                    result: None,
                 },
                 KernelOp {
                     kind: KernelOpKind::BinOpKind(BinOp::Add),
                     operands: vec![0, 1],
-                    result: Some(4),
+                    result: Some(3),
                 },
                 KernelOp {
                     kind: KernelOpKind::LoadGlobal,
-                    operands: vec![0, 4],
-                    result: Some(5),
+                    operands: vec![0, 3],
+                    result: Some(4),
                 },
             ],
             vec![LiteralValue::U32(0), LiteralValue::U32(1)],
         );
-        // The Mul between the two loads breaks the consecutive-loads
-        // sequence — chain detection requires loads back-to-back in
-        // the op stream.
+        // Pure arithmetic can be scheduled into a load gap, but visible
+        // memory effects cannot be crossed by vector-load fusion.
         let plan = analyze(&desc);
         assert!(plan.candidates.is_empty());
     }
 
     #[test]
     fn three_loads_only_yields_v2_candidate() {
-        // Chain of 3 — PTX has no v3, so we report v2 (covers first 2).
+        // Chain of 3  -  PTX has no v3, so we report v2 (covers first 2).
         let desc = build(
             vec![
                 KernelOp {

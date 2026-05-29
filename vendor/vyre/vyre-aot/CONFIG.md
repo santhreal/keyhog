@@ -1,11 +1,11 @@
-# vyre-aot — Configurability
+# vyre-aot  -  Configurability
 
 `vyre-aot` is a library; embedding tools surface the knobs below
 through their own CLIs. The library exposes both Tier A (operational)
 and Tier B (community knowledge) layers so embedders do not need to
 re-invent the schema.
 
-## Tier A — operational config
+## Tier A  -  operational config
 
 Library callers configure the AOT pipeline through the
 `AotCompileOptions` struct, optionally seeded from a TOML file the
@@ -24,12 +24,12 @@ caller picks up.
 Compiled defaults < caller-supplied `*.toml` < direct field overrides.
 Embedders are expected to surface `VYRE_AOT_*` to their users verbatim.
 
-## Tier B — community knowledge
+## Tier B  -  community knowledge
 
 The AOT pipeline consumes:
 
-- `rules/op/*.toml` — op lowering rules (shared with the runtime).
-- `rules/aot/*.toml` — AOT-specific shape contracts (allowed
+- `rules/op/*.toml`  -  op lowering rules (shared with the runtime).
+- `rules/aot/*.toml`  -  AOT-specific shape contracts (allowed
   workgroup sizes, register pressure budgets, target SM matrix). New
   contracts land as TOML; no Rust change required.
 

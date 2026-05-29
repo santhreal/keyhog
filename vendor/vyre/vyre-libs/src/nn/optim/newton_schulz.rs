@@ -23,7 +23,7 @@ inventory::submit! {
         id: OP_ID,
         build: || newton_schulz_5step("mat", "output", 2, 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[0.5, 0.0, 0.0, 0.5]),
             ]]

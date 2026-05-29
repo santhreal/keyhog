@@ -39,17 +39,17 @@
 // additional safety. The text format layered on top of the binary
 // format is:
 //
-// - **Deterministic** — same program always produces the same bytes
+// - **Deterministic**  -  same program always produces the same bytes
 //   because `to_wire` is deterministic and hex encoding is
 //   deterministic.
-// - **Human-diffable** — `git diff` on two `.vyre` files shows
+// - **Human-diffable**  -  `git diff` on two `.vyre` files shows
 //   exactly which bytes changed, which in the wire format usually
 //   corresponds to specific node/buffer changes.
-// - **Round-trippable** — the round-trip property
+// - **Round-trippable**  -  the round-trip property
 //   `from_text(to_text(p)) == p` holds by construction because the
 //   inner `to_wire`/`from_wire` already round-trips. This file only
 //   adds the hex envelope.
-// - **Small** — ~150 LOC of parser and serializer total, fits in
+// - **Small**  -  ~150 LOC of parser and serializer total, fits in
 //   one file, one set of tests.
 //
 // A richer S-expression form can be layered on top later if a
@@ -123,7 +123,7 @@ pub enum TextParseError {
     },
     /// The inner binary wire decoder rejected the byte payload.
     ///
-    /// The carried error is whatever [`Program::from_wire`] emitted —
+    /// The carried error is whatever [`Program::from_wire`] emitted  -
     /// a typed [`crate::error::Error`] whose `Display` impl already
     /// carries the `Fix:`-prefixed diagnostic prose.
     WireDecodeFailed {
@@ -237,7 +237,7 @@ impl Program {
     /// # Errors
     ///
     /// Returns a [`TextParseError`] describing the first parse
-    /// failure. Parsing is total — no panic path.
+    /// failure. Parsing is total  -  no panic path.
     #[inline]
     #[must_use]
     pub fn from_text(input: &str) -> Result<Self, TextParseError> {

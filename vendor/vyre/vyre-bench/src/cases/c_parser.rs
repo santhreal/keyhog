@@ -10,9 +10,10 @@ use crate::api::case::{
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use corpus::{linux_driver_corpus, CParserPrepared, LINUX_DRIVER_TU};
 use support::{
-    encode_parse_summary, require_encoded_parse_surface, run_tree_sitter_c_baseline,
-    time_tree_sitter_c_baseline, time_tree_sitter_cold_baseline, tree_sitter_cold_speedup_metric,
-    tree_sitter_speedup_metric, TempCompilePaths,
+    encode_parse_summary, metric, parse_summary_metric_points, require_encoded_parse_surface,
+    run_tree_sitter_c_baseline, time_tree_sitter_c_baseline, time_tree_sitter_cold_baseline,
+    tree_sitter_cold_speedup_metric, tree_sitter_speedup_metric, ParseSummaryMetricSurface,
+    TempCompilePaths,
 };
 use vyre_frontend_c::api::{compile, parse_source, VyreCompileOptions};
 
@@ -281,6 +282,12 @@ impl BenchCase for CParserOnlyLinuxDriverPipeline {
         let tree_sitter = run_tree_sitter_c_baseline(&prepared.source)?;
         let baseline_ns = baseline_start.elapsed().as_nanos() as u64;
         let output = encode_parse_summary(summary);
+        let mut custom =
+            parse_summary_metric_points(&summary, ParseSummaryMetricSurface::ParserOnly);
+        custom.extend([
+            metric("tree_sitter_c_ast_nodes", tree_sitter.nodes),
+            metric("tree_sitter_c_has_error", u64::from(tree_sitter.has_error)),
+        ]);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
@@ -290,36 +297,7 @@ impl BenchCase for CParserOnlyLinuxDriverPipeline {
                 bytes_touched: Some(
                     (prepared.source.len() as u64).saturating_add(output.len() as u64),
                 ),
-                custom: vec![
-                    MetricPoint {
-                        name: "c_parser_source_bytes".to_string(),
-                        value: summary.source_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_tokens".to_string(),
-                        value: summary.token_count as u64,
-                    },
-                    MetricPoint {
-                        name: "c_parser_ast_bytes".to_string(),
-                        value: summary.ast_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_function_record_bytes".to_string(),
-                        value: summary.function_record_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_call_record_bytes".to_string(),
-                        value: summary.call_record_bytes,
-                    },
-                    MetricPoint {
-                        name: "tree_sitter_c_ast_nodes".to_string(),
-                        value: tree_sitter.nodes,
-                    },
-                    MetricPoint {
-                        name: "tree_sitter_c_has_error".to_string(),
-                        value: u64::from(tree_sitter.has_error),
-                    },
-                ],
+                custom,
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
@@ -447,6 +425,21 @@ impl BenchCase for CParserSemaLinuxDriverCorpus100Pipeline {
         let tree_sitter_cold = time_tree_sitter_cold_baseline(&prepared.source)?;
         let vyre_cold_ns = backend_acquire_ns.saturating_add(wall_ns);
         let output = encode_parse_summary(summary);
+        let mut custom = vec![
+            metric("vyre_backend_acquire_ns", backend_acquire_ns),
+            metric("vyre_cold_wall_ns", vyre_cold_ns),
+            metric("tree_sitter_cold_wall_ns", tree_sitter_cold.wall_ns),
+        ];
+        custom.extend(parse_summary_metric_points(
+            &summary,
+            ParseSummaryMetricSurface::Full,
+        ));
+        custom.extend([
+            metric("tree_sitter_c_ast_nodes", tree_sitter.nodes),
+            metric("tree_sitter_c_has_error", u64::from(tree_sitter.has_error)),
+            tree_sitter_speedup_metric(baseline_ns, wall_ns),
+            tree_sitter_cold_speedup_metric(tree_sitter_cold.wall_ns, vyre_cold_ns),
+        ]);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
@@ -456,86 +449,7 @@ impl BenchCase for CParserSemaLinuxDriverCorpus100Pipeline {
                 bytes_touched: Some(
                     (prepared.source.len() as u64).saturating_add(output.len() as u64),
                 ),
-                custom: vec![
-                    MetricPoint {
-                        name: "c_parser_source_bytes".to_string(),
-                        value: summary.source_bytes,
-                    },
-                    MetricPoint {
-                        name: "vyre_backend_acquire_ns".to_string(),
-                        value: backend_acquire_ns,
-                    },
-                    MetricPoint {
-                        name: "vyre_cold_wall_ns".to_string(),
-                        value: vyre_cold_ns,
-                    },
-                    MetricPoint {
-                        name: "tree_sitter_cold_wall_ns".to_string(),
-                        value: tree_sitter_cold.wall_ns,
-                    },
-                    MetricPoint {
-                        name: "c_parser_tokens".to_string(),
-                        value: summary.token_count as u64,
-                    },
-                    MetricPoint {
-                        name: "c_parser_ast_bytes".to_string(),
-                        value: summary.ast_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_vast_bytes".to_string(),
-                        value: summary.vast_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_abi_layout_bytes".to_string(),
-                        value: summary.abi_layout_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_expression_shape_bytes".to_string(),
-                        value: summary.expression_shape_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_program_graph_bytes".to_string(),
-                        value: summary.program_graph_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_semantic_node_bytes".to_string(),
-                        value: summary.semantic_node_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_semantic_edge_bytes".to_string(),
-                        value: summary.semantic_edge_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_sema_scope_bytes".to_string(),
-                        value: summary.sema_scope_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_function_record_bytes".to_string(),
-                        value: summary.function_record_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_call_record_bytes".to_string(),
-                        value: summary.call_record_bytes,
-                    },
-                    MetricPoint {
-                        name: "c_parser_function_records".to_string(),
-                        value: summary.function_record_bytes / 12,
-                    },
-                    MetricPoint {
-                        name: "c_parser_call_records".to_string(),
-                        value: summary.call_record_bytes / 16,
-                    },
-                    MetricPoint {
-                        name: "tree_sitter_c_ast_nodes".to_string(),
-                        value: tree_sitter.nodes,
-                    },
-                    MetricPoint {
-                        name: "tree_sitter_c_has_error".to_string(),
-                        value: u64::from(tree_sitter.has_error),
-                    },
-                    tree_sitter_speedup_metric(baseline_ns, wall_ns),
-                    tree_sitter_cold_speedup_metric(tree_sitter_cold.wall_ns, vyre_cold_ns),
-                ],
+                custom,
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {

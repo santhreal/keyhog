@@ -3,9 +3,9 @@
 //! SPIR-V compute shaders for Vulkan are subject to per-device
 //! `VkPhysicalDeviceLimits`:
 //!
-//! - `maxComputeWorkGroupSize[3]` — per-dimension limit. Standard
+//! - `maxComputeWorkGroupSize[3]`  -  per-dimension limit. Standard
 //!   minimum is `[1024, 1024, 64]`; many drivers go higher.
-//! - `maxComputeWorkGroupInvocations` — total threads per workgroup
+//! - `maxComputeWorkGroupInvocations`  -  total threads per workgroup
 //!   (the product of the three dims). Standard minimum is `1024`.
 //!
 //! This pattern checks `desc.dispatch.workgroup_size` against the
@@ -21,7 +21,7 @@
 use serde::{Deserialize, Serialize};
 use vyre_lower::KernelDescriptor;
 
-/// Vulkan-baseline limits — every conformant Vulkan implementation
+/// Vulkan-baseline limits  -  every conformant Vulkan implementation
 /// must support at least these. Most desktop GPUs support
 /// considerably higher.
 pub const VULKAN_BASELINE: DeviceLimits = DeviceLimits {
@@ -33,7 +33,7 @@ pub const VULKAN_BASELINE: DeviceLimits = DeviceLimits {
 pub struct DeviceLimits {
     /// Per-dimension limit (X, Y, Z).
     pub max_workgroup_size_per_dim: [u32; 3],
-    /// Product limit — total threads per workgroup.
+    /// Product limit  -  total threads per workgroup.
     pub max_workgroup_invocations: u32,
 }
 
@@ -44,7 +44,7 @@ pub enum Violation {
     /// Product `workgroup_size[0] * [1] * [2]` exceeds
     /// `limits.max_workgroup_invocations`.
     InvocationsExceeded { actual: u32, limit: u32 },
-    /// One of the dims is zero — kernel would never run.
+    /// One of the dims is zero  -  kernel would never run.
     ZeroDim { axis: u8 },
 }
 
@@ -75,7 +75,7 @@ pub fn analyze(desc: &KernelDescriptor) -> ValidationReport {
 
 /// Validate against a custom device profile (use when targeting a
 /// specific GPU's known limits, e.g. NVIDIA RTX 4090's
-/// `[1024, 1024, 64]` and 1024 invocations — same as baseline).
+/// `[1024, 1024, 64]` and 1024 invocations  -  same as baseline).
 #[must_use]
 pub fn analyze_against(desc: &KernelDescriptor, limits: DeviceLimits) -> ValidationReport {
     let wg = desc.dispatch.workgroup_size;
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn product_over_1024_violates_invocations() {
-        // 32x32x2 = 2048 — within per-dim, over invocations.
+        // 32x32x2 = 2048  -  within per-dim, over invocations.
         let report = analyze(&empty_with_dispatch(Dispatch::new(32, 32, 2)));
         assert!(!report.ok());
         let has = report

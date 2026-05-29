@@ -4,7 +4,7 @@
 //! compute pipeline, and bind-group layout once so subsequent dispatch
 //! calls only pay buffer-allocation + execution + readback cost.
 //!
-//! Per the roadmap, this removes ~90% of per-call overhead — the WGSL
+//! Per the roadmap, this removes ~90% of per-call overhead  -  the WGSL
 //! lowering and pipeline compilation costs dominate over the actual GPU
 //! work for short programs run repeatedly.
 
@@ -14,11 +14,14 @@ use std::time::Instant;
 use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 use std::hash::BuildHasherDefault;
+use vyre_driver::launch::resolve_launch_workgroup_for_mode;
 #[cfg(test)]
 pub(crate) use vyre_driver::program_walks::enforce_actual_output_budget;
 pub(crate) use vyre_driver::program_walks::{element_size_bytes, OutputBindingLayout};
 use vyre_driver::program_walks::{find_indirect_dispatch, infer_dispatch_grid_for_count};
 pub use vyre_driver::program_walks::{output_layout_from_program, IndirectDispatch, OutputLayout};
+use vyre_driver::tuner::Mode;
+use vyre_driver::validation::LaunchGeometryLimits;
 use vyre_driver::BackendLayoutFingerprint;
 use vyre_driver::{BackendError, CompiledPipeline, DispatchConfig, OutputBuffers};
 use vyre_foundation::execution_plan::{self, ExecutionPlan};
@@ -33,7 +36,9 @@ use crate::pipeline::disk_cache::{
 };
 pub use crate::pipeline::persistent::DispatchItem;
 use crate::runtime;
+use crate::staging_reserve::reserve_backend_vec;
 use crate::DispatchArena;
+use vyre_driver::allocation::reserve_hash_set_to_capacity;
 use vyre_emit_naga::program::TrapTag;
 use vyre_lower::{TRAP_SIDECAR_NAME, TRAP_SIDECAR_WORDS};
 
@@ -53,7 +58,7 @@ pub(crate) type BindGroupLayoutCache = dashmap::DashMap<
 /// cache hits. A hit on [`early_pipeline_cache_key`] or the WGSL hash
 /// key must skip `execution_plan::plan`, output-layout derivation,
 /// and fresh [`StagingBufferPool::new`] (subagent: pipeline.rs compile
-/// path — 2026-04 orchestration sweep).
+/// path  -  2026-04 orchestration sweep).
 #[derive(Debug)]
 pub(crate) struct CachedPipelineArtifact {
     id: String,
@@ -126,6 +131,68 @@ fn checked_cache_cost_sum(parts: &[usize]) -> usize {
         });
     }
     total
+}
+
+fn wgpu_effective_dispatch_config(
+    program: &Program,
+    config: &DispatchConfig,
+    device: &wgpu::Device,
+) -> Result<DispatchConfig, BackendError> {
+    wgpu_effective_dispatch_config_for_limits(
+        program,
+        config,
+        wgpu_launch_limits(device),
+        Mode::from_env(),
+    )
+}
+
+fn wgpu_effective_dispatch_config_for_limits(
+    program: &Program,
+    config: &DispatchConfig,
+    limits: LaunchGeometryLimits,
+    mode: Mode,
+) -> Result<DispatchConfig, BackendError> {
+    let mut effective = config.clone();
+    if effective.workgroup_override.is_some() {
+        return Ok(effective);
+    }
+    let element_count = wgpu_launch_element_count_for_tuning(program)?;
+    let selected =
+        resolve_launch_workgroup_for_mode(program, &effective, limits, element_count, mode);
+    if selected != program.workgroup_size() {
+        effective.workgroup_override = Some(selected);
+    }
+    Ok(effective)
+}
+
+fn wgpu_launch_element_count_for_tuning(program: &Program) -> Result<u32, BackendError> {
+    if program.output_buffer_indices().is_empty() {
+        return Ok(0);
+    }
+    let layouts = vyre_driver::program_walks::output_binding_layouts(program)?;
+    let word_count = layouts
+        .first()
+        .map(|layout| layout.word_count)
+        .unwrap_or_default();
+    u32::try_from(word_count).map_err(|error| {
+        BackendError::new(format!(
+            "wgpu natural-gradient launch tuning cannot represent {word_count} output word(s) as u32: {error}. Fix: split the dispatch or provide an explicit workgroup/grid override."
+        ))
+    })
+}
+
+fn wgpu_launch_limits(device: &wgpu::Device) -> LaunchGeometryLimits {
+    let limits = device.limits();
+    LaunchGeometryLimits {
+        backend: "wgpu",
+        max_threads_per_block: limits.max_compute_invocations_per_workgroup,
+        max_block_dim: [
+            limits.max_compute_workgroup_size_x,
+            limits.max_compute_workgroup_size_y,
+            limits.max_compute_workgroup_size_z,
+        ],
+        max_grid_dim: [limits.max_compute_workgroups_per_dimension; 3],
+    }
 }
 
 /// In-memory pipeline cache (P-27 from `docs/audits/ROADMAP_PERFORMANCE.md`).
@@ -219,7 +286,7 @@ impl WgpuPipeline {
     /// keyed by the serialized IR + adapter fingerprint.
     ///
     /// Subsequent calls with the same Program on the same adapter skip
-    /// the ComputePipeline / BindGroupLayout creation entirely — the cache
+    /// the ComputePipeline / BindGroupLayout creation entirely  -  the cache
     /// returns the same `Arc<wgpu::ComputePipeline>` and the new
     /// `WgpuPipeline` instance just carries fresh metadata (output sizing).
     /// Per-Program metadata varies even when the WGSL doesn't, so it stays
@@ -284,6 +351,9 @@ impl WgpuPipeline {
         bind_group_layout_cache: Arc<BindGroupLayoutCache>,
     ) -> Result<Arc<Self>, BackendError> {
         let compile_program = program;
+        let effective_config =
+            wgpu_effective_dispatch_config(compile_program, config, &device_queue.0)?;
+        let config = &effective_config;
         // Cache-first: both keys are checked before `execution_plan::plan`
         // and before binding-metadata construction (orchestration sweep 2026-04).
         let early_key = early_pipeline_cache_key(compile_program, &adapter_info, config);
@@ -374,14 +444,32 @@ impl WgpuPipeline {
                 ))
             })?;
         let indirect = find_indirect_dispatch(compile_program)?;
-        let mut public_output_bindings =
-            FxHashSet::with_capacity_and_hasher(output_bindings.len(), Default::default());
+        let mut public_output_bindings = FxHashSet::default();
+        reserve_hash_set_to_capacity(
+            &mut public_output_bindings,
+            output_bindings.len(),
+            "WGPU pipeline binding classification",
+            "public output binding",
+            "split the pipeline or reduce output binding fanout before compilation",
+        )?;
         public_output_bindings.extend(output_bindings.iter().map(|output| output.binding));
         let buffers = program.buffers();
-        let mut explicit_output_bindings =
-            FxHashSet::with_capacity_and_hasher(buffers.len(), Default::default());
-        let mut pipeline_live_out_bindings =
-            FxHashSet::with_capacity_and_hasher(buffers.len(), Default::default());
+        let mut explicit_output_bindings = FxHashSet::default();
+        reserve_hash_set_to_capacity(
+            &mut explicit_output_bindings,
+            buffers.len(),
+            "WGPU pipeline binding classification",
+            "explicit output binding",
+            "split the pipeline or reduce output binding fanout before compilation",
+        )?;
+        let mut pipeline_live_out_bindings = FxHashSet::default();
+        reserve_hash_set_to_capacity(
+            &mut pipeline_live_out_bindings,
+            buffers.len(),
+            "WGPU pipeline binding classification",
+            "pipeline live-out binding",
+            "split the pipeline or reduce live-out binding fanout before compilation",
+        )?;
         for buffer in buffers {
             if buffer.is_output() {
                 explicit_output_bindings.insert(buffer.binding());
@@ -571,6 +659,7 @@ impl WgpuPipeline {
     }
 }
 
+
 impl WgpuPipeline {
     fn readback_persistent_outputs(
         &self,
@@ -579,14 +668,12 @@ impl WgpuPipeline {
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
         let (device, queue) = &*self.device_queue;
-        if outputs.len() < output_handles.len() {
-            if outputs.capacity() < output_handles.len() {
-                outputs.reserve_exact(output_handles.len() - outputs.capacity());
-            }
-            outputs.resize_with(output_handles.len(), Vec::new);
-        } else {
-            outputs.truncate(output_handles.len());
-        }
+        self::output_slots::resize_vec_with(
+            outputs,
+            output_handles.len(),
+            Vec::new,
+            "borrowed persistent output slots",
+        )?;
         for ((handle, output), bytes) in output_handles
             .iter()
             .zip(self.output_bindings.iter())
@@ -639,7 +726,8 @@ impl WgpuPipeline {
                     "trap sidecar byte length overflowed usize. Fix: keep TRAP_SIDECAR_WORDS within the host index ABI.",
                 )
             })?;
-        let mut bytes = Vec::with_capacity(trap_sidecar_bytes);
+        let mut bytes = Vec::new();
+        reserve_backend_vec(&mut bytes, trap_sidecar_bytes, "trap sidecar readback")?;
         handle.readback_prefix_until(
             device,
             Some(&self.staging_pool),
@@ -726,7 +814,7 @@ pub(crate) fn trap_error_from_sidecar(bytes: &[u8], trap_tags: &[TrapTag]) -> Op
 /// compound). Hosts the `usage_for_binding`, `validate_handle`, and
 /// `clear_outputs_for_bound` helpers all dispatch paths consume.
 pub(crate) mod binding;
-/// WGSL bind-group reflection scanner — extracts every
+/// WGSL bind-group reflection scanner  -  extracts every
 /// `(group, binding)` pair declared by lowered shader source so the
 /// reusable pipeline wrapper can mirror the layout exactly when
 /// creating bind groups. Misalignment is a validation error.
@@ -748,13 +836,15 @@ pub(crate) mod descriptor_metadata;
 /// `persist_compiled_pipeline_cache` to skip Naga + Tint + driver
 /// linkage for unchanged programs across `cargo test` cycles.
 pub(crate) mod disk_cache;
-/// Sibling of `disk_cache` — cache invalidation triggered by source
+/// Sibling of `disk_cache`  -  cache invalidation triggered by source
 /// edits, adapter changes, or feature-flag flips.
 #[path = "pipeline/disk_cache_invalidation.rs"]
 pub(crate) mod disk_cache_invalidation;
 /// Trimmed output readback. Owns the contract that `output_byte_range`
 /// transfers only meaningful bytes instead of whole output allocations.
 pub(crate) mod output_readback;
+/// Fallible output slot resizing shared by persistent and batched paths.
+pub(crate) mod output_slots;
 /// Persistent `Resource` to GPU-handle resolution and trap sidecar allocation.
 pub(crate) mod persistent_resources;
 // Tests for `disk_cache.rs` are declared *inside* `disk_cache.rs`
@@ -763,10 +853,11 @@ pub(crate) mod persistent_resources;
 // tests inside the disk_cache.rs body so the test file's `super::*`
 // resolved to disk_cache.rs's items; declaring it from the parent
 // `pipeline` module instead breaks 55 unresolved-name references.
-/// Persistent dispatch-item lifecycle (`DispatchItem`) — multi-call
+/// Persistent dispatch-item lifecycle (`DispatchItem`)  -  multi-call
 /// reuse of bind groups, staging pools, and pipeline handles across
 /// the same program-graph topology.
 pub mod persistent;
 
 #[cfg(test)]
 mod tests;
+

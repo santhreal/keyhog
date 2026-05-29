@@ -147,7 +147,7 @@ mod tests {
             index_bytes: 4,
             max_sparse_density_bps: 1_250,
         })
-        .expect("low-density bitset should plan");
+        .expect("Fix: low-density bitset should plan");
 
         assert_eq!(plan.encoding, BitsetCompressionEncoding::SparseIndices);
         assert_eq!(plan.dense_bytes, 1_024);
@@ -165,7 +165,7 @@ mod tests {
             index_bytes: 4,
             max_sparse_density_bps: 1_250,
         })
-        .expect("dense bitset should plan");
+        .expect("Fix: dense bitset should plan");
         assert_eq!(dense.encoding, BitsetCompressionEncoding::DenseWords);
         assert_eq!(dense.encoded_bytes, dense.dense_bytes);
 
@@ -175,7 +175,7 @@ mod tests {
             index_bytes: 32,
             max_sparse_density_bps: 2_000,
         })
-        .expect("expensive sparse bitset should plan");
+        .expect("Fix: expensive sparse bitset should plan");
         assert_eq!(
             expensive_sparse.encoding,
             BitsetCompressionEncoding::DenseWords

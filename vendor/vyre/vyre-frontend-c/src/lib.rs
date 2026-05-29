@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! `vyre-frontend-c` — GPU-first C compilation driver built on `vyre` and `vyre-libs`.
+//! `vyre-frontend-c`  -  GPU-first C compilation driver built on `vyre` and `vyre-libs`.
 //!
 //! **Implemented:** bounded include/macro/conditional TU preparation → lex → digraph rewrite →
 //! `opt_conditional_mask` → macro-token snapshot → `bracket_match` (paren + brace) → function shapes
@@ -17,6 +17,8 @@ pub mod api;
 pub mod elf_linux;
 mod gpu_backend;
 mod hash;
+/// Consumer-owned adapter for the GPU-resident C translation-unit workspace.
+pub mod megakernel_workspace;
 /// VYRECOB2 v3 object container: section table, header, and the readers/writers used by
 /// `vyrec` and the link step.
 pub mod object_format;
@@ -60,7 +62,7 @@ pub fn natural_gradient_step(
 ///
 /// P-CC-1: backward-pass synthesis through dagger functor. Reuses
 /// the substrate's functorial_pass_composition::apply_pass_functor as
-/// the dagger composition primitive — when invoked with a column
+/// the dagger composition primitive  -  when invoked with a column
 /// permutation that's a left-inverse of the forward mapping it
 /// produces the daggered transform.
 #[must_use]

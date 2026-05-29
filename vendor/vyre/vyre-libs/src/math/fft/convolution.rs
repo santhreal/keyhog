@@ -10,6 +10,7 @@ use std::sync::Arc;
 use vyre::ir::model::expr::GeneratorRef;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node, Program};
 
+use super::common::validate_complex_len;
 use super::fft_radix2_complex;
 use crate::region::wrap_anonymous;
 
@@ -46,12 +47,12 @@ pub fn fft_convolve_circular_complex(
         product_freq,
         output,
     ])?;
-    let elements = validate_len(n, "fft_convolve_circular_complex")?;
+    let elements = validate_complex_len(n, "fft_convolve_circular_complex")?;
 
     // Each `fft_radix2_complex` body emits Let bindings (`u_re_*`,
     // `u_im_*`, butterfly twiddles) at the body's outer scope. If we
     // flatten three of them into the same `entry` Vec they all
-    // collide — V032 catches the duplicate sibling let. Wrap each
+    // collide  -  V032 catches the duplicate sibling let. Wrap each
     // FFT body in its own Block so the bindings live in distinct
     // scopes and the outer entry only sees the Block (not its
     // internal Let nodes).
@@ -104,17 +105,6 @@ pub fn fft_convolve_circular_complex(
         vec![wrap_anonymous(OP_ID, entry)],
     )
     .with_entry_op_id(OP_ID))
-}
-
-fn validate_len(n: u32, op: &str) -> Result<u32, String> {
-    if n < 2 {
-        return Err(format!("Fix: {op} requires n >= 2; got n={n}."));
-    }
-    if !n.is_power_of_two() {
-        return Err(format!("Fix: {op} requires n a power of two; got n={n}."));
-    }
-    n.checked_mul(2)
-        .ok_or_else(|| format!("Fix: {op} 2*n overflows; reduce n."))
 }
 
 fn validate_names(names: &[&str]) -> Result<(), String> {
@@ -290,10 +280,7 @@ fn scale_conjugate_inverse_program() -> Program {
 }
 
 fn fixture_f32_bytes(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
+    vyre_primitives::wire::pack_f32_slice(values)
 }
 
 fn pointwise_complex_multiply_conjugate_inputs() -> Vec<Vec<Vec<u8>>> {
@@ -354,19 +341,13 @@ inventory::submit! {
             4,
         ).unwrap_or_else(|_| unreachable!("Fix: catalog fixture uses valid power-of-two buffers.")),
         test_inputs: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
             vec![vec![
-                f32_bytes(&[1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0]),
-                f32_bytes(&[1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                crate::test_support::byte_pack::f32_bytes(&[1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0]),
+                crate::test_support::byte_pack::f32_bytes(&[1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             ]]
         }),
         expected_output: Some(|| {
-            let f32_bytes = |w: &[f32]| {
-                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
-            };
-            vec![vec![f32_bytes(&[5.0, 0.0, 3.0, 0.0, 5.0, 0.0, 7.0, 0.0])]]
+            vec![vec![crate::test_support::byte_pack::f32_bytes(&[5.0, 0.0, 3.0, 0.0, 5.0, 0.0, 7.0, 0.0])]]
         }),
         category: Some("math"),
     }
@@ -375,11 +356,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
 
     fn decode(bytes: &[u8]) -> Vec<f32> {
         bytes
@@ -398,7 +376,7 @@ mod tests {
             "output",
             n,
         )
-        .expect("build");
+        .expect("Fix: build");
         let byte_len = (2 * n as usize) * 4;
         let outputs = vyre_reference::reference_eval(
             &prog,

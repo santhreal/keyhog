@@ -30,6 +30,13 @@ pub(super) struct PendingTimestampProfile {
     timestamp_period_ns: f32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TimestampProfile {
+    pub(super) dispatch_ns: u64,
+    pub(super) copy_ns: u64,
+    pub(super) gpu_total_ns: u64,
+}
+
 impl TimestampRecorder {
     pub(super) fn new(
         device: &wgpu::Device,
@@ -120,12 +127,12 @@ impl TimestampRecorder {
     }
 }
 
-pub(super) fn emit_timestamp_profile(
+pub(super) fn collect_timestamp_profile(
     profile: Option<PendingTimestampProfile>,
     deadline: Instant,
-) -> Result<(), BackendError> {
+) -> Result<Option<TimestampProfile>, BackendError> {
     let Some(profile) = profile else {
-        return Ok(());
+        return Ok(None);
     };
     let now = Instant::now();
     if now >= deadline {
@@ -194,7 +201,11 @@ pub(super) fn emit_timestamp_profile(
         timestamp_period_ns = profile.timestamp_period_ns,
         "wgpu dispatch timestamp profile"
     );
-    Ok(())
+    Ok(Some(TimestampProfile {
+        dispatch_ns,
+        copy_ns,
+        gpu_total_ns,
+    }))
 }
 
 fn timestamp_delta(end: u64, start: u64, label: &'static str) -> Result<u64, BackendError> {

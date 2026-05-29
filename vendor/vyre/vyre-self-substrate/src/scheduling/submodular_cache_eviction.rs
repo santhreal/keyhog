@@ -1,6 +1,6 @@
 //! Pipeline-cache eviction via #45 submodular maximization (#45 self-consumer).
 //!
-//! Closes the recursion thesis for #45 — submodular_greedy ships to
+//! Closes the recursion thesis for #45  -  submodular_greedy ships to
 //! user dialects (feature selection, sensor placement, summarization,
 //! coreset construction) AND drives vyre's compile-cache eviction
 //! policy.
@@ -10,7 +10,7 @@
 //! Vyre's backend pipeline caches can use LRU eviction: when the cache fills,
 //! drop the least-recently-
 //! used pipeline. LRU is fast and reasonable but provably suboptimal
-//! when access frequencies are skewed — a frequently-hit cold-edged
+//! when access frequencies are skewed  -  a frequently-hit cold-edged
 //! pipeline gets evicted because it sat for one extra second.
 //!
 //! Submodular maximization gives a provably-better bound. Reframe:
@@ -22,7 +22,7 @@
 //! (Mirzasoleiman 2015) gets close to that bound at GPU-friendly cost.
 //!
 //! For 0.6 we ship the per-step argmax-of-marginals primitive that
-//! the cache eviction policy will call once per fill — the K
+//! the cache eviction policy will call once per fill  -  the K
 //! consecutive argmax-of-marginals calls produce the K-element
 //! retention set; everything else is evicted.
 //!
@@ -32,7 +32,7 @@
 //! evicts ~30% of pipelines that should be retained on a workload
 //! with skewed temporal locality (typical for security scanning
 //! with hot-path/cold-path bimodal). Submodular eviction recovers
-//! most of those retained — measurable improvement in cache hit
+//! most of those retained  -  measurable improvement in cache hit
 //! rate at no per-eviction cost (the marginal-gain table is built
 //! incrementally).
 //!
@@ -56,8 +56,9 @@
 use crate::dispatch_buffers::{
     decode_u32_output_exact, ensure_input_slots, write_u32_slice_le_bytes, write_zero_bytes,
 };
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::math::submodular_greedy::argmax_of_marginals_cpu;
 use vyre_primitives::math::submodular_greedy::{argmax_of_marginals, NO_WINNER};
 
@@ -76,7 +77,7 @@ pub struct SubmodularEvictionGpuScratch {
 /// Returns a 0/1 vector of length n: 1 = retain, 0 = evict.
 ///
 /// The caller is responsible for updating the gains table to reflect
-/// diminishing returns — if pipelines i and j have correlated access
+/// diminishing returns  -  if pipelines i and j have correlated access
 /// patterns, picking i should reduce j's marginal gain. For a simple
 /// independent-access model the unmodified gains suffice; richer
 /// models pass an updated `gains` slice per step.
@@ -85,7 +86,7 @@ pub struct SubmodularEvictionGpuScratch {
 ///
 /// Panics if `gains.len() != n` or `k > n`.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn select_retention_set(gains: &mut [u32], n: u32, k: u32) -> Vec<u32> {
     let mut picked = Vec::with_capacity(n as usize);
     reference_select_retention_set_into(gains, n, k, &mut picked);
@@ -93,7 +94,7 @@ pub fn select_retention_set(gains: &mut [u32], n: u32, k: u32) -> Vec<u32> {
 }
 
 /// Compute the retention set into caller-owned storage.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_select_retention_set_into(
     gains: &mut [u32],
     n: u32,
@@ -245,7 +246,7 @@ pub fn invert_to_eviction_set(retention: &[u32]) -> Vec<u32> {
 /// Invert retention to eviction (1 = evict) into caller-owned storage.
 pub fn invert_to_eviction_set_into(retention: &[u32], eviction: &mut Vec<u32>) {
     eviction.clear();
-    eviction.reserve(retention.len());
+    reserve_vec_capacity_or_panic(eviction, retention.len(), "submodular eviction output");
     eviction.extend(retention.iter().map(|&r| if r == 0 { 1 } else { 0 }));
 }
 
@@ -279,8 +280,14 @@ mod tests {
                     inputs.len()
                 )));
             };
-            let gains = bytes_to_u32(gains_bytes)?;
-            let picked = bytes_to_u32(picked_bytes)?;
+            let gains = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+                gains_bytes,
+                "argmax test dispatcher",
+            )?;
+            let picked = crate::hardware::dispatch_buffers::decode_u32_input_aligned(
+                picked_bytes,
+                "argmax test dispatcher",
+            )?;
             let (winner_idx, winner_gain) = argmax_of_marginals_cpu(&gains, &picked);
             Ok(vec![
                 u32_slice_to_le_bytes(&[winner_idx]),
@@ -319,19 +326,6 @@ mod tests {
         }
     }
 
-    fn bytes_to_u32(bytes: &[u8]) -> Result<Vec<u32>, DispatchError> {
-        if bytes.len() % 4 != 0 {
-            return Err(DispatchError::BadInputs(format!(
-                "Fix: argmax test dispatcher input byte length must be u32-aligned, got {}.",
-                bytes.len()
-            )));
-        }
-        Ok(bytes
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect())
-    }
-
     #[test]
     fn picks_top_k_by_gain() {
         let mut gains = vec![3u32, 7, 2, 9, 5];
@@ -344,8 +338,8 @@ mod tests {
     fn via_picks_top_k_by_gain() {
         let dispatcher = ArgmaxDispatcher;
         let mut gains = vec![3u32, 7, 2, 9, 5];
-        let retention =
-            select_retention_set_via(&dispatcher, &mut gains, 5, 3).expect("dispatch succeeds");
+        let retention = select_retention_set_via(&dispatcher, &mut gains, 5, 3)
+            .expect("Fix: dispatch succeeds");
         assert_eq!(retention, vec![0, 1, 0, 1, 1]);
         assert_eq!(gains, vec![3, 0, 2, 0, 0]);
     }
@@ -422,10 +416,10 @@ mod tests {
         let via_section = source
             .split("pub fn select_retention_set_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("/// Convenience: invert retention to eviction")
             .next()
-            .expect("post-via marker should exist");
+            .expect("Fix: post-via marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_select"));
@@ -474,8 +468,8 @@ mod tests {
     fn k_larger_than_n_panics() {
         let mut gains = vec![1u32, 2, 3];
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            select_retention_set(&mut gains, 3, 5)
+            select_retention_set(&mut gains, 3, 5);
         }));
-        assert!(result.is_err(), "k > n must panic");
+        assert!(matches!(result, Err(_)), "k > n must panic");
     }
 }

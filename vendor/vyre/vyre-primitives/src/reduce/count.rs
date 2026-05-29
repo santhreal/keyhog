@@ -1,4 +1,4 @@
-//! `reduce_count` — population count over a packed bitset, written
+//! `reduce_count`  -  population count over a packed bitset, written
 //! as a single u32 into `out[0]`.
 
 use vyre_foundation::ir::Program;
@@ -27,11 +27,11 @@ inventory::submit! {
         OP_ID,
         || reduce_count("bitset", "out", 2),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0b1111, 0xFFFF_FFFF]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[36])]]
         }),
     )

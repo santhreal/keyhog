@@ -83,7 +83,7 @@ fn build_c11_full_ast_stage_with_scratch(
         &mut scratch.stmt_pairs,
         &mut scratch.statement_bounds,
     )?;
-    pack_u32_le_bytes_into(&scratch.stmt_pairs, &mut scratch.stmt_bytes);
+    vyre_primitives::wire::pack_u32_slice_into(&scratch.stmt_pairs, &mut scratch.stmt_bytes);
     log("dispatch c11_statement_bounds");
     if n_tokens > MAX_TOK_SCAN {
         return Err(format!(
@@ -161,12 +161,4 @@ fn build_c11_full_ast_stage_with_scratch(
         num_stmt,
         ast_capacity,
     })
-}
-
-fn pack_u32_le_bytes_into(words: &[u32], bytes: &mut Vec<u8>) {
-    bytes.clear();
-    bytes.reserve(words.len().saturating_mul(4));
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
 }

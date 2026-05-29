@@ -5,7 +5,7 @@ const ABS_DIFF_I32_MESSAGE: &str =
     "can overflow (i32::MIN - i32::MAX invokes target-text signed-integer UB). Fix: cast operands to U32 before AbsDiff, or rewrite as an explicit branch.";
 
 const NEGATE_I32_MESSAGE: &str =
-    "Fix: cast to U32 before Negate, or guard with Select(i32::MIN, 0, -x).";
+    "Fix: use `0 - x` for wrapping i32 negation, cast to U32 before Negate, or guard with Select(i32::MIN, 0, -x).";
 
 const SATURATING_MESSAGE: &str =
     "legal set is only U32 in the current lowering. Fix: cast both operands to U32, or clamp explicitly for I32/F32.";

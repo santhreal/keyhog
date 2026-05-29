@@ -1,4 +1,4 @@
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rustc_hash::FxHashSet as HashSet;
 use vyre::ir::{BufferAccess, Expr, Program};
 
 use crate::parsing::c::preprocess::expansion::opt_named_macro_expansion_materialized;

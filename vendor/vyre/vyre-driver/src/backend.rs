@@ -70,7 +70,8 @@ pub(crate) fn clone_borrowed_inputs_for_dispatch(
     field: &'static str,
 ) -> Result<smallvec::SmallVec<[Vec<u8>; 8]>, BackendError> {
     let mut owned = smallvec::SmallVec::<[Vec<u8>; 8]>::new();
-    owned.try_reserve(inputs.len()).map_err(|error| {
+    vyre_foundation::allocation::try_reserve_smallvec_to_capacity(&mut owned, inputs.len())
+        .map_err(|error| {
         BackendError::InvalidProgram {
             fix: format!(
                 "Fix: failed to reserve {field} for {} borrowed input buffer(s): {error}. Use a backend-native borrowed dispatch path or shard the dispatch.",
@@ -80,7 +81,8 @@ pub(crate) fn clone_borrowed_inputs_for_dispatch(
     })?;
     for (index, input) in inputs.iter().enumerate() {
         let mut cloned = Vec::new();
-        cloned.try_reserve_exact(input.len()).map_err(|error| {
+        crate::allocation::try_reserve_vec_to_capacity(&mut cloned, input.len()).map_err(
+            |error| {
             BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: failed to reserve {field} bytes for borrowed input {index} with length {}: {error}. Keep hot inputs resident on the GPU or shard the dispatch.",
@@ -94,12 +96,22 @@ pub(crate) fn clone_borrowed_inputs_for_dispatch(
     Ok(owned)
 }
 
-pub(crate) fn borrowed_input_slices<'a>(
+/// Borrow caller-owned input buffers as dispatch slices with checked SmallVec allocation.
+///
+/// Backend compiled-pipeline implementations use this at the `dispatch(Vec<u8>)`
+/// front door so every backend has the same allocation failure semantics before
+/// entering its native borrowed-input path.
+///
+/// # Errors
+/// Returns [`BackendError::InvalidProgram`] if reserving the slice-reference
+/// arena fails.
+pub fn borrowed_input_slices<'a>(
     inputs: &'a [Vec<u8>],
     field: &'static str,
 ) -> Result<smallvec::SmallVec<[&'a [u8]; 8]>, BackendError> {
     let mut borrowed = smallvec::SmallVec::<[&[u8]; 8]>::new();
-    borrowed.try_reserve(inputs.len()).map_err(|error| {
+    vyre_foundation::allocation::try_reserve_smallvec_to_capacity(&mut borrowed, inputs.len())
+        .map_err(|error| {
         BackendError::InvalidProgram {
             fix: format!(
                 "Fix: failed to reserve {field} for {} borrowed input slice(s): {error}. Reuse caller-owned borrowed slices or shard dispatch certification.",
@@ -111,21 +123,37 @@ pub(crate) fn borrowed_input_slices<'a>(
     Ok(borrowed)
 }
 
+#[cfg(test)]
+mod borrowed_input_slices_tests {
+    use super::*;
+
+    #[test]
+    fn borrowed_input_slices_reuses_caller_storage() {
+        let inputs = vec![vec![1u8, 2, 3], vec![4u8, 5]];
+        let borrowed = borrowed_input_slices(&inputs, "test borrowed input").unwrap();
+        assert_eq!(borrowed.len(), inputs.len());
+        assert_eq!(borrowed[0], inputs[0].as_slice());
+        assert_eq!(borrowed[1], inputs[1].as_slice());
+        assert_eq!(
+            borrowed[0].as_ptr(),
+            inputs[0].as_ptr(),
+            "compiled dispatch must borrow caller input storage instead of copying"
+        );
+    }
+}
+
 pub(crate) fn reserve_batch_output_slots(
     outputs: &mut Vec<OutputBuffers>,
     batch_len: usize,
     field: &'static str,
 ) -> Result<(), BackendError> {
-    if outputs.capacity() >= batch_len {
-        return Ok(());
-    }
-    outputs
-        .try_reserve_exact(batch_len - outputs.capacity())
-        .map_err(|error| BackendError::InvalidProgram {
+    crate::allocation::try_reserve_vec_to_capacity(outputs, batch_len).map_err(|error| {
+        BackendError::InvalidProgram {
             fix: format!(
                 "Fix: failed to reserve {field} for {batch_len} batch output slot(s): {error}. Split the batch before dispatch or use a backend-native batch path."
             ),
-        })
+        }
+    })
 }
 
 pub(crate) fn reserved_batch_output_slots(
@@ -156,15 +184,13 @@ pub(crate) fn resize_typed_output_slots<T>(
     output_len: usize,
     field: &'static str,
 ) -> Result<(), BackendError> {
-    if outputs.capacity() < output_len {
-        outputs
-            .try_reserve_exact(output_len - outputs.capacity())
-            .map_err(|error| BackendError::InvalidProgram {
-                fix: format!(
-                    "Fix: failed to reserve {field} for {output_len} typed output slot(s): {error}. Split the dispatch or decode into a caller-owned output arena."
-                ),
-            })?;
-    }
+    crate::allocation::try_reserve_vec_to_capacity(outputs, output_len).map_err(|error| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve {field} for {output_len} typed output slot(s): {error}. Split the dispatch or decode into a caller-owned output arena."
+            ),
+        }
+    })?;
     if outputs.len() < output_len {
         outputs.resize_with(output_len, Vec::new);
     } else {

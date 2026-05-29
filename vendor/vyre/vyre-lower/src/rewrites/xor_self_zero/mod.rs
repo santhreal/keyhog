@@ -1,4 +1,4 @@
-//! Self-XOR zeroing — `BitXor(x, x)` always evaluates to `0` (any
+//! Self-XOR zeroing  -  `BitXor(x, x)` always evaluates to `0` (any
 //! integer width). `BitXor` is integer-only in the descriptor IR so
 //! this rewrite is safe with no dtype tracking.
 //!
@@ -21,17 +21,19 @@
 //! Recurses. Idempotent. Wired immediately after `cmp_self_false` in
 //! `CANONICAL_REWRITE_PASSES`.
 
-use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
+use super::literal::ResultAllocator;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
 use vyre_foundation::ir::BinOp;
 
 #[must_use]
 pub fn xor_self_zero(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    out.body = xor_self_zero_body(out.body);
+    let mut allocator = ResultAllocator::for_body_tree(&out.body);
+    out.body = xor_self_zero_body(out.body, &mut allocator);
     out
 }
 
-fn xor_self_zero_body(mut body: KernelBody) -> KernelBody {
+fn xor_self_zero_body(mut body: KernelBody, allocator: &mut ResultAllocator) -> KernelBody {
     let mut rewrites: Vec<usize> = Vec::new();
     for (idx, op) in body.ops.iter().enumerate() {
         let bin = match &op.kind {
@@ -52,28 +54,12 @@ fn xor_self_zero_body(mut body: KernelBody) -> KernelBody {
         body.child_bodies = body
             .child_bodies
             .into_iter()
-            .map(xor_self_zero_body)
+            .map(|child| xor_self_zero_body(child, allocator))
             .collect();
         return body;
     }
 
-    let mut next_id: u32 = body
-        .ops
-        .iter()
-        .filter_map(|o| o.result)
-        .max()
-        .map(|m| m + 1)
-        .unwrap_or(0);
-
-    let pool_idx = push_lit(&mut body.literals, LiteralValue::U32(0));
-    let synth_id = next_id;
-    next_id += 1;
-    body.ops.push(KernelOp {
-        kind: KernelOpKind::Literal,
-        operands: vec![pool_idx],
-        result: Some(synth_id),
-    });
-    let _ = next_id;
+    let synth_id = allocator.push_literal(&mut body.ops, &mut body.literals, LiteralValue::U32(0));
 
     for op_idx in rewrites {
         body.ops[op_idx].kind = KernelOpKind::Copy;
@@ -83,18 +69,9 @@ fn xor_self_zero_body(mut body: KernelBody) -> KernelBody {
     body.child_bodies = body
         .child_bodies
         .into_iter()
-        .map(xor_self_zero_body)
+        .map(|child| xor_self_zero_body(child, allocator))
         .collect();
     body
-}
-
-fn push_lit(literals: &mut Vec<LiteralValue>, value: LiteralValue) -> u32 {
-    if let Some(idx) = literals.iter().position(|lit| lit == &value) {
-        return idx as u32;
-    }
-    let idx = literals.len() as u32;
-    literals.push(value);
-    idx
 }
 
 #[cfg(test)]
@@ -173,7 +150,7 @@ mod tests {
 
     #[test]
     fn other_self_binops_left_alone() {
-        // Sub(x, x) is intentionally not handled — float NaN.
+        // Sub(x, x) is intentionally not handled  -  float NaN.
         let mut body = empty_body();
         nonliteral_source(&mut body, 0);
         binop(&mut body, BinOp::Sub, 0, 0, 1);

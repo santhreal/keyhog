@@ -1,4 +1,4 @@
-//! `bitset_any` — emit 1 when any bit in the packed bitset is set.
+//! `bitset_any`  -  emit 1 when any bit in the packed bitset is set.
 //!
 //! Single-lane Program driven by invocation 0: scans every word,
 //! ORs them, writes a boolean (0 or 1) to `out[0]`. Used by source-query dialect
@@ -17,7 +17,7 @@ pub const OP_ID: &str = "vyre-primitives::bitset::any";
 /// AUDIT_2026-04-24 F-ANY-01: the inner loop short-circuits once a
 /// non-zero word is observed (tracked via `found` flag). The IR has
 /// no `break`, so the cheapest escape is to gate the load+or body on
-/// `found == 0` — subsequent iterations become empty bodies and the
+/// `found == 0`  -  subsequent iterations become empty bodies and the
 /// scan cost degrades to O(first_nonzero_word) instead of O(words).
 /// Bitsets are typically sparse (e.g. taint frontiers with one or
 /// two set bits) so the average cut is large.
@@ -88,11 +88,11 @@ inventory::submit! {
         OP_ID,
         || bitset_any("input", "out", 2),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0, 1]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1])]]
         }),
     )
@@ -112,23 +112,12 @@ mod tests {
         assert_eq!(cpu_ref(&[0, 0]), 0);
     }
 
-    /// GPU parity tests for bitset_any — exercise every word boundary
+    /// GPU parity tests for bitset_any  -  exercise every word boundary
     /// to expose the word-1+ bitset read bug.
     mod gpu_tests {
         use super::*;
         use vyre_driver::DispatchConfig;
         use vyre_driver_cuda::CudaBackend;
-
-        fn u32_bytes(values: &[u32]) -> Vec<u8> {
-            values.iter().flat_map(|v| v.to_le_bytes()).collect()
-        }
-
-        fn bytes_to_u32(bytes: &[u8]) -> Vec<u32> {
-            bytes
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect()
-        }
 
         fn run_gpu_any_with_backend(backend: &CudaBackend, input: &[u32]) -> u32 {
             let words = input.len() as u32;
@@ -136,7 +125,10 @@ mod tests {
             let outputs = backend
                 .dispatch(
                     &program,
-                    &[u32_bytes(input), u32_bytes(&[0])],
+                    &[
+                        crate::wire::pack_u32_slice(input),
+                        crate::wire::pack_u32_slice(&[0]),
+                    ],
                     &DispatchConfig::default(),
                 )
                 .expect(
@@ -149,7 +141,7 @@ mod tests {
                 "Fix: bitset_any must return exactly one output buffer, got {}.",
                 outputs.len()
             );
-            let result = bytes_to_u32(&outputs[0]);
+            let result = crate::wire::decode_u32_le_bytes_all(&outputs[0]);
             assert_eq!(
                 result.len(),
                 1,

@@ -31,7 +31,7 @@ pub trait IncludeLoader {
 /// Output of the driver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreprocessedSource {
-    /// Concatenated active bytes — line-spliced, comment-stripped,
+    /// Concatenated active bytes  -  line-spliced, comment-stripped,
     /// conditional-masked, include-expanded. Macro expansion is
     /// deliberately NOT performed here (mirrors the v0.4
     /// `prepare_resident_translation_unit_source` contract).

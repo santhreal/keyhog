@@ -16,7 +16,7 @@
 //! - X and M have no shared back-door path.
 //! - The Y ↔ M back-door is blocked by X.
 //!
-//! This file ships the **back-door predicate primitive** — given a
+//! This file ships the **back-door predicate primitive**  -  given a
 //! candidate set encoded as a bitmask, returns whether it satisfies
 //! the back-door criterion for `(X, Y)` on the supplied adjacency.
 //! The expensive operation is path-blocking enumeration; we delegate
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn cpu_empty_descendants_never_violates() {
-        // X has no descendants — any Z is allowed by this rule.
+        // X has no descendants  -  any Z is allowed by this rule.
         let z = vec![1, 1, 1, 1];
         let d = vec![0, 0, 0, 0];
         assert!(!backdoor_descendants_check_cpu(&z, &d));

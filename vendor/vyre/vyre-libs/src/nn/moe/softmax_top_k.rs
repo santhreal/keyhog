@@ -3,6 +3,10 @@
 //! Computes `softmax(scores)` and returns the top-k indices + normalized weights
 //! in a single dispatch, eliminating the separate softmax + top-k round-trip.
 
+use super::topk_selection::{
+    copy_top_k_indices_and_normalized_weights, init_top_k_slots, insert_top_k_candidate, BEST_IDXS,
+    BEST_VALS,
+};
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
@@ -25,21 +29,16 @@ pub fn softmax_top_k(
     n: u32,
     k: u32,
 ) -> Program {
-    let mut body = vec![];
-
-    // best_vals and best_idxs for top-k tracking
-    for slot in 0..k {
-        body.push(Node::Store {
-            buffer: "best_vals".into(),
-            index: Expr::u32(slot),
-            value: Expr::f32(f32::NEG_INFINITY),
-        });
-        body.push(Node::Store {
-            buffer: "best_idxs".into(),
-            index: Expr::u32(slot),
-            value: Expr::u32(0),
-        });
+    if k == 0 {
+        return crate::builder::invalid_output_program(
+            "vyre-libs::nn::softmax_top_k",
+            out_indices,
+            DataType::U32,
+            "Fix: softmax_top_k requires k > 0 so the selection scratch has at least one slot."
+                .to_string(),
+        );
     }
+    let mut body = init_top_k_slots(k);
 
     // max_val = max(scores)
     body.push(Node::let_bind("max_val", Expr::f32(f32::NEG_INFINITY)));
@@ -73,90 +72,28 @@ pub fn softmax_top_k(
             ),
             Node::assign("sum", Expr::add(Expr::var("sum"), Expr::var("exp_val"))),
             // Top-k insertion on exp_val
-            Node::let_bind("insert_pos", Expr::u32(k)),
-            Node::loop_for(
-                "j",
-                Expr::u32(0),
-                Expr::u32(k),
-                vec![Node::if_then(
-                    Expr::and(
-                        Expr::eq(Expr::var("insert_pos"), Expr::u32(k)),
-                        Expr::gt(
-                            Expr::var("exp_val"),
-                            Expr::load("best_vals", Expr::var("j")),
-                        ),
-                    ),
-                    vec![Node::assign("insert_pos", Expr::var("j"))],
-                )],
-            ),
-            Node::if_then(
-                Expr::lt(Expr::var("insert_pos"), Expr::u32(k)),
-                vec![
-                    Node::loop_for(
-                        "shift_j",
-                        Expr::u32(0),
-                        Expr::u32(k),
-                        vec![
-                            Node::let_bind(
-                                "rev",
-                                Expr::sub(Expr::u32(k - 1), Expr::var("shift_j")),
-                            ),
-                            Node::if_then(
-                                Expr::and(
-                                    Expr::ge(Expr::var("rev"), Expr::var("insert_pos")),
-                                    Expr::lt(Expr::var("rev"), Expr::u32(k - 1)),
-                                ),
-                                vec![
-                                    Node::Store {
-                                        buffer: "best_vals".into(),
-                                        index: Expr::add(Expr::var("rev"), Expr::u32(1)),
-                                        value: Expr::load("best_vals", Expr::var("rev")),
-                                    },
-                                    Node::Store {
-                                        buffer: "best_idxs".into(),
-                                        index: Expr::add(Expr::var("rev"), Expr::u32(1)),
-                                        value: Expr::load("best_idxs", Expr::var("rev")),
-                                    },
-                                ],
-                            ),
-                        ],
-                    ),
-                    Node::Store {
-                        buffer: "best_vals".into(),
-                        index: Expr::var("insert_pos"),
-                        value: Expr::var("exp_val"),
-                    },
-                    Node::Store {
-                        buffer: "best_idxs".into(),
-                        index: Expr::var("insert_pos"),
-                        value: Expr::var("i"),
-                    },
-                ],
-            ),
+            Node::Block(insert_top_k_candidate(
+                k,
+                Expr::var("exp_val"),
+                Expr::var("i"),
+            )),
         ],
     ));
 
-    // Normalize top-k weights: best_vals[j] / sum
-    for slot in 0..k {
-        body.push(Node::Store {
-            buffer: out_weights.into(),
-            index: Expr::u32(slot),
-            value: Expr::div(Expr::load("best_vals", Expr::u32(slot)), Expr::var("sum")),
-        });
-        body.push(Node::Store {
-            buffer: out_indices.into(),
-            index: Expr::u32(slot),
-            value: Expr::load("best_idxs", Expr::u32(slot)),
-        });
-    }
+    body.extend(copy_top_k_indices_and_normalized_weights(
+        out_indices,
+        out_weights,
+        k,
+        Expr::var("sum"),
+    ));
 
     Program::wrapped(
         vec![
             BufferDecl::storage(scores, 0, BufferAccess::ReadOnly, DataType::F32).with_count(n),
             BufferDecl::output(out_indices, 1, DataType::U32).with_count(k),
             BufferDecl::read_write(out_weights, 2, DataType::F32).with_count(k),
-            BufferDecl::read_write("best_vals", 3, DataType::F32).with_count(k),
-            BufferDecl::read_write("best_idxs", 4, DataType::U32).with_count(k),
+            BufferDecl::read_write(BEST_VALS, 3, DataType::F32).with_count(k),
+            BufferDecl::read_write(BEST_IDXS, 4, DataType::U32).with_count(k),
         ],
         [1, 1, 1],
         vec![wrap_anonymous("vyre-libs::nn::softmax_top_k", body)],
@@ -164,24 +101,17 @@ pub fn softmax_top_k(
 }
 
 fn fixture_f32_bytes(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_bits().to_le_bytes())
-        .collect()
+    vyre_primitives::wire::pack_f32_slice(values)
 }
 
 fn fixture_u32_bytes(values: &[u32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
+    vyre_primitives::wire::pack_u32_slice(values)
 }
 
 fn softmax_top_k_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     let scores: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     vec![vec![
         fixture_f32_bytes(&scores),
-        vec![0u8; 4 * 2],
         vec![0u8; 4 * 2],
         vec![0u8; 4 * 2],
         vec![0u8; 4 * 2],
@@ -208,36 +138,26 @@ fn softmax_top_k_fixture_expected() -> Vec<Vec<Vec<u8>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
 
-    fn f32_bytes(words: &[f32]) -> Vec<u8> {
-        words.iter().flat_map(|w| w.to_le_bytes()).collect()
-    }
-
     fn u32_from_bytes(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect()
+        vyre_primitives::wire::decode_u32_le_bytes_all(bytes)
     }
 
     fn f32_from_bytes(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect()
+        vyre_primitives::wire::decode_f32_le_bytes_all(bytes)
     }
 
     #[test]
     fn softmax_top_k_basic() {
-        // scores = [1.0, 2.0, 3.0] — softmax ≈ [0.090, 0.245, 0.665]
+        // scores = [1.0, 2.0, 3.0]  -  softmax ≈ [0.090, 0.245, 0.665]
         let scores = vec![1.0f32, 2.0, 3.0];
         let program = softmax_top_k("scores", "indices", "weights", 3, 2);
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
                 Value::from(f32_bytes(&scores)),
-                Value::from(vec![0u8; 2 * 4]),
                 Value::from(vec![0u8; 2 * 4]),
                 Value::from(vec![0u8; 2 * 4]),
                 Value::from(vec![0u8; 2 * 4]),
@@ -272,7 +192,6 @@ mod tests {
             &program,
             &[
                 Value::from(f32_bytes(&scores)),
-                Value::from(vec![0u8; 3 * 4]),
                 Value::from(vec![0u8; 3 * 4]),
                 Value::from(vec![0u8; 3 * 4]),
                 Value::from(vec![0u8; 3 * 4]),

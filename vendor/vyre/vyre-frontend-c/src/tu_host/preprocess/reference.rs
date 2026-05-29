@@ -132,6 +132,7 @@ pub fn reference_expand_preprocessor_macros(source: &str) -> String {
     out
 }
 
+#[cfg(test)]
 mod recursion_tests {
     use super::*;
 

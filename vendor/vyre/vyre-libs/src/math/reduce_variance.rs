@@ -307,13 +307,13 @@ inventory::submit! {
         id: "vyre-libs::math::reduce_variance",
         build: || reduce_variance("input", "output", 256),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[2.0_f32; 256]), // input
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![to_bytes(&[0.0_f32])]]
         }),
         category: Some("math"),
@@ -323,18 +323,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32_one as decode_one;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_one(bytes: &[u8]) -> f32 {
-        f32::from_le_bytes(bytes[0..4].try_into().unwrap())
-    }
 
     #[test]
     fn tiled_reduce_variance_matches_scalar_reference_across_multiple_tiles() {

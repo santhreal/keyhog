@@ -130,7 +130,7 @@ impl Node {
     /// Effectively-infinite loop used by persistent kernels (megakernel,
     /// event loops, streaming). Lowers to `Node::Loop` with
     /// `from: 0, to: u32::MAX`. At 1 µs per iteration `u32::MAX` is ~68
-    /// years — for all practical purposes infinite. The inner body
+    /// years  -  for all practical purposes infinite. The inner body
     /// drives termination via `Node::Return` or by observing an
     /// atomic shutdown flag the host sets.
     ///
@@ -211,7 +211,7 @@ impl Node {
     /// Represented as a named [`Node::Region`] whose `generator` is
     /// the callee's op id and whose body is an internal sequence of
     /// `Node::Let { name: "arg{i}", value: <arg_expr> }` bindings.
-    /// Every backend already handles `Node::Region` — the op-registry
+    /// Every backend already handles `Node::Region`  -  the op-registry
     /// inliner walks the arg binds, substitutes them into the callee's
     /// fragment, and splices the result in place. No new IR variant
     /// is introduced, and the arg values remain fully visible to CSE,

@@ -12,10 +12,12 @@ pub mod common;
 pub mod compare;
 /// docs
 pub mod hash;
+mod indexed_reference_impls;
 /// docs
 pub mod memory;
 /// docs
 pub mod scan;
+mod scalar_reference_impls;
 /// docs
 pub mod workgroup;
 pub use common::{EvalError, ReferenceEvaluator};

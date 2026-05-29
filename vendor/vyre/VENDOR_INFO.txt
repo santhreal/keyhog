@@ -1,11 +1,11 @@
 upstream:    /media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre
-ref:         cc0c480d14
-commit:      cc0c480d14ae50b0c847fba8837ccf3ebe41ef9f
-short:       cc0c480d14
-date:        2026-05-21 20:49:19 -0700
-subject:     vyre-libs(classic_ac): add use_subgroup_coalesce selector for CUDA compat
-subdirs:     vyre-aot vyre-bench vyre-core vyre-debug vyre-driver vyre-driver-cuda vyre-driver-reference vyre-driver-spirv vyre-driver-wgpu vyre-emit-naga vyre-emit-ptx vyre-emit-spirv vyre-foundation vyre-frontend-c vyre-harness vyre-intrinsics vyre-libs vyre-lints vyre-lower vyre-macros vyre-primitives vyre-reference vyre-runtime vyre-self-substrate vyre-spec
-vendored_at: 2026-05-23T03:08:53Z
+ref:         HEAD
+commit:      9f078696830e5d2f3aa9bb9c432117482f31da55
+short:       9f07869683
+date:        2026-05-29 09:31:50 +0000
+subject:     borrowck: detect illegal-subset (region-outlives) errors - escape/lifetime borrow errors
+subdirs:     vyre-aot vyre-bench vyre-core vyre-debug vyre-driver vyre-driver-cuda vyre-driver-reference vyre-driver-spirv vyre-driver-wgpu vyre-emit-naga vyre-emit-ptx vyre-emit-spirv vyre-foundation vyre-frontend-c vyre-frontend-rust vyre-harness vyre-intrinsics vyre-libs vyre-lints vyre-lower vyre-macros vyre-primitives vyre-reference vyre-runtime vyre-self-substrate vyre-spec
+vendored_at: 2026-05-29T09:49:40Z
 script:      scripts/vendor-vyre.sh
 
 NOTE: only vyre-* subdirectories are managed by this script. Any

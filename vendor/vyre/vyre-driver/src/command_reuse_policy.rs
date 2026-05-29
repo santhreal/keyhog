@@ -31,7 +31,7 @@ pub struct CommandReuseInputs {
 /// Verdict from [`decide_command_reuse`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandReuseDecision {
-    /// Use plain dispatch — repeat count too low to amortise the
+    /// Use plain dispatch  -  repeat count too low to amortise the
     /// command-record cost.
     PlainLaunches,
     /// Record once, replay `repeat_count - 1` more times. Includes

@@ -1,13 +1,13 @@
 //! Heterophilic dispatch-graph analysis via #31 sheaf diffusion (#31 self-consumer).
 //!
-//! Closes the recursion thesis for #31 — sheaf neural networks
+//! Closes the recursion thesis for #31  -  sheaf neural networks
 //! ship to user dialects (heterophilic graph learning, social
 //! networks, code call graphs) AND directly model vyre's own
 //! dispatch graph, where compute-bound, memory-bound, and
 //! control-flow nodes have fundamentally different "feature spaces"
 //! that GNN-style isotropic diffusion can't capture.
 //!
-//! # The legendary self-use
+//! # The release self-use
 //!
 //! Vyre's dispatch graph is heterophilic by construction:
 //!
@@ -18,7 +18,7 @@
 //! - **Control-flow nodes** (If, Loop) have features
 //!   {branch divergence, predicate cost, scheduling fence count}.
 //!
-//! These three feature spaces are NOT comparable — flops/sec is
+//! These three feature spaces are NOT comparable  -  flops/sec is
 //! not the same kind of thing as bytes/sec. Standard GNN
 //! homophilic diffusion would average across these heterogeneous
 //! kinds and produce nonsense.
@@ -31,7 +31,7 @@
 //!
 //! For vyre, sheaf diffusion on the dispatch graph PREDICTS where
 //! fusion will fail: nodes whose stalks diverge under sheaf
-//! diffusion are nodes whose feature spaces don't align — fusing
+//! diffusion are nodes whose feature spaces don't align  -  fusing
 //! them requires a costly conversion shim.
 //!
 //! # Algorithm
@@ -39,7 +39,7 @@
 //! ```text
 //! 1. assign each Region a stalk vector in its node-type's feature
 //!    space
-//! 2. compute the restriction diagonal — how strongly each Region
+//! 2. compute the restriction diagonal  -  how strongly each Region
 //!    "transmits" features to neighbors (high = compatible types,
 //!    low = type-mismatch)
 //! 3. one or more sheaf_diffusion_step iterations
@@ -50,7 +50,7 @@
 //! # Why this matters
 //!
 //! Today vyre's fusion analyzer treats the dispatch graph as
-//! homogeneous — every Region looks the same to the scheduler.
+//! homogeneous  -  every Region looks the same to the scheduler.
 //! Sheaf-diffusion-driven fusion analysis is the FIRST GPU
 //! substrate to model dispatch graphs as the heterophilic
 //! structures they actually are. Paradigm shift, not optimization.
@@ -59,9 +59,10 @@ use crate::dispatch_buffers::{
     ceil_div_u32, checked_product_count, decode_u32_output_exact, ensure_input_slots,
     write_u32_slice_le_bytes, write_zero_bytes,
 };
+use crate::hardware::scratch::reserve_vec_capacity_or_panic;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::graph::sheaf::sheaf_diffusion_step;
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::graph::sheaf::{sheaf_diffusion_step_cpu, sheaf_diffusion_step_cpu_into};
 
 /// Caller-owned dispatch scratch for fixed-point sheaf diffusion.
@@ -79,7 +80,7 @@ pub struct SheafDispatchGpuScratch {
 ///
 /// Returns the diffused stalks.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_diffuse_dispatch_stalks(
     stalks: &[f64],
     restriction_diag: &[f64],
@@ -93,7 +94,7 @@ pub fn reference_diffuse_dispatch_stalks(
 /// Apply one sheaf-diffusion step into caller-owned storage.
 ///
 /// Clears `out` and reuses its allocation.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_diffuse_dispatch_stalks_into(
     stalks: &[f64],
     restriction_diag: &[f64],
@@ -323,7 +324,7 @@ pub fn flag_fusion_incompatible_into(
     out: &mut Vec<u32>,
 ) {
     out.clear();
-    out.reserve(initial_stalks.len());
+    reserve_vec_capacity_or_panic(out, initial_stalks.len(), "sheaf incompatibility output");
     initial_stalks
         .iter()
         .zip(diffused_stalks.iter())
@@ -415,9 +416,9 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 4);
-            let stalks = read_u32s(&inputs[0]);
-            let restrictions = read_u32s(&inputs[1]);
-            let damping = read_u32s(&inputs[2])[0];
+            let stalks = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let restrictions = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+            let damping = crate::hardware::dispatch_buffers::read_u32s(&inputs[2])[0];
             assert_eq!(inputs[3].len(), stalks.len() * std::mem::size_of::<u32>());
             let out: Vec<u32> = stalks
                 .iter()
@@ -447,6 +448,7 @@ mod tests {
         .unwrap();
         assert_eq!(out, vec![5 * one, 10 * one]);
     }
+
 
     #[test]
     fn fixed_via_rejects_shape_mismatch() {
@@ -500,19 +502,13 @@ mod tests {
         let via_section = source
             .split("pub fn diffuse_dispatch_stalks_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[must_use]\n#[cfg(test)]\npub fn diffuse_to_equilibrium")
             .next()
-            .expect("test-only equilibrium marker should exist");
+            .expect("Fix: test-only equilibrium marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_diffuse"));
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

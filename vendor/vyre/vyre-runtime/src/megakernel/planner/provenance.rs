@@ -105,16 +105,11 @@ fn reserve_u32_staging(
     capacity: usize,
     label: &'static str,
 ) -> Result<(), BackendError> {
-    if values.capacity() < capacity {
-        values
-            .try_reserve_exact(capacity - values.capacity())
-            .map_err(|source| {
-                BackendError::new(format!(
-                    "megakernel {label} reservation failed for {capacity} u32 cell(s): {source}. Fix: shard the work queue before provenance closure."
-                ))
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(values, capacity).map_err(|source| {
+        BackendError::new(format!(
+            "megakernel {label} reservation failed for {capacity} u32 cell(s): {source}. Fix: shard the work queue before provenance closure."
+        ))
+    })
 }
 
 #[cfg(feature = "self-substrate-adapters")]

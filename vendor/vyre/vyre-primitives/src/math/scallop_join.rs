@@ -1,15 +1,15 @@
-//! `scallop_join` — Scallop-style probabilistic Datalog join, GPU-resident.
+//! `scallop_join`  -  Scallop-style probabilistic Datalog join, GPU-resident.
 //!
 //! Compiles one round of Datalog fixpoint into ONE GPU dispatch by
 //! composing two existing primitives:
 //!
 //! 1. [`crate::math::semiring_gemm::semiring_gemm`](crate::math::semiring_gemm::semiring_gemm) under the
-//!    [`crate::math::semiring_gemm::Semiring::Lineage`] choice — one round of relational join with
+//!    [`crate::math::semiring_gemm::Semiring::Lineage`] choice  -  one round of relational join with
 //!    provenance accumulation. The output cell `C[i,j]` is the bitset
 //!    union of clauses participating in any `i ⇝ j` derivation
 //!    through one join step.
 //! 2. [`persistent_fixpoint`](crate::fixpoint::persistent_fixpoint::persistent_fixpoint)
-//!    — runs the join to convergence inside a single dispatch with
+//!     -  runs the join to convergence inside a single dispatch with
 //!    GPU-resident ping-pong + scalar `changed` convergence flag. Zero
 //!    host round-trips.
 //!
@@ -21,13 +21,13 @@
 //!
 //! Datalog fixpoint converges when no new fact is derived. Under the
 //! Lineage semiring that means no clause-bitset OR'd into any cell
-//! flips a 0 bit to 1 — the canonical convergence signal `next ==
+//! flips a 0 bit to 1  -  the canonical convergence signal `next ==
 //! current` per word. `persistent_fixpoint` already does this check;
 //! `scallop_join` just packages the (transfer = semiring_gemm Lineage,
 //! convergence = persistent_fixpoint) pairing so callers don't have to
 //! re-derive that the Lineage semiring's monotonic OR-accumulator
 //! makes it safe inside `persistent_fixpoint`'s ping-pong. Other
-//! semirings would NOT be safe — `MinPlus` accumulators decrease
+//! semirings would NOT be safe  -  `MinPlus` accumulators decrease
 //! over iterations, which the equality check would treat as
 //! "changed = 1" indefinitely until the absolute minimum settles. So
 //! the recursion-thesis-clean wrapper is the contract:
@@ -40,7 +40,7 @@
 //! - **User dialect consumer**: probabilistic Datalog programs (Scallop
 //!   programs compile each rule body to one `scallop_join`). Substrate
 //!   for neuro-symbolic reasoning systems.
-//! - **vyre-self consumer**: rule-provenance tracking for frontend / any
+//! - **vyre-self consumer**: rule-provenance tracking for external analyzer / any
 //!   substrate that needs to ask "which input rule produced this output
 //!   finding?" The answer is a Datalog query over (rule_id, derives,
 //!   finding_id), and `scallop_join` is the GPU-resident execution.
@@ -152,7 +152,7 @@ pub fn scallop_join(
     let transfer = semiring_gemm(state, join_rules, next, n, n, n, Semiring::Lineage);
     let mut transfer_body: Vec<Node> = transfer.entry().to_vec();
 
-    // n*n cells, each one u32 — one "word" per cell for ping-pong.
+    // n*n cells, each one u32  -  one "word" per cell for ping-pong.
     let words = n.checked_mul(n).unwrap_or_else(|| {
         panic!(
             "scallop_join n={n} overflows relation matrix word count. Fix: shard the relation matrix before GPU dispatch."
@@ -164,7 +164,7 @@ pub fn scallop_join(
     // by itself REPLACES (next = gemm(state, join_rules)), losing the
     // seed facts. Append a per-cell `next[t] |= state[t]` step so
     // persistent_fixpoint's ping-pong copy preserves the seed facts
-    // alongside the newly-derived ones — matching cpu_ref_into.
+    // alongside the newly-derived ones  -  matching cpu_ref_into.
     let t = Expr::InvocationId { axis: 0 };
     transfer_body.push(Node::if_then(
         Expr::lt(t.clone(), Expr::u32(words)),
@@ -229,7 +229,7 @@ pub fn scallop_join(
 /// The Datalog fixpoint is monotone under Lineage (combine + accumulate
 /// are both OR-of-bitset, which only sets bits, never clears them), so
 /// it converges in at most `n^2` iterations. The `max_iterations` cap
-/// is a defensive safety bound — a non-monotone caller (which would be
+/// is a defensive safety bound  -  a non-monotone caller (which would be
 /// a contract violation) is detected and reported as the iteration
 /// count returning the cap itself.
 ///
@@ -320,7 +320,7 @@ inventory::submit! {
             // Seed: state[0,1] = clause-bit 0 (a derives b directly).
             // join: join_rules[1,1] = clause-bit 1 (b derives b through itself, transitively).
             // After one round: state[0,1] |= join_rules[1,1] applied through k=1 → bits 0 + 1.
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0b01, 0, 0]),
                 to_bytes(&[0, 0, 0, 0]),
@@ -329,7 +329,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0, 0b11, 0, 0]), // state
                 to_bytes(&[0, 0b11, 0, 0]), // next
@@ -359,7 +359,7 @@ mod tests {
             0b10,
             "Lineage of clause 1 must propagate to state[0,1] after one round"
         );
-        // bit 0 (the seed) must persist — Datalog never retracts facts.
+        // bit 0 (the seed) must persist  -  Datalog never retracts facts.
         assert_eq!(
             final_state[1] & 0b01,
             0b01,
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn cpu_ref_zero_absorbing_no_phantom_lineage() {
-        // Edge present with empty clause set vs no edge — Lineage
+        // Edge present with empty clause set vs no edge  -  Lineage
         // combine is zero-absorbing, so an empty cell × any
         // join-rule cell stays zero (no spurious lineage).
         let state = vec![0u32; 4]; // no facts

@@ -346,16 +346,16 @@ mod tests {
             match inputs.len() {
                 2 => {
                     assert_eq!(grid_override, Some([1, 1, 1]));
-                    let eigenvalues = read_u32s(&inputs[0]);
-                    let edge = read_u32s(&inputs[1])[0];
+                    let eigenvalues = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+                    let edge = crate::hardware::dispatch_buffers::read_u32s(&inputs[1])[0];
                     let clipped: Vec<u32> = eigenvalues.into_iter().map(|v| v.min(edge)).collect();
                     Ok(vec![u32_slice_to_le_bytes(&clipped)])
                 }
                 3 => {
                     assert_eq!(grid_override, Some([1, 1, 1]));
-                    let laplacian = read_u32s(&inputs[0]);
-                    let signal = read_u32s(&inputs[1]);
-                    let coeffs = read_u32s(&inputs[2]);
+                    let laplacian = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+                    let signal = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+                    let coeffs = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
                     assert_eq!(laplacian, vec![1, 0, 0, 1]);
                     assert_eq!(coeffs, vec![1]);
                     Ok(vec![u32_slice_to_le_bytes(&signal)])
@@ -434,20 +434,13 @@ mod tests {
         let via_section = source
             .split("pub fn fusion_scores_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[cfg(test)]\nmod tests")
             .next()
-            .expect("test module marker should exist");
+            .expect("Fix: test module marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_fusion_scores"));
         assert!(!via_section.contains("reference_shape_spectrum"));
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 }

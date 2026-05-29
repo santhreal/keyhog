@@ -1,10 +1,9 @@
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap as HashMap;
 
+use crate::parsing::c::preprocess::gpu_pipeline::lru_index::LruIndex;
 use crate::parsing::c::preprocess::gpu_pipeline::IncludeByteCacheStats;
 use crate::parsing::c::preprocess::gpu_pipeline::IncludeLoader;
 
@@ -32,9 +31,8 @@ struct IncludeFileCacheEntry {
 
 pub(super) struct IncludeFileCache {
     entries: HashMap<IncludeFileCacheKey, IncludeFileCacheEntry>,
-    lru: BinaryHeap<Reverse<IncludeFileCacheLruEntry>>,
+    lru: LruIndex<IncludeFileCacheKey>,
     clock: u64,
-    lru_serial: u64,
     retained_bytes: usize,
     max_entries: usize,
     max_bytes: usize,
@@ -58,9 +56,8 @@ impl IncludeFileCache {
     fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
         Self {
             entries: HashMap::default(),
-            lru: BinaryHeap::new(),
+            lru: LruIndex::with_capacity(max_entries),
             clock: 0,
-            lru_serial: 0,
             retained_bytes: 0,
             max_entries,
             max_bytes,
@@ -151,18 +148,14 @@ impl IncludeFileCache {
 
     fn evict_to_limits(&mut self) {
         while self.entries.len() > self.max_entries || self.retained_bytes > self.max_bytes {
-            let Some(Reverse(candidate)) = self.lru.pop() else {
+            let Some(evict_key) = self.lru.pop_valid(|key, last_used| {
+                self.entries
+                    .get(key)
+                    .is_some_and(|entry| entry.last_used == last_used)
+            }) else {
                 break;
             };
-            let should_evict = self
-                .entries
-                .get(&candidate.key)
-                .map(|entry| entry.last_used == candidate.last_used)
-                .unwrap_or(false);
-            if !should_evict {
-                continue;
-            }
-            if let Some(entry) = self.entries.remove(&candidate.key) {
+            if let Some(entry) = self.entries.remove(&evict_key) {
                 self.retained_bytes = self.retained_bytes.saturating_sub(entry.retained_bytes);
                 self.evictions = self.evictions.saturating_add(1);
             }
@@ -170,64 +163,22 @@ impl IncludeFileCache {
     }
 
     fn record_lru(&mut self, key: IncludeFileCacheKey, last_used: u64) {
-        self.lru_serial = self.lru_serial.saturating_add(1);
-        self.lru.push(Reverse(IncludeFileCacheLruEntry {
-            last_used,
-            serial: self.lru_serial,
-            key,
-        }));
+        self.lru.record(key, last_used);
         self.compact_lru_if_needed();
     }
 
     fn compact_lru_if_needed(&mut self) {
-        if self.lru.len() <= self.entries.len().saturating_mul(4).saturating_add(32) {
-            return;
-        }
-        let mut live = BinaryHeap::with_capacity(self.entries.len());
-        self.lru_serial = 0;
-        for (key, entry) in &self.entries {
-            self.lru_serial = self.lru_serial.saturating_add(1);
-            live.push(Reverse(IncludeFileCacheLruEntry {
-                last_used: entry.last_used,
-                serial: self.lru_serial,
-                key: key.clone(),
-            }));
-        }
-        self.lru = live;
+        self.lru.compact_if_needed(
+            self.entries.len(),
+            self.entries
+                .iter()
+                .map(|(key, entry)| (key.clone(), entry.last_used)),
+        );
     }
 
     #[cfg(test)]
     fn lru_len_for_tests(&self) -> usize {
         self.lru.len()
-    }
-}
-
-#[derive(Clone, Debug)]
-struct IncludeFileCacheLruEntry {
-    last_used: u64,
-    serial: u64,
-    key: IncludeFileCacheKey,
-}
-
-impl PartialEq for IncludeFileCacheLruEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.last_used == other.last_used && self.serial == other.serial
-    }
-}
-
-impl Eq for IncludeFileCacheLruEntry {}
-
-impl Ord for IncludeFileCacheLruEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.last_used
-            .cmp(&other.last_used)
-            .then_with(|| self.serial.cmp(&other.serial))
-    }
-}
-
-impl PartialOrd for IncludeFileCacheLruEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -304,11 +255,11 @@ mod tests {
 
         assert!(cache
             .resolve(&loader, Path::new("<tu>"), b"a.h", false, false)
-            .expect("resolve a")
+            .expect("Fix: resolve a")
             .is_some());
         assert!(cache
             .resolve(&loader, Path::new("<tu>"), b"b.h", false, false)
-            .expect("resolve b")
+            .expect("Fix: resolve b")
             .is_some());
 
         let stats = cache.stats();
@@ -324,7 +275,7 @@ mod tests {
 
         assert!(cache
             .resolve(&loader, Path::new("<tu>"), b"huge.h", false, false)
-            .expect("resolve huge")
+            .expect("Fix: resolve huge")
             .is_some());
 
         let stats = cache.stats();
@@ -340,12 +291,12 @@ mod tests {
 
         assert!(cache
             .resolve(&loader, Path::new("<tu>"), b"hot.h", false, false)
-            .expect("resolve hot")
+            .expect("Fix: resolve hot")
             .is_some());
         for _ in 0..160 {
             assert!(cache
                 .resolve(&loader, Path::new("<tu>"), b"hot.h", false, false)
-                .expect("resolve cached hot")
+                .expect("Fix: resolve cached hot")
                 .is_some());
         }
 

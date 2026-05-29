@@ -14,7 +14,7 @@
 //!
 //! The actual rewrite (split one binding into N component bindings,
 //! re-route every load through the matching component) is phase 2 and
-//! is invasive — it changes the kernel's binding signature, so the
+//! is invasive  -  it changes the kernel's binding signature, so the
 //! host dispatcher needs to be updated too. Phase 1 surfaces the
 //! candidates so the optimizer can decide whether to invoke the
 //! rewrite.

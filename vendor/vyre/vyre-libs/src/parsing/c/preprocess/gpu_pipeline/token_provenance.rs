@@ -59,3 +59,17 @@ use replacement_tokens::*;
 use span_dedupe::SpanDedupe;
 use spelling_origin::macro_spelling_origin;
 use token_columns::{token_len, token_start};
+
+fn reserve_token_provenance_events(
+    token_provenance_events: &mut Vec<TokenProvenanceEvent>,
+    additional: usize,
+    label: &'static str,
+) -> Result<(), String> {
+    token_provenance_events
+        .try_reserve_exact(additional)
+        .map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {additional} token provenance events for {label}: {error:?}. Fix: shard preprocessing before provenance export."
+            )
+        })
+}

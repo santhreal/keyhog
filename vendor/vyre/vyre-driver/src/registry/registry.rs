@@ -104,7 +104,7 @@ impl<'de> Deserialize<'de> for Target {
     }
 }
 
-/// Process-wide dialect registry — lock-free dispatch, supports hot-reloading.
+/// Process-wide dialect registry  -  lock-free dispatch, supports hot-reloading.
 ///
 /// # Contract
 ///
@@ -115,7 +115,7 @@ impl<'de> Deserialize<'de> for Target {
 /// After initialization:
 /// - `lookup` uses `ArcSwap::load` yielding a lock-free `Guard`.
 ///   It's one atomic load + one hash + one table probe. Zero locking.
-/// - `get_lowering` likewise evaluates lock-free — sub-ns.
+/// - `get_lowering` likewise evaluates lock-free  -  sub-ns.
 ///
 /// Runtime registration (hot reload, TOML loader) is actively supported by
 /// this struct. Updates swap out the underlying `Arc<DialectRegistry>`, letting
@@ -216,9 +216,9 @@ impl DialectRegistry {
                 panic!(
                     "dialect registry op-definition count overflowed usize. Fix: split registry initialization."
                 )
-            });
+        });
         let mut defs = Vec::new();
-        defs.try_reserve_exact(total_defs).unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut defs, total_defs).unwrap_or_else(|error| {
             panic!(
                 "dialect registry could not reserve {total_defs} op definition slot(s): {error}. Fix: reduce linked op inventory or split registry initialization."
             )
@@ -238,7 +238,7 @@ impl DialectRegistry {
     fn extern_defs() -> Vec<OpDef> {
         let dialect_count = inventory::iter::<ExternDialect>().count();
         let mut dialects = Vec::new();
-        dialects.try_reserve_exact(dialect_count).unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut dialects, dialect_count).unwrap_or_else(|error| {
             panic!(
                 "extern dialect registry could not reserve {dialect_count} dialect slot(s): {error}. Fix: reduce linked extern dialect inventory or split registry initialization."
             )
@@ -248,7 +248,7 @@ impl DialectRegistry {
 
         let op_count = inventory::iter::<ExternOp>().count();
         let mut ops = Vec::new();
-        ops.try_reserve_exact(op_count).unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut ops, op_count).unwrap_or_else(|error| {
             panic!(
                 "extern op registry could not reserve {op_count} op slot(s): {error}. Fix: reduce linked extern op inventory or split registry initialization."
             )
@@ -272,7 +272,7 @@ impl DialectRegistry {
         }
 
         let mut known = FxHashSet::default();
-        known.try_reserve(dialects.len()).unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_hash_set_to_capacity(&mut known, dialects.len()).unwrap_or_else(|error| {
             panic!(
                 "extern dialect registry could not reserve {} known dialect name slot(s): {error}. Fix: reduce linked extern dialect inventory or split registry initialization.",
                 dialects.len()
@@ -281,7 +281,7 @@ impl DialectRegistry {
         known.extend(dialects.into_iter().map(|dialect| dialect.name));
 
         let mut defs = Vec::new();
-        defs.try_reserve_exact(ops.len()).unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut defs, ops.len()).unwrap_or_else(|error| {
             panic!(
                 "extern op registry could not reserve {} filtered op definition slot(s): {error}. Fix: reduce linked extern op inventory or split registry initialization.",
                 ops.len()
@@ -304,7 +304,7 @@ impl DialectRegistry {
         let defs = defs.into_iter();
         let (lower_bound, _) = defs.size_hint();
         let mut by_id: FxHashMap<InternedOpId, &'static OpDef> = FxHashMap::default();
-        by_id.try_reserve(lower_bound).unwrap_or_else(|error| {
+        vyre_foundation::allocation::try_reserve_hash_map_to_capacity(&mut by_id, lower_bound).unwrap_or_else(|error| {
             panic!(
                 "dialect registry could not reserve {lower_bound} frozen op lookup slot(s): {error}. Fix: reduce linked op inventory or split registry initialization."
             )
@@ -448,6 +448,7 @@ mod tests {
 
     #[test]
     fn from_inventory_ingests_extern_ops() {
+
         let _lock = registry_test_lock();
         let registry = DialectRegistry::from_inventory();
         let op_id = "vyre-libs-driver-registry-test::dummy";
@@ -464,7 +465,7 @@ mod tests {
         let _lock = registry_test_lock();
         // FrozenIndex is lock-free by construction: after init, the map is
         // immutable and every read is a plain hash probe. This test confirms
-        // concurrent reads produce consistent results — not a lock-contention
+        // concurrent reads produce consistent results  -  not a lock-contention
         // test (there is no lock).
         use std::sync::Arc;
         use std::thread;
@@ -556,3 +557,4 @@ mod tests {
         DialectRegistry::install(DialectRegistry::from_inventory());
     }
 }
+

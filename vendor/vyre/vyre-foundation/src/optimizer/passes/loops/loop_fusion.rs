@@ -1,4 +1,4 @@
-//! ROADMAP A26 — fuse adjacent `Node::Loop` siblings whose bounds
+//! ROADMAP A26  -  fuse adjacent `Node::Loop` siblings whose bounds
 //! match and whose bodies touch disjoint buffer sets.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_fusion`.
@@ -34,7 +34,7 @@
 //!
 //! - Bounds must be `Expr::LitU32` and structurally equal.
 //! - Only adjacent siblings inside the same container body.
-//! - Buffer sets must be disjoint — any shared buffer would need an
+//! - Buffer sets must be disjoint  -  any shared buffer would need an
 //!   alias / cross-iteration-dependency proof we do not have without
 //!   the downstream dataflow analysis.
 //! - The second loop's body is rewritten so every `Expr::Var(j)`
@@ -130,7 +130,7 @@ fn fuse_in_body(body: Vec<Node>, changed: &mut bool) -> Vec<Node> {
             || !buffers_disjoint(&body_a, &body_b)
             || body_a_let_names_collide_with_b(&body_a, &body_b, &var_b)
         {
-            // Cannot fuse — emit the first loop, push the second back
+            // Cannot fuse  -  emit the first loop, push the second back
             // for the next iteration to consider against its successor.
             out.push(Node::Loop {
                 var: var_a,
@@ -246,6 +246,13 @@ fn collect_touched_buffers(nodes: &[Node], out: &mut FxHashSet<Ident>) {
                 out.insert(count_buffer.clone());
             }
             Node::Trap { address, .. } => collect_buffers_in_expr(address, out),
+            Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+                out.insert(buffer.clone());
+            }
+            Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+                out.insert(input.clone());
+                out.insert(output.clone());
+            }
             Node::Barrier { .. }
             | Node::Return
             | Node::Resume { .. }
@@ -499,6 +506,7 @@ fn rename_var_in_node(node: Node, from: &Ident, to: &Ident) -> Node {
         other => other,
     }
 }
+
 
 fn rename_var_in_expr(expr: Expr, from: &Ident, to: &Ident) -> Expr {
     match expr {
@@ -780,7 +788,7 @@ mod tests {
 
     #[test]
     fn does_not_fuse_when_body_b_reads_a_let_bound_in_body_a() {
-        // body_a binds "tmp"; body_b reads "tmp" — fusing would
+        // body_a binds "tmp"; body_b reads "tmp"  -  fusing would
         // change resolution because body_b has no access to body_a's
         // scope across iterations.
         let entry = vec![
@@ -840,3 +848,4 @@ mod tests {
         );
     }
 }
+

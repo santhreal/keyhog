@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn const_fold_skips_when_one_operand_not_literal() {
-        // tid + 5 — tid is not a literal, so nothing to fold.
+        // tid + 5  -  tid is not a literal, so nothing to fold.
         let desc = KernelDescriptor {
             id: "no_fold".into(),
             bindings: BindingLayout { slots: vec![] },
@@ -376,7 +376,7 @@ mod tests {
             },
         };
         let out = descriptor_const_fold(&desc);
-        // NaN refused — Min op stays.
+        // NaN refused  -  Min op stays.
         assert!(matches!(
             out.body.ops[2].kind,
             KernelOpKind::BinOpKind(BinOp::Min)
@@ -412,7 +412,7 @@ mod tests {
             },
         };
         let out = descriptor_const_fold(&desc);
-        // 1.0 / 0.0 = inf — div by 0 prevents fold.
+        // 1.0 / 0.0 = inf  -  div by 0 prevents fold.
         assert!(matches!(
             out.body.ops[2].kind,
             KernelOpKind::BinOpKind(BinOp::Div)
@@ -448,6 +448,7 @@ mod tests {
                     literals: vec![LiteralValue::Bool(a), LiteralValue::Bool(b)],
                 },
             };
+
             let out = descriptor_const_fold(&desc);
             let pool_idx = out.body.ops[2].operands[0] as usize;
             assert_eq!(out.body.literals[pool_idx], LiteralValue::Bool(expected));
@@ -548,7 +549,7 @@ mod tests {
 
     #[test]
     fn const_fold_unop_type_mismatch_not_folded() {
-        // Negate on a Bool — no semantics; must not fold.
+        // Negate on a Bool  -  no semantics; must not fold.
         let folded = folded_value(&unop_kernel(UnOp::Negate, LiteralValue::Bool(true)));
         assert!(folded.is_none());
     }
@@ -722,7 +723,7 @@ mod tests {
 
     #[test]
     fn const_fold_wrapping_add_sub_u32() {
-        // 0xFFFFFFFF + 1 wraps to 0 — same result as Add (already
+        // 0xFFFFFFFF + 1 wraps to 0  -  same result as Add (already
         // wraps), but the WrappingAdd variant carries different
         // semantic intent.
         let out = descriptor_const_fold(&fold_kernel(BinOp::WrappingAdd, 0xFFFF_FFFF, 1));
@@ -820,7 +821,7 @@ mod tests {
             },
         };
         let out = descriptor_const_fold(&desc);
-        // Stays as Eq — NaN refused.
+        // Stays as Eq  -  NaN refused.
         assert!(matches!(
             out.body.ops[2].kind,
             KernelOpKind::BinOpKind(BinOp::Eq)
@@ -898,15 +899,16 @@ mod tests {
                 ],
             },
         };
+
         let out = crate::rewrites::run_all(&desc);
         // Final store value must reference the literal pool entry holding
-        // U32(7) — the then branch was selected.
+        // U32(7)  -  the then branch was selected.
         let store = out
             .body
             .ops
             .iter()
             .find(|o| matches!(o.kind, KernelOpKind::StoreGlobal))
-            .expect("store survived");
+            .expect("Fix: store survived");
         let val_id = store.operands[2];
         // Find the producer of val_id; it must be a Literal of U32(7).
         let producer = out
@@ -914,7 +916,7 @@ mod tests {
             .ops
             .iter()
             .find(|o| o.result == Some(val_id))
-            .expect("producer of val");
+            .expect("Fix: producer of val");
         assert!(matches!(producer.kind, KernelOpKind::Literal));
         let pool_idx = producer.operands[0] as usize;
         assert_eq!(out.body.literals[pool_idx], LiteralValue::U32(7));
@@ -1014,7 +1016,7 @@ mod tests {
 
     #[test]
     fn const_fold_fma_skips_when_one_operand_not_literal() {
-        // Fma(tid, lit, lit) — tid not a literal.
+        // Fma(tid, lit, lit)  -  tid not a literal.
         let desc = KernelDescriptor {
             id: "fma_tid".into(),
             bindings: BindingLayout { slots: vec![] },
@@ -1123,3 +1125,4 @@ mod tests {
         ));
     }
 }
+

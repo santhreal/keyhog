@@ -3,6 +3,7 @@
 pub mod and;
 /// docs
 pub mod clz;
+pub(crate) mod common;
 #[path = "not/mod.rs"]
 /// docs
 pub mod not;

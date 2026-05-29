@@ -1,4 +1,4 @@
-//! `whitespace_classify_word` — word-at-a-time whitespace classification
+//! `whitespace_classify_word`  -  word-at-a-time whitespace classification
 //! emitting a per-word bitmap of "is-whitespace" lanes.
 //!
 //! Op id: `vyre-primitives::parsing::whitespace_classify_word`. Soundness:
@@ -12,7 +12,7 @@
 //! Every structural parser (simdjson-style JSON, CSV, HTTP header, protobuf
 //! text-format, INI, YAML) starts with a whitespace-skip pass that compresses
 //! N input bytes down to N/k structural bytes. The bottleneck on GPU is the
-//! per-byte branch — naive `if (c == ' ' || c == '\t' || ...) skip` collapses
+//! per-byte branch  -  naive `if (c == ' ' || c == '\t' || ...) skip` collapses
 //! warp efficiency the moment the input has mixed structure.
 //!
 //! The fix is the simdjson trick: load a whole word (4 bytes per u32 here),
@@ -25,14 +25,14 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `bytes_in` — packed u32 stream where each u32 holds 4 little-endian
+//!   - `bytes_in`  -  packed u32 stream where each u32 holds 4 little-endian
 //!     bytes (byte 0 in bits 0..7, byte 1 in 8..15, etc). The host is
 //!     responsible for padding the final word with non-whitespace bytes
 //!     (0xFF is canonical) so the classifier doesn't emit spurious skip
 //!     bits past the actual end-of-input.
 //!
 //! Outputs:
-//!   - `whitespace_mask_out` — one u32 per input word. Low 4 bits are the
+//!   - `whitespace_mask_out`  -  one u32 per input word. Low 4 bits are the
 //!     per-lane "is-whitespace" mask: bit 0 = byte 0, bit 1 = byte 1, etc.
 //!     The high 28 bits are zero and remain available to wider-lane
 //!     variants.
@@ -40,7 +40,7 @@
 //! ## Why the bitmask and not a per-byte branch
 //!
 //! Per-byte branches force the warp into 4-way divergence on every word.
-//! The bitmask approach uses pure arithmetic — no branches, every lane
+//! The bitmask approach uses pure arithmetic  -  no branches, every lane
 //! does the same work, GPU throughput stays at peak.
 
 use std::sync::Arc;
@@ -221,8 +221,9 @@ pub const fn is_structural_whitespace(byte: u8) -> bool {
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_whitespace_classify_word(words_in: &[u32]) -> Vec<u32> {
-    let mut out = Vec::with_capacity(words_in.len());
-    reference_whitespace_classify_word_into(words_in, &mut out);
+    let mut out = Vec::new();
+    try_reference_whitespace_classify_word_into(words_in, &mut out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - whitespace word-classifier reference allocation failed");
     out
 }
 
@@ -231,8 +232,26 @@ pub fn reference_whitespace_classify_word(words_in: &[u32]) -> Vec<u32> {
 /// Clears `out`, then reuses its capacity.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_whitespace_classify_word_into(words_in: &[u32], out: &mut Vec<u32>) {
+    try_reference_whitespace_classify_word_into(words_in, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - whitespace word-classifier reference allocation failed");
+}
+
+/// Fallible reference oracle into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_reference_whitespace_classify_word_into(
+    words_in: &[u32],
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    if words_in.len() > out.capacity() {
+        out.try_reserve_exact(words_in.len() - out.capacity())
+            .map_err(|err| {
+                format!(
+                    "whitespace word-classifier reference could not reserve {} output words: {err}",
+                    words_in.len()
+                )
+            })?;
+    }
     out.clear();
-    out.reserve(words_in.len());
     for word in words_in {
         let bytes = [
             (*word & 0xFF) as u8,
@@ -248,6 +267,7 @@ pub fn reference_whitespace_classify_word_into(words_in: &[u32], out: &mut Vec<u
         }
         out.push(mask);
     }
+    Ok(())
 }
 
 /// Pack 4 bytes into one little-endian u32 word. Helper for tests +
@@ -263,8 +283,21 @@ inventory::submit! {
     crate::harness::OpEntry::new(
         OP_ID,
         || whitespace_classify_word(256),
-        None,
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            let mut words = vec![0x78787878; 256];
+            words[0] = 0x20 | (0x09 << 8) | (0x78 << 16) | (0x0A << 24);
+            vec![vec![
+                to_bytes(&words),                // bytes_in
+                to_bytes(&[0; 256]),             // whitespace_mask_out
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            let mut expected = vec![0; 256];
+            expected[0] = 11;
+            vec![vec![to_bytes(&expected)]]
+        }),
     )
 }
 
@@ -276,6 +309,22 @@ mod tests {
     fn classify_all_non_whitespace_emits_zero_mask() {
         let words = vec![pack_bytes_le(b'a', b'b', b'c', b'd')];
         assert_eq!(reference_whitespace_classify_word(&words), vec![0]);
+    }
+
+    #[test]
+    fn classify_into_reuses_output_and_clears_stale_tail() {
+        let words = [
+            pack_bytes_le(b' ', b'\t', b'x', b'\n'),
+            pack_bytes_le(b'a', b'b', b'c', b'd'),
+        ];
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[u32::MAX; 8]);
+        let ptr = out.as_ptr();
+
+        try_reference_whitespace_classify_word_into(&words, &mut out).unwrap();
+
+        assert_eq!(out, vec![0b1011, 0]);
+        assert_eq!(out.as_ptr(), ptr);
     }
 
     #[test]
@@ -311,7 +360,7 @@ mod tests {
     #[test]
     fn classify_rejects_close_byte_values_that_are_not_whitespace() {
         // 0x21 (just past SP), 0x08 (just before TAB), 0x0B (between LF and
-        // CR), 0x0E (just past CR) — all NOT whitespace by the structural
+        // CR), 0x0E (just past CR)  -  all NOT whitespace by the structural
         // parser definition.
         let words = vec![pack_bytes_le(0x21, 0x08, 0x0B, 0x0E)];
         assert_eq!(
@@ -323,7 +372,7 @@ mod tests {
 
     #[test]
     fn classify_does_not_match_unicode_whitespace() {
-        // U+00A0 (non-breaking space), U+2003 (em space) — NOT in the
+        // U+00A0 (non-breaking space), U+2003 (em space)  -  NOT in the
         // structural-parser set. Adjusting that set is a wire-format-visible
         // change and this test enforces the contract.
         let words = vec![pack_bytes_le(0xA0, 0xC2, 0xE2, 0x80)];
@@ -354,7 +403,7 @@ mod tests {
 
     #[test]
     fn classify_does_not_set_high_bits() {
-        // High 28 bits MUST be zero — they're reserved for lane widening.
+        // High 28 bits MUST be zero  -  they're reserved for lane widening.
         // Adjusting this is a wire-format-visible change.
         let words = vec![pack_bytes_le(b' ', b' ', b' ', b' ')];
         let masks = reference_whitespace_classify_word(&words);

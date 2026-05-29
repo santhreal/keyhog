@@ -7,7 +7,7 @@
 use crate::ir::Expr;
 
 /// Algebraic simplifications of unary operators that don't require
-/// the operand to be a literal — these are always valid rewrites.
+/// the operand to be a literal  -  these are always valid rewrites.
 #[expect(
     clippy::too_many_lines,
     clippy::match_same_arms,
@@ -77,7 +77,7 @@ pub(super) fn simplify_unop(op: &crate::ir::UnOp, operand: &Expr) -> Option<Expr
         (UnOp::Abs, Expr::UnOp { op: UnOp::Abs, .. }) => Some(operand.clone()),
 
         // ─── Idempotent float operations ─────────────────────
-        // Applying these twice is the same as once — each
+        // Applying these twice is the same as once  -  each
         // elimination removes a GPU transcendental instruction.
         (
             UnOp::Floor,
@@ -125,7 +125,7 @@ pub(super) fn simplify_unop(op: &crate::ir::UnOp, operand: &Expr) -> Option<Expr
 
         // ─── Sqrt/InverseSqrt cancellation ───────────────────
         // InverseSqrt(InverseSqrt(x)) is not identity, but
-        // Sqrt(Sqrt(x)) is x^(1/4) — no simplification.
+        // Sqrt(Sqrt(x)) is x^(1/4)  -  no simplification.
         // However: InverseSqrt of a literal 1.0 → 1.0
         (UnOp::InverseSqrt, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(1.0)),
         (UnOp::Reciprocal, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(1.0)),

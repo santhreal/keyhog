@@ -65,7 +65,7 @@ fn hash_binding_layout(layout: &BindingLayout) -> u64 {
         slot.element_count.hash(&mut hasher);
         slot.memory_class.hash(&mut hasher);
         slot.visibility.hash(&mut hasher);
-        // Note: `name` is NOT hashed — names are caller-friendly debug
+        // Note: `name` is NOT hashed  -  names are caller-friendly debug
         // labels, not part of the layout contract.
     }
     hasher.finish()

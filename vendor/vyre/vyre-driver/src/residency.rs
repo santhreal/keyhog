@@ -69,27 +69,34 @@ impl ResidentGraphReuseTelemetry {
     /// Merge two telemetry snapshots with checked arithmetic.
     pub fn checked_add(self, rhs: Self) -> Result<Self, ResidentGraphReuseTelemetryError> {
         Ok(Self {
-            cold_uploads: self.cold_uploads.checked_add(rhs.cold_uploads).ok_or(
+            cold_uploads: crate::accounting::checked_add_u64_value(
+                self.cold_uploads,
+                rhs.cold_uploads,
                 ResidentGraphReuseTelemetryError::CounterOverflow {
                     counter: "cold_uploads",
                 },
             )?,
-            warm_reuses: self.warm_reuses.checked_add(rhs.warm_reuses).ok_or(
+            warm_reuses: crate::accounting::checked_add_u64_value(
+                self.warm_reuses,
+                rhs.warm_reuses,
                 ResidentGraphReuseTelemetryError::CounterOverflow {
                     counter: "warm_reuses",
                 },
             )?,
-            upload_bytes: self.upload_bytes.checked_add(rhs.upload_bytes).ok_or(
+            upload_bytes: crate::accounting::checked_add_u64_value(
+                self.upload_bytes,
+                rhs.upload_bytes,
                 ResidentGraphReuseTelemetryError::ByteCounterOverflow {
                     counter: "upload_bytes",
                 },
             )?,
-            avoided_upload_bytes: self
-                .avoided_upload_bytes
-                .checked_add(rhs.avoided_upload_bytes)
-                .ok_or(ResidentGraphReuseTelemetryError::ByteCounterOverflow {
+            avoided_upload_bytes: crate::accounting::checked_add_u64_value(
+                self.avoided_upload_bytes,
+                rhs.avoided_upload_bytes,
+                ResidentGraphReuseTelemetryError::ByteCounterOverflow {
                     counter: "avoided_upload_bytes",
-                })?,
+                },
+            )?,
         })
     }
 
@@ -99,27 +106,34 @@ impl ResidentGraphReuseTelemetry {
         earlier: Self,
     ) -> Result<Self, ResidentGraphReuseTelemetryError> {
         Ok(Self {
-            cold_uploads: self.cold_uploads.checked_sub(earlier.cold_uploads).ok_or(
+            cold_uploads: crate::accounting::checked_sub_u64_value(
+                self.cold_uploads,
+                earlier.cold_uploads,
                 ResidentGraphReuseTelemetryError::CounterUnderflow {
                     counter: "cold_uploads",
                 },
             )?,
-            warm_reuses: self.warm_reuses.checked_sub(earlier.warm_reuses).ok_or(
+            warm_reuses: crate::accounting::checked_sub_u64_value(
+                self.warm_reuses,
+                earlier.warm_reuses,
                 ResidentGraphReuseTelemetryError::CounterUnderflow {
                     counter: "warm_reuses",
                 },
             )?,
-            upload_bytes: self.upload_bytes.checked_sub(earlier.upload_bytes).ok_or(
+            upload_bytes: crate::accounting::checked_sub_u64_value(
+                self.upload_bytes,
+                earlier.upload_bytes,
                 ResidentGraphReuseTelemetryError::ByteCounterUnderflow {
                     counter: "upload_bytes",
                 },
             )?,
-            avoided_upload_bytes: self
-                .avoided_upload_bytes
-                .checked_sub(earlier.avoided_upload_bytes)
-                .ok_or(ResidentGraphReuseTelemetryError::ByteCounterUnderflow {
+            avoided_upload_bytes: crate::accounting::checked_sub_u64_value(
+                self.avoided_upload_bytes,
+                earlier.avoided_upload_bytes,
+                ResidentGraphReuseTelemetryError::ByteCounterUnderflow {
                     counter: "avoided_upload_bytes",
-                })?,
+                },
+            )?,
         })
     }
 

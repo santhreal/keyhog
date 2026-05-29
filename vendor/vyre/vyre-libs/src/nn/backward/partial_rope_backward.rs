@@ -105,7 +105,7 @@ pub fn partial_rope_backward(
                     }],
                 ),
                 Node::if_then(
-                    Expr::gte(dim, Expr::u32(rope_dims)),
+                    Expr::ge(dim, Expr::u32(rope_dims)),
                     vec![Node::Store {
                         buffer: grad_in.into(),
                         index: i,
@@ -136,7 +136,7 @@ inventory::submit! {
         id: OP_ID,
         build: || partial_rope_backward("grad_out", "cos", "sin", "grad_in", 1, 1, 4, 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[1.0, 0.0, 5.0, 6.0]), // grad_out
                 to_f32(&[1.0]),                   // cos
@@ -146,7 +146,7 @@ inventory::submit! {
         }),
         expected_output: Some(|| {
             // cos=1, sin=0: backward rotation is also identity
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![to_f32(&[1.0, 0.0, 5.0, 6.0])]]
         }),
         category: Some("nn"),

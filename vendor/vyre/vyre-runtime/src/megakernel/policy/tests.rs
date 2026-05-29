@@ -449,6 +449,7 @@ fn launch_cache_update_does_not_duplicate_entries() {
 }
 
 #[test]
+
 fn launch_cache_get_promotes_hot_key_before_eviction() {
     let policy = MegakernelLaunchPolicy::standard();
     let hot_request = MegakernelLaunchRequest::direct(1, 64, 256);
@@ -567,3 +568,4 @@ fn diffuse_priority_reuses_exact_scratch_capacity() {
     assert_eq!(out.as_ptr(), out_ptr);
     assert_eq!(scratch.as_ptr(), scratch_ptr);
 }
+

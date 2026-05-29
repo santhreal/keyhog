@@ -101,19 +101,25 @@ notify = "=8.0.0"
 # Performance libraries
 simdsieve = "=0.1.1"
 # vyre is vendored at vendor/vyre/ (see VENDOR_INFO.txt for the pinned
-# upstream commit; refresh via scripts/vendor-vyre.sh --ref vyre-vX.Y.Z).
-# Vendoring keeps keyhog buildable on a fresh checkout with no
-# sibling-repo assumptions — CI just needs `actions/checkout` and the
-# paths resolve. crates.io is not an option until vyre publishes there.
-vyre = { version = "=0.4.2", path = "vendor/vyre/vyre-core" }
-vyre_libs = { package = "vyre-libs", version = "=0.4.2", path = "vendor/vyre/vyre-libs" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.4.2", path = "vendor/vyre/vyre-driver-wgpu" }
+# upstream commit). vyre is under heavy churn, so keyhog tracks it by
+# VENDORING: `scripts/vendor-vyre-gated.sh` refreshes the vendored copy to
+# the latest upstream that still builds keyhog clean, otherwise it restores
+# the last-known-good snapshot. These deps are DUAL (path + version): local
+# and CI builds use `path` (the vendored copy, absorbing churn with no
+# crates.io round-trip), while `cargo publish` strips `path` and resolves
+# `version` from crates.io. At each crates.io release the matching vyre
+# snapshot is published first (scripts/publish-vyre.sh) so keyhog itself can
+# publish; between releases nothing is published. `cargo install --git` also
+# builds straight from the vendored path with no registry vyre required.
+vyre = { version = "=0.6.1", path = "vendor/vyre/vyre-core" }
+vyre_libs = { package = "vyre-libs", version = "=0.6.1", path = "vendor/vyre/vyre-libs" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.1", path = "vendor/vyre/vyre-driver-wgpu" }
 # CUDA backend — wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.4.2", path = "vendor/vyre/vyre-driver-cuda" }
-vyre-runtime = { version = "=0.4.2", path = "vendor/vyre/vyre-runtime" }
-wgpu = "=24.0.5"
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.1", path = "vendor/vyre/vyre-driver-cuda" }
+vyre-runtime = { version = "=0.6.1", path = "vendor/vyre/vyre-runtime" }
+wgpu = "=25.0.2"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }
 hyperscan = "=0.3.2"

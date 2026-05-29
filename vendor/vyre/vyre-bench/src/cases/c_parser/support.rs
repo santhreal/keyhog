@@ -8,6 +8,12 @@ pub(super) const ENCODED_PARSE_SUMMARY_BYTES: usize = 12 * 8;
 pub(super) const TREE_SITTER_SPEEDUP_METRIC: &str = "tree_sitter_speedup_x1000";
 pub(super) const TREE_SITTER_COLD_SPEEDUP_METRIC: &str = "tree_sitter_cold_speedup_x1000";
 
+#[derive(Clone, Copy)]
+pub(super) enum ParseSummaryMetricSurface {
+    ParserOnly,
+    Full,
+}
+
 pub(super) struct TempCompilePaths {
     pub(super) source: PathBuf,
     pub(super) object: PathBuf,
@@ -65,6 +71,55 @@ pub(super) fn encode_parse_summary(summary: CParseSummary) -> Vec<u8> {
     out.extend_from_slice(&summary.call_record_bytes.to_le_bytes());
     debug_assert_eq!(out.len(), ENCODED_PARSE_SUMMARY_BYTES);
     out
+}
+
+pub(super) fn parse_summary_metric_points(
+    summary: &CParseSummary,
+    surface: ParseSummaryMetricSurface,
+) -> Vec<MetricPoint> {
+    let mut metrics = vec![
+        metric("c_parser_source_bytes", summary.source_bytes),
+        metric("c_parser_tokens", summary.token_count as u64),
+        metric("c_parser_ast_bytes", summary.ast_bytes),
+    ];
+    if matches!(surface, ParseSummaryMetricSurface::Full) {
+        metrics.extend([
+            metric("c_parser_vast_bytes", summary.vast_bytes),
+            metric("c_parser_abi_layout_bytes", summary.abi_layout_bytes),
+            metric(
+                "c_parser_expression_shape_bytes",
+                summary.expression_shape_bytes,
+            ),
+            metric("c_parser_program_graph_bytes", summary.program_graph_bytes),
+            metric("c_parser_semantic_node_bytes", summary.semantic_node_bytes),
+            metric("c_parser_semantic_edge_bytes", summary.semantic_edge_bytes),
+            metric("c_parser_sema_scope_bytes", summary.sema_scope_bytes),
+        ]);
+    }
+    metrics.extend([
+        metric(
+            "c_parser_function_record_bytes",
+            summary.function_record_bytes,
+        ),
+        metric("c_parser_call_record_bytes", summary.call_record_bytes),
+    ]);
+    if matches!(surface, ParseSummaryMetricSurface::Full) {
+        metrics.extend([
+            metric(
+                "c_parser_function_records",
+                summary.function_record_bytes / 12,
+            ),
+            metric("c_parser_call_records", summary.call_record_bytes / 16),
+        ]);
+    }
+    metrics
+}
+
+pub(super) fn metric(name: &'static str, value: u64) -> MetricPoint {
+    MetricPoint {
+        name: name.to_string(),
+        value,
+    }
 }
 
 pub(super) fn scaled_speedup_x1000(baseline_ns: u64, wall_ns: u64) -> u64 {
@@ -331,9 +386,11 @@ fn remove_compile_temp_file(path: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::{
-        require_encoded_parse_surface, scaled_speedup_x1000, tree_sitter_speedup_metric,
-        ENCODED_PARSE_SUMMARY_BYTES, TREE_SITTER_SPEEDUP_METRIC,
+        parse_summary_metric_points, require_encoded_parse_surface, scaled_speedup_x1000,
+        tree_sitter_speedup_metric, ParseSummaryMetricSurface, ENCODED_PARSE_SUMMARY_BYTES,
+        TREE_SITTER_SPEEDUP_METRIC,
     };
+    use vyre_frontend_c::api::CParseSummary;
 
     #[test]
     fn speedup_metric_uses_x1000_scale() {
@@ -350,7 +407,7 @@ mod tests {
         for field in 1..=10 {
             summary[field * 8..field * 8 + 8].copy_from_slice(&1u64.to_le_bytes());
         }
-        require_encoded_parse_surface(&summary, "test").expect("complete surface must pass");
+        require_encoded_parse_surface(&summary, "test").expect("Fix: complete surface must pass");
 
         summary[7 * 8..7 * 8 + 8].copy_from_slice(&0u64.to_le_bytes());
         let err = require_encoded_parse_surface(&summary, "test")
@@ -358,6 +415,43 @@ mod tests {
         assert!(
             format!("{err:?}").contains("semantic_node_bytes"),
             "error should name the missing evidence field: {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_summary_metric_surface_is_single_source() {
+        let summary = CParseSummary {
+            source_bytes: 11,
+            token_count: 13,
+            ast_bytes: 17,
+            ast_node_count: 18,
+            vast_bytes: 19,
+            abi_layout_bytes: 23,
+            expression_shape_bytes: 29,
+            program_graph_bytes: 31,
+            semantic_node_bytes: 37,
+            semantic_edge_bytes: 41,
+            sema_scope_bytes: 43,
+            function_record_bytes: 24,
+            call_record_bytes: 32,
+        };
+        let parser_only = parse_summary_metric_points(&summary, ParseSummaryMetricSurface::ParserOnly);
+        let full = parse_summary_metric_points(&summary, ParseSummaryMetricSurface::Full);
+        assert!(
+            parser_only.iter().any(|point| point.name == "c_parser_tokens" && point.value == 13)
+        );
+        assert!(
+            !parser_only
+                .iter()
+                .any(|point| point.name == "c_parser_program_graph_bytes")
+        );
+        assert!(
+            full.iter()
+                .any(|point| point.name == "c_parser_program_graph_bytes" && point.value == 31)
+        );
+        assert!(
+            full.iter()
+                .any(|point| point.name == "c_parser_function_records" && point.value == 2)
         );
     }
 }

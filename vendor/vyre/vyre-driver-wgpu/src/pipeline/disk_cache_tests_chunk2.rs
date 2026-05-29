@@ -35,7 +35,7 @@ fn cache_misses_are_traced_on_fresh_temp_dir() {
         device_type: wgpu::DeviceType::Other,
         driver: "test-driver".to_string(),
         driver_info: "1.0".to_string(),
-        backend: wgpu::Backend::Empty,
+        backend: wgpu::Backend::Noop,
     };
 
     let program = Program::wrapped(

@@ -91,7 +91,7 @@ impl BodyBuilder<'_> {
     ///
     /// Without this, naga's WGSL writer emits `let _eN = ...;` inside
     /// the if-body, and the post-if reader uses `_eN` from the outer
-    /// scope — wgpu rejects with `no definition in scope for identifier
+    /// scope  -  wgpu rejects with `no definition in scope for identifier
     /// _eN`. The carrier-local round-trip is the same fix as for
     /// loops, just generalized over which structured op opens the child.
     pub(super) fn collect_child_carried_ids(
@@ -126,7 +126,7 @@ impl BodyBuilder<'_> {
         // Decide the authoritative type for this id at THIS point in
         // emission. value_types[id] is set by `bind_result_typed`, which
         // runs BEFORE bind_result. Constrain to a canonical scalar type
-        // only — non-scalar handles (atomic / array / struct) are
+        // only  -  non-scalar handles (atomic / array / struct) are
         // rejected by naga as `LocalVariable` types with `InvalidType`.
         let value_types_scalar = self.value_types.get(&id).copied().filter(|ty| {
             *ty == self.types.bool_ty
@@ -147,7 +147,7 @@ impl BodyBuilder<'_> {
         // *different* type (e.g. a Bool comparison op bound id 873 first,
         // then later a `LoopIndex` op rebound the same id to u32), the
         // cached Bool local is stale. Allocate a fresh u32 local now and
-        // overwrite the entry — every consumer goes through
+        // overwrite the entry  -  every consumer goes through
         // `value_handle_for_id` which Loads via the map, so subsequent
         // reads see the new typing.
         if let Some(existing) = self.loop_carrier_locals.get(&id).copied() {
@@ -185,7 +185,7 @@ impl BodyBuilder<'_> {
         // returned non-scalar handles (atomic / array / struct) when the
         // vyre op produced them, and naga rejects `LocalVariable` of
         // those types with `InvalidType`. Default to u32 in the
-        // ambiguous case — block-scope round-trips only need to preserve
+        // ambiguous case  -  block-scope round-trips only need to preserve
         // scalar values across block boundaries.
         let value_types_scalar = self.value_types.get(&id).copied().filter(|ty| {
             *ty == self.types.bool_ty

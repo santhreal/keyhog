@@ -1,4 +1,4 @@
-//! Pearl's do-calculus — graph surgery primitives.
+//! Pearl's do-calculus  -  graph surgery primitives.
 //!
 //! Pearl's three rules of do-calculus reduce a do-query `P(Y | do(X))`
 //! to an observable-query `P(Y | X)` when the causal graph admits.
@@ -6,16 +6,16 @@
 //! Correa-Bareinboim (2020) extends to multi-treatment identifiability.
 //!
 //! At the GPU primitive level, do-calculus reduces to **graph
-//! surgery** — three primitive transformations on the adjacency matrix:
+//! surgery**  -  three primitive transformations on the adjacency matrix:
 //!
-//! 1. **Edge deletion** — `do(X = x)` removes incoming edges to X
+//! 1. **Edge deletion**  -  `do(X = x)` removes incoming edges to X
 //!    (parents no longer cause X; X is set externally).
-//! 2. **Edge reversal** — needed when applying Rule 3 (action /
+//! 2. **Edge reversal**  -  needed when applying Rule 3 (action /
 //!    observation exchange).
-//! 3. **Subgraph extraction** — restrict to a node subset for backdoor
+//! 3. **Subgraph extraction**  -  restrict to a node subset for backdoor
 //!    / frontdoor adjustment.
 //!
-//! This file ships the **incoming-edge-deletion** primitive — the
+//! This file ships the **incoming-edge-deletion** primitive  -  the
 //! most-used graph surgery, the heart of `do(X = x)`.
 //!
 //! # Why this primitive is dual-use
@@ -49,7 +49,7 @@ pub const RULE2_OP_ID: &str = "vyre-primitives::graph::do_rule2_reverse_incoming
 /// - `out_adjacency`: row-major `n × n` u32 buffer.
 ///
 /// Per-cell rule: `out[i, j] = 0` if `intervention_mask[j] == 1`
-/// (column j zeros out — incoming edges to j removed). Otherwise
+/// (column j zeros out  -  incoming edges to j removed). Otherwise
 /// `out[i, j] = adjacency[i, j]`.
 #[must_use]
 pub fn do_intervention_delete_incoming(
@@ -60,10 +60,7 @@ pub fn do_intervention_delete_incoming(
 ) -> Program {
     match try_do_intervention_delete_incoming(adjacency, intervention_mask, out_adjacency, n) {
         Ok(program) => program,
-        Err(error) => {
-            eprintln!("{error}");
-            crate::invalid_output_program(OP_ID, out_adjacency, DataType::U32, error)
-        }
+        Err(error) => crate::invalid_output_program(OP_ID, out_adjacency, DataType::U32, error),
     }
 }
 
@@ -120,9 +117,21 @@ pub fn do_intervention_delete_incoming_cpu(
     intervention_mask: &[u32],
     n: u32,
 ) -> Vec<u32> {
+    try_do_intervention_delete_incoming_cpu(adjacency, intervention_mask, n).unwrap_or_else(|err| {
+        panic!("do_intervention_delete_incoming CPU oracle received malformed input. {err}")
+    })
+}
+
+/// Fallible CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_do_intervention_delete_incoming_cpu(
+    adjacency: &[u32],
+    intervention_mask: &[u32],
+    n: u32,
+) -> Result<Vec<u32>, String> {
     let mut out = Vec::new();
-    do_intervention_delete_incoming_cpu_into(adjacency, intervention_mask, n, &mut out);
-    out
+    try_do_intervention_delete_incoming_cpu_into(adjacency, intervention_mask, n, &mut out)?;
+    Ok(out)
 }
 
 /// CPU reference writing into caller-owned storage.
@@ -133,33 +142,59 @@ pub fn do_intervention_delete_incoming_cpu_into(
     n: u32,
     out: &mut Vec<u32>,
 ) {
-    let n = n as usize;
-    let cells = n.checked_mul(n).unwrap_or_else(|| {
-        panic!(
-            "do_intervention_delete_incoming CPU oracle n={n} overflows adjacency cell count. Fix: shard the causal graph before parity comparison."
+    try_do_intervention_delete_incoming_cpu_into(adjacency, intervention_mask, n, out)
+        .unwrap_or_else(|err| {
+            panic!("do_intervention_delete_incoming CPU oracle received malformed input. {err}")
+        });
+}
+
+/// Fallible CPU reference writing into caller-owned storage.
+///
+/// On error, `out` is left unchanged so hostile-shape tests and parity
+/// harnesses retain their last useful diagnostic matrix.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_do_intervention_delete_incoming_cpu_into(
+    adjacency: &[u32],
+    intervention_mask: &[u32],
+    n: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
+    let n_us = n as usize;
+    let cells = n_us.checked_mul(n_us).ok_or_else(|| {
+        format!(
+            "Fix: do-calculus intervention n*n overflows usize for n={n}; shard the causal graph before parity comparison."
         )
-    });
-    assert_eq!(
-        adjacency.len(),
-        cells,
-        "do_intervention_delete_incoming CPU oracle received adjacency_len={} for n={n}. Fix: pass a complete n*n adjacency matrix before parity comparison.",
-        adjacency.len()
-    );
-    assert_eq!(
-        intervention_mask.len(),
-        n,
-        "do_intervention_delete_incoming CPU oracle received intervention_mask_len={} for n={n}. Fix: pass one intervention slot per node before parity comparison.",
-        intervention_mask.len()
-    );
+    })?;
+    if adjacency.len() != cells {
+        return Err(format!(
+            "Fix: do-calculus intervention requires a complete n*n adjacency matrix: adjacency.len() == n*n, got len={} for n={n}.",
+            adjacency.len()
+        ));
+    }
+    if intervention_mask.len() != n_us {
+        return Err(format!(
+            "Fix: do-calculus intervention requires intervention_mask.len() == n, got len={} for n={n}.",
+            intervention_mask.len()
+        ));
+    }
+    if cells > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            cells - out.len(),
+            "do-calculus intervention CPU oracle",
+            "output adjacency",
+        )?;
+    }
     out.clear();
     out.extend_from_slice(adjacency);
-    for j in 0..n {
+    for j in 0..n_us {
         if intervention_mask[j] != 0 {
-            for i in 0..n {
-                out[i * n + j] = 0; // zero column j
+            for i in 0..n_us {
+                out[i * n_us + j] = 0; // zero column j
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -273,10 +308,10 @@ mod tests {
         let builder_source = source
             .split("/// Emit a Program that zeros all incoming edges")
             .nth(1)
-            .expect("do-intervention builder source must be present")
+            .expect("Fix: do-intervention builder source must be present")
             .split("/// CPU reference.")
             .next()
-            .expect("do-intervention builder source must precede CPU oracle");
+            .expect("Fix: do-intervention builder source must precede CPU oracle");
 
         assert!(
             builder_source.contains("pub fn try_do_intervention_delete_incoming(")
@@ -311,7 +346,7 @@ mod tests {
 // incoming edges" surgery is the existing
 // `do_intervention_delete_incoming_cpu`.
 
-/// Rule 2 (do-calculus) — edge reversal on incoming edges of treatment
+/// Rule 2 (do-calculus)  -  edge reversal on incoming edges of treatment
 /// nodes. Reverses every edge `i → j` where `treatment_mask[j] != 0`
 /// to `j → i`. Pre-existing reverse edges are merged via OR.
 ///
@@ -326,7 +361,6 @@ pub fn do_rule2_reverse_incoming(
     match try_do_rule2_reverse_incoming(adjacency, treatment_mask, out_adjacency, n) {
         Ok(program) => program,
         Err(error) => {
-            eprintln!("{error}");
             crate::invalid_output_program(RULE2_OP_ID, out_adjacency, DataType::U32, error)
         }
     }
@@ -406,9 +440,22 @@ pub fn do_rule2_reverse_incoming_cpu(
     treatment_mask: &[u32],
     n: u32,
 ) -> Vec<u32> {
+    try_do_rule2_reverse_incoming_cpu(adjacency, treatment_mask, n).unwrap_or_else(|err| {
+        panic!("do_rule2_reverse_incoming CPU oracle received malformed input. {err}")
+    })
+}
+
+/// Fallible rule-2 CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+
+pub fn try_do_rule2_reverse_incoming_cpu(
+    adjacency: &[u32],
+    treatment_mask: &[u32],
+    n: u32,
+) -> Result<Vec<u32>, String> {
     let mut out = Vec::new();
-    do_rule2_reverse_incoming_cpu_into(adjacency, treatment_mask, n, &mut out);
-    out
+    try_do_rule2_reverse_incoming_cpu_into(adjacency, treatment_mask, n, &mut out)?;
+    Ok(out)
 }
 
 /// Rule 2 CPU reference writing into caller-owned storage.
@@ -419,11 +466,48 @@ pub fn do_rule2_reverse_incoming_cpu_into(
     n: u32,
     out: &mut Vec<u32>,
 ) {
+    try_do_rule2_reverse_incoming_cpu_into(adjacency, treatment_mask, n, out).unwrap_or_else(
+        |err| panic!("do_rule2_reverse_incoming CPU oracle received malformed input. {err}"),
+    );
+}
+
+/// Fallible rule-2 CPU reference writing into caller-owned storage.
+///
+/// On error, `out` is left unchanged so parity harnesses can retain the last
+/// useful diagnostic matrix instead of losing it to a shape-preflight failure.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_do_rule2_reverse_incoming_cpu_into(
+    adjacency: &[u32],
+    treatment_mask: &[u32],
+    n: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), String> {
     let n_us = n as usize;
-    assert_eq!(adjacency.len(), n_us * n_us);
-    assert_eq!(treatment_mask.len(), n_us);
+    let expected_adjacency = n_us
+        .checked_mul(n_us)
+        .ok_or_else(|| format!("Fix: do-calculus rule2 n*n overflows usize for n={n}."))?;
+    if adjacency.len() != expected_adjacency {
+        return Err(format!(
+            "Fix: do-calculus rule2 requires adjacency.len() == n*n, got len={} for n={n}.",
+            adjacency.len()
+        ));
+    }
+    if treatment_mask.len() != n_us {
+        return Err(format!(
+            "Fix: do-calculus rule2 requires treatment_mask.len() == n, got len={} for n={n}.",
+            treatment_mask.len()
+        ));
+    }
+    if expected_adjacency > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            expected_adjacency - out.len(),
+            "do-calculus rule2 CPU oracle",
+            "output adjacency",
+        )?;
+    }
     out.clear();
-    out.resize(n_us * n_us, 0);
+    out.resize(expected_adjacency, 0);
     for row in 0..n_us {
         for col in 0..n_us {
             let idx = row * n_us + col;
@@ -441,9 +525,10 @@ pub fn do_rule2_reverse_incoming_cpu_into(
             out[idx] = value;
         }
     }
+    Ok(())
 }
 
-/// Rule 3 (do-calculus) — subgraph extraction. Returns the adjacency
+/// Rule 3 (do-calculus)  -  subgraph extraction. Returns the adjacency
 /// matrix restricted to nodes whose `keep_mask` bit is set. Edges
 /// touching dropped nodes are removed; the result is laid out as
 /// `k × k` where `k = popcount(keep_mask)`.
@@ -452,10 +537,87 @@ pub fn do_rule2_reverse_incoming_cpu_into(
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_rule3_subgraph_cpu(adjacency: &[u32], keep_mask: &[u32], n: u32) -> (Vec<u32>, Vec<u32>) {
+    try_do_rule3_subgraph_cpu(adjacency, keep_mask, n).unwrap_or_else(|err| {
+        panic!("do_rule3_subgraph CPU oracle received malformed input. {err}")
+    })
+}
+
+/// Fallible rule-3 CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_do_rule3_subgraph_cpu(
+    adjacency: &[u32],
+    keep_mask: &[u32],
+    n: u32,
+) -> Result<(Vec<u32>, Vec<u32>), String> {
     let mut reduced = Vec::new();
     let mut kept = Vec::new();
-    do_rule3_subgraph_cpu_into(adjacency, keep_mask, n, &mut reduced, &mut kept);
-    (reduced, kept)
+    try_do_rule3_subgraph_cpu_into(adjacency, keep_mask, n, &mut reduced, &mut kept)?;
+    Ok((reduced, kept))
+}
+
+/// Fallible rule-3 CPU reference writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_do_rule3_subgraph_cpu_into(
+    adjacency: &[u32],
+    keep_mask: &[u32],
+    n: u32,
+    reduced: &mut Vec<u32>,
+    kept: &mut Vec<u32>,
+) -> Result<(), String> {
+    let n_us = n as usize;
+    let expected_adjacency = n_us
+        .checked_mul(n_us)
+        .ok_or_else(|| format!("Fix: do-calculus rule3 n*n overflows usize for n={n}."))?;
+    if adjacency.len() != expected_adjacency {
+        return Err(format!(
+            "Fix: do-calculus rule3 requires adjacency.len() == n*n, got len={} for n={n}.",
+            adjacency.len()
+        ));
+    }
+    if keep_mask.len() != n_us {
+        return Err(format!(
+            "Fix: do-calculus rule3 requires keep_mask.len() == n, got len={} for n={n}.",
+            keep_mask.len()
+        ));
+    }
+
+    let kept_words = keep_mask.iter().filter(|&&m| m != 0).count();
+    let reduced_words = kept_words.checked_mul(kept_words).ok_or_else(|| {
+        format!("Fix: do-calculus rule3 reduced k*k overflows usize for k={kept_words}.")
+    })?;
+    if kept_words > kept.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            kept,
+            kept_words - kept.len(),
+            "do-calculus rule3 CPU oracle",
+            "kept index map",
+        )?;
+    }
+    if reduced_words > reduced.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            reduced,
+            reduced_words - reduced.len(),
+            "do-calculus rule3 CPU oracle",
+            "reduced adjacency",
+        )?;
+    }
+    kept.clear();
+    kept.extend(keep_mask.iter().enumerate().filter_map(|(idx, &m)| {
+        if m != 0 {
+            Some(idx as u32)
+        } else {
+            None
+        }
+    }));
+    let k = kept.len();
+    reduced.clear();
+    reduced.resize(reduced_words, 0);
+    for (new_i, &old_i) in kept.iter().enumerate() {
+        for (new_j, &old_j) in kept.iter().enumerate() {
+            reduced[new_i * k + new_j] = adjacency[(old_i as usize) * n_us + (old_j as usize)];
+        }
+    }
+    Ok(())
 }
 
 /// Rule 3 CPU reference writing into caller-owned storage.
@@ -467,26 +629,164 @@ pub fn do_rule3_subgraph_cpu_into(
     reduced: &mut Vec<u32>,
     kept: &mut Vec<u32>,
 ) {
-    let n_us = n as usize;
-    assert_eq!(adjacency.len(), n_us * n_us);
-    assert_eq!(keep_mask.len(), n_us);
+    try_do_rule3_subgraph_cpu_into(adjacency, keep_mask, n, reduced, kept).unwrap_or_else(|err| {
+        panic!("do_rule3_subgraph CPU oracle received malformed input. {err}")
+    });
+}
 
-    kept.clear();
-    kept.reserve(n_us);
-    kept.extend(keep_mask.iter().enumerate().filter_map(|(idx, &m)| {
-        if m != 0 {
-            Some(idx as u32)
-        } else {
-            None
+#[cfg(test)]
+mod fallible_cpu_reference_tests {
+    use super::*;
+
+    #[test]
+    fn try_intervention_rejects_bad_input_without_clobbering_output() {
+        let mut out = vec![42, 7];
+
+        let err = try_do_intervention_delete_incoming_cpu_into(&[1], &[1], 2, &mut out)
+            .expect_err("malformed intervention adjacency must return a typed error");
+
+        assert!(
+            err.contains("adjacency.len() == n*n"),
+            "Fix: intervention shape error must identify the adjacency contract, got: {err}"
+        );
+        assert_eq!(
+            out,
+            vec![42, 7],
+            "failed intervention preflight must preserve caller-owned diagnostics"
+        );
+    }
+
+    #[test]
+    fn intervention_into_reuses_capacity_and_truncates_stale_tail() {
+        let adjacency = vec![1, 2, 3, 4];
+        let mask = vec![1, 0];
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[99, 98, 97, 96, 95, 94, 93, 92]);
+        let capacity = out.capacity();
+
+        try_do_intervention_delete_incoming_cpu_into(&adjacency, &mask, 2, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - valid intervention matrix should reuse caller-owned output");
+
+        assert_eq!(out, vec![0, 2, 0, 4]);
+        assert_eq!(out.capacity(), capacity);
+
+        try_do_intervention_delete_incoming_cpu_into(&[5], &[1], 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - smaller intervention matrix should truncate stale output");
+
+        assert_eq!(out, vec![0]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_try_intervention_matches_legacy_oracle() {
+        for n in 1usize..=6 {
+            let adjacency: Vec<u32> = (0..(n * n))
+                .map(|idx| u32::from(((idx * 11 + n) % 5) == 0))
+                .collect();
+            let mask: Vec<u32> = (0..n)
+                .map(|idx| u32::from(((idx * 3 + n) % 2) == 0))
+                .collect();
+            let legacy = do_intervention_delete_incoming_cpu(&adjacency, &mask, n as u32);
+            let mut out = vec![u32::MAX];
+
+            try_do_intervention_delete_incoming_cpu_into(&adjacency, &mask, n as u32, &mut out)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated valid intervention matrices must pass fallible oracle");
+
+            assert_eq!(
+                out, legacy,
+                "fallible intervention oracle diverged at n={n}"
+            );
         }
-    }));
-    let k = kept.len();
-    reduced.clear();
-    reduced.resize(k * k, 0);
-    for (new_i, &old_i) in kept.iter().enumerate() {
-        for (new_j, &old_j) in kept.iter().enumerate() {
-            reduced[new_i * k + new_j] = adjacency[(old_i as usize) * n_us + (old_j as usize)];
+    }
+
+    #[test]
+    fn try_rule2_rejects_bad_input_without_clobbering_output() {
+        let mut out = vec![7, 11, 13];
+
+        let err = try_do_rule2_reverse_incoming_cpu_into(&[1], &[1], 2, &mut out)
+            .expect_err("malformed rule2 adjacency must return a typed error");
+
+        assert!(
+            err.contains("adjacency.len() == n*n"),
+            "Fix: rule2 shape error must identify the adjacency contract, got: {err}"
+        );
+        assert_eq!(
+            out,
+            vec![7, 11, 13],
+            "failed rule2 preflight must preserve caller-owned diagnostics"
+        );
+    }
+
+    #[test]
+    fn rule2_into_reuses_capacity_and_truncates_stale_tail() {
+        let adjacency = vec![0, 1, 0, 0];
+        let mask = vec![0, 1];
+        let mut out = Vec::with_capacity(8);
+        out.extend_from_slice(&[99, 98, 97, 96, 95, 94, 93, 92]);
+        let capacity = out.capacity();
+
+        try_do_rule2_reverse_incoming_cpu_into(&adjacency, &mask, 2, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - valid rule2 matrix should reuse caller-owned output");
+
+        assert_eq!(out, vec![0, 0, 1, 0]);
+        assert_eq!(out.capacity(), capacity);
+
+        try_do_rule2_reverse_incoming_cpu_into(&[7], &[1], 1, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - smaller rule2 matrix should truncate stale output");
+
+        assert_eq!(out, vec![7]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_try_rule2_matches_legacy_oracle() {
+        for n in 1usize..=6 {
+            let mut adjacency = vec![0u32; n * n];
+            for row in 0..n {
+                for col in 0..n {
+                    adjacency[row * n + col] = u32::from(((row * 3 + col * 5 + n) % 4) == 0);
+                }
+            }
+            let treatment_mask: Vec<u32> = (0..n)
+                .map(|idx| u32::from(((idx * 7 + n) % 3) == 0))
+                .collect();
+            let legacy = do_rule2_reverse_incoming_cpu(&adjacency, &treatment_mask, n as u32);
+            let mut out = vec![u32::MAX];
+
+            try_do_rule2_reverse_incoming_cpu_into(&adjacency, &treatment_mask, n as u32, &mut out)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated valid rule2 matrices must pass fallible oracle");
+
+            assert_eq!(out, legacy, "fallible rule2 oracle diverged at n={n}");
         }
+    }
+
+    #[test]
+    fn try_rule3_returns_tuple_and_preserves_outputs_on_error() {
+        let mut reduced = vec![0xA5, 0x5A];
+        let mut kept = vec![3, 1];
+
+        let err = try_do_rule3_subgraph_cpu_into(&[1], &[1, 0], 2, &mut reduced, &mut kept)
+            .expect_err("malformed rule3 adjacency must return a typed error");
+
+        assert!(
+            err.contains("adjacency.len() == n*n"),
+            "Fix: rule3 shape error must identify the adjacency contract, got: {err}"
+        );
+        assert_eq!(
+            reduced,
+            vec![0xA5, 0x5A],
+            "failed rule3 preflight must preserve reduced adjacency diagnostics"
+        );
+        assert_eq!(
+            kept,
+            vec![3, 1],
+            "failed rule3 preflight must preserve kept-index diagnostics"
+        );
+
+        let (valid_reduced, valid_kept) = try_do_rule3_subgraph_cpu(&[0, 1, 1, 0], &[1, 0], 2)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - valid rule3 tuple oracle must succeed");
+        assert_eq!(valid_reduced, vec![0]);
+        assert_eq!(valid_kept, vec![0]);
     }
 }
 
@@ -587,10 +887,10 @@ mod rule2_tests {
         let builder_source = source
             .split("pub fn do_rule2_reverse_incoming(")
             .nth(1)
-            .expect("Rule 2 builder source must be present")
+            .expect("Fix: Rule 2 builder source must be present")
             .split("/// Rule 2 CPU reference.")
             .next()
-            .expect("Rule 2 builder source must precede CPU oracle");
+            .expect("Fix: Rule 2 builder source must precede CPU oracle");
 
         assert!(
             builder_source.contains("pub fn try_do_rule2_reverse_incoming(")
@@ -602,6 +902,7 @@ mod rule2_tests {
 }
 
 #[cfg(test)]
+
 mod rule3_tests {
     use super::*;
 
@@ -620,9 +921,13 @@ mod rule3_tests {
         let mask = vec![1u32, 1];
         let mut out = Vec::with_capacity(8);
         let mut kept = Vec::with_capacity(4);
-        do_rule3_subgraph_cpu_into(&a, &mask, 2, &mut out, &mut kept);
         let out_capacity = out.capacity();
         let kept_capacity = kept.capacity();
+        out.extend_from_slice(&[99, 98, 97, 96, 95, 94, 93, 92]);
+        kept.extend_from_slice(&[9, 8, 7, 6]);
+        do_rule3_subgraph_cpu_into(&a, &mask, 2, &mut out, &mut kept);
+        assert_eq!(out.capacity(), out_capacity);
+        assert_eq!(kept.capacity(), kept_capacity);
         assert_eq!(out, a);
         assert_eq!(kept, vec![0, 1]);
 
@@ -631,6 +936,47 @@ mod rule3_tests {
         assert_eq!(kept.capacity(), kept_capacity);
         assert_eq!(out, vec![0]);
         assert_eq!(kept, vec![0]);
+    }
+
+    #[test]
+    fn generated_try_rule3_subgraph_matches_kept_shape_contracts() {
+        for n in 1u32..=64 {
+            let adjacency: Vec<u32> = (0..n)
+                .flat_map(|row| {
+                    (0..n).map(move |col| {
+                        if row == col {
+                            0
+                        } else {
+                            ((row + 1) * 17 + (col + 1) * 31) & 1
+                        }
+                    })
+                })
+                .collect();
+            for seed in 0u32..64 {
+                let keep_mask: Vec<u32> = (0..n)
+                    .map(|node| ((node.wrapping_mul(5) + seed) % 3 == 0) as u32)
+                    .collect();
+                let mut reduced = vec![0xCAFE_BABEu32; 3];
+                let mut kept = vec![0xDEAD_BEEFu32; 2];
+                try_do_rule3_subgraph_cpu_into(&adjacency, &keep_mask, n, &mut reduced, &mut kept)
+                    .unwrap();
+                let expected_kept: Vec<u32> = keep_mask
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, &keep)| (keep != 0).then_some(index as u32))
+                    .collect();
+                assert_eq!(kept, expected_kept);
+                assert_eq!(reduced.len(), kept.len() * kept.len());
+                for (new_i, &old_i) in kept.iter().enumerate() {
+                    for (new_j, &old_j) in kept.iter().enumerate() {
+                        assert_eq!(
+                            reduced[new_i * kept.len() + new_j],
+                            adjacency[(old_i as usize) * n as usize + old_j as usize]
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -681,3 +1027,4 @@ mod rule3_tests {
         assert_eq!(kept, vec![1, 3]);
     }
 }
+

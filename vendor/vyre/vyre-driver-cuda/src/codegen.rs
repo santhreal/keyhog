@@ -25,6 +25,7 @@ pub fn program_to_ptx_for_sm_and_subgroup(
     target_sm: u32,
     subgroup_size: u32,
 ) -> Result<String, String> {
+    let _profiler_range = crate::profiler::cuda_profiler_range(crate::profiler::CUDA_CODEGEN_RANGE);
     if target_sm == 0 {
         return Err(
             "CUDA PTX lowering received target sm_0. Fix: probe CUDA compute capability before lowering."
@@ -36,14 +37,14 @@ pub fn program_to_ptx_for_sm_and_subgroup(
             "CUDA PTX lowering received invalid subgroup size {subgroup_size}. Fix: pass the probed CUDA warp size from CudaDeviceCaps."
         ));
     }
-    let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+    let trace = crate::instrumentation::cuda_stage_trace_enabled();
     let start = std::time::Instant::now();
     if trace {
-        eprintln!("[cuda-codegen] start target_sm={target_sm} subgroup={subgroup_size}");
+        tracing::debug!("[cuda-codegen] start target_sm={target_sm} subgroup={subgroup_size}");
     }
     let descriptor = descriptor_gate::validate_and_analyze(program, target_sm)?;
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[cuda-codegen] +{}ms descriptor ops={} bindings={}",
             start.elapsed().as_millis(),
             descriptor.body.ops.len(),
@@ -64,7 +65,7 @@ pub fn program_to_ptx_for_sm_and_subgroup(
         )
     })?;
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[cuda-codegen] +{}ms emit bytes={}",
             start.elapsed().as_millis(),
             ptx.len()

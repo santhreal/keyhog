@@ -4,7 +4,7 @@
 //!
 //! `csr_forward_traverse` is ideal when the BFS frontier is sparse
 //! (<~5% of nodes). When the frontier saturates, a dense-bitmatrix
-//! step (adjacency × frontier) wins — each tile's adjacency bitrow
+//! step (adjacency × frontier) wins  -  each tile's adjacency bitrow
 //! × its frontier bitset is one vectorised OR over a pair of 32-bit
 //! words, with contiguous DRAM access patterns that outrun CSR.
 //!
@@ -33,21 +33,28 @@
 //!
 //! # Buffers
 //!
-//! - `frontier_in`  — ReadOnly, packed bitset, `bitset_words(n)` u32.
-//! - `frontier_out` — ReadWrite, same shape.
-//! - `frontier_popcount` — ReadOnly, one u32 set-bit count for
+//! - `frontier_in`   -  ReadOnly, packed bitset, `bitset_words(n)` u32.
+//! - `frontier_out`  -  ReadWrite, same shape.
+//! - `frontier_popcount`  -  ReadOnly, one u32 set-bit count for
 //!   device-side sparse/dense selection in the hybrid step.
-//! - `edge_offsets`, `edge_targets`, `edge_kind_mask` — CSR graph
+//! - `edge_offsets`, `edge_targets`, `edge_kind_mask`  -  CSR graph
 //!   buffers for sparse expansion in the hybrid step.
-//! - `adj_rows_dense` — ReadOnly, `node_count × bitset_words(n)` u32.
+//! - `adj_rows_dense`  -  ReadOnly, `node_count × bitset_words(n)` u32.
 //!   Row `d` is the bitset of predecessors of node `d`.
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-use crate::bitset::bitset_words;
+use crate::bitset::{
+    bitset_words,
+    four_russians::{
+        dense_matvec_byte_lut, dense_matvec_byte_lut_words, four_russians_dense_matvec_byte_lut,
+        frontier_words_for_byte_tiles,
+    },
+};
 
 /// Density threshold (percent). Tiles with ≥ this fraction of
 /// frontier bits set use the dense-bitmatrix step; below it, CSR.
@@ -58,6 +65,9 @@ pub const DENSE_THRESHOLD_PCT: u32 = 25;
 pub const OP_ID: &str = "vyre-primitives::graph::adaptive_traverse_dense";
 /// Canonical op id for the device-selected sparse/dense step.
 pub const HYBRID_OP_ID: &str = "vyre-primitives::graph::adaptive_traverse_sparse_dense";
+/// Canonical op id for graph-level dense Four-Russians traversal planning.
+pub const FOUR_RUSSIANS_DENSE_OP_ID: &str =
+    "vyre-primitives::graph::adaptive_traverse_four_russians_dense";
 
 /// Canonical input-frontier buffer name.
 pub const NAME_FRONTIER_IN: &str = "adap_frontier_in";
@@ -85,6 +95,402 @@ pub enum AdaptiveTraversalMode {
     SparseDense,
 }
 
+/// Dense-frontier kernel selected after the sparse/dense branch chooses dense.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DenseTraversalKernel {
+    /// Scan one dense reverse-adjacency row per destination node.
+    RowScanBitmatrix,
+    /// Use byte-tile Four-Russians source-column LUTs.
+    FourRussiansByteTile,
+}
+
+/// Primitive-owned resident adaptive traversal program identity.
+///
+/// Self-substrate and future CUDA/WGSL/SPIR-V dispatch layers use this as the
+/// stable cache-key taxonomy instead of forking per-wrapper enums.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum AdaptiveTraversalProgramKind {
+    /// Count set bits in the input frontier.
+    Popcount,
+    /// Clear the output frontier before an OR-writing traversal kernel.
+    ClearFrontierOut,
+    /// Initialize the active queue length before sparse queue compaction.
+    QueueLenInit,
+    /// Device-selected CSR/dense reverse-bitmatrix traversal.
+    SparseDense,
+    /// Compact active source ids from a frontier bitset into a queue.
+    FrontierToQueue,
+    /// Consume a compacted active-source queue through CSR rows.
+    QueueForward,
+    /// Dense graph traversal through a reusable Four-Russians byte-tile LUT.
+    FourRussiansDense,
+}
+
+/// Stable cache key for resident adaptive traversal Programs.
+///
+/// The key deliberately includes program layout identity, frontier width, queue
+/// capacity, traversal masks, threshold policy, and backend feature bits so a
+/// cached Program cannot be reused across incompatible CUDA/WGSL/SPIR-V shapes.
+/// Resident graph contents are represented by dispatch handles, not shader
+/// source, so same-shape resident graphs reuse compiled Programs.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AdaptiveTraversalPlanCacheKey {
+    /// Shape-only hash of the resident Program layout.
+    pub layout_hash: u64,
+    /// Number of graph nodes.
+    pub node_count: u32,
+    /// Number of logical CSR edges.
+    pub edge_count: u32,
+    /// Number of u32 words in one frontier bitset.
+    pub words: u32,
+    /// Active-source queue capacity for sparse-queue Programs.
+    pub queue_capacity: u32,
+    /// Allowed edge-kind mask baked into traversal Programs.
+    pub allow_mask: u32,
+    /// Dense cutover threshold baked into sparse/dense Programs.
+    pub dense_threshold_pct: u32,
+    /// Backend feature fingerprint from the dispatcher.
+    pub device_features: u64,
+    /// Resident Program shape represented by this key.
+    pub kind: AdaptiveTraversalProgramKind,
+}
+
+impl AdaptiveTraversalPlanCacheKey {
+    /// Construct a cache key for a resident adaptive traversal Program.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        queue_capacity: u32,
+        allow_mask: u32,
+        dense_threshold_pct: u32,
+        device_features: u64,
+        kind: AdaptiveTraversalProgramKind,
+    ) -> Self {
+        Self {
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            allow_mask,
+            dense_threshold_pct,
+            device_features,
+            kind,
+        }
+    }
+
+    /// Cache key for the frontier popcount Program.
+    #[must_use]
+    pub const fn popcount(
+        _layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            edge_count,
+            words,
+            0,
+            AdaptiveTraversalProgramKind::Popcount,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            0,
+            0,
+            0,
+            device_features,
+            AdaptiveTraversalProgramKind::Popcount,
+        )
+    }
+
+    /// Cache key for clearing the output frontier.
+    #[must_use]
+    pub const fn clear_frontier_out(
+        _layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            edge_count,
+            words,
+            0,
+            AdaptiveTraversalProgramKind::ClearFrontierOut,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            0,
+            0,
+            0,
+            device_features,
+            AdaptiveTraversalProgramKind::ClearFrontierOut,
+        )
+    }
+
+    /// Cache key for device-selected sparse/dense traversal.
+    #[must_use]
+    pub const fn sparse_dense(
+        _layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        allow_mask: u32,
+        dense_threshold_pct: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            edge_count,
+            words,
+            0,
+            AdaptiveTraversalProgramKind::SparseDense,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            0,
+            allow_mask,
+            dense_threshold_pct,
+            device_features,
+            AdaptiveTraversalProgramKind::SparseDense,
+        )
+    }
+
+    /// Cache key for the active-queue length initialization Program.
+    #[must_use]
+    pub const fn queue_len_init(
+        _layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        queue_capacity: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            AdaptiveTraversalProgramKind::QueueLenInit,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            0,
+            0,
+            device_features,
+            AdaptiveTraversalProgramKind::QueueLenInit,
+        )
+    }
+
+    /// Cache key for frontier-to-active-queue compaction.
+    #[must_use]
+    pub const fn frontier_to_queue(
+        _layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        queue_capacity: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            AdaptiveTraversalProgramKind::FrontierToQueue,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            0,
+            0,
+            device_features,
+            AdaptiveTraversalProgramKind::FrontierToQueue,
+        )
+    }
+
+    /// Cache key for queue-driven CSR traversal.
+    #[must_use]
+    pub const fn queue_forward(
+        _layout_hash: u64,
+        node_count: u32,
+        edge_count: u32,
+        words: u32,
+        queue_capacity: u32,
+        allow_mask: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            AdaptiveTraversalProgramKind::QueueForward,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            edge_count,
+            words,
+            queue_capacity,
+            allow_mask,
+            0,
+            device_features,
+            AdaptiveTraversalProgramKind::QueueForward,
+        )
+    }
+
+    /// Cache key for dense Four-Russians traversal through a resident LUT.
+    #[must_use]
+    pub const fn four_russians_dense(
+        _layout_hash: u64,
+        node_count: u32,
+        words: u32,
+        device_features: u64,
+    ) -> Self {
+        let layout_hash = adaptive_traversal_program_layout_hash(
+            node_count,
+            0,
+            words,
+            0,
+            AdaptiveTraversalProgramKind::FourRussiansDense,
+        );
+        Self::new(
+            layout_hash,
+            node_count,
+            0,
+            words,
+            0,
+            0,
+            0,
+            device_features,
+            AdaptiveTraversalProgramKind::FourRussiansDense,
+        )
+    }
+}
+
+const fn adaptive_traversal_program_kind_tag(kind: AdaptiveTraversalProgramKind) -> u64 {
+    match kind {
+        AdaptiveTraversalProgramKind::Popcount => 1,
+        AdaptiveTraversalProgramKind::ClearFrontierOut => 2,
+        AdaptiveTraversalProgramKind::SparseDense => 3,
+        AdaptiveTraversalProgramKind::QueueLenInit => 4,
+        AdaptiveTraversalProgramKind::FrontierToQueue => 5,
+        AdaptiveTraversalProgramKind::QueueForward => 6,
+        AdaptiveTraversalProgramKind::FourRussiansDense => 7,
+    }
+}
+
+const fn adaptive_traversal_hash_mix(hash: u64, value: u64) -> u64 {
+    (hash ^ value).wrapping_mul(0x0000_0100_0000_01B3)
+}
+
+/// Shape-only hash for resident adaptive traversal program layouts.
+///
+/// This excludes resident graph contents and dense LUT source rows; those are
+/// already bound through resident handles. Including content here fragments the
+/// compiled-program cache without changing generated code.
+#[must_use]
+pub const fn adaptive_traversal_program_layout_hash(
+    node_count: u32,
+    edge_count: u32,
+    words: u32,
+    queue_capacity: u32,
+    kind: AdaptiveTraversalProgramKind,
+) -> u64 {
+    let hash = adaptive_traversal_hash_mix(0xcbf2_9ce4_8422_2325, 0x4154_5241_5645_5253);
+    let hash = adaptive_traversal_hash_mix(hash, node_count as u64);
+    let hash = adaptive_traversal_hash_mix(hash, edge_count as u64);
+    let hash = adaptive_traversal_hash_mix(hash, words as u64);
+    let hash = adaptive_traversal_hash_mix(hash, queue_capacity as u64);
+    adaptive_traversal_hash_mix(hash, adaptive_traversal_program_kind_tag(kind))
+}
+
+/// In-session content hash for resident adaptive CSR+dense graph uploads.
+///
+/// This hashes graph contents, unlike [`adaptive_traversal_program_layout_hash`],
+/// which intentionally hashes only generated-program shape. Resident upload
+/// wrappers use this to identify uploaded graph layouts without forking the
+/// primitive's graph identity contract.
+#[must_use]
+pub fn adaptive_traversal_graph_content_hash(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    adj_rows_dense: &[u32],
+) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    node_count.hash(&mut hasher);
+    edge_offsets.hash(&mut hasher);
+    edge_targets.hash(&mut hasher);
+    edge_kind_mask.hash(&mut hasher);
+    adj_rows_dense.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// In-session content hash for resident adaptive Four-Russians dense LUT uploads.
+#[must_use]
+
+pub fn adaptive_four_russians_graph_content_hash(node_count: u32, adj_rows_dense: &[u32]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    node_count.hash(&mut hasher);
+    adj_rows_dense.hash(&mut hasher);
+    hasher.finish()
+}
+
+#[cfg(test)]
+mod resident_content_hash_tests {
+    use super::*;
+
+    #[test]
+    fn graph_content_hash_tracks_csr_masks_and_dense_rows() {
+        let offsets = [0, 1, 1];
+        let targets = [1];
+        let masks = [7];
+        let dense = [0b10, 0];
+        let baseline = adaptive_traversal_graph_content_hash(2, &offsets, &targets, &masks, &dense);
+        let changed_mask =
+            adaptive_traversal_graph_content_hash(2, &offsets, &targets, &[3], &dense);
+        let changed_dense =
+            adaptive_traversal_graph_content_hash(2, &offsets, &targets, &masks, &[0, 1]);
+
+        assert_ne!(baseline, changed_mask);
+        assert_ne!(baseline, changed_dense);
+    }
+
+    #[test]
+    fn four_russians_content_hash_tracks_lut_source_rows() {
+        let baseline = adaptive_four_russians_graph_content_hash(8, &[1, 0, 0, 0, 0, 0, 0, 0]);
+        let changed = adaptive_four_russians_graph_content_hash(8, &[2, 0, 0, 0, 0, 0, 0, 0]);
+
+        assert_ne!(baseline, changed);
+    }
+}
+
 /// Validated adaptive traversal graph layout metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdaptiveTraversalLayout {
@@ -105,6 +511,59 @@ pub struct AdaptiveFrontierLayout {
     pub words: usize,
     /// Number of u32 words in one frontier bitset, narrowed for primitive metadata.
     pub words_u32: u32,
+}
+
+/// Primitive-owned work classification for a validated adaptive frontier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveFrontierWorkPlan {
+    /// Validated frontier layout.
+    pub layout: AdaptiveFrontierLayout,
+    /// Whether any physical frontier word contains active bits.
+    pub has_active_bits: bool,
+}
+
+/// Workgroup lane count used by resident linear adaptive traversal kernels.
+pub const ADAPTIVE_TRAVERSAL_LINEAR_WORKGROUP_LANES: u32 = 256;
+/// Byte length of one resident u32 popcount scalar.
+pub const ADAPTIVE_TRAVERSAL_POPCOUNT_BYTES: usize = std::mem::size_of::<u32>();
+
+/// Primitive-owned resident frontier launch and scratch plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveResidentFrontierPlan {
+    /// Validated frontier work classification.
+    pub work: AdaptiveFrontierWorkPlan,
+    /// Number of bytes in one frontier bitset.
+    pub frontier_bytes: usize,
+    /// Number of bytes in one resident popcount scalar.
+    pub popcount_bytes: usize,
+    /// Grid for kernels that process frontier words.
+    pub frontier_word_grid: [u32; 3],
+    /// Grid for kernels that process graph nodes.
+    pub node_grid: [u32; 3],
+}
+
+/// Primitive-owned resident sparse-queue launch and scratch plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveResidentSparseQueuePlan {
+    /// Shared frontier launch and scratch plan.
+    pub frontier: AdaptiveResidentFrontierPlan,
+    /// Active-source queue capacity in u32 node ids.
+    pub queue_capacity: u32,
+    /// Number of bytes in the resident active-source queue.
+    pub queue_bytes: usize,
+    /// Grid for kernels that process the active-source queue.
+    pub queue_grid: [u32; 3],
+}
+
+/// Primitive-owned auto-mode resident traversal plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveResidentAutoStepPlan {
+    /// Shared frontier launch and scratch plan.
+    pub frontier: AdaptiveResidentFrontierPlan,
+    /// Host-visible frontier popcount used only for mode selection.
+    pub frontier_popcount: u32,
+    /// Selected traversal mode.
+    pub mode: AdaptiveTraversalMode,
 }
 
 #[must_use]
@@ -130,7 +589,7 @@ fn should_use_dense_with_popcount(popcount: u32, node_count: u32, threshold_pct:
 ///
 /// `frontier_in` is the packed bitset; `node_count` is the total
 /// number of nodes (not necessarily a multiple of 32). Integer-only
-/// comparison — no floating-point rounding surprises.
+/// comparison  -  no floating-point rounding surprises.
 #[must_use]
 pub fn should_use_dense(frontier_in: &[u32], node_count: u32) -> bool {
     if node_count == 0 {
@@ -167,6 +626,28 @@ pub fn select_adaptive_traversal_mode(
         AdaptiveTraversalMode::SparseQueue
     } else {
         AdaptiveTraversalMode::SparseDense
+    }
+}
+
+/// Select the dense traversal kernel after the sparse/dense cutover fires.
+///
+/// Four-Russians byte tiles amortize a larger LUT over repeated graph waves.
+/// They are selected only when the frontier is dense, the graph is large
+/// enough for row-scan waste to matter, and the caller expects to reuse the
+/// precomputed tile LUT across at least two traversal steps.
+#[must_use]
+pub fn select_dense_traversal_kernel(
+    node_count: u32,
+    frontier_popcount: u32,
+    expected_lut_reuse_steps: u32,
+) -> DenseTraversalKernel {
+    if node_count < 64 || frontier_popcount == 0 || expected_lut_reuse_steps < 2 {
+        return DenseTraversalKernel::RowScanBitmatrix;
+    }
+    if should_use_dense_with_popcount(frontier_popcount, node_count, DENSE_THRESHOLD_PCT) {
+        DenseTraversalKernel::FourRussiansByteTile
+    } else {
+        DenseTraversalKernel::RowScanBitmatrix
     }
 }
 
@@ -279,6 +760,146 @@ pub fn validate_adaptive_frontier(
     Ok(AdaptiveFrontierLayout { words, words_u32 })
 }
 
+/// Validate and classify an adaptive traversal frontier.
+///
+/// The all-zero frontier is a primitive identity case: every adaptive
+/// traversal variant produces an all-zero output and does not need a resident
+/// popcount, queue compaction, dense traversal, or readback kernel.
+///
+/// # Errors
+///
+/// Returns the same frontier-shape diagnostics as [`validate_adaptive_frontier`].
+pub fn plan_adaptive_frontier_work(
+    node_count: u32,
+    frontier_in: &[u32],
+) -> Result<AdaptiveFrontierWorkPlan, String> {
+    let layout = validate_adaptive_frontier(node_count, frontier_in)?;
+    Ok(AdaptiveFrontierWorkPlan {
+        layout,
+        has_active_bits: frontier_in.iter().any(|&word| word != 0),
+    })
+}
+
+/// Checked popcount for an adaptive traversal frontier.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic if the frontier contains more set bits than
+/// can be represented by the primitive's u32 resident popcount scalar.
+pub fn adaptive_frontier_popcount(frontier_in: &[u32], context: &str) -> Result<u32, String> {
+    let mut popcount = 0u32;
+    for &word in frontier_in {
+        popcount = popcount.checked_add(word.count_ones()).ok_or_else(|| {
+            format!(
+                "Fix: {context} frontier popcount exceeds u32::MAX for {} frontier words.",
+                frontier_in.len()
+            )
+        })?;
+    }
+    Ok(popcount)
+}
+
+/// Validate and plan resident frontier scratch plus launch grids.
+///
+/// # Errors
+///
+/// Returns frontier-shape diagnostics or byte-size overflow diagnostics.
+pub fn plan_adaptive_resident_frontier_step(
+    node_count: u32,
+    frontier_in: &[u32],
+) -> Result<AdaptiveResidentFrontierPlan, String> {
+    let work = plan_adaptive_frontier_work(node_count, frontier_in)?;
+    adaptive_resident_frontier_plan_from_work(node_count, work)
+}
+
+/// Validate and plan a queue-driven resident traversal step.
+///
+/// # Errors
+///
+/// Returns frontier-shape diagnostics or queue/frontier byte-size overflow
+/// diagnostics.
+pub fn plan_adaptive_resident_sparse_queue_step(
+    node_count: u32,
+    frontier_in: &[u32],
+) -> Result<AdaptiveResidentSparseQueuePlan, String> {
+    let frontier = plan_adaptive_resident_frontier_step(node_count, frontier_in)?;
+    let queue_capacity = node_count.max(1);
+    let queue_bytes = adaptive_u32_byte_len(
+        queue_capacity as usize,
+        "adaptive traversal resident active-source queue",
+    )?;
+    Ok(AdaptiveResidentSparseQueuePlan {
+        frontier,
+        queue_capacity,
+        queue_bytes,
+        queue_grid: adaptive_linear_grid(queue_capacity),
+    })
+}
+
+/// Validate, count, and select resident traversal mode in one primitive-owned plan.
+///
+/// # Errors
+///
+/// Returns frontier-shape diagnostics or byte-size overflow diagnostics.
+pub fn plan_adaptive_resident_auto_step(
+    node_count: u32,
+    edge_count: u32,
+    frontier_in: &[u32],
+    dense_threshold_pct: u32,
+) -> Result<AdaptiveResidentAutoStepPlan, String> {
+    let layout = validate_adaptive_frontier(node_count, frontier_in)?;
+    let frontier_popcount = adaptive_frontier_popcount(frontier_in, "adaptive resident auto step")?;
+    let work = AdaptiveFrontierWorkPlan {
+        layout,
+        has_active_bits: frontier_popcount != 0,
+    };
+    let frontier = adaptive_resident_frontier_plan_from_work(node_count, work)?;
+    let mode = select_adaptive_traversal_mode(
+        node_count,
+        edge_count,
+        frontier_popcount,
+        dense_threshold_pct,
+    );
+    Ok(AdaptiveResidentAutoStepPlan {
+        frontier,
+        frontier_popcount,
+        mode,
+    })
+}
+
+fn adaptive_resident_frontier_plan_from_work(
+    node_count: u32,
+    work: AdaptiveFrontierWorkPlan,
+) -> Result<AdaptiveResidentFrontierPlan, String> {
+    let frontier_bytes =
+        adaptive_u32_byte_len(work.layout.words, "adaptive traversal resident frontier")?;
+    let frontier_word_grid = adaptive_linear_grid(work.layout.words_u32);
+    Ok(AdaptiveResidentFrontierPlan {
+        work,
+        frontier_bytes,
+        popcount_bytes: ADAPTIVE_TRAVERSAL_POPCOUNT_BYTES,
+        frontier_word_grid,
+        node_grid: [node_count, 1, 1],
+    })
+}
+
+fn adaptive_u32_byte_len(words: usize, context: &str) -> Result<usize, String> {
+    words.checked_mul(std::mem::size_of::<u32>()).ok_or_else(|| {
+        format!(
+            "Fix: {context} byte length overflows usize for {words} u32 word(s). Shard the graph before resident dispatch."
+        )
+    })
+}
+
+const fn adaptive_linear_grid(items: u32) -> [u32; 3] {
+    let groups = items.div_ceil(ADAPTIVE_TRAVERSAL_LINEAR_WORKGROUP_LANES);
+    if groups == 0 {
+        [1, 1, 1]
+    } else {
+        [groups, 1, 1]
+    }
+}
+
 /// Build the GPU Program for one dense step. Invocation `d`
 /// computes `frontier_out[d] = any bit of (adj_rows[d] &
 /// frontier_in) is set`.
@@ -378,6 +999,134 @@ pub fn adaptive_dense_step(
                 body,
             )]),
         }],
+    )
+}
+
+/// Source-byte tile count for Four-Russians dense graph traversal.
+#[must_use]
+
+pub const fn four_russians_source_tile_count(node_count: u32) -> u32 {
+    node_count.div_ceil(8)
+}
+
+/// Frontier word count for graph-level Four-Russians dense traversal.
+#[must_use]
+pub const fn four_russians_frontier_words(node_count: u32) -> u32 {
+    frontier_words_for_byte_tiles(four_russians_source_tile_count(node_count))
+}
+
+/// LUT word count for graph-level Four-Russians dense traversal.
+#[must_use]
+pub fn four_russians_dense_lut_words(node_count: u32) -> u32 {
+    dense_matvec_byte_lut_words(
+        four_russians_source_tile_count(node_count),
+        bitset_words(node_count),
+    )
+}
+
+/// Transpose dense reverse-adjacency rows into source-column words.
+///
+/// `adj_rows_dense[dst][src] == 1` becomes `columns[src][dst] == 1`,
+/// grouped by 8-source byte tiles for Four-Russians LUT construction.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic when `node_count` is zero, the dense row
+/// matrix has the wrong shape, or the derived column table overflows `usize`.
+pub fn four_russians_dense_columns_from_adj_rows(
+    node_count: u32,
+    adj_rows_dense: &[u32],
+) -> Result<Vec<u32>, String> {
+    if node_count == 0 {
+        return Err(
+            "Fix: Four-Russians adaptive dense traversal requires node_count > 0.".to_string(),
+        );
+    }
+    let words = bitset_words(node_count) as usize;
+    let expected_rows = (node_count as usize).checked_mul(words).ok_or_else(|| {
+        format!(
+            "Fix: Four-Russians adaptive dense row count overflows usize for {node_count} nodes and {words} words."
+        )
+    })?;
+    if adj_rows_dense.len() != expected_rows {
+        return Err(format!(
+            "Fix: Four-Russians adaptive dense traversal expected {expected_rows} row words for {node_count} nodes, got {}.",
+            adj_rows_dense.len()
+        ));
+    }
+    let tile_count = four_russians_source_tile_count(node_count) as usize;
+    let column_count = tile_count
+        .checked_mul(8)
+        .and_then(|columns| columns.checked_mul(words))
+        .ok_or_else(|| {
+            format!(
+                "Fix: Four-Russians adaptive dense column table overflows usize for {node_count} nodes and {words} destination words."
+            )
+        })?;
+    let mut columns = vec![0u32; column_count];
+
+    for dst in 0..node_count as usize {
+        let row_start = dst * words;
+        let dst_word = dst / 32;
+        let dst_bit = 1u32 << (dst % 32);
+        for src_word in 0..words {
+            let mut word = adj_rows_dense[row_start + src_word];
+            while word != 0 {
+                let bit = word.trailing_zeros() as usize;
+                let src = src_word * 32 + bit;
+                if src < node_count as usize {
+                    let source_column = (src / 8) * 8 + (src % 8);
+                    let column_idx = source_column * words + dst_word;
+                    columns[column_idx] |= dst_bit;
+                }
+                word &= word - 1;
+            }
+        }
+    }
+
+    Ok(columns)
+}
+
+/// Build a Four-Russians dense traversal LUT from dense reverse rows.
+///
+/// # Errors
+///
+/// Propagates dense-row validation failures from
+/// [`four_russians_dense_columns_from_adj_rows`].
+pub fn four_russians_dense_lut_from_adj_rows(
+    node_count: u32,
+    adj_rows_dense: &[u32],
+) -> Result<Vec<u32>, String> {
+    let columns = four_russians_dense_columns_from_adj_rows(node_count, adj_rows_dense)?;
+    Ok(dense_matvec_byte_lut(
+        &columns,
+        four_russians_source_tile_count(node_count),
+        bitset_words(node_count),
+    ))
+}
+
+/// Build the graph-level Four-Russians dense traversal Program.
+#[must_use]
+pub fn adaptive_four_russians_dense_step(
+    frontier_in: &str,
+    tile_lut: &str,
+    frontier_out: &str,
+    node_count: u32,
+) -> Program {
+    if node_count == 0 {
+        return crate::invalid_output_program(
+            FOUR_RUSSIANS_DENSE_OP_ID,
+            frontier_out,
+            DataType::U32,
+            "Fix: adaptive_four_russians_dense_step requires node_count > 0, got 0.".to_string(),
+        );
+    }
+    four_russians_dense_matvec_byte_lut(
+        frontier_in,
+        tile_lut,
+        frontier_out,
+        four_russians_source_tile_count(node_count),
+        bitset_words(node_count),
     )
 }
 
@@ -629,6 +1378,23 @@ pub fn cpu_dense_step(frontier_in: &[u32], adj_rows_dense: &[u32], node_count: u
     out
 }
 
+/// CPU reference for graph-level Four-Russians dense traversal.
+#[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_four_russians_dense_step(
+    frontier_in: &[u32],
+    adj_rows_dense: &[u32],
+    node_count: u32,
+) -> Result<Vec<u32>, String> {
+    let lut = four_russians_dense_lut_from_adj_rows(node_count, adj_rows_dense)?;
+    Ok(crate::bitset::four_russians::dense_matvec_cpu_ref(
+        frontier_in,
+        &lut,
+        four_russians_source_tile_count(node_count),
+        bitset_words(node_count),
+    ))
+}
+
 /// CPU reference for the adaptive sparse/dense step.
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -878,6 +1644,70 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_plan_cache_keys_pin_resident_program_identity() {
+        let sparse_dense =
+            AdaptiveTraversalPlanCacheKey::sparse_dense(7, 64, 9, 2, 0x55, 25, 0xA11CE);
+        assert_eq!(sparse_dense.kind, AdaptiveTraversalProgramKind::SparseDense);
+        assert_eq!(
+            sparse_dense.layout_hash,
+            adaptive_traversal_program_layout_hash(
+                64,
+                9,
+                2,
+                0,
+                AdaptiveTraversalProgramKind::SparseDense,
+            )
+        );
+        assert_eq!(sparse_dense.queue_capacity, 0);
+        assert_eq!(sparse_dense.allow_mask, 0x55);
+        assert_eq!(sparse_dense.dense_threshold_pct, 25);
+        assert_eq!(
+            sparse_dense,
+            AdaptiveTraversalPlanCacheKey::sparse_dense(99, 64, 9, 2, 0x55, 25, 0xA11CE),
+            "resident graph contents must not fragment adaptive traversal Program caches"
+        );
+
+        assert_ne!(
+            sparse_dense,
+            AdaptiveTraversalPlanCacheKey::sparse_dense(7, 64, 9, 2, 0xAA, 25, 0xA11CE),
+            "edge-mask policy must be part of sparse/dense resident Program identity"
+        );
+        assert_ne!(
+            sparse_dense,
+            AdaptiveTraversalPlanCacheKey::sparse_dense(7, 64, 9, 2, 0x55, 50, 0xA11CE),
+            "dense cutover policy must be part of sparse/dense resident Program identity"
+        );
+        assert_ne!(
+            sparse_dense,
+            AdaptiveTraversalPlanCacheKey::sparse_dense(7, 64, 9, 2, 0x55, 25, 0xC0DA),
+            "backend feature bits must be part of resident Program identity"
+        );
+
+        let queue_forward =
+            AdaptiveTraversalPlanCacheKey::queue_forward(7, 64, 9, 2, 64, 0x55, 0xA11CE);
+        assert_eq!(
+            queue_forward.kind,
+            AdaptiveTraversalProgramKind::QueueForward
+        );
+        assert_eq!(queue_forward.queue_capacity, 64);
+        assert_eq!(queue_forward.allow_mask, 0x55);
+        assert_ne!(
+            queue_forward,
+            AdaptiveTraversalPlanCacheKey::frontier_to_queue(7, 64, 9, 2, 64, 0xA11CE)
+        );
+
+        let dense = AdaptiveTraversalPlanCacheKey::four_russians_dense(99, 128, 4, 0xA11CE);
+        assert_eq!(dense.kind, AdaptiveTraversalProgramKind::FourRussiansDense);
+        assert_eq!(dense.edge_count, 0);
+        assert_eq!(dense.queue_capacity, 0);
+        assert_eq!(
+            dense,
+            AdaptiveTraversalPlanCacheKey::four_russians_dense(7, 128, 4, 0xA11CE),
+            "resident Four-Russians LUT contents must not fragment dense Program caches"
+        );
+    }
+
+    #[test]
     fn adaptive_layout_validation_accepts_valid_csr_and_dense_rows() {
         let layout = validate_adaptive_traversal_layout(
             3,
@@ -920,6 +1750,26 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_frontier_work_plan_classifies_zero_and_nonzero_frontiers() {
+        assert_eq!(
+            plan_adaptive_frontier_work(64, &[0, 0]).unwrap(),
+            AdaptiveFrontierWorkPlan {
+                layout: AdaptiveFrontierLayout {
+                    words: 2,
+                    words_u32: 2,
+                },
+                has_active_bits: false,
+            }
+        );
+
+        assert!(
+            plan_adaptive_frontier_work(64, &[0, 1])
+                .unwrap()
+                .has_active_bits
+        );
+    }
+
+    #[test]
     fn adaptive_frontier_validation_rejects_zero_nodes_and_wrong_width() {
         let err = validate_adaptive_frontier(0, &[]).unwrap_err();
         assert!(err.contains("node_count > 0"));
@@ -927,4 +1777,54 @@ mod tests {
         let err = validate_adaptive_frontier(64, &[1]).unwrap_err();
         assert!(err.contains("expected 2 word"));
     }
+
+    #[test]
+    fn resident_frontier_plan_centralizes_bytes_and_grids() {
+        let plan = plan_adaptive_resident_frontier_step(8_193, &[1; 257])
+            .expect("Fix: resident frontier plan should accept a correctly shaped frontier");
+
+        assert!(plan.work.has_active_bits);
+        assert_eq!(plan.work.layout.words_u32, 257);
+        assert_eq!(plan.frontier_bytes, 257 * std::mem::size_of::<u32>());
+        assert_eq!(plan.popcount_bytes, std::mem::size_of::<u32>());
+        assert_eq!(plan.frontier_word_grid, [2, 1, 1]);
+        assert_eq!(plan.node_grid, [8_193, 1, 1]);
+    }
+
+    #[test]
+    fn resident_sparse_queue_plan_centralizes_queue_shape() {
+        let plan = plan_adaptive_resident_sparse_queue_step(513, &[1; 17])
+            .expect("Fix: resident sparse-queue plan should accept a correctly shaped frontier");
+
+        assert_eq!(plan.frontier.work.layout.words, 17);
+        assert_eq!(plan.queue_capacity, 513);
+        assert_eq!(plan.queue_bytes, 513 * std::mem::size_of::<u32>());
+        assert_eq!(plan.queue_grid, [3, 1, 1]);
+    }
+
+    #[test]
+    fn resident_auto_plan_selects_mode_from_primitive_popcount() {
+        let mut frontier = vec![0u32; bitset_words(1_000) as usize];
+        for node in 0..260u32 {
+            frontier[(node / 32) as usize] |= 1 << (node % 32);
+        }
+
+        let plan = plan_adaptive_resident_auto_step(1_000, 10_000, &frontier, 25)
+            .expect("Fix: resident auto plan should accept a correctly shaped frontier");
+
+        assert_eq!(plan.frontier_popcount, 260);
+        assert_eq!(plan.mode, AdaptiveTraversalMode::SparseDense);
+        assert!(plan.frontier.work.has_active_bits);
+    }
+
+    #[test]
+    fn resident_auto_plan_zero_frontier_keeps_sparse_queue_identity_case() {
+        let plan = plan_adaptive_resident_auto_step(64, 128, &[0, 0], 25)
+            .expect("Fix: zero frontier still has a valid resident auto plan");
+
+        assert_eq!(plan.frontier_popcount, 0);
+        assert_eq!(plan.mode, AdaptiveTraversalMode::SparseQueue);
+        assert!(!plan.frontier.work.has_active_bits);
+    }
 }
+

@@ -32,7 +32,7 @@ fn source_buffer_is_runtime_sized_not_source_length_specialized() {
         .buffers()
         .iter()
         .find(|buffer| buffer.name() == "source")
-        .expect("source buffer must exist");
+        .expect("Fix: source buffer must exist");
     assert_eq!(
         source.count(),
         0,

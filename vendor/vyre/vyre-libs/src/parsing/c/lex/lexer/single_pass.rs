@@ -283,7 +283,7 @@ mod tests {
     }
 
     /// The fused Region's `generator` is the L1 op id, NOT the
-    /// individual lex / digraph generators — so
+    /// individual lex / digraph generators  -  so
     /// `region_fusion_hint` correctly treats it as a single fused
     /// arm without trying to fuse it again.
     #[test]

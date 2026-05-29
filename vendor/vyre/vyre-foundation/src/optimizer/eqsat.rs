@@ -1,10 +1,10 @@
-//! Equality-saturation engine — minimal `EGraph` substrate for vyre IR
+//! Equality-saturation engine  -  minimal `EGraph` substrate for vyre IR
 //! algebraic rewrite families.
 //!
 //! Op id: `vyre-foundation::optimizer::eqsat`. Soundness: every equivalence
 //! added to the `EGraph` must be a true semantic equality of the underlying
 //! IR. Cost-direction: extraction phase picks the lowest-cost equivalent
-//! representative under a caller-supplied cost function — guaranteed
+//! representative under a caller-supplied cost function  -  guaranteed
 //! cost-monotone-down by construction.
 //!
 //! ## Why
@@ -35,7 +35,9 @@
 //! adds a dependency tree that conflicts with vyre's "every dep is a
 //! supply-chain risk" stance.
 
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::error::Error as StdError;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHasher;
@@ -65,12 +67,12 @@ pub trait ENodeLang: Clone + Eq + Hash {
     fn with_children(&self, children: &[EClassId]) -> Self;
 }
 
-/// One equivalence class — the set of all `ENodes` proven equal so far.
+/// One equivalence class  -  the set of all `ENodes` proven equal so far.
 #[derive(Debug, Clone)]
 pub struct EClass<L: ENodeLang> {
     /// Every `ENode` that lives in this class (canonicalized form).
     pub nodes: Vec<L>,
-    /// `EClasses` that have THIS one as a child — used during rebuild to
+    /// `EClasses` that have THIS one as a child  -  used during rebuild to
     /// propagate canonicalization.
     pub parents: Vec<EClassId>,
 }
@@ -86,9 +88,75 @@ pub struct EGraph<L: ENodeLang> {
     hashcons: FxHashMap<L, EClassId>,
     /// Union-find parent pointers for path-compression find.
     parent: Vec<EClassId>,
-    /// Set of `EClasses` that need rebuild after a union — drained by
+    /// Set of `EClasses` that need rebuild after a union  -  drained by
     /// `rebuild()`.
     pending: Vec<EClassId>,
+}
+
+/// E-graph construction, indexing, and staging failure.
+///
+/// Equality saturation is optimizer infrastructure, so allocator pressure and
+/// class-id overflow must be explicit errors on the fallible APIs rather than
+/// latent panics or poisoned sentinel ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EGraphError {
+    /// A fallible staging/allocation reservation failed.
+    Capacity {
+        /// Operation reserving memory.
+        context: &'static str,
+        /// Additional elements/slots requested.
+        requested: usize,
+        /// Allocator error rendered with platform-specific detail.
+        source: String,
+    },
+    /// Dense class storage exceeded the public `u32` id space.
+    ClassIdOverflow {
+        /// Dense class index that could not be represented as [`EClassId`].
+        index: usize,
+    },
+    /// A caller supplied an `EClassId` outside the current dense tables.
+    ClassIdOutOfBounds {
+        /// Operation resolving the id.
+        context: &'static str,
+        /// Invalid id.
+        id: EClassId,
+        /// Current table length.
+        len: usize,
+    },
+}
+
+impl fmt::Display for EGraphError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Capacity {
+                context,
+                requested,
+                source,
+            } => write!(
+                f,
+                "{context} could not reserve {requested} additional slots: {source}. Fix: lower the saturation batch size or split the optimizer workload."
+            ),
+            Self::ClassIdOverflow { index } => write!(
+                f,
+                "egraph class index {index} exceeds the u32 EClassId space. Fix: split the egraph or extract before adding more classes."
+            ),
+            Self::ClassIdOutOfBounds { context, id, len } => write!(
+                f,
+                "{context} referenced eclass id {} but only {len} class slots exist. Fix: pass ids returned by this EGraph instance.",
+                id.0
+            ),
+        }
+    }
+}
+
+impl StdError for EGraphError {}
+
+fn log_egraph_compat_error(context: &'static str, error: &EGraphError) {
+    tracing::error!(
+        context,
+        error = %error,
+        "legacy infallible egraph API failed; use the matching try_* API to handle this condition explicitly"
+    );
 }
 
 impl<L: ENodeLang> Default for EGraph<L> {
@@ -101,20 +169,49 @@ impl<L: ENodeLang> EGraph<L> {
     /// Create an empty `EGraph`.
     #[must_use]
     pub fn new() -> Self {
-        Self::with_capacity(0)
+        Self::empty_unreserved()
     }
 
     /// Create an `EGraph` with capacity for an expected number of `EClasses`.
     #[must_use]
     pub fn with_capacity(class_capacity: usize) -> Self {
+        match Self::try_with_capacity(class_capacity) {
+            Ok(egraph) => egraph,
+            Err(error) => {
+                log_egraph_compat_error("egraph with_capacity", &error);
+                Self::empty_unreserved()
+            }
+        }
+    }
+
+    /// Fallible variant of [`Self::with_capacity`].
+    pub fn try_with_capacity(class_capacity: usize) -> Result<Self, EGraphError> {
+        let mut classes = Vec::new();
+        reserve_vec_exact(&mut classes, class_capacity, "egraph class storage")?;
+        let mut hashcons = FxHashMap::default();
+        reserve_hashcons(&mut hashcons, class_capacity, "egraph hashcons storage")?;
+        let mut parent = Vec::new();
+        reserve_vec_exact(
+            &mut parent,
+            class_capacity,
+            "egraph union-find parent storage",
+        )?;
+        let mut pending = Vec::new();
+        reserve_vec_exact(&mut pending, class_capacity, "egraph rebuild queue storage")?;
+        Ok(Self {
+            classes,
+            hashcons,
+            parent,
+            pending,
+        })
+    }
+
+    fn empty_unreserved() -> Self {
         Self {
-            classes: Vec::with_capacity(class_capacity),
-            hashcons: FxHashMap::with_capacity_and_hasher(
-                class_capacity,
-                BuildHasherDefault::default(),
-            ),
-            parent: Vec::with_capacity(class_capacity),
-            pending: Vec::with_capacity(class_capacity),
+            classes: Vec::new(),
+            hashcons: FxHashMap::default(),
+            parent: Vec::new(),
+            pending: Vec::new(),
         }
     }
 
@@ -126,69 +223,156 @@ impl<L: ENodeLang> EGraph<L> {
 
     /// Find the canonical class representative via path compression.
     pub fn find(&mut self, id: EClassId) -> EClassId {
+        match self.try_find(id) {
+            Ok(found) => found,
+            Err(error) => {
+                log_egraph_compat_error("egraph find", &error);
+                id
+            }
+        }
+    }
+
+    /// Fallible variant of [`Self::find`].
+    pub fn try_find(&mut self, id: EClassId) -> Result<EClassId, EGraphError> {
         let mut cur = id;
-        while self.parent[cur.0 as usize] != cur {
-            cur = self.parent[cur.0 as usize];
+        loop {
+            let cur_idx = eclass_index(cur, self.parent.len(), "egraph find")?;
+            let parent = self.parent[cur_idx];
+            if parent == cur {
+                break;
+            }
+            cur = parent;
         }
         // Path compression.
         let mut walk = id;
-        while self.parent[walk.0 as usize] != cur {
-            let next = self.parent[walk.0 as usize];
-            self.parent[walk.0 as usize] = cur;
+        loop {
+            let walk_idx = eclass_index(walk, self.parent.len(), "egraph path compression")?;
+            let next = self.parent[walk_idx];
+            if next == cur {
+                break;
+            }
+            self.parent[walk_idx] = cur;
             walk = next;
         }
-        cur
+        Ok(cur)
     }
 
-    /// Find a canonical class without path compression — for read-only
+    /// Find a canonical class without path compression  -  for read-only
     /// use during iteration.
     #[must_use]
     pub fn find_immut(&self, id: EClassId) -> EClassId {
-        let mut cur = id;
-        while self.parent[cur.0 as usize] != cur {
-            cur = self.parent[cur.0 as usize];
+        match self.try_find_immut(id) {
+            Ok(found) => found,
+            Err(error) => {
+                log_egraph_compat_error("egraph immutable find", &error);
+                id
+            }
         }
-        cur
+    }
+
+    /// Fallible variant of [`Self::find_immut`].
+    pub fn try_find_immut(&self, id: EClassId) -> Result<EClassId, EGraphError> {
+        let mut cur = id;
+        loop {
+            let cur_idx = eclass_index(cur, self.parent.len(), "egraph immutable find")?;
+            let parent = self.parent[cur_idx];
+            if parent == cur {
+                break;
+            }
+            cur = parent;
+        }
+        Ok(cur)
     }
 
     /// Canonicalize a node by replacing each child with its current
     /// canonical `EClass`.
     fn canonicalize(&self, node: &L) -> L {
+        match self.try_canonicalize(node) {
+            Ok(canonical) => canonical,
+            Err(error) => {
+                log_egraph_compat_error("egraph canonicalize", &error);
+                node.clone()
+            }
+        }
+    }
+
+    fn try_canonicalize(&self, node: &L) -> Result<L, EGraphError> {
         let canon_children: EChildren = node
             .children()
             .into_iter()
-            .map(|c| self.find_immut(c))
-            .collect();
-        node.with_children(&canon_children)
+            .map(|c| self.try_find_immut(c))
+            .collect::<Result<_, _>>()?;
+        Ok(node.with_children(&canon_children))
     }
 
     /// Add a node to the `EGraph`. If an equivalent node already exists,
     /// return its `EClassId`; otherwise create a new `EClass`.
+    pub fn add(&mut self, node: L) -> EClassId {
+        match self.try_add(node) {
+            Ok(id) => id,
+            Err(error) => {
+                log_egraph_compat_error("egraph add", &error);
+                EClassId(0)
+            }
+        }
+    }
+
+    /// Fallible variant of [`Self::add`].
     #[expect(
         clippy::needless_pass_by_value,
         reason = "public insertion API consumes language nodes; canonicalized misses store an owned node"
     )]
-    pub fn add(&mut self, node: L) -> EClassId {
-        let canon = self.canonicalize(&node);
+    pub fn try_add(&mut self, node: L) -> Result<EClassId, EGraphError> {
+        let canon = self.try_canonicalize(&node)?;
         if let Some(&existing) = self.hashcons.get(&canon) {
-            return self.find(existing);
+            return self.try_find(existing);
         }
-        let new_id = eclass_id_from_index(self.classes.len());
+        let new_id = try_eclass_id_from_index(self.classes.len())?;
+        let canon_children = canon.children();
+        reserve_vec_exact(&mut self.parent, 1, "egraph parent insertion")?;
+        reserve_vec_exact(&mut self.classes, 1, "egraph class insertion")?;
+        reserve_hashcons(&mut self.hashcons, 1, "egraph hashcons insertion")?;
+        let mut child_indices: SmallVec<[(usize, EClassId); 4]> = SmallVec::new();
+        for child in &canon_children {
+            let child_canon = self.try_find(*child)?;
+            let child_idx = eclass_index(
+                child_canon,
+                self.classes.len(),
+                "egraph child parent registration",
+            )?;
+            child_indices.push((child_idx, child_canon));
+        }
+        for (position, (child_idx, _)) in child_indices.iter().enumerate() {
+            if child_indices[..position]
+                .iter()
+                .any(|(seen_idx, _)| seen_idx == child_idx)
+            {
+                continue;
+            }
+            let occurrences = child_indices
+                .iter()
+                .filter(|(seen_idx, _)| seen_idx == child_idx)
+                .count();
+            reserve_vec_exact(
+                &mut self.classes[*child_idx].parents,
+                occurrences,
+                "egraph child parent registration",
+            )?;
+        }
+        let mut nodes = Vec::new();
+        reserve_vec_exact(&mut nodes, 1, "egraph singleton enode storage")?;
+        nodes.push(canon.clone());
         self.parent.push(new_id);
         // Register `new_id` as a parent of each child class.
-        for child in canon.children() {
-            let child_canon = self.find(child);
-            if let Some(class) = self.classes.get_mut(child_canon.0 as usize) {
-                class.parents.push(new_id);
-            }
+        for (child_idx, _) in child_indices {
+            self.classes[child_idx].parents.push(new_id);
         }
-        let nodes = vec![canon.clone()];
         self.classes.push(EClass {
             nodes,
             parents: Vec::new(),
         });
         self.hashcons.insert(canon, new_id);
-        new_id
+        Ok(new_id)
     }
 
     /// Equate two `EClasses`. The returned id is the canonical class for
@@ -199,10 +383,21 @@ impl<L: ENodeLang> EGraph<L> {
     /// to re-canonicalize the hashcons + propagate equivalences upward
     /// through parent pointers.
     pub fn union(&mut self, a: EClassId, b: EClassId) -> EClassId {
-        let a_root = self.find(a);
-        let b_root = self.find(b);
+        match self.try_union(a, b) {
+            Ok(id) => id,
+            Err(error) => {
+                log_egraph_compat_error("egraph union", &error);
+                a
+            }
+        }
+    }
+
+    /// Fallible variant of [`Self::union`].
+    pub fn try_union(&mut self, a: EClassId, b: EClassId) -> Result<EClassId, EGraphError> {
+        let a_root = self.try_find(a)?;
+        let b_root = self.try_find(b)?;
         if a_root == b_root {
-            return a_root;
+            return Ok(a_root);
         }
         // Union with the smaller-id-as-root convention for determinism.
         let (winner, loser) = if a_root.0 < b_root.0 {
@@ -210,46 +405,85 @@ impl<L: ENodeLang> EGraph<L> {
         } else {
             (b_root, a_root)
         };
-        self.parent[loser.0 as usize] = winner;
+        let winner_idx = eclass_index(winner, self.classes.len(), "egraph union winner")?;
+        let loser_idx = eclass_index(loser, self.classes.len(), "egraph union loser")?;
+        let loser_nodes_len = self.classes[loser_idx].nodes.len();
+        let loser_parents_len = self.classes[loser_idx].parents.len();
+        reserve_vec_exact(
+            &mut self.classes[winner_idx].nodes,
+            loser_nodes_len,
+            "egraph union node merge",
+        )?;
+        reserve_vec_exact(
+            &mut self.classes[winner_idx].parents,
+            loser_parents_len,
+            "egraph union parent merge",
+        )?;
+        reserve_vec_exact(&mut self.pending, 1, "egraph rebuild queue push")?;
+        self.parent[loser_idx] = winner;
         // Merge nodes + parent lists into the winning class.
         let loser_class = std::mem::replace(
-            &mut self.classes[loser.0 as usize],
+            &mut self.classes[loser_idx],
             EClass {
                 nodes: Vec::new(),
                 parents: Vec::new(),
             },
         );
-        self.classes[winner.0 as usize]
-            .nodes
-            .extend(loser_class.nodes);
-        self.classes[winner.0 as usize]
-            .parents
-            .extend(loser_class.parents);
-        // Schedule the winner for rebuild — its parents may now be
+        self.classes[winner_idx].nodes.extend(loser_class.nodes);
+        self.classes[winner_idx].parents.extend(loser_class.parents);
+        // Schedule the winner for rebuild  -  its parents may now be
         // canonicalizable.
         self.pending.push(winner);
-        winner
+        Ok(winner)
     }
 
     /// Re-canonicalize the hashcons after a batch of `union()` calls.
     /// Returns the number of additional unions discovered transitively.
     pub fn rebuild(&mut self) -> usize {
+        match self.try_rebuild() {
+            Ok(count) => count,
+            Err(error) => {
+                log_egraph_compat_error("egraph rebuild", &error);
+                0
+            }
+        }
+    }
+
+    /// Fallible variant of [`Self::rebuild`].
+    pub fn try_rebuild(&mut self) -> Result<usize, EGraphError> {
         let mut new_unions = 0;
         while let Some(class_id) = self.pending.pop() {
-            let canonical = self.find(class_id);
+            let canonical = self.try_find(class_id)?;
+            let canonical_idx = eclass_index(canonical, self.classes.len(), "egraph rebuild")?;
+            let nodes_len = self.classes[canonical_idx].nodes.len();
+            let mut canon_nodes = Vec::new();
+            reserve_vec_exact(
+                &mut canon_nodes,
+                nodes_len,
+                "egraph rebuild canonical node staging",
+            )?;
+            reserve_hashcons(
+                &mut self.hashcons,
+                nodes_len,
+                "egraph rebuild hashcons staging",
+            )?;
             // Re-canonicalize every node in the canonical class.
-            let nodes = std::mem::take(&mut self.classes[canonical.0 as usize].nodes);
-            let mut canon_nodes = Vec::with_capacity(nodes.len());
+            let nodes = std::mem::take(&mut self.classes[canonical_idx].nodes);
             for node in nodes {
-                let new_canon = self.canonicalize(&node);
+                let new_canon = self.try_canonicalize(&node)?;
                 // Re-insert into hashcons; collisions trigger more unions.
                 if let Some(&existing) = self.hashcons.get(&new_canon) {
-                    let existing_canon = self.find(existing);
+                    let existing_canon = self.try_find(existing)?;
                     if existing_canon != canonical {
-                        let unified = self.union(existing_canon, canonical);
+                        let unified = self.try_union(existing_canon, canonical)?;
                         new_unions += 1;
                         if unified != canonical {
-                            // The winner changed — re-find at top of loop.
+                            // The winner changed  -  re-find at top of loop.
+                            reserve_vec_exact(
+                                &mut self.pending,
+                                1,
+                                "egraph rebuild winner reschedule",
+                            )?;
                             self.pending.push(unified);
                         }
                     }
@@ -257,10 +491,10 @@ impl<L: ENodeLang> EGraph<L> {
                 self.hashcons.insert(new_canon.clone(), canonical);
                 canon_nodes.push(new_canon);
             }
-            dedup_enodes_by_hash(&mut canon_nodes);
-            self.classes[canonical.0 as usize].nodes = canon_nodes;
+            try_dedup_enodes_by_hash(&mut canon_nodes)?;
+            self.classes[canonical_idx].nodes = canon_nodes;
         }
-        new_unions
+        Ok(new_unions)
     }
 
     /// Iterate every (`EClassId`, `ENode`) pair currently in the graph.
@@ -270,7 +504,13 @@ impl<L: ENodeLang> EGraph<L> {
             .iter()
             .enumerate()
             .filter_map(|(idx, class)| {
-                let class_id = eclass_id_from_index(idx);
+                let class_id = match try_eclass_id_from_index(idx) {
+                    Ok(class_id) => class_id,
+                    Err(error) => {
+                        log_egraph_compat_error("egraph iter_nodes class id", &error);
+                        return None;
+                    }
+                };
                 (self.parent[idx] == class_id).then_some((class_id, class))
             })
             .flat_map(|(class_id, class)| class.nodes.iter().map(move |n| (class_id, n)))
@@ -279,27 +519,93 @@ impl<L: ENodeLang> EGraph<L> {
     /// Read-only access to a class by id.
     #[must_use]
     pub fn class(&self, id: EClassId) -> Option<&EClass<L>> {
-        let canon = self.find_immut(id);
-        self.classes.get(canon.0 as usize)
+        match self.try_class(id) {
+            Ok(class) => class,
+            Err(error) => {
+                log_egraph_compat_error("egraph class lookup", &error);
+                None
+            }
+        }
+    }
+
+    /// Fallible variant of [`Self::class`].
+    pub fn try_class(&self, id: EClassId) -> Result<Option<&EClass<L>>, EGraphError> {
+        let canon = self.try_find_immut(id)?;
+        let idx = eclass_index(canon, self.classes.len(), "egraph class lookup")?;
+        Ok(self.classes.get(idx))
     }
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "EClassId is the compact u32 egraph handle; exceeding it is a hard capacity breach"
-)]
+
 fn eclass_id_from_index(index: usize) -> EClassId {
-    EClassId(u32::try_from(index).expect("Fix: egraph class index exceeds u32 EClassId capacity"))
+    match try_eclass_id_from_index(index) {
+        Ok(id) => id,
+        Err(error) => {
+            log_egraph_compat_error("egraph class id conversion", &error);
+            EClassId(0)
+        }
+    }
+}
+
+fn try_eclass_id_from_index(index: usize) -> Result<EClassId, EGraphError> {
+    u32::try_from(index)
+        .map(EClassId)
+        .map_err(|_| EGraphError::ClassIdOverflow { index })
+}
+
+fn eclass_index(id: EClassId, len: usize, context: &'static str) -> Result<usize, EGraphError> {
+    let index =
+        usize::try_from(id.0).map_err(|_| EGraphError::ClassIdOutOfBounds { context, id, len })?;
+    if index < len {
+        Ok(index)
+    } else {
+        Err(EGraphError::ClassIdOutOfBounds { context, id, len })
+    }
+}
+
+fn reserve_vec_exact<T>(
+    vec: &mut Vec<T>,
+    additional: usize,
+    context: &'static str,
+) -> Result<(), EGraphError> {
+    vec.try_reserve_exact(additional)
+        .map_err(|source| EGraphError::Capacity {
+            context,
+            requested: additional,
+            source: source.to_string(),
+        })
+}
+
+fn reserve_hashcons<L: Eq + Hash>(
+    hashcons: &mut FxHashMap<L, EClassId>,
+    additional: usize,
+    context: &'static str,
+) -> Result<(), EGraphError> {
+    hashcons
+        .try_reserve(additional)
+        .map_err(|source| EGraphError::Capacity {
+            context,
+            requested: additional,
+            source: source.to_string(),
+        })
 }
 
 fn dedup_enodes_by_hash<L: ENodeLang>(nodes: &mut Vec<L>) {
-    if nodes.len() <= 1 {
-        return;
+    if let Err(error) = try_dedup_enodes_by_hash(nodes) {
+        log_egraph_compat_error("egraph dedup", &error);
     }
-    let mut keyed = Vec::with_capacity(nodes.len());
+}
+
+fn try_dedup_enodes_by_hash<L: ENodeLang>(nodes: &mut Vec<L>) -> Result<(), EGraphError> {
+    if nodes.len() <= 1 {
+        return Ok(());
+    }
+    let mut keyed = Vec::new();
+    reserve_vec_exact(&mut keyed, nodes.len(), "egraph dedup hash staging")?;
     keyed.extend(nodes.drain(..).map(|node| (stable_enode_hash(&node), node)));
     keyed.sort_unstable_by_key(|(hash, _)| *hash);
-    let mut deduped: Vec<(u64, L)> = Vec::with_capacity(keyed.len());
+    let mut deduped: Vec<(u64, L)> = Vec::new();
+    reserve_vec_exact(&mut deduped, keyed.len(), "egraph dedup output staging")?;
     for (hash, node) in keyed {
         let duplicate_in_hash_bucket = deduped
             .iter()
@@ -310,7 +616,9 @@ fn dedup_enodes_by_hash<L: ENodeLang>(nodes: &mut Vec<L>) {
             deduped.push((hash, node));
         }
     }
+    reserve_vec_exact(nodes, deduped.len(), "egraph dedup node restoration")?;
     nodes.extend(deduped.into_iter().map(|(_, node)| node));
+    Ok(())
 }
 
 fn stable_enode_hash<L: ENodeLang>(node: &L) -> u64 {
@@ -351,25 +659,51 @@ pub fn saturate<L: ENodeLang>(
     rules: &[Box<dyn Rule<L>>],
     max_iters: usize,
 ) -> usize {
-    let mut equivalences = Vec::with_capacity(egraph.class_count());
+    match try_saturate(egraph, rules, max_iters) {
+        Ok(iters) => iters,
+        Err(error) => {
+            log_egraph_compat_error("egraph saturate", &error);
+            0
+        }
+    }
+}
+
+/// Fallible variant of [`saturate`].
+pub fn try_saturate<L: ENodeLang>(
+    egraph: &mut EGraph<L>,
+    rules: &[Box<dyn Rule<L>>],
+    max_iters: usize,
+) -> Result<usize, EGraphError> {
+    let mut equivalences = Vec::new();
+    reserve_vec_exact(
+        &mut equivalences,
+        egraph.class_count(),
+        "egraph saturation equivalence staging",
+    )?;
     for iter in 0..max_iters {
         equivalences.clear();
         for rule in rules {
-            equivalences.extend(rule.matches(egraph));
+            let matches = rule.matches(egraph);
+            reserve_vec_exact(
+                &mut equivalences,
+                matches.len(),
+                "egraph saturation rule-match staging",
+            )?;
+            equivalences.extend(matches);
         }
         if equivalences.is_empty() {
-            return iter;
+            return Ok(iter);
         }
         for (a, b) in equivalences.drain(..) {
-            egraph.union(a, b);
+            egraph.try_union(a, b)?;
         }
-        let extra = egraph.rebuild();
+        let extra = egraph.try_rebuild()?;
         if extra == 0 && egraph.pending.is_empty() {
             // Nothing else to propagate; still need to check if rules find
             // anything new on the next iter.
         }
     }
-    max_iters
+    Ok(max_iters)
 }
 
 /// Adapter that gates a base [`Rule`] on a device-fact predicate.
@@ -388,7 +722,7 @@ pub fn saturate<L: ENodeLang>(
 /// thread a snapshot through their own type.
 ///
 /// When `predicate` returns `false` the wrapped rule's [`matches`]
-/// short-circuits to an empty vector — the saturation loop sees no
+/// short-circuits to an empty vector  -  the saturation loop sees no
 /// equivalences and the rule contributes nothing. When `true`, the
 /// wrapped rule fires unchanged.
 pub struct DeviceAwareRule<L: ENodeLang, F: Fn() -> bool> {
@@ -435,14 +769,14 @@ pub struct FamilySaturationReport {
 /// Saturate-per-family is the prerequisite for ROADMAP A8: a global
 /// `max_iters` punishes algebraic families (which converge in 2-3 iters)
 /// for sharing a budget with slow rewrite families (which may need 50+).
-/// The fix is to give each family its own cap — algebraic gets the small
+/// The fix is to give each family its own cap  -  algebraic gets the small
 /// cap it needs, structural rewrite gets the larger one, and neither
 /// starves the other.
 ///
 /// Order: families run in the order they appear in `families`. Earlier
 /// families' merges are visible to later families (the `EGraph` carries
 /// state across calls). Re-running this wrapper after a third-party
-/// pass mutates the `EGraph` is safe — each call is independent.
+/// pass mutates the `EGraph` is safe  -  each call is independent.
 ///
 /// `budget_for` is queried once per family to allow callers to pull
 /// per-family caps from a TOML config or cost model. Returning 0 skips
@@ -452,7 +786,27 @@ pub fn saturate_per_family<L: ENodeLang>(
     families: &[&dyn Family<L>],
     budget_for: impl Fn(&str) -> usize,
 ) -> Vec<FamilySaturationReport> {
-    let mut out = Vec::with_capacity(families.len());
+    match try_saturate_per_family(egraph, families, budget_for) {
+        Ok(report) => report,
+        Err(error) => {
+            log_egraph_compat_error("egraph saturate_per_family", &error);
+            Vec::new()
+        }
+    }
+}
+
+/// Fallible variant of [`saturate_per_family`].
+pub fn try_saturate_per_family<L: ENodeLang>(
+    egraph: &mut EGraph<L>,
+    families: &[&dyn Family<L>],
+    budget_for: impl Fn(&str) -> usize,
+) -> Result<Vec<FamilySaturationReport>, EGraphError> {
+    let mut out = Vec::new();
+    reserve_vec_exact(
+        &mut out,
+        families.len(),
+        "egraph family saturation report staging",
+    )?;
     for family in families {
         let name = family.name();
         let budget = budget_for(name);
@@ -465,14 +819,14 @@ pub fn saturate_per_family<L: ENodeLang>(
             continue;
         }
         let rules = family.rules();
-        let iters_used = saturate(egraph, &rules, budget);
+        let iters_used = try_saturate(egraph, &rules, budget)?;
         out.push(FamilySaturationReport {
             family: name,
             iters_used,
             budget,
         });
     }
-    out
+    Ok(out)
 }
 
 /// Extract the lowest-cost equivalent representation of `class_id` under
@@ -486,6 +840,21 @@ pub fn extract_best<L: ENodeLang>(
     class_id: EClassId,
     cost_fn: impl Fn(&L) -> u64,
 ) -> Option<(L, u64)> {
+    match try_extract_best(egraph, class_id, cost_fn) {
+        Ok(best) => best,
+        Err(error) => {
+            log_egraph_compat_error("egraph extract_best", &error);
+            None
+        }
+    }
+}
+
+/// Fallible variant of [`extract_best`].
+pub fn try_extract_best<L: ENodeLang>(
+    egraph: &EGraph<L>,
+    class_id: EClassId,
+    cost_fn: impl Fn(&L) -> u64,
+) -> Result<Option<(L, u64)>, EGraphError> {
     // VYRE_IR_HOTSPOTS HIGH: extract_best is the inner loop of every
     // optimizer extraction (called per device per root by
     // device_extraction). The previous FxHashMap<EClassId, (L,u64)>
@@ -494,22 +863,25 @@ pub fn extract_best<L: ENodeLang>(
     // dense u32s in [0, class_count); a direct Vec<Option<(L,u64)>>
     // cuts every lookup to a u32 deref. Plus iter_nodes already
     // filters for canonical (parent[idx] == idx), so the find_immut
-    // on `cid` was redundant work — drop it.
+    // on `cid` was redundant work  -  drop it.
     let class_count = egraph.class_count();
-    let mut costs: Vec<Option<(L, u64)>> = (0..class_count).map(|_| None).collect();
+    let mut costs: Vec<Option<(L, u64)>> = Vec::new();
+    reserve_vec_exact(&mut costs, class_count, "egraph extraction cost table")?;
+    costs.resize_with(class_count, || None);
     let mut changed = true;
     let mut iters = 0;
     while changed && iters < 1024 {
         changed = false;
         iters += 1;
         for (cid, node) in egraph.iter_nodes() {
-            // cid is already canonical — iter_nodes filters parent[idx] == idx.
-            let canon_cid_idx = cid.0 as usize;
+            // cid is already canonical  -  iter_nodes filters parent[idx] == idx.
+            let canon_cid_idx = eclass_index(cid, class_count, "egraph extraction class")?;
             let mut node_cost = cost_fn(node);
             let mut child_overflow = false;
             for child in node.children() {
-                let canon_child = egraph.find_immut(child);
-                let canon_child_idx = canon_child.0 as usize;
+                let canon_child = egraph.try_find_immut(child)?;
+                let canon_child_idx =
+                    eclass_index(canon_child, class_count, "egraph extraction child class")?;
                 if let Some((_, c)) = costs.get(canon_child_idx).and_then(Option::as_ref) {
                     node_cost = node_cost.saturating_add(*c);
                 } else {
@@ -532,8 +904,9 @@ pub fn extract_best<L: ENodeLang>(
             }
         }
     }
-    let canon = egraph.find_immut(class_id);
-    costs.get(canon.0 as usize).and_then(Clone::clone)
+    let canon = egraph.try_find_immut(class_id)?;
+    let canon_idx = eclass_index(canon, class_count, "egraph extraction root class")?;
+    Ok(costs.get(canon_idx).and_then(Clone::clone))
 }
 
 #[cfg(test)]
@@ -667,7 +1040,7 @@ mod tests {
         let add_12 = egraph.add(Arith::Add(one, two));
         egraph.union(add_12, three);
         let _ = egraph.rebuild();
-        let (best, cost) = extract_best(&egraph, add_12, arith_cost).expect("must extract");
+        let (best, cost) = extract_best(&egraph, add_12, arith_cost).expect("Fix: must extract");
         assert_eq!(best, Arith::Const(3));
         assert_eq!(cost, 1);
     }
@@ -676,7 +1049,7 @@ mod tests {
     fn extract_best_returns_only_node_when_no_alternatives() {
         let mut egraph: EGraph<Arith> = EGraph::new();
         let a = egraph.add(Arith::Const(42));
-        let (best, cost) = extract_best(&egraph, a, arith_cost).expect("must extract");
+        let (best, cost) = extract_best(&egraph, a, arith_cost).expect("Fix: must extract");
         assert_eq!(best, Arith::Const(42));
         assert_eq!(cost, 1);
     }
@@ -738,7 +1111,7 @@ mod tests {
     fn class_lookup_returns_canonical_class() {
         let mut egraph: EGraph<Arith> = EGraph::new();
         let a = egraph.add(Arith::Const(7));
-        let class = egraph.class(a).expect("class must exist");
+        let class = egraph.class(a).expect("Fix: class must exist");
         assert!(matches!(class.nodes[0], Arith::Const(7)));
     }
 
@@ -754,7 +1127,7 @@ mod tests {
         let _ = egraph.rebuild();
         // The Add(1,2) class should still be findable, and its node should
         // now reference the unified child class.
-        let class = egraph.class(add_12).expect("class must still exist");
+        let class = egraph.class(add_12).expect("Fix: class must still exist");
         match &class.nodes[0] {
             Arith::Add(a, b) => {
                 let canon_a = egraph.find_immut(*a);
@@ -768,7 +1141,7 @@ mod tests {
         }
     }
 
-    /// Rule that pairs every Const id with itself — guaranteed to
+    /// Rule that pairs every Const id with itself  -  guaranteed to
     /// produce at least one match whenever the egraph holds any Const.
     /// Used purely as a forwarding-test fixture.
     struct PairConstSelfRule;
@@ -928,4 +1301,139 @@ mod tests {
             "the merged class still holds both original nodes (Const(1) + Const(2))"
         );
     }
+
+    #[test]
+    fn fallible_find_reports_foreign_class_id() {
+        let mut egraph: EGraph<Arith> = EGraph::new();
+        let err = egraph
+            .try_find(EClassId(0))
+            .expect_err("empty graph must reject foreign class id 0");
+        assert!(
+            matches!(
+                err,
+                EGraphError::ClassIdOutOfBounds {
+                    context: "egraph find",
+                    id: EClassId(0),
+                    len: 0
+                }
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn fallible_add_rejects_foreign_child_ids() {
+        let mut egraph: EGraph<Arith> = EGraph::new();
+        let err = egraph
+            .try_add(Arith::Add(EClassId(0), EClassId(0)))
+            .expect_err("foreign children must be rejected before insertion");
+        assert!(
+            matches!(
+                err,
+                EGraphError::ClassIdOutOfBounds {
+                    context: "egraph immutable find",
+                    id: EClassId(0),
+                    len: 0
+                }
+            ),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            egraph.class_count(),
+            0,
+            "failed fallible insertion must not allocate a partial class"
+        );
+    }
+
+    #[test]
+    fn fallible_add_handles_duplicate_children_without_late_allocation_path() {
+        let mut egraph: EGraph<Arith> =
+            EGraph::try_with_capacity(2).expect("Fix: unit-test oracle precondition - small egraph reservation must succeed");
+        let one = egraph
+            .try_add(Arith::Const(1))
+            .expect("Fix: unit-test oracle precondition - const insert must succeed");
+        let add = egraph
+            .try_add(Arith::Add(one, one))
+            .expect("Fix: unit-test oracle precondition - duplicate child registration must be pre-reserved");
+        let class = egraph
+            .try_class(add)
+            .expect("Fix: unit-test oracle precondition - class lookup must be valid")
+            .expect("Fix: unit-test oracle precondition - class must exist");
+        assert!(matches!(class.nodes[0], Arith::Add(_, _)));
+    }
+
+    #[test]
+    fn try_class_id_from_index_rejects_overflow() {
+        if usize::BITS <= u32::BITS {
+            return;
+        }
+        let overflow_index = (u32::MAX as usize) + 1;
+        let err = try_eclass_id_from_index(overflow_index)
+            .expect_err("overflowing class index must be rejected");
+        assert_eq!(
+            err,
+            EGraphError::ClassIdOverflow {
+                index: overflow_index
+            }
+        );
+    }
+
+    #[test]
+    fn fallible_saturate_and_extract_match_infallible_contracts() {
+        let mut egraph: EGraph<Arith> =
+            EGraph::try_with_capacity(4).expect("Fix: unit-test oracle precondition - small egraph reservation must succeed");
+        let one = egraph.try_add(Arith::Const(1)).expect("Fix: unit-test oracle precondition - insert one");
+        let two = egraph.try_add(Arith::Const(2)).expect("Fix: unit-test oracle precondition - insert two");
+        let three = egraph.try_add(Arith::Const(3)).expect("Fix: unit-test oracle precondition - insert three");
+        let add_12 = egraph.try_add(Arith::Add(one, two)).expect("Fix: unit-test oracle precondition - insert add");
+        egraph
+            .try_union(add_12, three)
+            .expect("Fix: unit-test oracle precondition - union equivalent nodes");
+        egraph.try_rebuild().expect("Fix: unit-test oracle precondition - rebuild equivalent nodes");
+        let rules: Vec<Box<dyn Rule<Arith>>> = vec![Box::new(UnionEqualConstsRule)];
+        let iters = try_saturate(&mut egraph, &rules, 10).expect("Fix: unit-test oracle precondition - fallible saturation");
+        assert!(iters <= 10);
+        let (best, cost) = try_extract_best(&egraph, add_12, arith_cost)
+            .expect("Fix: unit-test oracle precondition - fallible extraction")
+            .expect("Fix: unit-test oracle precondition - best node must exist");
+        assert_eq!(best, Arith::Const(3));
+        assert_eq!(cost, 1);
+    }
+
+    #[test]
+    fn eqsat_production_uses_fallible_staging_and_checked_ids() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/optimizer/eqsat.rs"
+        ))
+        .expect("Fix: eqsat source must be readable");
+        let production = src
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: unit-test oracle precondition - production section must exist");
+        assert!(
+            !production.contains("unwrap_or(u32::MAX)"),
+            "class ids must never saturate to a poisoned sentinel"
+        );
+        assert!(
+            !production.contains("Vec::with_capacity("),
+            "optimizer staging must use fallible reservations"
+        );
+        assert!(
+            !production.contains("with_capacity_and_hasher("),
+            "hashcons staging must use fallible reservations"
+        );
+        assert!(
+            !production.contains(" as usize"),
+            "EClassId indexing must go through checked conversion helpers"
+        );
+        assert!(production.contains("try_with_capacity"));
+        assert!(production.contains("try_saturate"));
+        assert!(production.contains("try_extract_best"));
+        assert!(
+            !production.contains(".expect("),
+            "legacy egraph compatibility APIs must not panic in production; callers that need hard errors use try_*"
+        );
+    }
 }
+

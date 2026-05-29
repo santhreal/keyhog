@@ -104,7 +104,7 @@ inventory::submit! {
         WORKGROUP_ANY_U32_OP_ID,
         || workgroup_any_u32("values", "out", 4),
         Some(|| vec![vec![
-            [0u32, 0, 7, 0].into_iter().flat_map(|value| value.to_le_bytes()).collect(),
+            crate::wire::pack_u32_slice(&[0u32, 0, 7, 0]),
             vec![0; 4],
         ]]),
         Some(|| vec![vec![7u32.to_le_bytes().to_vec()]]),

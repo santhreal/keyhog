@@ -5,7 +5,7 @@
     clippy::result_unit_err,
     clippy::module_inception
 )]
-//! vyre-driver — substrate-agnostic backend machinery.
+//! vyre-driver  -  substrate-agnostic backend machinery.
 //!
 //! Registry, runtime, pipeline, routing, diagnostics, and the VyreBackend
 //! trait. Concrete backend crates depend on this crate and contribute
@@ -14,6 +14,10 @@
 // missing_docs is enforced workspace-wide via [workspace.lints.rust].
 // vyre-driver inherits that floor; do not re-allow it here.
 
+/// Backend-neutral checked arithmetic and atomic accounting primitives.
+pub mod accounting;
+/// Backend-neutral fallible allocation reservation helpers.
+pub mod allocation;
 /// Backend-neutral ahead-of-time emission registry.
 pub mod aot;
 /// Independent-arm detection for queue-parallel dispatch (ROADMAP D2).
@@ -30,6 +34,8 @@ pub mod async_copy_overlap;
 pub mod autotune_store;
 /// VyreBackend trait, BackendError, capability records, validation.
 pub mod backend;
+/// Backend-neutral benchmark-driven optimization pass selection.
+pub mod benchmark_pass_selection;
 /// Backend-neutral program binding plans.
 pub mod binding;
 /// Bindless buffers / textures decision policy (ROADMAP D9). Decides
@@ -41,7 +47,7 @@ pub mod bindless_policy;
 pub mod cache_eviction;
 /// N5 substrate: spec-cache eviction with frequency × recency heat
 /// decay. Used by F1/F3 cache layers when capacity pressure
-/// triggers — `entries_to_evict(stats, capacity, now)` returns the
+/// triggers  -  `entries_to_evict(stats, capacity, now)` returns the
 /// evictable IDs in eviction order (lowest heat first).
 pub mod cache_eviction_heat;
 /// Backend-neutral cache invalidation policy.
@@ -52,21 +58,39 @@ pub mod cache_invalidation;
 /// record + replay overhead.
 pub mod command_reuse_policy;
 /// Device-conditioned e-graph extraction helpers.
+/// Backend-neutral device-side convergence planning.
+pub mod device_convergence;
+/// Backend-neutral device diagnostic aggregation planning.
+pub mod device_diagnostic_aggregation;
 pub mod device_extraction;
 /// Backend-neutral device capability profile and projections.
 pub mod device_profile;
 /// Tier-B device signature TOML loader.
 pub mod device_signature;
+/// Backend-neutral device-side work queue planning.
+pub mod device_work_queue;
 /// Structured, machine-readable diagnostic rendering.
 pub mod diagnostics;
 /// Bundled D-series + I2 policy invocation. One-shot eval of every
 /// dispatch-side decision substrate so the runtime threads a single
 /// `DispatchPolicyVerdict` instead of six per-substrate verdicts.
 pub mod dispatch_policy;
+/// Backend-neutral dispatch-shape comparison helpers.
+pub mod dispatch_shape;
 /// Device-profile-aware extraction cost helpers (ROADMAP A7).
 pub mod extraction_cost;
+/// Backend-neutral fixpoint-iteration resolution.
+pub mod fixpoint_iterations;
 /// Cross-dispatch fusion decision types and pure analysis.
 pub mod fusion;
+/// Backend-neutral replayable graph-capture binding planning.
+pub mod graph_capture;
+/// Backend-neutral exact-input identity keys for replay caches.
+pub mod input_identity;
+/// Backend-neutral monotonic ordering helpers for staging hot paths.
+pub mod ordering;
+/// Backend-neutral fallible output-slot vector management.
+pub mod output_slots;
 /// Push-constant / tiny-param inlining decision policy (ROADMAP D7).
 /// Backends consume `decide_param_inlining` to choose between inlined
 /// launch metadata and a uniform buffer upload, based on a per-backend
@@ -88,8 +112,14 @@ pub mod pipeline;
 pub mod pipeline_fusion;
 /// Dialect registry, OpDef registration, lowering tables, and interner.
 pub mod registry;
+/// Backend-neutral reservation policy adapters.
+pub mod reservation_policy;
 /// Backend-neutral resident-resource reuse telemetry.
 pub mod residency;
+/// Backend-neutral resident transfer interval fusion.
+pub mod resident_transfer_fusion;
+/// Backend-neutral compact result readback planning.
+pub mod result_compaction;
 /// Runtime routing: profile-guided variant selection, algorithm heuristics.
 pub mod routing;
 /// Sampled CPU-reference shadow execution of live dispatches.
@@ -112,6 +142,8 @@ pub mod subgroup;
 /// pre-spec on a predicted shape, weighted by recent hit count and
 /// prediction confidence vs the speculative spec cost.
 pub mod trace_jit_policy;
+/// Backend-neutral checked transfer accounting policy.
+pub mod transfer_accounting;
 /// Backend-neutral autotuner framework.
 pub mod tuner;
 /// Shared validation caches and launch-geometry contracts.
@@ -141,11 +173,23 @@ pub mod speculate;
 /// Cross-grid synchronization: kernel-split fallback for backends
 /// that lack a native cooperative-launch grid barrier. Splits a
 /// `Program` at every `Node::Barrier { ordering: GridSync }` and
-/// dispatches the segments in sequence — the kernel-launch boundary
+/// dispatches the segments in sequence  -  the kernel-launch boundary
 /// itself is the grid-level fence.
 pub mod grid_sync;
 /// Backend-neutral launch preparation and program fingerprint wrappers.
 pub mod launch;
+/// Backend-neutral adjacent-stage launch fusion planning.
+pub mod launch_fusion;
+/// Backend-neutral megakernel wave barrier planning.
+pub mod megakernel_barrier;
+/// Backend-neutral persistent megakernel execution planning.
+pub mod megakernel_execution;
+/// Backend-neutral megakernel frontier memory planning.
+pub mod megakernel_frontier;
+/// Backend-neutral resident-graph multi-query execution planning.
+pub mod multi_query_execution;
+/// Backend-neutral numeric boundary conversions.
+pub mod numeric;
 /// G7: persistent-thread engine + device-side work queue.
 /// Eliminates per-file kernel-launch overhead for streams of
 /// many small scan jobs.
@@ -155,11 +199,12 @@ pub use vyre_foundation::error;
 
 pub use aot::{emit_aot_target, registered_aot_emitters, AotEmitter, AotTargetId};
 pub use backend::{
-    default_dispatch_with_device_buffers, replace_output_buffers_preserving_slots,
-    validate_buffer_ownership, validate_program_for_backend, BackendError, BackendRegistration,
-    CompiledPipeline, DeviceBuffer, DispatchConfig, Executable, HostShimBuffer, Memory, MemoryRef,
-    OutputBuffers, PendingDispatch, ResidentDispatchStep, ResidentReadRange, Resource,
-    TimedDispatchResult, TypedDispatchExt, VyreBackend, DEVICE_BUFFER_FEATURE,
+    borrowed_input_slices, default_dispatch_with_device_buffers,
+    replace_output_buffers_preserving_slots, validate_buffer_ownership,
+    validate_program_for_backend, BackendError, BackendRegistration, CompiledPipeline,
+    DeviceBuffer, DispatchConfig, Executable, HostShimBuffer, Memory, MemoryRef, OutputBuffers,
+    PendingDispatch, ResidentDispatchStep, ResidentReadRange, Resource, TimedDispatchResult,
+    TypedDispatchExt, VyreBackend, DEVICE_BUFFER_FEATURE,
 };
 pub use binding::{
     binding_plans_share_layout, BackendLayoutClass, BackendLayoutFingerprint, BackendLayoutSlot,
@@ -171,7 +216,12 @@ pub use device_extraction::{
 pub use device_profile::DeviceProfile;
 pub use device_signature::{DeviceSignature, DeviceSignatureTable};
 pub use diagnostics::{Diagnostic, DiagnosticCode, OpLocation, Severity};
+pub use dispatch_shape::{
+    borrowed_input_batch_shapes_match, borrowed_input_shapes_match,
+    dispatch_configs_share_launch_shape,
+};
 pub use error::Error;
+pub use fixpoint_iterations::{resolve_fixpoint_iterations, resolve_fixpoint_iterations_usize};
 pub use launch::{program_vsa_fingerprint, program_vsa_fingerprint_words, LaunchPlan};
 pub use pipeline::{
     compile, compile_owned, compile_owned_with_telemetry, compile_shared,

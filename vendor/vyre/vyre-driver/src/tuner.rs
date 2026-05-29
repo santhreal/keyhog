@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use vyre_foundation::ir::Program;
 
-const CANDIDATES: &[u32] = &[32, 64, 128, 256, 512, 1024];
+/// Canonical 1D workgroup-size probes shared by live dispatch tuning and
+/// backend timer sweeps.
+pub const WORKGROUP_CANDIDATES: &[u32] = &[32, 64, 128, 256, 512, 1024];
 const AUTOTUNER_ENV: &str = "VYRE_AUTOTUNER";
 const MAX_TUNER_CACHE_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -17,21 +19,41 @@ const MAX_TUNER_CACHE_BYTES: u64 = 4 * 1024 * 1024;
 pub enum Mode {
     /// Sweep candidate sizes on first dispatch.
     On,
+    /// Sweep candidate sizes and use Fisher-preconditioned policy updates.
+    NaturalGradient,
     /// Use cached decisions when present, otherwise the default workgroup.
     OffUseDefault,
 }
 
 impl Mode {
+    /// Production default when `VYRE_AUTOTUNER` is unset.
+    ///
+    /// Explicit `VYRE_AUTOTUNER=off` or `default` still gives the stable
+    /// cached/default path for deterministic bisects, but the release path
+    /// exercises the Fisher-preconditioned autotuner by default.
+    #[must_use]
+    pub const fn production_default() -> Self {
+        Mode::NaturalGradient
+    }
+
     /// Resolve mode from `VYRE_AUTOTUNER`.
     #[must_use]
     pub fn from_env() -> Self {
-        match std::env::var(AUTOTUNER_ENV) {
-            Ok(value) if value == "on" => Mode::On,
-            Ok(value) if value == "off" || value == "default" => Mode::OffUseDefault,
-            Ok(value) => panic!(
-                "{AUTOTUNER_ENV}={value:?} is invalid. Fix: set VYRE_AUTOTUNER to `on`, `off`, or `default`, or unset it for the production default."
+        match std::env::var(AUTOTUNER_ENV).ok() {
+            Some(value) => Self::from_env_value(Some(value.as_str())),
+            None => Self::production_default(),
+        }
+    }
+
+    fn from_env_value(value: Option<&str>) -> Self {
+        match value {
+            Some("on") => Mode::On,
+            Some("natural" | "ng") => Mode::NaturalGradient,
+            Some("off" | "default") => Mode::OffUseDefault,
+            Some(value) => panic!(
+                "{AUTOTUNER_ENV}={value:?} is invalid. Fix: set VYRE_AUTOTUNER to `natural`, `on`, `off`, or `default`, or unset it for the Fisher-preconditioned production default."
             ),
-            Err(_) => Mode::OffUseDefault,
+            None => Self::production_default(),
         }
     }
 }
@@ -162,7 +184,7 @@ impl TunerCache {
     /// Record a decision under a typed key.
     ///
     /// HOT PATH (autotuner cache write): takes ownership of `key` so the fingerprint `String`
-    /// moves into the map — `set(key.as_str(), …)` would allocate a second copy of the same bytes.
+    /// moves into the map  -  `set(key.as_str(), …)` would allocate a second copy of the same bytes.
     pub fn set_key(&mut self, key: TunerProgramKey, size: [u32; 3]) {
         self.entries.insert(key.0, size);
     }
@@ -264,6 +286,229 @@ pub struct TuningMeasurement {
     pub elapsed_ns: u64,
 }
 
+/// 16.16 fixed-point value representing 1.0.
+pub const Q16_ONE: u32 = 1 << 16;
+
+/// Natural-gradient policy for choosing the next autotune probe from
+/// measured latency samples.
+///
+/// The policy treats the candidate set as a discrete distribution over
+/// launch configurations. Latency samples become a softmax over
+/// `-elapsed_ns / temperature_ns`; the supplied inverse-Fisher square-root
+/// matrix preconditions that probability/gradient vector before the driver
+/// picks the next candidate. CUDA/self-substrate can produce the same
+/// fixed-point matrix through the primitive-backed natural-gradient path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NaturalGradientPolicy {
+    /// Softmax temperature in nanoseconds. Larger values explore more.
+    pub temperature_ns: u64,
+}
+
+impl Default for NaturalGradientPolicy {
+    fn default() -> Self {
+        Self {
+            temperature_ns: 10_000,
+        }
+    }
+}
+
+/// Result of a natural-gradient autotune policy update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NaturalGradientTuningStep {
+    /// Candidate selected after Fisher preconditioning.
+    pub selected_workgroup_size: [u32; 3],
+    /// Fastest candidate observed in the raw measurement window.
+    pub best_measured_workgroup_size: [u32; 3],
+    /// Fastest elapsed time observed in the raw measurement window.
+    pub best_measured_elapsed_ns: u64,
+    /// Softmax policy weights in 16.16 fixed-point form.
+    pub policy_weights_q16: Vec<u32>,
+    /// Fisher-preconditioned gradient magnitudes in 16.16 fixed-point form.
+    pub natural_gradient_q16: Vec<u32>,
+}
+
+/// Errors returned by natural-gradient autotune policy construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NaturalGradientTuningError {
+    /// No latency samples were provided.
+    EmptyMeasurements,
+    /// The inverse-Fisher square-root matrix was not `n * n`.
+    FisherMatrixShape {
+        /// Number of latency samples.
+        measurements: usize,
+        /// Number of fixed-point cells in the supplied matrix.
+        cells: usize,
+    },
+    /// The softmax temperature was zero.
+    ZeroTemperature,
+}
+
+impl std::fmt::Display for NaturalGradientTuningError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyMeasurements => {
+                write!(
+                    f,
+                    "natural-gradient tuner received no measurements. Fix: measure at least one candidate before policy update."
+                )
+            }
+            Self::FisherMatrixShape {
+                measurements,
+                cells,
+            } => write!(
+                f,
+                "natural-gradient tuner expected an inverse-Fisher matrix with {} cells for {measurements} measurement(s), got {cells}. Fix: pass an n*n 16.16 matrix.",
+                measurements.saturating_mul(*measurements)
+            ),
+            Self::ZeroTemperature => {
+                write!(
+                    f,
+                    "natural-gradient tuner temperature is zero. Fix: use a positive temperature_ns."
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for NaturalGradientTuningError {}
+
+impl NaturalGradientPolicy {
+    /// Suggest the next workgroup-size candidate from latency samples and an
+    /// inverse-Fisher square-root matrix.
+    ///
+    /// `fisher_inv_sqrt_q16` is row-major `n x n`, 16.16 fixed-point. Passing
+    /// an identity matrix makes the policy reduce to the softmax-gradient
+    /// candidate. Non-identity blocks let the runtime bias exploration by the
+    /// local latency manifold instead of blindly reusing the single fastest
+    /// point.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NaturalGradientTuningError`] when the measurement set is
+    /// empty, temperature is zero, or the Fisher matrix shape does not match.
+    pub fn suggest(
+        &self,
+        measurements: &[TuningMeasurement],
+        fisher_inv_sqrt_q16: &[u32],
+    ) -> Result<NaturalGradientTuningStep, NaturalGradientTuningError> {
+        if measurements.is_empty() {
+            return Err(NaturalGradientTuningError::EmptyMeasurements);
+        }
+        if self.temperature_ns == 0 {
+            return Err(NaturalGradientTuningError::ZeroTemperature);
+        }
+        let expected_cells = measurements.len().checked_mul(measurements.len()).ok_or(
+            NaturalGradientTuningError::FisherMatrixShape {
+                measurements: measurements.len(),
+                cells: fisher_inv_sqrt_q16.len(),
+            },
+        )?;
+        if fisher_inv_sqrt_q16.len() != expected_cells {
+            return Err(NaturalGradientTuningError::FisherMatrixShape {
+                measurements: measurements.len(),
+                cells: fisher_inv_sqrt_q16.len(),
+            });
+        }
+
+        let mut best_index = 0usize;
+        let mut best_elapsed = measurements[0].elapsed_ns;
+        for (index, measurement) in measurements.iter().enumerate().skip(1) {
+            if measurement.elapsed_ns < best_elapsed {
+                best_index = index;
+                best_elapsed = measurement.elapsed_ns;
+            }
+        }
+
+        let policy_weights_q16 =
+            latency_softmax_weights_q16(measurements, best_elapsed, self.temperature_ns);
+        let natural_gradient_q16 =
+            precondition_q16(fisher_inv_sqrt_q16, &policy_weights_q16, measurements.len());
+        let selected_index = natural_gradient_q16
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, value)| *value)
+            .map(|(index, _)| index)
+            .unwrap_or(best_index);
+
+        Ok(NaturalGradientTuningStep {
+            selected_workgroup_size: measurements[selected_index].workgroup_size,
+            best_measured_workgroup_size: measurements[best_index].workgroup_size,
+            best_measured_elapsed_ns: best_elapsed,
+            policy_weights_q16,
+            natural_gradient_q16,
+        })
+    }
+}
+
+/// Build an identity inverse-Fisher square-root matrix in 16.16 fixed point.
+#[must_use]
+pub fn identity_fisher_q16(candidate_count: usize) -> Vec<u32> {
+    let mut out = Vec::new();
+    identity_fisher_q16_into(candidate_count, &mut out);
+    out
+}
+
+/// Write an identity inverse-Fisher square-root matrix into caller-owned
+/// storage.
+
+pub fn identity_fisher_q16_into(candidate_count: usize, out: &mut Vec<u32>) {
+    let cells = candidate_count.checked_mul(candidate_count).unwrap_or_else(|| {
+        panic!(
+            "candidate_count {candidate_count} overflows identity Fisher matrix size. Fix: split autotuning into smaller candidate pages."
+        )
+    });
+    out.clear();
+    out.resize(cells, 0);
+    for index in 0..candidate_count {
+        out[index * candidate_count + index] = Q16_ONE;
+    }
+}
+
+fn latency_softmax_weights_q16(
+    measurements: &[TuningMeasurement],
+    best_elapsed: u64,
+    temperature_ns: u64,
+) -> Vec<u32> {
+    let temperature = temperature_ns as f64;
+    let mut weights = Vec::with_capacity(measurements.len());
+    let mut sum = 0.0f64;
+    for measurement in measurements {
+        let penalty = measurement.elapsed_ns.saturating_sub(best_elapsed) as f64;
+        let weight = (-penalty / temperature).exp();
+        weights.push(weight);
+        sum += weight;
+    }
+    let mut out = Vec::with_capacity(measurements.len());
+    let mut assigned = 0u32;
+    for (index, weight) in weights.iter().enumerate() {
+        if index + 1 == weights.len() {
+            out.push(Q16_ONE.saturating_sub(assigned));
+            break;
+        }
+        let q16 = ((*weight / sum) * f64::from(Q16_ONE)).round() as u32;
+        let remaining = Q16_ONE.saturating_sub(assigned);
+        let q16 = q16.min(remaining);
+        assigned = assigned.saturating_add(q16);
+        out.push(q16);
+    }
+    out
+}
+
+fn precondition_q16(matrix_q16: &[u32], gradient_q16: &[u32], n: usize) -> Vec<u32> {
+    let mut out = vec![0u32; n];
+    for row in 0..n {
+        let mut acc = 0u64;
+        for col in 0..n {
+            let matrix = u64::from(matrix_q16[row * n + col]);
+            let gradient = u64::from(gradient_q16[col]);
+            acc = acc.saturating_add((matrix.saturating_mul(gradient)) >> 16);
+        }
+        out[row] = acc.min(u64::from(u32::MAX)) as u32;
+    }
+    out
+}
+
 /// Workgroup-size autotuner.
 pub struct Tuner {
     mode: Mode,
@@ -299,15 +544,15 @@ impl Tuner {
     pub fn candidates_for(&self, max_invocations: u32) -> Vec<u32> {
         let mut candidates = Vec::new();
         candidates
-            .try_reserve_exact(CANDIDATES.len())
+            .try_reserve_exact(WORKGROUP_CANDIDATES.len())
             .unwrap_or_else(|error| {
                 panic!(
                     "Vyre tuner could not reserve {} workgroup candidate slot(s): {error}. Fix: shrink the candidate table or split tuning into pages.",
-                    CANDIDATES.len()
+                    WORKGROUP_CANDIDATES.len()
                 )
             });
         candidates.extend(
-            CANDIDATES
+            WORKGROUP_CANDIDATES
                 .iter()
                 .copied()
                 .filter(|candidate| *candidate <= max_invocations),
@@ -377,6 +622,58 @@ impl Tuner {
             }
         }
         Ok(best)
+    }
+
+    /// Measure candidates, then choose the next probe with a
+    /// Fisher-preconditioned natural-gradient policy.
+    ///
+    /// This is the concrete runtime handoff for `VYRE_AUTOTUNER=natural`.
+    /// It reuses the same backend timer as [`Self::best_of`], records every
+    /// measured candidate, and feeds those measurements into
+    /// [`NaturalGradientPolicy`]. The returned step includes both the raw
+    /// fastest measurement and the Fisher-directed next candidate.
+    ///
+    /// # Errors
+    ///
+    /// Returns backend timing errors from [`BackendTimer`] or policy errors
+    /// from [`NaturalGradientPolicy`].
+    pub fn best_of_natural_gradient<T: BackendTimer>(
+        &self,
+        program: &Program,
+        candidates: impl IntoIterator<Item = [u32; 3]>,
+        timer: &mut T,
+        fisher_inv_sqrt_q16: &[u32],
+        policy: NaturalGradientPolicy,
+    ) -> Result<Result<NaturalGradientTuningStep, NaturalGradientTuningError>, T::Error> {
+        let mut measurements = Vec::new();
+        for workgroup_size in candidates {
+            let elapsed_ns = timer.measure_candidate_ns(program, workgroup_size)?;
+            measurements.push(TuningMeasurement {
+                workgroup_size,
+                elapsed_ns,
+            });
+        }
+        Ok(policy.suggest(&measurements, fisher_inv_sqrt_q16))
+    }
+
+    /// Convert measured candidates into a Fisher-preconditioned next probe.
+    ///
+    /// This keeps the best-of-N timing hook compatible while giving CUDA and
+    /// other GPU backends a richer update rule than "pick the current fastest
+    /// sample forever." Backends can feed `fisher_inv_sqrt_q16` from the
+    /// primitive-backed natural-gradient self-substrate path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NaturalGradientTuningError`] when the policy input is
+    /// malformed.
+    pub fn natural_gradient_step(
+        &self,
+        measurements: &[TuningMeasurement],
+        fisher_inv_sqrt_q16: &[u32],
+        policy: NaturalGradientPolicy,
+    ) -> Result<NaturalGradientTuningStep, NaturalGradientTuningError> {
+        policy.suggest(measurements, fisher_inv_sqrt_q16)
     }
 
     /// Write the cache to disk.
@@ -469,3 +766,255 @@ fn dirs_cache_root() -> PathBuf {
         PathBuf::from(".")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn measurements() -> Vec<TuningMeasurement> {
+        vec![
+            TuningMeasurement {
+                workgroup_size: [64, 1, 1],
+                elapsed_ns: 12_000,
+            },
+            TuningMeasurement {
+                workgroup_size: [128, 1, 1],
+                elapsed_ns: 8_000,
+            },
+            TuningMeasurement {
+                workgroup_size: [256, 1, 1],
+                elapsed_ns: 10_000,
+            },
+        ]
+    }
+
+    struct StaticTimer {
+        fail_on: Option<u32>,
+        measured: Vec<[u32; 3]>,
+    }
+
+    impl StaticTimer {
+        fn new() -> Self {
+            Self {
+                fail_on: None,
+                measured: Vec::new(),
+            }
+        }
+
+        fn failing(fail_on: u32) -> Self {
+            Self {
+                fail_on: Some(fail_on),
+                measured: Vec::new(),
+            }
+        }
+    }
+
+    impl BackendTimer for StaticTimer {
+        type Error = &'static str;
+
+        fn measure_candidate_ns(
+            &mut self,
+            _program: &Program,
+            workgroup_size: [u32; 3],
+        ) -> Result<u64, Self::Error> {
+            self.measured.push(workgroup_size);
+            if self.fail_on == Some(workgroup_size[0]) {
+                return Err("timer failed");
+            }
+            Ok(match workgroup_size[0] {
+                64 => 12_000,
+                128 => 8_000,
+                256 => 10_000,
+                _ => 50_000,
+            })
+        }
+    }
+
+    fn empty_program() -> Program {
+        Program::wrapped(Vec::new(), [64, 1, 1], Vec::new())
+    }
+
+    #[test]
+    fn unset_autotuner_mode_defaults_to_natural_gradient_release_path() {
+        assert_eq!(Mode::production_default(), Mode::NaturalGradient);
+        assert_eq!(Mode::from_env_value(None), Mode::NaturalGradient);
+    }
+
+    #[test]
+    fn explicit_env_modes_preserve_escape_hatches() {
+        assert_eq!(Mode::from_env_value(Some("natural")), Mode::NaturalGradient);
+        assert_eq!(Mode::from_env_value(Some("ng")), Mode::NaturalGradient);
+        assert_eq!(Mode::from_env_value(Some("on")), Mode::On);
+        assert_eq!(Mode::from_env_value(Some("off")), Mode::OffUseDefault);
+        assert_eq!(Mode::from_env_value(Some("default")), Mode::OffUseDefault);
+    }
+
+    #[test]
+    fn identity_fisher_preserves_fastest_candidate_policy_gradient() {
+        let policy = NaturalGradientPolicy {
+            temperature_ns: 4_000,
+        };
+        let samples = measurements();
+        let step = policy
+            .suggest(&samples, &identity_fisher_q16(samples.len()))
+            .expect("Fix: identity Fisher natural-gradient update should be valid");
+
+        assert_eq!(step.best_measured_workgroup_size, [128, 1, 1]);
+        assert_eq!(step.selected_workgroup_size, [128, 1, 1]);
+        assert_eq!(step.best_measured_elapsed_ns, 8_000);
+    }
+
+    #[test]
+    fn anisotropic_fisher_can_redirect_next_probe_without_changing_measurement_winner() {
+        let policy = NaturalGradientPolicy {
+            temperature_ns: 4_000,
+        };
+        let samples = measurements();
+        let mut fisher = identity_fisher_q16(samples.len());
+        fisher[0] = Q16_ONE * 8;
+
+        let step = policy
+            .suggest(&samples, &fisher)
+            .expect("Fix: diagonal Fisher natural-gradient update should be valid");
+
+        assert_eq!(step.best_measured_workgroup_size, [128, 1, 1]);
+        assert_eq!(
+            step.selected_workgroup_size,
+            [64, 1, 1],
+            "Fix: Fisher geometry must be able to steer exploration away from the raw fastest sample."
+        );
+        assert!(
+            step.natural_gradient_q16[0] > step.natural_gradient_q16[1],
+            "Fix: preconditioned gradient should reflect the anisotropic Fisher block."
+        );
+    }
+
+    #[test]
+    fn softmax_weights_conserve_q16_probability_mass_across_hostile_latencies() {
+        let policy = NaturalGradientPolicy { temperature_ns: 1 };
+        for base in [0_u64, 1, 10, 1_000, u64::MAX - 2] {
+            let samples = vec![
+                TuningMeasurement {
+                    workgroup_size: [32, 1, 1],
+                    elapsed_ns: base,
+                },
+                TuningMeasurement {
+                    workgroup_size: [64, 1, 1],
+                    elapsed_ns: base.saturating_add(1),
+                },
+                TuningMeasurement {
+                    workgroup_size: [128, 1, 1],
+                    elapsed_ns: base.saturating_add(2),
+                },
+            ];
+            let step = policy
+                .suggest(&samples, &identity_fisher_q16(samples.len()))
+                .expect("Fix: hostile latency range should still produce a normalized policy");
+            let total: u32 = step.policy_weights_q16.iter().sum();
+            assert_eq!(
+                total, Q16_ONE,
+                "Fix: fixed-point policy weights must conserve probability mass for base={base}."
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_empty_measurements_zero_temperature_and_bad_fisher_shape() {
+        let policy = NaturalGradientPolicy::default();
+        assert_eq!(
+            policy.suggest(&[], &[]),
+            Err(NaturalGradientTuningError::EmptyMeasurements)
+        );
+
+        let samples = measurements();
+        let zero_temp = NaturalGradientPolicy { temperature_ns: 0 };
+        assert_eq!(
+            zero_temp.suggest(&samples, &identity_fisher_q16(samples.len())),
+            Err(NaturalGradientTuningError::ZeroTemperature)
+        );
+        assert_eq!(
+            policy.suggest(&samples, &[Q16_ONE]),
+            Err(NaturalGradientTuningError::FisherMatrixShape {
+                measurements: samples.len(),
+                cells: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn tuner_exposes_natural_gradient_step_surface() {
+        let tuner = Tuner::new("natural-gradient-test-adapter", Mode::OffUseDefault);
+        let samples = measurements();
+        let step = tuner
+            .natural_gradient_step(
+                &samples,
+                &identity_fisher_q16(samples.len()),
+                NaturalGradientPolicy::default(),
+            )
+            .expect("Fix: tuner natural-gradient policy surface should accept identity Fisher");
+
+        assert_eq!(step.selected_workgroup_size, [128, 1, 1]);
+    }
+
+    #[test]
+    fn measured_natural_gradient_sweep_uses_backend_timer_and_fisher_policy() {
+        let tuner = Tuner::new(
+            "measured-natural-gradient-test-adapter",
+            Mode::NaturalGradient,
+        );
+        let mut timer = StaticTimer::new();
+        let mut fisher = identity_fisher_q16(3);
+        fisher[0] = Q16_ONE * 8;
+
+        let step = tuner
+            .best_of_natural_gradient(
+                &empty_program(),
+                [[64, 1, 1], [128, 1, 1], [256, 1, 1]],
+                &mut timer,
+                &fisher,
+                NaturalGradientPolicy {
+                    temperature_ns: 4_000,
+                },
+            )
+            .expect("Fix: backend timer should succeed")
+            .expect("Fix: natural-gradient policy should accept measured candidates");
+
+        assert_eq!(
+            timer.measured,
+            vec![[64, 1, 1], [128, 1, 1], [256, 1, 1]],
+            "Fix: natural-gradient sweep must measure every supplied candidate."
+        );
+        assert_eq!(step.best_measured_workgroup_size, [128, 1, 1]);
+        assert_eq!(
+            step.selected_workgroup_size,
+            [64, 1, 1],
+            "Fix: measured natural-gradient sweep must use Fisher policy, not raw fastest-only selection."
+        );
+    }
+
+    #[test]
+    fn measured_natural_gradient_sweep_propagates_timer_failures() {
+        let tuner = Tuner::new(
+            "measured-natural-gradient-error-test-adapter",
+            Mode::NaturalGradient,
+        );
+        let mut timer = StaticTimer::failing(128);
+        let err = tuner
+            .best_of_natural_gradient(
+                &empty_program(),
+                [[64, 1, 1], [128, 1, 1], [256, 1, 1]],
+                &mut timer,
+                &identity_fisher_q16(3),
+                NaturalGradientPolicy::default(),
+            )
+            .expect_err("Fix: backend timer failures must propagate before policy update");
+
+        assert_eq!(err, "timer failed");
+        assert_eq!(
+            timer.measured,
+            vec![[64, 1, 1], [128, 1, 1]],
+            "Fix: failed measurements must stop the sweep instead of producing a fake policy result."
+        );
+    }
+}
+

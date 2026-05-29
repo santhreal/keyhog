@@ -2,7 +2,7 @@
 //!
 //! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4 (algebraic
 //! simplification family). Companion to `boolean_simplify`'s
-//! double-LogicalNot pattern — that pass handles the boolean case;
+//! double-LogicalNot pattern  -  that pass handles the boolean case;
 //! this one handles the bitwise + arithmetic cases.
 //!
 //! Patterns rewritten:
@@ -12,9 +12,9 @@
 //!   addition; downstream identity_elim then folds Add(_, 0) etc.)
 //!
 //! Out of scope:
-//! - `Negate(Sub(a, b))` → `Sub(b, a)` — reorders operands but doesn't
+//! - `Negate(Sub(a, b))` → `Sub(b, a)`  -  reorders operands but doesn't
 //!   reduce op count; canonicalize handles operand sorting.
-//! - `Add(a, Negate(b))` → `Sub(a, b)` — symmetric to the Sub-Negate
+//! - `Add(a, Negate(b))` → `Sub(a, b)`  -  symmetric to the Sub-Negate
 //!   case but the canonical direction is Sub(a, Negate(b)) → Add(a, b)
 //!   so we don't oscillate; the inverse would defeat the rewrite.
 //!
@@ -23,8 +23,8 @@
 //! involution families (LogicalNot, BitNot, Negate) are handled in
 //! the same fixpoint phase.
 
+use super::body_index::BodyIndex;
 use crate::{KernelBody, KernelDescriptor, KernelOpKind};
-use rustc_hash::FxHashMap;
 use vyre_foundation::ir::{BinOp, UnOp};
 
 #[must_use]
@@ -35,12 +35,7 @@ pub fn negate_cancel(desc: &KernelDescriptor) -> KernelDescriptor {
 }
 
 fn negate_cancel_body(mut body: KernelBody) -> KernelBody {
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
+    let index = BodyIndex::new(&body);
 
     enum Rewrite {
         // Replace op_idx's kind/operands with Copy(replace_id).
@@ -57,11 +52,9 @@ fn negate_cancel_body(mut body: KernelBody) -> KernelBody {
                     continue;
                 }
                 let inner_id = op.operands[0];
-                let producer_idx = match result_to_idx.get(&inner_id) {
-                    Some(p) => *p,
-                    None => continue,
+                let Some(producer) = index.producer(&body, inner_id) else {
+                    continue;
                 };
-                let producer = &body.ops[producer_idx];
                 if let KernelOpKind::UnOpKind(inner) = &producer.kind {
                     if outer == inner && producer.operands.len() == 1 {
                         rewrites.push(Rewrite::Copy {
@@ -77,11 +70,9 @@ fn negate_cancel_body(mut body: KernelBody) -> KernelBody {
                 }
                 let a_id = op.operands[0];
                 let neg_id = op.operands[1];
-                let neg_producer_idx = match result_to_idx.get(&neg_id) {
-                    Some(p) => *p,
-                    None => continue,
+                let Some(neg_producer) = index.producer(&body, neg_id) else {
+                    continue;
                 };
-                let neg_producer = &body.ops[neg_producer_idx];
                 if matches!(neg_producer.kind, KernelOpKind::UnOpKind(UnOp::Negate))
                     && neg_producer.operands.len() == 1
                 {
@@ -231,7 +222,7 @@ mod tests {
         let desc = negate_cancel(&descriptor_with(body));
         assert!(
             matches!(kind_at(&desc, 2), KernelOpKind::UnOpKind(UnOp::BitNot)),
-            "Fix: BitNot(Negate(x)) must not collapse — different involutions"
+            "Fix: BitNot(Negate(x)) must not collapse  -  different involutions"
         );
     }
 

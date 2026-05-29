@@ -1,6 +1,6 @@
 //! Boolean simplification rewrite.
 //!
-//! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4 — boolean
+//! Source-of-truth: `PERF_ROADMAP_2026-05-01.md` section A.4  -  boolean
 //! simplification is one of the 20 classical compiler passes named in
 //! the perf roadmap. Patterns rewritten:
 //!
@@ -13,11 +13,11 @@
 //! - `Ne(LitU32(a), LitU32(b))` → `BoolLit(a != b)`
 //!
 //! What this pass does NOT do (out of scope, deliberately):
-//! - De Morgan's laws — they don't reduce op count, just rebalance
+//! - De Morgan's laws  -  they don't reduce op count, just rebalance
 //!   structure; downstream CSE handles the equality cases this would
 //!   produce.
-//! - `Eq(x, x)` → `true` — unsafe under f32 because NaN != NaN.
-//! - Float `Add(x, 0.0)` / `Mul(x, 1.0)` — those are wrong under
+//! - `Eq(x, x)` → `true`  -  unsafe under f32 because NaN != NaN.
+//! - Float `Add(x, 0.0)` / `Mul(x, 1.0)`  -  those are wrong under
 //!   strict-FP (they affect signed zero / NaN propagation); identity_elim
 //!   handles the integer cases.
 //!
@@ -25,35 +25,21 @@
 //! `CANONICAL_REWRITE_PASSES` after `identity_elim` (which handles the
 //! left/right-identity rules this leans on for stable input).
 
-use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
-use rustc_hash::FxHashMap;
+use super::body_index::BodyIndex;
+use super::literal::ResultAllocator;
+use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue};
 use vyre_foundation::ir::{BinOp, UnOp};
 
 #[must_use]
 pub fn boolean_simplify(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    out.body = boolean_simplify_body(out.body);
+    let mut allocator = ResultAllocator::for_body_tree(&out.body);
+    out.body = boolean_simplify_body(out.body, &mut allocator);
     out
 }
 
-fn boolean_simplify_body(mut body: KernelBody) -> KernelBody {
-    // Map result-id → op index. SSA shape so each id has exactly one
-    // producer.
-    let result_to_idx: FxHashMap<u32, usize> = body
-        .ops
-        .iter()
-        .enumerate()
-        .filter_map(|(i, op)| op.result.map(|r| (r, i)))
-        .collect();
-
-    // Pre-allocate next free result-id for synthesized literals.
-    let mut next_id: u32 = body
-        .ops
-        .iter()
-        .filter_map(|o| o.result)
-        .max()
-        .map(|m| m + 1)
-        .unwrap_or(0);
+fn boolean_simplify_body(mut body: KernelBody, allocator: &mut ResultAllocator) -> KernelBody {
+    let index = BodyIndex::new(&body);
 
     enum Rewrite {
         ReplaceWithExisting { op_idx: usize, replace_id: u32 },
@@ -69,11 +55,9 @@ fn boolean_simplify_body(mut body: KernelBody) -> KernelBody {
                     continue;
                 }
                 let inner = op.operands[0];
-                let producer = match result_to_idx.get(&inner) {
-                    Some(p) => *p,
-                    None => continue,
+                let Some(producer_op) = index.producer(&body, inner) else {
+                    continue;
                 };
-                let producer_op = &body.ops[producer];
                 // LogicalNot(LogicalNot(x)) → x
                 if matches!(producer_op.kind, KernelOpKind::UnOpKind(UnOp::LogicalNot))
                     && producer_op.operands.len() == 1
@@ -85,16 +69,11 @@ fn boolean_simplify_body(mut body: KernelBody) -> KernelBody {
                     continue;
                 }
                 // LogicalNot(BoolLit) → opposite BoolLit
-                if matches!(producer_op.kind, KernelOpKind::Literal)
-                    && producer_op.operands.len() == 1
-                {
-                    let pool_idx = producer_op.operands[0] as usize;
-                    if let Some(LiteralValue::Bool(value)) = body.literals.get(pool_idx) {
-                        rewrites.push(Rewrite::ReplaceWithBoolLit {
-                            op_idx: idx,
-                            value: !value,
-                        });
-                    }
+                if let Some(value) = index.bool_lit(&body, inner) {
+                    rewrites.push(Rewrite::ReplaceWithBoolLit {
+                        op_idx: idx,
+                        value: !value,
+                    });
                 }
             }
             KernelOpKind::BinOpKind(bin) => {
@@ -120,8 +99,7 @@ fn boolean_simplify_body(mut body: KernelBody) -> KernelBody {
                     }
                     // Literal compare: Eq/Ne over two U32 literals.
                     BinOp::Eq | BinOp::Ne => {
-                        if let Some((lhs_lit, rhs_lit)) =
-                            u32_lit_pair(&body, &result_to_idx, lhs, rhs)
+                        if let Some((lhs_lit, rhs_lit)) = u32_lit_pair(&body, &index, lhs, rhs)
                         {
                             let value = match bin {
                                 BinOp::Eq => lhs_lit == rhs_lit,
@@ -148,26 +126,14 @@ fn boolean_simplify_body(mut body: KernelBody) -> KernelBody {
                 body.ops[op_idx].operands = vec![replace_id];
             }
             Rewrite::ReplaceWithBoolLit { op_idx, value } => {
-                let pool_idx = push_lit(&mut body.literals, LiteralValue::Bool(value));
-                let synth_id = next_id;
-                next_id += 1;
-                body.ops.push(KernelOp {
-                    kind: KernelOpKind::Literal,
-                    operands: vec![pool_idx],
-                    result: Some(synth_id),
-                });
+                let synth_id =
+                    allocator.push_literal(&mut body.ops, &mut body.literals, LiteralValue::Bool(value));
                 body.ops[op_idx].kind = KernelOpKind::Copy;
                 body.ops[op_idx].operands = vec![synth_id];
             }
             Rewrite::ReplaceWithU32Lit { op_idx, value } => {
-                let pool_idx = push_lit(&mut body.literals, LiteralValue::U32(value));
-                let synth_id = next_id;
-                next_id += 1;
-                body.ops.push(KernelOp {
-                    kind: KernelOpKind::Literal,
-                    operands: vec![pool_idx],
-                    result: Some(synth_id),
-                });
+                let synth_id =
+                    allocator.push_literal(&mut body.ops, &mut body.literals, LiteralValue::U32(value));
                 body.ops[op_idx].kind = KernelOpKind::Copy;
                 body.ops[op_idx].operands = vec![synth_id];
             }
@@ -177,45 +143,20 @@ fn boolean_simplify_body(mut body: KernelBody) -> KernelBody {
     body.child_bodies = body
         .child_bodies
         .into_iter()
-        .map(boolean_simplify_body)
+        .map(|child| boolean_simplify_body(child, allocator))
         .collect();
     body
 }
 
 fn u32_lit_pair(
     body: &KernelBody,
-    result_to_idx: &FxHashMap<u32, usize>,
+    index: &BodyIndex,
     lhs: u32,
     rhs: u32,
 ) -> Option<(u32, u32)> {
-    let lhs_value = u32_lit(body, result_to_idx, lhs)?;
-    let rhs_value = u32_lit(body, result_to_idx, rhs)?;
+    let lhs_value = index.u32_lit(body, lhs)?;
+    let rhs_value = index.u32_lit(body, rhs)?;
     Some((lhs_value, rhs_value))
-}
-
-fn u32_lit(body: &KernelBody, result_to_idx: &FxHashMap<u32, usize>, id: u32) -> Option<u32> {
-    let producer_idx = *result_to_idx.get(&id)?;
-    let producer = body.ops.get(producer_idx)?;
-    if !matches!(producer.kind, KernelOpKind::Literal) {
-        return None;
-    }
-    let pool_idx = *producer.operands.first()? as usize;
-    match body.literals.get(pool_idx) {
-        Some(LiteralValue::U32(v)) => Some(*v),
-        _ => None,
-    }
-}
-
-fn push_lit(literals: &mut Vec<LiteralValue>, value: LiteralValue) -> u32 {
-    // Reuse an existing literal slot if one already holds the same value
-    // — shrinks the literal pool when many rewrites synthesize the same
-    // constant (e.g. Bool(true)).
-    if let Some(idx) = literals.iter().position(|lit| lit == &value) {
-        return idx as u32;
-    }
-    let idx = literals.len() as u32;
-    literals.push(value);
-    idx
 }
 
 #[cfg(test)]

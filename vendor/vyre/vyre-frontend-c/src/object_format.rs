@@ -36,7 +36,8 @@ pub enum SectionTag {
     AbiTypes = 19,
     /// `ast_shunting_yard` flat AST pool + roots (concatenated blobs).
     Ast = 10,
-    /// `c11_build_cfg_and_gotos` (`cfg` || `labels` || label tables).
+    /// `c11_build_cfg_and_gotos` public outputs (`cfg` || `labels`);
+    /// scratch hash tables are intentionally not serialized.
     Cfg = 11,
     /// `vyre_runtime::megakernel::protocol` fingerprint (fixed header).
     Megakernel = 12,

@@ -54,7 +54,7 @@ pub(super) fn preprocess_translation_unit(
     source: &[u8],
     cli_macros: &[MacroDef],
 ) -> Result<PreprocessedSource, String> {
-    let mut run = PreprocessRun::new(dispatcher, loader, cli_macros);
+    let mut run = PreprocessRun::try_new(dispatcher, loader, cli_macros)?;
     run.preprocess_one_file(tu_path, source, 0)?;
     Ok(run.finish())
 }
@@ -85,18 +85,29 @@ struct PreprocessRun<'a> {
 }
 
 impl<'a> PreprocessRun<'a> {
-    fn new(
+    fn try_new(
         dispatcher: &'a dyn GpuDispatcher,
         loader: &'a dyn IncludeLoader,
         cli_macros: &[MacroDef],
-    ) -> Self {
-        let mut macros = Vec::with_capacity(cli_macros.len());
+    ) -> Result<Self, String> {
+        let mut macros = Vec::new();
+        macros.try_reserve_exact(cli_macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} CLI macro definitions: {error:?}. Fix: shard or reject oversized CLI macro configuration before GPU preprocessing.",
+                cli_macros.len()
+            )
+        })?;
         let mut macro_index = HashMap::default();
-        macro_index.reserve(cli_macros.len());
+        macro_index.try_reserve(cli_macros.len()).map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: could not reserve {} CLI macro index entries: {error:?}. Fix: shard or reject oversized CLI macro configuration before GPU preprocessing.",
+                cli_macros.len()
+            )
+        })?;
         for mac in cli_macros {
             replace_live_macro_indexed(&mut macros, &mut macro_index, mac.clone());
         }
-        Self {
+        Ok(Self {
             dispatcher,
             loader,
             macros,
@@ -119,7 +130,7 @@ impl<'a> PreprocessRun<'a> {
             tokenization_scratch: TokenizationScratch::default(),
             live_conditional_scratch: LiveConditionalScratch::default(),
             ifdef_truth_batch_scratch: ifdef_truth_batch::IfdefTruthBatchScratch::default(),
-        }
+        })
     }
 
     fn finish(self) -> PreprocessedSource {

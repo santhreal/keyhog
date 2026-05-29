@@ -1,10 +1,10 @@
-//! Canonical ProgramGraph ABI — the 5-buffer CSR bundle every graph
+//! Canonical ProgramGraph ABI  -  the 5-buffer CSR bundle every graph
 //! primitive in Tier 2.5 consumes.
 //!
-//! Downstream analyzer emits a `ProgramGraph` from `surge::ast::Document`. Every
+//! Downstream analyzers emit a `ProgramGraph` from their native ASTs. Every
 //! vyre graph primitive takes exactly this buffer shape so a new
 //! primitive is "here's the transfer body," not "redeclare the four
-//! buffers you want." One ABI makes the primitives composable —
+//! buffers you want." One ABI makes the primitives composable  -
 //! `csr_forward_traverse` into `bitset_fixpoint` into `reduce_count`
 //! with no glue.
 //!
@@ -63,9 +63,9 @@ pub const BINDING_NODE_TAGS: u32 = 4;
 /// specific buffers (frontier bitsets, output arrays, scratch).
 pub const BINDING_PRIMITIVE_START: u32 = 5;
 
-/// Canonical buffer name constants — primitives refer to these so
+/// Canonical buffer name constants  -  primitives refer to these so
 /// every graph-consuming Program shares a single ABI symbol set.
-/// Downstream analyzer emits CSR blobs under the same names.
+/// Downstream analysis paths emit CSR blobs under the same names.
 pub const NAME_NODES: &str = "pg_nodes";
 /// Canonical name for `edge_offsets`.
 pub const NAME_EDGE_OFFSETS: &str = "pg_edge_offsets";
@@ -102,13 +102,9 @@ impl ProgramGraphShape {
     /// own RW output buffers starting at [`BINDING_PRIMITIVE_START`].
     #[must_use]
     pub fn read_only_buffers(&self) -> Vec<BufferDecl> {
-        match self.try_read_only_buffers() {
-            Ok(buffers) => buffers,
-            Err(error) => {
-                eprintln!("{error}");
-                self.inert_read_only_buffers()
-            }
-        }
+        self.try_read_only_buffers().expect(
+            "Fix: ProgramGraphShape::read_only_buffers requires a prevalidated graph shape; use try_read_only_buffers at plan/build time.",
+        )
     }
 
     /// Emit the canonical read-only ProgramGraph bindings with checked
@@ -128,9 +124,6 @@ impl ProgramGraphShape {
         ))
     }
 
-    fn inert_read_only_buffers(&self) -> Vec<BufferDecl> {
-        read_only_buffers_with_counts(1, 1, 1, 1)
-    }
 }
 
 fn read_only_buffers_with_counts(
@@ -241,8 +234,8 @@ pub enum GraphValidationError {
 
 /// Validate an in-memory `ProgramGraph` against the wire invariants.
 ///
-/// Called by conform harnesses on synthetic fixtures and by frontend on
-/// freshly-emitted graphs before dispatch. The backend dispatcher
+/// Called by conformance harnesses on synthetic fixtures and by downstream graph pipelines
+/// on freshly-emitted graphs before dispatch. The backend dispatcher
 /// rejects any graph whose CSR breaks these invariants.
 pub fn validate_program_graph(
     shape: ProgramGraphShape,
@@ -345,12 +338,27 @@ mod tests {
     }
 
     #[test]
-    fn legacy_read_only_buffers_do_not_panic_on_edge_offset_overflow() {
-        let bufs = ProgramGraphShape::new(u32::MAX, 0).read_only_buffers();
+    fn legacy_read_only_buffers_fail_fast_on_edge_offset_overflow() {
+        let panic = std::panic::catch_unwind(|| {
+            let _ = ProgramGraphShape::new(u32::MAX, 0).read_only_buffers();
+        })
+        .expect_err("legacy read_only_buffers must fail fast on edge-offset overflow");
 
-        assert_eq!(bufs.len(), 5);
-        assert_eq!(bufs[0].count(), 1);
-        assert_eq!(bufs[1].count(), 1);
+        let message = panic_payload_message(panic);
+        assert!(
+            message.contains("overflows edge-offset buffer count"),
+            "error should describe the graph shape overflow: {message}"
+        );
+    }
+
+    fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
+        if let Some(message) = payload.downcast_ref::<&str>() {
+            message.to_string()
+        } else if let Some(message) = payload.downcast_ref::<String>() {
+            message.clone()
+        } else {
+            format!("{payload:?}")
+        }
     }
 
     #[test]
@@ -359,13 +367,13 @@ mod tests {
         let production = source
             .split("/// Error kinds surfaced")
             .next()
-            .expect("ProgramGraphShape source must precede validation errors");
+            .expect("Fix: ProgramGraphShape source must precede validation errors");
 
         assert!(
             production.contains("pub fn try_read_only_buffers(")
-                && !production.contains(concat!("panic", "!("))
-                && !production.contains(".unwrap_or_else("),
-            "Fix: ProgramGraphShape buffer ABI must expose checked sizing and avoid production panics."
+                && !production.contains("inert_")
+                && !production.contains("Err(_) =>"),
+            "Fix: ProgramGraphShape buffer ABI must expose checked sizing and must not emit inert placeholder buffers."
         );
     }
 
@@ -415,6 +423,6 @@ mod tests {
             &[1, 1],
             &[0, 0, 0],
         );
-        assert!(ok.is_ok());
+        assert_eq!(ok, Ok(()));
     }
 }

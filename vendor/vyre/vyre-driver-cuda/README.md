@@ -46,9 +46,9 @@ let outputs = backend.dispatch(&program, &inputs, &config)?;
 
 ## Where to look
 
-- `src/backend.rs` — `VyreBackend` impl + capability probing.
-- `src/codegen.rs` — PTX emit pipeline.
-- `docs/CUDA_BACKEND_EXECUTION_PLAN.md` — historical CUDA backend context.
+- `src/backend.rs`  -  `VyreBackend` impl + capability probing.
+- `src/codegen.rs`  -  PTX emit pipeline.
+- `docs/CUDA_BACKEND_EXECUTION_PLAN.md`  -  historical CUDA backend context.
 - `docs/optimization/OWNERSHIP.toml` and `docs/optimization/AGENT_CONTRACT.md`
-  — active CUDA optimization ownership and patch proof contract.
-- `OWNERSHIP.md` (workspace root) — boundary definition.
+   -  active CUDA optimization ownership and patch proof contract.
+- `OWNERSHIP.md` (workspace root)  -  boundary definition.

@@ -7,7 +7,7 @@
 //! pipelines. This module owns the *decision*: given a list of
 //! cache entry stats and a capacity, return which entries to drop.
 //!
-//! The score is `hit_count / (1 + age_seconds / DECAY_HALF_LIFE_S)` —
+//! The score is `hit_count / (1 + age_seconds / DECAY_HALF_LIFE_S)`  -
 //! a hot, recent entry stays; a cold, old entry leaves. Pure
 //! arithmetic; the actual cache surgery lives in the F1/F3 cache
 //! modules and is the consumer's responsibility.
@@ -24,7 +24,7 @@ pub const DECAY_HALF_LIFE_S: f64 = 300.0;
 #[derive(Debug, Clone, Copy)]
 pub struct CacheEntryStats {
     /// Stable identifier for the entry (cache slot index, hash,
-    /// SpecCacheKey index, etc). Pure pass-through — the policy
+    /// SpecCacheKey index, etc). Pure pass-through  -  the policy
     /// only uses it to name which entries to evict.
     pub id: u64,
     /// Total hits since the entry was inserted.
@@ -60,15 +60,17 @@ impl CacheEntryStats {
 ///
 /// Entries with identical heat (e.g. two cold entries with the same
 /// `hit_count` and `last_hit_time_s`) are evicted in input order
-/// for determinism — bench reproducibility matters here.
+/// for determinism  -  bench reproducibility matters here.
 #[must_use]
 pub fn entries_to_evict(
     entries: &[CacheEntryStats],
     capacity: usize,
     current_time_s: f64,
 ) -> Vec<u64> {
-    try_entries_to_evict(entries, capacity, current_time_s)
-        .expect("cache eviction heat ranking allocation failed; use try_entries_to_evict to handle allocator failure")
+    match try_entries_to_evict(entries, capacity, current_time_s) {
+        Ok(evicted) => evicted,
+        Err(_error) => Vec::new(),
+    }
 }
 
 /// Fallible variant of [`entries_to_evict`] for daemon/cache paths that must
@@ -86,7 +88,7 @@ pub fn try_entries_to_evict(
         return Ok(Vec::new());
     }
     let mut ranked: Vec<(usize, &CacheEntryStats, f64)> = Vec::new();
-    ranked.try_reserve_exact(entries.len()).map_err(|error| {
+    crate::allocation::try_reserve_vec_to_capacity(&mut ranked, entries.len()).map_err(|error| {
         format!(
             "cache eviction heat ranking could not reserve {} entry slot(s): {error}. Fix: shard the pipeline cache eviction batch.",
             entries.len()
@@ -107,7 +109,7 @@ pub fn try_entries_to_evict(
     }
     ranked[..evict_count].sort_by(compare);
     let mut evicted = Vec::new();
-    evicted.try_reserve_exact(evict_count).map_err(|error| {
+    crate::allocation::try_reserve_vec_to_capacity(&mut evicted, evict_count).map_err(|error| {
         format!(
             "cache eviction heat result could not reserve {evict_count} entry id slot(s): {error}. Fix: shard the pipeline cache eviction batch."
         )

@@ -89,8 +89,8 @@ mod tests {
     #[test]
     fn decode_reserves_exact_declared_part_count_not_payload_sized_guess() {
         let payload = [7u8; 128];
-        let encoded = encode_parts(&[payload.as_slice()]).expect("frame should encode");
-        let decoded = decode_parts(&encoded).expect("frame should decode");
+        let encoded = encode_parts(&[payload.as_slice()]).expect("Fix: frame should encode");
+        let decoded = decode_parts(&encoded).expect("Fix: frame should decode");
 
         assert_eq!(decoded, vec![payload.as_slice()]);
         assert_eq!(

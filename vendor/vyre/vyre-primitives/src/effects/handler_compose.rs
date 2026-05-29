@@ -72,20 +72,27 @@ mod tests {
     fn identity_left_neutral() {
         let id = Handler::from_row(EffectRow::empty());
         let h = Handler::single(EffectKind::BufferWrite);
-        assert_eq!(handler_compose(id, h), h);
+        assert_eq!(
+            handler_compose(id, h).handled().bits(),
+            EffectKind::BufferWrite.mask()
+        );
     }
 
     #[test]
     fn identity_right_neutral() {
         let id = Handler::from_row(EffectRow::empty());
         let h = Handler::single(EffectKind::BufferWrite);
-        assert_eq!(handler_compose(h, id), h);
+        assert_eq!(
+            handler_compose(h, id).handled().bits(),
+            EffectKind::BufferWrite.mask()
+        );
     }
 
     #[test]
     fn idempotent_on_equal() {
         let h = handler_for(&[EffectKind::BufferWrite, EffectKind::Atomic]);
-        assert_eq!(handler_compose(h, h), h);
+        let mask = EffectKind::BufferWrite.mask() | EffectKind::Atomic.mask();
+        assert_eq!(handler_compose(h, h).handled().bits(), mask);
     }
 
     #[test]

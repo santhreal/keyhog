@@ -55,7 +55,7 @@ pub enum RuleBuildError {
 /// use vyre_libs::rule::{build_rule_program, RuleCondition, RuleFormula};
 ///
 /// let formula = RuleFormula::condition(RuleCondition::LiteralTrue);
-/// let program = build_rule_program(&[(formula, 3)]).expect("literal rule lowers");
+/// let program = build_rule_program(&[(formula, 3)]).expect("Fix: literal rule lowers");
 /// assert!(program.has_buffer("verdicts"));
 /// ```
 #[must_use]
@@ -139,7 +139,7 @@ pub fn try_rule_nodes(rules: &[(RuleFormula, u32)]) -> Result<Vec<Node>, RuleBui
     rule_nodes(rules)
 }
 
-/// Lower a [`RuleFormula`] to a boolean `Expr` tree —
+/// Lower a [`RuleFormula`] to a boolean `Expr` tree  -
 /// `Condition` → single predicate, `And`/`Or`/`Not` → bool combinators.
 ///
 /// # Errors
@@ -288,7 +288,7 @@ where
     }
 }
 
-/// Safe load from the `rule_bitmaps` buffer — returns 0 when
+/// Safe load from the `rule_bitmaps` buffer  -  returns 0 when
 /// `pattern_id` is out of range so the rule predicate stays defined.
 #[must_use]
 pub fn pattern_state(pattern_id: u32) -> Expr {
@@ -299,7 +299,7 @@ pub fn pattern_state(pattern_id: u32) -> Expr {
     )
 }
 
-/// Safe load from the `rule_counts` buffer — returns 0 when
+/// Safe load from the `rule_counts` buffer  -  returns 0 when
 /// `pattern_id` is out of range so the rule predicate stays defined.
 #[must_use]
 pub fn pattern_count(pattern_id: u32) -> Expr {
@@ -343,7 +343,7 @@ mod tests {
             RuleFormula::not(RuleFormula::condition(RuleCondition::FileSizeLt(4096))),
         );
 
-        let program = try_build_rule_program(&[(formula, 5)]).expect("supported rule lowers");
+        let program = try_build_rule_program(&[(formula, 5)]).expect("Fix: supported rule lowers");
 
         assert!(program.has_buffer("rule_bitmaps"));
         assert!(program.has_buffer("rule_counts"));
@@ -402,7 +402,7 @@ mod tests {
                 },
                 7,
             )
-            .expect("range condition lowers"),
+            .expect("Fix: range condition lowers"),
             Expr::u32(1)
         );
         assert_eq!(
@@ -413,7 +413,7 @@ mod tests {
                 },
                 7,
             )
-            .expect("set membership condition lowers"),
+            .expect("Fix: set membership condition lowers"),
             Expr::u32(1)
         );
     }

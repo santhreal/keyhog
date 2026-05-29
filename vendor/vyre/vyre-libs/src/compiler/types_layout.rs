@@ -126,26 +126,19 @@ inventory::submit! {
         id: "vyre-libs::parsing::c11_compute_alignments",
         build: || c11_compute_alignments("types", "sizes", "aligns", Expr::u32(5)),
         test_inputs: Some(|| vec![vec![
-            [
+            vyre_primitives::wire::pack_u32_slice(&[
                 C_ABI_CHAR,
                 C_ABI_POINTER,
                 C_ABI_LONG,
                 C_ABI_DOUBLE,
                 0,
-            ]
-            .into_iter()
-            .flat_map(u32::to_le_bytes)
-            .collect(),
+            ]),
             vec![0u8; 5 * 4],
             vec![0u8; 5 * 4],
         ]]),
         expected_output: Some(|| {
-            let mut sizes = Vec::with_capacity(20);
-            let mut aligns = Vec::with_capacity(20);
-            for value in [1u32, 8, 8, 8, 4] {
-                sizes.extend_from_slice(&value.to_le_bytes());
-                aligns.extend_from_slice(&value.to_le_bytes());
-            }
+            let sizes = vyre_primitives::wire::pack_u32_slice(&[1u32, 8, 8, 8, 4]);
+            let aligns = vyre_primitives::wire::pack_u32_slice(&[1u32, 8, 8, 8, 4]);
             vec![vec![sizes, aligns]]
         }),
         category: Some("compiler"),

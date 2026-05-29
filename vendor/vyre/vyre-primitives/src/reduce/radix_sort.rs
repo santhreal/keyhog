@@ -24,10 +24,10 @@ pub const OP_ID: &str = "vyre-primitives::reduce::radix_sort";
 
 /// Emit a stable u32 sort Program.
 ///
-/// `input`  — source buffer of `count` u32 keys.  
-/// `output` — destination buffer of `count` u32 keys.  
-/// `count`  — number of elements.  
-/// `bits`   — number of significant key bits (1..=32).  Fewer bits = fewer
+/// `input`   -  source buffer of `count` u32 keys.  
+/// `output`  -  destination buffer of `count` u32 keys.  
+/// `count`   -  number of elements.  
+/// `bits`    -  number of significant key bits (1..=32).  Fewer bits = fewer
 ///            passes.
 ///
 /// # Panics
@@ -119,19 +119,59 @@ pub fn radix_sort(input: &str, output: &str, count: u32, bits: u32) -> Program {
 pub fn cpu_ref(input: &[u32], bits: u32) -> Vec<u32> {
     let mut out = Vec::new();
     let mut scratch = Vec::new();
-    cpu_ref_into(input, bits, &mut out, &mut scratch);
-    out
+    match try_cpu_ref_into(input, bits, &mut out, &mut scratch) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives radix_sort CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU-reference stable u32 sort into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], bits: u32, out: &mut Vec<u32>, scratch: &mut Vec<u32>) {
+    if let Err(error) = try_cpu_ref_into(input, bits, out, scratch) {
+        eprintln!("vyre-primitives radix_sort CPU reference failed: {error}");
+        out.clear();
+        scratch.clear();
+    }
+}
+
+/// Fallible CPU-reference stable u32 sort into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(
+    input: &[u32],
+    bits: u32,
+    out: &mut Vec<u32>,
+    scratch: &mut Vec<u32>,
+) -> Result<(), String> {
     let bits = bits.min(32);
+    if input.len() > out.capacity() {
+        out.try_reserve_exact(input.len() - out.capacity())
+            .map_err(|err| {
+                format!(
+                    "radix_sort CPU reference could not reserve {} output keys: {err}",
+                    input.len()
+                )
+            })?;
+    }
+    if input.len() > scratch.capacity() {
+        scratch
+            .try_reserve_exact(input.len() - scratch.capacity())
+            .map_err(|err| {
+                format!(
+                    "radix_sort CPU reference could not reserve {} scratch keys: {err}",
+                    input.len()
+                )
+            })?;
+    }
 
     out.clear();
     out.extend_from_slice(input);
     if out.is_empty() || bits == 0 {
-        return;
+        scratch.clear();
+        return Ok(());
     }
 
     scratch.clear();
@@ -152,6 +192,7 @@ pub fn cpu_ref_into(input: &[u32], bits: u32, out: &mut Vec<u32>, scratch: &mut 
         out.clear();
         out.extend_from_slice(scratch);
     }
+    Ok(())
 }
 
 #[cfg(any(test, feature = "cpu-parity"))]
@@ -190,14 +231,14 @@ inventory::submit! {
         OP_ID,
         || radix_sort("input", "output", 4, 8),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[3, 1, 4, 2]),
                 to_bytes(&[0, 0, 0, 0]),
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1, 2, 3, 4])]]
         }),
     )
@@ -220,7 +261,7 @@ mod tests {
     #[test]
     fn cpu_ref_already_sorted() {
         let input = vec![1, 2, 3, 4, 5];
-        assert_eq!(cpu_ref(&input, 32), input);
+        assert_eq!(cpu_ref(&input, 32), vec![1, 2, 3, 4, 5]);
     }
 
     #[test]
@@ -245,9 +286,68 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let input = &[5, 4, 3, 2, 1];
+        let mut compat = Vec::with_capacity(16);
+        let mut compat_scratch = Vec::with_capacity(16);
+        let mut fallible = Vec::with_capacity(16);
+        let mut fallible_scratch = Vec::with_capacity(16);
+
+        cpu_ref_into(input, 32, &mut compat, &mut compat_scratch);
+        try_cpu_ref_into(input, 32, &mut fallible, &mut fallible_scratch)
+            .expect("Fix: small radix_sort CPU reference must reserve");
+
+        assert_eq!(cpu_ref(input, 32), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("radix_sort.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: radix_sort.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: radix_sort CPU reference wrappers must not panic in production."
+        );
+    }
+
+    #[test]
+    fn try_cpu_ref_into_reuses_buffers_and_clears_stale_tail() {
+        let mut out = Vec::with_capacity(16);
+        let mut scratch = Vec::with_capacity(16);
+        out.extend_from_slice(&[u32::MAX; 16]);
+        scratch.extend_from_slice(&[u32::MAX; 16]);
+        let out_ptr = out.as_ptr();
+        let scratch_ptr = scratch.as_ptr();
+
+        try_cpu_ref_into(&[5, 4, 3, 2, 1], 32, &mut out, &mut scratch).unwrap();
+
+        assert_eq!(out, vec![1, 2, 3, 4, 5]);
+        assert_eq!(out.as_ptr(), out_ptr);
+        assert_eq!(scratch.as_ptr(), scratch_ptr);
+    }
+
+    #[test]
+    fn bits_zero_clears_scratch_without_reallocating() {
+        let mut out = Vec::with_capacity(8);
+        let mut scratch = Vec::with_capacity(8);
+        scratch.extend_from_slice(&[u32::MAX; 8]);
+        let scratch_ptr = scratch.as_ptr();
+
+        try_cpu_ref_into(&[3, 1, 2], 0, &mut out, &mut scratch).unwrap();
+
+        assert_eq!(out, vec![3, 1, 2]);
+        assert!(scratch.is_empty());
+        assert_eq!(scratch.as_ptr(), scratch_ptr);
+    }
+
+    #[test]
     fn cpu_ref_stable_sort() {
         // With u32 keys there is no separate payload; stability is visible
-        // when keys are equal — their relative order must be preserved.
+        // when keys are equal  -  their relative order must be preserved.
         // We simulate payload by packing (key << 16 | payload) and verifying
         // the payload order after sort.
         let input: Vec<u32> = vec![

@@ -9,48 +9,11 @@ use vyre_primitives::nn::attention_passes::{
 };
 
 use crate::region::{wrap_anonymous, wrap_child};
+use vyre_primitives::nn::attention_stability::{
+    bounded_exp_arg, bounded_score, flush_tiny, positive_denominator,
+};
 
 const OP_ID: &str = "vyre-libs::nn::gqa_attention";
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn bounded_exp_arg(value: Expr) -> Expr {
-    let value_is_nan = Expr::is_nan(value.clone());
-    let finite = finite_or(value.clone(), Expr::f32(-80.0));
-    let upper_bounded = Expr::select(
-        Expr::gt(finite.clone(), Expr::f32(0.0)),
-        Expr::f32(0.0),
-        finite,
-    );
-    let clamped = Expr::select(
-        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
-        Expr::f32(-80.0),
-        upper_bounded,
-    );
-    Expr::select(value_is_nan, value, clamped)
-}
-
-fn positive_denominator(value: Expr) -> Expr {
-    let repaired = Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value.clone(),
-        Expr::f32(f32::MIN_POSITIVE),
-    );
-    Expr::select(Expr::is_nan(value.clone()), value, repaired)
-}
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 /// Build GQA attention (F32). n_q_heads must be a multiple of n_kv_heads.
 ///
@@ -168,7 +131,7 @@ pub fn gqa_attention(
 
     // Each `wrap_child(...)` below creates a new Region scope, so
     // any `Node::let_bind` inside a pass body dies when that pass's
-    // region exits — yet `sum_pass`'s `exp_expr` reads `max_score`
+    // region exits  -  yet `sum_pass`'s `exp_expr` reads `max_score`
     // and the post-pass `let_bind("denom", positive_denominator(sum_exp))`
     // reads `sum_exp`. The outer if_then body now declares both
     // accumulators up front and the per-pass bodies write into
@@ -181,15 +144,11 @@ pub fn gqa_attention(
                 "score",
                 // Clamp ±inf (overflow on large Q/K) to -80 BEFORE the
                 // softmax recurrence so it doesn't become NaN via inf-inf.
-                // Preserve NaN inputs intact — the NaN-input contract
+                // Preserve NaN inputs intact  -  the NaN-input contract
                 // requires those to flow through to the output.
                 {
                     let raw = Expr::mul(Expr::var("dot"), Expr::f32(scale));
-                    Expr::select(
-                        Expr::is_nan(raw.clone()),
-                        raw.clone(),
-                        finite_or(raw, Expr::f32(-80.0)),
-                    )
+                    bounded_score(raw)
                 },
             ));
             v.push(Node::assign(
@@ -299,7 +258,7 @@ inventory::submit! {
                 .unwrap_or_else(|error| crate::invalid_program(OP_ID, format!("Fix: gqa_attention fixture must build: {error}")))
         },
         test_inputs: Some(|| {
-            let f = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let f = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 f(&[1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0]),
                 f(&[1.0, 0.0, 0.0, 1.0]),
@@ -320,18 +279,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn gqa_attention_zero_sequence_length_rejected() {
@@ -349,7 +299,7 @@ mod tests {
         let q = [1.0f32, 0.0, 0.0, 1.0];
         let k = [1.0f32, 0.0];
         let v = [10.0f32, 20.0];
-        let prog = gqa_attention("q", "k", "v", "out", n_q, n_kv, s, d).expect("build");
+        let prog = gqa_attention("q", "k", "v", "out", n_q, n_kv, s, d).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -380,7 +330,7 @@ mod tests {
         let q = [1e20f32; 4];
         let k = [1e20f32; 4];
         let v = [1.0f32; 4];
-        let prog = gqa_attention("q", "k", "v", "out", n_q, n_kv, s, d).expect("build");
+        let prog = gqa_attention("q", "k", "v", "out", n_q, n_kv, s, d).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -409,7 +359,7 @@ mod tests {
         let q = [f32::NAN, 0.0];
         let k = [0.0f32, 0.0];
         let v = [1.0f32, 2.0];
-        let prog = gqa_attention("q", "k", "v", "out", n_q, n_kv, s, d).expect("build");
+        let prog = gqa_attention("q", "k", "v", "out", n_q, n_kv, s, d).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[

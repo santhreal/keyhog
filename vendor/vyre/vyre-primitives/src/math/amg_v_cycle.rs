@@ -124,18 +124,15 @@ pub fn amg_v_cycle(
                     "ax_i",
                     Expr::add(
                         Expr::var("ax_i"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    a,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("i"), Expr::u32(n_fine)),
-                                        Expr::var("j"),
-                                    ),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(
+                                a,
+                                Expr::add(
+                                    Expr::mul(Expr::var("i"), Expr::u32(n_fine)),
+                                    Expr::var("j"),
                                 ),
-                                Expr::load(x, Expr::var("j")),
                             ),
-                            Expr::u32(16),
+                            Expr::load(x, Expr::var("j")),
                         ),
                     ),
                 )],
@@ -164,18 +161,15 @@ pub fn amg_v_cycle(
                     "bc_i",
                     Expr::add(
                         Expr::var("bc_i"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    r_mat,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("ic"), Expr::u32(n_fine)),
-                                        Expr::var("jf"),
-                                    ),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(
+                                r_mat,
+                                Expr::add(
+                                    Expr::mul(Expr::var("ic"), Expr::u32(n_fine)),
+                                    Expr::var("jf"),
                                 ),
-                                Expr::load(scratch_fine, Expr::var("jf")),
                             ),
-                            Expr::u32(16),
+                            Expr::load(scratch_fine, Expr::var("jf")),
                         ),
                     ),
                 )],
@@ -227,18 +221,15 @@ pub fn amg_v_cycle(
                     "px_i",
                     Expr::add(
                         Expr::var("px_i"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    p_mat,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("if"), Expr::u32(n_coarse)),
-                                        Expr::var("jc"),
-                                    ),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(
+                                p_mat,
+                                Expr::add(
+                                    Expr::mul(Expr::var("if"), Expr::u32(n_coarse)),
+                                    Expr::var("jc"),
                                 ),
-                                Expr::load(scratch_coarse_x, Expr::var("jc")),
                             ),
-                            Expr::u32(16),
+                            Expr::load(scratch_coarse_x, Expr::var("jc")),
                         ),
                     ),
                 )],
@@ -318,9 +309,27 @@ pub fn cpu_ref(
     n_fine: u32,
     n_coarse: u32,
 ) -> Vec<f64> {
-    let mut out = Vec::with_capacity(n_fine as usize);
+    try_cpu_ref(a, b, x, r_mat, p_mat, a_c, omega, n_fine, n_coarse)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - amg_v_cycle cpu_ref failed: invalid V-cycle dimensions")
+}
+
+/// Fallible CPU reference: 2-level AMG V-cycle in f64.
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(clippy::too_many_arguments)]
+pub fn try_cpu_ref(
+    a: &[f64],
+    b: &[f64],
+    x: &[f64],
+    r_mat: &[f64],
+    p_mat: &[f64],
+    a_c: &[f64],
+    omega: f64,
+    n_fine: u32,
+    n_coarse: u32,
+) -> Result<Vec<f64>, String> {
+    let mut out = Vec::new();
     let mut scratch = AmgVcycleScratch::default();
-    cpu_ref_into(
+    try_cpu_ref_into(
         a,
         b,
         x,
@@ -332,8 +341,8 @@ pub fn cpu_ref(
         n_coarse,
         &mut scratch,
         &mut out,
-    );
-    out
+    )?;
+    Ok(out)
 }
 
 /// Reusable scratch for [`cpu_ref_into`].
@@ -363,12 +372,40 @@ pub fn cpu_ref_into(
     scratch: &mut AmgVcycleScratch,
     out: &mut Vec<f64>,
 ) {
-    let nf = n_fine as usize;
-    let nc = n_coarse as usize;
+    try_cpu_ref_into(
+        a, b, x, r_mat, p_mat, a_c, omega, n_fine, n_coarse, scratch, out,
+    )
+    .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - amg_v_cycle cpu_ref_into failed: invalid V-cycle dimensions");
+}
+
+/// Fallible CPU reference: 2-level AMG V-cycle in f64, writing into caller-owned storage.
+#[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(
+    a: &[f64],
+    b: &[f64],
+    x: &[f64],
+    r_mat: &[f64],
+    p_mat: &[f64],
+    a_c: &[f64],
+    omega: f64,
+    n_fine: u32,
+    n_coarse: u32,
+    scratch: &mut AmgVcycleScratch,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    let (nf, nc, fine_cells, transfer_cells, coarse_cells) =
+        checked_cpu_v_cycle_sizes(n_fine, n_coarse)?;
+    require_len("a", a.len(), fine_cells)?;
+    require_len("b", b.len(), nf)?;
+    require_len("x", x.len(), nf)?;
+    require_len("r_mat", r_mat.len(), transfer_cells)?;
+    require_len("p_mat", p_mat.len(), transfer_cells)?;
+    require_len("a_c", a_c.len(), coarse_cells)?;
 
     jacobi_smooth_step_cpu_into(a, b, x, omega, n_fine, &mut scratch.x_curr);
 
-    scratch.residual.clear();
+    reserve_cpu_scratch(&mut scratch.residual, nf, "residual")?;
     scratch.residual.resize(nf, 0.0);
     for i in 0..nf {
         let mut ax_i = 0.0;
@@ -378,7 +415,7 @@ pub fn cpu_ref_into(
         scratch.residual[i] = b[i] - ax_i;
     }
 
-    scratch.coarse_rhs.clear();
+    reserve_cpu_scratch(&mut scratch.coarse_rhs, nc, "coarse_rhs")?;
     scratch.coarse_rhs.resize(nc, 0.0);
     for i in 0..nc {
         for j in 0..nf {
@@ -386,8 +423,9 @@ pub fn cpu_ref_into(
         }
     }
 
-    scratch.coarse_x.clear();
+    reserve_cpu_scratch(&mut scratch.coarse_x, nc, "coarse_x")?;
     scratch.coarse_x.resize(nc, 0.0);
+    reserve_cpu_scratch(&mut scratch.coarse_next, nc, "coarse_next")?;
     scratch.coarse_next.clear();
     for _ in 0..4 {
         jacobi_smooth_step_cpu_into(
@@ -410,6 +448,69 @@ pub fn cpu_ref_into(
     }
 
     jacobi_smooth_step_cpu_into(a, b, &scratch.x_curr, omega, n_fine, out);
+    Ok(())
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+
+fn checked_cpu_v_cycle_sizes(
+    n_fine: u32,
+    n_coarse: u32,
+) -> Result<(usize, usize, usize, usize, usize), String> {
+    if n_fine == 0 {
+        return Err(
+            "amg_v_cycle CPU oracle requires n_fine > 0. Fix: provide a non-empty fine grid."
+                .to_string(),
+        );
+    }
+    if n_coarse == 0 {
+        return Err(
+            "amg_v_cycle CPU oracle requires n_coarse > 0. Fix: provide a non-empty coarse grid."
+                .to_string(),
+        );
+    }
+    if n_coarse >= n_fine {
+        return Err(format!("amg_v_cycle CPU oracle requires n_coarse < n_fine, got n_coarse={n_coarse}, n_fine={n_fine}."));
+    }
+    let nf = usize::try_from(n_fine)
+        .map_err(|_| format!("amg_v_cycle CPU oracle n_fine={n_fine} does not fit usize."))?;
+    let nc = usize::try_from(n_coarse)
+        .map_err(|_| format!("amg_v_cycle CPU oracle n_coarse={n_coarse} does not fit usize."))?;
+    let fine_cells = nf.checked_mul(nf).ok_or_else(|| {
+        format!("amg_v_cycle CPU oracle fine matrix cells overflow: n_fine={n_fine}.")
+    })?;
+    let transfer_cells = nf.checked_mul(nc).ok_or_else(|| {
+        format!("amg_v_cycle CPU oracle transfer matrix cells overflow: n_fine={n_fine}, n_coarse={n_coarse}.")
+    })?;
+    let coarse_cells = nc.checked_mul(nc).ok_or_else(|| {
+        format!("amg_v_cycle CPU oracle coarse matrix cells overflow: n_coarse={n_coarse}.")
+    })?;
+    Ok((nf, nc, fine_cells, transfer_cells, coarse_cells))
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn require_len(name: &str, got: usize, need: usize) -> Result<(), String> {
+    if got < need {
+        Err(format!(
+            "amg_v_cycle CPU oracle buffer `{name}` is too short: got {got}, need {need}. Fix: pass the full dense V-cycle buffer."
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn reserve_cpu_scratch(out: &mut Vec<f64>, len: usize, name: &str) -> Result<(), String> {
+    if len > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "AMG V-cycle CPU oracle",
+            name,
+        )?;
+    }
+    out.clear();
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -418,12 +519,7 @@ inventory::submit! {
         OP_ID,
         || amg_v_cycle("a", "b", "x", "r", "p", "ac", "om", "sf", "scb", "scx", 4, 2),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![
                 to_bytes(&[0; 16]), // a
                 to_bytes(&[0; 4]),  // b
@@ -439,12 +535,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![
                 to_bytes(&[0; 4]), // x
                 to_bytes(&[0; 4]), // sf
@@ -480,21 +571,11 @@ inventory::submit! {
             )
         },
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![to_bytes(&[9]), to_bytes(&[0])]]
         }),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![to_bytes(&[9])]]
         }),
     )
@@ -523,6 +604,135 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_output_and_scratch_storage() {
+        let n_fine = 4;
+        let n_coarse = 2;
+        let a = vec![
+            2.0, -1.0, 0.0, 0.0, -1.0, 2.0, -1.0, 0.0, 0.0, -1.0, 2.0, -1.0, 0.0, 0.0, -1.0, 2.0,
+        ];
+        let b = vec![1.0, 0.0, 0.0, 1.0];
+        let x = vec![0.0; 4];
+        let r_mat = vec![1.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0, 0.5];
+        let p_mat = vec![1.0, 0.0, 0.5, 0.5, 0.0, 1.0, 0.0, 0.5];
+        let a_c = vec![2.0, -0.5, -0.5, 2.0];
+        let omega = 2.0 / 3.0;
+        let mut scratch = AmgVcycleScratch::default();
+        let mut out = Vec::with_capacity(8);
+
+        try_cpu_ref_into(
+            &a,
+            &b,
+            &x,
+            &r_mat,
+            &p_mat,
+            &a_c,
+            omega,
+            n_fine,
+            n_coarse,
+            &mut scratch,
+            &mut out,
+        )
+        .unwrap();
+        let out_ptr = out.as_ptr();
+        let residual_ptr = scratch.residual.as_ptr();
+        let first = out.clone();
+        out.extend([99.0; 4]);
+        try_cpu_ref_into(
+            &a,
+            &b,
+            &x,
+            &r_mat,
+            &p_mat,
+            &a_c,
+            omega,
+            n_fine,
+            n_coarse,
+            &mut scratch,
+            &mut out,
+        )
+        .unwrap();
+
+        assert_eq!(out, first);
+        assert_eq!(out.as_ptr(), out_ptr);
+        assert_eq!(scratch.residual.as_ptr(), residual_ptr);
+    }
+
+    #[test]
+    fn try_cpu_ref_rejects_short_dense_inputs() {
+        let err = try_cpu_ref(
+            &[1.0],
+            &[1.0, 2.0],
+            &[0.0, 0.0],
+            &[1.0, 0.0],
+            &[1.0, 0.0],
+            &[1.0],
+            1.0,
+            2,
+            1,
+        )
+        .unwrap_err();
+        assert!(err.contains("buffer `a` is too short"), "{err}");
+    }
+
+    #[test]
+    fn generated_cpu_ref_matches_reusable_path() {
+        for case in 0..24 {
+            let n_fine = 3 + (case % 3);
+            let n_coarse = 1 + (case % (n_fine - 1));
+            let nf = n_fine as usize;
+            let nc = n_coarse as usize;
+            let mut a = vec![0.0; nf * nf];
+            for i in 0..nf {
+                a[i * nf + i] = 2.0 + case as f64 * 0.01;
+                if i + 1 < nf {
+                    a[i * nf + i + 1] = -0.25;
+                    a[(i + 1) * nf + i] = -0.25;
+                }
+            }
+            let b: Vec<f64> = (0..nf).map(|i| 1.0 + i as f64 * 0.125).collect();
+            let x: Vec<f64> = (0..nf).map(|i| i as f64 * 0.01).collect();
+            let mut r_mat = vec![0.0; nc * nf];
+            let mut p_mat = vec![0.0; nf * nc];
+            for i in 0..nc {
+                r_mat[i * nf + (i * nf / nc)] = 1.0;
+            }
+            for i in 0..nf {
+                p_mat[i * nc + (i * nc / nf).min(nc - 1)] = 1.0;
+            }
+            let mut a_c = vec![0.0; nc * nc];
+            for i in 0..nc {
+                a_c[i * nc + i] = 1.5 + case as f64 * 0.01;
+            }
+            let expected = cpu_ref(&a, &b, &x, &r_mat, &p_mat, &a_c, 0.5, n_fine, n_coarse);
+            let mut scratch = AmgVcycleScratch::default();
+            let mut out = Vec::with_capacity(expected.len() + 3);
+
+            try_cpu_ref_into(
+                &a,
+                &b,
+                &x,
+                &r_mat,
+                &p_mat,
+                &a_c,
+                0.5,
+                n_fine,
+                n_coarse,
+                &mut scratch,
+                &mut out,
+            )
+            .unwrap();
+
+            assert_eq!(out.len(), expected.len(), "case {case}");
+            for (idx, (&actual, &want)) in out.iter().zip(expected.iter()).enumerate() {
+                assert!(
+                    (actual - want).abs() < 1e-10,
+                    "case {case} idx {idx}: expected {want}, got {actual}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn program_has_correct_buffers() {
         let p = amg_v_cycle(
             "a", "b", "x", "r", "p", "ac", "om", "sf", "scb", "scx", 4, 2,
@@ -530,3 +740,4 @@ mod tests {
         assert_eq!(p.buffers().len(), 11);
     }
 }
+

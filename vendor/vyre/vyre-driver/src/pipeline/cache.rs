@@ -228,7 +228,7 @@ fn read_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<Vec<u
         )
     })?;
     let mut bytes = Vec::new();
-    bytes.try_reserve_exact(byte_capacity).map_err(|error| {
+    crate::allocation::try_reserve_vec_to_capacity(&mut bytes, byte_capacity).map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::OutOfMemory,
             format!(
@@ -248,7 +248,7 @@ fn read_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<Vec<u
 
 fn flush_paths(paths: &[std::path::PathBuf]) -> std::io::Result<()> {
     let mut parents = Vec::new();
-    parents.try_reserve_exact(paths.len()).map_err(|error| {
+    crate::allocation::try_reserve_vec_to_capacity(&mut parents, paths.len()).map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::OutOfMemory,
             format!(
@@ -302,7 +302,7 @@ fn sync_files_bounded(
     for chunk in paths.chunks(workers) {
         std::thread::scope(|scope| {
             let mut handles = Vec::new();
-            handles.try_reserve_exact(chunk.len()).map_err(|error| {
+            crate::allocation::try_reserve_vec_to_capacity(&mut handles, chunk.len()).map_err(|error| {
                 std::io::Error::new(
                     std::io::ErrorKind::OutOfMemory,
                     format!(
@@ -331,7 +331,7 @@ fn sync_files_bounded(
 /// Capability bits that participate in pipeline-cache identity.
 ///
 /// Two otherwise-identical pipelines compiled with different
-/// `PipelineFeatureFlags` produce different cache keys — a pipeline
+/// `PipelineFeatureFlags` produce different cache keys  -  a pipeline
 /// that assumed subgroup-op support cannot be reused on an adapter
 /// that does not expose subgroup ops even if the shader bytes match.
 ///
@@ -462,6 +462,7 @@ impl PipelineCacheKey {
 }
 
 #[cfg(test)]
+
 mod pipeline_cache_key_tests {
     use super::*;
 
@@ -581,3 +582,4 @@ mod pipeline_cache_key_tests {
         );
     }
 }
+

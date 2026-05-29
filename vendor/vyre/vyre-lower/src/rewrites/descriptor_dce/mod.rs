@@ -1,12 +1,14 @@
 //! Dead-op elimination rewrite.
 //!
 //! Strips result-producing pure ops whose result is not referenced
-//! anywhere in the descriptor tree. Result ids are **not** renumbered — they are
+//! anywhere in the descriptor tree. Result ids are **not** renumbered  -  they are
 //! left as-is so that cross-body references (e.g. a child body that
 //! reads a value produced in a parent body) remain valid. The verifier
 //! does not require dense ids.
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind};
+use crate::op_properties::kernel_op_kind_is_dce_pure as is_pure;
+use crate::operand_semantics::operand_is_result_reference;
+use crate::{KernelBody, KernelDescriptor};
 use rustc_hash::FxHashSet;
 
 #[must_use]
@@ -67,60 +69,6 @@ fn propagate_live_operands(body: &KernelBody, live_results: &mut FxHashSet<u32>)
 
 fn op_is_live_root_or_reachable(op: &crate::KernelOp, live_results: &FxHashSet<u32>) -> bool {
     !is_pure(&op.kind) || op.result_ids().any(|result| live_results.contains(&result))
-}
-
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        BufferLength => false,
-        StoreGlobal | StoreShared => pos != 0,
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        Atomic { .. } => pos != 0,
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos != 2,
-        StructuredBlock | Region { .. } => false,
-        Return | Barrier { .. } => false,
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        IndirectDispatch { .. } => false,
-        Call { .. } => true,
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
-}
-
-fn is_pure(kind: &KernelOpKind) -> bool {
-    !matches!(
-        kind,
-        KernelOpKind::StoreGlobal
-            | KernelOpKind::StoreShared
-            | KernelOpKind::LoopCarrierInit { .. }
-            | KernelOpKind::LoopCarrierEnd { .. }
-            | KernelOpKind::Barrier { .. }
-            | KernelOpKind::Atomic { .. }
-            | KernelOpKind::AsyncLoad { .. }
-            | KernelOpKind::AsyncStore { .. }
-            | KernelOpKind::AsyncWait { .. }
-            | KernelOpKind::Trap { .. }
-            | KernelOpKind::Resume { .. }
-            | KernelOpKind::IndirectDispatch { .. }
-            | KernelOpKind::Return
-            | KernelOpKind::StructuredIfThen
-            | KernelOpKind::StructuredIfThenElse
-            | KernelOpKind::StructuredForLoop { .. }
-            | KernelOpKind::StructuredBlock
-            | KernelOpKind::Region { .. }
-            | KernelOpKind::Call { .. }
-            | KernelOpKind::OpaqueExpr(..)
-            | KernelOpKind::OpaqueNode(..)
-    )
 }
 
 #[cfg(test)]

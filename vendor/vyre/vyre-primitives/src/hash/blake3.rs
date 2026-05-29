@@ -196,7 +196,7 @@ inventory::submit! {
         BLAKE3_G_OP_ID,
         || blake3_g_program("state", "message", "out"),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0; 16]),
                 to_bytes(&[0; 2]),
@@ -204,7 +204,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0; 16])]]
         }),
     )
@@ -216,7 +216,7 @@ inventory::submit! {
         BLAKE3_ROUND_OP_ID,
         || blake3_round_program("state", "message", "out"),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0; 16]),
                 to_bytes(&[0; 16]),
@@ -224,8 +224,100 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[0; 16])]]
         }),
     )
+}
+
+// ---------------------------------------------------------------------------
+// CPU reference implementations
+// ---------------------------------------------------------------------------
+
+/// CPU reference: BLAKE3 G mixing quartet on state words `(a, b, c, d)` with
+/// message words `(mx, my)`. Mutates `state` in place.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_blake3_g(
+    state: &mut [u32; 16],
+    a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    mx: u32,
+    my: u32,
+) {
+    state[a] = state[a].wrapping_add(state[b]).wrapping_add(mx);
+    state[d] = (state[d] ^ state[a]).rotate_right(16);
+    state[c] = state[c].wrapping_add(state[d]);
+    state[b] = (state[b] ^ state[c]).rotate_right(12);
+    state[a] = state[a].wrapping_add(state[b]).wrapping_add(my);
+    state[d] = (state[d] ^ state[a]).rotate_right(8);
+    state[c] = state[c].wrapping_add(state[d]);
+    state[b] = (state[b] ^ state[c]).rotate_right(7);
+}
+
+/// CPU reference: one full BLAKE3 permutation round with message schedule
+/// permutation applied to `message`.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_blake3_round(state: &mut [u32; 16], message: &[u32; 16], perm: &[usize; 16]) {
+    let mut m = [0u32; 16];
+    for (i, &src) in perm.iter().enumerate() {
+        m[i] = message[src];
+    }
+    // Column step
+    cpu_blake3_g(state, 0, 4, 8, 12, m[0], m[1]);
+    cpu_blake3_g(state, 1, 5, 9, 13, m[2], m[3]);
+    cpu_blake3_g(state, 2, 6, 10, 14, m[4], m[5]);
+    cpu_blake3_g(state, 3, 7, 11, 15, m[6], m[7]);
+    // Diagonal step
+    cpu_blake3_g(state, 0, 5, 10, 15, m[8], m[9]);
+    cpu_blake3_g(state, 1, 6, 11, 12, m[10], m[11]);
+    cpu_blake3_g(state, 2, 7, 8, 13, m[12], m[13]);
+    cpu_blake3_g(state, 3, 4, 9, 14, m[14], m[15]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn g_zero_state_zero_message_is_identity() {
+        let mut state = [0u32; 16];
+        cpu_blake3_g(&mut state, 0, 4, 8, 12, 0, 0);
+        // With all zeros, the rotations and XORs produce zero (XOR 0 = 0,
+        // rotate 0 = 0, wrapping_add 0 = 0).
+        assert_eq!(state, [0u32; 16]);
+    }
+
+    #[test]
+    fn g_nonzero_input_produces_avalanche() {
+        let mut state = [0u32; 16];
+        state[0] = 1;
+        cpu_blake3_g(&mut state, 0, 4, 8, 12, 0, 0);
+        // A single bit in s0 should propagate to s0, s4, s8, s12.
+        assert_ne!(state[0], 0);
+        assert_ne!(state[12], 0);
+    }
+
+    #[test]
+    fn round_zero_input_is_identity() {
+        let mut state = [0u32; 16];
+        let message = [0u32; 16];
+        cpu_blake3_round(&mut state, &message, &MSG_SCHEDULE[0]);
+        assert_eq!(state, [0u32; 16]);
+    }
+
+    #[test]
+    fn round_nonzero_produces_diffusion() {
+        let mut state = [0u32; 16];
+        state[0] = 0x6A09E667; // BLAKE3 IV[0]
+        let message = [0u32; 16];
+        cpu_blake3_round(&mut state, &message, &MSG_SCHEDULE[0]);
+        // After one round, mixing should spread the IV word.
+        let nonzero_count = state.iter().filter(|&&w| w != 0).count();
+        assert!(
+            nonzero_count >= 4,
+            "expected at least 4 nonzero words after one round, got {nonzero_count}"
+        );
+    }
 }

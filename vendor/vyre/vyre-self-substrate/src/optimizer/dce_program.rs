@@ -31,7 +31,7 @@ use vyre_primitives::graph::program_graph::{
 /// Canonical op id for the optimizer's DCE program.
 pub const OP_ID: &str = "vyre-self-substrate::optimizer::dce_program";
 
-/// Workgroup size — each BFS step's per-thread parallelism is
+/// Workgroup size  -  each BFS step's per-thread parallelism is
 /// bounded by this. Single-workgroup design keeps cross-workgroup
 /// sync simple (workgroup-scope barrier inside the persistent loop)
 /// and avoids the changed-flag race that multi-workgroup would
@@ -327,7 +327,7 @@ fn build_persistent_bfs_program_internal(
     );
     buffers.push(BufferDecl::workgroup("wg_scratch", 256, DataType::U32));
 
-    // Workgroup size [1024, 1, 1] — RTX 5090's max threads-per-block.
+    // Workgroup size [1024, 1, 1]  -  RTX 5090's max threads-per-block.
     // Packs every BFS step across 1024 threads per workgroup so a
     // 1001-node DAG fits in a single workgroup; 32-node SIMT loops
     // amortise atomic_or hits on the global `changed` word.

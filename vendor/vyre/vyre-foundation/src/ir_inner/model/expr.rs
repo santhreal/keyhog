@@ -1,4 +1,4 @@
-// Expression nodes — produce values.
+// Expression nodes  -  produce values.
 //
 // Every expression evaluates to a typed value. Expressions are pure:
 // they read state but do not modify it.
@@ -230,7 +230,7 @@ pub trait ExprNode: fmt::Debug + Send + Sync + 'static {
     fn as_any(&self) -> &dyn std::any::Any;
 
     /// Serialize the extension payload into stable bytes used by the wire
-    /// encoder's `Expr::Opaque` path (tag `0x80`). Default: empty payload —
+    /// encoder's `Expr::Opaque` path (tag `0x80`). Default: empty payload  -
     /// suitable for extensions that carry no state beyond their type
     /// identity. Extensions with state must override this to emit the exact
     /// bytes `wire_payload`'s matching `OpaqueExprResolver` will consume.
@@ -243,7 +243,7 @@ pub trait ExprNode: fmt::Debug + Send + Sync + 'static {
     ///
     /// Extension authors are recommended (but not required, for API
     /// compatibility) to use [`crate::opaque_payload::LeBytesWriter`] when
-    /// building payloads — it makes the right endianness the only choice at
+    /// building payloads  -  it makes the right endianness the only choice at
     /// the type level.
     ///
     /// Literal extensions that encode regex payloads must also canonicalize
@@ -533,6 +533,7 @@ impl Expr {
         Self::Opaque(node)
     }
 }
+
 mod atomics;
 mod builders;
 
@@ -543,10 +544,10 @@ mod tests {
     #[test]
     fn expr_size_is_bounded() {
         let size = std::mem::size_of::<Expr>();
-        eprintln!("Expr size: {size}");
         assert!(
             size <= 128,
             "Expr grew to {size} bytes. Fix: box the largest variant before adding more fields."
         );
     }
 }
+

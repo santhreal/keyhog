@@ -107,6 +107,11 @@ fn validate_node(
                 validate_node(nested, offset, backend, supported)?;
             }
         }
+        Node::Region { body, .. } => {
+            for (offset, nested) in body.iter().enumerate() {
+                validate_node(nested, offset, backend, supported)?;
+            }
+        }
         // Leaf nodes and backend-transparent nodes (opaque extensions
         // validate themselves via `NodeExtension::validate_extension`).
         Node::Let { .. }
@@ -142,8 +147,12 @@ pub fn node_op_id(node: &Node) -> &'static str {
         Node::AsyncWait { .. } => "vyre.node.async_wait",
         Node::Trap { .. } => "vyre.node.trap",
         Node::Resume { .. } => "vyre.node.resume",
+        Node::AllReduce { .. } => "vyre.node.all_reduce",
+        Node::AllGather { .. } => "vyre.node.all_gather",
+        Node::ReduceScatter { .. } => "vyre.node.reduce_scatter",
+        Node::Broadcast { .. } => "vyre.node.broadcast",
         // Region is a debug wrapper produced by vyre-libs Cat-A
-        // compositions. Every backend must accept it — either by
+        // compositions. Every backend must accept it  -  either by
         // lowering its body transparently or via the region_inline
         // optimizer pass. Treat it as a structural node
         // with no capability requirement.

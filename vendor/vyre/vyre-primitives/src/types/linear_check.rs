@@ -6,7 +6,7 @@
 //! substructural type system used by `vyre-foundation::validate` to
 //! reject ill-typed programs before lowering.
 //!
-//! Pure scalar primitive — no allocation, no IR dependency. The
+//! Pure scalar primitive  -  no allocation, no IR dependency. The
 //! foundation's checker walks the program counting uses; this primitive
 //! is the single decision per buffer.
 
@@ -14,7 +14,7 @@
 ///
 /// Mirrors `vyre_foundation::ir::LinearType` but lives at the
 /// primitive layer so external crates (the type-checker pass, future
-/// effect-system frontends, frontend rule lowering) can refer to the
+/// effect-system frontends, external analyzer rule lowering) can refer to the
 /// discipline without pulling in the IR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -67,7 +67,7 @@ pub enum LinearTypeError {
 /// Verify that `uses` satisfies the declared `discipline`.
 ///
 /// Returns `Ok(())` when the count is acceptable, otherwise returns
-/// the precise discipline-violation reason. Pure const fn — single
+/// the precise discipline-violation reason. Pure const fn  -  single
 /// pattern match on the discipline plus one or two comparisons.
 ///
 /// # Errors
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn linear_one_use_is_ok() {
-        assert!(check_linear_use(LinearDiscipline::Linear, 1).is_ok());
+        assert_eq!(check_linear_use(LinearDiscipline::Linear, 1), Ok(()));
     }
 
     #[test]
@@ -141,8 +141,8 @@ mod tests {
 
     #[test]
     fn affine_zero_or_one_use_is_ok() {
-        assert!(check_linear_use(LinearDiscipline::Affine, 0).is_ok());
-        assert!(check_linear_use(LinearDiscipline::Affine, 1).is_ok());
+        assert_eq!(check_linear_use(LinearDiscipline::Affine, 0), Ok(()));
+        assert_eq!(check_linear_use(LinearDiscipline::Affine, 1), Ok(()));
     }
 
     #[test]
@@ -159,15 +159,15 @@ mod tests {
 
     #[test]
     fn relevant_any_nonzero_use_is_ok() {
-        assert!(check_linear_use(LinearDiscipline::Relevant, 1).is_ok());
-        assert!(check_linear_use(LinearDiscipline::Relevant, 5).is_ok());
-        assert!(check_linear_use(LinearDiscipline::Relevant, u32::MAX).is_ok());
+        assert_eq!(check_linear_use(LinearDiscipline::Relevant, 1), Ok(()));
+        assert_eq!(check_linear_use(LinearDiscipline::Relevant, 5), Ok(()));
+        assert_eq!(check_linear_use(LinearDiscipline::Relevant, u32::MAX), Ok(()));
     }
 
     #[test]
     fn unrestricted_accepts_anything() {
         for uses in [0u32, 1, 2, 100, u32::MAX] {
-            assert!(check_linear_use(LinearDiscipline::Unrestricted, uses).is_ok());
+            assert_eq!(check_linear_use(LinearDiscipline::Unrestricted, uses), Ok(()));
         }
     }
 

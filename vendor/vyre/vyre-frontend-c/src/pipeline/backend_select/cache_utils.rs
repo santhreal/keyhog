@@ -36,14 +36,8 @@ where
     where
         V: Clone,
     {
-        if !self.entries.contains_key(key) {
-            return None;
-        }
         let tick = self.next_tick();
-        let entry = self
-            .entries
-            .get_mut(key)
-            .expect("Fix: entry must exist after contains_key checked it");
+        let entry = self.entries.get_mut(key)?;
         entry.last_seen = tick;
         Some(entry.value.clone())
     }

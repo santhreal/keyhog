@@ -2,7 +2,7 @@
 //!
 //! `result = fg + bg * (1 - fg_alpha)`
 //!
-//! Category A composition — pure IR over existing expressions.
+//! Category A composition  -  pure IR over existing expressions.
 //! No Tier 2.5 primitives consumed.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -13,7 +13,7 @@ const OP_ID: &str = "vyre-libs::visual::composite";
 /// Build a Program that composites `fg` over `bg` using Porter-Duff
 /// "over" arithmetic, writing the result to `output`.
 ///
-/// All buffers are `[u32; count]` — packed RGBA pixels.
+/// All buffers are `[u32; count]`  -  packed RGBA pixels.
 #[must_use]
 pub fn alpha_over(fg: &str, bg: &str, output: &str, count: u32) -> Program {
     Program::wrapped(
@@ -93,15 +93,13 @@ pub fn alpha_over(fg: &str, bg: &str, output: &str, count: u32) -> Program {
                                 "out_r",
                                 Expr::add(
                                     Expr::var("fg_r"),
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::add(
-                                                Expr::mul(Expr::var("bg_r"), Expr::var("inv_a")),
-                                                Expr::u32(128),
-                                            ),
-                                            Expr::u32(257),
+                                    super::wide_mul_shr_u32(
+                                        Expr::add(
+                                            Expr::mul(Expr::var("bg_r"), Expr::var("inv_a")),
+                                            Expr::u32(128),
                                         ),
-                                        Expr::u32(16),
+                                        Expr::u32(257),
+                                        16,
                                     ),
                                 ),
                             ),
@@ -109,15 +107,13 @@ pub fn alpha_over(fg: &str, bg: &str, output: &str, count: u32) -> Program {
                                 "out_g",
                                 Expr::add(
                                     Expr::var("fg_g"),
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::add(
-                                                Expr::mul(Expr::var("bg_g"), Expr::var("inv_a")),
-                                                Expr::u32(128),
-                                            ),
-                                            Expr::u32(257),
+                                    super::wide_mul_shr_u32(
+                                        Expr::add(
+                                            Expr::mul(Expr::var("bg_g"), Expr::var("inv_a")),
+                                            Expr::u32(128),
                                         ),
-                                        Expr::u32(16),
+                                        Expr::u32(257),
+                                        16,
                                     ),
                                 ),
                             ),
@@ -125,15 +121,13 @@ pub fn alpha_over(fg: &str, bg: &str, output: &str, count: u32) -> Program {
                                 "out_b",
                                 Expr::add(
                                     Expr::var("fg_b"),
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::add(
-                                                Expr::mul(Expr::var("bg_b"), Expr::var("inv_a")),
-                                                Expr::u32(128),
-                                            ),
-                                            Expr::u32(257),
+                                    super::wide_mul_shr_u32(
+                                        Expr::add(
+                                            Expr::mul(Expr::var("bg_b"), Expr::var("inv_a")),
+                                            Expr::u32(128),
                                         ),
-                                        Expr::u32(16),
+                                        Expr::u32(257),
+                                        16,
                                     ),
                                 ),
                             ),
@@ -142,15 +136,13 @@ pub fn alpha_over(fg: &str, bg: &str, output: &str, count: u32) -> Program {
                                 "out_a",
                                 Expr::add(
                                     Expr::var("fg_a"),
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::add(
-                                                Expr::mul(Expr::var("bg_a"), Expr::var("inv_a")),
-                                                Expr::u32(128),
-                                            ),
-                                            Expr::u32(257),
+                                    super::wide_mul_shr_u32(
+                                        Expr::add(
+                                            Expr::mul(Expr::var("bg_a"), Expr::var("inv_a")),
+                                            Expr::u32(128),
                                         ),
-                                        Expr::u32(16),
+                                        Expr::u32(257),
+                                        16,
                                     ),
                                 ),
                             ),

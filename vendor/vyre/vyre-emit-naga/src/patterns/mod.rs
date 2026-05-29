@@ -87,7 +87,7 @@ impl NagaAuditReport {
         !self.has_any()
     }
 
-    /// Identity element for `merge` — empty report. Useful as the
+    /// Identity element for `merge`  -  empty report. Useful as the
     /// seed of a corpus fold.
     pub fn zero() -> Self {
         Self {
@@ -178,7 +178,7 @@ mod audit_tests {
         let r2 = audit(&desc);
         acc.merge(r1);
         acc.merge(r2);
-        // No findings on empty kernels — sums to 0.
+        // No findings on empty kernels  -  sums to 0.
         assert_eq!(acc.total_candidates(), 0);
     }
 

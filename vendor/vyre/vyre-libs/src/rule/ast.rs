@@ -255,7 +255,7 @@ impl RuleCondition {
     /// Frozen conditions need only the six canonical rule buffers
     /// (`rule_ids`, `pattern_ids`, `rule_bitmaps`, `rule_counts`,
     /// `file_size`, `verdicts`). Extension conditions contribute extra
-    /// buffers via [`RuleConditionExt::required_buffers`] — callers merge
+    /// buffers via [`RuleConditionExt::required_buffers`]  -  callers merge
     /// the results.
     #[must_use]
     pub fn required_extension_buffers(&self) -> Vec<BufferDecl> {
@@ -280,7 +280,7 @@ impl RuleCondition {
 ///     RuleFormula::condition(RuleCondition::PatternExists { pattern_id: 0 }),
 ///     RuleFormula::not(RuleFormula::condition(RuleCondition::LiteralFalse)),
 /// );
-/// let program = formula.to_program().expect("formula lowers");
+/// let program = formula.to_program().expect("Fix: formula lowers");
 /// assert!(program.has_buffer("verdicts"));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -342,7 +342,7 @@ impl RuleFormula {
     ///
     /// let program = RuleFormula::condition(RuleCondition::LiteralTrue)
     ///     .to_program()
-    ///     .expect("literal rule lowers");
+    ///     .expect("Fix: literal rule lowers");
     /// assert!(program.has_buffer("rule_bitmaps"));
     /// assert!(program.has_buffer("verdicts"));
     /// ```

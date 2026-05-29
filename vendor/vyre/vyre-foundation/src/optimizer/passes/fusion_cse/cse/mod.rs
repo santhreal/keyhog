@@ -1,4 +1,4 @@
-//! Common-subexpression elimination — engine + ProgramPass registration colocated.
+//! Common-subexpression elimination  -  engine + ProgramPass registration colocated.
 //!
 //! Audit cleanup A6 (2026-04-30): hoisted from `transform/optimize/cse/`
 //! so the engine lives next to its ProgramPass registration. The old
@@ -8,19 +8,19 @@
 //!
 //! ## Layout
 //!
-//! - `engine` — the `cse(program)` and `cse_into(program, &mut ctx)`
+//! - `engine`  -  the `cse(program)` and `cse_into(program, &mut ctx)`
 //!   entry points; thin wrappers over `CseCtx::nodes`.
-//! - `cse_ctx.rs` + `impl_csectx.rs` — the per-pass scratchpad context
+//! - `cse_ctx.rs` + `impl_csectx.rs`  -  the per-pass scratchpad context
 //!   (flat hashmap + scoped undo log + epoch invalidation; forks and
 //!   side-effect clears cost O(1) unless actual bindings change).
-//! - `expr_key.rs` + `impl_exprkey.rs` — structural-equality key for
+//! - `expr_key.rs` + `impl_exprkey.rs`  -  structural-equality key for
 //!   pure expressions; canonicalizes commutative operands.
-//! - `expr_has_effect.rs` — conservative side-effect predicate (the
+//! - `expr_has_effect.rs`  -  conservative side-effect predicate (the
 //!   safety gate that prevents merging effectful nodes).
-//! - `is_commutative.rs` — operator commutativity table.
-//! - `type_key.rs` + `impl_typekey_from.rs` — compact `Copy` key for
+//! - `is_commutative.rs`  -  operator commutativity table.
+//! - `type_key.rs` + `impl_typekey_from.rs`  -  compact `Copy` key for
 //!   expression result types.
-//! - `program_pass.rs` — the registered `CsePass` (ProgramPass impl) that
+//! - `program_pass.rs`  -  the registered `CsePass` (ProgramPass impl) that
 //!   hooks the engine into the scheduler's fixpoint loop.
 
 /// Per-pass table of previously seen expression keys.
@@ -57,7 +57,7 @@ pub mod type_key;
 pub use engine::{cse, cse_into};
 pub use program_pass::CsePass;
 
-/// CSE test suites — adversarial cases for literal aliasing and non-literal
+/// CSE test suites  -  adversarial cases for literal aliasing and non-literal
 /// subexpression merging.
 #[cfg(test)]
 mod tests;

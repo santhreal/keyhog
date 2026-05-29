@@ -65,6 +65,7 @@
 
 mod emitter;
 mod error;
+mod index_facts;
 pub mod patterns;
 mod reg;
 mod target;
@@ -103,7 +104,7 @@ pub fn emit_with_options(
 
 /// Emit PTX text from a `KernelDescriptor` after running the full
 /// `vyre_lower::rewrites::run_all` optimization pipeline. Recommended
-/// over [`emit`] for production use — fewer dead instructions, fewer
+/// over [`emit`] for production use  -  fewer dead instructions, fewer
 /// redundant loads, lower register pressure.
 pub fn emit_optimized(desc: &KernelDescriptor) -> Result<String, EmitError> {
     emit_optimized_with_stats(desc).map(|(s, _)| s)
@@ -117,7 +118,7 @@ pub fn emit_optimized_with_stats(
     let (optimized, stats) = vyre_lower::rewrites::run_all_with_stats(desc);
     debug_assert!(
         vyre_lower::verify::verify(&optimized).is_ok(),
-        "rewrite pipeline produced an invalid descriptor — see vyre_lower::verify for the contract"
+        "rewrite pipeline produced an invalid descriptor  -  see vyre_lower::verify for the contract"
     );
     let ptx = emit(&optimized)?;
     Ok((ptx, stats))
@@ -142,7 +143,7 @@ pub fn emit_optimized_with_target_with_stats(
     let (optimized, stats) = vyre_lower::rewrites::run_all_with_stats(desc);
     debug_assert!(
         vyre_lower::verify::verify(&optimized).is_ok(),
-        "rewrite pipeline produced an invalid descriptor — see vyre_lower::verify for the contract"
+        "rewrite pipeline produced an invalid descriptor  -  see vyre_lower::verify for the contract"
     );
     let ptx = emit_with_target(&optimized, target)?;
     Ok((ptx, stats))

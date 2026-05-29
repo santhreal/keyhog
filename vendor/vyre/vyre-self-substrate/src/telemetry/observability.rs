@@ -24,7 +24,7 @@ macro_rules! counters {
 
         /// Snapshot of every substrate counter as a flat slice of
         /// (module_name, call_count) tuples. Each call resets nothing
-        /// — counters are monotonic from process start. Callers can
+        ///  -  counters are monotonic from process start. Callers can
         /// diff two snapshots to derive call rate.
         #[must_use]
         pub fn snapshot_counters() -> Vec<(&'static str, u64)> {
@@ -59,9 +59,13 @@ counters! {
     do_calculus_change_impact_calls,
     scallop_provenance_calls,
     vsa_fingerprint_calls,
+    bitset_mask_algebra_calls,
+    reduction_metrics_calls,
+    matching_diagnostic_compaction_calls,
     matroid_exact_megakernel_calls,
     amg_pass_solver_calls,
     tensor_train_compression_calls,
+    conv1d_latency_smoothing_calls,
     natural_gradient_autotuner_calls,
     kfac_autotune_step_calls,
     qsvt_matrix_function_fusion_calls,
@@ -82,9 +86,13 @@ counters! {
     knowledge_compile_pass_precondition_calls,
     adjustment_set_pass_dependency_calls,
     dataflow_fixpoint_calls,
+    alias_registry_calls,
+    toposort_calls,
+    graph_dispatch_calls,
     functorial_pass_composition_calls,
     scallop_provenance_wide_calls,
     level_wave_pass_calls,
+    vast_tree_walk_calls,
 }
 
 /// Bump counter `c` by one. Used internally by self-consumer modules
@@ -106,6 +114,9 @@ mod tests {
         assert!(names.contains(&"matroid_megakernel_scheduler_calls"));
         assert!(names.contains(&"vsa_fingerprint_calls"));
         assert!(names.contains(&"scallop_provenance_calls"));
+        assert!(names.contains(&"alias_registry_calls"));
+        assert!(names.contains(&"toposort_calls"));
+        assert!(names.contains(&"graph_dispatch_calls"));
     }
 
     #[test]

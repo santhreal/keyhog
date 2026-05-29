@@ -7,16 +7,9 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::f32_stability::flush_tiny;
 
 const OP_ID: &str = "vyre-libs::optim::adamw_step";
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 /// Build a single AdamW step (F32).
 ///
@@ -54,7 +47,7 @@ pub fn adamw_step(
     );
 
     // weight decay + adam update: θ = θ*(1-lr*wd) - lr * m / (√v + ε)
-    // (bias correction omitted — recipe uses β-schedule instead)
+    // (bias correction omitted  -  recipe uses β-schedule instead)
     let decayed = Expr::mul(p, Expr::f32(1.0 - lr * wd));
     let denom = Expr::add(
         Expr::UnOp {
@@ -109,7 +102,7 @@ inventory::submit! {
         id: OP_ID,
         build: || adamw_step("params", "grads", "m", "v", 2, 0.001, 0.9, 0.999, 1e-8, 0.01),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[1.0, 2.0]),          // params
                 to_f32(&[0.1, 0.2]),          // grads

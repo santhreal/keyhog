@@ -7,7 +7,7 @@
 //!
 //! In effect-system terms: a Region with row R is well-typed against
 //! signature S iff every bit set in R is also set in S. The primitive
-//! returns the unhandled-effect bitmask (R & !S) — empty means
+//! returns the unhandled-effect bitmask (R & !S)  -  empty means
 //! well-typed; non-empty pinpoints the violating effects.
 //!
 //! This is the pure-substrate layer the optimizer's `validate` pass
@@ -30,7 +30,7 @@ pub struct EffectTypeError {
 /// Returns `Ok(())` when every observed effect is permitted by the
 /// signature, otherwise returns the offending bitmask in
 /// [`EffectTypeError::unpermitted`]. The check is `(observed & !signature)`
-/// — a single u32 op, lock-free.
+///  -  a single u32 op, lock-free.
 ///
 /// # Errors
 ///
@@ -84,7 +84,7 @@ mod tests {
         // BufferWrite only.
         let sig = row_of(&[EffectKind::BufferWrite, EffectKind::Atomic]);
         let observed = EffectRow::single(EffectKind::BufferWrite);
-        assert!(check_effect_row(sig, observed).is_ok());
+        assert_eq!(check_effect_row(sig, observed), Ok(()));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! P4.1 — AlgebraicLaw inventory + optimizer dispatch.
+//! P4.1  -  AlgebraicLaw inventory + optimizer dispatch.
 //!
 //! Ops declare their laws at link time via
 //! `inventory::submit!(AlgebraicLawRegistration { … })`; optimizer
@@ -6,7 +6,7 @@
 //! `laws_for_op` to decide how to canonicalize operand order,
 //! fold identities, and fuse associative chains.
 //!
-//! **Contract freeze** — the registration struct's shape is the
+//! **Contract freeze**  -  the registration struct's shape is the
 //! semver boundary. External crates pin against the `{ op_id, law }`
 //! form; new fields will be `#[non_exhaustive]`-guarded.
 

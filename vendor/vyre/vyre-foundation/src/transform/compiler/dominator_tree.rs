@@ -1,4 +1,4 @@
-//! Dominator tree — the control-flow primitive for borrow checking and
+//! Dominator tree  -  the control-flow primitive for borrow checking and
 //! optimization passes.
 //!
 //! Every compiler needs dominator information: SSA construction, borrow-check
@@ -35,17 +35,17 @@ pub const IDOM_UNDEFINED: u32 = u32::MAX;
 /// if it changed.
 ///
 /// Buffers:
-/// - `idom`: `ReadWrite` u32 array — `node_count` entries; entry points
+/// - `idom`: `ReadWrite` u32 array  -  `node_count` entries; entry points
 ///   start as themselves, all others as [`IDOM_UNDEFINED`].
-/// - `pred_offsets`: `ReadOnly` u32 array of length `node_count` + 1 —
+/// - `pred_offsets`: `ReadOnly` u32 array of length `node_count` + 1  -
 ///   CSR offsets into the predecessor table.
-/// - `preds`: `ReadOnly` u32 array — flat predecessor list.
-/// - `rpo_index`: `ReadOnly` u32 array — reverse-postorder index per
+/// - `preds`: `ReadOnly` u32 array  -  flat predecessor list.
+/// - `rpo_index`: `ReadOnly` u32 array  -  reverse-postorder index per
 ///   node; used by the intersect helper to pick the "lower" node
 ///   when climbing.
 /// - `changed_flag`: `ReadWrite` u32 array of length 1.
 ///
-/// The intersect helper is embedded inline — it walks the two idom
+/// The intersect helper is embedded inline  -  it walks the two idom
 /// chains up the tree until they meet, comparing reverse-postorder
 /// indices to pick the deeper of the two.
 #[must_use]

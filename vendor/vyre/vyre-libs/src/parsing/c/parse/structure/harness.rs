@@ -1,4 +1,5 @@
 use super::*;
+use vyre_primitives::hash::fnv1a::fnv1a32;
 
 inventory::submit! {
     crate::harness::OpEntry {
@@ -34,9 +35,7 @@ inventory::submit! {
     }
 }
 
-fn pack_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_u32;
 
 fn function_extract_inputs() -> Vec<Vec<Vec<u8>>> {
     vec![vec![
@@ -57,8 +56,8 @@ fn function_extract_inputs() -> Vec<Vec<Vec<u8>>> {
 
 fn function_extract_expected() -> Vec<Vec<Vec<u8>>> {
     let mut functions = vec![0u32; 18];
-    functions[0..3].copy_from_slice(&[1, 4, 5]);
-    vec![vec![pack_u32(&functions), pack_u32(&[3])]]
+    functions[3..6].copy_from_slice(&[1, 4, 5]);
+    vec![vec![pack_u32(&functions), pack_u32(&[18])]]
 }
 
 fn call_extract_inputs() -> Vec<Vec<Vec<u8>>> {
@@ -83,14 +82,8 @@ fn call_extract_inputs() -> Vec<Vec<Vec<u8>>> {
 
 fn call_extract_expected() -> Vec<Vec<Vec<u8>>> {
     let mut calls = vec![0u32; 9 * 4];
-    calls[0..4].copy_from_slice(&[0, 5, 6, 7]);
-    vec![vec![pack_u32(&calls), pack_u32(&[4])]]
-}
-
-fn fnv1a32(bytes: &[u8]) -> u32 {
-    bytes.iter().fold(2_166_136_261u32, |hash, byte| {
-        (hash ^ u32::from(*byte)).wrapping_mul(16_777_619)
-    })
+    calls[21..24].copy_from_slice(&[5, 6, 7]);
+    vec![vec![pack_u32(&calls), pack_u32(&[36])]]
 }
 
 fn call_graph_inputs() -> Vec<Vec<Vec<u8>>> {

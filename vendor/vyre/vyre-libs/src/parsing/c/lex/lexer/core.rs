@@ -1,4 +1,4 @@
-//! `c11_lexer` builder. ~780 LOC of `Vec<Node>` accumulation — over the
+//! `c11_lexer` builder. ~780 LOC of `Vec<Node>` accumulation  -  over the
 //! 500-LOC source cap because the lexer body is one logical block whose
 //! sub-sections share closure state (next_byte, byte references, etc).
 //! Extracting those into helpers would change parser semantics, so this
@@ -17,6 +17,7 @@ use super::helpers::{
 
 mod dense;
 mod helpers;
+mod parallel_common;
 mod ranked;
 mod scan_bounds;
 mod sparse;

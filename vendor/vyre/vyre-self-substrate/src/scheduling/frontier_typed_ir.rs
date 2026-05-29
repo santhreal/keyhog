@@ -220,7 +220,7 @@ mod tests {
                 },
             ],
         )
-        .expect("valid frontier-typed plan should build");
+        .expect("Fix: valid frontier-typed plan should build");
 
         assert_eq!(plan.waves.len(), 3);
         assert_eq!(plan.waves[0].node_ids, vec![0]);
@@ -315,7 +315,8 @@ mod tests {
             });
         }
 
-        let plan = plan_frontier_typed_ir(&nodes, &dependencies).expect("wide DAG should plan");
+        let plan =
+            plan_frontier_typed_ir(&nodes, &dependencies).expect("Fix: wide DAG should plan");
 
         assert_eq!(plan.waves.len(), 2);
         assert_eq!(plan.waves[0].node_ids.len(), 512);

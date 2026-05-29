@@ -8,12 +8,12 @@
 //!
 //! Three prediction strategies, in order of preference:
 //!
-//! 1. **Repeat** — same fingerprint as the immediate predecessor
+//! 1. **Repeat**  -  same fingerprint as the immediate predecessor
 //!    (covers tight loops dispatching the same kernel).
-//! 2. **Cycle of length N** — fingerprint = the one N steps ago, even when
+//! 2. **Cycle of length N**  -  fingerprint = the one N steps ago, even when
 //!    only a partial next cycle has been observed (covers attention's Q, K, V,
 //!    scale, softmax, attend cycle before the second full cycle completes).
-//! 3. **None** — history too sparse to predict; runtime skips the
+//! 3. **None**  -  history too sparse to predict; runtime skips the
 //!    prefetch this iteration.
 //!
 //! Pure analysis; allocation-free after construction.
@@ -45,7 +45,7 @@ impl Default for ShapeHistory {
 }
 
 impl ShapeHistory {
-    /// Empty history — no prediction is possible.
+    /// Empty history  -  no prediction is possible.
     #[must_use]
     pub fn new() -> Self {
         Self {

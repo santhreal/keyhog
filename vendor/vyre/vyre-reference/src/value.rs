@@ -76,6 +76,19 @@ impl Value {
         bytes
     }
 
+    /// Write this value into an existing fixed-width byte slot.
+    ///
+    /// For non-empty targets, this is equivalent to
+    /// `target.copy_from_slice(&self.to_bytes_width(target.len()))` but avoids
+    /// allocating a temporary vector on store-heavy reference paths. Empty
+    /// targets are a no-op because they cannot carry the variable-width
+    /// `to_bytes_width(0)` payload.
+    pub fn write_bytes_width_into(&self, target: &mut [u8]) {
+        target.fill(0);
+        let mut cursor = 0usize;
+        self.copy_raw_bytes_prefix(target, &mut cursor);
+    }
+
     /// Append this value encoded at the declared input width without
     /// allocating a temporary byte vector for the caller.
     ///
@@ -122,6 +135,27 @@ impl Value {
         Ok(())
     }
 
+    fn copy_raw_bytes_prefix(&self, target: &mut [u8], cursor: &mut usize) {
+        match self {
+            Self::U32(value) => copy_bytes_prefix(&value.to_le_bytes(), target, cursor),
+            Self::I32(value) => copy_bytes_prefix(&value.to_le_bytes(), target, cursor),
+            Self::U64(value) => copy_bytes_prefix(&value.to_le_bytes(), target, cursor),
+            Self::Bool(value) => {
+                copy_bytes_prefix(&u32::from(*value).to_le_bytes(), target, cursor);
+            }
+            Self::Bytes(bytes) => copy_bytes_prefix(bytes, target, cursor),
+            Self::Float(value) => copy_bytes_prefix(&value.to_le_bytes(), target, cursor),
+            Self::Array(values) => {
+                for value in values {
+                    if *cursor >= target.len() {
+                        break;
+                    }
+                    value.copy_raw_bytes_prefix(target, cursor);
+                }
+            }
+        }
+    }
+
     /// Try to interpret the value as the IR's scalar `u32` word.
     #[must_use]
     pub fn try_as_u32(&self) -> Option<u32> {
@@ -131,7 +165,7 @@ impl Value {
             Self::U64(value) => u32::try_from(*value).ok(),
             Self::Bool(value) => Some(u32::from(*value)),
             Self::Bytes(bytes) => (bytes.len() <= 4).then(|| read_u32_prefix(bytes)),
-            Self::Float(value) => Some(*value as u32),
+            Self::Float(value) => f64_to_u32(*value),
             Self::Array(_) => None,
         }
     }
@@ -151,7 +185,7 @@ impl Value {
             Self::U64(value) => Some(*value),
             Self::Bool(value) => Some(u64::from(*value)),
             Self::Bytes(bytes) => (bytes.len() <= 8).then(|| read_u64_prefix(bytes)),
-            Self::Float(value) => Some(*value as u64),
+            Self::Float(value) => f64_to_u64(*value),
             Self::Array(_) => None,
         }
     }
@@ -258,9 +292,10 @@ impl Value {
                 if bytes.len() < 4 {
                     return Err("f32 requires 4 bytes".to_string());
                 }
-                Ok(Self::Float(f64::from(f32::from_le_bytes([
-                    bytes[0], bytes[1], bytes[2], bytes[3],
-                ]))))
+                let value = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                Ok(Self::Float(f64::from(
+                    crate::execution::typed_ops::canonical_f32(value),
+                )))
             }
             vyre::ir::DataType::F64 => {
                 if bytes.len() < 8 {
@@ -299,8 +334,16 @@ fn fixed_scalar_storage_width(ty: &vyre::ir::DataType) -> Option<usize> {
         | vyre::ir::DataType::BF16 => Some(2),
         vyre::ir::DataType::Handle(_) | vyre::ir::DataType::DeviceMesh { .. } => Some(4),
         vyre::ir::DataType::I64 => Some(8),
+        vyre::ir::DataType::Array { element_size } => Some(*element_size),
         vyre::ir::DataType::Vec { element, count } => fixed_scalar_storage_width(element)
             .and_then(|width| width.checked_mul(usize::from(*count))),
+        vyre::ir::DataType::TensorShaped { element, shape } => {
+            let element_width = fixed_scalar_storage_width(element)?;
+            shape.iter().try_fold(element_width, |width, &dim| {
+                width.checked_mul(dim as usize)
+            })
+        }
+        vyre::ir::DataType::Quantized { storage, .. } => fixed_scalar_storage_width(storage),
         _ => None,
     }
 }
@@ -313,6 +356,24 @@ fn extend_fixed_width(bytes: &[u8], declared_width: usize, out: &mut Vec<u8>) {
     let copied = bytes.len().min(declared_width);
     out.extend_from_slice(&bytes[..copied]);
     out.resize(out.len() + (declared_width - copied), 0);
+}
+
+fn copy_bytes_prefix(bytes: &[u8], target: &mut [u8], cursor: &mut usize) {
+    if *cursor >= target.len() {
+        return;
+    }
+    let len = (target.len() - *cursor).min(bytes.len());
+    target[*cursor..*cursor + len].copy_from_slice(&bytes[..len]);
+    *cursor += len;
+}
+
+fn f64_to_u32(value: f64) -> Option<u32> {
+    (value.is_finite() && value >= 0.0 && value <= f64::from(u32::MAX)).then(|| value as u32)
+}
+
+fn f64_to_u64(value: f64) -> Option<u64> {
+    const U64_EXCLUSIVE_MAX_AS_F64: f64 = 18_446_744_073_709_551_616.0;
+    (value.is_finite() && value >= 0.0 && value < U64_EXCLUSIVE_MAX_AS_F64).then(|| value as u64)
 }
 
 impl From<Vec<u8>> for Value {
@@ -362,6 +423,24 @@ mod tests {
         assert!(Value::Float(-1.0).truthy());
         assert!(Value::Float(f64::INFINITY).truthy());
         assert!(Value::Float(f64::NEG_INFINITY).truthy());
+    }
+
+    #[test]
+    fn f32_element_decode_canonicalizes_subnormal_and_nan_payload_bits() {
+        let positive_subnormal =
+            Value::from_element_bytes(vyre::ir::DataType::F32, &1u32.to_le_bytes())
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - f32 positive subnormal decode must succeed");
+        assert_eq!(positive_subnormal.try_as_f32().unwrap().to_bits(), 0x0000_0000);
+
+        let negative_subnormal =
+            Value::from_element_bytes(vyre::ir::DataType::F32, &0x8000_0001u32.to_le_bytes())
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - f32 negative subnormal decode must succeed");
+        assert_eq!(negative_subnormal.try_as_f32().unwrap().to_bits(), 0x8000_0000);
+
+        let payload_nan =
+            Value::from_element_bytes(vyre::ir::DataType::F32, &0x7fa0_0001u32.to_le_bytes())
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - f32 payload NaN decode must succeed");
+        assert_eq!(payload_nan.try_as_f32().unwrap().to_bits(), 0x7fc0_0000);
     }
 
     proptest! {

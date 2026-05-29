@@ -190,7 +190,7 @@ mod typedef_fast_path_tests {
         let starts = [0, typedef_start, 0];
         let lens = [0, typedef_len, 0];
         let hashes = c_global_typedef_fast_hashes(source.as_bytes(), &tokens, &starts, &lens)
-            .expect("unique global typedef should keep the fast path available");
+            .expect("Fix: unique global typedef should keep the fast path available");
         assert_eq!(hashes, vec![fnv1a32_bytes(b"UniqueType")]);
     }
 }

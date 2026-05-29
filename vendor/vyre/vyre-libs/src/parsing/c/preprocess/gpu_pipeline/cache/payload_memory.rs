@@ -1,7 +1,6 @@
-use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::super::lru_index::LruIndex;
+use super::super::byte_lru_cache::{ByteBoundLruCache, ByteLruPanicLabels};
 use super::super::payload_size::directive_payloads_bytes;
 use super::super::DirectivePayload;
 use super::payload_keys::PayloadsCacheKey;
@@ -9,42 +8,35 @@ use super::payload_keys::PayloadsCacheKey;
 const PAYLOAD_CACHE_MAX_ENTRIES: usize = 4096;
 const PAYLOAD_CACHE_MAX_BYTES: usize = 512 * 1024 * 1024;
 
-pub(in crate::parsing::c::preprocess::gpu_pipeline) struct PayloadCache {
-    entries: HashMap<PayloadsCacheKey, PayloadCacheEntry>,
-    bytes: usize,
-    max_entries: usize,
-    max_bytes: usize,
-    epoch: u64,
-    lru: LruIndex<PayloadsCacheKey>,
-}
+const PAYLOAD_CACHE_LABELS: ByteLruPanicLabels = ByteLruPanicLabels {
+    byte_add_overflow: "vyre-libs gpu preprocessor directive payload cache byte accounting overflowed during insert. Fix: lower payload cache limits or shard preprocessing sessions.",
+    byte_sub_underflow: "vyre-libs gpu preprocessor directive payload cache byte accounting underflowed during eviction. Fix: repair payload cache accounting before relying on memory limits.",
+    epoch_overflow: "vyre-libs gpu preprocessor directive payload cache epoch overflowed. Fix: recreate process-local preprocess cache before continuing an unbounded translation-unit stream.",
+};
 
-struct PayloadCacheEntry {
-    value: Arc<[DirectivePayload]>,
-    bytes: usize,
-    last_access: u64,
+pub(in crate::parsing::c::preprocess::gpu_pipeline) struct PayloadCache {
+    inner: ByteBoundLruCache<PayloadsCacheKey, Arc<[DirectivePayload]>>,
 }
 
 impl PayloadCache {
     fn new() -> Self {
         Self {
-            entries: HashMap::default(),
-            bytes: 0,
-            max_entries: PAYLOAD_CACHE_MAX_ENTRIES,
-            max_bytes: PAYLOAD_CACHE_MAX_BYTES,
-            epoch: 0,
-            lru: LruIndex::with_capacity(PAYLOAD_CACHE_MAX_ENTRIES),
+            inner: ByteBoundLruCache::new(
+                PAYLOAD_CACHE_MAX_ENTRIES,
+                PAYLOAD_CACHE_MAX_BYTES,
+                PAYLOAD_CACHE_LABELS,
+            ),
         }
     }
 
     #[cfg(test)]
     pub(in crate::parsing::c::preprocess::gpu_pipeline) fn with_limit(max_entries: usize) -> Self {
         Self {
-            entries: HashMap::default(),
-            bytes: 0,
-            max_entries,
-            max_bytes: PAYLOAD_CACHE_MAX_BYTES,
-            epoch: 0,
-            lru: LruIndex::with_capacity(max_entries),
+            inner: ByteBoundLruCache::new(
+                max_entries,
+                PAYLOAD_CACHE_MAX_BYTES,
+                PAYLOAD_CACHE_LABELS,
+            ),
         }
     }
 
@@ -54,12 +46,7 @@ impl PayloadCache {
         max_bytes: usize,
     ) -> Self {
         Self {
-            entries: HashMap::default(),
-            bytes: 0,
-            max_entries,
-            max_bytes,
-            epoch: 0,
-            lru: LruIndex::with_capacity(max_entries),
+            inner: ByteBoundLruCache::new(max_entries, max_bytes, PAYLOAD_CACHE_LABELS),
         }
     }
 
@@ -67,13 +54,7 @@ impl PayloadCache {
         &mut self,
         key: &PayloadsCacheKey,
     ) -> Option<Arc<[DirectivePayload]>> {
-        let next_epoch = self.next_epoch();
-        let entry = self.entries.get_mut(key)?;
-        entry.last_access = next_epoch;
-        let value = Arc::clone(&entry.value);
-        self.lru.record(key.clone(), next_epoch);
-        self.compact_lru_if_needed();
-        Some(value)
+        self.inner.lookup_cloned(key)
     }
 
     pub(in crate::parsing::c::preprocess::gpu_pipeline) fn insert(
@@ -82,45 +63,17 @@ impl PayloadCache {
         value: Arc<[DirectivePayload]>,
     ) {
         let entry_bytes = directive_payloads_bytes(&value);
-        if self.max_entries == 0 || entry_bytes > self.max_bytes {
-            self.remove(&key);
-            return;
-        }
-        self.remove(&key);
-        while self.entries.len() >= self.max_entries
-            || self.bytes.checked_add(entry_bytes).unwrap_or(usize::MAX) > self.max_bytes
-        {
-            let Some(evict_key) = self.pop_lru_key() else {
-                break;
-            };
-            self.remove(&evict_key);
-        }
-        let last_access = self.next_epoch();
-        self.bytes = self.bytes.checked_add(entry_bytes).unwrap_or_else(|| {
-            panic!(
-                "vyre-libs gpu preprocessor directive payload cache byte accounting overflowed during insert. Fix: lower payload cache limits or shard preprocessing sessions."
-            )
-        });
-        self.entries.insert(
-            key.clone(),
-            PayloadCacheEntry {
-                value,
-                bytes: entry_bytes,
-                last_access,
-            },
-        );
-        self.lru.record(key, last_access);
-        self.compact_lru_if_needed();
+        self.inner.insert(key, value, entry_bytes);
     }
 
     #[cfg(test)]
     pub(in crate::parsing::c::preprocess::gpu_pipeline) fn len(&self) -> usize {
-        self.entries.len()
+        self.inner.len()
     }
 
     #[cfg(test)]
     pub(in crate::parsing::c::preprocess::gpu_pipeline) fn byte_len(&self) -> usize {
-        self.bytes
+        self.inner.byte_len()
     }
 
     #[cfg(test)]
@@ -128,49 +81,12 @@ impl PayloadCache {
         &self,
         key: &PayloadsCacheKey,
     ) -> bool {
-        self.entries.contains_key(key)
+        self.inner.contains_key(key)
     }
 
     #[cfg(test)]
     pub(in crate::parsing::c::preprocess::gpu_pipeline) fn lru_index_len(&self) -> usize {
-        self.lru.len()
-    }
-
-    fn remove(&mut self, key: &PayloadsCacheKey) -> Option<PayloadCacheEntry> {
-        let entry = self.entries.remove(key)?;
-        self.bytes = self.bytes.checked_sub(entry.bytes).unwrap_or_else(|| {
-            panic!(
-                "vyre-libs gpu preprocessor directive payload cache byte accounting underflowed during eviction. Fix: repair payload cache accounting before relying on memory limits."
-            )
-        });
-        Some(entry)
-    }
-
-    fn next_epoch(&mut self) -> u64 {
-        self.epoch = self.epoch.checked_add(1).unwrap_or_else(|| {
-            panic!(
-                "vyre-libs gpu preprocessor directive payload cache epoch overflowed. Fix: recreate process-local preprocess cache before continuing an unbounded translation-unit stream."
-            )
-        });
-        self.epoch
-    }
-
-    fn pop_lru_key(&mut self) -> Option<PayloadsCacheKey> {
-        self.lru.pop_valid(|key, last_access| {
-            self.entries
-                .get(key)
-                .is_some_and(|entry| entry.last_access == last_access)
-        })
-    }
-
-    fn compact_lru_if_needed(&mut self) {
-        let live = self.entries.len();
-        self.lru.compact_if_needed(
-            live,
-            self.entries
-                .iter()
-                .map(|(key, entry)| (key.clone(), entry.last_access)),
-        );
+        self.inner.lru_index_len()
     }
 }
 

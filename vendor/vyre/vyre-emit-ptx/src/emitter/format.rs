@@ -4,7 +4,7 @@ use crate::reg::{PtxType, Reg};
 use vyre_foundation::ir::{BinOp, DataType};
 
 pub(super) fn is_ptx_vectorizable_dtype(dt: &DataType) -> bool {
-    matches!(dt, DataType::U32 | DataType::I32 | DataType::F32)
+    matches!(dt, DataType::U32 | DataType::I32 | DataType::F32 | DataType::Bool)
 }
 
 pub(super) fn write_reg_tuple(out: &mut String, regs: &[Reg]) {

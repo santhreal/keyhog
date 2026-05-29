@@ -1,23 +1,22 @@
-//! Frozen predicate primitives — the ~10 engine primitives listed in
-//! a downstream frontend's vision as "the engine has ≈10 true primitives; everything
-//! else is source-query dialect stdlib." Each is a thin wrapper that emits a vyre
+//! Frozen predicate primitives  -  the compact engine primitives used by
+//! source-query dialect standard libraries. Each is a thin wrapper that emits a vyre
 //! Program composing [`crate::graph`] + [`crate::bitset`] +
 //! [`crate::label`] primitives with a specific edge-kind mask, tag
 //! mask, or node-kind constant.
 //!
 //! The ten primitives:
-//! - `call_to` — edge kind `CallArg` from frontier to callee.
-//! - `return_value_of` — edge kind `Return` from call to binding.
-//! - `arg_of` — edge kind `CallArg` reverse (arg → call).
-//! - `size_argument_of` — arg_of restricted to integer literal args.
-//! - `edge` — raw edge matcher (forward, any mask).
-//! - `in_function` — node_tags ∩ `TAG_FAMILY_FUNCTION`.
-//! - `in_file` — node_tags ∩ `TAG_FAMILY_FILE`.
-//! - `in_package` — node_tags ∩ `TAG_FAMILY_PACKAGE`.
-//! - `literal_of` — `nodes[v] == NODE_KIND_LITERAL` AND value matches.
-//! - `node_kind` — `nodes[v] == kind`.
+//! - `call_to`  -  edge kind `CallArg` from frontier to callee.
+//! - `return_value_of`  -  edge kind `Return` from call to binding.
+//! - `arg_of`  -  edge kind `CallArg` reverse (arg → call).
+//! - `size_argument_of`  -  arg_of restricted to integer literal args.
+//! - `edge`  -  raw edge matcher (forward, any mask).
+//! - `in_function`  -  node_tags ∩ `TAG_FAMILY_FUNCTION`.
+//! - `in_file`  -  node_tags ∩ `TAG_FAMILY_FILE`.
+//! - `in_package`  -  node_tags ∩ `TAG_FAMILY_PACKAGE`.
+//! - `literal_of`  -  `nodes[v] == NODE_KIND_LITERAL` AND value matches.
+//! - `node_kind`  -  `nodes[v] == kind`.
 
-/// Canonical edge-kind bitmasks matching a downstream frontend's
+/// Canonical edge-kind bitmasks matching the shared source-query
 /// `ProgramGraph::EdgeKind`. One bit per kind; multiple bits can
 /// coexist in the same `edge_kind_mask[e]` word.
 pub mod edge_kind {
@@ -42,7 +41,7 @@ pub mod edge_kind {
     /// Control-flow edge.
     pub const CONTROL: u32 = 1 << 9;
 
-    // Slot-accessor edges — bits 10..14 — emitted by surge-source's
+    // Slot-accessor edges  -  bits 10..14  -  emitted by source frontends'
     // walker on AST nodes whose semantic operands need direct access
     // by name (`base_of`, `index_of`, `upper_bound_of`,
     // `induction_variable_of`, `format_string_argument_of`). The
@@ -68,7 +67,7 @@ pub mod edge_kind {
     /// 2 for swprintf, etc.).
     pub const FORMAT_STRING_ARG: u32 = 1 << 14;
 
-    // Per-slot CALL_ARG subkinds — bits 16..23. Pre-fix `arg_of(call,
+    // Per-slot CALL_ARG subkinds  -  bits 16..23. Pre-fix `arg_of(call,
     // N)` returned ALL CALL_ARG predecessors regardless of N because
     // the underlying csr_backward_traverse only filtered by the
     // generic CALL_ARG bit. With these subkind bits the walker emits
@@ -76,7 +75,7 @@ pub mod edge_kind {
     // call-arg edge, and `arg_of(call, N)` masks on
     // `CALL_ARG_SLOT_BASE << N`. 8 slots cover every realistic
     // launch-shape arity (every shape uses index ≤ 2). A 9th slot
-    // demand requires widening edge_kind_mask to u64 — a substrate
+    // demand requires widening edge_kind_mask to u64  -  a substrate
     // change tracked in the open backlog.
     /// First per-slot call-argument bit. Slot `N` uses
     /// `CALL_ARG_SLOT_BASE << N` while the generic [`CALL_ARG`] bit remains
@@ -127,7 +126,7 @@ pub mod edge_kind {
     }
 }
 
-/// Canonical tag-family bitmasks matching a downstream frontend's `TagFamily`.
+/// Canonical tag-family bitmasks matching the shared source-query `TagFamily`.
 pub mod tag_family {
     /// `in_function` mask.
     pub const FUNCTION: u32 = 1 << 0;
@@ -137,7 +136,7 @@ pub mod tag_family {
     pub const PACKAGE: u32 = 1 << 2;
 }
 
-/// Canonical `NodeKind` constants mirroring a downstream frontend's enum.
+/// Canonical `NodeKind` constants mirroring the shared source-query enum.
 pub mod node_kind {
     /// `Variable`.
     pub const VARIABLE: u32 = 1;
@@ -157,15 +156,250 @@ pub mod node_kind {
     pub const FUNCTION_DECL: u32 = 8;
 }
 
+macro_rules! define_tag_family_predicate {
+    (
+        $module:ident,
+        $function:ident,
+        $op_id:literal,
+        $family:expr,
+        $fixture_tags:expr,
+        $expected_nodeset:expr,
+        $doc:literal
+    ) => {
+        #[doc = $doc]
+        pub mod $module {
+            use vyre_foundation::ir::Program;
+
+            use crate::label::resolve_family::resolve_family;
+
+            /// Canonical op id.
+            pub const OP_ID: &str = $op_id;
+
+            /// Build the canonical tag-family predicate program.
+            #[must_use]
+            pub fn $function(node_tags: &str, nodeset_out: &str, node_count: u32) -> Program {
+                crate::program_region::tag_program(
+                    OP_ID,
+                    resolve_family(node_tags, nodeset_out, node_count, $family),
+                )
+            }
+
+            /// CPU reference.
+            #[must_use]
+            #[cfg(any(test, feature = "cpu-parity"))]
+            pub fn cpu_ref(node_tags: &[u32]) -> Vec<u32> {
+                crate::label::resolve_family::cpu_ref(node_tags, $family)
+            }
+
+            #[cfg(feature = "inventory-registry")]
+            inventory::submit! {
+                crate::harness::OpEntry::new(
+                    OP_ID,
+                    || $function("tags", "nodeset", 4),
+                    Some(|| {
+                        let to_bytes = crate::predicate::inventory_u32_le_bytes;
+                        vec![vec![
+                            to_bytes($fixture_tags),
+                            to_bytes(&[0]),
+                        ]]
+                    }),
+                    Some(|| {
+                        let to_bytes = crate::predicate::inventory_u32_le_bytes;
+                        vec![vec![to_bytes($expected_nodeset)]]
+                    }),
+                )
+            }
+
+            #[cfg(test)]
+            mod tests {
+                use super::*;
+
+                #[test]
+                fn cpu_ref_matches_inventory_fixture() {
+                    assert_eq!(cpu_ref($fixture_tags), $expected_nodeset.to_vec());
+                }
+            }
+        }
+    };
+}
+
+macro_rules! define_fixed_forward_edge_predicate {
+    (
+        $module:ident,
+        $function:ident,
+        $op_id:literal,
+        $edge_mask:expr,
+        $edge_count:expr,
+        $fixture_edge_offsets:expr,
+        $fixture_edge_targets:expr,
+        $fixture_edge_masks:expr,
+        $expected_nodeset:expr,
+        $module_doc:literal,
+        $function_doc:literal,
+        $region_label:literal
+    ) => {
+        #[doc = $module_doc]
+        pub mod $module {
+            use vyre_foundation::ir::Program;
+
+            use crate::graph::program_graph::ProgramGraphShape;
+            use crate::predicate::traversal::forward_edge_program;
+            #[cfg(any(test, feature = "cpu-parity"))]
+            use crate::predicate::traversal::{cpu_ref_forward, cpu_ref_forward_into};
+
+            /// Canonical op id.
+            pub const OP_ID: &str = $op_id;
+
+            #[doc = $function_doc]
+            #[must_use]
+            pub fn $function(
+                shape: ProgramGraphShape,
+                frontier_in: &str,
+                frontier_out: &str,
+            ) -> Program {
+                forward_edge_program(OP_ID, shape, frontier_in, frontier_out, $edge_mask)
+            }
+
+            /// CPU reference.
+            #[must_use]
+            #[cfg(any(test, feature = "cpu-parity"))]
+            pub fn cpu_ref(
+                node_count: u32,
+                edge_offsets: &[u32],
+                edge_targets: &[u32],
+                edge_kind_mask: &[u32],
+                frontier_in: &[u32],
+            ) -> Vec<u32> {
+                cpu_ref_forward(
+                    node_count,
+                    edge_offsets,
+                    edge_targets,
+                    edge_kind_mask,
+                    frontier_in,
+                    $edge_mask,
+                )
+            }
+
+            /// CPU reference using caller-owned output storage.
+            #[cfg(any(test, feature = "cpu-parity"))]
+            pub fn cpu_ref_into(
+                node_count: u32,
+                edge_offsets: &[u32],
+                edge_targets: &[u32],
+                edge_kind_mask: &[u32],
+                frontier_in: &[u32],
+                out: &mut Vec<u32>,
+            ) {
+                cpu_ref_forward_into(
+                    node_count,
+                    edge_offsets,
+                    edge_targets,
+                    edge_kind_mask,
+                    frontier_in,
+                    $edge_mask,
+                    out,
+                );
+            }
+
+            #[cfg(feature = "inventory-registry")]
+            inventory::submit! {
+                crate::harness::OpEntry::new(
+                    OP_ID,
+                    || $function(ProgramGraphShape::new(4, $edge_count), "fin", "fout"),
+                    Some(|| {
+                        let b = crate::predicate::inventory_u32_le_bytes;
+                        vec![vec![
+                            b(&[2, 1, 1, 1]),
+                            b($fixture_edge_offsets),
+                            b($fixture_edge_targets),
+                            b($fixture_edge_masks),
+                            b(&[0, 0, 0, 0]),
+                            b(&[0b0001]),
+                            b(&[0]),
+                        ]]
+                    }),
+                    Some(|| {
+                        let b = crate::predicate::inventory_u32_le_bytes;
+                        vec![vec![b($expected_nodeset)]]
+                    }),
+                )
+            }
+
+            #[cfg(test)]
+            mod tests {
+                use super::*;
+                use crate::predicate::traversal::assert_region_op_id;
+
+                #[test]
+                fn preserves_wrapper_op_id() {
+                    let program = $function(ProgramGraphShape::new(4, $edge_count), "fin", "fout");
+                    assert_region_op_id(&program, OP_ID, $region_label);
+                }
+            }
+        }
+    };
+}
+
 pub mod arg_of;
-pub mod call_to;
+define_fixed_forward_edge_predicate!(
+    call_to,
+    call_to,
+    "vyre-primitives::predicate::call_to",
+    crate::predicate::edge_kind::CALL_ARG,
+    2,
+    &[0, 1, 2, 2, 2],
+    &[1, 2],
+    &[2, 2],
+    &[0b0010],
+    "`call_to` - forward-traverse along `CALL_ARG` edges.",
+    "Build a Program that emits the callee NodeSet reachable via `CallArg` edges from the input frontier.",
+    "call_to"
+);
 pub mod edge;
-pub mod in_file;
-pub mod in_function;
-pub mod in_package;
+mod traversal;
+define_tag_family_predicate!(
+    in_file,
+    in_file,
+    "vyre-primitives::predicate::in_file",
+    crate::predicate::tag_family::FILE,
+    &[2, 2, 0, 0],
+    &[0b0011],
+    "`in_file` - NodeSet of file-tagged nodes."
+);
+define_tag_family_predicate!(
+    in_function,
+    in_function,
+    "vyre-primitives::predicate::in_function",
+    crate::predicate::tag_family::FUNCTION,
+    &[1, 0, 1, 0],
+    &[0b0101],
+    "`in_function` - NodeSet of function-tagged nodes."
+);
+define_tag_family_predicate!(
+    in_package,
+    in_package,
+    "vyre-primitives::predicate::in_package",
+    crate::predicate::tag_family::PACKAGE,
+    &[4, 0, 4, 0],
+    &[0b0101],
+    "`in_package` - NodeSet of package-tagged nodes."
+);
 pub mod literal_of;
 pub mod node_kind_eq;
-pub mod return_value_of;
+define_fixed_forward_edge_predicate!(
+    return_value_of,
+    return_value_of,
+    "vyre-primitives::predicate::return_value_of",
+    crate::predicate::edge_kind::RETURN,
+    1,
+    &[0, 1, 1, 1, 1],
+    &[1],
+    &[4],
+    &[0b0010],
+    "`return_value_of` - forward-traverse along `RETURN` edges.",
+    "Build a Program that emits the NodeSet of return-value bindings reached from the caller frontier via `Return` edges.",
+    "return_value_of"
+);
 pub mod size_argument_of;
 
 /// Little-endian `u32` word packing for [`inventory::submit!`] GPU fixtures.
@@ -174,5 +408,5 @@ pub mod size_argument_of;
 /// predicate's registry block (`audits/VYRE_PRIMITIVES_GAPS.md` dedup).
 #[cfg(feature = "inventory-registry")]
 pub(crate) fn inventory_u32_le_bytes(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|v| v.to_le_bytes()).collect()
+    crate::wire::pack_u32_slice(words)
 }

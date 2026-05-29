@@ -1,4 +1,4 @@
-//! Bracket matching — Tier 3 wrapper over the
+//! Bracket matching  -  Tier 3 wrapper over the
 //! Tier 2.5 [`vyre_primitives::matching::bracket_match::bracket_match`] primitive.
 //!
 //! Migrated per `docs/primitives-tier.md` Step 2 +
@@ -94,18 +94,12 @@ inventory::submit! {
         },
         test_inputs: Some(|| {
             let tokens: [u32; 8] = [12, 12, 0, 0, 0, 13, 13, 0];
-            let bytes = tokens
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&tokens);
             vec![vec![bytes, vec![0u8; 4 * 8]]]
         }),
         expected_output: Some(|| {
             let depths: [u32; 8] = [1, 2, 2, 2, 2, 1, 0, 0];
-            let bytes = depths
-                .iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&depths);
             vec![vec![bytes]]
         }),
         category: Some("parsing"),
@@ -127,11 +121,7 @@ mod tests {
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: bracket_match must run; restore this invariant before continuing.");
-        outputs[1]
-            .to_bytes()
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
+        vyre_primitives::wire::decode_u32_le_bytes_all(&outputs[1].to_bytes())
     }
 
     #[test]

@@ -3,7 +3,7 @@
 /// Hand-verified golden input/output pair declared beside an operation.
 ///
 /// Lives in `vyre_spec` so both `vyre` can embed
-/// the same type — previously this was a `conform`-only struct and
+/// the same type  -  previously this was a `conform`-only struct and
 /// `std`-side generated fixtures could not name it. Example: an add operation
 /// can publish input bytes for `1 + 2` and expected bytes for `3`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

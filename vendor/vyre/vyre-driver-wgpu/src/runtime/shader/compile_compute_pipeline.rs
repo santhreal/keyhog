@@ -7,7 +7,7 @@ use vyre_driver::error::Result;
 /// `PIPELINE_CACHE`, so one-off WGSL helpers still avoid repeated native
 /// compiler cold-start work. The pre-0.6 process-wide `static PIPELINES:
 /// DashMap` that lived here was a second, uncoordinated pipeline-object cache
-/// that leaked `wgpu::Device` references across backend instances — removed
+/// that leaked `wgpu::Device` references across backend instances  -  removed
 /// per the 0.6 "one in-memory cache" rule.
 ///
 /// Callers outside the backend dispatch path (e.g. `ext.rs` WGSL eval

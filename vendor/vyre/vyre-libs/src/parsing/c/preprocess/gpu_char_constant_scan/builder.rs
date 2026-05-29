@@ -1,29 +1,16 @@
+use super::super::gpu_source_bytes::{
+    literal_scan_common_buffers, literal_scan_program, literal_scan_status_output,
+    packed_source_byte_len_expr, safe_load_source_byte_expr,
+};
 use super::*;
 
 /// Build the 17b.3a char-constant scanner `Program`.
 #[must_use]
 pub fn gpu_char_constant_scan(source_len: u32) -> Program {
     let _ = source_len;
-    let source_byte_len = Expr::mul(Expr::buf_len("source"), Expr::u32(4));
-    // Real-GPU note: U8 storage buffers are emitted as `array<u32>`;
-    // `Expr::load(buf, addr)` returns the u32 word at index `addr`.
-    // Reference-eval treats U8 as byte-addressed. Declaring `source`
-    // as packed U32 below makes both backends agree on word-indexed
-    // access; this helper extracts the byte explicitly.
-    let load_byte_u32 = |addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load("source", word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
-    let safe_load = |addr: Expr| -> Expr {
-        Expr::select(
-            Expr::lt(addr.clone(), source_byte_len.clone()),
-            load_byte_u32(addr),
-            Expr::u32(0),
-        )
-    };
+    let source_byte_len = packed_source_byte_len_expr();
+    let safe_load =
+        |addr: Expr| -> Expr { safe_load_source_byte_expr(addr, source_byte_len.clone()) };
 
     let body: Vec<Node> = vec![Node::if_then(
         Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
@@ -461,6 +448,7 @@ pub fn gpu_char_constant_scan(source_len: u32) -> Program {
                                                                     Expr::select(
                                                                         Expr::eq(
                                                                             Expr::var("hb_lc"),
+
                                                                             Expr::u32(1),
                                                                         ),
                                                                         Expr::add(
@@ -889,46 +877,13 @@ pub fn gpu_char_constant_scan(source_len: u32) -> Program {
         ],
     )];
 
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(
-                "source",
-                BINDING_SOURCE,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(0),
-            BufferDecl::storage(
-                "start_pos",
-                BINDING_START_POS,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(1),
-            BufferDecl::storage(
-                "value_out",
-                BINDING_VALUE_OUT,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
-            .with_count(1),
-            BufferDecl::storage(
-                "bytes_consumed_out",
-                BINDING_BYTES_CONSUMED_OUT,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
-            .with_count(1),
-            BufferDecl::storage(
-                "ok_out",
-                BINDING_OK_OUT,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
-            .with_count(1),
-        ],
-        [256, 1, 1],
-        body,
-    )
-    .with_entry_op_id(OP_ID)
+    let mut buffers = literal_scan_common_buffers(
+        BINDING_SOURCE,
+        BINDING_START_POS,
+        BINDING_VALUE_OUT,
+        BINDING_BYTES_CONSUMED_OUT,
+    );
+    buffers.push(literal_scan_status_output("ok_out", BINDING_OK_OUT));
+    literal_scan_program(buffers, body, OP_ID)
 }
+

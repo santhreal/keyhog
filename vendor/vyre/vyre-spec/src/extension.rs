@@ -10,7 +10,7 @@
 //! actual registration + resolution lives in `vyre::dialect::extension`
 //! (see the vyre-core crate).
 //!
-//! Every extension id occupies the range `0x8000_0000..=0xFFFF_FFFF` — the
+//! Every extension id occupies the range `0x8000_0000..=0xFFFF_FFFF`  -  the
 //! high bit of the wire tag distinguishes extension ids from the frozen
 //! core tag space `0x00..=0x7F`. The `ExtensionDataTypeId::from_name`
 //! constructor folds a stable crate-name hash into the reserved range so
@@ -18,6 +18,41 @@
 //! name-clashes.
 
 use core::fmt::Debug;
+
+macro_rules! impl_extension_id {
+    ($id:ident) => {
+        impl $id {
+            /// Reserved range: every extension id has its high bit set.
+            ///
+            /// Core IR discriminants occupy `0x00..=0x7F`; extensions occupy
+            /// `0x80..=0xFFFF_FFFF`. Wire decoders test the high byte to route
+            /// decoding between the two.
+            pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
+
+            /// Construct an id from a stable extension name.
+            ///
+            /// The id is derived deterministically with FNV-1a and folded into
+            /// the extension range by setting the high bit. Callers that pass
+            /// the same `name` always get the same id.
+            #[must_use]
+            pub const fn from_name(name: &str) -> Self {
+                Self(fnv1a_with_high_bit(name))
+            }
+
+            /// Return the raw id.
+            #[must_use]
+            pub const fn as_u32(self) -> u32 {
+                self.0
+            }
+
+            /// Is this a reserved extension id (high bit set)?
+            #[must_use]
+            pub const fn is_extension(self) -> bool {
+                (self.0 & Self::EXTENSION_RANGE_MASK) != 0
+            }
+        }
+    };
+}
 
 /// Stable u32 id for an extension variant.
 ///
@@ -29,42 +64,7 @@ use core::fmt::Debug;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ExtensionDataTypeId(pub u32);
 
-impl ExtensionDataTypeId {
-    /// Reserved range: every extension id has its high bit set.
-    ///
-    /// Core IR discriminants occupy `0x00..=0x7F`; extensions occupy
-    /// `0x80..=0xFFFF_FFFF`. Wire decoders test the high byte to route
-    /// decoding between the two.
-    pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
-
-    /// Construct an id from a stable extension name.
-    ///
-    /// The id is derived deterministically: callers that pass the same
-    /// `name` always get the same id. Wire encoders serialize this id
-    /// directly; decoders on a machine with the same extension crate
-    /// linked resolve it back to the original trait vtable.
-    ///
-    /// The implementation hashes `name` with FNV-1a and folds the
-    /// 32-bit result into the extension range by setting the high
-    /// bit. Two collision-free names produce two distinct ids with
-    /// overwhelming probability.
-    #[must_use]
-    pub const fn from_name(name: &str) -> Self {
-        Self(fnv1a_with_high_bit(name))
-    }
-
-    /// Return the raw id.
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    /// Is this a reserved extension id (high bit set)?
-    #[must_use]
-    pub const fn is_extension(self) -> bool {
-        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
-    }
-}
+impl_extension_id!(ExtensionDataTypeId);
 
 /// The contract for an extension-declared `DataType`.
 ///
@@ -153,136 +153,31 @@ pub trait ExtensionTernaryOp: Send + Sync + Debug + 'static {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ExtensionBinOpId(pub u32);
 
-impl ExtensionBinOpId {
-    /// Reserved range mask (see [`ExtensionDataTypeId::EXTENSION_RANGE_MASK`]).
-    pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
-
-    /// Construct from a stable extension name.
-    #[must_use]
-    pub const fn from_name(name: &str) -> Self {
-        Self(fnv1a_with_high_bit(name))
-    }
-
-    /// Raw id.
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    /// Is this a reserved extension id (high bit set)?
-    #[must_use]
-    pub const fn is_extension(self) -> bool {
-        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
-    }
-}
+impl_extension_id!(ExtensionBinOpId);
 
 /// Stable u32 id for an extension unary operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ExtensionUnOpId(pub u32);
 
-impl ExtensionUnOpId {
-    /// Reserved range mask.
-    pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
-
-    /// Construct from a stable extension name.
-    #[must_use]
-    pub const fn from_name(name: &str) -> Self {
-        Self(fnv1a_with_high_bit(name))
-    }
-
-    /// Raw id.
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    /// Is this a reserved extension id (high bit set)?
-    #[must_use]
-    pub const fn is_extension(self) -> bool {
-        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
-    }
-}
+impl_extension_id!(ExtensionUnOpId);
 
 /// Stable u32 id for an extension atomic operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ExtensionAtomicOpId(pub u32);
 
-impl ExtensionAtomicOpId {
-    /// Reserved range mask.
-    pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
-
-    /// Construct from a stable extension name.
-    #[must_use]
-    pub const fn from_name(name: &str) -> Self {
-        Self(fnv1a_with_high_bit(name))
-    }
-
-    /// Raw id.
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    /// Is this a reserved extension id (high bit set)?
-    #[must_use]
-    pub const fn is_extension(self) -> bool {
-        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
-    }
-}
+impl_extension_id!(ExtensionAtomicOpId);
 
 /// Stable u32 id for an extension ternary operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ExtensionTernaryOpId(pub u32);
 
-impl ExtensionTernaryOpId {
-    /// Reserved range mask.
-    pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
-
-    /// Construct from a stable extension name.
-    #[must_use]
-    pub const fn from_name(name: &str) -> Self {
-        Self(fnv1a_with_high_bit(name))
-    }
-
-    /// Raw id.
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    /// Is this a reserved extension id (high bit set)?
-    #[must_use]
-    pub const fn is_extension(self) -> bool {
-        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
-    }
-}
+impl_extension_id!(ExtensionTernaryOpId);
 
 /// Stable u32 id for an extension rule condition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ExtensionRuleConditionId(pub u32);
 
-impl ExtensionRuleConditionId {
-    /// Reserved range mask.
-    pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
-
-    /// Construct from a stable extension name.
-    #[must_use]
-    pub const fn from_name(name: &str) -> Self {
-        Self(fnv1a_with_high_bit(name))
-    }
-
-    /// Raw id.
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    /// Is this a reserved extension id (high bit set)?
-    #[must_use]
-    pub const fn is_extension(self) -> bool {
-        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
-    }
-}
+impl_extension_id!(ExtensionRuleConditionId);
 
 /// FNV-1a 32-bit hash folded into the extension range (high bit set).
 ///

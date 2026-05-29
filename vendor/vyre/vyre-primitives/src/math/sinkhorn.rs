@@ -47,15 +47,12 @@
 //! near zero saturate to 1 to avoid divide-by-zero (callers tighten
 //! ε to control floor activation).
 
-use std::sync::Arc;
-
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{DataType, Expr, Program};
 
 /// Op id for the scaling-update primitive.
 pub const OP_ID: &str = "vyre-primitives::math::sinkhorn_scale";
 
-/// Numerical floor for the divisor — values below saturate to this so
+/// Numerical floor for the divisor  -  values below saturate to this so
 /// the divide doesn't return MAX. 1 in 16.16 = 65_536 / 65_536; here
 /// we just guard against zero exactly.
 pub const DIVISOR_FLOOR: u32 = 1;
@@ -78,36 +75,23 @@ pub fn sinkhorn_scale(target: &str, divisor: &str, out: &str, count: u32) -> Pro
         );
     }
 
-    let t = Expr::InvocationId { axis: 0 };
-    // d_safe = max(divisor[i], FLOOR)  — done as select(d == 0, FLOOR, d)
-    // (assuming we mostly want to guard against literal zero; fixed-point
-    // small-positive values pass through).
-    let d_loaded = Expr::load(divisor, t.clone());
-    let d_safe = Expr::select(
-        Expr::eq(d_loaded.clone(), Expr::u32(0)),
-        Expr::u32(DIVISOR_FLOOR),
-        d_loaded,
-    );
-    let value = Expr::div(Expr::load(target, t.clone()), d_safe);
-
-    let body = vec![Node::if_then(
-        Expr::lt(t.clone(), Expr::u32(count)),
-        vec![Node::store(out, t, value)],
-    )];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(target, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(divisor, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(count),
-            BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(count),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
+    crate::math::u32_binary_map::u32_binary_map_program(
+        OP_ID,
+        target,
+        divisor,
+        out,
+        count,
+        |target_value, divisor_value| {
+            // d_safe = max(divisor[i], FLOOR)  -  done as select(d == 0, FLOOR, d)
+            // (assuming we mostly want to guard against literal zero; fixed-point
+            // small-positive values pass through).
+            let d_safe = Expr::select(
+                Expr::eq(divisor_value.clone(), Expr::u32(0)),
+                Expr::u32(DIVISOR_FLOOR),
+                divisor_value,
+            );
+            Expr::div(target_value, d_safe)
+        },
     )
 }
 
@@ -128,7 +112,8 @@ pub fn sinkhorn_iter_cpu(
 ) {
     let mut kv = Vec::new();
     let mut ktu = Vec::new();
-    sinkhorn_iter_cpu_into(k, a, b, u, v, m, n, &mut kv, &mut ktu);
+    try_sinkhorn_iter_cpu_into(k, a, b, u, v, m, n, &mut kv, &mut ktu)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sinkhorn_iter_cpu failed: invalid Sinkhorn shape");
 }
 
 /// CPU reference using caller-owned temporary vectors.
@@ -145,9 +130,32 @@ pub fn sinkhorn_iter_cpu_into(
     kv: &mut Vec<f64>,
     ktu: &mut Vec<f64>,
 ) {
-    let m = m as usize;
-    let n = n as usize;
+    try_sinkhorn_iter_cpu_into(k, a, b, u, v, m, n, kv, ktu)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - sinkhorn_iter_cpu_into failed: invalid Sinkhorn shape");
+}
 
+/// Fallible CPU reference using caller-owned temporary vectors.
+#[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_sinkhorn_iter_cpu_into(
+    k: &[f64],
+    a: &[f64],
+    b: &[f64],
+    u: &mut [f64],
+    v: &mut [f64],
+    m: u32,
+    n: u32,
+    kv: &mut Vec<f64>,
+    ktu: &mut Vec<f64>,
+) -> Result<(), String> {
+    let m = usize::try_from(m)
+        .map_err(|_| format!("sinkhorn_iter CPU oracle m={m} does not fit usize."))?;
+    let n = usize::try_from(n)
+        .map_err(|_| format!("sinkhorn_iter CPU oracle n={n} does not fit usize."))?;
+    m.checked_mul(n)
+        .ok_or_else(|| format!("sinkhorn_iter CPU oracle K shape overflows: m={m}, n={n}."))?;
+
+    reserve_sinkhorn_tmp(kv, m, "K*v temporary")?;
     kv.clear();
     kv.resize(m, 0.0);
     for i in 0..m {
@@ -162,6 +170,7 @@ pub fn sinkhorn_iter_cpu_into(
             *u_i = a.get(i).copied().unwrap_or(0.0) / kv[i].max(1e-30);
         }
     }
+    reserve_sinkhorn_tmp(ktu, n, "K^T*u temporary")?;
     ktu.clear();
     ktu.resize(n, 0.0);
     for j in 0..n {
@@ -176,6 +185,20 @@ pub fn sinkhorn_iter_cpu_into(
             *v_j = b.get(j).copied().unwrap_or(0.0) / ktu[j].max(1e-30);
         }
     }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "cpu-parity"))]
+fn reserve_sinkhorn_tmp(out: &mut Vec<f64>, len: usize, name: &str) -> Result<(), String> {
+    if len > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            len - out.len(),
+            "Sinkhorn CPU oracle",
+            name,
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -185,8 +208,16 @@ inventory::submit! {
         || {
             sinkhorn_scale("a", "b", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[8, 9, 10, 11]),
+                crate::wire::pack_u32_slice(&[2, 3, 0, 5]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[4, 3, 10, 2])]]
+        }),
     )
 }
 
@@ -271,6 +302,67 @@ mod tests {
 
         assert_eq!(kv.as_ptr(), kv_ptr);
         assert_eq!(ktu.as_ptr(), ktu_ptr);
+    }
+
+    #[test]
+    fn cpu_into_truncates_stale_temporaries_without_reallocating() {
+        let k = vec![1.0, 1.0, 1.0, 1.0];
+        let a = vec![0.5, 0.5];
+        let b = vec![0.5, 0.5];
+        let mut u = vec![1.0, 1.0];
+        let mut v = vec![1.0, 1.0];
+        let mut kv = Vec::with_capacity(8);
+        let mut ktu = Vec::with_capacity(8);
+        kv.extend([99.0; 8]);
+        ktu.extend([99.0; 8]);
+        let kv_ptr = kv.as_ptr();
+        let ktu_ptr = ktu.as_ptr();
+
+        try_sinkhorn_iter_cpu_into(&k, &a, &b, &mut u, &mut v, 2, 2, &mut kv, &mut ktu).unwrap();
+
+        assert_eq!(kv.len(), 2);
+        assert_eq!(ktu.len(), 2);
+        assert_eq!(kv.as_ptr(), kv_ptr);
+        assert_eq!(ktu.as_ptr(), ktu_ptr);
+    }
+
+    #[test]
+    fn generated_cpu_iter_matches_independent_reference() {
+        for case in 0..48 {
+            let m = 1 + (case % 5);
+            let n = 1 + (case % 4);
+            let k: Vec<f64> = (0..m * n)
+                .map(|idx| 0.1 + (idx + case) as f64 * 0.01)
+                .collect();
+            let a: Vec<f64> = (0..m).map(|idx| 0.25 + idx as f64 * 0.05).collect();
+            let b: Vec<f64> = (0..n).map(|idx| 0.5 + idx as f64 * 0.025).collect();
+            let mut u = vec![1.0; m];
+            let mut v = vec![1.0; n];
+            let mut kv = Vec::with_capacity(m + 2);
+            let mut ktu = Vec::with_capacity(n + 2);
+
+            try_sinkhorn_iter_cpu_into(
+                &k, &a, &b, &mut u, &mut v, m as u32, n as u32, &mut kv, &mut ktu,
+            )
+            .unwrap();
+
+            for i in 0..m {
+                let expected_kv: f64 = (0..n).map(|j| k[i * n + j]).sum();
+                assert!(approx_eq(kv[i], expected_kv), "case {case} kv[{i}]");
+                assert!(
+                    approx_eq(u[i], a[i] / expected_kv.max(1e-30)),
+                    "case {case} u[{i}]"
+                );
+            }
+            for j in 0..n {
+                let expected_ktu: f64 = (0..m).map(|i| k[i * n + j] * u[i]).sum();
+                assert!(approx_eq(ktu[j], expected_ktu), "case {case} ktu[{j}]");
+                assert!(
+                    approx_eq(v[j], b[j] / expected_ktu.max(1e-30)),
+                    "case {case} v[{j}]"
+                );
+            }
+        }
     }
 
     #[test]

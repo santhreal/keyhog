@@ -1,4 +1,4 @@
-//! Cat-C `inverse_sqrt_f32` — finite-domain `1 / sqrt(x)` per f32 lane.
+//! Cat-C `inverse_sqrt_f32`  -  finite-domain `1 / sqrt(x)` per f32 lane.
 //! Inputs that are non-finite, negative, zero, or subnormal are clamped to
 //! `f32::MIN_POSITIVE` before the reciprocal square root.
 
@@ -81,6 +81,12 @@ inventory::submit! {
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
         category: Some("hardware"),
+        shape: Some(crate::harness::OpShape::new(
+            1,
+            1,
+            4,
+            crate::harness::HardwareSemantic::InverseSqrtF32,
+        )),
     }
 }
 

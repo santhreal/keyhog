@@ -8,7 +8,7 @@
 //!
 //! Composes #26 reachability_closure for the transitive-closure step.
 
-use crate::dataflow_fixpoint::reachability_closure_into;
+use vyre_foundation::pass_substrate::polyhedral_fusion as foundation_polyhedral;
 
 /// Reusable buffers for polyhedral fusion analysis.
 #[derive(Debug, Default)]
@@ -49,20 +49,14 @@ pub fn fusable_pairs_into<'a>(
 ) -> &'a [u32] {
     use crate::observability::{bump, polyhedral_fusion_calls};
     bump(&polyhedral_fusion_calls);
-    let n_us = n as usize;
-    reachability_closure_into(adj, n, max_iters, &mut scratch.closure, &mut scratch.next);
-    scratch.mask.clear();
-    scratch.mask.resize(n_us * n_us, 0);
-    for i in 0..n_us {
-        for j in 0..n_us {
-            if i == j {
-                continue;
-            }
-            if scratch.closure[i * n_us + j] == 0 && scratch.closure[j * n_us + i] == 0 {
-                scratch.mask[i * n_us + j] = 1;
-            }
-        }
-    }
+    foundation_polyhedral::fusable_pairs_with_scratch_into(
+        adj,
+        n,
+        max_iters,
+        &mut scratch.closure,
+        &mut scratch.next,
+        &mut scratch.mask,
+    );
     &scratch.mask
 }
 
@@ -155,5 +149,38 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(scratch.mask_ptr(), ptr);
         assert_eq!(fusion_score_into(&adj, 3, 5, &mut scratch), 6);
+    }
+
+    #[test]
+    fn invalid_shape_returns_empty_mask_without_indexing_empty_closure() {
+        let mut scratch = PolyhedralFusionScratch::new();
+        scratch.closure.extend_from_slice(&[99]);
+        scratch.next.extend_from_slice(&[100]);
+        scratch.mask.extend_from_slice(&[101]);
+        let mask = fusable_pairs_into(&[0, 1, 0], 2, 5, &mut scratch);
+        assert!(mask.is_empty());
+        assert!(scratch.closure.is_empty());
+        assert!(scratch.next.is_empty());
+    }
+
+    #[test]
+    fn generated_fusable_pairs_match_foundation_authority() {
+        let mut scratch = PolyhedralFusionScratch::new();
+        for n in 1u32..=8 {
+            let cells = (n * n) as usize;
+            for seed in 0u32..64 {
+                let mut state = seed ^ n.wrapping_mul(0xA511);
+                let mut adj = Vec::with_capacity(cells);
+                for _ in 0..cells {
+                    state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                    adj.push((state >> 30) & 1);
+                }
+                assert_eq!(
+                    fusable_pairs_into(&adj, n, n, &mut scratch),
+                    foundation_polyhedral::fusable_pairs(&adj, n, n).as_slice(),
+                    "n={n} seed={seed}"
+                );
+            }
+        }
     }
 }

@@ -89,6 +89,10 @@ pub fn walk_nodes(program: &Program, mut f: impl FnMut(&Node)) {
             | Node::Return
             | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
             | Node::AsyncWait { .. }
@@ -145,6 +149,10 @@ fn push_node_children_and_exprs<'a>(
         Node::Return
         | Node::Barrier { .. }
         | Node::IndirectDispatch { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncStore { .. }
         | Node::AsyncWait { .. }
@@ -311,6 +319,10 @@ pub fn walk_nodes_mut(program: &mut Program, mut f: impl FnMut(&mut Node)) {
             | Node::Return
             | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
             | Node::AsyncWait { .. }
@@ -450,6 +462,7 @@ pub fn collect_call_op_ids(program: &Program) -> Vec<Arc<str>> {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::{AtomicOp, BinOp, BufferDecl, DataType, Expr, Node, Program, UnOp};
@@ -711,3 +724,4 @@ mod tests {
         assert_eq!(buffers.len(), 2);
     }
 }
+

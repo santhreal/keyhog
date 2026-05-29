@@ -50,14 +50,13 @@ impl BenchCase for Attention {
 
         let prog = Program::wrapped(
             vec![
-                BufferDecl::storage("out", 0, BufferAccess::ReadWrite, DataType::F32)
+                BufferDecl::storage("Q", 0, BufferAccess::ReadOnly, DataType::F32)
                     .with_count((seq * dim) as u32),
-                BufferDecl::storage("Q", 1, BufferAccess::ReadOnly, DataType::F32)
+                BufferDecl::storage("K", 1, BufferAccess::ReadOnly, DataType::F32)
                     .with_count((seq * dim) as u32),
-                BufferDecl::storage("K", 2, BufferAccess::ReadOnly, DataType::F32)
+                BufferDecl::storage("V", 2, BufferAccess::ReadOnly, DataType::F32)
                     .with_count((seq * dim) as u32),
-                BufferDecl::storage("V", 3, BufferAccess::ReadOnly, DataType::F32)
-                    .with_count((seq * dim) as u32),
+                BufferDecl::output("out", 3, DataType::F32).with_count((seq * dim) as u32),
             ],
             [16, 16, 1],
             vec![
@@ -157,9 +156,7 @@ impl BenchCase for Attention {
             v_bytes[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
         }
 
-        let out_bytes = vec![0u8; seq * dim * 4];
-
-        let inputs = vec![out_bytes, q_bytes, k_bytes, v_bytes];
+        let inputs = vec![q_bytes, k_bytes, v_bytes];
 
         let timed = ctx
             .dispatch_timed(prog, &inputs, &ctx.dispatch_config)
@@ -170,7 +167,7 @@ impl BenchCase for Attention {
 
         let start_ref = std::time::Instant::now();
         let baseline_outputs = vec![crate::cases::cpu_baselines::attention_proxy_f32_bytes(
-            &inputs[1], &inputs[2], &inputs[3], seq, dim,
+            &inputs[0], &inputs[1], &inputs[2], seq, dim,
         )];
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
         let flop_count = (3 * seq * dim * seq) as u64;
@@ -190,10 +187,10 @@ impl BenchCase for Attention {
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(elapsed_ref),
                 input_bytes: Some(
-                    inputs[1]
+                    inputs[0]
                         .len()
-                        .saturating_add(inputs[2].len())
-                        .saturating_add(inputs[3].len()) as u64,
+                        .saturating_add(inputs[1].len())
+                        .saturating_add(inputs[2].len()) as u64,
                 ),
                 output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
                 custom: vec![MetricPoint {

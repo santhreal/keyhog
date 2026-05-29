@@ -1,4 +1,4 @@
-//! Pipeline mode — pre-compile a Program once, dispatch repeatedly with new inputs.
+//! Pipeline mode  -  pre-compile a Program once, dispatch repeatedly with new inputs.
 
 /// Shared on-disk compiled-pipeline cache.
 pub mod cache;
@@ -13,9 +13,9 @@ pub use compiler::{
     compile_shared_with_telemetry, compile_with_telemetry, prewarm, prewarm_owned, prewarm_shared,
 };
 pub use hashing::{
-    dispatch_policy_cache_string, hex_encode, hex_short, normalized_program_cache_digest,
-    try_normalized_program_cache_digest, update_dispatch_policy_cache_hash,
-    PipelineDeviceFingerprint,
+    dispatch_policy_cache_digest, dispatch_policy_cache_string, hex_encode, hex_short,
+    normalized_program_cache_digest, try_normalized_program_cache_digest,
+    update_dispatch_policy_cache_hash, PipelineDeviceFingerprint,
 };
 
 /// Version mixed into every persistent pipeline cache key.
@@ -176,16 +176,24 @@ impl PipelineCacheAudit {
     /// rate; pass `0` to disable the alarm.
     #[must_use]
     pub fn snapshot(&self, alarm_threshold_bps: u32) -> PipelineCacheAuditReport {
-        let denominator = self.hits.checked_add(self.misses).unwrap_or_else(|| {
+        let denominator = crate::accounting::checked_add_u64_lazy(self.hits, self.misses, || {
+            "pipeline cache audit denominator overflowed u64. Fix: rotate telemetry windows before counters reach u64::MAX."
+        })
+        .unwrap_or_else(|message| {
             panic!(
-                "pipeline cache audit denominator overflowed u64. Fix: rotate telemetry windows before counters reach u64::MAX."
+                "{message}"
             )
         });
         let hit_rate_bps = if denominator == 0 {
             None
         } else {
-            let bps = (u128::from(self.hits) * 10_000 / u128::from(denominator)).min(10_000);
-            Some(bps as u32)
+            Some(crate::numeric::ratio_basis_points_u64(
+                self.hits,
+                denominator,
+                0,
+                "pipeline cache hit rate",
+                "driver",
+            ))
         };
         let below_alarm_threshold = match hit_rate_bps {
             Some(rate) if alarm_threshold_bps > 0 => rate < alarm_threshold_bps,
@@ -202,11 +210,12 @@ impl PipelineCacheAudit {
 }
 
 fn increment_counter(value: u64, label: &str) -> u64 {
-    value.checked_add(1).unwrap_or_else(|| {
-        panic!(
+    crate::accounting::checked_add_u64_lazy(value, 1, || {
+        format!(
             "{label} overflowed u64. Fix: rotate pipeline cache telemetry windows before counter exhaustion; silent saturation hides cache regressions."
         )
     })
+    .unwrap_or_else(|message| panic!("{message}"))
 }
 
 /// Resolve pipeline cache limits from Tier-A operational environment settings.

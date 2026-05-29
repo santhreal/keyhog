@@ -1,6 +1,6 @@
 [package]
 name = "vyre-foundation"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,7 +22,7 @@ default = []
 serde = []
 
 [dependencies]
-dashmap = "6.1.0"
+dashmap = { workspace = true }
 vyre-spec.workspace = true
 vyre-macros.workspace = true
 serde.workspace = true
@@ -36,7 +36,7 @@ smallvec.workspace = true
 blake3.workspace = true
 bytemuck.workspace = true
 inventory.workspace = true
-lasso = { version = "0.7.3", features = ["multi-threaded"] }
+lasso.workspace = true
 bumpalo.workspace = true
 im.workspace = true
 libm.workspace = true
@@ -57,5 +57,9 @@ vyre-reference.workspace = true
 proptest.workspace = true
 criterion.workspace = true
 
-
-
+[[test]]
+name = "sweep_validation_rejection_oracle_matrix"
+path = "tests/sweep_validation_rejection_oracle_matrix.rs"
+[[test]]
+name = "sweep_validation_rejection_volume_oracle_matrix"
+path = "tests/sweep_validation_rejection_volume_oracle_matrix.rs"

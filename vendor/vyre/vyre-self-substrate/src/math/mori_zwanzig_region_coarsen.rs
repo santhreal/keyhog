@@ -1,6 +1,6 @@
 //! Region-tree coarse-graining via #58 Mori-Zwanzig projection (#58 self-consumer).
 //!
-//! Closes the recursion thesis for #58 — `mz_project_step` ships to
+//! Closes the recursion thesis for #58  -  `mz_project_step` ships to
 //! user dialects (climate modeling, scientific ML model reduction)
 //! AND derives vyre's coarse-grained dispatch view of its own Region
 //! tree.
@@ -8,7 +8,7 @@
 //! # The self-use
 //!
 //! Vyre's full dispatch graph at workspace scale is millions of
-//! Regions. Most optimizer passes don't need that resolution — they
+//! Regions. Most optimizer passes don't need that resolution  -  they
 //! need a coarse view that preserves the dispatch structure (memory
 //! pressure, sync points, fusion eligibility) while dropping leaf
 //! detail. Mori-Zwanzig (1965) gives an EXACT reduction with a
@@ -42,7 +42,7 @@
 //! At 1M Regions, naive full-resolution analysis is O(N²) memory in
 //! the worst case (#19 polyhedral fusion considers all pairs).
 //! Mori-Zwanzig coarsening to K macro-nodes drops that to O(K²) at
-//! the cost of an exactly-quantified projection error — the memory
+//! the cost of an exactly-quantified projection error  -  the memory
 //! kernel. Combined with #51 FMM hierarchical compression on the
 //! coarse system, full workspace analysis stays tractable.
 
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn singleton_clusters_preserve_state() {
-        // Each Region is its own cluster — projection is identity.
+        // Each Region is its own cluster  -  projection is identity.
         let assignments = vec![0u32, 1, 2, 3];
         let state = vec![10.0, 20.0, 30.0, 40.0];
         let coarse = coarsen_via_clustering(&state, &assignments, 4, 4);
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn single_global_cluster_yields_uniform_mean() {
-        // All Regions in one cluster — every coarse cell = global mean.
+        // All Regions in one cluster  -  every coarse cell = global mean.
         let assignments = vec![0u32; 4];
         let state = vec![10.0, 20.0, 30.0, 40.0];
         let coarse = coarsen_via_clustering(&state, &assignments, 4, 1);
@@ -416,8 +416,8 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 3);
-            let p = read_u32s(&inputs[0]);
-            let state = read_u32s(&inputs[1]);
+            let p = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let state = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
             assert_eq!(inputs[2].len(), state.len() * std::mem::size_of::<u32>());
             let n = state.len();
             let mut out = vec![0u32; n];
@@ -448,6 +448,7 @@ mod tests {
     }
 
     #[test]
+
     fn fixed_via_rejects_shape_mismatch() {
         let err =
             coarsen_region_state_fixed_via(&MoriDispatcher, &[1, 0, 0], &[1, 1], 2).unwrap_err();
@@ -495,19 +496,13 @@ mod tests {
         let via_section = source
             .split("pub fn coarsen_region_state_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("/// Convenience: derive the projection AND apply it in one step.")
             .next()
-            .expect("post-via marker should exist");
+            .expect("Fix: post-via marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_coarsen"));
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

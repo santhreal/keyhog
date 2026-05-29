@@ -17,7 +17,7 @@ pub const BATCH_FENCE: u32 = 7;
 /// GPU-initiated load miss: the megakernel writes a DMA request to the IO
 /// queue and polls for completion. The argument is the consumer's
 /// resource identifier (32-bit, opaque to vyre). vyre is a generic GPU
-/// substrate; it does not know what "the resource" is — that is the
+/// substrate; it does not know what "the resource" is  -  that is the
 /// consumer's domain. See the boundary rule in AGENTS.md.
 pub const LOAD_MISS: u32 = 0x0000_FFFD;
 /// Deprecated alias retained for source-level compatibility. Will be
@@ -25,7 +25,7 @@ pub const LOAD_MISS: u32 = 0x0000_FFFD;
 /// [`LOAD_MISS`].
 #[deprecated(
     since = "0.5.0",
-    note = "vyre is a generic GPU substrate — use `LOAD_MISS`. The wire \
+    note = "vyre is a generic GPU substrate  -  use `LOAD_MISS`. The wire \
             format is unchanged; only the symbolic name moves."
 )]
 pub const EXPERT_LOAD_MISS: u32 = LOAD_MISS;

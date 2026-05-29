@@ -1,18 +1,13 @@
-//! IR program builders — construct the megakernel `Program` from vyre IR.
+//! IR program builders  -  construct the megakernel `Program` from vyre IR.
 //!
 //! Two flavours:
-//! - **Interpreted** (`build_program_sharded`) — If-tree opcode dispatch.
-//! - **JIT** (`build_program_jit`) — payload processor fused directly.
+//! - **Interpreted** (`build_program_sharded`)  -  If-tree opcode dispatch.
+//! - **JIT** (`build_program_jit`)  -  payload processor fused directly.
 
 use std::sync::Arc;
 
 use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
 
-#[cfg(feature = "c-frontend-adapter")]
-use super::c_frontend::{
-    c_frontend_phase_dispatch_nodes, c_frontend_phase_machine_guard_nodes,
-    c_frontend_workspace_bootstrap_nodes, CFrontendPhaseHandler, CFrontendWorkspaceManifest,
-};
 use super::handlers::{claimed_slot_bindings, claimed_slot_body, load_miss_body, OpcodeHandler};
 use super::io::{
     io_word, IO_DESTINATION_CAPABILITY_TABLE, IO_QUEUE_DMA_TAG, IO_SLOT_COUNT, IO_SLOT_WORDS,
@@ -20,6 +15,7 @@ use super::io::{
 };
 use super::ir_util::atomic_load_relaxed;
 use super::protocol::*;
+use super::workspace_adapter::MegakernelWorkspaceAdapter;
 mod cache;
 mod jit;
 mod priority;
@@ -39,7 +35,7 @@ pub fn build_program() -> Program {
 /// custom opcodes.
 ///
 /// Buffers are declared with concrete `with_count(...)` sizes so the
-/// backend readback layer allocates the right static staging size — a
+/// backend readback layer allocates the right static staging size  -  a
 /// `count=0` default reads back 4 bytes regardless of how much the
 /// kernel wrote.
 #[must_use]
@@ -82,47 +78,18 @@ pub fn build_program_sharded_slots_shared(
     ))
 }
 
-/// Build the sharded megakernel IR with a resident C frontend workspace ABI.
-///
-/// This declares the parser workspace buffer that a self-orchestrating C
-/// frontend megakernel path consumes after launch. It does not add host parser
-/// semantics; language work must be implemented as megakernel IR against the
-/// resident workspace.
+/// Build the sharded megakernel IR with a consumer-owned resident workspace.
 #[must_use]
-#[cfg(feature = "c-frontend-adapter")]
-pub fn build_program_sharded_with_c_frontend_workspace(
+pub fn build_program_sharded_with_workspace_adapter(
     workgroup_size_x: u32,
     slot_count: u32,
     opcodes: &[OpcodeHandler],
-    manifest: &CFrontendWorkspaceManifest,
-) -> Program {
-    build_program_sharded_with_c_frontend_workspace_phases(
-        workgroup_size_x,
-        slot_count,
-        opcodes,
-        manifest,
-        &[],
-    )
-}
-
-/// Build the sharded megakernel IR with resident C frontend phase handlers.
-///
-/// This is the production composition point for the one-dispatch C frontend:
-/// the CPU declares the resident workspace and launches the megakernel; parser
-/// phases are explicit GPU IR handlers selected from manifest phase words.
-#[must_use]
-#[cfg(feature = "c-frontend-adapter")]
-pub fn build_program_sharded_with_c_frontend_workspace_phases(
-    workgroup_size_x: u32,
-    slot_count: u32,
-    opcodes: &[OpcodeHandler],
-    manifest: &CFrontendWorkspaceManifest,
-    c_frontend_handlers: &[CFrontendPhaseHandler],
+    adapter: &impl MegakernelWorkspaceAdapter,
 ) -> Program {
     wrap_persistent_megakernel_program_with_buffers(
-        default_buffers_with_c_frontend_workspace(slot_count, manifest),
+        default_buffers_with_workspace_adapter(slot_count, adapter),
         workgroup_size_x,
-        persistent_body_with_c_frontend(workgroup_size_x, opcodes, manifest, c_frontend_handlers),
+        persistent_body_with_workspace_adapter(workgroup_size_x, opcodes, adapter),
     )
 }
 
@@ -231,24 +198,38 @@ pub fn build_program_with_self_loading_miss_handler(
     slot_count: u32,
     opcodes: &[OpcodeHandler],
 ) -> Program {
+    match try_build_program_with_self_loading_miss_handler(workgroup_size_x, slot_count, opcodes) {
+        Ok(program) => program,
+        Err(error) => panic!("{error}"),
+    }
+}
+
+/// Fallible variant of [`build_program_with_self_loading_miss_handler`].
+pub fn try_build_program_with_self_loading_miss_handler(
+    workgroup_size_x: u32,
+    slot_count: u32,
+    opcodes: &[OpcodeHandler],
+) -> Result<Program, String> {
     let mut extended = Vec::new();
-    extended
-        .try_reserve_exact(opcodes.len().checked_add(1).unwrap_or_else(|| {
-            panic!(
-                "megakernel self-loading opcode extension count overflowed usize. Fix: split opcode handler sets before building the megakernel."
-            )
-        }))
-        .expect("megakernel self-loading opcode extension allocation failed. Fix: split opcode handler sets before building the megakernel.");
+    let extended_len = opcodes.len().checked_add(1).ok_or_else(|| {
+        "megakernel self-loading opcode extension count overflowed usize. Fix: split opcode handler sets before building the megakernel."
+            .to_string()
+    })?;
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut extended, extended_len).map_err(|error| {
+        format!(
+            "megakernel self-loading opcode extension allocation failed: {error}. Fix: split opcode handler sets before building the megakernel."
+        )
+    })?;
     extended.extend_from_slice(opcodes);
     extended.push(OpcodeHandler {
         opcode: super::protocol::opcode::LOAD_MISS,
         body: load_miss_body(),
     });
-    wrap_persistent_megakernel_program(
+    Ok(wrap_persistent_megakernel_program(
         workgroup_size_x,
         slot_count,
         persistent_body_with_io(workgroup_size_x, &extended, false),
-    )
+    ))
 }
 
 fn build_program_sharded_slots_with_io(
@@ -279,7 +260,6 @@ fn wrap_persistent_megakernel_program(
     wrap_megakernel_program(workgroup_size_x, slot_count, vec![Node::forever(body)])
 }
 
-#[cfg(feature = "c-frontend-adapter")]
 fn wrap_persistent_megakernel_program_with_buffers(
     buffers: Vec<BufferDecl>,
     workgroup_size_x: u32,
@@ -328,9 +308,11 @@ fn default_buffers(slot_count: u32) -> Vec<BufferDecl> {
     let ring_slots = slot_count.max(1);
     let control = BufferDecl::read_write("control", 0, DataType::U32).with_count(CONTROL_MIN_WORDS);
     let ring_buffer = BufferDecl::read_write("ring_buffer", 1, DataType::U32).with_count(
-        ring_slots.checked_mul(SLOT_WORDS).expect(
-            "megakernel ring buffer word count overflowed u32; reduce slot_count or SLOT_WORDS",
-        ),
+        ring_slots.checked_mul(SLOT_WORDS).unwrap_or_else(|| {
+            panic!(
+                "megakernel ring buffer word count overflowed u32. Fix: reduce slot_count or SLOT_WORDS before building default megakernel buffers."
+            )
+        }),
     );
     let debug_log =
         BufferDecl::read_write("debug_log", 2, DataType::U32).with_count(debug::BUFFER_WORDS);
@@ -338,13 +320,12 @@ fn default_buffers(slot_count: u32) -> Vec<BufferDecl> {
     vec![control, ring_buffer, debug_log, io_queue]
 }
 
-#[cfg(feature = "c-frontend-adapter")]
-fn default_buffers_with_c_frontend_workspace(
+fn default_buffers_with_workspace_adapter(
     slot_count: u32,
-    manifest: &CFrontendWorkspaceManifest,
+    adapter: &impl MegakernelWorkspaceAdapter,
 ) -> Vec<BufferDecl> {
     let mut buffers = default_buffers(slot_count);
-    buffers.push(manifest.buffer_decl());
+    buffers.push(adapter.buffer_decl());
     buffers
 }
 
@@ -355,20 +336,47 @@ pub fn persistent_body(workgroup_size_x: u32, opcodes: &[OpcodeHandler]) -> Vec<
     persistent_body_with_io(workgroup_size_x, opcodes, false)
 }
 
+/// Fallible persistent body builder with explicit staging-allocation reporting.
+pub fn try_persistent_body(
+    workgroup_size_x: u32,
+    opcodes: &[OpcodeHandler],
+) -> Result<Vec<Node>, String> {
+    try_persistent_body_with_io(workgroup_size_x, opcodes, false)
+}
+
 fn persistent_body_with_io(
     workgroup_size_x: u32,
     opcodes: &[OpcodeHandler],
     include_io_polling: bool,
 ) -> Vec<Node> {
+    match try_persistent_body_with_io(workgroup_size_x, opcodes, include_io_polling) {
+        Ok(body) => body,
+        Err(error) => panic!("{error}"),
+    }
+}
+
+fn try_persistent_body_with_io(
+    workgroup_size_x: u32,
+    opcodes: &[OpcodeHandler],
+    include_io_polling: bool,
+) -> Result<Vec<Node>, String> {
     let mut body = persistent_lane_prologue(workgroup_size_x);
-    body.try_reserve_exact(if include_io_polling { 3 } else { 2 })
-        .expect("megakernel persistent body node reservation failed. Fix: reduce fused IO/body staging before building the megakernel.");
+    let additional_nodes = if include_io_polling { 3 } else { 2 };
+    let body_capacity = body.len().checked_add(additional_nodes).ok_or_else(|| {
+        "megakernel persistent body node reservation overflowed usize. Fix: reduce fused IO/body staging before building the megakernel."
+            .to_string()
+    })?;
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut body, body_capacity).map_err(|error| {
+        format!(
+            "megakernel persistent body node reservation failed: {error}. Fix: reduce fused IO/body staging before building the megakernel."
+        )
+    })?;
     body.push(direct_slot_base_binding());
     body.push(Node::Block(execute_slot_body(opcodes)));
     if include_io_polling {
         body.push(Node::Block(process_io_requests()));
     }
-    body
+    Ok(body)
 }
 
 fn persistent_lane_prologue(workgroup_size_x: u32) -> Vec<Node> {
@@ -427,19 +435,18 @@ fn lane_id_expr(workgroup_size_x: u32) -> Expr {
     )
 }
 
-#[cfg(feature = "c-frontend-adapter")]
-fn persistent_body_with_c_frontend(
+fn persistent_body_with_workspace_adapter(
     workgroup_size_x: u32,
     opcodes: &[OpcodeHandler],
-    manifest: &CFrontendWorkspaceManifest,
-    c_frontend_handlers: &[CFrontendPhaseHandler],
+    adapter: &impl MegakernelWorkspaceAdapter,
 ) -> Vec<Node> {
-    let mut body = c_frontend_workspace_bootstrap_nodes(manifest);
-    body.extend(c_frontend_phase_machine_guard_nodes());
-    body.extend(c_frontend_phase_dispatch_nodes(c_frontend_handlers));
+    let mut body = adapter.bootstrap_nodes();
+    body.extend(adapter.guard_nodes());
+    body.extend(adapter.dispatch_nodes());
     body.extend(persistent_body_with_io(workgroup_size_x, opcodes, false));
     body
 }
+
 
 fn process_io_requests() -> Vec<Node> {
     let nodes = vec![Node::loop_for(
@@ -561,3 +568,4 @@ fn execute_already_claimed_slot_body(tenant_id: Expr, claimed_body: Vec<Node>) -
 
 #[cfg(test)]
 mod tests;
+

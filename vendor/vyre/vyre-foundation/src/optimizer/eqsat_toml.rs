@@ -54,7 +54,7 @@ use crate::optimizer::eqsat::{EClassId, EGraph, ENodeLang, Rule};
 /// (`vyre-libs::math::matmul`, etc.).
 pub trait OpIdNode {
     /// Stable op-id string. `None` for terminal/leaf nodes that don't
-    /// carry an op id (literals, builtins) — they're skipped by the
+    /// carry an op id (literals, builtins)  -  they're skipped by the
     /// equivalence rule.
     fn op_id(&self) -> Option<&str>;
 }

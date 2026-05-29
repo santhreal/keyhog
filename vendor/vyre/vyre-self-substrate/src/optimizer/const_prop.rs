@@ -8,7 +8,7 @@
 //! no use-before-def issues since the IR is structured).
 //!
 //! Per-scope semantics: a Let in an If's `then` branch is NOT visible
-//! after the If — the constant-prop map for the parent scope is
+//! after the If  -  the constant-prop map for the parent scope is
 //! re-used after the branch, but the branch's own additions are
 //! popped on exit. This matches the IR's lexical scoping.
 //!
@@ -266,7 +266,7 @@ fn rewrite_node(node: &Node, env: &mut ConstEnv) -> Node {
         } => {
             let new_from = rewrite_expr(from, env);
             let new_to = rewrite_expr(to, env);
-            // Loop-iter var shadows any enclosing constant — remove
+            // Loop-iter var shadows any enclosing constant  -  remove
             // it from the env for the body's duration.
             let saved = env.snapshot();
             env.bindings.remove(var);
@@ -448,6 +448,7 @@ fn rewrite_expr(expr: &Expr, env: &ConstEnv) -> Expr {
         }
         Expr::Select {
             cond,
+
             true_val,
             false_val,
         } => {
@@ -521,3 +522,4 @@ fn rewrite_expr(expr: &Expr, env: &ConstEnv) -> Expr {
         _ => expr.clone(),
     }
 }
+

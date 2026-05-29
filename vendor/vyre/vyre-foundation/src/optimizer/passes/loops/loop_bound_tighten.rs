@@ -1,7 +1,7 @@
-//! ROADMAP A19 — loop-bound tightening via inner predicate hoisting.
+//! ROADMAP A19  -  loop-bound tightening via inner predicate hoisting.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::loop_bound_tighten`.
-//! Soundness: `Exact` — when every observable side-effect inside a
+//! Soundness: `Exact`  -  when every observable side-effect inside a
 //! `Node::Loop` body is gated by a predicate of the form
 //! `Expr::lt(Expr::var(loop_var), Expr::LitU32(N))` and `N <= to`,
 //! iterating from `from` to `min(to, N)` produces the same observable
@@ -36,7 +36,7 @@
 //! - Loop bounds must both be `Expr::LitU32`. Runtime bounds (e.g.
 //!   `Expr::buf_len`) need range facts (ROADMAP A16) before tightening
 //!   is safe; that variant lives beside the downstream range pass.
-//! - When `n >= b`, the predicate is always true on every iteration —
+//! - When `n >= b`, the predicate is always true on every iteration  -
 //!   the redundant guard is dropped by `loop_redundant_bound_check_elide`,
 //!   not by this pass.
 
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn does_not_tighten_when_body_has_unguarded_sibling() {
-        // Body has the gated If plus a separate Store — the second
+        // Body has the gated If plus a separate Store  -  the second
         // Store must execute on every iteration up to `to`, so we
         // cannot tighten.
         let entry = vec![Node::loop_for(
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn does_not_tighten_when_loop_bound_is_runtime() {
-        // Upper bound is `Expr::buf_len(...)` not a literal — without
+        // Upper bound is `Expr::buf_len(...)` not a literal  -  without
         // range facts proving buf_len <= 8, we cannot tighten.
         let entry = vec![Node::loop_for(
             "i",

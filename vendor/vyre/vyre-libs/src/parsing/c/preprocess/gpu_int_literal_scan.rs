@@ -14,15 +14,19 @@
 //!
 //! Inputs:
 //!   - `source` (U8)
-//!   - `start_pos` (U32, single element) — byte offset to start scanning.
+//!   - `start_pos` (U32, single element)  -  byte offset to start scanning.
 //!
 //! Outputs:
 //!   - `value_out` (U32, single element).
 //!   - `bytes_consumed_out` (U32, single element). `0` indicates "not
-//!     an integer literal at this position" — the caller treats this
+//!     an integer literal at this position"  -  the caller treats this
 //!     the same way the CPU `consume_integer` returns `None`.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use super::gpu_source_bytes::{
+    literal_scan_common_buffers, literal_scan_program, packed_source_byte_len_expr,
+    safe_load_source_byte_expr,
+};
+use vyre::ir::{Expr, Node, Program};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_int_literal_scan";
@@ -53,26 +57,9 @@ pub const MAX_SUFFIX: u32 = 4;
 #[must_use]
 pub fn gpu_int_literal_scan(source_len: u32) -> Program {
     let _ = source_len;
-    let source_byte_len = Expr::mul(Expr::buf_len("source"), Expr::u32(4));
-    // Real-GPU note: U8 storage buffers are emitted as `array<u32>`;
-    // `Expr::load(buf, addr)` returns the u32 word at index `addr`.
-    // Reference-eval treats U8 as byte-addressed. Declaring `source`
-    // as packed U32 below makes both backends agree on word-indexed
-    // access; this helper extracts the byte explicitly.
-    let load_byte_u32 = |addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load("source", word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
-    let safe_load = |addr: Expr| -> Expr {
-        Expr::select(
-            Expr::lt(addr.clone(), source_byte_len.clone()),
-            load_byte_u32(addr),
-            Expr::u32(0),
-        )
-    };
+    let source_byte_len = packed_source_byte_len_expr();
+    let safe_load =
+        |addr: Expr| -> Expr { safe_load_source_byte_expr(addr, source_byte_len.clone()) };
 
     let body: Vec<Node> = vec![Node::if_then(
         Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
@@ -468,44 +455,20 @@ pub fn gpu_int_literal_scan(source_len: u32) -> Program {
         ],
     )];
 
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(
-                "source",
-                BINDING_SOURCE,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(0),
-            BufferDecl::storage(
-                "start_pos",
-                BINDING_START_POS,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(1),
-            BufferDecl::storage(
-                "value_out",
-                BINDING_VALUE_OUT,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
-            .with_count(1),
-            BufferDecl::storage(
-                "bytes_consumed_out",
-                BINDING_BYTES_CONSUMED_OUT,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
-            .with_count(1),
-        ],
-        [256, 1, 1],
+    literal_scan_program(
+        literal_scan_common_buffers(
+            BINDING_SOURCE,
+            BINDING_START_POS,
+            BINDING_VALUE_OUT,
+            BINDING_BYTES_CONSUMED_OUT,
+        ),
         body,
+        OP_ID,
     )
-    .with_entry_op_id(OP_ID)
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use vyre_reference::value::Value;
@@ -532,8 +495,10 @@ mod tests {
         let value = outputs[0].to_bytes();
         let consumed = outputs[1].to_bytes();
         (
-            u32::from_le_bytes([value[0], value[1], value[2], value[3]]),
-            u32::from_le_bytes([consumed[0], consumed[1], consumed[2], consumed[3]]),
+            vyre_primitives::wire::read_u32_le_word(&value, 0, "int-literal value")
+                .expect("Fix: integer literal value output must contain one u32."),
+            vyre_primitives::wire::read_u32_le_word(&consumed, 0, "int-literal consumed")
+                .expect("Fix: integer literal consumed output must contain one u32."),
         )
     }
 
@@ -567,7 +532,7 @@ mod tests {
             .buffers()
             .iter()
             .find(|buffer| buffer.name() == "source")
-            .expect("source buffer must exist");
+            .expect("Fix: source buffer must exist");
         assert_eq!(
             source.count(),
             0,
@@ -582,3 +547,4 @@ mod tests {
         assert_eq!(run_literal_scan(b"0b1010'0101WB", 0), (165, 13));
     }
 }
+

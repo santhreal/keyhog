@@ -1,13 +1,13 @@
-//! FlashAttention-2 tiling — sequence-tiled online-softmax attention.
+//! FlashAttention-2 tiling  -  sequence-tiled online-softmax attention.
 //!
 //! Two builders are provided:
 //!
-//! - [`flash_attention_2`] — tiled variant. Each invocation handles one
+//! - [`flash_attention_2`]  -  tiled variant. Each invocation handles one
 //!   query row. The KV sequence is processed in tiles of `tile_size`;
 //!   scores for a whole tile are computed first, then the online-softmax
 //!   state `(m, l, o_acc)` is updated once per tile.
 //!
-//! - [`flash_attention_2_reference`] — scalar per-row online-softmax
+//! - [`flash_attention_2_reference`]  -  scalar per-row online-softmax
 //!   without tiling. Used as a parity oracle.
 //!
 //! Category-A composition.
@@ -15,49 +15,12 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use crate::region::wrap_anonymous;
+use vyre_primitives::nn::attention_stability::{
+    bounded_exp_arg, bounded_score, flush_tiny, positive_denominator,
+};
 
 const OP_ID: &str = "vyre-libs::nn::flash_attention_2";
 const REFERENCE_OP_ID: &str = "vyre-libs::nn::flash_attention_2_reference";
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn bounded_exp_arg(value: Expr) -> Expr {
-    let value_is_nan = Expr::is_nan(value.clone());
-    let finite = finite_or(value.clone(), Expr::f32(-80.0));
-    let upper_bounded = Expr::select(
-        Expr::gt(finite.clone(), Expr::f32(0.0)),
-        Expr::f32(0.0),
-        finite,
-    );
-    let clamped = Expr::select(
-        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
-        Expr::f32(-80.0),
-        upper_bounded,
-    );
-    Expr::select(value_is_nan, value, clamped)
-}
-
-fn positive_denominator(value: Expr) -> Expr {
-    let repaired = Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value.clone(),
-        Expr::f32(f32::MIN_POSITIVE),
-    );
-    Expr::select(Expr::is_nan(value.clone()), value, repaired)
-}
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
 
 /// Build a Program that computes FlashAttention-2 with explicit
 /// sequence tiling.
@@ -69,7 +32,7 @@ fn flush_tiny(value: Expr) -> Expr {
 ///
 /// # Parameters
 ///
-/// * `tile_size` — number of keys processed per tile (e.g. 64 or 128).
+/// * `tile_size`  -  number of keys processed per tile (e.g. 64 or 128).
 ///
 /// # Errors
 ///
@@ -222,14 +185,7 @@ pub fn flash_attention_2(
                 "raw_score",
                 Expr::mul(Expr::var("dot_val"), scale_expr.clone()),
             ),
-            Node::let_bind(
-                "score",
-                Expr::select(
-                    Expr::is_nan(Expr::var("raw_score")),
-                    Expr::var("raw_score"),
-                    finite_or(Expr::var("raw_score"), Expr::f32(-80.0)),
-                ),
-            ),
+            Node::let_bind("score", bounded_score(Expr::var("raw_score"))),
             Node::store(
                 "score_tile",
                 score_idx(Expr::var("local"), Expr::var("tile_j")),
@@ -540,14 +496,7 @@ pub fn flash_attention_2_reference(
             "raw_score",
             Expr::mul(Expr::var("dot_val"), scale_expr.clone()),
         ),
-        Node::let_bind(
-            "score",
-            Expr::select(
-                Expr::is_nan(Expr::var("raw_score")),
-                Expr::var("raw_score"),
-                finite_or(Expr::var("raw_score"), Expr::f32(-80.0)),
-            ),
-        ),
+        Node::let_bind("score", bounded_score(Expr::var("raw_score"))),
         // m_new = max(m, score)
         Node::let_bind(
             "m_new",
@@ -689,20 +638,12 @@ pub fn flash_attention_2_reference(
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
-    }
 
     fn run_program(program: Program, q: &[f32], k: &[f32], v: &[f32]) -> Vec<f32> {
         let out_bytes = program
@@ -710,7 +651,7 @@ mod tests {
             .iter()
             .find(|b| b.name() == "out")
             .map(|b| b.count() as usize * core::mem::size_of::<f32>())
-            .expect("output buffer present");
+            .expect("Fix: output buffer present");
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
@@ -720,7 +661,7 @@ mod tests {
                 Value::from(vec![0u8; out_bytes]),
             ],
         )
-        .expect("reference eval must succeed");
+        .expect("Fix: reference eval must succeed");
         decode_f32(&outputs[0].to_bytes())
     }
 
@@ -884,3 +825,4 @@ mod tests {
         }
     }
 }
+

@@ -4,6 +4,7 @@ pub mod gating;
 pub mod moe_layer;
 pub mod softmax_top_k;
 pub mod top_k;
+mod topk_selection;
 
 pub use expert_mlp::expert_mlp;
 pub use gating::moe_gate;

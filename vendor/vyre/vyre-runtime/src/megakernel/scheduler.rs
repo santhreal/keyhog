@@ -1,4 +1,4 @@
-//! Work scheduler — priority-aware slot scanning for the persistent megakernel.
+//! Work scheduler  -  priority-aware slot scanning for the persistent megakernel.
 //!
 //! Extends the base slot-claim logic with priority partitioning:
 //! each priority level occupies a contiguous partition of the ring buffer.
@@ -34,15 +34,15 @@ pub const PRIORITY_LEVELS: u32 = 5;
 
 /// Priority discriminants.
 pub mod priority {
-    /// Highest priority — interactive/latency-critical work.
+    /// Highest priority  -  interactive/latency-critical work.
     pub const CRITICAL: u32 = 0;
-    /// High priority — important but not latency-critical.
+    /// High priority  -  important but not latency-critical.
     pub const HIGH: u32 = 1;
-    /// Normal priority — the default for all work.
+    /// Normal priority  -  the default for all work.
     pub const NORMAL: u32 = 2;
-    /// Low priority — background, non-urgent work.
+    /// Low priority  -  background, non-urgent work.
     pub const LOW: u32 = 3;
-    /// Idle priority — processed only when no other work exists.
+    /// Idle priority  -  processed only when no other work exists.
     pub const IDLE: u32 = 4;
 }
 

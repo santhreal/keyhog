@@ -27,16 +27,20 @@ pub(crate) fn load_payloads_from_disk(key: &PayloadsCacheKey) -> Option<Vec<Dire
     }
 }
 
-pub(crate) fn store_payloads_to_disk(key: &PayloadsCacheKey, payloads: &[DirectivePayload]) {
+pub(crate) fn store_payloads_to_disk(
+    key: &PayloadsCacheKey,
+    payloads: &[DirectivePayload],
+) -> Result<(), String> {
     let dir = parsed_ast_cache_dir();
     let path = payloads_disk_path(&dir, key);
-    let encoded = encode_payloads(key, payloads);
+    let encoded = encode_payloads(key, payloads)?;
     let tmp = disk_cache_tmp_path(&path, "vpl");
-    std::fs::write(&tmp, &encoded).unwrap_or_else(|error| {
-        panic!(
+    std::fs::write(&tmp, &encoded).map_err(|error| {
+        format!(
             "vyre C GPU preprocessor disk cache could not write payload temp entry {}: {error}. Fix: repair cache directory permissions.",
             tmp.display()
         )
-    });
+    })?;
     publish_disk_cache_file(&tmp, &path, "payload");
+    Ok(())
 }

@@ -65,7 +65,7 @@ fn coalesces_nested_if_with_two_pure_conds() {
 #[test]
 fn does_not_coalesce_when_outer_has_sibling() {
     // Outer If body has an extra Store sibling alongside the inner
-    // If — coalescing would change observable order.
+    // If  -  coalescing would change observable order.
     let entry = vec![Node::if_then(
         Expr::var("c1"),
         vec![
@@ -205,7 +205,7 @@ fn analyze_runs_when_coalesceable_pair_present() {
 
 #[test]
 fn coalesces_inside_loop_body() {
-    // Nested If inside a Loop body still coalesces — the Loop
+    // Nested If inside a Loop body still coalesces  -  the Loop
     // itself is not the trigger; the rule fires on the inner pair.
     let loop_var = Ident::from("i");
     let entry = vec![Node::loop_for(

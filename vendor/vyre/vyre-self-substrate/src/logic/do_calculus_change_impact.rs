@@ -6,7 +6,7 @@
 //!
 //! This replaces ad-hoc cache invalidation with formal causal analysis.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use crate::dataflow_fixpoint::reachability_closure_into;
 use crate::dataflow_fixpoint::reachability_closure_via_into;
 #[cfg(test)]
@@ -16,10 +16,11 @@ use crate::dispatch_buffers::{
     write_u32_slice_le_bytes,
 };
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
+use vyre_foundation::ir::Program;
 use vyre_primitives::graph::do_calculus::{
     do_intervention_delete_incoming, do_rule2_reverse_incoming,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::graph::do_calculus::{
     do_intervention_delete_incoming_cpu_into, do_rule2_reverse_incoming_cpu_into,
     do_rule3_subgraph_cpu_into,
@@ -64,7 +65,7 @@ impl DoCalculusImpactScratch {
 /// incoming edges to the changed nodes) and then computes the
 /// transitive closure to find all affected downstream nodes.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn predict_impact(adj: &[u32], intervention_mask: &[u32], n: u32) -> Vec<u32> {
     use crate::observability::{bump, do_calculus_change_impact_calls};
     bump(&do_calculus_change_impact_calls);
@@ -77,7 +78,7 @@ pub fn predict_impact(adj: &[u32], intervention_mask: &[u32], n: u32) -> Vec<u32
 }
 
 /// Predict impact using named reusable scratch.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn predict_impact_with_scratch(
     adj: &[u32],
     intervention_mask: &[u32],
@@ -96,7 +97,7 @@ pub fn predict_impact_with_scratch(
 }
 
 /// Predict impact while reusing caller-owned matrix scratch buffers.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_predict_impact_into(
     adj: &[u32],
     intervention_mask: &[u32],
@@ -262,44 +263,17 @@ fn intervention_delete_incoming_via_into_with_inputs(
     inputs: &mut Vec<Vec<u8>>,
     out: &mut Vec<u32>,
 ) -> Result<(), DispatchError> {
-    use crate::observability::{bump, do_calculus_change_impact_calls};
-    bump(&do_calculus_change_impact_calls);
-
-    let cells = checked_square_cells(n, "intervention_delete_incoming_via")?;
-    let cells_u32 = u32::try_from(cells).map_err(|_| {
-        DispatchError::BadInputs(format!(
-            "Fix: intervention_delete_incoming_via n*n exceeds the primitive u32 lane limit for n={n}."
-        ))
-    })?;
-    if adj.len() != cells {
-        return Err(DispatchError::BadInputs(format!(
-            "Fix: intervention_delete_incoming_via requires adj.len() == n*n, got len={}, n={n}, n*n={cells}.",
-            adj.len()
-        )));
-    }
-    if intervention_mask.len() != n as usize {
-        return Err(DispatchError::BadInputs(format!(
-            "Fix: intervention_delete_incoming_via requires intervention_mask.len() == n, got len={}, n={n}.",
-            intervention_mask.len()
-        )));
-    }
-
-    let program = do_intervention_delete_incoming("adj", "intervention_mask", "out", n);
-    ensure_input_slots(inputs, 2);
-    write_u32_slice_le_bytes(&mut inputs[0], adj);
-    write_u32_slice_le_bytes(&mut inputs[1], intervention_mask);
-    let outputs = dispatcher.dispatch(
-        &program,
-        &inputs[..2],
-        Some([ceil_div_u32(cells_u32, 256), 1, 1]),
-    )?;
-    if outputs.is_empty() {
-        return Err(DispatchError::BackendError(format!(
-            "Fix: intervention_delete_incoming_via expected at least one output buffer, got {}.",
-            outputs.len()
-        )));
-    }
-    decode_u32_output_exact(&outputs[0], cells, "intervention_delete_incoming_via", out)
+    dispatch_do_calculus_surgery_into(
+        dispatcher,
+        adj,
+        intervention_mask,
+        n,
+        inputs,
+        out,
+        "intervention_delete_incoming_via",
+        "intervention_mask",
+        do_intervention_delete_incoming,
+    )
 }
 
 /// Primitive-native dispatcher path for Pearl Rule 2 graph surgery:
@@ -364,32 +338,59 @@ fn rule2_reverse_incoming_via_into_with_inputs(
     inputs: &mut Vec<Vec<u8>>,
     out: &mut Vec<u32>,
 ) -> Result<(), DispatchError> {
+    dispatch_do_calculus_surgery_into(
+        dispatcher,
+        adj,
+        treatment_mask,
+        n,
+        inputs,
+        out,
+        "rule2_reverse_incoming_via",
+        "treatment_mask",
+        do_rule2_reverse_incoming,
+    )
+}
+
+fn dispatch_do_calculus_surgery_into<F>(
+    dispatcher: &dyn OptimizerDispatcher,
+    adj: &[u32],
+    mask: &[u32],
+    n: u32,
+    inputs: &mut Vec<Vec<u8>>,
+    out: &mut Vec<u32>,
+    op_name: &'static str,
+    mask_buffer: &'static str,
+    build_program: F,
+) -> Result<(), DispatchError>
+where
+    F: FnOnce(&str, &str, &str, u32) -> Program,
+{
     use crate::observability::{bump, do_calculus_change_impact_calls};
     bump(&do_calculus_change_impact_calls);
 
-    let cells = checked_square_cells(n, "rule2_reverse_incoming_via")?;
+    let cells = checked_square_cells(n, op_name)?;
     let cells_u32 = u32::try_from(cells).map_err(|_| {
         DispatchError::BadInputs(format!(
-            "Fix: rule2_reverse_incoming_via n*n exceeds the primitive u32 lane limit for n={n}."
+            "Fix: {op_name} n*n exceeds the primitive u32 lane limit for n={n}."
         ))
     })?;
     if adj.len() != cells {
         return Err(DispatchError::BadInputs(format!(
-            "Fix: rule2_reverse_incoming_via requires adj.len() == n*n, got len={}, n={n}, n*n={cells}.",
+            "Fix: {op_name} requires adj.len() == n*n, got len={}, n={n}, n*n={cells}.",
             adj.len()
         )));
     }
-    if treatment_mask.len() != n as usize {
+    if mask.len() != n as usize {
         return Err(DispatchError::BadInputs(format!(
-            "Fix: rule2_reverse_incoming_via requires treatment_mask.len() == n, got len={}, n={n}.",
-            treatment_mask.len()
+            "Fix: {op_name} requires {mask_buffer}.len() == n, got len={}, n={n}.",
+            mask.len()
         )));
     }
 
-    let program = do_rule2_reverse_incoming("adj", "treatment_mask", "out", n);
+    let program = build_program("adj", mask_buffer, "out", n);
     ensure_input_slots(inputs, 2);
     write_u32_slice_le_bytes(&mut inputs[0], adj);
-    write_u32_slice_le_bytes(&mut inputs[1], treatment_mask);
+    write_u32_slice_le_bytes(&mut inputs[1], mask);
     let outputs = dispatcher.dispatch(
         &program,
         &inputs[..2],
@@ -397,11 +398,11 @@ fn rule2_reverse_incoming_via_into_with_inputs(
     )?;
     if outputs.is_empty() {
         return Err(DispatchError::BackendError(format!(
-            "Fix: rule2_reverse_incoming_via expected at least one output buffer, got {}.",
+            "Fix: {op_name} expected at least one output buffer, got {}.",
             outputs.len()
         )));
     }
-    decode_u32_output_exact(&outputs[0], cells, "rule2_reverse_incoming_via", out)
+    decode_u32_output_exact(&outputs[0], cells, op_name, out)
 }
 
 /// Compute the impacted subgraph: the adjacency restricted to the
@@ -415,10 +416,10 @@ fn rule2_reverse_incoming_via_into_with_inputs(
 /// instead of `n²`.
 ///
 /// On a hot path this lets cache invalidation skip every non-impacted
-/// row outright when computing per-impacted lineage details — `k` is
+/// row outright when computing per-impacted lineage details  -  `k` is
 /// almost always far smaller than `n`.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn impact_subgraph(adj: &[u32], intervention_mask: &[u32], n: u32) -> (Vec<u32>, Vec<u32>) {
     use crate::observability::{bump, do_calculus_change_impact_calls};
     bump(&do_calculus_change_impact_calls);
@@ -431,7 +432,7 @@ pub fn impact_subgraph(adj: &[u32], intervention_mask: &[u32], n: u32) -> (Vec<u
 }
 
 /// Compute impacted subgraph using named reusable scratch.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_impact_subgraph_with_scratch(
     adj: &[u32],
     intervention_mask: &[u32],
@@ -455,7 +456,7 @@ pub fn reference_impact_subgraph_with_scratch(
 /// node X, we can replace `do(X)` with an observation `X` after
 /// reversing the edges incoming to X. The two yield the same
 /// downstream-impact set on a DAG; on a graph with feedback edges
-/// into the observed node they differ — the rule-2 form lets a
+/// into the observed node they differ  -  the rule-2 form lets a
 /// caller answer "if we OBSERVED rule X had changed (rather than
 /// explicitly invalidating it), what does the dependency graph
 /// predict?". Cache-invalidation telemetry uses this to model
@@ -465,7 +466,8 @@ pub fn reference_impact_subgraph_with_scratch(
 /// graph's reversed-edge reachability from the observed set
 /// reaches `j`.
 #[must_use]
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
+
 pub fn predict_impact_observation_form(adj: &[u32], observation_mask: &[u32], n: u32) -> Vec<u32> {
     use crate::observability::{bump, do_calculus_change_impact_calls};
     bump(&do_calculus_change_impact_calls);
@@ -478,7 +480,7 @@ pub fn predict_impact_observation_form(adj: &[u32], observation_mask: &[u32], n:
 }
 
 /// Predict observation-form impact using named reusable scratch.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn predict_impact_observation_form_with_scratch(
     adj: &[u32],
     observation_mask: &[u32],
@@ -497,7 +499,7 @@ pub fn predict_impact_observation_form_with_scratch(
 }
 
 /// Predict observation-form impact while reusing caller-owned matrix scratch.
-#[cfg(test)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_predict_impact_observation_form_into(
     adj: &[u32],
     observation_mask: &[u32],
@@ -768,7 +770,7 @@ mod tests {
     /// Adversarial: every edge between kept nodes must survive in
     /// the reduced adjacency, and no edge to a dropped node may
     /// appear. A common bug is to copy the edge weight from the
-    /// wrong (i, j) cell of the original — a permutation error.
+    /// wrong (i, j) cell of the original  -  a permutation error.
     #[test]
     fn impact_subgraph_adversarial_dense_must_drop_unkept_edges() {
         // K3 over {0,1,2} plus isolated 3.
@@ -892,11 +894,11 @@ mod tests {
         for (start_marker, end_marker) in regions {
             let start = source
                 .find(start_marker)
-                .expect("via start marker must exist");
+                .expect("Fix: via start marker must exist");
             let end = source[start..]
                 .find(end_marker)
                 .map(|offset| start + offset)
-                .expect("via end marker must exist");
+                .expect("Fix: via end marker must exist");
             let release_path = &source[start..end];
             assert!(!release_path.contains("_cpu"), "{start_marker}");
             assert!(!release_path.contains("reference_"), "{start_marker}");
@@ -918,8 +920,8 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 2);
-            let adj = read_u32s(&inputs[0]);
-            let mask = read_u32s(&inputs[1]);
+            let adj = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let mask = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
             let n = mask.len();
             let mut out = adj;
             for j in 0..n {
@@ -959,8 +961,8 @@ mod tests {
         ) -> Result<Vec<Vec<u8>>, DispatchError> {
             assert_eq!(grid_override, Some([1, 1, 1]));
             assert_eq!(inputs.len(), 2);
-            let adj = read_u32s(&inputs[0]);
-            let mask = read_u32s(&inputs[1]);
+            let adj = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+            let mask = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
             let n = mask.len();
             assert_eq!(adj.len(), n * n);
             let mut out = vec![0u32; n * n];
@@ -1013,11 +1015,5 @@ mod tests {
         let err = rule2_reverse_incoming_via(&Rule2Dispatcher, &[1, 2, 3], &[1, 0], 2).unwrap_err();
         assert!(matches!(err, DispatchError::BadInputs(_)));
     }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
-    }
 }
+

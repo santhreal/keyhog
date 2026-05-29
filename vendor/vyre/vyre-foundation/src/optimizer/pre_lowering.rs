@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 // only mutation lives inside `run()`'s local variables) so a single
 // OnceLock-cached scheduler can serve every `optimize()` invocation.
 // Avoids re-running the topological sort + per-pass metadata clone +
-// pass_index hashmap construction on every call — pre_lowering is on
+// pass_index hashmap construction on every call  -  pre_lowering is on
 // the per-program optimization hot path.
 static PHASE2_SCHEDULER: OnceLock<Result<PassScheduler, OptimizerError>> = OnceLock::new();
 static PHASE4_SCHEDULER: OnceLock<Result<PassScheduler, OptimizerError>> = OnceLock::new();
@@ -49,22 +49,26 @@ fn pre_lowering_scheduler(phases: &'static [PassPhase]) -> Result<PassScheduler,
                 && !metadata.invalidates.contains(&"buffer_layout")
         })
         .collect();
-    Ok(PassScheduler::with_passes(passes).with_cost_monotone_enforcement(true))
+    Ok(PassScheduler::try_with_passes(passes)?
+        .with_cost_monotone_enforcement(true)
+        .with_effect_handler_enforcement(true)
+        .with_linear_type_enforcement(true)
+        .with_shape_predicate_enforcement(true))
 }
 
 /// Run the unified pre-lowering optimization pipeline.
 ///
 /// Pipeline stages (in order):
-/// 1. **Canonicalize** — deterministic operand ordering so downstream
+/// 1. **Canonicalize**  -  deterministic operand ordering so downstream
 ///    passes see a stable, content-addressable form.
-/// 2. **Region inline** — flatten small `Node::Region` debug-wrappers
+/// 2. **Region inline**  -  flatten small `Node::Region` debug-wrappers
 ///    so the optimizer sees one unit.
-/// 3. **Expression-level optimizer fixpoint** — runs safe, ABI-preserving
+/// 3. **Expression-level optimizer fixpoint**  -  runs safe, ABI-preserving
 ///    passes (`const_fold`, `loop_strip_mine`, `loop_unroll`, `strength_reduce`, `normalize_atomics`)
 ///    to a fixed point. These passes preserve buffer declarations and the
 ///    top-level runnable shape.
-/// 4. **CSE** — common-subexpression elimination on the optimized IR.
-/// 5. **DCE** — dead-code elimination cleans up anything CSE exposed.
+/// 4. **CSE**  -  common-subexpression elimination on the optimized IR.
+/// 5. **DCE**  -  dead-code elimination cleans up anything CSE exposed.
 #[must_use]
 #[inline]
 pub fn optimize(program: Program) -> Program {
@@ -79,7 +83,7 @@ pub fn optimize(program: Program) -> Program {
 
     // Phase 2: expression-level optimizer fixpoint.
     // Only runs passes that preserve buffer declarations and top-level
-    // runnable shape — safe for programs with fixed GPU bind-group layouts.
+    // runnable shape  -  safe for programs with fixed GPU bind-group layouts.
     let phase2_output = {
         let phase2_scheduler =
             PHASE2_SCHEDULER.get_or_init(|| pre_lowering_scheduler(PHASE2_SELECTION));
@@ -225,6 +229,18 @@ mod tests {
             assert!(
                 scheduler.cost_monotone_enforcement(),
                 "Fix: backend-called pre_lowering::optimize must not land cost-up rewrites silently"
+            );
+            assert!(
+                scheduler.effect_handler_enforcement(),
+                "Fix: backend-called pre_lowering::optimize must not introduce new effects silently"
+            );
+            assert!(
+                scheduler.linear_type_enforcement(),
+                "Fix: backend-called pre_lowering::optimize must not introduce linear-type violations silently"
+            );
+            assert!(
+                scheduler.shape_predicate_enforcement(),
+                "Fix: backend-called pre_lowering::optimize must not introduce shape-predicate violations silently"
             );
         }
     }

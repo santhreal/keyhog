@@ -163,7 +163,7 @@ mod tests {
                 region(InvalidationRegionKind::Fact, 4, 40, 50),
             ],
         )
-        .expect("valid invalidation plan should build");
+        .expect("Fix: valid invalidation plan should build");
 
         assert_eq!(
             plan.waves,
@@ -188,7 +188,7 @@ mod tests {
                 region(InvalidationRegionKind::Fact, 7, 25, 27),
             ],
         )
-        .expect("merged spans should plan");
+        .expect("Fix: merged spans should plan");
 
         assert_eq!(plan.changed_spans, vec![SourceSpan { start: 10, end: 30 }]);
         assert_eq!(plan.waves, vec![wave(InvalidationRegionKind::Fact, &[7])]);

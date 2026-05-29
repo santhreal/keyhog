@@ -1,9 +1,9 @@
-//! `branch_coalesce` — collapse nested `Node::If` whose outer body is
+//! `branch_coalesce`  -  collapse nested `Node::If` whose outer body is
 //! exactly one inner `If` with no `otherwise` arm into a single `If`
 //! whose condition is `And(outer_cond, inner_cond)`.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::branch_coalesce`.
-//! Soundness: `Exact` — both `Then` arms run only when both
+//! Soundness: `Exact`  -  both `Then` arms run only when both
 //! conditions are true; both `Otherwise` arms are empty so there is no
 //! else-arm semantics to preserve. Cost direction: monotone-down on
 //! `node_count + control_flow_count`. Preserves: every analysis.
@@ -34,10 +34,10 @@
 //! literal.
 //!
 //! Does NOT fire (deliberately):
-//!   - when the outer `then` has more than one child node — sibling
+//!   - when the outer `then` has more than one child node  -  sibling
 //!     statements would otherwise be hoisted into the inner branch and
 //!     change observable order.
-//!   - when either `otherwise` arm is non-empty — would lose else-arm
+//!   - when either `otherwise` arm is non-empty  -  would lose else-arm
 //!     semantics.
 //!   - when the conditions involve side-effects (Load, Atomic, Call,
 //!     Opaque). Even pure-looking expression evaluation may matter when
@@ -212,7 +212,7 @@ fn is_coalesceable_if(node: &Node) -> bool {
 }
 
 /// True iff `expr` produces a boolean value via pure operations only.
-/// Loads, atomics, calls, and opaque extensions are rejected — their
+/// Loads, atomics, calls, and opaque extensions are rejected  -  their
 /// repeated or reordered evaluation could change observable behavior.
 fn is_pure_bool_expr(expr: &Expr) -> bool {
     match expr {
@@ -237,11 +237,11 @@ fn is_pure_bool_expr(expr: &Expr) -> bool {
         | Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
-        // BufLen returns the bound buffer's length — a dispatch-time
+        // BufLen returns the bound buffer's length  -  a dispatch-time
         // constant, no observable side effect; conjoining `i < buf_len`
         // with a sibling predicate is safe.
         | Expr::BufLen { .. } => true,
-        // Fma is fused-multiply-add — pure arithmetic when its operands
+        // Fma is fused-multiply-add  -  pure arithmetic when its operands
         // are pure. Reject when any operand is impure.
         Expr::Fma { a, b, c } => is_pure_bool_expr(a) && is_pure_bool_expr(b) && is_pure_bool_expr(c),
         // Anything that reads memory or invokes side effects is

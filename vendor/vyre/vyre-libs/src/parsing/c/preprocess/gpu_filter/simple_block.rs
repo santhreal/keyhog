@@ -3,34 +3,36 @@ use super::block_programs::{
     simple_block_comment_marks_program, simple_block_comment_masks_program,
     simple_block_comment_topology_program,
 };
+use super::compact::{compact_comment_filtered_bytes, CommentCompactScratch};
 use super::full_comment::gpu_filter_full_comment_state;
 use super::host::read_output_u32;
-use super::program_helpers::byte_compact_program;
+use super::scratch::write_zero_bytes;
 use super::FilteredBytes;
 use crate::parsing::c::preprocess::gpu_pipeline::GpuDispatcher;
 
 #[derive(Default)]
 pub(super) struct SimpleBlockScratch {
     zero_words: Vec<u8>,
-    scalar_zero: Vec<u8>,
     marks_out: Vec<Vec<u8>>,
     open_scan: Vec<u8>,
     close_after_scan: Vec<u8>,
     topology_out: Vec<Vec<u8>>,
     masks_out: Vec<Vec<u8>>,
-    offsets_bytes: Vec<u8>,
-    compact_init: Vec<u8>,
-    compact_out: Vec<Vec<u8>>,
+    compact: CommentCompactScratch,
 }
 
 impl SimpleBlockScratch {
-    fn prepare(&mut self, n_bucket: u32, byte_buf_pad: usize) {
-        self.zero_words.clear();
-        self.zero_words.resize(n_bucket as usize * 4, 0);
-        self.scalar_zero.clear();
-        self.scalar_zero.resize(4, 0);
-        self.compact_init.clear();
-        self.compact_init.resize(byte_buf_pad, 0);
+    fn prepare(&mut self, n_bucket: u32, byte_buf_pad: usize) -> Result<(), String> {
+        let word_bytes = (n_bucket as usize).checked_mul(4).ok_or_else(|| {
+            "simple block comments scratch byte size overflowed usize. Fix: reduce batch size."
+                .to_string()
+        })?;
+        write_zero_bytes(
+            &mut self.zero_words,
+            word_bytes,
+            "simple block comments zero words",
+        )?;
+        self.compact.prepare(byte_buf_pad)
     }
 }
 
@@ -45,7 +47,7 @@ pub(super) fn gpu_filter_simple_block_comments(
     full_scratch: &mut super::full_comment::FullCommentScratch,
     scan_scratch: &mut PrefixScanScratch,
 ) -> Result<FilteredBytes, String> {
-    scratch.prepare(n_bucket, byte_buf_pad);
+    scratch.prepare(n_bucket, byte_buf_pad)?;
     let marks_prog = simple_block_comment_marks_program(n_bucket);
     dispatcher
         .dispatch_borrowed_into(
@@ -91,7 +93,7 @@ pub(super) fn gpu_filter_simple_block_comments(
                 scratch.marks_out[1].as_slice(),
                 scratch.open_scan.as_slice(),
                 scratch.close_after_scan.as_slice(),
-                scratch.scalar_zero.as_slice(),
+                scratch.compact.scalar_zero(),
                 n_real_buf,
             ],
             &mut scratch.topology_out,
@@ -117,7 +119,10 @@ pub(super) fn gpu_filter_simple_block_comments(
             raw,
             splice_input,
             n_bucket,
-            n_bucket as usize,
+            usize::try_from(n_bucket).map_err(|_| {
+                "simple block comments fallback bucket length does not fit usize. Fix: reduce batch size."
+                    .to_string()
+            })?,
             byte_buf_pad,
             n_real_buf,
             full_scratch,
@@ -146,44 +151,15 @@ pub(super) fn gpu_filter_simple_block_comments(
             scratch.masks_out.len()
         ));
     }
-    inclusive_prefix_scan_u32_into(
+    compact_comment_filtered_bytes(
         dispatcher,
-        &scratch.masks_out[0],
+        "simple block comments",
+        raw,
+        splice_input,
+        scratch.masks_out[0].as_slice(),
+        scratch.masks_out[1].as_slice(),
         n_bucket,
+        &mut scratch.compact,
         scan_scratch,
-        &mut scratch.offsets_bytes,
     )
-    .map_err(|e| format!("simple block comments prefix scan: {e}"))?;
-    dispatcher
-        .dispatch_borrowed_into(
-            &byte_compact_program(n_bucket),
-            &[
-                splice_input,
-                scratch.masks_out[0].as_slice(),
-                scratch.masks_out[1].as_slice(),
-                scratch.offsets_bytes.as_slice(),
-                scratch.compact_init.as_slice(),
-                scratch.scalar_zero.as_slice(),
-            ],
-            &mut scratch.compact_out,
-        )
-        .map_err(|e| format!("simple block comments byte_compact: {e}"))?;
-    if scratch.compact_out.len() != 2 {
-        return Err(format!(
-            "simple block comments byte_compact: expected exactly 2 outputs, got {}. Fix: backend must return compacted/live_count and no extras.",
-            scratch.compact_out.len()
-        ));
-    }
-    let compacted_buf = scratch.compact_out.first().ok_or_else(|| {
-        "simple block comments byte_compact: missing compacted output".to_string()
-    })?;
-    let live_buf = scratch.compact_out.get(1).ok_or_else(|| {
-        "simple block comments byte_compact: missing live_count output".to_string()
-    })?;
-    let live =
-        read_output_u32(&live_buf, "simple block comments byte_compact live_count")? as usize;
-    let byte_len = live.min(raw.len()).min(compacted_buf.len());
-    Ok(FilteredBytes {
-        bytes: compacted_buf[..byte_len].to_vec(),
-    })
 }

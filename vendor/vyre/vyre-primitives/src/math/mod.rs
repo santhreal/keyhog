@@ -16,24 +16,25 @@ pub mod interval;
 pub mod ode_step;
 /// Subgroup prefix-sum scan used by compaction, histograms, and reductions.
 pub mod prefix_scan;
+pub(crate) mod u32_binary_map;
 
-/// Differential-privacy accountant — Gaussian-mechanism RDP step with
+/// Differential-privacy accountant  -  Gaussian-mechanism RDP step with
 /// host-side `(ε, δ)` conversion. Same Program serves user DP-SGD
 /// trainers AND vyre's own profiler-telemetry hardening.
 pub mod dp_accountant;
 
-/// Fractional-calculus kernel — Grünwald-Letnikov weight generator
+/// Fractional-calculus kernel  -  Grünwald-Letnikov weight generator
 /// that feeds the existing `conv1d` primitive. No new GPU dispatch;
 /// the lego rule is satisfied by composition.
 pub mod fractional;
 
-/// Submodular greedy step — argmax-of-marginals primitive driving
+/// Submodular greedy step  -  argmax-of-marginals primitive driving
 /// (1 - 1/e)-approximation greedy maximization. Same Program serves
 /// user active-learning / coreset / sensor-placement dialects AND
 /// vyre-self compile-cache eviction as submodular coverage.
 pub mod submodular_greedy;
 
-/// Conformal prediction — finite-sample distribution-free uncertainty
+/// Conformal prediction  -  finite-sample distribution-free uncertainty
 /// intervals. Same Program serves user calibrated-NN dialects AND
 /// vyre-self dispatch cost-model intervals (#28).
 pub mod conformal;
@@ -47,10 +48,13 @@ pub mod sinkhorn;
 /// Full iterative Sinkhorn balance primitive.
 pub mod sinkhorn_iterate;
 
-/// Differentiable algorithm primitives — softmax + temperature-scaled
+/// Differentiable algorithm primitives  -  softmax + temperature-scaled
 /// argmax. Same Programs serve user attention/structured-prediction
 /// dialects AND vyre-self differentiable autotuner (#27).
 pub mod differentiable;
+
+/// Quantized packing primitives for INT4 / packed low-bit tensors.
+pub mod quantized;
 
 /// Score-based generative one-step denoise combiner. User: diffusion /
 /// flow-matching / SDE simulation.
@@ -64,7 +68,7 @@ pub mod kfac_block_inverse;
 /// optimizers, general matrix-function family.
 pub mod preconditioner;
 
-/// Natural-gradient block-apply — multiply gradient by precomputed
+/// Natural-gradient block-apply  -  multiply gradient by precomputed
 /// `M^{-1/2}` block. Composes with #16 preconditioner pipeline.
 pub mod natural_gradient;
 
@@ -77,17 +81,17 @@ pub mod sparse_recovery;
 /// gradient-norm-clipped optimizers.
 pub mod dp_clip;
 
-/// Mori-Zwanzig Markovian projection step — closed-form coarse-
+/// Mori-Zwanzig Markovian projection step  -  closed-form coarse-
 /// graining of dynamical systems (#58). User: scientific ML
 /// emulators. Self: vyre's coarse view of own dispatch graph.
 pub mod mori_zwanzig;
 
-/// Information-geometry primitives — Bhattacharyya / Fisher-Rao /
+/// Information-geometry primitives  -  Bhattacharyya / Fisher-Rao /
 /// Amari α-connection (#57). User: distribution-aware loss design,
 /// MoE routing.
 pub mod info_geometry;
 
-/// Fast Multipole Method primitives — P2M / M2L / L2P (#51). User:
+/// Fast Multipole Method primitives  -  P2M / M2L / L2P (#51). User:
 /// n-body simulations, kernel methods at scale, Poisson solvers.
 /// Self: hierarchical compression of all-pairs dispatch dependency
 /// analysis (#19 polyhedral fusion).
@@ -120,7 +124,7 @@ pub mod tensor_train_decompose;
 
 /// Tensor-train one-step contraction (#6). User: NN compression,
 /// long-context attention, scientific-tensor compression. Self:
-/// vyre's chain-shaped Region tree as a TT — optimal contraction
+/// vyre's chain-shaped Region tree as a TT  -  optimal contraction
 /// order = optimal fusion order.
 pub mod tensor_train;
 
@@ -159,7 +163,7 @@ pub mod padic;
 /// callers AND vyre-self bigint-cost-model arithmetic.
 pub mod bigint_add_carry;
 
-/// Generic-semiring matrix multiply — spine of the LEGO substrate.
+/// Generic-semiring matrix multiply  -  spine of the LEGO substrate.
 /// Same Program serves user dialects (security reachability, dataflow,
 /// CKY parsing, Viterbi, GF(2)) AND vyre-self consumers (#19 fusion-graph
 /// analysis, #22 megakernel scheduler critical path, #26 region-graph
@@ -171,7 +175,7 @@ pub mod semiring_gemm;
 pub mod bellman_shortest_path;
 
 /// Scallop-style probabilistic Datalog join (#39). Composes
-/// `semiring_gemm` under `Lineage` with `persistent_fixpoint` —
+/// `semiring_gemm` under `Lineage` with `persistent_fixpoint`  -
 /// one round of relational join per fixpoint step, run to convergence
 /// inside ONE GPU dispatch. User dialect: probabilistic Datalog.
 /// Self-consumer: rule-provenance tracking

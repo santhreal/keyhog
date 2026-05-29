@@ -35,7 +35,7 @@ let outputs: Vec<Vec<u8>> = backend.dispatch(&program, &inputs, &config)?;
 ## Requirements
 
 - A wgpu-capable GPU. This crate does NOT silently fall back to CPU. Absence of a GPU is surfaced as an actionable error, not a degradation.
-- `wgpu = 24.x`. Pinned: major wgpu version bumps are a `vyre-driver-wgpu` major bump.
+- `wgpu = 25.x`. Pinned: major wgpu version bumps are a `vyre-driver-wgpu` major bump.
 
 ## MSRV
 

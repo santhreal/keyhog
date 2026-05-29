@@ -5,7 +5,7 @@
 //! the io_uring submission + completion queue and the GPU-mapped DMA buffer,
 //! while [`crate::megakernel::Megakernel::publish_slot`] owns the host-side
 //! ring-slot writer that signals a persistent GPU kernel. Nothing composed
-//! them — a caller had to manually reach into both every dispatch.
+//! them  -  a caller had to manually reach into both every dispatch.
 //! [`UringMegakernelPump`] wires them together so a host thread can run one
 //! compact loop:
 //!
@@ -31,7 +31,7 @@
 //!
 //! ## Backpressure
 //!
-//! The pump does not allocate new ring slots on its own —
+//! The pump does not allocate new ring slots on its own  -
 //! `submit_file_scan` takes a caller-assigned `slot_idx`. The host
 //! thread is responsible for slot bookkeeping (e.g., round-robin
 //! over `slot_count` published slots with the kernel draining
@@ -86,7 +86,7 @@ pub struct UringMegakernelPump<'a> {
 
 impl<'a> UringMegakernelPump<'a> {
     /// Construct a pump bound to an existing stream. `chunk_bytes`
-    /// is the fixed read size — every call to `submit_file_scan`
+    /// is the fixed read size  -  every call to `submit_file_scan`
     /// must request exactly this many bytes.
     ///
     /// The pump takes ownership of `stream`; reclaim it via
@@ -148,7 +148,7 @@ impl<'a> UringMegakernelPump<'a> {
     /// # Safety
     ///
     /// `fd` must be an open file descriptor the pump's io_uring
-    /// ring can read from. The caller retains ownership — the pump
+    /// ring can read from. The caller retains ownership  -  the pump
     /// does not close it. `len` must equal `self.chunk_bytes`;
     /// mismatches are rejected with `PipelineError::QueueFull`.
     #[allow(clippy::too_many_arguments)]
@@ -179,8 +179,11 @@ impl<'a> UringMegakernelPump<'a> {
             let slot = self
                 .iovec_scratch
                 .back_mut()
-                .expect("Fix: just-pushed iovec scratch slot must exist");
-            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+                .ok_or(PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "just-pushed iovec scratch slot is missing; keep io_uring scratch ownership synchronized with submit staging",
+                })?;
+            // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
             unsafe {
                 self.stream.submit_read_to_gpu(
                     fd,
@@ -216,7 +219,7 @@ impl<'a> UringMegakernelPump<'a> {
     /// `ring_bytes`.
     ///
     /// Returns the number of completions processed (including
-    /// those that surfaced errors — those still advance the
+    /// those that surfaced errors  -  those still advance the
     /// inflight counter). The first error is returned via
     /// `Err(PipelineError::IoUringSyscall)`; subsequent completions
     /// keep draining so the ring does not overflow.
@@ -226,7 +229,7 @@ impl<'a> UringMegakernelPump<'a> {
     /// - [`PipelineError::IoUringSyscall`] on the first failed CQE.
     /// - [`PipelineError::QueueFull`] if `Megakernel::publish_slot`
     ///   rejects the published slot (e.g., `slot_idx` still in-flight
-    ///   on the GPU side — caller must wait for the kernel to drain).
+    ///   on the GPU side  -  caller must wait for the kernel to drain).
     pub fn drain_into_ring(&mut self, ring_bytes: &mut [u8]) -> Result<u32, PipelineError> {
         let mut completed: u32 = 0;
         let mut first_error: Option<PipelineError> = None;
@@ -342,7 +345,7 @@ mod tests {
         iovec.iov_base = core::ptr::null_mut();
         iovec.iov_len = 0;
         free.push(iovec);
-        let reused = free.pop().expect("released iovec must be reusable");
+        let reused = free.pop().expect("Fix: released iovec must be reusable");
 
         assert_eq!(
             (&*reused as *const super::super::stream::Iovec) as usize,
@@ -353,7 +356,7 @@ mod tests {
     }
 
     /// The pump requires callers to match `len` to the bound
-    /// `chunk_bytes` — length drift must surface as a structured
+    /// `chunk_bytes`  -  length drift must surface as a structured
     /// error before we ever touch the io_uring SQ.
     #[test]
     #[cfg(target_os = "linux")]

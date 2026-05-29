@@ -15,7 +15,7 @@ impl Autotune {
     /// O(1) gates: autotune only adjusts 1-D workgroup kernels with at least
     /// one buffer (it derives shape facts from buffers and may emit a
     /// `buf_len` bounds guard). Multi-dimensional workgroups have intentional
-    /// spatial structure (e.g. 2-D matmul tile) and skip the tuner anyway —
+    /// spatial structure (e.g. 2-D matmul tile) and skip the tuner anyway  -
     /// pre-gating here avoids deriving `ProgramShapeFacts` for those programs.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
@@ -48,7 +48,7 @@ impl Autotune {
         let size_changed = tuned != current;
 
         if !size_changed {
-            // Missing bounds-guard is not a compiler-wide crash condition —
+            // Missing bounds-guard is not a compiler-wide crash condition  -
             // it is exactly what this pass would inject if it were running
             // a tuning step. Return unchanged so a later pass / the backend
             // validator surfaces the issue with an actionable diagnostic.
@@ -89,7 +89,7 @@ fn tuned_workgroup_size_for(
     problem_size: Option<u32>,
     caps: &AdapterCaps,
 ) -> [u32; 3] {
-    // Only tune 1D kernels — multi-dimensional workgroups have intentional
+    // Only tune 1D kernels  -  multi-dimensional workgroups have intentional
     // spatial structure (e.g. 2D tile for matmul) that we must not disturb.
     if current[1] != 1 || current[2] != 1 {
         return current;
@@ -115,7 +115,7 @@ fn inferred_guard_bound_buffer(program: &Program) -> Option<&crate::ir::BufferDe
         .max_by_key(|buffer| {
             (
                 // Prefer output / pipeline-live-out buffers as the bounds
-                // source because they define the result domain — input
+                // source because they define the result domain  -  input
                 // buffers may be oversized padding or reused across calls.
                 u8::from(buffer.is_output() || buffer.is_pipeline_live_out()),
                 buffer.count(),
@@ -128,7 +128,7 @@ fn infer_problem_size(program: &Program) -> Option<u32> {
         .into_iter()
         .map(crate::ir_inner::model::program::BufferDecl::count)
         // Zero-count buffers are uniforms or temporaries with no
-        // meaningful element count — exclude them from problem-size
+        // meaningful element count  -  exclude them from problem-size
         // inference.
         .filter(|count| *count > 0)
         .min()
@@ -161,7 +161,7 @@ fn referenced_storage_buffers(program: &Program) -> Vec<&crate::ir::BufferDecl> 
 
 /// Returns `Ok(())` when the program has a bounds check OR the
 /// workgroup size evenly divides the inferred problem size.
-/// Returns `Err(msg)` when neither holds — the caller then decides
+/// Returns `Err(msg)` when neither holds  -  the caller then decides
 /// whether to emit a diagnostic, fall through without tuning, or
 /// inject the missing guard.
 ///
@@ -210,6 +210,10 @@ fn node_has_gid_x_bounds_check(node: &Node) -> bool {
         | Node::IndirectDispatch { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncStore { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncWait { .. }
         | Node::Trap { .. }
         | Node::Resume { .. }
@@ -332,7 +336,7 @@ mod tests {
 
     #[test]
     fn preserves_multidimensional_workgroup() {
-        // 2D workgroup — never tuned.
+        // 2D workgroup  -  never tuned.
         let program = Program::wrapped(
             vec![BufferDecl::output("out", 0, DataType::U32).with_count(1000)],
             [8, 8, 1],

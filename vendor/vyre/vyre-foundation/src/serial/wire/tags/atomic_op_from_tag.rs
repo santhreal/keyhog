@@ -1,4 +1,5 @@
 use crate::ir::AtomicOp;
+use crate::serial::wire::tags::op_tag_decode::{decode_tag, ATOMIC_OP_TAGS};
 
 /// Decode an [`AtomicOp`] from its VIR0 wire-format tag byte.
 ///
@@ -10,8 +11,8 @@ use crate::ir::AtomicOp;
 /// # Returns
 ///
 /// `Ok(AtomicOp)` on a recognized tag. The mapping is stable:
-/// `0 → Add`, `1 → Or`, `2 → And`, `3 → Xor`, `4 → Min`, `5 → Max`,
-/// `6 → Exchange`, `7 → CompareExchange`.
+/// `1 → Add`, `2 → Or`, `3 → And`, `4 → Xor`, `5 → Min`, `6 → Max`,
+/// `7 → Exchange`, `8 → CompareExchange`.
 ///
 /// # Failure mode
 ///
@@ -20,20 +21,5 @@ use crate::ir::AtomicOp;
 /// diagnostic.
 #[inline]
 pub(crate) fn atomic_op_from_tag(tag: u8) -> Result<AtomicOp, String> {
-    match tag {
-        0x01 => Ok(AtomicOp::Add),
-        0x02 => Ok(AtomicOp::Or),
-        0x03 => Ok(AtomicOp::And),
-        0x04 => Ok(AtomicOp::Xor),
-        0x05 => Ok(AtomicOp::Min),
-        0x06 => Ok(AtomicOp::Max),
-        0x07 => Ok(AtomicOp::Exchange),
-        0x08 => Ok(AtomicOp::CompareExchange),
-        0x09 => Ok(AtomicOp::CompareExchangeWeak),
-        0x0A => Ok(AtomicOp::FetchNand),
-        0x0B => Ok(AtomicOp::LruUpdate),
-        _ => Err(format!(
-            "Fix: unknown atomic op tag {tag}; use a compatible IR serializer."
-        )),
-    }
+    decode_tag(tag, ATOMIC_OP_TAGS, "atomic")
 }

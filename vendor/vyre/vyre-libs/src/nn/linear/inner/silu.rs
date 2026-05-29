@@ -1,7 +1,7 @@
-//! Fused `linear_silu` constructor — Linear + SiLU activation in one
+//! Fused `linear_silu` constructor  -  Linear + SiLU activation in one
 //! GPU dispatch.
 //!
-//! ROADMAP H5 — GEMM + bias + activation fusion. Companion to
+//! ROADMAP H5  -  GEMM + bias + activation fusion. Companion to
 //! `linear_relu`; computes `out[i] = silu(sum_k x[k] * w[k, i] + b[i])`
 //! where `silu(z) = z / (1 + exp(-z))`.
 //!
@@ -16,9 +16,12 @@
 //! because the activation is element-wise and depends only on the
 //! per-output-row accumulator value.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use vyre::ir::{DataType, Program};
 
-use crate::region::wrap_anonymous;
+use super::fused_activation::linear_fused_activation;
+use crate::nn::activation::silu::silu_expr;
+
+const OP_ID: &str = "vyre-libs::nn::linear_silu";
 
 /// Build a Program that computes `out[i] = silu(sum_k x[k] * w[k, i] + b[i])`.
 ///
@@ -34,86 +37,26 @@ pub fn linear_silu(
     in_dim: u32,
     out_dim: u32,
 ) -> Result<Program, String> {
-    if in_dim == 0 {
-        return Err("Fix: linear_silu in_dim=0 is invalid: empty reduction".to_string());
-    }
-    if out_dim == 0 {
-        return Err("Fix: linear_silu out_dim=0 is invalid: empty output".to_string());
-    }
-    let weight_count = in_dim.checked_mul(out_dim).ok_or_else(|| {
-        "Fix: linear_silu in_dim*out_dim overflows u32; reduce dimensions.".to_string()
-    })?;
-    let i = Expr::var("i");
-    // sigmoid(acc) = 1.0 / (1.0 + exp(-acc))
-    let sigmoid_acc = Expr::div(
-        Expr::f32(1.0),
-        Expr::add(
-            Expr::f32(1.0),
-            Expr::UnOp {
-                op: UnOp::Exp,
-                operand: Box::new(Expr::UnOp {
-                    op: UnOp::Negate,
-                    operand: Box::new(Expr::var("acc")),
-                }),
-            },
-        ),
-    );
-    let silu_acc = Expr::mul(Expr::var("acc"), sigmoid_acc);
-    let body = vec![
-        Node::let_bind("i", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(i.clone(), Expr::u32(out_dim)),
-            vec![
-                Node::let_bind("acc", Expr::load(b, i.clone())),
-                Node::loop_for(
-                    "k",
-                    Expr::u32(0),
-                    Expr::u32(in_dim),
-                    vec![Node::assign(
-                        "acc",
-                        Expr::add(
-                            Expr::var("acc"),
-                            Expr::mul(
-                                Expr::load(x, Expr::var("k")),
-                                Expr::load(
-                                    w,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("k"), Expr::u32(out_dim)),
-                                        i.clone(),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    )],
-                ),
-                Node::Store {
-                    buffer: out.into(),
-                    index: i,
-                    value: silu_acc,
-                },
-            ],
-        ),
-    ];
-    Ok(Program::wrapped(
-        vec![
-            BufferDecl::storage(x, 0, BufferAccess::ReadOnly, DataType::F32).with_count(in_dim),
-            BufferDecl::storage(w, 1, BufferAccess::ReadOnly, DataType::F32)
-                .with_count(weight_count),
-            BufferDecl::storage(b, 2, BufferAccess::ReadOnly, DataType::F32).with_count(out_dim),
-            BufferDecl::output(out, 3, DataType::F32).with_count(out_dim),
-        ],
-        [64, 1, 1],
-        vec![wrap_anonymous("vyre-libs::nn::linear_silu", body)],
-    ))
+    linear_fused_activation(
+        "linear_silu",
+        OP_ID,
+        x,
+        w,
+        b,
+        out,
+        in_dim,
+        out_dim,
+        silu_expr,
+    )
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::nn::linear_silu",
+        id: OP_ID,
         build: || {
             linear_silu("x", "w", "b", "out", 4, 4).unwrap_or_else(|error| {
                 crate::builder::invalid_output_program(
-                    "vyre-libs::nn::linear_silu",
+                    OP_ID,
                     "out",
                     DataType::F32,
                     error,
@@ -121,9 +64,7 @@ inventory::submit! {
             })
         },
         test_inputs: Some(|| {
-            let f32_bytes = |words: &[f32]| {
-                words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>()
-            };
+            let f32_bytes = vyre_primitives::wire::pack_f32_slice;
             let x = f32_bytes(&(0..4).map(|i| i as f32).collect::<Vec<_>>());
             let w = f32_bytes(&(0..16).map(|i| i as f32).collect::<Vec<_>>());
             let bias = f32_bytes(&[0.0, 0.0, 0.0, 0.0]);
@@ -139,10 +80,7 @@ inventory::submit! {
             // Then silu(z) = z / (1 + exp(-z))
             let acc: Vec<f32> = (0..4).map(|i| 56.0 + 6.0 * i as f32).collect();
             let silu: Vec<f32> = acc.iter().map(|z| z / (1.0 + (-z).exp())).collect();
-            let bytes = silu
-                .iter()
-                .flat_map(|v| v.to_bits().to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&silu);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -152,20 +90,11 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
 
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
     fn decode(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
+        vyre_primitives::wire::decode_f32_le_bytes_all(bytes)
     }
 
     fn silu_scalar(z: f32) -> f32 {
@@ -181,7 +110,7 @@ mod tests {
         let x: Vec<f32> = (0..in_dim).map(|i| i as f32).collect();
         let w: Vec<f32> = (0..in_dim * out_dim).map(|i| i as f32 * 0.1).collect();
         let bias = vec![0.5, -0.25, 1.0, 0.0];
-        let prog = linear_silu("x", "w", "b", "out", in_dim, out_dim).expect("build");
+        let prog = linear_silu("x", "w", "b", "out", in_dim, out_dim).expect("Fix: build");
         let outputs = vyre_reference::reference_eval(
             &prog,
             &[
@@ -221,5 +150,27 @@ mod tests {
         let err =
             linear_silu("x", "w", "b", "out", 4, 0).expect_err("Fix: empty output must error");
         assert!(err.contains("out_dim=0"));
+    }
+
+    #[test]
+    fn linear_silu_reuses_standalone_tiny_flush_semantics() {
+        let subnormal = f32::from_bits(1);
+        let prog = linear_silu("x", "w", "b", "out", 1, 1).expect("Fix: build linear_silu");
+        let outputs = vyre_reference::reference_eval(
+            &prog,
+            &[
+                Value::from(f32_bytes(&[0.0])),
+                Value::from(f32_bytes(&[0.0])),
+                Value::from(f32_bytes(&[subnormal])),
+                Value::from(vec![0u8; 4]),
+            ],
+        )
+        .expect("Fix: linear_silu must execute with subnormal bias");
+        let actual = decode(&outputs[0].to_bytes());
+        assert_eq!(
+            actual[0].to_bits(),
+            0.0f32.to_bits(),
+            "linear_silu must use the same flush_tiny SiLU semantics as standalone silu"
+        );
     }
 }

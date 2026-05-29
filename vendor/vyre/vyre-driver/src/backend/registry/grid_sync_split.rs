@@ -313,7 +313,7 @@ fn borrowed_inputs_from_owned(inputs: &[Vec<u8>]) -> Result<Vec<&[u8]>, BackendE
     let mut borrowed = Vec::new();
     if borrowed.capacity() < inputs.len() {
         borrowed
-            .try_reserve_exact(inputs.len() - borrowed.capacity())
+            .try_reserve_exact(inputs.len() - borrowed.len())
             .map_err(|error| BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: failed to reserve {} borrowed grid-sync input views for registry wrapper dispatch: {error}. Use borrowed dispatch directly or shard the host-side split.",
@@ -341,7 +341,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("registry grid-sync split production source must precede tests");
+            .expect("Fix: registry grid-sync split production source must precede tests");
 
         assert!(
             production.contains("fn borrowed_inputs_from_owned")
@@ -448,6 +448,7 @@ mod tests {
             "second segment must receive the first segment's ReadWrite output"
         );
     }
+
 
     struct NativeGridSyncProbe {
         calls: Mutex<usize>,
@@ -684,3 +685,4 @@ mod tests {
         );
     }
 }
+

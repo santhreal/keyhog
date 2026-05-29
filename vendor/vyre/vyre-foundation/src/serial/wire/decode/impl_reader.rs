@@ -1,4 +1,4 @@
-use crate::ir::DataType;
+use crate::ir::{CommGroup, DataType};
 use crate::serial::wire::decode::reject_reserved_extension_id;
 use crate::serial::wire::tags::{
     atomic_op_from_tag, bin_op_from_tag, data_type_from_tag, un_op_from_tag,
@@ -138,6 +138,27 @@ impl Reader<'_> {
             }
             13 => Ok(Node::trap(self.expr()?, self.string()?)),
             14 => Ok(Node::resume(self.string()?)),
+            15 => Ok(Node::AllReduce {
+                buffer: self.string()?.into(),
+                op: vyre_spec::CollectiveOp::from_wire_tag(self.u8()?)?,
+                group: CommGroup(self.u32()?),
+            }),
+            16 => Ok(Node::AllGather {
+                input: self.string()?.into(),
+                output: self.string()?.into(),
+                group: CommGroup(self.u32()?),
+            }),
+            17 => Ok(Node::ReduceScatter {
+                input: self.string()?.into(),
+                output: self.string()?.into(),
+                op: vyre_spec::CollectiveOp::from_wire_tag(self.u8()?)?,
+                group: CommGroup(self.u32()?),
+            }),
+            18 => Ok(Node::Broadcast {
+                buffer: self.string()?.into(),
+                root: self.u32()?,
+                group: CommGroup(self.u32()?),
+            }),
             11 => {
                 let generator: crate::ir::Ident = self.string()?.into();
                 let presence = self.u8()?;
@@ -307,6 +328,21 @@ impl Reader<'_> {
             }
             return Ok(DataType::DeviceMesh { axes });
         }
+        if tag == 0x1F {
+            let storage = Box::new(self.data_type()?);
+            if !storage.is_quantized_storage() {
+                return Err(format!(
+                    "Fix: DataType::Quantized storage `{storage}` is invalid; use I4/I8/I16/U8/U16/F8E4M3/F8E5M2/FP4/NF4 storage."
+                ));
+            }
+            let scale = self.quantization_scale()?;
+            let zero_point = self.quantization_zero_point()?;
+            return Ok(DataType::Quantized {
+                storage,
+                scale,
+                zero_point,
+            });
+        }
         if tag == 0x80 {
             // Opaque: u32 extension id follows.
             let id = reject_reserved_extension_id(self.u32()?, "DataType")?;
@@ -315,6 +351,69 @@ impl Reader<'_> {
             )));
         }
         data_type_from_tag(tag)
+    }
+
+    fn quantization_scale(&mut self) -> Result<vyre_spec::QuantizationScale, String> {
+        let tag = self.u8()?;
+        let param = self.u32()?;
+        match tag {
+            0 => {
+                if param != 0 {
+                    return Err(format!(
+                        "Fix: quantization PerTensor scale payload parameter must be 0, got {param}."
+                    ));
+                }
+                Ok(vyre_spec::QuantizationScale::PerTensor)
+            }
+            1 => Ok(vyre_spec::QuantizationScale::PerChannel { axis: param }),
+            2 => {
+                if param == 0 {
+                    return Err(
+                        "Fix: quantization PerGroup scale requires group_size > 0.".to_string()
+                    );
+                }
+                Ok(vyre_spec::QuantizationScale::PerGroup { group_size: param })
+            }
+            other => Err(format!(
+                "Fix: unknown quantization scale tag {other}; use a compatible IR serializer."
+            )),
+        }
+    }
+
+    fn quantization_zero_point(&mut self) -> Result<vyre_spec::QuantizationZeroPoint, String> {
+        let tag = self.u8()?;
+        let param = self.u32()?;
+        match tag {
+            0 => {
+                if param != 0 {
+                    return Err(format!(
+                        "Fix: quantization absent zero-point payload parameter must be 0, got {param}."
+                    ));
+                }
+                Ok(vyre_spec::QuantizationZeroPoint::Absent)
+            }
+            1 => {
+                if param != 0 {
+                    return Err(format!(
+                        "Fix: quantization PerTensor zero-point payload parameter must be 0, got {param}."
+                    ));
+                }
+                Ok(vyre_spec::QuantizationZeroPoint::PerTensor)
+            }
+            2 => Ok(vyre_spec::QuantizationZeroPoint::PerChannel { axis: param }),
+            3 => {
+                if param == 0 {
+                    return Err(
+                        "Fix: quantization PerGroup zero-point requires group_size > 0."
+                            .to_string(),
+                    );
+                }
+                Ok(vyre_spec::QuantizationZeroPoint::PerGroup { group_size: param })
+            }
+            other => Err(format!(
+                "Fix: unknown quantization zero-point tag {other}; use a compatible IR serializer."
+            )),
+        }
     }
 
     #[expect(
@@ -349,6 +448,7 @@ impl Reader<'_> {
                 };
                 Ok(Expr::BinOp {
                     op,
+
                     left: Box::new(self.expr()?),
                     right: Box::new(self.expr()?),
                 })
@@ -435,3 +535,4 @@ impl Reader<'_> {
         }
     }
 }
+

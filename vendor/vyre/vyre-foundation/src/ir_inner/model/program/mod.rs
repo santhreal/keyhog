@@ -1,4 +1,4 @@
-//! Program model — a complete, self-contained GPU compute dispatch.
+//! Program model  -  a complete, self-contained GPU compute dispatch.
 //!
 //! A `Program` can be constructed without a GPU, serialized to disk,
 //! transmitted over a network, optimized by transformation passes, and lowered
@@ -35,10 +35,12 @@ pub use self::core::Program;
 pub use self::scope::Scope;
 pub use self::stats::ProgramStats;
 pub use self::stats::{
-    NODE_KIND_ASSIGN, NODE_KIND_ASYNC_LOAD, NODE_KIND_ASYNC_STORE, NODE_KIND_ASYNC_WAIT,
-    NODE_KIND_BARRIER, NODE_KIND_BLOCK, NODE_KIND_EXPRESSION_BEARING_MASK, NODE_KIND_IF,
-    NODE_KIND_INDIRECT_DISPATCH, NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_OPAQUE, NODE_KIND_REGION,
-    NODE_KIND_RESUME, NODE_KIND_RETURN, NODE_KIND_STORE, NODE_KIND_TRAP,
+    NODE_KIND_ALL_GATHER, NODE_KIND_ALL_REDUCE, NODE_KIND_ASSIGN, NODE_KIND_ASYNC_LOAD,
+    NODE_KIND_ASYNC_STORE, NODE_KIND_ASYNC_WAIT, NODE_KIND_BARRIER, NODE_KIND_BLOCK,
+    NODE_KIND_BROADCAST, NODE_KIND_EXPRESSION_BEARING_MASK, NODE_KIND_IF,
+    NODE_KIND_INDIRECT_DISPATCH, NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_OPAQUE,
+    NODE_KIND_REDUCE_SCATTER, NODE_KIND_REGION, NODE_KIND_RESUME, NODE_KIND_RETURN,
+    NODE_KIND_STORE, NODE_KIND_TRAP,
 };
 
 /// Memory tier requested for a declared program region.

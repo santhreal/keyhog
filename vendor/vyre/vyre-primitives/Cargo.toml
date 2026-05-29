@@ -1,13 +1,13 @@
 [package]
 name = "vyre-primitives"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Compositional primitives for vyre — marker types (always on) + Tier 2.5 LEGO substrate (feature-gated per domain)."
+description = "Compositional primitives for vyre  -  marker types (always on) + Tier 2.5 LEGO substrate (feature-gated per domain)."
 readme = "README.md"
 keywords = ["gpu", "ir", "primitive", "vyre", "lego"]
 categories = ["algorithms", "api-bindings"]
@@ -26,7 +26,7 @@ gpu = []
 # available without host execution paths.
 cpu-parity = []
 
-# Internal marker feature — ON whenever any domain feature pulls
+# Internal marker feature  -  ON whenever any domain feature pulls
 # vyre-foundation. Keeps `#[cfg]` expressions terse (one gate
 # instead of `any(feature = "text", feature = "matching", …)`).
 # AUDIT_2026-04-24 F-RANGE-03: replaces the previous dead
@@ -34,7 +34,7 @@ cpu-parity = []
 vyre-foundation = ["dep:vyre-foundation"]
 
 # Per-domain Tier 2.5 feature flags. See docs/primitives-tier.md.
-# Every domain pulls vyre-foundation — every primitive ships CPU
+# Every domain pulls vyre-foundation  -  every primitive ships CPU
 # reference + GPU `fn(...) -> Program` builder together.
 text = ["vyre-foundation"]
 matching = ["vyre-foundation"]
@@ -45,7 +45,7 @@ math = ["vyre-foundation", "graph", "fixpoint"]
 nn = ["vyre-foundation", "math"]
 hash = ["vyre-foundation"]
 parsing = ["vyre-foundation", "text", "matching"]
-graph = ["vyre-foundation", "bitset", "reduce"]
+graph = ["vyre-foundation", "bitset", "reduce", "hash"]
 bitset = ["vyre-foundation"]
 reduce = ["vyre-foundation"]
 label = ["vyre-foundation", "bitset"]
@@ -77,7 +77,7 @@ dnnf = ["vyre-foundation", "graph"]
 topology = ["vyre-foundation", "math", "graph"]
 visual = ["vyre-foundation"]
 
-# Convenience aggregate — enable the entire Tier 2.5 substrate.
+# Convenience aggregate  -  enable the entire Tier 2.5 substrate.
 all-lego = [
     "text", "matching", "math", "nn", "hash", "parsing",
     "geom", "opt", "topology",
@@ -94,6 +94,7 @@ inventory-registry = ["dep:inventory", "vyre-foundation"]
 vyre-foundation = { workspace = true, optional = true }
 vyre-spec.workspace = true
 inventory = { workspace = true, optional = true }
+bytemuck.workspace = true
 
 [dev-dependencies]
 vyre-reference = { workspace = true }
@@ -101,6 +102,7 @@ vyre-foundation.workspace = true
 proptest.workspace = true
 vyre-driver-cuda = { workspace = true }
 vyre-driver = { workspace = true }
+criterion.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -120,15 +122,19 @@ name = "inflate_program"
 path = "tests/inflate_program.rs"
 required-features = ["decode"]
 
-
-
-
-
+[[bench]]
+name = "wire_throughput"
+harness = false
 
 [[test]]
-name = "adversarial_bitset_and"
-path = "tests/adversarial_bitset_and.rs"
-required-features = ["bitset", "cpu-parity"]
+name = "generated_graph_oracle_matrix"
+path = "tests/generated_graph_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+
+
+
+
+
 
 [[test]]
 name = "bitset_word_contracts"
@@ -136,54 +142,14 @@ path = "tests/bitset_word_contracts.rs"
 required-features = ["bitset", "cpu-parity"]
 
 [[test]]
-name = "adversarial_bitset_any"
-path = "tests/adversarial_bitset_any.rs"
+name = "adversarial_bitset_reduce_matrix"
+path = "tests/adversarial_bitset_reduce_matrix.rs"
 required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_contains"
 path = "tests/adversarial_bitset_contains.rs"
 required-features = ["bitset", "cpu-parity"]
-
-[[test]]
-name = "adversarial_bitset_not"
-path = "tests/adversarial_bitset_not.rs"
-required-features = ["bitset", "cpu-parity"]
-
-[[test]]
-name = "adversarial_bitset_or"
-path = "tests/adversarial_bitset_or.rs"
-required-features = ["bitset", "cpu-parity"]
-
-[[test]]
-name = "adversarial_bitset_popcount"
-path = "tests/adversarial_bitset_popcount.rs"
-required-features = ["bitset", "cpu-parity"]
-
-[[test]]
-name = "adversarial_bitset_xor"
-path = "tests/adversarial_bitset_xor.rs"
-required-features = ["bitset", "cpu-parity"]
-
-[[test]]
-name = "adversarial_reduce_all"
-path = "tests/adversarial_reduce_all.rs"
-required-features = ["reduce"]
-
-[[test]]
-name = "adversarial_reduce_any"
-path = "tests/adversarial_reduce_any.rs"
-required-features = ["reduce"]
-
-[[test]]
-name = "adversarial_reduce_count"
-path = "tests/adversarial_reduce_count.rs"
-required-features = ["reduce"]
-
-[[test]]
-name = "adversarial_reduce_count_non_zero"
-path = "tests/adversarial_reduce_count_non_zero.rs"
-required-features = ["reduce"]
 
 [[test]]
 name = "adversarial_reduce_gather"
@@ -193,16 +159,6 @@ required-features = ["reduce"]
 [[test]]
 name = "adversarial_reduce_histogram"
 path = "tests/adversarial_reduce_histogram.rs"
-required-features = ["reduce"]
-
-[[test]]
-name = "adversarial_reduce_max"
-path = "tests/adversarial_reduce_max.rs"
-required-features = ["reduce"]
-
-[[test]]
-name = "adversarial_reduce_min"
-path = "tests/adversarial_reduce_min.rs"
 required-features = ["reduce"]
 
 [[test]]
@@ -218,11 +174,6 @@ required-features = ["reduce"]
 [[test]]
 name = "adversarial_reduce_segment_reduce"
 path = "tests/adversarial_reduce_segment_reduce.rs"
-required-features = ["reduce"]
-
-[[test]]
-name = "adversarial_reduce_sum"
-path = "tests/adversarial_reduce_sum.rs"
 required-features = ["reduce"]
 
 [[test]]
@@ -261,8 +212,18 @@ path = "tests/adversarial_boolean_packing_four_russians_readiness.rs"
 required-features = ["bitset", "cpu-parity"]
 
 [[test]]
+name = "four_russians_dense_matvec_generated"
+path = "tests/four_russians_dense_matvec_generated.rs"
+required-features = ["bitset", "cpu-parity"]
+
+[[test]]
 name = "adversarial_graph_ops"
 path = "tests/adversarial_graph_ops.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "adaptive_four_russians_dense_generated"
+path = "tests/adaptive_four_russians_dense_generated.rs"
 required-features = ["graph", "cpu-parity"]
 
 [[test]]
@@ -274,3 +235,234 @@ required-features = ["bitset", "cpu-parity"]
 name = "region_adversarial"
 path = "tests/region_adversarial.rs"
 required-features = ["matching"]
+
+[[test]]
+name = "dominator_tree_pristine"
+path = "tests/dominator_tree_pristine.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "dominator_tree_scale_gate"
+path = "tests/dominator_tree_scale_gate.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "dominator_tree_proptest"
+path = "tests/dominator_tree_proptest.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "sweep_segment_reduce_oracle_matrix"
+path = "tests/sweep_segment_reduce_oracle_matrix.rs"
+required-features = ["cpu-parity", "reduce"]
+
+[[test]]
+name = "sweep_radix_sort_oracle_matrix"
+path = "tests/sweep_radix_sort_oracle_matrix.rs"
+required-features = ["cpu-parity", "reduce"]
+
+[[test]]
+name = "sweep_predicate_node_kind_oracle_matrix"
+path = "tests/sweep_predicate_node_kind_oracle_matrix.rs"
+required-features = ["cpu-parity", "predicate"]
+
+[[test]]
+name = "sweep_hash_crc_oracle_matrix"
+path = "tests/sweep_hash_crc_oracle_matrix.rs"
+required-features = ["hash"]
+
+[[test]]
+name = "sweep_hash_fnv1a_oracle_matrix"
+path = "tests/sweep_hash_fnv1a_oracle_matrix.rs"
+required-features = ["hash"]
+
+[[test]]
+name = "sweep_toposort_oracle_matrix"
+path = "tests/sweep_toposort_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "sweep_bitset_binary_oracle_matrix"
+path = "tests/sweep_bitset_binary_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+
+[[test]]
+name = "sweep_reduce_scalar_oracle_matrix"
+path = "tests/sweep_reduce_scalar_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+
+[[test]]
+name = "sweep_graph_motif_oracle_matrix"
+path = "tests/sweep_graph_motif_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "sweep_graph_path_reconstruct_oracle_matrix"
+path = "tests/sweep_graph_path_reconstruct_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "sweep_graph_csr_bidirectional_oracle_matrix"
+path = "tests/sweep_graph_csr_bidirectional_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[example]]
+name = "dominator_tree_e2e"
+path = "examples/dominator_tree_e2e.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_hash_adler32_volume_oracle_matrix"
+path = "tests/sweep_hash_adler32_volume_oracle_matrix.rs"
+required-features = ["hash"]
+[[test]]
+name = "sweep_hash_multi_hash_volume_oracle_matrix"
+path = "tests/sweep_hash_multi_hash_volume_oracle_matrix.rs"
+required-features = ["hash"]
+[[test]]
+name = "sweep_hash_blake3_g_volume_oracle_matrix"
+path = "tests/sweep_hash_blake3_g_volume_oracle_matrix.rs"
+required-features = ["hash", "cpu-parity"]
+[[test]]
+name = "sweep_hash_blake3_round_volume_oracle_matrix"
+path = "tests/sweep_hash_blake3_round_volume_oracle_matrix.rs"
+required-features = ["hash", "cpu-parity"]
+[[test]]
+name = "sweep_graph_csr_forward_traverse_volume_oracle_matrix"
+path = "tests/sweep_graph_csr_forward_traverse_volume_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_graph_csr_backward_traverse_volume_oracle_matrix"
+path = "tests/sweep_graph_csr_backward_traverse_volume_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_graph_reachable_volume_oracle_matrix"
+path = "tests/sweep_graph_reachable_volume_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_graph_csr_forward_or_changed_volume_oracle_matrix"
+path = "tests/sweep_graph_csr_forward_or_changed_volume_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_graph_persistent_bfs_volume_oracle_matrix"
+path = "tests/sweep_graph_persistent_bfs_volume_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_math_prefix_scan_inclusive_volume_oracle_matrix"
+path = "tests/sweep_math_prefix_scan_inclusive_volume_oracle_matrix.rs"
+required-features = ["math", "cpu-parity"]
+[[test]]
+name = "sweep_math_prefix_scan_exclusive_volume_oracle_matrix"
+path = "tests/sweep_math_prefix_scan_exclusive_volume_oracle_matrix.rs"
+required-features = ["math", "cpu-parity"]
+[[test]]
+name = "sweep_decode_hex_primitives_volume_oracle_matrix"
+path = "tests/sweep_decode_hex_primitives_volume_oracle_matrix.rs"
+required-features = ["decode"]
+[[test]]
+name = "sweep_decode_base64_volume_oracle_matrix"
+path = "tests/sweep_decode_base64_volume_oracle_matrix.rs"
+required-features = ["decode"]
+[[test]]
+name = "sweep_bitset_and_not_volume_oracle_matrix"
+path = "tests/sweep_bitset_and_not_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_subset_of_volume_oracle_matrix"
+path = "tests/sweep_bitset_subset_of_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_equal_volume_oracle_matrix"
+path = "tests/sweep_bitset_equal_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_any_volume_oracle_matrix"
+path = "tests/sweep_bitset_any_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_contains_volume_oracle_matrix"
+path = "tests/sweep_bitset_contains_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_test_bit_volume_oracle_matrix"
+path = "tests/sweep_bitset_test_bit_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_copy_volume_oracle_matrix"
+path = "tests/sweep_bitset_copy_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_zero_volume_oracle_matrix"
+path = "tests/sweep_bitset_zero_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_count_volume_oracle_matrix"
+path = "tests/sweep_reduce_count_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_count_non_zero_volume_oracle_matrix"
+path = "tests/sweep_reduce_count_non_zero_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_gather_volume_oracle_matrix"
+path = "tests/sweep_reduce_gather_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_scatter_volume_oracle_matrix"
+path = "tests/sweep_reduce_scatter_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_histogram_volume_oracle_matrix"
+path = "tests/sweep_reduce_histogram_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_range_counts_volume_oracle_matrix"
+path = "tests/sweep_reduce_range_counts_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_workgroup_any_volume_oracle_matrix"
+path = "tests/sweep_reduce_workgroup_any_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_multi_block_prefix_scan_volume_oracle_matrix"
+path = "tests/sweep_reduce_multi_block_prefix_scan_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_graph_scc_decompose_volume_oracle_matrix"
+path = "tests/sweep_graph_scc_decompose_volume_oracle_matrix.rs"
+required-features = ["graph", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_popcount_unary_volume_oracle_matrix"
+path = "tests/sweep_bitset_popcount_unary_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_not_unary_volume_oracle_matrix"
+path = "tests/sweep_bitset_not_unary_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_bitset_stochastic_and_mul_volume_oracle_matrix"
+path = "tests/sweep_bitset_stochastic_and_mul_volume_oracle_matrix.rs"
+required-features = ["bitset", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_sum_volume_oracle_matrix"
+path = "tests/sweep_reduce_sum_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_min_volume_oracle_matrix"
+path = "tests/sweep_reduce_min_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_reduce_max_volume_oracle_matrix"
+path = "tests/sweep_reduce_max_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]
+[[test]]
+name = "sweep_hash_crc32_volume_oracle_matrix"
+path = "tests/sweep_hash_crc32_volume_oracle_matrix.rs"
+required-features = ["hash"]
+[[test]]
+name = "sweep_hash_volume_oracle_matrix"
+path = "tests/sweep_hash_volume_oracle_matrix.rs"
+required-features = ["hash"]
+[[test]]
+name = "sweep_reduce_scalar_volume_oracle_matrix"
+path = "tests/sweep_reduce_scalar_volume_oracle_matrix.rs"
+required-features = ["reduce", "cpu-parity"]

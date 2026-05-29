@@ -31,7 +31,7 @@ pub(crate) fn is_type_name_start_token(token: Expr) -> Expr {
             TOK_GNU_INT128,
             TOK_GNU_BUILTIN_VA_LIST,
             // C23 / TS 18661-2 scalar types and clang/GCC half-precision
-            // spellings — every keyword that can begin a type-name must
+            // spellings  -  every keyword that can begin a type-name must
             // be in this list, otherwise typeof / sizeof / casts using
             // these scalars fail the type-name predicate.
             TOK_BITINT_KW,
@@ -127,6 +127,54 @@ pub(crate) fn is_decl_prefix_reset_token(token: Expr) -> Expr {
     )
 }
 
+pub(crate) fn is_declarator_follower_token(token: Expr) -> Expr {
+    any_token_eq(
+        token,
+        &[
+            TOK_SEMICOLON,
+            TOK_COMMA,
+            TOK_ASSIGN,
+            TOK_LBRACKET,
+            TOK_LPAREN,
+            TOK_RPAREN,
+            TOK_GNU_ATTRIBUTE,
+        ],
+    )
+}
+
+pub(crate) fn is_declaration_candidate_follower_token(token: Expr) -> Expr {
+    any_token_eq(
+        token,
+        &[
+            TOK_SEMICOLON,
+            TOK_COMMA,
+            TOK_ASSIGN,
+            TOK_LPAREN,
+            TOK_LBRACKET,
+            TOK_COLON,
+            TOK_RPAREN,
+            TOK_RBRACKET,
+            TOK_GNU_ATTRIBUTE,
+        ],
+    )
+}
+
+pub(crate) fn is_declaration_previous_disqualifier_token(token: Expr) -> Expr {
+    any_token_eq(
+        token,
+        &[TOK_STRUCT, TOK_UNION, TOK_ENUM, TOK_DOT, TOK_ARROW],
+    )
+}
+
+pub(crate) fn is_precomputed_declaration_previous_disqualifier_token(token: Expr) -> Expr {
+    any_token_eq(
+        token,
+        &[
+            TOK_STRUCT, TOK_UNION, TOK_ENUM, TOK_DOT, TOK_ARROW, TOK_GOTO,
+        ],
+    )
+}
+
 pub(crate) fn is_typedef_name_annotation(flags: Expr) -> Expr {
     Expr::ne(
         Expr::bitand(flags, Expr::u32(C_TYPEDEF_FLAG_VISIBLE_TYPEDEF_NAME)),
@@ -169,5 +217,22 @@ pub(crate) fn is_aggregate_specifier_body_open(
                 any_token_eq(prev_prev_kind, &[TOK_STRUCT, TOK_UNION, TOK_ENUM]),
             ),
         ),
+    )
+}
+
+/// Returns true when a typedef symbol occurrence may participate in declaration linking.
+pub(crate) fn is_typedef_symbol_link_follower_token(token: Expr) -> Expr {
+    any_token_eq(
+        token,
+        &[
+            TOK_SEMICOLON,
+            TOK_COMMA,
+            TOK_ASSIGN,
+            TOK_LPAREN,
+            TOK_LBRACKET,
+            TOK_COLON,
+            TOK_RPAREN,
+            TOK_RBRACKET,
+        ],
     )
 }

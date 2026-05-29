@@ -1,4 +1,4 @@
-//! B6 — promote a recognized matmul fragment shape into a single
+//! B6  -  promote a recognized matmul fragment shape into a single
 //! [`KernelOpKind::MatrixMma`] op.
 //!
 //! ## What this catches
@@ -7,7 +7,7 @@
 //! sub-sequence with the operand contract for the
 //! `M16N8K16/F16/F16/F32` MatrixMma fragment:
 //!
-//!   - 4 ops producing `a0..a3` (the A fragment lanes — typically
+//!   - 4 ops producing `a0..a3` (the A fragment lanes  -  typically
 //!     `LoadShared` / `LoadGlobal` of the A tile);
 //!   - 2 ops producing `b0..b1` (the B fragment lanes);
 //!   - 4 `Fma` ops producing `c0..c3` accumulators in order, where
@@ -15,7 +15,7 @@
 //!     C accumulators threaded through the chain.
 //!
 //! The pre-loaded `c_init0..c_init3` ops are NOT consumed by the
-//! rewrite (they remain in the descriptor) — only the `Fma` chain
+//! rewrite (they remain in the descriptor)  -  only the `Fma` chain
 //! collapses into one `MatrixMma`. The MatrixMma's operand vector
 //! is `[a0,a1,a2,a3, b0,b1, c0,c1,c2,c3]` and its 4 result ids start
 //! at the new fresh result base.
@@ -38,6 +38,7 @@
 //! the existing emit path activates without explicit MatrixMma in
 //! the input descriptor.
 
+use super::literal::ResultAllocator;
 use crate::descriptor::{
     KernelBody, KernelDescriptor, KernelOp, KernelOpKind, MatrixMmaElement, MatrixMmaLayout,
     MatrixMmaShape,
@@ -78,42 +79,18 @@ pub fn infer_matmul_tile_loops(desc: &KernelDescriptor) -> Vec<MatmulTileLoopPla
 #[must_use]
 pub fn matmul_promote(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    out.body = promote_body(&out.body, &mut next_result_id_for(&desc.body));
+    let mut allocator = ResultAllocator::for_body_tree(&desc.body);
+    out.body = promote_body(&out.body, &mut allocator);
     out
 }
 
-fn next_result_id_for(body: &KernelBody) -> u32 {
-    let mut max = 0u32;
-    let mut found_any = false;
-    walk_max_result_id(body, &mut max, &mut found_any);
-    if found_any {
-        max.wrapping_add(1)
-    } else {
-        0
-    }
-}
-
-fn walk_max_result_id(body: &KernelBody, max: &mut u32, found_any: &mut bool) {
-    for op in &body.ops {
-        if let Some(r) = op.result {
-            if !*found_any || r > *max {
-                *max = r;
-                *found_any = true;
-            }
-        }
-    }
-    for child in &body.child_bodies {
-        walk_max_result_id(child, max, found_any);
-    }
-}
-
-fn promote_body(body: &KernelBody, next_result_id: &mut u32) -> KernelBody {
+fn promote_body(body: &KernelBody, allocator: &mut ResultAllocator) -> KernelBody {
     let mut new_ops: Vec<KernelOp> = Vec::with_capacity(body.ops.len());
 
     let ops = &body.ops;
     let mut i = 0;
     while i < ops.len() {
-        if let Some((promoted, advance)) = try_promote_at(ops, i, next_result_id) {
+        if let Some((promoted, advance)) = try_promote_at(ops, i, allocator) {
             new_ops.push(promoted);
             i += advance;
         } else {
@@ -125,7 +102,7 @@ fn promote_body(body: &KernelBody, next_result_id: &mut u32) -> KernelBody {
     let new_children: Vec<KernelBody> = body
         .child_bodies
         .iter()
-        .map(|c| promote_body(c, next_result_id))
+        .map(|c| promote_body(c, allocator))
         .collect();
 
     KernelBody {
@@ -177,7 +154,7 @@ fn promotable_fma_starts(ops: &[KernelOp]) -> Vec<usize> {
 fn try_promote_at(
     ops: &[KernelOp],
     i: usize,
-    next_result_id: &mut u32,
+    allocator: &mut ResultAllocator,
 ) -> Option<(KernelOp, usize)> {
     let FragmentMatch {
         a_ids,
@@ -190,9 +167,7 @@ fn try_promote_at(
     operands.extend_from_slice(&b_unique);
     operands.extend_from_slice(&c_ids);
 
-    // Allocate 4 fresh contiguous result ids for the accumulator tuple.
-    let result_base = *next_result_id;
-    *next_result_id = next_result_id.wrapping_add(MATMUL_TILE_LEN as u32);
+    let result_base = allocator.fresh_block(MATMUL_TILE_LEN as u32);
 
     let promoted = KernelOp {
         kind: KernelOpKind::MatrixMma {
@@ -221,7 +196,7 @@ fn match_fragment_at(ops: &[KernelOp], i: usize) -> Option<FragmentMatch> {
     if i + needed > ops.len() {
         return None;
     }
-    // The MatrixMma operand vector requires 4 a + 2 b + 4 c — the
+    // The MatrixMma operand vector requires 4 a + 2 b + 4 c  -  the
     // 4 c values come from the prior cumulative state. We look for a
     // contiguous block of 4 `Fma` ops whose first operand cycles over
     // 4 unique a ids and whose second cycles over 2 unique b ids.
@@ -385,7 +360,7 @@ mod tests {
 
     #[test]
     fn fma_chain_with_repeated_a_does_not_promote() {
-        // a id repeats — not a valid M16N8K16 fragment.
+        // a id repeats  -  not a valid M16N8K16 fragment.
         let prelude = (0..10).map(lit).collect::<Vec<_>>();
         let fmas = vec![
             fma(0, 4, 6, 10),
@@ -473,6 +448,7 @@ mod tests {
             fma(2, 4, 8, 12),
             fma(3, 5, 9, 13),
         ];
+
         let mut child_ops = prelude;
         child_ops.extend(fmas);
         let child = KernelBody {
@@ -528,3 +504,4 @@ mod tests {
         assert_eq!(once.body.ops.len(), twice.body.ops.len());
     }
 }
+

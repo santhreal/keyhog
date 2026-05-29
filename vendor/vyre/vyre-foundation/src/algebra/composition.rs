@@ -59,6 +59,10 @@ fn collect_self_exclusive_regions<'a>(nodes: &'a [Node], counts: &mut FxHashMap<
             Node::Let { .. }
             | Node::Assign { .. }
             | Node::Store { .. }
+            | Node::AllReduce { .. }
+            | Node::AllGather { .. }
+            | Node::ReduceScatter { .. }
+            | Node::Broadcast { .. }
             | Node::Return
             | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }

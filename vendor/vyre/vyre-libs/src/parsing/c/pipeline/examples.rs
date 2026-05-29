@@ -15,8 +15,8 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 ///
 /// This composition itself is **not** registered with the harness because the
 /// buffer-reference passing in `Expr::Call` args here is a compile-time
-/// sketch that the reference interpreter does not execute — the real
-/// executable form is the fused megakernel produced by frontend against the
+/// sketch that the reference interpreter does not execute  -  the real
+/// executable form is the fused megakernel produced by downstream analyzer against the
 /// individual sub-op registrations. Register this wrapper only after `Expr::Call`
 /// can carry buffer references or the inline-expansion pass can splice the
 /// callee bodies directly.
@@ -339,7 +339,7 @@ pub fn build_c11_compiler_megakernel(
 }
 
 // NOTE: `build_c11_compiler_megakernel` is intentionally NOT registered with
-// the `inventory` harness. See the function's docstring for why — the sub-ops
+// the `inventory` harness. See the function's docstring for why  -  the sub-ops
 // it calls are the byte-identity verified units; this outer fn is the
 // written-down pipeline spec. Once the IR gains a `BufferRef` expression (or
 // this fn is rewritten against the inline-expansion pass), re-register here.

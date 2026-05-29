@@ -434,16 +434,11 @@ fn reserve_resident_bytes(
     label: &'static str,
     fix: &'static str,
 ) -> Result<(), PipelineError> {
-    if bytes.capacity() < capacity {
-        bytes
-            .try_reserve_exact(capacity - bytes.capacity())
-            .map_err(|error| {
-                PipelineError::Backend(format!(
-                    "megakernel resident {label} byte reservation failed for {capacity} bytes: {error}. Fix: {fix}."
-                ))
-            })?;
-    }
-    Ok(())
+    vyre_foundation::allocation::try_reserve_vec_to_capacity(bytes, capacity).map_err(|error| {
+        PipelineError::Backend(format!(
+            "megakernel resident {label} byte reservation failed for {capacity} bytes: {error}. Fix: {fix}."
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -452,6 +447,7 @@ mod tests {
     use crate::megakernel::protocol::opcode;
     use std::sync::Arc;
     use vyre_driver::backend::{CompiledPipeline, DispatchConfig, VyreBackend};
+
 
     struct ResidentEchoPipeline;
 
@@ -699,3 +695,4 @@ mod tests {
         assert!(buffers.retained_default_output_bytes() > 0);
     }
 }
+

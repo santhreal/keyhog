@@ -13,7 +13,7 @@ pub use super::depth::{
 use super::expr_rules::validate_output_markers;
 use super::fusion_safety::{collect_expr_accesses, NodeAccesses};
 // Self-composition (duplicate self-exclusive regions) is enforced in
-// `PreorderValidator::run` via `self_comp_counts` — do not add a second
+// `PreorderValidator::run` via `self_comp_counts`  -  do not add a second
 // `duplicate_self_exclusive_regions` walk here.
 use super::{depth, err, nodes, ValidationError, ValidationOptions, ValidationReport};
 use crate::composition::self_exclusive_region_key;
@@ -154,7 +154,7 @@ fn validate_output_buffer_element_type(
 }
 
 // ------------------------------------------------------------------
-// PreorderValidator — single-pass explicit-stack traversal
+// PreorderValidator  -  single-pass explicit-stack traversal
 // ------------------------------------------------------------------
 
 use super::barrier;
@@ -311,8 +311,8 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
                             // parent already is OR when either bound
                             // varies across the workgroup. Uniform
                             // bounds keep every invocation in lockstep
-                            // — same iteration count, same loop-var
-                            // value at each step — so a barrier inside
+                            //  -  same iteration count, same loop-var
+                            // value at each step  -  so a barrier inside
                             // is reached by every lane simultaneously.
                             let parent_divergent = self.current_divergent();
                             let bounds_uniform =
@@ -462,6 +462,20 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
         self.warnings.append(&mut self.expr_report_scratch.warnings);
     }
 
+    fn validate_collective_buffer(&mut self, name: &Ident) {
+        let Some(buffer) = self.buffers.get(name.as_str()) else {
+            self.errors.push(err(format!(
+                "V046: collective references unknown buffer `{name}`. Fix: declare the collective buffer before validation."
+            )));
+            return;
+        };
+        if buffer.access == BufferAccess::Workgroup {
+            self.errors.push(err(format!(
+                "V046: collective buffer `{name}` is workgroup-local. Fix: use device/global storage visible to the distributed backend."
+            )));
+        }
+    }
+
     /// Report fusion-alias hazards between `accesses` and the current linear state.
     fn report_alias_hazards(&mut self, accesses: &NodeAccesses) {
         let mut hazards = accesses
@@ -537,7 +551,7 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
             return ControlFlow::Continue(());
         };
         // Same-region duplicate Lets are always invalid, even when
-        // shadowing is allowed for nested scopes — the V032 contract
+        // shadowing is allowed for nested scopes  -  the V032 contract
         // covered by `sibling_duplicate_lets_are_rejected_even_when_shadowing_is_allowed`.
         // `allow_shadowing` only opens nested scopes; siblings collide
         // unconditionally.
@@ -875,6 +889,49 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         ControlFlow::Continue(())
     }
 
+    fn visit_collective(&mut self, node: &Node) -> ControlFlow<Self::Break> {
+        let depth = self.current_depth();
+        depth::check_limits(&mut self.limits, depth, &mut self.errors);
+        if !self.options.supports_distributed_collectives() {
+            self.errors.push(err(
+                "V046: distributed collective nodes require backend collective support. Fix: validate with BackendCapabilities { supports_distributed_collectives: true, .. } or lower collectives before this backend."
+                    .to_string(),
+            ));
+        }
+
+        let mut accesses = NodeAccesses::default();
+        match node {
+            Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+                self.validate_collective_buffer(buffer);
+                accesses.read_buffers.insert(buffer.clone());
+            }
+            Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+                self.validate_collective_buffer(input);
+                self.validate_collective_buffer(output);
+                if let (Some(input_buf), Some(output_buf)) = (
+                    self.buffers.get(input.as_str()),
+                    self.buffers.get(output.as_str()),
+                ) {
+                    if input_buf.element != output_buf.element {
+                        self.errors.push(err(format!(
+                            "V046: collective input/output element mismatch: `{}` is `{}`, `{}` is `{}`. Fix: use matching element types before collective lowering.",
+                            input_buf.name(),
+                            input_buf.element,
+                            output_buf.name(),
+                            output_buf.element
+                        )));
+                    }
+                }
+                accesses.read_buffers.insert(input.clone());
+                accesses.read_buffers.insert(output.clone());
+            }
+            _ => {}
+        }
+        self.report_alias_hazards(&accesses);
+        self.extend_alias(&accesses);
+        ControlFlow::Continue(())
+    }
+
     fn visit_block(&mut self, _node: &Node, _body: &[Node]) -> ControlFlow<Self::Break> {
         let depth = self.current_depth();
         depth::check_limits(&mut self.limits, depth, &mut self.errors);
@@ -931,6 +988,8 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
 }
 
 #[cfg(test)]
+
 mod tests {
     include!("validate_tests.rs");
 }
+

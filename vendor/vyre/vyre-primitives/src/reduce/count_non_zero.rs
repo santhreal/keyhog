@@ -1,4 +1,4 @@
-//! `reduce_count_non_zero` — count the non-zero lanes in a u32 ValueSet.
+//! `reduce_count_non_zero`  -  count the non-zero lanes in a u32 ValueSet.
 
 use std::sync::Arc;
 
@@ -64,13 +64,16 @@ inventory::submit! {
         OP_ID,
         || reduce_count_non_zero("values", "out", 4),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[1, 0, 1, 1]),
                 to_bytes(&[0]),
             ]]
         }),
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
+            vec![vec![to_bytes(&[3])]]
+        }),
     )
 }
 

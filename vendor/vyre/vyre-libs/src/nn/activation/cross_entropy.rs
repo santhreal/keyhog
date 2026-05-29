@@ -273,7 +273,7 @@ fn reference_cross_entropy_bytes(logits: &[f32], targets: &[u32], vocab_size: us
             .sum::<f32>();
         let target_logit = row.get(target as usize).copied().unwrap_or(0.0);
         let loss = max_logit + libm::logf(sum) - target_logit;
-        out.extend_from_slice(&loss.to_bits().to_le_bytes());
+        vyre_primitives::wire::append_f32_slice_le_bytes(&[loss], &mut out);
     }
     out
 }
@@ -283,8 +283,8 @@ inventory::submit! {
         id: OP_ID,
         build: || cross_entropy("logits", "targets", "loss", 2, 4),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
+            let to_u32 = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             vec![vec![
                 // logits: 2 tokens × 4 vocab
                 to_f32(&[1.0, 2.0, 3.0, 0.5,  0.1, 0.2, 0.3, 0.4]),
@@ -312,18 +312,8 @@ mod tests {
         let targets = [2_u32, 0];
         let program = cross_entropy("logits", "targets", "loss", 2, 4);
         let inputs = vec![
-            Value::from(
-                logits
-                    .iter()
-                    .flat_map(|value| value.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
-            Value::from(
-                targets
-                    .iter()
-                    .flat_map(|value| value.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
+            Value::from(vyre_primitives::wire::pack_f32_slice(&logits)),
+            Value::from(vyre_primitives::wire::pack_u32_slice(&targets)),
             Value::from(vec![0u8; 4 * 2 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -352,18 +342,8 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(
-                logits
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
-            Value::from(
-                targets
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
+            Value::from(vyre_primitives::wire::pack_f32_slice(&logits)),
+            Value::from(vyre_primitives::wire::pack_u32_slice(&targets)),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -383,18 +363,8 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(
-                logits
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
-            Value::from(
-                targets
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
+            Value::from(vyre_primitives::wire::pack_f32_slice(&logits)),
+            Value::from(vyre_primitives::wire::pack_u32_slice(&targets)),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -412,18 +382,8 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(
-                logits
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
-            Value::from(
-                targets
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
+            Value::from(vyre_primitives::wire::pack_f32_slice(&logits)),
+            Value::from(vyre_primitives::wire::pack_u32_slice(&targets)),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -443,18 +403,8 @@ mod tests {
         let _targets = [1u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(
-                logits
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
-            Value::from(
-                [1u32]
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
+            Value::from(vyre_primitives::wire::pack_f32_slice(&logits)),
+            Value::from(vyre_primitives::wire::pack_u32_slice(&[1u32])),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -473,18 +423,8 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 1);
         let inputs = vec![
-            Value::from(
-                logits
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
-            Value::from(
-                targets
-                    .iter()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect::<Vec<_>>(),
-            ),
+            Value::from(vyre_primitives::wire::pack_f32_slice(&logits)),
+            Value::from(vyre_primitives::wire::pack_u32_slice(&targets)),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)

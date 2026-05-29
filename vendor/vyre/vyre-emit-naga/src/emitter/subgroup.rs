@@ -28,9 +28,12 @@ impl BodyBuilder<'_> {
             },
             Span::UNDEFINED,
         );
+        let result_id = op
+            .result
+            .ok_or_else(|| EmitError::InvalidDescriptor("SubgroupBallot missing result".into()))?;
         let target_ty = self
             .value_types
-            .get(&op.result.unwrap())
+            .get(&result_id)
             .copied()
             .unwrap_or(self.types.u32_ty);
         if target_ty == self.types.u64_ty {

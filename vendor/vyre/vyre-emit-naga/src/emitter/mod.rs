@@ -56,7 +56,7 @@ struct BodyBuilder<'a> {
     loop_carrier_locals: FxHashMap<u32, naga::Handle<LocalVariable>>,
     /// Depth of nested `child_block` swaps. > 0 means the current
     /// `self.function.body` is a child block (loop body, if-then arm,
-    /// continuing block, etc.) — values bound here have their
+    /// continuing block, etc.)  -  values bound here have their
     /// `Statement::Emit` in a closed scope from the perspective of
     /// outer-block readers. `bind_result` publishes via a function-
     /// scope `LocalVariable` whenever depth > 0 so `value_handle_for_id`

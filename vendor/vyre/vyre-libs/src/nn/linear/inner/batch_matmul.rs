@@ -123,18 +123,9 @@ pub fn batch_matmul(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn batch_matmul_single_batch_matches_matmul() {
@@ -188,9 +179,13 @@ mod tests {
 
     #[test]
     fn batch_matmul_zero_dim_errors() {
-        assert!(batch_matmul("a", "b", "out", 0, 2, 2, 2).is_err());
-        assert!(batch_matmul("a", "b", "out", 1, 0, 2, 2).is_err());
-        assert!(batch_matmul("a", "b", "out", 1, 2, 0, 2).is_err());
-        assert!(batch_matmul("a", "b", "out", 1, 2, 2, 0).is_err());
+        for (batch, m, k, n) in [(0, 2, 2, 2), (1, 0, 2, 2), (1, 2, 0, 2), (1, 2, 2, 0)] {
+            let err = batch_matmul("a", "b", "out", batch, m, k, n)
+                .expect_err("zero dim must error");
+            assert!(
+                err.contains("batch_matmul") && err.contains("> 0"),
+                "batch_matmul zero-dim error for ({batch},{m},{k},{n}): {err}"
+            );
+        }
     }
 }

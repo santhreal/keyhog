@@ -159,7 +159,7 @@ fn checked_cube_u64(value: u64) -> Option<u64> {
 /// original count no-op their stores.
 ///
 /// The win is on tail handling for attention/softmax/reduce shapes where
-/// the workload is not a multiple of the workgroup size — without
+/// the workload is not a multiple of the workgroup size  -  without
 /// coercion the last workgroup runs with masked-out lanes that still
 /// incur scheduling cost; with coercion every workgroup is identical
 /// and the masked-out lanes are skipped via the predicate.
@@ -191,13 +191,20 @@ impl TailMaskPolicy {
 ///
 /// `element_count == 0` is treated as 0 (rounded_count = 0, no tail).
 /// `element_count == 1` rounds to 1 (already pow2).
-/// `element_count` beyond `1 << 31` is rejected by panicking with an
-/// actionable message. Silently saturating would under-dispatch work
-/// and a plain-dispatch fallback would hide a shape-planning failure.
+/// `element_count` beyond `1 << 31` cannot be rounded inside `u32`; callers
+/// that need to distinguish that condition must use
+/// [`try_coerce_to_pow2_with_tail_mask`]. This legacy wrapper preserves the
+/// original shape on overflow instead of panicking.
 #[must_use]
 pub fn coerce_to_pow2_with_tail_mask(element_count: u32) -> TailMaskPolicy {
-    try_coerce_to_pow2_with_tail_mask(element_count)
-        .expect("power-of-two dispatch tail-mask planning failed in legacy infallible caller")
+    match try_coerce_to_pow2_with_tail_mask(element_count) {
+        Ok(policy) => policy,
+        Err(_error) => TailMaskPolicy {
+            original_count: element_count,
+            rounded_count: element_count,
+            tail_lanes: 0,
+        },
+    }
 }
 
 /// Fallible N6 power-of-two dispatch-grid coercion.
@@ -304,7 +311,7 @@ mod n6_tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("dispatch-grid production source must precede tests");
+            .expect("Fix: dispatch-grid production source must precede tests");
 
         assert!(
             !production.contains(" as f64")

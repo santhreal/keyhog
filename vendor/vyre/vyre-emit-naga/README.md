@@ -96,10 +96,10 @@ operates on the layer below.
 
 ## See also
 
-- `vyre-lower` — IR + rewrite stack + verify.
-- `vyre-emit-spirv` — routes through this crate to produce SPIR-V
+- `vyre-lower`  -  IR + rewrite stack + verify.
+- `vyre-emit-spirv`  -  routes through this crate to produce SPIR-V
   binaries.
-- `vyre-emit-ptx` — independent PTX emitter for CUDA.
+- `vyre-emit-ptx`  -  independent PTX emitter for CUDA.
 
 ## License
 

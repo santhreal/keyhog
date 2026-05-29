@@ -5,13 +5,17 @@ use std::sync::Arc;
 
 use cudarc::driver::sys::CUstream;
 use smallvec::SmallVec;
+use vyre_driver::accounting::checked_add_usize_lazy;
 use vyre_driver::binding::BindingRole;
-use vyre_driver::{BackendError, DispatchConfig, PendingDispatch};
+use vyre_driver::transfer_accounting::TransferAccountingPolicy;
+use vyre_driver::{BackendError, DispatchConfig, OutputBuffers, PendingDispatch, VyreBackend};
 use vyre_foundation::ir::Program;
 
-use crate::numeric::{elapsed_nanos_u64, usize_to_u64};
+use crate::numeric::CUDA_NUMERIC;
+use crate::CUDA_BACKEND_ID;
 
-use super::allocations::{cuda_check, DispatchAllocations, HostTransferAllocations};
+use super::allocations::{DispatchAllocations, HostTransferAllocations};
+use super::copy::aligned_async_copy_len;
 use super::dispatch::CudaBackend;
 use super::launch_params::launch_param_byte_len;
 use super::module_cache::ModuleCacheKey;
@@ -32,34 +36,107 @@ struct DeviceClear {
     byte_len: usize,
 }
 
+struct CudaReadyPending {
+    outputs: Vec<Vec<u8>>,
+}
+
+const CUDA_HOST_TRANSFER_ACCOUNTING: TransferAccountingPolicy =
+    TransferAccountingPolicy::new("CUDA", "split the dispatch into bounded chunks");
+
+impl vyre_driver::backend::private::Sealed for CudaReadyPending {}
+
+impl PendingDispatch for CudaReadyPending {
+    fn is_ready(&self) -> bool {
+        true
+    }
+
+    fn await_result(self: Box<Self>) -> Result<Vec<Vec<u8>>, BackendError> {
+        Ok(self.outputs)
+    }
+}
+
+struct GridSyncSplitCudaBackend<'a>(&'a CudaBackend);
+
+impl vyre_driver::backend::private::Sealed for GridSyncSplitCudaBackend<'_> {}
+
+impl VyreBackend for GridSyncSplitCudaBackend<'_> {
+    fn id(&self) -> &'static str {
+        CUDA_BACKEND_ID
+    }
+
+    fn dispatch(
+        &self,
+        program: &Program,
+        inputs: &[Vec<u8>],
+        config: &DispatchConfig,
+    ) -> Result<Vec<Vec<u8>>, BackendError> {
+        let mut borrowed_inputs = SmallVec::<[&[u8]; 8]>::new();
+        reserve_smallvec(&mut borrowed_inputs, inputs.len(), "grid-sync CUDA input")?;
+        borrowed_inputs.extend(inputs.iter().map(Vec::as_slice));
+        self.0
+            .dispatch_borrowed_async(program, &borrowed_inputs, config)?
+            .await_result()
+    }
+
+    fn dispatch_borrowed(
+        &self,
+        program: &Program,
+        inputs: &[&[u8]],
+        config: &DispatchConfig,
+    ) -> Result<Vec<Vec<u8>>, BackendError> {
+        self.0
+            .dispatch_borrowed_async(program, inputs, config)?
+            .await_result()
+    }
+
+    fn dispatch_borrowed_into(
+        &self,
+        program: &Program,
+        inputs: &[&[u8]],
+        config: &DispatchConfig,
+        outputs: &mut OutputBuffers,
+    ) -> Result<(), BackendError> {
+        self.0
+            .dispatch_borrowed_async(program, inputs, config)?
+            .await_result_into(outputs)
+    }
+
+    fn supports_grid_sync(&self) -> bool {
+        self.0.supports_grid_sync()
+    }
+
+    fn max_workgroup_size(&self) -> [u32; 3] {
+        self.0.max_block_dim()
+    }
+
+    fn max_compute_invocations_per_workgroup(&self) -> u32 {
+        self.0.max_threads_per_block()
+    }
+
+    fn max_compute_workgroups_per_dimension(&self) -> u32 {
+        self.0.max_grid_dim()[0]
+    }
+}
+
 fn add_transfer_bytes(total: &mut u64, bytes: usize, label: &str) -> Result<(), BackendError> {
-    let bytes = u64::try_from(bytes).map_err(|_| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA {label} transfer byte count exceeds u64; split the dispatch into bounded chunks."
-        ),
-    })?;
-    *total = total
-        .checked_add(bytes)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA {label} transfer byte accounting overflowed u64; split the dispatch into bounded chunks."
-            ),
-        })?;
-    Ok(())
+    CUDA_HOST_TRANSFER_ACCOUNTING.add_bytes(total, bytes, label)
 }
 
 fn add_transfer_operation(total: &mut u64, label: &str) -> Result<(), BackendError> {
-    *total = total
-        .checked_add(1)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA {label} transfer operation accounting overflowed u64; split the dispatch into bounded chunks."
-            ),
-        })?;
-    Ok(())
+    CUDA_HOST_TRANSFER_ACCOUNTING.add_operation(total, label)
 }
 
 impl CudaBackend {
+    fn dispatch_borrowed_with_grid_sync_split(
+        &self,
+        program: &Program,
+        inputs: &[&[u8]],
+        config: &DispatchConfig,
+    ) -> Result<Vec<Vec<u8>>, BackendError> {
+        let adapter = GridSyncSplitCudaBackend(self);
+        vyre_driver::grid_sync::dispatch_with_grid_sync_split(&adapter, program, inputs, config)
+    }
+
     /// Dispatch a vyre Program synchronously on this CUDA device with borrowed inputs.
     pub fn dispatch_borrowed(
         &self,
@@ -67,6 +144,9 @@ impl CudaBackend {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
+        if vyre_driver::grid_sync::contains_grid_sync(program) && !self.supports_grid_sync() {
+            return self.dispatch_borrowed_with_grid_sync_split(program, inputs, config);
+        }
         self.dispatch_borrowed_async(program, inputs, config)?
             .await_result()
     }
@@ -93,10 +173,20 @@ impl CudaBackend {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Box<dyn PendingDispatch>, BackendError> {
-        let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+        let lowered_program =
+            vyre_foundation::transform::collectives::lower_single_rank_collectives(program)
+                .map_err(|error| BackendError::InvalidProgram {
+                    fix: error.to_string(),
+                })?;
+        let program = lowered_program.as_ref().unwrap_or(program);
+        if vyre_driver::grid_sync::contains_grid_sync(program) && !self.supports_grid_sync() {
+            let outputs = self.dispatch_borrowed_with_grid_sync_split(program, inputs, config)?;
+            return Ok(Box::new(CudaReadyPending { outputs }));
+        }
+        let trace = crate::instrumentation::cuda_stage_trace_enabled();
         let start = std::time::Instant::now();
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] dispatch_borrowed_async start buffers={} inputs={}",
                 program.buffers().len(),
                 inputs.len()
@@ -104,20 +194,20 @@ impl CudaBackend {
         }
         let prepared = self.prepare_host_dispatch(program, inputs, config)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms prepare_host_dispatch",
                 start.elapsed().as_millis()
             );
         }
-        let ptx_src = self.ptx_for_program_cached(program, config)?;
+        let (ptx_src, ptx_source_key) = self.ptx_for_program_cached_with_key(program, config)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms ptx_for_program_cached bytes={}",
                 start.elapsed().as_millis(),
                 ptx_src.len()
             );
         }
-        let module_key = self.module_cache_key(&ptx_src);
+        let module_key = self.module_cache_key_for_ptx_source_key(ptx_source_key)?;
 
         self.dispatch_prepared_borrowed_async_with_ptx_key(
             program, inputs, &ptx_src, module_key, &prepared,
@@ -131,11 +221,17 @@ impl CudaBackend {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<vyre_driver::TimedDispatchResult, BackendError> {
+        let lowered_program =
+            vyre_foundation::transform::collectives::lower_single_rank_collectives(program)
+                .map_err(|error| BackendError::InvalidProgram {
+                    fix: error.to_string(),
+                })?;
+        let program = lowered_program.as_ref().unwrap_or(program);
         let prepared = self.prepare_host_dispatch(program, inputs, config)?;
-        let ptx_src = self.ptx_for_program_cached(program, config)?;
-        let module_key = self.module_cache_key(&ptx_src);
+        let (ptx_src, ptx_source_key) = self.ptx_for_program_cached_with_key(program, config)?;
+        let module_key = self.module_cache_key_for_ptx_source_key(ptx_source_key)?;
         self.dispatch_prepared_borrowed_timed_with_ptx_key(
-            program, inputs, &ptx_src, module_key, &prepared,
+            program, inputs, config, &ptx_src, module_key, &prepared,
         )
     }
 
@@ -163,7 +259,7 @@ impl CudaBackend {
     ) -> Result<vyre_driver::TimedDispatchResult, BackendError> {
         let prepared = self.prepare_host_dispatch(program, inputs, config)?;
         self.dispatch_prepared_borrowed_timed_with_ptx_key(
-            program, inputs, ptx_src, module_key, &prepared,
+            program, inputs, config, ptx_src, module_key, &prepared,
         )
     }
 
@@ -184,6 +280,7 @@ impl CudaBackend {
         &self,
         program: &Program,
         inputs: &[&[u8]],
+        config: &DispatchConfig,
         ptx_src: &str,
         module_key: ModuleCacheKey,
         prepared: &CudaDispatchPlan,
@@ -193,13 +290,27 @@ impl CudaBackend {
         let pending = self.dispatch_borrowed_async_with_ptx_concrete(
             program, inputs, ptx_src, module_key, true, prepared,
         )?;
-        let enqueue_ns = elapsed_nanos_u64(enqueue_started, "host-dispatch enqueue latency")?;
+        let enqueue_ns =
+            CUDA_NUMERIC.elapsed_nanos_u64(enqueue_started, "host-dispatch enqueue latency")?;
         let wait_started = std::time::Instant::now();
         let (outputs, device_ns) = pending.await_timed_result()?;
-        let wait_ns = elapsed_nanos_u64(wait_started, "host-dispatch wait latency")?;
+        let wait_ns = CUDA_NUMERIC.elapsed_nanos_u64(wait_started, "host-dispatch wait latency")?;
+        if let Some(measured_device_ns) = device_ns {
+            let _accepted = vyre_driver::launch::record_launch_measurement(
+                program,
+                config,
+                self.launch_limits(),
+                prepared.launch.element_count,
+                prepared.launch.workgroup,
+                measured_device_ns,
+            );
+        }
+        let wall_ns = CUDA_NUMERIC.elapsed_nanos_u64(started, "host-dispatch wall latency")?;
+        self.telemetry
+            .record_timed_dispatch(wall_ns, device_ns, Some(enqueue_ns), Some(wait_ns));
         Ok(vyre_driver::TimedDispatchResult {
             outputs,
-            wall_ns: elapsed_nanos_u64(started, "host-dispatch wall latency")?,
+            wall_ns,
             device_ns,
             enqueue_ns: Some(enqueue_ns),
             wait_ns: Some(wait_ns),
@@ -215,6 +326,8 @@ impl CudaBackend {
         capture_timing: bool,
         prepared: &CudaDispatchPlan,
     ) -> Result<crate::stream::CudaPendingDispatch, BackendError> {
+        let _profiler_range =
+            crate::profiler::cuda_profiler_range(crate::profiler::CUDA_HOST_DISPATCH_RANGE);
         if prepared
             .bindings
             .bindings
@@ -227,11 +340,11 @@ impl CudaBackend {
             });
         }
 
-        let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+        let trace = crate::instrumentation::cuda_stage_trace_enabled();
         let start = std::time::Instant::now();
         self.warmup()?;
         if trace {
-            eprintln!("[cuda-trace] +{}ms warmup", start.elapsed().as_millis());
+            tracing::debug!("[cuda-trace] +{}ms warmup", start.elapsed().as_millis());
         }
         self.validate_transient_dispatch_memory_budget(prepared, inputs, "CUDA host dispatch")?;
 
@@ -274,18 +387,19 @@ impl CudaBackend {
                 })?,
             };
 
-            let allocation = self.transient_pool.acquire(byte_len)?;
-            self.telemetry
-                .record_transient_allocation_bytes(usize_to_u64(
-                    allocation.byte_len,
-                    "transient allocation byte count",
-                )?);
+            let allocation_byte_len = aligned_async_copy_len(byte_len)?;
+            let allocation = self.transient_pool.acquire(allocation_byte_len)?;
+            self.telemetry.record_transient_allocation_bytes(
+                CUDA_NUMERIC
+                    .usize_to_u64(allocation.byte_len, "transient allocation byte count")?,
+            );
             let dev_ptr = allocation.ptr;
             allocations.set_ptr(binding.buffer_index, allocation);
 
             if let Some(input_index) = binding.input_index {
                 let input = inputs[input_index];
-                let host_ptr = host_transfers.push_upload(input)?;
+                let copy_byte_len = aligned_async_copy_len(input.len())?;
+                let host_ptr = host_transfers.push_upload_padded(input, copy_byte_len)?;
                 add_transfer_bytes(&mut upload_bytes, input.len(), "host upload")?;
                 if !input.is_empty() {
                     add_transfer_operation(&mut upload_operations, "host upload")?;
@@ -293,12 +407,12 @@ impl CudaBackend {
                 host_uploads.push(HostUpload {
                     dst: dev_ptr,
                     src: host_ptr,
-                    byte_len: input.len(),
+                    byte_len: copy_byte_len,
                 });
             } else if byte_len != 0 {
                 device_clears.push(DeviceClear {
                     dst: dev_ptr,
-                    byte_len,
+                    byte_len: allocation.byte_len,
                 });
             }
         }
@@ -307,25 +421,26 @@ impl CudaBackend {
         let params_buf_ptr = if param_bytes == 0 {
             0
         } else {
-            let params_allocation = self.transient_pool.acquire(param_bytes)?;
+            let param_copy_bytes = aligned_async_copy_len(param_bytes)?;
+            let params_allocation = self.transient_pool.acquire(param_copy_bytes)?;
             self.telemetry
-                .record_transient_allocation_bytes(usize_to_u64(
+                .record_transient_allocation_bytes(CUDA_NUMERIC.usize_to_u64(
                     params_allocation.byte_len,
                     "parameter allocation byte count",
                 )?);
             let params_buf_ptr = params_allocation.ptr;
-            let param_host_ptr = host_transfers.push_u32_words(&prepared.launch.param_words)?;
+            let param_host_ptr = host_transfers
+                .push_u32_words_padded(&prepared.launch.param_words, param_copy_bytes)?;
             host_uploads.push(HostUpload {
                 dst: params_buf_ptr,
                 src: param_host_ptr,
-                byte_len: param_bytes,
+                byte_len: param_copy_bytes,
             });
             add_transfer_bytes(&mut upload_bytes, param_bytes, "parameter upload")?;
             add_transfer_operation(&mut upload_operations, "parameter upload")?;
-            self.telemetry.record_param_upload_bytes(usize_to_u64(
-                param_bytes,
-                "parameter upload byte count",
-            )?);
+            self.telemetry.record_param_upload_bytes(
+                CUDA_NUMERIC.usize_to_u64(param_bytes, "parameter upload byte count")?,
+            );
             allocations.set_params(params_allocation);
             params_buf_ptr
         };
@@ -336,7 +451,7 @@ impl CudaBackend {
         )?;
         let stream_raw = launch_resources.stream_raw()?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms stream/events",
                 start.elapsed().as_millis()
             );
@@ -347,7 +462,7 @@ impl CudaBackend {
             .record_host_upload_operations(upload_operations);
         enqueue_device_clears_async(&device_clears, stream_raw)?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms alloc/upload/clear",
                 start.elapsed().as_millis()
             );
@@ -359,7 +474,7 @@ impl CudaBackend {
         // Fixpoint loop: launch the kernel `fixpoint_iterations` times
         // on the same stream. CUDA serialises kernels within a single
         // stream so each iteration observes the previous iteration's
-        // writes — the persistent-state contract that dataflow BFS-on-CSR
+        // writes  -  the persistent-state contract that dataflow BFS-on-CSR
         // primitives rely on to converge multi-hop reachability.
         // `allocations` stays device-resident across iterations, so the
         // pointer vector is materialized once and borrowed by each launch.
@@ -370,7 +485,7 @@ impl CudaBackend {
             prepared.cooperative,
         )?;
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms resolve_launch_function",
                 start.elapsed().as_millis()
             );
@@ -397,7 +512,7 @@ impl CudaBackend {
             ptr_values.push(ptr);
         }
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms host args ptr_values={:x?} params=0x{params_buf_ptr:x} words={:?} grid={:?} workgroup={:?} element_count={}",
                 start.elapsed().as_millis(),
                 ptr_values,
@@ -410,7 +525,7 @@ impl CudaBackend {
         let mut params_ref = params_buf_ptr;
         let mut kernel_args = Self::kernel_args(&mut ptr_values, &mut params_ref)?;
         for _ in 0..prepared.fixpoint_iterations {
-            self.launch_resolved_function(
+            self.launch_prevalidated_function(
                 func,
                 &mut kernel_args,
                 &prepared.launch,
@@ -420,7 +535,7 @@ impl CudaBackend {
             )?;
         }
         if trace {
-            eprintln!("[cuda-trace] +{}ms launch", start.elapsed().as_millis());
+            tracing::debug!("[cuda-trace] +{}ms launch", start.elapsed().as_millis());
         }
 
         let mut readback_bytes = 0_u64;
@@ -442,36 +557,52 @@ impl CudaBackend {
                 },
             };
             let readback = cuda_output_readback(&buffers[binding.buffer_index], full_byte_len)?;
-            let out_ptr = host_transfers.push_output(readback.byte_len)?;
+            let allocation_byte_len = allocations.byte_len(binding.buffer_index);
+            let padded_readback_len = aligned_async_copy_len(readback.byte_len)?;
+            let readback_end = readback
+                .device_offset
+                .checked_add(padded_readback_len)
+                .unwrap_or(usize::MAX);
+            let copy_byte_len = if readback_end <= allocation_byte_len {
+                padded_readback_len
+            } else {
+                readback.byte_len
+            };
+            let out_ptr = host_transfers.push_output_padded(readback.byte_len, copy_byte_len)?;
             if readback.byte_len != 0 {
                 add_transfer_bytes(&mut readback_bytes, readback.byte_len, "output readback")?;
                 add_transfer_operation(&mut readback_operations, "output readback")?;
                 let base_ptr = allocations.ptr(binding.buffer_index);
-                let device_ptr =
-                    base_ptr
-                        .checked_add(usize_to_u64(
-                            readback.device_offset,
-                            "host dispatch output readback device offset",
-                        )?)
-                        .ok_or_else(|| BackendError::InvalidProgram {
-                            fix: format!(
-                                "Fix: CUDA host dispatch readback pointer overflowed for output `{}` at device_ptr={base_ptr} offset={}. Rebuild the program with a valid output byte range or split the output buffer.",
-                                binding.name, readback.device_offset
-                            ),
-                        })?;
+                let device_ptr = vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+                    base_ptr,
+                    readback.device_offset,
+                    || {
+                        BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA host dispatch readback device offset {} for output `{}` does not fit CUdeviceptr arithmetic.",
+                            readback.device_offset, binding.name
+                        ),
+                    }
+                    },
+                    || {
+                        BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA host dispatch readback pointer overflowed for output `{}` at device_ptr={base_ptr} offset={}. Rebuild the program with a valid output byte range or split the output buffer.",
+                            binding.name, readback.device_offset
+                        ),
+                    }
+                    },
+                )?;
                 // SAFETY: FFI to libcuda.so. Pointer args were validated by
                 // the matching alloc / store API; lifetimes are documented in
                 // the surrounding function. cuda_check (or matching CUresult
                 // guard) propagates non-success codes as BackendError.
                 unsafe {
-                    cuda_check(
-                        cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
-                            out_ptr,
-                            device_ptr,
-                            readback.byte_len,
-                            stream_raw,
-                        ),
-                        "cuMemcpyDtoHAsync_v2",
+                    super::copy::d2h_async_checked(
+                        out_ptr,
+                        device_ptr,
+                        copy_byte_len,
+                        stream_raw,
                     )?;
                 }
             }
@@ -490,7 +621,7 @@ impl CudaBackend {
             return Err(error);
         }
         if trace {
-            eprintln!(
+            tracing::debug!(
                 "[cuda-trace] +{}ms readback/event",
                 start.elapsed().as_millis()
             );
@@ -533,6 +664,12 @@ impl CudaBackend {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
+        let lowered_program =
+            vyre_foundation::transform::collectives::lower_single_rank_collectives(program)
+                .map_err(|error| BackendError::InvalidProgram {
+                    fix: error.to_string(),
+                })?;
+        let program = lowered_program.as_ref().unwrap_or(program);
         // Reject programs that ask for capabilities the live CUDA
         // backend doesn't expose BEFORE we attempt PTX emit. Without
         // this gate, indirect_dispatch / f16 / bf16 IR falls all the
@@ -549,12 +686,23 @@ impl CudaBackend {
             validation_caps.supports_bf16,
             validation_caps.supports_indirect_dispatch,
             validation_caps.supports_trap_propagation,
+            validation_caps.supports_distributed_collectives,
             validation_caps.max_workgroup_size,
             &required,
         )
         .map_err(|error| BackendError::InvalidProgram {
             fix: error.to_string(),
         })?;
+        if vyre_driver::grid_sync::contains_grid_sync(program) && !self.supports_grid_sync() {
+            let mut borrowed_inputs = SmallVec::<[&[u8]; 8]>::new();
+            reserve_smallvec(
+                &mut borrowed_inputs,
+                inputs.len(),
+                "grid-sync CUDA dispatch input",
+            )?;
+            borrowed_inputs.extend(inputs.iter().map(Vec::as_slice));
+            return self.dispatch_borrowed_with_grid_sync_split(program, &borrowed_inputs, config);
+        }
         self.dispatch_async(program, inputs, config)?.await_result()
     }
 }
@@ -563,28 +711,29 @@ impl CudaBackend {
 fn host_transfer_capacities(prepared: &CudaDispatchPlan) -> Result<(usize, usize), BackendError> {
     let output_capacity = prepared.output_binding_indices.len();
     let upload_capacity = host_upload_batch_capacity(prepared)?;
-    let transfer_capacity =
-        upload_capacity
-            .checked_add(output_capacity)
-            .ok_or_else(|| BackendError::InvalidProgram {
+    let transfer_capacity = checked_add_usize_lazy(upload_capacity, output_capacity, || {
+        BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: CUDA host transfer capacity overflowed usize for {upload_capacity} upload slot(s) plus {output_capacity} output slot(s); split the dispatch."
                 ),
-            })?;
+            }
+    })?;
     Ok((transfer_capacity, output_capacity))
 }
 
 #[inline]
 fn host_upload_batch_capacity(prepared: &CudaDispatchPlan) -> Result<usize, BackendError> {
-    prepared
-        .bindings
-        .input_indices
-        .len()
-        .checked_add(usize::from(!prepared.launch.param_words.is_empty()))
-        .ok_or_else(|| BackendError::InvalidProgram {
+    let input_slots = prepared.bindings.input_indices.len();
+    checked_add_usize_lazy(
+        input_slots,
+        usize::from(!prepared.launch.param_words.is_empty()),
+        || {
+            BackendError::InvalidProgram {
             fix: "Fix: CUDA host upload batch capacity overflowed usize while adding the params upload slot; split the dispatch."
                 .to_string(),
-        })
+        }
+        },
+    )
 }
 
 #[inline]
@@ -601,15 +750,7 @@ fn enqueue_host_uploads_async(
         // surrounding function. cuda_check (or matching CUresult guard)
         // propagates non-success codes as BackendError.
         unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                    upload.dst,
-                    upload.src,
-                    upload.byte_len,
-                    stream,
-                ),
-                "cuMemcpyHtoDAsync_v2",
-            )?;
+            super::copy::h2d_async_checked(upload.dst, upload.src, upload.byte_len, stream)?;
         }
     }
     Ok(())
@@ -626,10 +767,7 @@ fn enqueue_device_clears_async(
         // surrounding function. cuda_check (or matching CUresult guard)
         // propagates non-success codes as BackendError.
         unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuMemsetD8Async(clear.dst, 0, clear.byte_len, stream),
-                "cuMemsetD8Async",
-            )?;
+            super::copy::memset_d8_async_checked(clear.dst, 0, clear.byte_len, stream)?;
         }
     }
     Ok(())
@@ -697,12 +835,12 @@ mod tests {
         };
 
         assert_eq!(
-            host_upload_batch_capacity(&plan).expect("capacity must fit"),
+            host_upload_batch_capacity(&plan).expect("Fix: capacity must fit"),
             2,
             "zero-byte launch params must not reserve a fake H2D upload slot"
         );
         assert_eq!(
-            host_transfer_capacities(&plan).expect("capacity must fit"),
+            host_transfer_capacities(&plan).expect("Fix: capacity must fit"),
             (4, 2),
             "pinned-host transfer storage must reserve inputs + outputs only when params are empty"
         );
@@ -710,12 +848,12 @@ mod tests {
         let mut plan_with_params = plan;
         plan_with_params.launch.param_words.push(7);
         assert_eq!(
-            host_upload_batch_capacity(&plan_with_params).expect("capacity must fit"),
+            host_upload_batch_capacity(&plan_with_params).expect("Fix: capacity must fit"),
             3,
             "non-empty launch params must reserve one H2D upload slot"
         );
         assert_eq!(
-            host_transfer_capacities(&plan_with_params).expect("capacity must fit"),
+            host_transfer_capacities(&plan_with_params).expect("Fix: capacity must fit"),
             (5, 2),
             "pinned-host transfer storage must reserve inputs + params + outputs when params exist"
         );

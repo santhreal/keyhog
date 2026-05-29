@@ -1,4 +1,4 @@
-//! ROADMAP A16 — range facts into cast / branch / bounds-check elision.
+//! ROADMAP A16  -  range facts into cast / branch / bounds-check elision.
 //!
 //! Loop-induction range slice shipped here. Inside `Loop(i,
 //! LitU32(lo), LitU32(hi), body)`, the loop variable `i` has the
@@ -26,7 +26,7 @@
 //! wrapper per fired fold) and monotone-down on per-iteration
 //! branch overhead.
 //!
-//! Preserves: every analysis. Invalidates: nothing — the surviving
+//! Preserves: every analysis. Invalidates: nothing  -  the surviving
 //! arm executes on every iteration just as it did before.
 //!
 //! ## Conservatism
@@ -35,8 +35,9 @@
 //!   bounds need the full range substrate (intervals + symbolic
 //!   bounds via a downstream range analysis).
 //! - The condition must be a comparison of `Var(loop_var)` against
-//!   a `LitU32`. Compound conditions (BinOp::And / Or chains) and
-//!   non-Var operands are skipped — the next algebraic round will
+//!   a `LitU32` or `BufLen(buffer)` whose range is proved by
+//!   `ProgramShapeFacts`. Compound conditions (BinOp::And / Or chains) and
+//!   non-Var operands are skipped  -  the next algebraic round will
 //!   simplify them and a future pass can re-attempt.
 //! - The loop variable must not be reassigned inside the body
 //!   (no `Assign { name: i, .. }`, no `Let { name: i, .. }`, no
@@ -48,6 +49,7 @@
 //!   appears in the condition, then against `i`'s range.
 
 use crate::ir::{BinOp, Expr, Ident, Node, Program};
+use crate::optimizer::program_shape_facts::ProgramShapeFacts;
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 use crate::visit::node_map;
 
@@ -72,10 +74,11 @@ impl LoopVarRangeFoldPass {
         if !stats.has_any_node_kind(NODE_KIND_LOOP) || !stats.has_any_node_kind(NODE_KIND_IF) {
             return PassAnalysis::SKIP;
         }
+        let shape_facts = ProgramShapeFacts::derive_cached(program);
         if program
             .entry()
             .iter()
-            .any(|n| node_map::any_descendant(n, &mut has_foldable_if))
+            .any(|n| node_map::any_descendant(n, &mut |node| has_foldable_if(node, &shape_facts)))
         {
             PassAnalysis::RUN
         } else {
@@ -87,10 +90,11 @@ impl LoopVarRangeFoldPass {
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
         let mut changed = false;
+        let shape_facts = ProgramShapeFacts::derive_cached(&program);
         let program = program.map_entry(|entry| {
             entry
                 .into_iter()
-                .map(|n| recurse(n, None, &mut changed))
+                .map(|n| recurse(n, None, &shape_facts, &mut changed))
                 .collect()
         });
         PassResult { program, changed }
@@ -104,11 +108,22 @@ struct LoopRange<'a> {
     hi: u32,
 }
 
+#[derive(Clone, Copy)]
+struct BoundRange {
+    min: u32,
+    max: Option<u32>,
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "range-fold tree rewrite keeps loop/if/block/region reconstruction in one ownership-preserving pass"
 )]
-fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node {
+fn recurse(
+    node: Node,
+    range: Option<LoopRange<'_>>,
+    shape_facts: &ProgramShapeFacts,
+    changed: &mut bool,
+) -> Node {
     match node {
         Node::Loop {
             var,
@@ -130,14 +145,14 @@ fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node
                 };
                 body.into_iter()
                     .flat_map(|n| {
-                        let folded = recurse(n, Some(inner_range), changed);
+                        let folded = recurse(n, Some(inner_range), shape_facts, changed);
                         flatten_block(folded)
                     })
                     .collect()
             } else {
                 body.into_iter()
                     .flat_map(|n| {
-                        let folded = recurse(n, range, changed);
+                        let folded = recurse(n, range, shape_facts, changed);
                         flatten_block(folded)
                     })
                     .collect()
@@ -155,12 +170,12 @@ fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node
             otherwise,
         } => {
             if let Some(range) = range {
-                if let Some(verdict) = condition_verdict(&cond, &range) {
+                if let Some(verdict) = condition_verdict(&cond, &range, shape_facts) {
                     *changed = true;
                     let new_body = if verdict { then } else { otherwise };
                     let folded: Vec<Node> = new_body
                         .into_iter()
-                        .map(|n| recurse(n, Some(range), changed))
+                        .map(|n| recurse(n, Some(range), shape_facts, changed))
                         .collect();
                     if folded.len() == 1 {
                         return folded
@@ -175,18 +190,18 @@ fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node
                 cond,
                 then: then
                     .into_iter()
-                    .map(|n| recurse(n, range, changed))
+                    .map(|n| recurse(n, range, shape_facts, changed))
                     .collect(),
                 otherwise: otherwise
                     .into_iter()
-                    .map(|n| recurse(n, range, changed))
+                    .map(|n| recurse(n, range, shape_facts, changed))
                     .collect(),
             }
         }
         Node::Block(body) => Node::Block(
             body.into_iter()
                 .flat_map(|n| {
-                    let folded = recurse(n, range, changed);
+                    let folded = recurse(n, range, shape_facts, changed);
                     flatten_block(folded)
                 })
                 .collect(),
@@ -207,7 +222,7 @@ fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node
                     body_vec
                         .into_iter()
                         .flat_map(|n| {
-                            let folded = recurse(n, range, changed);
+                            let folded = recurse(n, range, shape_facts, changed);
                             flatten_block(folded)
                         })
                         .collect(),
@@ -227,13 +242,17 @@ fn flatten_block(node: Node) -> Vec<Node> {
 
 /// Decide the truth value of `cond` given a known loop-var range,
 /// or return `None` if the range cannot determine the verdict.
-fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
+fn condition_verdict(
+    cond: &Expr,
+    range: &LoopRange<'_>,
+    shape_facts: &ProgramShapeFacts,
+) -> Option<bool> {
     let Expr::BinOp { op, left, right } = cond else {
         return None;
     };
-    let (lit_side, var_on_left) = match (left.as_ref(), right.as_ref()) {
-        (Expr::Var(name), Expr::LitU32(lit)) if name == range.var => (*lit, true),
-        (Expr::LitU32(lit), Expr::Var(name)) if name == range.var => (*lit, false),
+    let (bound, var_on_left) = match (left.as_ref(), right.as_ref()) {
+        (Expr::Var(name), bound) if name == range.var => (bound_range(bound, shape_facts)?, true),
+        (bound, Expr::Var(name)) if name == range.var => (bound_range(bound, shape_facts)?, false),
         _ => return None,
     };
     let lo = range.lo;
@@ -243,8 +262,10 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
     }
     let max_inclusive = hi - 1;
     if matches!(op, BinOp::Eq | BinOp::Ne) {
-        return if lit_side < lo || lit_side > max_inclusive {
+        return if max_inclusive < bound.min || bound.max.is_some_and(|max| max < lo) {
             Some(matches!(op, BinOp::Ne))
+        } else if hi == lo.saturating_add(1) && bound.max == Some(lo) && bound.min == lo {
+            Some(matches!(op, BinOp::Eq))
         } else {
             None
         };
@@ -253,9 +274,9 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
         // Var(i) < lit
         // lit > Var(i)
         (BinOp::Lt, true) | (BinOp::Gt, false) => {
-            if lit_side >= hi {
+            if bound.min >= hi {
                 true
-            } else if lit_side <= lo {
+            } else if bound.max.is_some_and(|max| max <= lo) {
                 false
             } else {
                 return None;
@@ -264,9 +285,9 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
         // lit < Var(i)
         // Var(i) > lit
         (BinOp::Lt, false) | (BinOp::Gt, true) => {
-            if lit_side >= max_inclusive {
+            if bound.min >= max_inclusive {
                 false
-            } else if lit_side < lo {
+            } else if bound.max.is_some_and(|max| max < lo) {
                 true
             } else {
                 return None;
@@ -275,9 +296,9 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
         // Var(i) <= lit
         // lit >= Var(i)
         (BinOp::Le, true) | (BinOp::Ge, false) => {
-            if lit_side >= max_inclusive {
+            if bound.min >= max_inclusive {
                 true
-            } else if lit_side < lo {
+            } else if bound.max.is_some_and(|max| max < lo) {
                 false
             } else {
                 return None;
@@ -286,9 +307,9 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
         // lit <= Var(i)
         // Var(i) >= lit
         (BinOp::Le, false) | (BinOp::Ge, true) => {
-            if lit_side <= lo {
+            if bound.max.is_some_and(|max| max <= lo) {
                 true
-            } else if lit_side > max_inclusive {
+            } else if bound.min > max_inclusive {
                 false
             } else {
                 return None;
@@ -296,6 +317,23 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
         }
         _ => return None,
     })
+}
+
+fn bound_range(expr: &Expr, shape_facts: &ProgramShapeFacts) -> Option<BoundRange> {
+    match expr {
+        Expr::LitU32(value) => Some(BoundRange {
+            min: *value,
+            max: Some(*value),
+        }),
+        Expr::BufLen { buffer } => {
+            let fact = shape_facts.get(buffer)?;
+            Some(BoundRange {
+                min: fact.min_count,
+                max: fact.max_count,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn body_rebinds_var(body: &[Node], var: &Ident) -> bool {
@@ -325,7 +363,7 @@ fn node_rebinds_var(node: &Node, var: &Ident) -> bool {
     }
 }
 
-fn has_foldable_if(node: &Node) -> bool {
+fn has_foldable_if(node: &Node, shape_facts: &ProgramShapeFacts) -> bool {
     if let Node::Loop {
         var,
         from,
@@ -341,18 +379,29 @@ fn has_foldable_if(node: &Node) -> bool {
             return false;
         }
         let range = LoopRange { var, lo, hi };
-        body.iter().any(|n| body_has_foldable_if(n, &range))
+        body.iter()
+            .any(|n| body_has_foldable_if(n, &range, shape_facts))
     } else {
         false
     }
 }
 
-fn body_has_foldable_if(node: &Node, range: &LoopRange<'_>) -> bool {
+fn body_has_foldable_if(
+    node: &Node,
+    range: &LoopRange<'_>,
+    shape_facts: &ProgramShapeFacts,
+) -> bool {
     match node {
-        Node::If { cond, .. } => condition_verdict(cond, range).is_some(),
-        Node::Block(body) => body.iter().any(|n| body_has_foldable_if(n, range)),
-        Node::Loop { body, .. } => body.iter().any(|n| body_has_foldable_if(n, range)),
-        Node::Region { body, .. } => body.iter().any(|n| body_has_foldable_if(n, range)),
+        Node::If { cond, .. } => condition_verdict(cond, range, shape_facts).is_some(),
+        Node::Block(body) => body
+            .iter()
+            .any(|n| body_has_foldable_if(n, range, shape_facts)),
+        Node::Loop { body, .. } => body
+            .iter()
+            .any(|n| body_has_foldable_if(n, range, shape_facts)),
+        Node::Region { body, .. } => body
+            .iter()
+            .any(|n| body_has_foldable_if(n, range, shape_facts)),
         _ => false,
     }
 }
@@ -360,7 +409,7 @@ fn body_has_foldable_if(node: &Node, range: &LoopRange<'_>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node};
+    use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node, ShapePredicate};
 
     fn buf() -> BufferDecl {
         BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(8)
@@ -368,6 +417,10 @@ mod tests {
 
     fn program(entry: Vec<Node>) -> Program {
         Program::wrapped(vec![buf()], [1, 1, 1], entry)
+    }
+
+    fn program_with_buffers(buffers: Vec<BufferDecl>, entry: Vec<Node>) -> Program {
+        Program::wrapped(buffers, [1, 1, 1], entry)
     }
 
     fn loop_with_if(
@@ -395,6 +448,7 @@ mod tests {
 
     fn count_ifs(nodes: &[Node]) -> usize {
         let mut total = 0;
+
         for n in nodes {
             match n {
                 Node::If {
@@ -498,7 +552,7 @@ mod tests {
     }
 
     /// Negative: condition compares against another Var, not a
-    /// literal — the range fact doesn't help.
+    /// literal  -  the range fact doesn't help.
     #[test]
     fn keeps_var_lt_var() {
         let entry = loop_with_if(
@@ -536,7 +590,7 @@ mod tests {
         assert!(!result.changed);
     }
 
-    /// Negative: runtime bounds skip — the range substrate needs
+    /// Negative: runtime bounds skip  -  the range substrate needs
     /// literal `from`/`to`.
     #[test]
     fn keeps_runtime_bound_loop() {
@@ -564,7 +618,7 @@ mod tests {
         }
     }
 
-    /// Positive: nested Loop — the inner If folds against the
+    /// Positive: nested Loop  -  the inner If folds against the
     /// inner range.
     #[test]
     fn folds_inside_nested_loop() {
@@ -590,4 +644,100 @@ mod tests {
         );
         assert_eq!(count_ifs(result.program.entry()), 0);
     }
+
+    #[test]
+    fn folds_var_lt_buf_len_when_shape_min_covers_loop_hi() {
+        let buffers = vec![
+            BufferDecl::read("input", 0, DataType::U32)
+                .with_shape_predicate(ShapePredicate::AtLeast(8)),
+            BufferDecl::storage("buf", 1, BufferAccess::ReadWrite, DataType::U32).with_count(8),
+        ];
+        let entry = loop_with_if(
+            Expr::lt(Expr::var("i"), Expr::buf_len("input")),
+            vec![store("buf", Expr::var("i"), Expr::u32(1))],
+            vec![store("buf", Expr::var("i"), Expr::u32(99))],
+            0,
+            8,
+        );
+
+        let program = program_with_buffers(buffers, entry);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&LoopVarRangeFoldPass, &program),
+            PassAnalysis::RUN,
+            "shape-backed buf_len facts must make the branch visibly foldable during analysis"
+        );
+        let result = LoopVarRangeFoldPass::transform(program);
+        assert!(result.changed, "i < buf_len(input) is true when len >= 8");
+        assert_eq!(count_ifs(result.program.entry()), 0);
+    }
+
+    #[test]
+    fn keeps_var_lt_buf_len_when_shape_min_is_too_weak() {
+        let buffers = vec![
+            BufferDecl::read("input", 0, DataType::U32)
+                .with_shape_predicate(ShapePredicate::AtLeast(4)),
+            BufferDecl::storage("buf", 1, BufferAccess::ReadWrite, DataType::U32).with_count(8),
+        ];
+        let entry = loop_with_if(
+            Expr::lt(Expr::var("i"), Expr::buf_len("input")),
+            vec![store("buf", Expr::var("i"), Expr::u32(1))],
+            vec![store("buf", Expr::var("i"), Expr::u32(99))],
+            0,
+            8,
+        );
+
+        let result = LoopVarRangeFoldPass::transform(program_with_buffers(buffers, entry));
+        assert!(
+            !result.changed,
+            "len >= 4 cannot prove i < len for every i in [0,8)"
+        );
+        assert_eq!(count_ifs(result.program.entry()), 1);
+    }
+
+    #[test]
+    fn folds_var_ge_buf_len_false_when_shape_min_exceeds_loop_max() {
+        let buffers = vec![
+            BufferDecl::read("input", 0, DataType::U32)
+                .with_shape_predicate(ShapePredicate::AtLeast(9)),
+            BufferDecl::storage("buf", 1, BufferAccess::ReadWrite, DataType::U32).with_count(8),
+        ];
+        let entry = loop_with_if(
+            Expr::ge(Expr::var("i"), Expr::buf_len("input")),
+            vec![store("buf", Expr::var("i"), Expr::u32(1))],
+            vec![store("buf", Expr::var("i"), Expr::u32(2))],
+            0,
+            8,
+        );
+
+        let result = LoopVarRangeFoldPass::transform(program_with_buffers(buffers, entry));
+        assert!(
+            result.changed,
+            "i >= buf_len(input) is false when i <= 7 and len >= 9"
+        );
+        assert_eq!(count_ifs(result.program.entry()), 0);
+    }
+
+    #[test]
+    fn folds_eq_buf_len_false_when_shape_range_is_disjoint() {
+        let buffers = vec![
+            BufferDecl::read("input", 0, DataType::U32)
+                .with_shape_predicate(ShapePredicate::AtLeast(16)),
+            BufferDecl::storage("buf", 1, BufferAccess::ReadWrite, DataType::U32).with_count(8),
+        ];
+        let entry = loop_with_if(
+            Expr::eq(Expr::var("i"), Expr::buf_len("input")),
+            vec![store("buf", Expr::var("i"), Expr::u32(1))],
+            vec![store("buf", Expr::var("i"), Expr::u32(2))],
+            0,
+            8,
+        );
+
+        let result = LoopVarRangeFoldPass::transform(program_with_buffers(buffers, entry));
+        assert!(
+            result.changed,
+            "i == buf_len(input) is false when i in [0,8) and len >= 16"
+        );
+        assert_eq!(count_ifs(result.program.entry()), 0);
+    }
 }
+

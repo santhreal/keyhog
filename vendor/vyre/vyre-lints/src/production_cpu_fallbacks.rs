@@ -2,7 +2,7 @@
 //!
 //! CPU/reference execution is valid only as an explicit oracle in tests,
 //! conformance harnesses, or reference backend crates. It is forbidden in
-//! production Vyre/Vyrec/Weir dispatch paths because a hidden reference path
+//! production GPU dispatch paths because a hidden reference path
 //! can turn a GPU regression into a green release.
 
 use crate::{Violation, ViolationKind};
@@ -78,7 +78,6 @@ fn workspace_relative(path: &Path) -> String {
         "vyre-emit-spirv/",
         "vyre-foundation/",
         "vyre-frontend-c/",
-        "weir/",
         "vyre-harness/",
         "vyre-intrinsics/",
         "vyre-libs/",

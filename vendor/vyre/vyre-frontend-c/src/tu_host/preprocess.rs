@@ -27,10 +27,7 @@ use ident::{is_ident_continue, is_ident_start};
 #[cfg(feature = "cpu-oracle")]
 use macro_expand::expand_line_macros;
 #[cfg(feature = "cpu-oracle")]
-use macro_params::{
-    collapse_token_paste, macro_arg, parse_macro_args, replace_macro_params, stringify_arg,
-    variadic_arg,
-};
+use macro_params::{parse_macro_args, replace_macro_params};
 #[cfg(feature = "cpu-oracle")]
 pub use reference::reference_expand_preprocessor_macros;
 

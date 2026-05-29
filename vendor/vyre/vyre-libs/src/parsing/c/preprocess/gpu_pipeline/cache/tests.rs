@@ -62,7 +62,7 @@ fn classified_token_cache_evicts_to_byte_budget() {
                 &c_value,
             ),
         )
-        .expect("classified cache test budget must fit usize");
+        .expect("Fix: classified cache test budget must fit usize");
     let mut cache = ClassifiedTokenCache::with_limits(8, budget);
 
     cache.insert(a.clone(), a_value);
@@ -130,7 +130,7 @@ fn payload_cache_evicts_to_byte_budget() {
     let c_value = payloads(23, 96);
     let budget = directive_payloads_bytes(&a_value)
         .checked_add(directive_payloads_bytes(&c_value))
-        .expect("payload cache test budget must fit usize");
+        .expect("Fix: payload cache test budget must fit usize");
     let mut cache = PayloadCache::with_limits(8, budget);
 
     cache.insert(a.clone(), a_value);

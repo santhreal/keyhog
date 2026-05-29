@@ -10,12 +10,25 @@ pub(super) fn checked_gpu_u32(label: &str, value: usize) -> Result<u32, String> 
 // Phase 18b: gpu_tokenize_and_classify
 // =================================================================
 
-pub(super) fn unpack_u32_words_prefix(bytes: &[u8], count: usize) -> Vec<u32> {
-    bytes
-        .chunks_exact(4)
-        .take(count)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect()
+pub(super) fn unpack_u32_words_prefix(bytes: &[u8], count: usize) -> Result<Vec<u32>, String> {
+    // The wire primitive errors when bytes < count*4; the prefix variant
+    // is permissive by contract (truncates), so clamp count down before
+    // delegating.
+    let available = bytes.len() / 4;
+    let take = count.min(available);
+    let mut out = Vec::new();
+    out.try_reserve_exact(take).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {take} prefix u32 decode words: {error:?}. Fix: shard GPU preprocess decode before collecting prefix rows."
+        )
+    })?;
+    vyre_primitives::wire::unpack_u32_slice_into(bytes, take, "gpu_pipeline.prefix", &mut out)
+        .map_err(|error| {
+            format!(
+                "vyre-libs::gpu_pipeline: clamped prefix u32 unpack failed: {error}. Fix: repair GPU output table encoding before prefix decode."
+            )
+        })?;
+    Ok(out)
 }
 
 pub(super) fn unpack_u32_words_exact_into(
@@ -33,12 +46,9 @@ pub(super) fn unpack_u32_words_exact_into(
             bytes.len()
         ));
     }
-    out.clear();
-    out.reserve(count);
-    for chunk in bytes.chunks_exact(4).take(count) {
-        out.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
-    Ok(())
+    // Trailing-byte rejection above guarantees `bytes.len() == count*4`,
+    // so the wire primitive's LE bytemuck fast path applies cleanly.
+    vyre_primitives::wire::unpack_u32_slice_into(bytes, count, label, out)
 }
 
 pub(super) fn unpack_u32_words_prefix_exact(
@@ -56,42 +66,93 @@ pub(super) fn unpack_u32_words_prefix_exact(
             bytes.len()
         ));
     }
-    Ok(unpack_u32_words_prefix(bytes, prefix_count))
+    unpack_u32_words_prefix(bytes, prefix_count)
 }
 
-pub(super) fn pack_u32_words(words: &[u32], pad_len: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(pad_len * 4);
-    for w in words {
-        out.extend_from_slice(&w.to_le_bytes());
+pub(super) fn u32_word_byte_len(word_count: usize, label: &str) -> Result<usize, String> {
+    word_count.checked_mul(4).ok_or_else(|| {
+        format!(
+            "vyre-libs::gpu_pipeline: {label} word count {word_count} overflows host byte sizing. Fix: shard preprocessing before GPU staging."
+        )
+    })
+}
+
+pub(super) fn padded_u32_byte_len(byte_len: usize, label: &str) -> Result<usize, String> {
+    byte_len
+        .checked_add(3)
+        .and_then(|value| value.checked_div(4))
+        .and_then(|words| words.checked_mul(4))
+        .map(|bytes| bytes.max(4))
+        .ok_or_else(|| {
+            format!(
+                "vyre-libs::gpu_pipeline: {label} byte length {byte_len} overflows u32 padding. Fix: shard preprocessing before GPU staging."
+            )
+        })
+}
+
+pub(super) fn reserve_gpu_staging_bytes(
+    out: &mut Vec<u8>,
+    additional: usize,
+    label: &str,
+) -> Result<(), String> {
+    out.try_reserve_exact(additional).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {additional} {label} bytes: {error:?}. Fix: shard preprocessing before GPU staging."
+        )
+    })
+}
+
+pub(super) fn pack_u32_words(words: &[u32], pad_len: usize) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    pack_u32_words_into(&mut out, words, pad_len)?;
+    Ok(out)
+}
+
+pub(super) fn pack_u32_words_into(
+    out: &mut Vec<u8>,
+    words: &[u32],
+    pad_len: usize,
+) -> Result<(), String> {
+    // Route through the canonical `vyre-primitives::wire` LEGO primitive:
+    // it does the same clear/resize/copy_from_slice with one allocation,
+    // an endian-aware `bytemuck::cast_slice` fast path on LE hosts, and
+    // surfaces a structured `Result` for overflow/sizing errors. The pad
+    // contract here is "exact `pad_len` words long with input as prefix",
+    // which is exactly what `pack_u32_slice_min_words_into` provides via
+    // `min_words = max(pad_len, words.len())`. Local code panicked
+    // through `resize` when `words.len() > pad_len`, so we preserve that
+    // contract by clamping `min_words` to at least `words.len()` so the
+    // canonical primitive's overflow check is the new behavior.
+    let min_words = pad_len.max(words.len());
+    if let Ok(min_words_u32) = u32::try_from(min_words) {
+        if vyre_primitives::wire::pack_u32_slice_min_words_into(words, min_words_u32, out).is_ok() {
+            return Ok(());
+        }
     }
-    out.resize(pad_len * 4, 0);
-    out
-}
 
-pub(super) fn pack_u32_words_into(out: &mut Vec<u8>, words: &[u32], pad_len: usize) {
-    let byte_len = pad_len.saturating_mul(4);
     out.clear();
-    out.reserve(byte_len);
+    let byte_len = u32_word_byte_len(min_words, "packed u32 table")?;
+    reserve_gpu_staging_bytes(out, byte_len, "packed u32 table")?;
     for word in words {
         out.extend_from_slice(&word.to_le_bytes());
     }
     out.resize(byte_len, 0);
+    Ok(())
 }
 
-pub(super) fn pad_to_u32_words(bytes: &[u8]) -> Vec<u8> {
-    let target = bytes.len().div_ceil(4).max(1) * 4;
-    let mut out = Vec::with_capacity(target);
-    out.extend_from_slice(bytes);
-    out.resize(target, 0);
-    out
+pub(super) fn pad_to_u32_words(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    pad_to_u32_words_into(&mut out, bytes)?;
+    Ok(out)
 }
 
-pub(super) fn pad_to_u32_words_into(out: &mut Vec<u8>, bytes: &[u8]) {
-    let target = bytes.len().div_ceil(4).max(1) * 4;
+pub(super) fn pad_to_u32_words_into(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), String> {
+    let target = padded_u32_byte_len(bytes.len(), "padded byte buffer")?;
     out.clear();
-    out.reserve(target);
+    reserve_gpu_staging_bytes(out, target, "padded byte buffer")?;
     out.extend_from_slice(bytes);
     out.resize(target, 0);
+    Ok(())
 }
 
 /// Cache the runtime-sized `gpu_ifdef_value(1, 0)` Program so the
@@ -101,16 +162,7 @@ pub fn bucket_pow2(value: usize, min: usize) -> usize {
 }
 
 pub(super) fn read_u32_word(buf: &[u8], word_index: usize, label: &str) -> Result<u32, String> {
-    let offset = word_index
-        .checked_mul(4)
-        .ok_or_else(|| format!("vyre-libs::gpu_pipeline: {label} byte offset overflowed usize"))?;
-    let bytes = buf.get(offset..offset + 4).ok_or_else(|| {
-        format!(
-            "vyre-libs::gpu_pipeline: {label} missing u32 word {word_index}; buffer has {} bytes",
-            buf.len()
-        )
-    })?;
-    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    vyre_primitives::wire::read_u32_le_word(buf, word_index, label)
 }
 
 pub(super) fn read_u32_scalar_exact(buf: &[u8], label: &str) -> Result<u32, String> {
@@ -121,4 +173,118 @@ pub(super) fn read_u32_scalar_exact(buf: &[u8], label: &str) -> Result<u32, Stri
         ));
     }
     read_u32_word(buf, 0, label)
+}
+
+#[cfg(test)]
+mod generated_buffer_codec_tests {
+    use super::*;
+
+    fn generated_words(seed: u32, count: usize) -> Vec<u32> {
+        let mut state = seed ^ 0x9e37_79b9;
+        let mut out = Vec::new();
+        out.try_reserve_exact(count)
+            .expect("Fix: test fixture must pre-size buffers; increase reserve or shrink generated corpus - generated test word storage must reserve");
+        for index in 0..count {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            out.push(state.wrapping_add(index as u32));
+        }
+        out
+    }
+
+    #[test]
+    fn generated_u32_pack_prefix_decode_round_trips_4096_shapes() {
+        for seed in 0..4096u32 {
+            let word_count = (seed as usize) & 31;
+            let pad_len = ((seed as usize >> 5) & 31).saturating_sub(seed as usize & 3);
+            let words = generated_words(seed, word_count);
+            let packed =
+                pack_u32_words(&words, pad_len).expect("Fix: packing must not fail on in-bounds generated tables; shrink inputs or grow buffer - generated u32 table packing must not fail");
+            let table_words = pad_len.max(word_count);
+            assert_eq!(
+                packed.len(),
+                table_words * 4,
+                "seed {seed}: packed byte length must match padded word count"
+            );
+
+            let decoded = unpack_u32_words_prefix_exact(
+                &packed,
+                word_count,
+                table_words,
+                "generated prefix decode",
+            )
+            .expect("Fix: reject malformed packed tables in tests; regenerate fixture on mismatch - generated packed table must decode");
+            assert_eq!(decoded, words, "seed {seed}: prefix decode must round-trip");
+
+            let over_requested = unpack_u32_words_prefix(&packed, table_words + 7)
+                .expect("Fix: prefix decode must clamp to available words; reject over-large prefix requests - over-requested prefix decode must clamp to available words");
+            assert_eq!(
+                over_requested.len(),
+                table_words,
+                "seed {seed}: prefix decode must clamp to available complete u32 words"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_byte_padding_preserves_prefix_and_zero_fills_4096_lengths() {
+        for len in 0..4096usize {
+            let mut bytes = Vec::new();
+            bytes
+                .try_reserve_exact(len)
+                .expect("Fix: reserve byte scratch before fill; fail test setup if reserve too small - generated byte storage must reserve");
+            for index in 0..len {
+                bytes.push((index as u8).wrapping_mul(37).wrapping_add(len as u8));
+            }
+
+            let padded = pad_to_u32_words(&bytes).expect("Fix: padding only fails on hostile lengths; bound generated byte corpus - generated byte padding must not fail");
+            assert_eq!(
+                padded.len() % 4,
+                0,
+                "len {len}: padded buffer must be u32 aligned"
+            );
+            assert!(
+                padded.len() >= bytes.len().max(4),
+                "len {len}: padded buffer must retain source and scalar minimum"
+            );
+            assert_eq!(
+                &padded[..bytes.len()],
+                bytes.as_slice(),
+                "len {len}: padded buffer must preserve source prefix"
+            );
+            assert!(
+                padded[bytes.len()..].iter().all(|byte| *byte == 0),
+                "len {len}: padded suffix must be zero-filled"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_exact_prefix_decode_rejects_malformed_table_lengths() {
+        for seed in 0..1024u32 {
+            let word_count = 1 + ((seed as usize) & 15);
+            let words = generated_words(seed ^ 0xa5a5_5a5a, word_count);
+            let packed = pack_u32_words(&words, word_count)
+                .expect("Fix: exact packing requires aligned word counts; reject odd-length hostile inputs - generated exact table packing must not fail");
+
+            let short = &packed[..packed.len() - 1];
+            let short_err = unpack_u32_words_prefix_exact(short, word_count, word_count, "short table")
+                .expect_err("seed {seed}: short exact table must be rejected");
+            assert!(
+                short_err.contains("malformed u32 table"),
+                "short table error: {short_err}"
+            );
+
+            let mut trailing = packed;
+            trailing.push(0);
+            let trail_err =
+                unpack_u32_words_prefix_exact(&trailing, word_count, word_count, "trailing table")
+                    .expect_err("seed {seed}: trailing byte must be rejected");
+            assert!(
+                trail_err.contains("malformed u32 table"),
+                "trailing table error: {trail_err}"
+            );
+        }
+    }
 }

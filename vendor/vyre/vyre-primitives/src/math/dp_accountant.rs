@@ -1,4 +1,4 @@
-//! Differential-privacy accountant primitives — Rényi DP composition
+//! Differential-privacy accountant primitives  -  Rényi DP composition
 //! across Gaussian-mechanism steps with closed-form `(ε, δ)` conversion.
 //!
 //! # Lego-rule note
@@ -6,7 +6,7 @@
 //! Most of the DP accountant pipeline composes from primitives that
 //! already exist:
 //!   - **per-step RDP cost** at order α for a Gaussian mechanism with
-//!     noise σ is `α / (2σ²)` — that's this file's primitive,
+//!     noise σ is `α / (2σ²)`  -  that's this file's primitive,
 //!   - **composition over T steps** is `reduce::sum` over the per-step
 //!     RDP buffer (no new op needed),
 //!   - **convert RDP(α) to (ε, δ)** is `eps = rdp + ln(1/δ) / (α - 1)`,
@@ -20,19 +20,16 @@
 //! |---|---|
 //! | future `vyre-libs::privacy::dp_sgd` | per-step accounting in DP-SGD trainers (#42) |
 //! | future `vyre-libs::observability::dp_telemetry` | release aggregate dispatch / cache statistics with formal privacy guarantees |
-//! | `vyre-driver` DP telemetry release | applies RDP composition before exposing per-Program latency aggregates so the telemetry layer cannot leak individual user code patterns — same Program serves user DP-SGD trainers AND vyre-self telemetry hardening |
+//! | `vyre-driver` DP telemetry release | applies RDP composition before exposing per-Program latency aggregates so the telemetry layer cannot leak individual user code patterns  -  same Program serves user DP-SGD trainers AND vyre-self telemetry hardening |
 //!
 //! # Fixed-point convention
 //!
 //! All buffers are u32 in caller-supplied 16.16 fixed-point.
 //! `sigma_squared[i]` must be the scaled value of σ² (NOT σ). The
-//! formula assumes that doubling pre-scales α to 2α — i.e. the caller
+//! formula assumes that doubling pre-scales α to 2α  -  i.e. the caller
 //! provides `alpha[i]` already scaled, the divide is fixed-point.
 
-use std::sync::Arc;
-
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{DataType, Expr, Program};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::math::gaussian_rdp_step";
@@ -55,29 +52,15 @@ pub fn gaussian_rdp_step(alpha: &str, sigma_squared: &str, out: &str, count: u32
         );
     }
 
-    let t = Expr::InvocationId { axis: 0 };
-    // out = alpha / (2 * sigma_squared)
-    let denom = Expr::mul(Expr::u32(2), Expr::load(sigma_squared, t.clone()));
-    let value = Expr::div(Expr::load(alpha, t.clone()), denom);
-
-    let body = vec![Node::if_then(
-        Expr::lt(t.clone(), Expr::u32(count)),
-        vec![Node::store(out, t, value)],
-    )];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(alpha, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(sigma_squared, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(count),
-            BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(count),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
+    crate::math::u32_binary_map::u32_binary_map_program(
+        OP_ID,
+        alpha,
+        sigma_squared,
+        out,
+        count,
+        |alpha_value, sigma_squared_value| {
+            Expr::div(alpha_value, Expr::mul(Expr::u32(2), sigma_squared_value))
+        },
     )
 }
 
@@ -86,11 +69,41 @@ pub fn gaussian_rdp_step(alpha: &str, sigma_squared: &str, out: &str, count: u32
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn gaussian_rdp_step_cpu(alpha: &[f64], sigma_squared: &[f64]) -> Vec<f64> {
+    let mut out = Vec::new();
+    try_gaussian_rdp_step_cpu_into(alpha, sigma_squared, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
+    out
+}
+
+/// CPU reference using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn gaussian_rdp_step_cpu_into(alpha: &[f64], sigma_squared: &[f64], out: &mut Vec<f64>) {
+    try_gaussian_rdp_step_cpu_into(alpha, sigma_squared, out)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_gaussian_rdp_step_cpu_into(
+    alpha: &[f64],
+    sigma_squared: &[f64],
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    let n = alpha.len().min(sigma_squared.len());
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "DP accountant CPU oracle",
+            "gaussian_rdp_step output",
+        )?;
+    }
+    out.clear();
     alpha
         .iter()
         .zip(sigma_squared.iter())
-        .map(|(&a, &s2)| a / (2.0 * s2))
-        .collect()
+        .for_each(|(&a, &s2)| out.push(a / (2.0 * s2)));
+    Ok(())
 }
 
 /// Convert RDP(α) to (ε, δ)-DP via Mironov's standard inequality:
@@ -111,8 +124,16 @@ inventory::submit! {
         || {
             gaussian_rdp_step("alpha", "sigma_sq", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[8, 12, 16, 20]),
+                crate::wire::pack_u32_slice(&[2, 3, 4, 5]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[2; 4])]]
+        }),
     )
 }
 
@@ -162,6 +183,61 @@ mod tests {
         let r = gaussian_rdp_step_cpu(&[2.0, 4.0], &[1.0]);
         assert_eq!(r.len(), 1);
         assert!(approx_eq(r[0], 1.0));
+    }
+
+    #[test]
+    fn cpu_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let ptr = out.as_ptr();
+        let capacity = out.capacity();
+
+        try_gaussian_rdp_step_cpu_into(&[2.0, 4.0], &[1.0, 2.0], &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - DP accountant CPU oracle should reuse caller-owned output");
+
+        assert_eq!(out.len(), 2);
+        assert!(approx_eq(out[0], 1.0));
+        assert!(approx_eq(out[1], 1.0));
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        try_gaussian_rdp_step_cpu_into(&[2.0], &[1.0], &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - DP accountant CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![1.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_cpu_matches_scalar_reference() {
+        let mut out = Vec::new();
+        for case in 0..2048usize {
+            let alpha_len = case % 97;
+            let sigma_len = (case * 7) % 97;
+            let alpha: Vec<f64> = (0..alpha_len)
+                .map(|idx| ((idx * 13 + case) % 31) as f64 / 3.0)
+                .collect();
+            let sigma_squared: Vec<f64> = (0..sigma_len)
+                .map(|idx| ((idx * 17 + case) % 29) as f64 / 5.0)
+                .collect();
+
+            try_gaussian_rdp_step_cpu_into(&alpha, &sigma_squared, &mut out)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated DP accountant CPU oracle should evaluate");
+
+            let n = alpha_len.min(sigma_len);
+            assert_eq!(out.len(), n, "case {case}: output length");
+            for idx in 0..n {
+                let expected = alpha[idx] / (2.0 * sigma_squared[idx]);
+                if expected.is_infinite() {
+                    assert_eq!(out[idx], expected, "case {case} idx {idx}: infinity");
+                } else if expected.is_nan() {
+                    assert!(out[idx].is_nan(), "case {case} idx {idx}: NaN");
+                } else {
+                    assert!(approx_eq(out[idx], expected), "case {case} idx {idx}");
+                }
+            }
+        }
     }
 
     #[test]

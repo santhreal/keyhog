@@ -1,4 +1,4 @@
-//! `rematerialize_cheap_let` — inline `Let` bindings whose value is a
+//! `rematerialize_cheap_let`  -  inline `Let` bindings whose value is a
 //! trivially cheap leaf expression, then drop the binding.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::rematerialize_cheap_let`.
@@ -8,7 +8,7 @@
 //! value as a single materialization, and the IR's defined order keeps
 //! every observable side effect intact because none of these
 //! expressions has one. Cost-direction: monotone-down on
-//! `register_pressure_estimate` — each successful rewrite removes one
+//! `register_pressure_estimate`  -  each successful rewrite removes one
 //! named live binding; the substituted cheap expressions occupy the
 //! same register lifetime they would have occupied as a `Var(name)`
 //! load. Preserves: ABI and observable value semantics. Invalidates:
@@ -32,7 +32,7 @@
 //! compound expression recomputes work at every reference site, which
 //! is the opposite of register-pressure reduction. The leaf set above
 //! is the strict subset where one register holding a name and one
-//! register holding the same value cost the same — so dropping the
+//! register holding the same value cost the same  -  so dropping the
 //! name pays one fewer name without paying any extra arithmetic.
 //!
 //! ## Safety against rebinding
@@ -46,7 +46,7 @@
 //!
 //! ## ROADMAP
 //!
-//! A14 — live-range and register-pressure model with rematerialization.
+//! A14  -  live-range and register-pressure model with rematerialization.
 //! `register_pressure_estimate` already exists at the
 //! `ProgramStats`/`OptimizationCost` layer; this pass is the
 //! rewrite-side companion that drops the easiest contributors to that
@@ -125,7 +125,7 @@ fn rewrite_sequence(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 substitute_var_in_node(node, &name, &value);
             }
             *changed = true;
-            // Do not advance — the next index is the node previously at
+            // Do not advance  -  the next index is the node previously at
             // i+1, which may itself be a candidate.
         } else {
             i += 1;
@@ -238,6 +238,10 @@ fn substitute_var_in_node(node: &mut Node, name: &str, value: &Expr) {
         Node::Return
         | Node::Barrier { .. }
         | Node::IndirectDispatch { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncWait { .. }
         | Node::Resume { .. }
         | Node::Opaque(_) => {}
@@ -358,6 +362,10 @@ fn node_reassigns(node: &Node, name: &str) -> bool {
         | Node::IndirectDispatch { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncStore { .. }
+        | Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. }
         | Node::AsyncWait { .. }
         | Node::Trap { .. }
         | Node::Resume { .. }
@@ -440,6 +448,7 @@ mod tests {
         None
     }
 
+
     /// Positive: `let z = 0u; store(buf, 0, z)` rematerializes to
     /// `store(buf, 0, 0u)`.
     #[test]
@@ -450,7 +459,7 @@ mod tests {
         ];
         let result = RematerializeCheapLetPass::transform(program(entry));
         assert!(result.changed, "single-use literal Let must inline");
-        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let siblings = find_user_siblings(result.program.entry()).expect("Fix: user body present");
         assert_eq!(siblings.len(), 1, "Let dropped, only Store remains");
         match &siblings[0] {
             Node::Store { value, .. } => {
@@ -477,7 +486,7 @@ mod tests {
             result.changed,
             "literal Let must inline regardless of use count"
         );
-        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let siblings = find_user_siblings(result.program.entry()).expect("Fix: user body present");
         assert_eq!(siblings.len(), 3, "Let dropped, three Stores remain");
         for n in siblings {
             match n {
@@ -487,7 +496,7 @@ mod tests {
         }
     }
 
-    /// Positive: `Let(z, InvocationId(0))` inlines as well — the
+    /// Positive: `Let(z, InvocationId(0))` inlines as well  -  the
     /// builtin reads the same register at every site.
     #[test]
     fn inlines_invocation_id() {
@@ -497,7 +506,7 @@ mod tests {
         ];
         let result = RematerializeCheapLetPass::transform(program(entry));
         assert!(result.changed, "InvocationId Let must inline");
-        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let siblings = find_user_siblings(result.program.entry()).expect("Fix: user body present");
         assert_eq!(siblings.len(), 1, "Let dropped");
         match &siblings[0] {
             Node::Store { index, .. } => {
@@ -507,7 +516,7 @@ mod tests {
         }
     }
 
-    /// Negative: a `Let` whose value is a `Load` must not inline —
+    /// Negative: a `Let` whose value is a `Load` must not inline  -
     /// recomputing the load at every use site re-reads memory and
     /// increases work, the opposite of the intent of this pass.
     #[test]
@@ -527,7 +536,7 @@ mod tests {
         assert!(!result.changed, "Load value must not inline");
     }
 
-    /// Negative: a `Let` whose value is a `BinOp` must not inline —
+    /// Negative: a `Let` whose value is a `BinOp` must not inline  -
     /// the recomputation is not free.
     #[test]
     fn keeps_binop_let() {
@@ -547,7 +556,7 @@ mod tests {
     }
 
     /// Negative: a `Let` followed by an `Assign` to the same name must
-    /// not inline — the original value is no longer in effect after
+    /// not inline  -  the original value is no longer in effect after
     /// the reassignment, and inlining would substitute the original
     /// value at sites that should see the reassigned one.
     #[test]
@@ -586,7 +595,7 @@ mod tests {
         ];
 
         let result = RematerializeCheapLetPass::transform(program(entry));
-        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let siblings = find_user_siblings(result.program.entry()).expect("Fix: user body present");
 
         assert!(
             siblings.iter().any(|node| matches!(
@@ -617,7 +626,7 @@ mod tests {
         }];
 
         let result = RematerializeCheapLetPass::transform(program(entry));
-        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let siblings = find_user_siblings(result.program.entry()).expect("Fix: user body present");
         let Node::If { then, .. } = &siblings[0] else {
             panic!("expected If");
         };
@@ -633,7 +642,7 @@ mod tests {
     }
 
     /// Negative: a `Let` whose name is used as a loop induction
-    /// variable in a descendant scope must not inline — the loop
+    /// variable in a descendant scope must not inline  -  the loop
     /// `var` rebinds the name on each iteration, and inlining the
     /// original value would lose loop-correlated semantics.
     #[test]
@@ -655,7 +664,7 @@ mod tests {
     }
 
     /// Positive: a `Let` whose use sits inside a nested If still
-    /// inlines — substitution recurses through all descendant scopes.
+    /// inlines  -  substitution recurses through all descendant scopes.
     #[test]
     fn inlines_into_nested_if() {
         let entry = vec![
@@ -668,7 +677,7 @@ mod tests {
         ];
         let result = RematerializeCheapLetPass::transform(program(entry));
         assert!(result.changed, "nested-If use must be inlined");
-        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let siblings = find_user_siblings(result.program.entry()).expect("Fix: user body present");
         match &siblings[0] {
             Node::If {
                 then, otherwise, ..
@@ -700,3 +709,4 @@ mod tests {
         }
     }
 }
+

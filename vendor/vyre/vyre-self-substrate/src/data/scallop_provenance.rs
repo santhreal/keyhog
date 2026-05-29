@@ -1,6 +1,6 @@
 //! GPU-resident rule-provenance tracking via #39 scallop_join (#39 substrate).
 //!
-//! Closes the recursion thesis for #39 — `vyre-primitives::math::scallop_join`
+//! Closes the recursion thesis for #39  -  `vyre-primitives::math::scallop_join`
 //! ships a Datalog-fixpoint primitive for user-dialect probabilistic logic,
 //! AND simultaneously powers vyre's own provenance bookkeeping.
 //!
@@ -11,7 +11,7 @@
 //! sub-tree of Regions, dropping or merging the `source_region`
 //! annotation on the way. The host-side `Region::source_region` field
 //! preserves direct authorship, but does NOT close the transitive
-//! relation — given a final fused Region, "which input rules
+//! relation  -  given a final fused Region, "which input rules
 //! ultimately contributed clauses to it?" is a Datalog query, not a
 //! single field lookup.
 //!
@@ -190,7 +190,7 @@ pub fn lineage_for_output_into(closure: &[u32], n: u32, out: u32, row: &mut Vec<
 ///
 /// The GPU path runs the entire fixpoint as one dispatch (the
 /// `scallop_join` primitive iterates internally to fixpoint), so
-/// unlike the BFS-style closures this is a single dispatch — no host
+/// unlike the BFS-style closures this is a single dispatch  -  no host
 /// loop required.
 ///
 /// # Errors
@@ -437,7 +437,7 @@ mod tests {
         let mut closure = Vec::with_capacity(8);
         let ptr = closure.as_ptr();
         provenance_closure_via_into(&dispatcher, &state, &join_rules, 2, 16, &mut closure)
-            .expect("dispatch succeeds");
+            .expect("Fix: dispatch succeeds");
         assert_eq!(closure, expected);
         assert_eq!(closure.as_ptr(), ptr);
     }
@@ -448,6 +448,7 @@ mod tests {
         let dispatcher = ProvenanceDispatcher {
             outputs: vec![u32_slice_to_le_bytes(&expected)],
         };
+
         let state = vec![0u32; 4];
         let join_rules = vec![0u32; 4];
         let mut scratch = ScallopProvenanceGpuScratch::default();
@@ -462,7 +463,7 @@ mod tests {
             &mut scratch,
             &mut closure,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let closure_capacity = closure.capacity();
@@ -476,7 +477,7 @@ mod tests {
             &mut scratch,
             &mut closure,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
@@ -498,7 +499,7 @@ mod tests {
         let state = vec![0u32; 4];
         let join_rules = vec![0u32; 4];
         let closure = provenance_closure_via(&dispatcher, &state, &join_rules, 2, 16)
-            .expect("scratch outputs must not mask the state output");
+            .expect("Fix: scratch outputs must not mask the state output");
         assert_eq!(closure, vec![1, 2, 3, 4]);
     }
 
@@ -559,10 +560,10 @@ mod tests {
         let gpu_region = source
             .split("pub fn provenance_closure_via(")
             .nth(1)
-            .expect("release provenance function must exist")
+            .expect("Fix: release provenance function must exist")
             .split("#[cfg(test)]")
             .next()
-            .expect("tests follow release provenance functions");
+            .expect("Fix: tests follow release provenance functions");
         assert!(
             !gpu_region.contains("cpu_ref") && !gpu_region.contains("reference_provenance"),
             "release provenance path must stay GPU-dispatch-only; host references belong behind cfg(test)"
@@ -574,3 +575,4 @@ mod tests {
         );
     }
 }
+

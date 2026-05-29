@@ -1,4 +1,4 @@
-//! Cat-C `fma_f32` — fused multiply-add per f32 lane.
+//! Cat-C `fma_f32`  -  fused multiply-add per f32 lane.
 //! CPU reference: `f32::mul_add` BYTE-IDENTICAL (never multiply-then-add).
 //!
 //! Round-mode guarantee: this op promises IEEE-754 single-round fused
@@ -18,7 +18,7 @@ use crate::hardware::{pack_f32, ternary_f32_program};
 ///
 /// This op requires the backend to advertise the `FMA` capability.  If the
 /// backend reports `FMA` as absent, lowering **must** emit a clear
-/// `BackendError::Unsupported` — it must
+/// `BackendError::Unsupported`  -  it must
 /// **never** silently fall back to `a * b + c`, because IEEE-754 multiply-then-add
 /// double-rounds and produces a different result from single-round fused
 /// multiply-add.  Callers that want the weaker `a * b + c` contract must build
@@ -65,6 +65,12 @@ inventory::submit! {
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
         category: Some("hardware"),
+        shape: Some(crate::harness::OpShape::new(
+            3,
+            1,
+            4,
+            crate::harness::HardwareSemantic::FmaF32,
+        )),
     }
 }
 

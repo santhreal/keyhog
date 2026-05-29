@@ -21,7 +21,7 @@ pub enum MemoryOrdering {
     /// only synchronizes within a workgroup. `GridSync` is required
     /// when a fused kernel has an arm with divergent stores
     /// (e.g. `if invocation_id == K { store ... }`) followed by an arm
-    /// that reads what was stored — without grid-level sync, threads
+    /// that reads what was stored  -  without grid-level sync, threads
     /// in non-K blocks observe stale state. Backends that lack a
     /// native grid barrier (workgroup-only fences, no cooperative
     /// launch) must lower this to a kernel-split: emit two separate

@@ -1,4 +1,4 @@
-//! Layer normalization — `y_i = (x_i - mean(x)) / sqrt(var(x) + eps)`.
+//! Layer normalization  -  `y_i = (x_i - mean(x)) / sqrt(var(x) + eps)`.
 //!
 //! Category-A composition with a workgroup-tiled reduction. The public
 //! [`layer_norm`] path computes sum and sum-of-squares in one tiled pass,
@@ -6,9 +6,9 @@
 //!
 //! ## API surface
 //!
-//! - [`LayerNorm`] — typed builder with [`TensorRef`]-accepting
+//! - [`LayerNorm`]  -  typed builder with [`TensorRef`]-accepting
 //!   inputs and contract checks at [`LayerNorm::build`] time.
-//! - [`layer_norm`] — back-compat free function.
+//! - [`layer_norm`]  -  back-compat free function.
 //!
 //! Both paths emit byte-identical IR.
 
@@ -44,27 +44,6 @@ impl LayerNorm {
             eps,
             options: BuildOptions::default(),
         }
-    }
-
-    /// Override workgroup size.
-    #[must_use]
-    pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
-        self.options = self.options.with_workgroup_size(size);
-        self
-    }
-
-    /// Override region generator name.
-    #[must_use]
-    pub fn with_region_generator(mut self, name: &'static str) -> Self {
-        self.options = self.options.with_region_generator(name);
-        self
-    }
-
-    /// Stamp the region metadata with a tenant id.
-    #[must_use]
-    pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
-        self.options = self.options.with_tenant_id(tenant_id);
-        self
     }
 
     /// Validate + materialize the Program.
@@ -118,7 +97,8 @@ impl LayerNorm {
             .options
             .workgroup_size
             .unwrap_or([LAYER_NORM_TILE, 1, 1]);
-        let tile = workgroup[0].max(1);
+        let tile = workgroup[0].max(1).min(n);
+        let workgroup = [tile, workgroup[1], workgroup[2]];
         let chunks = n.div_ceil(tile);
         let input_name = self.input.name_str();
         let output_name = self.output.name_str();
@@ -136,6 +116,8 @@ impl LayerNorm {
         ))
     }
 }
+
+crate::builder::impl_cat_a_builder_options!(LayerNorm);
 
 fn layer_norm_tiled_program(
     input: &str,
@@ -402,7 +384,7 @@ inventory::submit! {
         test_inputs: Some(|| {
             let input = [2.0f32, 2.0, 2.0, 2.0];
             vec![vec![
-                input.iter().flat_map(|value| value.to_le_bytes()).collect(),
+                vyre_primitives::wire::pack_f32_slice(&input),
             ]]
         }),
         expected_output: Some(|| vec![
@@ -417,21 +399,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn builder_rejects_dtype_mismatch() {
@@ -471,6 +441,27 @@ mod tests {
             free.to_wire().unwrap(),
             built.to_wire().unwrap(),
             "free `layer_norm` and builder `LayerNorm::build` must be byte-identical"
+        );
+    }
+
+    #[test]
+    fn layer_norm_small_tensor_clamps_reduction_tile_to_live_lanes() {
+        let program = layer_norm("input", "output", 4, 1e-5);
+        assert_eq!(
+
+            program.workgroup_size(),
+            [4, 1, 1],
+            "Fix: layer_norm must not emit a 256-lane scratch reduction for a 4-element tensor; CUDA may not initialize dead lanes before reduction."
+        );
+        let scratch = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "ln_sum_scratch")
+            .expect("Fix: layer_norm must keep its sum scratch buffer.");
+        assert_eq!(
+            scratch.count(),
+            4,
+            "Fix: layer_norm scratch size must track the clamped live-lane tile."
         );
     }
 
@@ -574,14 +565,27 @@ mod tests {
     #[test]
     fn layer_norm_empty_tensor_traps() {
         // n=0 is rejected by the builder.
+        let err = LayerNorm::new(
+            TensorRef::f32_1d("input", 0),
+            TensorRef::f32_1d("output", 0),
+            1e-5,
+        )
+        .build()
+        .expect_err("layer_norm n=0 must be rejected at build time");
+        assert!(
+            matches!(err, TensorRefError::ShapeMismatch { .. }),
+            "layer_norm n=0 shape error: {err:?}"
+        );
         let program = layer_norm("input", "output", 0, 1e-5);
-        let result = vyre_reference::reference_eval(
+        let eval_err = vyre_reference::reference_eval(
             &program,
             &[Value::from(vec![0u8; 4]), Value::from(vec![0u8; 4])],
-        );
+        )
+        .expect_err("layer_norm n=0 must trap instead of producing output");
+        let msg = eval_err.to_string();
         assert!(
-            result.is_err(),
-            "layer_norm n=0 must trap instead of producing output"
+            msg.contains("trap") || msg.contains("Fix:"),
+            "layer_norm n=0 eval error: {msg}"
         );
     }
 
@@ -606,3 +610,4 @@ mod tests {
         }
     }
 }
+

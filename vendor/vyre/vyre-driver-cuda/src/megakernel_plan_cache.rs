@@ -11,6 +11,8 @@ use std::collections::BinaryHeap;
 
 use rustc_hash::FxHashMap;
 
+use crate::backend::ordering::sort_unstable_by_key_if_needed;
+use crate::backend::staging_reserve::reserve_vec;
 use crate::device::CudaDeviceCaps;
 use crate::megakernel_scheduler::{
     plan_cuda_megakernel_memory_budget, select_cuda_megakernel_topology,
@@ -118,6 +120,21 @@ impl CudaMegakernelPlanCacheKey {
             fusion_pressure_bucket: fusion_bucket(fusion_pressure),
         }
     }
+
+    fn identity(self) -> CudaMegakernelPlanIdentityKey {
+        CudaMegakernelPlanIdentityKey {
+            graph_layout_hash: self.graph_layout_hash,
+            analysis_kind: self.analysis_kind,
+            device: self.device,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct CudaMegakernelPlanIdentityKey {
+    graph_layout_hash: u64,
+    analysis_kind: CudaMegakernelAnalysisKind,
+    device: CudaMegakernelDeviceKey,
 }
 
 /// Cached CUDA megakernel plan.
@@ -152,6 +169,7 @@ struct CudaMegakernelPlanCacheEntry {
 #[derive(Debug)]
 pub struct CudaMegakernelPlanCache {
     entries: FxHashMap<CudaMegakernelPlanCacheKey, CudaMegakernelPlanCacheEntry>,
+    latest_by_identity: FxHashMap<CudaMegakernelPlanIdentityKey, (u64, CudaMegakernelTopology)>,
     eviction_queue: BinaryHeap<Reverse<(u64, CudaMegakernelPlanCacheKey)>>,
     max_entries: usize,
     serial: u64,
@@ -161,15 +179,11 @@ pub struct CudaMegakernelPlanCache {
 }
 
 fn increment_plan_cache_counter(counter: &mut u64, field: &'static str) {
-    match counter.checked_add(1) {
-        Some(next) => *counter = next,
-        None => {
-            tracing::error!(
-                "CUDA megakernel {field} overflowed u64; pinning counter at u64::MAX. Fix: scrape metrics more frequently or shard the cache."
-            );
-            *counter = u64::MAX;
-        }
-    }
+    vyre_driver::accounting::pinning_increment_u64(counter, || {
+        tracing::error!(
+            "CUDA megakernel {field} overflowed u64; pinning counter at u64::MAX. Fix: scrape metrics more frequently or shard the cache."
+        );
+    });
 }
 
 impl Default for CudaMegakernelPlanCache {
@@ -190,6 +204,7 @@ impl CudaMegakernelPlanCache {
     pub fn with_max_entries(max_entries: usize) -> Self {
         Self {
             entries: FxHashMap::default(),
+            latest_by_identity: FxHashMap::default(),
             eviction_queue: BinaryHeap::new(),
             max_entries,
             serial: 0,
@@ -209,8 +224,10 @@ impl CudaMegakernelPlanCache {
         if let Some(entry) = self.entries.get_mut(&key) {
             increment_plan_cache_counter(&mut self.hits, "megakernel plan-cache hit counter");
             entry.last_seen = serial;
+            let plan = entry.plan;
             self.eviction_queue.push(Reverse((serial, key)));
-            return Ok(entry.plan);
+            self.update_latest_identity(key.identity(), serial, plan.topology);
+            return Ok(plan);
         }
         increment_plan_cache_counter(&mut self.misses, "megakernel plan-cache miss counter");
         if self.max_entries == 0 {
@@ -234,6 +251,7 @@ impl CudaMegakernelPlanCache {
             },
         );
         self.eviction_queue.push(Reverse((serial, key)));
+        self.update_latest_identity(key.identity(), serial, plan.topology);
         Ok(plan)
     }
 
@@ -392,6 +410,7 @@ impl CudaMegakernelPlanCache {
     /// Drop every cached plan and preserve counters for observability.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.latest_by_identity.clear();
         self.eviction_queue.clear();
     }
 
@@ -401,15 +420,41 @@ impl CudaMegakernelPlanCache {
         analysis_kind: CudaMegakernelAnalysisKind,
         device: CudaMegakernelDeviceKey,
     ) -> Option<CudaMegakernelTopology> {
-        self.entries
-            .iter()
-            .filter(|(key, _)| {
-                key.graph_layout_hash == graph_layout_hash
-                    && key.analysis_kind == analysis_kind
-                    && key.device == device
+        self.latest_by_identity
+            .get(&CudaMegakernelPlanIdentityKey {
+                graph_layout_hash,
+                analysis_kind,
+                device,
             })
+            .map(|(_, topology)| *topology)
+    }
+
+    fn update_latest_identity(
+        &mut self,
+        identity: CudaMegakernelPlanIdentityKey,
+        serial: u64,
+        topology: CudaMegakernelTopology,
+    ) {
+        match self.latest_by_identity.get(&identity) {
+            Some((latest_serial, _)) if *latest_serial > serial => {}
+            _ => {
+                self.latest_by_identity.insert(identity, (serial, topology));
+            }
+        }
+    }
+
+    fn recompute_latest_identity(&mut self, identity: CudaMegakernelPlanIdentityKey) {
+        let latest = self
+            .entries
+            .iter()
+            .filter(|(key, _)| key.identity() == identity)
             .max_by_key(|(_, entry)| entry.last_seen)
-            .map(|(_, entry)| entry.plan.topology)
+            .map(|(_, entry)| (entry.last_seen, entry.plan.topology));
+        if let Some(latest) = latest {
+            self.latest_by_identity.insert(identity, latest);
+        } else {
+            self.latest_by_identity.remove(&identity);
+        }
     }
 
     fn evict_until_below_limit(&mut self) -> Result<(), CudaMegakernelMemoryError> {
@@ -423,7 +468,16 @@ impl CudaMegakernelPlanCache {
             if entry.last_seen != last_seen {
                 continue;
             }
+            let identity = lru_key.identity();
+            let evicted_topology = entry.plan.topology;
             self.entries.remove(&lru_key);
+            if matches!(
+                self.latest_by_identity.get(&identity),
+                Some((latest_seen, latest_topology))
+                    if *latest_seen == last_seen && *latest_topology == evicted_topology
+            ) {
+                self.recompute_latest_identity(identity);
+            }
             increment_plan_cache_counter(
                 &mut self.evictions,
                 "megakernel plan-cache eviction counter",
@@ -449,16 +503,20 @@ impl CudaMegakernelPlanCache {
 
     fn rebase_lru_serials(&mut self) -> Result<(), CudaMegakernelMemoryError> {
         let mut ordered = Vec::new();
-        ordered.try_reserve_exact(self.entries.len()).map_err(|_| {
-            CudaMegakernelMemoryError::ByteCountOverflow {
-                field: "megakernel plan-cache LRU rebase scratch",
-            }
+        reserve_vec(
+            &mut ordered,
+            self.entries.len(),
+            "megakernel plan-cache LRU rebase scratch",
+        )
+        .map_err(|_| CudaMegakernelMemoryError::ByteCountOverflow {
+            field: "megakernel plan-cache LRU rebase scratch",
         })?;
         for (key, entry) in &self.entries {
             ordered.push((entry.last_seen, *key));
         }
-        ordered.sort_unstable_by_key(|(last_seen, key)| (*last_seen, *key));
+        sort_unstable_by_key_if_needed(&mut ordered, |(last_seen, key)| (*last_seen, *key));
         self.eviction_queue.clear();
+        self.latest_by_identity.clear();
         let mut serial = 0_u64;
         for (_, key) in ordered {
             serial = serial
@@ -466,15 +524,22 @@ impl CudaMegakernelPlanCache {
                 .ok_or(CudaMegakernelMemoryError::ByteCountOverflow {
                     field: "megakernel plan-cache LRU rebase serial",
                 })?;
-            if let Some(entry) = self.entries.get_mut(&key) {
+            let topology = if let Some(entry) = self.entries.get_mut(&key) {
                 entry.last_seen = serial;
+                Some(entry.plan.topology)
+            } else {
+                None
+            };
+            if let Some(topology) = topology {
                 self.eviction_queue.push(Reverse((serial, key)));
+                self.update_latest_identity(key.identity(), serial, topology);
             }
         }
         self.serial = serial;
         Ok(())
     }
 }
+
 
 fn density_bucket(frontier_density: f64) -> u16 {
     if !frontier_density.is_finite() {
@@ -492,28 +557,22 @@ fn pressure_bucket(memory_pressure_bps: u32) -> u32 {
 }
 
 fn pressure_bps(numerator: u64, denominator: u64) -> u32 {
-    if denominator == 0 {
-        return if numerator == 0 { 0 } else { u32::MAX };
-    }
-    let value = (u128::from(numerator) * 10_000) / u128::from(denominator);
-    if value > u128::from(u32::MAX) {
-        tracing::error!(
-            "CUDA megakernel pressure basis-points value exceeded u32. Fix: shard or normalize the telemetry domain before cache lookup."
-        );
-        return u32::MAX;
-    }
-    value as u32
+    crate::numeric::CUDA_NUMERIC.ratio_basis_points_u64(
+        numerator,
+        denominator,
+        if numerator == 0 { 0 } else { u32::MAX },
+        "megakernel pressure",
+    )
 }
 
 fn launch_pressure_bps(dispatch_cost_ns: f64, launch_overhead_ns: f64) -> u32 {
-    if dispatch_cost_ns <= 0.0 || !dispatch_cost_ns.is_finite() {
-        return 0;
-    }
-    if !launch_overhead_ns.is_finite() {
-        return u32::MAX;
-    }
-    let value = (launch_overhead_ns.max(0.0) / dispatch_cost_ns) * 10_000.0;
-    finite_f64_to_u32_trunc(value, "launch-pressure basis-points")
+    crate::numeric::CUDA_NUMERIC.finite_f64_ratio_basis_points_trunc(
+        launch_overhead_ns,
+        dispatch_cost_ns,
+        u32::MAX,
+        0,
+        "launch-pressure basis-points",
+    )
 }
 
 fn readback_bucket(readback_bytes: u64) -> u16 {
@@ -526,14 +585,13 @@ fn readback_bucket(readback_bytes: u64) -> u16 {
 }
 
 fn fusion_bucket(fusion_pressure: f64) -> u32 {
-    if !fusion_pressure.is_finite() {
-        return 0;
-    }
-    let value = fusion_pressure.max(0.0) * 10_000.0;
-    pressure_bucket(finite_f64_to_u32_trunc(
-        value,
-        "fusion-pressure basis-points",
-    ))
+    pressure_bucket(
+        crate::numeric::CUDA_NUMERIC.finite_f64_unit_basis_points_trunc(
+            fusion_pressure,
+            0,
+            "fusion-pressure basis-points",
+        ),
+    )
 }
 
 fn rounded_f64_to_u16_bucket(value: f64, label: &'static str) -> u16 {
@@ -551,36 +609,17 @@ fn rounded_f64_to_u16_bucket(value: f64, label: &'static str) -> u16 {
     rounded as u16
 }
 
-fn finite_f64_to_u32_trunc(value: f64, label: &'static str) -> u32 {
-    if !value.is_finite() {
-        tracing::error!(
-            "CUDA megakernel {label} value {value} is not finite. Fix: normalize pressure before cache lookup."
-        );
-        return u32::MAX;
-    }
-    if value <= 0.0 {
-        return 0;
-    }
-    if value > f64::from(u32::MAX) {
-        tracing::error!(
-            "CUDA megakernel {label} value {value} cannot fit u32. Fix: normalize pressure before cache lookup."
-        );
-        return u32::MAX;
-    }
-    value as u32
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         CudaMegakernelAnalysisKind, CudaMegakernelDeviceKey, CudaMegakernelPlanCache,
         CudaMegakernelPlanCacheKey,
     };
-    use crate::device::CudaDeviceCaps;
     use crate::megakernel_scheduler::{
         CudaMegakernelGraphShape, CudaMegakernelScheduleSample, CudaMegakernelTopology,
         CudaMegakernelTopologyDecision,
     };
+    use crate::synthetic_device_caps::blackwell_sm120_caps_default;
 
     fn device() -> CudaMegakernelDeviceKey {
         CudaMegakernelDeviceKey {
@@ -590,31 +629,6 @@ mod tests {
             supports_grid_sync: true,
             supports_tensor_cores: true,
             max_workgroup_size: 1024,
-        }
-    }
-
-    fn caps() -> CudaDeviceCaps {
-        CudaDeviceCaps {
-            name: "NVIDIA GeForce RTX 5090".to_string(),
-            ordinal: 0,
-            compute_capability: (12, 0),
-            total_memory: 32 * 1024 * 1024 * 1024,
-            max_threads_per_block: 1024,
-            max_block_dim: [1024, 1024, 64],
-            max_grid_dim: [2_147_483_647, 65_535, 65_535],
-            shared_memory_per_block: 128 * 1024,
-            shared_memory_per_sm: 256 * 1024,
-            warp_size: 32,
-            cooperative_launch: true,
-            concurrent_kernels: true,
-            async_engine_count: 2,
-            multi_processor_count: 170,
-            l2_cache_bytes: 96 * 1024 * 1024,
-            memory_clock_rate_khz: 14_000_000,
-            global_memory_bus_width_bits: 512,
-            max_registers_per_block: 65_536,
-            max_registers_per_sm: 65_536,
-            max_threads_per_sm: 2048,
         }
     }
 
@@ -666,7 +680,10 @@ mod tests {
 
     #[test]
     fn device_key_is_derived_from_cuda_caps() {
-        assert_eq!(CudaMegakernelDeviceKey::from(&caps()), device());
+        assert_eq!(
+            CudaMegakernelDeviceKey::from(&blackwell_sm120_caps_default()),
+            device()
+        );
     }
 
     #[test]
@@ -1091,25 +1108,27 @@ mod tests {
         let second = key(2, CudaMegakernelAnalysisKind::Ifds, 0.20, 1_000);
         cache
             .get_or_insert_with(first, || decision(CudaMegakernelTopology::SparseFrontier))
-            .expect("first plan insert should fit");
+            .expect("Fix: first plan insert should fit");
         cache
             .get_or_insert_with(second, || decision(CudaMegakernelTopology::DenseFrontier))
-            .expect("second plan insert should fit");
+            .expect("Fix: second plan insert should fit");
         cache.serial = u64::MAX;
 
         cache
             .get_or_insert_with(first, || decision(CudaMegakernelTopology::FusedWave))
-            .expect("LRU serial exhaustion must rebase instead of failing the CUDA dispatch path");
+            .expect(
+                "Fix: LRU serial exhaustion must rebase instead of failing the CUDA dispatch path",
+            );
 
         let first_seen = cache
             .entries
             .get(&first)
-            .expect("first entry must remain")
+            .expect("Fix: first entry must remain")
             .last_seen;
         let second_seen = cache
             .entries
             .get(&second)
-            .expect("second entry must remain")
+            .expect("Fix: second entry must remain")
             .last_seen;
         assert!(first_seen > second_seen);
         assert_eq!(cache.stats().hits, 1);
@@ -1121,12 +1140,12 @@ mod tests {
         let key = key(3, CudaMegakernelAnalysisKind::Ifds, 0.10, 1_000);
         cache
             .get_or_insert_with(key, || decision(CudaMegakernelTopology::SparseFrontier))
-            .expect("plan insert should fit");
+            .expect("Fix: plan insert should fit");
         cache.hits = u64::MAX;
 
         cache
             .get_or_insert_with(key, || decision(CudaMegakernelTopology::DenseFrontier))
-            .expect("counter exhaustion must not fail the CUDA dispatch path");
+            .expect("Fix: counter exhaustion must not fail the CUDA dispatch path");
 
         assert_eq!(cache.stats().hits, u64::MAX);
     }
@@ -1154,7 +1173,7 @@ mod tests {
         let production = src
             .split("#[cfg(test)]")
             .next()
-            .expect("megakernel plan-cache source must contain production section");
+            .expect("Fix: megakernel plan-cache source must contain production section");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".expect(")
@@ -1175,5 +1194,28 @@ mod tests {
                 && src.contains("fn advance_serial"),
             "Fix: CUDA megakernel plan-cache LRU serial must rebase on overflow, not wrap or fail hot dispatch."
         );
+        assert!(
+            production.contains("use crate::backend::ordering::sort_unstable_by_key_if_needed;")
+                && production.contains("sort_unstable_by_key_if_needed(&mut ordered"),
+            "Fix: CUDA megakernel plan-cache LRU rebase must use the shared monotonic sort fast path instead of a bespoke unconditional sort."
+        );
+        assert!(
+            !production.contains(".sort_unstable_by_key("),
+            "Fix: CUDA megakernel plan-cache production code must not reintroduce unconditional key sorting."
+        );
+        let latest_lookup = production
+            .split("fn latest_topology_for_identity")
+            .nth(1)
+            .expect("Fix: CUDA megakernel plan-cache must expose previous-topology lookup")
+            .split("fn update_latest_identity")
+            .next()
+            .expect("Fix: CUDA megakernel plan-cache lookup function must be bounded");
+        assert!(
+            latest_lookup.contains("latest_by_identity")
+                && latest_lookup.contains(".get(&CudaMegakernelPlanIdentityKey")
+                && !latest_lookup.contains(".iter()"),
+            "Fix: previous-topology lookup must use the identity index instead of scanning every cached plan on cache miss."
+        );
     }
 }
+

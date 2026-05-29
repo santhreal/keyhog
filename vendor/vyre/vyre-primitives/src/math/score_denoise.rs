@@ -1,4 +1,4 @@
-//! Score-based generative modeling — one denoise step.
+//! Score-based generative modeling  -  one denoise step.
 //!
 //! Diffusion models (Song-Ermon 2020, Ho 2020) and flow-matching
 //! (Lipman 2023) reduce to "one denoise step":
@@ -109,9 +109,51 @@ pub fn score_denoise_step_cpu(
     sigma: f64,
 ) -> Vec<f64> {
     let n = x.len().min(score.len()).min(noise.len());
-    (0..n)
-        .map(|i| alpha * x[i] + beta * score[i] + sigma * noise[i])
-        .collect()
+    let mut out = Vec::with_capacity(n);
+    score_denoise_step_cpu_into(x, score, noise, alpha, beta, sigma, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn score_denoise_step_cpu_into(
+    x: &[f64],
+    score: &[f64],
+    noise: &[f64],
+    alpha: f64,
+    beta: f64,
+    sigma: f64,
+    out: &mut Vec<f64>,
+) {
+    try_score_denoise_step_cpu_into(x, score, noise, alpha, beta, sigma, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - score_denoise_step_cpu_into failed: output allocation failed");
+}
+
+/// Fallible CPU reference into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_score_denoise_step_cpu_into(
+    x: &[f64],
+    score: &[f64],
+    noise: &[f64],
+    alpha: f64,
+    beta: f64,
+    sigma: f64,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    let n = x.len().min(score.len()).min(noise.len());
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "score-denoise CPU oracle",
+            "denoised output",
+        )?;
+    }
+    out.clear();
+    for i in 0..n {
+        out.push(alpha * x[i] + beta * score[i] + sigma * noise[i]);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -158,8 +200,49 @@ mod tests {
     }
 
     #[test]
+    fn cpu_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(8);
+        out.extend([99.0; 8]);
+        let ptr = out.as_ptr();
+
+        try_score_denoise_step_cpu_into(&[1.0, 2.0], &[3.0], &[4.0, 5.0], 1.0, 1.0, 1.0, &mut out)
+            .unwrap();
+
+        assert_eq!(out, vec![8.0]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_cpu_matches_independent_reference() {
+        for case in 0..96 {
+            let n = 1 + (case % 13);
+            let x: Vec<f64> = (0..n).map(|i| i as f64 * 0.25 - 1.0).collect();
+            let score: Vec<f64> = (0..n)
+                .map(|i| case as f64 * 0.01 - i as f64 * 0.125)
+                .collect();
+            let noise: Vec<f64> = (0..n).map(|i| (i * i + case) as f64 * 0.001).collect();
+            let alpha = 0.75 + (case % 5) as f64 * 0.01;
+            let beta = -0.25 + (case % 7) as f64 * 0.02;
+            let sigma = (case % 11) as f64 * 0.005;
+            let mut out = Vec::with_capacity(n + 3);
+
+            try_score_denoise_step_cpu_into(&x, &score, &noise, alpha, beta, sigma, &mut out)
+                .unwrap();
+
+            for i in 0..n {
+                let expected = alpha * x[i] + beta * score[i] + sigma * noise[i];
+                assert!(
+                    approx_eq(out[i], expected),
+                    "case {case} idx {i}: expected {expected}, got {}",
+                    out[i]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn cpu_iterated_steps_converge_with_decay() {
-        // Iterate alpha=0.5, beta=0, sigma=0 — pure decay.
+        // Iterate alpha=0.5, beta=0, sigma=0  -  pure decay.
         // x_n = 0.5 * x_{n-1} = (0.5)^n * x_0
         let mut x = vec![16.0];
         for _ in 0..4 {

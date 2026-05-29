@@ -1,4 +1,4 @@
-//! `branch_value_hoist` — hoist a common prefix out of a divergent
+//! `branch_value_hoist`  -  hoist a common prefix out of a divergent
 //! `Node::If`. Cross-branch GVN entry point under ROADMAP A18.
 //!
 //! Soundness: `Exact`. When both arms of an `If` begin with the same
@@ -28,7 +28,7 @@
 //!
 //! ## ROADMAP
 //!
-//! A18 — GVN across control flow. The fact-driven full-CFG GVN over
+//! A18  -  GVN across control flow. The fact-driven full-CFG GVN over
 //! arbitrary join points lands beside the downstream reaching-def pass; this
 //! row implements the structural prefix slice that is provably correct
 //! without needing the alias substrate.
@@ -132,7 +132,7 @@ fn extract_common_prefix(
     mut then: Vec<Node>,
     mut otherwise: Vec<Node>,
 ) -> (Vec<Node>, Vec<Node>, Vec<Node>) {
-    // Count the prefix length first, then drain in one pass — the
+    // Count the prefix length first, then drain in one pass  -  the
     // previous loop did Vec::remove(0) per matched Let which is O(n)
     // each (every remaining element shifts left). For an If with a
     // long body and a 5-deep common prefix that's 5 * 2 * (n - 5)
@@ -282,7 +282,7 @@ mod tests {
         let result = BranchValueHoistPass::transform(program);
         assert!(result.changed, "common Let prefix must be hoisted");
         let siblings = find_if_with_siblings(result.program.entry())
-            .expect("hoisted Let + If must live as siblings somewhere in the entry tree");
+            .expect("Fix: hoisted Let + If must live as siblings somewhere in the entry tree");
         assert_eq!(siblings.len(), 2, "prefix Let then surviving If");
         assert!(matches!(&siblings[0], Node::Let { name, .. } if name.as_str() == "x"));
         assert!(matches!(&siblings[1], Node::If { .. }));
@@ -313,7 +313,7 @@ mod tests {
         let result = BranchValueHoistPass::transform(program);
         assert!(result.changed, "two-Let prefix must be hoisted in one pass");
         let siblings = find_if_with_siblings(result.program.entry())
-            .expect("hoisted Lets + If must live as siblings somewhere in the entry tree");
+            .expect("Fix: hoisted Lets + If must live as siblings somewhere in the entry tree");
         assert_eq!(siblings.len(), 3, "two Let prefix nodes then surviving If");
         assert!(matches!(&siblings[0], Node::Let { name, .. } if name.as_str() == "x"));
         assert!(matches!(&siblings[1], Node::Let { name, .. } if name.as_str() == "y"));
@@ -346,7 +346,7 @@ mod tests {
         assert!(!result.changed, "differing values must not hoist");
     }
 
-    /// Negative: a `Let` whose value reads memory must not be hoisted —
+    /// Negative: a `Let` whose value reads memory must not be hoisted  -
     /// the `Load` would observe state that may not have been initialised
     /// on the unconditional path.
     #[test]
@@ -393,7 +393,7 @@ mod tests {
         assert!(!result.changed, "Atomic prefix must not be hoisted");
     }
 
-    /// Negative: prefix nodes must be `Let` — a leading `Store`
+    /// Negative: prefix nodes must be `Let`  -  a leading `Store`
     /// observable on both arms must not be hoisted either, because the
     /// hoist would change observed memory ordering relative to the
     /// surrounding code outside the `If`.
@@ -410,7 +410,7 @@ mod tests {
         assert!(!result.changed, "Store prefix must not be hoisted");
     }
 
-    /// Negative: only the matching prefix is extracted — non-matching
+    /// Negative: only the matching prefix is extracted  -  non-matching
     /// trailing nodes stay in their respective arms.
     #[test]
     fn extracts_only_the_common_prefix() {
@@ -427,11 +427,11 @@ mod tests {
         let result = BranchValueHoistPass::transform(program);
         assert!(result.changed, "leading common prefix must be hoisted");
         let siblings = find_if_with_siblings(result.program.entry())
-            .expect("hoisted Let + If must live as siblings somewhere in the entry tree");
+            .expect("Fix: hoisted Let + If must live as siblings somewhere in the entry tree");
         let surviving_if = siblings
             .iter()
             .find(|n| matches!(n, Node::If { .. }))
-            .expect("surviving If must remain after the hoist");
+            .expect("Fix: surviving If must remain after the hoist");
         match surviving_if {
             Node::If {
                 then, otherwise, ..

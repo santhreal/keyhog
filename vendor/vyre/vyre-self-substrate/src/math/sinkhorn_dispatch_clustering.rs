@@ -5,7 +5,7 @@
 //!
 //! # Math Frontier #2 entry
 //!
-//! "sinkhorn — dispatch-graph clustering via Sinkhorn-OT distance between
+//! "sinkhorn  -  dispatch-graph clustering via Sinkhorn-OT distance between
 //! cost-vector distributions."
 //!
 //! # Transport Problem
@@ -513,6 +513,7 @@ pub fn sinkhorn_clustering_via_with_scratch_into(
     )
 }
 
+
 fn checked_product(
     left: u32,
     right: u32,
@@ -826,7 +827,7 @@ mod tests {
             1.0,
             &mut out,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
         assert_eq!(out, vec![0, 1]);
         assert_eq!(out.as_ptr(), ptr);
     }
@@ -853,7 +854,7 @@ mod tests {
             &mut scratch,
             &mut out,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         let input_capacities = scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>();
         let out_capacity = out.capacity();
@@ -872,7 +873,7 @@ mod tests {
             &mut scratch,
             &mut out,
         )
-        .expect("dispatch succeeds");
+        .expect("Fix: dispatch succeeds");
 
         assert_eq!(
             scratch.inputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
@@ -977,3 +978,4 @@ mod tests {
         assert_eq!(scratch.assignment_ptr(), ptr);
     }
 }
+

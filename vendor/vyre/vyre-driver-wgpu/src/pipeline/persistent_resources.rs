@@ -15,6 +15,7 @@ use crate::pipeline::{BufferBindingInfo, WgpuPipeline};
 pub(crate) struct ResolvedPersistentResources {
     pub(crate) inputs: SmallVec<[crate::buffer::GpuBufferHandle; 8]>,
     pub(crate) outputs: SmallVec<[crate::buffer::GpuBufferHandle; 8]>,
+    pub(crate) output_resources: SmallVec<[vyre_driver::Resource; 8]>,
 }
 
 impl WgpuPipeline {
@@ -23,11 +24,30 @@ impl WgpuPipeline {
         resources: &[vyre_driver::Resource],
         queue: &wgpu::Queue,
     ) -> Result<ResolvedPersistentResources, BackendError> {
+        self.resolve_persistent_resources_impl(resources, queue, false)
+    }
+
+    pub(crate) fn resolve_persistent_resources_for_resource_outputs(
+        &self,
+        resources: &[vyre_driver::Resource],
+        queue: &wgpu::Queue,
+    ) -> Result<ResolvedPersistentResources, BackendError> {
+        self.resolve_persistent_resources_impl(resources, queue, true)
+    }
+
+    fn resolve_persistent_resources_impl(
+        &self,
+        resources: &[vyre_driver::Resource],
+        queue: &wgpu::Queue,
+        return_resource_outputs: bool,
+    ) -> Result<ResolvedPersistentResources, BackendError> {
         let binding_capacity = self.buffer_bindings.len();
         let mut inputs =
             SmallVec::<[crate::buffer::GpuBufferHandle; 8]>::with_capacity(binding_capacity);
         let mut outputs =
             SmallVec::<[crate::buffer::GpuBufferHandle; 8]>::with_capacity(binding_capacity);
+        let mut output_resources =
+            SmallVec::<[vyre_driver::Resource; 8]>::with_capacity(self.output_bindings.len());
         let mut resource_index = 0usize;
 
         for info in self.buffer_bindings.iter() {
@@ -47,6 +67,19 @@ impl WgpuPipeline {
             resource_index += 1;
             let handle = self.resolve_persistent_resource(info, resource, queue)?;
             if info.is_output {
+                if return_resource_outputs {
+                    match resource {
+                        vyre_driver::Resource::Resident(id) => {
+                            output_resources.push(vyre_driver::Resource::Resident(*id));
+                        }
+                        vyre_driver::Resource::Borrowed(_) => {
+                            return Err(BackendError::new(format!(
+                                "persistent resident-output dispatch cannot return borrowed output binding {} (`{}`). Fix: allocate a resident output buffer and pass Resource::Resident so the backend can skip host readback.",
+                                info.binding, info.name
+                            )));
+                        }
+                    }
+                }
                 outputs.push(handle);
             } else {
                 inputs.push(handle);
@@ -60,7 +93,11 @@ impl WgpuPipeline {
             )));
         }
 
-        Ok(ResolvedPersistentResources { inputs, outputs })
+        Ok(ResolvedPersistentResources {
+            inputs,
+            outputs,
+            output_resources,
+        })
     }
 
     fn resolve_persistent_resource(

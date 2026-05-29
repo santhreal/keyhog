@@ -10,7 +10,7 @@
 //!   `DEFAULT_MAX_EXPR_DEPTH` (1024).
 //!
 //! These are the two limits that map directly to existing arena
-//! columns (`expr_count`, `depths`, `node_count`) — no per-Node walk
+//! columns (`expr_count`, `depths`, `node_count`)  -  no per-Node walk
 //! required. The other validators (typecheck, uniformity, fusion
 //! safety, name-shadowing) need contextual data the substrate
 //! doesn't yet build into the arena and stay on the CPU side.
@@ -31,7 +31,7 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 use crate::dispatch_buffers::{decode_u32_output_exact, u32_slice_to_le_bytes};
 
-use super::dispatcher::{DispatchError, OptimizerDispatcher};
+use super::dispatcher::{DispatchError, OptimizerDispatcher, ResidentDispatchStep};
 use super::encode::{encode_program, EncodeError};
 use super::expr_arena::{encode_expr_arena, ExprArenaEncoding};
 
@@ -44,6 +44,7 @@ pub const DEFAULT_MAX_NODE_COUNT: u32 = 100_000;
 
 /// Workgroup size for the limit-validator kernel.
 const VALIDATOR_WORKGROUP_X: u32 = 256;
+const RESIDENT_CACHE_DOMAIN_VALIDATE_LIMITS_RO: u64 = 0x5659_5245_5641_4c31;
 
 /// Index of the V033 (expr-depth) violation bit in the output buffer.
 pub const VIOLATION_INDEX_V033: u32 = 0;
@@ -100,7 +101,7 @@ pub fn gpu_validate_limits_from_encoding(
     let n_exprs = arena.expr_count.max(1);
 
     let limits_program = build_validate_limits_program(n_exprs);
-    // Pad depths to at least one u32 — the program declares
+    // Pad depths to at least one u32  -  the program declares
     // `depths` with `count = max(expr_count, 1)`, so an empty arena
     // still needs a 4-byte buffer to satisfy the static byte-len
     // contract enforced by the resident dispatcher.
@@ -117,13 +118,23 @@ pub fn gpu_validate_limits_from_encoding(
     ]);
     let violations_bytes = vec![0u8; 8]; // 2 u32 slots, init zero.
 
-    let outputs = dispatcher
-        .dispatch(
+    let outputs = if dispatcher.supports_persistent() {
+        dispatch_validate_limits_resident(
+            dispatcher,
             &limits_program,
-            &[depths_bytes, limits_bytes, violations_bytes],
-            Some([1, 1, 1]),
+            &[&depths_bytes, &limits_bytes],
+            &violations_bytes,
         )
-        .map_err(ValidateError::Dispatch)?;
+        .map_err(ValidateError::Dispatch)?
+    } else {
+        dispatcher
+            .dispatch(
+                &limits_program,
+                &[depths_bytes, limits_bytes, violations_bytes],
+                Some([1, 1, 1]),
+            )
+            .map_err(ValidateError::Dispatch)?
+    };
     if outputs.len() != 1 {
         return Err(ValidateError::Dispatch(DispatchError::BackendError(
             format!(
@@ -145,14 +156,62 @@ pub fn gpu_validate_limits_from_encoding(
     Ok([v033, v019])
 }
 
+fn dispatch_validate_limits_resident(
+    dispatcher: &dyn OptimizerDispatcher,
+    program: &Program,
+    static_payloads: &[&[u8]],
+    violations_bytes: &[u8],
+) -> Result<Vec<Vec<u8>>, DispatchError> {
+    let static_set = dispatcher.acquire_resident_static_uploads(
+        RESIDENT_CACHE_DOMAIN_VALIDATE_LIMITS_RO,
+        static_payloads,
+    )?;
+    if static_set.handles.len() != static_payloads.len() {
+        return Err(DispatchError::BackendError(format!(
+            "Fix: gpu_validate_limits resident static cache returned {} handle(s) for {} immutable payload(s).",
+            static_set.handles.len(),
+            static_payloads.len()
+        )));
+    }
+    let violations_h = match dispatcher.alloc_resident_many(&[violations_bytes.len()]) {
+        Ok(handles) => handles[0],
+        Err(error) => {
+            let _ = dispatcher.release_resident_static_uploads(static_set);
+            return Err(error);
+        }
+    };
+    let fills = [(violations_h, violations_bytes.len(), 0)];
+    let handles = [static_set.handles[0], static_set.handles[1], violations_h];
+    let step = ResidentDispatchStep {
+        program,
+        handle_ids: &handles,
+        grid_override: Some([1, 1, 1]),
+    };
+    let mut outputs = Vec::with_capacity(1);
+    let result = dispatcher.fill_upload_resident_many_sequence_read_many_into(
+        &fills,
+        &[],
+        &[step],
+        &[violations_h],
+        &mut outputs,
+    );
+    let _ = dispatcher.free_resident(violations_h);
+    let release_result = dispatcher.release_resident_static_uploads(static_set);
+    match (result, release_result) {
+        (Ok(()), Ok(())) => Ok(outputs),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+    }
+}
+
 /// Build the limit-checker Program. Single workgroup [256, 1, 1].
 /// Threads cooperate on a max-reduce of `depths`; thread 0 then
 /// compares against the limits and writes the violations bitmap.
 ///
 /// Buffer layout:
-///   0: depths    (RO)  — per-Expr depth (column from `ExprArenaEncoding.depths`)
-///   1: limits    (RO)  — `[max_expr_depth, max_node_count, node_count, expr_count]`
-///   2: violations (RW) — 2 u32 slots; index 0 = V033, index 1 = V019
+///   0: depths    (RO)   -  per-Expr depth (column from `ExprArenaEncoding.depths`)
+///   1: limits    (RO)   -  `[max_expr_depth, max_node_count, node_count, expr_count]`
+///   2: violations (RW)  -  2 u32 slots; index 0 = V033, index 1 = V019
 #[must_use]
 pub fn build_validate_limits_program(expr_count: u32) -> Program {
     let buffers = vec![
@@ -333,7 +392,7 @@ mod tests {
             [1, 1, 1],
             vec![Node::store("buf", Expr::u32(0), Expr::u32(1))],
         );
-        let out = gpu_validate_limits(&program, &dispatcher).expect("dispatch succeeds");
+        let out = gpu_validate_limits(&program, &dispatcher).expect("Fix: dispatch succeeds");
         assert_eq!(out, [true, false]);
     }
 

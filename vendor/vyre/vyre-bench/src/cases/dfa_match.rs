@@ -5,7 +5,7 @@ use crate::api::case::{
 use crate::api::metric::BenchMetrics;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-/// DFA Match benchmark — full grid-strided word-aligned literal scan.
+/// DFA Match benchmark  -  full grid-strided word-aligned literal scan.
 ///
 /// Scans a 256KB text buffer for every 4-byte-aligned occurrence of `b"vyre"`.
 /// The grid is auto-inferred from the text buffer's element count (65536 u32
@@ -66,8 +66,7 @@ impl BenchCase for DfaMatch {
         // Each thread checks exactly one word via gid_x().
         let prog = Program::wrapped(
             vec![
-                BufferDecl::storage("out_matches", 0, BufferAccess::ReadWrite, DataType::U32)
-                    .with_count(1),
+                BufferDecl::output("out_matches", 0, DataType::U32).with_count(1),
                 BufferDecl::storage("text", 1, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(WORD_COUNT),
             ],
@@ -112,9 +111,7 @@ impl BenchCase for DfaMatch {
             text_bytes[offset..offset + 4].copy_from_slice(b"vyre");
         }
 
-        let out_bytes = vec![0u8; 4]; // zero-initialized match counter
-
-        let inputs = vec![out_bytes, text_bytes];
+        let inputs = vec![text_bytes];
         let timed = ctx
             .dispatch_timed(prog, &inputs, &ctx.dispatch_config)
             .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
@@ -122,10 +119,10 @@ impl BenchCase for DfaMatch {
         let dispatch_ns = timed.device_ns;
         let outputs = timed.outputs;
 
-        // CPU baseline — byte-granularity scan via memchr
+        // CPU baseline  -  byte-granularity scan via memchr
         let start_ref = std::time::Instant::now();
         let baseline_outputs = vec![crate::cases::cpu_baselines::dfa_vyre_match_count_bytes(
-            &inputs[1],
+            &inputs[0],
         )];
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
 
@@ -141,7 +138,7 @@ impl BenchCase for DfaMatch {
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(elapsed_ref),
-                input_bytes: Some(inputs[1].len() as u64),
+                input_bytes: Some(inputs[0].len() as u64),
                 output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
                 ..Default::default()
             }),

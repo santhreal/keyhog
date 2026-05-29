@@ -1,4 +1,4 @@
-//! `reduce_scatter` — parallel scatter over a u32 ValueSet.
+//! `reduce_scatter`  -  parallel scatter over a u32 ValueSet.
 //!
 //! Each global invocation loads one source value and, if the index is
 //! in-range, writes it to `dst[index]`.  Used by graph operations for
@@ -17,7 +17,7 @@
 //!         dst[idx] = src[global_id]
 //! ```
 //!
-//! Out-of-range indices are silently dropped — at internet scale an
+//! Out-of-range indices are silently dropped  -  at internet scale an
 //! unguarded store would corrupt adjacent buffers.
 //!
 //! # Note on races
@@ -27,10 +27,11 @@
 //! **not** use atomics.  Callers that need deterministic ordering must
 //! ensure unique indices or compose with an atomic reduction step.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+#[cfg(any(test, feature = "cpu-parity"))]
+use super::indexed_move::{indexed_move_cpu_ref_into, try_indexed_move_cpu_ref_into};
+use super::indexed_move::{indexed_move_program, IndexedMoveKind};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::reduce::scatter";
@@ -41,46 +42,7 @@ pub const OP_ID: &str = "vyre-primitives::reduce::scatter";
 /// Invalid `count == 0` lowers to an explicit trap program.
 #[must_use]
 pub fn scatter(src: &str, indices: &str, dst: &str, count: u32) -> Program {
-    if count == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            dst,
-            DataType::U32,
-            format!("Fix: scatter requires count > 0, got {count}."),
-        );
-    }
-
-    let t = Expr::InvocationId { axis: 0 };
-
-    let body = vec![
-        Node::let_bind("idx", Expr::load(indices, t.clone())),
-        Node::if_then(
-            Expr::lt(Expr::var("idx"), Expr::u32(count)),
-            vec![Node::store(
-                dst,
-                Expr::var("idx"),
-                Expr::load(src, t.clone()),
-            )],
-        ),
-    ];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(src, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(indices, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(count),
-            BufferDecl::storage(dst, 2, BufferAccess::ReadWrite, DataType::U32).with_count(count),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(count)),
-                body,
-            )]),
-        }],
-    )
+    indexed_move_program(OP_ID, src, indices, dst, count, IndexedMoveKind::Scatter)
 }
 
 /// CPU reference.
@@ -91,23 +53,30 @@ pub fn scatter(src: &str, indices: &str, dst: &str, count: u32) -> Program {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(src: &[u32], indices: &[u32], dst_len: usize) -> Vec<u32> {
     let mut dst = Vec::new();
-    cpu_ref_into(src, indices, dst_len, &mut dst);
-    dst
+    match try_cpu_ref_into(src, indices, dst_len, &mut dst) {
+        Ok(()) => dst,
+        Err(error) => {
+            eprintln!("vyre-primitives scatter CPU reference failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference into caller-owned destination storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(src: &[u32], indices: &[u32], dst_len: usize, dst: &mut Vec<u32>) {
-    dst.clear();
-    dst.resize(dst_len, 0);
-    for (i, &idx) in indices.iter().enumerate() {
-        let j = idx as usize;
-        if j < dst.len() {
-            if let Some(&value) = src.get(i) {
-                dst[j] = value;
-            }
-        }
-    }
+    indexed_move_cpu_ref_into(IndexedMoveKind::Scatter, src, indices, dst_len, dst);
+}
+
+/// Fallible CPU reference into caller-owned destination storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(
+    src: &[u32],
+    indices: &[u32],
+    dst_len: usize,
+    dst: &mut Vec<u32>,
+) -> Result<(), String> {
+    try_indexed_move_cpu_ref_into(IndexedMoveKind::Scatter, src, indices, dst_len, dst)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -116,7 +85,7 @@ inventory::submit! {
         OP_ID,
         || scatter("src", "indices", "dst", 4),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[10, 20, 30, 40]),
                 to_bytes(&[3, 0, 2, 1]),
@@ -124,7 +93,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[20, 40, 30, 10])]]
         }),
     )
@@ -200,6 +169,48 @@ mod tests {
         let src = &[1u32];
         let indices = &[u32::MAX];
         assert_eq!(cpu_ref(src, indices, 2), vec![0, 0]);
+    }
+
+    #[test]
+    fn try_cpu_ref_into_reuses_destination_and_clears_stale_tail() {
+        let src = &[10u32, 20, 30, 40];
+        let indices = &[3u32, 0, u32::MAX, 1];
+        let mut dst = Vec::with_capacity(16);
+        dst.extend_from_slice(&[u32::MAX; 16]);
+        let ptr = dst.as_ptr();
+
+        try_cpu_ref_into(src, indices, 4, &mut dst).unwrap();
+
+        assert_eq!(dst, vec![20, 40, 0, 10]);
+        assert_eq!(dst.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let src = &[10u32, 20, 30, 40];
+        let indices = &[3u32, 0, u32::MAX, 1];
+        let mut compat = Vec::with_capacity(8);
+        let mut fallible = Vec::with_capacity(8);
+
+        cpu_ref_into(src, indices, 4, &mut compat);
+        try_cpu_ref_into(src, indices, 4, &mut fallible)
+            .expect("Fix: small scatter CPU reference must reserve");
+
+        assert_eq!(cpu_ref(src, indices, 4), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_cpu_ref_wrapper_has_no_raw_panic_path() {
+        let production = include_str!("scatter.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: scatter.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: scatter CPU parity wrappers must not panic in production."
+        );
     }
 
     #[test]

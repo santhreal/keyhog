@@ -1,88 +1,36 @@
-//! Cat-A `adler32` — Adler-32 (RFC 1950) checksum.
+//! Cat-A `adler32` wrapper  -  Adler-32 (RFC 1950) checksum.
 //!
 //! Serial single-invocation walk. A init 1, B init 0, both mod 65521
 //! per byte. Output `(B << 16) | A`.
 //!
-//! `input[i]` packs one byte per u32 slot.
+//! Delegates the executable checksum body to `vyre-primitives`; this Tier-3
+//! module owns only scoped buffer naming, provenance, and harness registration.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::Program;
+use vyre_primitives::hash::adler32::{adler32_program, ADLER32_OP_ID};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
-use crate::buffer_names::scoped_generic_name;
+#[cfg(test)]
+use vyre_primitives::hash::adler32::adler32 as adler32_cpu_reference;
+
+use super::wrap::HashWrapperSpec;
 
 const OP_ID: &str = "vyre-libs::hash::adler32";
 const FAMILY_PREFIX: &str = "hash_adler32";
-const MOD_ADLER: u32 = 65_521;
-
-fn scoped_input_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
-}
-
-fn scoped_output_buffer(name: &str) -> String {
-    scoped_generic_name(FAMILY_PREFIX, "out", name, &["out", "output"])
-}
+const SPEC: HashWrapperSpec = HashWrapperSpec::new(OP_ID, ADLER32_OP_ID, FAMILY_PREFIX, 1);
 
 /// Build a Program that writes Adler-32(input[0..n]) to `out[0]`.
 #[must_use]
 pub fn adler32(input: &str, out: &str, n: u32) -> Program {
-    let input = scoped_input_buffer(input);
-    let out = scoped_output_buffer(out);
-    let body = vec![crate::region::wrap_anonymous(
-        OP_ID,
-        vec![Node::if_then(
-            Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-            vec![
-                Node::let_bind("a", Expr::u32(1)),
-                Node::let_bind("b", Expr::u32(0)),
-                Node::loop_for(
-                    "i",
-                    Expr::u32(0),
-                    Expr::u32(n),
-                    vec![
-                        Node::assign(
-                            "a",
-                            Expr::rem(
-                                Expr::add(Expr::var("a"), Expr::load(&input, Expr::var("i"))),
-                                Expr::u32(MOD_ADLER),
-                            ),
-                        ),
-                        Node::assign(
-                            "b",
-                            Expr::rem(
-                                Expr::add(Expr::var("b"), Expr::var("a")),
-                                Expr::u32(MOD_ADLER),
-                            ),
-                        ),
-                    ],
-                ),
-                Node::store(
-                    &out,
-                    Expr::u32(0),
-                    Expr::bitor(Expr::shl(Expr::var("b"), Expr::u32(16)), Expr::var("a")),
-                ),
-            ],
-        )],
-    )];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-            BufferDecl::output(&out, 1, DataType::U32).with_count(1),
-        ],
-        [1, 1, 1],
-        body,
-    )
+    let (input, out) = SPEC.scoped_standard_buffers(input, out);
+    let primitive = adler32_program(&input, &out, n);
+    SPEC.wrap_static_count(&input, &out, n, primitive)
 }
 
 #[cfg(test)]
 fn cpu_ref(input: &[u8]) -> u32 {
-    let mut a: u32 = 1;
-    let mut b: u32 = 0;
-    for &byte in input {
-        a = (a + u32::from(byte)) % MOD_ADLER;
-        b = (b + a) % MOD_ADLER;
-    }
-    (b << 16) | a
+    adler32_cpu_reference(input)
 }
 
 inventory::submit! {
@@ -90,8 +38,7 @@ inventory::submit! {
         id: OP_ID,
         build: || adler32("input", "out", 3),
         test_inputs: Some(|| {
-            let mut bytes = Vec::with_capacity(12);
-            for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
+            let bytes = vyre_primitives::wire::pack_bytes_as_u32_slice(b"abc");
             vec![vec![bytes]]
         }),
         // Adler-32("abc") = 0x024D0127 (a = 295, b = 589).
@@ -113,7 +60,19 @@ mod tests {
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: adler32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
-        u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+        vyre_primitives::wire::read_u32_le_word(&raw, 0, "adler32 output")
+            .expect("Fix: adler32 output must contain one u32.")
+    }
+
+    fn run_words(words: &[u32]) -> u32 {
+        let n = words.len().max(1) as u32;
+        let program = adler32("input", "out", n);
+        let input = vyre_primitives::wire::pack_u32_slice(words);
+        let outputs = vyre_reference::reference_eval(&program, &[Value::Bytes(input.into())])
+            .expect("Fix: adler32 must run on u32 byte slots.");
+        let raw = outputs[0].to_bytes();
+        vyre_primitives::wire::read_u32_le_word(&raw, 0, "adler32 word output")
+            .expect("Fix: adler32 word output must contain one u32.")
     }
 
     #[test]
@@ -131,6 +90,11 @@ mod tests {
     fn random_64_bytes_match_ref() {
         let bytes: Vec<u8> = (0u8..64).collect();
         assert_eq!(run(&bytes), cpu_ref(&bytes));
+    }
+
+    #[test]
+    fn high_input_bits_are_ignored() {
+        assert_eq!(run_words(&[0xFFFF_FF61, 0xA5A5_0062]), cpu_ref(b"ab"));
     }
 
     #[test]

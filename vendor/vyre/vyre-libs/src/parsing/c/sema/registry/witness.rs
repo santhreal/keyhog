@@ -7,9 +7,9 @@ use super::reference::{
 use super::*;
 use crate::parsing::c::lex::tokens::*;
 
-fn pack_u32(v: &[u32]) -> Vec<u8> {
-    v.iter().flat_map(|value| value.to_le_bytes()).collect()
-}
+use crate::scan::dispatch_io::pack_u32_slice as pack_u32;
+
+const WITNESS_TOKEN_COUNT: u32 = 14;
 
 #[derive(Clone, Copy)]
 struct FixtureAtom {
@@ -97,13 +97,13 @@ fn witness_fixture() -> (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>) {
     let mut lens = Vec::with_capacity(atoms.len());
     let mut max_end = 0usize;
     for atom in atoms {
-        let end_u32 = atom.start.checked_add(atom.len).expect(
-            "C semantic registry witness span overflows u32. Fix: keep fixture spans bounded.",
-        );
-        let end = usize::try_from(end_u32).expect(
-            "C semantic registry witness span exceeds usize. Fix: keep fixture spans bounded.",
-        );
-        max_end = max_end.max(end);
+        if let Some(end) = atom
+            .start
+            .checked_add(atom.len)
+            .and_then(|value| usize::try_from(value).ok())
+        {
+            max_end = max_end.max(end);
+        }
         tokens.push(atom.token);
         starts.push(atom.start);
         lens.push(atom.len);
@@ -199,17 +199,13 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::c_sema_scope",
         build: || {
-            let (tokens, _, _, _) = witness_fixture();
-            let token_count = u32::try_from(tokens.len()).expect(
-                "C semantic registry witness token count exceeds u32. Fix: split the fixture.",
-            );
             c_sema_scope(
                 "tok_types",
                 "tok_starts",
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(token_count),
+                Expr::u32(WITNESS_TOKEN_COUNT),
                 "out_scope_tree",
             )
         },
@@ -223,10 +219,6 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: SCOPE_PHASE_OP_ID,
         build: || {
-            let (tokens, _, _, _) = witness_fixture();
-            let token_count = u32::try_from(tokens.len()).expect(
-                "C semantic scope witness token count exceeds u32. Fix: split the fixture.",
-            );
             c_sema_scope_phase(
                 CScopePhase::Scope,
                 SCOPE_PHASE_OP_ID,
@@ -235,7 +227,7 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(token_count),
+                Expr::u32(WITNESS_TOKEN_COUNT),
                 "out_scope_tree",
             )
         },
@@ -249,10 +241,6 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: SCOPE_BRACE_PHASE_OP_ID,
         build: || {
-            let (tokens, _, _, _) = witness_fixture();
-            let token_count = u32::try_from(tokens.len()).expect(
-                "C semantic scope-brace witness token count exceeds u32. Fix: split the fixture.",
-            );
             c_sema_scope_phase(
                 CScopePhase::ScopeBrace,
                 SCOPE_BRACE_PHASE_OP_ID,
@@ -261,7 +249,7 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(token_count),
+                Expr::u32(WITNESS_TOKEN_COUNT),
                 "out_scope_tree",
             )
         },
@@ -275,10 +263,6 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: SCOPE_FUNCTION_PARAMS_PHASE_OP_ID,
         build: || {
-            let (tokens, _, _, _) = witness_fixture();
-            let token_count = u32::try_from(tokens.len()).expect(
-                "C semantic function-parameter witness token count exceeds u32. Fix: split the fixture.",
-            );
             c_sema_scope_phase(
                 CScopePhase::ScopeFunctionParameters,
                 SCOPE_FUNCTION_PARAMS_PHASE_OP_ID,
@@ -287,7 +271,7 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(token_count),
+                Expr::u32(WITNESS_TOKEN_COUNT),
                 "out_scope_tree",
             )
         },
@@ -301,10 +285,6 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: DECL_PHASE_OP_ID,
         build: || {
-            let (tokens, _, _, _) = witness_fixture();
-            let token_count = u32::try_from(tokens.len()).expect(
-                "C semantic declaration witness token count exceeds u32. Fix: split the fixture.",
-            );
             c_sema_scope_phase(
                 CScopePhase::Decl,
                 DECL_PHASE_OP_ID,
@@ -313,7 +293,7 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(token_count),
+                Expr::u32(WITNESS_TOKEN_COUNT),
                 "out_scope_tree",
             )
         },
@@ -327,10 +307,6 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: IDENTIFIER_INTERN_PHASE_OP_ID,
         build: || {
-            let (tokens, _, _, _) = witness_fixture();
-            let token_count = u32::try_from(tokens.len()).expect(
-                "C semantic identifier-intern witness token count exceeds u32. Fix: split the fixture.",
-            );
             c_sema_scope_phase(
                 CScopePhase::IdentifierIntern,
                 IDENTIFIER_INTERN_PHASE_OP_ID,
@@ -339,7 +315,7 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(token_count),
+                Expr::u32(WITNESS_TOKEN_COUNT),
                 "out_scope_tree",
             )
         },

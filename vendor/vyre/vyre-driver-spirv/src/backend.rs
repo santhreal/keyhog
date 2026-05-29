@@ -59,7 +59,7 @@ impl SpirvBackend {
     /// fingerprint across backends lets a single SPIR-V or PTX cache
     /// dedup against AOT artifacts.
     ///
-    /// P-SPIRV-1: substrate consumption — vsa_fingerprint is the
+    /// P-SPIRV-1: substrate consumption  -  vsa_fingerprint is the
     /// identity-by-meaning key that crosses backend boundaries.
     #[must_use]
     pub fn program_fingerprint(program: &Program) -> Vec<u32> {

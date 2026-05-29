@@ -1,7 +1,6 @@
 use std::path::Path;
 
-use vyre_libs::parsing::c::lex::diagnostics::{first_c11_lexer_diagnostic, C11LexerDiagnosticKind};
-use vyre_libs::parsing::c::lex::tokens::*;
+use vyre_libs::parsing::c::lex::diagnostics::C11LexerDiagnosticKind;
 use vyre_libs::parsing::c::parse::vast::{C_AST_KIND_GOTO_STMT, C_AST_KIND_LABEL_STMT};
 use vyre_runtime::megakernel::protocol;
 
@@ -13,6 +12,7 @@ mod cfg_lowering;
 mod compiler_sections;
 mod diagnostics;
 mod dispatch_inputs;
+mod lexer_diagnostic_report;
 mod lexer_diagnostics;
 mod megakernel_section;
 mod packing;
@@ -31,6 +31,7 @@ pub(super) use packing::{
 };
 pub(crate) use program_outputs::{
     drop_suppressed_readbacks, is_input_buffer, mark_program_outputs,
-    mark_program_outputs_readback, suppress_readwrite_readback,
+    mark_program_outputs_readback, suppress_readwrite_readback, take_exact_output,
+    take_last_output_into,
 };
 pub(super) use source_diagnostics::reject_c11_source_diagnostics;

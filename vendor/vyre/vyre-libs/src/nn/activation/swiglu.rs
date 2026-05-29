@@ -60,7 +60,7 @@ inventory::submit! {
         id: "vyre-libs::nn::swiglu",
         build: || swiglu("gate", "up", "output", 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_f32_slice;
             vec![vec![
                 to_bytes(&[0.0_f32, 1.0, -1.0, 2.0]), // gate
                 to_bytes(&[1.0_f32, 2.0, 3.0, 4.0]),  // up
@@ -73,7 +73,7 @@ inventory::submit! {
                 let sigmoid_g = 1.0 / (1.0 + (-g).exp());
                 g * u * sigmoid_g
             }).collect();
-            let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_f32_slice(&out);
             vec![vec![bytes]]
         }),
         category: Some("nn"),
@@ -83,18 +83,9 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     fn swiglu_ref(g: f32, u: f32) -> f32 {
         let sigmoid_g = 1.0 / (1.0 + (-g).exp());

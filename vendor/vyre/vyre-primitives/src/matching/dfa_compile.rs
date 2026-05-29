@@ -110,11 +110,11 @@ pub enum DfaWireError {
         /// Bytes actually provided in the input slice.
         got: usize,
     },
-    /// First four bytes were not the `VDFA` magic — caller likely passed
+    /// First four bytes were not the `VDFA` magic  -  caller likely passed
     /// an unrelated blob.
     BadMagic,
     /// Wire version did not match the build's `DFA_WIRE_VERSION`. The
-    /// caller's cache is from an older secret-scanning consumer/vyre and must be rebuilt.
+    /// caller's cache is from an older scanner consumer/vyre and must be rebuilt.
     VersionMismatch {
         /// Wire version this build of vyre-primitives understands.
         expected: u32,
@@ -122,7 +122,7 @@ pub enum DfaWireError {
         found: u32,
     },
     /// One of the array length fields disagreed with the declared
-    /// `state_count` — corrupt or hand-crafted blob.
+    /// `state_count`  -  corrupt or hand-crafted blob.
     ShapeMismatch {
         /// Static description of which length cross-check failed.
         reason: &'static str,
@@ -161,7 +161,7 @@ impl fmt::Display for DfaWireError {
             Self::ShapeMismatch { reason } => write!(
                 f,
                 "DFA wire blob shape mismatch: {reason}. Fix: this blob is \
-                 corrupt — discard and recompile."
+                 corrupt  -  discard and recompile."
             ),
             Self::SectionTooLarge { len, max } => write!(
                 f,
@@ -339,7 +339,11 @@ pub const DEFAULT_DFA_BUDGET_BYTES: usize = 16 * 1024 * 1024;
 #[must_use]
 pub fn dfa_compile(patterns: &[&[u8]]) -> CompiledDfa {
     dfa_compile_with_budget(patterns, DEFAULT_DFA_BUDGET_BYTES)
-        .unwrap_or_else(|_| CompiledDfa::empty())
+        .unwrap_or_else(|error| {
+            panic!(
+                "default DFA compilation exceeded the production budget: {error}. Fix: use dfa_compile_with_budget and shard oversized pattern sets."
+            )
+        })
 }
 
 /// Compile a list of byte patterns with an explicit transition-table
@@ -537,6 +541,7 @@ fn dfa_compile_inner_capped(
     })
 }
 
+
 fn fail_chain_accepts_pattern(state: usize, pattern: u32, fail: &[u32], accept: &[u32]) -> bool {
     let mut f = fail[state] as usize;
     while f != 0 && f != state {
@@ -637,4 +642,26 @@ mod tests {
             DfaCompileError::TooLarge { .. } | DfaCompileError::TrieStateCapExceeded { .. }
         ));
     }
+
+    #[test]
+    fn infallible_compile_does_not_silently_return_empty_on_error() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/matching/dfa_compile.rs"
+        ))
+        .expect("Fix: DFA compiler source must be readable");
+        let production = src
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: meta-test scans production sources; update fixture path if module moved - production section must exist");
+        assert!(
+            !production.contains("unwrap_or_else(|_| CompiledDfa::empty())"),
+            "dfa_compile must never hide a failed compile by returning the empty rejecting automaton"
+        );
+        assert!(
+            production.contains("use dfa_compile_with_budget and shard oversized pattern sets"),
+            "dfa_compile panic must explain the structured recovery path"
+        );
+    }
 }
+

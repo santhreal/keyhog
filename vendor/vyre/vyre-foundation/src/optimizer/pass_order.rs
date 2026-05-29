@@ -5,7 +5,7 @@
 //! ID is unique, every declared requirement exists, and every requirement
 //! appears before the pass that consumes it.
 
-use super::{registered_pass_registrations, OptimizerError, PassMetadata, PassSchedulingError};
+use super::{derive_registered_pass_order, OptimizerError, PassMetadata, PassSchedulingError};
 use rustc_hash::FxHashMap;
 
 /// Summary returned after validating an optimizer pass order.
@@ -27,12 +27,8 @@ pub struct PassOrderValidation {
 /// Returns [`OptimizerError`] when the registered scheduler inventory is
 /// invalid or when the scheduled order violates a declared dependency.
 pub fn validate_registered_pass_order() -> Result<PassOrderValidation, OptimizerError> {
-    let registrations = registered_pass_registrations()?;
-    let metadata = registrations
-        .iter()
-        .map(|registration| registration.metadata)
-        .collect::<Vec<_>>();
-    validate_scheduled_pass_order(&metadata).map_err(OptimizerError::from)
+    let derived = derive_registered_pass_order()?;
+    validate_scheduled_pass_order(derived.metadata()).map_err(OptimizerError::from)
 }
 
 /// Validate an already-ordered pass metadata slice.
@@ -43,10 +39,8 @@ pub fn validate_registered_pass_order() -> Result<PassOrderValidation, Optimizer
 pub fn validate_scheduled_pass_order(
     metadata: &[PassMetadata],
 ) -> Result<PassOrderValidation, PassSchedulingError> {
-    let mut position_by_name = FxHashMap::with_capacity_and_hasher(
-        metadata.len(),
-        std::hash::BuildHasherDefault::default(),
-    );
+    let mut position_by_name =
+        FxHashMap::with_capacity_and_hasher(metadata.len(), Default::default());
     for (index, pass) in metadata.iter().enumerate() {
         if position_by_name.insert(pass.name, index).is_some() {
             return Err(PassSchedulingError::DuplicateId { id: pass.name });
@@ -94,7 +88,7 @@ mod tests {
             meta("shape_facts", &[]),
             meta("decode_scan_fuse", &["shape_facts"]),
         ])
-        .expect("dependency appears before consumer");
+        .expect("Fix: dependency appears before consumer");
         assert_eq!(report.pass_count, 2);
         assert_eq!(report.dependency_edges, 1);
         assert_eq!(report.first_pass, Some("shape_facts"));
@@ -144,7 +138,7 @@ mod tests {
     #[test]
     fn live_registered_order_validates() {
         let report = validate_registered_pass_order()
-            .expect("live optimizer registry must have a valid dependency order");
+            .expect("Fix: live optimizer registry must have a valid dependency order");
         assert!(
             report.pass_count > 0,
             "live optimizer registry must not be empty"

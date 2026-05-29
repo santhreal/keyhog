@@ -1,85 +1,18 @@
-//! `bitset_subset_of` — write 1 to `out_scalar` iff `lhs ⊆ rhs`.
+//! `bitset_subset_of`  -  write 1 to `out_scalar` iff `lhs ⊆ rhs`.
 //!
 //! Equivalent: `(lhs & !rhs) == 0` per word for every word.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use crate::bitset::relation::{bitset_relation_program, BitsetRelation};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::bitset::subset_of";
-const WORKGROUP_SIZE: u32 = 256;
 
 /// Build a Program: `out_scalar[0] = (forall w: (lhs[w] & !rhs[w]) == 0) ? 1 : 0`.
 #[must_use]
 pub fn bitset_subset_of(lhs: &str, rhs: &str, out_scalar: &str, words: u32) -> Program {
-    let lane = Expr::InvocationId { axis: 0 };
-    let chunk_count = Expr::div(
-        Expr::add(Expr::u32(words), Expr::u32(WORKGROUP_SIZE - 1)),
-        Expr::u32(WORKGROUP_SIZE),
-    );
-    let body = vec![
-        Node::if_then(
-            Expr::eq(lane.clone(), Expr::u32(0)),
-            vec![Node::store(out_scalar, Expr::u32(0), Expr::u32(1))],
-        ),
-        Node::Barrier {
-            ordering: vyre_foundation::MemoryOrdering::SeqCst,
-        },
-        Node::loop_for(
-            "chunk",
-            Expr::u32(0),
-            chunk_count,
-            vec![
-                Node::let_bind(
-                    "w",
-                    Expr::add(
-                        Expr::mul(Expr::var("chunk"), Expr::u32(WORKGROUP_SIZE)),
-                        lane.clone(),
-                    ),
-                ),
-                Node::if_then(
-                    Expr::lt(Expr::var("w"), Expr::u32(words)),
-                    vec![Node::let_bind(
-                        "_subset_prev",
-                        Expr::atomic_and(
-                            out_scalar,
-                            Expr::u32(0),
-                            Expr::select(
-                                Expr::eq(
-                                    Expr::bitand(
-                                        Expr::load(lhs, Expr::var("w")),
-                                        Expr::UnOp {
-                                            op: UnOp::BitNot,
-                                            operand: Box::new(Expr::load(rhs, Expr::var("w"))),
-                                        },
-                                    ),
-                                    Expr::u32(0),
-                                ),
-                                Expr::u32(1),
-                                Expr::u32(0),
-                            ),
-                        ),
-                    )],
-                ),
-            ],
-        ),
-    ];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(lhs, 0, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(rhs, 1, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(out_scalar, 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(1),
-        ],
-        [WORKGROUP_SIZE, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
-    )
+    bitset_relation_program(OP_ID, lhs, rhs, out_scalar, words, BitsetRelation::SubsetOf)
 }
 
 /// CPU reference.
@@ -108,7 +41,7 @@ inventory::submit! {
         OP_ID,
         || bitset_subset_of("lhs", "rhs", "out", 2),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[0xFFFF, 0xF0F0]),
                 to_bytes(&[0xFFFF, 0xF0F0]),
@@ -116,7 +49,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[1])]]
         }),
     )
@@ -125,6 +58,7 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vyre_foundation::ir::Node;
 
     #[test]
     fn proper_subset_returns_one() {
@@ -149,5 +83,39 @@ mod tests {
     #[test]
     fn empty_lhs_is_subset_of_anything() {
         assert_eq!(cpu_ref(&[0], &[0xFFFF_FFFF]), 1);
+    }
+
+    #[test]
+    fn preserves_wrapper_op_id() {
+        let program = bitset_subset_of("lhs", "rhs", "out", 2);
+        let generator = match &program.entry[0] {
+            Node::Region { generator, .. } => generator.to_string(),
+            other => panic!("Fix: bitset_subset_of must build a Region entry, got {other:?}."),
+        };
+        assert_eq!(generator, OP_ID);
+    }
+
+    #[test]
+    fn generated_adversarial_pairs_match_subset_contract() {
+        let mut state = 0xC001_D00D_u32;
+        for case in 0..4096 {
+            state = state.wrapping_mul(22_695_477).wrapping_add(1);
+            let len = (state as usize % 19) + 1;
+            let mut lhs = Vec::with_capacity(len);
+            let mut rhs = Vec::with_capacity(len);
+            for word in 0..len {
+                state = state.rotate_left(7) ^ (word as u32).wrapping_mul(0x27D4_EB2D);
+                let superset = state;
+                let candidate = if case % 3 == 0 {
+                    superset & state.rotate_right((case + word) as u32 & 31)
+                } else {
+                    superset ^ (1_u32 << ((case + word * 3) & 31))
+                };
+                lhs.push(candidate);
+                rhs.push(superset);
+            }
+            let expected = u32::from(lhs.iter().zip(&rhs).all(|(a, b)| (a & !b) == 0));
+            assert_eq!(cpu_ref(&lhs, &rhs), expected, "case {case}");
+        }
     }
 }

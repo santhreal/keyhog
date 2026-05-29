@@ -1,4 +1,4 @@
-//! Sheaf neural network primitive — sheaf Laplacian application (#31).
+//! Sheaf neural network primitive  -  sheaf Laplacian application (#31).
 //!
 //! Sheaf neural networks (Bodnar-Di Giovanni 2022, Hansen-Gebhart 2023)
 //! generalize GNNs from "all nodes share one feature space" to "each
@@ -6,7 +6,7 @@
 //! The sheaf Laplacian is a block matrix where the (i, j) block is
 //! `F_{ij}^T F_{ij}` (composition of restriction maps).
 //!
-//! This file ships the **block-diagonal sheaf Laplacian apply step** —
+//! This file ships the **block-diagonal sheaf Laplacian apply step**  -
 //! given block-encoded restriction maps `F_{ij}` and a per-node
 //! feature stalk, propagate one diffusion step:
 //!
@@ -39,11 +39,11 @@ pub const OP_ID: &str = "vyre-primitives::graph::sheaf_diffusion_step";
 /// Inputs:
 /// - `stalks`: `n_nodes * d` u32 (16.16 fp). Per-node `d`-dim feature
 ///   vector (`d` = stalk dimension).
-/// - `restriction_diag`: `n_nodes * d` u32 — the diagonal of each
+/// - `restriction_diag`: `n_nodes * d` u32  -  the diagonal of each
 ///   per-node restriction-map composition `F_{ii}^T F_{ii}` reduced to
 ///   diagonal form (caller computes block-diagonal restriction; this
 ///   primitive operates on the diagonal-block reduction).
-/// - `damping_scaled`: 1-element u32 — diffusion step size in 16.16.
+/// - `damping_scaled`: 1-element u32  -  diffusion step size in 16.16.
 ///
 /// Output:
 /// - `stalks_next`: `n_nodes * d` u32.
@@ -76,10 +76,7 @@ pub fn sheaf_diffusion_step(
         d,
     ) {
         Ok(program) => program,
-        Err(error) => {
-            eprintln!("{error}");
-            crate::invalid_output_program(OP_ID, stalks_next, DataType::U32, error)
-        }
+        Err(error) => crate::invalid_output_program(OP_ID, stalks_next, DataType::U32, error),
     }
 }
 
@@ -153,9 +150,20 @@ pub fn sheaf_diffusion_step_cpu(
     restriction_diag: &[f64],
     damping: f64,
 ) -> Vec<f64> {
-    let mut out = Vec::with_capacity(stalks.len());
-    sheaf_diffusion_step_cpu_into(stalks, restriction_diag, damping, &mut out);
-    out
+    try_sheaf_diffusion_step_cpu(stalks, restriction_diag, damping)
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Fallible CPU reference (f64).
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_sheaf_diffusion_step_cpu(
+    stalks: &[f64],
+    restriction_diag: &[f64],
+    damping: f64,
+) -> Result<Vec<f64>, String> {
+    let mut out = Vec::new();
+    try_sheaf_diffusion_step_cpu_into(stalks, restriction_diag, damping, &mut out)?;
+    Ok(out)
 }
 
 /// CPU reference (f64), writing into caller-owned storage.
@@ -169,9 +177,28 @@ pub fn sheaf_diffusion_step_cpu_into(
     damping: f64,
     out: &mut Vec<f64>,
 ) {
+    try_sheaf_diffusion_step_cpu_into(stalks, restriction_diag, damping, out)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference (f64), writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_sheaf_diffusion_step_cpu_into(
+    stalks: &[f64],
+    restriction_diag: &[f64],
+    damping: f64,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
     let n = stalks.len().min(restriction_diag.len());
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "sheaf diffusion CPU oracle",
+            "sheaf_diffusion_step_cpu_into",
+        )?;
+    }
     out.clear();
-    out.reserve(n);
     out.extend(
         stalks
             .iter()
@@ -179,6 +206,7 @@ pub fn sheaf_diffusion_step_cpu_into(
             .take(n)
             .map(|(&s, &r)| s - damping * r * s),
     );
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -187,7 +215,7 @@ inventory::submit! {
         OP_ID,
         || sheaf_diffusion_step("stalks", "restriction_diag", "damping", "stalks_next", 1, 1),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![
                 to_bytes(&[10u32 << 16]),
                 to_bytes(&[1u32 << 16]),
@@ -196,7 +224,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| crate::wire::pack_u32_slice(w);
             vec![vec![to_bytes(&[5u32 << 16])]]
         }),
     )
@@ -240,6 +268,61 @@ mod tests {
     fn cpu_mismatched_inputs_truncate_to_complete_pairs() {
         let out = sheaf_diffusion_step_cpu(&[10.0, 4.0], &[0.5], 1.0);
         assert_eq!(out, vec![5.0]);
+    }
+
+    #[test]
+    fn checked_cpu_ref_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let capacity = out.capacity();
+
+        try_sheaf_diffusion_step_cpu_into(&[10.0, 4.0], &[0.5, 0.25], 1.0, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - checked sheaf CPU oracle should reuse caller-owned storage");
+
+        assert_eq!(out.len(), 2);
+        assert!(approx_eq(out[0], 5.0));
+        assert!(approx_eq(out[1], 3.0));
+        assert_eq!(out.capacity(), capacity);
+
+        try_sheaf_diffusion_step_cpu_into(&[10.0], &[0.5], 1.0, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - checked sheaf CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![5.0]);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_cpu_oracle_reuses_storage_and_matches_closed_form() {
+        let mut out = Vec::new();
+        for case in 0..4096usize {
+            let stalk_len = case % 97;
+            let diag_len = (case / 7) % 97;
+            let n = stalk_len.min(diag_len);
+            let damping = ((case % 31) as f64 - 15.0) / 17.0;
+            let stalks: Vec<f64> = (0..stalk_len)
+                .map(|idx| ((idx * 13 + case) % 211) as f64 / 11.0 - 7.0)
+                .collect();
+            let restriction_diag: Vec<f64> = (0..diag_len)
+                .map(|idx| ((idx * 17 + case * 3) % 157) as f64 / 19.0 - 3.0)
+                .collect();
+
+            try_sheaf_diffusion_step_cpu_into(&stalks, &restriction_diag, damping, &mut out)
+                .expect("Fix: caller must pre-size buffers; use fallible reserve or return ResourceExhausted - generated sheaf CPU oracle should reserve and evaluate");
+
+            assert_eq!(
+                out.len(),
+                n,
+                "case {case}: output must truncate to complete stalk/restriction pairs"
+            );
+            for idx in 0..n {
+                let expected = stalks[idx] - damping * restriction_diag[idx] * stalks[idx];
+                assert!(
+                    approx_eq(out[idx], expected),
+                    "case {case} idx {idx}: expected {expected}, got {}",
+                    out[idx]
+                );
+            }
+        }
     }
 
     #[test]
@@ -302,10 +385,10 @@ mod tests {
         let builder_source = source
             .split("pub fn sheaf_diffusion_step(")
             .nth(1)
-            .expect("sheaf diffusion builder source must be present")
+            .expect("Fix: sheaf diffusion builder source must be present")
             .split("/// CPU reference")
             .next()
-            .expect("sheaf diffusion builder source must precede CPU oracle");
+            .expect("Fix: sheaf diffusion builder source must precede CPU oracle");
 
         assert!(
             builder_source.contains("pub fn try_sheaf_diffusion_step(")
@@ -313,6 +396,28 @@ mod tests {
                 && !builder_source.contains(concat!("panic", "!("))
                 && !builder_source.contains(".unwrap_or_else("),
             "Fix: sheaf_diffusion_step must expose checked release sizing and avoid production panics."
+        );
+    }
+
+    #[test]
+    fn sheaf_cpu_source_uses_fallible_reusable_storage() {
+        let source = include_str!("sheaf.rs");
+        let cpu_source = source
+            .split("/// CPU reference (f64).")
+            .nth(1)
+            .expect("Fix: sheaf CPU source must be present")
+            .split("#[cfg(feature = \"inventory-registry\")]")
+            .next()
+            .expect("Fix: sheaf CPU source must precede registry entry");
+
+        assert!(
+            cpu_source.contains("try_sheaf_diffusion_step_cpu_into")
+                && cpu_source.contains("crate::graph::scratch::reserve_graph_items")
+                && cpu_source.contains("out.capacity()")
+                && !cpu_source.contains("fn reserve_sheaf_cpu_vec")
+                && !cpu_source.contains("Vec::with_capacity")
+                && !cpu_source.contains(".reserve("),
+            "Fix: sheaf CPU oracle must use fallible reusable storage instead of infallible per-step allocation."
         );
     }
 }

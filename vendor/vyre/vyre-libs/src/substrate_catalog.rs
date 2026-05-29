@@ -7,7 +7,7 @@ use crate::harness::OpEntry;
 use crate::region::wrap_anonymous;
 
 fn u32s(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    vyre_primitives::wire::pack_u32_slice(words)
 }
 
 fn indexed_map_program() -> Program {

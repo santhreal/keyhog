@@ -14,6 +14,7 @@ use super::recovery::{
     backend_error_indicates_device_loss, recover_compiled_pipeline, MegakernelRecoveryDecision,
     MegakernelRecoveryPolicy,
 };
+use super::staging_reserve::reserve_vec_capacity;
 use crate::PipelineError;
 use arc_swap::ArcSwap;
 use std::sync::Arc;
@@ -493,6 +494,7 @@ impl Megakernel {
     }
 }
 
+
 impl MegakernelRecoveryPolicy {
     fn allows_retry(self, error: &vyre_driver::BackendError) -> bool {
         self.retry_device_loss_once && backend_error_indicates_device_loss(error)
@@ -584,15 +586,7 @@ pub(super) fn reserve_output_shell<T>(
     capacity: usize,
     label: &'static str,
 ) -> Result<(), PipelineError> {
-    if out.capacity() < capacity {
-        out.try_reserve_exact(capacity - out.capacity())
-            .map_err(|source| {
-                PipelineError::Backend(format!(
-                    "{label} could not reserve {capacity} slot(s): {source}. Fix: split the megakernel dispatch or reuse a caller-owned output shell."
-                ))
-            })?;
-    }
-    Ok(())
+    reserve_vec_capacity(out, capacity, label)
 }
 
 pub(super) fn nanos_u64(nanos: u128) -> Result<u64, PipelineError> {
@@ -637,3 +631,4 @@ fn checked_add_u32(left: u32, right: u32, label: &str) -> Result<u32, PipelineEr
 
 #[cfg(test)]
 mod tests;
+

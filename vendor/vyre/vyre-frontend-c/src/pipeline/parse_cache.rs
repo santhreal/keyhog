@@ -3,12 +3,12 @@
 //! Two layers. Lexer output is keyed by `(backend_id, source_text)`;
 //! full semantic summaries are keyed by `(backend_id, source_text, semantic_options)`.
 //!
-//! 1. **Lexer output cache** — `(types, starts, lens, counts, n_tokens, …)`
+//! 1. **Lexer output cache**  -  `(types, starts, lens, counts, n_tokens, …)`
 //!    after the resident GPU `c11_lexer` dispatch. The dense single-thread
 //!    GPU lexer scans 200 KB on one thread (~550 ms), so every repeat of the
 //!    same source skips the dispatch entirely without introducing a CPU parse
 //!    path.
-//! 2. **Full-summary cache (memory + disk)** —
+//! 2. **Full-summary cache (memory + disk)**  -
 //!    [`crate::api::CParseSummary`] keyed by source hash plus semantic
 //!    option discriminators. The on-disk half persists across process restarts: a re-parse of any
 //!    previously-seen translation unit returns the cached summary
@@ -308,7 +308,7 @@ mod tests {
     fn summary_round_trip_preserves_every_field() {
         let original = fixture_summary();
         let bytes = encode_summary(&original);
-        let decoded = decode_summary(&bytes).expect("decode round-trip should succeed");
+        let decoded = decode_summary(&bytes).expect("Fix: decode round-trip should succeed");
         assert_eq!(original, decoded);
     }
 

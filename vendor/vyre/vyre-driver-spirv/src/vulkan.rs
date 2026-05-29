@@ -7,7 +7,7 @@
 
 use ash::vk;
 
-use vyre_driver::BackendError;
+use vyre_driver::{BackendError, BindingPlan};
 use vyre_foundation::ir::{BufferAccess, Program};
 
 /// Owned Vulkan compute context.
@@ -87,9 +87,9 @@ impl VulkanDevice {
             if props.device_type == vk::PhysicalDeviceType::CPU {
                 continue;
             }
-            // SAFETY: same as the get_physical_device_properties call
-            // above — `pd` is a live handle bound to `instance`.
             let queue_families =
+                // SAFETY: same as the get_physical_device_properties call
+                // above  -  `pd` is a live handle bound to `instance`.
                 unsafe { instance.get_physical_device_queue_family_properties(pd) };
             for (index, family) in queue_families.iter().enumerate() {
                 if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
@@ -146,7 +146,10 @@ impl VulkanDevice {
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
         // SAFETY: `device` is the live Device returned above; the
-        // CommandPoolCreateInfo struct lives until create_command_pool
+        // SAFETY: `device` is the live logical device created above,
+        // `queue_family_index` was selected from that physical device's
+        // compute-capable queue families, and the CommandPoolCreateInfo
+        // struct lives until create_command_pool returns.
         // returns.
         let command_pool = unsafe {
             device.create_command_pool(
@@ -164,9 +167,9 @@ impl VulkanDevice {
             ))
         })?;
 
-        // SAFETY: physical_device is a live vk::PhysicalDevice handle
-        // bound to `instance`.
         let memory_properties =
+            // SAFETY: physical_device is a live vk::PhysicalDevice handle
+            // bound to `instance`.
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
         let host_memory_type_index = find_host_visible_memory_type(&memory_properties).ok_or_else(
             || {
@@ -202,7 +205,7 @@ impl VulkanDevice {
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             ..Default::default()
         };
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         let buffer = unsafe {
             self
             .device
@@ -217,7 +220,7 @@ impl VulkanDevice {
             memory_type_index: self.host_memory_type_index,
             ..Default::default()
         };
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         let memory = unsafe {
             self
             .device
@@ -237,7 +240,7 @@ impl VulkanDevice {
 
     /// Destroy a buffer and its memory.
     unsafe fn destroy_buffer(&self, buffer: vk::Buffer, memory: vk::DeviceMemory) {
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe {
             self.device.destroy_buffer(buffer, None);
             self.device.free_memory(memory, None);
@@ -260,7 +263,7 @@ impl VulkanDevice {
             command_buffer_count: 1,
             _marker: std::marker::PhantomData,
         };
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         let mut cbs = unsafe {
             self
             .device
@@ -273,7 +276,7 @@ impl VulkanDevice {
             )
         })?;
 
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe {
             self.device.begin_command_buffer(
                 command_buffer,
@@ -289,7 +292,7 @@ impl VulkanDevice {
             ))
         })?;
 
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe {
             self.device
                 .cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, pipeline);
@@ -305,7 +308,7 @@ impl VulkanDevice {
                 .cmd_dispatch(command_buffer, workgroups[0], workgroups[1], workgroups[2]);
         }
 
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe { self.device.end_command_buffer(command_buffer) }.map_err(|e| {
             BackendError::new(format!(
                 "Vulkan command buffer end failed: {e}. Fix: check recorded commands."
@@ -328,7 +331,7 @@ impl VulkanDevice {
             p_command_buffers: &command_buffer,
             ..Default::default()
         };
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe { self.device.queue_submit(self.queue, &[submit_info], fence) }.map_err(|e| {
             BackendError::new(format!(
                 "Vulkan queue submit failed: {e}. Fix: verify queue and command buffer state."
@@ -342,7 +345,7 @@ impl VulkanDevice {
             ))
         })?;
 
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe {
             self.device.destroy_fence(fence, None);
             self.device
@@ -392,7 +395,7 @@ unsafe fn create_shader_module(
         p_code: words.as_ptr(),
         ..Default::default()
     };
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     unsafe { device.create_shader_module(&create_info, None) }
         .map_err(|e| BackendError::new(format!("Vulkan shader module creation failed: {e}. Fix: validate the SPIR-V binary with spirv-val before loading.")))
 }
@@ -432,12 +435,15 @@ pub(crate) unsafe fn dispatch_program(
         infer_grid(program, workgroup_size)?
     };
 
-    // Build bindings from program buffers.
+    let binding_plan = BindingPlan::from_borrowed_inputs(program, inputs)?;
+
+    // Build bindings from the backend-neutral ABI plan so input and output
+    // slots stay identical to every other backend.
     let mut dispatch_bindings: Vec<DispatchBinding> = Vec::new();
-    let mut input_index = 0usize;
     let mut output_bindings: Vec<(u32, usize)> = Vec::new(); // (binding, index in dispatch_bindings)
 
-    for buffer in program.buffers() {
+    for binding in &binding_plan.bindings {
+        let buffer = &program.buffers()[binding.buffer_index];
         if buffer.access() == BufferAccess::Workgroup {
             continue;
         }
@@ -451,9 +457,10 @@ pub(crate) unsafe fn dispatch_program(
             }
         })? as usize;
         let byte_len = if buffer.count() == 0 {
-            if let Some(input) = inputs.get(input_index) {
+            if let Some(input_index) = binding.input_index {
+                let input = inputs[input_index];
                 input.len()
-            } else if buffer.is_output() {
+            } else if binding.output_index.is_some() {
                 // Output buffer without input: size from element type.
                 element_size
             } else {
@@ -484,12 +491,12 @@ pub(crate) unsafe fn dispatch_program(
                 ),
             }
         })?;
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         let (vk_buffer, vk_memory) = unsafe { device.create_host_buffer(vk_byte_len) }?;
 
         // If there is a matching input, upload it.
-        if let Some(input) = inputs.get(input_index) {
-            let input = *input;
+        if let Some(input_index) = binding.input_index {
+            let input = inputs[input_index];
             if input.len() > byte_len {
                 return Err(BackendError::InvalidProgram {
                     fix: format!(
@@ -499,7 +506,7 @@ pub(crate) unsafe fn dispatch_program(
                     ),
                 });
             }
-            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+            // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
             let ptr = unsafe {
                 device
                     .device
@@ -510,15 +517,14 @@ pub(crate) unsafe fn dispatch_program(
                     "Vulkan memory map failed: {e}. Fix: check memory type is host-visible."
                 ))
             })?;
-            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+            // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
             let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, byte_len) };
             slice[..input.len()].copy_from_slice(input);
             // SAFETY: Memory was mapped successfully just above and is unmapped properly after copying.
             unsafe { device.device.unmap_memory(vk_memory) };
-            input_index += 1;
         }
 
-        if buffer.is_output() || buffer.pipeline_live_out {
+        if binding.output_index.is_some() {
             output_bindings.push((buffer.binding(), dispatch_bindings.len()));
         }
 
@@ -530,18 +536,8 @@ pub(crate) unsafe fn dispatch_program(
         });
     }
 
-    if input_index != inputs.len() {
-        return Err(BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: received {} input buffers but only {} were consumed by Program buffer declarations.",
-                inputs.len(),
-                input_index
-            ),
-        });
-    }
-
     // Create shader module.
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     let shader_module = unsafe { create_shader_module(&device.device, spv_words) }?;
 
     // Descriptor set layout.
@@ -563,7 +559,7 @@ pub(crate) unsafe fn dispatch_program(
             layout_bindings.len()
         ))
     })?;
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     let descriptor_set_layout = unsafe {
         device.device.create_descriptor_set_layout(
             &vk::DescriptorSetLayoutCreateInfo {
@@ -581,7 +577,7 @@ pub(crate) unsafe fn dispatch_program(
     })?;
 
     // Pipeline layout.
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     let pipeline_layout = unsafe {
         device.device.create_pipeline_layout(
             &vk::PipelineLayoutCreateInfo {
@@ -610,7 +606,7 @@ pub(crate) unsafe fn dispatch_program(
         ..Default::default()
     };
 
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     let pipeline = match unsafe {
         device.device.create_compute_pipelines(
             vk::PipelineCache::null(),
@@ -641,7 +637,7 @@ pub(crate) unsafe fn dispatch_program(
         ty: vk::DescriptorType::STORAGE_BUFFER,
         descriptor_count,
     };
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     let descriptor_pool = unsafe {
         device.device.create_descriptor_pool(
             &vk::DescriptorPoolCreateInfo {
@@ -660,7 +656,7 @@ pub(crate) unsafe fn dispatch_program(
     })?;
 
     // Descriptor set.
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     let descriptor_set = unsafe {
         device
             .device
@@ -707,7 +703,7 @@ pub(crate) unsafe fn dispatch_program(
         })
         .collect();
 
-    // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+    // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
     unsafe { device.device.update_descriptor_sets(&write_bindings, &[]) };
 
     // Dispatch.
@@ -718,7 +714,7 @@ pub(crate) unsafe fn dispatch_program(
     let mut outputs = Vec::with_capacity(output_bindings.len());
     for (_binding, idx) in &output_bindings {
         let b = &dispatch_bindings[*idx];
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         let ptr = unsafe {
             device
             .device
@@ -728,7 +724,7 @@ pub(crate) unsafe fn dispatch_program(
         // SAFETY: The host memory was successfully mapped and the pointer remains valid for readback.
         let slice = unsafe { std::slice::from_raw_parts(ptr as *const u8, b.byte_len) };
         outputs.push(slice.to_vec());
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe { device.device.unmap_memory(b.memory) };
     }
 
@@ -744,7 +740,7 @@ pub(crate) unsafe fn dispatch_program(
         device.device.destroy_shader_module(shader_module, None);
     }
     for b in dispatch_bindings {
-        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
         unsafe { device.destroy_buffer(b.buffer, b.memory) };
     }
 
@@ -752,6 +748,7 @@ pub(crate) unsafe fn dispatch_program(
 }
 
 /// Infer the dispatch grid from the program's output buffer sizes.
+
 fn infer_grid(program: &Program, workgroup_size: [u32; 3]) -> Result<[u32; 3], BackendError> {
     if workgroup_size[1] != 1 || workgroup_size[2] != 1 {
         return Err(BackendError::new(format!(
@@ -772,3 +769,4 @@ fn infer_grid(program: &Program, workgroup_size: [u32; 3]) -> Result<[u32; 3], B
     let x = max_count.div_ceil(lanes).max(1);
     Ok([x, 1, 1])
 }
+

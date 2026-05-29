@@ -18,7 +18,7 @@ pub struct CacheEntry {
 /// Carries its own recency LRU so eviction picks the coldest entry
 /// within the tier in O(1) instead of scanning the global
 /// `AccessTracker` looking for a key that happens to live in this
-/// tier. Before 0.6 the scan was O(N) in the global tracker size —
+/// tier. Before 0.6 the scan was O(N) in the global tracker size  -
 /// catastrophic when the cold key was far from the tier boundary.
 #[non_exhaustive]
 pub struct CacheTier {
@@ -36,13 +36,45 @@ impl CacheTier {
     /// Create a new empty tier.
     #[inline]
     pub fn new(name: impl Into<String>, capacity: u64) -> Self {
-        Self {
+        let name = name.into();
+        match Self::try_new(name.clone(), capacity) {
+            Ok(tier) => tier,
+            Err(error) => {
+                tracing::error!(
+                    tier = %name,
+                    capacity,
+                    error = %error,
+                    "wgpu cache tier LRU reservation failed; continuing with grow-on-use metadata"
+                );
+                Self {
+                    name,
+                    capacity,
+                    used: 0,
+                    entries: FxHashMap::default(),
+                    lru: IntrusiveLru::with_reserved_capacity(0),
+                }
+            }
+        }
+    }
+
+    /// Fallible version of [`Self::new`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if tier LRU metadata cannot be
+    /// reserved.
+    #[inline]
+    pub fn try_new(
+        name: impl Into<String>,
+        capacity: u64,
+    ) -> Result<Self, vyre_driver::BackendError> {
+        Ok(Self {
             name: name.into(),
             capacity,
             used: 0,
             entries: FxHashMap::default(),
-            lru: IntrusiveLru::with_reserved_capacity(1024),
-        }
+            lru: IntrusiveLru::try_with_reserved_capacity(1024)?,
+        })
     }
 }
 
@@ -59,6 +91,7 @@ pub struct AccessStats {
 }
 
 /// LRU eviction policy with frequency-based promotion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct LruPolicy {
     /// Minimum access frequency required for promotion.
@@ -159,7 +192,27 @@ impl TieredCache {
     /// Create a new cache with the given tiers and a default [`LruPolicy`].
     #[inline]
     pub fn new(tiers: Vec<CacheTier>) -> Self {
-        Self::with_policy(tiers, LruPolicy::default())
+        match Self::try_new(tiers) {
+            Ok(cache) => cache,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "wgpu tiered cache tracker reservation failed; continuing with grow-on-use metadata"
+                );
+                Self::with_policy(Vec::new(), LruPolicy::default())
+            }
+        }
+    }
+
+    /// Fallible version of [`Self::new`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if cache access metadata cannot be
+    /// reserved.
+    #[inline]
+    pub fn try_new(tiers: Vec<CacheTier>) -> Result<Self, vyre_driver::BackendError> {
+        Self::try_with_policy(tiers, LruPolicy::default())
     }
 }
 
@@ -167,12 +220,40 @@ impl TieredCache {
     /// Create a new cache with a custom LRU policy.
     #[inline]
     pub fn with_policy(tiers: Vec<CacheTier>, policy: LruPolicy) -> Self {
-        Self {
+        match Self::try_with_policy(tiers, policy) {
+            Ok(cache) => cache,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "wgpu tiered cache tracker reservation failed; continuing with grow-on-use metadata"
+                );
+                Self {
+                    tiers: Vec::new(),
+                    tracker: AccessTracker::new(),
+                    policy,
+                    index: FxHashMap::default(),
+                }
+            }
+        }
+    }
+
+    /// Fallible version of [`Self::with_policy`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`vyre_driver::BackendError`] if cache access metadata cannot be
+    /// reserved.
+    #[inline]
+    pub fn try_with_policy(
+        tiers: Vec<CacheTier>,
+        policy: LruPolicy,
+    ) -> Result<Self, vyre_driver::BackendError> {
+        Ok(Self {
             tiers,
-            tracker: AccessTracker::new(),
+            tracker: AccessTracker::try_new()?,
             policy,
             index: FxHashMap::default(),
-        }
+        })
     }
 
     /// Return a reference to the entry with the given key, if it exists.
@@ -433,10 +514,12 @@ mod tests {
     #[test]
     fn tiered_cache_repairs_used_bytes_after_underflow_instead_of_panicking() {
         let mut cache = TieredCache::new(vec![CacheTier::new("gpu", 128)]);
-        cache.insert(1, 64).expect("test insert must fit");
+        cache.insert(1, 64).expect("Fix: test insert must fit");
         cache.tiers[0].used = 0;
 
-        let removed = cache.evict(1).expect("corrupted entry should still evict");
+        let removed = cache
+            .evict(1)
+            .expect("Fix: corrupted entry should still evict");
 
         assert_eq!(removed.size, 64);
         assert_eq!(cache.tiers[0].used, 0);
@@ -449,7 +532,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("tiered cache production source must precede tests");
+            .expect("Fix: tiered cache production source must precede tests");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".unwrap_or_else("),

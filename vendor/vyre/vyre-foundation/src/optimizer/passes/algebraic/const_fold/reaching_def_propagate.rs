@@ -1,11 +1,11 @@
-//! ROADMAP A11 — reaching-def facts into cross-control-flow const fold.
+//! ROADMAP A11  -  reaching-def facts into cross-control-flow const fold.
 //!
 //! Built on top of the A2 `ProgramFacts` substrate. For every
 //! `Node::Let { name, value: Lit* }` whose `name` is never rebound
 //! anywhere in the program (no Assign, no Loop induction var, no
 //! second `Let { name }` shadow), the literal value is propagated
 //! to every `Expr::Var(name)` read site across the entire program
-//! tree — including reads in sibling control-flow branches that
+//! tree  -  including reads in sibling control-flow branches that
 //! A14's same-scope cheap-leaf rematerialization cannot reach.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::reaching_def_propagate`.
@@ -13,7 +13,7 @@
 //! guarantees that every dynamic read of `name` resolves to
 //! the single static `Let` site, so substituting the literal at
 //! every read site preserves observable behavior. Without
-//! rebinding, control-flow path doesn't matter — the only value
+//! rebinding, control-flow path doesn't matter  -  the only value
 //! the name can ever hold is the literal at its single defining
 //! site. The Let itself is then dead and gets removed by the
 //! existing DCE on the next pass-scheduler iteration.
@@ -24,7 +24,7 @@
 //! Var slot). Per-site cost goes from one register read to one
 //! immediate operand, which is strictly cheaper on every backend.
 //!
-//! Preserves: every analysis. Invalidates: nothing — the Let was
+//! Preserves: every analysis. Invalidates: nothing  -  the Let was
 //! the unique reaching definition; the literal substitution is its
 //! observably-equivalent inlining.
 //!
@@ -44,7 +44,7 @@
 //! A14 (`rematerialize_cheap_let`) walks one sibling sequence at a
 //! time and substitutes through descendant scopes when the name is
 //! not reassigned in that subtree. It cannot substitute INTO a
-//! sibling subtree of the Let's own container — e.g., if `Let(x, 7)`
+//! sibling subtree of the Let's own container  -  e.g., if `Let(x, 7)`
 //! lives at the top of the `then` arm of an If and the read is
 //! inside the `otherwise` arm, A14 leaves the read untouched
 //! because the Let's descendant scan never visits the sibling arm.
@@ -426,7 +426,7 @@ mod tests {
 
     /// Cross-CFG propagation: `Let(x, 7)` at the top of `then`
     /// is propagated to a `Var(x)` read inside the `otherwise`
-    /// arm — the very case A14 cannot reach because the read is
+    /// arm  -  the very case A14 cannot reach because the read is
     /// in a sibling subtree, not a descendant of the Let's
     /// scope.
     ///
@@ -448,6 +448,7 @@ mod tests {
         assert!(result.changed, "literal must propagate to both arms");
         let entry = result.program.entry().to_vec();
         assert_eq!(
+
             count_var_reads(&entry, "x"),
             0,
             "no Var(x) reads remain after propagation"
@@ -505,7 +506,7 @@ mod tests {
     }
 
     /// Negative: a Let whose value is NOT a literal (e.g., a
-    /// BinOp or Load) is not propagated by this pass — that's
+    /// BinOp or Load) is not propagated by this pass  -  that's
     /// A14 / CSE territory.
     #[test]
     fn keeps_let_with_non_literal_value() {
@@ -525,7 +526,7 @@ mod tests {
     }
 
     /// Positive: nested-into-Loop read is propagated.
-    /// `Let(x, 7)` at top, read inside a Loop body — A14 would
+    /// `Let(x, 7)` at top, read inside a Loop body  -  A14 would
     /// also handle this, but the test asserts the cross-CFG
     /// substrate doesn't accidentally regress same-scope cases.
     #[test]
@@ -568,3 +569,4 @@ mod tests {
         assert_eq!(p1.changed, p2.changed);
     }
 }
+

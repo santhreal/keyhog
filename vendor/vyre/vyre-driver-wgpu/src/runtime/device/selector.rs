@@ -1,21 +1,21 @@
 //! Adapter selection + enumeration (C5 refactor).
 //!
 //! The legacy [`super::device::cached_device`] singleton picks the
-//! first adapter `wgpu::Instance::request_adapter` returns — fine for
+//! first adapter `wgpu::Instance::request_adapter` returns  -  fine for
 //! a single-GPU dev box, useless for multi-GPU servers that need to
 //! choose a specific device by vendor, index, or power preference.
 //!
 //! This module ships the explicit selection API:
 //!
-//! * [`enumerate_adapters`] — list every adapter wgpu reports.
-//! * [`AdapterCriteria`] — match by device type, vendor, name
+//! * [`enumerate_adapters`]  -  list every adapter wgpu reports.
+//! * [`AdapterCriteria`]  -  match by device type, vendor, name
 //!   substring, or power preference.
-//! * [`select_adapter`] — pick one matching the criteria (returns
+//! * [`select_adapter`]  -  pick one matching the criteria (returns
 //!   the first match; callers wanting all matches iterate
 //!   [`enumerate_adapters`] themselves).
-//! * [`init_device_for_adapter`] — build a device+queue bound to the
+//! * [`init_device_for_adapter`]  -  build a device+queue bound to the
 //!   chosen adapter.
-//! * `VYRE_ADAPTER_INDEX` — env override used by the backend
+//! * `VYRE_ADAPTER_INDEX`  -  env override used by the backend
 //!   auto-picker to route programs to a specific device without
 //!   patching code.
 //!
@@ -25,6 +25,8 @@
 //! device/queue pair.
 
 use vyre_driver::error::{Error, Result};
+
+use crate::staging_reserve::reserve_backend_vec;
 
 /// Stable adapter identity used for deterministic recovery.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,11 +113,22 @@ impl AdapterCriteria {
 /// List every adapter the wgpu instance reports.
 #[must_use]
 pub fn enumerate_adapters() -> Vec<wgpu::AdapterInfo> {
+    try_enumerate_adapters()
+        .expect("Fix: WGPU adapter enumeration metadata allocation failed; reduce adapter fan-out or repair host memory pressure before release-path probing.")
+}
+
+/// List every adapter the wgpu instance reports with fallible metadata staging.
+///
+/// # Errors
+///
+/// Returns `Error::Gpu` when probe-result metadata cannot be reserved.
+pub(crate) fn try_enumerate_adapters() -> Result<Vec<wgpu::AdapterInfo>> {
     let instance = wgpu::Instance::default();
     let adapters = instance.enumerate_adapters(wgpu::Backends::all());
-    let mut infos = Vec::with_capacity(adapters.len());
+    let mut infos = Vec::new();
+    reserve_probe_vec(&mut infos, adapters.len(), "adapter enumeration metadata")?;
     infos.extend(adapters.iter().map(wgpu::Adapter::get_info));
-    infos
+    Ok(infos)
 }
 
 /// Report whether the centralized adapter probe can see at least one real GPU.
@@ -140,7 +153,8 @@ pub fn has_real_gpu_adapter() -> bool {
 pub fn adapter_for_info(expected: &wgpu::AdapterInfo) -> Result<wgpu::Adapter> {
     let instance = wgpu::Instance::default();
     let adapters = instance.enumerate_adapters(wgpu::Backends::all());
-    let mut probed = Vec::with_capacity(adapters.len());
+    let mut probed = Vec::new();
+    reserve_probe_vec(&mut probed, adapters.len(), "adapter recovery probe report")?;
     for adapter in adapters {
         let candidate = adapter.get_info();
         if adapter_info_matches(&candidate, expected) {
@@ -185,7 +199,7 @@ pub fn adapter_probe_report() -> AdapterProbeReport {
     let instance = wgpu::Instance::default();
     let adapters = instance.enumerate_adapters(wgpu::Backends::all());
     let mut report = AdapterProbeReport {
-        probed: Vec::with_capacity(adapters.len()),
+        probed: Vec::new(),
         missing: Vec::new(),
     };
 
@@ -213,19 +227,17 @@ pub fn adapter_probe_report() -> AdapterProbeReport {
                 .push("TIMESTAMP_QUERY_INSIDE_ENCODERS".to_string());
         }
         let adapter_limits = adapter.limits();
-        if let Err(error) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("vyre probe"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits {
-                    max_storage_buffers_per_shader_stage:
-                        adapter_limits.max_storage_buffers_per_shader_stage,
-                    ..wgpu::Limits::default()
-                },
-                memory_hints: wgpu::MemoryHints::default(),
+        if let Err(error) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("vyre probe"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits {
+                max_storage_buffers_per_shader_stage:
+                    adapter_limits.max_storage_buffers_per_shader_stage,
+                ..wgpu::Limits::default()
             },
-            None,
-        )) {
+            memory_hints: wgpu::MemoryHints::default(),
+            trace: wgpu::Trace::Off,
+        })) {
             report
                 .missing
                 .push(format!("device request failed on {}: {error}", info.name));
@@ -273,11 +285,24 @@ fn adapter_matches(info: &wgpu::AdapterInfo, criteria: &AdapterCriteria) -> bool
         }
     }
     if let Some(needle) = &criteria.name_contains {
-        if !info.name.to_lowercase().contains(&needle.to_lowercase()) {
+        if !adapter_name_contains(&info.name, needle) {
             return false;
         }
     }
     true
+}
+
+fn adapter_name_contains(name: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if name.is_ascii() && needle.is_ascii() {
+        return name
+            .as_bytes()
+            .windows(needle.len())
+            .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()));
+    }
+    name.to_lowercase().contains(&needle.to_lowercase())
 }
 
 /// Initialize a device + queue bound to the adapter at `index`.
@@ -340,7 +365,12 @@ async fn acquire_gpu_for_adapter_identity(
         }
     }
 
-    let mut probed = Vec::with_capacity(adapters.len());
+    let mut probed = Vec::new();
+    reserve_probe_vec(
+        &mut probed,
+        adapters.len(),
+        "adapter identity recovery probe report",
+    )?;
     probed.extend(adapters.iter().map(|adapter| {
         let info = adapter.get_info();
         format!(
@@ -413,15 +443,21 @@ fn adapter_index_from_raw(raw: Option<&str>) -> Result<Option<usize>> {
     })
 }
 
+fn reserve_probe_vec<T>(vec: &mut Vec<T>, additional: usize, context: &'static str) -> Result<()> {
+    reserve_backend_vec(vec, additional, context).map_err(|error| Error::Gpu {
+        message: error.to_string(),
+    })
+}
+
 #[cfg(test)]
+
 mod tests {
     use super::*;
 
     #[test]
     fn enumerate_adapters_finds_required_gpu() {
         let adapters = enumerate_adapters();
-        assert!(
-            !adapters.is_empty(),
+        assert_ne!(adapters.len(), 0,
             "Fix: WGPU adapter enumeration returned no adapters on a GPU-required release host; repair driver/runtime configuration instead of accepting a CPU-only environment."
         );
     }
@@ -504,4 +540,35 @@ mod tests {
             "Fix: recovery must not silently bind to a different physical adapter."
         );
     }
+
+    #[test]
+    fn adapter_name_contains_matches_ascii_without_lowercase_in_hot_path() {
+        assert!(adapter_name_contains("NVIDIA GeForce RTX 5090", "rtx"));
+        assert!(adapter_name_contains("NVIDIA GeForce RTX 5090", "RTX"));
+        assert!(!adapter_name_contains("NVIDIA GeForce RTX 5090", "radeon"));
+        assert!(adapter_name_contains("Mötley GPU", "mötley"));
+    }
+
+    #[test]
+    fn production_selector_uses_fallible_probe_reservations() {
+        let production = include_str!("selector.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: selector production section should precede tests");
+
+        assert!(
+            !production.contains("Vec::with_capacity"),
+            "Fix: GPU probe paths must not use infallible capacity constructors."
+        );
+        assert!(
+            production.contains("reserve_probe_vec"),
+            "Fix: GPU probe metadata should reserve through the shared WGPU staging helper."
+        );
+        assert!(
+            !production.contains("info.name.to_lowercase()"),
+            "Fix: adapter matching must not allocate lowercase strings per adapter."
+        );
+        assert!(production.contains("adapter_name_contains"));
+    }
 }
+

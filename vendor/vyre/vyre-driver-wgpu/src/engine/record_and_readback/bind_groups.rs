@@ -1,5 +1,6 @@
 use super::binding_lookup::BindingLookup;
 use super::{GpuBuffers, RecordAndReadback};
+use crate::allocation::reserve_smallvec_to_capacity;
 use smallvec::SmallVec;
 use std::sync::Arc;
 use vyre_driver::BackendError;
@@ -12,8 +13,14 @@ pub(super) fn build_bind_groups(
     buffer_ids: &mut Vec<u64>,
     bound_indices: &mut Vec<usize>,
 ) -> Result<SmallVec<[Arc<wgpu::BindGroup>; 4]>, BackendError> {
-    let mut bind_groups: SmallVec<[Arc<wgpu::BindGroup>; 4]> =
-        SmallVec::with_capacity(request.bind_group_layouts.len());
+    let mut bind_groups: SmallVec<[Arc<wgpu::BindGroup>; 4]> = SmallVec::new();
+    reserve_smallvec_to_capacity(
+        &mut bind_groups,
+        request.bind_group_layouts.len(),
+        "record-and-readback bind groups",
+        "bind group",
+        "split the bind group layout set before dispatch",
+    )?;
     for (group_index, layout) in request.bind_group_layouts.iter().enumerate() {
         let group_index_u32 = u32::try_from(group_index).map_err(|_| {
             BackendError::new(
@@ -62,8 +69,14 @@ pub(super) fn build_bind_groups(
             continue;
         }
 
-        let mut entries: SmallVec<[wgpu::BindGroupEntry<'_>; 16]> =
-            SmallVec::with_capacity(bound_indices.len());
+        let mut entries: SmallVec<[wgpu::BindGroupEntry<'_>; 16]> = SmallVec::new();
+        reserve_smallvec_to_capacity(
+            &mut entries,
+            bound_indices.len(),
+            "record-and-readback bind groups",
+            "bind group entry",
+            "split the bind group binding set before dispatch",
+        )?;
         for &idx in bound_indices.iter() {
             let (binding, buffer, logical_size_bytes) = gpu_buffers.get(idx).ok_or_else(|| {
                 BackendError::new(format!(

@@ -4,7 +4,7 @@
 //! matrices (Marchenko-Pastur, Wigner). Recent work (Pennington 2017,
 //! Martin 2021 weight-watcher, Edelman 2024) uses RMT to PREDICT
 //! training dynamics and SHAPE the weight spectrum. This file ships
-//! the **Marchenko-Pastur edge-clipping** primitive — given the
+//! the **Marchenko-Pastur edge-clipping** primitive  -  given the
 //! eigenvalue/singular-value distribution of a matrix, clip values
 //! outside the predicted bulk to the bulk-edge.
 //!
@@ -19,10 +19,7 @@
 //! | future `vyre-libs::ml::training_dynamics` | training-dynamics-aware optimizers |
 //! | `vyre-foundation::transform` spectral scheduling | clip outlier eigenvalues in vyre's dispatch graph |
 
-use std::sync::Arc;
-
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{DataType, Expr, Program};
 
 /// Op id.
 pub const OP_ID: &str = "vyre-primitives::math::mp_edge_clip";
@@ -43,28 +40,13 @@ pub fn mp_edge_clip(eigenvalues: &str, mp_edge: &str, out: &str, n: u32) -> Prog
         );
     }
 
-    let t = Expr::InvocationId { axis: 0 };
-    let bound = Expr::load(mp_edge, Expr::u32(0));
-    let value = Expr::min(Expr::load(eigenvalues, t.clone()), bound);
-
-    let body = vec![Node::if_then(
-        Expr::lt(t.clone(), Expr::u32(n)),
-        vec![Node::store(out, t, value)],
-    )];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(eigenvalues, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n),
-            BufferDecl::storage(mp_edge, 1, BufferAccess::ReadOnly, DataType::U32).with_count(1),
-            BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(n),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(body),
-        }],
+    crate::math::u32_binary_map::u32_vector_scalar_map_program(
+        OP_ID,
+        eigenvalues,
+        mp_edge,
+        out,
+        n,
+        Expr::min,
     )
 }
 
@@ -84,7 +66,36 @@ pub fn mp_upper_edge(m: u32, n: u32, sigma_sq: f64) -> f64 {
 #[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn mp_edge_clip_cpu(eigenvalues: &[f64], edge: f64) -> Vec<f64> {
-    eigenvalues.iter().map(|&v| v.min(edge)).collect()
+    let mut out = Vec::new();
+    try_mp_edge_clip_cpu_into(eigenvalues, edge, &mut out)
+        .unwrap_or_else(|error| panic!("{error}"));
+    out
+}
+
+/// CPU reference: clip elementwise to the MP edge into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn mp_edge_clip_cpu_into(eigenvalues: &[f64], edge: f64, out: &mut Vec<f64>) {
+    try_mp_edge_clip_cpu_into(eigenvalues, edge, out).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Fallible CPU reference: clip elementwise to the MP edge into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_mp_edge_clip_cpu_into(
+    eigenvalues: &[f64],
+    edge: f64,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    if eigenvalues.len() > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            eigenvalues.len() - out.len(),
+            "spectral shape CPU oracle",
+            "mp_edge_clip output",
+        )?;
+    }
+    out.clear();
+    out.extend(eigenvalues.iter().map(|&v| v.min(edge)));
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -94,8 +105,16 @@ inventory::submit! {
         || {
             mp_edge_clip("a", "b", "out", 4)
         },
-        None,
-        None,
+        Some(|| {
+            vec![vec![
+                crate::wire::pack_u32_slice(&[1, 5, 10, 3]),
+                crate::wire::pack_u32_slice(&[4]),
+                crate::wire::pack_u32_slice(&[0; 4]),
+            ]]
+        }),
+        Some(|| {
+            vec![vec![crate::wire::pack_u32_slice(&[1, 4, 4, 3])]]
+        }),
     )
 }
 
@@ -135,6 +154,53 @@ mod tests {
         assert!(approx_eq(out[0], 1.0));
         assert!(approx_eq(out[1], 4.0));
         assert!(approx_eq(out[2], 4.0));
+    }
+
+    #[test]
+    fn cpu_clip_into_reuses_output_and_truncates_stale_tail() {
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&[99.0, 98.0, 97.0, 96.0]);
+        let ptr = out.as_ptr();
+        let capacity = out.capacity();
+
+        try_mp_edge_clip_cpu_into(&[1.0, 5.0, 10.0], 4.0, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - MP edge clip CPU oracle should reuse caller-owned output");
+
+        assert_eq!(out, vec![1.0, 4.0, 4.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+
+        try_mp_edge_clip_cpu_into(&[8.0], 4.0, &mut out)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - MP edge clip CPU oracle should truncate stale output");
+
+        assert_eq!(out, vec![4.0]);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out.capacity(), capacity);
+    }
+
+    #[test]
+    fn generated_cpu_clip_matches_scalar_reference() {
+        let mut out = Vec::new();
+        for case in 0..2048usize {
+            let len = case % 129;
+            let edge = ((case % 31) as f64 - 15.0) / 3.0;
+            let eigenvalues: Vec<f64> = (0..len)
+                .map(|idx| ((idx * 17 + case) % 97) as f64 / 5.0 - 9.0)
+                .collect();
+
+            try_mp_edge_clip_cpu_into(&eigenvalues, edge, &mut out)
+                .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated MP edge clip CPU oracle should evaluate");
+
+            assert_eq!(out.len(), eigenvalues.len(), "case {case}: output length");
+            for idx in 0..out.len() {
+                assert!(
+                    approx_eq(out[idx], eigenvalues[idx].min(edge)),
+                    "case {case} idx {idx}: expected {}, got {}",
+                    eigenvalues[idx].min(edge),
+                    out[idx]
+                );
+            }
+        }
     }
 
     #[test]

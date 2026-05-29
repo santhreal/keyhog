@@ -1,4 +1,4 @@
-//! `regex.backtracking.adversarial` — Catastrophic backtracking regex.
+//! `regex.backtracking.adversarial`  -  Catastrophic backtracking regex.
 //!
 //! Pattern `(a+)+b` against hostile inputs of repeated 'a's. CPU regex engines
 //! with backtracking go superlinear (O(2^n)). GPU parallelism should dominate
@@ -9,6 +9,9 @@ use crate::api::case::{
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::BenchMetrics;
+use crate::api::resident::{
+    dispatch_program_timed, input_bytes_total, transfer_accounting, ResidentInputSet,
+};
 use crate::api::suite::SuiteKind;
 use pcre2::bytes::{Regex, RegexBuilder};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -33,6 +36,8 @@ struct RegexBacktrackingPrepared {
     regex: Regex,
     input_bytes: Vec<u8>,
     inputs: Vec<Vec<u8>>,
+    input_bytes_total: u64,
+    resident: Option<ResidentInputSet>,
 }
 
 impl BenchCase for RegexBacktracking {
@@ -80,11 +85,11 @@ impl BenchCase for RegexBacktracking {
         ))
     }
 
-    fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
+    fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         // GPU kernel: NFA-style parallel state evaluation.
         // For pattern (a+)+b, the NFA has states:
-        //   S0: start — on 'a' go to S1
-        //   S1: in (a+) — on 'a' stay in S1, on 'b' go to S2 (accept)
+        //   S0: start  -  on 'a' go to S1
+        //   S1: in (a+)  -  on 'a' stay in S1, on 'b' go to S2 (accept)
         //   S2: accept
         //
         // Each thread scans its input slice byte-by-byte in a loop.
@@ -228,11 +233,15 @@ impl BenchCase for RegexBacktracking {
             .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
         let input_bytes = vec![0x61u8; TOTAL_WORDS as usize * 4];
         let inputs = vec![input_bytes.clone()];
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputSet::upload_optional(ctx, &inputs, "regex backtracking bench")?;
         Ok(Box::new(RegexBacktrackingPrepared {
             program: prog,
             regex,
             input_bytes,
             inputs,
+            input_bytes_total,
+            resident,
         }))
     }
 
@@ -255,9 +264,15 @@ impl BenchCase for RegexBacktracking {
                 )
             })?;
 
-        let timed = ctx
-            .dispatch_timed(&prepared.program, &prepared.inputs, &ctx.dispatch_config)
-            .map_err(|e| BenchError::BackendFailed(e.to_string()))?;
+        let dispatch = dispatch_program_timed(
+            ctx,
+            &prepared.program,
+            prepared.resident.as_ref(),
+            &prepared.inputs,
+            &ctx.dispatch_config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let timed = dispatch.timed;
         let outputs = timed.outputs;
 
         // CPU baseline: PCRE2 backtracking engine on the exact same hostile corpus.
@@ -269,17 +284,25 @@ impl BenchCase for RegexBacktracking {
             INPUT_LEN as usize * 4,
         )?;
         let elapsed_ref = start_ref.elapsed().as_nanos() as u64;
+        let output_bytes = outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let accounting =
+            transfer_accounting(prepared.input_bytes_total, output_bytes, resident_used);
 
         Ok(BenchRun {
             metrics: BenchMetrics {
                 wall_ns: Some(timed.wall_ns),
                 dispatch_ns: timed.device_ns,
-                input_bytes: Some(prepared.input_bytes.len() as u64),
-                output_bytes: Some(outputs.iter().map(Vec::len).sum::<usize>() as u64),
+                input_bytes: Some(prepared.input_bytes_total),
+                output_bytes: Some(output_bytes),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
+                bytes_touched: Some(accounting.bytes_touched),
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(elapsed_ref),
+                input_bytes: Some(prepared.input_bytes.len() as u64),
+                output_bytes: Some(cpu_results.len() as u64),
                 ..Default::default()
             }),
             outputs,
@@ -292,7 +315,7 @@ impl BenchCase for RegexBacktracking {
     }
 }
 
-/// CPU PCRE2 scan — the advertised backtracking baseline, not a custom NFA.
+/// CPU PCRE2 scan  -  the advertised backtracking baseline, not a custom NFA.
 fn cpu_pcre2_scan(
     regex: &Regex,
     input: &[u8],
@@ -315,7 +338,7 @@ fn cpu_pcre2_scan(
         }
         results[instance] = matches;
     }
-    Ok(results.iter().flat_map(|r| r.to_le_bytes()).collect())
+    Ok(vyre_primitives::wire::pack_u32_slice(&results))
 }
 
 inventory::submit! {

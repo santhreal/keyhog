@@ -1,4 +1,4 @@
-//! `flows_to_with_sanitizer` — composite source→sink reachability
+//! `flows_to_with_sanitizer`  -  composite source→sink reachability
 //! with explicit sanitizer kill, in one fused Region.
 //!
 //! This is the CodeQL `DataFlow::Configuration` shape compressed into
@@ -21,7 +21,7 @@
 //! Soundness: [`Exact`](vyre::soundness::Soundness::Exact)
 //! when iterated to fixpoint with the same sanitizer mask supplied
 //! at every step. One step alone is
-//! [`MayOver`](vyre::soundness::Soundness::MayOver) — the
+//! [`MayOver`](vyre::soundness::Soundness::MayOver)  -  the
 //! caller is responsible for the fixpoint loop, which is the same
 //! contract every other reachability primitive in this module honours.
 
@@ -40,10 +40,10 @@ pub(crate) const OP_ID: &str = "vyre-libs::security::flows_to_with_sanitizer";
 /// reduced to a single u32 in `out_scalar_buf`.
 ///
 /// Buffer ownership:
-/// * `source_buf`, `sink_buf`, `sanitizer_buf` — read-only.
-/// * `clean_buf`, `reach_buf`, `alive_buf`, `hits_buf` — read-write
+/// * `source_buf`, `sink_buf`, `sanitizer_buf`  -  read-only.
+/// * `clean_buf`, `reach_buf`, `alive_buf`, `hits_buf`  -  read-write
 ///   scratch sized to `bitset_words(shape.node_count)`.
-/// * `out_scalar_buf` — read-write 1-word output, nonzero iff any
+/// * `out_scalar_buf`  -  read-write 1-word output, nonzero iff any
 ///   non-sanitized source-reachable bit overlaps with sink.
 #[must_use]
 pub fn flows_to_with_sanitizer(
@@ -100,7 +100,7 @@ inventory::submit! {
         id: OP_ID,
         build: || flows_to_with_sanitizer(ProgramGraphShape::new(4, 3), "source", "sink", "sanitizer", "clean", "reach", "alive", "hits", "out_scalar"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0b0001]),              // source = {0}
                 to_bytes(&[0b0000]),              // sanitizer = {}
@@ -122,7 +122,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![
                 to_bytes(&[0b0001]),              // clean = {0}
                 to_bytes(&[0b0011]),              // reach = {0,1}
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn source_killed_by_sanitizer_returns_zero() {
         let (off, tgt, msk) = linear_dataflow(4);
-        // Sanitizer covers the source itself — nothing flows.
+        // Sanitizer covers the source itself  -  nothing flows.
         let result = cpu_ref(4, &off, &tgt, &msk, &[0b0001], &[0b0010], &[0b0001]);
         assert_eq!(result, 0);
     }
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn landing_killed_by_sanitizer_returns_zero() {
         let (off, tgt, msk) = linear_dataflow(4);
-        // Source = {0}, sink = {1}, sanitizer = {1} — sink itself is
+        // Source = {0}, sink = {1}, sanitizer = {1}  -  sink itself is
         // sanitized, so the landing kill drops it before the AND-sink.
         let result = cpu_ref(4, &off, &tgt, &msk, &[0b0001], &[0b0010], &[0b0010]);
         assert_eq!(result, 0);
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn unrelated_sanitizer_passes_through() {
         let (off, tgt, msk) = linear_dataflow(4);
-        // Sanitizer covers node 3 (downstream of sink) — irrelevant.
+        // Sanitizer covers node 3 (downstream of sink)  -  irrelevant.
         let result = cpu_ref(4, &off, &tgt, &msk, &[0b0001], &[0b0010], &[0b1000]);
         assert_eq!(result, 1);
     }

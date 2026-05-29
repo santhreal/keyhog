@@ -2,7 +2,7 @@
 //!
 //! The `io` dialect declares ops that move bytes between persistent
 //! storage and GPU memory without a CPU staging copy. These are
-//! Category C — they have no portable lowering. A concrete backend
+//! Category C  -  they have no portable lowering. A concrete backend
 //! opts in by registering a `BackendRegistration` that supplies
 //! `primary_text` / `primary_binary` / `secondary_text` / `native_module` builders.
 //!
@@ -13,13 +13,13 @@
 //!
 //! The ops:
 //!
-//! * `io.dma_from_nvme(fd, offset, length)` — stream bytes directly
+//! * `io.dma_from_nvme(fd, offset, length)`  -  stream bytes directly
 //!   from an NVMe block device into GPU memory.
-//! * `io.write_back_to_nvme(handle, fd, offset)` — stream GPU bytes
+//! * `io.write_back_to_nvme(handle, fd, offset)`  -  stream GPU bytes
 //!   back to an NVMe block device.
-//! * `mem.zerocopy_map(fd)` — map a file descriptor so that the GPU
+//! * `mem.zerocopy_map(fd)`  -  map a file descriptor so that the GPU
 //!   can read it as its own address space (GDS).
-//! * `mem.unmap(handle)` — release a `mem.zerocopy_map` reservation.
+//! * `mem.unmap(handle)`  -  release a `mem.zerocopy_map` reservation.
 //!
 //! Even without lowerings, the ops are compositional in vyre IR:
 //! frontends can write Programs against them today, and the Program

@@ -1,10 +1,10 @@
-# vyre-spec — architecture
+# vyre-spec  -  architecture
 
 Frozen data contracts. Every wire-stable enum (BinOp, AtomicOp,
 DataType, BufferAccess, Convention) plus every algebraic law
 declaration ships from this crate.
 
-This is the smallest crate in the workspace by design — the
+This is the smallest crate in the workspace by design  -  the
 "spec" is the smallest immutable surface of vyre, separate from
 the larger `vyre-foundation` so consumers can take just the wire
 contract without the IR transforms.
@@ -44,11 +44,11 @@ foundation declares. A new op without a category trip the build.
 
 ## Public types
 
-- **`BinOp` / `UnOp` / `AtomicOp`** — frozen enums.
+- **`BinOp` / `UnOp` / `AtomicOp`**  -  frozen enums.
 - **`DataType` / `BufferAccess` / `Convention` / `OpSignature`**
-  — frozen wire types.
-- **`AlgebraicLaw`** — marker enum.
-- **`Category`** — op-category enum.
+   -  frozen wire types.
+- **`AlgebraicLaw`**  -  marker enum.
+- **`Category`**  -  op-category enum.
 
 ## Integration points
 

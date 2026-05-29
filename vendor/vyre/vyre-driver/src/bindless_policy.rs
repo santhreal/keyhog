@@ -1,8 +1,8 @@
 //! D9 substrate: bindless buffers / textures decision policy.
 //!
 //! When a kernel binds many resources (think 100+ small buffers in a
-//! sparse compute graph), the per-binding setup cost — bind group
-//! creation, descriptor set rebinds — dominates dispatch latency.
+//! sparse compute graph), the per-binding setup cost  -  bind group
+//! creation, descriptor set rebinds  -  dominates dispatch latency.
 //! Bindless mode replaces N descriptor entries with one descriptor
 //! array indexed at runtime, eliminating the rebind churn.
 //!
@@ -49,7 +49,7 @@ pub struct BindlessInputs {
 /// Verdict from [`decide_bindless`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BindlessDecision {
-    /// Use bindless — N resources go into a single descriptor array.
+    /// Use bindless  -  N resources go into a single descriptor array.
     Bindless,
     /// Use traditional per-resource bindings.
     TraditionalBindings,
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn static_support_with_dynamic_access_returns_traditional() {
-        // Static can't satisfy dynamic indexing of unbound slots —
+        // Static can't satisfy dynamic indexing of unbound slots  -
         // dynamic access on Static-only support falls back.
         assert_eq!(
             decide_bindless(inp(100, BindlessSupport::Static, true)),

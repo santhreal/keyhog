@@ -15,8 +15,8 @@
 //! Substrate parity strategy: route the descriptor through
 //! `vyre-emit-naga` to get a `naga::Module`, then use
 //! `naga::back::spv::Writer` to produce a SPIR-V binary. This shares
-//! the lossless lowering work with the wgpu/naga path — both backends
-//! see the exact same naga::Module — and avoids forking a second
+//! the lossless lowering work with the wgpu/naga path  -  both backends
+//! see the exact same naga::Module  -  and avoids forking a second
 //! KernelOp → SPIR-V translation table.
 //!
 //! ## Op coverage
@@ -68,7 +68,7 @@ pub fn emit(desc: &KernelDescriptor) -> Result<Vec<u32>, EmitError> {
     emit_from_naga_module(&module)
 }
 
-/// Emit a SPIR-V binary from an optimized form of `desc` — runs the
+/// Emit a SPIR-V binary from an optimized form of `desc`  -  runs the
 /// full vyre rewrite stack before lowering. Recommended over [`emit`]
 /// for production use.
 pub fn emit_optimized(desc: &KernelDescriptor) -> Result<Vec<u32>, EmitError> {
@@ -83,7 +83,7 @@ pub fn emit_optimized_with_stats(
     let (optimized, stats) = vyre_lower::rewrites::run_all_with_stats(desc);
     debug_assert!(
         vyre_lower::verify::verify(&optimized).is_ok(),
-        "rewrite pipeline produced an invalid descriptor — see vyre_lower::verify for the contract"
+        "rewrite pipeline produced an invalid descriptor  -  see vyre_lower::verify for the contract"
     );
     let words = emit(&optimized)?;
     Ok((words, stats))
@@ -158,7 +158,7 @@ fn words_to_le_bytes(words: Vec<u32>) -> Result<Vec<u8>, EmitError> {
     Ok(bytes)
 }
 
-/// SPIR-V magic number — `0x07230203` per the spec. Useful for
+/// SPIR-V magic number  -  `0x07230203` per the spec. Useful for
 /// integration tests and consumer-side sanity checks.
 pub const SPIRV_MAGIC: u32 = 0x07230203;
 
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn emit_optimized_drops_dead_arithmetic() {
-        // Same shape — identity + absorbing zero → dead after run_all.
+        // Same shape  -  identity + absorbing zero → dead after run_all.
         // Optimized SPIR-V should be no longer than raw.
         use vyre_foundation::ir::BinOp as Bo;
         let desc = KernelDescriptor {

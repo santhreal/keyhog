@@ -14,6 +14,7 @@ use crate::parsing::c::parse::vast_kinds::{
     C_AST_KIND_BUILTIN_VA_INTRIN_EXPR,
 };
 use std::sync::OnceLock;
+use vyre_primitives::hash::fnv1a::fnv1a32_const;
 
 /// One GNU builtin spelling and its parser-local VAST kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,17 +39,6 @@ const fn gnu_builtin(name: &'static [u8], kind: u32) -> GnuBuiltinNameKind {
         hash: fnv1a32_const(name),
         kind,
     }
-}
-
-const fn fnv1a32_const(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    let mut idx = 0usize;
-    while idx < bytes.len() {
-        hash ^= bytes[idx] as u32;
-        hash = hash.wrapping_mul(0x0100_0193);
-        idx += 1;
-    }
-    hash
 }
 
 /// Canonical GNU builtin catalog shared by byte-name, GPU-hash, and oracle classifiers.
@@ -771,6 +761,7 @@ pub(super) fn classify_gnu_builtin_hash(hash: u32) -> Option<u32> {
         .map(|idx| catalog[idx].kind)
 }
 
+
 fn sorted_hash_catalog() -> &'static [GnuBuiltinHashKind] {
     static SORTED_HASH_CATALOG: OnceLock<Box<[GnuBuiltinHashKind]>> = OnceLock::new();
     SORTED_HASH_CATALOG.get_or_init(|| {
@@ -1038,12 +1029,6 @@ mod tests {
         }
     }
 
-    fn fnv1a32(bytes: &[u8]) -> u32 {
-        let mut hash = 0x811c_9dc5u32;
-        for byte in bytes {
-            hash ^= u32::from(*byte);
-            hash = hash.wrapping_mul(0x0100_0193);
-        }
-        hash
-    }
+    use vyre_primitives::hash::fnv1a::fnv1a32;
 }
+

@@ -1,6 +1,6 @@
 [package]
 name = "vyre-aot"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,15 +19,15 @@ workspace = true
 [dependencies]
 vyre-foundation.workspace = true
 vyre-driver.workspace = true
-vyre-primitives = { workspace = true, features = ["math", "graph", "fixpoint", "bitset", "reduce", "inventory-registry"] }
+vyre-primitives = { workspace = true, default-features = false, features = ["math", "graph", "fixpoint", "bitset", "reduce", "inventory-registry"] }
 vyre-spec.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
-sha2.workspace = true
+hashkit = { path = "../../../indexing/hashkit" }
 blake3.workspace = true
-brotli = "8"
-lzma-rs = "0.3"
+brotli.workspace = true
+lzma-rs.workspace = true
 
 [features]
 default = []
@@ -36,3 +36,4 @@ ptx = []
 [dev-dependencies]
 vyre-reference.workspace = true
 tempfile.workspace = true
+sha2.workspace = true

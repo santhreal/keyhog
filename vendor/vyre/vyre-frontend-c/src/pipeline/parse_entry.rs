@@ -57,8 +57,8 @@ pub fn parse_c11_translation_unit(
 /// comparators while keeping vyre's real path-aware include context.
 ///
 /// Three-layer cache (in `pipeline::parse_cache`):
-///   1. process-local `summary_cache()` — returns cached summary in <1 µs.
-///   2. on-disk summary cache — survives process restarts.
+///   1. process-local `summary_cache()`  -  returns cached summary in <1 µs.
+///   2. on-disk summary cache  -  survives process restarts.
 ///   3. lex output cache (further down inside `parse_c11_source_with_backend`).
 pub fn parse_c11_translation_unit_bytes(
     path: &Path,

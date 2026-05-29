@@ -18,46 +18,9 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
 use crate::region::wrap_anonymous;
-
-fn finite_or(value: Expr, replacement: Expr) -> Expr {
-    Expr::select(Expr::is_finite(value.clone()), value, replacement)
-}
-
-fn bounded_exp_arg(value: Expr) -> Expr {
-    let value_is_nan = Expr::is_nan(value.clone());
-    let finite = finite_or(value.clone(), Expr::f32(-80.0));
-    let upper_bounded = Expr::select(
-        Expr::gt(finite.clone(), Expr::f32(0.0)),
-        Expr::f32(0.0),
-        finite,
-    );
-    let clamped = Expr::select(
-        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
-        Expr::f32(-80.0),
-        upper_bounded,
-    );
-    Expr::select(value_is_nan, value, clamped)
-}
-
-fn positive_denominator(value: Expr) -> Expr {
-    let repaired = Expr::select(
-        Expr::and(
-            Expr::is_finite(value.clone()),
-            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
-        ),
-        value.clone(),
-        Expr::f32(f32::MIN_POSITIVE),
-    );
-    Expr::select(Expr::is_nan(value.clone()), value, repaired)
-}
-
-fn flush_tiny(value: Expr) -> Expr {
-    Expr::select(
-        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
-        Expr::f32(0.0),
-        value,
-    )
-}
+use vyre_primitives::nn::attention_stability::{
+    bounded_exp_arg, bounded_score, flush_tiny, positive_denominator,
+};
 
 /// MLA single-token decode with compressed KV cache.
 ///
@@ -66,12 +29,12 @@ fn flush_tiny(value: Expr) -> Expr {
 /// output for this token.
 ///
 /// Shapes:
-///   `q: [num_heads, head_dim]` — query vectors for current token
-///   `kv_cache: [seq_len, kv_lora_rank]` — compressed KV for all prior tokens
-///   `kr_cache: [seq_len, qk_rope_head_dim]` — decoupled RoPE keys for prior tokens
-///   `w_uk: [kv_lora_rank, num_heads * head_dim]` — K up-projection
-///   `w_uv: [kv_lora_rank, num_heads * head_dim]` — V up-projection
-///   `out: [num_heads, head_dim]` — attention output
+///   `q: [num_heads, head_dim]`  -  query vectors for current token
+///   `kv_cache: [seq_len, kv_lora_rank]`  -  compressed KV for all prior tokens
+///   `kr_cache: [seq_len, qk_rope_head_dim]`  -  decoupled RoPE keys for prior tokens
+///   `w_uk: [kv_lora_rank, num_heads * head_dim]`  -  K up-projection
+///   `w_uv: [kv_lora_rank, num_heads * head_dim]`  -  V up-projection
+///   `out: [num_heads, head_dim]`  -  attention output
 ///
 /// # Errors
 /// Returns `Err` when any dimension is zero.
@@ -235,14 +198,7 @@ pub fn mla_decode(
                 "raw_score",
                 Expr::mul(Expr::var("dot_val"), scale_expr.clone()),
             ),
-            Node::let_bind(
-                "score",
-                Expr::select(
-                    Expr::is_nan(Expr::var("raw_score")),
-                    Expr::var("raw_score"),
-                    finite_or(Expr::var("raw_score"), Expr::f32(-80.0)),
-                ),
-            ),
+            Node::let_bind("score", bounded_score(Expr::var("raw_score"))),
             Node::store(
                 "score_tile",
                 score_idx(Expr::var("local"), Expr::var("tile_j")),
@@ -535,9 +491,10 @@ pub fn mla_decode(
 /// to be appended to the KV cache.
 ///
 /// Shapes:
-///   `h: [hidden_dim]` — current token hidden state
-///   `w_dk: [hidden_dim, kv_lora_rank]` — down-projection weights
-///   `c_out: [kv_lora_rank]` — compressed latent output
+///   `h: [hidden_dim]`  -  current token hidden state
+///   `w_dk: [hidden_dim, kv_lora_rank]`  -  down-projection weights
+///   `c_out: [kv_lora_rank]`  -  compressed latent output
+
 pub fn mla_compress_kv(
     h: &str,
     w_dk: &str,
@@ -601,18 +558,9 @@ pub fn mla_compress_kv(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_f32;
+    use crate::test_support::byte_pack::f32_bytes;
     use vyre_reference::value::Value;
-
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values.iter().flat_map(|v| v.to_le_bytes()).collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    }
 
     #[test]
     fn mla_compress_kv_identity() {
@@ -718,10 +666,16 @@ mod tests {
 
     #[test]
     fn mla_decode_zero_dim_errors() {
-        assert!(mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", 0, 1, 2, 2, 2).is_err());
-        assert!(mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", 1, 0, 2, 2, 2).is_err());
-        assert!(mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", 1, 1, 0, 2, 2).is_err());
-        assert!(mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", 1, 1, 2, 0, 2).is_err());
-        assert!(mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", 1, 1, 2, 2, 0).is_err());
+        for (batch, seq, kv_heads, head_dim, latent) in
+            [(0, 1, 2, 2, 2), (1, 0, 2, 2, 2), (1, 1, 0, 2, 2), (1, 1, 2, 0, 2), (1, 1, 2, 2, 0)]
+        {
+            let err = mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", batch, seq, kv_heads, head_dim, latent)
+                .expect_err("zero dim must error");
+            assert!(
+                err.contains("mla_decode") && err.contains("> 0"),
+                "mla_decode zero-dim ({batch},{seq},{kv_heads},{head_dim},{latent}): {err}"
+            );
+        }
     }
 }
+

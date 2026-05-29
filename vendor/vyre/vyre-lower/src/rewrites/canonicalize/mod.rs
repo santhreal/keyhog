@@ -10,7 +10,7 @@
 //! `Min`, `Max`, `Eq`, `Ne`, `WrappingAdd`.
 //!
 //! NOT commutative: `Sub`, `Div`, `Mod`, `Shl`, `Shr`, `Lt`, `Le`,
-//! `Gt`, `Ge` — operand order matters semantically. Float Add/Mul
+//! `Gt`, `Ge`  -  operand order matters semantically. Float Add/Mul
 //! aren't strictly commutative under IEEE 754 NaN rules either, but
 //! we don't model that distinction here (descriptor BinOp is type-
 //! agnostic). Folding under floats with NaNs would change which NaN
@@ -126,7 +126,7 @@ mod tests {
             vec![LiteralValue::U32(3), LiteralValue::U32(4)],
         );
         let out = canonicalize(&desc);
-        // Sub is NOT commutative — order preserved.
+        // Sub is NOT commutative  -  order preserved.
         assert_eq!(out.body.ops[2].operands, vec![1, 0]);
     }
 

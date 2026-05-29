@@ -33,7 +33,7 @@ pub struct DriftFinding {
 
 /// Resolve when an entry first appeared. Returns the (`age_days`,
 /// `added_date_iso`) pair. Implementors decide where the data comes
-/// from — production uses git blame, tests inject deterministic
+/// from  -  production uses git blame, tests inject deterministic
 /// values.
 pub trait AgeResolver {
     fn age(&self, allowlist_path: &Path, exempt_path: &str) -> Option<(i64, String)>;

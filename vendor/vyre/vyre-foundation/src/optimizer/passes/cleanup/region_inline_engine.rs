@@ -13,7 +13,7 @@
 
 use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::program::Program;
-use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 
 /// Default node-count threshold. Regions whose bodies count ≤ this many
 /// nodes inline; larger Regions stay wrapped so tracing spans and
@@ -52,16 +52,9 @@ pub fn run(program: Program) -> Program {
 #[must_use]
 pub fn run_with_threshold(program: Program, threshold: usize) -> Program {
     program.map_entry(|owned_entry| {
-        let mut region_counts = FxHashMap::default();
         let mut entry = Vec::with_capacity(owned_entry.len());
         let mut scratch_pool = Vec::new();
-        inline_nodes_into(
-            owned_entry,
-            threshold,
-            &mut region_counts,
-            &mut scratch_pool,
-            &mut entry,
-        );
+        inline_nodes_into(owned_entry, threshold, &mut scratch_pool, &mut entry);
         entry
     })
 }
@@ -76,7 +69,6 @@ pub fn run_with_threshold(program: Program, threshold: usize) -> Program {
 fn inline_nodes_into(
     nodes: Vec<Node>,
     threshold: usize,
-    region_counts: &mut FxHashMap<usize, usize>,
     scratch_pool: &mut Vec<Vec<Node>>,
     out: &mut Vec<Node>,
 ) {
@@ -87,7 +79,7 @@ fn inline_nodes_into(
                 generator,
                 source_region,
             } => {
-                let count = count_nodes(&body, region_counts);
+                let count = count_nodes_capped(&body, threshold);
                 // VYRE_IR_HOTSPOTS CRIT: `(*body).clone()` cloned the
                 // whole inner Vec<Node> unconditionally. try_unwrap
                 // first so a uniquely-owned Arc yields the inner Vec
@@ -98,17 +90,11 @@ fn inline_nodes_into(
                     Err(arc) => (*arc).clone(),
                 };
                 if count <= threshold {
-                    // Flatten directly into `out` — no intermediate vec.
-                    inline_nodes_into(body_vec, threshold, region_counts, scratch_pool, out);
+                    // Flatten directly into `out`  -  no intermediate vec.
+                    inline_nodes_into(body_vec, threshold, scratch_pool, out);
                 } else {
                     let mut new_body = take_scratch(scratch_pool, body_vec.len());
-                    inline_nodes_into(
-                        body_vec,
-                        threshold,
-                        region_counts,
-                        scratch_pool,
-                        &mut new_body,
-                    );
+                    inline_nodes_into(body_vec, threshold, scratch_pool, &mut new_body);
                     out.push(Node::Region {
                         generator,
                         source_region,
@@ -119,13 +105,7 @@ fn inline_nodes_into(
             }
             Node::Block(children) => {
                 let mut new_children = take_scratch(scratch_pool, children.len());
-                inline_nodes_into(
-                    children,
-                    threshold,
-                    region_counts,
-                    scratch_pool,
-                    &mut new_children,
-                );
+                inline_nodes_into(children, threshold, scratch_pool, &mut new_children);
                 out.push(Node::Block(std::mem::take(&mut new_children)));
                 return_scratch(scratch_pool, new_children);
             }
@@ -136,7 +116,7 @@ fn inline_nodes_into(
                 body,
             } => {
                 let mut new_body = take_scratch(scratch_pool, body.len());
-                inline_nodes_into(body, threshold, region_counts, scratch_pool, &mut new_body);
+                inline_nodes_into(body, threshold, scratch_pool, &mut new_body);
                 out.push(Node::Loop {
                     var,
                     from,
@@ -152,14 +132,8 @@ fn inline_nodes_into(
             } => {
                 let mut new_then = take_scratch(scratch_pool, then.len());
                 let mut new_otherwise = take_scratch(scratch_pool, otherwise.len());
-                inline_nodes_into(then, threshold, region_counts, scratch_pool, &mut new_then);
-                inline_nodes_into(
-                    otherwise,
-                    threshold,
-                    region_counts,
-                    scratch_pool,
-                    &mut new_otherwise,
-                );
+                inline_nodes_into(then, threshold, scratch_pool, &mut new_then);
+                inline_nodes_into(otherwise, threshold, scratch_pool, &mut new_otherwise);
                 out.push(Node::If {
                     cond,
                     then: std::mem::take(&mut new_then),
@@ -173,28 +147,37 @@ fn inline_nodes_into(
     }
 }
 
-fn count_nodes(nodes: &[Node], region_counts: &mut FxHashMap<usize, usize>) -> usize {
-    nodes
-        .iter()
-        .map(|n| match n {
-            Node::Block(children) => 1 + count_nodes(children, region_counts),
-            Node::Loop { body, .. } => 1 + count_nodes(body, region_counts),
-            Node::If {
-                then, otherwise, ..
-            } => 1 + count_nodes(then, region_counts) + count_nodes(otherwise, region_counts),
-            Node::Region { body, .. } => {
-                let key = std::sync::Arc::as_ptr(body) as usize;
-                if let Some(count) = region_counts.get(&key) {
-                    1 + *count
-                } else {
-                    let count = count_nodes(body, region_counts);
-                    region_counts.insert(key, count);
-                    1 + count
-                }
+fn count_nodes_capped(nodes: &[Node], threshold: usize) -> usize {
+    let cap = threshold.saturating_add(1);
+    let mut count = 0usize;
+    let mut stack: SmallVec<[&[Node]; 16]> = SmallVec::new();
+    stack.push(nodes);
+
+    while let Some(nodes) = stack.pop() {
+        for node in nodes {
+            count = count.saturating_add(1);
+            if count >= cap {
+                return cap;
             }
-            _ => 1,
-        })
-        .sum()
+            match node {
+                Node::Block(children) | Node::Loop { body: children, .. } => {
+                    stack.push(children);
+                }
+                Node::If {
+                    then, otherwise, ..
+                } => {
+                    stack.push(otherwise);
+                    stack.push(then);
+                }
+                Node::Region { body, .. } => {
+                    stack.push(body);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    count
 }
 
 #[cfg(test)]
@@ -246,6 +229,19 @@ mod tests {
     }
 
     #[test]
+    fn generated_large_region_count_is_capped_at_inline_threshold() {
+        let body: Vec<Node> = (0..4096)
+            .map(|i| Node::store("out", Expr::u32(i), Expr::u32(i)))
+            .collect();
+
+        assert_eq!(
+            count_nodes_capped(&body, 64),
+            65,
+            "Fix: region-inline must stop counting once a generated body exceeds the inline threshold."
+        );
+    }
+
+    #[test]
     fn nested_small_regions_all_inline() {
         let inner = Node::Region {
             generator: "inner".into(),
@@ -263,7 +259,7 @@ mod tests {
             vec![outer],
         );
         let optimized = run(prog);
-        // Both Regions inlined — only the Store remains.
+        // Both Regions inlined  -  only the Store remains.
         assert_eq!(optimized.entry().len(), 1);
         assert!(matches!(&optimized.entry()[0], Node::Store { .. }));
     }

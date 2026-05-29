@@ -1,4 +1,4 @@
-//! IO subsystem — GPU↔runtime DMA request queue for the persistent megakernel.
+//! IO subsystem  -  GPU↔runtime DMA request queue for the persistent megakernel.
 //!
 //! Module ownership:
 //!  - `mod.rs`: doc + constants + IoRequest/IoCompletion + word/op/status modules
@@ -73,7 +73,7 @@ pub mod io_word {
     pub const OFFSET_HI: u32 = 4;
     /// Number of bytes to transfer.
     pub const BYTE_COUNT: u32 = 5;
-    /// Slot status — same semantics as work ring (EMPTY/PUBLISHED/CLAIMED/DONE).
+    /// Slot status  -  same semantics as work ring (EMPTY/PUBLISHED/CLAIMED/DONE).
     pub const STATUS: u32 = 6;
     /// Caller-supplied tag for correlating completions.
     pub const TAG: u32 = 7;
@@ -85,7 +85,7 @@ pub mod io_op {
     pub const READ: u32 = 0x01;
     /// Write from GPU buffer to storage.
     pub const WRITE: u32 = 0x02;
-    /// Memory fence — ensure all prior IO ops are visible.
+    /// Memory fence  -  ensure all prior IO ops are visible.
     pub const FENCE: u32 = 0x03;
 }
 
@@ -93,7 +93,7 @@ pub mod io_op {
 pub mod io_status {
     /// Operation completed successfully.
     pub const OK: u32 = 0x10;
-    /// Operation failed — error code in the tag word.
+    /// Operation failed  -  error code in the tag word.
     pub const ERROR: u32 = 0x11;
 }
 

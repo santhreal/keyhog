@@ -237,8 +237,28 @@ impl WgpuPipeline {
         inputs: &[&[u8]],
     ) -> Result<(Vec<GpuBufferHandle>, Vec<GpuBufferHandle>), BackendError> {
         let (_device, queue) = &*self.device_queue;
-        let mut input_handles = Vec::with_capacity(self.buffer_bindings.len());
-        let mut output_handles = Vec::with_capacity(self.buffer_bindings.len());
+        let mut input_handles = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(
+            &mut input_handles,
+            self.buffer_bindings.len(),
+        )
+        .map_err(|source| {
+            BackendError::new(format!(
+                "persistent legacy input handle staging could not reserve {} handle slot(s): {source}. Fix: split input buffers before dispatch.",
+                self.buffer_bindings.len()
+            ))
+        })?;
+        let mut output_handles = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(
+            &mut output_handles,
+            self.buffer_bindings.len(),
+        )
+        .map_err(|source| {
+            BackendError::new(format!(
+                "persistent legacy output handle staging could not reserve {} handle slot(s): {source}. Fix: split output buffers before dispatch.",
+                self.buffer_bindings.len()
+            ))
+        })?;
         // `inputs` is ordered like non-Shared `buffer_bindings`. Avoid building a
         // temporary `input_bindings` vec each call: advance a slot only for used entries.
         let mut input_slot: usize = 0;
@@ -383,7 +403,17 @@ impl WgpuPipeline {
     ) -> Result<Arc<[Arc<wgpu::BindGroup>]>, BackendError> {
         let mut grouped_bound: Vec<
             smallvec::SmallVec<[(&BufferBindingInfo, &GpuBufferHandle); 16]>,
-        > = Vec::with_capacity(self.bind_group_layouts.len());
+        > = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(
+            &mut grouped_bound,
+            self.bind_group_layouts.len(),
+        )
+        .map_err(|source| {
+            BackendError::new(format!(
+                "persistent bind-group staging could not reserve {} group slot(s): {source}. Fix: split bind-group resources before caching.",
+                self.bind_group_layouts.len()
+            ))
+        })?;
         grouped_bound.resize_with(self.bind_group_layouts.len(), smallvec::SmallVec::new);
         for (info, handle) in bound {
             let group = usize::try_from(info.group).map_err(|source| {
@@ -403,7 +433,17 @@ impl WgpuPipeline {
             };
             slot.push((*info, *handle));
         }
-        let mut bind_groups = Vec::with_capacity(self.bind_group_layouts.len());
+        let mut bind_groups = Vec::new();
+        vyre_driver::allocation::try_reserve_vec_to_capacity(
+            &mut bind_groups,
+            self.bind_group_layouts.len(),
+        )
+        .map_err(|source| {
+            BackendError::new(format!(
+                "persistent bind-group cache result could not reserve {} group slot(s): {source}. Fix: split bind-group resources before caching.",
+                self.bind_group_layouts.len()
+            ))
+        })?;
         for (group_index, layout) in self.bind_group_layouts.iter().enumerate() {
             let group_bound = &grouped_bound[group_index];
             let handle_id_capacity = group_bound.len().checked_mul(2).ok_or_else(|| {
@@ -411,14 +451,43 @@ impl WgpuPipeline {
                     "persistent bind group handle-id count overflowed usize. Fix: split bind-group resources before caching.",
                 )
             })?;
-            let mut handle_ids: smallvec::SmallVec<[u64; 16]> =
-                smallvec::SmallVec::with_capacity(handle_id_capacity);
+            let mut handle_ids: smallvec::SmallVec<[u64; 16]> = smallvec::SmallVec::new();
+            vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+                &mut handle_ids,
+                handle_id_capacity,
+            )
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "persistent bind-group handle-id cache key could not reserve {handle_id_capacity} word slot(s): {source}. Fix: split bind-group resources before caching."
+                ))
+            })?;
+            let mut checked_bound: smallvec::SmallVec<
+                [(&BufferBindingInfo, &GpuBufferHandle, u64); 16],
+            > = smallvec::SmallVec::new();
+            vyre_foundation::allocation::try_reserve_smallvec_to_capacity(
+                &mut checked_bound,
+                group_bound.len(),
+            )
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "persistent bind-group checked binding staging could not reserve {} binding slot(s): {source}. Fix: split bind-group resources before caching.",
+                    group_bound.len()
+                ))
+            })?;
             for (_, handle) in group_bound {
                 handle_ids.push(handle.allocation_identity());
-                handle_ids.push(padded_wgpu_u64(
+                let bind_size = padded_wgpu_u64(
                     handle.byte_len(),
                     "persistent bind-group cache key byte length",
-                )?);
+                )?;
+                handle_ids.push(bind_size);
+            }
+            for (info, handle) in group_bound {
+                checked_bound.push((
+                    info,
+                    handle,
+                    padded_wgpu_u64(handle.byte_len(), "persistent bind-group binding size")?,
+                ));
             }
             let layout_id = Arc::as_ptr(layout).addr();
             let bg = self
@@ -428,19 +497,13 @@ impl WgpuPipeline {
                         smallvec::SmallVec::<[wgpu::BindGroupEntry<'_>; 16]>::with_capacity(
                             group_bound.len(),
                         );
-                    entries.extend(group_bound.iter().map(|(info, handle)| {
+                    entries.extend(checked_bound.iter().map(|(info, handle, bind_size)| {
                         wgpu::BindGroupEntry {
                             binding: info.binding,
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: handle.buffer(),
                                 offset: 0,
-                                size: wgpu::BufferSize::new(
-                                    padded_wgpu_u64(
-                                        handle.byte_len(),
-                                        "persistent bind-group binding size",
-                                    )
-                                    .expect("persistent bind-group size must match checked cache-key size"),
-                                ),
+                                size: wgpu::BufferSize::new(*bind_size),
                             }),
                         }
                     }));
@@ -500,30 +563,13 @@ pub(crate) fn binding_padded_size(
     Ok(len)
 }
 
+
 fn padded_wgpu_u64(size: u64, label: &'static str) -> Result<u64, BackendError> {
-    let normalized = size.max(4);
-    let remainder = normalized % 4;
-    if remainder == 0 {
-        return Ok(normalized);
-    }
-    normalized.checked_add(4 - remainder).ok_or_else(|| {
-        BackendError::new(format!(
-            "{label} overflows u64 while padding to WGPU's 4-byte buffer alignment. Fix: split persistent dispatch buffers."
-        ))
-    })
+    crate::numeric::align_up_u64(size, 4, label)
 }
 
 fn padded_wgpu_usize(size: usize, label: &'static str) -> Result<usize, BackendError> {
-    let normalized = size.max(4);
-    let remainder = normalized % 4;
-    if remainder == 0 {
-        return Ok(normalized);
-    }
-    normalized.checked_add(4 - remainder).ok_or_else(|| {
-        BackendError::new(format!(
-            "{label} overflows usize while padding to WGPU's 4-byte buffer alignment. Fix: split persistent dispatch buffers."
-        ))
-    })
+    crate::numeric::align_up_usize(size, 4, label)
 }
 
 fn validate_consumed_counts(
@@ -588,3 +634,4 @@ mod tests {
         assert_eq!(size, 20);
     }
 }
+

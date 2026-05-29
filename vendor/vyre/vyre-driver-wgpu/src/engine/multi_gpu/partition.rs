@@ -66,14 +66,18 @@ pub fn partition_work_stealing(
 ) -> Result<Vec<Partition>, String> {
     validate_inputs(devices, items)?;
     let mut partitions = Vec::new();
-    partitions.try_reserve_exact(devices.len()).map_err(|error| {
+    vyre_driver::allocation::try_reserve_vec_to_capacity(&mut partitions, devices.len()).map_err(|error| {
         format!(
             "partition table allocation failed for {} GPU devices: {error}. Fix: lower the adapter fanout or memory pressure before scheduling.",
             devices.len()
         )
     })?;
     let mut least_loaded = BinaryHeap::new();
-    least_loaded.try_reserve_exact(devices.len()).map_err(|error| {
+    vyre_foundation::allocation::try_reserve_binary_heap_to_capacity(
+        &mut least_loaded,
+        devices.len(),
+    )
+    .map_err(|error| {
         format!(
             "partition heap allocation failed for {} GPU devices: {error}. Fix: lower the adapter fanout or memory pressure before scheduling.",
             devices.len()
@@ -83,7 +87,7 @@ pub fn partition_work_stealing(
     for device in devices {
         let partition_index = partitions.len();
         let mut item_ids = Vec::new();
-        item_ids.try_reserve_exact(target_item_capacity).map_err(|error| {
+        vyre_driver::allocation::try_reserve_vec_to_capacity(&mut item_ids, target_item_capacity).map_err(|error| {
             format!(
                 "partition assignment allocation failed for GPU device {} and {} target work slots: {error}. Fix: split the multi-GPU batch.",
                 device.device_index, target_item_capacity
@@ -102,7 +106,7 @@ pub fn partition_work_stealing(
     }
 
     let mut ordered = Vec::new();
-    ordered.try_reserve_exact(items.len()).map_err(|error| {
+    vyre_driver::allocation::try_reserve_vec_to_capacity(&mut ordered, items.len()).map_err(|error| {
         format!(
             "partition work-order allocation failed for {} items: {error}. Fix: split the multi-GPU batch.",
             items.len()
@@ -142,7 +146,7 @@ fn validate_inputs(devices: &[DeviceLoad], items: &[WeightedWorkItem]) -> Result
         );
     }
     let mut seen = rustc_hash::FxHashSet::default();
-    seen.try_reserve(devices.len()).map_err(|error| {
+    vyre_foundation::allocation::try_reserve_hash_set_to_capacity(&mut seen, devices.len()).map_err(|error| {
         format!(
             "GPU device validation allocation failed for {} devices: {error}. Fix: lower adapter fanout or memory pressure before scheduling.",
             devices.len()
@@ -165,7 +169,7 @@ fn validate_inputs(devices: &[DeviceLoad], items: &[WeightedWorkItem]) -> Result
         }
     }
     let mut seen_items = rustc_hash::FxHashSet::default();
-    seen_items.try_reserve(items.len()).map_err(|error| {
+    vyre_foundation::allocation::try_reserve_hash_set_to_capacity(&mut seen_items, items.len()).map_err(|error| {
         format!(
             "work item validation allocation failed for {} items: {error}. Fix: split the multi-GPU batch.",
             items.len()
@@ -268,7 +272,7 @@ mod tests {
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("partition production source must precede tests");
+            .expect("Fix: partition production source must precede tests");
         assert!(
             !production.contains("Vec::with_capacity")
                 && !production.contains("BinaryHeap::with_capacity")
@@ -276,7 +280,10 @@ mod tests {
             "Fix: WGPU multi-GPU partitioning must report allocation pressure instead of aborting on infallible capacity constructors."
         );
         assert!(
-            production.contains("try_reserve_exact") && production.contains("ensure_vec_spare"),
+            production.contains("try_reserve_vec_to_capacity")
+                && production.contains("try_reserve_binary_heap_to_capacity")
+                && production.contains("try_reserve_hash_set_to_capacity")
+                && production.contains("ensure_vec_spare"),
             "Fix: WGPU multi-GPU partitioning must use fallible allocation for schedule tables and per-device assignments."
         );
     }

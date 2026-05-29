@@ -57,6 +57,194 @@ fn output_resources_contain(output_resources: &[Resource], candidate: &Resource)
     }
 }
 
+struct ResidentStageResources {
+    resources: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]>,
+    allocated: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]>,
+    output_lengths: SmallVec<[(usize, usize); RESIDENT_STAGE_INLINE_BINDINGS]>,
+}
+
+fn resident_input_lengths(
+    inputs: &[ResidentStageInput<'_>],
+) -> SmallVec<[usize; RESIDENT_STAGE_INLINE_BINDINGS]> {
+    inputs
+        .iter()
+        .copied()
+        .map(ResidentStageInput::byte_len)
+        .collect()
+}
+
+fn resident_cached_pipeline<F>(
+    backend: &dyn VyreBackend,
+    stage_key: StagePipelineCacheKey,
+    build_program: F,
+    input_lengths: &[usize],
+    config: &DispatchConfig,
+    stage_label: &str,
+    trace: bool,
+    started: std::time::Instant,
+) -> Result<ResidentCachedPipeline, vyre::BackendError>
+where
+    F: FnOnce() -> Result<Program, String>,
+{
+    #[allow(clippy::type_complexity)]
+    static PIPELINES: OnceLock<
+        Mutex<BoundedPipelineCache<BackendStagePipelineCacheKey, ResidentCachedPipeline>>,
+    > = OnceLock::new();
+
+    let key = (backend_pipeline_cache_key(backend.id()), stage_key);
+    let cache = PIPELINES.get_or_init(|| Mutex::new(BoundedPipelineCache::default()));
+    let cached = {
+        let mut guard = cache
+            .lock()
+            .map_err(|error| vyre::BackendError::DispatchFailed {
+                code: None,
+                message: format!("frontend C resident pipeline cache lock poisoned: {error}"),
+            })?;
+        guard.get_cloned(&key)
+    };
+    if let Some(entry) = cached {
+        entry.plan.validate_input_byte_lengths(input_lengths)?;
+        return Ok(entry);
+    }
+
+    let program = build_program().map_err(|message| vyre::BackendError::DispatchFailed {
+        code: None,
+        message,
+    })?;
+    if vyre_driver::grid_sync::contains_grid_sync(&program) {
+        return Err(vyre::BackendError::UnsupportedFeature {
+            name: format!("{stage_label} grid-sync split dispatch"),
+            backend: backend.id().to_string(),
+        });
+    }
+    let plan = Arc::new(BindingPlan::from_input_lengths(&program, input_lengths)?);
+    if trace {
+        eprintln!(
+            "[resident-stage] +{}ms planned entry={} bindings={} outputs={}",
+            started.elapsed().as_millis(),
+            program.entry_op_id.as_deref().unwrap_or("<anonymous>"),
+            plan.bindings.len(),
+            plan.output_indices.len()
+        );
+        eprintln!(
+            "[resident-stage] +{}ms compile_native entry={}",
+            started.elapsed().as_millis(),
+            program.entry_op_id.as_deref().unwrap_or("<anonymous>")
+        );
+    }
+    let Some(pipeline) = backend.compile_native(&program, config)? else {
+        return Err(vyre::BackendError::DispatchFailed {
+            code: None,
+            message: format!(
+                "{} backend did not return a compiled native pipeline for {stage_label} `{}`. Fix: repair native resident pipeline compilation; parser stages must not downgrade through host readbacks.",
+                backend.id(),
+                program.entry_op_id.as_deref().unwrap_or("<anonymous>")
+            ),
+        });
+    };
+    let entry = ResidentCachedPipeline { pipeline, plan };
+    let mut guard = cache
+        .lock()
+        .map_err(|error| vyre::BackendError::DispatchFailed {
+            code: None,
+            message: format!(
+                "frontend C resident pipeline cache lock poisoned while inserting: {error}"
+            ),
+        })?;
+    let cache_bytes = compiled_pipeline_cache_estimated_bytes(&program);
+    guard.insert_with_cost(
+        key,
+        entry.clone(),
+        COMPILED_PIPELINE_CACHE_MAX_ENTRIES,
+        cache_bytes,
+        COMPILED_PIPELINE_CACHE_MAX_BYTES,
+    );
+    Ok(entry)
+}
+
+fn bind_resident_stage_resources(
+    backend: &dyn VyreBackend,
+    plan: &BindingPlan,
+    inputs: &[ResidentStageInput<'_>],
+    input_lengths: &[usize],
+    stage_label: &str,
+) -> Result<ResidentStageResources, vyre::BackendError> {
+    let mut resources: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]> = SmallVec::new();
+    let mut allocated: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]> = SmallVec::new();
+    let mut output_lengths: SmallVec<[(usize, usize); RESIDENT_STAGE_INLINE_BINDINGS]> =
+        SmallVec::new();
+    let mut host_uploads: SmallVec<[(Resource, &[u8]); RESIDENT_STAGE_INLINE_BINDINGS]> =
+        SmallVec::new();
+
+    for binding in &plan.bindings {
+        if binding.role == BindingRole::Shared {
+            continue;
+        }
+        let resource = if let Some(input_index) = binding.input_index {
+            match inputs.get(input_index).copied().ok_or_else(|| {
+                vyre::BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: {stage_label} input index {input_index} for `{}` was missing after binding validation.",
+                        binding.name
+                    ),
+                }
+            })? {
+                ResidentStageInput::Host(bytes) => {
+                    let resource = backend.allocate_resident(bytes.len())?;
+                    allocated.push(resource.clone());
+                    host_uploads.push((resource.clone(), bytes));
+                    resource
+                }
+                ResidentStageInput::Resident(blob) => blob.resource.clone(),
+            }
+        } else {
+            let byte_len = binding.static_byte_len.ok_or_else(|| {
+                vyre::BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: {stage_label} output `{}` has dynamic size with no input-derived byte length; declare a static count before zero-copy frontend chaining.",
+                        binding.name
+                    ),
+                }
+            })?;
+            let resource = backend.allocate_resident(byte_len)?;
+            allocated.push(resource.clone());
+            resource
+        };
+
+        if let Some(output_index) = binding.output_index {
+            let byte_len = binding
+                .static_byte_len
+                .or_else(|| binding.input_index.map(|input_index| input_lengths[input_index]))
+                .ok_or_else(|| vyre::BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: {stage_label} output `{}` needs a static or input-derived byte length for output-resource chaining.",
+                        binding.name
+                    ),
+                })?;
+            output_lengths.push((output_index, byte_len));
+        }
+        resources.push(resource);
+    }
+    if !host_uploads.is_empty() {
+        let uploads: SmallVec<[(&Resource, &[u8]); RESIDENT_STAGE_INLINE_BINDINGS]> = host_uploads
+            .iter()
+            .map(|(resource, bytes)| (resource, *bytes))
+            .collect();
+        if let Err(error) = backend.upload_resident_many(&uploads) {
+            for resource in allocated {
+                let _ = backend.free_resident(resource);
+            }
+            return Err(error);
+        }
+    }
+
+    Ok(ResidentStageResources {
+        resources,
+        allocated,
+        output_lengths,
+    })
+}
+
 pub(crate) fn dispatch_resident_stage_cached<F>(
     backend: &dyn VyreBackend,
     stage_key: StagePipelineCacheKey,
@@ -78,85 +266,17 @@ where
             inputs.len()
         );
     }
-    #[allow(clippy::type_complexity)]
-    static PIPELINES: OnceLock<
-        Mutex<BoundedPipelineCache<BackendStagePipelineCacheKey, ResidentCachedPipeline>>,
-    > = OnceLock::new();
-
-    let input_lengths: SmallVec<[usize; RESIDENT_STAGE_INLINE_BINDINGS]> = inputs
-        .iter()
-        .copied()
-        .map(ResidentStageInput::byte_len)
-        .collect();
-    let key = (backend_pipeline_cache_key(backend.id()), stage_key);
-    let cache = PIPELINES.get_or_init(|| Mutex::new(BoundedPipelineCache::default()));
-    let cached = {
-        let mut guard = cache
-            .lock()
-            .map_err(|error| vyre::BackendError::DispatchFailed {
-                code: None,
-                message: format!("frontend C resident stage pipeline cache lock poisoned: {error}"),
-            })?;
-        guard.get_cloned(&key)
-    };
-    let ResidentCachedPipeline { pipeline, plan } = if let Some(entry) = cached {
-        entry.plan.validate_input_byte_lengths(&input_lengths)?;
-        entry
-    } else {
-        let program = build_program().map_err(|message| vyre::BackendError::DispatchFailed {
-            code: None,
-            message,
-        })?;
-        if vyre_driver::grid_sync::contains_grid_sync(&program) {
-            return Err(vyre::BackendError::UnsupportedFeature {
-                name: "resident grid-sync split dispatch".to_string(),
-                backend: backend.id().to_string(),
-            });
-        }
-        let plan = Arc::new(BindingPlan::from_input_lengths(&program, &input_lengths)?);
-        if trace {
-            eprintln!(
-                "[resident-stage] +{}ms planned entry={} bindings={} outputs={}",
-                started.elapsed().as_millis(),
-                program.entry_op_id.as_deref().unwrap_or("<anonymous>"),
-                plan.bindings.len(),
-                plan.output_indices.len()
-            );
-            eprintln!(
-                "[resident-stage] +{}ms compile_native entry={}",
-                started.elapsed().as_millis(),
-                program.entry_op_id.as_deref().unwrap_or("<anonymous>")
-            );
-        }
-        let Some(pipeline) = backend.compile_native(&program, config)? else {
-            return Err(vyre::BackendError::DispatchFailed {
-                code: None,
-                message: format!(
-                    "{} backend did not return a compiled native pipeline for resident stage `{}`. Fix: repair native resident pipeline compilation; resident parser stages must not downgrade to host readback.",
-                    backend.id(),
-                    program.entry_op_id.as_deref().unwrap_or("<anonymous>")
-                ),
-            });
-        };
-        let entry = ResidentCachedPipeline { pipeline, plan };
-        let mut guard = cache
-            .lock()
-            .map_err(|error| vyre::BackendError::DispatchFailed {
-                code: None,
-                message: format!(
-                    "frontend C resident stage pipeline cache lock poisoned while inserting: {error}"
-                ),
-            })?;
-        let cache_bytes = compiled_pipeline_cache_estimated_bytes(&program);
-        guard.insert_with_cost(
-            key,
-            entry.clone(),
-            COMPILED_PIPELINE_CACHE_MAX_ENTRIES,
-            cache_bytes,
-            COMPILED_PIPELINE_CACHE_MAX_BYTES,
-        );
-        entry
-    };
+    let input_lengths = resident_input_lengths(inputs);
+    let ResidentCachedPipeline { pipeline, plan } = resident_cached_pipeline(
+        backend,
+        stage_key,
+        build_program,
+        &input_lengths,
+        config,
+        "resident stage",
+        trace,
+        started,
+    )?;
     if trace {
         eprintln!(
             "[resident-stage] +{}ms pipeline ready",
@@ -164,60 +284,11 @@ where
         );
     }
 
-    let mut resources: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]> = SmallVec::new();
-    let mut allocated: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]> = SmallVec::new();
-    let mut output_lengths: SmallVec<[(usize, usize); RESIDENT_STAGE_INLINE_BINDINGS]> =
-        SmallVec::new();
-
-    for binding in &plan.bindings {
-        if binding.role == BindingRole::Shared {
-            continue;
-        }
-        let resource = if let Some(input_index) = binding.input_index {
-            match inputs.get(input_index).copied().ok_or_else(|| {
-                vyre::BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: resident stage input index {input_index} for `{}` was missing after binding validation.",
-                        binding.name
-                    ),
-                }
-            })? {
-                ResidentStageInput::Host(bytes) => {
-                    let resource = backend.allocate_resident(bytes.len())?;
-                    backend.upload_resident(&resource, bytes)?;
-                    allocated.push(resource.clone());
-                    resource
-                }
-                ResidentStageInput::Resident(blob) => blob.resource.clone(),
-            }
-        } else {
-            let byte_len = binding.static_byte_len.ok_or_else(|| {
-                vyre::BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: resident output `{}` has dynamic size with no input-derived byte length; declare a static count before zero-copy frontend chaining.",
-                        binding.name
-                    ),
-                }
-            })?;
-            let resource = backend.allocate_resident(byte_len)?;
-            allocated.push(resource.clone());
-            resource
-        };
-
-        if let Some(output_index) = binding.output_index {
-            let byte_len = binding
-                .static_byte_len
-                .or_else(|| binding.input_index.map(|input_index| input_lengths[input_index]))
-                .ok_or_else(|| vyre::BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: resident output `{}` needs a static or input-derived byte length for output-resource chaining.",
-                        binding.name
-                    ),
-                })?;
-            output_lengths.push((output_index, byte_len));
-        }
-        resources.push(resource);
-    }
+    let ResidentStageResources {
+        resources,
+        allocated,
+        mut output_lengths,
+    } = bind_resident_stage_resources(backend, &plan, inputs, &input_lengths, "resident stage")?;
     if trace {
         eprintln!(
             "[resident-stage] +{}ms resources ready count={} allocated={}",
@@ -276,117 +347,33 @@ pub(crate) fn dispatch_resident_stage_readback_cached_into<F>(
 where
     F: FnOnce() -> Result<Program, String>,
 {
-    #[allow(clippy::type_complexity)]
-    static PIPELINES: OnceLock<
-        Mutex<BoundedPipelineCache<BackendStagePipelineCacheKey, ResidentCachedPipeline>>,
-    > = OnceLock::new();
-
-    let input_lengths: SmallVec<[usize; RESIDENT_STAGE_INLINE_BINDINGS]> = inputs
-        .iter()
-        .copied()
-        .map(ResidentStageInput::byte_len)
-        .collect();
-    let key = (backend_pipeline_cache_key(backend.id()), stage_key);
-    let cache = PIPELINES.get_or_init(|| Mutex::new(BoundedPipelineCache::default()));
-    let cached = {
-        let mut guard = cache
-            .lock()
-            .map_err(|error| vyre::BackendError::DispatchFailed {
-                code: None,
-                message: format!(
-                    "frontend C resident readback pipeline cache lock poisoned: {error}"
-                ),
-            })?;
-        guard.get_cloned(&key)
-    };
-    let ResidentCachedPipeline { pipeline, plan } = if let Some(entry) = cached {
-        entry.plan.validate_input_byte_lengths(&input_lengths)?;
-        entry
-    } else {
-        let program = build_program().map_err(|message| vyre::BackendError::DispatchFailed {
-            code: None,
-            message,
-        })?;
-        if vyre_driver::grid_sync::contains_grid_sync(&program) {
-            return Err(vyre::BackendError::UnsupportedFeature {
-                name: "resident terminal grid-sync split dispatch".to_string(),
-                backend: backend.id().to_string(),
-            });
-        }
-        let plan = Arc::new(BindingPlan::from_input_lengths(&program, &input_lengths)?);
-        let Some(pipeline) = backend.compile_native(&program, config)? else {
-            return Err(vyre::BackendError::DispatchFailed {
-                code: None,
-                message: format!(
-                    "{} backend did not return a compiled native pipeline for resident terminal stage `{}`. Fix: repair native resident pipeline compilation; terminal parser stages must not downgrade through intermediate host readbacks.",
-                    backend.id(),
-                    program.entry_op_id.as_deref().unwrap_or("<anonymous>")
-                ),
-            });
-        };
-        let entry = ResidentCachedPipeline { pipeline, plan };
-        let mut guard = cache
-            .lock()
-            .map_err(|error| vyre::BackendError::DispatchFailed {
-                code: None,
-                message: format!(
-                    "frontend C resident readback pipeline cache lock poisoned while inserting: {error}"
-                ),
-            })?;
-        let cache_bytes = compiled_pipeline_cache_estimated_bytes(&program);
-        guard.insert_with_cost(
-            key,
-            entry.clone(),
-            COMPILED_PIPELINE_CACHE_MAX_ENTRIES,
-            cache_bytes,
-            COMPILED_PIPELINE_CACHE_MAX_BYTES,
-        );
-        entry
-    };
-
-    let mut resources: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]> = SmallVec::new();
-    let mut allocated: SmallVec<[Resource; RESIDENT_STAGE_INLINE_BINDINGS]> = SmallVec::new();
-    for binding in &plan.bindings {
-        if binding.role == BindingRole::Shared {
-            continue;
-        }
-        let resource = if let Some(input_index) = binding.input_index {
-            match inputs.get(input_index).copied().ok_or_else(|| {
-                vyre::BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: resident terminal stage input index {input_index} for `{}` was missing after binding validation.",
-                        binding.name
-                    ),
-                }
-            })? {
-                ResidentStageInput::Host(bytes) => {
-                    let resource = backend.allocate_resident(bytes.len())?;
-                    backend.upload_resident(&resource, bytes)?;
-                    allocated.push(resource.clone());
-                    resource
-                }
-                ResidentStageInput::Resident(blob) => blob.resource.clone(),
-            }
-        } else {
-            let byte_len = binding.static_byte_len.ok_or_else(|| {
-                vyre::BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: resident terminal output `{}` has dynamic size with no input-derived byte length; declare a static count before zero-copy frontend chaining.",
-                        binding.name
-                    ),
-                }
-            })?;
-            let resource = backend.allocate_resident(byte_len)?;
-            allocated.push(resource.clone());
-            resource
-        };
-        resources.push(resource);
-    }
+    let input_lengths = resident_input_lengths(inputs);
+    let ResidentCachedPipeline { pipeline, plan } = resident_cached_pipeline(
+        backend,
+        stage_key,
+        build_program,
+        &input_lengths,
+        config,
+        "resident terminal stage",
+        false,
+        std::time::Instant::now(),
+    )?;
+    let ResidentStageResources {
+        resources,
+        allocated,
+        ..
+    } = bind_resident_stage_resources(
+        backend,
+        &plan,
+        inputs,
+        &input_lengths,
+        "resident terminal stage",
+    )?;
 
     outputs.reserve(plan.output_indices.len().saturating_sub(outputs.len()));
     if let Err(error) = pipeline.dispatch_persistent_handles_into(&resources, config, outputs) {
-        for resource in allocated {
-            let _ = backend.free_resident(resource);
+        for resource in &allocated {
+            let _ = backend.free_resident(resource.clone());
         }
         return Err(error);
     }

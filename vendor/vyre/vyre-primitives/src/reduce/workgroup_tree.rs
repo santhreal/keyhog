@@ -210,50 +210,36 @@ fn child_region(generator: &'static str, parent_op_id: &str, body: Vec<Node>) ->
 }
 
 fn sum_body(tile: u32, scratch: &'static str, scope: WorkgroupReductionScope) -> Vec<Node> {
-    let mut nodes = Vec::new();
-    let mut stride = tile.next_power_of_two() / 2;
-    while stride > 0 {
-        nodes.push(Node::if_then(
-            scope.lane_guard(Expr::lt(Expr::var("local"), Expr::u32(stride))),
-            vec![Node::if_then(
-                Expr::lt(
-                    Expr::add(Expr::var("local"), Expr::u32(stride)),
-                    Expr::u32(tile),
-                ),
-                vec![Node::Store {
-                    buffer: scratch.into(),
-                    index: Expr::var("local"),
-                    value: Expr::add(
-                        Expr::load(scratch, Expr::var("local")),
-                        Expr::load(scratch, Expr::add(Expr::var("local"), Expr::u32(stride))),
-                    ),
-                }],
-            )],
-        ));
-        nodes.push(Node::barrier());
-        stride /= 2;
-    }
-    nodes
+    tree_body(tile, scratch, scope, Expr::add)
 }
 
 fn max_body(tile: u32, scratch: &'static str, scope: WorkgroupReductionScope) -> Vec<Node> {
+    tree_body(tile, scratch, scope, Expr::max)
+}
+
+fn tree_body<F>(
+    tile: u32,
+    scratch: &'static str,
+    scope: WorkgroupReductionScope,
+    combine: F,
+) -> Vec<Node>
+where
+    F: Fn(Expr, Expr) -> Expr,
+{
     let mut nodes = Vec::new();
     let mut stride = tile.next_power_of_two() / 2;
     while stride > 0 {
+        let lhs = Expr::load(scratch, Expr::var("local"));
+        let rhs_index = Expr::add(Expr::var("local"), Expr::u32(stride));
+        let rhs = Expr::load(scratch, rhs_index.clone());
         nodes.push(Node::if_then(
             scope.lane_guard(Expr::lt(Expr::var("local"), Expr::u32(stride))),
             vec![Node::if_then(
-                Expr::lt(
-                    Expr::add(Expr::var("local"), Expr::u32(stride)),
-                    Expr::u32(tile),
-                ),
+                Expr::lt(rhs_index, Expr::u32(tile)),
                 vec![Node::Store {
                     buffer: scratch.into(),
                     index: Expr::var("local"),
-                    value: Expr::max(
-                        Expr::load(scratch, Expr::var("local")),
-                        Expr::load(scratch, Expr::add(Expr::var("local"), Expr::u32(stride))),
-                    ),
+                    value: combine(lhs, rhs),
                 }],
             )],
         ));
@@ -265,18 +251,12 @@ fn max_body(tile: u32, scratch: &'static str, scope: WorkgroupReductionScope) ->
 
 #[cfg(feature = "inventory-registry")]
 fn fixture_f32(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_bits().to_le_bytes())
-        .collect()
+    crate::wire::pack_f32_slice(values)
 }
 
 #[cfg(feature = "inventory-registry")]
 fn fixture_u32(values: &[u32]) -> Vec<u8> {
-    values
-        .iter()
-        .flat_map(|value| value.to_le_bytes())
-        .collect()
+    crate::wire::pack_u32_slice(values)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -323,17 +303,6 @@ mod tests {
     use super::*;
     use vyre_reference::value::Value;
 
-    fn f32_bytes(values: &[f32]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
-    }
-
-    fn decode_f32(bytes: &[u8]) -> f32 {
-        f32::from_le_bytes(bytes[..4].try_into().unwrap())
-    }
-
     #[test]
     fn child_region_names_parent_and_primitive() {
         let node = sum_f32_child(
@@ -367,14 +336,32 @@ mod tests {
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
-                Value::from(f32_bytes(&values)),
+                Value::from(crate::wire::pack_f32_slice(&values)),
                 Value::from(vec![0_u8; core::mem::size_of::<f32>()]),
             ],
         )
         .expect("Fix: workgroup_sum_f32 must execute in the reference interpreter.");
         assert_eq!(
-            decode_f32(&outputs[0].to_bytes()),
+            crate::wire::decode_f32_le_bytes_all(&outputs[0].to_bytes())[0],
             values.iter().copied().sum::<f32>()
+        );
+    }
+
+    #[test]
+    fn standalone_sum_u32_matches_reference_arithmetic() {
+        let values = [1_u32, 2, 3, 4, 5, 6, 7];
+        let program = workgroup_sum_u32("values", "out", values.len() as u32, 4);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(crate::wire::pack_u32_slice(&values)),
+                Value::from(vec![0_u8; core::mem::size_of::<u32>()]),
+            ],
+        )
+        .expect("Fix: workgroup_sum_u32 must execute in the reference interpreter.");
+        assert_eq!(
+            crate::wire::decode_u32_le_bytes_all(&outputs[0].to_bytes())[0],
+            values.iter().copied().sum::<u32>()
         );
     }
 
@@ -385,11 +372,46 @@ mod tests {
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
-                Value::from(f32_bytes(&values)),
+                Value::from(crate::wire::pack_f32_slice(&values)),
                 Value::from(vec![0_u8; core::mem::size_of::<f32>()]),
             ],
         )
         .expect("Fix: workgroup_max_f32 must execute in the reference interpreter.");
-        assert_eq!(decode_f32(&outputs[0].to_bytes()), 9.5);
+        assert_eq!(
+            crate::wire::decode_f32_le_bytes_all(&outputs[0].to_bytes())[0],
+            9.5
+        );
+    }
+
+    #[test]
+    fn non_power_of_two_tile_reductions_match_reference_arithmetic() {
+        let values = [4.0_f32, -7.0, 2.5, 9.0, 1.0, 3.25, -2.0];
+        let sum_program = workgroup_sum_f32("values", "out", values.len() as u32, 3);
+        let sum_outputs = vyre_reference::reference_eval(
+            &sum_program,
+            &[
+                Value::from(crate::wire::pack_f32_slice(&values)),
+                Value::from(vec![0_u8; core::mem::size_of::<f32>()]),
+            ],
+        )
+        .expect("Fix: workgroup_sum_f32 must support non-power-of-two tiles.");
+        assert_eq!(
+            crate::wire::decode_f32_le_bytes_all(&sum_outputs[0].to_bytes())[0],
+            values.iter().copied().sum::<f32>()
+        );
+
+        let max_program = workgroup_max_f32("values", "out", values.len() as u32, 3);
+        let max_outputs = vyre_reference::reference_eval(
+            &max_program,
+            &[
+                Value::from(crate::wire::pack_f32_slice(&values)),
+                Value::from(vec![0_u8; core::mem::size_of::<f32>()]),
+            ],
+        )
+        .expect("Fix: workgroup_max_f32 must support non-power-of-two tiles.");
+        assert_eq!(
+            crate::wire::decode_f32_le_bytes_all(&max_outputs[0].to_bytes())[0],
+            9.0
+        );
     }
 }

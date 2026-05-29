@@ -43,7 +43,12 @@ pub(super) fn record_macro_expansions(
     macro_expansion_events: &mut Vec<MacroExpansionEvent>,
 ) -> Result<(), String> {
     let mut macros_by_name: HashMap<&[u8], MacroBucket<'_>> = HashMap::default();
-    macros_by_name.reserve(macros.len());
+    macros_by_name.try_reserve(macros.len()).map_err(|error| {
+        format!(
+            "vyre-libs::gpu_pipeline: could not reserve {} macro-expansion evidence index entries: {error:?}. Fix: shard expansion evidence recording before GPU preprocessing.",
+            macros.len()
+        )
+    })?;
     for mac in macros {
         macros_by_name
             .entry(mac.name.as_slice())
@@ -70,6 +75,14 @@ pub(super) fn record_macro_expansions(
         let Some(candidate_macros) = macros_by_name.get(token) else {
             continue;
         };
+        macro_expansion_events
+            .try_reserve(candidate_macros.len())
+            .map_err(|error| {
+                format!(
+                    "vyre-libs::gpu_pipeline: could not reserve {} macro-expansion events: {error:?}. Fix: shard expansion evidence recording before GPU preprocessing.",
+                    candidate_macros.len()
+                )
+            })?;
         for mac in candidate_macros {
             if mac.is_function_like {
                 if let Some(args) = function_like_invocation_args(&classified.source, end) {

@@ -3,6 +3,9 @@ use crate::api::case::{
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
+use crate::api::resident::{
+    dispatch_compiled_timed, input_bytes_total, transfer_accounting, ResidentInputPool,
+};
 use std::sync::Arc;
 use vyre_driver::autotune_store::{AutotuneRecord, AutotuneStore};
 use vyre_driver::specialization::SpecCacheKey;
@@ -17,12 +20,14 @@ pub struct MegakernelLatency;
 
 const SLOT_COUNT: u32 = 256;
 const WORKGROUP_SIZE: u32 = 256;
+const RESIDENT_SAMPLE_SETS: usize = 8;
 
 struct MegakernelLatencyPrepared {
     program: vyre_foundation::ir::Program,
     inputs: Vec<Vec<u8>>,
     input_bytes_total: u64,
     compiled: Option<Arc<dyn CompiledPipeline>>,
+    resident: Option<ResidentInputPool>,
 }
 
 impl BenchCase for MegakernelLatency {
@@ -65,7 +70,7 @@ impl BenchCase for MegakernelLatency {
         ))
     }
 
-    fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
+    fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let program = megakernel::build_program_sharded_once_slots(WORKGROUP_SIZE, SLOT_COUNT, &[]);
         let control_bytes = megakernel::encode_control(false, 1, 0)
             .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
@@ -75,12 +80,19 @@ impl BenchCase for MegakernelLatency {
         let io_bytes = megakernel::io::try_encode_empty_io_queue(megakernel::io::IO_SLOT_COUNT)
             .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
         let inputs = vec![control_bytes, ring_bytes, debug_bytes, io_bytes];
-        let input_bytes_total = inputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let input_bytes_total = input_bytes_total(&inputs);
+        let resident = ResidentInputPool::upload_optional(
+            ctx,
+            &inputs,
+            RESIDENT_SAMPLE_SETS,
+            "megakernel latency bench",
+        )?;
         Ok(Box::new(MegakernelLatencyPrepared {
             program,
             inputs,
             input_bytes_total,
             compiled: None,
+            resident,
         }))
     }
 
@@ -113,30 +125,37 @@ impl BenchCase for MegakernelLatency {
             .pipeline;
             prepared.compiled = Some(compiled);
         }
-        let input_refs: Vec<&[u8]> = prepared.inputs.iter().map(Vec::as_slice).collect();
-        let timed = prepared
-            .compiled
-            .as_ref()
-            .ok_or_else(|| {
-                BenchError::ExecutionFailed(
-                    "megakernel latency compiled pipeline missing after compile".to_string(),
-                )
-            })?
-            .dispatch_borrowed_timed(&input_refs, &config)
-            .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
-        let elapsed = timed.wall_ns;
-        let dispatch_ns = timed.device_ns;
-        let outputs = timed.outputs;
+        let compiled = prepared.compiled.as_ref().ok_or_else(|| {
+            BenchError::ExecutionFailed(
+                "megakernel latency compiled pipeline missing after compile".to_string(),
+            )
+        })?;
+        let dispatch = dispatch_compiled_timed(
+            compiled.as_ref(),
+            prepared.resident.as_mut(),
+            &prepared.inputs,
+            &config,
+        )?;
+        let resident_used = dispatch.resident_used;
+        let elapsed = dispatch.timed.wall_ns;
+        let dispatch_ns = dispatch.timed.device_ns;
+        let outputs = dispatch.timed.outputs;
         let output_bytes_total = outputs.iter().map(Vec::len).sum::<usize>() as u64;
-        let bytes_touched = prepared
-            .input_bytes_total
-            .saturating_add(output_bytes_total);
+        let accounting = transfer_accounting(
+            prepared.input_bytes_total,
+            output_bytes_total,
+            resident_used,
+        );
         let device_ns = dispatch_ns.unwrap_or(elapsed);
-        let wall_gb_s = gb_per_second(bytes_touched, elapsed);
-        let device_gb_s = gb_per_second(bytes_touched, device_ns);
+        let wall_gb_s = gb_per_second(accounting.bytes_touched, elapsed);
+        let device_gb_s = gb_per_second(accounting.bytes_touched, device_ns);
         let start_ref = std::time::Instant::now();
         let baseline_outputs = simulate_sharded_once_outputs(&prepared.inputs)?;
         let baseline_ns = start_ref.elapsed().as_nanos() as u64;
+        let baseline_output_bytes = baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64;
+        let baseline_bytes_touched = prepared
+            .input_bytes_total
+            .saturating_add(baseline_output_bytes);
         let speculation = record_speculation_probe()?;
 
         Ok(BenchRun {
@@ -145,9 +164,9 @@ impl BenchCase for MegakernelLatency {
                 dispatch_ns,
                 input_bytes: Some(prepared.input_bytes_total),
                 output_bytes: Some(output_bytes_total),
-                bytes_touched: Some(bytes_touched),
-                bytes_read: Some(prepared.input_bytes_total),
-                bytes_written: Some(output_bytes_total),
+                bytes_touched: Some(accounting.bytes_touched),
+                bytes_read: Some(accounting.bytes_read),
+                bytes_written: Some(accounting.bytes_written),
                 atomic_op_count: Some(u64::from(SLOT_COUNT).saturating_mul(2)),
                 wall_throughput_gb_s: Some(wall_gb_s),
                 device_throughput_gb_s: Some(device_gb_s),
@@ -167,6 +186,14 @@ impl BenchCase for MegakernelLatency {
                     MetricPoint {
                         name: "megakernel_roundtrip_buffers".to_string(),
                         value: outputs.len() as u64,
+                    },
+                    MetricPoint {
+                        name: "megakernel_resident_input_pool_sets".to_string(),
+                        value: if resident_used {
+                            RESIDENT_SAMPLE_SETS as u64
+                        } else {
+                            0
+                        },
                     },
                     MetricPoint {
                         name: "megakernel_speculation_samples".to_string(),
@@ -194,10 +221,10 @@ impl BenchCase for MegakernelLatency {
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(baseline_ns),
                 input_bytes: Some(prepared.input_bytes_total),
-                output_bytes: Some(baseline_outputs.iter().map(Vec::len).sum::<usize>() as u64),
-                bytes_touched: Some(bytes_touched),
+                output_bytes: Some(baseline_output_bytes),
+                bytes_touched: Some(baseline_bytes_touched),
                 bytes_read: Some(prepared.input_bytes_total),
-                bytes_written: Some(output_bytes_total),
+                bytes_written: Some(baseline_output_bytes),
                 ..Default::default()
             }),
             outputs,
@@ -353,7 +380,8 @@ fn read_word(bytes: &[u8], word_index: u32) -> Result<u32, BenchError> {
             "megakernel word {word_index} is outside output buffer"
         ))
     })?;
-    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    vyre_primitives::wire::read_u32_le_word(bytes, 0, "megakernel latency output")
+        .map_err(BenchError::CorrectnessViolation)
 }
 
 fn write_word(bytes: &mut [u8], word_index: u32, value: u32) -> Result<(), BenchError> {

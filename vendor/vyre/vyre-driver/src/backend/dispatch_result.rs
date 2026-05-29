@@ -119,12 +119,7 @@ pub fn replace_output_buffers_preserving_slots_with_memory_stats(
 }
 
 fn reserve_output_slots_for_replacement(outputs: &mut OutputBuffers, total_slots: usize) {
-    if outputs.capacity() >= total_slots {
-        return;
-    }
-    outputs
-        .try_reserve_exact(total_slots - outputs.capacity())
-        .unwrap_or_else(|error| {
+    crate::allocation::try_reserve_vec_to_capacity(outputs, total_slots).unwrap_or_else(|error| {
             panic!(
                 "output replacement could not reserve {total_slots} output slot(s): {error}. Fix: split dispatch outputs before readback replacement."
             )

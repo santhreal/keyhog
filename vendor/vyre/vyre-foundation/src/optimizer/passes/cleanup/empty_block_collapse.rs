@@ -1,7 +1,7 @@
-//! `empty_block_collapse` — drop `Node::Block(vec![])` from sibling sequences.
+//! `empty_block_collapse`  -  drop `Node::Block(vec![])` from sibling sequences.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::empty_block_collapse`.
-//! Soundness: `Exact` — empty Blocks have no observable behavior. Removing
+//! Soundness: `Exact`  -  empty Blocks have no observable behavior. Removing
 //! them strictly shrinks the IR. Cost-direction: monotone-down on
 //! node_count + control_flow_count + ir_heap_allocations. Preserves: every
 //! analysis. Invalidates: nothing.
@@ -15,7 +15,7 @@
 //!     visible to downstream consumers.
 //!
 //! Without an empty-block collapse, those markers persist through
-//! lowering — adding noise to the wire format, the codegen output, and
+//! lowering  -  adding noise to the wire format, the codegen output, and
 //! the cost certificate. This pass is the cleanup.
 //!
 //! ## Rule
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn nested_empty_block_collapses() {
-        // Block(vec![Block(vec![])]) — the inner empty Block should be
+        // Block(vec![Block(vec![])])  -  the inner empty Block should be
         // dropped, leaving Block(vec![]).
         let entry = vec![Node::Block(vec![Node::Block(Vec::new())])];
         let program = program_with_entry(entry);
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn block_with_store_is_preserved() {
-        // Block(vec![Store(...)]) must NOT be touched — it has content.
+        // Block(vec![Store(...)]) must NOT be touched  -  it has content.
         let entry = vec![Node::Block(vec![Node::store(
             "buf",
             Expr::u32(0),

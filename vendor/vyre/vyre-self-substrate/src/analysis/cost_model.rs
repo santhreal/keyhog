@@ -385,10 +385,10 @@ mod tests {
         let via_section = source
             .split("pub fn predict_runtime_fixed_via")
             .nth(1)
-            .expect("via section should exist")
+            .expect("Fix: via section should exist")
             .split("#[cfg(test)]\nmod tests")
             .next()
-            .expect("test module marker should exist");
+            .expect("Fix: test module marker should exist");
 
         assert!(!via_section.contains("_cpu"));
         assert!(!via_section.contains("reference_predict_runtime"));
@@ -414,12 +414,12 @@ mod tests {
     }
 
     fn dispatch_sum_product(inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, DispatchError> {
-        let kinds = read_u32s(&inputs[0]);
-        let offsets = read_u32s(&inputs[1]);
-        let counts = read_u32s(&inputs[2]);
-        let children = read_u32s(&inputs[3]);
-        let weights = read_u32s(&inputs[4]);
-        let values = read_u32s(&inputs[5]);
+        let kinds = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
+        let offsets = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
+        let counts = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+        let children = crate::hardware::dispatch_buffers::read_u32s(&inputs[3]);
+        let weights = crate::hardware::dispatch_buffers::read_u32s(&inputs[4]);
+        let values = crate::hardware::dispatch_buffers::read_u32s(&inputs[5]);
         let mut out = values.clone();
         for node in 0..kinds.len() {
             if kinds[node] == KIND_SUM {
@@ -442,7 +442,7 @@ mod tests {
     }
 
     fn dispatch_conformal(inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, DispatchError> {
-        let scores = read_u32s(&inputs[0]);
+        let scores = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
         let out_len = inputs[1].len() / std::mem::size_of::<u32>();
         if out_len != 1 {
             return Err(DispatchError::BadInputs(format!(
@@ -450,12 +450,5 @@ mod tests {
             )));
         }
         Ok(vec![u32_slice_to_le_bytes(&[*scores.last().unwrap_or(&0)])])
-    }
-
-    fn read_u32s(bytes: &[u8]) -> Vec<u32> {
-        bytes
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect()
     }
 }

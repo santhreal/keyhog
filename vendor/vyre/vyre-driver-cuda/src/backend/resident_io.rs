@@ -1,22 +1,46 @@
 //! Host and device copies for CUDA-resident buffers.
 
+use vyre_driver::transfer_accounting::TransferAccountingPolicy;
 use vyre_driver::{BackendError, OutputBuffers};
 
-use super::allocations::{cuda_check, HostTransferAllocations};
+use super::allocations::HostTransferAllocations;
+use super::capabilities::cuda_live_free_memory_bytes;
 use super::dispatch::CudaBackend;
 use super::output_range::CudaOutputReadback;
-use super::resident::CudaResidentBuffer;
+use super::resident::{CudaResidentBuffer, ResidentViewCache};
+use super::resident_readback_fusion::{
+    fuse_resident_readback_copies, FusedResidentReadbacks, ResidentReadbackCopy,
+};
+use super::resident_upload_fusion::{
+    fuse_resident_upload_copies, push_resident_upload_copy, ResidentUploadCopy,
+};
 use super::staging_reserve::{clear_vec_slots, reserve_smallvec, reserved_vec, resize_vec_slots};
-use crate::numeric::usize_to_u64;
+use crate::numeric::CUDA_NUMERIC;
 use smallvec::SmallVec;
 
 const CUDA_RESIDENT_BUDGET_NUMERATOR: u64 = 9;
 const CUDA_RESIDENT_BUDGET_DENOMINATOR: u64 = 10;
+const CUDA_RESIDENT_TRANSFER_ACCOUNTING: TransferAccountingPolicy =
+    TransferAccountingPolicy::new("CUDA resident", "split the transfer into bounded chunks");
 
-#[derive(Clone, Copy)]
-struct ResidentReadbackCopy {
-    src: u64,
-    byte_len: usize,
+fn cuda_resident_total_budget_bytes(total_memory: u64) -> u64 {
+    let budget = (u128::from(total_memory) * u128::from(CUDA_RESIDENT_BUDGET_NUMERATOR))
+        / u128::from(CUDA_RESIDENT_BUDGET_DENOMINATOR);
+    budget as u64
+}
+
+fn cuda_resident_live_budget_bytes(
+    total_memory: u64,
+    live_free_memory: u64,
+    resident_bytes: u64,
+) -> u64 {
+    let total_budget = cuda_resident_total_budget_bytes(total_memory);
+    if resident_bytes >= total_budget {
+        return resident_bytes;
+    }
+    let accounted_available = total_budget - resident_bytes;
+    let live_available = cuda_resident_total_budget_bytes(live_free_memory);
+    resident_bytes + accounted_available.min(live_available)
 }
 
 impl CudaBackend {
@@ -36,30 +60,11 @@ fn add_resident_transfer_bytes(
     bytes: usize,
     label: &str,
 ) -> Result<(), BackendError> {
-    let bytes = u64::try_from(bytes).map_err(|_| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA resident {label} byte count exceeds u64; split the transfer into bounded chunks."
-        ),
-    })?;
-    *total = total
-        .checked_add(bytes)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA resident {label} byte accounting overflowed u64; split the transfer into bounded chunks."
-            ),
-        })?;
-    Ok(())
+    CUDA_RESIDENT_TRANSFER_ACCOUNTING.add_bytes(total, bytes, label)
 }
 
 fn add_resident_copy_count(total: &mut usize, label: &str) -> Result<(), BackendError> {
-    *total = total
-        .checked_add(1)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA resident {label} copy counting overflowed usize; split the transfer into bounded chunks."
-            ),
-        })?;
-    Ok(())
+    CUDA_RESIDENT_TRANSFER_ACCOUNTING.add_copy_count(total, label)
 }
 
 fn add_resident_copy_slots(
@@ -67,14 +72,19 @@ fn add_resident_copy_slots(
     slots: usize,
     label: &str,
 ) -> Result<(), BackendError> {
-    *total = total
-        .checked_add(slots)
-        .ok_or_else(|| BackendError::InvalidProgram {
-            fix: format!(
-                "Fix: CUDA resident {label} copy-slot accounting overflowed usize; split the transfer into bounded chunks."
-            ),
-        })?;
-    Ok(())
+    CUDA_RESIDENT_TRANSFER_ACCOUNTING.add_copy_slots(total, slots, label)
+}
+
+fn resident_upload_staging<'a>(
+    upload_count: usize,
+    copy_label: &'static str,
+    view_label: &'static str,
+) -> Result<(SmallVec<[ResidentUploadCopy<'a>; 8]>, ResidentViewCache), BackendError> {
+    let mut copies = SmallVec::<[ResidentUploadCopy<'a>; 8]>::new();
+    reserve_smallvec(&mut copies, upload_count, copy_label)?;
+    let mut resident_view_cache = ResidentViewCache::new();
+    reserve_smallvec(&mut resident_view_cache, upload_count, view_label)?;
+    Ok((copies, resident_view_cache))
 }
 
 fn clear_resident_copy_outputs(
@@ -95,14 +105,11 @@ impl CudaBackend {
             });
         }
         self.warmup()?;
-        let handle = self
-            .resident_store
-            .allocate(byte_len, self.cuda_resident_budget_bytes())?;
-        self.telemetry
-            .record_resident_allocation_bytes(usize_to_u64(
-                byte_len,
-                "resident allocation byte count",
-            )?);
+        let resident_budget = self.cuda_resident_budget_bytes()?;
+        let handle = self.resident_store.allocate(byte_len, resident_budget)?;
+        self.telemetry.record_resident_allocation_bytes(
+            CUDA_NUMERIC.usize_to_u64(byte_len, "resident allocation byte count")?,
+        );
         Ok(handle)
     }
 
@@ -123,11 +130,15 @@ impl CudaBackend {
         if uploads.is_empty() {
             return Ok(());
         }
-        let mut copies = SmallVec::<[(u64, &[u8]); 8]>::new();
-        reserve_smallvec(&mut copies, uploads.len(), "upload copy")?;
         let mut uploaded_bytes = 0_u64;
+        let (mut copies, mut resident_view_cache) =
+            resident_upload_staging(uploads.len(), "upload copy", "resident upload view cache")?;
         for &(handle, bytes) in uploads {
-            let buffer = self.resident_store.view(handle)?;
+            let buffer = self.resident_store.view_cached(
+                handle,
+                &mut resident_view_cache,
+                "resident upload view cache",
+            )?;
             if bytes.len() != buffer.byte_len {
                 return Err(BackendError::InvalidProgram {
                     fix: format!(
@@ -138,49 +149,17 @@ impl CudaBackend {
                     ),
                 });
             }
-            if !bytes.is_empty() {
-                copies.push((buffer.ptr, bytes));
-                add_resident_transfer_bytes(&mut uploaded_bytes, bytes.len(), "upload")?;
-            }
+            push_resident_upload_copy(
+                &mut copies,
+                &mut uploaded_bytes,
+                handle.id,
+                buffer.ptr,
+                bytes,
+                "upload",
+            )?;
         }
-        if copies.is_empty() {
-            return Ok(());
-        }
-        self.warmup()?;
-        let mut host_transfers = HostTransferAllocations::with_capacity(
-            std::sync::Arc::clone(&self.host_pool),
-            copies.len(),
-            0,
-        )?;
-        self.with_resident_stream(|stream| {
-            for &(dst_ptr, bytes) in &copies {
-                let host_ptr = host_transfers.push_upload(bytes)?;
-                // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-                // matching alloc / store API; lifetimes are documented in the
-                // surrounding function. cuda_check (or matching CUresult guard)
-                // propagates non-success codes as BackendError.
-                unsafe {
-                    cuda_check(
-                        cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                            dst_ptr,
-                            host_ptr,
-                            bytes.len(),
-                            stream.raw(),
-                        ),
-                        "cuMemcpyHtoDAsync_v2",
-                    )?;
-                }
-            }
-            stream.synchronize()
-        })?;
-        self.telemetry.record_sync_point();
-        self.telemetry.record_host_to_device_bytes(uploaded_bytes);
-        self.telemetry.record_host_upload_operations(usize_to_u64(
-            copies.len(),
-            "resident upload operation count",
-        )?);
-        drop(host_transfers);
-        Ok(())
+        let (copies, uploaded_bytes) = fuse_resident_upload_copies(copies)?;
+        self.copy_resident_uploads(&copies, uploaded_bytes)
     }
 
     /// Download bytes from an existing CUDA-resident buffer.
@@ -211,24 +190,31 @@ impl CudaBackend {
         let mut copies = SmallVec::<[ResidentReadbackCopy; 8]>::new();
         reserve_smallvec(&mut copies, handles.len(), "full readback copy")?;
         let mut expected_copy_count = 0usize;
-        let mut readback_bytes = 0_u64;
+        let mut resident_view_cache = ResidentViewCache::new();
+        reserve_smallvec(
+            &mut resident_view_cache,
+            handles.len(),
+            "resident full-readback view cache",
+        )?;
         for &handle in handles {
-            let buffer = self.resident_store.view(handle)?;
+            let buffer = self.resident_store.view_cached(
+                handle,
+                &mut resident_view_cache,
+                "resident full-readback view cache",
+            )?;
             copies.push(ResidentReadbackCopy {
+                handle_id: handle.id,
                 src: if buffer.byte_len == 0 { 0 } else { buffer.ptr },
                 byte_len: buffer.byte_len,
             });
             if buffer.byte_len != 0 {
                 add_resident_copy_count(&mut expected_copy_count, "full readback")?;
-                add_resident_transfer_bytes(&mut readback_bytes, buffer.byte_len, "full readback")?;
             }
         }
-        self.download_resident_copies_many_into(
-            &copies,
-            expected_copy_count,
-            readback_bytes,
-            outputs,
-        )
+        if expected_copy_count == 0 {
+            return clear_resident_copy_outputs(&copies, outputs);
+        }
+        self.download_resident_fused_copies_many_into(&copies, outputs)
     }
 
     /// Download bytes from an existing CUDA-resident buffer into caller-owned
@@ -263,72 +249,7 @@ impl CudaBackend {
         byte_len: usize,
         bytes: &mut Vec<u8>,
     ) -> Result<(), BackendError> {
-        self.with_resident(handle, |buffer| {
-            let end = byte_offset.checked_add(byte_len).ok_or_else(|| {
-                BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: CUDA resident ranged download overflows usize at offset {byte_offset} len {byte_len}."
-                    ),
-                }
-            })?;
-            if end > buffer.byte_len {
-                return Err(BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: CUDA resident ranged download requested bytes [{byte_offset}..{end}) but buffer has {} bytes.",
-                        buffer.byte_len
-                    ),
-                });
-            }
-            if byte_len == 0 {
-                bytes.clear();
-                return Ok(());
-            }
-            let src = buffer
-                .ptr
-                .checked_add(usize_to_u64(
-                    byte_offset,
-                    "resident ranged download byte offset",
-                )?)
-                .ok_or_else(|| BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: CUDA resident ranged download pointer arithmetic overflowed at offset {byte_offset}."
-                    ),
-                })?;
-            self.warmup()?;
-            let mut host_transfers = HostTransferAllocations::with_capacity(
-                std::sync::Arc::clone(&self.host_pool),
-                1,
-                1,
-            )?;
-            self.with_resident_stream(|stream| {
-                let dst = host_transfers.push_output(byte_len)?;
-                // SAFETY: FFI to libcuda.so. Pointer args are bounds-checked
-                // against the resident allocation above. The stream
-                // synchronization below proves CUDA completed the copy before the
-                // pinned host bytes are materialized into caller-owned storage.
-                unsafe {
-                    cuda_check(
-                        cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
-                            dst,
-                            src,
-                            byte_len,
-                            stream.raw(),
-                        ),
-                        "cuMemcpyDtoHAsync_v2",
-                    )?;
-                }
-                stream.synchronize()
-            })?;
-            self.telemetry.record_device_to_host_readback(usize_to_u64(
-                byte_len,
-                "resident ranged download byte count",
-            )?);
-            self.telemetry
-                .record_device_readback_operations(if byte_len == 0 { 0 } else { 1 });
-            self.telemetry.record_sync_point();
-            host_transfers.collect_output_into(0, bytes)?;
-            Ok(())
-        })
+        self.download_resident_ranges_into(&[(handle, byte_offset, byte_len)], &mut [bytes])
     }
 
     /// Download selected byte ranges from resident buffers into caller-owned
@@ -350,45 +271,70 @@ impl CudaBackend {
         let mut copies = SmallVec::<[ResidentReadbackCopy; 8]>::new();
         reserve_smallvec(&mut copies, ranges.len(), "ranged readback copy")?;
         let mut expected_copy_count = 0usize;
-        let mut readback_bytes = 0_u64;
+        let mut resident_view_cache = ResidentViewCache::new();
+        reserve_smallvec(
+            &mut resident_view_cache,
+            ranges.len(),
+            "resident ranged-readback view cache",
+        )?;
         for &(handle, byte_offset, byte_len) in ranges {
-            let buffer = self.resident_store.view(handle)?;
-            let end = byte_offset.checked_add(byte_len).ok_or_else(|| {
-                BackendError::InvalidProgram {
+            let buffer = self.resident_store.view_cached(
+                handle,
+                &mut resident_view_cache,
+                "resident ranged-readback view cache",
+            )?;
+            let end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+                byte_offset,
+                byte_len,
+                buffer.byte_len,
+                || {
+                    BackendError::InvalidProgram {
                     fix: format!(
                         "Fix: CUDA resident ranged batch download for handle {} overflows usize at offset {byte_offset} len {byte_len}.",
                         handle.id
                     ),
                 }
-            })?;
-            if end > buffer.byte_len {
-                return Err(BackendError::InvalidProgram {
+                },
+                |end| {
+                    BackendError::InvalidProgram {
                     fix: format!(
                         "Fix: CUDA resident ranged batch download for handle {} requested bytes [{byte_offset}..{end}) but buffer has {} bytes.",
                         handle.id, buffer.byte_len
                     ),
-                });
-            }
+                }
+                },
+            )?;
             let src = if byte_len == 0 {
                 0
             } else {
-                buffer
-                    .ptr
-                    .checked_add(usize_to_u64(
-                        byte_offset,
-                        "resident ranged batch download byte offset",
-                    )?)
-                    .ok_or_else(|| BackendError::InvalidProgram {
+                vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+                    buffer.ptr,
+                    byte_offset,
+                    || {
+                        BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA resident ranged batch download byte offset {byte_offset} does not fit CUdeviceptr arithmetic for handle {}.",
+                            handle.id
+                        ),
+                    }
+                    },
+                    || {
+                        BackendError::InvalidProgram {
                         fix: format!(
                             "Fix: CUDA resident ranged batch download pointer arithmetic overflowed for handle {} at offset {byte_offset}.",
                             handle.id
                         ),
-                    })?
+                    }
+                    },
+                )?
             };
-            copies.push(ResidentReadbackCopy { src, byte_len });
+            copies.push(ResidentReadbackCopy {
+                handle_id: handle.id,
+                src,
+                byte_len,
+            });
             if byte_len != 0 {
                 add_resident_copy_count(&mut expected_copy_count, "ranged readback")?;
-                add_resident_transfer_bytes(&mut readback_bytes, byte_len, "ranged readback")?;
             }
         }
         if expected_copy_count == 0 {
@@ -397,50 +343,22 @@ impl CudaBackend {
             }
             return Ok(());
         }
-        self.warmup()?;
-        let mut host_transfers = HostTransferAllocations::with_capacity(
-            std::sync::Arc::clone(&self.host_pool),
-            expected_copy_count,
-            copies.len(),
-        )?;
-        let copy_count = self.with_resident_stream(|stream| {
-            let mut copy_count = 0usize;
-            for copy in &copies {
-                let dst = host_transfers.push_output(copy.byte_len)?;
-                if copy.byte_len != 0 {
-                    // SAFETY: FFI to libcuda.so. Source pointer/range was
-                    // validated above against the resident allocation; the target
-                    // is a pinned host-transfer slot owned until synchronization.
-                    unsafe {
-                        cuda_check(
-                            cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
-                                dst,
-                                copy.src,
-                                copy.byte_len,
-                                stream.raw(),
-                            ),
-                            "cuMemcpyDtoHAsync_v2",
-                        )?;
-                    }
-                    copy_count += 1;
-                }
-            }
-            if copy_count != 0 {
-                stream.synchronize()?;
-                self.telemetry.record_sync_point();
-            }
-            Ok::<usize, BackendError>(copy_count)
-        })?;
-        for (output_index, output) in outputs.iter_mut().enumerate() {
-            host_transfers.collect_output_into(output_index, *output)?;
+        let fused_readbacks = fuse_resident_readback_copies(&copies)?;
+        let (host_transfers, copy_count) =
+            self.stage_fused_resident_readbacks_to_host(&fused_readbacks, copies.len())?;
+        for (view, output) in fused_readbacks.views.iter().zip(outputs.iter_mut()) {
+            host_transfers.collect_output_range_into(
+                view.copy_slot,
+                view.byte_offset,
+                view.byte_len,
+                *output,
+            )?;
         }
-        self.telemetry
-            .record_device_to_host_readback(readback_bytes);
-        self.telemetry
-            .record_device_readback_operations(usize_to_u64(
-                copy_count,
-                "resident readback operation count",
-            )?);
+        self.record_resident_readback_telemetry(
+            &fused_readbacks,
+            copy_count,
+            "resident readback operation count",
+        )?;
         Ok(())
     }
 
@@ -475,97 +393,100 @@ impl CudaBackend {
         let mut copies = SmallVec::<[ResidentReadbackCopy; 8]>::new();
         reserve_smallvec(&mut copies, handles.len(), "readback copy")?;
         let mut expected_copy_count = 0usize;
-        let mut readback_bytes = 0_u64;
+        let mut resident_view_cache = ResidentViewCache::new();
+        reserve_smallvec(
+            &mut resident_view_cache,
+            handles.len(),
+            "resident readback view cache",
+        )?;
         for (&handle, readback) in handles.iter().zip(readbacks.iter()) {
-            let buffer = self.resident_store.view(handle)?;
-            let end = readback
-                .device_offset
-                .checked_add(readback.byte_len)
-                .ok_or_else(|| BackendError::InvalidProgram {
+            let buffer = self.resident_store.view_cached(
+                handle,
+                &mut resident_view_cache,
+                "resident readback view cache",
+            )?;
+            let end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+                readback.device_offset,
+                readback.byte_len,
+                buffer.byte_len,
+                || {
+                    BackendError::InvalidProgram {
                     fix: format!(
                         "Fix: CUDA resident readback for handle {} overflows usize at offset {} len {}.",
                         handle.id, readback.device_offset, readback.byte_len
                     ),
-                })?;
-            if end > buffer.byte_len {
-                return Err(BackendError::InvalidProgram {
+                }
+                },
+                |end| {
+                    BackendError::InvalidProgram {
                     fix: format!(
                         "Fix: CUDA resident readback for handle {} requested bytes [{}..{}) but buffer has {} bytes.",
                         handle.id, readback.device_offset, end, buffer.byte_len
                     ),
-                });
-            }
+                }
+                },
+            )?;
             let src = if readback.byte_len == 0 {
                 0
             } else {
-                buffer
-                    .ptr
-                    .checked_add(usize_to_u64(
-                        readback.device_offset,
-                        "resident readback device offset",
-                    )?)
-                    .ok_or_else(|| BackendError::InvalidProgram {
+                vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+                    buffer.ptr,
+                    readback.device_offset,
+                    || {
+                        BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA resident readback device offset {} does not fit CUdeviceptr arithmetic for handle {}.",
+                            readback.device_offset, handle.id
+                        ),
+                    }
+                    },
+                    || {
+                        BackendError::InvalidProgram {
                         fix: format!(
                             "Fix: CUDA resident readback pointer arithmetic overflowed for handle {} at offset {}.",
                             handle.id, readback.device_offset
                         ),
-                    })?
+                    }
+                    },
+                )?
             };
             copies.push(ResidentReadbackCopy {
+                handle_id: handle.id,
                 src,
                 byte_len: readback.byte_len,
             });
             if readback.byte_len != 0 {
                 add_resident_copy_count(&mut expected_copy_count, "readback")?;
-                add_resident_transfer_bytes(&mut readback_bytes, readback.byte_len, "readback")?;
             }
         }
         if expected_copy_count == 0 {
             return clear_resident_copy_outputs(&copies, outputs);
         }
-        self.download_resident_copies_many_into(
-            &copies,
-            expected_copy_count,
-            readback_bytes,
-            outputs,
-        )
+        self.download_resident_fused_copies_many_into(&copies, outputs)
     }
 
-    fn download_resident_copies_many_into(
+    fn stage_fused_resident_readbacks_to_host(
         &self,
-        copies: &[ResidentReadbackCopy],
-        expected_copy_count: usize,
-        readback_bytes: u64,
-        outputs: &mut OutputBuffers,
-    ) -> Result<(), BackendError> {
-        if expected_copy_count == 0 {
-            return clear_resident_copy_outputs(copies, outputs);
-        }
+        fused_readbacks: &FusedResidentReadbacks,
+        requested_output_slots: usize,
+    ) -> Result<(HostTransferAllocations, usize), BackendError> {
         self.warmup()?;
         let mut host_transfers = HostTransferAllocations::with_capacity(
             std::sync::Arc::clone(&self.host_pool),
-            expected_copy_count,
-            copies.len(),
+            fused_readbacks.non_empty_copy_count,
+            requested_output_slots,
         )?;
         let copy_count = self.with_resident_stream(|stream| {
             let mut copy_count = 0usize;
-            for copy in copies {
+            for copy in &fused_readbacks.copies {
                 let dst = host_transfers.push_output(copy.byte_len)?;
                 if copy.byte_len != 0 {
-                    // SAFETY: FFI to libcuda.so. Pointer args were validated by
-                    // the matching alloc / store API; lifetimes are documented in
-                    // the surrounding function. cuda_check (or matching CUresult
-                    // guard) propagates non-success codes as BackendError.
+                    // SAFETY: FFI to libcuda.so. Source pointer/range was
+                    // validated against the resident allocation before staging;
+                    // the pinned host destination remains owned until the stream
+                    // fence completes.
                     unsafe {
-                        cuda_check(
-                            cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
-                                dst,
-                                copy.src,
-                                copy.byte_len,
-                                stream.raw(),
-                            ),
-                            "cuMemcpyDtoHAsync_v2",
-                        )?;
+                        super::copy::d2h_async_checked(dst, copy.src, copy.byte_len, stream.raw())?;
                     }
                     copy_count += 1;
                 }
@@ -576,14 +497,100 @@ impl CudaBackend {
             }
             Ok::<usize, BackendError>(copy_count)
         })?;
-        host_transfers.collect_outputs_into(outputs)?;
+        Ok((host_transfers, copy_count))
+    }
+
+    fn record_resident_readback_telemetry(
+        &self,
+        fused_readbacks: &FusedResidentReadbacks,
+        copy_count: usize,
+        operation_count_label: &str,
+    ) -> Result<(), BackendError> {
         self.telemetry
-            .record_device_to_host_readback(readback_bytes);
-        self.telemetry
-            .record_device_readback_operations(usize_to_u64(
-                copy_count,
-                "resident readback operation count",
-            )?);
+            .record_device_to_host_readback(fused_readbacks.bytes);
+        self.telemetry.record_device_readback_operations(
+            CUDA_NUMERIC.usize_to_u64(copy_count, operation_count_label)?,
+        );
+        Ok(())
+    }
+
+    fn download_resident_fused_copies_many_into(
+        &self,
+        copies: &[ResidentReadbackCopy],
+        outputs: &mut OutputBuffers,
+    ) -> Result<(), BackendError> {
+        let fused_readbacks = fuse_resident_readback_copies(copies)?;
+        if fused_readbacks.non_empty_copy_count == 0 {
+            return clear_resident_copy_outputs(copies, outputs);
+        }
+        let (host_transfers, copy_count) =
+            self.stage_fused_resident_readbacks_to_host(&fused_readbacks, copies.len())?;
+        resize_vec_slots(outputs, copies.len(), "readback output")?;
+        for (view, output) in fused_readbacks.views.iter().zip(outputs.iter_mut()) {
+            host_transfers.collect_output_range_into(
+                view.copy_slot,
+                view.byte_offset,
+                view.byte_len,
+                output,
+            )?;
+        }
+        self.record_resident_readback_telemetry(
+            &fused_readbacks,
+            copy_count,
+            "resident fused readback operation count",
+        )?;
+        Ok(())
+    }
+
+    fn download_resident_fused_copy_batches_many_into(
+        &self,
+        copy_batches: &[SmallVec<[ResidentReadbackCopy; 8]>],
+        total_copy_slots: usize,
+        outputs: &mut Vec<OutputBuffers>,
+    ) -> Result<(), BackendError> {
+        let mut flat_copies = SmallVec::<[ResidentReadbackCopy; 8]>::new();
+        reserve_smallvec(
+            &mut flat_copies,
+            total_copy_slots,
+            "flat fused batch readback copy",
+        )?;
+        for copies in copy_batches {
+            flat_copies.extend(copies.iter().copied());
+        }
+
+        let fused_readbacks = fuse_resident_readback_copies(&flat_copies)?;
+        if fused_readbacks.non_empty_copy_count == 0 {
+            resize_vec_slots(outputs, copy_batches.len(), "batched readback output")?;
+            for (copies, batch_outputs) in copy_batches.iter().zip(outputs.iter_mut()) {
+                resize_vec_slots(batch_outputs, copies.len(), "batched readback item")?;
+                clear_vec_slots(batch_outputs);
+            }
+            return Ok(());
+        }
+
+        let (host_transfers, copy_count) =
+            self.stage_fused_resident_readbacks_to_host(&fused_readbacks, total_copy_slots)?;
+
+        resize_vec_slots(outputs, copy_batches.len(), "batched readback output")?;
+        let mut transfer_index = 0usize;
+        for (copies, batch_outputs) in copy_batches.iter().zip(outputs.iter_mut()) {
+            resize_vec_slots(batch_outputs, copies.len(), "batched readback item")?;
+            for output in batch_outputs {
+                let view = fused_readbacks.views[transfer_index];
+                host_transfers.collect_output_range_into(
+                    view.copy_slot,
+                    view.byte_offset,
+                    view.byte_len,
+                    output,
+                )?;
+                transfer_index += 1;
+            }
+        }
+        self.record_resident_readback_telemetry(
+            &fused_readbacks,
+            copy_count,
+            "resident fused batched readback operation count",
+        )?;
         Ok(())
     }
 
@@ -608,7 +615,6 @@ impl CudaBackend {
         reserve_smallvec(&mut copy_batches, handle_batches.len(), "readback batch")?;
         let mut expected_copy_count = 0usize;
         let mut total_copy_slots = 0usize;
-        let mut readback_bytes = 0_u64;
         for (batch_index, (handles, readbacks)) in handle_batches
             .iter()
             .zip(readback_batches.iter())
@@ -626,52 +632,70 @@ impl CudaBackend {
             let mut copies = SmallVec::<[ResidentReadbackCopy; 8]>::new();
             reserve_smallvec(&mut copies, handles.len(), "batched readback copy")?;
             add_resident_copy_slots(&mut total_copy_slots, handles.len(), "batch readback")?;
+            let mut resident_view_cache = ResidentViewCache::new();
+            reserve_smallvec(
+                &mut resident_view_cache,
+                handles.len(),
+                "resident batched-readback view cache",
+            )?;
             for (&handle, readback) in handles.iter().zip(readbacks.iter()) {
-                let buffer = self.resident_store.view(handle)?;
-                let end = readback
-                    .device_offset
-                    .checked_add(readback.byte_len)
-                    .ok_or_else(|| BackendError::InvalidProgram {
+                let buffer = self.resident_store.view_cached(
+                    handle,
+                    &mut resident_view_cache,
+                    "resident batched-readback view cache",
+                )?;
+                let end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+                    readback.device_offset,
+                    readback.byte_len,
+                    buffer.byte_len,
+                    || {
+                        BackendError::InvalidProgram {
                         fix: format!(
                             "Fix: CUDA resident batch readback for handle {} overflows usize at offset {} len {}.",
                             handle.id, readback.device_offset, readback.byte_len
                         ),
-                    })?;
-                if end > buffer.byte_len {
-                    return Err(BackendError::InvalidProgram {
+                    }
+                    },
+                    |end| {
+                        BackendError::InvalidProgram {
                         fix: format!(
                             "Fix: CUDA resident batch readback for handle {} requested bytes [{}..{}) but buffer has {} bytes.",
                             handle.id, readback.device_offset, end, buffer.byte_len
                         ),
-                    });
-                }
+                    }
+                    },
+                )?;
                 let src = if readback.byte_len == 0 {
                     0
                 } else {
-                    buffer
-                        .ptr
-                        .checked_add(usize_to_u64(
-                            readback.device_offset,
-                            "resident batch readback device offset",
-                        )?)
-                        .ok_or_else(|| BackendError::InvalidProgram {
+                    vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+                        buffer.ptr,
+                        readback.device_offset,
+                        || {
+                            BackendError::InvalidProgram {
+                            fix: format!(
+                                "Fix: CUDA resident batch readback device offset {} does not fit CUdeviceptr arithmetic for handle {}.",
+                                readback.device_offset, handle.id
+                            ),
+                        }
+                        },
+                        || {
+                            BackendError::InvalidProgram {
                             fix: format!(
                                 "Fix: CUDA resident batch readback pointer arithmetic overflowed for handle {} at offset {}.",
                                 handle.id, readback.device_offset
                             ),
-                        })?
+                        }
+                        },
+                    )?
                 };
                 copies.push(ResidentReadbackCopy {
+                    handle_id: handle.id,
                     src,
                     byte_len: readback.byte_len,
                 });
                 if readback.byte_len != 0 {
                     add_resident_copy_count(&mut expected_copy_count, "batch readback")?;
-                    add_resident_transfer_bytes(
-                        &mut readback_bytes,
-                        readback.byte_len,
-                        "batch readback",
-                    )?;
                 }
             }
             copy_batches.push(copies);
@@ -684,61 +708,11 @@ impl CudaBackend {
             }
             return Ok(());
         }
-        self.warmup()?;
-        let mut host_transfers = HostTransferAllocations::with_capacity(
-            std::sync::Arc::clone(&self.host_pool),
-            expected_copy_count,
+        self.download_resident_fused_copy_batches_many_into(
+            &copy_batches,
             total_copy_slots,
-        )?;
-        let copy_count = self.with_resident_stream(|stream| {
-            let mut copy_count = 0usize;
-            for copies in &copy_batches {
-                for copy in copies {
-                    let dst = host_transfers.push_output(copy.byte_len)?;
-                    if copy.byte_len != 0 {
-                        // SAFETY: FFI to libcuda.so. Pointer args were validated
-                        // by the matching alloc / store API; lifetimes are
-                        // documented in the surrounding function. cuda_check (or
-                        // matching CUresult guard) propagates non-success codes as
-                        // BackendError.
-                        unsafe {
-                            cuda_check(
-                                cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
-                                    dst,
-                                    copy.src,
-                                    copy.byte_len,
-                                    stream.raw(),
-                                ),
-                                "cuMemcpyDtoHAsync_v2",
-                            )?;
-                        }
-                        copy_count += 1;
-                    }
-                }
-            }
-            if copy_count != 0 {
-                stream.synchronize()?;
-                self.telemetry.record_sync_point();
-            }
-            Ok::<usize, BackendError>(copy_count)
-        })?;
-        resize_vec_slots(outputs, copy_batches.len(), "batched readback output")?;
-        let mut transfer_index = 0usize;
-        for (copies, batch_outputs) in copy_batches.iter().zip(outputs.iter_mut()) {
-            resize_vec_slots(batch_outputs, copies.len(), "batched readback item")?;
-            for output in batch_outputs {
-                host_transfers.collect_output_into(transfer_index, output)?;
-                transfer_index += 1;
-            }
-        }
-        self.telemetry
-            .record_device_to_host_readback(readback_bytes);
-        self.telemetry
-            .record_device_readback_operations(usize_to_u64(
-                copy_count,
-                "resident batched readback operation count",
-            )?);
-        Ok(())
+            outputs,
+        )
     }
 
     /// Free a CUDA-resident buffer handle.
@@ -764,11 +738,18 @@ impl CudaBackend {
         if uploads.is_empty() {
             return Ok(());
         }
-        let mut copies = SmallVec::<[(u64, &[u8]); 8]>::new();
-        reserve_smallvec(&mut copies, uploads.len(), "offset upload copy")?;
         let mut uploaded_bytes = 0_u64;
+        let (mut copies, mut resident_view_cache) = resident_upload_staging(
+            uploads.len(),
+            "offset upload copy",
+            "resident offset-upload view cache",
+        )?;
         for &(handle, dst_offset_bytes, bytes) in uploads {
-            let buffer = self.resident_store.view(handle)?;
+            let buffer = self.resident_store.view_cached(
+                handle,
+                &mut resident_view_cache,
+                "resident offset-upload view cache",
+            )?;
             let dst_ptr = checked_resident_dst(
                 handle,
                 buffer.ptr,
@@ -776,11 +757,24 @@ impl CudaBackend {
                 dst_offset_bytes,
                 bytes.len(),
             )?;
-            if !bytes.is_empty() {
-                copies.push((dst_ptr, bytes));
-                add_resident_transfer_bytes(&mut uploaded_bytes, bytes.len(), "offset upload")?;
-            }
+            push_resident_upload_copy(
+                &mut copies,
+                &mut uploaded_bytes,
+                handle.id,
+                dst_ptr,
+                bytes,
+                "offset upload",
+            )?;
         }
+        let (copies, uploaded_bytes) = fuse_resident_upload_copies(copies)?;
+        self.copy_resident_uploads(&copies, uploaded_bytes)
+    }
+
+    fn copy_resident_uploads(
+        &self,
+        copies: &[ResidentUploadCopy<'_>],
+        uploaded_bytes: u64,
+    ) -> Result<(), BackendError> {
         if copies.is_empty() {
             return Ok(());
         }
@@ -791,21 +785,19 @@ impl CudaBackend {
             0,
         )?;
         self.with_resident_stream(|stream| {
-            for &(dst_ptr, bytes) in &copies {
+            for copy in copies {
+                let bytes = copy.bytes.as_slice();
                 let host_ptr = host_transfers.push_upload(bytes)?;
                 // SAFETY: FFI to libcuda.so. Pointer args were validated by the
                 // matching alloc / store API; lifetimes are documented in the
                 // surrounding function. cuda_check (or matching CUresult guard)
                 // propagates non-success codes as BackendError.
                 unsafe {
-                    cuda_check(
-                        cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                            dst_ptr,
-                            host_ptr,
-                            bytes.len(),
-                            stream.raw(),
-                        ),
-                        "cuMemcpyHtoDAsync_v2",
+                    super::copy::h2d_async_checked(
+                        copy.dst_ptr,
+                        host_ptr,
+                        bytes.len(),
+                        stream.raw(),
                     )?;
                 }
             }
@@ -813,10 +805,9 @@ impl CudaBackend {
         })?;
         self.telemetry.record_sync_point();
         self.telemetry.record_host_to_device_bytes(uploaded_bytes);
-        self.telemetry.record_host_upload_operations(usize_to_u64(
-            copies.len(),
-            "resident upload operation count",
-        )?);
+        self.telemetry.record_host_upload_operations(
+            CUDA_NUMERIC.usize_to_u64(copies.len(), "resident upload operation count")?,
+        );
         drop(host_transfers);
         Ok(())
     }
@@ -832,11 +823,12 @@ impl CudaBackend {
         self.resident_store.allocated_bytes()
     }
 
-    fn cuda_resident_budget_bytes(&self) -> u64 {
-        let budget = (u128::from(self.caps.total_memory)
-            * u128::from(CUDA_RESIDENT_BUDGET_NUMERATOR))
-            / u128::from(CUDA_RESIDENT_BUDGET_DENOMINATOR);
-        budget as u64
+    fn cuda_resident_budget_bytes(&self) -> Result<u64, BackendError> {
+        Ok(cuda_resident_live_budget_bytes(
+            self.caps.total_memory,
+            cuda_live_free_memory_bytes()?,
+            self.resident_store.allocated_bytes(),
+        ))
     }
 
     /// Pin a pre-allocated host buffer as page-locked for fast async H2D.
@@ -852,20 +844,9 @@ impl CudaBackend {
             });
         }
         self.warmup()?;
-        // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-        // matching alloc / store API; lifetimes are documented in the
-        // surrounding function. cuda_check (or matching CUresult guard)
-        // propagates non-success codes as BackendError.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuMemHostRegister_v2(
-                    ptr as *mut std::ffi::c_void,
-                    byte_len,
-                    cudarc::driver::sys::CU_MEMHOSTREGISTER_PORTABLE as ::std::os::raw::c_uint,
-                ),
-                "cuMemHostRegister_v2",
-            )
-        }
+        // SAFETY: The caller provided the host range lifetime and uniqueness
+        // guarantees documented on this unsafe public API.
+        unsafe { super::host_memory::register_host_buffer(ptr, byte_len, "cuMemHostRegister_v2") }
     }
 
     /// Unregister a previously [`Self::pin_host_buffer`]d host region.
@@ -876,16 +857,9 @@ impl CudaBackend {
     /// this region.
     pub unsafe fn unpin_host_buffer(&self, ptr: u64) -> Result<(), BackendError> {
         self.warmup()?;
-        // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-        // matching alloc / store API; lifetimes are documented in the
-        // surrounding function. cuda_check (or matching CUresult guard)
-        // propagates non-success codes as BackendError.
-        unsafe {
-            cuda_check(
-                cudarc::driver::sys::cuMemHostUnregister(ptr as *mut std::ffi::c_void),
-                "cuMemHostUnregister",
-            )
-        }
+        // SAFETY: The caller guarantees no in-flight async copies still use
+        // this host range, as documented on this unsafe public API.
+        unsafe { super::host_memory::unregister_host_buffer(ptr, "cuMemHostUnregister") }
     }
 
     /// Async H2D copy from a pinned host pointer into a CUDA-resident buffer.
@@ -905,22 +879,6 @@ impl CudaBackend {
             return Ok(());
         }
         self.with_resident(handle, |buffer| {
-            let end = dst_offset_bytes
-                .checked_add(byte_count)
-                .ok_or_else(|| BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: async upload at offset {dst_offset_bytes} for handle {} would overflow usize.",
-                        handle.id
-                    ),
-                })?;
-            if end > buffer.byte_len {
-                return Err(BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: async upload for handle {} writes [{dst_offset_bytes}..{end}) but buffer is only {} bytes.",
-                        handle.id, buffer.byte_len
-                    ),
-                });
-            }
             let dst_ptr = checked_resident_dst(handle, buffer.ptr, buffer.byte_len, dst_offset_bytes, byte_count)?;
             let mut pending_stream = self.async_upload_stream.lock().map_err(|_| {
                 BackendError::new("CUDA async upload stream lock was poisoned. Fix: recreate the backend before queueing more resident uploads.")
@@ -937,14 +895,11 @@ impl CudaBackend {
             // surrounding function. cuda_check (or matching CUresult guard)
             // propagates non-success codes as BackendError.
             unsafe {
-                let copy_result = cuda_check(
-                    cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                        dst_ptr,
-                        src_ptr as *const std::ffi::c_void,
-                        byte_count,
-                        stream.raw(),
-                    ),
-                    "cuMemcpyHtoDAsync_v2",
+                let copy_result = super::copy::h2d_async_checked(
+                    dst_ptr,
+                    src_ptr as *const std::ffi::c_void,
+                    byte_count,
+                    stream.raw(),
                 );
                 if let Err(error) = copy_result {
                     if created_stream {
@@ -956,7 +911,7 @@ impl CudaBackend {
                 }
             }
             self.telemetry
-                .record_host_to_device_bytes(usize_to_u64(
+                .record_host_to_device_bytes(CUDA_NUMERIC.usize_to_u64(
                     byte_count,
                     "resident byte upload count",
                 )?);
@@ -987,6 +942,32 @@ impl CudaBackend {
 }
 
 #[cfg(test)]
+
+mod resident_budget_tests {
+    use super::{cuda_resident_live_budget_bytes, cuda_resident_total_budget_bytes};
+
+    #[test]
+    fn resident_budget_caps_new_allocations_against_live_free_vram() {
+        assert_eq!(cuda_resident_total_budget_bytes(10_000), 9_000);
+        assert_eq!(
+            cuda_resident_live_budget_bytes(10_000, 1_000, 0),
+            900,
+            "Fix: resident allocation budget must respect live free VRAM, not only total board memory."
+        );
+        assert_eq!(
+            cuda_resident_live_budget_bytes(10_000, 8_000, 2_000),
+            9_000,
+            "Fix: resident allocation budget must preserve already-owned resident bytes while capping only additional allocation headroom."
+        );
+        assert_eq!(
+            cuda_resident_live_budget_bytes(10_000, 0, 2_000),
+            2_000,
+            "Fix: zero live free VRAM must allow no additional resident allocation beyond already-owned handles."
+        );
+    }
+}
+
+#[cfg(test)]
 mod async_upload_tests {
     #[test]
     fn async_uploads_use_backend_stream_not_null_stream() {
@@ -994,6 +975,7 @@ mod async_upload_tests {
         assert!(
             source.contains("async_upload_stream")
                 && source.contains("stream.raw()")
+                && source.contains("super::copy::h2d_async_checked")
                 && source.contains("release_stream(stream)"),
             "Fix: CUDA async resident uploads must retain a backend-owned stream until synchronize_uploads releases it."
         );
@@ -1006,6 +988,25 @@ mod async_upload_tests {
             "Fix: CUDA async resident uploads must not enqueue or synchronize on the null stream; that creates a global device fence."
         );
     }
+
+    #[test]
+    fn fused_resident_readback_dma_is_single_sourced() {
+        let source = include_str!("resident_io.rs");
+        assert_eq!(
+            source
+                .matches(concat!("stage_fused_resident_", "readbacks_to_host("))
+                .count(),
+            4,
+            "Fix: ranged, flat, and batched CUDA resident readbacks must share one D2H staging helper instead of drifting across duplicated copy loops."
+        );
+        assert_eq!(
+            source
+                .matches(concat!("super::copy::", "d2h_async_checked"))
+                .count(),
+            1,
+            "Fix: CUDA resident D2H FFI must stay behind the single fused-readback staging helper."
+        );
+    }
 }
 
 fn checked_resident_dst(
@@ -1015,34 +1016,46 @@ fn checked_resident_dst(
     dst_offset_bytes: usize,
     byte_count: usize,
 ) -> Result<u64, BackendError> {
-    let end = dst_offset_bytes
-        .checked_add(byte_count)
-        .ok_or_else(|| BackendError::InvalidProgram {
+    let _end = vyre_driver::accounting::checked_usize_byte_range_end_lazy(
+        dst_offset_bytes,
+        byte_count,
+        buffer_len,
+        || {
+            BackendError::InvalidProgram {
             fix: format!(
                 "Fix: CUDA resident upload at offset {dst_offset_bytes} for handle {} would overflow usize.",
                 handle.id
             ),
-        })?;
-    if end > buffer_len {
-        return Err(BackendError::InvalidProgram {
+        }
+        },
+        |end| {
+            BackendError::InvalidProgram {
             fix: format!(
                 "Fix: CUDA resident upload for handle {} writes [{dst_offset_bytes}..{end}) but buffer is only {buffer_len} bytes; resize the resident slot or trim the source slice.",
                 handle.id
             ),
-        });
-    }
-    let dst_offset = u64::try_from(dst_offset_bytes).map_err(|_| BackendError::InvalidProgram {
-        fix: format!(
-            "Fix: CUDA resident upload offset {dst_offset_bytes} does not fit CUdeviceptr arithmetic for handle {}.",
-            handle.id
-        ),
-    })?;
-    base_ptr
-        .checked_add(dst_offset)
-        .ok_or_else(|| BackendError::InvalidProgram {
+        }
+        },
+    )?;
+    vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+        base_ptr,
+        dst_offset_bytes,
+        || {
+            BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA resident upload offset {dst_offset_bytes} does not fit CUdeviceptr arithmetic for handle {}.",
+                handle.id
+            ),
+        }
+        },
+        || {
+            BackendError::InvalidProgram {
             fix: format!(
                 "Fix: CUDA resident upload pointer arithmetic overflowed for handle {} at offset {dst_offset_bytes}.",
                 handle.id
             ),
-        })
+        }
+        },
+    )
 }
+

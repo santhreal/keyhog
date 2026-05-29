@@ -4,6 +4,7 @@ use crate::api::case::{
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::suite::SuiteKind;
+use crate::cases::byte_pack::decode_u64_words;
 use std::time::Instant;
 use vyre_lower::rewrites;
 use vyre_lower::rewrites::egraph_saturation::{saturate_descriptor, SaturationLimits};
@@ -204,7 +205,7 @@ impl BenchCase for EgraphSaturation {
                 "egraph saturation benchmark produced no structural output".to_string(),
             )
         })?;
-        let words = decode_u64_words(output)?;
+        let words = decode_u64_words(output, "egraph saturation")?;
         if words.len() != 11 {
             return Err(BenchError::CorrectnessViolation(format!(
                 "egraph saturation metric payload contained {} u64 word(s), expected 11",
@@ -283,23 +284,6 @@ fn is_boolean_egraph_case(desc: &KernelDescriptor) -> bool {
 
 fn total_body_ops(body: &vyre_lower::KernelBody) -> u64 {
     body.ops.len() as u64 + body.child_bodies.iter().map(total_body_ops).sum::<u64>()
-}
-
-fn decode_u64_words(bytes: &[u8]) -> Result<Vec<u64>, BenchError> {
-    if bytes.len() % 8 != 0 {
-        return Err(BenchError::CorrectnessViolation(format!(
-            "egraph saturation metric payload length {} is not divisible by 8",
-            bytes.len()
-        )));
-    }
-    Ok(bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let mut word = [0u8; 8];
-            word.copy_from_slice(chunk);
-            u64::from_le_bytes(word)
-        })
-        .collect())
 }
 
 inventory::submit! {

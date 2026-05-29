@@ -42,7 +42,7 @@ pub mod line_splice_classify;
 pub mod ast_cse_constant_fold;
 
 /// AST-level structural-hash CSE probe/insert wave operating on packed-
-/// AST u32 buffers. NOT the vyre-IR CSE — the `ast_` prefix disambiguates.
+/// AST u32 buffers. NOT the vyre-IR CSE  -  the `ast_` prefix disambiguates.
 pub mod ast_cse_structural_hash;
 
 /// 2D / planar grammar rewrite scheduler (#11). Picks a maximal

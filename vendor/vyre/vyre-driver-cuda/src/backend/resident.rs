@@ -6,14 +6,18 @@ use std::sync::{
     Arc,
 };
 
-use cudarc::driver::sys::CUresult;
 use dashmap::DashMap;
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
+use vyre_driver::accounting::{
+    checked_add_u64_lazy, checked_add_usize_lazy, checked_atomic_add_u64_guarded_with_order,
+    checked_atomic_add_usize_with_order, checked_atomic_next_u64_with_order,
+    checked_atomic_sub_usize_with_order,
+};
 use vyre_driver::BackendError;
 
 use super::accounting::checked_sub_u64;
-use super::allocations::{cuda_check, free_cuda_ptr};
+use super::allocations::{alloc_cuda_ptr, free_cuda_ptr};
 use super::staging_reserve::{reserve_hash_map, reserve_smallvec};
 
 #[derive(Debug)]
@@ -35,17 +39,7 @@ unsafe impl Sync for ResidentBuffer {}
 
 impl Drop for ResidentBuffer {
     fn drop(&mut self) {
-        if self.ptr != 0 {
-            // SAFETY: `ptr` came from `cuMemAlloc_v2` and is owned by this handle.
-            unsafe {
-                let result = cudarc::driver::sys::cuMemFree_v2(self.ptr);
-                if result != CUresult::CUDA_SUCCESS {
-                    eprintln!(
-                        "Fix: cuMemFree_v2 failed while dropping CUDA resident buffer with {result:?}; ensure all resident dispatches have completed."
-                    );
-                }
-            }
-        }
+        free_cuda_ptr(self.ptr);
     }
 }
 
@@ -63,6 +57,8 @@ pub struct CudaResidentBuffer {
     /// Buffer size in bytes.
     pub byte_len: usize,
 }
+
+pub(crate) type ResidentViewCache = SmallVec<[(CudaResidentBuffer, ResidentBufferView); 8]>;
 
 #[derive(Debug)]
 pub(crate) struct CudaResidentStore {
@@ -115,17 +111,9 @@ impl CudaResidentStore {
             ),
         })?;
         reserve_resident_budget(&self.resident_bytes, requested_bytes, budget_bytes)?;
-        let mut ptr = 0u64;
-        // SAFETY: FFI to libcuda.so. Pointer args were validated by the
-        // matching alloc / store API; lifetimes are documented in the
-        // surrounding function. cuda_check (or matching CUresult guard)
-        // propagates non-success codes as BackendError.
-        unsafe {
-            let allocation_result = cuda_check(
-                cudarc::driver::sys::cuMemAlloc_v2(&mut ptr, byte_len),
-                "cuMemAlloc_v2",
-            );
-            if let Err(error) = allocation_result {
+        let ptr = match alloc_cuda_ptr(byte_len, "cuMemAlloc_v2") {
+            Ok(ptr) => ptr,
+            Err(error) => {
                 release_resident_budget_or_repair(
                     &self.resident_bytes,
                     requested_bytes,
@@ -133,7 +121,7 @@ impl CudaResidentStore {
                 );
                 return Err(error);
             }
-        }
+        };
         let id = match allocate_resident_handle_id(&self.next_id) {
             Ok(id) => id,
             Err(error) => {
@@ -214,6 +202,32 @@ impl CudaResidentStore {
         })
     }
 
+    pub(crate) fn view_cached(
+        &self,
+        handle: CudaResidentBuffer,
+        cache: &mut ResidentViewCache,
+        context: &'static str,
+    ) -> Result<ResidentBufferView, BackendError> {
+        for &(cached_handle, cached_view) in cache.iter() {
+            if cached_handle.id != handle.id {
+                continue;
+            }
+            if cached_handle.byte_len != handle.byte_len {
+                return Err(BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA {context} received resident handle {} with inconsistent byte lengths {} and {}; rebuild the resident handle list from the backend store before dispatch.",
+                        handle.id, cached_handle.byte_len, handle.byte_len
+                    ),
+                });
+            }
+            return Ok(cached_view);
+        }
+        let view = self.view(handle)?;
+        reserve_smallvec(cache, 1, context)?;
+        cache.push((handle, view));
+        Ok(view)
+    }
+
     pub(crate) fn mark_inflight(
         &self,
         handles: &[CudaResidentBuffer],
@@ -281,16 +295,22 @@ impl CudaResidentStore {
         let counter = self
             .inflight
             .entry(handle.id)
-            .or_insert_with(|| AtomicUsize::new(0))
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                value.checked_add(1)
-            });
-        counter.map_err(|value| BackendError::InvalidProgram {
+            .or_insert_with(|| AtomicUsize::new(0));
+        checked_atomic_add_usize_with_order(
+            &*counter,
+            1,
+            Ordering::Acquire,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |value, _| {
+                BackendError::InvalidProgram {
             fix: format!(
                 "Fix: CUDA resident in-flight reference count overflowed for handle {id} at {value}; wait for pending dispatches before rebinding this resident buffer.",
                 id = handle.id
             ),
-        })?;
+            }
+            },
+        )?;
         guard.ids.push(handle.id);
         Ok(())
     }
@@ -350,11 +370,13 @@ impl CudaResidentStore {
                     entry.byte_len
                 ),
             })?;
-            total = total.checked_add(bytes).ok_or_else(|| BackendError::InvalidProgram {
+            total = checked_add_u64_lazy(total, bytes, || {
+                BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: CUDA resident byte accounting overflowed while rebuilding from live handle {} with {bytes} bytes; shard the resident set.",
                     entry.key()
                 ),
+            }
             })?;
         }
         self.resident_bytes.store(total, Ordering::Release);
@@ -365,13 +387,13 @@ impl CudaResidentStore {
         let mut total = 0usize;
         for entry in self.inflight.iter() {
             let count = entry.value().load(Ordering::Acquire);
-            total = total.checked_add(count).ok_or_else(|| {
+            total = checked_add_usize_lazy(total, count, || {
                 BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: CUDA resident in-flight reference count overflowed while summing handle {} with {count} reference(s). Wait for pending work and repair resident dispatch lifetime accounting; never continue with saturated in-flight state.",
-                        entry.key()
-                    ),
-                }
+                fix: format!(
+                    "Fix: CUDA resident in-flight reference count overflowed while summing handle {} with {count} reference(s). Wait for pending work and repair resident dispatch lifetime accounting; never continue with saturated in-flight state.",
+                    entry.key()
+                ),
+            }
             })?;
         }
         Ok(total)
@@ -379,19 +401,17 @@ impl CudaResidentStore {
 }
 
 fn allocate_resident_handle_id(next_id: &AtomicU64) -> Result<u64, BackendError> {
-    let mut observed = next_id.load(Ordering::Acquire);
-    loop {
-        if observed == u64::MAX {
-            return Err(BackendError::InvalidProgram {
-                fix: "Fix: CUDA resident buffer handle id space is exhausted before allocation; recreate the backend session instead of wrapping handle ids.".to_string(),
-            });
+    checked_atomic_next_u64_with_order(
+        next_id,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |_| {
+            BackendError::InvalidProgram {
+            fix: "Fix: CUDA resident buffer handle id space is exhausted before allocation; recreate the backend session instead of wrapping handle ids.".to_string(),
         }
-        let next = observed + 1;
-        match next_id.compare_exchange_weak(observed, next, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return Ok(observed),
-            Err(actual) => observed = actual,
-        }
-    }
+        },
+    )
 }
 
 fn reserve_resident_budget(
@@ -399,26 +419,21 @@ fn reserve_resident_budget(
     requested_bytes: u64,
     budget_bytes: u64,
 ) -> Result<(), BackendError> {
-    let mut observed = resident_bytes.load(Ordering::Acquire);
-    loop {
-        let next = observed.checked_add(requested_bytes).ok_or_else(|| {
+    checked_atomic_add_u64_guarded_with_order(
+        resident_bytes,
+        requested_bytes,
+        Ordering::Acquire,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |observed, requested| {
             BackendError::InvalidProgram {
                 fix: format!(
-                    "Fix: CUDA resident allocation accounting overflowed while adding {requested_bytes} bytes to {observed} resident bytes; shard the resident set."
+                    "Fix: CUDA resident allocation accounting overflowed while adding {requested} bytes to {observed} resident bytes; shard the resident set."
                 ),
             }
-        })?;
-        validate_resident_allocation_budget(next, budget_bytes)?;
-        match resident_bytes.compare_exchange_weak(
-            observed,
-            next,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => return Ok(()),
-            Err(actual) => observed = actual,
-        }
-    }
+        },
+        |next| validate_resident_allocation_budget(next, budget_bytes),
+    )
 }
 
 fn release_resident_budget(
@@ -433,6 +448,7 @@ fn release_resident_budget(
             }
     })
 }
+
 
 fn release_resident_budget_or_repair(
     resident_bytes: &AtomicU64,
@@ -461,7 +477,10 @@ pub(crate) fn validate_resident_allocation_budget(
 
 #[cfg(test)]
 mod tests {
-    use super::validate_resident_allocation_budget;
+    use super::{
+        validate_resident_allocation_budget, CudaResidentBuffer, CudaResidentStore, ResidentBuffer,
+        ResidentViewCache,
+    };
     use vyre_driver::BackendError;
 
     #[test]
@@ -503,7 +522,7 @@ mod tests {
             .split("pub(crate) fn allocate(")
             .nth(1)
             .and_then(|tail| tail.split("pub(crate) fn free(&self").next())
-            .expect("resident allocate source must be discoverable");
+            .expect("Fix: resident allocate source must be discoverable");
         assert!(
             allocate.contains("free_cuda_ptr(ptr);")
                 && allocate.contains("release_resident_budget_or_repair(")
@@ -522,8 +541,21 @@ mod tests {
             source.contains("reserve_hash_map(&mut seen, handles.len(), \"resident duplicate check\")?"),
             "Fix: large resident handle duplicate detection must reserve fallibly before marking handles in-flight."
         );
+        let mark_inflight = source
+            .split("pub(crate) fn mark_inflight(")
+            .nth(1)
+            .and_then(|tail| tail.split("fn mark_unique_inflight_handle(").next())
+            .expect("Fix: resident mark_inflight source must be discoverable");
+        let guard_reserve_pos = mark_inflight
+            .find("reserve_smallvec(")
+            .expect("Fix: resident in-flight guard ids must reserve fallibly");
+        let first_mark_pos = mark_inflight
+            .find("self.mark_unique_inflight_handle(")
+            .expect("Fix: resident in-flight marking helper call must be discoverable");
         assert!(
-            source.contains("reserve_smallvec(&mut guard.ids, handles.len(), \"resident in-flight guard ids\")?"),
+            mark_inflight[guard_reserve_pos..first_mark_pos].contains("&mut guard.ids")
+                && mark_inflight[guard_reserve_pos..first_mark_pos]
+                    .contains("\"resident in-flight guard ids\""),
             "Fix: resident in-flight guard ids must reserve fallibly before reference counts are incremented."
         );
         assert!(
@@ -548,6 +580,47 @@ mod tests {
             "Fix: CUDA resident resource handle staging must not allocate infallibly."
         );
     }
+
+    #[test]
+    fn resident_view_cache_reuses_validated_handle_metadata_and_rejects_drift() {
+        let store = CudaResidentStore::new();
+        store.buffers.insert(
+            7,
+            ResidentBuffer {
+                ptr: 0x1000,
+                byte_len: 64,
+            },
+        );
+        let mut cache = ResidentViewCache::new();
+        let handle = CudaResidentBuffer {
+            id: 7,
+            byte_len: 64,
+        };
+
+        let first = store
+            .view_cached(handle, &mut cache, "resident view cache test")
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - resident view cache must resolve a live handle");
+        assert_eq!(first.ptr, 0x1000);
+        assert_eq!(first.byte_len, 64);
+
+        let drifted = store
+            .view_cached(
+                CudaResidentBuffer {
+                    id: 7,
+                    byte_len: 32,
+                },
+                &mut cache,
+                "resident view cache test",
+            )
+            .expect_err("cached resident handle metadata drift must be rejected");
+        match drifted {
+            BackendError::InvalidProgram { fix } => {
+                assert!(fix.contains("resident handle 7"));
+                assert!(fix.contains("inconsistent byte lengths 64 and 32"));
+            }
+            other => panic!("expected InvalidProgram, got {other:?}"),
+        }
+    }
 }
 
 /// Reference-count guard for resident buffers currently bound to async work.
@@ -561,12 +634,17 @@ impl Drop for ResidentUseGuard {
     fn drop(&mut self) {
         for id in &self.ids {
             let should_remove = if let Some(count) = self.inflight.get(id) {
-                match count.fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                    value.checked_sub(1)
-                }) {
-                    Ok(_) => count.load(Ordering::Acquire) == 0,
+                match checked_atomic_sub_usize_with_order(
+                    &*count,
+                    1,
+                    Ordering::Acquire,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                    |value, _| value,
+                ) {
+                    Ok(()) => count.load(Ordering::Acquire) == 0,
                     Err(value) => {
-                        eprintln!(
+                        tracing::error!(
                             "Fix: CUDA resident in-flight reference count underflowed for handle {id} at {value}; resident dispatch lifetime accounting is corrupt."
                         );
                         false
@@ -582,3 +660,4 @@ impl Drop for ResidentUseGuard {
         }
     }
 }
+

@@ -1,4 +1,4 @@
-//! Dot product — element-wise multiply + sum-reduce.
+//! Dot product  -  element-wise multiply + sum-reduce.
 //!
 //! Category A composition: reads two equally-sized u32 buffers,
 //! multiplies element-wise, and reduces through workgroup scratch.
@@ -36,27 +36,6 @@ impl Dot {
             out,
             options: BuildOptions::default(),
         }
-    }
-
-    /// Override the generated Program workgroup size.
-    #[must_use]
-    pub fn with_workgroup_size(mut self, size: [u32; 3]) -> Self {
-        self.options = self.options.with_workgroup_size(size);
-        self
-    }
-
-    /// Override the Region generator id.
-    #[must_use]
-    pub fn with_region_generator(mut self, name: &'static str) -> Self {
-        self.options = self.options.with_region_generator(name);
-        self
-    }
-
-    /// Stamp the Region metadata with a tenant id.
-    #[must_use]
-    pub fn with_tenant_id(mut self, tenant_id: u32) -> Self {
-        self.options = self.options.with_tenant_id(tenant_id);
-        self
     }
 
     /// Validate tensor metadata and materialize the dot-product Program.
@@ -128,6 +107,8 @@ impl Dot {
     }
 }
 
+crate::builder::impl_cat_a_builder_options!(Dot);
+
 /// Build a Program that computes the dot product of `lhs` and `rhs`
 /// (both length `n`) into `out[0]`.
 ///
@@ -140,7 +121,7 @@ impl Dot {
 /// strided slice and the workgroup reduces into `out[0]`.
 ///
 /// # Errors
-/// Returns `Err` when `n == 0` — empty reductions are rejected
+/// Returns `Err` when `n == 0`  -  empty reductions are rejected
 /// (FINDING-V7-TEST-009-DOT).
 pub fn dot(lhs: &str, rhs: &str, out: &str, n: u32) -> Result<Program, String> {
     Dot::new(
@@ -256,11 +237,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::byte_pack::decode_u32_one as decode_one;
     use vyre_reference::value::Value;
-
-    fn decode_one(bytes: &[u8]) -> u32 {
-        u32::from_le_bytes(bytes[0..4].try_into().unwrap())
-    }
 
     #[test]
     fn tiled_dot_matches_scalar_reference_across_multiple_tiles() {
@@ -283,7 +261,7 @@ mod tests {
             .expect("Fix: dot program must execute in the reference interpreter.");
             decode_one(&outputs[0].to_bytes())
         };
-        let actual = run(dot("lhs", "rhs", "out", n).expect("dot dimensions are valid"));
+        let actual = run(dot("lhs", "rhs", "out", n).expect("Fix: dot dimensions are valid"));
         let expected = run(dot_reference("lhs", "rhs", "out", n));
         assert_eq!(
             actual, expected,
@@ -299,7 +277,7 @@ mod tests {
     fn dot_single_element() {
         let lhs = vec![7u32];
         let rhs = vec![3u32];
-        let program = dot("lhs", "rhs", "out", 1).expect("dot n=1 must build");
+        let program = dot("lhs", "rhs", "out", 1).expect("Fix: dot n=1 must build");
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
@@ -308,15 +286,18 @@ mod tests {
                 Value::from(vec![0u8; 4]),
             ],
         )
-        .expect("dot n=1 must execute");
+        .expect("Fix: dot n=1 must execute");
         let actual = decode_one(&outputs[0].to_bytes());
         assert_eq!(actual, 21u32, "dot of [7]·[3] = 21");
     }
 
     #[test]
     fn dot_empty_rejected() {
-        let err = dot("lhs", "rhs", "out", 0);
-        assert!(err.is_err(), "dot n=0 must be rejected");
+        let err = dot("lhs", "rhs", "out", 0).expect_err("dot n=0 must be rejected");
+        assert!(
+            err.contains("dot") || err.contains("ShapeMismatch"),
+            "dot n=0 error must name the op or shape failure: {err}"
+        );
     }
 
     #[test]
@@ -324,7 +305,7 @@ mod tests {
         let n = 1025_u32; // Just above DOT_TILE=256, needs multiple tiles
         let lhs: Vec<u32> = (0..n).map(|i| i.wrapping_add(1)).collect();
         let rhs: Vec<u32> = (0..n).map(|i| i.wrapping_add(2)).collect();
-        let program = dot("lhs", "rhs", "out", n).expect("dot n=1025 must build");
+        let program = dot("lhs", "rhs", "out", n).expect("Fix: dot n=1025 must build");
         let outputs = vyre_reference::reference_eval(
             &program,
             &[
@@ -333,7 +314,7 @@ mod tests {
                 Value::from(vec![0u8; 4]),
             ],
         )
-        .expect("dot n=1025 must execute");
+        .expect("Fix: dot n=1025 must execute");
         let actual = decode_one(&outputs[0].to_bytes());
         let expected: u32 = lhs
             .iter()

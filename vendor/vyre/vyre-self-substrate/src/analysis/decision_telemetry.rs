@@ -99,7 +99,7 @@ pub fn record_eviction(dropped_fraction: f64) {
 
 /// Record one autotune-step decision. `relative_delta` is the
 /// magnitude of the parameter change as a fraction of the previous
-/// value — `(new - old).abs() / max(old, eps)`.
+/// value  -  `(new - old).abs() / max(old, eps)`.
 pub fn record_autotune(relative_delta: f64) {
     let f = relative_delta.abs();
     let bucket = if f < 1e-3 {

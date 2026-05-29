@@ -18,7 +18,7 @@ pub(crate) fn validate_and_analyze(
             descriptor
         ));
     }
-    if std::env::var_os("VYRE_CUDA_DESCRIPTOR_AUDIT").is_some() {
+    if crate::instrumentation::cuda_descriptor_audit_enabled() {
         let neutral = vyre_lower::audit::audit(&descriptor);
         let concrete =
             vyre_emit_ptx::patterns::audit_optimized(&descriptor, compute_capability(target_sm));
@@ -34,10 +34,7 @@ pub(crate) fn validate_and_analyze(
 }
 
 fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor, String> {
-    if !matches!(
-        std::env::var("VYRE_CUDA_CANONICAL_PREEMIT").as_deref(),
-        Ok("0" | "false" | "FALSE" | "off" | "OFF")
-    ) {
+    if crate::instrumentation::cuda_canonical_preemit_enabled() {
         let prepared = vyre_lower::prepare_program_for_emit(program)
             .map_err(|error| {
                 format!(
@@ -51,7 +48,7 @@ fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor
         });
     }
 
-    let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+    let trace = crate::instrumentation::cuda_stage_trace_enabled();
     let start = std::time::Instant::now();
     let descriptor = vyre_lower::lower(program).map_err(|error| {
         format!(
@@ -65,22 +62,19 @@ fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor
         ));
     }
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[cuda-codegen] +{}ms lower ops={} bindings={}",
             start.elapsed().as_millis(),
             descriptor.body.ops.len(),
             descriptor.bindings.slots.len()
         );
     }
-    if matches!(
-        std::env::var("VYRE_CUDA_DESCRIPTOR_REWRITES").as_deref(),
-        Ok("0" | "false" | "FALSE" | "off" | "OFF")
-    ) {
+    if !crate::instrumentation::cuda_descriptor_rewrites_enabled() {
         return Ok(descriptor);
     }
     let optimized = run_cuda_descriptor_rewrites(&descriptor)?;
     if trace {
-        eprintln!(
+        tracing::debug!(
             "[cuda-codegen] +{}ms descriptor_rewrites ops={} bindings={}",
             start.elapsed().as_millis(),
             optimized.body.ops.len(),
@@ -145,7 +139,8 @@ mod tests {
             }],
         );
 
-        let descriptor = validate_and_analyze(&program, 90).expect("descriptor gate must pass");
+        let descriptor =
+            validate_and_analyze(&program, 90).expect("Fix: descriptor gate must pass");
 
         assert_eq!(descriptor.dispatch.workgroup_size, [128, 1, 1]);
         assert_eq!(descriptor.bindings.slots.len(), 1);
@@ -172,15 +167,20 @@ mod tests {
 
     #[test]
     fn descriptor_rewrites_are_release_default_not_opt_in() {
-        let source = include_str!("descriptor_gate.rs");
+        let descriptor_source = include_str!("descriptor_gate.rs");
+        let instrumentation_source = include_str!("../instrumentation.rs");
 
         assert!(
-            source.contains("VYRE_CUDA_DESCRIPTOR_REWRITES")
-                && source.contains("Ok(\"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")"),
+            instrumentation_source.contains("CUDA_DESCRIPTOR_REWRITES_ENV")
+                && instrumentation_source.contains("\"VYRE_CUDA_DESCRIPTOR_REWRITES\"")
+                && instrumentation_source.contains("cached_enabled_default_true")
+                && instrumentation_source
+                    .contains("matches!(value, \"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")")
+                && descriptor_source.contains("cuda_descriptor_rewrites_enabled()"),
             "Fix: CUDA descriptor rewrites must be default-on with only an explicit debug disable."
         );
         assert!(
-            !source.contains(concat!(
+            !instrumentation_source.contains(concat!(
                 "var_os(\"VYRE_CUDA_DESCRIPTOR_REWRITES\")",
                 ".is_none()"
             )),
@@ -190,15 +190,21 @@ mod tests {
 
     #[test]
     fn canonical_preemit_lowering_is_release_default_not_opt_in() {
-        let source = include_str!("descriptor_gate.rs");
+        let descriptor_source = include_str!("descriptor_gate.rs");
+        let instrumentation_source = include_str!("../instrumentation.rs");
 
         assert!(
-            source.contains("VYRE_CUDA_CANONICAL_PREEMIT")
-                && source.contains("Ok(\"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")"),
+            instrumentation_source.contains("CUDA_CANONICAL_PREEMIT_ENV")
+                && instrumentation_source.contains("\"VYRE_CUDA_CANONICAL_PREEMIT\"")
+                && instrumentation_source.contains("cached_enabled_default_true")
+                && instrumentation_source.contains(
+                    "matches!(value, \"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")"
+                )
+                && descriptor_source.contains("cuda_canonical_preemit_enabled()"),
             "Fix: CUDA canonical pre-emit lowering must be default-on with only an explicit debug disable."
         );
         assert!(
-            !source.contains(concat!(
+            !instrumentation_source.contains(concat!(
                 "var_os(\"VYRE_CUDA_CANONICAL_PREEMIT\")",
                 ".is_some()"
             )),

@@ -3,8 +3,8 @@
 //! # Idea
 //!
 //! When a single Program already contains both a decoder and a
-//! scanner — the decoder writes some `ReadWrite` storage handoff
-//! buffer, the scanner then reads from it — the decoded bytes
+//! scanner  -  the decoder writes some `ReadWrite` storage handoff
+//! buffer, the scanner then reads from it  -  the decoded bytes
 //! don't need to round-trip through DRAM. Promoting the handoff
 //! to workgroup memory keeps the bytes in the SM's shared
 //! scratchpad and lets the scanner hit L1 instead of HBM.
@@ -19,13 +19,13 @@
 //!
 //! For every buffer `b` where:
 //!   * `b.access() == BufferAccess::ReadWrite` (written then read),
-//!   * `b.count() > 0` (static size known — workgroup memory
+//!   * `b.count() > 0` (static size known  -  workgroup memory
 //!     requires a compile-time count), and
 //!   * `b` is not marked `pipeline_live_out` (a workgroup buffer
 //!     cannot be observed outside the dispatch),
 //!
 //! the pass rewrites `b` in-place to
-//! `BufferDecl::workgroup(name, count, element)` — the access mode
+//! `BufferDecl::workgroup(name, count, element)`  -  the access mode
 //! flips to `Workgroup`, the memory tier flips to `Shared`, and
 //! the binding slot is dropped (workgroup buffers do not hold a
 //! `@binding`). Entry-body node ops reference buffers by name, so
@@ -140,7 +140,7 @@ pub fn run(program: Program) -> Program {
         .collect();
 
     // VYRE_IR_HOTSPOTS audit: avoid the deep-clone of the entry
-    // Vec<Node>. When the Arc is unique (the common case — we own
+    // Vec<Node>. When the Arc is unique (the common case  -  we own
     // the only reference after `run()` returns) `try_unwrap` hands
     // back the Vec<Node> directly. Only fall back to cloning when
     // another Arc is still outstanding.
@@ -148,7 +148,7 @@ pub fn run(program: Program) -> Program {
     Program::wrapped(new_buffers, program.workgroup_size, entry)
 }
 
-/// Count decode-handoff candidate buffers in `program` — the
+/// Count decode-handoff candidate buffers in `program`  -  the
 /// buffers `run` would promote. Identical filter to `run`.
 #[must_use]
 pub fn count_opportunities(program: &Program) -> usize {
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn run_preserves_pipeline_live_out_buffer() {
         // A ReadWrite buffer that is live-out must NOT be demoted
-        // to workgroup memory — callers expect to read it back.
+        // to workgroup memory  -  callers expect to read it back.
         let p = Program::wrapped(
             vec![
                 BufferDecl::storage("result", 0, BufferAccess::ReadWrite, DataType::U32)
@@ -283,7 +283,7 @@ mod tests {
     }
 
     /// A ReadWrite handoff that exceeds 16 KiB stays in storage memory
-    /// — wgpu's shared-memory floor would reject the workgroup decl on
+    ///  -  wgpu's shared-memory floor would reject the workgroup decl on
     /// the fallback path. 4097 u32 elements = 16388 bytes, just above
     /// the 16384-byte budget.
     #[test]

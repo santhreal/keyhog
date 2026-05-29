@@ -1,11 +1,11 @@
-//! Cat-A `clamp_u32` — element-wise `x.clamp(lo, hi)`.
+//! Cat-A `clamp_u32`  -  element-wise `x.clamp(lo, hi)`.
 //!
 //! Migration target per `docs/migration-vyre-ops-to-intrinsics.md`:
 //! pure composition of `Expr::min` and `Expr::max` (both are existing
 //! `BinOp` primitives with no dedicated target builder arm required at the op
 //! level). Library, not intrinsic.
 //!
-//! Signature takes three buffers + one output — the binary helper
+//! Signature takes three buffers + one output  -  the binary helper
 //! doesn't fit, so the Program is constructed inline (still wrapped in
 //! a `Node::Region` per the Region chain invariant).
 //!
@@ -58,8 +58,7 @@ inventory::submit! {
             let input = [0u32, 5, 10, u32::MAX];
             let lo = [3u32, 3, 3, 100];
             let hi = [8u32, 8, 8, 200];
-            let to_bytes =
-                |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = vyre_primitives::wire::pack_u32_slice;
             vec![vec![to_bytes(&input), to_bytes(&lo), to_bytes(&hi)]]
         }),
         expected_output: Some(|| {
@@ -67,10 +66,7 @@ inventory::submit! {
             // down to hi=200; the first three clamp up to lo=3 or
             // pass through unchanged.
             let expected = [3u32, 5, 8, 200];
-            let bytes = expected
-                .iter()
-                .flat_map(|w| w.to_le_bytes())
-                .collect::<Vec<u8>>();
+            let bytes = vyre_primitives::wire::pack_u32_slice(&expected);
             vec![vec![bytes]]
         }),
         category: Some("math"),
@@ -85,7 +81,7 @@ mod tests {
     fn run(input: &[u32], lo: &[u32], hi: &[u32]) -> Vec<u32> {
         let n = input.len() as u32;
         let program = clamp_u32("input", "lo", "hi", "out", n.max(1));
-        let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+        let to_bytes = vyre_primitives::wire::pack_u32_slice;
         let inputs = vec![
             Value::Bytes(to_bytes(input).into()),
             Value::Bytes(to_bytes(lo).into()),
@@ -95,9 +91,7 @@ mod tests {
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: clamp_u32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
-        raw.chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect()
+        vyre_primitives::wire::decode_u32_le_bytes_all(&raw)
     }
 
     #[test]

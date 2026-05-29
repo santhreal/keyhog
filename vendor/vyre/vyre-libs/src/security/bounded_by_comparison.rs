@@ -1,14 +1,14 @@
-//! `bounded_by_comparison` — Tier-3 shim over
+//! `bounded_by_comparison`  -  Tier-3 shim over
 //! [`vyre_primitives::graph::csr_backward_traverse`] with the
 //! `DOMINANCE` edge-kind mask.
 //!
 //! AUDIT_2026-04-24 F-BBC-02 (doc fix): the primitive computes
-//! reverse reachability along dominance edges — i.e. the set of
+//! reverse reachability along dominance edges  -  i.e. the set of
 //! dominance-tree *ancestors* of each node in `frontier_in`. The
 //! stdlib rule intersects that ancestor set with the bound-check
 //! NodeSet. Prior doc text claimed "every access is reachable
 //! backward along dominance edges from some bound check," which
-//! describes descendant reachability, not ancestor reachability —
+//! describes descendant reachability, not ancestor reachability  -
 //! the directions were swapped. Correct framing: "for each access
 //! in `frontier_in`, compute the dominators via ancestor walk,
 //! then a bound-check intersects to prove the access is covered
@@ -51,7 +51,7 @@ inventory::submit! {
         id: OP_ID,
         build: || bounded_by_comparison(ProgramGraphShape::new(4, 4), "fin", "fout"),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // Diamond dominance tree: 0 dominates 1 and 2; both dominate 3.
             // Backward from {3} reaches {1, 2} in one step.
             vec![vec![
@@ -63,14 +63,14 @@ inventory::submit! {
                     edge_kind::DOMINANCE,
                     edge_kind::DOMINANCE,
                     edge_kind::DOMINANCE,
-                ]),                               // pg_edge_kind_mask — all DOMINANCE
+                ]),                               // pg_edge_kind_mask  -  all DOMINANCE
                 to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
                 to_bytes(&[0b1000]),              // fin = {3}
                 to_bytes(&[0b1000]),              // fout accumulator seed = {3}
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_bytes = |w: &[u32]| vyre_primitives::wire::pack_u32_slice(w);
             // One backward step from {3}: nodes 1 and 2 have edges to 3,
             // so they light up. Accumulator preserves seed {3}.
             vec![vec![to_bytes(&[0b1110])]]
@@ -181,7 +181,7 @@ mod tests {
         );
 
         let contract = crate::harness::convergence_contract(OP_ID)
-            .expect("bounded_by_comparison must have a ConvergenceContract");
+            .expect("Fix: bounded_by_comparison must have a ConvergenceContract");
         assert!(
             contract.max_iterations >= node_count,
             "ConvergenceContract max_iterations ({}) must be >= chain depth ({}) to avoid silent truncation",

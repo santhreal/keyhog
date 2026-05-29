@@ -110,21 +110,7 @@ fn read_u32_stream_into(
     label: &str,
     out: &mut Vec<u32>,
 ) -> Result<(), String> {
-    out.clear();
-    let required = count.checked_mul(4).ok_or_else(|| {
-        format!("{label}: requested u32 stream length overflows byte count. Fix: shard the decode.")
-    })?;
-    if bytes.len() < required {
-        return Err(format!(
-            "{label}: u32 stream has {} bytes, needs {required}. Fix: backend output is truncated.",
-            bytes.len()
-        ));
-    }
-    out.reserve(count);
-    for chunk in bytes[..required].chunks_exact(4) {
-        out.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
-    Ok(())
+    vyre_primitives::wire::unpack_u32_slice_into(bytes, count, label, out)
 }
 
 #[cfg(test)]

@@ -68,6 +68,7 @@ fn precompute_decl_contexts_with_scratch(
         ],
     );
     let inputs = [scoped_vast_blob];
+    scratch.outputs.clear();
     super::dispatch_borrowed_stage_cached_into(
         backend,
         decl_context_key,

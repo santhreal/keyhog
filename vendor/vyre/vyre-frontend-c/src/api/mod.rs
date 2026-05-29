@@ -11,6 +11,7 @@ pub mod include_graph;
 pub mod lex_index;
 /// Decoders for semantic, syntax, ABI, and scope sections embedded in frontend objects.
 pub mod object_decode;
+mod object_io;
 /// clang/vyrec parity report and release-gate types.
 pub mod parity;
 /// Normalized source-location and provenance model for parity comparison.
@@ -26,6 +27,7 @@ pub mod security_index;
 pub mod structure_index;
 /// Target, dialect, and compiler-predefine option model for the C frontend.
 pub mod target;
+mod word_decode;
 
 pub use include_graph::{IncludeGraphEdge, IncludeGraphProof, IncludeGraphResidency};
 pub use object_decode::{

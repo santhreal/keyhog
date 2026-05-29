@@ -4,6 +4,7 @@ use crate::api::case::{
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::suite::SuiteKind;
+use crate::cases::byte_pack::decode_u64_words;
 use std::collections::BTreeSet;
 use std::time::Instant;
 use vyre_foundation::ir::DataType;
@@ -227,7 +228,7 @@ impl BenchCase for AliasAwareOptimizations {
                 "alias-aware optimization benchmark produced no structural output".to_string(),
             )
         })?;
-        let words = decode_u64_words(output)?;
+        let words = decode_u64_words(output, "alias-aware")?;
         if words.len() != 16 {
             return Err(BenchError::CorrectnessViolation(format!(
                 "alias-aware optimization benchmark emitted {} metric words, expected 16",
@@ -459,22 +460,6 @@ fn encode_eval(eval: &EvalSummary) -> Vec<u8> {
     output
 }
 
-fn decode_u64_words(bytes: &[u8]) -> Result<Vec<u64>, BenchError> {
-    if bytes.len() % 8 != 0 {
-        return Err(BenchError::CorrectnessViolation(format!(
-            "alias-aware metric payload length {} is not divisible by 8",
-            bytes.len()
-        )));
-    }
-    Ok(bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let mut word = [0u8; 8];
-            word.copy_from_slice(chunk);
-            u64::from_le_bytes(word)
-        })
-        .collect())
-}
 
 fn total_ops(desc: &KernelDescriptor) -> u64 {
     reachable_body_ops(&desc.body)
@@ -745,3 +730,4 @@ fn store_body(binding: u32, index: u32) -> KernelBody {
 inventory::submit! {
     &AliasAwareOptimizations as &'static dyn BenchCase
 }
+

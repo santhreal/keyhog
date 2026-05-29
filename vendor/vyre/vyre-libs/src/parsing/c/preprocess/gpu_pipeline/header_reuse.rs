@@ -3,10 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use rustc_hash::FxHashMap as HashMap;
-
+use super::byte_lru_cache::{ByteBoundLruCache, ByteLruPanicLabels};
 use super::classified_size::classified_tokens_bytes;
-use super::lru_index::LruIndex;
 use super::payload_size::directive_payloads_bytes;
 use super::{ClassifiedTokens, DirectivePayload, MacroDef};
 
@@ -55,6 +53,12 @@ pub(super) struct HeaderReuseEntry {
 
 const HEADER_REUSE_CACHE_MAX_ENTRIES: usize = 8192;
 const HEADER_REUSE_CACHE_MAX_BYTES: usize = 512 * 1024 * 1024;
+
+const HEADER_REUSE_CACHE_LABELS: ByteLruPanicLabels = ByteLruPanicLabels {
+    byte_add_overflow: "vyre-libs gpu preprocessor header reuse cache byte accounting overflowed during insert. Fix: lower header reuse cache limits or shard preprocessing sessions.",
+    byte_sub_underflow: "vyre-libs gpu preprocessor header reuse cache byte accounting underflowed during eviction. Fix: repair header reuse cache accounting before relying on memory limits.",
+    epoch_overflow: "vyre-libs gpu preprocessor header reuse cache epoch overflowed. Fix: recreate process-local header reuse cache before continuing an unbounded include stream.",
+};
 
 #[cfg(test)]
 pub(super) fn header_reuse_key(
@@ -111,142 +115,54 @@ pub(super) fn reuse_event(key: &HeaderReuseKey, hit: bool, stored: bool) -> Head
 }
 
 struct HeaderReuseCache {
-    entries: HashMap<HeaderReuseKey, HeaderReuseCacheEntry>,
-    bytes: usize,
-    max_entries: usize,
-    max_bytes: usize,
-    epoch: u64,
-    lru: LruIndex<HeaderReuseKey>,
-}
-
-struct HeaderReuseCacheEntry {
-    value: HeaderReuseEntry,
-    bytes: usize,
-    last_access: u64,
+    inner: ByteBoundLruCache<HeaderReuseKey, HeaderReuseEntry>,
 }
 
 impl HeaderReuseCache {
     fn new() -> Self {
         Self {
-            entries: HashMap::default(),
-            bytes: 0,
-            max_entries: HEADER_REUSE_CACHE_MAX_ENTRIES,
-            max_bytes: HEADER_REUSE_CACHE_MAX_BYTES,
-            epoch: 0,
-            lru: LruIndex::with_capacity(HEADER_REUSE_CACHE_MAX_ENTRIES),
+            inner: ByteBoundLruCache::new(
+                HEADER_REUSE_CACHE_MAX_ENTRIES,
+                HEADER_REUSE_CACHE_MAX_BYTES,
+                HEADER_REUSE_CACHE_LABELS,
+            ),
         }
     }
 
     #[cfg(test)]
     fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
         Self {
-            entries: HashMap::default(),
-            bytes: 0,
-            max_entries,
-            max_bytes,
-            epoch: 0,
-            lru: LruIndex::with_capacity(max_entries),
+            inner: ByteBoundLruCache::new(max_entries, max_bytes, HEADER_REUSE_CACHE_LABELS),
         }
     }
 
     fn lookup(&mut self, key: &HeaderReuseKey) -> Option<HeaderReuseEntry> {
-        let next_epoch = self.next_epoch();
-        let entry = self.entries.get_mut(key)?;
-        entry.last_access = next_epoch;
-        let value = entry.value.clone();
-        self.lru.record(key.clone(), next_epoch);
-        self.compact_lru_if_needed();
-        Some(value)
+        self.inner.lookup_cloned(key)
     }
 
     fn insert(&mut self, key: HeaderReuseKey, value: HeaderReuseEntry) {
         let entry_bytes = header_reuse_entry_bytes(&value);
-        if self.max_entries == 0 || entry_bytes > self.max_bytes {
-            self.remove(&key);
-            return;
-        }
-        self.remove(&key);
-        while self.entries.len() >= self.max_entries
-            || self.bytes.checked_add(entry_bytes).unwrap_or(usize::MAX) > self.max_bytes
-        {
-            let Some(evict_key) = self.pop_lru_key() else {
-                break;
-            };
-            self.remove(&evict_key);
-        }
-        let last_access = self.next_epoch();
-        self.bytes = self.bytes.checked_add(entry_bytes).unwrap_or_else(|| {
-            panic!(
-                "vyre-libs gpu preprocessor header reuse cache byte accounting overflowed during insert. Fix: lower header reuse cache limits or shard preprocessing sessions."
-            )
-        });
-        self.entries.insert(
-            key.clone(),
-            HeaderReuseCacheEntry {
-                value,
-                bytes: entry_bytes,
-                last_access,
-            },
-        );
-        self.lru.record(key, last_access);
-        self.compact_lru_if_needed();
+        self.inner.insert(key, value, entry_bytes);
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.entries.len()
+        self.inner.len()
     }
 
     #[cfg(test)]
     fn byte_len(&self) -> usize {
-        self.bytes
+        self.inner.byte_len()
     }
 
     #[cfg(test)]
     fn contains_key(&self, key: &HeaderReuseKey) -> bool {
-        self.entries.contains_key(key)
+        self.inner.contains_key(key)
     }
 
     #[cfg(test)]
     fn lru_index_len(&self) -> usize {
-        self.lru.len()
-    }
-
-    fn remove(&mut self, key: &HeaderReuseKey) -> Option<HeaderReuseCacheEntry> {
-        let entry = self.entries.remove(key)?;
-        self.bytes = self.bytes.checked_sub(entry.bytes).unwrap_or_else(|| {
-            panic!(
-                "vyre-libs gpu preprocessor header reuse cache byte accounting underflowed during eviction. Fix: repair header reuse cache accounting before relying on memory limits."
-            )
-        });
-        Some(entry)
-    }
-
-    fn next_epoch(&mut self) -> u64 {
-        self.epoch = self.epoch.checked_add(1).unwrap_or_else(|| {
-            panic!(
-                "vyre-libs gpu preprocessor header reuse cache epoch overflowed. Fix: recreate process-local header reuse cache before continuing an unbounded include stream."
-            )
-        });
-        self.epoch
-    }
-
-    fn pop_lru_key(&mut self) -> Option<HeaderReuseKey> {
-        self.lru.pop_valid(|key, last_access| {
-            self.entries
-                .get(key)
-                .is_some_and(|entry| entry.last_access == last_access)
-        })
-    }
-
-    fn compact_lru_if_needed(&mut self) {
-        let live = self.entries.len();
-        self.lru.compact_if_needed(
-            live,
-            self.entries
-                .iter()
-                .map(|(key, entry)| (key.clone(), entry.last_access)),
-        );
+        self.inner.lru_index_len()
     }
 }
 
@@ -396,7 +312,7 @@ mod tests {
         let c_entry = entry(3, 96);
         let budget = header_reuse_entry_bytes(&a_entry)
             .checked_add(header_reuse_entry_bytes(&c_entry))
-            .expect("test cache budget must fit usize");
+            .expect("Fix: test cache budget must fit usize");
         let mut cache = HeaderReuseCache::with_limits(8, budget);
         cache.insert(a.clone(), a_entry);
         cache.insert(b.clone(), b_entry);

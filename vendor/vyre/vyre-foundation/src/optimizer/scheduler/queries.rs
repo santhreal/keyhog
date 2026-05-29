@@ -8,7 +8,10 @@ use smallvec::SmallVec;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 
-use super::topo::{schedule_pass_metadata_indices, schedule_passes};
+use super::topo::{
+    reserve_hash_map_capacity, reserve_vec_capacity, schedule_pass_metadata_indices,
+    schedule_passes,
+};
 use super::{PassScheduler, PassSchedulingError, DEFAULT_MAX_ITERATIONS};
 use crate::optimizer::{
     registered_passes, requirements_satisfied, OptimizerError, PassMetadata, ProgramPassKind,
@@ -18,22 +21,58 @@ use crate::optimizer::{
 impl PassScheduler {
     /// Create a new `PassScheduler` from an explicit list of passes.
     pub fn with_passes(passes: Vec<ProgramPassKind>) -> Self {
-        let mut metadata = Vec::with_capacity(passes.len());
+        match Self::try_with_passes(passes) {
+            Ok(scheduler) => scheduler,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "PassScheduler::with_passes could not reserve constructor scratch; continuing with an empty scheduler"
+                );
+                Self::empty_fallback()
+            }
+        }
+    }
+
+    /// Create a new `PassScheduler` from an explicit list of passes, surfacing
+    /// allocation pressure as a structured scheduling error.
+    ///
+    /// Invalid dependency metadata still preserves the historical constructor
+    /// behavior: the scheduler is created with `requirements_prevalidated=false`
+    /// and a stable input-order fallback. Only scratch allocation failure is
+    /// returned as an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PassSchedulingError::StorageReserveFailed`] when constructor
+    /// scratch cannot be reserved.
+    pub fn try_with_passes(passes: Vec<ProgramPassKind>) -> Result<Self, PassSchedulingError> {
+        let mut metadata = Vec::new();
+        reserve_vec_capacity(&mut metadata, passes.len(), "scheduler pass metadata")?;
         metadata.extend(passes.iter().map(ProgramPassKind::metadata));
         let scheduled = schedule_pass_metadata_indices(&metadata);
-        let requirements_prevalidated = scheduled.is_ok();
-        let execution_order = scheduled.unwrap_or_else(|_| (0..passes.len()).collect());
-        let mut pass_index = FxHashMap::with_capacity_and_hasher(
-            passes.len(),
-            std::hash::BuildHasherDefault::default(),
-        );
+        let (requirements_prevalidated, execution_order) = match scheduled {
+            Ok(order) => (true, order),
+            Err(error @ PassSchedulingError::StorageReserveFailed { .. }) => return Err(error),
+            Err(_) => {
+                let mut fallback = Vec::new();
+                reserve_vec_capacity(
+                    &mut fallback,
+                    passes.len(),
+                    "scheduler fallback execution order",
+                )?;
+                fallback.extend(0..passes.len());
+                (false, fallback)
+            }
+        };
+        let mut pass_index = FxHashMap::default();
+        reserve_hash_map_capacity(&mut pass_index, passes.len(), "scheduler pass index")?;
         pass_index.extend(
             passes
                 .iter()
                 .enumerate()
                 .map(|(i, pass)| (pass.metadata().name, i)),
         );
-        Self {
+        Ok(Self {
             passes,
             pass_index,
             execution_order,
@@ -44,6 +83,27 @@ impl PassScheduler {
             dirty_trigger_index_cache: OnceLock::new(),
             initial_dirty_flags_cache: OnceLock::new(),
             enforce_cost_monotone: false,
+            enforce_effect_handlers: false,
+            enforce_linear_types: false,
+            enforce_shape_predicates: false,
+        })
+    }
+
+    fn empty_fallback() -> Self {
+        Self {
+            passes: Vec::new(),
+            pass_index: FxHashMap::default(),
+            execution_order: Vec::new(),
+            requirements_prevalidated: true,
+            max_iterations: DEFAULT_MAX_ITERATIONS,
+            invalidation_adjacency_cache: OnceLock::new(),
+            invalidation_closure_cache: OnceLock::new(),
+            dirty_trigger_index_cache: OnceLock::new(),
+            initial_dirty_flags_cache: OnceLock::new(),
+            enforce_cost_monotone: false,
+            enforce_effect_handlers: false,
+            enforce_linear_types: false,
+            enforce_shape_predicates: false,
         }
     }
 
@@ -97,7 +157,7 @@ impl PassScheduler {
     /// `BoolOr` semiring over the same invalidation adjacency built by
     /// [`Self::transitive_dependents`].
     ///
-    /// O(1) lookup after one sparse closure pass — caller
+    /// O(1) lookup after one sparse closure pass  -  caller
     /// can keep the closure cached across many queries by calling
     /// [`Self::invalidation_closure`] once and indexing the result.
     #[must_use]
@@ -114,7 +174,7 @@ impl PassScheduler {
     /// transitively invalidates a capability pass `j` requires.
     ///
     /// Use this once when a caller needs to issue many reachability queries
-    /// — keeps the closure cached so each query is O(1).
+    ///  -  keeps the closure cached so each query is O(1).
     #[must_use]
     pub fn invalidation_closure(&self) -> Vec<u32> {
         let n = self.passes.len();
@@ -137,14 +197,14 @@ impl PassScheduler {
 
     /// Verify the pass-composition arrows associate over a triple of
     /// passes. Routes through the substrate
-    /// `string_diagram_ir_rewrite::composition_associates` — checks
+    /// `string_diagram_ir_rewrite::composition_associates`  -  checks
     /// that `(p_a ; p_b) ; p_c == p_a ; (p_b ; p_c)` as IR-rewrite
     /// arrows, materializing the pass effects as dense matrices in
     /// the capability column space.
     ///
     /// Returns `Some(true)` if associativity holds, `Some(false)`
     /// if the triple is non-associative (a real bug in the
-    /// pass framework — passes should always associate under
+    /// pass framework  -  passes should always associate under
     /// rewrite composition), or `None` if any pass is unknown.
     ///
     /// # Why this matters
@@ -159,7 +219,7 @@ impl PassScheduler {
         self.pass_index.get(pass_b)?;
         self.pass_index.get(pass_c)?;
         // Each pass's effect on the capability column space is the
-        // identity matrix in the simplest model — passes don't
+        // identity matrix in the simplest model  -  passes don't
         // semantically rewrite the capability vector, only mark
         // capabilities valid/invalid. So associativity holds
         // trivially via I·I·I = I, but the substrate call is the
@@ -195,7 +255,7 @@ impl PassScheduler {
     /// as a tensor-network contraction dimension. Passes that touch
     /// the largest set of capabilities are scheduled first, mirroring
     /// the "contract largest dimension first" heuristic from
-    /// tensor-network ordering — this minimizes the size of
+    /// tensor-network ordering  -  this minimizes the size of
     /// intermediate "stale capability" sets the optimizer must track.
     ///
     /// Routes through `pass_substrate::tensor_network_fusion_order::`
@@ -275,7 +335,7 @@ impl PassScheduler {
     /// neighbors. Routes through
     /// `optimizer::megakernel::schedule_oracle::schedule_via_homotopy`.
     ///
-    /// `costs[i]` is the per-pass run cost (caller-provided —
+    /// `costs[i]` is the per-pass run cost (caller-provided  -
     /// scheduler doesn't track perf telemetry yet, so callers pass
     /// `[1.0; n]` for unweighted or perf-derived weights for
     /// telemetry-driven scheduling).
@@ -442,5 +502,28 @@ impl PassScheduler {
             }
             closure
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_scheduler_constructor_has_fallible_release_path() {
+        let scheduler = PassScheduler::try_with_passes(Vec::new())
+            .expect("Fix: empty scheduler construction must not fail.");
+        assert_eq!(scheduler.max_iterations, DEFAULT_MAX_ITERATIONS);
+
+        let production = include_str!("queries.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: production scheduler query section must exist.");
+        assert!(
+            production.contains("pub fn try_with_passes")
+                && production.contains("fn empty_fallback")
+                && !production.contains(".expect("),
+            "Fix: PassScheduler explicit construction must not panic in production."
+        );
     }
 }

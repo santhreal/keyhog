@@ -1,4 +1,4 @@
-//! Branch collapse — `StructuredIfThen`/`StructuredIfThenElse` whose
+//! Branch collapse  -  `StructuredIfThen`/`StructuredIfThenElse` whose
 //! condition is provably constant collapses to the appropriate arm.
 //!
 //! This pass picks up two sources of provably-constant conditions:
@@ -11,6 +11,7 @@
 //!    of leaving a runtime compare-and-branch in the kernel.
 
 use crate::analyses::value_range::{analyze_body, IntRange};
+use crate::operand_semantics::operand_is_result_reference;
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
 use rustc_hash::FxHashMap;
 use vyre_foundation::ir::BinOp;
@@ -70,7 +71,7 @@ fn collapse_body(mut body: KernelBody) -> KernelBody {
 
     // Pre-compute every result id referenced by any op in this body
     // (including nested children). If a candidate-for-drop body
-    // produces an id in this set, we MUST NOT drop the body — its
+    // produces an id in this set, we MUST NOT drop the body  -  its
     // result is consumed elsewhere and dropping creates dangling refs.
     let parent_referenced_ids = collect_all_referenced_ids(&body);
     let parent_produced_ids = collect_top_level_produced_ids(&body);
@@ -92,7 +93,7 @@ fn collapse_body(mut body: KernelBody) -> KernelBody {
                                     inline_child_body(child, &mut new_ops, &mut new_children);
                                     continue;
                                 }
-                                // Fall through — leave the IfThen
+                                // Fall through  -  leave the IfThen
                                 // intact rather than yank refs out
                                 // of scope.
                             }
@@ -181,7 +182,7 @@ fn inline_child_body(child: &KernelBody, ops: &mut Vec<KernelOp>, children: &mut
 /// SSA result-reference inside the child resolves to an id produced
 /// inside the child itself. If the child body references ids defined
 /// in the body that contained the if-then (i.e. ids the inlining
-/// would yank out of scope), refuse to collapse — the IfThen stays
+/// would yank out of scope), refuse to collapse  -  the IfThen stays
 /// intact and the verifier stays clean. This is the fix for
 /// `DanglingResultRef { ref_id: 13 }` on shunting_yard descriptors.
 fn can_collapse_safely(child: &KernelBody, parent_produced: &rustc_hash::FxHashSet<u32>) -> bool {
@@ -250,38 +251,6 @@ fn body_refs_only(body: &KernelBody, produced: &rustc_hash::FxHashSet<u32>) -> b
         }
     }
     true
-}
-
-/// Conservative classification of operand positions that name a
-/// result id (vs. a child-body index, literal-pool index, or binding
-/// slot). Mirrors the shape the verifier uses.
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        Literal => false,
-        LocalInvocationId
-        | GlobalInvocationId
-        | WorkgroupId
-        | SubgroupLocalId
-        | SubgroupSize
-        | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        LoadGlobal
-        | LoadShared
-        | LoadConstant
-        | StoreGlobal
-        | StoreShared
-        | BufferLength
-        | Atomic { .. }
-        | AsyncLoad { .. }
-        | AsyncStore { .. } => pos != 0,
-        StructuredIfThen => pos == 0,
-        StructuredIfThenElse => pos == 0,
-        StructuredForLoop { .. } => pos == 0 || pos == 1,
-        StructuredBlock | Region { .. } => false,
-        IndirectDispatch { .. } => false,
-        _ => true,
-    }
 }
 
 /// Try to derive a constant verdict for `op(l, r)` purely from the
@@ -426,7 +395,7 @@ mod tests {
             },
         };
         let out = branch_collapse(&desc);
-        // Expected: outer ops = [Lit(true), Lit(7)] — IfThen replaced by inlined body.
+        // Expected: outer ops = [Lit(true), Lit(7)]  -  IfThen replaced by inlined body.
         assert_eq!(out.body.ops.len(), 2);
         assert!(matches!(out.body.ops[0].kind, KernelOpKind::Literal));
         assert!(matches!(out.body.ops[1].kind, KernelOpKind::Literal));
@@ -470,7 +439,7 @@ mod tests {
             },
         };
         let out = branch_collapse(&desc);
-        // Expected: outer ops = [Lit(false)] only — IfThen dropped, body discarded.
+        // Expected: outer ops = [Lit(false)] only  -  IfThen dropped, body discarded.
         assert_eq!(out.body.ops.len(), 1);
         assert!(matches!(out.body.ops[0].kind, KernelOpKind::Literal));
     }
@@ -479,6 +448,7 @@ mod tests {
     fn if_then_with_non_literal_cond_unchanged() {
         // tid; if(cond=tid) { Lit(7); }
         let desc = KernelDescriptor {
+
             id: "runtime_cond".into(),
             bindings: BindingLayout { slots: vec![] },
             dispatch: Dispatch::new(64, 1, 1),
@@ -612,7 +582,7 @@ mod tests {
             },
         };
         let out = branch_collapse(&desc);
-        // Else-arm at child_bodies[1] — its 1 op survives.
+        // Else-arm at child_bodies[1]  -  its 1 op survives.
         assert_eq!(out.body.ops.len(), 2);
         assert!(out
             .body
@@ -667,7 +637,7 @@ mod tests {
             .ops
             .iter()
             .find(|op| matches!(op.kind, KernelOpKind::StructuredBlock))
-            .expect("nested block must survive inlined branch");
+            .expect("Fix: nested block must survive inlined branch");
         let child_id = block.operands[0] as usize;
         assert!(
             out.body.child_bodies.get(child_id).is_some(),
@@ -736,7 +706,7 @@ mod tests {
     fn range_proves_lt_true_collapses_then_branch() {
         // Lit(3); Lit(10); cond = Lt(Lit(3), Lit(10)) → true; if(cond) { Lit(123) }
         // Both operands are singletons, range proves 3 < 10 → cond true.
-        // Outer body collapses to [Lit(3), Lit(10), Lt, Lit(123)] — IfThen replaced.
+        // Outer body collapses to [Lit(3), Lit(10), Lt, Lit(123)]  -  IfThen replaced.
         let desc = lit_kernel(
             vec![
                 KernelOp {
@@ -839,7 +809,7 @@ mod tests {
     fn range_overlapping_lt_leaves_branch_unchanged() {
         // Lit(3); Lit(BitAnd over Lit(3) → range [0, 3]); cond = Lt(Lit(3), BitAnd…)
         // The BitAnd produces range [0, 3], so Lt(3, [0,3]) is undecidable
-        // (true at (3, ?) only when the right value is > 3 — never). Wait:
+        // (true at (3, ?) only when the right value is > 3  -  never). Wait:
         // Lt(3, x in [0,3]) requires x > 3 → always false → range proves false.
         // For an undecidable case, use Lt(BitAnd, BitAnd) which gives [0,3] vs [0,3].
         let desc = lit_kernel(
@@ -890,7 +860,7 @@ mod tests {
                 .ops
                 .iter()
                 .any(|o| matches!(o.kind, KernelOpKind::StructuredIfThen)),
-            "overlapping ranges must NOT collapse the branch — undecidable"
+            "overlapping ranges must NOT collapse the branch  -  undecidable"
         );
     }
 
@@ -929,6 +899,7 @@ mod tests {
                         ops: vec![KernelOp {
                             kind: KernelOpKind::Literal,
                             operands: vec![0],
+
                             result: Some(100),
                         }],
                         child_bodies: vec![],
@@ -965,3 +936,4 @@ mod tests {
         );
     }
 }
+

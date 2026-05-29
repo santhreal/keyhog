@@ -6,11 +6,11 @@
 //!
 //! This module carries three inventory-collected registries:
 //!
-//! * [`Migration`] — a one-step rewrite from `(op_id, from_version)`
+//! * [`Migration`]  -  a one-step rewrite from `(op_id, from_version)`
 //!   to `(op_id, to_version)` operating on an [`AttrMap`]. Migrations
 //!   chain automatically: if v1→v2 and v2→v3 are registered, a v1
 //!   payload decodes as v3.
-//! * [`Deprecation`] — marks an op as deprecated since a specific
+//! * [`Deprecation`]  -  marks an op as deprecated since a specific
 //!   version, with a note that becomes part of the
 //!   [`deprecation_diagnostic`] warning surfaced to the caller.
 //! * Decoders consult these tables before validating an op against the
@@ -20,7 +20,7 @@
 //! Design notes:
 //!
 //! * Attribute values are typed (see [`AttrValue`]). A migration can
-//!   inspect the existing shape before rewriting — no stringly-typed
+//!   inspect the existing shape before rewriting  -  no stringly-typed
 //!   dance inside the hot decode path.
 //! * Migrations are `fn` pointers, not closures. This keeps
 //!   `Migration` `'static` and safe to stash behind `inventory::iter`.
@@ -232,9 +232,9 @@ impl std::error::Error for MigrationError {}
 /// Multiple migrations form a chain. [`MigrationRegistry::apply_chain`]
 /// follows the chain to completion.
 pub struct Migration {
-    /// `(op_id, from_version)` — the shape on the wire.
+    /// `(op_id, from_version)`  -  the shape on the wire.
     pub from: (&'static str, Semver),
-    /// `(op_id, to_version)` — the shape after rewrite.
+    /// `(op_id, to_version)`  -  the shape after rewrite.
     pub to: (&'static str, Semver),
     /// The attribute-map rewrite function.
     pub rewrite: fn(&mut AttrMap) -> Result<(), MigrationError>,
@@ -258,7 +258,7 @@ inventory::collect!(Migration);
 ///
 /// The decoder consults the registry after successfully resolving an
 /// op; a hit produces a `Severity::Warning` diagnostic surfaced to
-/// the caller. Deprecation is a pure warning — decoding still
+/// the caller. Deprecation is a pure warning  -  decoding still
 /// succeeds.
 pub struct Deprecation {
     /// The op identifier being deprecated.
@@ -285,7 +285,7 @@ inventory::collect!(Deprecation);
 
 /// Registry indexing migrations and deprecations for fast lookup.
 ///
-/// Construction happens lazily on first `global()` call — every
+/// Construction happens lazily on first `global()` call  -  every
 /// `inventory::submit!` in the workspace contributes. The registry
 /// is immutable after construction.
 pub struct MigrationRegistry {
@@ -304,7 +304,7 @@ impl MigrationRegistry {
         REGISTRY.get_or_init(|| {
             let migration_count = inventory::iter::<Migration>().count();
             let mut forward = FxHashMap::default();
-            forward.try_reserve(migration_count).unwrap_or_else(|error| {
+            vyre_foundation::allocation::try_reserve_hash_map_to_capacity(&mut forward, migration_count).unwrap_or_else(|error| {
                 panic!(
                     "Vyre migration registry could not reserve {migration_count} migration slot(s): {error}. Fix: split registry initialization or reduce linked migration inventory."
                 )
@@ -315,9 +315,11 @@ impl MigrationRegistry {
             }
             let deprecation_count = inventory::iter::<Deprecation>().count();
             let mut deprecations = FxHashMap::default();
-            deprecations
-                .try_reserve(deprecation_count)
-                .unwrap_or_else(|error| {
+            vyre_foundation::allocation::try_reserve_hash_map_to_capacity(
+                &mut deprecations,
+                deprecation_count,
+            )
+            .unwrap_or_else(|error| {
                     panic!(
                         "Vyre migration registry could not reserve {deprecation_count} deprecation slot(s): {error}. Fix: split registry initialization or reduce linked deprecation inventory."
                     )
@@ -342,7 +344,7 @@ impl MigrationRegistry {
     /// Follow the migration chain starting at `(op_id, from)` and
     /// rewrite `attrs` in place.
     ///
-    /// Returns `(final_op_id, final_version)` — the `(op_id, to)`
+    /// Returns `(final_op_id, final_version)`  -  the `(op_id, to)`
     /// pair of the last migration applied, or the input `(op_id,
     /// from)` when no migration is registered. A failing rewrite
     /// short-circuits and surfaces the [`MigrationError`].
@@ -414,7 +416,7 @@ mod tests {
     }
 
     // Register test-only migrations via inventory. These live in the
-    // test build only — no `cfg(test)` gate is needed on the
+    // test build only  -  no `cfg(test)` gate is needed on the
     // inventory::submit! because the tests module itself is gated.
     inventory::submit! {
         Migration::new(
@@ -446,6 +448,7 @@ mod tests {
             Semver::new(1, 1, 0),
             "migrate to test.op_dep2",
         )
+
     }
 
     #[test]
@@ -556,3 +559,4 @@ mod tests {
         assert_eq!(Semver::new(1, 2, 3).to_string(), "1.2.3");
     }
 }
+

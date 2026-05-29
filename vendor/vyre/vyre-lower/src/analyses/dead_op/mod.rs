@@ -7,11 +7,13 @@
 //! 3. The op has no side effects (i.e. not a Store, Barrier, AtomicXxx,
 //!    AsyncXxx, Trap/Resume, IndirectDispatch, Return)
 //!
-//! Phase 1: detection only — returns a list of op-indices flagged as
+//! Phase 1: detection only  -  returns a list of op-indices flagged as
 //! dead. Phase 2: a real DCE rewrite that strips them from the
 //! descriptor (defers to vyre-opt's optimizer pipeline).
 
-use crate::{KernelBody, KernelDescriptor, KernelOpKind};
+use crate::op_properties::kernel_op_kind_is_dce_pure as is_pure;
+use crate::operand_semantics::operand_is_result_reference;
+use crate::{KernelBody, KernelDescriptor};
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +22,7 @@ pub struct DeadOpReport {
     pub kernel_id: String,
     /// Op-indices (into `KernelBody.ops`) of detected dead ops.
     pub dead_op_indices: Vec<usize>,
-    /// Total ops in the body (for context — `dead_count / total` gives
+    /// Total ops in the body (for context  -  `dead_count / total` gives
     /// the dead-code ratio).
     pub total_op_count: u32,
 }
@@ -102,58 +104,6 @@ fn walk_collect_result_references(
     }
 }
 
-/// Per-`KernelOpKind` operand classification: does the operand at
-/// position `pos` reference an earlier result-id, or is it some other
-/// kind of index (binding slot, literal-pool index, body-child index,
-/// axis number)?
-fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
-    use KernelOpKind::*;
-    match kind {
-        // Operand 0 is a pool index, not a result-id.
-        Literal => false,
-        // Operand 0 is the axis number for builtin id ops.
-        LocalInvocationId | GlobalInvocationId | WorkgroupId => false,
-        // No operands.
-        SubgroupLocalId | SubgroupSize | LoopIndex { .. } => false,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => pos == 0,
-        // Operand 0 is a binding-slot; rest are result-ids.
-        LoadGlobal | LoadShared | LoadConstant => pos != 0,
-        // Operand 0 is binding-slot; operands 1.. are result-ids.
-        BufferLength => false,
-        // Operand 0 is binding-slot; operands 1, 2 are result-ids.
-        StoreGlobal | StoreShared => pos != 0,
-        // All operands are result-ids.
-        Copy | BinOpKind(_) | UnOpKind(_) | Fma | MatrixMma { .. } | Select | Cast { .. } => true,
-        // Atomic: operand 0 is binding-slot; rest are result-ids.
-        Atomic { .. } => pos != 0,
-        // Subgroup ops: all operands are result-ids.
-        SubgroupBallot | SubgroupShuffle | SubgroupAdd => true,
-        // Operand 0 is condition (result-id); operand 1 (and 2 for
-        // IfThenElse) are body-child indices, not result-ids.
-        StructuredIfThen | StructuredIfThenElse => pos == 0,
-        // Operands 0, 1 are lo/hi (result-ids); operand 2 is body index.
-        StructuredForLoop { .. } => pos != 2,
-        // Operand 0 is body-child index, not a result-id.
-        StructuredBlock | Region { .. } => false,
-        // No operands or all metadata.
-        Return | Barrier { .. } => false,
-        // Async load/store: operands 0, 1 are binding-slots; operands 2, 3 are result-ids.
-        AsyncLoad { .. } | AsyncStore { .. } => pos >= 2,
-        AsyncWait { .. } => false,
-        // Trap: operand 0 is the address (result-id).
-        Trap { .. } => pos == 0,
-        Resume { .. } => false,
-        // Operand 0 is binding-slot.
-        IndirectDispatch { .. } => false,
-        // Call: every operand is a result-id (call args).
-        Call { .. } => true,
-        // Conservative: assume all operands are result-id refs for
-        // unknown extension ops, so DCE doesn't accidentally elide
-        // their dependencies.
-        OpaqueExpr(..) | OpaqueNode(..) => true,
-    }
-}
-
 fn count_ops(body: &KernelBody) -> u32 {
     let mut total: u32 = body.ops.len() as u32;
     for child in &body.child_bodies {
@@ -181,39 +131,12 @@ fn walk_find_dead(
     }
 }
 
-fn is_pure(kind: &KernelOpKind) -> bool {
-    !matches!(
-        kind,
-        KernelOpKind::StoreGlobal
-            | KernelOpKind::StoreShared
-            | KernelOpKind::LoopCarrierInit { .. }
-            | KernelOpKind::LoopCarrierEnd { .. }
-            | KernelOpKind::Barrier { .. }
-            | KernelOpKind::Atomic { .. }
-            | KernelOpKind::AsyncLoad { .. }
-            | KernelOpKind::AsyncStore { .. }
-            | KernelOpKind::AsyncWait { .. }
-            | KernelOpKind::Trap { .. }
-            | KernelOpKind::Resume { .. }
-            | KernelOpKind::IndirectDispatch { .. }
-            | KernelOpKind::Return
-            | KernelOpKind::StructuredIfThen
-            | KernelOpKind::StructuredIfThenElse
-            | KernelOpKind::StructuredForLoop { .. }
-            | KernelOpKind::StructuredBlock
-            | KernelOpKind::Region { .. }
-            | KernelOpKind::Call { .. }
-            | KernelOpKind::OpaqueExpr(..)
-            | KernelOpKind::OpaqueNode(..)
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         BindingLayout, BindingSlot, BindingVisibility, Dispatch, KernelBody, KernelDescriptor,
-        KernelOp, LiteralValue, MemoryClass,
+        KernelOp, KernelOpKind, LiteralValue, MemoryClass,
     };
     use vyre_foundation::ir::{BinOp, DataType};
 
@@ -360,13 +283,13 @@ mod tests {
             },
         };
         let r = analyze(&desc);
-        // op at index 2 (the Add) is dead — its result 2 is never used
+        // op at index 2 (the Add) is dead  -  its result 2 is never used
         // (and operands 0 and 1 ARE used by it, so they're alive).
-        // op at index 0 (tid) is dead too — result 0 is only used by
+        // op at index 0 (tid) is dead too  -  result 0 is only used by
         // the dead Add, so transitively dead.
-        // op at index 1 (lit) is dead too — same reason.
+        // op at index 1 (lit) is dead too  -  same reason.
         // Phase-1 conservative: only flag direct deads (an op whose
-        // result is unreferenced) — the chain-DCE is phase 2.
+        // result is unreferenced)  -  the chain-DCE is phase 2.
         assert_eq!(r.dead_op_indices.len(), 1);
         assert_eq!(r.dead_op_indices[0], 2);
     }

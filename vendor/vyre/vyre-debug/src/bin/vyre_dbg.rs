@@ -146,9 +146,9 @@ fn print_json_or_exit<T: ?Sized + serde::Serialize>(value: &T, context: &str) {
 }
 
 fn read_kdesc(path: &Path) -> Result<vyre_lower::KernelDescriptor, String> {
-    let file = std::fs::File::open(path)
+    let mut file = std::fs::File::open(path)
         .map_err(|e| format!("Failed to open kdesc {}: {e}", path.display()))?;
-    bincode::deserialize_from(file)
+    bincode::serde::decode_from_std_read(&mut file, bincode::config::standard())
         .map_err(|e| format!("Failed to decode kdesc {}: {e}", path.display()))
 }
 

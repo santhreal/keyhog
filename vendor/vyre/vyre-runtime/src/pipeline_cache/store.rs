@@ -1,4 +1,4 @@
-//! [`PipelineCacheStore`] — backend trait shared by every concrete cache
+//! [`PipelineCacheStore`]  -  backend trait shared by every concrete cache
 //! implementation in this module.
 
 use std::io;

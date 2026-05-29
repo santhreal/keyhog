@@ -11,7 +11,6 @@ use vyre_libs::parsing::c::lex::tokens::{TOK_LBRACE, TOK_LPAREN, TOK_RBRACE, TOK
 use super::buffers::read_u32_stream;
 const MATCH_NONE: u32 = u32::MAX;
 const ELF_OUT_BYTES: usize = 4096 * 4;
-const ELF_OFFSET_BYTES: usize = 16 * 4;
 
 #[derive(Default)]
 struct DispatchScratch {
@@ -29,13 +28,6 @@ thread_local! {
 fn elf_out_zeroes() -> &'static [u8] {
     static ZEROES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     ZEROES.get_or_init(|| vec![0u8; ELF_OUT_BYTES]).as_slice()
-}
-
-fn elf_offset_zeroes() -> &'static [u8] {
-    static ZEROES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-    ZEROES
-        .get_or_init(|| vec![0u8; ELF_OFFSET_BYTES])
-        .as_slice()
 }
 
 pub(super) fn dispatch_c11_bracket_pairs(
@@ -273,7 +265,7 @@ fn try_dispatch_elf_with_scratch(
     let mut cfg = DispatchConfig::default();
     cfg.label = Some("vyre-frontend-c opt_lower_elf".to_string());
     let key = super::stage_pipeline_cache_key("opt_lower_elf", &[node_count as u64]);
-    let inputs = [compiler_bytes, elf_out_zeroes(), elf_offset_zeroes()];
+    let inputs = [compiler_bytes, elf_out_zeroes()];
     super::dispatch_borrowed_stage_cached_into(
         backend,
         key,
@@ -300,39 +292,7 @@ fn pack_u32_le_bytes_min_words_into(
     min_words: u32,
     out: &mut Vec<u8>,
 ) -> Result<(), String> {
-    let min_words = usize::try_from(min_words).map_err(|_| {
-        format!(
-            "u32 byte pack minimum word count {min_words} exceeds host usize. Fix: shard the token stream before GPU dispatch."
-        )
-    })?;
-    let byte_len = min_words.checked_mul(4).ok_or_else(|| {
-        format!(
-            "u32 byte pack minimum word count {min_words} overflows host byte indexing. Fix: shard the token stream before GPU dispatch."
-        )
-    })?;
-    let packed_len = words.len().checked_mul(4).ok_or_else(|| {
-        format!(
-            "u32 byte pack word count {} overflows host byte indexing. Fix: shard the token stream before GPU dispatch.",
-            words.len()
-        )
-    })?;
-    if packed_len > byte_len {
-        return Err(format!(
-            "u32 byte pack input has {packed_len} bytes but minimum buffer only has {byte_len}. Fix: pass min_words >= words.len()."
-        ));
-    }
-    out.clear();
-    out.resize(byte_len, 0);
-    #[cfg(target_endian = "little")]
-    {
-        out[..packed_len].copy_from_slice(bytemuck::cast_slice(words));
-    }
-    #[cfg(target_endian = "big")]
-    for (index, word) in words.iter().enumerate() {
-        let start = index * 4;
-        out[start..start + 4].copy_from_slice(&word.to_le_bytes());
-    }
-    Ok(())
+    vyre_primitives::wire::pack_u32_slice_min_words_into(words, min_words, out)
 }
 
 fn read_u32_stream_into(
@@ -341,21 +301,7 @@ fn read_u32_stream_into(
     label: &str,
     out: &mut Vec<u32>,
 ) -> Result<(), String> {
-    let byte_len = words.checked_mul(4).ok_or_else(|| {
-        format!("{label}: word count {words} overflows byte indexing. Fix: shard before readback.")
-    })?;
-    if buf.len() < byte_len {
-        return Err(format!(
-            "{label}: need {byte_len} bytes for {words} u32 words, have {}",
-            buf.len()
-        ));
-    }
-    out.clear();
-    out.reserve(words);
-    for chunk in buf[..byte_len].chunks_exact(4) {
-        out.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-    }
-    Ok(())
+    vyre_primitives::wire::unpack_u32_slice_into(buf, words, label, out)
 }
 
 #[cfg(test)]
@@ -382,13 +328,13 @@ mod gpu_bracket_tests {
             &program,
             &[Value::from(super::super::buffers::vec_u32_le_bytes(tokens))],
         )
-        .expect("GPU bracket-pair program must execute under reference evaluator");
+        .expect("Fix: GPU bracket-pair program must execute under reference evaluator");
         assert_eq!(outputs.len(), 2);
         (
             read_u32_stream(&outputs[0].to_bytes(), tokens.len(), "paren test pairs")
-                .expect("paren pairs must decode"),
+                .expect("Fix: paren pairs must decode"),
             read_u32_stream(&outputs[1].to_bytes(), tokens.len(), "brace test pairs")
-                .expect("brace pairs must decode"),
+                .expect("Fix: brace pairs must decode"),
         )
     }
 

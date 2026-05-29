@@ -1,6 +1,7 @@
 use crate::parsing::c::lex::tokens::TOK_IDENTIFIER;
 use crate::parsing::c::source_bytes::load_source_byte;
 use vyre::ir::{Expr, Node};
+use vyre_primitives::hash::fnv1a::{fnv1a32_initial_expr, fnv1a32_update_byte_node};
 
 /// Emit IR that interns an identifier token by hashing its source bytes.
 pub fn emit_identifier_intern(
@@ -20,7 +21,7 @@ pub fn emit_identifier_intern(
             vec![
                 Node::let_bind("start", Expr::load(tok_starts, node_idx.clone())),
                 Node::let_bind("len", Expr::load(tok_lens, node_idx)),
-                Node::let_bind("hash", Expr::u32(0x811c_9dc5)),
+                Node::let_bind("hash", fnv1a32_initial_expr()),
                 Node::loop_for(
                     "intern_scan",
                     Expr::u32(0),
@@ -34,8 +35,7 @@ pub fn emit_identifier_intern(
                                 packed_haystack,
                             ),
                         ),
-                        Node::assign("hash", Expr::bitxor(Expr::var("hash"), Expr::var("byte"))),
-                        Node::assign("hash", Expr::mul(Expr::var("hash"), Expr::u32(0x0100_0193))),
+                        fnv1a32_update_byte_node("hash", Expr::var("byte")),
                     ],
                 ),
                 Node::assign("identifier_intern_id", Expr::var("hash")),

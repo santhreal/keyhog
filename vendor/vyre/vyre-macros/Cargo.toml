@@ -1,13 +1,13 @@
 [package]
 name = "vyre-macros"
-version = "0.4.2"
+version = "0.6.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Procedural macros for vyre compiler passes — #[vyre_pass], #[vyre_ast_registry]"
+description = "Procedural macros for vyre compiler passes  -  #[vyre_pass], #[vyre_ast_registry]"
 readme = "README.md"
 keywords = ["gpu", "macro", "compiler", "ir", "vyre"]
 categories = ["development-tools::procedural-macro-helpers", "compilers"]
@@ -27,7 +27,7 @@ syn.workspace = true
 
 [dev-dependencies]
 inventory.workspace = true
-trybuild = "1"
+trybuild = { workspace = true }
 
 [lints]
 workspace = true

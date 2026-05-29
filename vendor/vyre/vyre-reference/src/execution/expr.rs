@@ -372,9 +372,11 @@ pub fn buffer_mut<'a>(
 ) -> Result<&'a mut Buffer, vyre::Error> {
     let decl = buffer_decl(program, name)?;
     match decl.access() {
-        BufferAccess::ReadWrite | BufferAccess::Workgroup => resolve_buffer_mut(memory, decl),
+        BufferAccess::ReadWrite | BufferAccess::WriteOnly | BufferAccess::Workgroup => {
+            resolve_buffer_mut(memory, decl)
+        }
         BufferAccess::ReadOnly | BufferAccess::Uniform => Err(Error::interp(format!(
-            "store target `{name}` is not writable. Fix: declare it ReadWrite or Workgroup."
+            "store target `{name}` is not writable. Fix: declare it ReadWrite, WriteOnly, or Workgroup."
         ))),
         _ => Err(Error::interp(format!(
             "store target `{name}` uses an unsupported access mode. Fix: use a supported BufferAccess."
@@ -460,6 +462,7 @@ fn atomic_buffer_mut<'a>(
         ))),
     }
 }
+
 
 fn buffer_decl<'a>(program: &'a Program, name: &str) -> Result<&'a BufferDecl, vyre::Error> {
     program.buffer(name).ok_or_else(|| {
@@ -592,3 +595,4 @@ mod tests {
         }
     }
 }
+

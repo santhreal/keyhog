@@ -88,6 +88,9 @@ pub fn registered_backends() -> &'static [&'static BackendRegistration] {
     static FROZEN: std::sync::OnceLock<Box<[&'static BackendRegistration]>> =
         std::sync::OnceLock::new();
     FROZEN.get_or_init(|| {
+        // HOT-PATH-OK: inventory::iter runs only during OnceLock
+        // initialization; registered_backends returns the frozen slice after
+        // first access.
         let registration_count = inventory::iter::<BackendRegistration>.into_iter().count();
         let mut registrations = Vec::new();
         registrations
@@ -97,6 +100,8 @@ pub fn registered_backends() -> &'static [&'static BackendRegistration] {
                     "Vyre backend inventory could not reserve {registration_count} registration slot(s): {error}. Fix: reduce linked backend inventory or split registry initialization."
                 )
             });
+        // HOT-PATH-OK: this second inventory walk materializes the same
+        // init-only frozen backend slice after capacity has been reserved.
         registrations.extend(inventory::iter::<BackendRegistration>);
         registrations.into_boxed_slice()
     })

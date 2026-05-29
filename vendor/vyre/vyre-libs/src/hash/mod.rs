@@ -11,6 +11,7 @@ pub mod crc32;
 pub mod fnv1a32;
 pub mod fnv1a64;
 pub mod multi_hash;
+mod wrap;
 
 pub use adler32::adler32;
 pub use blake3_compress::blake3_compress;
@@ -21,9 +22,5 @@ pub use multi_hash::multi_hash;
 
 #[cfg(test)]
 pub(crate) fn pack_bytes_as_u32(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len() * 4);
-    for &b in bytes {
-        out.extend_from_slice(&u32::from(b).to_le_bytes());
-    }
-    out
+    vyre_primitives::wire::pack_bytes_as_u32_slice(bytes)
 }

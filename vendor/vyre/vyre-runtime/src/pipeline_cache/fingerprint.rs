@@ -1,4 +1,4 @@
-//! [`PipelineFingerprint`] — the content-addressed key for cache
+//! [`PipelineFingerprint`]  -  the content-addressed key for cache
 //! lookups. Wrapped in its own module so the field-allowlist invariant
 //! and hashing helper sit next to the public type.
 

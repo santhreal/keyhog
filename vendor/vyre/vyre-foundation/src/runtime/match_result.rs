@@ -1,9 +1,9 @@
-//! Native scan match result — **legacy scan-domain shim.**
+//! Native scan match result  -  **legacy scan-domain shim.**
 //!
 //! CRITIQUE_VISION_ALIGNMENT_2026-04-23 V1: this type was the Tier-1
 //! return shape for every byte-range scan in vyre. Its field name
 //! (`pattern_id`) pre-decided that every byte range is a "match"
-//! from a "pattern" — a matching-dialect concept that shouldn't
+//! from a "pattern"  -  a matching-dialect concept that shouldn't
 //! live in foundation. A crypto decoder, an AST-span emitter, or a
 //! capture-group producer would either adopt matching vocabulary
 //! awkwardly or ship a parallel type.

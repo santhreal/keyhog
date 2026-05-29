@@ -2,6 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use vyre_driver::accounting::{atomic_max_u64, pinning_atomic_increment_u64};
 use vyre_driver::LaunchPlan;
 
 use crate::backend::accounting::checked_add_u64;
@@ -25,6 +26,8 @@ pub struct CudaTelemetrySnapshot {
     pub kernel_launches: u64,
     /// CUDA graph replays issued through `cuGraphLaunch`.
     pub cuda_graph_launches: u64,
+    /// CUDA graph requests satisfied from a materialized host-output cache.
+    pub cuda_graph_materialized_cache_hits: u64,
     /// Batched cudaGraph replay chunks issued by compiled pipelines.
     pub cuda_graph_batched_replay_chunks: u64,
     /// Individual cudaGraph lanes launched inside batched replay chunks.
@@ -35,12 +38,30 @@ pub struct CudaTelemetrySnapshot {
     pub host_upload_operations: u64,
     /// Non-empty device-to-host readback operations.
     pub device_readback_operations: u64,
+    /// Successful timed dispatches reported by CUDA timed entrypoints.
+    pub timed_dispatches: u64,
+    /// Timed dispatches that included CUDA event-backed device time.
+    pub timed_device_measurements: u64,
+    /// Timed dispatches that completed without CUDA event-backed device time.
+    pub timed_dispatches_missing_device_time: u64,
+    /// Aggregate host-observed timed dispatch duration.
+    pub timed_wall_ns_total: u64,
+    /// Aggregate CUDA event-observed device duration.
+    pub timed_device_ns_total: u64,
+    /// Maximum CUDA event-observed device duration.
+    pub timed_device_ns_max: u64,
+    /// Aggregate host enqueue duration for timed dispatches.
+    pub timed_enqueue_ns_total: u64,
+    /// Aggregate host wait/readback duration for timed dispatches.
+    pub timed_wait_ns_total: u64,
     /// Aggregate scheduled CUDA thread slots across kernel launches.
     pub scheduled_thread_slots: u64,
     /// Kernel launches whose exact scheduled thread-slot product exceeded u64 telemetry width.
     pub scheduled_thread_slot_overflows: u64,
     /// Runtime telemetry counter additions that exceeded u64 counter width.
     pub telemetry_counter_overflows: u64,
+    /// Resident dispatches that took the host-buffer borrowed fallback path.
+    pub resident_borrowed_fallback_dispatches: u64,
     /// Aggregate logical element count submitted across kernel launches.
     pub launched_elements: u64,
     /// Aggregate scheduled CUDA thread slots that carried no logical element.
@@ -67,14 +88,24 @@ impl CudaTelemetrySnapshot {
                 "vyre_cuda_param_upload_bytes_total {}\n",
                 "vyre_cuda_kernel_launches_total {}\n",
                 "vyre_cuda_graph_launches_total {}\n",
+                "vyre_cuda_graph_materialized_cache_hits_total {}\n",
                 "vyre_cuda_graph_batched_replay_chunks_total {}\n",
                 "vyre_cuda_graph_batched_replay_lanes_total {}\n",
                 "vyre_cuda_sync_points_total {}\n",
                 "vyre_cuda_host_upload_operations_total {}\n",
                 "vyre_cuda_device_readback_operations_total {}\n",
+                "vyre_cuda_timed_dispatches_total {}\n",
+                "vyre_cuda_timed_device_measurements_total {}\n",
+                "vyre_cuda_timed_dispatches_missing_device_time_total {}\n",
+                "vyre_cuda_timed_wall_ns_total {}\n",
+                "vyre_cuda_timed_device_ns_total {}\n",
+                "vyre_cuda_timed_device_ns_max {}\n",
+                "vyre_cuda_timed_enqueue_ns_total {}\n",
+                "vyre_cuda_timed_wait_ns_total {}\n",
                 "vyre_cuda_scheduled_thread_slots_total {}\n",
                 "vyre_cuda_scheduled_thread_slot_overflows_total {}\n",
                 "vyre_cuda_telemetry_counter_overflows_total {}\n",
+                "vyre_cuda_resident_borrowed_fallback_dispatches_total {}\n",
                 "vyre_cuda_launched_elements_total {}\n",
                 "vyre_cuda_wasted_thread_slots_total {}\n",
                 "vyre_cuda_logical_thread_utilization_bps {}\n",
@@ -89,14 +120,24 @@ impl CudaTelemetrySnapshot {
             self.param_upload_bytes,
             self.kernel_launches,
             self.cuda_graph_launches,
+            self.cuda_graph_materialized_cache_hits,
             self.cuda_graph_batched_replay_chunks,
             self.cuda_graph_batched_replay_lanes,
             self.sync_points,
             self.host_upload_operations,
             self.device_readback_operations,
+            self.timed_dispatches,
+            self.timed_device_measurements,
+            self.timed_dispatches_missing_device_time,
+            self.timed_wall_ns_total,
+            self.timed_device_ns_total,
+            self.timed_device_ns_max,
+            self.timed_enqueue_ns_total,
+            self.timed_wait_ns_total,
             self.scheduled_thread_slots,
             self.scheduled_thread_slot_overflows,
             self.telemetry_counter_overflows,
+            self.resident_borrowed_fallback_dispatches,
             self.launched_elements,
             self.wasted_thread_slots,
             self.logical_thread_utilization_bps,
@@ -117,14 +158,24 @@ pub(crate) struct CudaTelemetry {
     param_upload_bytes: AtomicU64,
     kernel_launches: AtomicU64,
     cuda_graph_launches: AtomicU64,
+    cuda_graph_materialized_cache_hits: AtomicU64,
     cuda_graph_batched_replay_chunks: AtomicU64,
     cuda_graph_batched_replay_lanes: AtomicU64,
     sync_points: AtomicU64,
     host_upload_operations: AtomicU64,
     device_readback_operations: AtomicU64,
+    timed_dispatches: AtomicU64,
+    timed_device_measurements: AtomicU64,
+    timed_dispatches_missing_device_time: AtomicU64,
+    timed_wall_ns_total: AtomicU64,
+    timed_device_ns_total: AtomicU64,
+    timed_device_ns_max: AtomicU64,
+    timed_enqueue_ns_total: AtomicU64,
+    timed_wait_ns_total: AtomicU64,
     scheduled_thread_slots: AtomicU64,
     scheduled_thread_slot_overflows: AtomicU64,
     telemetry_counter_overflows: AtomicU64,
+    resident_borrowed_fallback_dispatches: AtomicU64,
     launched_elements: AtomicU64,
 }
 
@@ -148,6 +199,9 @@ impl CudaTelemetry {
             param_upload_bytes: self.param_upload_bytes.load(Ordering::Relaxed),
             kernel_launches: self.kernel_launches.load(Ordering::Relaxed),
             cuda_graph_launches: self.cuda_graph_launches.load(Ordering::Relaxed),
+            cuda_graph_materialized_cache_hits: self
+                .cuda_graph_materialized_cache_hits
+                .load(Ordering::Relaxed),
             cuda_graph_batched_replay_chunks: self
                 .cuda_graph_batched_replay_chunks
                 .load(Ordering::Relaxed),
@@ -157,11 +211,24 @@ impl CudaTelemetry {
             sync_points: self.sync_points.load(Ordering::Relaxed),
             host_upload_operations: self.host_upload_operations.load(Ordering::Relaxed),
             device_readback_operations: self.device_readback_operations.load(Ordering::Relaxed),
+            timed_dispatches: self.timed_dispatches.load(Ordering::Relaxed),
+            timed_device_measurements: self.timed_device_measurements.load(Ordering::Relaxed),
+            timed_dispatches_missing_device_time: self
+                .timed_dispatches_missing_device_time
+                .load(Ordering::Relaxed),
+            timed_wall_ns_total: self.timed_wall_ns_total.load(Ordering::Relaxed),
+            timed_device_ns_total: self.timed_device_ns_total.load(Ordering::Relaxed),
+            timed_device_ns_max: self.timed_device_ns_max.load(Ordering::Relaxed),
+            timed_enqueue_ns_total: self.timed_enqueue_ns_total.load(Ordering::Relaxed),
+            timed_wait_ns_total: self.timed_wait_ns_total.load(Ordering::Relaxed),
             scheduled_thread_slots,
             scheduled_thread_slot_overflows: self
                 .scheduled_thread_slot_overflows
                 .load(Ordering::Relaxed),
             telemetry_counter_overflows: self.telemetry_counter_overflows.load(Ordering::Relaxed),
+            resident_borrowed_fallback_dispatches: self
+                .resident_borrowed_fallback_dispatches
+                .load(Ordering::Relaxed),
             launched_elements,
             wasted_thread_slots,
             logical_thread_utilization_bps: utilization_bps(
@@ -187,6 +254,8 @@ impl CudaTelemetry {
         self.param_upload_bytes.store(0, Ordering::Relaxed);
         self.kernel_launches.store(0, Ordering::Relaxed);
         self.cuda_graph_launches.store(0, Ordering::Relaxed);
+        self.cuda_graph_materialized_cache_hits
+            .store(0, Ordering::Relaxed);
         self.cuda_graph_batched_replay_chunks
             .store(0, Ordering::Relaxed);
         self.cuda_graph_batched_replay_lanes
@@ -194,11 +263,30 @@ impl CudaTelemetry {
         self.sync_points.store(0, Ordering::Relaxed);
         self.host_upload_operations.store(0, Ordering::Relaxed);
         self.device_readback_operations.store(0, Ordering::Relaxed);
+        self.timed_dispatches.store(0, Ordering::Relaxed);
+        self.timed_device_measurements.store(0, Ordering::Relaxed);
+        self.timed_dispatches_missing_device_time
+            .store(0, Ordering::Relaxed);
+        self.timed_wall_ns_total.store(0, Ordering::Relaxed);
+        self.timed_device_ns_total.store(0, Ordering::Relaxed);
+        self.timed_device_ns_max.store(0, Ordering::Relaxed);
+        self.timed_enqueue_ns_total.store(0, Ordering::Relaxed);
+        self.timed_wait_ns_total.store(0, Ordering::Relaxed);
         self.scheduled_thread_slots.store(0, Ordering::Relaxed);
         self.scheduled_thread_slot_overflows
             .store(0, Ordering::Relaxed);
         self.telemetry_counter_overflows.store(0, Ordering::Relaxed);
+        self.resident_borrowed_fallback_dispatches
+            .store(0, Ordering::Relaxed);
         self.launched_elements.store(0, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_resident_borrowed_fallback_dispatch(&self) {
+        self.add(
+            "resident_borrowed_fallback_dispatches",
+            &self.resident_borrowed_fallback_dispatches,
+            1,
+        );
     }
 
     pub(crate) fn record_host_to_device_bytes(&self, bytes: u64) {
@@ -256,6 +344,14 @@ impl CudaTelemetry {
         self.add("cuda_graph_launches", &self.cuda_graph_launches, 1);
     }
 
+    pub(crate) fn record_cuda_graph_materialized_cache_hit(&self) {
+        self.add(
+            "cuda_graph_materialized_cache_hits",
+            &self.cuda_graph_materialized_cache_hits,
+            1,
+        );
+    }
+
     pub(crate) fn record_cuda_graph_batched_replay(&self, lanes: u64) {
         self.add(
             "cuda_graph_batched_replay_chunks",
@@ -289,6 +385,49 @@ impl CudaTelemetry {
         );
     }
 
+    pub(crate) fn record_timed_dispatch(
+        &self,
+        wall_ns: u64,
+        device_ns: Option<u64>,
+        enqueue_ns: Option<u64>,
+        wait_ns: Option<u64>,
+    ) {
+        self.add("timed_dispatches", &self.timed_dispatches, 1);
+        self.add("timed_wall_ns_total", &self.timed_wall_ns_total, wall_ns);
+        match device_ns {
+            Some(device_ns) => {
+                self.add(
+                    "timed_device_measurements",
+                    &self.timed_device_measurements,
+                    1,
+                );
+                self.add(
+                    "timed_device_ns_total",
+                    &self.timed_device_ns_total,
+                    device_ns,
+                );
+                self.record_max("timed_device_ns_max", &self.timed_device_ns_max, device_ns);
+            }
+            None => {
+                self.add(
+                    "timed_dispatches_missing_device_time",
+                    &self.timed_dispatches_missing_device_time,
+                    1,
+                );
+            }
+        }
+        if let Some(enqueue_ns) = enqueue_ns {
+            self.add(
+                "timed_enqueue_ns_total",
+                &self.timed_enqueue_ns_total,
+                enqueue_ns,
+            );
+        }
+        if let Some(wait_ns) = wait_ns {
+            self.add("timed_wait_ns_total", &self.timed_wait_ns_total, wait_ns);
+        }
+    }
+
     fn add(&self, name: &'static str, counter: &AtomicU64, value: u64) -> bool {
         if value == 0 {
             return true;
@@ -306,18 +445,22 @@ impl CudaTelemetry {
         true
     }
 
+    fn record_max(&self, name: &'static str, counter: &AtomicU64, value: u64) {
+        let _ = name;
+        atomic_max_u64(counter, value, Ordering::Relaxed);
+    }
+
     fn record_counter_overflow(&self, source_counter: &'static str) {
-        if self
-            .telemetry_counter_overflows
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                current.checked_add(1)
-            })
-            .is_err()
-        {
-            tracing::error!(
+        pinning_atomic_increment_u64(
+            &self.telemetry_counter_overflows,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            || {
+                tracing::error!(
                 "CUDA telemetry overflow counter overflowed while recording `{source_counter}`. Fix: rotate telemetry snapshots before overflow diagnostics exceed u64."
             );
-        }
+            },
+        );
     }
 }
 
@@ -331,26 +474,20 @@ fn scheduled_thread_slots(launch: &LaunchPlan) -> Option<u64> {
     u64::try_from(exact).ok()
 }
 
+
 fn utilization_bps(used: u64, scheduled: u64) -> u32 {
-    if scheduled == 0 {
-        return 0;
-    }
-    let bps = (u128::from(used) * 10_000) / u128::from(scheduled);
-    bps.min(10_000) as u32
+    crate::numeric::CUDA_NUMERIC
+        .ratio_basis_points_u64(used, scheduled, 0, "telemetry utilization")
+        .min(10_000)
 }
 
 fn elements_per_slot_bps(elements: u64, scheduled: u64) -> u64 {
-    if scheduled == 0 {
-        return 0;
-    }
-    let bps = (u128::from(elements) * 10_000) / u128::from(scheduled);
-    if bps > u128::from(u64::MAX) {
-        tracing::error!(
-            "CUDA telemetry logical-elements-per-thread-slot bps exceeded u64. Fix: rotate telemetry snapshots before density exceeds export width."
-        );
-        return u64::MAX;
-    }
-    bps as u64
+    crate::numeric::CUDA_NUMERIC.ratio_basis_points_u64_wide(
+        elements,
+        scheduled,
+        0,
+        "telemetry logical-elements-per-thread-slot",
+    )
 }
 
 #[cfg(test)]
@@ -366,10 +503,12 @@ mod tests {
         telemetry.record_resident_allocation_bytes(64);
         telemetry.record_param_upload_bytes(4);
         telemetry.record_cuda_graph_launch();
+        telemetry.record_cuda_graph_materialized_cache_hit();
         telemetry.record_cuda_graph_batched_replay(4);
         telemetry.record_sync_point();
         telemetry.record_host_upload_operations(2);
         telemetry.record_device_readback_operations(1);
+        telemetry.record_timed_dispatch(100, Some(40), Some(25), Some(35));
 
         let snapshot = telemetry.snapshot();
         assert_eq!(snapshot.host_to_device_bytes, 16);
@@ -379,11 +518,20 @@ mod tests {
         assert_eq!(snapshot.resident_allocation_bytes_requested, 64);
         assert_eq!(snapshot.param_upload_bytes, 4);
         assert_eq!(snapshot.cuda_graph_launches, 1);
+        assert_eq!(snapshot.cuda_graph_materialized_cache_hits, 1);
         assert_eq!(snapshot.cuda_graph_batched_replay_chunks, 1);
         assert_eq!(snapshot.cuda_graph_batched_replay_lanes, 4);
         assert_eq!(snapshot.sync_points, 1);
         assert_eq!(snapshot.host_upload_operations, 2);
         assert_eq!(snapshot.device_readback_operations, 1);
+        assert_eq!(snapshot.timed_dispatches, 1);
+        assert_eq!(snapshot.timed_device_measurements, 1);
+        assert_eq!(snapshot.timed_dispatches_missing_device_time, 0);
+        assert_eq!(snapshot.timed_wall_ns_total, 100);
+        assert_eq!(snapshot.timed_device_ns_total, 40);
+        assert_eq!(snapshot.timed_device_ns_max, 40);
+        assert_eq!(snapshot.timed_enqueue_ns_total, 25);
+        assert_eq!(snapshot.timed_wait_ns_total, 35);
         assert_eq!(snapshot.wasted_thread_slots, 0);
         assert_eq!(snapshot.scheduled_thread_slot_overflows, 0);
         assert_eq!(snapshot.telemetry_counter_overflows, 0);
@@ -391,9 +539,13 @@ mod tests {
         assert_eq!(snapshot.logical_thread_waste_bps, 0);
         assert_eq!(snapshot.logical_elements_per_thread_slot_bps, 0);
         let prometheus = snapshot.to_prometheus_text();
+        assert!(prometheus.contains("vyre_cuda_graph_materialized_cache_hits_total 1\n"));
         assert!(prometheus.contains("vyre_cuda_graph_batched_replay_chunks_total 1\n"));
         assert!(prometheus.contains("vyre_cuda_graph_batched_replay_lanes_total 4\n"));
         assert!(prometheus.contains("vyre_cuda_sync_points_total 1\n"));
+        assert!(prometheus.contains("vyre_cuda_timed_dispatches_total 1\n"));
+        assert!(prometheus.contains("vyre_cuda_timed_device_ns_total 40\n"));
+        assert!(prometheus.contains("vyre_cuda_timed_device_ns_max 40\n"));
         assert!(prometheus.contains("vyre_cuda_telemetry_counter_overflows_total 0\n"));
 
         telemetry.reset();
@@ -479,12 +631,41 @@ mod tests {
     }
 
     #[test]
+    fn timed_dispatch_records_missing_device_time_without_losing_wall_time() {
+        let telemetry = CudaTelemetry::default();
+        telemetry.record_timed_dispatch(77, None, Some(11), Some(22));
+        let snapshot = telemetry.snapshot();
+        assert_eq!(snapshot.timed_dispatches, 1);
+        assert_eq!(snapshot.timed_device_measurements, 0);
+        assert_eq!(snapshot.timed_dispatches_missing_device_time, 1);
+        assert_eq!(snapshot.timed_wall_ns_total, 77);
+        assert_eq!(snapshot.timed_device_ns_total, 0);
+        assert_eq!(snapshot.timed_device_ns_max, 0);
+        assert_eq!(snapshot.timed_enqueue_ns_total, 11);
+        assert_eq!(snapshot.timed_wait_ns_total, 22);
+    }
+
+    #[test]
+    fn timed_dispatch_tracks_max_device_latency() {
+        let telemetry = CudaTelemetry::default();
+        telemetry.record_timed_dispatch(10, Some(3), None, None);
+        telemetry.record_timed_dispatch(20, Some(30), None, None);
+        telemetry.record_timed_dispatch(30, Some(7), None, None);
+        let snapshot = telemetry.snapshot();
+        assert_eq!(snapshot.timed_dispatches, 3);
+        assert_eq!(snapshot.timed_device_measurements, 3);
+        assert_eq!(snapshot.timed_wall_ns_total, 60);
+        assert_eq!(snapshot.timed_device_ns_total, 40);
+        assert_eq!(snapshot.timed_device_ns_max, 30);
+    }
+
+    #[test]
     fn telemetry_production_paths_do_not_panic_on_counter_or_ratio_overflow() {
         let source = include_str!("telemetry.rs");
         let production = source
             .split("#[cfg(test)]")
             .next()
-            .expect("telemetry source must contain production section");
+            .expect("Fix: telemetry source must contain production section");
         assert!(
             !production.contains(concat!("panic", "!("))
                 && !production.contains(".unwrap_or_else(")
@@ -494,8 +675,14 @@ mod tests {
         assert!(
             production.contains("record_counter_overflow")
                 && production.contains("scheduled_thread_slot_overflows")
+                && production.contains("record_timed_dispatch")
                 && production.contains("tracing::error!"),
             "Fix: CUDA telemetry overflow paths must stay observable after removing release-path panics."
         );
+        assert!(
+            production.contains("crate::numeric::CUDA_NUMERIC.ratio_basis_points_u64"),
+            "Fix: CUDA telemetry basis-point math must use the shared backend numeric policy."
+        );
     }
 }
+

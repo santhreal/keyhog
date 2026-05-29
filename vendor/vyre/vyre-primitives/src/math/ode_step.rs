@@ -118,9 +118,56 @@ pub fn rk4_step_cpu(
         .min(k3.len())
         .min(k4.len());
 
-    (0..n)
-        .map(|i| y_prev[i] + (h / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]))
-        .collect()
+    let mut out = Vec::with_capacity(n);
+    rk4_step_cpu_into(y_prev, k1, k2, k3, k4, h, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn rk4_step_cpu_into(
+    y_prev: &[f64],
+    k1: &[f64],
+    k2: &[f64],
+    k3: &[f64],
+    k4: &[f64],
+    h: f64,
+    out: &mut Vec<f64>,
+) {
+    try_rk4_step_cpu_into(y_prev, k1, k2, k3, k4, h, out)
+        .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - rk4_step_cpu_into failed: output allocation failed");
+}
+
+/// Fallible CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_rk4_step_cpu_into(
+    y_prev: &[f64],
+    k1: &[f64],
+    k2: &[f64],
+    k3: &[f64],
+    k4: &[f64],
+    h: f64,
+    out: &mut Vec<f64>,
+) -> Result<(), String> {
+    let n = y_prev
+        .len()
+        .min(k1.len())
+        .min(k2.len())
+        .min(k3.len())
+        .min(k4.len());
+    if n > out.capacity() {
+        crate::graph::scratch::reserve_graph_items(
+            out,
+            n - out.len(),
+            "RK4 CPU oracle",
+            "next-state output",
+        )?;
+    }
+    out.clear();
+    for i in 0..n {
+        out.push(y_prev[i] + (h / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -179,6 +226,46 @@ mod tests {
         let next = rk4_step_cpu(&y, &k1, &k2, &k3, &k4, 0.5);
         assert_eq!(next.len(), 1);
         assert!(approx_eq(next[0], 1.5));
+    }
+
+    #[test]
+    fn cpu_into_reuses_output_and_truncates_stale_tail() {
+        let y = vec![1.0, 2.0, 3.0];
+        let k = vec![1.0, 1.0, 1.0];
+        let mut out = Vec::with_capacity(8);
+        out.extend([99.0; 8]);
+        let ptr = out.as_ptr();
+
+        try_rk4_step_cpu_into(&y, &k[..1], &k, &k, &k, 0.5, &mut out).unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(approx_eq(out[0], 1.5));
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_cpu_matches_independent_rk4_reference() {
+        for case in 0..96 {
+            let n = 1 + (case % 9);
+            let h = 0.01 * ((case % 11) as f64 - 5.0);
+            let y: Vec<f64> = (0..n).map(|i| i as f64 * 0.25 - 0.5).collect();
+            let k1: Vec<f64> = (0..n).map(|i| (i as f64 + case as f64) * 0.01).collect();
+            let k2: Vec<f64> = (0..n).map(|i| (i as f64 - case as f64) * 0.02).collect();
+            let k3: Vec<f64> = (0..n).map(|i| (case as f64 - i as f64) * 0.03).collect();
+            let k4: Vec<f64> = (0..n).map(|i| (i as f64 * i as f64) * 0.001).collect();
+            let mut out = Vec::with_capacity(n + 3);
+
+            try_rk4_step_cpu_into(&y, &k1, &k2, &k3, &k4, h, &mut out).unwrap();
+
+            for i in 0..n {
+                let expected = y[i] + (h / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+                assert!(
+                    approx_eq(out[i], expected),
+                    "case {case} idx {i}: expected {expected}, got {}",
+                    out[i]
+                );
+            }
+        }
     }
 
     #[test]

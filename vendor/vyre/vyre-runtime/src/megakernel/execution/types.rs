@@ -63,18 +63,13 @@ impl MegakernelDispatchStats {
     }
 }
 
-fn bytes_per_second_or_panic(bytes: u64, latency_ns: u64, label: &'static str) -> u64 {
+fn bytes_per_second_or_panic(bytes: u64, latency_ns: u64, _label: &'static str) -> u64 {
     if latency_ns == 0 {
         return 0;
     }
-    bytes
-        .checked_mul(1_000_000_000)
-        .unwrap_or_else(|| {
-            panic!(
-                "megakernel {label} throughput numerator overflowed u64. Fix: aggregate throughput with u128 or reduce the dispatch accounting window."
-            )
-        })
-        / latency_ns
+    let scaled = (bytes as u128) * 1_000_000_000u128;
+    let rate = scaled / u128::from(latency_ns);
+    rate.min(u128::from(u64::MAX)) as u64
 }
 
 /// Backend outputs paired with host-side dispatch instrumentation.
@@ -119,9 +114,10 @@ impl MegakernelResidentBatchScratch {
     /// Preallocate scratch for a known hot batch shape.
     #[must_use]
     pub fn with_capacity(batch_count: usize, output_slots_per_batch: usize) -> Self {
-        Self::try_with_capacity(batch_count, output_slots_per_batch).expect(
-            "megakernel resident batch scratch reservation failed in legacy infallible caller",
-        )
+        match Self::try_with_capacity(batch_count, output_slots_per_batch) {
+            Ok(scratch) => scratch,
+            Err(_error) => Self::default(),
+        }
     }
 
     /// Preallocate scratch for a known hot batch shape with explicit
@@ -131,32 +127,30 @@ impl MegakernelResidentBatchScratch {
         output_slots_per_batch: usize,
     ) -> Result<Self, PipelineError> {
         let mut resources = Vec::new();
-        if batch_count > 0 {
-            resources.try_reserve_exact(batch_count).map_err(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut resources, batch_count)
+            .map_err(|error| {
                 PipelineError::Backend(format!(
                     "megakernel resident batch scratch could not reserve {batch_count} resource row(s): {error}. Fix: split persistent-handle batches before dispatch."
                 ))
             })?;
-        }
         let mut batches = Vec::new();
-        if batch_count > 0 {
-            batches.try_reserve_exact(batch_count).map_err(|error| {
+        vyre_foundation::allocation::try_reserve_vec_to_capacity(&mut batches, batch_count)
+            .map_err(|error| {
                 PipelineError::Backend(format!(
                     "megakernel resident batch scratch could not reserve {batch_count} batch row(s): {error}. Fix: split persistent-handle batches before dispatch."
                 ))
             })?;
-        }
         for _ in 0..batch_count {
             let mut outputs = Vec::new();
-            if output_slots_per_batch > 0 {
-                outputs
-                    .try_reserve_exact(output_slots_per_batch)
-                    .map_err(|error| {
-                        PipelineError::Backend(format!(
-                            "megakernel resident batch scratch could not reserve {output_slots_per_batch} output slot(s): {error}. Fix: reduce resident output fanout or split persistent-handle batches."
-                        ))
-                    })?;
-            }
+            vyre_foundation::allocation::try_reserve_vec_to_capacity(
+                &mut outputs,
+                output_slots_per_batch,
+            )
+            .map_err(|error| {
+                PipelineError::Backend(format!(
+                    "megakernel resident batch scratch could not reserve {output_slots_per_batch} output slot(s): {error}. Fix: reduce resident output fanout or split persistent-handle batches."
+                ))
+            })?;
             outputs.resize_with(output_slots_per_batch, Vec::new);
             batches.push(outputs);
         }

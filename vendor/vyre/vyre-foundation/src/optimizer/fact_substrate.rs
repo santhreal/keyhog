@@ -6,9 +6,9 @@
 //!
 //! # Design
 //!
-//! * **Shape facts** — [`ProgramShapeFacts`] per buffer (already existed).
-//! * **Use facts** — variable-use counts and buffer read/write sets.
-//! * **Type facts** — best-effort expression-type map for float/int
+//! * **Shape facts**  -  [`ProgramShapeFacts`] per buffer (already existed).
+//! * **Use facts**  -  variable-use counts and buffer read/write sets.
+//! * **Type facts**  -  best-effort expression-type map for float/int
 //!   discrimination (used by FMA synthesis and vectorization).
 //!
 //! The substrate is keyed by the canonical 256-bit program fingerprint so
@@ -100,7 +100,7 @@ impl UseFacts {
 // cache that the next pass on iteration N+1 reuses. Each slot stores the
 // fully-populated FactSubstrate; the `_*` variants narrow on read by
 // returning a clone with the unrequested fields cleared. All FactSubstrate
-// fields are `Arc`, so the clone is a handful of refcount bumps — never a
+// fields are `Arc`, so the clone is a handful of refcount bumps  -  never a
 // deep copy.
 thread_local! {
     static FACT_SUBSTRATE_CACHE_FULL: std::cell::RefCell<Option<([u8; 32], FactSubstrate)>> =
@@ -129,7 +129,7 @@ impl FactSubstrate {
     /// Cached counterpart of [`Self::derive`]. Returns the previous result
     /// for the same program fingerprint when available, otherwise computes
     /// once and stashes the result in a thread-local cache. Same logical
-    /// payload as `derive` — the cache is purely a redundant-walk avoider.
+    /// payload as `derive`  -  the cache is purely a redundant-walk avoider.
     #[must_use]
     pub fn derive_cached(program: &Program) -> Self {
         let fp = program.fingerprint();

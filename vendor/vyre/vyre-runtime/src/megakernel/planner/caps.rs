@@ -16,7 +16,7 @@ pub struct MegakernelCaps {
 }
 
 impl MegakernelCaps {
-    /// Unsupported — every method returns an explicit error.
+    /// Unsupported  -  every method returns an explicit error.
     #[must_use]
     pub const fn unsupported() -> Self {
         Self {
@@ -150,7 +150,7 @@ pub struct MegakernelReport {
     ///
     /// Lets observability collectors (Tempo, Honeycomb, Prometheus)
     /// attribute every megakernel output back to the source rules
-    /// that derived it — without this, fused-region outputs lose
+    /// that derived it  -  without this, fused-region outputs lose
     /// their lineage.
     pub region_lineage: Vec<u32>,
 }

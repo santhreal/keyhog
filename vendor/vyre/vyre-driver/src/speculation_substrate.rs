@@ -3,8 +3,8 @@
 //!
 //! Generalizes I2's trace-JIT speculation to ANY "probably profitable"
 //! rewrite (vec_pack, shared_promote, async_load_promote, ...). For each
-//! candidate rewrite the runtime keeps two compiled variants — a
-//! conservative baseline and a speculative variant — and races them
+//! candidate rewrite the runtime keeps two compiled variants  -  a
+//! conservative baseline and a speculative variant  -  and races them
 //! against the autotune DB's recorded winner.
 //!
 //! This module owns the pure *decision*: given the speculative variant's
@@ -17,7 +17,7 @@
 //! key, dispatching them in alternation, recording observations to
 //! [`crate::autotune_store`]) lives in `runtime_megakernel` and is
 //! Codex's lane. This module is the half that's safe to land before
-//! that wiring exists — every consumer reads the same decision contract.
+//! that wiring exists  -  every consumer reads the same decision contract.
 
 /// Per-shape observation feeding the speculation decision.
 #[derive(Debug, Clone, Copy)]
@@ -40,13 +40,13 @@ pub struct SpeculationObservation {
 /// Verdict returned by [`decide_speculation`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpeculationVerdict {
-    /// Speculative variant wins — replace the baseline in the cache.
+    /// Speculative variant wins  -  replace the baseline in the cache.
     /// Future dispatches use the speculative variant directly.
     Adopt,
-    /// Speculative variant loses or is statistically inconclusive —
+    /// Speculative variant loses or is statistically inconclusive  -
     /// drop it from the cache and stop racing on this shape.
     Reject,
-    /// Not enough samples yet — keep racing.
+    /// Not enough samples yet  -  keep racing.
     KeepRacing,
 }
 
@@ -57,7 +57,7 @@ pub const MIN_DISPATCHES_FOR_VERDICT: u32 = 8;
 
 /// Minimum savings in basis points (1 bp = 0.01%) the speculative
 /// variant must show over the baseline to be adopted, after side-compile
-/// cost amortization. 1500 bps = 15% — tuned conservative so adopting
+/// cost amortization. 1500 bps = 15%  -  tuned conservative so adopting
 /// is rare but high-confidence.
 pub const MIN_ADOPT_SAVINGS_BPS: u64 = 1500;
 
@@ -72,7 +72,7 @@ pub fn decide_speculation(obs: SpeculationObservation) -> SpeculationVerdict {
         return SpeculationVerdict::KeepRacing;
     }
     if obs.baseline_mean_ns == 0 {
-        // Degenerate baseline — keep racing rather than divide-by-zero.
+        // Degenerate baseline  -  keep racing rather than divide-by-zero.
         return SpeculationVerdict::KeepRacing;
     }
 
@@ -90,13 +90,18 @@ pub fn decide_speculation(obs: SpeculationObservation) -> SpeculationVerdict {
     if effective_speculative_ns >= baseline_mean_ns {
         return SpeculationVerdict::Reject;
     }
-    let savings_ns = baseline_mean_ns - effective_speculative_ns;
-    // savings in basis points relative to baseline: (savings * 10000) / baseline.
-    let savings_bps = (savings_ns * 10_000) / baseline_mean_ns;
-    if savings_bps >= u128::from(MIN_ADOPT_SAVINGS_BPS) {
+    let savings_ns = u64::try_from(baseline_mean_ns - effective_speculative_ns).unwrap_or(u64::MAX);
+    let savings_bps = crate::numeric::ratio_basis_points_u64_wide(
+        savings_ns,
+        obs.baseline_mean_ns,
+        0,
+        "speculation savings",
+        "driver",
+    );
+    if savings_bps >= MIN_ADOPT_SAVINGS_BPS {
         SpeculationVerdict::Adopt
     } else {
-        // Speculative wins but by less than the threshold — keep
+        // Speculative wins but by less than the threshold  -  keep
         // racing in case the gap widens with more samples.
         SpeculationVerdict::KeepRacing
     }
@@ -118,7 +123,7 @@ mod tests {
 
     #[test]
     fn under_threshold_keeps_racing() {
-        // baseline only sampled 3 times — too few to verdict.
+        // baseline only sampled 3 times  -  too few to verdict.
         let v = decide_speculation(obs(3, 100_000, 100, 50_000, 0));
         assert_eq!(v, SpeculationVerdict::KeepRacing);
     }
@@ -200,7 +205,7 @@ mod tests {
         assert!(
             source.contains("u128::from(obs.speculative_mean_ns)")
                 && source.contains("u128::from(obs.baseline_mean_ns)")
-                && source.contains("(savings_ns * 10_000) / baseline_mean_ns"),
+                && source.contains("crate::numeric::ratio_basis_points_u64_wide"),
             "Fix: speculation adoption policy must compute effective cost and savings in widened integer space."
         );
     }

@@ -24,7 +24,7 @@
 //!
 //! Useful as a debug-time check after every rewrite pass. Not yet
 //! wired into `run_all` because the established invariant is "every
-//! rewrite preserves verify()" — wire when the user asks. Direct
+//! rewrite preserves verify()"  -  wire when the user asks. Direct
 //! callers (rewrite tests, fuzz harnesses) can call `verify()` to
 //! turn quiet bugs into loud ones.
 
@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{KernelBody, KernelDescriptor, KernelOpKind};
 
-/// Result type — `Ok(())` if every invariant holds; `Err(Vec)` lists
+/// Result type  -  `Ok(())` if every invariant holds; `Err(Vec)` lists
 /// every violation found, not just the first.
 pub type VerifyResult = Result<(), Vec<VerifyError>>;
 
@@ -67,7 +67,7 @@ pub enum VerifyErrorKind {
         got: usize,
     },
     /// `dispatch.workgroup_size[axis]` is zero. A kernel with a zero
-    /// dim never runs — almost certainly a host-side bug.
+    /// dim never runs  -  almost certainly a host-side bug.
     DispatchZeroDim {
         axis: u8,
     },
@@ -262,7 +262,7 @@ fn verify_body(
             }
         }
 
-        // Minimum operand count per kind. Conservative — we just check
+        // Minimum operand count per kind. Conservative  -  we just check
         // shapes the rewrites actually produce.
         let min_required = min_operand_count(&op.kind);
         if op.operands.len() < min_required {
@@ -321,7 +321,7 @@ pub enum OperandClass {
     ResultRef,
     ChildBodyIdx,
     LiteralPoolIdx,
-    /// Binding-slot literal, opaque tag, etc. — not validated structurally.
+    /// Binding-slot literal, opaque tag, etc.  -  not validated structurally.
     Other,
 }
 
@@ -469,6 +469,7 @@ fn min_operand_count(kind: &KernelOpKind) -> usize {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::{
@@ -491,7 +492,7 @@ mod tests {
 
     #[test]
     fn empty_kernel_verifies() {
-        assert!(verify(&empty_desc(vec![], vec![])).is_ok());
+        assert!(matches!(verify(&empty_desc(vec![], vec![])), Ok(_)));
     }
 
     #[test]
@@ -852,7 +853,7 @@ mod tests {
     #[test]
     fn run_all_output_verifies() {
         // Full pipeline output must satisfy verify(). This is the
-        // critical regression gate — any rewrite that produces an
+        // critical regression gate  -  any rewrite that produces an
         // invalid descriptor will fail this test.
         let desc = empty_desc(
             vec![
@@ -1025,3 +1026,4 @@ mod tests {
             .any(|e| matches!(e.kind, VerifyErrorKind::WorkgroupBindingInHostRange { .. })));
     }
 }
+

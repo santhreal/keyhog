@@ -65,13 +65,13 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
     // a barrier after the earlier writer. Without this, the fused
     // kernel runs writer + reader in the same launch with no
     // synchronization, and the reader sees stale data from threads
-    // that haven't completed the writer's body yet — the exact
+    // that haven't completed the writer's body yet  -  the exact
     // "stack_overflow_gets misses node 39" mode.
     let mut write_arms_per_buffer: FxHashMap<Ident, Vec<usize>> = FxHashMap::default();
     let mut barrier_after_arm: FxHashSet<usize> = FxHashSet::default();
     // Arms whose body contains a divergent store gated on InvocationId
     // (e.g. `if invocation_id == 0 { ... store ... }`). Workgroup-only
-    // barriers (`SeqCst`) cannot propagate those writes across blocks —
+    // barriers (`SeqCst`) cannot propagate those writes across blocks  -
     // a `bar.sync 0` waits for threads in the SAME block but issues no
     // grid-level fence. When the next arm reads what the divergent
     // store wrote, the barrier MUST upgrade to `MemoryOrdering::GridSync`
@@ -90,7 +90,7 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
         // Walk entry nodes once: clone into segment and collect both
         // atomic targets (writes) and Load targets (reads). Buffers
         // referenced inside the body but NOT declared in the arm's
-        // own `buffers()` table — produced by an earlier arm — only
+        // own `buffers()` table  -  produced by an earlier arm  -  only
         // surface here. Without this, RAW hazards across arms that
         // read shared scalars (e.g. broadcast reading the scalar
         // written by a single-thread `bitset_any`) get no barrier
@@ -150,7 +150,7 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
             }
         }
 
-        // F-IR-22: WAR hazard — for each buffer this arm writes, if
+        // F-IR-22: WAR hazard  -  for each buffer this arm writes, if
         // any previous arm read it, mark a barrier after every such
         // earlier read arm so the new write can't clobber the read.
         for write_buf in &arm_writes {
@@ -161,7 +161,7 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
             }
         }
 
-        // RAW hazard — for each buffer this arm reads, if any
+        // RAW hazard  -  for each buffer this arm reads, if any
         // previous arm wrote it, the writer's results must be
         // visible before this read. Insert a barrier after every
         // such earlier writer arm. Required because the fused

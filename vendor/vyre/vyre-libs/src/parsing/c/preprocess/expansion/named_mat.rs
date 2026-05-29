@@ -1,7 +1,6 @@
 //! Materialized named macro-expansion dispatch builder.
 
 #![allow(missing_docs)] // Internal macro-expansion helpers are documented at the owning module boundary.
-use crate::parsing::c::lex::tokens::*;
 use crate::parsing::c::preprocess::materialization::*;
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -51,90 +50,21 @@ pub fn opt_named_macro_expansion_materialized(
     let out_buffer_count = max_out_tokens.max(1);
     let out_source_count = max_out_source_bytes.max(1);
 
-    let mut process_current = vec![
-        Node::let_bind("named_tok", Expr::load(in_tok_types, Expr::var("named_i"))),
-        Node::let_bind("named_macro_slot", Expr::u32(EMPTY_MACRO_SLOT)),
-        Node::let_bind("named_macro_idx", Expr::u32(EMPTY_MACRO_SLOT)),
-        Node::let_bind("named_macro_kind", Expr::u32(C_MACRO_KIND_OBJECT_LIKE)),
-        Node::let_bind("named_param_count", Expr::u32(0)),
-        Node::let_bind("named_is_variadic", Expr::u32(0)),
-        Node::let_bind("named_required_param_count", Expr::u32(0)),
-    ];
-    process_current.push(Node::if_then(
-        Expr::eq(Expr::var("named_tok"), Expr::u32(TOK_IDENTIFIER)),
-        {
-            let mut ident = emit_source_span_hash(
-                "named",
-                Expr::var("named_i"),
-                in_tok_starts,
-                in_tok_lens,
-                source_words,
-                source_len.clone(),
-                "named_name_hash",
-            );
-            ident.extend(emit_macro_hash_lookup(
-                "named_lookup",
-                Expr::var("named_name_hash"),
-                Expr::var("named_start"),
-                Expr::var("named_len"),
-                source_words,
-                macro_name_hashes,
-                macro_name_starts,
-                macro_name_lens,
-                macro_name_words,
-                "named_macro_slot",
-            ));
-            ident
-        },
-    ));
-    process_current.push(Node::if_then(
-        Expr::ne(Expr::var("named_macro_slot"), Expr::u32(EMPTY_MACRO_SLOT)),
-        vec![
-            Node::assign(
-                "named_macro_idx",
-                Expr::load(macro_vals, Expr::var("named_macro_slot")),
-            ),
-            Node::assign(
-                "named_macro_kind",
-                Expr::load(macro_kinds, Expr::var("named_macro_slot")),
-            ),
-            Node::let_bind(
-                "named_param_count_raw",
-                Expr::load(macro_param_counts, Expr::var("named_macro_slot")),
-            ),
-            Node::assign(
-                "named_param_count",
-                Expr::bitand(Expr::var("named_param_count_raw"), Expr::u32(0x7fff_ffff)),
-            ),
-            Node::assign(
-                "named_is_variadic",
-                Expr::shr(Expr::var("named_param_count_raw"), Expr::u32(31)),
-            ),
-            Node::assign(
-                "named_required_param_count",
-                Expr::saturating_sub(
-                    Expr::var("named_param_count"),
-                    Expr::var("named_is_variadic"),
-                ),
-            ),
-            Node::if_then(
-                Expr::and(
-                    Expr::ne(
-                        Expr::var("named_macro_kind"),
-                        Expr::u32(C_MACRO_KIND_OBJECT_LIKE),
-                    ),
-                    Expr::ne(
-                        Expr::var("named_macro_kind"),
-                        Expr::u32(C_MACRO_KIND_FUNCTION_LIKE),
-                    ),
-                ),
-                vec![Node::trap(
-                    Expr::var("named_macro_kind"),
-                    "named-macro-kind-invalid",
-                )],
-            ),
-        ],
-    ));
+    let mut process_current = emit_named_macro_scan_prefix(NamedMacroScanSpec {
+        in_tok_types,
+        in_tok_starts,
+        in_tok_lens,
+        source_words,
+        macro_name_hashes,
+        macro_name_starts,
+        macro_name_lens,
+        macro_name_words,
+        macro_vals,
+        macro_kinds,
+        macro_param_counts,
+        source_len: source_len.clone(),
+        decode_variadic_param_count: true,
+    });
     process_current.push(Node::if_then_else(
         Expr::eq(Expr::var("named_macro_slot"), Expr::u32(EMPTY_MACRO_SLOT)),
         {
@@ -160,36 +90,8 @@ pub fn opt_named_macro_expansion_materialized(
             passthrough
         },
         {
-            let mut expanded = vec![
-                Node::let_bind(
-                    "named_repl_size",
-                    Expr::load(macro_sizes, Expr::var("named_macro_idx")),
-                ),
-                Node::if_then(
-                    Expr::gt(
-                        Expr::add(Expr::var("named_macro_idx"), Expr::var("named_repl_size")),
-                        Expr::u32(MACRO_TABLE_SLOTS),
-                    ),
-                    vec![Node::trap(
-                        Expr::add(Expr::var("named_macro_idx"), Expr::var("named_repl_size")),
-                        "named-macro-replacement-range-out-of-bounds",
-                    )],
-                ),
-                Node::let_bind("named_has_open_paren", Expr::u32(0)),
-                Node::if_then(
-                    Expr::lt(
-                        Expr::add(Expr::var("named_i"), Expr::u32(1)),
-                        num_tokens.clone(),
-                    ),
-                    vec![Node::if_then(
-                        Expr::eq(
-                            Expr::load(in_tok_types, Expr::add(Expr::var("named_i"), Expr::u32(1))),
-                            Expr::u32(TOK_LPAREN),
-                        ),
-                        vec![Node::assign("named_has_open_paren", Expr::u32(1))],
-                    )],
-                ),
-            ];
+            let mut expanded =
+                emit_named_replacement_prelude(macro_sizes, in_tok_types, num_tokens.clone());
             expanded.push(Node::if_then_else(
                 Expr::eq(
                     Expr::var("named_macro_kind"),

@@ -320,10 +320,10 @@ mod tests {
 
         let first = first_loader
             .cached_include_bytes(&header)
-            .expect("first loader must read include bytes");
+            .expect("Fix: first loader must read include bytes");
         let second = second_loader
             .cached_include_bytes(&header)
-            .expect("second loader must reuse shared include bytes");
+            .expect("Fix: second loader must reuse shared include bytes");
 
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(first_loader.dependency_signature().unwrap().len(), 1);
@@ -369,7 +369,7 @@ mod tests {
 
         let loaded = loader
             .cached_include_bytes(&header)
-            .expect("loader must re-read a stale shared include cache entry");
+            .expect("Fix: loader must re-read a stale shared include cache entry");
 
         assert_eq!(loaded.as_ref(), b"#define SHARED 2\n");
         assert!(

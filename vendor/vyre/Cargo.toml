@@ -175,30 +175,60 @@ private_intra_doc_links = "warn"
 # version (the `version` is required so a published crate can resolve its
 # workspace siblings from crates.io after publication).
 [workspace.dependencies]
-vyre = { version = "0.4.2", path = "vyre-core", default-features = false }
-vyre-foundation = { version = "0.4.2", path = "vyre-foundation" }
-vyre-driver = { version = "0.4.2", path = "vyre-driver" }
-vyre-driver-wgpu = { version = "0.4.2", path = "vyre-driver-wgpu" }
-vyre-driver-cuda = { version = "0.4.2", path = "vyre-driver-cuda" }
-vyre-driver-reference = { version = "0.4.2", path = "vyre-driver-reference" }
-vyre-driver-spirv = { version = "0.4.2", path = "vyre-driver-spirv" }
-vyre-reference = { version = "0.4.2", path = "vyre-reference" }
-vyre-spec = { version = "0.4.2", path = "vyre-spec" }
-vyre-macros = { version = "0.4.2", path = "vyre-macros" }
-vyre-primitives = { version = "0.4.2", path = "vyre-primitives" }
-vyre-runtime = { version = "0.4.2", path = "vyre-runtime" }
-vyre-libs = { version = "0.4.2", path = "vyre-libs" }
-vyre-self-substrate = { version = "0.4.2", path = "vyre-self-substrate" }
-vyre-intrinsics = { version = "0.4.2", path = "vyre-intrinsics" }
-vyre-aot = { version = "0.4.2", path = "vyre-aot" }
-vyre-bench = { version = "0.4.2", path = "vyre-bench" }
-vyre-test-harness = { version = "0.4.2", path = "conform/vyre-test-harness" }
-vyre-harness = { version = "0.4.2", path = "vyre-harness" }
-vyre-lower = { version = "0.4.2", path = "vyre-lower" }
-vyre-emit-naga = { version = "0.4.2", path = "vyre-emit-naga" }
-vyre-emit-ptx = { version = "0.4.2", path = "vyre-emit-ptx" }
-vyre-emit-spirv = { version = "0.4.2", path = "vyre-emit-spirv" }
+vyre = { version = "0.6.1", path = "vyre-core", default-features = false }
+vyre-foundation = { version = "0.6.1", path = "vyre-foundation" }
+vyre-driver = { version = "0.6.1", path = "vyre-driver" }
+vyre-driver-wgpu = { version = "0.6.1", path = "vyre-driver-wgpu" }
+vyre-driver-cuda = { version = "0.6.1", path = "vyre-driver-cuda" }
+vyre-driver-reference = { version = "0.6.1", path = "vyre-driver-reference" }
+vyre-driver-spirv = { version = "0.6.1", path = "vyre-driver-spirv" }
+vyre-reference = { version = "0.6.1", path = "vyre-reference" }
+vyre-spec = { version = "0.6.1", path = "vyre-spec" }
+vyre-macros = { version = "0.6.1", path = "vyre-macros" }
+vyre-primitives = { version = "0.6.1", path = "vyre-primitives" }
+vyre-runtime = { version = "0.6.1", path = "vyre-runtime" }
+vyre-libs = { version = "0.6.1", path = "vyre-libs" }
+vyre-self-substrate = { version = "0.6.1", path = "vyre-self-substrate" }
+vyre-intrinsics = { version = "0.6.1", path = "vyre-intrinsics" }
+vyre-aot = { version = "0.6.1", path = "vyre-aot" }
+vyre-bench = { version = "0.6.1", path = "vyre-bench" }
+vyre-test-harness = { version = "0.6.1", path = "conform/vyre-test-harness" }
+vyre-harness = { version = "0.6.1", path = "vyre-harness" }
+vyre-lower = { version = "0.6.1", path = "vyre-lower" }
+vyre-emit-naga = { version = "0.6.1", path = "vyre-emit-naga" }
+vyre-emit-ptx = { version = "0.6.1", path = "vyre-emit-ptx" }
+vyre-emit-spirv = { version = "0.6.1", path = "vyre-emit-spirv" }
 weir = { version = "0.0.1", path = "../../../dataflow/weir" }
+# Workspace deps newly referenced by upstream HEAD members (mostly test /
+# bench dev-deps that keyhog never compiles, but whose `workspace = true`
+# inheritance must still resolve). Copied from upstream's workspace.dependencies;
+# path-based ones remapped to vendored locations. libc is aligned to keyhog's
+# pin (0.2.184) so the unified graph has a single libc.
+c-grammar-gen = { package = "surgec-grammar-gen", path = "shared/surgec-grammar-gen" }
+anyhow = "=1.0.102"
+arc-swap = "=1.9.1"
+ash = "=0.38.0"
+assert_cmd = "=2.2.2"
+bincode = { version = "=2.0.1", features = ["serde"] }
+brotli = "=8.0.2"
+core_affinity = "=0.8.3"
+crc32fast = "=1.5.0"
+crossbeam-queue = "=0.3.12"
+env_logger = "=0.11.10"
+external-dataflow-engine = { package = "weir", path = "../../../dataflow/weir" }
+fnv = "=1.0.7"
+lasso = { version = "=0.7.3", features = ["multi-threaded"] }
+libc = { version = "=0.2.184", default-features = false }
+lzma-rs = "=0.3.0"
+object = { version = "=0.39.1", default-features = false }
+predicates = "=3.1.4"
+rand = { version = "=0.10.1", features = ["std", "std_rng"] }
+tree-sitter = "=0.26.9"
+tree-sitter-c = "=0.24.2"
+tree-sitter-go = "=0.25.0"
+trybuild = "=1.0.116"
+ureq = "=3.3.0"
+vyre-debug = { version = "0.6.1", path = "vyre-debug" }
 
 # Shared third-party pins; every member agrees on versions.
 serde = { version = "=1.0.228", features = ["derive", "rc"] }
@@ -209,7 +239,7 @@ tempfile = "=3.27.0"
 proptest = "=1.9.0"
 pollster = "=0.4.0"
 tokio = { version = "=1.51.1", features = ["full"] }
-wgpu = { version = "=24.0.5", features = ["wgsl", "naga-ir"] }
+wgpu = { version = "=25.0.2", features = ["wgsl", "naga-ir"] }
 bytemuck = { version = "=1.25.0", features = ["derive"] }
 naga = { version = ">=25.0.0, <26.0.0", features = ["wgsl-in", "wgsl-out", "spv-out"] }
 proc-macro2 = { version = "=1.0.106", features = ["span-locations"] }

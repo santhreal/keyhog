@@ -1,4 +1,4 @@
-//! [`MegakernelIoQueue`] — high-level wrapper around the raw queue bytes.
+//! [`MegakernelIoQueue`]  -  high-level wrapper around the raw queue bytes.
 
 use std::sync::atomic::{fence, Ordering};
 

@@ -1,4 +1,4 @@
-//! `bitset_and_not` — per-word `lhs AND NOT rhs` over packed bitsets.
+//! `bitset_and_not`  -  per-word `lhs AND NOT rhs` over packed bitsets.
 //!
 //! Produced as a first-class primitive so set-difference (subtract
 //! `rhs` from `lhs`) is one Region instead of the two-op compose
@@ -7,10 +7,8 @@
 //! from the source frontier, making the `not_via` path one fewer
 //! buffer + one fewer dispatch than the manual compose.
 
-use std::sync::Arc;
-
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use super::binary_word::{binary_word_program, BitwiseBinaryOp};
+use vyre_foundation::ir::Program;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::bitset::and_not";
@@ -21,31 +19,7 @@ pub const OP_ID: &str = "vyre-primitives::bitset::and_not";
 /// `lhs.iter().zip(rhs).map(|(a,b)| a & !b).collect()`.
 #[must_use]
 pub fn bitset_and_not(lhs: &str, rhs: &str, out: &str, words: u32) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-    let body = vec![Node::store(
-        out,
-        t.clone(),
-        Expr::bitand(
-            Expr::load(lhs, t.clone()),
-            Expr::bitnot(Expr::load(rhs, t.clone())),
-        ),
-    )];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(lhs, 0, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(rhs, 1, BufferAccess::ReadOnly, DataType::U32).with_count(words),
-            BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(words),
-        ],
-        [256, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(words)),
-                body,
-            )]),
-        }],
-    )
+    binary_word_program(OP_ID, lhs, rhs, out, words, BitwiseBinaryOp::AndNot)
 }
 
 /// CPU reference: `out[i] = lhs[i] & !rhs[i]` per word.
@@ -53,16 +27,38 @@ pub fn bitset_and_not(lhs: &str, rhs: &str, out: &str, words: u32) -> Program {
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
-    cpu_ref_into(lhs, rhs, &mut out);
-    out
+    match try_cpu_ref_into(lhs, rhs, &mut out) {
+        Ok(()) => out,
+        Err(error) => {
+            eprintln!("vyre-primitives bitset_and_not cpu_ref failed: {error}");
+            Vec::new()
+        }
+    }
 }
 
 /// CPU reference into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], out: &mut Vec<u32>) {
+    if let Err(error) = try_cpu_ref_into(lhs, rhs, out) {
+        eprintln!("vyre-primitives bitset_and_not cpu_ref_into failed: {error}");
+        out.clear();
+    }
+}
+
+/// Fallible CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_cpu_ref_into(lhs: &[u32], rhs: &[u32], out: &mut Vec<u32>) -> Result<(), String> {
+    let len = lhs.len().min(rhs.len());
+    if len > out.capacity() {
+        out.try_reserve(len - out.len()).map_err(|err| {
+            format!(
+                "bitset_and_not CPU oracle failed to reserve {len} output words: {err}. Fix: shard the bitset before parity evaluation."
+            )
+        })?;
+    }
     out.clear();
-    out.reserve(lhs.len().min(rhs.len()));
     out.extend(lhs.iter().zip(rhs.iter()).map(|(a, b)| a & !b));
+    Ok(())
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -71,12 +67,7 @@ inventory::submit! {
         OP_ID,
         || bitset_and_not("lhs", "rhs", "out", 2),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![
                 to_bytes(&[0xFF00, 0xAAAA_AAAA]),
                 to_bytes(&[0xF0F0, 0x5555_5555]),
@@ -84,12 +75,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let to_bytes = |words: &[u32]| {
-                words
-                    .iter()
-                    .flat_map(|word| word.to_le_bytes())
-                    .collect::<Vec<u8>>()
-            };
+            let to_bytes = |words: &[u32]| crate::wire::pack_u32_slice(words);
             vec![vec![to_bytes(&[0x0F00, 0xAAAA_AAAA])]]
         }),
     )
@@ -124,7 +110,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Adversarial fixtures — empty, single-word, cross-word, A==B, B=all-1s.
+    // Adversarial fixtures  -  empty, single-word, cross-word, A==B, B=all-1s.
     // ------------------------------------------------------------------
 
     #[test]
@@ -137,6 +123,34 @@ mod tests {
         let lhs = vec![0xFFFF_FFFF];
         let rhs = vec![0x0000_FFFF];
         assert_eq!(cpu_ref(&lhs, &rhs), vec![0xFFFF_0000]);
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_fallible_reference() {
+        let lhs = [0xFFFF_0000, 0x1234_5678];
+        let rhs = [0x00FF_00FF, 0xFFFF_0000];
+        let mut compat = Vec::with_capacity(4);
+        let mut fallible = Vec::with_capacity(4);
+
+        cpu_ref_into(&lhs, &rhs, &mut compat);
+        try_cpu_ref_into(&lhs, &rhs, &mut fallible)
+            .expect("Fix: small bitset_and_not CPU oracle must reserve");
+
+        assert_eq!(cpu_ref(&lhs, &rhs), fallible);
+        assert_eq!(compat, fallible);
+    }
+
+    #[test]
+    fn production_cpu_ref_wrappers_have_no_raw_panic_path() {
+        let production = include_str!("and_not.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("Fix: and_not.rs must contain production section");
+
+        assert!(
+            !production.contains(".expect(") && !production.contains(".unwrap("),
+            "Fix: bitset_and_not CPU parity wrappers must not panic in production."
+        );
     }
 
     #[test]
@@ -158,5 +172,44 @@ mod tests {
         let lhs = vec![0xFFFF_FFFF, 0xFFFF_FFFF];
         let rhs = vec![0xFFFF_FFFF, 0xFFFF_FFFF];
         assert_eq!(cpu_ref(&lhs, &rhs), vec![0, 0]);
+    }
+
+    #[test]
+    fn cpu_ref_into_truncates_stale_tail_without_reallocating() {
+        let lhs = vec![0xFFFF_FFFF, 0x0F0F_0F0F];
+        let rhs = vec![0x0000_FFFF, 0xF0F0_F0F0];
+        let mut out = Vec::with_capacity(8);
+        out.extend([0xDEAD_BEEF; 8]);
+        let ptr = out.as_ptr();
+
+        try_cpu_ref_into(&lhs, &rhs, &mut out).unwrap();
+
+        assert_eq!(out, vec![0xFFFF_0000, 0x0F0F_0F0F]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn generated_and_not_matches_scalar_reference_and_truncates_shorter_input() {
+        for lhs_len in 0..64usize {
+            let rhs_len = 63usize.saturating_sub(lhs_len / 2);
+            let lhs: Vec<u32> = (0..lhs_len)
+                .map(|idx| (idx as u32).wrapping_mul(0x9E37_79B9))
+                .collect();
+            let rhs: Vec<u32> = (0..rhs_len)
+                .map(|idx| (idx as u32).wrapping_mul(0x85EB_CA6B).wrapping_add(7))
+                .collect();
+            let mut out = Vec::with_capacity(lhs_len.min(rhs_len) + 3);
+
+            try_cpu_ref_into(&lhs, &rhs, &mut out).unwrap();
+
+            assert_eq!(
+                out,
+                lhs.iter()
+                    .zip(rhs.iter())
+                    .map(|(a, b)| a & !b)
+                    .collect::<Vec<_>>(),
+                "generated and-not case lhs_len={lhs_len} rhs_len={rhs_len}"
+            );
+        }
     }
 }

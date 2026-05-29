@@ -1,7 +1,7 @@
 //! Effects-typed lower pipeline (P-1.0-V1.3).
 //!
 //! [`compute_program_effects`] walks a `Program` and computes the
-//! [`ProgramEffects`] row — the union of every effect kind any
+//! [`ProgramEffects`] row  -  the union of every effect kind any
 //! Region in the program produces. The lowering pipeline can route
 //! handler discharges (P-1.0-V1.1, P-1.0-V1.2) against the row to
 //! prove that a backend's emitted code respects the declared effect
@@ -29,20 +29,20 @@ impl ProgramEffects {
     pub const fn empty() -> Self {
         Self(0)
     }
-    /// Buffer write — `Node::Store`, `Node::AsyncStore`.
+    /// Buffer write  -  `Node::Store`, `Node::AsyncStore`.
     pub const BUFFER_WRITE: Self = Self(1 << 0);
-    /// Atomic read-modify-write — `Expr::Atomic`.
+    /// Atomic read-modify-write  -  `Expr::Atomic`.
     pub const ATOMIC: Self = Self(1 << 1);
     /// Host-visible I/O effect used by host-bridge extensions.
     pub const HOST_IO: Self = Self(1 << 2);
-    /// Nested GPU dispatch — `Node::IndirectDispatch`.
+    /// Nested GPU dispatch  -  `Node::IndirectDispatch`.
     pub const GPU_DISPATCH: Self = Self(1 << 3);
-    /// Synchronization — `Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst }`.
+    /// Synchronization  -  `Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst }`.
     pub const BARRIER: Self = Self(1 << 4);
-    /// Async load fetching from streaming storage —
+    /// Async load fetching from streaming storage  -
     /// `Node::AsyncLoad`.
     pub const ASYNC_LOAD: Self = Self(1 << 5);
-    /// Trap or abort — `Node::Trap`.
+    /// Trap or abort  -  `Node::Trap`.
     pub const TRAP: Self = Self(1 << 6);
 
     /// Whether this row contains every bit set in `other`.
@@ -50,6 +50,27 @@ impl ProgramEffects {
     #[inline]
     pub const fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
+    }
+
+    /// Whether this row has no effects.
+    #[must_use]
+    #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Whether every effect in `self` is also present in `other`.
+    #[must_use]
+    #[inline]
+    pub const fn is_subset_of(self, other: Self) -> bool {
+        (self.0 & !other.0) == 0
+    }
+
+    /// Effects present in `self` but absent from `previous`.
+    #[must_use]
+    #[inline]
+    pub const fn introduced_since(self, previous: Self) -> Self {
+        Self(self.0 & !previous.0)
     }
 
     /// Raw bitmask.
@@ -126,6 +147,13 @@ fn walk_node(node: &Node, effects: &mut ProgramEffects) {
             *effects |= ProgramEffects::BUFFER_WRITE;
             walk_expr(offset, effects);
             walk_expr(size, effects);
+        }
+        Node::AllReduce { .. }
+        | Node::AllGather { .. }
+        | Node::ReduceScatter { .. }
+        | Node::Broadcast { .. } => {
+            *effects |= ProgramEffects::BUFFER_WRITE;
+            *effects |= ProgramEffects::BARRIER;
         }
         Node::AsyncWait { .. } | Node::Resume { .. } | Node::Return | Node::Opaque(_) => {}
         Node::Trap { address, .. } => {
@@ -321,5 +349,17 @@ mod tests {
             vec![buffer],
         );
         assert_eq!(compute_program_effects(&p1), compute_program_effects(&p2));
+    }
+
+    #[test]
+    fn introduced_since_reports_only_new_effects() {
+        let before = ProgramEffects::BUFFER_WRITE | ProgramEffects::ATOMIC;
+        let after = before | ProgramEffects::BARRIER;
+        let introduced = after.introduced_since(before);
+
+        assert!(introduced.contains(ProgramEffects::BARRIER));
+        assert!(!introduced.contains(ProgramEffects::BUFFER_WRITE));
+        assert!(introduced.is_subset_of(ProgramEffects::BARRIER));
+        assert!(ProgramEffects::empty().is_empty());
     }
 }

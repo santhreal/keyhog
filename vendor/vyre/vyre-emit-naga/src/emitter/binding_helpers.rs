@@ -1,16 +1,16 @@
 //! `BodyBuilder` binding/operand/result-binding helpers. The leaf
 //! pieces every op-emit path consumes:
 //!
-//! - `slot_operand` / `value_operand` / `value_type_operand` — read
+//! - `slot_operand` / `value_operand` / `value_type_operand`  -  read
 //!   typed pieces out of a `KernelOp`'s `operands` Vec.
-//! - `binding_element_pointer*` / `buffer_len_expr` — turn a
+//! - `binding_element_pointer*` / `buffer_len_expr`  -  turn a
 //!   `(slot, index)` pair into a naga pointer / length expression.
-//! - `bind_result` / `bind_result_typed` — record an emitted value's
+//! - `bind_result` / `bind_result_typed`  -  record an emitted value's
 //!   handle (and type) for downstream consumers, with Q7 carrier-store
 //!   plumbing for loop-carried ids.
-//! - `child_block` / `inline_axis` / `require_u32_slot` — small one-off
+//! - `child_block` / `inline_axis` / `require_u32_slot`  -  small one-off
 //!   guards.
-//! - `literal_type` / `type_for_data_type` / `binary_result_type` —
+//! - `literal_type` / `type_for_data_type` / `binary_result_type`  -
 //!   IR-type → naga-type lookups.
 
 use naga::{Expression, Span, Statement, Type};
@@ -84,7 +84,7 @@ impl BodyBuilder<'_> {
                 reason: "no global variable was declared for this slot".to_owned(),
             })?;
         let base = self.append_expr(Expression::GlobalVariable(global));
-        // Coerce the array index to u32 — naga rejects Bool / Sint / Float
+        // Coerce the array index to u32  -  naga rejects Bool / Sint / Float
         // indices with `InvalidIndexType`. With the Q7 carrier-publish
         // round-trip a Bool result that originally inlined as `1u`/`0u`
         // can now Load as Bool; force u32 here.
@@ -171,7 +171,7 @@ impl BodyBuilder<'_> {
         // If the cached carrier local was allocated with a different
         // scalar type than the authoritative `value_types[id]` (a
         // later `bind_result_typed` rebound the same vyre id to a
-        // different kind — e.g. id 873 was first a Bool comparison,
+        // different kind  -  e.g. id 873 was first a Bool comparison,
         // then reused as a u32 LoopIndex), Load through the cached
         // local AND coerce the result to the expected type. Just
         // dropping the cached entry sends the consumer to a
@@ -258,7 +258,7 @@ impl BodyBuilder<'_> {
             if std::env::var("VYRE_PUBLISH_TRACE").is_ok() {
                 let underlying = self.resolve_underlying_local_kind(init);
                 let scalar = self.scalar_kind_of_expression(init, 0);
-                eprintln!(
+                tracing::debug!(
                     "[publish] result={result} op={kind:?} init={init:?} scalar={scalar:?} underlying_local={underlying:?}",
                     kind = op.kind,
                 );
@@ -379,7 +379,7 @@ impl BodyBuilder<'_> {
         // `value_types[id]` instead of falling back to
         // `scalar_kind_of_expression`, which returns `None` on complex
         // operands like nested `Select`/`Binary` and defaults the local
-        // to u32 — silently mis-typing Bool results and breaking
+        // to u32  -  silently mis-typing Bool results and breaking
         // downstream Select-arm validation.
         let id = op.result.ok_or_else(|| {
             EmitError::InvalidDescriptor(format!(

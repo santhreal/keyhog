@@ -57,7 +57,7 @@ inventory::submit! {
         id: OP_ID,
         build: || qk_gain_backward("gain", "grad_out", "grad_q", 2, 1, 2),
         test_inputs: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![
                 to_f32(&[5.25, 3.0]),
                 to_f32(&[1.0, 1.0, 1.0, 1.0]),
@@ -65,7 +65,7 @@ inventory::submit! {
             ]]
         }),
         expected_output: Some(|| {
-            let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
+            let to_f32 = |w: &[f32]| vyre_primitives::wire::pack_f32_slice(w);
             vec![vec![to_f32(&[5.25, 5.25, 3.0, 3.0])]]
         }),
         category: Some("nn"),
