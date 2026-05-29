@@ -72,7 +72,7 @@ web = ["keyhog-sources/web"]
 verify = ["keyhog-verifier/live"]
 gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
-cuda = ["keyhog-scanner/cuda"]         # CUDA backend (NVIDIA-only, libcuda.so required)
+cuda = ["keyhog-scanner/cuda"]         # no-op alias: CUDA is the primary GPU backend on Linux, always compiled + runtime-loaded
 # Interactive TUI scan dashboard. Pulled in by default; can be turned
 # off in size-constrained builds via `--no-default-features`. Adds
 # ratatui + crossterm to the dependency closure.
