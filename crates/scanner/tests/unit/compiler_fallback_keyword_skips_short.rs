@@ -1,15 +1,13 @@
 //! Keywords shorter than 4 chars are excluded from fallback AC.
 
 use keyhog_scanner::compiler::build_fallback_keyword_ac;
-use keyhog_scanner::types::CompiledPattern;
-use regex::Regex;
-use std::sync::Arc;
+use keyhog_scanner::types::{CompiledPattern, LazyRegex};
 
 #[test]
 fn compiler_fallback_keyword_skips_short() {
     let pattern = CompiledPattern {
         detector_index: 0,
-        regex: Arc::new(Regex::new("key=[a-z0-9]{16}").unwrap()),
+        regex: LazyRegex::detector("key=[a-z0-9]{16}"),
         group: None,
         client_safe: false,
     };

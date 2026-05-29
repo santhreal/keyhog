@@ -232,7 +232,7 @@ pub fn shared_regex_compile(
     let regex = regex::RegexBuilder::new(pattern)
         .case_insensitive(true)
         .size_limit(REGEX_SIZE_LIMIT_BYTES)
-        .dfa_size_limit(REGEX_SIZE_LIMIT_BYTES)
+        .dfa_size_limit(regex_dfa_limit())
         .crlf(true)
         .build()?;
     Ok(std::sync::Arc::new(regex))
@@ -281,7 +281,7 @@ pub(crate) fn shared_regex(
 pub fn compile_companion(spec: &CompanionSpec, detector_id: &str) -> Result<CompiledCompanion> {
     let regex = regex::RegexBuilder::new(&spec.regex)
         .size_limit(REGEX_SIZE_LIMIT_BYTES)
-        .dfa_size_limit(REGEX_SIZE_LIMIT_BYTES)
+        .dfa_size_limit(regex_dfa_limit())
         .crlf(true)
         .build()
         .map_err(|e| ScanError::RegexCompile {

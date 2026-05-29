@@ -9,6 +9,7 @@ pub mod explain_aws_access_key;
 pub mod hook_blocks_secret_allows_clean;
 pub mod incremental_rescan_reports_unchanged_secret;
 pub mod keyhogignore_excludes_file;
+pub mod named_detector_structured_keys_fire_at_default;
 pub mod realworld_configs;
 pub mod scan_clean_file_exit_zero;
 pub mod scan_dedup_none_reports_all_occurrences;

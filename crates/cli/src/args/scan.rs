@@ -281,6 +281,15 @@ pub struct ScanArgs {
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub max_file_size: Option<usize>,
 
+    /// Per-regex lazy-DFA cache size limit, e.g. "256KB" or "1MB" (default
+    /// 1 MiB). This is the dominant per-worker scan-memory knob: peak memory
+    /// is roughly `active_detectors × this_limit × worker_threads`. Lower it on
+    /// memory-constrained or many-core hosts (complex detectors fall back to
+    /// slower NFA simulation); raise it for maximum throughput. Config:
+    /// `regex_dfa_limit` in `.keyhog.toml`; this flag overrides it.
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
+    pub regex_dfa_limit: Option<usize>,
+
     /// Custom input sources to enable (pluggable).
     #[arg(long, value_name = "NAME")]
     pub source: Option<Vec<String>>,

@@ -66,7 +66,7 @@ fn scan_finds_planted_aws_key_and_returns_exit_1() {
     assert!(!arr.is_empty(), "expected at least one finding");
     let aws = arr
         .iter()
-        .find(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-access-key"));
+        .find(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("hot-aws_key"));
     assert!(
         aws.is_some(),
         "expected aws-access-key finding; got: {arr:?}",
@@ -698,7 +698,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
     let arr = findings.as_array().expect("array");
     assert!(
         arr.iter()
-            .any(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-access-key")),
+            .any(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("hot-aws_key")),
         "daemon wire path must return aws finding; got {arr:?}"
     );
 }

@@ -148,13 +148,41 @@ Restart the scanner and the new detector is loaded alongside the
 built-ins. There's no opt-in, no flag, no rebuild - TOML in, detector
 out.
 
-## Running a subset of detectors
+## Disabling specific detectors
 
-There is no per-ID enable/disable flag. The detector set is the corpus
-keyhog loads, so you control it by choosing which TOMLs are present:
+Turn off a detector by id in `.keyhog.toml`:
+
+```toml
+[detector.aws-access-key]
+enabled = false
+
+[detector.generic-secret]
+enabled = false
+```
+
+Detector ids are the `detector_id` field in `--format json`/`jsonl` output, or
+the left column of `keyhog detectors`. The high-precision fast-path detectors
+are prefixed `hot-` (e.g. `hot-aws_key`); a service like AWS can have both a
+`hot-` detector and a TOML detector, so disable both to silence it entirely:
+
+```toml
+[detector.hot-aws_key]
+enabled = false
+[detector.aws-access-key]
+enabled = false
+```
+
+Disabled TOML detectors are dropped before the corpus compiles (zero scan
+cost); disabled hot-pattern findings are filtered from the report. If an id
+matches nothing in the loaded corpus, keyhog warns rather than silently
+ignoring it.
+
+## Running only a chosen subset
+
+To run a curated set instead of the full corpus, point `--detectors` at a
+directory holding only the TOMLs you want:
 
 ```sh
-# Copy just the detectors you want into a directory and point at it.
 mkdir my-detectors
 cp detectors/stripe-secret-key.toml detectors/aws-*.toml my-detectors/
 keyhog scan . --detectors my-detectors/     # or KEYHOG_DETECTORS=my-detectors
