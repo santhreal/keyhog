@@ -85,8 +85,9 @@ pub const KNOWN_PREFIXES: &[&str] = &[
 /// placeholder penalty in `apply_post_ml_penalties` had already slammed
 /// these to ~0.05, but the unconditional `final_score.max(0.8)` in
 /// `scan_postprocess` then lifted them straight back. Mirror corpus
-/// 2026-05-29: 154 docs-example FPs across `ghp_`/`AKIA`/`xoxb-`/`sk_live_`
-/// all surfaced through this exact path; this single guard kills them.
+/// 2026-05-29: 154 docs-example FPs across the GitHub PAT, AWS access
+/// key, Slack bot token, and Stripe secret key prefix families all
+/// surfaced through this exact path; this single guard kills them.
 #[must_use]
 pub fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
     if super::penalties::contains_placeholder_word(credential)
