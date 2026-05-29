@@ -167,7 +167,6 @@ pub fn contains_evasion(text: &str) -> bool {
     !detect_unicode_attacks(text).is_empty()
 }
 
-/// Cyrillic characters that look like Latin
 fn cyrillic_to_latin(ch: char) -> Option<char> {
     match ch {
         // Lowercase Cyrillic lookalikes
@@ -183,6 +182,7 @@ fn cyrillic_to_latin(ch: char) -> Option<char> {
         'ѕ' => Some('s'), // U+0455
         'һ' => Some('h'), // U+04BB
         'ɡ' => Some('g'), // U+0261
+        'ї' => Some('i'), // U+0457
         // Uppercase
         'А' => Some('A'), // U+0410
         'В' => Some('B'), // U+0412
@@ -198,6 +198,7 @@ fn cyrillic_to_latin(ch: char) -> Option<char> {
         'Т' => Some('T'), // U+0422
         'Х' => Some('X'), // U+0425
         'Ү' => Some('Y'), // U+04AE
+        'Ї' => Some('I'), // U+0407
         _ => None,
     }
 }
@@ -272,7 +273,8 @@ fn is_zero_width(ch: char) -> bool {
         '\u{2060}' | // Word Joiner
         '\u{180E}' | // Mongolian Vowel Separator
         '\u{200E}' | // Left-to-Right Mark
-        '\u{200F}' // Right-to-Left Mark
+        '\u{200F}' | // Right-to-Left Mark
+        '\u{00AD}'   // Soft Hyphen
     )
 }
 
