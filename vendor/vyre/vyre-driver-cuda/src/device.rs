@@ -151,6 +151,21 @@ impl CudaDeviceCaps {
     /// Returns an error when the CUDA driver cannot initialize or report its
     /// visible device count.
     pub fn visible_device_count() -> Result<usize, String> {
+        // With cudarc's `dynamic-loading` feature the CUDA libraries are
+        // dlopen'd lazily, and the first driver call (`cuInit` below) PANICS
+        // via `panic_no_lib_found` when libcuda is absent rather than
+        // returning a CUresult. Probe for the library first - `is_culib_present`
+        // only attempts the dlopen and never calls into the driver - so hosts
+        // without the NVIDIA runtime (CI runners, CPU-only machines) get a
+        // recoverable error and fall back to wgpu/CPU instead of aborting.
+        // SAFETY: `is_culib_present` performs a dlopen probe with no driver
+        // calls and no shared mutable state; it is sound on any host.
+        if !unsafe { cudarc::driver::sys::is_culib_present() } {
+            return Err(
+                "CUDA driver library (libcuda) is not present on this host. Fix: install the NVIDIA driver, or run on the wgpu/CPU path - this is expected on CI runners and machines without an NVIDIA GPU."
+                    .to_string(),
+            );
+        }
         result::init().map_err(|e| {
             format!(
                 "CUDA driver init failed: {e}. Fix: verify `nvidia-smi` succeeds and libcuda.so from the NVIDIA driver is visible to this process."
@@ -711,4 +726,3 @@ mod tests {
         );
     }
 }
-
