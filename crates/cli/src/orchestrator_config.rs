@@ -253,7 +253,9 @@ pub(crate) fn require_non_empty_detectors(
 /// shipping divergent copies. Pre-2026-05-24 each subcommand had its
 /// own load+fallback wrapper and the copies had drifted on error
 /// messages and on the fallback-to-embedded branch - kimi-dedup rows #4-6.
-pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+// `pub` (was pub(crate)) so the relocated explain test loads the embedded
+// corpus through the same path production uses (no_inline_tests_in_src gate).
+pub fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
     if path.exists() && path.is_dir() {
         let loaded = load_detectors(path).context("loading detectors from directory")?;
         require_non_empty_detectors(&loaded, path)?;

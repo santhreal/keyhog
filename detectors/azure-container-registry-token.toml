@@ -16,7 +16,12 @@ description = "Azure Container Registry JWT access token with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:ACR|azurecr)[\\w_]*(?:USERNAME|USER)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+# \b before ACR + an 8-char capture floor. The old unanchored, min-1
+# capture matched the "ACR" *inside* "MACRO": LLVM's Dwarf.h
+# `DW_MACRO_lo_user = 0xe0` parsed as ACR(o_lo_)USER = 0xe0 and surfaced
+# `0xe0` as an ACR username (conf 0.8). Dogfood 2026-05-29. The word
+# boundary stops mid-word ACR matches; {8,} drops short hex macro values.
+regex = "(?:\\bACR|azurecr)[\\w]*(?:USERNAME|USER)[=:\\s\"'']+([a-zA-Z0-9_-]{8,})"
 description = "Azure Container Registry username with captured token reference"
 group = 1
 

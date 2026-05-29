@@ -1,26 +1,28 @@
 # Docs: https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens
-# Format: Prefix shpca_, shpat_, or shpss_ followed by 32 hex chars
+# Format: Prefix shpca_ followed by 32 hex chars (custom app access token)
 # Verify: API call to {{shop}}.myshopify.com/admin/api/{version}/shop.json
-# Prefix: shpca_, shpat_, shpss_
+# Prefix: shpca_
+#
+# Scope: this detector owns ONLY the `shpca_` (custom app) token shape.
+# The `shpat_` (admin API) and `shpss_` (storefront) shapes have their own
+# dedicated detectors - `shopify-admin-api-token` and
+# `shopify-storefront-api-token`. Patterns for those two prefixes lived here
+# too and made every admin/storefront token report twice (once as the
+# specific type, once as the generic "Shopify Access Token"): identical
+# offset + value, two detector names. Removed so each Shopify prefix maps to
+# exactly one detector. This file now matches its own contract, which has
+# always declared `shpca_` only.
 
 [detector]
 id = "shopify-access-token"
 name = "Shopify Access Token"
 service = "shopify"
 severity = "critical"
-keywords = ["shpca_", "shpat_", "shpss_", "shopify"]
+keywords = ["shpca_", "shopify"]
 
 [[detector.patterns]]
 regex = 'shpca_[a-f0-9]{32}'
 description = "Shopify custom app access token"
-
-[[detector.patterns]]
-regex = 'shpat_[a-f0-9]{32}'
-description = "Shopify admin API access token"
-
-[[detector.patterns]]
-regex = 'shpss_[a-f0-9]{32}'
-description = "Shopify storefront access token"
 
 # NOTE: live verification disabled. `{{shop}}` was never defined as a
 # capture group or companion. kimi-wave3 §1. To re-enable, add a

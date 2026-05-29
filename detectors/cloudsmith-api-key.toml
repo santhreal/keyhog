@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["cs_", "cloudsmith", "CLOUDSMITH_API_KEY"]
 
 [[detector.patterns]]
-regex = "cs_[a-zA-Z0-9]{32,48}"
+regex = "(?-i)cs_[a-zA-Z0-9]{32,48}"
 description = "Cloudsmith API key with cs_ prefix"
 
 [[detector.patterns]]

@@ -128,7 +128,7 @@ pub(super) fn check_markers(
 
     // Documentation/placeholder markers embedded *inside* a
     // known-prefix token (e.g. `ghp_EXAMPLE_TOKEN_FROM_DOCS`,
-    // `AKIAEXAMPLEEXAMPLE12`, `sk_live_PLACEHOLDER_NOT_A_REAL_KEY`,
+    // `AKIA_EXAMPLE_EXAMPLE_12`, `sk_live_PLACEHOLDER_NOT_A_REAL_KEY`,
     // `xoxb-…-EXAMPLE-TOKEN`). The general EXAMPLE check at the
     // top requires a *word-boundary* token match, which misses
     // these because the marker is surrounded by alphanumerics

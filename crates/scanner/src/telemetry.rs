@@ -94,12 +94,12 @@ pub fn record_example_suppression(
 ) {
     let t = cell();
     t.example_suppressions.fetch_add(1, Ordering::Relaxed);
-    
+
     // KH-120: Wrap dogfood logging events behind static capability flags to eliminate overhead during silent scans.
     if !is_dogfood_enabled() {
         return;
     }
-    
+
     let redacted = redact_credential(credential);
     if let Ok(mut events) = t.events.lock() {
         events.push(DogfoodEvent::ExampleSuppressed {

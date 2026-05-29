@@ -471,15 +471,34 @@ fn extract_template_literal_continuation(line: &str) -> Option<(String, bool)> {
         }
         if in_template && ch == '$' && chars.peek() == Some(&'{') {
             chars.next();
+            // Inside a `${...}` interpolation, string-literal contents ARE
+            // concatenation fragments: `ghp_${"BODY"}` reassembles to
+            // `ghp_BODY`. Pull the bytes inside any "..."/'...'/`...` and
+            // append them; everything else (bare identifiers like
+            // `${token}`, operators, whitespace) is a runtime expression,
+            // not literal text, so it's skipped - which keeps variable
+            // references from polluting the reassembled candidate.
             let mut brace_depth = 1;
+            let mut in_str: Option<char> = None;
             for c in chars.by_ref() {
-                if c == '{' {
-                    brace_depth += 1;
-                } else if c == '}' {
-                    brace_depth -= 1;
-                    if brace_depth == 0 {
-                        break;
+                if let Some(q) = in_str {
+                    if c == q {
+                        in_str = None;
+                    } else {
+                        result.push(c);
                     }
+                    continue;
+                }
+                match c {
+                    '"' | '\'' | '`' => in_str = Some(c),
+                    '{' => brace_depth += 1,
+                    '}' => {
+                        brace_depth -= 1;
+                        if brace_depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
                 }
             }
             continue;

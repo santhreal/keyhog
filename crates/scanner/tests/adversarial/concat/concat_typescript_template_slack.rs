@@ -7,7 +7,7 @@ use oracle_support::scan_text;
 #[test]
 fn concat_typescript_template_slack() {
     let body = r#"const a = "xoxb-";
-const b = "123456789012-1234567890123";
+const b = "123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx";
 export const token = `${a}${b}`;
 "#;
     let matches = scan_text(body, "concat-ts-slack.txt");

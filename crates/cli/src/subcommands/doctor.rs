@@ -183,6 +183,29 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         }
     }
 
+    // GPU scan-path self-test. Before this, `doctor` reported "keyhog works"
+    // while `backend --self-test` exited 4 on a broken GPU AC kernel - the
+    // two health checks disagreed and a user trusting `doctor` never learned
+    // their GPU path was dead. Surface the production GPU verdict here too.
+    // A FAIL is a WARNING, not unhealthy: keyhog falls back to SIMD/CPU so
+    // recall is preserved; only large-file (>=16 MiB) GPU acceleration is
+    // lost. Skipped on no-GPU / software-renderer hosts (matches backend
+    // --self-test's SKIP path, so a headless CI box stays green).
+    if hw.gpu_available && !hw.gpu_is_software {
+        match keyhog_scanner::gpu::vyre_ac_kernel_self_test() {
+            Ok(report) => println!(
+                "  gpu scan path  {green}PASS{reset}  {dim}AC kernel matches={}, backend={}{reset}",
+                report.matches, report.backend_id
+            ),
+            Err(e) => {
+                warned = true;
+                println!(
+                    "  gpu scan path  {yellow}DEGRADED{reset}  GPU AC kernel self-test failed; scans fall back to SIMD/CPU (recall preserved, large-file GPU acceleration lost).\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}"
+                );
+            }
+        }
+    }
+
     // ── Summary ───────────────────────────────────────────────────────
     println!();
     if healthy && !warned {

@@ -89,6 +89,11 @@ struct SarifResult {
     /// shell-interpolation reference. Tier-B #15 + #17.
     #[serde(skip_serializing_if = "Option::is_none")]
     fixes: Option<Vec<SarifFix>>,
+    /// SARIF `partialFingerprints` - stable per-finding identity (the
+    /// credential hash) so GitHub code-scanning dedups alerts across runs
+    /// instead of re-opening the same leak every scan. See `sarif_uri`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partial_fingerprints: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -315,6 +320,9 @@ impl<W: Write + Send> SarifReporter<W> {
                 Some(related_locations)
             },
             fixes,
+            partial_fingerprints: super::sarif_uri::credential_fingerprints(
+                &finding.credential_hash,
+            ),
         }
     }
 
@@ -358,6 +366,7 @@ impl<W: Write + Send> SarifReporter<W> {
                     "severity".to_string(),
                     serde_json::Value::String(format!("{:?}", finding.severity).to_lowercase()),
                 );
+                super::sarif_uri::apply_code_scanning_props(&mut props, finding.severity);
                 props
             }),
         }

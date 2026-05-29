@@ -43,6 +43,12 @@ codewalk = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 rayon = { workspace = true }
+# Concurrent dedup/seen-path maps in the always-on filesystem walker
+# (`filesystem.rs`). Was previously only present transitively via other
+# workspace members, so reduced-feature builds (e.g. `--features ci`) failed
+# to resolve the `dashmap` import. Declared directly here so every feature
+# combination compiles.
+dashmap = { workspace = true }
 gix = { workspace = true, optional = true }
 memmap2 = { workspace = true }
 memchr = { workspace = true }

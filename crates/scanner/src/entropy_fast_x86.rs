@@ -3,7 +3,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use crate::entropy_fast::{get_log2_table, HIST_SCRATCH, shannon_entropy_scalar};
+use crate::entropy_fast::{get_log2_table, shannon_entropy_scalar, HIST_SCRATCH};
 
 /// AVX2 path: 4-way parallel histogram to break load-add-store dependency chains.
 #[cfg(target_arch = "x86_64")]
@@ -24,7 +24,7 @@ pub(crate) unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
     for j in (0..1024).step_by(8) {
         _mm256_storeu_si256(scratch[j..].as_mut_ptr() as *mut _, zero);
     }
-    
+
     let (c0, rest) = scratch.split_at_mut(256);
     let (c1, rest) = rest.split_at_mut(256);
     let (c2, c3) = rest.split_at_mut(256);
@@ -245,7 +245,7 @@ pub(crate) unsafe fn shannon_entropy_sse2(data: &[u8]) -> f64 {
     while i < end32 {
         let v0 = _mm_load_si128(ptr.add(i) as *const _);
         let v1 = _mm_load_si128(ptr.add(i + 16) as *const _);
-        
+
         let cmp0 = _mm_cmpeq_epi8(v0, zeros);
         let cmp1 = _mm_cmpeq_epi8(v1, zeros);
         let mask0 = _mm_movemask_epi8(cmp0) as u32;
@@ -361,7 +361,7 @@ pub(crate) unsafe fn has_high_entropy_fast_x86(data: &[u8], threshold: f64) -> b
 
     let mut min_v = v;
     let mut max_v = v;
-    
+
     let shuf1 = _mm_srli_si128(min_v, 8);
     min_v = _mm_min_epu8(min_v, shuf1);
     let shuf1_max = _mm_srli_si128(max_v, 8);
@@ -411,7 +411,7 @@ pub(crate) unsafe fn has_high_entropy_fast_x86(data: &[u8], threshold: f64) -> b
     check_shift!(13);
     check_shift!(14);
     check_shift!(15);
-    
+
     let unique = 16 - dup_mask.count_ones();
 
     if (unique < 4 && threshold >= 1.585) || (unique < 4 && spread < 16 && threshold >= 2.0) {

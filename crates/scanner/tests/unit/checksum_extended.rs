@@ -271,7 +271,10 @@ fn github_fine_grained_empty_not_applicable() {
 
 #[test]
 fn validator_ids_match_expected() {
-    assert_eq!(GithubClassicPatValidator.validator_id(), "github-classic-pat");
+    assert_eq!(
+        GithubClassicPatValidator.validator_id(),
+        "github-classic-pat"
+    );
     assert_eq!(
         GithubFineGrainedPatValidator.validator_id(),
         "github-fine-grained-pat"

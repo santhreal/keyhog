@@ -130,7 +130,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                         group: pattern.group,
                         client_safe: pattern.client_safe,
                     },
-                    detector.keywords.clone(),
+                    Vec::new(),
                 ));
             }
 

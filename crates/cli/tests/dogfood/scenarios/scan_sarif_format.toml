@@ -3,4 +3,4 @@ corpus = ["aws_leak.env"]
 args = ["scan", "--format", "sarif", "{corpus}/aws_leak.env"]
 exit_code = 1
 max_ms = 20000
-stdout_contains = ["\"$schema\"", "2.1.0", "hot-aws_key"]
+stdout_contains = ["\"$schema\"", "2.1.0", "aws-access-key"]

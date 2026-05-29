@@ -4,8 +4,8 @@ use keyhog_core::Chunk;
 
 /// Match secrets that have been reversed character-by-character to dodge a
 /// naïve byte-substring scan. Cheap evasion the adversarial corpus
-/// (release-2026-04-26) hits multiple times - `RNK1ESEMURKWESFEDBA46AIKA`
-/// is exactly the AWS access-key-id `AKIA64ABDEFSEWKRUMSEK1NR` reversed.
+/// (release-2026-04-26) hits multiple times - `RNK1ESEMURKWESFEDBA-46AIKA`
+/// is exactly the AWS access-key-id `AKIA-64ABDEFSEWKRUMSEK1NR` reversed.
 ///
 /// The reverse decoder runs *after* the other decoders fail to match. It only
 /// emits a decoded chunk when the candidate is at least 16 chars long; below

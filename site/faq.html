@@ -76,10 +76,11 @@ keyhog ever makes are:</p>
 <ul>
   <li><code>--verify</code> — explicit live verification. Disabled by
   default; refused under <code>--lockdown</code>.</li>
-  <li><code>--github-org</code> / <code>--s3</code> sources — explicit data
-  sources where you've configured what to fetch.</li>
-  <li>Release update check — <strong>disabled by default</strong>, opt in
-  with <code>keyhog config set updates.check true</code>.</li>
+  <li><code>--github-org</code> / <code>--s3-bucket</code> sources — explicit
+  data sources where you've configured what to fetch.</li>
+  <li>Release update check — only runs when you explicitly invoke
+  <code>keyhog update</code> (or <code>keyhog update --check</code>). There is
+  no background phone-home.</li>
 </ul>
 
 <p>Run with <code>strace -e network</code> if you want to verify the wire

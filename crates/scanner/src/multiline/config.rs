@@ -129,7 +129,11 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let has_explicit_concat = text.contains("\" +") || text.contains("' +");
     let has_backslash_cont = text.contains("\" \\") || text.contains("' \\");
     let has_template = memchr::memchr(b'`', bytes).is_some();
-    let has_paste = text.contains("paste0(");
+    // Function-style string concatenation: R's paste()/paste0() and Rust's
+    // concat!() macro. All three splice multiple string literals into one
+    // value, so any of them is a concat indicator.
+    let has_paste =
+        text.contains("paste0(") || text.contains("paste(") || text.contains("concat!(");
     let has_implicit = bytes.windows(3).any(|window| {
         (window[0] == b'"' && window[1] == b' ' && window[2] == b'"')
             || (window[0] == b'\'' && window[1] == b' ' && window[2] == b'\'')
@@ -157,6 +161,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
             || trimmed.starts_with("+ ")
             || trimmed.contains("paste0(")
             || trimmed.contains("paste(")
+            || trimmed.contains("concat!(")
             || trimmed.contains("\" +")
             || trimmed.contains("' +")
             || trimmed.contains("+ \"")
@@ -166,6 +171,21 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
             || trimmed.contains("' '")
             || has_var_ref_concat_line(trimmed)
             || (trimmed.ends_with('`') && trimmed.matches('`').count() == 1)
+            // String literal interpolated INTO a template literal:
+            // `ghp_${"BODY"}` / `${'a'}${'b'}`. The `${"`/`${'` shape is the
+            // concat-evasion signal - a string literal spliced into an
+            // interpolation. Deliberately narrow: bare `${ident}` (normal
+            // runtime interpolation, ubiquitous in JS/TS) is NOT flagged, so
+            // this adds no preprocessing cost to ordinary template code.
+            || trimmed.contains("${\"")
+            || trimmed.contains("${'")
+            // Adjacent template interpolations `${a}${b}` - the close-brace
+            // immediately followed by `${` is the concat-via-interpolation
+            // signal. Ordinary single interpolation (`Hi ${name}!`) has
+            // literal text between/around the braces and never produces
+            // `}${`, so this stays clear of the ubiquitous JS/TS template
+            // case and adds no cost to it.
+            || trimmed.contains("}${")
         {
             return true;
         }

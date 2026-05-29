@@ -91,9 +91,7 @@ pub(crate) async fn resolved_client_for_url(
         // be explicit for clarity.
         let target = format!("{host}:{port}");
         let addrs: std::result::Result<Vec<std::net::SocketAddr>, std::io::Error> =
-            tokio::net::lookup_host(target.as_str())
-                .await
-                .map(|iter| iter.collect());
+            crate::ssrf::resolve_dns_cached(target.as_str()).await;
         match addrs {
             Ok(addrs) if addrs.is_empty() => {
                 return Err(VerificationResult::Error(

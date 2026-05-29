@@ -48,9 +48,13 @@ extra_scripts = "<script src='data/detectors-loader.js' defer></script>"
 
 <h2>Running a subset</h2>
 
-<p>Restrict a scan to a single detector with <code>--detector</code> (repeatable):</p>
+<p>There is no per-id flag. Point <code>--detectors</code> at a directory
+holding only the TOMLs you want (or disable individual detectors in
+<code>.keyhog.toml</code> with <code>[detector.&lt;id&gt;] enabled = false</code>):</p>
 
-<pre><code><span class="prompt">$</span> keyhog scan . --detector aws-access-key --detector stripe-secret-key</code></pre>
+<pre><code><span class="prompt">$</span> mkdir my-detectors
+<span class="prompt">$</span> cp detectors/aws-*.toml detectors/stripe-secret-key.toml my-detectors/
+<span class="prompt">$</span> keyhog scan . --detectors my-detectors/</code></pre>
 
 <p>Or list every detector that matches a filter:</p>
 

@@ -35,7 +35,7 @@ fn detects_secret_in_utf16le_file() {
         Some(1),
         "secret in a UTF-16LE file must be found"
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("github_pat"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("github-classic-pat"));
 }
 
 #[test]
@@ -48,5 +48,5 @@ fn detects_secret_in_utf16be_file() {
         Some(1),
         "secret in a UTF-16BE file must be found"
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("github_pat"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("github-classic-pat"));
 }

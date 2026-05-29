@@ -91,9 +91,10 @@ files, the same way git locates <code>.gitignore</code>. Nested files add
 to (don't override) parent files. The repo-root file is the
 highest-precedence override.</p>
 
-<p>Override the file with <code>--keyhogignore PATH</code>. Disable
-allowlists entirely with <code>--no-keyhogignore</code> — useful when
-running a security audit that should ignore the team's own suppressions.</p>
+<p>The <code>.keyhogignore</code> is auto-discovered at the scan root. To run
+a security audit that ignores the team's own suppressions, scan a tree
+without that file (rename it, or scan a clean checkout) - the report then
+surfaces every finding, including the allowlisted ones.</p>
 
 <h2>What does NOT belong here</h2>
 
@@ -106,7 +107,7 @@ running a security audit that should ignore the team's own suppressions.</p>
   <a href="baseline.html">baseline</a>. Baselines track snapshots; the
   ignore file tracks individually-reviewed exemptions.</li>
   <li><strong>"All findings in test files."</strong> Use
-  <code>--exclude '**/test/**'</code> at the CLI or add it to
+  <code>--exclude-paths '**/test/**'</code> at the CLI or add it to
   <code>.keyhog.toml</code>. The ignore file should be for individually-
   reviewed exceptions, not bulk filters.</li>
 </ul>

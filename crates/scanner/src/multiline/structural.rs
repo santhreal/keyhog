@@ -104,6 +104,31 @@ pub(super) fn collect_structural_fragments(
         current_struct_offset += joined.len() + 1;
     }
 
+    // Third pass: template-literal variable interpolation.
+    //   const a = "xoxb-";
+    //   const b = "...";
+    //   token = `${a}${b}`;
+    // Resolve each `${ident}` / `${"lit"}` in a template RHS to its recorded
+    // literal value and concatenate. Gated on the `}${` adjacent-interpolation
+    // signal so ordinary single-interpolation template code never enters this
+    // pass (keeps cold-path JS/TS scanning free of the cost).
+    if lines.iter().any(|line| line.contains("}${")) {
+        let tmpl_vars = collect_template_vars(lines);
+        for joined in lines
+            .iter()
+            .filter_map(|line| resolve_template_reference(line, &tmpl_vars))
+            .filter(|j| j.len() >= 12)
+        {
+            structural_joined.push(joined.clone());
+            structural_mappings.push(LineMapping {
+                start_offset: current_struct_offset,
+                end_offset: current_struct_offset + joined.len(),
+                line_number: SYNTHETIC_BASE_LINE,
+            });
+            current_struct_offset += joined.len() + 1;
+        }
+    }
+
     for cluster in clusters {
         if cluster.len() >= 2 {
             let joined: String = cluster.iter().map(|(_, _, value)| value.as_str()).collect();
@@ -161,6 +186,90 @@ fn resolve_concat_reference(
         joined.push_str(&value.1);
     }
     Some(joined)
+}
+
+/// Resolve a template-literal RHS like `` `${a}${b}` `` (or `` `${"lit"}` ``)
+/// against a map of recorded variable literals. Each `${ident}` is replaced by
+/// its value, `${"..."}`/`${'...'}` by the inner literal, and any literal text
+/// in the template is kept verbatim. Returns `None` if any interpolation is an
+/// unresolved reference (so a partial/garbage candidate is never emitted) or if
+/// nothing was resolved.
+fn resolve_template_reference(
+    line: &str,
+    vars: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let trimmed = line.trim();
+    let open = trimmed.find('`')?;
+    let rest = &trimmed[open + 1..];
+    let close = rest.find('`')?;
+    let template = &rest[..close];
+    if !template.contains("${") {
+        return None;
+    }
+
+    let mut joined = String::new();
+    let mut chars = template.chars().peekable();
+    let mut resolved = 0usize;
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut inner = String::new();
+            let mut depth = 1;
+            for c in chars.by_ref() {
+                if c == '{' {
+                    depth += 1;
+                } else if c == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                inner.push(c);
+            }
+            let inner = inner.trim();
+            if inner.len() >= 2
+                && ((inner.starts_with('"') && inner.ends_with('"'))
+                    || (inner.starts_with('\'') && inner.ends_with('\'')))
+            {
+                joined.push_str(&inner[1..inner.len() - 1]);
+                resolved += 1;
+            } else if let Some(value) = vars.get(inner) {
+                joined.push_str(value);
+                resolved += 1;
+            } else {
+                return None;
+            }
+        } else {
+            joined.push(ch);
+        }
+    }
+
+    (resolved >= 1).then_some(joined)
+}
+
+/// Collect `ident = "value"` assignments for the template-interpolation pass.
+/// Unlike `ASSIGN_RE` this admits single-character names (`a`, `b`) and the
+/// `$`-prefixed identifiers common in JS/TS, because template references are
+/// frequently terse (`${a}`). Only built when the `}${` concat signal is
+/// present, so the extra regex never runs on ordinary code.
+fn collect_template_vars(lines: &[&str]) -> std::collections::HashMap<String, String> {
+    static TVAR_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
+        Regex::new(
+            r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#,
+        )
+        .ok()
+    });
+    let mut map = std::collections::HashMap::new();
+    if let Some(re) = TVAR_RE.as_ref() {
+        for line in lines {
+            if let Some(caps) = re.captures(line) {
+                if let (Some(name), Some(value)) = (caps.get(1), caps.get(2)) {
+                    map.insert(name.as_str().to_string(), value.as_str().to_string());
+                }
+            }
+        }
+    }
+    map
 }
 
 fn is_related_variable(v1: &str, v2: &str) -> bool {

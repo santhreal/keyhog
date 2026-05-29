@@ -5,27 +5,33 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 
 | Exit | Meaning                                                            |
 |------|--------------------------------------------------------------------|
-| `0`  | Scan completed, zero findings emitted.                             |
-| `1`  | Scan completed, one or more findings emitted (unverified or verified-live). |
-| `2`  | Runtime error: bad CLI args, config parse failure, I/O error, panic, etc. |
-| `11` | Scanner thread panicked. Distinct from `2` so CI can distinguish a code bug from a config error. |
+| `0`  | Scan completed, zero findings.                                     |
+| `1`  | Findings present, NONE confirmed live (unverified, or verified-dead). |
+| `2`  | User error: unknown CLI flag, `.keyhog.toml` parse failure, bad `--baseline`. |
+| `3`  | System error: I/O failure, source-backend failure, or detector-corpus audit failure. |
+| `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
+| `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
+| `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
+| `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
 ## `0` (clean)
 
 Use case: a CI step like `keyhog scan .` exits 0 when the working tree
 is clean. The job stays green.
 
-`--verify` does NOT change the exit code on its own. A scan that finds
-a credential but verifies it as dead still exits `1` (the credential
-was in the file, even if the API rejects it). To gate ONLY on live
-credentials:
+With `--verify`, the exit code escalates when a credential is confirmed
+live: a found secret the vendor API accepts exits `10`, while a found
+secret that verifies dead (or wasn't verified) exits `1`. So gating ONLY
+on live credentials needs no JSON parsing - branch on the exit code:
 
 ```sh
-keyhog scan . --verify --format json \
-  | jq -e 'any(.verification == "verified-live")'
+keyhog scan . --verify
+case $? in
+  0)  echo "clean" ;;
+  10) echo "LIVE credentials present - block + page" ; exit 1 ;;
+  1)  echo "findings, none confirmed live" ;;
+esac
 ```
-
-`jq -e` exits non-zero when the predicate is false.
 
 ## `1` (findings present)
 
@@ -33,15 +39,10 @@ The most common non-zero. CI fails, pre-commit hook blocks the commit,
 PR check turns red. Findings get printed to stdout in whatever format
 `--format` selected.
 
-To distinguish "findings, but all dead" from "findings, some live"
-without parsing JSON:
-
-```sh
-if ! keyhog scan . --verify --format jsonl \
-     | grep -q 'verified-live'; then
-  echo "No live credentials found."
-fi
-```
+Exit `1` means findings exist but, under `--verify`, none were confirmed
+live. A scan that confirms a live credential exits `10` instead (see
+below) - so "findings but all dead" vs "some live" is just `1` vs `10`,
+no JSON parsing required.
 
 ## `2` (runtime error)
 
@@ -59,6 +60,35 @@ Things that exit `2`:
 
 Stderr carries the error message. Stdout may have partial output
 depending on where the error happened.
+
+## `3` (system error)
+
+A failure the operator can't fix by correcting a flag: an I/O error, a
+source backend that couldn't read its input, or a detector-corpus audit
+failure. Distinct from `2` (user error) so a pipeline can retry/route
+differently. Stderr carries the cause.
+
+## `4` (health / self-test failure)
+
+Returned by the maintenance subcommands, not by `scan`: `keyhog doctor`
+when the install fails its end-to-end self-test, `keyhog repair` when it
+could not restore a working binary, and `keyhog backend` when its
+self-test fails. A health monitor can treat `4` as "binary present but
+not trustworthy."
+
+## `10` (live credentials, or update available)
+
+The highest-severity scan outcome: a `--verify` scan where the vendor
+API **accepted** a found secret - it is real and exfil-capable right now.
+Gate hard on this:
+
+```sh
+keyhog scan . --verify || rc=$?
+[ "${rc:-0}" = "10" ] && { echo "::error::live credential confirmed"; exit 1; }
+```
+
+`keyhog update --check` reuses `10` to mean "a newer release exists"
+(exit `0` = already current), so a self-update cron can branch on it.
 
 ## `11` (scanner panic)
 
@@ -86,12 +116,15 @@ keyhog scan .                # exit 1 stops the shell here
 Or to handle the non-zero explicitly:
 
 ```sh
-keyhog scan . || rc=$?
+keyhog scan . --verify || rc=$?
 case "$rc" in
   0|"")  echo "clean" ;;
-  1)     echo "findings -> opening PR comment" ;;
-  2)     echo "config error -> failing build" ;;
+  1)     echo "findings (none live) -> opening PR comment" ;;
+  10)    echo "LIVE credentials -> block + page on-call" ;;
+  2)     echo "user error (bad flag/config) -> failing build" ;;
+  3)     echo "system error -> retry / investigate" ;;
   11)    echo "scanner panic -> paging on-call" ;;
+  130)   echo "interrupted" ;;
   *)     echo "unknown exit $rc" ;;
 esac
 ```
