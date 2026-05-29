@@ -38,6 +38,7 @@ pub mod massive_adversarial_suite_32;
 pub mod massive_adversarial_suite_33;
 pub mod massive_adversarial_suite_34;
 pub mod massive_adversarial_suite_35;
+pub mod massive_adversarial_suite_36;
 pub mod massive_adversarial_suite_2;
 pub mod massive_adversarial_suite_3;
 pub mod massive_adversarial_suite_4;
