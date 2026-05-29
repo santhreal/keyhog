@@ -66,9 +66,45 @@ const MIN_DECODE_LEN: usize = 16;
 /// Conservative verdict for the confidence pipeline: does this generic
 /// candidate decode to identifiable binary / serialized data? Real secrets
 /// return `false`.
+///
+/// Memoized: a single match is scored on this twice (ML feature #41 in
+/// `ml_features` and the generic-detector confidence penalty in
+/// `confidence::penalties`), and a scan re-encounters the same token across
+/// chunks. Without the cache every call re-decodes and re-parses the bytes.
+/// Thread-local + bounded with wholesale eviction, mirroring
+/// `entropy::shannon_entropy`. The verdict is a pure function of `candidate`,
+/// so caching by content hash is always correct.
 #[must_use]
 pub fn is_encoded_binary(candidate: &str) -> bool {
-    analyze(candidate).is_binary_payload()
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    const MAX_CACHE_ENTRIES: usize = 4096;
+
+    thread_local! {
+        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
+    }
+
+    // FNV-1a over the candidate bytes - the same hash the entropy / ML-score
+    // caches key on.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in candidate.as_bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    CACHE.with(|cache| {
+        if let Some(&verdict) = cache.borrow().get(&hash) {
+            return verdict;
+        }
+        let verdict = analyze(candidate).is_binary_payload();
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= MAX_CACHE_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(hash, verdict);
+        verdict
+    })
 }
 
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe
