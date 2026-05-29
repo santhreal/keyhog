@@ -15,10 +15,15 @@ regex = "(?:CONSUL_HTTP_TOKEN|CONSUL_TOKEN|consul_token|bootstrap_token)[=:\\s\"
 description = "Consul ACL token in environment variable (UUID format)"
 group = 1
 
-[[detector.patterns]]
-regex = "token:\\s*[\"'']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})[\"'']?"
-description = "Consul ACL token in configuration file"
-group = 1
+# The bare `token:\s*<uuid>` config-file pattern was dropped 2026-05-29.
+# YAML `token: <uuid>` is ubiquitous across Kubernetes secrets, Vault
+# config, Linkerd service tokens, Istio meshes, Helm values, etc. -
+# every random UUID in a `token:` YAML field was being attributed to
+# Consul. Mirror v23 traced 70 FPs to this single pattern. The CLI-
+# anchored `SecretID:` pattern below (Consul's actual CLI output
+# format) carries the Consul-specific marker and stays. Every other
+# Consul code path uses `CONSUL_HTTP_TOKEN` / `CONSUL_TOKEN` /
+# `consul_token` / `bootstrap_token`, all handled by pattern #1.
 
 [[detector.patterns]]
 regex = "SecretID:\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"

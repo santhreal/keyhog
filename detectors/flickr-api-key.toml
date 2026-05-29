@@ -8,17 +8,23 @@ id = "flickr-api-key"
 name = "Flickr API Key"
 service = "flickr"
 severity = "medium"
-keywords = ["FLICKR", "flickr", "api_key"]
+keywords = ["FLICKR", "flickr"]
 
 [[detector.patterns]]
 regex = '(?:FLICKR|flickr)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-f0-9]{32})'
 description = "Flickr API key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = 'api_key=([a-f0-9]{32})'
-description = "Flickr API key in URL parameter"
-group = 1
+# Bare `api_key=<32hex>` pattern dropped 2026-05-29. It mis-claimed every
+# random 32-char hex string in any `api_key=` URL parameter on behalf
+# of Flickr. Mirror v23 traced 111 FPs to this single pattern across
+# sha256-hex prefixes, sha1-hex digests, and the 32-hex bodies of 113
+# unrelated services. Flickr's spec is "32 character alphanumeric string"
+# with NO distinctive prefix, so contextless attribution to Flickr is
+# never correct — these belong with `generic-secret` / `generic-api-key`,
+# where the suppression cascade gates them properly. Keywords list
+# narrowed to `FLICKR`/`flickr` so the AC pre-filter no longer admits
+# chunks for the generic `api_key` literal.
 
 [[detector.companions]]
 name = "flickr-api-secret"
