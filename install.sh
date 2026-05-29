@@ -17,7 +17,7 @@
 #   --uninstall       remove the binary + optionally clean up hooks
 #
 # Common flags:
-#   --version=v0.5.34   pin a release tag (default: latest release with assets)
+#   --version=v0.5.37   pin a release tag (default: latest release with assets)
 #   --variant=cuda      force CUDA variant (Linux only)
 #   --variant=cpu       force the default WGPU + SIMD variant
 #   --install-dir=PATH  override $KEYHOG_INSTALL
@@ -356,7 +356,7 @@ resolve_tag() {
     releases_json=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null || true)
     if [ -z "$releases_json" ]; then
         err "Could not query GitHub releases API."
-        err "Try --version=v0.5.34 (or another known tag) explicitly."
+        err "Try --version=v0.5.37 (or another known tag) explicitly."
         exit 1
     fi
 
@@ -387,7 +387,7 @@ resolve_tag() {
 
     if [ -z "$TAG" ]; then
         err "No GitHub release in the last 10 has any assets uploaded."
-        err "Try --version=v0.5.34 (or another known tag) explicitly."
+        err "Try --version=v0.5.37 (or another known tag) explicitly."
         exit 1
     fi
 }

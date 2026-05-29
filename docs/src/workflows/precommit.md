@@ -26,7 +26,7 @@ raw git hooks, add the following to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.34
+    rev: v0.5.37
     hooks:
       - id: keyhog
         stages: [pre-commit]

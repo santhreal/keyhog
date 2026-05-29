@@ -88,7 +88,7 @@ tool, add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.35
+    rev: v0.5.37
     hooks:
       - id: keyhog
         name: keyhog secret scan (staged)
