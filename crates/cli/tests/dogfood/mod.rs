@@ -144,8 +144,7 @@ fn run_scenario(path: &Path) -> Result<(), String> {
 
     // Findings assertions are checked only when the scenario declares them,
     // and require stdout to parse as a JSON findings array.
-    let need_findings =
-        !sc.expect.is_empty() || sc.expect_total.is_some() || !sc.forbid.is_empty();
+    let need_findings = !sc.expect.is_empty() || sc.expect_total.is_some() || !sc.forbid.is_empty();
     if need_findings {
         match serde_json::from_str::<serde_json::Value>(&stdout) {
             Ok(serde_json::Value::Array(arr)) => {
@@ -173,9 +172,9 @@ fn run_scenario(path: &Path) -> Result<(), String> {
                     }
                 }
                 for ex in &sc.expect {
-                    let hit = got
-                        .iter()
-                        .any(|(id, line)| id == &ex.detector_id && (ex.line.is_none() || *line == ex.line));
+                    let hit = got.iter().any(|(id, line)| {
+                        id == &ex.detector_id && (ex.line.is_none() || *line == ex.line)
+                    });
                     if !hit {
                         errs.push(format!(
                             "missing finding {} @line {:?}; got {got:?}",
@@ -212,7 +211,10 @@ fn dogfood_release_gate() {
         .filter(|p| p.extension().is_some_and(|x| x == "toml"))
         .collect();
     files.sort();
-    assert!(!files.is_empty(), "no dogfood scenarios found in {scen_dir:?}");
+    assert!(
+        !files.is_empty(),
+        "no dogfood scenarios found in {scen_dir:?}"
+    );
 
     let mut failures = Vec::new();
     for f in &files {
