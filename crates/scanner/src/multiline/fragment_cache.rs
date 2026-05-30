@@ -86,10 +86,21 @@ impl FragmentCache {
             }
         }
 
-        // Senior Audit §Phase 8: Proximity-Aware Reassembly (God-Mode Taint)
-        // Brute-force O(N^2) join is replaced with proximity gating.
-        // Only join fragments that are physically near each other (<100 lines)
-        // or logically related. This eliminates combinatorial explosion.
+        // Reassembly is SAME-FILE only. Cross-file joins (every AKIA/AIza
+        // assignment in dir X paired with every other matching assignment
+        // in dir X siblings) were observed to cannibalize the standalone
+        // findings: the cross-file `:reassembled` candidate replaces the
+        // legitimate singleton during downstream resolution, and the
+        // synthesized credential gets attributed to a sibling-file path.
+        // Investigator evidence (mirror-pos-0000091.yaml AKIA glued to a
+        // sibling klaviyo sk_) confirmed the singleton was lost.
+        //
+        // Real split-credential patterns (AWS_ACCESS_KEY in one .env paired
+        // with AWS_SECRET in another) are NOT in the corpus and the loss
+        // they cause is concrete: the standalone finding is dropped.
+        // Restrict reassembly to same-path fragments within 100 lines of
+        // each other; preserves the file-boundary split case (chunked
+        // 1MB+ files) without manufacturing cross-file glue.
         if cluster.len() >= 2 {
             let mut candidates = Vec::new();
             for i in 0..cluster.len() {
@@ -100,13 +111,8 @@ impl FragmentCache {
                     let f1 = &cluster[i];
                     let f2 = &cluster[j];
 
-                    let near = if f1.path == f2.path {
-                        (f1.line as isize - f2.line as isize).abs() < 100
-                    } else {
-                        // For cross-file, only join if they share the same directory scope
-                        // (already handled by scoped_key usually, but we check again)
-                        true
-                    };
+                    let near = f1.path == f2.path
+                        && (f1.line as isize - f2.line as isize).abs() < 100;
 
                     if near {
                         let mut joined = Zeroizing::new(String::new());
@@ -143,4 +149,131 @@ fn shard_index(key: &str) -> usize {
     key.bytes()
         .fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize))
         % SHARD_COUNT
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frag(prefix: &str, var: &str, value: &str, line: usize, path: &str) -> SecretFragment {
+        SecretFragment {
+            prefix: prefix.to_string(),
+            var_name: var.to_string(),
+            value: Zeroizing::new(value.to_string()),
+            line,
+            path: Some(Arc::from(path)),
+        }
+    }
+
+    /// Positive truth case: two fragments in the SAME file within 100
+    /// lines must reassemble to a glued candidate. This is the legitimate
+    /// file-boundary-split path used when a credential spans a chunk seam.
+    #[test]
+    fn same_file_fragments_within_window_reassemble() {
+        let cache = FragmentCache::new(64);
+        let dir = "/repo/.env.d";
+        // First call seeds the cluster, no candidates yet.
+        let first = cache.record_and_reassemble(frag(
+            "awskey",
+            "AWS_ACCESS_KEY_PART1",
+            "AKIA0000000000000000",
+            10,
+            &format!("{dir}/keys.env"),
+        ));
+        assert!(
+            first.is_empty(),
+            "single-fragment scope must not yield candidates, got {} candidates",
+            first.len()
+        );
+
+        // Second fragment in the SAME file, within 100 lines.
+        let joined = cache.record_and_reassemble(frag(
+            "awskey",
+            "AWS_ACCESS_KEY_PART2",
+            "BBBBBBBBBBBBBBBBBBBB",
+            20,
+            &format!("{dir}/keys.env"),
+        ));
+        // 2 fragments * (n-1) pairs = 2 ordered pairs yielded.
+        let glued: Vec<String> = joined.iter().map(|z| z.to_string()).collect();
+        assert!(
+            glued
+                .iter()
+                .any(|g| g == "AKIA0000000000000000BBBBBBBBBBBBBBBBBBBB"),
+            "expected forward AKIA||BBBB reassembly in {:?}",
+            glued
+        );
+        assert!(
+            glued
+                .iter()
+                .any(|g| g == "BBBBBBBBBBBBBBBBBBBBAKIA0000000000000000"),
+            "expected reverse BBBB||AKIA reassembly in {:?}",
+            glued
+        );
+        assert_eq!(
+            glued.len(),
+            2,
+            "exactly two ordered pairs expected, got {}: {:?}",
+            glued.len(),
+            glued
+        );
+    }
+
+    /// Adversarial negative twin: two fragments in DIFFERENT files under
+    /// the same directory scope MUST NOT reassemble. This is the regression
+    /// gate for the cross-file cannibalization bug. Before the fix, this
+    /// case produced a glued AKIA||BBBB candidate.
+    #[test]
+    fn cross_file_fragments_do_not_reassemble() {
+        let cache = FragmentCache::new(64);
+        let dir = "/repo/.env.d";
+        let _ = cache.record_and_reassemble(frag(
+            "awskey",
+            "AWS_ACCESS_KEY",
+            "AKIA0000000000000000",
+            6,
+            &format!("{dir}/file_a.yaml"),
+        ));
+        let cross = cache.record_and_reassemble(frag(
+            "awskey",
+            "AWS_ACCESS_KEY",
+            "BBBBBBBBBBBBBBBBBBBB",
+            6,
+            &format!("{dir}/file_b.sh"),
+        ));
+        assert!(
+            cross.is_empty(),
+            "cross-file reassembly must be suppressed, got {} candidates: {:?}",
+            cross.len(),
+            cross.iter().map(|z| z.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    /// Same-file fragments separated by more than the 100-line window are
+    /// not reassembled. This case proves the window gate is still
+    /// load-bearing after the cross-file restriction.
+    #[test]
+    fn same_file_fragments_outside_window_do_not_reassemble() {
+        let cache = FragmentCache::new(64);
+        let path = "/repo/huge.env";
+        let _ = cache.record_and_reassemble(frag(
+            "awskey",
+            "AWS_ACCESS_KEY_A",
+            "AKIA0000000000000000",
+            1,
+            path,
+        ));
+        let far = cache.record_and_reassemble(frag(
+            "awskey",
+            "AWS_ACCESS_KEY_B",
+            "BBBBBBBBBBBBBBBBBBBB",
+            500,
+            path,
+        ));
+        assert!(
+            far.is_empty(),
+            "out-of-window same-file reassembly must be suppressed, got {:?}",
+            far.iter().map(|z| z.to_string()).collect::<Vec<_>>()
+        );
+    }
 }
