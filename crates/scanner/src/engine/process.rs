@@ -96,10 +96,13 @@ impl CompiledScanner {
         };
         let entropy = match_entropy(credential.as_bytes());
 
-        if detector.id.starts_with("generic-") && detector.id != "generic-private-key" {
+        let is_generic = detector.id.starts_with("generic-") && detector.id != "generic-private-key";
+        let is_weakly_anchored = crate::pipeline::is_weakly_anchored_named_detector(&detector.id);
+        if is_generic || is_weakly_anchored {
             // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
             // have lower entropy than random strings. A blanket 3.5 floor misses them.
-            let entropy_floor = generic_entropy_floor(detector.id.as_str(), credential.len());
+            let floor_id = if is_weakly_anchored { "generic-api-key" } else { detector.id.as_str() };
+            let entropy_floor = generic_entropy_floor(floor_id, credential.len());
             if entropy < entropy_floor {
                 return;
             }
@@ -134,7 +137,8 @@ impl CompiledScanner {
         // floor, silently deleting real secrets. Mirror the same anchor=
         // positive-evidence rule the shape-gate bypass already uses so the
         // gate stays load-bearing for generic-* but never buries a named hit.
-        let is_named_detector = crate::confidence::is_service_anchored_detector(&detector.id);
+        let is_named_detector = crate::confidence::is_service_anchored_detector(&detector.id)
+            && !crate::pipeline::is_weakly_anchored_named_detector(&detector.id);
         let Some(score_result) = self.match_confidence(
             entry,
             chunk,

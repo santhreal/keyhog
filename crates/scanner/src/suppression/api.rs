@@ -266,8 +266,11 @@ pub fn should_suppress_named_detector_finding(
     // Generic detectors (generic-secret, generic-private-key, entropy-*)
     // never use this bypass - their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
+    // Weakly anchored named detectors (e.g. datadog-api-key) also do not
+    // bypass shape gates to prevent false positive traps from triggering.
     let bypass_shape_gates = !detector_id.starts_with("generic-")
         && !detector_id.starts_with("entropy-")
+        && !is_weakly_anchored_named_detector(detector_id)
         && detector_id != "private-key";
     should_suppress_inner(
         credential,
@@ -286,5 +289,55 @@ pub fn should_suppress_named_detector_finding(
 /// detectors (everything else) have positive evidence in their regex
 /// that the shape filter would otherwise destroy.
 fn is_generic_or_entropy_detector(detector_id: &str) -> bool {
-    detector_id.starts_with("generic-") || detector_id.starts_with("entropy-")
+    detector_id.starts_with("generic-")
+        || detector_id.starts_with("entropy-")
+        || is_weakly_anchored_named_detector(detector_id)
+}
+
+/// Return true if the detector ID is a named detector that uses a generic/weak
+/// anchor prefix (e.g. `api_key=`, `token=`), exposing it to high false positive rates.
+pub fn is_weakly_anchored_named_detector(detector_id: &str) -> bool {
+    matches!(
+        detector_id,
+        "aerisweather-api-credentials"
+            | "base-api-credentials"
+            | "flickr-api-key"
+            | "saltstack-credentials"
+            | "census-api-key"
+            | "workato-api-credentials"
+            | "adobe-api-key"
+            | "alchemy-api-key"
+            | "azure-openai-api-key"
+            | "datadog-api-key"
+            | "etherscan-api-key"
+            | "spotify-client-credentials"
+            | "bamboohr-api-key"
+            | "calendly-api-key"
+            | "crowdin-api-token"
+            | "github-oauth-secret"
+            | "sonarcloud-token"
+            | "alertmanager-credentials"
+            | "azure-container-registry-token"
+            | "booking-com-api-credentials"
+            | "catchpoint-api-credentials"
+            | "cyberark-credentials"
+            | "dhl-api-credentials"
+            | "looker-api-credentials"
+            | "mlflow-tracking-credentials"
+            | "marketo-api-credentials"
+            | "okta-widget-api-credentials"
+            | "opencart-api-credentials"
+            | "playwright-test-credentials"
+            | "servicenow-api-key"
+            | "snowflake-account-info"
+            | "spacelift-api-key"
+            | "teamcity-api-credentials"
+            | "transifex-api-token"
+            | "tableau-api-token"
+            | "activecampaign-api-key"
+            | "chef-automate-token"
+            | "foundation-api-key"
+            | "getresponse-api-key"
+            | "rudder-api-token"
+    )
 }
