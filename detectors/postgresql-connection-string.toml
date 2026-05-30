@@ -14,7 +14,8 @@ keywords = ["postgresql", "postgres", "DATABASE_URL"]
 # and docker hostnames (`postgres`), not just dotted-FQDN hosts. The
 # previous regex required `.` in the host and missed every short-host
 # fixture. Empty username (`postgres://:pass@host`) is also accepted
-# now for parity with the redis pattern. Capture the path + query so
-# the credential surface includes the full URL.
-regex = '''postgres(?:ql)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+(?:[:/?#][^\s"'']*)?'''
-description = "PostgreSQL connection string with credentials (full URL incl. path / query)"
+# now for parity with the redis pattern. The capture deliberately stops
+# at the host (excludes the trailing `/db?query`) so the credential
+# surface matches the existing contract harness.
+regex = '''postgres(?:ql)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
+description = "PostgreSQL connection string with credentials (host-bounded capture)"

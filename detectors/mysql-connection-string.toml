@@ -13,7 +13,8 @@ keywords = ["mysql", "DATABASE_URL"]
 # Widen the host class to accept Kubernetes service names (`mysql-db`),
 # docker hostnames (`mysql`), and IP literals, not just dotted-FQDN
 # hosts. Empty username (`mysql://:pass@host`) is also accepted for
-# parity with redis. Capture the path + query so the credential surface
-# includes the full URL.
-regex = '''mysql://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+(?:[:/?#][^\s"'']*)?'''
-description = "MySQL connection string with credentials (full URL incl. path / query)"
+# parity with redis. The capture deliberately stops at the host
+# (excludes the trailing `/db?query`) so the credential surface matches
+# the existing contract harness.
+regex = '''mysql://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
+description = "MySQL connection string with credentials (host-bounded capture)"

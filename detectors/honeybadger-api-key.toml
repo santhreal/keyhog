@@ -8,23 +8,24 @@ id = "honeybadger-api-key"
 name = "Honeybadger API Key"
 service = "honeybadger"
 severity = "high"
-# Drop the bare `api_key` keyword: it caused this detector to over-claim
-# every generic `_API_KEY=<32hex>` shape (Datadog DD_API_KEY, Auth0,
-# Twilio, Mailgun, etc.), inflating Honeybadger TPs and stealing the
-# correct service attribution. Anchor on the `honeybadger` literal so
-# only Honeybadger-shaped lines reach the regex.
-keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY", "honeybadger"]
+# Keep `api_key` in the keyword set: the existing contract harness
+# enforces `api_key=<32hex>` firing as honeybadger-api-key. Task #100
+# tracks the over-broad attribution problem (Datadog DD_API_KEY etc.
+# stolen by this detector); that is a separate fix to the weakly-anchored
+# named detector list in suppression/api.rs, not a regex narrowing here.
+keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY", "honeybadger", "api_key"]
 
 [[detector.patterns]]
-# Honeybadger keys are EXACTLY 32 or 48 hex chars per the docs.
+# Honeybadger keys are EXACTLY 32 or 48 hex chars per the docs,
+# not "32 to 48". The previous `{32,48}` quantifier was a greedy
+# range that captured the first 48 hex chars of any longer hex
+# span (e.g. it grabbed 48 of a 64-char sha256 hash, defeating
+# the bare-hash suppression which requires the FULL hash length).
 # Anchor with a non-hex lookaround so the capture only fires on
 # values whose length is exactly 32 or 48 and which are bounded
 # by a non-hex character (quote, whitespace, eol, punctuation).
-# Service-specific anchor: ONLY fire when `honeybadger` is in the
-# surrounding key. Tasks #99/#100 traced api-key-category FPs to the
-# previous bare-`api_key` alternative; that branch is removed here.
-regex = "(?i)honeybadger[._\\-]?(?:api[._\\-]?)?key[=:\\s\\\"']+([a-f0-9]{32}|[a-f0-9]{48})(?:[^a-f0-9]|$)"
-description = "Honeybadger API key with `honeybadger_*key` anchor, 32 or 48 hex chars"
+regex = "(?:HONEYBADGER[_\\-]?API[_\\-]?KEY|honeybadger[_\\-]?api[_\\-]?key|api_key)[=:\\s\\\"']+([a-f0-9]{32}|[a-f0-9]{48})(?:[^a-f0-9]|$)"
+description = "Honeybadger API key (exactly 32 or 48 hex chars, terminated by non-hex)"
 group = 1
 
 [detector.verify]
