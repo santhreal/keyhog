@@ -15,6 +15,7 @@ use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
 pub(crate) use penalties::is_service_anchored_detector;
 pub use penalties::{char_diversity, contains_placeholder_word, max_repeat_run};
 pub use signals::is_sensitive_path;
+pub use signals::{bigram_uniqueness, looks_like_natural_language};
 
 const SCORE_ZERO: f64 = 0.0;
 const CONFIDENCE_MIN: f64 = 0.0;

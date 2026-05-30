@@ -1,3 +1,7 @@
+// `scan_filters` is consumed in the `feature = "simd"` arm below (the
+// trigger-bitmap / fallback path). Lean builds compile that arm out, so
+// gate the glob to match — otherwise rustc warns about an unused import.
+#[cfg(feature = "simd")]
 use super::scan_filters::*;
 use super::*;
 #[cfg(feature = "simd")]
