@@ -8,7 +8,19 @@ id = "twilio-api-key"
 name = "Twilio API Key"
 service = "twilio"
 severity = "high"
-keywords = ["SK", "twilio", "TWILIO"]
+keywords = [
+    # The "SK" prefix itself is 2 chars, below the AC prefilter's 4-char
+    # floor (see engine/compile.rs), so it never reaches the prefilter
+    # gate even if listed. Useful keywords are the full env-var names
+    # and the vendor string, all >= 4 chars.
+    "twilio",
+    "TWILIO",
+    "TWILIO_API_KEY_SID",
+    "TWILIO_API_KEY",
+    "TWILIO_SID",
+    "twilio_api_key",
+    "twilio_sid",
+]
 
 [[detector.patterns]]
 regex = "SK[a-f0-9]{32}"
