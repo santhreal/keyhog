@@ -75,10 +75,12 @@ pub struct ConfigFile {
     // The README documents `[scan]`, `[detector.X]`, and `[lockdown]`
     // nested tables; all three are now WIRED in `apply_config_file`
     // (`[scan]` -> the flat scalar args, `[detector.X] enabled` -> the
-    // disabled-detector set, `[lockdown] require` -> ConfigOutcome). They
-    // were previously parsed-and-silently-ignored - a user copying the
-    // README believed e.g. lockdown enforcement was active when it never
-    // reached the runtime.
+    // disabled-detector set, `[detector.X] min_confidence` -> the
+    // per-detector confidence floor applied in scan post-processing,
+    // `[lockdown] require` -> ConfigOutcome). They were previously
+    // parsed-and-silently-ignored - a user copying the README believed
+    // e.g. lockdown enforcement was active when it never reached the
+    // runtime.
     //
     // `[allowlist]` is still parse-only: its governance flags
     // (require_reason / require_approved_by / max_expires_days) need the
@@ -125,9 +127,12 @@ pub struct AllowlistSection {
     pub max_expires_days: Option<u64>,
 }
 
-/// `[detector.<id>]` per-detector override. `enabled = false` is the
-/// primary toggle documented in the README. Wired into the scanner via
-/// `disabled_detectors` on `ScanArgs`.
+/// `[detector.<id>]` per-detector override. `enabled = false` drops the
+/// detector from the corpus (wired via `ConfigOutcome::disabled_detectors`).
+/// `min_confidence = <f>` sets a per-detector confidence floor applied in
+/// scan post-processing (wired via `ConfigOutcome::detector_min_confidence`),
+/// taking precedence over the global `--min-confidence`. Both are
+/// README-documented and now reach the runtime.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 pub struct DetectorSection {
@@ -182,6 +187,13 @@ pub struct ConfigOutcome {
     /// wiring, parsed and silently ignored - a security control that looked
     /// active but never enforced.
     pub require_lockdown: bool,
+    /// Per-detector `[detector.<id>] min_confidence = <f>` overrides keyed by
+    /// detector id. Applied in scan post-processing: a finding from detector
+    /// `id` is dropped when its confidence is below this threshold, taking
+    /// precedence over the global `--min-confidence`. Was parsed into
+    /// `DetectorSection.min_confidence` and silently ignored before this
+    /// wiring (the README documents it as active).
+    pub detector_min_confidence: std::collections::HashMap<String, f64>,
 }
 
 /// Load and merge a `.keyhog.toml` config file into the parsed `ScanArgs`.
@@ -453,22 +465,28 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
         .and_then(|l| l.require)
         .unwrap_or(false);
 
-    // `[detector.<id>] enabled = false` -> the caller drops these detectors
-    // from the loaded corpus after `load_detectors`. (Per-detector
-    // `min_confidence` overrides are parsed into `DetectorSection` but applied
-    // separately in scan post-processing.)
-    let disabled_detectors = config
-        .detector
-        .map(|map| {
-            map.into_iter()
-                .filter(|(_, section)| section.enabled == Some(false))
-                .map(|(id, _)| id)
-                .collect()
-        })
-        .unwrap_or_default();
+    // `[detector.<id>]` table: `enabled = false` drops the detector from the
+    // loaded corpus after `load_detectors`; `min_confidence = <f>` becomes a
+    // per-detector confidence floor applied in scan post-processing. Both keys
+    // were README-documented; the confidence floor used to be parsed and
+    // silently ignored (the disabled toggle was wired earlier). Drain the map
+    // once into both outputs.
+    let mut disabled_detectors = Vec::new();
+    let mut detector_min_confidence = std::collections::HashMap::new();
+    if let Some(map) = config.detector {
+        for (id, section) in map {
+            if section.enabled == Some(false) {
+                disabled_detectors.push(id.clone());
+            }
+            if let Some(conf) = section.min_confidence {
+                detector_min_confidence.insert(id, conf);
+            }
+        }
+    }
 
     ConfigOutcome {
         disabled_detectors,
         require_lockdown,
+        detector_min_confidence,
     }
 }

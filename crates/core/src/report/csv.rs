@@ -84,3 +84,54 @@ fn escape_csv(val: &str) -> String {
         val.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_support::sample_finding;
+    use super::CsvReporter;
+    use crate::Reporter;
+
+    fn render(finding: &crate::VerifiedFinding) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut reporter = CsvReporter::new(&mut buf).expect("new csv reporter");
+            reporter.report(finding).expect("report finding");
+            reporter.finish().expect("finish");
+        }
+        String::from_utf8(buf).expect("utf8 csv output")
+    }
+
+    #[test]
+    fn csv_emits_header_then_escaped_row() {
+        let out = render(&sample_finding());
+        let mut lines = out.lines();
+
+        // Header is written verbatim by `CsvReporter::new`.
+        assert_eq!(
+            lines.next().expect("header line"),
+            "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence",
+        );
+
+        // The single finding renders to exactly one row. Fields with commas
+        // or quotes (`detector_name`) are RFC-4180 quoted, the inner `"` is
+        // doubled, empty commit/author/date collapse to empty fields, and the
+        // confidence renders as `0.875`.
+        assert_eq!(
+            lines.next().expect("data row"),
+            "aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef,filesystem,config/app.env,12,5,,,,live,0.875",
+        );
+
+        assert!(lines.next().is_none(), "exactly one data row expected: {out:?}");
+    }
+
+    #[test]
+    fn csv_field_with_comma_is_quoted_and_inner_quote_doubled() {
+        // Guard the escaping rule directly so a future change that drops
+        // RFC-4180 quoting or quote-doubling fails loudly rather than
+        // silently corrupting CSV parsers downstream.
+        assert_eq!(super::escape_csv("a,b"), "\"a,b\"");
+        assert_eq!(super::escape_csv("she said \"hi\""), "\"she said \"\"hi\"\"\"");
+        // A plain field is emitted bare (no surrounding quotes).
+        assert_eq!(super::escape_csv("plain"), "plain");
+    }
+}

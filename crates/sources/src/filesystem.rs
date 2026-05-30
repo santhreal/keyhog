@@ -2,7 +2,7 @@
 //! respects `.gitignore`, and yields chunks for scanning.
 
 use codewalk::{CodeWalker, WalkConfig};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::HashSet;
@@ -41,43 +41,10 @@ fn file_mtime_ns_cached(path: &Path) -> Option<u64> {
     res
 }
 
-/// Thread-safe O(1) cache for excluded paths (KH-39)
-struct GitignoreTrie {
-    ignored_paths: DashSet<PathBuf>,
-}
-
-impl GitignoreTrie {
-    fn new() -> Self {
-        Self {
-            ignored_paths: DashSet::new(),
-        }
-    }
-
-    fn is_ignored(&self, path: &Path) -> bool {
-        let mut current = path;
-        while let Some(parent) = current.parent() {
-            if self.ignored_paths.contains(parent) {
-                return true;
-            }
-            current = parent;
-        }
-        self.ignored_paths.contains(path)
-    }
-
-    fn insert_ignored(&self, path: PathBuf) {
-        self.ignored_paths.insert(path);
-    }
-}
-
 static SKIP_EXTENSIONS_SET: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
-static SKIP_DIRS_SET: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
 
 fn get_skip_extensions() -> &'static std::collections::HashSet<&'static str> {
     SKIP_EXTENSIONS_SET.get_or_init(|| SKIP_EXTENSIONS.iter().copied().collect())
-}
-
-fn get_skip_dirs() -> &'static std::collections::HashSet<&'static str> {
-    SKIP_DIRS_SET.get_or_init(|| SKIP_DIRS.iter().copied().collect())
 }
 
 /// Minimum file size to use memory mapping. The crossover point is
