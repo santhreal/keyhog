@@ -58,7 +58,7 @@ jobs:
         env:
           # Pinned to the latest release so keyhog's own CI catches leaks
           # the binary in users' CI would catch today. Bump on every release.
-          KEYHOG_VERSION: v0.5.34
+          KEYHOG_VERSION: v0.5.37
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
