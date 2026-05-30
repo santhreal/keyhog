@@ -813,7 +813,6 @@ Verified gates:
 Remaining source-coherence findings surfaced by the green all-tests runs:
 
 - `crates/sources/src/filesystem.rs` is still over 500 lines.
-- `crates/sources/src/web.rs` is still over 500 lines.
 - `property::http_fuzz` remains the long-running source-package property module and needs a bounded CI profile before it can be part of the fast source gate.
 
 ## Executed Patch Set: GitHub Org Split
@@ -829,3 +828,18 @@ Verified gates:
 
 - `cargo fmt -p keyhog-sources`
 - `cargo test -p keyhog-sources --all-features --test all_tests github -- --nocapture`
+
+## Executed Patch Set: Web SSRF Split
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- ARCHITECTURE: split URL redaction, host/IP denial, redirect revalidation, DNS screening, and pinned-client construction out of `web.rs` into `web/ssrf.rs`.
+- COHERENCE: `web.rs` is now 411 lines and no longer emits the 500-line modularity warning in the source gates.
+- AUDIT HUNTS: SSRF/DNS-rebinding contracts stay covered through the moved external web tests.
+
+Verified gates:
+
+- `cargo fmt -p keyhog-sources`
+- `cargo test -p keyhog-sources --test all_tests web -- --nocapture`
