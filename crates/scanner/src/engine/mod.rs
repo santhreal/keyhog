@@ -15,7 +15,6 @@ mod fallback_generic;
 mod gpu_ac_phase1;
 mod gpu_cache;
 mod gpu_coalesce;
-#[allow(dead_code)]
 pub mod gpu_decode_scan;
 mod gpu_dispatch;
 mod gpu_forced;
@@ -24,9 +23,7 @@ mod gpu_literal_phase1;
 mod gpu_megascan;
 mod gpu_phase2;
 pub(crate) mod gpu_postprocess;
-#[allow(dead_code)]
 pub mod gpu_program_fusion;
-#[allow(dead_code)]
 pub mod gpu_regex_dfa;
 mod gpu_scan_wrappers;
 mod hot_patterns;
