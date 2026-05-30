@@ -38,13 +38,13 @@ keyhog-sources = { version = "=0.5.37", path = "crates/sources", default-feature
 
 # Serialization
 serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.149"
+serde_json = "=1.0.150"
 serde_with = "=3.18.0"
 serde_yaml = "=0.9.34"
-toml = "=0.8.23"
+toml = "=1.1.2"
 
 # Async
-tokio = { version = "=1.51.1", features = ["full"] }
+tokio = { version = "=1.52.3", features = ["full"] }
 futures-util = "=0.3.32"
 async-trait = "=0.1.89"
 
@@ -61,7 +61,7 @@ thiserror = "=2.0.18"
 anyhow = "=1.0.102"
 
 # CLI
-clap = { version = "=4.6.0", features = ["derive"] }
+clap = { version = "=4.6.1", features = ["derive"] }
 clap_complete = "=4.6.0"
 dirs = "=6.0.0"
 
@@ -94,37 +94,30 @@ tar = "=0.4.45"
 gix = { version = "=0.77.0", default-features = false, features = ["max-performance-safe"] }
 
 # Benchmarking
-criterion = { version = "=0.5.1", features = ["html_reports"] }
+criterion = { version = "=0.8.2", features = ["html_reports"] }
 
 # Parallelism
 rayon = "=1.12.0"
 memchr = "=2.8.0"
 parking_lot = "=0.12.5"
-dashmap = "=6.1.0"
+dashmap = "=6.2.1"
 indexmap = "=2.7.1"
 notify = "=8.0.0"
 
 # Performance libraries
 simdsieve = "=0.1.1"
-# vyre is vendored at vendor/vyre/ (see VENDOR_INFO.txt for the pinned
-# upstream commit). vyre is under heavy churn, so keyhog tracks it by
-# VENDORING: `scripts/vendor-vyre-gated.sh` refreshes the vendored copy to
-# the latest upstream that still builds keyhog clean, otherwise it restores
-# the last-known-good snapshot. These deps are DUAL (path + version): local
-# and CI builds use `path` (the vendored copy, absorbing churn with no
-# crates.io round-trip), while `cargo publish` strips `path` and resolves
-# `version` from crates.io. At each crates.io release the matching vyre
-# snapshot is published first (scripts/publish-vyre.sh) so keyhog itself can
-# publish; between releases nothing is published. `cargo install --git` also
-# builds straight from the vendored path with no registry vyre required.
-vyre = { version = "=0.6.1", path = "vendor/vyre/vyre-core" }
-vyre_libs = { package = "vyre-libs", version = "=0.6.1", path = "vendor/vyre/vyre-libs" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.1", path = "vendor/vyre/vyre-driver-wgpu" }
-# CUDA backend — wired in keyhog-scanner behind the `cuda` feature
+# vyre 0.6.1 is published to crates.io. The vendor/vyre/ tree stays in
+# place for offline/local development and is excluded from the workspace
+# (`exclude` above); to re-pin path overrides for an unreleased vyre,
+# add `path = "vendor/vyre/<crate>"` back onto each line.
+# CUDA backend is wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.1", path = "vendor/vyre/vyre-driver-cuda" }
-vyre-runtime = { version = "=0.6.1", path = "vendor/vyre/vyre-runtime" }
+vyre = "=0.6.1"
+vyre_libs = { package = "vyre-libs", version = "=0.6.1" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.1" }
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.1" }
+vyre-runtime = "=0.6.1"
 wgpu = "=25.0.2"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }
@@ -133,7 +126,7 @@ lru = "=0.12.5"
 
 # Crypto and encodings
 sha2 = "=0.10.9"
-blake3 = "=1.8.4"
+blake3 = "=1.8.5"
 hmac = "=0.12.1"
 hex = "=0.4.3"
 percent-encoding = "=2.3.2"
@@ -154,7 +147,7 @@ ziftsieve = "=0.1.0"
 openpack = "=0.2.2"
 goblin = "=0.10.5"
 quick-xml = { version = "=0.37.5", features = ["serialize"] }
-libc = "=0.2.184"
+libc = "=0.2.186"
 io-uring = "=0.7.11"
 
 # Test support
