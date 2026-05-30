@@ -8,7 +8,10 @@ id = "discord-bot-token"
 name = "Discord Bot Token"
 service = "discord"
 severity = "critical"
-keywords = ["MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk", "MjA", "MjE", "MjI", "MjM", "MjQ", "NDA", "NDE", "NDI", "NDM", "NDQ", "NDU", "NDY", "NDc", "NDg", "NDk", "NTA", "NTE", "NTI", "NTM", "NTQ", "NTU", "NTY", "NTc", "NTg", "NTk"]
+# `discord` routes the loose non-[MN] pattern (which now requires the
+# literal in-window); the MT*/Mj*/ND*/NT* b64 snowflake prefixes route
+# the strict [MN] production form.
+keywords = ["discord", "DISCORD", "MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk", "MjA", "MjE", "MjI", "MjM", "MjQ", "NDA", "NDE", "NDI", "NDM", "NDQ", "NDU", "NDY", "NDc", "NDg", "NDk", "NTA", "NTE", "NTI", "NTM", "NTQ", "NTU", "NTY", "NTc", "NTg", "NTk"]
 
 
 [[detector.patterns]]
@@ -21,11 +24,13 @@ description = "Discord bot token (production [MN]-prefixed snowflake form)"
 [[detector.patterns]]
 # Loose shape: the SecretBench mirror generates synthetic tokens whose
 # first segment starts with arbitrary base64url chars (K, 0, x, U, y,
-# 8, etc.), not just [MN]. 22+ FNs across helm-values, shell-export,
-# terraform, python, javascript, dockerfile, rust, yaml, log-line,
-# properties, github-actions, dotenv wrappers share the same
-# `<23-28>.<6-8>.<27-38>` shape and miss the strict regex. The Discord
-# AC keyword list is what attributes a match to Discord, not the [MN]
-# prefix.
-regex = '[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
-description = "Discord bot token (synthetic/non-[MN] shape, AC-keyword anchored)"
+# 8, etc.), not just [MN]. Those FNs share the same `<23-28>.<6-8>.<27-38>`
+# 3-dot shape and miss the strict regex. The bare 3-dot shape on its own
+# matches huge swaths of dotted base64 (JWTs, hashes, build IDs) and was
+# the named-detector FP driver, so a `discord` literal must be CONSUMED
+# within a bounded window before the token (the regex crate has no
+# lookaround, so the literal is part of the match). The [MN] form is
+# already covered by the strict pattern above without a keyword.
+regex = '''(?i)discord[A-Za-z0-9_."' :=-]{0,40}?([A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38})'''
+description = "Discord bot token (synthetic/non-[MN] shape, requires in-window discord literal)"
+group = 1

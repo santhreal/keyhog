@@ -91,6 +91,20 @@ pub struct VerificationEngine {
 }
 
 /// Runtime configuration for live verification.
+///
+/// Config-surface boundary: `VerifyConfig` is an **orthogonal subsystem**
+/// config, NOT part of the detection/bench config surface. Only
+/// `ScanConfig` + `ScannerConfig` (+ nested `MultilineConfig`) influence
+/// detection accuracy and are exercised by the benchmark. `VerifyConfig`
+/// governs live HTTP verification (network I/O, concurrency, proxy, TLS)
+/// and is constructed only on the `--verify` path
+/// (`cli/src/orchestrator/postprocess.rs`); the bench runs with
+/// `--no-verification` and never touches it. The sibling orthogonal configs
+/// are `OobConfig` (verifier/src/oob/session.rs, `--verify-oob` only),
+/// `HttpClientConfig` (sources/src/http.rs, per-source network I/O),
+/// `MegakernelSessionConfig` (scanner GPU slot geometry), and
+/// `AwsSigV4Config` (S3 request signing). Do NOT fold any of these into the
+/// canonical scan config: they are legitimately separate axes.
 pub struct VerifyConfig {
     /// End-to-end timeout for one verification attempt.
     pub timeout: Duration,

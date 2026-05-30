@@ -162,16 +162,23 @@ impl CompiledScanner {
                         line.as_ptr() as usize - chunk.data.as_ref().as_ptr() as usize;
                     line_offset + value_match.start()
                 };
+                // The contributing fragment's path. Reassembly is same-path
+                // only (see `FragmentCache::record_and_reassemble`), so this
+                // is the authoritative attribution for every candidate the
+                // trigger fragment produces. Captured before the move below
+                // so the reassembled finding's `file_path` can be stamped
+                // from it instead of inherited from `chunk.metadata.clone()`.
+                let fragment_path: Option<std::sync::Arc<str>> = chunk
+                    .metadata
+                    .path
+                    .as_ref()
+                    .map(|p| std::sync::Arc::from(p.as_str()));
                 let fragment = crate::fragment_cache::SecretFragment {
                     prefix: crate::multiline::extract_prefix(var_name_match.as_str()),
                     var_name: var_name_match.as_str().to_string(),
                     value: zeroize::Zeroizing::new(value_match.as_str().to_string()),
                     line: fragment_line,
-                    path: chunk
-                        .metadata
-                        .path
-                        .as_ref()
-                        .map(|p| std::sync::Arc::from(p.as_str())),
+                    path: fragment_path.clone(),
                 };
 
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);
@@ -212,6 +219,18 @@ impl CompiledScanner {
                     let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, deadline);
                     for m in &mut reassembled_matches {
                         m.detector_id = format!("{}:reassembled", m.detector_id).into();
+                        // Stamp the finding's path from the CONTRIBUTING
+                        // fragment, not the synthetic `dummy_chunk` (which
+                        // cloned the outer chunk's metadata). A candidate can
+                        // be glued from a fragment recorded by an earlier
+                        // chunk plus this trigger fragment; inheriting the
+                        // dummy chunk's path mis-attributed the reassembled
+                        // finding to whatever chunk happened to be scanning
+                        // when reassembly fired - the cross-file attribution
+                        // mangling that produced `:reassembled` FPs. Reassembly
+                        // is same-path only, so `fragment_path` is the correct
+                        // source for every candidate this fragment yields.
+                        m.location.file_path = fragment_path.clone();
                         // Point the finding to the trigger fragment's
                         // line AND byte offset in the source chunk.
                         // Previously offset was the synthetic position
@@ -262,6 +281,16 @@ impl CompiledScanner {
         // patterns that were guaranteed to return no matches - the
         // dominant cost of the per-detector regex pass on chunks that
         // trigger multiple AC patterns of multi-pattern detectors.
+        // No-trigger fast path: if no AC pattern fired, every word is
+        // zero, so same-prefix expansion has nothing to propagate. Bail
+        // BEFORE the `to_vec()` clone and the O(words) bit-scan loop -
+        // the caller's `expanded.iter().any(|&w| w != 0)` would be false
+        // anyway, so an empty vec is an equivalent (and cheaper) "no
+        // patterns" signal. On the dominant no-hit chunk this drops the
+        // expansion clone + scan to a single all-zero pass.
+        if !triggered_patterns.iter().any(|&w| w != 0) {
+            return Vec::new();
+        }
         let mut expanded = triggered_patterns.to_vec();
         for (word_idx, &word) in triggered_patterns.iter().enumerate() {
             if word == 0 {
@@ -372,8 +401,15 @@ impl CompiledScanner {
         let scores = crate::gpu::batch_ml_inference(&candidates, &self.config);
         let pending_matches: Vec<_> = scan_state.ml_pending.drain(..).collect();
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores) {
-            let mut final_score = (crate::types::ML_WEIGHT * ml_conf)
-                + (crate::types::HEURISTIC_WEIGHT * pending.heuristic_conf);
+            // Honour the runtime `--ml-weight` / `ml_weight` knob instead
+            // of the compile-time ML_WEIGHT/HEURISTIC_WEIGHT consts: the
+            // blend is `w·ml + (1-w)·heuristic` with `w` already clamped to
+            // [0,1] by `ScannerConfig::sanitise`. A hardcoded 0.6/0.4 made
+            // the tuned knob a no-op (the tuned!=shipped trap) - now the
+            // value the user / benchmark sets is the value the blend uses.
+            let ml_weight = self.config.ml_weight;
+            let mut final_score =
+                (ml_weight * ml_conf) + ((1.0 - ml_weight) * pending.heuristic_conf);
             final_score = final_score.max(pending.heuristic_conf).max(ml_conf);
 
             // `--scan-comments` opts the Comment context out of the

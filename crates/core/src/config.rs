@@ -22,10 +22,27 @@ pub struct ScanConfig {
     /// Shannon entropy threshold (typical secrets are 4.5+).
     pub entropy_threshold: f64,
     /// Minimum length for entropy-based secret detection.
+    ///
+    /// NOTE: not yet read by the live scan. `From<ScanConfig> for
+    /// ScannerConfig` does not carry this field; the entropy length
+    /// gate currently uses the engine's own length constants. Setting
+    /// it in a deserialized config is a no-op until a reader is wired
+    /// in. See the `From` impl on `ScannerConfig` for the canonical
+    /// list of carried vs uncarried fields.
     pub min_secret_len: usize,
     /// Maximum file size to scan (bytes). Large files are skipped or sampled.
+    ///
+    /// NOTE: not read here on the live path. The effective cap is set
+    /// at the source walker (`FilesystemSource::with_max_file_size`,
+    /// fed from `ScanArgs.max_file_size`); this field is retained for
+    /// the canonical config surface but is not carried into
+    /// `ScannerConfig`.
     pub max_file_size: u64,
     /// Deduplication strategy.
+    ///
+    /// NOTE: not read here on the live path. The effective scope comes
+    /// from `ScanArgs.dedup` and is applied by the verifier via
+    /// `DedupScope`; this field is not carried into `ScannerConfig`.
     pub dedup: DedupScope,
 
     /// Whether to enable ML-based probabilistic gating.
@@ -34,8 +51,12 @@ pub struct ScanConfig {
     pub ml_weight: f64,
     /// Whether to normalize Unicode characters before scanning.
     pub unicode_normalization: bool,
-    /// Maximum bytes allowed from recursive decoding.
-    pub decode_size_limit: usize,
+    /// Whether to validate decoded strings (e.g. that decoded base64 is
+    /// UTF-8) before recursing into them.
+    pub validate_decode: bool,
+    /// Maximum bytes allowed from recursive decoding. Same field name on
+    /// `ScannerConfig` so `From<ScanConfig>` is a 1:1 carry, not a rename.
+    pub max_decode_bytes: usize,
     /// Maximum matches allowed per chunk to prevent OOM.
     pub max_matches_per_chunk: usize,
 
@@ -77,11 +98,15 @@ pub enum ConfigError {
 impl Default for ScanConfig {
     fn default() -> Self {
         Self {
-            // Raised from 0.3 → 0.5 (kimi-wave3 §4 LOW). The previous
-            // 0.3 default let low-confidence generic-entropy matches
-            // through, drowning real findings in noise. Detector
-            // configs that want the looser bar can opt back in.
-            min_confidence: 0.5,
+            // Bench-tuned floor (SecretBench mirror grid-sweep 2026-05-30):
+            // 0.40 maximises F1 (0.8642, P=0.984, FP=37) and is the precision
+            // sweet spot. 0.30 admits a low-confidence FP band (FP 174); 0.50
+            // is WORSE on both axes (the floor is non-monotonic in FP - see
+            // the scan-time/ML entanglement bug tracked in backlog DET-08).
+            // This is the canonical tuned == benched == shipped floor; the
+            // post-scan gate (orchestrator/postprocess.rs) and the scan-time
+            // generic gate (engine/fallback_generic.rs) both resolve to it.
+            min_confidence: 0.40,
             // Aligned with CLI / scanner defaults (`ScannerConfig` derives from this).
             max_decode_depth: 10,
             entropy_enabled: true,
@@ -93,8 +118,9 @@ impl Default for ScanConfig {
             ml_enabled: true,
             ml_weight: 0.5,
             unicode_normalization: true,
-            // Per-chunk decode-through ceiling (conservative vs multi‑MiB blobs).
-            decode_size_limit: 512 * 1024,
+            validate_decode: true,
+            // Per-chunk decode-through ceiling (conservative vs multi-MiB blobs).
+            max_decode_bytes: 512 * 1024,
             max_matches_per_chunk: 1000,
             scan_comments: false,
             known_prefixes: vec!["AKIA".into(), "ASIA".into(), "ghp_".into(), "sk_".into()],
@@ -147,6 +173,17 @@ impl Default for ScanConfig {
 }
 
 impl ScanConfig {
+    // PRESET ROUTING NOTE: these core presets are the canonical preset
+    // definitions, reachable in the engine only via
+    // `ScannerConfig::from(ScanConfig::fast()/thorough()/paranoid())`.
+    // The CLI's `build_scanner_config` currently selects the parallel
+    // `ScannerConfig::fast()/thorough()` instead, whose values DIVERGE
+    // from these (e.g. fast decode-depth 0 vs 2, thorough 10 vs 8). The
+    // single-source-of-truth fix is to route the CLI through these core
+    // presets and drop the scanner-side duplicates; until that lands,
+    // a reader auditing "what --fast does" must check the CLI path, not
+    // these methods. Values here are pinned by `crates/core/tests/unit`.
+
     /// Fast configuration optimized for speed over exhaustive recall.
     pub fn fast() -> Self {
         Self {
@@ -173,6 +210,10 @@ impl ScanConfig {
             max_decode_depth: MAX_DECODE_DEPTH_LIMIT,
             entropy_enabled: true,
             entropy_in_source_files: true,
+            // Deliberately below the default of 20: paranoid mode trades
+            // precision for recall and accepts shorter candidates. Not a
+            // default disagreement - see `min_secret_len`'s field note on
+            // its (currently no-op) live-path status.
             min_secret_len: 16,
             ml_enabled: true,
             ..Default::default()

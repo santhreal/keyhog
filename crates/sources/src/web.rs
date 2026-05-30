@@ -132,6 +132,82 @@ fn is_disallowed_ipv6(ip: std::net::Ipv6Addr) -> bool {
         || ip.segments()[0] & 0xffc0 == 0xfe80 // fe80::/10 link-local
 }
 
+/// Disallow check for a RESOLVED IP address (post-DNS). The string-level
+/// `is_disallowed_web_host` only ever sees the hostname; once DNS hands us
+/// the actual `IpAddr` we run the same v4/v6 rules against it to defeat a
+/// public-looking name that resolves to a private/loopback/metadata IP
+/// (DNS-rebinding). Mirrors the verifier's `is_private_ip_addr` gate.
+fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => is_disallowed_ipv4(v4),
+        std::net::IpAddr::V6(v6) => is_disallowed_ipv6(v6),
+    }
+}
+
+/// Build a redirect policy that re-validates EVERY hop against the SSRF
+/// host filter. reqwest's `Policy::limited` is a hop-count-only policy: a
+/// public URL that answers `302 Location: http://169.254.169.254/...`
+/// (or any 127.0.0.1 / RFC1918 / `.internal` target) is followed
+/// automatically and the internal/metadata body comes back as a scanned
+/// Chunk - the operator-URL-only check in `fetch_url` never sees the
+/// redirect target. This closure aborts the chain when a hop is
+/// disallowed, while still capping the hop count.
+///
+/// Two checks per hop, both required:
+///   1. `is_disallowed_web_host` on the target string (literal internal
+///      IPs, `.internal`/`localhost` names, malformed URLs).
+///   2. `resolve_and_screen` on the target host - the original-host pin
+///      via `resolve_to_addrs` only covers the FIRST host, so the redirect
+///      target is otherwise re-resolved by the system resolver and a
+///      public-looking redirect name pointing at a private IP would slip
+///      through (DNS-rebinding via redirect). Resolving + screening here
+///      closes that. Mirrors the verifier's `Policy::none()` intent
+///      (verify/request.rs:124-128) while still allowing a bounded number
+///      of genuinely-public redirects that CDNs legitimately use.
+fn ssrf_revalidating_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= REDIRECT_LIMIT {
+            return attempt.error(SourceError::Other(format!(
+                "too many redirects (> {REDIRECT_LIMIT})"
+            )));
+        }
+        // Snapshot the target into owned values inside this block so NO borrow
+        // of `attempt` is held across the `attempt.error()` / `attempt.follow()`
+        // moves below (`Attempt::url()` borrows `attempt`; holding the `&Url`
+        // across a move is E0505).
+        let (target_str, host, port) = {
+            let url = attempt.url();
+            (
+                url.as_str().to_string(),
+                url.host_str().map(str::to_owned),
+                url.port_or_known_default().unwrap_or(443),
+            )
+        };
+        // Do NOT echo the (attacker-controlled) target host into the
+        // error; redact userinfo and keep the message generic so a
+        // redirect to an internal name can't leak topology.
+        if is_disallowed_web_host(&target_str) {
+            let redacted = redact_url(&target_str);
+            return attempt.error(SourceError::Other(format!(
+                "refusing to follow redirect to {redacted}: target resolves to a \
+                 private / loopback / link-local / metadata-service address"
+            )));
+        }
+        // Post-DNS screen of the redirect target (rebinding-via-redirect).
+        if let Some(host) = host {
+            if let Err(e) = resolve_and_screen(&host, port) {
+                return attempt.error(e);
+            }
+        }
+        attempt.follow()
+    })
+}
+
+/// Maximum SSRF-revalidated redirect hops. Matches the shared
+/// `http::REDIRECT_LIMIT` (5); kept local so the custom policy above
+/// doesn't reach across modules for a single constant.
+const REDIRECT_LIMIT: usize = 5;
+
 #[cfg(test)]
 mod web_host_filter_tests {
     use super::is_disallowed_web_host;
@@ -285,6 +361,112 @@ mod redact_url_tests {
     }
 }
 
+/// Whole-path SSRF-gate tests for the redirect + DNS-rebinding defenses.
+///
+/// These exercise the REAL `build_web_client` / `resolve_and_screen`
+/// path, not just the pure string pre-filter. The previous
+/// `web_redirect_target_*` adversarial files only asserted
+/// `is_disallowed_web_host("http://169.254.169.254/...") == true` - a
+/// pure-function check that passed even though the live redirect/DNS
+/// path was wide open. A redirecting-server whole-path test still needs a
+/// DNS-control harness (tracked in tests/adversarial; see needs_cross_file),
+/// but the post-DNS IP screening and the policy wiring are pinned here.
+#[cfg(test)]
+mod ssrf_resolve_pin_tests {
+    use super::{build_web_client, is_disallowed_ip, resolve_and_screen};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn resolved_ip_screen_matches_string_filter() {
+        // Loopback / private / link-local / metadata IPs must be rejected
+        // once DNS hands us the literal address (DNS-rebinding defense).
+        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5))));
+        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 5))));
+        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
+            169, 254, 169, 254
+        ))));
+        assert!(is_disallowed_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        // An IPv4-mapped IPv6 of loopback must also be caught.
+        assert!(is_disallowed_ip(IpAddr::V6(
+            "::ffff:127.0.0.1".parse().unwrap()
+        )));
+        // A real public IP passes.
+        assert!(!is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
+    }
+
+    #[test]
+    fn resolve_and_screen_rejects_loopback_literal() {
+        // `127.0.0.1` resolves to itself; the post-DNS screen must refuse it
+        // and the error must NOT echo the address.
+        let err = resolve_and_screen("127.0.0.1", 80).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("private / loopback"),
+            "expected loopback refusal, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_and_screen_accepts_loopback_via_pin_only_for_public() {
+        // Sanity: a literal public IP screens clean and is returned for
+        // pinning. (No DNS lookup is performed for IP literals.)
+        let addrs = resolve_and_screen("1.1.1.1", 443).expect("public IP must pass");
+        assert!(!addrs.is_empty(), "must return at least one pinned addr");
+        assert!(addrs.iter().all(|a| !is_disallowed_ip(a.ip())));
+    }
+
+    #[test]
+    fn build_web_client_refuses_loopback_resolving_host_when_direct() {
+        // Direct connection (no proxy): a host that resolves to loopback is
+        // refused at client-build time, before any request leaves the
+        // process. This is the DNS-screening half of the SSRF fix wired
+        // through the real `build_web_client`.
+        let cfg = crate::http::HttpClientConfig::default();
+        let res = build_web_client(&cfg, "http://127.0.0.1:9/", false);
+        assert!(
+            res.is_err(),
+            "loopback-resolving host must be refused on the direct path"
+        );
+    }
+
+    #[test]
+    fn build_web_client_builds_for_public_host_when_direct() {
+        // A real public host resolves to public IPs and builds a pinned
+        // client. (Network-dependent: skipped cleanly if DNS is unavailable
+        // in the sandbox - the resolution failure is itself a safe refusal,
+        // so either Ok or a DNS-failure Err is acceptable here.)
+        let cfg = crate::http::HttpClientConfig::default();
+        match build_web_client(&cfg, "https://example.com/app.js", false) {
+            Ok(_) => {}
+            Err(e) => {
+                let m = e.to_string();
+                assert!(
+                    m.contains("DNS resolution failed") || m.contains("no addresses"),
+                    "public host should build or fail only on DNS, got: {m}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn build_web_client_skips_pin_under_proxy() {
+        // With a proxy in use, DNS is the proxy's job - we must NOT pre-resolve
+        // (which would refuse a private-resolving name the proxy is meant to
+        // reach), so a loopback-resolving host builds fine when proxied.
+        let cfg = crate::http::HttpClientConfig {
+            proxy: Some("http://127.0.0.1:8080".into()),
+            ..Default::default()
+        };
+        let res = build_web_client(&cfg, "http://127.0.0.1:9/", true);
+        assert!(
+            res.is_ok(),
+            "under a proxy the source must skip DNS pinning and let the proxy resolve"
+        );
+    }
+}
+
 /// Web content source that fetches JavaScript, source maps, and WASM from URLs.
 ///
 /// URLs ending in `.wasm` are treated as binary and have strings extracted.
@@ -351,32 +533,136 @@ impl WebSource {
     ///
     /// Uses `reqwest::blocking` directly; the blocking client internally manages
     /// its own background runtime, so no dedicated thread wrapper is required.
+    ///
+    /// Each URL gets its own client built via [`build_web_client`] so the
+    /// host can be DNS-resolved and pinned (DNS-rebinding defense); the
+    /// custom redirect policy re-validates every hop (redirect-to-internal
+    /// defense). Both gates mirror the verifier's `resolved_client_for_url`.
     fn fetch_all(&self) -> Vec<Result<Chunk, SourceError>> {
-        // Auto-decompression DISABLED - without this, reqwest expands gzip
-        // bodies to completion before we can check size, opening a gzip-bomb
-        // DoS. Decompression is opt-in per call where we explicitly want it.
-        let client = match crate::http::blocking_client_builder(&self.http) {
-            Ok(b) => b
-                .timeout(crate::timeouts::HTTP_REQUEST)
-                .build()
-                .map_err(|e| SourceError::Other(format!("failed to build HTTP client: {e}"))),
-            Err(e) => Err(SourceError::Other(e)),
-        };
-
-        let client = match client {
-            Ok(c) => c,
-            Err(e) => return vec![Err(e)],
-        };
+        let proxy_in_use = matches!(
+            self.http.effective_proxy().as_deref(),
+            Some(p) if !matches!(p, "off" | "none" | "")
+        );
 
         let mut results = Vec::new();
 
         for url in &self.urls {
+            // SSRF defense (host pre-filter): the verifier already has this
+            // gate via bogon for live verifications; WebSource was the
+            // missing surface. Without it,
+            // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
+            // would fetch the cloud metadata endpoint and extract IAM creds.
+            if is_disallowed_web_host(url) {
+                let safe_url = redact_url(url);
+                results.push(Err(SourceError::Other(format!(
+                    "refusing to fetch {safe_url}: host resolves to a private / \
+                     loopback / link-local / metadata-service address - \
+                     WebSource only fetches public URLs"
+                ))));
+                continue;
+            }
+
+            let client = match build_web_client(&self.http, url, proxy_in_use) {
+                Ok(c) => c,
+                Err(e) => {
+                    results.push(Err(e));
+                    continue;
+                }
+            };
+
             let chunks = fetch_url(&client, url);
             results.extend(chunks);
         }
 
         results
     }
+}
+
+/// Build a per-URL blocking client carrying the shared HTTP policy
+/// (proxy, TLS, UA, body-bomb defenses) PLUS two SSRF gates the shared
+/// builder can't apply on its own:
+///
+///   1. **Per-hop redirect re-validation** ([`ssrf_revalidating_redirect_policy`]).
+///      Overrides the shared `Policy::limited`, which is hop-count-only
+///      and would happily follow `302 Location: http://169.254.169.254/...`.
+///   2. **DNS resolution + pinning.** Resolves the host once, rejects if
+///      any resolved address is private/loopback/link-local/metadata, then
+///      pins host→addrs via `resolve_to_addrs` so reqwest's connector
+///      cannot re-resolve to a private IP between the check and the TCP
+///      connect (DNS-rebinding). Skipped under a proxy, where DNS is the
+///      proxy's job and pinning would be moot (mirrors the verifier's
+///      `proxy_in_use` short-circuit in verify/request.rs).
+fn build_web_client(
+    cfg: &crate::http::HttpClientConfig,
+    url: &str,
+    proxy_in_use: bool,
+) -> Result<reqwest::blocking::Client, SourceError> {
+    // Auto-decompression stays DISABLED (set in the shared builder) -
+    // without it reqwest expands gzip bodies to completion before we can
+    // check size, opening a gzip-bomb DoS. Decompression is opt-in per
+    // call where we explicitly want it.
+    let mut builder = crate::http::blocking_client_builder(cfg)
+        .map_err(SourceError::Other)?
+        .timeout(crate::timeouts::HTTP_REQUEST)
+        // Replace the shared hop-count-only policy with one that
+        // re-validates each redirect target against the SSRF host filter.
+        .redirect(ssrf_revalidating_redirect_policy());
+
+    if !proxy_in_use {
+        // Direct connection: resolve + pin so a public-looking host that
+        // resolves to a private/metadata IP is refused, and a rebinding
+        // resolver can't swap the IP after the check.
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|e| SourceError::Other(format!("invalid URL: {e}")))?;
+        if let Some(host) = parsed.host_str() {
+            // IP literals are already covered by `is_disallowed_web_host`;
+            // only domains need DNS resolution. `to_socket_addrs` handles
+            // both, so resolve uniformly and gate on the result.
+            let port = parsed.port_or_known_default().unwrap_or(443);
+            let host = host.to_string();
+            let addrs = resolve_and_screen(&host, port)?;
+            builder = builder.resolve_to_addrs(&host, &addrs);
+        }
+    }
+
+    builder
+        .build()
+        .map_err(|e| SourceError::Other(format!("failed to build HTTP client: {e}")))
+}
+
+/// Resolve `host:port` and reject the lot if ANY resolved address is a
+/// private / loopback / link-local / metadata IP. Returns the screened
+/// address list for `resolve_to_addrs` pinning. Uses the blocking
+/// `ToSocketAddrs` resolver to match the blocking client - no tokio
+/// runtime required on the source path.
+fn resolve_and_screen(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, SourceError> {
+    use std::net::ToSocketAddrs;
+    let addrs: Vec<std::net::SocketAddr> = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| {
+            SourceError::Other(format!(
+                "refusing to fetch {}: DNS resolution failed: {e}",
+                redact_url(host)
+            ))
+        })?
+        .collect();
+    if addrs.is_empty() {
+        return Err(SourceError::Other(format!(
+            "refusing to fetch {}: DNS returned no addresses",
+            redact_url(host)
+        )));
+    }
+    if addrs.iter().any(|a| is_disallowed_ip(a.ip())) {
+        // Don't name the resolved IP - it's the secret topology this gate
+        // exists to protect.
+        return Err(SourceError::Other(format!(
+            "refusing to fetch {}: host resolves to a private / loopback / \
+             link-local / metadata-service address - WebSource only fetches \
+             public URLs",
+            redact_url(host)
+        )));
+    }
+    Ok(addrs)
 }
 
 impl Source for WebSource {
@@ -393,12 +679,21 @@ impl Source for WebSource {
 }
 
 /// Fetch a single URL and produce one or more chunks based on content type.
+///
+/// The caller (`fetch_all`) has already screened `url` with
+/// `is_disallowed_web_host` and built `client` through `build_web_client`,
+/// which pins the resolved (screened) IP and installs the per-hop
+/// SSRF-revalidating redirect policy. The pre-filter is repeated here as a
+/// cheap defense-in-depth guard so this helper stays safe even if a future
+/// caller hands it a client that skipped `build_web_client`.
 fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk, SourceError>> {
-    // SSRF defense: the verifier already has this gate via bogon for live
-    // verifications; WebSource was the missing surface. Without this,
+    // SSRF defense (host pre-filter): the verifier already has this gate via
+    // bogon for live verifications; WebSource was the missing surface.
+    // Without it,
     // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
-    // would happily fetch the cloud metadata endpoint and extract IAM
-    // credentials. Kimi sources-audit web-source SSRF finding.
+    // would fetch the cloud metadata endpoint and extract IAM credentials.
+    // The redirect-target and DNS-rebinding bypasses of this gate are closed
+    // in `build_web_client`. Kimi sources-audit web-source SSRF finding.
     if is_disallowed_web_host(url) {
         let safe_url = redact_url(url);
         return vec![Err(SourceError::Other(format!(

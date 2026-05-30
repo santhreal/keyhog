@@ -330,7 +330,7 @@ pub struct ScanArgs {
     )]
     pub ml_threshold: f64,
 
-    /// Minimum confidence score (0.0 - 1.0) to report findings
+    /// Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40).
     #[arg(long, value_name = "FLOAT", value_parser = crate::value_parsers::parse_min_confidence)]
     pub min_confidence: Option<f64>,
 
@@ -358,11 +358,11 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH", conflicts_with_all = ["baseline", "create_baseline"])]
     pub update_baseline: Option<PathBuf>,
 
-    /// Maximum depth for recursive decoding (1-10, default: 4).
+    /// Maximum depth for recursive decoding (1-10, default: 10).
     #[arg(long, value_name = "DEPTH", value_parser = crate::value_parsers::parse_decode_depth)]
     pub decode_depth: Option<usize>,
 
-    /// Maximum file size for decode-through scanning (default: 64KB).
+    /// Maximum file size for decode-through scanning (default: 512KB).
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub decode_size_limit: Option<usize>,
 
@@ -415,7 +415,7 @@ pub struct ScanArgs {
     #[arg(long)]
     pub dogfood: bool,
 
-    /// ML weight for confidence scoring, 0.0-1.0 (default: 0.6).
+    /// ML weight for confidence scoring, 0.0-1.0 (default: 0.5).
     #[arg(long, value_name = "WEIGHT")]
     pub ml_weight: Option<f64>,
 

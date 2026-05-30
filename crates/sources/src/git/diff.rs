@@ -135,7 +135,11 @@ fn stream_added_lines(
         }
 
         loop {
-            let line = match super::read_capped_line(&mut reader, &mut line_buf, super::MAX_GIT_LINE_BYTES) {
+            let line = match super::read_capped_line(
+                &mut reader,
+                &mut line_buf,
+                super::MAX_GIT_LINE_BYTES,
+            ) {
                 Ok(n) if n > 0 => {
                     let l = String::from_utf8_lossy(&line_buf);
                     l.trim_end_matches('\n').trim_end_matches('\r').to_string()

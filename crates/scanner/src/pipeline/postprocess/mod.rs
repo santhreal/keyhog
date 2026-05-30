@@ -13,8 +13,9 @@ pub(crate) use crate::suppression::{
 #[cfg(feature = "simdsieve")]
 pub(crate) use crate::suppression::looks_like_secret_scanner_source;
 pub use crate::suppression::{
-    is_weakly_anchored_named_detector, should_suppress_known_example_credential,
+    detector_weak_anchor, should_suppress_known_example_credential,
     should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
+    should_suppress_named_detector_finding_weak,
 };
 
 use crate::types::*;

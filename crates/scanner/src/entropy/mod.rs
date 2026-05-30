@@ -29,31 +29,18 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
-    const MAX_CACHE_ENTRIES: usize = 4096;
-
     thread_local! {
         static CACHE: RefCell<HashMap<u64, f64>> = RefCell::new(HashMap::with_capacity(256));
     }
 
-    // Fast hash for cache key - FNV-1a, same as decode pipeline
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in data {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-
-    CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(&cached) = cache.get(&hash) {
-            return cached;
-        }
-        let entropy = shannon_entropy_uncached(data);
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            cache.clear(); // simple eviction - bounded memory
-        }
-        cache.insert(hash, entropy);
-        entropy
-    })
+    // FNV-1a content key, shared seed with every other per-scan cache.
+    let hash = crate::util_hash::hash_fast(data);
+    crate::util_hash::memoize_by_hash(
+        &CACHE,
+        hash,
+        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
+        || shannon_entropy_uncached(data),
+    )
 }
 
 fn shannon_entropy_uncached(data: &[u8]) -> f64 {
@@ -102,7 +89,54 @@ pub struct EntropyMatch {
 }
 
 /// True if the file at `path` is worth running entropy scanning on.
+///
+/// Path-only gate: `.json` and all source-code extensions are hard-OFF here.
+/// For the keyword-anchored lift of those hard-OFFs (a `.json` body or a
+/// source file that carries a secret-keyword assignment line still holds
+/// real, unprefixed high-entropy secrets), call
+/// [`is_entropy_appropriate_with_content`], which the entropy fallback uses.
 pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> bool {
+    is_entropy_appropriate_inner(path, allow_source_files, false)
+}
+
+/// Content-aware variant of [`is_entropy_appropriate`].
+///
+/// `has_secret_keyword_line` is true when the chunk text contains at least one
+/// secret-keyword assignment line (same predicate the entropy scanner uses to
+/// seed keyword contexts, [`keywords::find_keyword_assignment_lines`]). When
+/// set, two path-only hard-OFFs are lifted:
+///
+///   * `.json` files (the single biggest FN wrapper - `{"auth": "<40-char
+///     base64>"}` was scoring 0 while the identical `auth: "<same>"` in
+///     `.yaml` was caught), and
+///   * source-code files when `allow_source_files` is false (the dominant
+///     go/rust/js FN shape `const apiKey = "<base64-40>"` lives in a quoted
+///     RHS of a const/assignment with a secret keyword).
+///
+/// Both lifts are contract-safe: the keyword-assignment anchor confines the
+/// recall expansion to credential-shaped lines, away from prose / identifiers,
+/// and the per-candidate suppression gates on the emit path
+/// (pure-identifier, prose, kebab, filename-shape, ...) still run.
+///
+/// `.lock` / `.map` / minified bundles stay hard-OFF unconditionally - they
+/// are not credential wrappers, only alphabet-coincidence noise.
+pub fn is_entropy_appropriate_with_content(
+    path: Option<&str>,
+    allow_source_files: bool,
+    text: &str,
+    secret_keywords: &[String],
+) -> bool {
+    let has_secret_keyword_line =
+        !keywords::find_keyword_assignment_lines(&text.lines().collect::<Vec<_>>(), secret_keywords)
+            .is_empty();
+    is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
+}
+
+fn is_entropy_appropriate_inner(
+    path: Option<&str>,
+    allow_source_files: bool,
+    has_secret_keyword_line: bool,
+) -> bool {
     let Some(path) = path else { return true };
     // ASCII case-insensitive byte comparison - no whole-path lowercase
     // allocation per call. Hot path on every chunk during a scan.
@@ -112,10 +146,17 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
             && bytes[bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
     };
 
-    for extension in [b".json".as_slice(), b".lock", b".map"] {
+    // `.lock` / `.map` are never credential wrappers - stay hard-OFF even with
+    // a keyword line. `.json` is lifted when a secret-keyword assignment line
+    // is present (part (a) of the FN-recall fix): JSON is the biggest FN
+    // wrapper, but only the keyword-anchored bodies hold real secrets.
+    for extension in [b".lock".as_slice(), b".map"] {
         if ends_ci(extension) {
             return false;
         }
+    }
+    if ends_ci(b".json") && !has_secret_keyword_line {
+        return false;
     }
     if ends_ci(b".min.js") || ends_ci(b".min.css") {
         return false;
@@ -247,5 +288,19 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
             }
         }
     }
-    false
+
+    // Source-file lift (part (b) of the FN-recall fix). Everything that
+    // reaches here is a genuine source-code file (`.rs`, `.go`, `.js`,
+    // `.py`, ...) that is neither a recognized config/secret file nor a
+    // package manifest (both returned earlier). The dominant go/rust/js
+    // FN shape is a quoted RHS of a const/assignment with a secret keyword,
+    // `const apiKey = "<base64-40>"`. When the chunk carries such a
+    // secret-keyword assignment line, allow entropy scanning here even
+    // without `--entropy-source-files`; the per-candidate emit gates
+    // (pure-identifier, prose, kebab, filename-shape, ...) reject the
+    // identifier noise that motivated the source-file hard-OFF, so the
+    // keyword anchor keeps this contract-safe. Manifests are unaffected -
+    // they already returned `false` above, so a `name = "my-secret"` line
+    // in `Cargo.toml` cannot re-enable scanning here.
+    has_secret_keyword_line
 }

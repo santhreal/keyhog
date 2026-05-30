@@ -30,13 +30,15 @@ regex = '(?-i)\bAC[a-f0-9]{32}\b'
 description = "Twilio AccountSid (AC + 32 hex, standalone vendor fingerprint)"
 
 [[detector.patterns]]
-# Bare `authToken: "..."` / `auth_token = "..."` shape - the Twilio Node /
-# Python / Ruby SDK quickstart shape. Safe because the required
-# accountSid companion (AC + 32 hex) is itself a Twilio-specific
-# fingerprint, so this pattern can't fire on a generic authToken from
-# some other API.
-regex = "(?i)auth[_.-]?token\\s*[=:]\\s*[\"']?([a-fA-F0-9]{32})[\"']?"
-description = "Bare authToken shape; requires Twilio accountSid companion to fire"
+# `authToken: "..."` / `auth_token = "..."` shape - the Twilio Node /
+# Python / Ruby SDK quickstart shape. Re-anchored to a Twilio-fingerprinted
+# context: a `twilio` or `AC<32hex>` AccountSid literal must be CONSUMED
+# within the preceding window (the regex crate has no lookaround). The bare
+# `auth_token=<32hex>` shape on its own matched generic auth tokens from any
+# API and was the FP driver; requiring the in-window Twilio fingerprint
+# restores attribution without leaning solely on the companion gate.
+regex = "(?i)(?:twilio|AC[a-f0-9]{32})[\\sa-z0-9_.:=\"',{}()-]{0,80}?auth[_.-]?token\\s*[=:]\\s*[\"']?([a-fA-F0-9]{32})[\"']?"
+description = "Twilio authToken (32 hex) anchored to in-window twilio/AccountSid fingerprint"
 group = 1
 
 [[detector.companions]]

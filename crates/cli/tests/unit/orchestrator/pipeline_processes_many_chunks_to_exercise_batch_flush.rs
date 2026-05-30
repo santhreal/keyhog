@@ -17,6 +17,14 @@ fn pipeline_processes_many_chunks_to_exercise_batch_flush() {
         .collect();
     let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource { chunks })];
     let findings = orch.scan_sources_for_test(sources, false, None);
-    let recall = findings.len() as f64 / N as f64;
-    assert!(recall >= 0.80, "recall {:.2}% below floor", recall * 100.0);
+    // Every one of the N chunks contains exactly one planted STATIC_SECRET_ match, so a
+    // correct batch flush across the >4096 boundary must surface exactly N findings. A loose
+    // recall floor (e.g. 0.80) would silently tolerate ~1200 dropped chunks - the exact
+    // flush regression this test exists to catch - so assert the exact count instead.
+    assert_eq!(
+        findings.len(),
+        N,
+        "batch flush must not drop any chunk; lost {}",
+        N - findings.len()
+    );
 }

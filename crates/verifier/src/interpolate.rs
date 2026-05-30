@@ -27,6 +27,38 @@ fn url_encode(s: &str) -> String {
     percent_encoding::percent_encode(s.as_bytes(), percent_encoding::NON_ALPHANUMERIC).to_string()
 }
 
+/// Reduce an OOB collector value to the DNS-hostname charset the no-encode
+/// substitution path assumes (`[a-z0-9.-]`), uppercasing folded to lower.
+///
+/// disc audit (security.LOW.interpolate): the `{{interactsh*}}` tokens are
+/// interpolated into URL / header / body templates WITHOUT URL-encoding, on
+/// the stated invariant that the minted value is always `[a-z0-9.]` from
+/// `OobSession::mint()`. But the host is `format!("{unique_id}.{server_host}")`
+/// where `server_host` comes from the operator-supplied `--oob-server`, which
+/// `normalize_server()` only trims of scheme/trailing-slash and never
+/// validates for charset. A collector host carrying structural characters
+/// (`/ ? # @ : " ' < > \` space, control bytes) would otherwise be injected
+/// verbatim into request structure. We enforce the invariant the comment
+/// relies on at the substitution boundary: any byte outside the DNS-hostname
+/// charset is dropped, so a hostile `--oob-server` can never smuggle
+/// structural punctuation into a URL, header, or body. ASCII uppercase is
+/// folded to lowercase (DNS is case-insensitive); everything else outside the
+/// allowed set is removed. This is belt-and-suspenders alongside any host
+/// validation in `normalize_server()` and is correct even if that validation
+/// is absent or weakened.
+fn sanitize_oob_value(s: &str) -> String {
+    s.chars()
+        .filter_map(|c| {
+            let lc = c.to_ascii_lowercase();
+            if lc.is_ascii_lowercase() || c.is_ascii_digit() || lc == '.' || lc == '-' {
+                Some(lc)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Strip control characters from raw credential values before they reach
 /// HTTP client builders or log sinks.
 ///
@@ -74,9 +106,16 @@ pub fn interpolate(
     // do NOT URL-encode the value: the minted host is already URL-safe (only
     // `[a-z0-9.]`), and templates routinely embed it verbatim into JSON
     // bodies, headers, and URL paths where percent-encoding would corrupt
-    // the structural punctuation. A hostile detector TOML can't smuggle
-    // anything novel here - every value comes from `OobSession::mint()`,
-    // which is keyed off our own RSA correlation id, never user input.
+    // the structural punctuation. The host is `<unique_id>.<server_host>` and
+    // `server_host` derives from the operator-supplied `--oob-server`, which
+    // `normalize_server()` does not validate for charset - so we enforce the
+    // `[a-z0-9.]` invariant the no-encode path relies on right here, at the
+    // substitution boundary, via `sanitize_oob_value()`. Any structural
+    // punctuation or control byte that slipped through registration is
+    // dropped before it can reach a URL, header, or body. The `id` token can
+    // legitimately carry only `[a-z0-9]` (correlation id + alphanumeric
+    // suffix from `mint_url`), so the same hostname charset is a safe
+    // superset for it.
     for (token, key) in [
         ("{{interactsh.url}}", "__keyhog_oob_url"),
         ("{{interactsh.host}}", "__keyhog_oob_host"),
@@ -86,8 +125,18 @@ pub fn interpolate(
         ("{{interactsh}}", "__keyhog_oob_host"),
     ] {
         if interpolated.contains(token) {
-            let value = companions.get(key).map(String::as_str).unwrap_or("");
-            interpolated = interpolated.replace(token, value);
+            let raw = companions.get(key).map(String::as_str).unwrap_or("");
+            // The url variant carries a leading scheme (`https://`) that the
+            // hostname charset would strip; sanitize only the host portion
+            // and re-prepend the (fixed, trusted) scheme so the value stays a
+            // well-formed URL while the operator-influenced host is cleaned.
+            let value = match raw.split_once("://") {
+                Some((scheme, host)) if scheme.chars().all(|c| c.is_ascii_alphabetic()) => {
+                    format!("{scheme}://{}", sanitize_oob_value(host))
+                }
+                _ => sanitize_oob_value(raw),
+            };
+            interpolated = interpolated.replace(token, &value);
         }
     }
 
@@ -142,4 +191,78 @@ pub fn companions_with_oob(
     out.insert(OOB_COMPANION_URL.to_string(), minted_url.to_string());
     out.insert(OOB_COMPANION_ID.to_string(), minted_id.to_string());
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // disc audit (security.LOW.interpolate): a hostile `--oob-server` whose
+    // host carries structural punctuation must not be injected verbatim into
+    // a body/header/URL template. The substitution boundary enforces the
+    // `[a-z0-9.-]` invariant the no-encode comment relies on.
+    #[test]
+    fn oob_host_structural_chars_stripped() {
+        // Operator-supplied collector host carrying a path-break, query, and
+        // quote that would otherwise escape the JSON string / URL structure.
+        let hostile_host = "abc123.evil.com/x?q=1\"";
+        let comps = companions_with_oob(
+            &HashMap::new(),
+            hostile_host,
+            &format!("https://{hostile_host}"),
+            "abc123",
+        );
+
+        let body = interpolate("{\"u\":\"https://{{interactsh}}/cb\"}", "cred", &comps);
+        // No structural byte from the hostile host survives into the output.
+        assert!(!body.contains('?'), "query separator leaked: {body}");
+        assert!(!body.contains("?q=1"), "query string leaked: {body}");
+        // Exactly the template's own 4 quotes remain; none injected by the host.
+        assert_eq!(body.matches('"').count(), 4, "stray quote leaked into JSON: {body}");
+        // The slash present in the output is only the template's own `/cb`,
+        // never the injected `/x`.
+        assert!(!body.contains("/x"), "injected path leaked: {body}");
+        assert!(body.contains("abc123.evil.com"), "legit host bytes dropped: {body}");
+
+        let url = interpolate("{{interactsh.url}}/cb", "cred", &comps);
+        // Scheme is preserved, host is sanitized, injected query/path gone.
+        assert!(url.starts_with("https://abc123.evil.com/cb"), "url malformed: {url}");
+        assert!(!url.contains("?q=1"), "query leaked into url: {url}");
+    }
+
+    // Positive twin: a well-formed collector host and id pass through the
+    // no-encode path unchanged (sanitization is identity on legal input).
+    #[test]
+    fn oob_legit_host_passes_through() {
+        let comps = companions_with_oob(
+            &HashMap::new(),
+            "deadbeefcafe0.oast.fun",
+            "https://deadbeefcafe0.oast.fun",
+            "deadbeefcafe0",
+        );
+        assert_eq!(
+            interpolate("h={{interactsh.host}}", "cred", &comps),
+            "h=deadbeefcafe0.oast.fun"
+        );
+        assert_eq!(
+            interpolate("u={{interactsh.url}}", "cred", &comps),
+            "u=https://deadbeefcafe0.oast.fun"
+        );
+        assert_eq!(
+            interpolate("id={{interactsh.id}}", "cred", &comps),
+            "id=deadbeefcafe0"
+        );
+        assert_eq!(
+            interpolate("https://{{interactsh}}/p", "cred", &comps),
+            "https://deadbeefcafe0.oast.fun/p"
+        );
+    }
+
+    #[test]
+    fn sanitize_oob_value_charset() {
+        // Folds case, keeps `[a-z0-9.-]`, drops everything else.
+        assert_eq!(sanitize_oob_value("AbC-1.2_x/y@z "), "abc-1.2xyz");
+        assert_eq!(sanitize_oob_value("good.host-1.oast.fun"), "good.host-1.oast.fun");
+        assert_eq!(sanitize_oob_value("\u{0}\u{7f}<>'\""), "");
+    }
 }

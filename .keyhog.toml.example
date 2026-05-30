@@ -53,15 +53,15 @@ no_entropy = false
 
 # Maximum depth for recursive decoding (1-10, default: 4)
 # - 2: Fast, basic detection
-# - 4: Balanced (default) - catches double/triple encoding
-# - 8: Thorough - catches sophisticated evasion
-# - 10: Maximum - catches state-level adversaries
-decode_depth = 4
+# - 4: catches double/triple encoding
+# - 8: catches sophisticated evasion
+# - 10: Maximum (default) - catches state-level adversaries
+decode_depth = 10
 
-# Maximum file size for decode-through scanning (default: 64KB)
+# Maximum file size for decode-through scanning (default: 512KB)
 # Files larger than this skip encoding detection for performance
 # Accepts: "32KB", "1MB", "10MB", "100MB"
-decode_size_limit = "64KB"
+decode_size_limit = "512KB"
 
 # ============================================================================
 # ENTROPY DETECTION OPTIONS
@@ -81,20 +81,23 @@ entropy_threshold = 4.5
 # CONFIDENCE & ML OPTIONS
 # ============================================================================
 
-# Minimum confidence score to report findings (0.0 - 1.0, default: 0.70)
-# - 0.50: Aggressive (more findings, more false positives)
-# - 0.70: Balanced (default)
+# Minimum confidence score to report findings (0.0 - 1.0, default: 0.40)
+# Bench-tuned on the SecretBench mirror (max F1). NOTE: the floor is
+# currently non-monotonic in precision around 0.50 (a scan-time/ML
+# entanglement, tracked in backlog DET-08); 0.40 is the measured optimum.
+# - 0.30: Aggressive (more findings, more false positives)
+# - 0.40: Balanced (default)
 # - 0.85: Conservative (fewer findings, fewer false positives)
-min_confidence = 0.70
+min_confidence = 0.40
 
 # Disable ML-based confidence scoring
 # WARNING: increases false positives, hurts recall on hand-crafted
 # near-misses. REFUSED in --lockdown mode.
 no_ml = false
 
-# ML weight for confidence scoring (0.0-1.0, default: 0.6)
+# ML weight for confidence scoring (0.0-1.0, default: 0.5)
 # Higher values trust ML more; lower values favor heuristics
-ml_weight = 0.6
+ml_weight = 0.5
 
 # ============================================================================
 # UNICODE & SECURITY OPTIONS

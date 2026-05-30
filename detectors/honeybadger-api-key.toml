@@ -8,12 +8,11 @@ id = "honeybadger-api-key"
 name = "Honeybadger API Key"
 service = "honeybadger"
 severity = "high"
-# Keep `api_key` in the keyword set: the existing contract harness
-# enforces `api_key=<32hex>` firing as honeybadger-api-key. Task #100
-# tracks the over-broad attribution problem (Datadog DD_API_KEY etc.
-# stolen by this detector); that is a separate fix to the weakly-anchored
-# named detector list in suppression/api.rs, not a regex narrowing here.
-keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY", "honeybadger", "api_key"]
+# Drop the bare `api_key` keyword: it attributed any `api_key=<32hex>`
+# (Datadog DD_API_KEY, generic SDK keys, etc.) to honeybadger, driving
+# the named-detector FP rise. Attribution now requires an explicit
+# `honeybadger` token in the AC window, which is the real vendor anchor.
+keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY", "honeybadger"]
 
 [[detector.patterns]]
 # Honeybadger keys are EXACTLY 32 or 48 hex chars per the docs,
@@ -24,7 +23,7 @@ keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY",
 # Anchor with a non-hex lookaround so the capture only fires on
 # values whose length is exactly 32 or 48 and which are bounded
 # by a non-hex character (quote, whitespace, eol, punctuation).
-regex = "(?:HONEYBADGER[_\\-]?API[_\\-]?KEY|honeybadger[_\\-]?api[_\\-]?key|api_key)[=:\\s\\\"']+([a-f0-9]{32}|[a-f0-9]{48})(?:[^a-f0-9]|$)"
+regex = "(?i)honeybadger[._\\-]?(?:api[._\\-]?)?key[=:\\s\\\"']+([a-f0-9]{32}|[a-f0-9]{48})(?:[^a-f0-9]|$)"
 description = "Honeybadger API key (exactly 32 or 48 hex chars, terminated by non-hex)"
 group = 1
 

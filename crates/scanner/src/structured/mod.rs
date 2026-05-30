@@ -103,8 +103,20 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
 fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPreprocessedText {
     use crate::multiline::LineMapping;
     let original_end = text.len();
-    let mut final_text = text.to_string();
-    let mut mappings: Vec<LineMapping> = Vec::new();
+
+    // Pre-size the output: original bytes + one '\n' separator + each synthetic
+    // line ("{context}: {value}\n"). Avoids repeated reallocation while pushing
+    // and the throwaway String that a `format!` per pair would allocate.
+    let appended_len: usize = pairs
+        .iter()
+        .map(|p| p.context.len() + 2 + p.value.len() + 1)
+        .sum();
+    let mut final_text = String::with_capacity(original_end + 1 + appended_len);
+    final_text.push_str(text);
+
+    // One mapping per source line plus one per synthetic line.
+    let line_count = text.split('\n').count();
+    let mut mappings: Vec<LineMapping> = Vec::with_capacity(line_count + pairs.len());
     let mut offset = 0usize;
 
     for (line_idx, line) in text.split('\n').enumerate() {
@@ -120,14 +132,17 @@ fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPrep
     final_text.push('\n');
     let mut current_offset = original_end + 1;
     for pair in pairs {
-        let appended_line = format!("{}: {}", pair.context, pair.value);
-        let line_len = appended_line.len();
+        // line == "{context}: {value}"; push the parts directly instead of
+        // allocating an intermediate String via format!.
+        let line_len = pair.context.len() + 2 + pair.value.len();
         mappings.push(LineMapping {
             line_number: pair.line,
             start_offset: current_offset,
             end_offset: current_offset + line_len,
         });
-        final_text.push_str(&appended_line);
+        final_text.push_str(&pair.context);
+        final_text.push_str(": ");
+        final_text.push_str(&pair.value);
         final_text.push('\n');
         current_offset += line_len + 1;
     }
@@ -142,8 +157,20 @@ fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPrep
 #[cfg(not(feature = "multiline"))]
 fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPreprocessedText {
     use crate::types::LineMapping;
-    let mut final_text = text.to_string();
-    let mut mappings: Vec<LineMapping> = Vec::new();
+
+    // Pre-size the output: original bytes + one '\n' separator + each synthetic
+    // line ("{context}: {value}\n"). Avoids repeated reallocation while pushing
+    // and the throwaway String that a `format!` per pair would allocate.
+    let appended_len: usize = pairs
+        .iter()
+        .map(|p| p.context.len() + 2 + p.value.len() + 1)
+        .sum();
+    let mut final_text = String::with_capacity(text.len() + 1 + appended_len);
+    final_text.push_str(text);
+
+    // One mapping per source line plus one per synthetic line.
+    let line_count = text.split('\n').count();
+    let mut mappings: Vec<LineMapping> = Vec::with_capacity(line_count + pairs.len());
     let mut offset = 0usize;
 
     for (line_idx, line) in text.split('\n').enumerate() {
@@ -162,14 +189,17 @@ fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPrep
     final_text.push('\n');
     let mut current_offset = text.len() + 1;
     for pair in pairs {
-        let appended_line = format!("{}: {}", pair.context, pair.value);
-        let line_len = appended_line.len();
+        // line == "{context}: {value}"; push the parts directly instead of
+        // allocating an intermediate String via format!.
+        let line_len = pair.context.len() + 2 + pair.value.len();
         mappings.push(LineMapping {
             line_number: pair.line,
             start_offset: current_offset,
             end_offset: current_offset + line_len,
         });
-        final_text.push_str(&appended_line);
+        final_text.push_str(&pair.context);
+        final_text.push_str(": ");
+        final_text.push_str(&pair.value);
         final_text.push('\n');
         current_offset += line_len + 1;
     }

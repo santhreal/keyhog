@@ -142,7 +142,7 @@ impl ScanOrchestrator {
                         return false;
                     }
                 }
-                if allowlist.is_raw_hash_ignored(&m.credential_hash) {
+                if allowlist.is_hash_ignored(&m.credential_hash) {
                     return false;
                 }
                 if allowlist.ignored_detectors.contains(&*m.detector_id) {
@@ -158,7 +158,21 @@ impl ScanOrchestrator {
                         if conf < *floor {
                             return false;
                         }
-                    } else if !self.args.no_ml && conf < self.args.min_confidence.unwrap_or(0.3) {
+                    } else if !self.args.no_ml
+                        && conf
+                            < self
+                                .args
+                                .min_confidence
+                                .unwrap_or(keyhog_core::ScanConfig::default().min_confidence)
+                    {
+                        // When `--min-confidence` is unset the floor falls back to the
+                        // canonical `ScanConfig::default().min_confidence` (single source
+                        // of truth in crates/core/src/config.rs), NOT a bare literal. This
+                        // is the post-scan confidence gate for named-detector / entropy
+                        // findings; its sibling is the scan-time generic-fallback gate at
+                        // crates/scanner/src/engine/fallback_generic.rs (`confidence <
+                        // self.config.min_confidence`). Both now resolve to the same value
+                        // so the tuned == benched == shipped floor stays coherent.
                         return false;
                     }
                 }

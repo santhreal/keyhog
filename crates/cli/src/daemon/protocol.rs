@@ -90,6 +90,17 @@ pub enum Response {
     /// start`.
     ScanResults {
         path: Option<String>,
+        /// Security: each `RawMatch` carries the *unredacted* plaintext
+        /// credential (`RawMatch::credential`), so this field puts every
+        /// discovered secret on the wire in the clear. The sole control
+        /// is the daemon socket's `0600` mode (same-uid trust model): the
+        /// server hard-fails startup if that chmod does not stick (see
+        /// `server::set_socket_mode_user_only`), so nothing but a process
+        /// running as the daemon's own uid can ever read this payload.
+        /// The redaction the rest of keyhog relies on is applied
+        /// client-side, after these bytes have already crossed the socket
+        /// under that 0600 guarantee - never trust this field to be
+        /// redacted on the wire.
         matches: Vec<RawMatch>,
         /// Wire-v2: scanner-side example suppression count. Defaults
         /// to 0 for back-compat with v1 servers (serde default).

@@ -9,7 +9,17 @@ fn archive_symlink_guard_in_source() {
         "archive symlink guard log must exist"
     );
     assert!(
-        src.contains("symlink_metadata(&path)"),
-        "must check symlink_metadata before openpack"
+        src.contains("std::fs::symlink_metadata(path)"),
+        "symlink helper must use symlink_metadata without following links"
+    );
+    let guard = src
+        .find("if is_symlink(&path)")
+        .expect("archive symlink guard");
+    let open = src
+        .find("openpack::OpenPack::open_default(&path)")
+        .expect("archive open");
+    assert!(
+        guard < open,
+        "must check symlink_metadata-backed guard before openpack"
     );
 }

@@ -31,9 +31,31 @@ const LOW_ENTROPY_PENALTY: f64 = 0.6;
 const KEYWORD_NEARBY_WEIGHT: f64 = 0.10;
 const SENSITIVE_FILE_WEIGHT: f64 = 0.10;
 const COMPANION_WEIGHT: f64 = 0.05;
+/// Gap between the configurable entropy floor (the "high" scoring tier,
+/// default [`HIGH_ENTROPY_THRESHOLD`] = 4.5) and the "very high" tier that
+/// earns the full [`ENTROPY_WEIGHT`]. Derived so the default floor reproduces
+/// the canonical [`VERY_HIGH_ENTROPY_THRESHOLD`] (5.8) exactly, while a tuned
+/// `--entropy-threshold` / `.keyhog.toml entropy_threshold` slides both tiers
+/// together instead of leaving the named-detector scorer pinned to a hardcoded
+/// floor the config cannot move.
+const VERY_HIGH_ENTROPY_MARGIN: f64 = VERY_HIGH_ENTROPY_THRESHOLD - HIGH_ENTROPY_THRESHOLD;
 
-/// Compute a confidence score from `0.0` to `1.0`.
+/// Compute a confidence score from `0.0` to `1.0` using the default,
+/// compiled-in entropy floor ([`HIGH_ENTROPY_THRESHOLD`]).
+///
+/// Prefer [`compute_confidence_with_threshold`] on the named-detector hot
+/// path so the resolved `ScannerConfig.entropy_threshold` drives the scoring
+/// floor; this wrapper exists for callers that have no config in scope.
 pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
+    compute_confidence_with_threshold(signals, HIGH_ENTROPY_THRESHOLD)
+}
+
+/// Compute a confidence score from `0.0` to `1.0`, anchoring the entropy
+/// scoring tiers to the resolved `entropy_threshold` (the same knob honored by
+/// the generic entropy fallback) rather than a hardcoded const. The "high"
+/// tier fires at `entropy_threshold`; the "very high" tier (full
+/// [`ENTROPY_WEIGHT`]) fires at `entropy_threshold + VERY_HIGH_ENTROPY_MARGIN`.
+pub fn compute_confidence_with_threshold(signals: &ConfidenceSignals, entropy_threshold: f64) -> f64 {
     let mut score = SCORE_ZERO;
     let mut max_possible = SCORE_ZERO;
 
@@ -47,10 +69,12 @@ pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
         score += CONTEXT_ANCHOR_WEIGHT;
     }
 
+    let high_entropy_tier = entropy_threshold;
+    let very_high_entropy_tier = entropy_threshold + VERY_HIGH_ENTROPY_MARGIN;
     max_possible += ENTROPY_WEIGHT;
-    if signals.entropy >= VERY_HIGH_ENTROPY_THRESHOLD {
+    if signals.entropy >= very_high_entropy_tier {
         score += ENTROPY_WEIGHT;
-    } else if signals.entropy >= HIGH_ENTROPY_THRESHOLD {
+    } else if signals.entropy >= high_entropy_tier {
         score += HIGH_ENTROPY_PARTIAL_WEIGHT;
     } else if signals.entropy >= MODERATE_ENTROPY_THRESHOLD {
         score += MODERATE_ENTROPY_WEIGHT;

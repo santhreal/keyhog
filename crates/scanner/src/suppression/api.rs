@@ -54,6 +54,34 @@ pub fn should_suppress_named_detector_finding(
     source_type: Option<&str>,
     detector_id: &str,
 ) -> bool {
+    should_suppress_named_detector_finding_weak(
+        credential,
+        path,
+        context,
+        source_type,
+        detector_id,
+        false,
+    )
+}
+
+/// Weak-anchor-aware variant of [`should_suppress_named_detector_finding`].
+///
+/// `weak_anchor` is the structural classification produced by
+/// [`detector_weak_anchor`] at the scan call site (which has the full
+/// [`keyhog_core::DetectorSpec`]). When `true`, the detector relies on a
+/// generic keyword anchor with a broad / hash-shaped capture, so the
+/// shape-suppression gates that protect the `generic-*` / `entropy-*`
+/// fallbacks stay engaged instead of being bypassed. The id-only public
+/// wrapper above passes `false` for callers that have not computed the
+/// structural classification.
+pub fn should_suppress_named_detector_finding_weak(
+    credential: &str,
+    path: Option<&str>,
+    context: context::CodeContext,
+    source_type: Option<&str>,
+    detector_id: &str,
+    weak_anchor: bool,
+) -> bool {
     // Shape filters split into two tiers based on whether the shape
     // can legitimately appear as the body of a real service-anchored
     // credential.
@@ -80,7 +108,7 @@ pub fn should_suppress_named_detector_finding(
     //
     // The previous flow applied Tier B universally and dropped 400+
     // contract evasions. See task #41 + the 2026-05-27 audit.
-    let apply_tier_b = is_generic_or_entropy_detector(detector_id);
+    let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
 
     if apply_tier_b && looks_like_pure_identifier(credential) {
         crate::telemetry::record_example_suppression(
@@ -270,7 +298,7 @@ pub fn should_suppress_named_detector_finding(
     // bypass shape gates to prevent false positive traps from triggering.
     let bypass_shape_gates = !detector_id.starts_with("generic-")
         && !detector_id.starts_with("entropy-")
-        && !is_weakly_anchored_named_detector(detector_id)
+        && !weak_anchor
         && detector_id != "private-key";
     should_suppress_inner(
         credential,
@@ -283,61 +311,140 @@ pub fn should_suppress_named_detector_finding(
 }
 
 /// True if the detector that fired has no service-specific anchor -
-/// only the generic `generic-password`, `generic-secret`,
-/// `entropy-*` fallbacks. Used by [`should_suppress_named_detector_finding`]
-/// to decide whether the Tier-B shape filters apply: anchored
-/// detectors (everything else) have positive evidence in their regex
-/// that the shape filter would otherwise destroy.
-fn is_generic_or_entropy_detector(detector_id: &str) -> bool {
-    detector_id.starts_with("generic-")
-        || detector_id.starts_with("entropy-")
-        || is_weakly_anchored_named_detector(detector_id)
+/// the generic `generic-*` / `entropy-*` fallbacks, or a named detector
+/// that the structural classifier flagged as weakly anchored
+/// (`weak_anchor`). Used by [`should_suppress_named_detector_finding_weak`]
+/// to decide whether the Tier-B shape filters apply: strongly anchored
+/// detectors have positive evidence in their regex that the shape filter
+/// would otherwise destroy.
+fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
+    detector_id.starts_with("generic-") || detector_id.starts_with("entropy-") || weak_anchor
 }
 
-/// Return true if the detector ID is a named detector that uses a generic/weak
-/// anchor prefix (e.g. `api_key=`, `token=`), exposing it to high false positive rates.
-pub fn is_weakly_anchored_named_detector(detector_id: &str) -> bool {
-    matches!(
-        detector_id,
-        "aerisweather-api-credentials"
-            | "base-api-credentials"
-            | "flickr-api-key"
-            | "saltstack-credentials"
-            | "census-api-key"
-            | "workato-api-credentials"
-            | "adobe-api-key"
-            | "alchemy-api-key"
-            | "azure-openai-api-key"
-            | "datadog-api-key"
-            | "etherscan-api-key"
-            | "spotify-client-credentials"
-            | "bamboohr-api-key"
-            | "calendly-api-key"
-            | "crowdin-api-token"
-            | "github-oauth-secret"
-            | "sonarcloud-token"
-            | "alertmanager-credentials"
-            | "azure-container-registry-token"
-            | "booking-com-api-credentials"
-            | "catchpoint-api-credentials"
-            | "cyberark-credentials"
-            | "dhl-api-credentials"
-            | "looker-api-credentials"
-            | "mlflow-tracking-credentials"
-            | "marketo-api-credentials"
-            | "okta-widget-api-credentials"
-            | "opencart-api-credentials"
-            | "playwright-test-credentials"
-            | "servicenow-api-key"
-            | "snowflake-account-info"
-            | "spacelift-api-key"
-            | "teamcity-api-credentials"
-            | "transifex-api-token"
-            | "tableau-api-token"
-            | "activecampaign-api-key"
-            | "chef-automate-token"
-            | "foundation-api-key"
-            | "getresponse-api-key"
-            | "rudder-api-token"
-    )
+/// Detectors that are weakly anchored but NOT caught by the structural
+/// broad-identifier rule in [`detector_weak_anchor`], because their
+/// capture is pure-hex (`[a-f0-9]{32}` / `{40}`) - structurally identical
+/// to a legitimate hex API key such as `algolia-admin-api-key`, so shape
+/// alone cannot tell them apart - or a high-minimum broad identifier
+/// (`{20,}` / `{32}`). These were measured FP-prone on the SecretBench
+/// mirror corpus and so remain an explicit, corpus-derived data set rather
+/// than a structural derivation.
+const RESIDUAL_WEAK_ANCHORED: &[&str] = &[
+    "aerisweather-api-credentials",
+    "base-api-credentials",
+    "flickr-api-key",
+    "census-api-key",
+    "workato-api-credentials",
+    "adobe-api-key",
+    "alchemy-api-key",
+    "azure-openai-api-key",
+    "datadog-api-key",
+    "etherscan-api-key",
+    "spotify-client-credentials",
+    "bamboohr-api-key",
+    "calendly-api-key",
+    "crowdin-api-token",
+    "github-oauth-secret",
+    "sonarcloud-token",
+    "activecampaign-api-key",
+    "chef-automate-token",
+    "foundation-api-key",
+    "getresponse-api-key",
+    "rudder-api-token",
+];
+
+/// Structurally classify whether a named detector is *weakly anchored*:
+/// it relies on a generic keyword anchor (`api_key=`, `token=`, …) with a
+/// capture that can collide with non-secrets, so the shape-suppression
+/// gates must stay engaged (it should be treated like a `generic-*`
+/// fallback rather than a service-fingerprinted detector).
+///
+/// Derived at the scan call site from the detector's own regex shape so
+/// every present and future detector with this shape is covered - this
+/// replaces a hand-maintained ID allowlist that drifted out of sync with
+/// the detector corpus. The broad-identifier class (Category C of
+/// `FP_AUDIT_REPORT.md`: a `[a-zA-Z0-9_-]`-style capture with a small
+/// minimum length that matches any short identifier) is derived here; the
+/// pure-hex class, which is shape-indistinguishable from real hex keys,
+/// stays in [`RESIDUAL_WEAK_ANCHORED`].
+pub fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
+    let id = spec.id.as_str();
+    if id.starts_with("generic-") || id.starts_with("entropy-") || id == "private-key" {
+        return false;
+    }
+    RESIDUAL_WEAK_ANCHORED.contains(&id)
+        || spec
+            .patterns
+            .iter()
+            .any(|p| has_broad_identifier_capture(&p.regex))
+}
+
+/// True if `regex` contains a capture group whose entire body is a single
+/// full-alphabet identifier character class (`[a-zA-Z0-9_-]` and close
+/// variants, NOT hex-only `[a-f0-9]`) with a minimum repeat of 0 or 1
+/// (`+`, `*`, `{0,..}`, `{1,..}`, `{1}`). That is the broad-identifier
+/// false-positive shape from Category C of `FP_AUDIT_REPORT.md`: a
+/// minimum length of one means the capture matches ANY short identifier
+/// (function name, variable, kwarg default) sitting after the detector's
+/// keyword anchor. Higher minimums (e.g. `{8,}`, `{16}`) describe real
+/// fixed-shape keys and are deliberately NOT flagged.
+fn has_broad_identifier_capture(regex: &str) -> bool {
+    let mut search_from = 0;
+    while let Some(rel) = regex[search_from..].find("([") {
+        let class_open = search_from + rel + 1; // index of '['
+        let Some(rel_close) = regex[class_open..].find(']') else {
+            break;
+        };
+        let class_close = class_open + rel_close; // index of ']'
+        let body = &regex[class_open + 1..class_close];
+        if let Some(min_len) = group_capture_min_len(&regex[class_close + 1..]) {
+            if min_len <= 1 && is_full_alpha_identifier_class(body) {
+                return true;
+            }
+        }
+        search_from = class_close + 1;
+    }
+    false
+}
+
+/// If `after` (the slice immediately following a class's closing `]`) is a
+/// quantifier that closes the capture group right after it, return the
+/// quantifier's minimum repeat count. `Some` only when the group is exactly
+/// `([class]<quant>)`.
+fn group_capture_min_len(after: &str) -> Option<usize> {
+    let bytes = after.as_bytes();
+    match bytes.first()? {
+        b'+' if bytes.get(1) == Some(&b')') => Some(1),
+        b'*' if bytes.get(1) == Some(&b')') => Some(0),
+        b'{' => {
+            let close = after.find('}')?;
+            if after.as_bytes().get(close + 1) != Some(&b')') {
+                return None;
+            }
+            after[1..close].split(',').next()?.parse::<usize>().ok()
+        }
+        _ => None,
+    }
+}
+
+/// True if `body` (a regex character-class body, without the brackets) is
+/// composed only of identifier range/literal tokens AND includes a full
+/// alphabetic range (`a-z`, `A-Z`, or `\w`). Hex-only classes (`a-f0-9`)
+/// return false because `a-f` is not an accepted token.
+fn is_full_alpha_identifier_class(body: &str) -> bool {
+    const TOKENS: &[&str] = &["a-z", "A-Z", "0-9", "\\w", "\\d", "_", "-"];
+    let mut full_alpha = false;
+    let mut rest = body;
+    while !rest.is_empty() {
+        match TOKENS.iter().find(|t| rest.starts_with(**t)) {
+            Some(t) => {
+                if *t == "a-z" || *t == "A-Z" || *t == "\\w" {
+                    full_alpha = true;
+                }
+                rest = &rest[t.len()..];
+            }
+            None => return false,
+        }
+    }
+    full_alpha
 }

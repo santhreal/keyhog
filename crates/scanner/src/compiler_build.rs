@@ -18,21 +18,27 @@ pub struct CompileState {
 
 pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     use rayon::prelude::*;
-    use std::collections::HashMap;
 
     // De-duplicate identical regex strings BEFORE compilation. The 888-
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple
     // google-* detectors share the `AIza` regex shape). Compiling each
     // once cuts startup-compile time and RAM proportionally - see
     // audits/legendary-2026-04-26.
-    let unique_patterns: HashMap<String, ()> = detectors
-        .iter()
-        .flat_map(|d| d.patterns.iter().map(|p| (p.regex.clone(), ())))
-        .collect();
-    tracing::debug!(
-        unique = unique_patterns.len(),
-        "compiler dedup: unique pattern regexes"
-    );
+    //
+    // The count is informational only (one debug log line), so gate the
+    // whole computation behind the DEBUG level check and borrow the regex
+    // sources instead of cloning them. Under any non-debug level this is
+    // zero allocation - it used to heap-clone ~1000+ regex source strings
+    // into an owned HashMap on every scanner construction (every CLI
+    // invocation, every daemon/watch recompile) solely to print the count.
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        let unique = detectors
+            .iter()
+            .flat_map(|d| d.patterns.iter().map(|p| p.regex.as_str()))
+            .collect::<std::collections::HashSet<&str>>()
+            .len();
+        tracing::debug!(unique, "compiler dedup: unique pattern regexes");
+    }
 
     // Phase 1: Pre-compile all regexes in parallel (the expensive part).
     let compiled_results: Vec<Result<(Vec<CompiledPattern>, Vec<CompiledCompanion>)>> = detectors

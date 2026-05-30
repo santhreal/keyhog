@@ -67,14 +67,8 @@ pub fn select_backend(
         return ScanBackend::CpuFallback;
     }
 
-    if caps.gpu_available && !caps.gpu_is_software {
-        let tier = classify_gpu_tier(caps.gpu_name.as_deref());
-        let solo = gpu_solo_bytes_for_tier(tier);
-        let min = gpu_min_bytes_for_tier(tier);
-        let pattern_floor = gpu_pattern_breakeven_for_tier(tier);
-        if workload_bytes >= solo || (workload_bytes >= min && pattern_count >= pattern_floor) {
-            return ScanBackend::Gpu;
-        }
+    if gpu_could_engage(caps, workload_bytes, pattern_count) {
+        return ScanBackend::Gpu;
     }
 
     if caps.hyperscan_available {
@@ -86,6 +80,32 @@ pub fn select_backend(
     }
 
     ScanBackend::CpuFallback
+}
+
+/// Cheap, side-effect-free pre-check: could a scan of `workload_bytes` over
+/// `pattern_count` patterns *ever* route to [`ScanBackend::Gpu`] on this
+/// hardware? This is exactly the GPU branch condition inside
+/// [`select_backend`], factored out so cold-path callers can gate the
+/// expensive wgpu/CUDA device acquisition (the ~250 ms adapter-enumeration
+/// cold-start in `engine::compile`) on whether the workload can clear the
+/// tier's GPU floor at all.
+///
+/// On a many-tiny-file corpus the per-batch byte total never reaches the
+/// high-tier 2 MiB floor (see [`super::thresholds`]), so this returns `false`
+/// and the caller can skip paying for a device no chunk will ever touch.
+/// It does **not** consult `KEYHOG_BACKEND` or `KEYHOG_NO_GPU`; callers that
+/// need the env override should check [`forced_backend_from_env`] /
+/// [`crate::gpu::env_no_gpu`] separately, matching `select_backend`'s order.
+#[must_use]
+pub fn gpu_could_engage(caps: &HardwareCaps, workload_bytes: u64, pattern_count: usize) -> bool {
+    if !caps.gpu_available || caps.gpu_is_software {
+        return false;
+    }
+    let tier = classify_gpu_tier(caps.gpu_name.as_deref());
+    let solo = gpu_solo_bytes_for_tier(tier);
+    let min = gpu_min_bytes_for_tier(tier);
+    let pattern_floor = gpu_pattern_breakeven_for_tier(tier);
+    workload_bytes >= solo || (workload_bytes >= min && pattern_count >= pattern_floor)
 }
 
 /// Parse `KEYHOG_BACKEND` env var into a forced [`ScanBackend`].

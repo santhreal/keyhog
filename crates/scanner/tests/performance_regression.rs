@@ -69,8 +69,14 @@ fn scan_1mb_with_all_detectors_under_100ms() {
         "Scanning 1MB with all detectors took {} ms (expected < {limit_ms} ms). Fix: optimize scan_inner or reduce detector count.",
         elapsed.as_millis()
     );
-    // Ensure the scan actually produced findings
-    assert!(!matches.is_empty(), "Expected findings in benchmark text");
+    // Truth assert (separate from the perf assert above): the benchmark text
+    // plants Stripe live secret keys (`sk_live_...`), so the scan MUST fire the
+    // `stripe-secret-key` detector by exact id - not merely produce some match.
+    assert!(
+        matches.iter().any(|m| &*m.detector_id == "stripe-secret-key"),
+        "Expected the planted sk_live_ secret to fire the stripe-secret-key detector; got: {:?}",
+        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+    );
 }
 
 #[test]

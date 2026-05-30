@@ -68,11 +68,14 @@ impl ScannerConfig {
     }
 
     pub fn thorough() -> Self {
+        // `min_confidence` intentionally omitted: it inherits the canonical
+        // `ScanConfig::default()` floor (single source of truth) instead of
+        // forking a second literal. Deep scanning widens decode/entropy, not
+        // the confidence bar.
         Self {
             max_decode_depth: 10,
             ml_enabled: true,
             entropy_enabled: true,
-            min_confidence: 0.5,
             ..Default::default()
         }
     }
@@ -96,14 +99,18 @@ impl ScannerConfig {
     /// a ScannerConfig from a user-influenced source pays this
     /// once at config-build time.
     pub fn sanitise(&mut self) {
-        // Probabilities: clamp to [0.0, 1.0], NaN → default.
+        // Probabilities: clamp to [0.0, 1.0], NaN → canonical default. The
+        // NaN fallbacks READ FROM `ScanConfig::default()` rather than repeating
+        // a literal, so a corrupt-config scrub can never fork from the shipped
+        // floor (currently ml_weight 0.5, min_confidence 0.40) - one source.
+        let canon = keyhog_core::config::ScanConfig::default();
         if !self.ml_weight.is_finite() {
-            self.ml_weight = 0.6;
+            self.ml_weight = canon.ml_weight;
         } else {
             self.ml_weight = self.ml_weight.clamp(0.0, 1.0);
         }
         if !self.min_confidence.is_finite() {
-            self.min_confidence = 0.3;
+            self.min_confidence = canon.min_confidence;
         } else {
             self.min_confidence = self.min_confidence.clamp(0.0, 1.0);
         }
@@ -132,9 +139,26 @@ impl ScannerConfig {
 
 impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
     fn from(config: keyhog_core::config::ScanConfig) -> Self {
+        // Identity-style mapping: every shared knob carries 1:1 with the
+        // SAME field name on both sides. No rename, no invented value -
+        // the From must not introduce drift, or a tuning baked into one
+        // `Default` silently disagrees with the benched/shipped path.
+        //
+        // `multiline` has no `ScanConfig` counterpart (its type lives in
+        // this crate, and `keyhog-core` cannot depend on `keyhog-scanner`
+        // without a dependency cycle), so it takes the scanner default.
+        //
+        // `ScanConfig::{min_secret_len, max_file_size, dedup}` are NOT
+        // carried: the scanner reads none of them, so mapping them in
+        // would be dead state that could drift. `max_file_size` is
+        // enforced independently at the source walker (`keyhog-sources`,
+        // `FilesystemSource::with_max_file_size`); `dedup` is applied by
+        // the verifier via `DedupScope`; `min_secret_len` currently has no
+        // reader at all. They stay on `ScanConfig` (covered by core config
+        // tests) but have no `ScannerConfig` peer by design.
         let mut out = Self {
             max_decode_depth: config.max_decode_depth,
-            validate_decode: true,
+            validate_decode: config.validate_decode,
             entropy_enabled: config.entropy_enabled,
             entropy_threshold: config.entropy_threshold,
             entropy_in_source_files: config.entropy_in_source_files,
@@ -142,7 +166,7 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
             ml_weight: config.ml_weight,
             min_confidence: config.min_confidence,
             unicode_normalization: config.unicode_normalization,
-            max_decode_bytes: config.decode_size_limit,
+            max_decode_bytes: config.max_decode_bytes,
             max_matches_per_chunk: config.max_matches_per_chunk,
             scan_comments: config.scan_comments,
             multiline: crate::multiline::MultilineConfig::default(),
@@ -279,8 +303,41 @@ impl ScanState {
         let mut matches: Vec<_> = self.matches.into_iter().map(|r| r.0).collect();
         // Sort descending by confidence for final output
         matches.sort_by(|a, b| b.cmp(a));
-        // Dedup identical findings. Stable: keeps the highest-confidence
-        // entry of any duplicate set thanks to the sort above.
+        // Dedup identical findings (same detector + credential + offset).
+        // 0 or 1 match cannot contain a duplicate, so skip all dedup work -
+        // no HashSet alloc, no refcount traffic - on the overwhelmingly
+        // common small-chunk case.
+        if matches.len() <= 1 {
+            return matches;
+        }
+        // For small N a sort-based adjacent dedup beats a HashSet: it adds
+        // no allocation and no `Arc::clone` (two atomics per match) - it
+        // only borrows the identity fields for comparison. The Vec is
+        // already sorted confidence-descending above; `sort_by` is a STABLE
+        // sort, so grouping by (detector_id, credential, offset) preserves
+        // that confidence-descending order within each identity group. The
+        // first element of each run is therefore the highest-confidence
+        // entry, which `dedup_by` keeps. A final `b.cmp(a)` restores the
+        // canonical output order. Same result as the HashSet path, no alloc.
+        if matches.len() <= 64 {
+            matches.sort_by(|a, b| {
+                a.detector_id
+                    .cmp(&b.detector_id)
+                    .then_with(|| a.credential.cmp(&b.credential))
+                    .then_with(|| a.location.offset.cmp(&b.location.offset))
+            });
+            matches.dedup_by(|a, b| {
+                a.detector_id == b.detector_id
+                    && a.credential == b.credential
+                    && a.location.offset == b.location.offset
+            });
+            // Restore confidence-descending order for output.
+            matches.sort_by(|a, b| b.cmp(a));
+            return matches;
+        }
+        // Large N: HashSet dedup amortises better than repeated sorts.
+        // Stable: keeps the highest-confidence entry of any duplicate set
+        // thanks to the confidence sort above.
         let mut seen: std::collections::HashSet<(std::sync::Arc<str>, std::sync::Arc<str>, usize)> =
             std::collections::HashSet::with_capacity(matches.len());
         matches.retain(|m| {

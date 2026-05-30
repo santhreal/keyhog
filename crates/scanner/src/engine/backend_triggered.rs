@@ -12,47 +12,58 @@ impl CompiledScanner {
         triggered_patterns: Vec<u64>,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
-        let line_offsets = prepared.line_offsets().to_vec();
+        // Borrow the OnceLock-cached line offsets instead of cloning: the
+        // cache (backend_prepared.rs) exists precisely to avoid recomputing
+        // the offset table, and every downstream consumer
+        // (extract_confirmed_patterns / scan_fallback_patterns /
+        // scan_generic_assignments / scan_entropy_fallback) takes `&[usize]`.
+        // The `.to_vec()` heap-cloned one usize per line of the file on every
+        // chunk for no reason. The borrow stays valid for the whole function
+        // because `prepared` is only read (never moved/mutated) afterward.
+        let line_offsets: &[usize] = prepared.line_offsets();
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
         #[cfg(feature = "simdsieve")]
         self.scan_hot_patterns_fast(
             &prepared.preprocessed.text,
-            &line_offsets,
+            line_offsets,
             prepared.chunk,
             &mut scan_state,
         );
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
+        // `documentation_lines` is consumed unconditionally below by
+        // `scan_fallback_patterns` (fallback detectors run on every chunk,
+        // see Task #69), so it must exist on both the trigger and no-trigger
+        // paths. Compute it exactly once here rather than once in each arm of
+        // a trigger branch - the old dual-arm shape recomputed nothing extra
+        // but obscured that the flags scan happens once per chunk.
+        let documentation_lines = context::documentation_line_flags(&code_lines);
+
         // No-trigger fast path: when no AC pattern fired, the entire
         // confirmed-pattern extraction pipeline is dead work. Skip
-        // building the `confirmed_patterns: Vec<usize>` (allocation
-        // saved), the per-line `documentation_line_flags` scan
-        // (~6 µs saved on profile), and the `extract_confirmed_patterns`
-        // call. The downstream fallbacks (`scan_generic_assignments`,
-        // `scan_entropy_fallback`, `apply_ml_batch_scores`) run
-        // unchanged since they have their own input shapes.
-        let documentation_lines = if expanded_patterns.iter().any(|&w| w != 0) {
+        // building the `confirmed_patterns: Vec<usize>` (allocation saved)
+        // and the `extract_confirmed_patterns` call. The downstream
+        // fallbacks (`scan_fallback_patterns`, `scan_generic_assignments`,
+        // `scan_entropy_fallback`, `apply_ml_batch_scores`) run unchanged
+        // since they have their own input shapes.
+        if expanded_patterns.iter().any(|&w| w != 0) {
             let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
                 .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
                 .collect();
-            let documentation_lines = context::documentation_line_flags(&code_lines);
 
             self.extract_confirmed_patterns(
                 &confirmed_patterns,
                 &prepared.preprocessed,
-                &line_offsets,
+                line_offsets,
                 &code_lines,
                 &documentation_lines,
                 prepared.chunk,
                 &mut scan_state,
                 deadline,
             );
-            documentation_lines
-        } else {
-            context::documentation_line_flags(&code_lines)
-        };
+        }
 
         // Fallback patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
@@ -65,7 +76,7 @@ impl CompiledScanner {
         // `fallback_always_active = true` so they run on every chunk.
         self.scan_fallback_patterns(
             &prepared.preprocessed,
-            &line_offsets,
+            line_offsets,
             &code_lines,
             &documentation_lines,
             prepared.chunk,
@@ -73,12 +84,12 @@ impl CompiledScanner {
             deadline,
         );
 
-        self.scan_generic_assignments(&code_lines, &line_offsets, prepared.chunk, &mut scan_state);
+        self.scan_generic_assignments(&code_lines, line_offsets, prepared.chunk, &mut scan_state);
 
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
             &prepared.preprocessed,
-            &line_offsets,
+            line_offsets,
             prepared.chunk,
             &mut scan_state,
         );

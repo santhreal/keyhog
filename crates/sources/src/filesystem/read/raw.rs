@@ -7,12 +7,19 @@ use memmap2::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 
-use super::decode::decode_text_file;
+use super::decode::{decode_text_file, decode_text_file_owned};
 use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 pub(in crate::filesystem) fn read_file_buffered(path: &Path) -> Option<String> {
+    // The buffered read already owns its `Vec<u8>`. Hand it to the owning
+    // decoder so the valid-UTF-8 fast path can *move* the buffer straight
+    // into the returned `String` (`String::from_utf8` reuses the same
+    // allocation) instead of paying a full-file `s.to_owned()` heap copy.
+    // At internet scale that copy is a whole extra pass over every byte
+    // scanned on the hottest loop; the mmap path can't avoid it (its
+    // backing store is borrowed), but the buffered path can and must.
     let bytes = read_file_safe(path).ok()?;
-    decode_text_file(&bytes)
+    decode_text_file_owned(bytes)
 }
 
 /// Open `path` in a symlink-resistant way. POSIX gets `O_NOFOLLOW`;

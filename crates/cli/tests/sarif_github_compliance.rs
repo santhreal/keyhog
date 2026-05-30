@@ -113,5 +113,42 @@ fn sarif_is_github_code_scanning_compliant() {
             "result.level must be a valid SARIF level; got {}",
             r["level"]
         );
+        // (5) `relatedLocations` must not contain duplicate items. This is the
+        // exact failure class the upload-sarif Action rejects on
+        // ("relatedLocations contains duplicate item"); when it fires GitHub
+        // drops the ENTIRE run, so no schema validator and none of (1)-(4)
+        // above catches it. Assert it here, end to end through the real binary,
+        // not just at the renderer/property level. The dedup key is the same
+        // (uri, startLine, charOffset) triple the renderer dedups on.
+        if let Some(related) = r["relatedLocations"].as_array() {
+            let mut keys: Vec<(String, Option<i64>, i64)> = related
+                .iter()
+                .map(|loc| {
+                    let uri = loc
+                        .pointer("/physicalLocation/artifactLocation/uri")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let line = loc
+                        .pointer("/physicalLocation/region/startLine")
+                        .and_then(|v| v.as_i64());
+                    let offset = loc
+                        .pointer("/physicalLocation/region/charOffset")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    (uri, line, offset)
+                })
+                .collect();
+            let before = keys.len();
+            keys.sort();
+            keys.dedup();
+            assert_eq!(
+                keys.len(),
+                before,
+                "relatedLocations contains a duplicate (uri, line, offset) item; \
+                 GitHub Code Scanning rejects this with 'relatedLocations contains \
+                 duplicate item' and drops the whole run. result={r}"
+            );
+        }
     }
 }

@@ -188,21 +188,67 @@ def record_file_path(rec: dict, root: pathlib.Path) -> pathlib.Path:
 # ── scanner adapters ──────────────────────────────────────────────
 
 
+def scanner_version(scanner: str, binary: str | None = None) -> str:
+    """Best-effort `<binary> --version` capture so a bench result records
+    exactly which build produced the score. The v32 artifact shipped with
+    an empty `version` field, which made the stale-binary provenance break
+    (HEAD source vs the older build on PATH) invisible. Emitting the real
+    version string into ScoreReport.version closes that gap. Returns "" if
+    the binary is absent or the probe fails - never raises."""
+    bin_name = binary or scanner
+    if shutil.which(bin_name) is None:
+        return ""
+    try:
+        completed = subprocess.run(
+            [bin_name, "--version"],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    out = (completed.stdout or completed.stderr or "").strip()
+    # Collapse multi-line --version banners (keyhog prints version + ML
+    # model hash on separate lines) into one space-joined line.
+    return " ".join(line.strip() for line in out.splitlines() if line.strip())
+
+
+def _scan_roots(file_paths: list[pathlib.Path]) -> list[pathlib.Path]:
+    """Collapse the per-fixture paths to the smallest set of directories
+    that still covers every file, so a directory-recursive scanner pays
+    ONE cold-start (warm() + Hyperscan compile + GPU probe) over the whole
+    corpus instead of one per hash-prefix shard (257x on the mirror).
+    When every fixture shares a common ancestor we return that single root;
+    otherwise we fall back to the distinct parent dirs."""
+    parents = sorted({fp.parent for fp in file_paths})
+    if not parents:
+        return []
+    try:
+        import os.path
+        common = pathlib.Path(os.path.commonpath([str(p) for p in parents]))
+    except ValueError:
+        # Mixed drives / no common path: keep the per-parent batching.
+        return parents
+    # Only collapse to the common root if it is itself one of the scanned
+    # trees (or an ancestor of all of them); commonpath already guarantees
+    # the latter, so a single recursive scan of `common` covers everything.
+    return [common]
+
+
 def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[dict]:
     """Run keyhog over the given files. Returns a list of finding
     dicts each with at least {"file": str, "value": str}."""
     if shutil.which(binary) is None:
         raise FileNotFoundError(f"keyhog binary not found on PATH: {binary}")
-    # `keyhog scan` accepts ONE PATH argument (file or directory),
-    # not a list. Batch by parent dir so a 100k-fixture sharded
-    # corpus pays one keyhog cold-start (~250 ms) per shard (256
-    # shards) instead of per file (100k × cold-start). The
+    # `keyhog scan` accepts ONE PATH argument (file or directory) and
+    # recurses into it, parallelising internally via the dispatch
+    # pipeline. Collapse the fixtures to their common root and scan it
+    # ONCE so the corpus pays a single warm()/Hyperscan-compile/GPU-probe
+    # cold-start (owner-measured 0.45-2.3 s each) amortised over all
+    # 15k files, instead of 257x once-per-shard. The
     # `--format json --show-secrets --no-suppress-test-fixtures`
     # combination is what makes scoring apples-to-apples with
-    # trufflehog/gitleaks (which don't suppress demo tokens).
+    # trufflehog/kingfisher/betterleaks (which don't suppress demo tokens).
     norm: list[dict] = []
-    parents = sorted({fp.parent for fp in file_paths})
-    for parent in parents:
+    for parent in _scan_roots(file_paths):
         cmd = [
             binary, "scan", "--format", "json", "--show-secrets",
             "--no-suppress-test-fixtures",
@@ -274,26 +320,87 @@ def run_trufflehog(file_paths: list[pathlib.Path], binary: str = "trufflehog") -
     return norm
 
 
-def run_gitleaks(file_paths: list[pathlib.Path], binary: str = "gitleaks") -> list[dict]:
+def run_kingfisher(file_paths: list[pathlib.Path], binary: str = "kingfisher") -> list[dict]:
     if shutil.which(binary) is None:
-        raise FileNotFoundError(f"gitleaks binary not found on PATH: {binary}")
-    # gitleaks `detect --source DIR --no-git` is the filesystem mode.
+        raise FileNotFoundError(f"kingfisher binary not found on PATH: {binary}")
+    # kingfisher `scan --format jsonl` emits one JSON object per
+    # finding, followed by a TRAILING SUMMARY line ({"findings": N,
+    # "blobs_scanned": …, "kingfisher": {…}}) that carries neither a
+    # `rule` nor a `finding` key — that line must be skipped or it
+    # would be parsed as a phantom finding (value="", file="") and
+    # silently inflate FPs. `--no-update-check` keeps it offline,
+    # `--no-validate` stops live-API calls so scoring is apples-to-
+    # apples with the other --no-verification scanners, and
+    # `--confidence low` reports at the lowest bar so kingfisher is
+    # not handicapped vs keyhog's --no-suppress-test-fixtures. Exit
+    # code is 200 when findings are present, so check=False.
     norm: list[dict] = []
     parents = sorted({fp.parent for fp in file_paths})
     for parent in parents:
-        with subprocess.Popen(
-            [
-                binary, "detect", "--source", str(parent), "--no-git",
-                "--report-format", "json", "--report-path", "/dev/stdout",
-                "--exit-code", "0",
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-        ) as proc:
-            out, _ = proc.communicate(timeout=600)
+        cmd = [
+            binary, "--no-update-check", "scan", "--format", "jsonl",
+            "--no-validate", "--confidence", "low", str(parent),
+        ]
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=1800,
+        )
+        for line in completed.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            # Per-finding line shape:
+            #   {"rule": {"name", "id"},
+            #    "finding": {"snippet", "line", "path", …}}
+            # The trailing summary line has neither key; skip it.
+            fnd = obj.get("finding")
+            rule = obj.get("rule")
+            if not isinstance(fnd, dict) or not isinstance(rule, dict):
+                continue
+            norm.append({
+                "file": fnd.get("path") or "",
+                "line": fnd.get("line", 0),
+                "value": fnd.get("snippet") or "",
+                "detector": rule.get("id") or rule.get("name") or "",
+            })
+    return norm
+
+
+def run_betterleaks(file_paths: list[pathlib.Path], binary: str = "betterleaks") -> list[dict]:
+    if shutil.which(binary) is None:
+        raise FileNotFoundError(f"betterleaks binary not found on PATH: {binary}")
+    # betterleaks `dir` mode emits the gitleaks JSON schema as a
+    # single array on stdout. `--report-path -` routes it to stdout,
+    # `--no-banner` keeps the banner off stdout (it would corrupt the
+    # JSON), `--redact=0` disables secret redaction so the captured
+    # value byte-matches the manifest secret (default --redact=100
+    # masks the whole secret and every finding scores as a non-
+    # overlapping FP), `--validation=false` stops live-API calls, and
+    # `--exit-code 0` makes a clean exit even with findings so we read
+    # stdout instead of treating the run as failed.
+    norm: list[dict] = []
+    parents = sorted({fp.parent for fp in file_paths})
+    for parent in parents:
+        cmd = [
+            binary, "dir", "--no-banner", "--report-format", "json",
+            "--report-path", "-", "--redact=0", "--validation=false",
+            "--exit-code", "0", str(parent),
+        ]
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=1800,
+        )
+        out = completed.stdout.strip()
+        if not out:
+            continue
         try:
-            data = json.loads(out) if out.strip() else []
+            data = json.loads(out)
         except json.JSONDecodeError:
-            data = []
+            continue
+        if not isinstance(data, list):
+            continue
         for f in data:
             norm.append({
                 "file": f.get("File", ""),
@@ -307,7 +414,8 @@ def run_gitleaks(file_paths: list[pathlib.Path], binary: str = "gitleaks") -> li
 SCANNERS = {
     "keyhog": run_keyhog,
     "trufflehog": run_trufflehog,
-    "gitleaks": run_gitleaks,
+    "kingfisher": run_kingfisher,
+    "betterleaks": run_betterleaks,
 }
 
 
@@ -421,6 +529,11 @@ def score_corpus(
         rec_by_path[rec.get("on_disk_path", "")] = rec
 
     report = ScoreReport(scanner=scanner, fixture_count=len(records))
+    # Record the scanner build that produced this score. An empty version
+    # field (as the v32 artifact shipped with) lets a stale binary on PATH
+    # masquerade as a HEAD result; stamping `<scanner> --version` makes the
+    # provenance auditable from the result JSON alone.
+    report.version = scanner_version(scanner)
     t0 = time.perf_counter()
     try:
         findings = SCANNERS[scanner](file_paths)

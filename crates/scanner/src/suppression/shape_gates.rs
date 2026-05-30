@@ -44,12 +44,21 @@ pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
 /// uniform hex). Exposed so the named-detector path can apply it
 /// without the UUID arm.
 pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
-    // Prefixed-hash forms emitted by docker (`sha256:<64-hex>`), npm
-    // package-lock integrity (`sha512-<base64>`), python requirements
-    // (`sha256:<64-hex>`) and git-LFS pointers (`sha256:<64-hex>`).
-    // These are very common FP shapes - see secretbench mirror per-
-    // category FP counts (docker-image-digest, npm-lock-integrity,
-    // python-requirements-hash).
+    looks_like_prefixed_hash_digest(credential) || looks_like_bare_hex_digest(credential)
+}
+
+/// Algo-labelled hash-digest sub-shape of [`looks_like_hash_digest`]:
+/// docker (`sha256:<64-hex>`), npm package-lock integrity
+/// (`sha512-<base64>`), python requirements (`sha256:<64-hex>`), git-LFS
+/// pointers (`sha256:<64-hex>`). The `sha256:` / `sha512-` label is a
+/// structural decoy marker that NO service-specific detector regex ever
+/// requests as the body of its credential, so this sub-shape stays a
+/// false positive even when a generic keyword anchor (`token=`,
+/// `integrity:`) is attached. Split out from the bare-hex arm so the
+/// decision tree can fire it regardless of `bypass_shape_gates` while
+/// the ambiguous bare-hex arm (Algolia / New Relic / Redis Labs use
+/// 32/40/64-hex bodies) stays anchor-gated.
+pub(crate) fn looks_like_prefixed_hash_digest(credential: &str) -> bool {
     if let Some(body) = strip_hash_algo_prefix(credential) {
         // Stripped body must itself be a hash digest of the
         // corresponding length OR a base64 blob (npm-style).
@@ -66,6 +75,18 @@ pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
             return true;
         }
     }
+    false
+}
+
+/// Bare uniform-hex digest arm of [`looks_like_hash_digest`]. AMBIGUOUS
+/// with real service-anchored hex keys (Algolia admin 32-hex, New Relic
+/// 40-hex, Redis Labs 64-hex), so the decision tree keeps this arm gated
+/// on `!bypass_shape_gates`: a service-fingerprinted detector that
+/// requested pure hex IS positive evidence the value is a key, not a
+/// git SHA. The bare-hex-under-a-bare-keyword case (`token=<64-hex>`)
+/// is handled in `suppression/api.rs` by reclassifying generic-keyword
+/// pure-hex captures as `weak_anchor` (→ `!bypass_shape_gates` here).
+pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     // Bare hash-digest hex. Lengths that real secrets use commonly
     // (e.g. 40-char AWS secret-access-key body) DON'T match because
     // those are base64, not pure hex.
@@ -158,31 +179,14 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// AWS secret keys are 40 chars base62 with diversity typically
 /// < 32, so the diversity clause does not bite them.
 pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
-    if !(40..=80).contains(&credential.len()) {
-        return false;
-    }
-    let has_padding = credential.ends_with("==") || credential.ends_with('=');
-    let length_multiple_of_4 = credential.len().is_multiple_of(4);
-    if !has_padding && !length_multiple_of_4 {
-        return false;
-    }
-    let mut has_b64_punct = false;
-    let mut seen = [false; 256];
-    let mut distinct_alnum: u32 = 0;
-    for b in credential.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {
-                if !seen[b as usize] {
-                    seen[b as usize] = true;
-                    distinct_alnum += 1;
-                }
-            }
-            b'=' => {}
-            b'+' | b'/' => has_b64_punct = true,
-            _ => return false,
-        }
-    }
-    has_b64_punct || has_padding || (length_multiple_of_4 && distinct_alnum >= 32)
+    // Single source of truth for the random-base64-blob shape: the
+    // parameterized `decode_structure::is_random_base64_blob`. This caller
+    // pins the [40, 80] length band and the diversity floor of 32 distinct
+    // alphanumeric chars; the sibling `decode_structure::looks_like_uniform_
+    // base64_blob` pins (44, 600, 32). The two were byte-identical scan loops
+    // before being reconciled here so their bands can never silently drift in
+    // opposite directions again (org/dedup audit finding).
+    crate::decode_structure::is_random_base64_blob(credential, 40, 80, 32)
 }
 
 fn is_uniform_hex(s: &str) -> bool {

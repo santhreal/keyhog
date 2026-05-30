@@ -3,6 +3,17 @@
 const COALESCE_SEPARATOR_LEN: usize = 8;
 const COALESCE_SEPARATOR_BYTE: u8 = 0xFF;
 
+/// Build the contiguous GPU input buffer from `chunks`.
+///
+/// The returned `Vec<u8>` is a full second copy of the batch corpus (up to
+/// the documented 256 MiB-1 GiB), so peak RSS is 2x the batch while both it
+/// and the original `chunks` slice are live. Ownership is handed to the
+/// caller precisely so the caller can `drop(buffer)` the instant the GPU
+/// dispatch returns its matches (`pipeline.scan` yields owned
+/// pattern_id/start/end), collapsing the 2x window back to 1x before the
+/// per-chunk extraction phase. Callers (gpu_megascan / gpu_literal_phase1 /
+/// gpu_ac_phase1) MUST drop the buffer immediately after dispatch; holding
+/// it to end-of-scope straddles the peak-memory extraction window.
 pub fn coalesce_chunks(chunks: &[keyhog_core::Chunk]) -> (Vec<(usize, usize, usize)>, Vec<u8>) {
     // Reserve once: data + (n-1) separators. Empirically this single big
     // allocation is the main cost of `coalesce_chunks` on a typical

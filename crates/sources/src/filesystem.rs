@@ -2,7 +2,6 @@
 //! respects `.gitignore`, and yields chunks for scanning.
 
 use codewalk::{CodeWalker, WalkConfig};
-use dashmap::DashMap;
 use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::HashSet;
@@ -13,32 +12,17 @@ use std::sync::{Arc, OnceLock};
 
 mod read;
 
-/// Thread-safe cache of symlink status to avoid std::fs::symlink_metadata syscalls (KH-41)
-static SYMLINK_CACHE: OnceLock<DashMap<PathBuf, bool>> = OnceLock::new();
-
-fn is_symlink_cached(path: &Path) -> bool {
-    let cache = SYMLINK_CACHE.get_or_init(DashMap::new);
-    if let Some(res) = cache.get(path) {
-        return *res;
-    }
-    let res = std::fs::symlink_metadata(path)
+/// Test whether `path` is a symlink. No cache: the walker visits each
+/// path exactly once, so a process-lifetime `DashMap<PathBuf, bool>`
+/// only ever sees a single lookup per key and retained one PathBuf per
+/// file for the whole scan (1GB+ on a multi-million-file tree) while
+/// providing a ~0% hit rate. A bare `symlink_metadata` stat is the
+/// single-pass-correct choice. (Was KH-41 SYMLINK_CACHE; removed - the
+/// cache was pure retained-forever overhead on single-pass walks.)
+fn is_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
-        .unwrap_or(false);
-    cache.insert(path.to_path_buf(), res);
-    res
-}
-
-/// Thread-safe cache of directory stats/mtime to eliminate duplicate stat syscalls (KH-51)
-static STAT_CACHE: OnceLock<DashMap<PathBuf, Option<u64>>> = OnceLock::new();
-
-fn file_mtime_ns_cached(path: &Path) -> Option<u64> {
-    let cache = STAT_CACHE.get_or_init(DashMap::new);
-    if let Some(res) = cache.get(path) {
-        return *res;
-    }
-    let res = file_mtime_ns(path);
-    cache.insert(path.to_path_buf(), res);
-    res
+        .unwrap_or(false)
 }
 
 static SKIP_EXTENSIONS_SET: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
@@ -368,112 +352,141 @@ impl Source for FilesystemSource {
         if !self.respect_gitignore {
             config = config.respect_gitignore(false);
         }
-        // Use walk_iter (NOT walk()) so per-entry errors don't
-        // collapse the entire scan. `walk()` collects into a Vec
-        // via `.collect()` on a Result iterator - a single
-        // permission-denied (chmod 000 sub-tree, EACCES on a
-        // sibling) short-circuits the whole walk and the user
-        // gets ZERO findings. Production-grade behaviour is to
-        // log+skip the failed entry and keep walking everything
-        // else.
-        let mut entries: Vec<codewalk::FileEntry> = if !self.include_paths.is_empty() {
-            // Pre-filter files using a pre-sorted canonicalized allowed set to avoid filesystem walks for unrequested subdirectories (KH-54)
-            let allowed: HashSet<PathBuf> = self
-                .include_paths
-                .iter()
-                .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
-                .collect();
-            let mut resolved = Vec::new();
-            for path in allowed {
-                if path.is_dir() {
-                    let sub_walker = CodeWalker::new(&path, config.clone());
-                    resolved.extend(sub_walker.walk_iter().filter_map(|r| r.ok()));
-                } else if path.is_file() {
-                    if let Ok(meta) = std::fs::metadata(&path) {
-                        resolved.push(codewalk::FileEntry {
-                            path,
-                            size: meta.len(),
-                            // `is_binary` is a walk-time hint codewalk fills for
-                            // directory walks. For an EXPLICITLY-included single
-                            // file the user asked us to scan, leave it false:
-                            // keyhog never reads this field (it does its own
-                            // null-byte binary check at read time in this same
-                            // file), so the hint is inert and `false` keeps the
-                            // requested file in the scan set. (Required field
-                            // since codewalk 0.2.5; omitting it broke every
-                            // fresh keyhog-sources compile.)
-                            is_binary: false,
-                        });
-                    }
+        // Stream the walk through `walk_parallel` instead of `.collect()`-ing
+        // it into a `Vec<FileEntry>` up front. The old flow drained the entire
+        // directory walk into a Vec before the reader pool touched a byte: on a
+        // multi-million-file tree that paid the whole enumeration latency with
+        // the rayon pool idle AND held one PathBuf (+ size + flag) per file
+        // resident before a single read - hundreds of MB for a 10M-file
+        // monorepo / whole-disk scan-system walk. `walk_parallel` fans the walk
+        // across background threads and pushes `FileEntry`s into a bounded
+        // (8192-entry) channel AS THEY ARE DISCOVERED; `par_bridge()` below
+        // pulls from that channel into the reader pool, so file reads start on
+        // the first enumerated entry, directory-traversal syscalls overlap file
+        // I/O, and resident entry memory is bounded by the channel depth, not
+        // O(file_count).
+        //
+        // Per-entry errors (EACCES on a chmod-000 sub-tree, a racing unlink)
+        // are logged and skipped, never propagated - one unreadable sibling
+        // must not short-circuit the walk and hand the user ZERO findings (the
+        // failure mode of `walk()`/`.collect()` on a `Result` iterator). The
+        // channel `Receiver` is owned and `'static`, so the iterator can move
+        // into the producer thread without borrowing a stack-local walker.
+        //
+        // threads=0 lets `ignore` pick the logical-CPU count, matching its own
+        // `build_parallel` default.
+        fn forward_entries(
+            rx: std::sync::mpsc::Receiver<codewalk::error::Result<codewalk::FileEntry>>,
+        ) -> impl Iterator<Item = codewalk::FileEntry> + Send {
+            rx.into_iter().filter_map(|result| match result {
+                Ok(entry) => Some(entry),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "skipping unreadable filesystem entry; scan continues"
+                    );
+                    None
                 }
-            }
-            resolved
-        } else {
-            let walker = CodeWalker::new(&self.root, config);
-            walker
-                .walk_iter()
-                .filter_map(|result| match result {
-                    Ok(entry) => Some(entry),
-                    Err(error) => {
-                        tracing::warn!(
-                            %error,
-                            "skipping unreadable filesystem entry; scan continues"
-                        );
-                        None
-                    }
-                })
-                .collect()
-        };
+            })
+        }
+
+        let entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> =
+            if !self.include_paths.is_empty() {
+                // Restrict the walk to the canonicalized allowed set so we
+                // never traverse unrequested subdirectories (KH-54). The set is
+                // small (user-supplied include list); the directory walks it
+                // spawns stream lazily via `flat_map`, and explicitly-named
+                // single files are stat'd directly without a walk.
+                let allowed: HashSet<PathBuf> = self
+                    .include_paths
+                    .iter()
+                    .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
+                    .collect();
+                Box::new(allowed.into_iter().flat_map(move |path| {
+                    let inner: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> =
+                        if path.is_dir() {
+                            let sub_walker = CodeWalker::new(&path, config.clone());
+                            Box::new(forward_entries(sub_walker.walk_parallel(0)))
+                        } else if path.is_file() {
+                            match std::fs::metadata(&path) {
+                                Ok(meta) => Box::new(std::iter::once(codewalk::FileEntry {
+                                    path,
+                                    size: meta.len(),
+                                    // `is_binary` is a walk-time hint codewalk fills for
+                                    // directory walks. For an EXPLICITLY-included single
+                                    // file the user asked us to scan, leave it false:
+                                    // keyhog never reads this field (it does its own
+                                    // null-byte binary check at read time in this same
+                                    // file), so the hint is inert and `false` keeps the
+                                    // requested file in the scan set. (Required field
+                                    // since codewalk 0.2.5; omitting it broke every
+                                    // fresh keyhog-sources compile.)
+                                    is_binary: false,
+                                })),
+                                Err(_) => Box::new(std::iter::empty()),
+                            }
+                        } else {
+                            Box::new(std::iter::empty())
+                        };
+                    inner
+                }))
+            } else {
+                let walker = CodeWalker::new(&self.root, config);
+                Box::new(forward_entries(walker.walk_parallel(0)))
+            };
 
         let merkle = self.merkle.clone();
         let skipped = self.skipped.clone();
         let window_size = self.window_size;
         let window_overlap = self.window_overlap;
 
-        // Parallel file producer: walker enumeration is fast (dir tree
-        // syscalls amortize cheaply), but per-file I/O + decode + chunk
-        // assembly was previously serial - at ~16 MiB/s/core that meant a
-        // 16-core box scanned at the speed of one core. Now a spawned
-        // producer thread fans the entry list across the rayon pool
-        // (which the CLI sizes to `--threads`/physical cores), and each
-        // worker pushes finished chunks through a bounded channel. The
-        // bound (64) caps peak in-flight memory at ~64 × max-chunk-size
-        // independent of corpus size; backpressure is automatic - when
-        // the scanner thread (downstream) falls behind, workers block on
-        // `send` and stop reading new files. Nosey Parker uses the same
-        // pattern (ignore::WalkBuilder::build_parallel); the gap was
-        // never throughput, it was concurrency.
+        // Parallel file producer: the walk is lazy (dir tree syscalls
+        // amortize cheaply), but per-file I/O + decode + chunk assembly
+        // was previously serial - at ~16 MiB/s/core that meant a 16-core
+        // box scanned at the speed of one core. A spawned producer thread
+        // bridges the walk iterator into the rayon pool (which the CLI
+        // sizes to `--threads`/physical cores), and each worker pushes
+        // finished chunks through a bounded channel. The bound (64) caps
+        // peak in-flight memory at ~64 × max-chunk-size independent of
+        // corpus size; backpressure is automatic - when the scanner
+        // thread (downstream) falls behind, workers block on `send` and
+        // stop reading new files. Nosey Parker uses the same pattern
+        // (ignore::WalkBuilder::build_parallel); the gap was never
+        // throughput, it was concurrency.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
         std::thread::spawn(move || {
-            use rayon::prelude::*;
-            // `.with_min_len` caps the rayon split grain. Without it, the
-            // work-stealing splitter recurses far deeper than the balanced
-            // log2(N) on a large entry list - the split-tree depth scales with
-            // file count, so a big tree (100k+ files) overflowed the 8 MiB
-            // worker stack with ~1300+ nested bridge_producer_consumer frames
-            // (SIGABRT "has overflowed its stack"). A 64-entry floor bounds the
-            // depth at ~log2(len/64) for any corpus size while keeping leaves
-            // (len/64) far above the core count, so I/O parallelism is intact.
-            entries
-                .into_par_iter()
-                .with_min_len(64)
-                .for_each_with(tx, |tx, entry| {
-                    for chunk in process_entry(
-                        entry,
-                        &merkle,
-                        &skipped,
-                        max_size,
-                        window_size,
-                        window_overlap,
-                    ) {
-                        if tx.send(chunk).is_err() {
-                            // Receiver dropped (scan cancelled / orchestrator
-                            // shut down). Bail out instead of churning on
-                            // entries no one will read.
-                            return;
-                        }
-                    }
-                });
+            use rayon::iter::{ParallelBridge, ParallelIterator};
+            // `par_bridge()` pulls entries from the lazy walk iterator on
+            // demand through a shared Mutex-guarded cursor, so reads start
+            // as soon as enumeration yields the first entry (overlapping
+            // walk + I/O) and entry memory never materializes as one big
+            // Vec. Unlike `into_par_iter()` on a `Vec`, the bridge does NOT
+            // build a deep balanced split tree whose depth scales with file
+            // count - that recursion was what overflowed the 8 MiB worker
+            // stack (~1300+ nested bridge_producer_consumer frames, SIGABRT
+            // "has overflowed its stack") on 100k+-file trees and forced the
+            // old `.with_min_len(64)` floor. The bridge splits shallowly off
+            // a single producer, so the stack stays bounded for any corpus
+            // size without a grain knob.
+            entries.par_bridge().for_each_with(tx, |tx, entry| {
+                // `emit` returns false once the receiver is gone (scan
+                // cancelled / orchestrator shut down); `process_entry`
+                // stops producing the moment that happens instead of
+                // churning chunks no one will read. Emitting through a
+                // callback (rather than returning a Vec) keeps the
+                // windowed-file path streaming - one window's String is
+                // resident at a time, not the whole file.
+                let mut emit = |chunk: Result<Chunk, SourceError>| tx.send(chunk).is_ok();
+                process_entry(
+                    entry,
+                    &merkle,
+                    &skipped,
+                    max_size,
+                    window_size,
+                    window_overlap,
+                    &mut emit,
+                );
+            });
         });
 
         Box::new(rx.into_iter())
@@ -486,13 +499,21 @@ impl Source for FilesystemSource {
 
 /// Per-entry chunk extraction. Extracted from the inline `chunks()`
 /// closure so it can run on a rayon worker via
-/// `into_par_iter().for_each_with`. Reads the file (or archive, or
-/// compressed stream) and returns the resulting `Chunk`s in one batch;
-/// the parallel producer fans calls out across the rayon pool so
-/// per-file I/O overlaps freely.
+/// `par_bridge().for_each_with`. Reads the file (or archive, or
+/// compressed stream) and feeds each resulting `Chunk` to `emit` as it
+/// is produced; the parallel producer fans calls out across the rayon
+/// pool so per-file I/O overlaps freely.
 ///
-/// Pure function - captures nothing; all state arrives via parameters
-/// so the rayon closure stays `Sync` and free of `&'_ self` borrows.
+/// Emitting through a callback (rather than returning a `Vec`) keeps the
+/// large-file windowed path streaming: only one window's decoded
+/// `String` is resident at a time before it flows into the bounded
+/// orchestrator channel, instead of materializing every window of a
+/// (up to `max_file_size`) file at once. `emit` returns `false` once the
+/// receiver is gone (scan cancelled); we stop producing immediately so
+/// no work is wasted on chunks no one will read.
+///
+/// Captures nothing beyond the parameters/callback, so the rayon closure
+/// stays free of `&'_ self` borrows.
 fn process_entry(
     entry: codewalk::FileEntry,
     merkle: &Option<Arc<MerkleIndex>>,
@@ -500,17 +521,15 @@ fn process_entry(
     max_size: u64,
     window_size: usize,
     window_overlap: usize,
-) -> Vec<Result<Chunk, SourceError>> {
-    // Tune Rayon worker threads to automatically yield during I/O waits, maximizing parallel CPU utilisation (KH-36)
-    rayon::yield_now();
-
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
     let path = entry.path;
     let file_size = entry.size;
 
     // Screen out `.min.js` and `.bundle.js` files instantly using fast checks before reading/metadata stats (KH-55)
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if is_default_excluded(filename) {
-        return vec![];
+        return;
     }
     if filename.contains(".min.")
         || filename.contains(".bundle.")
@@ -518,7 +537,7 @@ fn process_entry(
         || filename.ends_with(".min.js")
         || filename.ends_with(".bundle.js")
     {
-        return vec![];
+        return;
     }
 
     // Over-size audit. codewalk used to silently drop files past
@@ -536,7 +555,7 @@ fn process_entry(
             "skipping file: size exceeds --max-file-size cap"
         );
         crate::SKIPPED_OVER_MAX_SIZE.fetch_add(1, Ordering::Relaxed);
-        return vec![];
+        return;
     }
 
     let ext = path
@@ -547,7 +566,7 @@ fn process_entry(
 
     // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
     if get_skip_extensions().contains(ext.as_str()) {
-        return vec![];
+        return;
     }
 
     if ext.is_empty() {
@@ -562,23 +581,25 @@ fn process_entry(
                         || buf.starts_with(b"%PDF") // PDF
                         || buf.starts_with(b"PK\x03\x04"); // Zip / Docx
                     if is_binary {
-                        return vec![];
+                        return;
                     }
                 }
             }
         }
     }
 
-    // Fast-path skip: stat the file once (utilizing STAT_CACHE, KH-51), ask the cache "have I
+    // Fast-path skip: stat the file once and ask the merkle index "have I
     // seen this exact (path, mtime, size) tuple?" If yes, never
     // open() or read() - the dominant cost on cold-cache disk.
     // Stored alongside the chunk so the orchestrator can refresh
-    // the index entry post-scan without a second stat.
-    let live_mtime_ns = file_mtime_ns_cached(&path);
+    // the index entry post-scan without a second stat. (No cross-file
+    // mtime cache: the walker visits each path once, so a cache here
+    // retained one PathBuf per file for the whole scan with no hits.)
+    let live_mtime_ns = file_mtime_ns(&path);
     if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
         if idx.metadata_unchanged(&path, mtime_ns, file_size) {
             skipped.fetch_add(1, Ordering::Relaxed);
-            return vec![];
+            return;
         }
     }
 
@@ -592,20 +613,20 @@ fn process_entry(
         // (privileged) target. symlink_metadata() does not follow
         // links; if file_type().is_symlink() we skip the archive
         // entirely. Kimi sources-audit HIGH finding.
-        // Utilizes SYMLINK_CACHE to avoid redundant syscalls (KH-41).
-        if is_symlink_cached(&path) {
+        if is_symlink(&path) {
             tracing::warn!(
                 archive = %path.display(),
                 "refusing to open archive at a symlink path - \
                  prevents the link-swap attack class"
             );
-            return Vec::new();
+            return;
         }
         // Per-entry uncompressed-size cap to defeat zip-bomb DoS.
         // openpack's central directory exposes uncompressed_size; skip
         // any entry that exceeds max_size (per-file cap) and the total
-        // uncompressed budget.
-        let mut archive_chunks = Vec::new();
+        // uncompressed budget. Each decoded entry is emitted immediately
+        // so we never hold the whole archive's worth of chunks at once.
+        let archive_display = display_path(&path);
         let mut total_uncompressed: u64 = 0;
         let total_budget: u64 = max_size.saturating_mul(4); // 4x file cap budget for archives
         if let Ok(pack) = openpack::OpenPack::open_default(&path) {
@@ -633,43 +654,47 @@ fn process_entry(
                         break;
                     }
                     if let Ok(content) = pack.read_entry(&archive_entry.name) {
-                        if let Ok(s) = String::from_utf8(content.clone()) {
-                            archive_chunks.push(Ok(Chunk {
+                        let entry_path = || format!("{}//{}", archive_display, archive_entry.name);
+                        let chunk = match String::from_utf8(content) {
+                            Ok(s) => Some(Ok(Chunk {
                                 data: s.into(),
                                 metadata: ChunkMetadata {
                                     source_type: "filesystem/archive".into(),
-                                    path: Some(format!(
-                                        "{}//{}",
-                                        display_path(&path),
-                                        archive_entry.name
-                                    )),
+                                    path: Some(entry_path()),
                                     ..Default::default()
                                 },
-                            }));
-                        } else {
-                            let strings = crate::strings::extract_printable_strings(&content, 8);
-                            if !strings.is_empty() {
-                                archive_chunks.push(Ok(Chunk {
-                                    data: keyhog_core::SensitiveString::join(&strings, "\n"),
-                                    metadata: ChunkMetadata {
-                                        source_type: "filesystem/archive-binary".into(),
-                                        path: Some(format!(
-                                            "{}//{}",
-                                            path.display(),
-                                            archive_entry.name
-                                        )),
-                                        ..Default::default()
-                                    },
-                                }));
+                            })),
+                            Err(error) => {
+                                let content = error.into_bytes();
+                                let strings =
+                                    crate::strings::extract_printable_strings(&content, 8);
+                                if strings.is_empty() {
+                                    None
+                                } else {
+                                    Some(Ok(Chunk {
+                                        data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                                        metadata: ChunkMetadata {
+                                            source_type: "filesystem/archive-binary".into(),
+                                            path: Some(entry_path()),
+                                            ..Default::default()
+                                        },
+                                    }))
+                                }
+                            }
+                        };
+                        if let Some(chunk) = chunk {
+                            if !emit(chunk) {
+                                return;
                             }
                         }
                     }
                 }
             }
         }
-        return archive_chunks;
+        return;
     } else if ext == "gz" || ext == "zst" || ext == "lz4" || ext == "sz" {
-        return extract_compressed_chunks(&path, max_size);
+        extract_compressed_chunks(&path, max_size, emit);
+        return;
     } else if ext == "har" {
         // Browser DevTools "Save all as HAR with content" export.
         // Expand into one chunk per request + one per response so
@@ -681,52 +706,54 @@ fn process_entry(
         if let Ok(bytes) = std::fs::read(&path) {
             let path_str = display_path(&path);
             if let Some(har_chunks) = crate::har::try_expand_har(&bytes, &path_str, max_size) {
-                return har_chunks;
+                for chunk in har_chunks {
+                    if !emit(chunk) {
+                        return;
+                    }
+                }
+                return;
             }
         }
         // fall through to the regular text scan below
     }
 
-    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if is_default_excluded(filename) {
-        return vec![];
-    }
-    if filename.contains(".min.")
-        || filename.contains(".bundle.")
-        || filename.ends_with(".chunk.js")
-    {
-        return vec![];
-    }
-
     if file_size > window_size as u64 {
+        let display = display_path(&path);
         // Fast path: mmap once and slice zero-copy into overlapping
         // `window_size` views with `window_overlap` shared bytes
         // between neighbours. Replaces a 64 MiB heap buffer +
         // per-window `seek-back+re-read` round-trip with a single
-        // mmap + madvise(SEQUENTIAL).
+        // mmap + madvise(SEQUENTIAL). We `into_iter()` the window Vec
+        // and emit each chunk as we go so a window's decoded `String`
+        // is dropped before the next is built - resident memory stays
+        // ~one window rather than the whole file.
         if let Some(windows) = read::read_file_windowed_mmap(&path, window_size, window_overlap) {
-            return windows
-                .into_iter()
-                .map(|w| {
-                    Ok(Chunk {
-                        data: w.text.into(),
-                        metadata: ChunkMetadata {
-                            source_type: "filesystem/windowed".to_string(),
-                            path: Some(display_path(&path)),
-                            base_offset: w.offset,
-                            mtime_ns: live_mtime_ns,
-                            size_bytes: Some(file_size),
-                            ..Default::default()
-                        },
-                    })
-                })
-                .collect();
+            for w in windows {
+                let chunk = Ok(Chunk {
+                    data: w.text.into(),
+                    metadata: ChunkMetadata {
+                        source_type: "filesystem/windowed".to_string(),
+                        path: Some(display.clone()),
+                        base_offset: w.offset,
+                        mtime_ns: live_mtime_ns,
+                        size_bytes: Some(file_size),
+                        ..Default::default()
+                    },
+                });
+                if !emit(chunk) {
+                    return;
+                }
+            }
+            return;
         }
         // Buffered fallback: mmap refused (locked writer, unsupported
-        // filesystem). Same semantics as before - working buffer +
-        // seek-back overlap. Sized to the configured window so test
-        // overrides apply here too.
-        let mut window_chunks = Vec::new();
+        // filesystem). Working buffer + seek-back overlap, sized to the
+        // configured window so test overrides apply here too. Each
+        // window is emitted as soon as it is decoded, so only the single
+        // reusable read buffer plus one window's `String` is resident -
+        // the prior implementation collected every window of the entire
+        // file into a Vec before returning, holding the whole (up to
+        // `max_file_size`) file decoded at once.
         if let Ok(mut file) = std::fs::File::open(&path) {
             let mut current_offset = 0;
             let mut buffer = vec![0u8; window_size];
@@ -735,17 +762,20 @@ fn process_entry(
                     break;
                 }
                 let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
-                window_chunks.push(Ok(Chunk {
+                let chunk = Ok(Chunk {
                     data: data.into(),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/windowed".to_string(),
-                        path: Some(display_path(&path)),
+                        path: Some(display.clone()),
                         base_offset: current_offset,
                         mtime_ns: live_mtime_ns,
                         size_bytes: Some(file_size),
                         ..Default::default()
                     },
-                }));
+                });
+                if !emit(chunk) {
+                    return;
+                }
                 if n < window_size {
                     break;
                 }
@@ -753,7 +783,7 @@ fn process_entry(
                 current_offset += n - window_overlap;
             }
         }
-        return window_chunks;
+        return;
     }
     let file_text = if file_size >= MMAP_THRESHOLD {
         read::read_file_mmap(&path)
@@ -767,19 +797,19 @@ fn process_entry(
             if let Ok(bytes) = read::read_file_safe(&path) {
                 let strings = crate::strings::extract_printable_strings(&bytes, 8);
                 if strings.is_empty() {
-                    return vec![];
+                    return;
                 }
                 (
                     keyhog_core::SensitiveString::join(&strings, "\n"),
                     "filesystem:binary-strings",
                 )
             } else {
-                return vec![];
+                return;
             }
         }
     };
 
-    vec![Ok(Chunk {
+    let _ = emit(Ok(Chunk {
         data: content,
         metadata: ChunkMetadata {
             source_type: source_type.to_string(),
@@ -788,10 +818,14 @@ fn process_entry(
             size_bytes: Some(file_size),
             ..Default::default()
         },
-    })]
+    }));
 }
 
-fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, SourceError>> {
+fn extract_compressed_chunks(
+    path: &Path,
+    max_size: u64,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -818,7 +852,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
     // budget gate (4× max_size) still applies inside the loop below.
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(b) => b,
-        None => return Vec::new(),
+        None => return,
     };
     let bytes = file_bytes.as_slice();
 
@@ -828,11 +862,10 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
     // OOMing. See audit release-2026-04-26 filesystem.rs:308-361.
     let total_budget: usize = max_size.saturating_mul(4) as usize;
 
-    let mut chunks = Vec::new();
-
     if let Ok(blocks) = ziftsieve::extract_from_bytes(format, bytes) {
         let mut current_chunk_literals = String::new();
         let mut total_decompressed: usize = 0;
+        let path_display = display_path(path);
         for block in blocks {
             if let Ok(s) = std::str::from_utf8(block.literals()) {
                 total_decompressed = total_decompressed.saturating_add(s.len());
@@ -850,28 +883,29 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
             }
 
             if current_chunk_literals.len() > 8 * 1024 * 1024 {
-                chunks.push(Ok(Chunk {
+                if !emit(Ok(Chunk {
                     data: std::mem::take(&mut current_chunk_literals).into(),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/compressed".into(),
-                        path: Some(display_path(path)),
+                        path: Some(path_display.clone()),
                         ..Default::default()
                     },
-                }));
+                })) {
+                    return;
+                }
             }
         }
         if !current_chunk_literals.is_empty() {
-            chunks.push(Ok(Chunk {
+            let _ = emit(Ok(Chunk {
                 data: current_chunk_literals.into(),
                 metadata: ChunkMetadata {
                     source_type: "filesystem/compressed".into(),
-                    path: Some(display_path(path)),
+                    path: Some(path_display),
                     ..Default::default()
                 },
             }));
         }
     }
-    chunks
 }
 
 /// Check if a path matches the built-in default exclusion patterns.

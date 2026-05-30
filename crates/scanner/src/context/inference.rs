@@ -157,6 +157,169 @@ fn is_hex_sequential_placeholder(credential: &str) -> bool {
     ascending > threshold && ascending2 > threshold
 }
 
+/// Per-line region membership precomputed once per chunk.
+///
+/// `is_in_encrypted_block` and `is_in_test_function` both depend only on the
+/// surrounding lines, so when many matches land in the same function the
+/// per-match 10/100-line backward walks recompute identical answers. Building
+/// these flags in a single forward pass turns the per-match work into an O(1)
+/// lookup, converting O(matches * 100) line scans into O(lines) once per chunk.
+pub struct ContextRegions {
+    encrypted: Vec<bool>,
+    test_function: Vec<bool>,
+}
+
+impl ContextRegions {
+    /// Build the region table in a single forward pass over `lines`.
+    pub fn new(lines: &[&str]) -> Self {
+        ContextRegions {
+            encrypted: encrypted_block_flags(lines),
+            test_function: test_function_flags(lines),
+        }
+    }
+
+    fn is_encrypted(&self, line_idx: usize) -> bool {
+        self.encrypted.get(line_idx).copied().unwrap_or(false)
+    }
+
+    fn is_test_function(&self, line_idx: usize) -> bool {
+        self.test_function.get(line_idx).copied().unwrap_or(false)
+    }
+}
+
+/// Forward-pass equivalent of `is_in_encrypted_block` for every line.
+///
+/// A line is "in" an encrypted block if any of the preceding
+/// `ENCRYPTED_BLOCK_LOOKBACK_LINES` lines (or itself) starts an encrypted
+/// marker. Tracking the distance since the last marker line reproduces the
+/// per-line backward window in one sweep.
+fn encrypted_block_flags(lines: &[&str]) -> Vec<bool> {
+    let mut flags = vec![false; lines.len()];
+    let mut lines_since_marker = ENCRYPTED_BLOCK_LOOKBACK_LINES + 1;
+    for (idx, line) in lines.iter().enumerate() {
+        if is_encrypted_marker_line(line.trim()) {
+            lines_since_marker = 0;
+        }
+        flags[idx] = lines_since_marker <= ENCRYPTED_BLOCK_LOOKBACK_LINES;
+        lines_since_marker = lines_since_marker.saturating_add(1);
+    }
+    flags
+}
+
+fn is_encrypted_marker_line(trimmed: &str) -> bool {
+    trimmed.starts_with("$ANSIBLE_VAULT")
+        || trimmed.starts_with("ENC[")
+        || memchr::memmem::find(trimmed.as_bytes(), b"sops:").is_some()
+        || memchr::memmem::find(trimmed.as_bytes(), b"sealed-secrets").is_some()
+        || trimmed.starts_with("-----BEGIN PGP MESSAGE-----")
+        || trimmed.starts_with("-----BEGIN AGE ENCRYPTED")
+}
+
+/// One line of the test-function backward scan, classified independently.
+#[derive(Clone, Copy, PartialEq)]
+enum TestScanMark {
+    /// A test-function/test-attribute start: a match here means "in a test".
+    TestStart,
+    /// A non-test function/class boundary: a match here means "not in a test".
+    Boundary,
+    /// Neither - keep walking back.
+    Neither,
+}
+
+/// Forward-pass equivalent of `is_in_test_function` for every line.
+///
+/// `is_in_test_function` walks back up to `TEST_FUNCTION_LOOKBACK_LINES`,
+/// returning on the first `TestStart`/`Boundary` it sees. Classifying each
+/// line once and then tracking the index of the most recent non-`Neither`
+/// line reproduces that "nearest interesting line within the window decides"
+/// behaviour in a single O(lines) sweep.
+fn test_function_flags(lines: &[&str]) -> Vec<bool> {
+    let marks: Vec<TestScanMark> = (0..lines.len())
+        .map(|idx| classify_test_scan_line(lines, idx))
+        .collect();
+
+    let mut flags = vec![false; lines.len()];
+    // Index of the most recent line whose mark is not `Neither`, if any.
+    let mut last_interesting: Option<usize> = None;
+    for line_idx in 0..lines.len() {
+        if let Some(prev_idx) = last_interesting {
+            if line_idx - prev_idx <= TEST_FUNCTION_LOOKBACK_LINES {
+                flags[line_idx] = marks[prev_idx] == TestScanMark::TestStart;
+            }
+        }
+        // The next line scans back through this one, so update after deciding
+        // the current line (the original scans the range `start..line_idx`,
+        // i.e. it never inspects its own line).
+        if marks[line_idx] != TestScanMark::Neither {
+            last_interesting = Some(line_idx);
+        }
+    }
+    flags
+}
+
+/// Classify a single line for the test-function backward scan, mirroring the
+/// per-line decisions in `is_in_test_function` (including the 3-line attribute
+/// lookback for bare Rust `fn` declarations).
+fn classify_test_scan_line(lines: &[&str], candidate_line_idx: usize) -> TestScanMark {
+    let trimmed = lines[candidate_line_idx].trim();
+
+    if trimmed.starts_with("def test_")
+        || trimmed.starts_with("class Test")
+        || trimmed.starts_with("it(")
+        || trimmed.starts_with("describe(")
+        || trimmed.starts_with("test(")
+        || trimmed == "#[test]"
+        || trimmed == concat!("#[cfg(", "test)]")
+        || trimmed.starts_with("#[tokio::test")
+        || trimmed.starts_with("func Test")
+        || trimmed == "@Test"
+    {
+        return TestScanMark::TestStart;
+    }
+
+    // Stop looking back when we hit a non-test class or function boundary.
+    if trimmed.starts_with("class ") {
+        return TestScanMark::Boundary;
+    }
+
+    if (trimmed.starts_with("def ") || trimmed.starts_with("async def "))
+        && !trimmed.contains("def test_")
+    {
+        return TestScanMark::Boundary;
+    }
+
+    if trimmed.starts_with("func ") && !trimmed.contains("func Test") {
+        return TestScanMark::Boundary;
+    }
+
+    if (trimmed.starts_with("fn ")
+        || trimmed.starts_with("pub fn ")
+        || trimmed.starts_with("async fn ")
+        || trimmed.starts_with("pub async fn "))
+        && !trimmed.contains("fn test_")
+    {
+        let pre_start = candidate_line_idx.saturating_sub(3);
+        for pre_line in &lines[pre_start..candidate_line_idx] {
+            let pre_trimmed = pre_line.trim();
+            if pre_trimmed == "#[test]"
+                || pre_trimmed == concat!("#[cfg(", "test)]")
+                || pre_trimmed.starts_with("#[tokio::test")
+                || pre_trimmed.starts_with("#[test")
+                || pre_trimmed == "@Test"
+            {
+                return TestScanMark::TestStart;
+            }
+        }
+        return TestScanMark::Boundary;
+    }
+
+    if trimmed.starts_with("function ") && !trimmed.contains("function test") {
+        return TestScanMark::Boundary;
+    }
+
+    TestScanMark::Neither
+}
+
 /// Infer context when documentation-line flags have already been computed.
 pub fn infer_context_with_documentation(
     lines: &[&str],
@@ -184,6 +347,43 @@ pub fn infer_context_with_documentation(
         return CodeContext::Documentation;
     }
     if is_in_test_function(lines, line_idx) {
+        return CodeContext::TestCode;
+    }
+    if is_assignment_line(trimmed) {
+        return CodeContext::Assignment;
+    }
+    infer_default_context(trimmed)
+}
+
+/// Like `infer_context_with_documentation`, but reads encrypted-block and
+/// test-function membership from a `ContextRegions` table precomputed once per
+/// chunk instead of re-walking up to 100 lines backward per match.
+pub fn infer_context_with_regions(
+    lines: &[&str],
+    line_idx: usize,
+    file_path: Option<&str>,
+    documentation_lines: &[bool],
+    regions: &ContextRegions,
+) -> CodeContext {
+    if line_idx >= lines.len() {
+        return CodeContext::Unknown;
+    }
+
+    let trimmed = lines[line_idx].trim();
+
+    if file_path.is_some_and(is_test_file) {
+        return CodeContext::TestCode;
+    }
+    if regions.is_encrypted(line_idx) {
+        return CodeContext::Encrypted;
+    }
+    if is_comment_line(trimmed) {
+        return CodeContext::Comment;
+    }
+    if documentation_lines.get(line_idx).copied().unwrap_or(false) {
+        return CodeContext::Documentation;
+    }
+    if regions.is_test_function(line_idx) {
         return CodeContext::TestCode;
     }
     if is_assignment_line(trimmed) {
@@ -277,19 +477,11 @@ fn is_comparison_operator(trimmed: &str, pos: usize, operator: &str) -> bool {
 
 fn is_in_encrypted_block(lines: &[&str], line_idx: usize) -> bool {
     let start = line_idx.saturating_sub(ENCRYPTED_BLOCK_LOOKBACK_LINES);
-    for line in lines.iter().take(line_idx + 1).skip(start) {
-        let trimmed = line.trim();
-        if trimmed.starts_with("$ANSIBLE_VAULT")
-            || trimmed.starts_with("ENC[")
-            || memchr::memmem::find(trimmed.as_bytes(), b"sops:").is_some()
-            || memchr::memmem::find(trimmed.as_bytes(), b"sealed-secrets").is_some()
-            || trimmed.starts_with("-----BEGIN PGP MESSAGE-----")
-            || trimmed.starts_with("-----BEGIN AGE ENCRYPTED")
-        {
-            return true;
-        }
-    }
-    false
+    lines
+        .iter()
+        .take(line_idx + 1)
+        .skip(start)
+        .any(|line| is_encrypted_marker_line(line.trim()))
 }
 
 fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {

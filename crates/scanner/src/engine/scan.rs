@@ -107,6 +107,29 @@ impl CompiledScanner {
                 .par_iter()
                 .map(|chunk| {
                     let data = chunk.data.as_bytes();
+                    // Cheap O(n) content prefilters before the Hyperscan
+                    // automaton walk. mod.rs's per-chunk entry point screens
+                    // with these (alphabet set + bigram bloom) but the
+                    // coalesced phase-1 path historically fed every chunk's
+                    // raw bytes straight into the much heavier
+                    // `scanner.scan`. On a source-heavy monorepo the bloom
+                    // (a single 4096-bit pass) rejects the majority of files
+                    // that carry no detector literal-prefix, eliding the
+                    // Hyperscan scratch scan on them. Same gates, same
+                    // ordering, and the same `>= 64`-byte bloom guard as
+                    // mod.rs so behaviour is identical to the non-coalesced
+                    // path. A rejected chunk returns `None` (no trigger),
+                    // which routes phase 2 down the keyword/entropy fallback
+                    // branch exactly as a genuine no-HS-hit chunk would.
+                    let alphabet_rejected = self
+                        .alphabet_screen
+                        .as_ref()
+                        .is_some_and(|screen| !screen.screen(data));
+                    if alphabet_rejected
+                        || (data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(data))
+                    {
+                        return None;
+                    }
                     with_trigger_buffer(words_needed, |scratch| {
                         for (hs_id, _start, _end) in scanner.scan(data) {
                             let Some((_det, dedup_id, _grp)) = scanner.pattern_info(hs_id) else {
@@ -129,18 +152,27 @@ impl CompiledScanner {
                 })
                 .collect();
 
-            let hit_count = triggers.iter().filter(|t| t.is_some()).count();
-            let total_hs_matches: usize = triggers
-                .iter()
-                .filter_map(|t| t.as_ref())
-                .map(|t| t.iter().map(|w| w.count_ones() as usize).sum::<usize>())
-                .sum();
-            tracing::info!(
-                files = chunks.len(),
-                hits = hit_count,
-                hs_matches = total_hs_matches,
-                "coalesced scan phase 1 complete"
-            );
+            // The phase-1 telemetry is purely a tracing::info! line, which
+            // is off at the default log level. `total_hs_matches` is a full
+            // popcount pass over every word of every hit bitmap; computing
+            // it unconditionally is O(total_words) of dead work per batch
+            // when info logging is disabled. Gate the whole summary (and its
+            // hit_count walk) behind an enabled check so the default path
+            // pays nothing.
+            if tracing::enabled!(tracing::Level::INFO) {
+                let hit_count = triggers.iter().filter(|t| t.is_some()).count();
+                let total_hs_matches: usize = triggers
+                    .iter()
+                    .filter_map(|t| t.as_ref())
+                    .map(|t| t.iter().map(|w| w.count_ones() as usize).sum::<usize>())
+                    .sum();
+                tracing::info!(
+                    files = chunks.len(),
+                    hits = hit_count,
+                    hs_matches = total_hs_matches,
+                    "coalesced scan phase 1 complete"
+                );
+            }
 
             // Phase 2: Full extraction on hit files + multiline fallback (parallel).
             let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
@@ -177,10 +209,12 @@ impl CompiledScanner {
                     // standalone-on-a-line k8s bootstrap tokens. Fix:
                     // for chunks that plausibly carry a secret (have a
                     // generic-assignment-keyword OR an explicit secret-
-                    // prefix substring like ghp_/sk-proj-/etc.) route
-                    // through scan_inner, which walks
-                    // scan_prepared_with_triggered → scan_fallback_patterns
-                    // → scan_generic_assignments → scan_entropy_fallback.
+                    // prefix substring like ghp_/sk-proj-/etc.) drive
+                    // scan_prepared_with_triggered directly with an empty
+                    // trigger bitmap (reusing phase 1's HS result rather
+                    // than re-running the automaton), which walks
+                    // scan_fallback_patterns → scan_generic_assignments
+                    // → scan_entropy_fallback.
                     //
                     // Bound on plausibility: pure source-code files
                     // without any secret-related keyword stay on the
@@ -215,7 +249,32 @@ impl CompiledScanner {
                             || has_secret_keyword_fast(chunk.data.as_bytes())
                             || has_high_entropy_run_fast(chunk.data.as_bytes()))
                     {
-                        let mut matches = self.scan_inner(chunk, ScanBackend::SimdCpu, None);
+                        // KH perf: this is a no-HS-hit chunk - phase 1
+                        // already ran the Hyperscan automaton over these
+                        // bytes and found no literal-prefix hit (the empty
+                        // trigger bitmap was discarded as `None`). Calling
+                        // `scan_inner` here would call
+                        // `collect_triggered_patterns_for_backend` ->
+                        // `collect_triggered_patterns_simd`, which runs the
+                        // FULL Hyperscan automaton a SECOND time over the
+                        // same bytes for a result we already know is empty.
+                        // Reuse the phase-1 result instead: prepare the
+                        // chunk and drive `scan_prepared_with_triggered`
+                        // directly with an EMPTY trigger bitmap. The
+                        // confirmed-pattern extraction is correctly skipped
+                        // (no AC pattern fired); the keyword-AC fallback,
+                        // generic-assignment, and entropy stages run off
+                        // `code_lines` / preprocessed text and need no HS
+                        // pass - which is exactly the work this branch
+                        // wants. Saves one full Hyperscan walk per
+                        // keyworded no-hit file.
+                        let prepared = self.prepare_chunk(chunk);
+                        let mut matches = self.scan_prepared_with_triggered(
+                            prepared,
+                            ScanBackend::SimdCpu,
+                            Vec::new(),
+                            None,
+                        );
                         // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing
                         if matches.capacity() < 16 {
                             matches.reserve(16 - matches.len());
@@ -273,6 +332,28 @@ impl CompiledScanner {
     /// .env with AWS_SECRET in another.
     #[cfg(feature = "simd")]
     fn record_and_reassemble_for_no_hit_chunk(&self, chunk: &Chunk, matches: &mut Vec<RawMatch>) {
+        if matches.is_empty() {
+            return;
+        }
+        // Fast plausibility gate before paying three String allocs per
+        // match (prefix/var_name/value) and the sharded fragment-cache
+        // mutex per record. Cross-file reassembly only fires for fragments
+        // that carry assignment-like syntax (a `=`/`:` plus a quote, the
+        // `var = "value"` shape the fragment cache pairs on). A chunk with
+        // no such syntax cannot contribute a poolable fragment, so the
+        // record + lock + reassemble work is dead. Mirrors the
+        // `has_fragment_assignment_syntax` check in scan_postprocess.rs;
+        // inlined here (it is private to that module) to keep this on a
+        // single cheap memchr pass.
+        let data = chunk.data.as_bytes();
+        let has_assignment =
+            memchr::memchr(b'=', data).is_some() || memchr::memchr(b':', data).is_some();
+        let has_quote = memchr::memchr(b'"', data).is_some()
+            || memchr::memchr(b'\'', data).is_some()
+            || memchr::memchr(b'`', data).is_some();
+        if !(has_assignment && has_quote) {
+            return;
+        }
         // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing
         let mut reassembled_candidates = Vec::with_capacity(16);
         // Pre-allocate the path Arc once per chunk: every match in a
@@ -295,30 +376,51 @@ impl CompiledScanner {
                     line: m.location.line.unwrap_or(0),
                     path: Some(std::sync::Arc::clone(path)),
                 };
-                let reassembled = self.fragment_cache.record_and_reassemble(fragment);
+                // Stamped variant: cross-file pooling is impossible now
+                // (scoped_key keys on the full path), and each candidate
+                // carries the anchor fragment's real path/line so the
+                // synthesized finding is attributed to the contributing
+                // file rather than to the current chunk's metadata.
+                let reassembled = self.fragment_cache.record_and_reassemble_stamped(fragment);
                 reassembled_candidates.extend(reassembled);
             }
         }
         for candidate in reassembled_candidates {
-            // candidate is Zeroizing<String> - scrubbed when this
+            // candidate.value is Zeroizing<String> - scrubbed when this
             // iteration ends.
-            let entropy = crate::pipeline::match_entropy(candidate.as_bytes());
-            if entropy < 3.0 || candidate.len() < 16 {
+            let entropy = crate::pipeline::match_entropy(candidate.value.as_bytes());
+            if entropy < 3.0 || candidate.value.len() < 16 {
                 continue;
             }
-            let mut dummy_data = String::with_capacity(candidate.len() + 24);
+            let mut dummy_data = String::with_capacity(candidate.value.len() + 24);
             dummy_data.push_str("reassembled_key = \"");
-            dummy_data.push_str(candidate.as_str());
+            dummy_data.push_str(candidate.value.as_str());
             dummy_data.push('"');
+            // Stamp the dummy chunk's metadata from the ANCHOR fragment's
+            // path, not chunk.metadata.clone(): the contributing
+            // fragment may have come from a different file than the chunk
+            // currently being scanned (same coalesced batch). Falling
+            // back to chunk.metadata is only for the shouldn't-happen
+            // case where the anchor lost its path.
+            let mut dummy_metadata = chunk.metadata.clone();
+            if let Some(frag_path) = candidate.path.as_deref() {
+                dummy_metadata.path = Some(frag_path.to_string());
+            }
             let dummy_chunk = Chunk {
                 data: dummy_data.into(),
-                metadata: chunk.metadata.clone(),
+                metadata: dummy_metadata,
             };
             // Tiny synthesized chunk; skip GPU unconditionally -
             // per-dispatch overhead dwarfs the work. Matches the
             // scan_cross_chunk_fragments rationale.
             let backend = crate::hw_probe::ScanBackend::SimdCpu;
             let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, None);
+            // Point each reassembled finding at the anchor fragment's
+            // real source line so the finding's location matches the file
+            // its metadata now names.
+            for rm in &mut reassembled_matches {
+                rm.location.line = Some(candidate.line);
+            }
             matches.append(&mut reassembled_matches);
         }
     }

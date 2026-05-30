@@ -89,17 +89,19 @@ pub fn apply_code_scanning_props(
 
 /// Build the SARIF `partialFingerprints` map for a finding's credential hash,
 /// the stable identity GitHub code-scanning uses to dedup alerts across runs.
-/// An empty hash yields `None` (no stable identity to key on).
+/// The raw 32-byte hash is hex-encoded here, at the reporter boundary (the
+/// `Finding` stores raw bytes - see `finding.rs`). An all-zero hash is the
+/// "no credential identity" sentinel and yields `None`.
 pub fn credential_fingerprints(
-    credential_hash: &str,
+    credential_hash: &[u8; 32],
 ) -> Option<std::collections::BTreeMap<String, String>> {
-    if credential_hash.is_empty() {
+    if credential_hash == &[0u8; 32] {
         return None;
     }
     let mut fp = std::collections::BTreeMap::new();
     fp.insert(
         "keyhog/credentialHash/v1".to_string(),
-        credential_hash.to_string(),
+        crate::finding::hex_encode(credential_hash),
     );
     Some(fp)
 }

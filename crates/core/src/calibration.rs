@@ -16,9 +16,16 @@
 //! version field. Load returns an empty store on miss / corrupted JSON /
 //! schema mismatch - never poison the cache from a damaged artifact.
 //!
-//! This module ships the DATA layer only. Live integration into the
-//! scanner's confidence-scoring path is a separate change that needs
-//! per-detector lookup at `apply_post_ml_penalties` time.
+//! Coherence contract (audit organization/coherence finding): this module is
+//! the DATA layer, but it is now LIVE - the scanner's confidence-scoring path
+//! (`scanner::confidence::apply_calibration_multiplier`) reads these counters.
+//! Because a calibration artifact silently present on one machine but absent on
+//! another would make `tuned != benched != shipped`, the integration MUST be
+//! opt-in and deterministic: the scoring path only consults a calibration store
+//! when one is explicitly supplied, and the default / benchmark / CI scan runs
+//! with an [`empty`](Calibration::empty) store so two machines produce identical
+//! findings for the same input. A stray `$XDG_CACHE_HOME` artifact on a dev box
+//! must never silently alter results - that gating lives in the scanner crate.
 
 #![allow(missing_docs)]
 
@@ -178,9 +185,9 @@ impl Calibration {
 
     /// Return the posterior mean for `detector_id`, falling back to 0.5
     /// when no observations exist (uniform prior over a never-calibrated
-    /// detector). Callers MAY use this value as a confidence multiplier
-    /// inside the scanner's confidence-scoring path; the live integration
-    /// is staged separately.
+    /// detector). The scanner's confidence-scoring path consumes this value,
+    /// but only when calibration is explicitly opted in (see the module-level
+    /// coherence contract) so default / benchmark scans stay deterministic.
     pub fn confidence_multiplier(&self, detector_id: &str) -> f64 {
         self.inner
             .read()

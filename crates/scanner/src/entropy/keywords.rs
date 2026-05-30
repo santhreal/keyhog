@@ -444,6 +444,22 @@ fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool
         return false;
     }
 
+    // Dash-segmented-alnum decoy shape. License/product serials
+    // (`A1B2C-D3E4F-G5H6I-J7K8L-M9N0P`), template placeholders
+    // (`XXXXX-XXXXX-...`) and segmented identifiers
+    // (`my-service-prod-key-name-here`) are dash-joined runs of
+    // alphanumerics with no other symbol class. The dash inflates
+    // their byte alphabet enough that the serial shape lands AT or
+    // ABOVE the 4.5 blanket floor (a 5x5 mixed serial measures
+    // ~4.58), so the entropy admit below would let them through.
+    // They are not credentials - the 0f05b3de mirror admitted 42 of
+    // them as false positives. Reject the shape outright; symbolic
+    // passwords keep a richer symbol set (`$`, `*`, `!`, `#`, ...)
+    // and never reduce to pure dash-segmented alnum.
+    if is_dash_segmented_alnum_decoy(value) {
+        return false;
+    }
+
     // Symbolic-charset / credential-anchored entropy relaxation.
     // The blanket `HIGH_ENTROPY_THRESHOLD` (4.5) floor over-rejects
     // real symbolic-password shapes whose Shannon entropy lands in
@@ -467,6 +483,37 @@ fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool
         }
     }
     false
+}
+
+/// Heuristic: is this value a dash-segmented run of alphanumerics with
+/// no other symbol class? Matches license/product serials
+/// (`A1B2C-D3E4F-G5H6I-J7K8L-M9N0P`), template placeholders
+/// (`XXXXX-XXXXX-...`) and segmented identifiers
+/// (`my-service-prod-key-name-here`). The only non-alphanumeric byte is
+/// `-`, and it joins at least two non-empty alphanumeric groups. Real
+/// symbolic passwords carry richer symbol sets (`$`, `*`, `!`, `#`)
+/// and never reduce to this shape, so gating on it is precision-positive
+/// at near-zero recall cost.
+fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
+    if !value.contains('-') {
+        return false;
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return false;
+    }
+    let mut groups = 0usize;
+    for group in value.split('-') {
+        if group.is_empty() {
+            // A leading/trailing/double dash breaks the uniform serial
+            // shape - leave those to the entropy floors.
+            return false;
+        }
+        groups += 1;
+    }
+    groups >= 2
 }
 
 /// Heuristic: is this string a likely source-code identifier rather
@@ -615,6 +662,63 @@ mod strict_secret_tests {
             "passwordispasswordispassword",
             true,
         ));
+    }
+
+    #[test]
+    fn dash_segmented_alnum_decoys_rejected() {
+        // Negative twin (the 42-FP class from the 0f05b3de mirror):
+        // license/product serials, template placeholders and segmented
+        // identifiers are dash-joined alnum runs. The license-serial
+        // shape measures ~4.58 entropy - ABOVE the 4.5 blanket floor -
+        // so it would otherwise be admitted unconditionally. Every entry
+        // in this corpus must stay rejected, including in credential
+        // context where the relaxed floor is widest.
+        let decoy_corpus = [
+            "A1B2C-D3E4F-G5H6I-J7K8L-M9N0P", // mixed 5x5 license serial
+            "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY", // alpha 5x5 license serial
+            "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX", // template placeholder serial
+            "00000-00000-00000-00000-00000", // zero-filled serial
+            "my-service-prod-key-name-here", // segmented identifier
+        ];
+        let fp: usize = decoy_corpus
+            .iter()
+            .filter(|value| passes_strict_secret_checks(value, true))
+            .count();
+        assert_eq!(fp, 0, "license/template decoys must yield zero admits");
+        // And outside credential context too.
+        assert!(decoy_corpus
+            .iter()
+            .all(|value| !passes_strict_secret_checks(value, false)));
+    }
+
+    #[test]
+    fn symbolic_password_class_survives_decoy_gate() {
+        // Positive twin: the symbolic-password recall must be intact after
+        // the dash-segmented decoy gate. These carry symbol classes beyond
+        // `-` ($ * ! #), never reduce to dash-segmented alnum, and stay
+        // admitted in credential context.
+        let passwords = [
+            "Y6NPMwS*rWGUv!JQnSG6a#D14",
+            "1E1B3b4Ho$U4kYBi",
+            "sk-proj-AbC9$xZ", // hyphen present but a `$` defeats the decoy shape
+        ];
+        assert!(passwords
+            .iter()
+            .all(|value| passes_strict_secret_checks(value, true)));
+    }
+
+    #[test]
+    fn dash_segmented_helper_excludes_symbolic_and_unsegmented() {
+        // Unit check on the shape predicate itself: only pure
+        // dash-joined alnum runs qualify; richer symbol sets and
+        // dash-free values do not.
+        use super::is_dash_segmented_alnum_decoy;
+        assert!(is_dash_segmented_alnum_decoy("A1B2C-D3E4F-G5H6I"));
+        assert!(!is_dash_segmented_alnum_decoy("Y6NPMwS*rWGUv!JQ")); // symbols, no dash
+        assert!(!is_dash_segmented_alnum_decoy("sk-proj-AbC9$xZ")); // dash but `$` present
+        assert!(!is_dash_segmented_alnum_decoy("nodashvalue1234")); // no dash at all
+        assert!(!is_dash_segmented_alnum_decoy("-leading-dash")); // empty leading group
+        assert!(!is_dash_segmented_alnum_decoy("trailing-dash-")); // empty trailing group
     }
 }
 

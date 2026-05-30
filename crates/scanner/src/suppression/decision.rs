@@ -7,8 +7,9 @@ use super::decode::try_decode_b64_to_utf8;
 use super::doc_markers::{check_markers, MarkerVerdict};
 use super::shape_gates::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
-    has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_dashed_serial_key,
-    looks_like_hash_digest, looks_like_standard_base64_blob, RFC7519_EXAMPLE_JWT_PREFIX,
+    has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
+    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest,
+    looks_like_standard_base64_blob, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::context;
 
@@ -166,10 +167,38 @@ pub(super) fn should_suppress_inner(
     // Bench v19 confirmed both gates close the FP regression without
     // losing recall; the contracts_runner test caught the earlier
     // UUID over-suppression that prompted the split.
-    if !bypass_shape_gates && looks_like_hash_digest(credential) {
+    //
+    // Anchor-class split (recovers v32's 0-FP on these classes without
+    // the +60-TP regression of a blanket revert - see 19c9d668):
+    //
+    //   * ALWAYS-FIRE sub-shapes (even with `bypass_shape_gates` set):
+    //     algo-labelled digests (`sha256:`/`sha512-`/…), 8-4-4-4-12
+    //     UUIDs, and 5x5 dashed serials. NO service-specific detector
+    //     regex ever requests one of THOSE structural shapes as its
+    //     credential body, so a bare `token=`/`integrity:` keyword
+    //     anchor is too weak to override them. A genuinely service-
+    //     specific match carries a known prefix and has already exited
+    //     via `MarkerVerdict::Allow` in `check_markers` before reaching
+    //     here, so anything arriving with one of these decoy shapes is
+    //     an npm-integrity / docker-digest / git-sha / k8s-uid / license
+    //     decoy regardless of the anchor class.
+    //
+    //   * BARE uniform-hex (32/40/48/56/64/72/128-hex) stays gated on
+    //     `!bypass_shape_gates`: it is shape-indistinguishable from real
+    //     service-anchored hex keys (Algolia admin 32-hex, New Relic
+    //     40-hex, Redis Labs 64-hex). Dropping it under a service anchor
+    //     would tank recall (the +60 TP). The bare-hex-under-a-generic-
+    //     keyword case (`api_key=<64-hex>` git SHA) is handled upstream
+    //     in `suppression/api.rs`, which reclassifies generic-keyword
+    //     pure-hex captures as `weak_anchor` → `!bypass_shape_gates`
+    //     here, so this arm still fires for them.
+    if looks_like_prefixed_hash_digest(credential) {
         return true;
     }
-    if !bypass_shape_gates && is_uuid_v4_shape(credential) {
+    if !bypass_shape_gates && looks_like_bare_hex_digest(credential) {
+        return true;
+    }
+    if is_uuid_v4_shape(credential) {
         return true;
     }
 
@@ -179,7 +208,15 @@ pub(super) fn should_suppress_inner(
     //         and a thousand similar product-key surfaces. Real
     //         credentials almost never carry this shape. From
     //         secretbench-medium-15k: 464 FPs (3rd-largest cluster).
-    if !bypass_shape_gates && looks_like_dashed_serial_key(credential) {
+    //
+    //         Always-fire (like the labelled-digest / UUID arms above):
+    //         the exact 5x5 dash-separated shape (`JQQJN-XXXXX-XXXXX-
+    //         XXXXX-XXXXX` Windows/Office/Adobe license keys) is never
+    //         the body a service-specific detector regex requests, so a
+    //         bare `secret=` keyword anchor cannot override it. A real
+    //         service-anchored credential carries a known prefix and has
+    //         already exited via `Allow` in `check_markers`.
+    if looks_like_dashed_serial_key(credential) {
         return true;
     }
 

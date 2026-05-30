@@ -55,14 +55,47 @@ pub fn preprocess_multiline(
 
     let joined_text = result_lines.join("\n");
     let original_end = text.len();
-    let mut final_text = text.to_string();
 
-    let mut appended_any = false;
     let joined_trimmed = joined_text.trim();
     let text_trimmed = text.trim();
     let is_real_concatenation = joined_trimmed != text_trimmed;
+    let will_append = is_real_concatenation && !joined_text.is_empty();
 
-    if is_real_concatenation && !joined_text.is_empty() {
+    // Structural fragments are appended after any concatenation join, so their
+    // offsets start past the (possibly extended) text. Computing that base
+    // arithmetically (rather than from `final_text.len()`) lets us probe for
+    // structural fragments before materializing the extended buffer, so the
+    // no-fragment case below can return without ever building it.
+    let structural_base = if will_append {
+        original_end + 1 + 1 + joined_text.len()
+    } else {
+        original_end + 1
+    };
+    let (structural_joined, structural_mappings) =
+        collect_structural_fragments(&lines, structural_base, fragment_cache);
+
+    // Defer the full-chunk `text.to_string()` copy until we know there is
+    // actually something to append. When neither a real concatenation join nor
+    // a structural fragment was found (the common case for a chunk that merely
+    // tripped a concatenation indicator), `final_text` would equal the input
+    // verbatim, so we skip pushing `joined_text`/structural segments into a new
+    // buffer. The chain `mappings` are still emitted unshifted (matching the
+    // original path, which only shifts them when the join is appended) so the
+    // offset→line map is byte-identical to the non-deferred result.
+    if !will_append && structural_joined.is_empty() {
+        let mut original_mappings = identity_line_mappings(text, original_end);
+        original_mappings.extend(mappings);
+        return PreprocessedText {
+            text: text.to_string(),
+            original_end,
+            mappings: original_mappings,
+        };
+    }
+
+    let mut final_text = text.to_string();
+    let mut appended_any = false;
+
+    if will_append {
         final_text.push('\n');
         final_text.push_str(&joined_text);
 
@@ -74,8 +107,6 @@ pub fn preprocess_multiline(
         appended_any = true;
     }
 
-    let (structural_joined, structural_mappings) =
-        collect_structural_fragments(&lines, final_text.len() + 1, fragment_cache);
     if !structural_joined.is_empty() {
         if !appended_any {
             final_text.push('\n');
@@ -84,6 +115,22 @@ pub fn preprocess_multiline(
         mappings.extend(structural_mappings);
     }
 
+    let mut original_mappings = identity_line_mappings(text, original_end);
+    original_mappings.extend(mappings);
+
+    PreprocessedText {
+        text: final_text,
+        original_end,
+        mappings: original_mappings,
+    }
+}
+
+/// Build the identity offset→line map over the original `text` (one entry per
+/// `'\n'`-separated segment, `end_offset` clamped to `original_end`). This is
+/// the mapping prefix shared by both the passthrough early-return and the
+/// concatenation path, so it lives in one place rather than being inlined
+/// twice.
+fn identity_line_mappings(text: &str, original_end: usize) -> Vec<LineMapping> {
     let mut original_mappings = Vec::new();
     let mut offset = 0;
     for (line_idx, line) in text.split('\n').enumerate() {
@@ -95,13 +142,7 @@ pub fn preprocess_multiline(
         });
         offset = end + 1;
     }
-    original_mappings.extend(mappings);
-
-    PreprocessedText {
-        text: final_text,
-        original_end,
-        mappings: original_mappings,
-    }
+    original_mappings
 }
 
 fn passthrough_text(text: &str) -> PreprocessedText {

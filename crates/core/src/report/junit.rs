@@ -101,7 +101,7 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
                 writeln!(self.writer, "Date:          {}", d)?;
             }
             writeln!(self.writer, "Redacted:      {}", finding.credential_redacted)?;
-            writeln!(self.writer, "Hash:          {}", finding.credential_hash)?;
+            writeln!(self.writer, "Hash:          {}", crate::hex_encode(&finding.credential_hash))?;
             writeln!(self.writer, "Verification:  {}", verification_str)?;
             if !confidence_str.is_empty() {
                 writeln!(self.writer, "Confidence:    {}", confidence_str)?;
