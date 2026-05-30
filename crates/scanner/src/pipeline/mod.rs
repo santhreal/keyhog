@@ -9,7 +9,7 @@ pub use context_window::{
     match_line_number, normalize_scannable_chunk,
 };
 pub use postprocess::{
-    build_raw_match, should_suppress_known_example_credential,
+    build_raw_match, is_weakly_anchored_named_detector, should_suppress_known_example_credential,
     should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
 };
 pub(crate) use postprocess::{
