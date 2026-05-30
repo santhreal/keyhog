@@ -161,6 +161,26 @@ impl CompiledScanner {
             if entropy_match.value.bytes().any(|b| b == b' ' || b == b'\t') {
                 continue;
             }
+            // English-prose suppression: a 16+ char value that is pure
+            // lowercase ASCII letters (no digit, no symbol), OR a
+            // multi-token whitespace-bearing alphabetic value with at
+            // least one lowercase word, is virtually never a real
+            // credential - real tokens are mixed-case + digits. When
+            // the line is NOT directly anchored by a strong credential
+            // keyword (e.g. `description = "..."` happens to land near
+            // `password` in the file), the joined-word shape is
+            // overwhelmingly free-text.
+            //
+            // We only apply this when the keyword anchor is weak: if
+            // the candidate's keyword is itself a strong credential
+            // anchor (`api_key`, `token`, `password`, ...), the
+            // keyword itself is positive evidence and we keep the
+            // candidate - users do plant lowercase-only passwords.
+            if !keyword_is_credential_anchor(&entropy_match.keyword)
+                && crate::entropy::keywords::entropy_value_looks_like_prose(&entropy_match.value)
+            {
+                continue;
+            }
             // Comma-bearing values are config/DSN-style metadata, not
             // credentials. Catches Redis DSN
             // `tcp,addr=:6379,password=macaron,db=0,pool_size=100,...`
