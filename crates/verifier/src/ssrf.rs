@@ -99,7 +99,7 @@ pub fn is_private_ip_addr_fast(ip: &IpAddr) -> bool {
 /// used for the URL-string check. Used after DNS resolution to defeat DNS
 /// rebinding (where attacker.com → 127.0.0.1).
 pub fn is_private_ip_addr(ip: &IpAddr) -> bool {
-    is_private_ip_addr_fast(ip) || bogon::ip_addr_is_bogon(*ip)
+    is_private_ip_addr_fast(ip) || crate::bogon::ip_addr_is_bogon(*ip)
 }
 
 /// Returns true if the URL points to a private or loopback address.
@@ -113,14 +113,14 @@ pub fn is_private_url(url_str: &str) -> bool {
         match host {
             url::Host::Ipv4(ip) => {
                 if is_private_ip_addr_fast(&IpAddr::V4(ip))
-                    || bogon::ip_addr_is_bogon(IpAddr::V4(ip))
+                    || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
                 {
                     return true;
                 }
             }
             url::Host::Ipv6(ip) => {
                 if is_private_ip_addr_fast(&IpAddr::V6(ip))
-                    || bogon::ip_addr_is_bogon(IpAddr::V6(ip))
+                    || crate::bogon::ip_addr_is_bogon(IpAddr::V6(ip))
                 {
                     return true;
                 }
@@ -163,7 +163,7 @@ pub fn is_private_url(url_str: &str) -> bool {
                 };
                 if let Some(ip) = maybe_ip {
                     if is_private_ip_addr_fast(&IpAddr::V4(ip))
-                        || bogon::ip_addr_is_bogon(IpAddr::V4(ip))
+                        || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
                     {
                         return true;
                     }
