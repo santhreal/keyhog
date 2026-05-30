@@ -252,6 +252,159 @@ fn has_low_alnum_ratio(value: &str) -> bool {
     alnum < 0.5
 }
 
+/// Heuristic for "this value looks like an English-prose run", not a
+/// credential. Tightens FP filtering when the keyword-anchor is weak
+/// (e.g. the word `secret` appears in a comment or commit message that
+/// happens to also contain a high-entropy looking token-substring). Real
+/// credentials never contain consecutive lowercase ASCII letters longer
+/// than ~12 chars (longest common English word still in heavy use), and
+/// they don't contain multiple whitespace-delimited words.
+///
+/// Returns true if `value` should be treated as English prose.
+fn looks_like_english_prose(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 16 {
+        return false;
+    }
+
+    // Branch 1: pure lowercase ASCII letters with no digit/symbol. A 16+
+    // char string of nothing but lowercase letters is overwhelmingly a
+    // dictionary-word concatenation, joined sentence fragment, or
+    // identifier sentence (e.g. `description = "thequickbrownfoxjumps..."`
+    // emitted from a free-text field). Real high-entropy credentials at
+    // this length virtually always include at least one digit or a
+    // mixed-case transition - the entropy of pure-lowercase-letters tops
+    // out at log2(26) = 4.7 bits/byte, but English compressed via the
+    // narrow vowel/consonant alternation lands well under that.
+    if bytes.iter().all(|b| b.is_ascii_lowercase()) && bytes.len() >= 16 {
+        return true;
+    }
+
+    // Branch 2: multi-word whitespace-bearing prose. The dotenv / log-line
+    // / properties extractors occasionally capture the entire RHS as a
+    // single value when the source is `KEY=this is the description of
+    // something interesting and long`. The whitespace-bearing gate at the
+    // emit site already drops these unconditionally for the entropy
+    // fallback, but Strict-mode plausibility (called from quoted-value
+    // extraction) sees the raw string and needs an explicit prose branch:
+    // 2+ whitespace-separated tokens where every token is 2+ chars of
+    // pure ASCII letters (any case) and there is at least one lowercase
+    // run of 3+ chars. Real credentials never split into multiple
+    // alphabetic tokens.
+    let tokens: Vec<&str> = value.split_whitespace().collect();
+    if tokens.len() >= 2 {
+        let all_alpha = tokens
+            .iter()
+            .all(|t| t.len() >= 2 && t.bytes().all(|b| b.is_ascii_alphabetic()));
+        if all_alpha {
+            let has_lowercase_word =
+                tokens.iter().any(|t| t.len() >= 3 && t.bytes().all(|b| b.is_ascii_lowercase()));
+            if has_lowercase_word {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Public predicate for callers in the entropy emit-path. Returns true
+/// when the value would be classified as English prose; the emit-path
+/// uses this to tighten plausibility when no strong credential keyword
+/// anchor is adjacent.
+pub fn entropy_value_looks_like_prose(value: &str) -> bool {
+    looks_like_english_prose(value)
+}
+
+#[cfg(test)]
+mod english_prose_tests {
+    use super::{entropy_value_looks_like_prose, looks_like_english_prose};
+
+    #[test]
+    fn long_pure_lowercase_is_prose() {
+        // Positive prose: 32-char pure lowercase is overwhelmingly a
+        // joined sentence fragment / variable name run, not a credential.
+        assert!(looks_like_english_prose(
+            "thequickbrownfoxjumpsoverthelazydog"
+        ));
+    }
+
+    #[test]
+    fn mixed_case_credential_is_not_prose() {
+        // Negative twin: a real-world high-entropy credential with mixed
+        // case must NOT be flagged as prose.
+        assert!(!looks_like_english_prose(
+            "Hk9PqRsTuVwXyZAbCdEfGhIjKlMnOpQr"
+        ));
+    }
+
+    #[test]
+    fn alphanumeric_credential_is_not_prose() {
+        // Negative twin: any digit in the value disqualifies it from the
+        // prose classification.
+        assert!(!looks_like_english_prose(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaa1234"
+        ));
+    }
+
+    #[test]
+    fn short_lowercase_is_not_prose() {
+        // Negative twin: short values fall under the 16-char floor.
+        assert!(!looks_like_english_prose("password"));
+    }
+
+    #[test]
+    fn public_alias_is_consistent() {
+        // Public re-export points at the same predicate.
+        assert!(entropy_value_looks_like_prose(
+            "thisismyverylongpassphraseinpurelowercase"
+        ));
+        assert!(!entropy_value_looks_like_prose("Abcd1234EfGhIjKlMnOpQrStUvWx"));
+    }
+
+    #[test]
+    fn multi_word_alphabetic_is_prose() {
+        // Positive: a multi-word English fragment captured as the
+        // value of a `description=` style field gets dropped as prose.
+        // The entropy emit-path already drops whitespace-bearing values
+        // wholesale, but Strict-mode plausibility (quoted-string path)
+        // sees the same shape and must also classify it as prose.
+        assert!(looks_like_english_prose(
+            "this is the description of something"
+        ));
+        assert!(looks_like_english_prose(
+            "Session opened with handle XYZ"
+        ));
+    }
+
+    #[test]
+    fn multi_token_mixed_high_entropy_is_not_prose() {
+        // Negative twin: a multi-token value where one token is
+        // a high-entropy token (digits + mixed case) must NOT be
+        // classified as prose - real credentials get pasted into
+        // values that may carry surrounding whitespace from naive
+        // shell joins, and we must not over-suppress them.
+        assert!(!looks_like_english_prose(
+            "key=Hk9PqRsTuV4kYBiZ0Q1A2B3C"
+        ));
+    }
+
+    #[test]
+    fn sixteen_char_pure_lowercase_is_prose() {
+        // Positive recall: lowering the floor from 24 to 16 catches
+        // shorter joined-word shapes that the prior gate walked past.
+        // `description = "configurationhelper"` would surface as a
+        // generic-secret/entropy candidate without this.
+        assert!(looks_like_english_prose("configurationmgr"));
+    }
+
+    #[test]
+    fn fifteen_char_pure_lowercase_is_not_prose() {
+        // Negative twin: just below the floor stays admitted.
+        assert!(!looks_like_english_prose("configurationm"));
+    }
+}
+
 fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
     // Outside a credential-keyword anchor, any >10-char pure-hex value is a
     // checksum/digest, not a credential. Inside one (`apiKey: <hex>`), the
@@ -291,7 +444,29 @@ fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool
         return false;
     }
 
-    shannon_entropy(value.as_bytes()) >= HIGH_ENTROPY_THRESHOLD
+    // Symbolic-charset / credential-anchored entropy relaxation.
+    // The blanket `HIGH_ENTROPY_THRESHOLD` (4.5) floor over-rejects
+    // real symbolic-password shapes whose Shannon entropy lands in
+    // the 3.5-4.5 band - e.g. `1E1B3b4Ho$U4kYBi` (entropy ~3.95),
+    // `Y6NPMwS*rWGUv!JQnSG6a#D14` (entropy ~4.1). When the value
+    // arrives WITH a strong credential-keyword anchor AND carries
+    // at least one symbolic (non-alphanumeric) character, the
+    // anchor + symbol-set together are positive evidence that the
+    // value is a credential, not a code identifier or English word.
+    // Use a lower 3.5 floor in that case. Pure-alphanumeric values
+    // keep the original 4.5 floor (those are harder to distinguish
+    // from CamelCase/snake_case identifiers).
+    let entropy = shannon_entropy(value.as_bytes());
+    if entropy >= HIGH_ENTROPY_THRESHOLD {
+        return true;
+    }
+    if is_credential_context {
+        let has_symbol = value.bytes().any(|b| !b.is_ascii_alphanumeric());
+        if has_symbol && entropy >= 3.5 {
+            return true;
+        }
+    }
+    false
 }
 
 /// Heuristic: is this string a likely source-code identifier rather
@@ -379,6 +554,68 @@ pub fn is_secret_plausible_with_context(
         placeholder_keywords,
         is_credential_context,
     )
+}
+
+#[cfg(test)]
+mod strict_secret_tests {
+    use super::passes_strict_secret_checks;
+
+    #[test]
+    fn symbolic_password_in_credential_context_admitted() {
+        // Positive recall: a real-world symbolic password whose Shannon
+        // entropy lands in the 3.5-4.5 band (below the blanket high-
+        // entropy floor) gets admitted when the value sits in a
+        // credential-keyword anchored context. Catches the FN class
+        // described in the generic-password investigator findings
+        // (Y6NPMwS*rWGUv!JQnSG6a#D14, 1E1B3b4Ho$U4kYBi, etc.).
+        assert!(passes_strict_secret_checks(
+            "1E1B3b4Ho$U4kYBi",
+            true,
+        ));
+        assert!(passes_strict_secret_checks(
+            "Y6NPMwS*rWGUv!JQnSG6a#D14",
+            true,
+        ));
+    }
+
+    #[test]
+    fn pure_alnum_low_entropy_in_credential_context_rejected() {
+        // Negative twin: a pure-alphanumeric value with sub-4.5 entropy
+        // and NO symbol stays rejected even in credential context - the
+        // anchor + symbol-set combo is what lifts the floor; alphanumeric
+        // alone is indistinguishable from CamelCase identifiers.
+        assert!(!passes_strict_secret_checks(
+            "abcdefghij1234567",
+            true,
+        ));
+    }
+
+    #[test]
+    fn symbolic_value_no_anchor_keeps_high_floor() {
+        // Negative twin: outside credential context, the relaxation
+        // does not apply - a symbolic 3.5-4.5 entropy value alone is
+        // not enough signal without the keyword anchor.
+        // `H!l$o-w0rld-pas` has symbols and ~3.7 entropy, below the
+        // 4.5 blanket floor, with no anchor - must stay rejected.
+        assert!(!passes_strict_secret_checks(
+            "H!l$o-w0rld-pas",
+            false,
+        ));
+    }
+
+    #[test]
+    fn english_prose_with_anchor_still_rejected() {
+        // Adversarial: a credential-anchored value that happens to be
+        // English prose stays rejected - the prose-shape filter at
+        // higher emit-path tiers catches this, but the strict checker
+        // also gates on entropy floors which prose fails.
+        // `passwordispasswordispassword` is pure-lowercase 28 chars,
+        // entropy lands around 3.0 - both alnum-only branches reject.
+        assert!(!passes_strict_secret_checks(
+            "passwordispasswordispassword",
+            true,
+        ));
+    }
 }
 
 fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
