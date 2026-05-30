@@ -89,16 +89,15 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -use
 git clone https://github.com/santhsecurity/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
-# Source-build via cargo install --git (no clone needed)
-cargo install --git https://github.com/santhsecurity/keyhog keyhog \
-  --no-default-features --features portable
+# From crates.io
+cargo install keyhog --no-default-features --features portable
 ```
 
-> `cargo install keyhog` (registry, no `--git`) is intentionally NOT
-> the canonical path: the keyhog crates aren't on crates.io at the
-> current vyre version. See [PUBLISHING.md](./PUBLISHING.md) for the
-> blocker + unblock plan. Until then `install.sh` (signed prebuilt)
-> and `cargo install --git` are the two supported paths.
+> `install.sh` (signed prebuilt) remains the recommended path because a
+> fresh `cargo install keyhog` source-builds Hyperscan + the GPU stack
+> (~3 minutes on a hosted runner) versus a ~20 MB signed-binary download
+> in ~1 s. `cargo install keyhog` is the right path for developers who
+> want a source build with their toolchain.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.
@@ -328,7 +327,7 @@ Use the `portable` feature - every detection feature, no system-library
 build deps (skips the Hyperscan/Ghidra build step):
 
 ```yaml
-- run: cargo install --git https://github.com/santhsecurity/keyhog keyhog --no-default-features --features portable
+- run: cargo install keyhog --no-default-features --features portable
 - run: keyhog scan . --format sarif --severity high > keyhog.sarif
 ```
 
