@@ -6,14 +6,22 @@
 use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 
-proptest! {
-    #![proptest_config(ProptestConfig {
+fn filesystem_fuzz_config() -> ProptestConfig {
+    ProptestConfig {
         // 50 cases is plenty for shape coverage; this test is heavier than
         // a single-file proptest because each case spins a real temp dir.
         cases: 50,
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(
+            "tests/property/filesystem_fuzz.proptest-regressions",
+        ))),
         ..ProptestConfig::default()
-    })]
+    }
+}
+
+proptest! {
+    #![proptest_config(filesystem_fuzz_config())]
 
     #[test]
     fn random_files_dont_panic_filesystem_source(

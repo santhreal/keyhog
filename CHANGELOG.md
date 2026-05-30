@@ -11,6 +11,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Split GitHub org git-error redaction into a focused submodule so `github_org.rs` is back under the 500-line modularity target.
 - Split WebSource SSRF, URL redaction, redirect validation, and DNS pinning helpers into `web/ssrf.rs`, bringing `web.rs` under the 500-line modularity target.
 - Split filesystem extraction and walker/filter policy into `filesystem/extract.rs` and `filesystem/filter.rs`, bringing the filesystem source below the 500-line modularity target and registering the zip archive skip-list regression gate.
+- Fix HTTP property-test env isolation for `KEYHOG_PROXY`/`KEYHOG_INSECURE_TLS`, keep 10k-case policy fuzzing while bounding real reqwest builder/client construction, and wire direct proptest regression files so aggregate source gates run without skipping `http_fuzz`.
 
 ## v0.5.37 - 2026-05-29 - Mirror benchmark: F1 0.7815 to 0.8896 (closes the gap to betterleaks 0.892)
 
