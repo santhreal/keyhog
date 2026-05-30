@@ -125,28 +125,38 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// Heuristics (all required):
 ///   1. Length in `[40, 80]` chars - the window where the SecretBench
 ///      protobuf negatives concentrate (30-60 random bytes → 40-80
-///      base64 chars). Above 80 we leave to the decode-and-recheck
-///      gate (random binary doesn't decode to UTF-8 - no recheck
+///      base64 chars). Above 80 the decode-and-recheck gate handles
+///      it (random binary doesn't decode to UTF-8 - no recheck
 ///      fires - and real long-form positives like Azure storage key
 ///      (88 chars) keep their recall). Below 40 we'd over-suppress
 ///      short tokens that happen to contain `+/`.
 ///   2. Alphabet limited to `[A-Za-z0-9+/=]` (standard base64).
-///   3. Contains at least one of `+` or `/` - the chars that
-///      distinguish standard base64 from base64url. Real provider
-///      tokens use base64url (`-_`) or pure alphanumeric, never
-///      standard `+/` in the bare-token form.
-///   4. Either ends in `=`/`==` padding OR length is a multiple of
+///   3. Either ends in `=`/`==` padding OR length is a multiple of
 ///      4 (proper base64 of byte-aligned data). 40 % 4 == 0 so the
 ///      40-char unpadded case is admitted; previously the gate
 ///      rejected those, leaking thousands of FPs from the no-pad
 ///      40-char `generic-password`/`generic-secret` shape in the
 ///      SecretBench mirror corpus.
+///   4. Admit clause - at least ONE of:
+///        * contains `+` / `/` (standard-base64 punct), OR
+///        * trailing `=` padding, OR
+///        * length is a multiple of 4 AND alphabet diversity is
+///          >= 32 distinct alphanumeric chars (random bytes
+///          encoded; placeholder / dictionary-word shapes never
+///          reach that diversity at >= 40 chars).
+///
+/// Mirror v32 had 52 base64-protobuf FPs surviving every other
+/// suppression; the v33 widening (drop the strict `+/` requirement,
+/// add a high-diversity admit) collapses the pure-alphanumeric and
+/// padded sub-classes that were leaking.
 ///
 /// Why this is safe for recall: PEM-framed credentials get the
 /// hard bypass above (they start with `-----BEGIN`), so
 /// EC/RSA/PGP/OpenSSH private keys are unaffected even though
 /// their bodies are standard base64. The 86/88-char Azure storage
 /// key sits OUTSIDE the [40, 80] window so recall is preserved.
+/// AWS secret keys are 40 chars base62 with diversity typically
+/// < 32, so the diversity clause does not bite them.
 pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     if !(40..=80).contains(&credential.len()) {
         return false;
@@ -157,14 +167,22 @@ pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
         return false;
     }
     let mut has_b64_punct = false;
-    for c in credential.chars() {
-        match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '=' => {}
-            '+' | '/' => has_b64_punct = true,
+    let mut seen = [false; 256];
+    let mut distinct_alnum: u32 = 0;
+    for b in credential.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {
+                if !seen[b as usize] {
+                    seen[b as usize] = true;
+                    distinct_alnum += 1;
+                }
+            }
+            b'=' => {}
+            b'+' | b'/' => has_b64_punct = true,
             _ => return false,
         }
     }
-    has_b64_punct
+    has_b64_punct || has_padding || (length_multiple_of_4 && distinct_alnum >= 32)
 }
 
 fn is_uniform_hex(s: &str) -> bool {
@@ -304,4 +322,77 @@ pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
         i += run;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Round 1 FP-killer: base64-protobuf cause #1. A 40-char pure-alphanumeric
+    // base64 string (no +/) with high alphabet diversity must hit the gate.
+    // 25 FPs from the mirror corpus matched this exact shape under
+    // generic-secret and bypassed the +/ requirement before this widening.
+    #[test]
+    fn standard_base64_blob_admits_pure_alnum_high_diversity() {
+        // 40-char base64 alphabet, no +/, distinct alnum >= 32, mult-of-4.
+        let v = "8Xs2ny0Ng9nqVusefKpLxC7DJ1lj4YplT6m62LAg";
+        assert_eq!(v.len(), 40);
+        let distinct: std::collections::BTreeSet<char> = v.chars().collect();
+        assert!(distinct.len() >= 32, "fixture diversity must be >= 32");
+        assert!(
+            looks_like_standard_base64_blob(v),
+            "40-char pure-alphanumeric mult-of-4 base64 with high alphabet \
+             diversity is a random-bytes shape and must be slammed",
+        );
+    }
+
+    // Negative twin: a real AWS-secret-access-key shape (40 base62 chars
+    // with low alphabet diversity) must NOT hit the gate. The diversity
+    // floor of 32 distinct chars keeps these alive (real 40-char secrets
+    // generated by AWS rarely exceed 25-28 distinct chars at this length).
+    #[test]
+    fn standard_base64_blob_rejects_low_diversity_alnum() {
+        // 40 chars, pure alphanumeric, no +/, low diversity (< 32 distinct).
+        let v = "AAaaBBbbCCccDDddEEee11223344556677889900";
+        assert_eq!(v.len(), 40);
+        let distinct: std::collections::BTreeSet<char> = v.chars().collect();
+        assert!(distinct.len() < 32, "fixture diversity must be < 32");
+        assert!(
+            !looks_like_standard_base64_blob(v),
+            "low-diversity 40-char alnum must NOT fire (real short-token \
+             recall preserved); got diversity={}",
+            distinct.len(),
+        );
+    }
+
+    // Round 1 FP-killer: base64-protobuf cause #4. A 48-char padded base64
+    // ending in `=` with no +/ punct must hit the gate. Six FPs in the
+    // mirror matched this exact shape and previously slipped the strict
+    // `+/`-required check.
+    #[test]
+    fn standard_base64_blob_admits_padded_no_punct() {
+        // 48 chars, mult-of-4, ends in `=`, no `+` or `/`.
+        let v = "Y9yPilpjN2WTIqtSuWGOKwSkvfmeAoLFCj099gWg24tohA==";
+        assert_eq!(v.len(), 48);
+        assert!(
+            looks_like_standard_base64_blob(v),
+            "padded 48-char base64 without +/ punct must fire via the \
+             padded-admit clause (base64-protobuf cause #4)",
+        );
+    }
+
+    // Negative twin: a 41-char base64 with no padding, mult-of-4 = false
+    // (41 % 4 == 1) - the strict mult-of-4 OR padding precondition keeps
+    // this off the gate. Real provider tokens at non-mult-of-4 lengths
+    // (e.g. 41-char protocol-specific tokens) stay live.
+    #[test]
+    fn standard_base64_blob_rejects_non_mult4_no_pad() {
+        let v = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1Ja";
+        assert_eq!(v.len(), 41);
+        assert!(
+            !looks_like_standard_base64_blob(v),
+            "41-char non-mult-of-4 unpadded base64 must NOT fire (the \
+             length precondition fails before any admit clause)",
+        );
+    }
 }
