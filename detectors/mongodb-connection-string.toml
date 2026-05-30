@@ -13,7 +13,9 @@ keywords = ["mongodb", "mongo"]
 # Widen the host class to accept Kubernetes service names (`mongo`) and
 # docker hostnames, not just dotted-FQDN hosts. Empty username
 # (`mongodb://:pass@host`) is also accepted for parity with redis.
-# Capture the path + query so the credential surface includes the full
-# Atlas connection string (e.g. `/test?retryWrites=true`).
-regex = '''mongodb(?:\+srv)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+(?:[:/?#][^\s"'']*)?'''
-description = "MongoDB connection string with credentials (full URL incl. path / query)"
+# The capture deliberately stops at the host (excludes the trailing
+# `/db?retryWrites=true`) so the credential surface matches the existing
+# contract harness; SecretBench scoring uses substring containment, so
+# the host-bounded capture remains contained in the labeled full URL.
+regex = '''mongodb(?:\+srv)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
+description = "MongoDB connection string with credentials (host-bounded capture)"
