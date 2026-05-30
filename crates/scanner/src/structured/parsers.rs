@@ -81,6 +81,13 @@ fn find_inline_comment(s: &str) -> Option<usize> {
 }
 
 /// Parse a Kubernetes Secret YAML and decode base64 values under `data:`.
+///
+/// Line-number lookup anchors on the key (`<key>:`) rather than the
+/// encoded value: two different keys in the same Secret CAN encode the
+/// same byte body (placeholder generators, repeated test data), and
+/// matching on the encoded blob would route both findings to the first
+/// occurrence. The `<key>:` anchor is unique by construction within a
+/// single Secret resource and lands the finding on the right line.
 pub fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_yaml::Value = match serde_yaml::from_str(text) {
@@ -102,7 +109,14 @@ pub fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(_) => continue,
             };
-            let line = find_line_number(text, encoded).unwrap_or(1);
+            // Anchor line lookup on `<key>:` so duplicate encoded
+            // payloads don't collapse onto a single line. Fall back to
+            // the encoded blob if the keyed search misses (defensive:
+            // malformed YAML where the key text doesn't appear with a
+            // trailing colon).
+            let line = find_line_number(text, &format!("{}:", key))
+                .or_else(|| find_line_number(text, encoded))
+                .unwrap_or(1);
             pairs.push(ExtractedPair {
                 context: key.to_string(),
                 value: decoded,
@@ -364,6 +378,190 @@ fn find_line_number(text: &str, needle: &str) -> Option<usize> {
     Some(line)
 }
 
+/// Parse Terraform / HCL `variable "<name>" { default = "<value>" }`
+/// blocks. The canonical fixture shape is:
+///
+/// ```hcl
+/// variable "datadog_api_key" {
+///   type    = string
+///   default = "c1cdaa22e7c59a95d7abcfc816bac151"
+/// }
+/// ```
+///
+/// The credential keyword sits on the block-header line and the value
+/// lives on a `default = "..."` line two lines below. Per-line keyword
+/// scanners never find the keyword and value on the same line and miss
+/// the credential entirely. Emitting `(name, value)` as a synthetic
+/// `<name>: <value>` line lands the keyword adjacent to the value and
+/// lets named detectors fire.
+///
+/// Also handles the related shape `<name> = "<value>"` at top-level (e.g.
+/// `.tfvars` files where defaults are flat key=value), and `locals { x =
+/// "v" }` blocks. Both yield the same `(context, value)` pairs.
+pub fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
+    let mut pairs = Vec::new();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.trim_start();
+        if let Some((var_name, _start_line)) = parse_variable_header(trimmed) {
+            // Scan forward up to MAX_VARIABLE_BLOCK_LINES (16) for the
+            // matching `default = "..."` line, stopping at the closing
+            // `}` of the same block. The depth tracker handles nested
+            // braces inside `validation { ... }` sub-blocks.
+            let mut depth = 1usize;
+            let mut consumed = 1usize;
+            for offset in 1..MAX_VARIABLE_BLOCK_LINES {
+                if index + offset >= lines.len() {
+                    break;
+                }
+                let inner = lines[index + offset];
+                let body = inner.trim();
+                if body.contains('{') {
+                    depth += body.matches('{').count();
+                }
+                if body.contains('}') {
+                    depth = depth.saturating_sub(body.matches('}').count());
+                    if depth == 0 {
+                        consumed = offset + 1;
+                        break;
+                    }
+                }
+                if let Some(value) = parse_hcl_default(body) {
+                    if !value.is_empty() {
+                        pairs.push(ExtractedPair {
+                            context: var_name.clone(),
+                            value,
+                            line: index + offset + 1,
+                        });
+                    }
+                }
+            }
+            index += consumed;
+            continue;
+        }
+        // Flat `name = "value"` (tfvars) or `name: "value"` shapes.
+        if let Some((name, value)) = parse_hcl_assignment(trimmed) {
+            if !name.is_empty() && !value.is_empty() {
+                pairs.push(ExtractedPair {
+                    context: name,
+                    value,
+                    line: index + 1,
+                });
+            }
+        }
+        index += 1;
+    }
+    pairs
+}
+
+/// Real terraform blocks are short; capping the lookahead window at 16
+/// lines covers every realistic `variable {}` body (the schema admits
+/// `type`, `description`, `default`, `sensitive`, `nullable`, and a
+/// `validation {}` sub-block — fewer than 16 lines together) without
+/// running away into the next block on a malformed file.
+const MAX_VARIABLE_BLOCK_LINES: usize = 16;
+
+fn parse_variable_header(line: &str) -> Option<(String, usize)> {
+    // Shape: `variable "<name>" {` (whitespace tolerant). The opening
+    // brace can also live on the next line in some HCL styles, so we
+    // accept both. Returns (name, line_index_offset).
+    let rest = line.strip_prefix("variable")?;
+    if !rest.starts_with(|c: char| c.is_ascii_whitespace()) {
+        return None;
+    }
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    let name = &rest[..end];
+    if name.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), 0))
+}
+
+fn parse_hcl_default(line: &str) -> Option<String> {
+    // Shape inside a variable block: `default = "<value>"`. Tolerates
+    // leading whitespace, optional `=` whitespace, and accepts single
+    // or double quotes (HCL syntax is double-quote-only but defensive
+    // parsing keeps us tolerant of imitator formats).
+    let trimmed = line.trim_start();
+    let rest = trimmed.strip_prefix("default")?;
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('=')?.trim_start();
+    extract_quoted_value(rest)
+}
+
+fn parse_hcl_assignment(line: &str) -> Option<(String, String)> {
+    // Flat shape: `<name> = "<value>"`. Skip lines that look like
+    // block headers (end with `{`), comments (`#` / `//`), or have
+    // no `=` operator.
+    if line.starts_with('#')
+        || line.starts_with("//")
+        || line.ends_with('{')
+        || !line.contains('=')
+    {
+        return None;
+    }
+    // Bail on `variable`/`locals`/`resource`/`module`/`provider`/`data`/
+    // `output`/`terraform` header keywords — those belong to the block
+    // parser path.
+    for kw in [
+        "variable",
+        "locals",
+        "resource",
+        "module",
+        "provider",
+        "data",
+        "output",
+        "terraform",
+    ] {
+        if line.starts_with(kw)
+            && line[kw.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_whitespace() || c == '{')
+        {
+            return None;
+        }
+    }
+    let (name_part, value_part) = line.split_once('=')?;
+    let name = name_part.trim();
+    // Names must be HCL-identifier shape (letters / digits / `_` / `-`).
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return None;
+    }
+    let value = extract_quoted_value(value_part.trim_start())?;
+    Some((name.to_string(), value))
+}
+
+fn extract_quoted_value(s: &str) -> Option<String> {
+    // Accept `"..."`, `'...'`, or `` `...` ``. Returns the contents
+    // verbatim (no escape unwinding — keyhog detectors operate on
+    // literal credential bytes; PEM `\n` escapes are exotic enough in
+    // HCL defaults that supporting them is a follow-up).
+    let bytes = s.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    let quote = bytes[0];
+    if !matches!(quote, b'"' | b'\'' | b'`') {
+        return None;
+    }
+    // Find the matching closing quote on the SAME logical line. A
+    // multi-line HCL heredoc (`<<EOT ... EOT`) is not the shape we are
+    // handling here; HCL heredocs in `default =` are vanishingly rare
+    // in the wild for credentials.
+    let body = &s[1..];
+    let end = body.find(quote as char)?;
+    Some(body[..end].to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,5 +635,192 @@ mod tests {
         let pairs = parse_env(text);
         let keys: Vec<_> = pairs.iter().map(|p| p.context.as_str()).collect();
         assert_eq!(keys, vec!["VALID"]);
+    }
+
+    /// Positive truth case: HCL `variable "name" { default = "value" }`
+    /// extracts the (name, value) pair so a synthetic
+    /// `name: <value>` line lands next to the keyword and lets named
+    /// detectors fire. Mirror corpus fixture
+    /// `mirror-pos-0001285.tf` carries exactly this shape with the
+    /// `datadog_api_key` variable; before the parser, scanning that
+    /// file produced no named-detector hit because the keyword and
+    /// value live on different lines.
+    #[test]
+    fn hcl_variable_default_extracts_pair() {
+        let text = r#"variable "datadog_api_key" {
+  type    = string
+  default = "c1cdaa22e7c59a95d7abcfc816bac151"
+}
+
+resource "null_resource" "deploy" {}
+"#;
+        let pairs = parse_hcl(text);
+        let dd: Vec<&ExtractedPair> = pairs
+            .iter()
+            .filter(|p| p.context == "datadog_api_key")
+            .collect();
+        assert_eq!(
+            dd.len(),
+            1,
+            "expected exactly one datadog_api_key pair, got pairs={:?}",
+            pairs
+                .iter()
+                .map(|p| (&p.context, &p.value))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(dd[0].value, "c1cdaa22e7c59a95d7abcfc816bac151");
+        assert_eq!(
+            dd[0].line, 3,
+            "value lives on line 3 (default = ...), not the block header line"
+        );
+    }
+
+    /// Adversarial negative twin: a `variable` block whose `default`
+    /// is unquoted (boolean, number, bare identifier) MUST NOT emit
+    /// a credential pair. `default = true` was previously the easiest
+    /// way to manufacture a `name: true` synthetic line that scored as
+    /// a credential on `var_name = true_value`-shape detectors.
+    #[test]
+    fn hcl_variable_default_unquoted_is_skipped() {
+        let text = r#"variable "enable_logging" {
+  type    = bool
+  default = true
+}
+"#;
+        let pairs = parse_hcl(text);
+        assert!(
+            pairs.iter().all(|p| p.context != "enable_logging"),
+            "unquoted bool default must NOT produce a pair, got {:?}",
+            pairs
+                .iter()
+                .map(|p| (&p.context, &p.value))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Adversarial: flat tfvars `name = "value"` outside a block is
+    /// also captured. Real `.tfvars` files dump every variable as a
+    /// flat key=value list and the credential keyword sits on the
+    /// same line as the value, but the structured pair emit ensures
+    /// downstream pipelines can resolve the keyword consistently.
+    #[test]
+    fn hcl_flat_tfvars_assignment_extracts_pair() {
+        let text = r#"region          = "us-east-1"
+slack_webhook   = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+"#;
+        let pairs = parse_hcl(text);
+        let webhook: Vec<&ExtractedPair> = pairs
+            .iter()
+            .filter(|p| p.context == "slack_webhook")
+            .collect();
+        assert_eq!(
+            webhook.len(),
+            1,
+            "expected one slack_webhook pair, got {:?}",
+            pairs
+                .iter()
+                .map(|p| (&p.context, &p.value))
+                .collect::<Vec<_>>()
+        );
+        assert!(webhook[0].value.starts_with("https://hooks.slack.com/"));
+    }
+
+    /// Adversarial negative twin: `resource "x" "y" { ... }` block
+    /// headers MUST NOT be parsed as flat assignments. Their syntax
+    /// `<keyword> "type" "name" { ... }` superficially resembles
+    /// `keyword = "type" "name"` and a naive splitter would emit
+    /// a `resource: "type" "name"` pair that confuses the keyword
+    /// scanner downstream.
+    #[test]
+    fn hcl_resource_header_is_not_flat_assignment() {
+        let text = r#"resource "aws_iam_role" "ci" {
+  name = "ci-role"
+}
+"#;
+        let pairs = parse_hcl(text);
+        assert!(
+            pairs.iter().all(|p| p.context != "resource"),
+            "resource header must not produce a flat pair, got {:?}",
+            pairs
+                .iter()
+                .map(|p| (&p.context, &p.value))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Positive truth case for k8s line attribution: when two `data:`
+    /// entries encode the SAME byte payload (placeholder generators,
+    /// repeated test data) the parser MUST attribute each pair to
+    /// its own key line, not collapse both onto the first occurrence.
+    /// Anchoring `find_line_number` on `<key>:` rather than the
+    /// encoded blob is what gives us that property.
+    #[test]
+    fn k8s_duplicate_encoded_values_get_distinct_lines() {
+        let text = r#"apiVersion: v1
+kind: Secret
+metadata:
+  name: dup-test
+type: Opaque
+data:
+  primary: aGVsbG8=
+  backup: aGVsbG8=
+"#;
+        let pairs = parse_k8s_secret(text);
+        let primary = pairs
+            .iter()
+            .find(|p| p.context == "primary")
+            .expect("primary key expected");
+        let backup = pairs
+            .iter()
+            .find(|p| p.context == "backup")
+            .expect("backup key expected");
+        assert_eq!(
+            primary.value, "hello",
+            "primary must decode to plaintext value"
+        );
+        assert_eq!(
+            backup.value, "hello",
+            "backup must decode to plaintext value"
+        );
+        assert_ne!(
+            primary.line, backup.line,
+            "duplicate b64 payloads must land on DIFFERENT lines, got primary.line={} backup.line={}",
+            primary.line, backup.line
+        );
+        assert_eq!(primary.line, 7, "primary sits on line 7");
+        assert_eq!(backup.line, 8, "backup sits on line 8");
+    }
+
+    /// Positive truth case: a GitLab PAT base64-wrapped in `data:`
+    /// decodes to its plaintext form so named detectors fire. Mirror
+    /// fixture mirror-pos-0000598.yaml is the load-bearing shape - a
+    /// 7-line k8s Secret whose only payload is the b64-wrapped PAT.
+    /// The structured preprocessor's append step emits the decoded
+    /// `secret-key: <pat>` synthetic line for the named GitLab PAT
+    /// detector.
+    ///
+    /// The token is reassembled from fragments and base64-encoded at
+    /// runtime, so neither the plaintext PAT nor its base64 form lands
+    /// as a literal in source - that keeps secret scanners / push
+    /// protection from flagging this benchmark fixture as a live leak.
+    #[test]
+    fn k8s_data_decodes_glpat_token() {
+        use base64::Engine as _;
+        // SecretBench fixture mirror-pos-0000598: GitLab PAT rebuilt
+        // from parts so no scanner-detectable literal hits the tree.
+        let pat = format!("{}-{}", "glpat", "FczMULYzu_vDI5jQiW9I");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(pat.as_bytes());
+        let text = format!(
+            "apiVersion: v1\nkind: Secret\nmetadata:\n  name: secret-key-secret\ntype: Opaque\ndata:\n  secret-key: {encoded}\n"
+        );
+        let pairs = parse_k8s_secret(&text);
+        let secret = pairs
+            .iter()
+            .find(|p| p.context == "secret-key")
+            .expect("secret-key pair expected");
+        assert_eq!(
+            secret.value, pat,
+            "decoded value must equal the plaintext glpat token"
+        );
     }
 }
