@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Sources
+
+- Fix `keyhog-sources` default test compilation by marking the S3 ambient credential forwarding integration test as requiring the `s3` feature.
+
 ## v0.5.37 - 2026-05-29 - Mirror benchmark: F1 0.7815 to 0.8896 (closes the gap to betterleaks 0.892)
 
 Headline: precision 0.9716, recall 0.8203, F1 0.8896 against the
