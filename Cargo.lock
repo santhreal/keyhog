@@ -330,10 +330,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bogon"
-version = "0.1.0"
-
-[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2910,7 +2906,6 @@ version = "0.5.37"
 dependencies = [
  "aes",
  "base64",
- "bogon",
  "cfb-mode",
  "codewalk",
  "dashmap",
