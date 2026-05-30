@@ -82,6 +82,16 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
         return Some(parsers::parse_tfstate(text));
     }
 
+    // HCL / Terraform configuration. The block shape
+    //   variable "x" { default = "<value>" }
+    // hides the credential keyword (`x`) on the header line and the
+    // value two lines below. Per-line keyword scanning misses both.
+    // Extract `(x, <value>)` pairs so the keyword sits adjacent to the
+    // value as a synthetic line and named detectors fire.
+    if ends_ci(b".tf") || ends_ci(b".tfvars") || ends_ci(b".hcl") {
+        return Some(parsers::parse_hcl(text));
+    }
+
     if ends_ci(b".ipynb") {
         return Some(parsers::parse_jupyter(text));
     }
