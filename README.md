@@ -88,7 +88,17 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -use
 # From source (any platform)
 git clone https://github.com/santhsecurity/keyhog.git
 cd keyhog && cargo build --release -p keyhog
+
+# Source-build via cargo install --git (no clone needed)
+cargo install --git https://github.com/santhsecurity/keyhog keyhog \
+  --no-default-features --features portable
 ```
+
+> `cargo install keyhog` (registry, no `--git`) is intentionally NOT
+> the canonical path: the keyhog crates aren't on crates.io at the
+> current vyre version. See [PUBLISHING.md](./PUBLISHING.md) for the
+> blocker + unblock plan. Until then `install.sh` (signed prebuilt)
+> and `cargo install --git` are the two supported paths.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.
