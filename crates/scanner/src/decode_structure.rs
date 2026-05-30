@@ -122,43 +122,121 @@ const DECODED_PLACEHOLDER_WORDS: &[&[u8]] = &[
 ];
 
 /// Shape-only check: does `value` look like a uniform base64 blob with no
-/// structure markers? Strict criteria - 60+ chars long, multiple-of-4 length
+/// structure markers? Criteria - 44+ chars long, multiple-of-4 length
 /// or trailing `=` padding, every char in the standard base64 alphabet,
-/// AND contains at least one `+` / `/` punct or has padding. Matches the
-/// `random-base64-protobuf` corpus shape (random bytes base64-encoded into
-/// a `password=`/`secret=` slot) without firing on real service-anchored
-/// credentials:
-///   * AWS secret access keys (40 base62 chars, no +/, no padding) - skipped
-///   * GitHub PATs (40+ chars but contain `_`) - skipped
+/// AND (contains `+` / `/` punct OR has padding OR has high alphabet
+/// diversity). Matches the `random-base64-protobuf` corpus shape (random
+/// bytes base64-encoded into a `password=`/`secret=` slot) without firing
+/// on real service-anchored credentials:
+///   * AWS secret access keys (40 base62 chars, no +/, no padding) - too short
+///   * GitHub PATs (40+ chars but contain `_`) - skipped (alphabet check)
 ///   * npm tokens (36 chars base62) - too short, skipped
 ///   * Stripe keys (32 chars, `sk_`/`pk_` prefix with `_`) - skipped
 ///   * Slack tokens (xox*-prefixed with `-`) - skipped
 ///   * JWT tokens (`.` separators) - skipped
-///   * OAuth bearer tokens at 40-59 chars - skipped via 60-char floor
+///   * OAuth bearer tokens with `-`/`_` (base64url) - skipped via alphabet
 ///
 /// Used by `confidence::penalties::apply_post_ml_penalties` as the generic-
 /// detector branch's "this is a random base64 blob, not a credential" gate.
 /// Mirror v27 had 56 base64-protobuf FPs surviving every other suppression;
-/// this is the dedicated gate for that class.
+/// this is the dedicated gate for that class. v33 widened the floor from
+/// 60 to 44 and added a high-diversity admit so pure-alphanumeric base64
+/// (lacking +/) is also slammed - 14+ FPs in the corpus relied on the
+/// gap.
 #[must_use]
 pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
-    if !(60..=300).contains(&value.len()) {
+    if !(44..=600).contains(&value.len()) {
         return false;
     }
     let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len() % 4 == 0;
+    let length_mult_4 = value.len().is_multiple_of(4);
     if !has_padding && !length_mult_4 {
         return false;
     }
     let mut has_b64_punct = false;
+    let mut seen = [false; 256];
+    let mut distinct_alnum: u32 = 0;
     for b in value.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'=' => {}
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {
+                if !seen[b as usize] {
+                    seen[b as usize] = true;
+                    distinct_alnum += 1;
+                }
+            }
+            b'=' => {}
             b'+' | b'/' => has_b64_punct = true,
             _ => return false,
         }
     }
-    has_b64_punct || has_padding
+    // Admit clauses:
+    //   * +/  punctuation in standard base64 alphabet, OR
+    //   * trailing `=` padding (length already validated as mult-of-4 path
+    //     above), OR
+    //   * length is mult-of-4 AND alphabet diversity >= 32 distinct
+    //     alphanumeric chars (random bytes encoded; placeholders / words
+    //     never reach this diversity at >= 44 chars).
+    has_b64_punct || has_padding || (length_mult_4 && distinct_alnum >= 32)
+}
+
+/// True when `value` base64-decodes to bytes that are themselves all in
+/// the base64 alphabet (double-encoded base64). k8s `data:` fields wrap
+/// their values in another base64 layer; the inner decoded bytes are the
+/// actual user content, and when those bytes are themselves a printable
+/// base64 blob the outer wrapper is categorically data, not a credential.
+///
+/// Conservative: requires the decoded length to be >= 32 chars AND the
+/// decoded bytes to be all standard-base64 alphabet (A-Za-z0-9+/=).
+/// Random secret bytes would produce non-base64 bytes (non-printable,
+/// 0x00..0x20, 0x80..0xFF) so this is definitional, not heuristic.
+///
+/// Memoized via the same FNV-1a hash + thread-local cache pattern as the
+/// other decode-through helpers.
+#[must_use]
+pub fn decoded_is_base64_blob(candidate: &str) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    const MAX_CACHE_ENTRIES: usize = 4096;
+
+    thread_local! {
+        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
+    }
+
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in candidate.as_bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    CACHE.with(|cache| {
+        if let Some(&verdict) = cache.borrow().get(&hash) {
+            return verdict;
+        }
+        let verdict = compute_decoded_is_base64_blob(candidate);
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= MAX_CACHE_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(hash, verdict);
+        verdict
+    })
+}
+
+fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
+    let trimmed = candidate.trim();
+    if trimmed.len() < MIN_DECODE_LEN {
+        return false;
+    }
+    let Some(bytes) = decode_candidate(trimmed) else {
+        return false;
+    };
+    if bytes.len() < 32 {
+        return false;
+    }
+    bytes
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
 }
 
 /// Decode `candidate` (base64 / url-safe-base64 / hex) and check whether the
@@ -402,5 +480,109 @@ fn read_varint(data: &[u8], start: usize) -> Option<(u64, usize)> {
         if shift > 63 {
             return None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Round 1 FP-killer: base64-protobuf cause #1, #2, #4, #7. Pure-alphanumeric
+    // base64 in [44, 80] without +/ punct must hit the gate via the high-
+    // diversity admit. This is the 25-FP wedge in the mirror corpus.
+    #[test]
+    fn looks_like_uniform_base64_blob_admits_pure_alnum_at_44() {
+        // 44 chars, mult-of-4, all base64 alphabet, no +/, 32+ distinct
+        // alphanumeric chars: a random-bytes-encoded protobuf shape.
+        let v = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor";
+        assert_eq!(v.len(), 44);
+        let distinct: std::collections::BTreeSet<char> = v.chars().collect();
+        assert!(distinct.len() >= 32, "fixture must have >= 32 distinct chars");
+        assert!(
+            looks_like_uniform_base64_blob(v),
+            "44-char pure-alphanumeric mult-of-4 base64 with high alphabet \
+             diversity must hit the gate (random protobuf-of-bytes shape)",
+        );
+    }
+
+    // Negative twin: a short value (< 44) must NOT hit the gate even when it
+    // would otherwise pass the alphabet / padding checks. AWS secret access
+    // keys (40 chars base62) live in this band and would regress if the
+    // gate fired.
+    #[test]
+    fn looks_like_uniform_base64_blob_rejects_below_44() {
+        let v = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"; // 40 chars
+        assert_eq!(v.len(), 40);
+        assert!(
+            !looks_like_uniform_base64_blob(v),
+            "40-char base64 below the floor must not fire (AWS-secret-key \
+             length band preserved)",
+        );
+    }
+
+    // Negative twin: low-diversity alphanumeric blob (placeholder-shape) is
+    // already caught by other gates; the diversity floor of 32 distinct
+    // alphanumeric chars protects against suppressing only-a-few-distinct
+    // values where a `+/` pattern would otherwise rescue it. Use a value
+    // with low diversity AND no +/ AND no padding: should NOT hit the
+    // gate.
+    #[test]
+    fn looks_like_uniform_base64_blob_rejects_low_diversity_alnum() {
+        // 44 chars mult-of-4, 6 distinct chars total (a, b, c, A, B, C).
+        let v = "aabbccABCabcABCabcABCabcABCabcABCabcABCabcABC";
+        // Confirm length and diversity properties.
+        let mut set = std::collections::BTreeSet::new();
+        for ch in v.chars() {
+            set.insert(ch);
+        }
+        // We want a 44-char string with <32 distinct chars; pad if needed.
+        let v = &v[..44];
+        assert_eq!(v.len(), 44);
+        assert!(set.len() < 32);
+        assert!(
+            !looks_like_uniform_base64_blob(v),
+            "low-alphabet-diversity 44-char no-punct no-pad base64 must \
+             not fire (diversity gate keeps placeholders out)",
+        );
+    }
+
+    // Positive truth case: k8s `data:` outer wrapper is base64-of-base64.
+    // The decoded bytes are themselves an all-base64-alphabet string of
+    // >= 32 chars. This is categorically a binary-data wrapper, not a
+    // credential. Mirror v32 had 7 such FPs.
+    #[test]
+    fn decoded_is_base64_blob_detects_double_b64() {
+        // outer = base64(inner), inner = "AAAA...AAAA" (40 'A's, plain b64
+        // alphabet, len >= 32). outer must decode to inner which is all-
+        // base64-alphabet.
+        let inner = "A".repeat(40);
+        let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
+        assert!(
+            decoded_is_base64_blob(&outer),
+            "base64-of-base64 (k8s data: shape) must be flagged as a \
+             binary blob, not a credential",
+        );
+    }
+
+    // Negative twin: a real (random-bytes) secret base64-encoded once
+    // decodes to random bytes that are NOT in the base64 alphabet (a real
+    // 24-byte secret has ~62/256 chance per byte of being base64-alphabet,
+    // and 32+ consecutive such bytes is vanishingly rare). The helper
+    // must return false on this shape so real secrets stay live.
+    #[test]
+    fn decoded_is_base64_blob_rejects_random_secret_bytes() {
+        // 30 random bytes → 40-char base64. Those 30 bytes contain control
+        // codes / non-alphabet bytes by construction.
+        let raw: [u8; 30] = [
+            0x00, 0x01, 0x02, 0xff, 0xfe, 0x80, 0x7f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+            0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24,
+            0x25, 0x26,
+        ];
+        let outer = base64::engine::general_purpose::STANDARD.encode(raw);
+        assert!(
+            !decoded_is_base64_blob(&outer),
+            "base64 of random secret bytes must NOT be flagged as a \
+             double-b64 blob (real secrets must stay live)",
+        );
     }
 }
