@@ -44,6 +44,14 @@ SARIF; adopt without breaking an existing tree by committing a baseline
 (`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
 fails only on NEW secrets.
 
+For ultra-lean CI installs there's now `cargo install keyhog
+--no-default-features --features ci`: 13 MB binary (vs 22 MB full),
+~140 ms cold-start, no Hyperscan dependency, no wgpu/Vulkan probe,
+no libstdc++ link. Same 891 detectors, same ML/entropy/decode/multiline
+data paths. Use this profile in self-built CI images where binary size
+or container cold-start matters; the prebuilt installer above stays the
+default for a turnkey single-binary download.
+
 GitLab CI, CircleCI, Drone, BuildKite, Jenkins, Bazel, pre-commit, Husky,
 lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 
@@ -359,9 +367,12 @@ repos:
 
 ## Daemon mode (105× faster re-scan)
 
-Every keyhog invocation pays a ~3 s cold start to compile 891 detectors
-into Hyperscan. Run keyhog as a daemon and that cost is paid once per
-host . every subsequent scan is **~7 ms**:
+Every keyhog invocation pays a ~2 s cold start in the default desktop
+build (Hyperscan compile + GPU adapter probe). The lean ci profile
+above drops that to ~140 ms by skipping both. For pre-commit and
+IDE save handlers where even 140 ms is too much, run keyhog as a
+daemon: the cost is paid once per host, every subsequent scan is
+**~7 ms**:
 
 ```bash
 keyhog daemon start                    # Unix socket on $XDG_RUNTIME_DIR
