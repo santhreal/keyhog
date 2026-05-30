@@ -139,3 +139,7 @@ harness = false
 [[test]]
 name = "prefilter_robustness_proptest"
 path = "tests/property/prefilter_robustness_proptest.rs"
+
+[[test]]
+name = "cross_detector_corpus_proptest"
+path = "tests/property/cross_detector_corpus_proptest.rs"
