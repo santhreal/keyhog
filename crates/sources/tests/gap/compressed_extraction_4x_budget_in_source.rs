@@ -2,8 +2,11 @@
 
 #[test]
 fn compressed_extraction_4x_budget_in_source() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/filesystem.rs"))
-        .expect("filesystem.rs");
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/filesystem/extract.rs"
+    ))
+    .expect("filesystem/extract.rs");
     assert!(
         src.contains("let total_budget: usize = max_size.saturating_mul(4) as usize"),
         "missing compressed 4x decompression budget"

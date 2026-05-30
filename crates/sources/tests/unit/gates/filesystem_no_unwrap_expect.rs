@@ -2,16 +2,22 @@
 
 #[test]
 fn filesystem_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/filesystem.rs");
-    let src = std::fs::read_to_string(path).expect("source readable");
-    let mut offenders: Vec<(usize, &str)> = Vec::new();
-    for (i, line) in src.lines().enumerate() {
-        let t = line.trim();
-        if t.starts_with("//") || t.contains("#[cfg(test)]") {
-            continue;
-        }
-        if t.contains(".unwrap(") || t.contains(".expect(") {
-            offenders.push((i + 1, line));
+    let mut offenders: Vec<(String, usize, String)> = Vec::new();
+    for rel in [
+        "src/filesystem.rs",
+        "src/filesystem/extract.rs",
+        "src/filesystem/filter.rs",
+    ] {
+        let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel);
+        let src = std::fs::read_to_string(&path).expect("source readable");
+        for (i, line) in src.lines().enumerate() {
+            let t = line.trim();
+            if t.starts_with("//") || t.contains("#[cfg(test)]") {
+                continue;
+            }
+            if t.contains(".unwrap(") || t.contains(".expect(") {
+                offenders.push((rel.to_string(), i + 1, line.to_string()));
+            }
         }
     }
     assert!(

@@ -1,6 +1,6 @@
 pub mod all_tests_declares_gate_module;
 pub mod gap_binary_read_is_capped_registered;
-pub mod gap_mod_twenty_three_entries;
+pub mod gap_mod_twenty_four_entries;
 pub mod gate_filesystem_read_missing_path_exists;
 pub mod gate_git_history_non_repo_exists;
 pub mod gate_mod_eight_replacements;

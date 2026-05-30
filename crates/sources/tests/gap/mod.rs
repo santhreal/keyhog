@@ -21,3 +21,4 @@ pub mod stdin_max_bytes_cap_in_source;
 pub mod unix_open_no_follow_in_read;
 pub mod walker_follow_symlinks_disabled;
 pub mod web_max_response_bytes_in_source;
+pub mod zip_not_in_skip_extensions;
