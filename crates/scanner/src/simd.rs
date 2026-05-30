@@ -406,4 +406,114 @@ pub(crate) mod backend {
     // engines with the same size limits the production paths use,
     // and fails with the offending regex string the moment either
     // engine rejects it - catching the silent-drop class at PR time.
+    #[cfg(test)]
+    mod silent_drop_gate {
+        use super::HsScanner;
+
+        /// Compile `pattern` through the regex crate with the EXACT flags the
+        /// production fallback path uses (`compiler_compile::shared_regex_compile`):
+        /// `case_insensitive(true)`, `crlf(true)`, and the same size + DFA
+        /// budgets. Returns the regex-crate error if the pattern is rejected.
+        fn regex_crate_rejects(pattern: &str) -> Option<regex::Error> {
+            regex::RegexBuilder::new(pattern)
+                .case_insensitive(true)
+                .size_limit(crate::types::REGEX_SIZE_LIMIT_BYTES)
+                .dfa_size_limit(crate::types::regex_dfa_limit())
+                .crlf(true)
+                .build()
+                .err()
+        }
+
+        /// Every embedded detector pattern must compile in BOTH the Hyperscan
+        /// (simd) engine and the regex crate (fallback engine). A pattern that
+        /// either engine silently drops is a live credential keyhog cannot
+        /// detect on the corresponding platform - exactly the 2026-05-24
+        /// aws-ecr-token / supabase-realtime regression. This drives the real
+        /// embedded detector set through both real compile paths and names the
+        /// offending detector + regex the moment one is dropped.
+        #[test]
+        fn every_embedded_pattern_compiles_in_both_engines() {
+            // Route Hyperscan's compiled-DB cache into a throwaway dir so the
+            // batched compile below does not write into the user's real
+            // ~/.cache/keyhog (and so a stale cache cannot mask a regression).
+            // `compile()` only accepts a `KEYHOG_CACHE_DIR` under $HOME or
+            // `/tmp/keyhog-cache-<uid>`, so nest under the latter to pass that
+            // validation. SAFETY: geteuid/getpid are trivial, infallible,
+            // read-only syscalls.
+            let (uid, pid) = unsafe { (libc::geteuid(), libc::getpid()) };
+            let tmp = std::path::PathBuf::from(format!("/tmp/keyhog-cache-{uid}"))
+                .join(format!("silentgate-{pid}"));
+            std::fs::create_dir_all(&tmp).expect("create temp cache dir");
+            std::env::set_var("KEYHOG_CACHE_DIR", &tmp);
+
+            let tomls = keyhog_core::embedded_detector_tomls();
+            assert!(
+                tomls.len() >= 100,
+                "expected the full embedded detector set, got {} (build dropped detectors?)",
+                tomls.len()
+            );
+
+            // (detector_id, regex) for every in-budget embedded pattern, in a
+            // stable order so the Hyperscan `unsupported` indices map straight
+            // back to the offending detector.
+            let mut hs_inputs: Vec<(String, String)> = Vec::new();
+            let mut checked = 0usize;
+
+            for (file, toml) in tomls {
+                let detectors = keyhog_core::load_detectors_from_str(toml)
+                    .unwrap_or_else(|e| panic!("embedded detector {file} failed to parse: {e}"));
+
+                for detector in &detectors {
+                    for pat in &detector.patterns {
+                        checked += 1;
+                        let regex = pat.regex.as_str();
+
+                        // Engine A: regex crate (fallback path). A rejection here
+                        // is the `CompiledTooBig`-class failure that surfaces as a
+                        // late runtime error in a real `keyhog scan`.
+                        if let Some(err) = regex_crate_rejects(regex) {
+                            panic!(
+                                "regex-crate engine dropped detector {} (file {file}): {err}\n  regex: {regex}",
+                                detector.id
+                            );
+                        }
+
+                        // Patterns over Hyperscan's 500-char ceiling are a known,
+                        // explicit skip (the `compile()` guard reroutes them to
+                        // the keyword fallback), so only the simd engine is
+                        // asserted for in-budget regexes.
+                        if regex.len() <= 500 {
+                            hs_inputs.push((detector.id.clone(), regex.to_string()));
+                        }
+                    }
+                }
+            }
+
+            assert!(
+                checked >= 100,
+                "expected to check >=100 embedded patterns, only checked {checked}"
+            );
+
+            // Engine B: Hyperscan (simd path), compiled in ONE batch exactly as
+            // production does. `compile` returns the input indices it could not
+            // compile in `unsupported`; any index there is a pattern the simd
+            // engine would silently never match.
+            let pattern_refs: Vec<(usize, usize, &str, bool)> = hs_inputs
+                .iter()
+                .enumerate()
+                .map(|(i, (_id, regex))| (i, i, regex.as_str(), false))
+                .collect();
+
+            let (_scanner, unsupported) = HsScanner::compile(&pattern_refs)
+                .expect("Hyperscan failed to compile the embedded detector set");
+
+            if let Some(&idx) = unsupported.first() {
+                let (id, regex) = &hs_inputs[idx];
+                panic!(
+                    "Hyperscan engine dropped {} embedded pattern(s); first is detector {id}\n  regex: {regex}",
+                    unsupported.len()
+                );
+            }
+        }
+    }
 }
