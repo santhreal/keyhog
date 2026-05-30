@@ -161,17 +161,26 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         if crate::decode_structure::is_encoded_binary(credential) {
             adjusted *= 0.02;
         }
-        // Uniform random-base64 blob (60+ chars, all-base64 alphabet, has
-        // `+`/`/` or padding). The 60-char floor + `+`/`/` requirement clears
-        // every well-known service-anchored shape (AWS, GitHub, Stripe, npm,
-        // Slack, JWT) so this fires only on the unanchored-random-base64
-        // class - the SecretBench mirror v27 had 56 base64-protobuf FPs all
-        // matching this shape via generic-secret / generic-password. Slammed
-        // hard (×0.02 like decode_structure) because there is no legitimate
-        // service that publishes a 60+ char raw-base64 secret WITHOUT a
-        // service-specific prefix; if it has one, a named detector would have
-        // matched it instead of generic-*.
+        // Uniform random-base64 blob (44+ chars, all-base64 alphabet, with
+        // `+`/`/`, padding, or high alphabet diversity). The alphabet check
+        // clears every well-known service-anchored shape (AWS, GitHub,
+        // Stripe, npm, Slack, JWT) so this fires only on the unanchored-
+        // random-base64 class - the SecretBench mirror v27 had 56
+        // base64-protobuf FPs all matching this shape via generic-secret /
+        // generic-password, and v32 had 52 still surviving. Slammed hard
+        // (×0.02 like decode_structure) because there is no legitimate
+        // service that publishes a 44+ char raw-base64 secret WITHOUT a
+        // service-specific prefix; if it has one, a named detector would
+        // have matched it instead of generic-*.
         if crate::decode_structure::looks_like_uniform_base64_blob(credential) {
+            adjusted *= 0.02;
+        }
+        // Double-base64 wrapper (k8s `data:` shape: outer base64 decodes to
+        // bytes that are themselves all standard-base64 alphabet, length
+        // >= 32). The inner bytes are the user-supplied content; the outer
+        // wrapper is categorically a data envelope, not a credential. Mirror
+        // v32 had 7 such FPs concentrated in yaml/k8s-secret fixtures.
+        if crate::decode_structure::decoded_is_base64_blob(credential) {
             adjusted *= 0.02;
         }
     }
@@ -247,4 +256,48 @@ pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
 
     let adjusted = if is_test_like { score * 0.5 } else { score };
     finalize_confidence(adjusted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine as _;
+
+    // Round 1 FP-killer: base64-protobuf cause #6. Generic-secret matches on
+    // base64-of-base64 (k8s `data:` outer wrapper) must be slammed by the
+    // post-ML penalty so the 7 yaml/k8s-secret FPs collapse.
+    #[test]
+    fn apply_post_ml_penalties_slams_double_base64_for_generic() {
+        // 40-char inner (high-diversity base64 alphabet, distinct >= 32 so
+        // it survives the alphabet-diversity check). Outer decodes to
+        // inner which is all base64 alphabet, length 40.
+        let inner = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1J";
+        let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
+        let pre = 0.9_f64;
+        let post = apply_post_ml_penalties(pre, &outer, false);
+        assert!(
+            post <= pre * 0.05,
+            "generic-* finding whose value is base64-of-base64 must be \
+             slammed by the post-ML penalty (got {post} from {pre})",
+        );
+    }
+
+    // Negative twin: a named (service-anchored) detector match with the same
+    // wrapper shape must NOT be slammed - the named anchor already proved
+    // the bytes are credential content. is_named=true skips the decode-
+    // through gates entirely. Inner has high diversity so the named
+    // char_diversity penalty (< 0.1) does not fire either.
+    #[test]
+    fn apply_post_ml_penalties_preserves_named_double_base64() {
+        let inner = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1J";
+        let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
+        let pre = 0.9_f64;
+        let post = apply_post_ml_penalties(pre, &outer, true);
+        assert!(
+            post >= pre - 1e-9,
+            "named-detector match with base64-of-base64 shape must NOT be \
+             slammed (named anchor overrides shape gates); got {post} \
+             from {pre}",
+        );
+    }
 }
