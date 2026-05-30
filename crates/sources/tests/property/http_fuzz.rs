@@ -10,19 +10,21 @@
 //!
 //! These tests pin the policy itself, not just one happy-path call.
 //!
-//! Test budget: every property runs 10 000 cases (overridable via the
-//! standard `PROPTEST_CASES` env var). At ~5 µs per case the suite
-//! finishes in well under a second locally and inside the CI budget.
+//! Test budget: policy properties run 10 000 cases. Builder properties
+//! run a bounded smoke profile because constructing real reqwest
+//! builders/clients dominates the fast aggregate source gate.
 
 #![cfg(any(feature = "web", feature = "github", feature = "s3"))]
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 
 use keyhog_sources::http::{async_client_builder, blocking_client_builder, HttpClientConfig};
 
-const CASES: u32 = 10_000;
+const POLICY_CASES: u32 = 10_000;
+const BUILDER_CASES: u32 = 256;
 
-static ENV_PROXY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ── strategies ──────────────────────────────────────────────────────
 
@@ -62,33 +64,48 @@ fn any_env_proxy() -> impl Strategy<Value = Option<String>> {
 
 // ── helpers ─────────────────────────────────────────────────────────
 
-/// Per-test env namespace. Tests run in parallel; if we wrote to
-/// `KEYHOG_PROXY` directly we'd race with sibling tests. So every
-/// case stuffs the value into a uniquely-named env var, then we
-/// shadow it onto `KEYHOG_PROXY` for the brief moment the call is
-/// made, then restore. proptest invokes each case sequentially within
-/// one harness, so the shadowing window is single-threaded per test
-/// binary; the broader race is across `cargo test --jobs N` binaries,
-/// which each get their own process and env.
-fn with_env_proxy<R>(env: Option<&str>, f: impl FnOnce() -> R) -> R {
-    let _guard = ENV_PROXY_LOCK.lock().unwrap();
-    let prev = std::env::var("KEYHOG_PROXY").ok();
-    match env {
-        Some(v) => std::env::set_var("KEYHOG_PROXY", v),
-        None => std::env::remove_var("KEYHOG_PROXY"),
-    }
+/// Test-local HTTP env scope. Rust environment variables are process-global,
+/// while the test harness runs property tests concurrently. Hold one lock
+/// around every case that reads or writes HTTP env knobs so a sibling case
+/// cannot leak proxy/TLS state into the assertion under test.
+fn with_http_env<R>(proxy: Option<&str>, insecure_tls: Option<&str>, f: impl FnOnce() -> R) -> R {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let prev_proxy = std::env::var("KEYHOG_PROXY").ok();
+    let prev_insecure_tls = std::env::var("KEYHOG_INSECURE_TLS").ok();
+
+    set_env_value("KEYHOG_PROXY", proxy);
+    set_env_value("KEYHOG_INSECURE_TLS", insecure_tls);
+
     let out = f();
-    match prev {
-        Some(v) => std::env::set_var("KEYHOG_PROXY", v),
-        None => std::env::remove_var("KEYHOG_PROXY"),
-    }
+
+    set_env_value("KEYHOG_PROXY", prev_proxy.as_deref());
+    set_env_value("KEYHOG_INSECURE_TLS", prev_insecure_tls.as_deref());
     out
+}
+
+fn set_env_value(key: &str, value: Option<&str>) {
+    match value {
+        Some(v) => std::env::set_var(key, v),
+        None => std::env::remove_var(key),
+    }
+}
+
+fn http_fuzz_config(cases: u32) -> ProptestConfig {
+    ProptestConfig {
+        cases,
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(
+            "tests/property/http_fuzz.proptest-regressions",
+        ))),
+        ..ProptestConfig::default()
+    }
 }
 
 // ── property tests ──────────────────────────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: CASES, .. ProptestConfig::default() })]
+    #![proptest_config(http_fuzz_config(POLICY_CASES))]
 
     /// Explicit `--proxy` always wins over `KEYHOG_PROXY`, regardless
     /// of what the env says (including "off"). A regression here would
@@ -100,7 +117,7 @@ proptest! {
         env in any_env_proxy(),
         flag in any_proxy_url(),
     ) {
-        with_env_proxy(env.as_deref(), || {
+        with_http_env(env.as_deref(), None, || {
             let cfg = HttpClientConfig { proxy: Some(flag.clone()), ..Default::default() };
             let resolved = cfg.effective_proxy();
             prop_assert_eq!(resolved.as_deref(), Some(flag.as_str()));
@@ -111,7 +128,7 @@ proptest! {
     /// When the flag is unset the env var takes effect verbatim.
     #[test]
     fn env_var_resolves_when_flag_unset(env in any_proxy_url()) {
-        with_env_proxy(Some(&env), || {
+        with_http_env(Some(&env), None, || {
             let cfg = HttpClientConfig::default();
             // Empty env strings count as "no env" (matches our
             // documented behavior - operators sometimes export an
@@ -130,31 +147,39 @@ proptest! {
     #[test]
     fn empty_env_var_is_treated_as_unset(noise in any::<u8>()) {
         let _ = noise;
-        with_env_proxy(Some(""), || {
+        with_http_env(Some(""), None, || {
             let cfg = HttpClientConfig::default();
             prop_assert!(cfg.effective_proxy().is_none());
             Ok(())
         })?;
     }
+}
+
+proptest! {
+    #![proptest_config(http_fuzz_config(BUILDER_CASES))]
 
     /// Valid `http://` / `https://` / `socks5://` URLs must produce
     /// a working blocking builder. Invalid schemes (`gopher://`,
     /// random gibberish) must surface a clean Err, never a panic.
     #[test]
     fn blocking_builder_handles_every_proxy_url(p in any_proxy_url()) {
-        let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
-        match blocking_client_builder(&cfg) {
-            Ok(_) | Err(_) => {} // either is fine; we're proving no-panic
-        }
+        with_http_env(None, None, || {
+            let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
+            match blocking_client_builder(&cfg) {
+                Ok(_) | Err(_) => {} // either is fine; we're proving no-panic
+            }
+        });
     }
 
     /// Same for the async builder.
     #[test]
     fn async_builder_handles_every_proxy_url(p in any_proxy_url()) {
-        let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
-        match async_client_builder(&cfg) {
-            Ok(_) | Err(_) => {}
-        }
+        with_http_env(None, None, || {
+            let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
+            match async_client_builder(&cfg) {
+                Ok(_) | Err(_) => {}
+            }
+        });
     }
 
     /// Building with no proxy + no env var must always succeed -
@@ -165,7 +190,7 @@ proptest! {
     /// flag was silently dropped would still see the test pass.
     #[test]
     fn default_builder_always_succeeds(insecure in any::<bool>()) {
-        with_env_proxy(None, || {
+        with_http_env(None, None, || {
             let cfg = HttpClientConfig { insecure_tls: insecure, ..Default::default() };
             let blocking = blocking_client_builder(&cfg);
             let r#async = async_client_builder(&cfg);
@@ -184,23 +209,22 @@ proptest! {
             Ok(())
         })?;
     }
+}
+
+proptest! {
+    #![proptest_config(http_fuzz_config(POLICY_CASES))]
 
     /// `KEYHOG_INSECURE_TLS=1|true|TRUE` enables insecure mode;
     /// everything else leaves it off. Guards against a typo
     /// (`KEYHOG_INSECURE_TLS=yes`) silently enabling.
     #[test]
     fn insecure_tls_env_var_only_recognizes_1_or_true(value in "[a-zA-Z0-9]{0,12}") {
-        let prev = std::env::var("KEYHOG_INSECURE_TLS").ok();
-        std::env::set_var("KEYHOG_INSECURE_TLS", &value);
-
-        let cfg = HttpClientConfig::default();
-        let expected = matches!(value.as_str(), "1" | "true" | "TRUE");
-        prop_assert_eq!(cfg.effective_insecure_tls(), expected);
-
-        match prev {
-            Some(v) => std::env::set_var("KEYHOG_INSECURE_TLS", v),
-            None => std::env::remove_var("KEYHOG_INSECURE_TLS"),
-        }
+        with_http_env(None, Some(&value), || {
+            let cfg = HttpClientConfig::default();
+            let expected = matches!(value.as_str(), "1" | "true" | "TRUE");
+            prop_assert_eq!(cfg.effective_insecure_tls(), expected);
+            Ok(())
+        })?;
     }
 
     /// Explicit `insecure_tls: true` is sticky - env var can't
@@ -210,16 +234,11 @@ proptest! {
     fn explicit_insecure_tls_cannot_be_overridden_by_env(
         env in "[a-zA-Z0-9]{0,12}",
     ) {
-        let prev = std::env::var("KEYHOG_INSECURE_TLS").ok();
-        std::env::set_var("KEYHOG_INSECURE_TLS", &env);
-
-        let cfg = HttpClientConfig { insecure_tls: true, ..Default::default() };
-        prop_assert!(cfg.effective_insecure_tls());
-
-        match prev {
-            Some(v) => std::env::set_var("KEYHOG_INSECURE_TLS", v),
-            None => std::env::remove_var("KEYHOG_INSECURE_TLS"),
-        }
+        with_http_env(None, Some(&env), || {
+            let cfg = HttpClientConfig { insecure_tls: true, ..Default::default() };
+            prop_assert!(cfg.effective_insecure_tls());
+            Ok(())
+        })?;
     }
 
     /// `HttpClientConfig::default()` is offline-safe: no proxy,
@@ -228,18 +247,11 @@ proptest! {
     /// uses the default.
     #[test]
     fn default_config_is_offline_safe(_seed in any::<u32>()) {
-        with_env_proxy(None, || {
-            let prev = std::env::var("KEYHOG_INSECURE_TLS").ok();
-            std::env::remove_var("KEYHOG_INSECURE_TLS");
-
+        with_http_env(None, None, || {
             let cfg = HttpClientConfig::default();
             prop_assert_eq!(cfg.effective_proxy(), None);
             prop_assert!(!cfg.effective_insecure_tls());
             prop_assert!(cfg.ua_suffix.is_none());
-
-            if let Some(v) = prev {
-                std::env::set_var("KEYHOG_INSECURE_TLS", v);
-            }
             Ok(())
         })?;
     }
@@ -253,7 +265,7 @@ proptest! {
         Just("none".to_string()),
         Just(String::new()),
     ]) {
-        with_env_proxy(Some("http://env-should-not-win:8080"), || {
+        with_http_env(Some("http://env-should-not-win:8080"), None, || {
             let cfg = HttpClientConfig {
                 proxy: Some(flag.clone()),
                 ..Default::default()
@@ -263,40 +275,57 @@ proptest! {
             Ok(())
         })?;
     }
+}
+
+proptest! {
+    #![proptest_config(http_fuzz_config(BUILDER_CASES))]
 
     /// Custom timeout must propagate to builder construction without
     /// panicking - callers (Slack/S3/web) rely on per-source overrides.
     #[test]
     fn custom_timeout_builder_succeeds(secs in 1u64..120) {
-        let cfg = HttpClientConfig {
-            timeout: Some(std::time::Duration::from_secs(secs)),
-            ..Default::default()
-        };
-        prop_assert!(blocking_client_builder(&cfg).is_ok());
-        prop_assert!(async_client_builder(&cfg).is_ok());
+        with_http_env(None, None, || {
+            let cfg = HttpClientConfig {
+                timeout: Some(std::time::Duration::from_secs(secs)),
+                ..Default::default()
+            };
+            prop_assert!(blocking_client_builder(&cfg).is_ok());
+            prop_assert!(async_client_builder(&cfg).is_ok());
+            Ok(())
+        })?;
     }
 
     /// UA suffix must not break builder construction for any short label.
     #[test]
     fn ua_suffix_builder_succeeds(suffix in "[a-z]{0,16}") {
-        let cfg = HttpClientConfig {
-            ua_suffix: if suffix.is_empty() {
-                None
-            } else {
-                Some(suffix)
-            },
-            ..Default::default()
-        };
-        prop_assert!(blocking_client_builder(&cfg).unwrap().build().is_ok());
-        prop_assert!(async_client_builder(&cfg).unwrap().build().is_ok());
+        with_http_env(None, None, || {
+            let cfg = HttpClientConfig {
+                ua_suffix: if suffix.is_empty() {
+                    None
+                } else {
+                    Some(suffix)
+                },
+                ..Default::default()
+            };
+            prop_assert!(blocking_client_builder(&cfg).unwrap().build().is_ok());
+            prop_assert!(async_client_builder(&cfg).unwrap().build().is_ok());
+            Ok(())
+        })?;
     }
 }
 
 // ── unit-test sanity guard for the proptests themselves ─────────────
 
 #[test]
-fn ten_thousand_case_budget_is_acknowledged() {
-    // If a future tweak drops CASES below 10k without intent, this
+fn property_case_budgets_are_acknowledged() {
+    // If a future tweak drops POLICY_CASES below 10k without intent, this
     // assert fails and the diff has to justify the change.
-    assert_eq!(CASES, 10_000, "intent: 10k cases per http property");
+    assert_eq!(
+        POLICY_CASES, 10_000,
+        "intent: 10k cases per pure HTTP policy property"
+    );
+    assert!(
+        BUILDER_CASES >= 256,
+        "builder smoke properties must keep a non-trivial bounded profile"
+    );
 }

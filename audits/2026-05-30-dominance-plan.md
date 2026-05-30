@@ -812,7 +812,7 @@ Verified gates:
 
 Remaining source-coherence findings surfaced by the green all-tests runs:
 
-- `property::http_fuzz` remains the long-running source-package property module and needs a bounded CI profile before it can be part of the fast source gate.
+- None in the `keyhog-sources` aggregate gates after the filesystem split and property-gate fixes.
 
 ## Executed Patch Set: GitHub Org Split
 
@@ -863,4 +863,23 @@ Verified gates:
 - `cargo test -p keyhog-sources --all-features --test all_tests gap:: -- --nocapture`
 - `cargo test -p keyhog-sources --test all_tests -- --skip property::http_fuzz --nocapture`
 - `cargo test -p keyhog-sources --all-features --test all_tests -- --skip property::http_fuzz --nocapture`
+- `git diff --check`
+
+## Executed Patch Set: Source Property Gates
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- TESTING: fixed HTTP property-test env isolation by locking and restoring `KEYHOG_PROXY` plus `KEYHOG_INSECURE_TLS` for every case that reads or writes HTTP env.
+- TESTING: kept 10k-case HTTP policy properties and moved real reqwest builder/client properties to a bounded 256-case smoke profile.
+- COHERENCE: removed the aggregate-gate `property::http_fuzz` skip; default and all-features `keyhog-sources` aggregate tests now run all registered source properties.
+- COHERENCE: configured direct proptest regression files for HTTP and filesystem fuzz tests, removing the repeated SourceParallel persistence warning from aggregate source runs.
+
+Verified gates:
+
+- `cargo test -p keyhog-sources --all-features --test all_tests property::http_fuzz -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests property:: -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests -- --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests -- --nocapture`
 - `git diff --check`
