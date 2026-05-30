@@ -4,9 +4,8 @@ name: integration-smoke
 # Downloads install.sh / install.ps1 from raw.githubusercontent.com,
 # runs them non-interactively, then exercises the CLI surface a new
 # user touches in their first minute: scan, exit codes, SARIF, hook,
-# daemon. Pins to v0.5.34 because that is the last release with
-# published binary assets; bump after the v0.5.35 release workflow
-# is fixed.
+# daemon. Defaults to the current release (v0.5.37) but accepts any
+# tag with published binary assets via the `version` workflow input.
 #
 # Manual only. Pre-launch sanity gate before any growth push.
 
@@ -14,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to install (no leading v, e.g. 0.5.34)."
+        description: "Release tag to install (no leading v, e.g. 0.5.37)."
         required: false
-        default: "0.5.34"
+        default: "0.5.37"
 
 jobs:
   smoke:
