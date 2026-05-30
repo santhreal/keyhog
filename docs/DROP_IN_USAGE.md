@@ -125,8 +125,46 @@ pre-commit:
 
 ## GitHub Actions
 
-PR + push scan with SARIF upload to GitHub Code Scanning. Put this at
-`.github/workflows/keyhog.yml`:
+### Recommended: composite action (3 lines + a baseline)
+
+The most concise integration. Drop this file at
+`.github/workflows/keyhog.yml` and that is the whole PR:
+
+```yaml
+name: keyhog
+on: [push, pull_request]
+permissions: { contents: read, security-events: write }
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+        with:
+          path: .
+          severity: high
+          format: sarif
+          baseline: .keyhog-baseline.json   # optional, see below
+```
+
+Cost to your CI: ~20 MB binary download (cacheable), ~400 ms cold-start
+in CI (auto-disables GPU on hosted runners), ~10 s wall-clock for a
+5,000-file repo, single `libhyperscan5` apt package auto-installed on
+Ubuntu runners. No Python, no JVM, no Docker daemon. SARIF auto-uploads
+to GitHub code-scanning.
+
+**Adopt without breaking an existing repo.** If your tree already
+contains findings keyhog would flag, generate a baseline once, commit
+it, and the action will only fail on NEW secrets going forward:
+
+```bash
+keyhog scan --create-baseline .keyhog-baseline.json
+git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
+```
+
+### Manual (no composite-action dependency)
+
+If you want the install step explicit, this is equivalent:
 
 ```yaml
 name: keyhog
