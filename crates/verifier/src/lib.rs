@@ -10,6 +10,7 @@ pub mod reqwest {
     pub use reqwest::*;
 }
 
+mod bogon;
 /// Shared in-memory verification cache.
 pub mod cache;
 pub mod domain_allowlist;
