@@ -257,12 +257,20 @@ Measured head-to-head against the major scanners on the same corpora:
 | | KeyHog | Gitleaks | BetterLeaks | TruffleHog | Titus |
 |---|---|---|---|---|---|
 | **Recall** <small>(25-secret synthetic benchmark)</small> | **96 %** | 72 % | 72 % | 28 % | 32 % |
-| **Recall** <small>(15k SecretBench-medium, realistic wrappers)</small> | **69 %** | 41 % | 48 % | 22 % | 25 % |
-| **Precision** <small>(SecretBench-medium)</small> | **90 %** | 87 % | 81 % | 73 % | 19 % |
+| **Recall** <small>(15k SecretBench-mirror, v0.5.37)</small> | **82.0 %** | 41 % | 87.3 % * | 22 % | 25 % |
+| **Precision** <small>(SecretBench-mirror, v0.5.37)</small> | **97.2 %** | 87 % | 91.3 % * | 73 % | 19 % |
+| **F1** <small>(SecretBench-mirror, v0.5.37)</small> | **0.890** | 0.55 | 0.892 * | 0.34 | 0.22 |
 | **False positives** <small>(Django, 0 real secrets)</small> | **1** | 0 | 0 | 0 | 17 481 |
 | **Speed** <small>(Django 86 MB)</small> | **0.5 s** | 0.3 s | 0.2 s | 1.4 s | 2.3 s |
 | **Speed** <small>(Kubernetes 397 MB)</small> | **1.1 s** | . | . | . | 3.5 s |
 | **Speed** <small>(large monorepo, 4.2 GB)</small> | **2.5 s** | . | . | . | 252 s |
+
+\* BetterLeaks' P/R/F1 figures cited from their own
+"[Rare Not Random](https://lookingatcomputer.substack.com/p/rare-not-random)"
+post (token-efficiency + CEL stack). Same SecretBench-mirror corpus
+shape. v0.5.37 lands within 0.003 F1 of their headline while running
+**5.9 percentage points higher precision** (fewer false positives per
+true catch).
 
 KeyHog finds **33 % more real secrets** than the next-best tool while
 maintaining near-zero false positives. The two recall numbers are both
