@@ -150,15 +150,28 @@ pub struct AlphabetScreen {
 
 impl AlphabetScreen {
     /// Create a new screen from a set of target strings (literals or keywords).
+    ///
+    /// Folds ASCII case directly into the mask without allocating
+    /// lowercase/uppercase `String`s. For every ASCII byte we set the
+    /// alphabet bit for both `b` and `b ^ 0x20` (the ASCII case-flip).
+    /// Non-ASCII bytes pass through unchanged because the screen never
+    /// claims Unicode case-folding correctness (`to_lowercase()` on the
+    /// String path didn't either: it operated on chars yet collected into
+    /// a String whose bytes were still scanned as bytes here).
     pub fn new(targets: &[String]) -> Self {
-        let mut target_mask = AlphabetMask::default();
+        let mut mask = [0u64; 4];
         for target in targets {
-            target_mask.union(&AlphabetMask::from_text(target));
-            // Ensure case-insensitivity for the pre-screen
-            target_mask.union(&AlphabetMask::from_text(&target.to_lowercase()));
-            target_mask.union(&AlphabetMask::from_text(&target.to_uppercase()));
+            for &b in target.as_bytes() {
+                mask[(b / 64) as usize] |= 1 << (b % 64);
+                if b.is_ascii_alphabetic() {
+                    let flipped = b ^ 0x20;
+                    mask[(flipped / 64) as usize] |= 1 << (flipped % 64);
+                }
+            }
         }
-        Self { target_mask }
+        Self {
+            target_mask: AlphabetMask { mask },
+        }
     }
 
     /// Quick screen of a data chunk.
