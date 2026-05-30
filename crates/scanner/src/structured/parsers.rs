@@ -1,6 +1,17 @@
 use super::ExtractedPair;
 
 /// Parse KEY=VALUE lines from an .env file.
+///
+/// Quoting styles recognised:
+/// - `KEY="value"` and `KEY='value'` (matching ASCII single/double quotes).
+/// - `` KEY=`value` `` backtick-quoted bodies (some shells + dotenv-cli
+///   accept these).
+/// - Bare `KEY=value` with no quotes.
+///
+/// Inline comments are stripped on UNQUOTED values only. Sample seen in
+/// `.env` files: `DB_PASS=p4ssw0rd # rotate quarterly` -> value = `p4ssw0rd`.
+/// Quoted values keep `#` because the user has explicitly opted into the
+/// literal string including the hash.
 pub fn parse_env(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     for (line_idx, line) in text.lines().enumerate() {
@@ -15,10 +26,10 @@ pub fn parse_env(text: &str) -> Vec<ExtractedPair> {
             if key.is_empty() {
                 continue;
             }
-            let unquoted = strip_quotes(value);
+            let unquoted = unquote_env_value(value);
             pairs.push(ExtractedPair {
                 context: key.to_string(),
-                value: unquoted.to_string(),
+                value: unquoted,
                 line: line_idx + 1,
             });
         }
@@ -26,15 +37,47 @@ pub fn parse_env(text: &str) -> Vec<ExtractedPair> {
     pairs
 }
 
-fn strip_quotes(s: &str) -> &str {
+/// Strip surrounding ASCII quotes (`"`, `'`, or `` ` ``) when both ends
+/// match; otherwise drop any trailing inline `# comment ...` segment and
+/// return the trimmed remainder.
+///
+/// Behaviour:
+/// - `"value"` -> `value`
+/// - `'value'` -> `value`
+/// - `` `value` `` -> `value`
+/// - `value # comment` -> `value`
+/// - `"value # not a comment"` -> `value # not a comment` (quotes
+///   protect the body verbatim).
+/// - `value` -> `value` (no-op fast path).
+fn unquote_env_value(s: &str) -> String {
+    // Quoted body: bytes-indexed match on first/last ASCII byte is safe -
+    // the only quote chars we care about are 1-byte ASCII. The interior
+    // may be multi-byte UTF-8 but the slice `&s[1..s.len()-1]` only
+    // crosses ASCII byte boundaries.
     if s.len() >= 2 {
-        let first = s.as_bytes()[0] as char;
-        let last = s.as_bytes()[s.len() - 1] as char;
-        if (first == '"' || first == '\'') && first == last {
-            return &s[1..s.len() - 1];
+        let first = s.as_bytes()[0];
+        let last = s.as_bytes()[s.len() - 1];
+        if matches!(first, b'"' | b'\'' | b'`') && first == last {
+            return s[1..s.len() - 1].to_string();
         }
     }
-    s
+    // Unquoted: drop trailing inline comment if any. Whitespace before
+    // the `#` is required so token values that legitimately contain a
+    // `#` (e.g. JWT bodies, base64 with `+/=`) survive.
+    if let Some(hash_idx) = find_inline_comment(s) {
+        return s[..hash_idx].trim_end().to_string();
+    }
+    s.to_string()
+}
+
+/// Return the byte offset of an inline `# comment` start, when the `#`
+/// is preceded by ASCII whitespace. `None` if no such position exists.
+fn find_inline_comment(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    bytes
+        .windows(2)
+        .position(|w| w[0].is_ascii_whitespace() && w[1] == b'#')
+        .map(|i| i + 1)
 }
 
 /// Parse a Kubernetes Secret YAML and decode base64 values under `data:`.
@@ -319,4 +362,80 @@ fn find_line_number(text: &str, needle: &str) -> Option<usize> {
     let pos = text.find(needle)?;
     let line = text[..pos].chars().filter(|&c| c == '\n').count() + 1;
     Some(line)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Positive truth case: backtick-quoted env values get stripped of
+    /// their wrapping quotes. Before the fix the value retained the
+    /// surrounding backticks (e.g. `` `ghp_TOKEN` `` instead of
+    /// `ghp_TOKEN`), so the named GitHub-PAT detector's AC literal
+    /// `ghp_` was offset by one byte and never matched.
+    #[test]
+    fn env_backtick_quotes_are_stripped() {
+        let text = "API_KEY=`ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234`";
+        let pairs = parse_env(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].context, "API_KEY");
+        assert_eq!(
+            pairs[0].value, "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234",
+            "backtick wrap must be removed, got {:?}",
+            pairs[0].value
+        );
+    }
+
+    /// Positive truth case: inline `# comment` after an unquoted value
+    /// is dropped. Before the fix the value carried the comment along,
+    /// over-extending the captured credential past the secret bytes.
+    #[test]
+    fn env_inline_comment_is_stripped_for_unquoted_value() {
+        let text = "DB_PASS=p4ssw0rd # rotate quarterly";
+        let pairs = parse_env(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].value, "p4ssw0rd");
+    }
+
+    /// Adversarial negative twin: a `#` INSIDE a quoted value is part
+    /// of the literal string and must NOT be treated as a comment.
+    /// Several base64 / JWT / passphrase credentials legitimately
+    /// contain `#`. Dropping bytes after a `#` inside quotes would
+    /// silently truncate the captured credential.
+    #[test]
+    fn env_inline_comment_preserved_inside_quotes() {
+        let text = "PASSPHRASE=\"my#hard#pw # not-a-comment\"";
+        let pairs = parse_env(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(
+            pairs[0].value, "my#hard#pw # not-a-comment",
+            "quoted body must be returned verbatim, hash and all"
+        );
+    }
+
+    /// Adversarial negative twin: a `#` with NO preceding whitespace
+    /// is part of the unquoted value. Real credentials (base64 with
+    /// `#` padding bytes, fragment identifiers in URLs) embed `#`
+    /// without space. Only `\s#` is the comment lead-in.
+    #[test]
+    fn env_hash_without_whitespace_is_not_a_comment() {
+        let text = "URL_FRAG=https://example.com/foo#section";
+        let pairs = parse_env(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(
+            pairs[0].value, "https://example.com/foo#section",
+            "hash without leading space is part of the value"
+        );
+    }
+
+    /// Adversarial: leading-`=` (empty key) lines are skipped. This is
+    /// the parser's existing contract; the new unquoting path must
+    /// not regress it.
+    #[test]
+    fn env_leading_equals_skips_empty_key() {
+        let text = "=orphan_value\nVALID=ok";
+        let pairs = parse_env(text);
+        let keys: Vec<_> = pairs.iter().map(|p| p.context.as_str()).collect();
+        assert_eq!(keys, vec!["VALID"]);
+    }
 }

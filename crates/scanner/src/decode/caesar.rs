@@ -45,6 +45,46 @@ pub fn is_source_code_path(path: Option<&str>) -> bool {
         .any(|ext| lower.ends_with(ext))
 }
 
+/// True when `line` contains a `scheme://user:pass@host` URL with embedded
+/// credentials. The plaintext URL itself is the credential; Caesar /
+/// ROT-N decoding cannot reveal anything new, and (worse) the 25-shift
+/// emission produces a high-confidence decoded chunk whose body wins the
+/// per-line resolution group over the real connection-string detector.
+///
+/// Match shape: `<scheme>://[^/@\s]+:[^/@\s]+@[^\s]+`. The presence of
+/// `:` between scheme and `@` is what distinguishes a credentialled URL
+/// (`postgres://u:p@h`) from a bare host URL (`https://example.com`) -
+/// the bare-host case has no credential to lose, so we leave it alone.
+pub(crate) fn line_has_credential_url(line: &str) -> bool {
+    let Some(scheme_end) = line.find("://") else {
+        return false;
+    };
+    // Scheme must be 2+ alphabetic bytes immediately before `://`.
+    let scheme_bytes = line[..scheme_end].as_bytes();
+    let scheme_ok = scheme_bytes.len() >= 2
+        && scheme_bytes
+            .iter()
+            .rev()
+            .take_while(|b| b.is_ascii_alphabetic() || **b == b'+')
+            .count()
+            >= 2;
+    if !scheme_ok {
+        return false;
+    }
+    let rest = &line[scheme_end + 3..];
+    // Walk userinfo: bytes up to the FIRST `/` or whitespace. The first
+    // `@` in that span splits user[:pass]@host. Require a `:` BEFORE the
+    // `@` so we only match URLs with embedded passwords.
+    let userinfo_end = rest
+        .find(|c: char| c == '/' || c == '?' || c == '#' || c.is_ascii_whitespace())
+        .unwrap_or(rest.len());
+    let userinfo = &rest[..userinfo_end];
+    let Some(at_pos) = userinfo.find('@') else {
+        return false;
+    };
+    userinfo[..at_pos].contains(':')
+}
+
 impl Decoder for CaesarDecoder {
     fn name(&self) -> &'static str {
         "caesar"
@@ -62,6 +102,21 @@ impl Decoder for CaesarDecoder {
             return Vec::new();
         }
         let mut out = Vec::new();
+        // Skip Caesar on chunks whose lines already carry a URL with
+        // embedded credentials (`scheme://user:pass@host`). Every db
+        // connection-string URL is plaintext-readable already, so the
+        // 25-shift fan-out cannot reveal new information; its only
+        // observed effect is to emit a high-confidence garbage finding
+        // whose decoded body out-resolves the real URL match during the
+        // per-line resolution group. Investigator empirically attributed
+        // the postgres / mongo log-line + .env database FNs to this
+        // exact resolution loss. Gate per-line so a chunk that mixes
+        // URL traffic with Caesar-encoded creds elsewhere still gets
+        // the decoder where it matters.
+        let chunk_has_credential_url = chunk.data.lines().any(line_has_credential_url);
+        if chunk_has_credential_url {
+            return Vec::new();
+        }
         for candidate in extract_encoded_values(&chunk.data) {
             if candidate.len() < MIN_CAESAR_LEN {
                 continue;
@@ -158,4 +213,61 @@ pub fn looks_credential_shaped(s: &str) -> bool {
     crate::confidence::KNOWN_PREFIXES
         .iter()
         .any(|prefix| s.contains(prefix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Positive truth case: every documented DB scheme with embedded
+    /// `user:pass@host` is detected. This is the gate that prevents
+    /// caesar from masking real connection-string credentials.
+    #[test]
+    fn credential_url_detected_for_db_schemes() {
+        let cases = [
+            "postgres://app:secret@db.example.org:5432/app",
+            "postgresql://u:p@host/dbname",
+            "mysql://u:p@host:3306/dbname",
+            "mongodb://u:p@host/dbname",
+            "mongodb+srv://u:p@host/db?retryWrites=true",
+            "redis://:password@host:6379",
+            "rediss://u:p@host:6380",
+            r#"DB_URL="postgres://app:secret@db/app""#,
+            "log: connecting mongodb+srv://prhvtsuw:TpDkVI0CIr0lSVjMf3ySeNu4@dqudscouyssx.example.org/test",
+        ];
+        for line in cases {
+            assert!(
+                line_has_credential_url(line),
+                "expected credential URL detection on: {}",
+                line
+            );
+        }
+    }
+
+    /// Adversarial negative twin: URLs WITHOUT embedded credentials must
+    /// not gate Caesar off. Bare-host URLs, doc placeholders, and code
+    /// comments still need the decoder pass.
+    #[test]
+    fn credential_url_silent_on_bare_or_placeholderless_urls() {
+        let cases = [
+            "https://example.com/path?query=1",
+            "http://localhost:8080",
+            "ftp://files.example.com/pub/",
+            "see docs at https://docs.example.org/setup",
+            "git://github.com/owner/repo.git",
+            // `:` after scheme but no user (`@` absent)
+            "redis://host:6379",
+            // `@` present but no `:` before it (anonymous SSH-style URL)
+            "ssh://user@host:22/repo.git",
+            // Bare text mentioning `://` without a real scheme prefix.
+            "looks like ://typo without a scheme",
+        ];
+        for line in cases {
+            assert!(
+                !line_has_credential_url(line),
+                "credential-URL gate fired on a non-credential line: {}",
+                line
+            );
+        }
+    }
 }

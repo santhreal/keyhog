@@ -73,8 +73,78 @@ pub fn looks_reversible(candidate: &str) -> bool {
     // Only emit a reverse-decoded chunk when the reversed string would
     // contain a known provider prefix. Stops `ZYXWVUTSRQPONMLKJIHGFEDCBA`
     // from looking like a candidate just because it has a long alnum run.
+    //
+    // Skip 2-char prefixes - the only entry that short is the Ethereum
+    // `0x` literal. `0x` shows up by random chance in ~1.6% of 80-char
+    // base64 strings, which routed every such reversed blob through the
+    // decoder and emitted spurious findings on the base64-protobuf
+    // decoy class. Investigator empirically attributed 4 FPs to this
+    // exact path. An Ethereum address embedded inside an obfuscated
+    // reversed string is exotic enough that the recall loss is near zero;
+    // every 3+ char vendor prefix (`hf_`, `SG.`, `eyJ`, `sk-`, `ghp_`,
+    // ...) still gates as before.
     let reversed = reverse_str(candidate);
     crate::confidence::KNOWN_PREFIXES
         .iter()
+        .filter(|prefix| prefix.len() >= 3)
         .any(|prefix| reversed.contains(prefix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Positive truth case: a reversed AKIA access key still admits the
+    /// reverse decoder. AKIA is 4 chars, well above the 3-char floor.
+    #[test]
+    fn reversible_admits_genuine_akia_reverse() {
+        // "AKIA_64ABDEFSEWKRUMSEK1NR" reversed -> "RN1KESMURKWESFEDBA46_AIKA"
+        let reversed = "RN1KESMURKWESFEDBA46_AIKA";
+        assert!(
+            looks_reversible(reversed),
+            "AKIA reversal must be admitted as reverse-decodable"
+        );
+    }
+
+    /// Adversarial negative twin: a 60-char base64 blob whose reverse
+    /// happens to contain `0x` (the Ethereum-address 2-char prefix) MUST
+    /// NOT pass the gate. Before the fix the 2-char `0x` literal in
+    /// KNOWN_PREFIXES gated random base64 through the reverse decoder.
+    /// `0x` appears by random chance in ~1.6% of 80-char base64 strings.
+    #[test]
+    fn reversible_rejects_random_base64_with_0x() {
+        // Build a 32+ char alphanumeric candidate whose REVERSE contains
+        // `0x` but no 3+ char vendor prefix. The literal `x0` placed in
+        // the original becomes `0x` in the reverse. The body is otherwise
+        // arbitrary base64 chars that include enough digits and letters
+        // to clear the 12-char alphanumeric run-length gate.
+        let candidate = "x0YeAhsbifEWGqJxAefViNbZ2yJI1ZpgVqlSiZ7BcMK4LR3zU8m";
+        let reversed: String = candidate.chars().rev().collect();
+        assert!(
+            reversed.contains("0x"),
+            "reversed text must contain the 0x literal by construction; reversed={}",
+            reversed
+        );
+        assert!(
+            !looks_reversible(candidate),
+            "random base64 whose only known-prefix hit is 2-char `0x` must NOT be reverse-decoded; reversed={}",
+            reversed
+        );
+    }
+
+    /// Defensive coverage: a reversal containing the 3-char `hf_`
+    /// HuggingFace prefix still admits the candidate. Proves the 3-char
+    /// floor is the cut, not 4.
+    #[test]
+    fn reversible_admits_hf_prefix_in_reversal() {
+        // Build a candidate whose reverse contains `hf_AB...` shape with
+        // a 12+ alnum run for the run-length gate.
+        let reversed_text = "hf_ABCDEFGHIJKLM"; // hf_ + 13 alnum
+        let candidate: String = reversed_text.chars().rev().collect();
+        assert!(
+            looks_reversible(&candidate),
+            "3-char hf_ prefix in reversed text must keep the candidate admissible; reversed={}",
+            reversed_text
+        );
+    }
 }
