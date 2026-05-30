@@ -11,8 +11,13 @@ severity = "critical"
 keywords = ["glpat-", "gitlab"]
 
 [[detector.patterns]]
-regex = 'glpat-[a-zA-Z0-9\-]{20,64}'
-description = "GitLab personal access token (glpat- prefix, 20-64 chars)"
+# Allow `_` in the body: real GitLab glpat tokens (and SecretBench
+# fixtures) use base64url-safe characters including underscore (see
+# mirror-pos-0000033.ini: `glpat-_fOrNLbqhvJPZGZDzQ9P`). The previous
+# `[a-zA-Z0-9\-]` class rejected underscores and dropped these tokens
+# to entropy fallback.
+regex = 'glpat-[a-zA-Z0-9_\-]{20,64}'
+description = "GitLab personal access token (glpat- prefix, 20-64 base64url chars)"
 
 [detector.verify]
 method = "GET"

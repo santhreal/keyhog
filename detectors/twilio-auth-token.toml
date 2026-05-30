@@ -8,12 +8,26 @@ id = "twilio-auth-token"
 name = "Twilio Auth Token"
 service = "twilio"
 severity = "critical"
-keywords = ["twilio", "TWILIO"]
+# Add `AC` and `AccountSid` literals so the AC pre-filter routes the
+# bare-AccountSid shape into the regex. `AC` is a 2-char literal so
+# pair it with the longer `TWILIO_ACCOUNT_SID` / `AccountSid` variants
+# to satisfy the AC keyword-length floor.
+keywords = ["twilio", "TWILIO", "TWILIO_ACCOUNT_SID", "AccountSid", "accountSid", "account_sid"]
 
 [[detector.patterns]]
 regex = "(?i)twilio[_.\\s-]*auth[_.\\s-]*token\\s*[=:]\\s*[\"']?([a-fA-F0-9]{32})[\"']?"
 description = "Twilio auth token (32 hex chars with TWILIO_AUTH_TOKEN context)"
 group = 1
+
+[[detector.patterns]]
+# Twilio AccountSid: `AC` + 32 hex chars is a Twilio-specific vendor
+# fingerprint. Fixtures that ship only the AccountSid (no auth_token
+# nearby) were previously silent because the AccountSid lived only in
+# the companion block. Routing AC[hex32] as a primary pattern surfaces
+# those findings; the `AC` prefix plus exactly-32 hex digits avoids
+# sha1-hex (40) and uuid (36) collisions.
+regex = '(?-i)\bAC[a-f0-9]{32}\b'
+description = "Twilio AccountSid (AC + 32 hex, standalone vendor fingerprint)"
 
 [[detector.patterns]]
 # Bare `authToken: "..."` / `auth_token = "..."` shape - the Twilio Node /

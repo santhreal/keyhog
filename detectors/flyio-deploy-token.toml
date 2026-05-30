@@ -8,11 +8,17 @@ id = "flyio-deploy-token"
 name = "Fly.io Deploy Token"
 service = "flyio"
 severity = "critical"
-keywords = ["fo1_", "fly", "deploy"]
+# Drop the bare `fly` / `deploy` keywords: they add noise and caused
+# pre-filter false negatives when no contextual hint was present (e.g.
+# `const TOKEN = "fo1_..."` in source code). The `fo1_` prefix alone is
+# vendor-specific enough to be the AC anchor.
+keywords = ["fo1_"]
 
 [[detector.patterns]]
-regex = "fo1_[a-zA-Z0-9_-]{40,}"
-description = "Fly.io deploy token (fo1_ prefix)"
+# Bound the upper length so we don't latch onto a longer base64url
+# run. Real Fly.io deploy tokens are 64 chars after the prefix.
+regex = "fo1_[a-zA-Z0-9_-]{40,80}"
+description = "Fly.io deploy token (fo1_ prefix, length-bounded)"
 
 [[detector.patterns]]
 regex = "(?:FLY|fly)[_\\-\\s]*(?:DEPLOY|deploy)[_\\-\\s]*(?:TOKEN|token)[=:\\s\"'\\']+(fo1_[a-zA-Z0-9_-]{40,})"

@@ -10,5 +10,10 @@ severity = "high"
 keywords = ["redis", "REDIS_URL"]
 
 [[detector.patterns]]
-regex = 'rediss?://[^:]*:[^@\s]+@[a-zA-Z0-9._:-]+'
-description = "Redis connection string with credentials"
+# Alternation form `(?:rediss|redis)` instead of `rediss?`. The prefix
+# extractor walks char-by-char and treats `?` as a break char after
+# pushing the preceding `s`, so the previous `rediss?://` regex emitted
+# only the AC literal `rediss` and missed every plain `redis://` URL.
+# Alternation emits both `rediss` and `redis` as AC literals.
+regex = '(?:rediss|redis)://[^:]*:[^@\s]+@[a-zA-Z0-9._:-]+(?:[:/?#][^\s"'']*)?'
+description = "Redis connection string with credentials (full URL incl. path / query)"

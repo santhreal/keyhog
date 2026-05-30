@@ -10,8 +10,13 @@ service = "azure"
 severity = "high"
 keywords = [
   "Ocp-Apim-Subscription-Key",
+  "OCP_APIM_SUBSCRIPTION_KEY",
+  "ocp_apim_subscription_key",
+  "ocp-apim-subscription-key",
   "azure_subscription_key",
   "subscription-key",
+  "subscription_key",
+  "SUBSCRIPTION_KEY",
   "AZURE_SUBSCRIPTION_KEY",
   "azureSubscriptionKey",
 ]

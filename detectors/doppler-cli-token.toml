@@ -8,11 +8,18 @@ id = "doppler-cli-token"
 name = "Doppler CLI Token"
 service = "doppler"
 severity = "critical"
-keywords = ["dp.ct.", "dp.pt.", "doppler"]
+keywords = ["dp.ct.", "dp.pt.", "dp.sa.", "doppler"]
 
 [[detector.patterns]]
-regex = 'dp\.(ct|pt)\.[a-zA-Z0-9]{44}'
-description = "Doppler CLI token or personal token with dp.ct. or dp.pt. prefix"
+# Cover the full Doppler token-prefix family in one alternation: cli
+# tokens (ct), personal tokens (pt), and service-account tokens (sa).
+# The `sa` form is the SecretBench session-token category's only
+# remaining FN class (3 fixtures: dp.sa.<44 base58>). The doppler-
+# service-token.toml file handles `dp.st.` separately; this regex does
+# not duplicate that prefix here. Length kept at exactly 44 chars
+# (the documented Doppler shape) to avoid runaway captures.
+regex = 'dp\.(ct|pt|sa)\.[a-zA-Z0-9]{44}'
+description = "Doppler CLI / personal / service-account token (dp.ct./dp.pt./dp.sa.)"
 
 [detector.verify]
 method = "GET"
