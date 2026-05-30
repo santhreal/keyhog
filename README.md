@@ -16,11 +16,43 @@
 ---
 
 **keyhog** scans source trees, git history, Docker images, S3 buckets, and
-running systems for leaked credentials. It compiles **891 service-specific
-detectors** into a single Hyperscan NFA database, decodes nested encodings
-before matching, calibrates confidence per detector via Bayesian
-Beta(α,β) feedback, and routes every scan to the fastest hardware backend
-present:
+running systems for leaked credentials. **891 service-specific detectors**,
+decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
+zero runtime configuration. Default `keyhog scan .` works out of the box.
+
+### Add it to your CI (one workflow file)
+
+```yaml
+# .github/workflows/keyhog.yml
+name: keyhog
+on: [push, pull_request]
+permissions: { contents: read, security-events: write }
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+        with: { path: ., severity: high, format: sarif }
+```
+
+Cost to your CI: ~20 MB binary download (cacheable), ~400 ms cold-start
+on hosted runners (GPU auto-disabled, SIMD path), ~10 s wall-clock for
+a 5,000-file repo. Single `libhyperscan5` apt package, no Python, no
+JVM, no Docker daemon. Findings auto-upload to GitHub code-scanning as
+SARIF; adopt without breaking an existing tree by committing a baseline
+(`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
+fails only on NEW secrets.
+
+GitLab CI, CircleCI, Drone, BuildKite, Jenkins, Bazel, pre-commit, Husky,
+lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
+
+### How it works
+
+keyhog compiles its 891 detectors into a single Hyperscan NFA database,
+decodes nested encodings before matching, calibrates confidence per
+detector via Bayesian Beta(α,β) feedback, and routes every scan to the
+fastest hardware backend present:
 
 | Layer / Backend | When | How |
 |---|---|---|
