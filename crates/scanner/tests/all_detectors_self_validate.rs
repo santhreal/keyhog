@@ -81,6 +81,52 @@ fn contract_ids_on_disk() -> BTreeSet<String> {
 #[test]
 fn every_detector_loads() {
     let dir = detector_dir();
+    
+    let mut files = std::fs::read_dir(&dir)
+        .expect("read_dir")
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) == Some("toml") {
+                Some(p)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+
+    let mut failed_to_parse = 0;
+    let mut failed_quality_gate = 0;
+
+    for path in &files {
+        let content = std::fs::read_to_string(path).expect("read");
+        let parsed = toml::from_str::<keyhog_core::DetectorFile>(&content);
+        match parsed {
+            Err(e) => {
+                println!("TOML Parse Error in {}: {}", path.display(), e);
+                failed_to_parse += 1;
+            }
+            Ok(file) => {
+                let issues = keyhog_core::validate_detector(&file.detector);
+                let has_errors = issues.iter().any(|issue| matches!(issue, keyhog_core::QualityIssue::Error(_)));
+                if has_errors {
+                    println!("Quality Gate Errors in {}:", path.display());
+                    for issue in issues {
+                        if let keyhog_core::QualityIssue::Error(err) = issue {
+                            println!("  - {}", err);
+                        }
+                    }
+                    failed_quality_gate += 1;
+                }
+            }
+        }
+    }
+
+    println!("Total TOML files: {}", files.len());
+    println!("Failed to parse: {}", failed_to_parse);
+    println!("Failed quality gate: {}", failed_quality_gate);
+
     let detectors = keyhog_core::load_detectors(&dir)
         .unwrap_or_else(|e| panic!("load_detectors({}) failed: {e}", dir.display()));
     assert!(
