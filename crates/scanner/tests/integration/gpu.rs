@@ -60,7 +60,7 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
 
 fn chunk(data: &str) -> Chunk {
     Chunk {
-        data: data.to_string(),
+        data: data.to_string().into(),
         metadata: ChunkMetadata {
             base_offset: 0,
             source_type: "test".into(),
