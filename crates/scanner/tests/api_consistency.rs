@@ -15,19 +15,12 @@
 //! avoid here by passing `None` / a far-future deadline). A drift here
 //! is a contract regression invisible to per-API tests.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
 fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     CompiledScanner::compile(detectors).expect("compile")

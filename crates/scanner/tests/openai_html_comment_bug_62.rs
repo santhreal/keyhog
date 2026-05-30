@@ -24,20 +24,13 @@
 //! Both expectations are tests below. If a future change weakens
 //! either, this file fails.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
-
 const HIGH_ENTROPY_KEY: &str = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ";
 const LOW_ENTROPY_KEY: &str = "sk-1234567890abcdefghijABCDEFGHIJ1234567890abcdefgh";
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn make_chunk(text: &str) -> Chunk {
     Chunk {

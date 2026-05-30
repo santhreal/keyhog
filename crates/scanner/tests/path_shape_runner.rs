@@ -25,6 +25,9 @@
 //! 348 contracts × ~2 positives × (5 production-paths + 4
 //! suppressed-paths) ≈ **6 300 path-aware assertions** per run.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -51,14 +54,6 @@ struct Positive {
     credential: String,
     #[allow(dead_code)]
     reason: String,
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn contracts_dir() -> PathBuf {

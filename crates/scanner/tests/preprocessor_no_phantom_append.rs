@@ -25,18 +25,11 @@
 //!     (file, line) duplicate of the primary.
 //!   - Every reported offset is inside the source file (< file_len).
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{dedup_matches, Chunk, ChunkMetadata, DedupScope};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {
         data: text.into(),

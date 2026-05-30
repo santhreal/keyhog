@@ -1,14 +1,8 @@
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
+mod support;
+use support::paths::detector_dir;
 
 fn scan(text: &str) -> Vec<String> {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
