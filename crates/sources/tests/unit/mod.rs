@@ -6,5 +6,6 @@ pub mod gates;
 pub mod git_diff;
 pub mod git_history;
 pub mod http;
+pub mod internal_contracts;
 pub mod lib;
 pub mod timeouts;

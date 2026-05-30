@@ -90,7 +90,7 @@ impl HttpClientConfig {
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const REDIRECT_LIMIT: usize = 5;
 
-fn user_agent(suffix: Option<&str>) -> String {
+pub(crate) fn user_agent(suffix: Option<&str>) -> String {
     let base = concat!("keyhog/", env!("CARGO_PKG_VERSION"));
     match suffix {
         Some(s) if !s.is_empty() => format!("{base} ({s})"),
@@ -154,57 +154,4 @@ pub fn async_client_builder(cfg: &HttpClientConfig) -> Result<reqwest::ClientBui
     }
 
     Ok(builder)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn explicit_proxy_overrides_env() {
-        // SAFETY: tests run single-threaded by default per-binary, but
-        // env mutation is still racy across `cargo test --jobs N`. The
-        // env-var is namespaced under KEYHOG_ to avoid leaking into
-        // other tests; nothing else in the crate reads it.
-        std::env::set_var("KEYHOG_PROXY", "http://env-proxy:8080");
-        let cfg = HttpClientConfig {
-            proxy: Some("http://flag-proxy:9090".into()),
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.effective_proxy().as_deref(),
-            Some("http://flag-proxy:9090")
-        );
-        std::env::remove_var("KEYHOG_PROXY");
-    }
-
-    #[test]
-    fn proxy_off_string_is_preserved() {
-        let cfg = HttpClientConfig {
-            proxy: Some("off".into()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.effective_proxy().as_deref(), Some("off"));
-    }
-
-    #[test]
-    fn insecure_tls_env_var_recognized() {
-        std::env::set_var("KEYHOG_INSECURE_TLS", "1");
-        let cfg = HttpClientConfig::default();
-        assert!(cfg.effective_insecure_tls());
-        std::env::remove_var("KEYHOG_INSECURE_TLS");
-    }
-
-    #[test]
-    fn user_agent_includes_version() {
-        let ua = user_agent(None);
-        assert!(ua.starts_with("keyhog/"));
-        assert!(ua.contains(env!("CARGO_PKG_VERSION")));
-    }
-
-    #[test]
-    fn user_agent_appends_suffix() {
-        let ua = user_agent(Some("web"));
-        assert!(ua.contains("(web)"), "ua: {ua}");
-    }
 }

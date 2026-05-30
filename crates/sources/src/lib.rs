@@ -171,3 +171,68 @@ pub fn register_plugins() {
         registry.register(Arc::new(S3Source::new(bucket)));
     }
 }
+
+#[doc(hidden)]
+pub mod testing {
+    pub fn strip_unc_prefix(s: &str) -> &str {
+        crate::filesystem::strip_unc_prefix(s)
+    }
+
+    pub fn user_agent(suffix: Option<&str>) -> String {
+        crate::http::user_agent(suffix)
+    }
+
+    #[cfg(feature = "binary")]
+    pub fn extract_string_literals(line: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        crate::binary::literals::extract_string_literals(line, &mut out);
+        out
+    }
+
+    #[cfg(feature = "binary")]
+    pub fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
+        crate::binary::sections::extract_sections(bytes, path)
+    }
+
+    #[cfg(feature = "github")]
+    pub fn validate_repo_name(name: &str) -> Result<(), keyhog_core::SourceError> {
+        crate::github_org::validate_repo_name(name)
+    }
+
+    #[cfg(feature = "github")]
+    pub fn validate_clone_url(url: &str) -> Result<(), keyhog_core::SourceError> {
+        crate::github_org::validate_clone_url(url)
+    }
+
+    #[cfg(feature = "web")]
+    pub fn redact_url(url: &str) -> String {
+        crate::web::redact_url(url).into_owned()
+    }
+
+    #[cfg(feature = "web")]
+    pub fn is_disallowed_web_host(url: &str) -> bool {
+        crate::web::is_disallowed_web_host(url)
+    }
+
+    #[cfg(feature = "web")]
+    pub fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+        crate::web::is_disallowed_ip(ip)
+    }
+
+    #[cfg(feature = "web")]
+    pub fn resolve_and_screen(
+        host: &str,
+        port: u16,
+    ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError> {
+        crate::web::resolve_and_screen(host, port)
+    }
+
+    #[cfg(feature = "web")]
+    pub fn build_web_client(
+        http: &crate::http::HttpClientConfig,
+        original_url: &str,
+        use_proxy: bool,
+    ) -> Result<crate::reqwest::blocking::Client, keyhog_core::SourceError> {
+        crate::web::build_web_client(http, original_url, use_proxy)
+    }
+}
