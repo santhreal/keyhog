@@ -615,3 +615,32 @@ fn merkle_skip_chunks_carry_live_metadata() {
     );
     assert_eq!(meta.size_bytes, Some(size));
 }
+
+// Regression: a large flat directory must scan to completion without
+// overflowing a worker stack. The parallel walk's rayon split grain is
+// capped (`with_min_len`) so the split-tree depth stays ~log2(len/grain)
+// instead of scaling with file count - an unbounded depth blew the 8 MiB
+// worker stack on 100k+ file trees (SIGABRT). 12k files keeps the test fast
+// while exercising the at-scale parallel path; the full 100k repro lives in
+// the dogfood corpus. The count assertion also proves every file is walked.
+#[test]
+fn large_flat_directory_scans_all_files_without_stack_overflow() {
+    const N: usize = 12_000;
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..N {
+        fs::write(
+            dir.path().join(format!("f{i}.txt")),
+            format!("token_{i} = value_{i}\n"),
+        )
+        .unwrap();
+    }
+    let chunks: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        chunks.len(),
+        N,
+        "every file in a large flat directory must be walked and chunked"
+    );
+}
