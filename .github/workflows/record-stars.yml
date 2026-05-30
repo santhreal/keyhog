@@ -10,12 +10,15 @@ on:
     - cron: '17 7 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   record:
     runs-on: ubuntu-latest
+    # Per-job permissions: this repo rejects dispatch of any workflow that
+    # declares a TOP-LEVEL `permissions:` block (1-3s exit, 0 jobs -- see
+    # health-check.yml / keyhog.yml / vendor-vyre.yml). Per-job is equivalent
+    # and dispatch-safe, so the daily star snapshot actually runs.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
