@@ -10,5 +10,10 @@ severity = "critical"
 keywords = ["mongodb", "mongo"]
 
 [[detector.patterns]]
-regex = '''mongodb(?:\+srv)?://[^:]+:[^@\s"'']+@[a-zA-Z0-9-]+\.[a-zA-Z0-9._-]+'''
-description = "MongoDB connection string with credentials (requires domain host)"
+# Widen the host class to accept Kubernetes service names (`mongo`) and
+# docker hostnames, not just dotted-FQDN hosts. Empty username
+# (`mongodb://:pass@host`) is also accepted for parity with redis.
+# Capture the path + query so the credential surface includes the full
+# Atlas connection string (e.g. `/test?retryWrites=true`).
+regex = '''mongodb(?:\+srv)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+(?:[:/?#][^\s"'']*)?'''
+description = "MongoDB connection string with credentials (full URL incl. path / query)"

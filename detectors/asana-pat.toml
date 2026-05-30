@@ -21,6 +21,16 @@ keywords = [
 regex = '1/[0-9]{16,20}/[a-zA-Z0-9]{32,48}'
 description = "Asana personal access token (format: 1/user_id/token)"
 
+[[detector.patterns]]
+# Asana legacy PAT shape: `<16-digit-user-id>:<32-hex-secret>` (e.g.
+# `0395028979185585:af8dbeb6fd1abfd3ee64efbe9bbb5179`). The shape is
+# shared with license-key-style 16:32-hex decoys, so the `asana` /
+# `app.asana.com` / `ASANA_PAT` keyword AC pre-filter is the
+# attribution gate; bare 16:32-hex without an Asana keyword in the
+# scan window will not route through this detector.
+regex = '[0-9]{16}:[a-fA-F0-9]{32}'
+description = "Asana legacy personal access token (user-id:secret shape)"
+
 [detector.verify]
 method = "GET"
 url = "https://app.asana.com/api/1.0/users/me"

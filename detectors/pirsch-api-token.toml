@@ -11,8 +11,13 @@ severity = "medium"
 keywords = ["pa_", "PIRSCH_CLIENT_ID", "pirsch.io"]
 
 [[detector.patterns]]
-regex = "(?-i)pa_[a-zA-Z0-9]{32,}"
-description = "Pirsch access key starting with pa_ prefix"
+# Word-boundary anchored Pirsch access key. The previous unbounded
+# `pa_[a-zA-Z0-9]{32,}` regex could latch onto the middle of a longer
+# high-entropy run (e.g. cross-file reassembled fragments that happen
+# to spell `pa_<random alnum>`). Pirsch tokens are documented as 32-40
+# chars; the negative lookahead prevents merging into a longer run.
+regex = "(?-i)\\bpa_[a-zA-Z0-9]{32,40}(?![A-Za-z0-9])"
+description = "Pirsch access key starting with pa_ prefix (length-bounded)"
 
 [[detector.patterns]]
 regex = "(?:PIRSCH[_\\-\\s]?CLIENT[_\\-\\s]?ID|pirsch[_\\-\\s]?client[_\\-\\s]?id)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"

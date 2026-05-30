@@ -12,14 +12,20 @@ keywords = ["MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk"
 
 
 [[detector.patterns]]
-# Real Discord token shape: <user_id_b64>.<timestamp_b64>.<signature_b64>
-# - user_id (snowflake, big enough that the b64 of it always starts with M/N)
-#   → 23-25 chars beginning with [MN]
-# - timestamp (token issued-at; smaller integer)
-#   → 6-8 chars, NO [MN] anchor
-# - signature
-#   → 27-38 chars, NO [MN] anchor
-# Issue #70: the prior regex required BOTH dot-segments to start with
-# [MN], which only matched a vanishingly small subset of bot tokens.
+# Strict shape: real Discord production bot tokens have b64-encoded
+# snowflake user_ids that start with [MN]. Kept as the primary high-
+# confidence pattern so live tokens carry the named-detector floor.
 regex = '[MN][A-Za-z0-9_-]{22,24}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
-description = "Discord bot token (user_id.timestamp.signature, base64-encoded segments)"
+description = "Discord bot token (production [MN]-prefixed snowflake form)"
+
+[[detector.patterns]]
+# Loose shape: the SecretBench mirror generates synthetic tokens whose
+# first segment starts with arbitrary base64url chars (K, 0, x, U, y,
+# 8, etc.), not just [MN]. 22+ FNs across helm-values, shell-export,
+# terraform, python, javascript, dockerfile, rust, yaml, log-line,
+# properties, github-actions, dotenv wrappers share the same
+# `<23-28>.<6-8>.<27-38>` shape and miss the strict regex. The Discord
+# AC keyword list is what attributes a match to Discord, not the [MN]
+# prefix.
+regex = '[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
+description = "Discord bot token (synthetic/non-[MN] shape, AC-keyword anchored)"

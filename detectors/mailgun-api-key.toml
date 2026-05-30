@@ -8,11 +8,31 @@ id = "mailgun-api-key"
 name = "Mailgun API Key"
 service = "mailgun"
 severity = "critical"
-keywords = ["key-"]
+# The bare `key-` 4-char keyword was getting dropped by the AC keyword
+# floor in low-info-keyword filters, leaving .tf / properties / log-line
+# fixtures unrouted. Widen to canonical Mailgun anchors so the pre-filter
+# has a 7+ char surface that survives the floor.
+keywords = [
+  "key-",
+  "mailgun",
+  "MAILGUN",
+  "MAILGUN_API_KEY",
+  "mailgun_api_key",
+  "api.mailgun.net",
+]
 
 [[detector.patterns]]
 regex = 'key-[a-f0-9]{32}'
 description = "Mailgun API key (key- prefix with 32 hex characters)"
+
+[[detector.patterns]]
+# Anchored fallback for `.tf` `mailgun_api_key { default = "..." }` and
+# similar HCL / properties shapes where the bare key- prefix may be
+# absent or wrapped, but the strong `mailgun_api_key` context keyword is
+# present in the same window.
+regex = '''(?i)mailgun[._-]?(?:api[._-]?)?key\s*[=:]\s*["']?([a-zA-Z0-9_-]{20,})["']?'''
+description = "Mailgun API key with `mailgun_api_key` context anchor"
+group = 1
 
 [detector.verify]
 method = "GET"
