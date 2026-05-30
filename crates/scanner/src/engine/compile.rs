@@ -2,6 +2,10 @@ use super::*;
 
 impl CompiledScanner {
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
+        // `state` is only mutated under `feature = "simd"` (the
+        // Hyperscan-reject reroute below). Lean builds would lint it
+        // unused-mut otherwise.
+        #[cfg_attr(not(feature = "simd"), allow(unused_mut))]
         let mut state = build_compile_state(&detectors)?;
         let ac = build_ac_pattern_set(&state.ac_literals)?;
         // GPU is unconditional in the build; runtime probe decides whether to

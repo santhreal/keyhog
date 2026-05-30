@@ -8,6 +8,17 @@
 //! - Gate: Linear(41→6) + softmax
 //! - 6 experts: Linear(41→32)+ReLU → Linear(32→16)+ReLU → Linear(16→1)
 //! - Output: sigmoid(weighted sum of expert logits)
+//!
+//! ## Feature-gating in the lean build
+//!
+//! Every entry point that would touch wgpu / vyre-driver-wgpu directly is
+//! wrapped in `#[cfg(feature = "gpu")]`. With the `gpu` feature off (the
+//! `cargo install keyhog --no-default-features --features ci` path), the
+//! GPU drivers aren't linked at all, the probe functions report "no GPU
+//! available" without ever calling into wgpu, and the self-test functions
+//! return a "not available in this build" `Err` instead of panicking.
+//! The CPU MoE path in `ml_scorer.rs` is the entire scoring story under
+//! that profile.
 
 // Both submodules lean on the wgpu device/queue + bytemuck cast helpers.
 // They only exist in `gpu`-on builds; the public API in this module
