@@ -1,4 +1,8 @@
 //! Migrated from src/simd.rs — silent_drop_regression gate.
+//!
+//! `HsScanner` is only exposed when the `simd` (Hyperscan) feature is on;
+//! the lean ci build skips this test entirely.
+#![cfg(feature = "simd")]
 
 use keyhog_scanner::testing::HsScanner;
 use keyhog_scanner::types::REGEX_SIZE_LIMIT_BYTES;

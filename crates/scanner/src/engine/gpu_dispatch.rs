@@ -34,6 +34,12 @@ impl CompiledScanner {
         configs: &[vyre::DispatchConfig],
     ) -> std::result::Result<Vec<ShardDispatchResult>, vyre::BackendError> {
         debug_assert_eq!(shard_inputs.len(), configs.len());
+        // wgpu's batched-encoder path (`dispatch_borrowed_batch`) is reached
+        // through the concrete WgpuBackend handle, which only exists in
+        // `gpu`-on builds. Without it the CUDA/trait dispatch path below is
+        // the only option — and in lean (no-`gpu`) builds no backend is
+        // acquired at compile time, so this fn's caller never reaches here.
+        #[cfg(feature = "gpu")]
         if let Some(wgpu) = &self.wgpu_backend {
             let jobs: Vec<(&vyre::Program, &[&[u8]], &vyre::DispatchConfig)> = shard_inputs
                 .iter()

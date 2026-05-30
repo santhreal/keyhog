@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Smoke test for vyre's new `classic_ac_bounded_ranges_program`
 //! end-to-end on the real GPU. Validates that the AC kernel
 //! produces the same `(pattern_id, start, end)` triples as the CPU
