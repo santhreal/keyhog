@@ -479,23 +479,34 @@ impl Source for FilesystemSource {
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
         std::thread::spawn(move || {
             use rayon::prelude::*;
-            entries.into_par_iter().for_each_with(tx, |tx, entry| {
-                for chunk in process_entry(
-                    entry,
-                    &merkle,
-                    &skipped,
-                    max_size,
-                    window_size,
-                    window_overlap,
-                ) {
-                    if tx.send(chunk).is_err() {
-                        // Receiver dropped (scan cancelled / orchestrator
-                        // shut down). Bail out instead of churning on
-                        // entries no one will read.
-                        return;
+            // `.with_min_len` caps the rayon split grain. Without it, the
+            // work-stealing splitter recurses far deeper than the balanced
+            // log2(N) on a large entry list - the split-tree depth scales with
+            // file count, so a big tree (100k+ files) overflowed the 8 MiB
+            // worker stack with ~1300+ nested bridge_producer_consumer frames
+            // (SIGABRT "has overflowed its stack"). A 64-entry floor bounds the
+            // depth at ~log2(len/64) for any corpus size while keeping leaves
+            // (len/64) far above the core count, so I/O parallelism is intact.
+            entries
+                .into_par_iter()
+                .with_min_len(64)
+                .for_each_with(tx, |tx, entry| {
+                    for chunk in process_entry(
+                        entry,
+                        &merkle,
+                        &skipped,
+                        max_size,
+                        window_size,
+                        window_overlap,
+                    ) {
+                        if tx.send(chunk).is_err() {
+                            // Receiver dropped (scan cancelled / orchestrator
+                            // shut down). Bail out instead of churning on
+                            // entries no one will read.
+                            return;
+                        }
                     }
-                }
-            });
+                });
         });
 
         Box::new(rx.into_iter())
