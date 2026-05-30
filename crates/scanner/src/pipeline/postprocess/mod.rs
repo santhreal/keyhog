@@ -4,9 +4,14 @@ pub(crate) use crate::suppression::{
     contains_uuid_v4_substring, looks_like_email_address,
     looks_like_punctuation_decorated_identifier, looks_like_pure_identifier,
     looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
-    looks_like_secret_scanner_source, looks_like_url_or_path_segment,
-    looks_like_vendored_minified_path, looks_like_word_separated_identifier,
+    looks_like_url_or_path_segment, looks_like_vendored_minified_path,
+    looks_like_word_separated_identifier,
 };
+// See pipeline/mod.rs: only the `simdsieve` hot-pattern fast path imports
+// this symbol through the pipeline module path; gate to silence the lean
+// build without an #[allow] evasion.
+#[cfg(feature = "simdsieve")]
+pub(crate) use crate::suppression::looks_like_secret_scanner_source;
 pub use crate::suppression::{
     is_weakly_anchored_named_detector, should_suppress_known_example_credential,
     should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,

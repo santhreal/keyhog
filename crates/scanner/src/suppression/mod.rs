@@ -8,6 +8,10 @@ pub(crate) mod path_filter;
 pub(crate) mod shape;
 pub(crate) mod shape_gates;
 
+// Only the simdsieve hot-pattern fast path consumes this through the
+// `suppression::` alias; the direct callers in this crate go through
+// `path_filter::`. Gate to keep the lean build warning-free.
+#[cfg(feature = "simdsieve")]
 pub(crate) use path_filter::looks_like_secret_scanner_source;
 pub(crate) use path_filter::looks_like_vendored_minified_path;
 pub(crate) use shape::{
