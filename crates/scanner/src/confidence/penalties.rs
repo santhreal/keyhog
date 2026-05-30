@@ -150,16 +150,6 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         if max_repeat_run(credential) > 0.5 {
             adjusted *= 0.1;
         }
-        // Token-rarity / BPE-efficiency gate intentionally NOT wired here
-        // yet. See `confidence::signals::bigram_uniqueness` for the proxy
-        // implementation + the empirical reason the proxy alone isn't safe:
-        // a real `ghp_1234567890abcdef1234567890abcdef1234` token scores
-        // 0.51 (repeating digit + hex bigrams) while a plain English
-        // sentence scores 0.84+. Wiring it would create FNs on real
-        // tokens. The accurate version needs the cl100k_base BPE merge
-        // table; tracked as task #116. The signal is exported so a future
-        // ML re-train can fold it in as feature #42+ once we can afford
-        // the ~1.6 MB vocab embedding (or wire a thin remote tokenizer).
         // Decode-through coherence (generic detectors only). A generic
         // high-entropy candidate that base64/hex-decodes to an identifiable
         // binary asset (PNG/gzip/zip/ELF/PDF/... magic bytes) or a full
