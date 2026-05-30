@@ -134,11 +134,16 @@ fn bench_scan_no_hit_throughput(c: &mut Criterion) {
 
 #[cfg(feature = "gpu")]
 fn bench_raw_vyre_gpu(c: &mut Criterion) {
+    // vyre 0.6.1 API: `GpuLiteralSet::scan(backend, haystack, max_matches)`
+    // (`scan_shared` was removed). Acquire the shared wgpu backend the
+    // same way the production scanner does in engine/compile.rs.
     let patterns = vec![b"needle".to_vec()];
     let pattern_refs: Vec<&[u8]> = patterns.iter().map(Vec::as_slice).collect();
 
-    let dq = vyre_wgpu::runtime::cached_device().expect("failed to get GPU device");
-    let (device, _) = &*dq;
+    let Ok(backend) = vyre_driver_wgpu::WgpuBackend::shared() else {
+        eprintln!("bench_raw_vyre_gpu: wgpu backend unavailable, skipping");
+        return;
+    };
 
     let scanner = vyre_libs::scan::GpuLiteralSet::compile(&pattern_refs);
 
@@ -155,7 +160,13 @@ fn bench_raw_vyre_gpu(c: &mut Criterion) {
             BenchmarkId::new("one_match", format!("{}B", size)),
             &buffer,
             |b, data| {
-                b.iter(|| black_box(scanner.scan_shared(black_box(data)).expect("vyre GPU scan")));
+                b.iter(|| {
+                    black_box(
+                        scanner
+                            .scan(&*backend, black_box(data), 10_000)
+                            .expect("vyre GPU scan"),
+                    )
+                });
             },
         );
     }
