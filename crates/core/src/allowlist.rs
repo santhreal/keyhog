@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::path::Component;
 use std::path::Path;
 
+use crate::merkle_spec_hash::hex_nibble;
 use crate::VerifiedFinding;
 
 #[path = "allowlist_metadata.rs"]
@@ -445,14 +446,20 @@ fn normalize_path(path: &str) -> String {
 
 fn parse_sha256_hex(input: &str) -> Option<[u8; 32]> {
     let input = input.trim();
-    if input.len() != 64 {
+    // A SHA-256 hex digest is 64 ASCII bytes. Operate on the byte slice, not
+    // `&str[..]` slicing: a 64-*byte* input containing a multibyte UTF-8 char
+    // at an odd offset (e.g. a stray `é` pasted into `.keyhogignore`) would
+    // make `&input[idx*2..idx*2+2]` panic on a non-char boundary. Decode each
+    // nibble directly so any non-hex byte just fails the parse.
+    let bytes = input.as_bytes();
+    if bytes.len() != 64 {
         return None;
     }
-
     let mut digest = [0u8; 32];
     for idx in 0..32 {
-        let chunk = &input[idx * 2..idx * 2 + 2];
-        digest[idx] = u8::from_str_radix(chunk, 16).ok()?;
+        let hi = hex_nibble(bytes[idx * 2])?;
+        let lo = hex_nibble(bytes[idx * 2 + 1])?;
+        digest[idx] = (hi << 4) | lo;
     }
     Some(digest)
 }

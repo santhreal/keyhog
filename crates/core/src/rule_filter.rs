@@ -96,21 +96,11 @@ impl<'a> RuleEvaluationContext for FindingContext<'a> {
             "service" => Some(self.service),
             "path" => Some(self.path),
             "credential_hash" => Some(self.credential_hash),
-            "severity" => Some(self.severity_str()),
+            // `Severity::as_str` is the single source of truth for the
+            // kebab-case wire form; rehand-rolling the match here drifted
+            // from it once already (the `client-safe` tier).
+            "severity" => Some(self.severity.as_str()),
             _ => None,
-        }
-    }
-}
-
-impl<'a> FindingContext<'a> {
-    fn severity_str(&self) -> &'static str {
-        match self.severity {
-            Severity::Info => "info",
-            Severity::ClientSafe => "client-safe",
-            Severity::Low => "low",
-            Severity::Medium => "medium",
-            Severity::High => "high",
-            Severity::Critical => "critical",
         }
     }
 }
@@ -276,22 +266,39 @@ fn eq_field(field: &'static str, value: &str) -> RuleCondition {
 }
 
 fn normalise_severity(s: &str) -> Result<String, String> {
+    // Normalise to the kebab-case wire form that `Severity::as_str` emits
+    // (`client-safe`, not `clientsafe` or `client_safe`) - that is the string
+    // `FindingContext::field_value` reports for the `severity` field. Both
+    // `severity =` and `severity_lte =` compare against it, so the underscore
+    // alias must fold to the hyphen form or a `severity = "client_safe"` rule
+    // would never match a client-safe finding.
     let lower = s.trim().to_ascii_lowercase();
-    match lower.as_str() {
-        "info" | "low" | "medium" | "high" | "critical" => Ok(lower),
-        other => Err(format!(
-            "unknown severity {other:?}; expected info|low|medium|high|critical"
-        )),
-    }
+    let canonical = match lower.as_str() {
+        "client_safe" | "client-safe" | "clientsafe" => "client-safe",
+        "info" | "low" | "medium" | "high" | "critical" => lower.as_str(),
+        other => {
+            return Err(format!(
+                "unknown severity {other:?}; expected info|client-safe|low|medium|high|critical"
+            ))
+        }
+    };
+    Ok(canonical.to_string())
 }
 
+/// Rank ordering MUST match the `Severity` enum's derived `Ord`
+/// (Info < ClientSafe < Low < Medium < High < Critical). `severity_lte`
+/// expands to the set of every label at or below the threshold rank, so a
+/// drift between this table and the enum would suppress the wrong tiers - in
+/// particular, omitting `client-safe` made `severity_lte = "low"` silently
+/// skip client-safe findings that rank *below* low.
 fn severity_rank(s: &str) -> Result<usize, String> {
     match s {
         "info" => Ok(0),
-        "low" => Ok(1),
-        "medium" => Ok(2),
-        "high" => Ok(3),
-        "critical" => Ok(4),
+        "client-safe" => Ok(1),
+        "low" => Ok(2),
+        "medium" => Ok(3),
+        "high" => Ok(4),
+        "critical" => Ok(5),
         other => Err(format!("unknown severity rank {other:?}")),
     }
 }
@@ -299,9 +306,10 @@ fn severity_rank(s: &str) -> Result<usize, String> {
 fn severity_label(rank: usize) -> &'static str {
     match rank {
         0 => "info",
-        1 => "low",
-        2 => "medium",
-        3 => "high",
+        1 => "client-safe",
+        2 => "low",
+        3 => "medium",
+        4 => "high",
         _ => "critical",
     }
 }

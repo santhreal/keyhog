@@ -178,3 +178,56 @@ fn filter_inline_suppressions_with_detector_suffix() {
         "non-matching detector should not be suppressed"
     );
 }
+
+#[test]
+fn filter_inline_suppressions_detector_suffix_is_case_insensitive() {
+    // The directive carries a lowercase `detector=aws-access-key` token,
+    // but the finding's detector_id is mixed-case. The `detector=` match
+    // must be ASCII-case-insensitive: a finding whose id case-folds to the
+    // directive's target is suppressed; an unrelated id is not. Guards the
+    // alloc-free `eq_ignore_ascii_case` comparison in
+    // `line_has_inline_suppression`.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mixed_case.rs");
+    std::fs::write(
+        &path,
+        "let x = 1; // keyhog:ignore detector=aws-access-key\nlet token = \"secret\";\n",
+    )
+    .unwrap();
+
+    let make = |id: &str| RawMatch {
+        detector_id: Arc::from(id),
+        detector_name: Arc::from("AWS Access Key"),
+        service: Arc::from("aws"),
+        severity: Severity::Low,
+        credential: Arc::from("secret"),
+        credential_hash: "hash".into(),
+        companions: Default::default(),
+        location: MatchLocation {
+            source: Arc::from("filesystem"),
+            file_path: Some(Arc::from(path.to_string_lossy().as_ref())),
+            line: Some(2),
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: None,
+    };
+
+    // Mixed-case id that case-folds to the directive target: suppressed.
+    let kept_match = filter_inline_suppressions(vec![make("AWS-Access-KEY")]);
+    assert!(
+        kept_match.is_empty(),
+        "mixed-case detector id matching the directive target must be suppressed"
+    );
+
+    // Unrelated id: not suppressed by a scoped `detector=` directive.
+    let kept_nonmatch = filter_inline_suppressions(vec![make("GCP-Service-Key")]);
+    assert_eq!(
+        kept_nonmatch.len(),
+        1,
+        "a detector id that does not match the directive target must survive"
+    );
+}

@@ -1,4 +1,5 @@
 pub mod allowlist;
+pub mod allowlist_hash_parse_non_ascii_does_not_panic;
 pub mod apply_default_protections_populates_report_fields;
 pub mod banner;
 pub mod chunk_metadata_defaults_are_empty;
@@ -87,9 +88,11 @@ pub mod save_overwrites_disk_entry_for_same_path;
 pub mod save_with_spec_then_load_with_matching_spec_keeps_entries;
 pub mod schema_mismatch_returns_empty;
 pub mod schema_version_mismatch_treated_as_cold_start;
+pub mod sensitive_string_debug_redacts;
 pub mod serialize_binary_credential_as_tagged_b64;
 pub mod serialize_utf8_credential_as_tagged_text;
 pub mod service_with_path_separators_normalizes_to_screaming_snake;
+pub mod severity_lte_includes_client_safe_tier;
 pub mod severity_lte_matches_at_or_below_threshold;
 pub mod source_error_other_includes_fix_hint;
 pub mod source_registry_missing_name_returns_none;

@@ -162,7 +162,7 @@ pub struct ScanSystemArgs {
     ///   --space 50G   --space 1T   --space 500M
     /// Default 50 GiB; enough to cover most home directories without
     /// drowning the scan on a NAS-mount.
-    #[arg(long, default_value = "50G", value_parser = parse_byte_size)]
+    #[arg(long, default_value = "50G", value_parser = parse_space_bytes)]
     pub space: u64,
 
     /// Include network-mounted filesystems (NFS, SMB, sshfs). Off by
@@ -199,27 +199,15 @@ pub struct ScanSystemArgs {
     pub lockdown: bool,
 }
 
-/// Parse human-readable byte sizes: `50G`, `1T`, `500M`, `1024K`, `1234`.
-fn parse_byte_size(s: &str) -> Result<u64, String> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return Err("empty size".into());
-    }
-    let (num_part, suffix) = trimmed.split_at(
-        trimmed
-            .find(|c: char| !c.is_ascii_digit() && c != '.')
-            .unwrap_or(trimmed.len()),
-    );
-    let n: f64 = num_part.parse().map_err(|e| format!("bad number: {e}"))?;
-    let multiplier: u64 = match suffix.trim().to_ascii_uppercase().as_str() {
-        "" | "B" => 1,
-        "K" | "KB" | "KIB" => 1024,
-        "M" | "MB" | "MIB" => 1024 * 1024,
-        "G" | "GB" | "GIB" => 1024 * 1024 * 1024,
-        "T" | "TB" | "TIB" => 1024_u64.pow(4),
-        other => return Err(format!("unknown size suffix: {other}")),
-    };
-    Ok((n * multiplier as f64) as u64)
+/// Parse human-readable byte sizes for `--space` (`50G`, `1T`, `500M`, `1024K`).
+///
+/// Thin `u64`-returning adapter over the single source of truth in
+/// `crate::value_parsers::parse_byte_size` (overflow-checked, unit-required,
+/// NaN/negative-guarded, with committed test fixtures). `ScanSystemArgs::space`
+/// is a `u64`; the shared parser yields a sanity-capped `usize` (< usize::MAX/2),
+/// so the widening cast is lossless on every supported platform.
+fn parse_space_bytes(s: &str) -> Result<u64, String> {
+    crate::value_parsers::parse_byte_size(s).map(|bytes| bytes as u64)
 }
 
 #[derive(Parser)]
@@ -237,8 +225,12 @@ pub struct BackendArgs {
     #[arg(long)]
     pub probe_bytes: Option<u64>,
 
-    /// Pattern count to use for routing simulation. Defaults to 1509
-    /// (current corpus). Use this to test threshold behavior.
+    /// Compiled pattern count to use for the routing-simulation matrix.
+    /// This is a what-if knob: it does not change the loaded corpus, only
+    /// the pattern_count fed to the backend-routing thresholds so you can
+    /// probe how a larger/smaller corpus would route. The default is a
+    /// representative full-corpus figure; pass an explicit value to test a
+    /// specific threshold boundary.
     #[arg(long, default_value_t = 1509)]
     pub patterns: usize,
 
@@ -367,7 +359,7 @@ pub struct DetectorArgs {
     pub detectors: PathBuf,
     /// Filter detectors by substring match (case-insensitive) against id,
     /// name, service, and keywords. Useful for finding detectors in the
-    /// 888-strong corpus (e.g. `keyhog detectors --search aws`).
+    /// 891-strong corpus (e.g. `keyhog detectors --search aws`).
     #[arg(short, long)]
     pub search: Option<String>,
     /// Print full detector spec (regex, prefixes, keywords) instead of
@@ -452,5 +444,86 @@ impl CliDedupScope {
             Self::File => DedupScope::File,
             Self::None => DedupScope::None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    const GIB: u64 = 1024 * 1024 * 1024;
+
+    // `parse_space_bytes` is the thin `u64` adapter over the shared
+    // `value_parsers::parse_byte_size`. These assert the exact byte counts
+    // (not just `is_ok`) so the test fails if the adapter ever drops the
+    // multiplier or the cast becomes lossy.
+    #[test]
+    fn parse_space_bytes_resolves_gib_suffix_exactly() {
+        assert_eq!(parse_space_bytes("50G").unwrap(), 50 * GIB);
+        assert_eq!(parse_space_bytes("1T").unwrap(), 1024 * GIB);
+        assert_eq!(parse_space_bytes("500M").unwrap(), 500 * 1024 * 1024);
+    }
+
+    #[test]
+    fn parse_space_bytes_handles_fractional() {
+        // 1.5 GiB, exercising the f64 path of the shared parser through the cast.
+        assert_eq!(parse_space_bytes("1.5G").unwrap(), GIB + GIB / 2);
+    }
+
+    #[test]
+    fn parse_space_bytes_rejects_bare_number() {
+        // The footgun guard inherited from the shared parser: a unitless
+        // "50" is ambiguous against the GiB-scale defaults and must error
+        // rather than silently mean 50 bytes (the old args.rs copy's bug).
+        assert!(parse_space_bytes("50").is_err());
+    }
+
+    #[test]
+    fn parse_space_bytes_rejects_unknown_suffix() {
+        assert!(parse_space_bytes("5Z").is_err());
+    }
+
+    #[test]
+    fn parse_space_bytes_empty_is_zero() {
+        // Empty input keeps the shared parser's documented Ok(0) contract.
+        assert_eq!(parse_space_bytes("").unwrap(), 0);
+    }
+
+    // Drive the value_parser through the real clap tree: `keyhog scan-system
+    // --space 2G` must resolve `space` to exactly 2 GiB. This proves the
+    // wiring end-to-end, not just the bare function.
+    #[test]
+    fn scan_system_space_flag_parses_through_clap() {
+        let cli = Cli::parse_from(["keyhog", "scan-system", "--space", "2G"]);
+        match cli.command {
+            Some(Command::ScanSystem(args)) => assert_eq!(args.space, 2 * GIB),
+            other => panic!("expected ScanSystem command, got something else: {}", other.is_some()),
+        }
+    }
+
+    #[test]
+    fn scan_system_space_default_is_50_gib() {
+        let cli = Cli::parse_from(["keyhog", "scan-system"]);
+        match cli.command {
+            Some(Command::ScanSystem(args)) => assert_eq!(args.space, 50 * GIB),
+            _ => panic!("expected ScanSystem command"),
+        }
+    }
+
+    #[test]
+    fn scan_system_rejects_unitless_space() {
+        // The clap layer must surface the parser error for `--space 50`.
+        let err = Cli::try_parse_from(["keyhog", "scan-system", "--space", "50"]);
+        assert!(err.is_err(), "unitless --space 50 must be rejected by the value_parser");
+    }
+
+    // clap's own consistency check across the WHOLE command tree: catches
+    // duplicate arg ids, bad `conflicts_with`/`requires` references, and
+    // short/long collisions in any subcommand. Fails loudly at test time
+    // instead of panicking at runtime on first use.
+    #[test]
+    fn cli_definition_is_internally_consistent() {
+        Cli::command().debug_assert();
     }
 }

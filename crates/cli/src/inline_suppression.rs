@@ -81,12 +81,16 @@ fn line_has_inline_suppression(line: &str, detector_id: &str) -> bool {
     let Some(directive) = inline_suppression_directive(line) else {
         return false;
     };
-    let detector = detector_id.to_ascii_lowercase();
+    // `directive` is already lowercased by `inline_suppression_directive`
+    // (it operates on a lowercased copy of the line). Compare the
+    // `detector=` token case-insensitively against `detector_id` rather
+    // than allocating a lowercased copy of the id on every match - this
+    // runs once per finding in the suppression hot path.
     match directive
         .split(|ch: char| ch.is_whitespace() || matches!(ch, ',' | ';'))
         .find_map(|token| token.strip_prefix(DETECTOR_DIRECTIVE_PREFIX))
     {
-        Some(expected) => expected == detector,
+        Some(expected) => expected.eq_ignore_ascii_case(detector_id),
         None => true,
     }
 }

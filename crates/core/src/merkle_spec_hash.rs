@@ -43,20 +43,46 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
 }
 
 pub(crate) fn hex_encode(bytes: &[u8; 32]) -> String {
+    // Lowercase-hex each byte directly into the preallocated buffer. The
+    // previous `push_str(&format!("{:02x}", b))` allocated a throwaway
+    // `String` per byte (32 allocations per call) on the merkle-save hot
+    // path - one call per cached entry, ~1M on a large repo.
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);
-    for b in bytes {
-        out.push_str(&format!("{:02x}", b));
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
 }
 
 pub(crate) fn hex_to_array(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 {
+    // Byte-slice, not `&str[..]`: a 64-byte input with a multibyte UTF-8 char
+    // at an odd offset (corrupted / hand-edited cache, deserialized
+    // `spec_hash`) would panic on a non-char boundary with `&hex[i*2..i*2+2]`.
+    // Decode each nibble directly; any non-hex byte fails the parse cleanly.
+    let bytes = hex.as_bytes();
+    if bytes.len() != 64 {
         return None;
     }
     let mut out = [0u8; 32];
     for i in 0..32 {
-        out[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        let hi = hex_nibble(bytes[i * 2])?;
+        let lo = hex_nibble(bytes[i * 2 + 1])?;
+        out[i] = (hi << 4) | lo;
     }
     Some(out)
+}
+
+/// Decode a single lowercase/uppercase hex digit byte to its 0-15 value.
+/// Shared by the allowlist SHA-256 parser so both sites decode hex identically
+/// (byte-wise, never `&str[..]` slicing - that panics on non-char boundaries).
+#[inline]
+pub(crate) fn hex_nibble(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
 }

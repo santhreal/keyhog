@@ -12,7 +12,7 @@ use crate::args::BackendArgs;
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_solo_bytes_for_tier, probe_hardware,
-    select_backend, thresholds, GpuTier, ScanBackend,
+    select_backend, thresholds, GpuTier,
 };
 use std::process::ExitCode;
 
@@ -176,11 +176,9 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     );
 
     println!();
-    let cur = ScanBackend::Gpu.label();
     println!(
         "Force a backend with: KEYHOG_BACKEND={{gpu|simd|cpu}}  (or `keyhog scan --backend ...`)"
     );
-    let _ = cur;
     Ok(())
 }
 

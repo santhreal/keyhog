@@ -235,6 +235,7 @@ pub(crate) fn into_finding(
 /// Hidden hooks for integration tests. Not covered by semver.
 #[doc(hidden)]
 pub mod testing {
+    pub use crate::bogon::ip_addr_is_bogon;
     pub use crate::oob::redact_interactsh_error;
     pub use crate::verify::format_sigv4_timestamps;
 }
