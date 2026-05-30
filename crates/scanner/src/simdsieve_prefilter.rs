@@ -93,7 +93,11 @@ pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
 /// A slot is `None` only when its `HOT_PATTERN_DETECTOR_IDS` entry names no
 /// loaded detector (`hot-square_secret`, genuinely fast-path-only); that slot
 /// keeps the length-floor as its sole gate.
-#[allow(dead_code)] // used by the simdsieve hot path; harmless if that path is cfg-stripped
+///
+/// This module (`mod simdsieve_prefilter`) and the sole caller in
+/// `engine::compile` are both gated on `feature = "simdsieve"`, so whenever
+/// this function is compiled its caller is too: no `#[allow(dead_code)]` is
+/// needed.
 pub fn build_hot_pattern_validators(
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Vec<Option<regex::Regex>> {

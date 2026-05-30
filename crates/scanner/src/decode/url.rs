@@ -414,7 +414,12 @@ fn contains_octal_escape(input: &str) -> bool {
 }
 
 fn mime_encoded_word_decode(input: &str) -> Result<String, ()> {
-    if !input.starts_with("=?") || !input.ends_with("?=") {
+    // `len() < 4` guards the `input[2..len-2]` slice below: the 2-byte
+    // `=?` opener and `?=` closer overlap on a 3-byte input like `"=?="`
+    // (both `starts_with`/`ends_with` succeed), which would make the
+    // slice `[2..1]` and panic. A real MIME encoded-word is never under
+    // 4 bytes, so rejecting shorter inputs loses no recall.
+    if input.len() < 4 || !input.starts_with("=?") || !input.ends_with("?=") {
         return Err(());
     }
     let inner = &input[2..input.len() - 2];
