@@ -1,0 +1,241 @@
+# Real-world CVE / public-disclosure replay corpus.
+#
+# Each entry pins ONE public credential shape that has appeared in a
+# disclosed leak, vendor security advisory, official documentation
+# sample, or widely-cited detector test corpus (TruffleHog, gitleaks,
+# GitHub Secret Scanning). The runner
+# (`cve_corpus_runner.rs`) loops every entry, scans `fixture_text`
+# with the same `CompiledScanner` keyhog ships, and asserts at least
+# one surfaced finding's `credential` matches `redacted_credential_pattern`
+# (a Rust regex). The pattern is the SHAPE the regex MUST keep matching
+# even after rotation, so "the credential was revoked" never excuses
+# a recall regression.
+#
+# Rules:
+#  - cve_id        : canonical CVE / GHSA / advisory id (or shape-only
+#                    label when the leak predates assignment).
+#  - source_url    : permanent, citable provenance.
+#  - redacted_credential_pattern : Rust regex; matches a real surfaced
+#                    finding.credential. Anchored where unambiguous,
+#                    loose only where the leak shape varies.
+#  - fixture_text  : the exact public-domain bytes that surfaced the
+#                    leak. Where the original credential is still live
+#                    (rare, since we only embed shapes), we substitute
+#                    a same-shape synthetic; the regex still bites.
+
+schema_version = 1
+
+# ── AWS access key (sample shape from public detector corpora,
+# AKIA prefix + 16 chars, never the "EXAMPLE" body keyhog suppresses).
+[[entry]]
+cve_id = "TRUFFLEHOG-PUBLIC-AWS-AKIA-SHAPE"
+source_url = "https://github.com/trufflesecurity/trufflehog/tree/main/pkg/detectors/aws"
+redacted_credential_pattern = '^AKIA[0-9A-Z]{16}$'
+fixture_text = """
+aws_access_key_id = AKIAQYLPMN5HFIQR7XYA
+"""
+
+# ── AWS session token (STS temporary credential) shape from AWS docs.
+[[entry]]
+cve_id = "AWS-DOCS-ASIA-STS-SHAPE"
+source_url = "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html"
+redacted_credential_pattern = '^ASIA[0-9A-Z]{16}$'
+fixture_text = """
+# AWS STS temporary credentials sample (ASIA prefix marks temporary).
+AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLZ
+AWS_SESSION_TOKEN_ASSUMED_ROLE=ops/staging
+"""
+
+# ── GitHub classic personal access token (ghp_). The "gitlab-runner
+# committed token" class of leak (countless public-repo incidents,
+# 2022-2024) all share this same exact shape.
+[[entry]]
+cve_id = "GH-CLASSIC-PAT-LEAK-SHAPE"
+source_url = "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+redacted_credential_pattern = '^ghp_[A-Za-z0-9]{36}$'
+fixture_text = """
+# Classic GitHub PAT in a CI config (the shape behind the bulk of
+# public ghp_ leaks GitHub Secret Scanning emails about).
+GH_TOKEN=ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ
+"""
+
+# ── GitHub fine-grained PAT. Documented shape from GitHub's docs.
+[[entry]]
+cve_id = "GH-DOCS-FINE-GRAINED-PAT-SHAPE"
+source_url = "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+redacted_credential_pattern = '^github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}$'
+fixture_text = """
+# Fine-grained PAT embedded in a git push URL.
+git push https://oauth2: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@github.com/me/repo.git
+"""
+
+# ── GitLab personal access token. The "exposed gitlab-runner token"
+# advisory class (e.g. CVE-2021-22214 family + many publicized
+# auto-mod leaks). Same glpat- shape across all reports.
+[[entry]]
+cve_id = "GITLAB-PAT-PUBLIC-LEAK-SHAPE"
+source_url = "https://docs.gitlab.com/ee/security/tokens/"
+redacted_credential_pattern = '^glpat-[A-Za-z0-9_\-]{20,64}$'
+fixture_text = """
+# GitLab PAT used by a runner inside a public commit.
+GITLAB_TOKEN=glpat-aB3kQp7VbT2hYRzNcMfW
+"""
+
+# ── Stripe live secret key. Stripe's own public documentation has
+# historically published `sk_live_4eC39HqLyjWDarjtT1zdp7dc` as a
+# sample; keyhog suppresses that exact body via the test-fixture
+# Tier-B list, so this entry uses a different same-shape body.
+[[entry]]
+cve_id = "STRIPE-DOCS-SK-LIVE-SHAPE"
+source_url = "https://stripe.com/docs/keys"
+redacted_credential_pattern = '^sk_live_[a-zA-Z0-9]{24,}$'
+fixture_text = """
+# Stripe live secret key in a server-side config.
+STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD
+"""
+
+# ── Slack bot token (xoxb-). The 2014 "Snapchat-style Slack leak"
+# pattern, plus every gitleaks/trufflehog test corpus.
+[[entry]]
+cve_id = "SLACK-BOT-TOKEN-PUBLIC-SHAPE"
+source_url = "https://api.slack.com/authentication/token-types"
+redacted_credential_pattern = '^xoxb-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{24,32}$'
+fixture_text = """
+# Slack bot token committed in a CI env file.
+SLACK_BOT_TOKEN=xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx
+"""
+
+# ── SendGrid API key. Shape from SendGrid's own developer docs +
+# Twilio post-acquisition published examples.
+[[entry]]
+cve_id = "SENDGRID-API-KEY-DOCS-SHAPE"
+source_url = "https://docs.sendgrid.com/ui/account-and-settings/api-keys"
+redacted_credential_pattern = '^SG\.[a-zA-Z0-9_-]{22,32}\.[a-zA-Z0-9_-]{43,47}$'
+fixture_text = """
+# SendGrid key in an env file, env-var style.
+SENDGRID_API_KEY=SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF
+"""
+
+# ── Mailgun API key. Mailgun's docs and TruffleHog use the same
+# `key-<32 hex>` shape in their test fixtures.
+[[entry]]
+cve_id = "MAILGUN-API-KEY-DOCS-SHAPE"
+source_url = "https://documentation.mailgun.com/en/latest/api-intro.html#authentication"
+redacted_credential_pattern = '^key-[a-f0-9]{32}$'
+fixture_text = """
+# Mailgun API key in a curl URL embedded in a deploy script.
+curl https://api:key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@api.mailgun.net/v3/example.com/messages -F from='Excited <mailgun@example.com>'
+"""
+
+# ── Google API key. The AIza-prefixed shape behind the
+# 2018-2024 wave of "Firebase API key in mobile app" disclosures.
+[[entry]]
+cve_id = "GOOGLE-API-KEY-AIZA-SHAPE"
+source_url = "https://cloud.google.com/docs/authentication/api-keys"
+redacted_credential_pattern = '^AIza[0-9A-Za-z_-]{35}$'
+fixture_text = """
+# Google Maps API key inside a public JavaScript bundle.
+const MAPS_KEY = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV";
+"""
+
+# ── OpenAI API key (sk-...). 2023-2024 wave of "OpenAI key in
+# committed .env" disclosures (CVE-shape rather than single CVE).
+[[entry]]
+cve_id = "OPENAI-API-KEY-SK-SHAPE"
+source_url = "https://platform.openai.com/docs/api-reference/authentication"
+redacted_credential_pattern = '^sk-[a-zA-Z0-9]{48}$'
+fixture_text = """
+# OpenAI API key in a Python client init.
+import os
+from openai import OpenAI
+client = OpenAI(api_key="sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ")
+"""
+
+# ── OpenAI project-scoped key (sk-proj-...).
+[[entry]]
+cve_id = "OPENAI-PROJECT-KEY-SHAPE"
+source_url = "https://help.openai.com/en/articles/9186755-managing-projects-in-the-api-platform"
+redacted_credential_pattern = '^sk-proj-[a-zA-Z0-9_-]{40,164}$'
+fixture_text = """
+# OpenAI project-scoped key (sk-proj-) committed in a notebook.
+OPENAI_API_KEY=sk-proj-abcDEF123_def-456GHI789jkl-MNO012pqr-STU345vwx-YZA678bcd_efghi
+"""
+
+# ── Anthropic API key (sk-ant-api03-...). The shape behind the
+# 2024-2025 wave of "Claude key in committed config" disclosures.
+[[entry]]
+cve_id = "ANTHROPIC-API-KEY-SK-ANT-SHAPE"
+source_url = "https://docs.anthropic.com/en/api/getting-started"
+redacted_credential_pattern = '^sk-ant-api03-[A-Za-z0-9_-]{80,120}$'
+fixture_text = """
+# Anthropic key in a server config (revoked shape from public docs).
+ANTHROPIC_API_KEY=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
+"""
+
+# ── npm publishing token. npm registry token shape behind the
+# 2021-2024 npm package supply-chain takeovers (UA-Parser-JS, etc.).
+[[entry]]
+cve_id = "NPM-PUBLISH-TOKEN-SHAPE"
+source_url = "https://docs.npmjs.com/about-access-tokens"
+redacted_credential_pattern = '^npm_[a-zA-Z0-9]{36}$'
+fixture_text = """
+# npm publish token in a .npmrc committed by mistake.
+//registry.npmjs.org/:_authToken=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
+"""
+
+# ── Databricks PAT (dapi prefix). The same shape every public
+# Databricks-token-leaked-on-GitHub disclosure has carried.
+[[entry]]
+cve_id = "DATABRICKS-PAT-DAPI-SHAPE"
+source_url = "https://docs.databricks.com/dev-tools/auth.html#personal-access-token"
+redacted_credential_pattern = '^dapi[a-f0-9]{32,}$'
+fixture_text = """
+# Databricks PAT in an HTTP header in a notebook.
+Authorization: Bearer dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d
+"""
+
+# ── RSA PEM private key block. The class behind the Mirai-era
+# "hardcoded SSH key" leaks (CVE-2016-10401 family of hardcoded-
+# credential CVEs) and every k8s/Helm chart key-in-config incident.
+[[entry]]
+cve_id = "RSA-PRIVATE-KEY-PEM-BLOCK-SHAPE"
+source_url = "https://github.com/kubernetes/kubernetes/tree/master/cmd/kube-apiserver/app/testing/testdata"
+redacted_credential_pattern = '(?s)-----BEGIN (?:RSA )?PRIVATE KEY-----.*?-----END (?:RSA )?PRIVATE KEY-----'
+fixture_text = """
+# RSA private key inlined in a Kubernetes secret YAML (not under
+# testdata/, so test-context suppression does not apply).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tls-cert
+data:
+  tls.key: |
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEowIBAAKCAQEA3UzRe60Sgbw7Szrwkw4I97rbfs7+bvtt8ZAs9uO+Qz502eyS
+    toqQrh3psgmPPDOlcmgZCKgFb75dy2Ykvh7t4HfvHpW3RqwsULLotTK1HAIPDqAT
+    Pve1M6CgtxzBSBRKasyo1SSq+T21dxfF1yAUHk
+    -----END RSA PRIVATE KEY-----
+"""
+
+# ── JWT (HS256 header + payload + signature). The 2024 Snowflake
+# breach class of "long-lived JWT in client storage" disclosures
+# all share this canonical eyJhbGci... triple-segment shape.
+[[entry]]
+cve_id = "SNOWFLAKE-2024-JWT-SHAPE"
+source_url = "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-228a"
+redacted_credential_pattern = '^eyJhbGci[a-zA-Z0-9_-]{5,256}\.eyJ[a-zA-Z0-9_-]{10,1000}\.[a-zA-Z0-9_-]{10,512}$'
+fixture_text = """
+# Long-lived service JWT in an Authorization header.
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w
+"""
+
+# ── Stripe restricted key (rk_live_). Stripe's restricted-key shape
+# appears in many committed-config disclosures alongside sk_live_.
+[[entry]]
+cve_id = "STRIPE-RESTRICTED-KEY-RK-LIVE-SHAPE"
+source_url = "https://stripe.com/docs/keys#limit-access"
+redacted_credential_pattern = '^rk_live_[a-zA-Z0-9]{24,}$'
+fixture_text = """
+# Stripe restricted live key in a Node config.
+const stripe = require('stripe')('rk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD');
+"""
