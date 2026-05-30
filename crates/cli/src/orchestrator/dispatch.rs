@@ -127,6 +127,18 @@ impl ScanOrchestrator {
         );
 
         let stream = self.args.stream;
+        // Auto-route every batch through `select_backend` when the user has not
+        // pinned KEYHOG_BACKEND. Previously the default (no-override) path fell
+        // straight into the SIMD `scan_coalesced` arm, so on a discrete-GPU host
+        // the GPU engine and its phase1/phase2 streaming overlap were dead
+        // unless `KEYHOG_BACKEND=gpu` was set explicitly - the documented
+        // GPU-default behaviour had regressed to opt-in. `select_backend`
+        // already gates GPU on availability + tier thresholds and returns SIMD
+        // under `env_no_gpu()` (CI), so this is a no-op on CI and on small
+        // batches, and the GPU init path degrades to SIMD if the device is
+        // unusable. Captured once and moved into the scanner thread.
+        let hw_caps = keyhog_scanner::hw_probe::probe_hardware();
+        let pattern_count = scanner.pattern_count();
 
         let scanner_thread = std::thread::spawn(move || {
             let mut findings: Vec<RawMatch> = Vec::new();
@@ -167,8 +179,18 @@ impl ScanOrchestrator {
                     continue;
                 }
                 let scanned_count = batch.len();
-                let explicit_backend = explicit_backend_override();
-                match explicit_backend {
+                // Explicit KEYHOG_BACKEND wins; otherwise auto-route this batch
+                // by size/pattern-count/hardware. Auto-routed Gpu/MegaScan land
+                // in the same streaming arms as the explicit choice below.
+                let chosen_backend = explicit_backend_override().or_else(|| {
+                    let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
+                    Some(keyhog_scanner::hw_probe::select_backend(
+                        &hw_caps,
+                        batch_bytes,
+                        pattern_count,
+                    ))
+                });
+                match chosen_backend {
                     Some(keyhog_scanner::hw_probe::ScanBackend::Gpu) => {
                         let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                         tracing::debug!(
@@ -176,7 +198,7 @@ impl ScanOrchestrator {
                             backend = "gpu",
                             batch_bytes,
                             chunks = scanned_count,
-                            "batch dispatched (explicit gpu, pipelined)",
+                            "batch dispatched (gpu, pipelined)",
                         );
                         match scanner.scan_coalesced_gpu_phase1(&batch) {
                             keyhog_scanner::GpuPhase1Output::Done(per_chunk) => {
@@ -214,7 +236,7 @@ impl ScanOrchestrator {
                             backend = backend.label(),
                             batch_bytes,
                             chunks = scanned_count,
-                            "batch dispatched (explicit megascan, sync)",
+                            "batch dispatched (megascan, sync)",
                         );
                         let per_chunk = scanner.scan_chunks_with_backend(&batch, backend);
                         crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
