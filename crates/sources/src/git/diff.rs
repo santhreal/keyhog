@@ -2,7 +2,6 @@
 //! CI/CD pre-commit hooks that should only flag new secrets.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -118,7 +117,7 @@ fn stream_added_lines(
         .stdout
         .take()
         .ok_or_else(|| SourceError::Io(std::io::Error::other("missing stdout")))?;
-    let mut reader = std::io::BufReader::new(stdout).lines();
+    let mut reader = std::io::BufReader::new(stdout);
 
     // Get commit info for metadata
     let author = super::get_commit_author(&repo_arg, &head_commit)?;
@@ -128,6 +127,7 @@ fn stream_added_lines(
     let mut current_content = String::new();
     let mut in_hunk = false;
     let mut done = false;
+    let mut line_buf: Vec<u8> = Vec::new();
 
     Ok(std::iter::from_fn(move || {
         if done {
@@ -135,13 +135,16 @@ fn stream_added_lines(
         }
 
         loop {
-            let line = match reader.next() {
-                Some(Ok(l)) => l,
-                Some(Err(e)) => {
+            let line = match super::read_capped_line(&mut reader, &mut line_buf, super::MAX_GIT_LINE_BYTES) {
+                Ok(n) if n > 0 => {
+                    let l = String::from_utf8_lossy(&line_buf);
+                    l.trim_end_matches('\n').trim_end_matches('\r').to_string()
+                }
+                Err(e) => {
                     done = true;
                     return Some(Err(SourceError::Io(e)));
                 }
-                None => {
+                Ok(_) => {
                     done = true;
                     if let Some(ref path) = current_path {
                         if !current_content.trim().is_empty() {

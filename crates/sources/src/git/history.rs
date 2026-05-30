@@ -123,7 +123,7 @@ fn stream_git_history_chunks(
 
         loop {
             line_buf.clear();
-            let line = match std::io::BufRead::read_until(&mut reader, b'\n', &mut line_buf) {
+            let line = match super::read_capped_line(&mut reader, &mut line_buf, super::MAX_GIT_LINE_BYTES) {
                 Ok(0) => {
                     done = true;
                     if let (Some(commit), Some(author), Some(date), Some(path)) = (
