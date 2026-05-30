@@ -158,13 +158,10 @@ pub(crate) fn extract_encoded_values(text: &str) -> Vec<String> {
     values
 }
 
-/// Fast non-cryptographic hash for dedup. FNV-1a is simple and fast enough
-/// for collision avoidance in a small set of decoded chunks.
-pub(crate) fn hash_fast(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in data {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash
-}
+/// Fast non-cryptographic hash for dedup, re-exported from the crate-canonical
+/// FNV-1a in [`crate::util_hash`]. The loop body used to live here (and was
+/// copy-pasted into entropy/ml_scorer/decode_structure); it now has a single
+/// home so a seed/prime change can never silently re-key only some caches.
+/// Keep this re-export so `decode::pipeline` callers that import
+/// `extractor::hash_fast` stay unchanged.
+pub(crate) use crate::util_hash::hash_fast;

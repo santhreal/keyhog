@@ -35,13 +35,29 @@
 //!   case_07_scan_no_default_excl  - `scan --no-default-excludes <tmp>/tree/`
 //!   case_08_scan_format_csv       - `scan --format csv <tmp>/tree/`
 //!   case_09_scan_format_junit     - `scan --format junit <tmp>/tree/`
+//!   case_10_scan_clean_format_csv   - `scan --format csv <tmp>/clean-tree/`
+//!   case_11_scan_clean_format_junit - `scan --format junit <tmp>/clean-tree/`
+//!   case_12_scan_clean_format_html  - `scan --format html <tmp>/clean-tree/`
 //!
-//! The HTML format is not byte-snapshotted: its `rawFindings` payload embeds
-//! a serde JSON dump whose field set tracks `VerifiedFinding`, so a byte
-//! snapshot would churn on every unrelated struct change. Instead
-//! `html_format_report_contains_finding` drives the real binary and asserts
-//! the document is well-formed (DOCTYPE) and carries the planted key's
-//! detector inside the embedded findings payload.
+//! Cases 10-12 scan a tree with NO planted secret so every format's
+//! zero-finding shape is pinned (CSV header-only, JUnit `tests="0"
+//! failures="0"`, HTML `rawFindings = []`). The with-findings HTML report is
+//! still not byte-snapshotted because its `rawFindings` payload embeds a serde
+//! JSON dump whose field set tracks `VerifiedFinding`, so that byte snapshot
+//! would churn on every unrelated struct change; `html_format_report_contains_finding`
+//! drives the real binary and asserts the document is well-formed (DOCTYPE)
+//! and carries the planted key's detector inside the embedded findings
+//! payload. The CLEAN HTML report (case_12) has an empty `rawFindings` array
+//! and is otherwise a static template, so it IS byte-stable and safe to pin.
+//!
+//! Byte stability proves output did not change; it does not prove the output
+//! is a valid document. `csv_format_is_valid_and_row_count_matches_findings`
+//! and `junit_format_is_well_formed_and_counts_match_findings` close that gap:
+//! they parse the binary's CSV (RFC-4180 record parser) and JUnit (XML
+//! attribute/element reader) output and assert the document's own count
+//! metadata agrees with the ground-truth finding count from the JSON format,
+//! so a malformed CSV row or a torn / miscounted JUnit envelope fails even
+//! when its bytes are stable.
 //!
 //! Each case uses `--no-daemon` so the in-process pipeline runs (snapshots
 //! must not depend on whether a `keyhog daemon` happens to be up on the
@@ -111,6 +127,44 @@ fn write_single_file() -> (TempDir, PathBuf) {
     let key = format!("{AWS_KEY_PREFIX}{AWS_KEY_BODY}");
     std::fs::write(&path, format!("AWS_ACCESS_KEY_ID=\"{key}\"\n")).expect("write planted.txt");
     (dir, path)
+}
+
+/// Build a tree that plants NO credential, so every output format must emit
+/// its zero-finding shape (CSV header-only, JUnit `tests="0" failures="0"`,
+/// HTML with `const rawFindings = []`). The clean-input snapshots pin that
+/// shape so a regression that, say, started emitting a spurious data row on a
+/// finding-less scan, or dropped the CSV header, or produced a malformed
+/// empty JUnit envelope, is caught even though the happy-path tree-scan
+/// snapshots would not move.
+///
+/// Layout mirrors `write_tree()` minus the planted keys: same directory
+/// depth and same file names, just prose contents, so the only behavioural
+/// difference from the finding-bearing cases is the absence of secrets.
+fn write_clean_tree() -> TempDir {
+    let dir = TempDir::new().expect("tempdir");
+    let tree = dir.path().join("tree");
+    std::fs::create_dir(&tree).expect("mkdir tree");
+    std::fs::create_dir(tree.join("sub")).expect("mkdir tree/sub");
+
+    std::fs::write(
+        tree.join("planted.txt"),
+        "AWS_ACCESS_KEY_ID=not-a-key\nAWS_SECRET_ACCESS_KEY=also-not-a-secret\n",
+    )
+    .expect("write planted.txt");
+
+    std::fs::write(
+        tree.join("clean.txt"),
+        "the quick brown fox jumps over the lazy dog\n",
+    )
+    .expect("write clean.txt");
+
+    std::fs::write(
+        tree.join("sub").join("also.cfg"),
+        "# config\naccess_key = placeholder\n",
+    )
+    .expect("write sub/also.cfg");
+
+    dir
 }
 
 // -----------------------------------------------------------------------------
@@ -692,6 +746,54 @@ fn case_09_scan_format_junit() {
     snap("case_09_scan_format_junit", captured, dir.path());
 }
 
+// -----------------------------------------------------------------------------
+// Clean-input (zero-finding) snapshots.
+//
+// The happy-path cases above all scan a tree that contains a planted key, so
+// they only pin the WITH-findings shape of each format. The testing contract
+// requires every output format be byte-compared on >=1 realistic scenario;
+// "a scan that finds nothing" is the other realistic scenario, and its empty
+// shape is exactly where a format regression (dropped CSV header, malformed
+// empty JUnit envelope, HTML that renders `undefined` instead of `[]`) hides.
+// These cases pin that shape through the real binary on `write_clean_tree()`.
+// -----------------------------------------------------------------------------
+
+#[test]
+fn case_10_scan_clean_format_csv() {
+    let dir = write_clean_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "csv", &tree_s],
+        dir.path(),
+    );
+    snap("case_10_scan_clean_format_csv", captured, dir.path());
+}
+
+#[test]
+fn case_11_scan_clean_format_junit() {
+    let dir = write_clean_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "junit", &tree_s],
+        dir.path(),
+    );
+    snap("case_11_scan_clean_format_junit", captured, dir.path());
+}
+
+#[test]
+fn case_12_scan_clean_format_html() {
+    let dir = write_clean_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "html", &tree_s],
+        dir.path(),
+    );
+    snap("case_12_scan_clean_format_html", captured, dir.path());
+}
+
 /// HTML is verified structurally rather than by byte snapshot (see the module
 /// header): the embedded `rawFindings` JSON tracks `VerifiedFinding`'s field
 /// set, which would make a byte snapshot churn on unrelated struct changes.
@@ -749,6 +851,275 @@ fn snap(case: &str, captured: Captured, tempdir_root: &Path) {
         exit_repr: captured.exit_repr,
     };
     compare_or_write(case, &captured);
+}
+
+// -----------------------------------------------------------------------------
+// Structural validity of CSV / JUnit (not just byte stability).
+//
+// A byte snapshot proves the output did not CHANGE; it does not prove the
+// output is a VALID document. A regression that emitted an unescaped comma in
+// a credential preview, or dropped a closing `</testsuite>`, would sail
+// through the snapshot the moment its bytes stabilised. The two tests below
+// drive the real binary and parse its output with a real reader (RFC-4180 CSV
+// field/record parser; well-formed-XML element/attribute extractor), then
+// assert the document's own count metadata agrees with the ground-truth
+// finding count taken from the binary's JSON output on the same tree. If CSV
+// or JUnit ever emits a malformed document, the parse fails or the counts
+// disagree and the test fails loudly.
+// -----------------------------------------------------------------------------
+
+/// Ground-truth finding count for a tree: run the binary in `--format json`
+/// (a separately-tested, structurally-stable format) and count the entries in
+/// its top-level findings array. The JSON format emits a top-level JSON array
+/// of finding objects (one element per top-level finding; `additional_locations`
+/// live inside an element and do NOT add array entries), which is exactly the
+/// granularity CSV rows and JUnit `<testcase>`s use. Used as the oracle that
+/// CSV row count and JUnit `tests`/`failures` must agree with, so no
+/// host-dependent finding count is hardcoded.
+fn json_finding_count(tree_s: &str, root: &Path) -> usize {
+    let captured = run_keyhog(&["scan", "--no-daemon", "--format", "json", tree_s], root);
+    let v: serde_json::Value =
+        serde_json::from_str(&captured.stdout).expect("json output parses as JSON");
+    v.as_array()
+        .map(|a| a.len())
+        .expect("json output is a top-level array of findings")
+}
+
+/// Minimal RFC-4180 CSV parser: splits `text` into records, each a vector of
+/// fields, honouring `"`-quoted fields, doubled `""` escapes, and commas /
+/// newlines embedded inside quotes. Returns one inner `Vec<String>` per
+/// record. Trailing blank line (from the final `\n`) is dropped. This is a
+/// real parse, not a `split(',')`, so it fails on unbalanced quotes exactly
+/// as a downstream CSV consumer would choke.
+fn parse_csv(text: &str) -> Vec<Vec<String>> {
+    let mut records = Vec::new();
+    let mut field = String::new();
+    let mut record = Vec::new();
+    let mut in_quotes = false;
+    let mut field_started = false;
+    let mut any_field_on_record = false;
+    let mut chars = text.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if in_quotes {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                    field.push('"');
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                field.push(c);
+            }
+            continue;
+        }
+        match c {
+            '"' => {
+                in_quotes = true;
+                field_started = true;
+                any_field_on_record = true;
+            }
+            ',' => {
+                record.push(std::mem::take(&mut field));
+                field_started = false;
+                any_field_on_record = true;
+            }
+            '\r' => { /* swallow; the following \n terminates the record */ }
+            '\n' => {
+                if field_started || any_field_on_record || !record.is_empty() {
+                    record.push(std::mem::take(&mut field));
+                    records.push(std::mem::take(&mut record));
+                }
+                field_started = false;
+                any_field_on_record = false;
+            }
+            other => {
+                field.push(other);
+                field_started = true;
+                any_field_on_record = true;
+            }
+        }
+    }
+    // Final record with no trailing newline.
+    if field_started || any_field_on_record || !field.is_empty() || !record.is_empty() {
+        record.push(field);
+        records.push(record);
+    }
+    assert!(!in_quotes, "CSV ended inside an unterminated quoted field: malformed output");
+    records
+}
+
+/// Drive the real binary in `--format csv` on a finding-bearing tree, parse
+/// the output as RFC-4180 CSV, and assert: the header is the exact 15-column
+/// header keyhog promises, every data row has exactly 15 fields (no row
+/// torn by an unescaped comma), and the data-row count equals the JSON
+/// ground-truth finding count.
+#[test]
+fn csv_format_is_valid_and_row_count_matches_findings() {
+    let dir = write_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "csv", &tree_s],
+        dir.path(),
+    );
+
+    let expected = json_finding_count(&tree_s, dir.path());
+    assert!(expected > 0, "fixture must plant >=1 finding for a meaningful csv row-count check");
+
+    let records = parse_csv(&captured.stdout);
+    assert!(!records.is_empty(), "csv output had no records at all: {:?}", captured.stdout);
+
+    const HEADER: &[&str] = &[
+        "detector_id", "detector_name", "service", "severity", "credential_redacted",
+        "credential_hash", "source", "file_path", "line", "offset", "commit", "author",
+        "date", "verification", "confidence",
+    ];
+    assert_eq!(
+        records[0], HEADER,
+        "csv header row is not the promised 15-column schema: {:?}",
+        records[0]
+    );
+
+    let data_rows = &records[1..];
+    for (i, row) in data_rows.iter().enumerate() {
+        assert_eq!(
+            row.len(),
+            HEADER.len(),
+            "csv data row {i} has {} fields, expected {} (likely an unescaped comma/quote): {row:?}",
+            row.len(),
+            HEADER.len()
+        );
+    }
+    assert_eq!(
+        data_rows.len(),
+        expected,
+        "csv data-row count ({}) disagrees with json finding count ({expected})",
+        data_rows.len()
+    );
+}
+
+/// Extract the value of attribute `attr` from the first occurrence of element
+/// `tag` in `xml`. Returns the unescaped attribute text. A tiny, deliberately
+/// boring XML attribute reader (no `quick-xml` dep so this harness keeps zero
+/// failure surface of its own); it locates `<tag ` then the `attr="..."`
+/// inside that start tag.
+fn xml_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let start = xml.find(&open)?;
+    let after = &xml[start..];
+    let tag_end = after.find('>')?;
+    let start_tag = &after[..tag_end];
+    let needle = format!("{attr}=\"");
+    let aidx = start_tag.find(&needle)?;
+    let rest = &start_tag[aidx + needle.len()..];
+    let end = rest.find('"')?;
+    Some(
+        rest[..end]
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&amp;", "&"),
+    )
+}
+
+/// Count non-overlapping occurrences of `needle` in `hay`.
+fn count_occurrences(hay: &str, needle: &str) -> usize {
+    if needle.is_empty() {
+        return 0;
+    }
+    let mut n = 0;
+    let mut rest = hay;
+    while let Some(i) = rest.find(needle) {
+        n += 1;
+        rest = &rest[i + needle.len()..];
+    }
+    n
+}
+
+/// Drive the real binary in `--format junit` on a finding-bearing tree, then
+/// assert the document is a well-formed JUnit envelope whose own counts agree
+/// with the JSON ground-truth: the XML prolog and `<testsuites>` open/close
+/// frame the body, `<testsuite tests=N failures=N errors="0">` carries the
+/// finding count, and exactly N `<testcase>`/`<failure>` pairs are present.
+/// A torn or count-mismatched envelope (the classic JUnit regression) fails
+/// here rather than passing a stable byte snapshot.
+#[test]
+fn junit_format_is_well_formed_and_counts_match_findings() {
+    let dir = write_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "junit", &tree_s],
+        dir.path(),
+    );
+    let xml = &captured.stdout;
+
+    let expected = json_finding_count(&tree_s, dir.path());
+    assert!(expected > 0, "fixture must plant >=1 finding for a meaningful junit count check");
+
+    // Envelope: prolog + balanced <testsuites> + a single <testsuite>.
+    assert!(
+        xml.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"),
+        "junit output missing XML prolog: {xml:?}"
+    );
+    assert_eq!(
+        count_occurrences(xml, "<testsuites>"),
+        1,
+        "junit output must open exactly one <testsuites>: {xml:?}"
+    );
+    assert_eq!(
+        count_occurrences(xml, "</testsuites>"),
+        1,
+        "junit output must close <testsuites> exactly once: {xml:?}"
+    );
+    assert!(
+        xml.find("<testsuites>").unwrap() < xml.find("</testsuites>").unwrap(),
+        "junit <testsuites> close precedes its open: {xml:?}"
+    );
+
+    // <testsuite> count attributes must equal the ground-truth finding count.
+    let tests = xml_attr(xml, "testsuite", "tests")
+        .expect("junit <testsuite> has a tests attribute");
+    let failures = xml_attr(xml, "testsuite", "failures")
+        .expect("junit <testsuite> has a failures attribute");
+    let errors = xml_attr(xml, "testsuite", "errors")
+        .expect("junit <testsuite> has an errors attribute");
+    assert_eq!(
+        tests,
+        expected.to_string(),
+        "junit testsuite tests=\"{tests}\" disagrees with json finding count {expected}"
+    );
+    assert_eq!(
+        failures,
+        expected.to_string(),
+        "junit testsuite failures=\"{failures}\" disagrees with json finding count {expected}"
+    );
+    assert_eq!(errors, "0", "junit testsuite errors should be 0, got {errors}");
+
+    // Exactly N testcase/failure pairs, balanced open/close.
+    assert_eq!(
+        count_occurrences(xml, "<testcase "),
+        expected,
+        "junit <testcase> count disagrees with finding count {expected}: {xml:?}"
+    );
+    assert_eq!(
+        count_occurrences(xml, "</testcase>"),
+        expected,
+        "junit <testcase> open/close imbalance: {xml:?}"
+    );
+    assert_eq!(
+        count_occurrences(xml, "<failure "),
+        expected,
+        "junit <failure> count disagrees with finding count {expected}: {xml:?}"
+    );
+    assert_eq!(
+        count_occurrences(xml, "</failure>"),
+        expected,
+        "junit <failure> open/close imbalance: {xml:?}"
+    );
 }
 
 // -----------------------------------------------------------------------------

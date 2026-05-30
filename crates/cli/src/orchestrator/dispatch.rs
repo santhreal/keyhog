@@ -137,6 +137,22 @@ impl ScanOrchestrator {
         // under `env_no_gpu()` (CI), so this is a no-op on CI and on small
         // batches, and the GPU init path degrades to SIMD if the device is
         // unusable. Captured once and moved into the scanner thread.
+        //
+        // COHERENCE HAZARD: because this auto-routes by hardware + batch
+        // size, the DEFAULT scan result is a function of which machine ran
+        // it and how files were batched (a >= GPU_MIN_BYTES_HIGH_TIER batch
+        // on a discrete-GPU host takes the GPU phase1/phase2 path; a smaller
+        // batch or a CI host takes SIMD `scan_coalesced`). SIMD and GPU MUST
+        // produce identical findings for this to be safe. That equivalence
+        // is not self-evident (see `crates/scanner/tests/diagnose_sb_divergence.rs`
+        // and the `gpu_parity` gate), so two invariants live OUTSIDE this
+        // file and must hold for tuned == benched == shipped:
+        //   1. Benchmarks pin a deterministic backend (score.py sets
+        //      KEYHOG_BACKEND=simd / KEYHOG_NO_GPU=1) so the tuned F1 is not
+        //      silently measured on a different code path than what ships.
+        //   2. GPU-vs-SIMD parity is a RELEASE BLOCKER (gpu_parity), so
+        //      auto-routing can never change the finding set under the user.
+        // Do not relax either without re-checking this site.
         let hw_caps = keyhog_scanner::hw_probe::probe_hardware();
         let pattern_count = scanner.pattern_count();
 

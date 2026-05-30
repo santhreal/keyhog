@@ -3,15 +3,68 @@ use crate::context;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+/// Per-thread scratch for computing the active-fallback set of a chunk.
+///
+/// Previously this was a dense `Vec<bool>` of `fallback.len()` (~1000) that
+/// was zero-filled, `copy_from_slice`-seeded, and then fully iterated by the
+/// caller every chunk - O(F) per chunk even when only a handful of patterns
+/// fire. We now carry a SPARSE list of active fallback indices instead, so
+/// callers visit only the active patterns. Two pieces:
+///   * `active`: the sparse index list, refilled (not reallocated) per chunk.
+///   * `stamp` + `generation`: a versioned "seen" set used to dedup a pattern
+///     that is both always-active and keyword-triggered, without the O(F)
+///     per-chunk clear a dense bitmap would need. The generation counter just
+///     increments; `stamp` is grown once and reused.
+struct ActivePatternsScratch {
+    active: Vec<usize>,
+    stamp: Vec<u32>,
+    generation: u32,
+}
+
+impl ActivePatternsScratch {
+    const fn new() -> Self {
+        Self {
+            active: Vec::new(),
+            stamp: Vec::new(),
+            generation: 0,
+        }
+    }
+
+    /// Begin a fresh chunk: bump the generation so all previous stamps are
+    /// stale, ensure the stamp vector covers `len` patterns, and clear the
+    /// sparse list (retaining its capacity). On generation wraparound the
+    /// stamp vector is reset so a stale `u32::MAX` stamp can't alias.
+    fn begin(&mut self, len: usize) {
+        if self.stamp.len() < len {
+            self.stamp.resize(len, 0);
+        }
+        self.generation = self.generation.wrapping_add(1);
+        if self.generation == 0 {
+            // Wrapped: every stamp must be treated as stale.
+            self.stamp.iter_mut().for_each(|s| *s = 0);
+            self.generation = 1;
+        }
+        self.active.clear();
+    }
+
+    /// Record `index` as active if it has not already been recorded this
+    /// generation. Returns nothing; dedup is silent.
+    #[inline]
+    fn mark(&mut self, index: usize) {
+        if let Some(slot) = self.stamp.get_mut(index) {
+            if *slot != self.generation {
+                *slot = self.generation;
+                self.active.push(index);
+            }
+        }
+    }
+}
+
 thread_local! {
-    /// Per-thread pool for the `active_fallback_patterns` bitmap.
-    ///
-    /// Every fallback scan previously did `vec![false; self.fallback.len()]` -
-    /// a fresh allocation per chunk. With ~1000 fallback patterns and a
-    /// 100k-file scan, that's a million tiny allocations hammering the
-    /// global allocator across rayon workers. Pool one buffer per worker;
-    /// it's resized once and resliced thereafter.
-    static ACTIVE_PATTERNS_POOL: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    /// Per-thread pool for the active-fallback scratch. Pool one per worker;
+    /// it is grown once and reused thereafter (no per-chunk allocation).
+    static ACTIVE_PATTERNS_POOL: RefCell<ActivePatternsScratch> =
+        const { RefCell::new(ActivePatternsScratch::new()) };
 }
 
 impl CompiledScanner {
@@ -45,15 +98,16 @@ impl CompiledScanner {
             return;
         }
         self.with_active_fallback_patterns(&chunk.data, |this, active_patterns| {
-            for (index, (entry, _keywords)) in this.fallback.iter().enumerate() {
-                if !active_patterns[index] {
-                    continue;
-                }
+            // `active_patterns` is the SPARSE list of active fallback indices,
+            // so we touch only the patterns that can fire on this chunk rather
+            // than the full `fallback.len()` vector.
+            for (tested, &index) in active_patterns.iter().enumerate() {
                 if let Some(deadline) = deadline {
-                    if index.is_multiple_of(16) && std::time::Instant::now() >= deadline {
+                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
                         break;
                     }
                 }
+                let (entry, _keywords) = &this.fallback[index];
                 this.extract_matches(
                     entry,
                     preprocessed,
@@ -70,49 +124,54 @@ impl CompiledScanner {
         });
     }
 
-    /// Compute the active-fallback bitmap into the thread-local pool, run the
-    /// caller's closure with a borrow, and return whatever the closure
-    /// returns. The bitmap is reset (not freed) on exit, so the next chunk
-    /// the same worker handles reuses the allocation.
+    /// Compute the active-fallback set into the thread-local pool, run the
+    /// caller's closure with a borrow of the SPARSE active-index list, and
+    /// return whatever the closure returns. The scratch is reset (not freed)
+    /// on entry, so the next chunk the same worker handles reuses the
+    /// allocation. The closure receives `&[usize]` - the fallback indices
+    /// that are active for this chunk, so it visits only those patterns
+    /// rather than the full `fallback.len()` vector.
     fn with_active_fallback_patterns<R>(
         &self,
         data: &str,
-        f: impl FnOnce(&Self, &[bool]) -> R,
+        f: impl FnOnce(&Self, &[usize]) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
-            let mut buf = cell.borrow_mut();
-            buf.clear();
-            buf.resize(self.fallback.len(), false);
-            self.populate_active_fallback(data, &mut buf);
-            f(self, &buf)
+            let mut scratch = cell.borrow_mut();
+            scratch.begin(self.fallback.len());
+            self.populate_active_fallback(data, &mut scratch);
+            f(self, &scratch.active)
         })
     }
 
-    fn populate_active_fallback(&self, data: &str, active: &mut [bool]) {
-        debug_assert_eq!(active.len(), self.fallback.len());
+    fn populate_active_fallback(&self, data: &str, scratch: &mut ActivePatternsScratch) {
         if let Some(keyword_ac) = &self.fallback_keyword_ac {
-            // Seed the bitmap from the precomputed `fallback_always_active`
-            // table - this collapses the previous `O(F × K)` per-chunk loop
-            // (walking each pattern's keywords looking for any ≥4-char
-            // entry) into one `copy_from_slice`. The table is built once
-            // at scanner construction.
-            let always = &self.fallback_always_active;
-            debug_assert_eq!(always.len(), active.len());
-            active.copy_from_slice(always);
+            // Seed from the precomputed `fallback_always_active` table - one
+            // pass over a bool slice marks the patterns with no ≥4-char
+            // keyword (they run on every chunk). The table is built once at
+            // scanner construction. Then the keyword AC adds the patterns
+            // whose keyword is actually present in this chunk. `mark` dedups
+            // so a pattern that is both always-active and keyword-triggered
+            // appears once.
+            for (index, &always) in self.fallback_always_active.iter().enumerate() {
+                if always {
+                    scratch.mark(index);
+                }
+            }
             for mat in keyword_ac.find_iter(data) {
                 let keyword_idx = mat.pattern().as_usize();
-                if keyword_idx < self.fallback_keyword_to_patterns.len() {
-                    for &pattern_idx in &self.fallback_keyword_to_patterns[keyword_idx] {
-                        if pattern_idx < active.len() {
-                            active[pattern_idx] = true;
-                        }
+                if let Some(pattern_indices) = self.fallback_keyword_to_patterns.get(keyword_idx) {
+                    for &pattern_idx in pattern_indices {
+                        scratch.mark(pattern_idx);
                     }
                 }
             }
         } else {
             // No keyword prefilter compiled - every fallback pattern is
-            // considered active. `slice::fill` lowers to a memset.
-            active.fill(true);
+            // considered active.
+            for index in 0..self.fallback.len() {
+                scratch.mark(index);
+            }
         }
     }
 
@@ -128,19 +187,17 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
     ) {
         self.with_active_fallback_patterns(&chunk.data, |this, active_set| {
-            // Walk in fallback-index order without the prior `Vec<&CompiledPattern>`
-            // collect step - the bitmap already encodes which entries are
-            // active and we don't need a second allocation just to filter.
-            let mut tested: usize = 0;
-            for (index, (entry, _)) in this.fallback.iter().enumerate() {
-                if !active_set[index] {
-                    continue;
-                }
+            // `active_set` is the sparse list of active fallback indices, so
+            // we iterate only the patterns that can fire - no second
+            // `Vec<&CompiledPattern>` collect and no scan over the inactive
+            // entries of the full fallback vector.
+            for (tested, &index) in active_set.iter().enumerate() {
                 if let Some(deadline) = deadline {
                     if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
                         break;
                     }
                 }
+                let (entry, _) = &this.fallback[index];
                 this.extract_matches(
                     entry,
                     preprocessed,
@@ -153,7 +210,6 @@ impl CompiledScanner {
                     0,
                     deadline,
                 );
-                tested += 1;
             }
         });
     }
@@ -164,14 +220,22 @@ impl CompiledScanner {
         preprocessed: &ScannerPreprocessedText,
         line: usize,
     ) -> Option<HashMap<String, String>> {
-        let mut results = HashMap::new();
-        if let Some(detector_companions) = self.companions.get(entry.detector_index) {
-            for companion in detector_companions {
-                if let Some(val) = find_companion(preprocessed, line, companion) {
-                    results.insert(companion.name.clone(), val);
-                } else if companion.required {
-                    return None;
-                }
+        // Most detectors declare no companions. Return the empty map without
+        // sizing a bucket array (`HashMap::new()` is allocation-free until the
+        // first insert) and without entering the search loop. Only detectors
+        // that actually have companions pay for the map.
+        let Some(detector_companions) = self.companions.get(entry.detector_index) else {
+            return Some(HashMap::new());
+        };
+        if detector_companions.is_empty() {
+            return Some(HashMap::new());
+        }
+        let mut results = HashMap::with_capacity(detector_companions.len());
+        for companion in detector_companions {
+            if let Some(val) = find_companion(preprocessed, line, companion) {
+                results.insert(companion.name.clone(), val);
+            } else if companion.required {
+                return None;
             }
         }
         Some(results)
@@ -309,7 +373,10 @@ impl CompiledScanner {
             let text_context = local_context_window(data, line, ML_CONTEXT_RADIUS_LINES);
             let ml_context = match chunk.metadata.path.as_deref() {
                 Some(path) => format!("file:{path}\n{text_context}"),
-                None => text_context,
+                // `local_context_window` returns `&str`; the Some arm is an
+                // owned `String`, and `ml_context` feeds `Cow::Owned` below,
+                // so both arms must be `String`.
+                None => text_context.to_string(),
             };
 
             Some(MlScoreResult::Pending {

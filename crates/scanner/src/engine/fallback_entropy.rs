@@ -26,13 +26,35 @@ impl CompiledScanner {
             return;
         }
 
-        // Skip entropy scanning on lines that already have named detector matches.
+        // Cheap precheck: the full-chunk Shannon-entropy sweep below is O(L)
+        // per chunk, paid on the ~95% of source files that contain no
+        // high-entropy token. A real secret at this stage is always a
+        // contiguous base62/hex run (32-char hex API key, 40-char base62
+        // token, 64-char SHA hex, base64 blob). If the chunk holds no such
+        // run, `find_entropy_secrets_with_threshold` cannot return a hit, so
+        // we skip the sweep entirely. Reuses the same single-pass run scan
+        // (`has_high_entropy_run_fast`) the no-HS-hit admission branch in
+        // `scan_coalesced` uses, so the gate stays consistent and adds no
+        // FPs (hash/UUID shapes are still suppressed downstream). The helper
+        // is only compiled under the `simd` feature (the shipped/benched
+        // default); without it the precheck is a no-op and behavior is
+        // unchanged.
+        #[cfg(feature = "simd")]
+        if !super::scan_filters::has_high_entropy_run_fast(preprocessed.text.as_bytes()) {
+            return;
+        }
+
+        // Skip entropy scanning on lines that already have named detector
+        // matches. Only allocate the skip-line set when there are matches to
+        // walk - the ~95%-empty common case pays nothing.
         let mut skip_lines = std::collections::HashSet::new();
-        for m in &scan_state.matches {
-            let id = &*m.0.detector_id;
-            if !id.starts_with("generic-") && !id.starts_with("entropy-") {
-                if let Some(line) = m.0.location.line {
-                    skip_lines.insert(line);
+        if !scan_state.matches.is_empty() {
+            for m in &scan_state.matches {
+                let id = &*m.0.detector_id;
+                if !id.starts_with("generic-") && !id.starts_with("entropy-") {
+                    if let Some(line) = m.0.location.line {
+                        skip_lines.insert(line);
+                    }
                 }
             }
         }

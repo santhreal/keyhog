@@ -222,8 +222,49 @@ pub fn compile_pattern(
     })
 }
 
-static REGEX_CACHE: std::sync::OnceLock<dashmap::DashMap<String, std::sync::Arc<Regex>>> =
-    std::sync::OnceLock::new();
+/// Number of independently-locked shards in the process-wide regex cache.
+/// Mirrors `multiline::fragment_cache::SHARD_COUNT` so the regex cache and the
+/// fragment cache share the same contention profile under rayon.
+const REGEX_CACHE_SHARDS: usize = 64;
+
+/// Total compiled-regex entries retained across all shards before LRU eviction
+/// kicks in. The embedded corpus is ~889 detectors with ~6-15% duplicate
+/// regexes, so the unique compiled set is well under 1k; 8192 leaves ample
+/// headroom for the corpus plus any user `--detectors` overlay while still
+/// bounding a long-lived daemon/watch process that recompiles distinct
+/// detector sets per job. Without this cap the former `dashmap::DashMap` grew
+/// without eviction, retaining every unique pattern source string plus its
+/// compiled `Arc<Regex>` (each holding a ~1 MiB lazy-DFA cache) for the life
+/// of the process - a slow unbounded-allocation on daemon/watch paths that
+/// load many different detector sets.
+const REGEX_CACHE_CAPACITY: usize = 8192;
+
+type RegexCacheShard =
+    parking_lot::Mutex<lru::LruCache<String, std::sync::Arc<Regex>>>;
+
+static REGEX_CACHE: std::sync::OnceLock<Box<[RegexCacheShard]>> = std::sync::OnceLock::new();
+
+fn regex_cache() -> &'static [RegexCacheShard] {
+    REGEX_CACHE.get_or_init(|| {
+        let per_shard = (REGEX_CACHE_CAPACITY / REGEX_CACHE_SHARDS).max(1);
+        let nz = std::num::NonZeroUsize::new(per_shard).unwrap_or(std::num::NonZeroUsize::MIN);
+        (0..REGEX_CACHE_SHARDS)
+            .map(|_| parking_lot::Mutex::new(lru::LruCache::new(nz)))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    })
+}
+
+/// Pick the shard for a pattern from a hash of its source bytes, so the same
+/// pattern always lands in the same shard (consistent dedup) and the load
+/// spreads evenly across shards under parallel compile.
+fn regex_cache_shard(pattern: &str) -> &'static RegexCacheShard {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    pattern.hash(&mut hasher);
+    let idx = (hasher.finish() as usize) % REGEX_CACHE_SHARDS;
+    &regex_cache()[idx]
+}
 
 pub fn shared_regex_compile(
     pattern: &str,
@@ -243,10 +284,9 @@ pub fn warm_shared_regex_cache(
         std::result::Result<std::sync::Arc<Regex>, regex::Error>,
     )>,
 ) {
-    let cache = REGEX_CACHE.get_or_init(dashmap::DashMap::new);
     for (pattern, res) in compiled {
         if let Ok(arc) = res {
-            cache.insert(pattern, arc);
+            regex_cache_shard(&pattern).lock().put(pattern, arc);
         }
     }
 }
@@ -258,21 +298,33 @@ pub fn warm_shared_regex_cache(
 /// compile time and resident memory proportionally - see audits/legendary-
 /// 2026-04-26 sources_verifier_detectors_legendary.md.
 ///
-/// The cache is process-wide via a `dashmap::DashMap<...>` which is lock-free
-/// and extremely high-performance during the main parallel compile.
+/// The cache is process-wide and bounded: a sharded `parking_lot::Mutex<
+/// lru::LruCache<...>>` (mirroring `multiline::fragment_cache`) caps total
+/// retained entries at `REGEX_CACHE_CAPACITY` and evicts least-recently-used
+/// patterns. This keeps the dedup win for the fixed corpus while bounding the
+/// daemon/watch paths, which recompile a fresh scanner per job and would
+/// otherwise accumulate every distinct `--detectors` pattern (plus its
+/// ~1 MiB lazy-DFA cache) forever in the old unbounded `DashMap`.
 pub(crate) fn shared_regex(
     pattern: &str,
 ) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
-    let cache = REGEX_CACHE.get_or_init(dashmap::DashMap::new);
-    if let Some(hit) = cache.get(pattern) {
-        return Ok(std::sync::Arc::clone(hit.value()));
+    let shard = regex_cache_shard(pattern);
+    // Cache-hit fast path: `&str` lookup, no owned-key allocation. `get`
+    // bumps LRU recency, so hot corpus patterns are never evicted under load.
+    if let Some(hit) = shard.lock().get(pattern) {
+        return Ok(std::sync::Arc::clone(hit));
     }
+    // Compile outside the lock so a slow NFA/DFA build never blocks other
+    // patterns hashing to the same shard.
     let arc = shared_regex_compile(pattern)?;
-    Ok(cache
-        .entry(pattern.to_string())
-        .or_insert(arc)
-        .value()
-        .clone())
+    let mut lock = shard.lock();
+    // Another thread may have inserted the same pattern while we compiled;
+    // prefer the already-cached instance to keep the dedup invariant.
+    if let Some(hit) = lock.get(pattern) {
+        return Ok(std::sync::Arc::clone(hit));
+    }
+    lock.put(pattern.to_string(), std::sync::Arc::clone(&arc));
+    Ok(arc)
 }
 
 pub fn compile_companion(spec: &CompanionSpec, detector_id: &str) -> Result<CompiledCompanion> {

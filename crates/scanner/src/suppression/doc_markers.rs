@@ -128,30 +128,22 @@ pub(super) fn check_markers(
 
     // Documentation/placeholder markers embedded *inside* a
     // known-prefix token (e.g. `ghp_EXAMPLE_TOKEN_FROM_DOCS`,
-    // `AKIA_EXAMPLE_EXAMPLE_12`, `sk_live_PLACEHOLDER_NOT_A_REAL_KEY`,
+    // `AKIAEXAMPLEEXAMPLE12`, `sk_live_PLACEHOLDER_NOT_A_REAL_KEY`,
     // `xoxb-…-EXAMPLE-TOKEN`). The general EXAMPLE check at the
     // top requires a *word-boundary* token match, which misses
     // these because the marker is surrounded by alphanumerics
-    // (camelCase or snake_case). Then the known-prefix bypass
-    // below would early-return Allow, letting them through.
-    // SecretBench-medium 15k seed-0: 234 leaked FPs from
-    // docs-example-marker pre-fix. Substring match is safe here
-    // because real secrets do not contain these literal strings.
+    // (camelCase or snake_case). This substring scan MUST run
+    // BEFORE the known-prefix Allow fast-path below: otherwise a
+    // doc marker buried inside a service-prefixed token would gain
+    // immunity from the substring scan and leak through as a real
+    // finding. SecretBench-medium 15k seed-0: 234 leaked FPs from
+    // docs-example-marker pre-fix (145 of them this exact ordering
+    // bug). Substring match is safe here because real secrets do
+    // not contain these literal strings.
     //
-    // Service-prefix credentials are vetted before doc-marker substring
-    // checks. `TESTKEY_*` adversarial fixtures carry the marker as
-    // their prefix, so they fall through to repetitive-mask gates
-    // instead of taking the service-prefix fast path.
-    let known_prefix_body = known_prefix_body(credential);
-    if let Some(body) = known_prefix_body {
-        if looks_like_prefixed_masked_sequence(body) {
-            return MarkerVerdict::Suppress;
-        }
-        if !credential.starts_with("TESTKEY_") {
-            return MarkerVerdict::Allow;
-        }
-    }
-
+    // `TESTKEY_*` adversarial fixtures carry the marker as their
+    // prefix, so the `TESTKEY`/`TEST_KEY` markers are skipped for
+    // them - they fall through to repetitive-mask gates instead.
     const DOC_MARKER_SUBSTRINGS: &[&str] = &[
         "EXAMPLE",
         "PLACEHOLDER",
@@ -184,6 +176,24 @@ pub(super) fn check_markers(
                 }
                 return MarkerVerdict::Suppress;
             }
+        }
+    }
+
+    // Known-prefix Allow fast-path. Runs AFTER the doc-marker substring
+    // scan above so a marker buried inside a service-prefixed token
+    // (`AKIAEXAMPLEEXAMPLE12`, `ghp_EXAMPLE_TOKEN_FROM_DOCS`) suppresses
+    // first and never reaches this Allow. A clean known-prefix token whose
+    // body does NOT match a masked-sequence shape is positive evidence -
+    // downstream shape gates would only generate FPs, so we return early.
+    // `TESTKEY_*` adversarial fixtures must not take this fast path; they
+    // fall through to the repetitive-mask gates in the decision tree.
+    let known_prefix_body = known_prefix_body(credential);
+    if let Some(body) = known_prefix_body {
+        if looks_like_prefixed_masked_sequence(body) {
+            return MarkerVerdict::Suppress;
+        }
+        if !credential.starts_with("TESTKEY_") {
+            return MarkerVerdict::Allow;
         }
     }
 

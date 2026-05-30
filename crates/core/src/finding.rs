@@ -38,8 +38,14 @@ pub struct RawMatch {
     /// Matched credential bytes before redaction.
     #[serde(with = "serde_arc_str")]
     pub credential: Arc<str>,
-    /// SHA-256 hash of the credential for allowlisting and deduplication.
-    pub credential_hash: String,
+    /// SHA-256 digest of the credential for allowlisting and deduplication.
+    ///
+    /// Stored as the raw 32 inline bytes (matching the verifier `CacheKey`),
+    /// never the 64-char hex `String`: zero heap, half the per-finding
+    /// footprint, no per-match allocation on the pre-dedup hot path. Hex
+    /// encoding happens lazily at the serde/reporter boundary only.
+    #[serde(with = "serde_hash_hex")]
+    pub credential_hash: [u8; 32],
     /// Companion credential or context value extracted nearby.
     pub companions: std::collections::HashMap<String, String>,
     /// Source location for the match.
@@ -102,7 +108,10 @@ impl std::fmt::Debug for RawMatch {
                 "credential",
                 &format_args!("<redacted {} bytes>", self.credential.len()),
             )
-            .field("credential_hash", &self.credential_hash)
+            .field(
+                "credential_hash",
+                &format_args!("{}", hex_encode(&self.credential_hash)),
+            )
             .field(
                 "companions",
                 &format_args!("<{} redacted companions>", self.companions.len()),
@@ -198,8 +207,10 @@ pub struct VerifiedFinding {
     pub severity: Severity,
     /// Redacted version of the credential for reporting.
     pub credential_redacted: Cow<'static, str>,
-    /// SHA-256 hash of the original credential for internal correlation.
-    pub credential_hash: String,
+    /// SHA-256 digest of the original credential for internal correlation.
+    /// Raw 32 inline bytes; hex-encoded lazily at the serde/reporter boundary.
+    #[serde(with = "serde_hash_hex")]
+    pub credential_hash: [u8; 32],
     /// Source location for the match.
     pub location: MatchLocation,
     /// Verification result.
@@ -250,7 +261,7 @@ impl RawMatch {
             service: self.service.clone(),
             severity: self.severity,
             credential_redacted: crate::redact(&self.credential),
-            credential_hash: self.credential_hash.clone(),
+            credential_hash: self.credential_hash,
             companions_redacted: self
                 .companions
                 .iter()
@@ -276,13 +287,48 @@ pub struct RedactedFinding {
     pub service: Arc<str>,
     pub severity: Severity,
     pub credential_redacted: Cow<'static, str>,
-    pub credential_hash: String,
+    /// SHA-256 digest as raw 32 inline bytes; hex-encoded at the serde boundary.
+    #[serde(with = "serde_hash_hex")]
+    pub credential_hash: [u8; 32],
     pub companions_redacted: HashMap<String, String>,
     pub location: MatchLocation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entropy: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
+}
+
+/// Lower-case hex of a 32-byte SHA-256 digest. The only place the hex string
+/// is materialized for a `[u8; 32]` `credential_hash` (reporters, Debug).
+#[inline]
+pub fn hex_encode(bytes: &[u8; 32]) -> String {
+    hex::encode(bytes)
+}
+
+/// Serde adapter keeping the on-wire shape of `credential_hash` a 64-char
+/// lower-case hex string while the in-memory field is raw `[u8; 32]`. This
+/// preserves the documented JSON/JSONL/baseline/SARIF format (`.credential_hash`
+/// consumers, `keyhogignore` `hash:` entries) with zero heap on the hot path.
+pub mod serde_hash_hex {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(val: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(val))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+        bytes.try_into().map_err(|_| {
+            serde::de::Error::invalid_length(s.len() / 2, &"32-byte SHA-256 digest")
+        })
+    }
 }
 
 pub mod serde_arc_str {

@@ -85,6 +85,26 @@ const SCHEMA_VERSION: u32 = 2;
 /// independent locks so tiny-file storms don't serialize all rayon workers.
 const MERKLE_SHARDS: usize = 64;
 
+/// Default upper bound on the number of in-memory cache entries.
+///
+/// Resident cost per entry is roughly `48 bytes` for the [`CacheEntry`]
+/// (`mtime_ns: u64` + `size: u64` + `hash: [u8; 32]`, with padding) plus
+/// the heap-allocated [`PathBuf`] key (one allocation, length of the
+/// canonical path). On a typical repo a path averages ~80-120 bytes, so
+/// budget ~150 bytes/entry end-to-end. At the default cap of 8M entries
+/// that bounds the index at roughly 1.2 GB resident - large, but bounded,
+/// and survivable on the fleet's 32-128 GB boxes. A giant monorepo can
+/// raise or lower this via [`MerkleIndex::with_max_entries`] (Tier-A
+/// configurability: compiled default, overridable by the caller).
+///
+/// When the cap is hit we WARN and stop *adding new paths*; updates to
+/// paths already in the index are always allowed so an over-cap scan
+/// never corrupts an existing entry. An uncached file is simply re-read
+/// and re-scanned next run - slower, never unsound. This preserves the
+/// module's core guarantee (a file that ever produced a finding is
+/// `forget`-ten, never cached) regardless of the cap.
+const MERKLE_DEFAULT_MAX_ENTRIES: usize = 8_000_000;
+
 fn shard_index(path: &Path) -> usize {
     let mut h = DefaultHasher::new();
     path.hash(&mut h);
@@ -110,16 +130,52 @@ struct CacheEntry {
 #[derive(Debug)]
 pub struct MerkleIndex {
     shards: Vec<RwLock<HashMap<PathBuf, CacheEntry>>>,
+    /// Upper bound on the number of retained entries across all shards.
+    /// Defaults to [`MERKLE_DEFAULT_MAX_ENTRIES`]. Once reached, only
+    /// updates to existing paths are accepted; new paths are dropped
+    /// (with a one-shot WARN) so a giant monorepo can't silently grow
+    /// the index without bound.
+    max_entries: usize,
+    /// Set once the cap is first hit so we WARN at most once per index
+    /// rather than once per dropped entry (which would be a log storm
+    /// on a multi-million-file overflow).
+    cap_warned: std::sync::atomic::AtomicBool,
+    /// Approximate live entry count, maintained on the insert hot path so
+    /// the cap check is O(1) instead of summing all 64 shard lengths per
+    /// insert (that scan would dominate a multi-million-file scan). It is
+    /// incremented only on a NEW-path insert and never decremented (the
+    /// `forget` path is for found-secret invalidation, not bulk eviction),
+    /// so it is a monotonic upper bound on live entries - exactly the
+    /// conservative side for a "stop growing" budget. Exact counts use
+    /// [`Self::len`].
+    approx_count: std::sync::atomic::AtomicUsize,
 }
 
 impl MerkleIndex {
-    /// Construct a fresh, empty [`MerkleIndex`] with no cached entries.
+    /// Construct a fresh, empty [`MerkleIndex`] with no cached entries and
+    /// the default entry cap ([`MERKLE_DEFAULT_MAX_ENTRIES`]).
     pub fn empty() -> Self {
+        Self::with_max_entries(MERKLE_DEFAULT_MAX_ENTRIES)
+    }
+
+    /// Construct a fresh, empty [`MerkleIndex`] with an explicit entry cap.
+    /// A cap of `0` is treated as "unbounded" for callers that genuinely
+    /// want the old behavior, but the documented resident cost still
+    /// applies (~150 bytes/entry).
+    pub fn with_max_entries(max_entries: usize) -> Self {
         Self {
             shards: (0..MERKLE_SHARDS)
                 .map(|_| RwLock::new(HashMap::new()))
                 .collect(),
+            max_entries,
+            cap_warned: std::sync::atomic::AtomicBool::new(false),
+            approx_count: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    /// The configured maximum number of retained entries (`0` = unbounded).
+    pub fn max_entries(&self) -> usize {
+        self.max_entries
     }
 
     /// Load the index from `path` without spec-hash gating. Returns an
@@ -211,9 +267,15 @@ impl MerkleIndex {
             "merkle index loaded"
         );
         let idx = Self::empty();
+        // Respect the entry cap even on load: a previously-saved index
+        // larger than the current cap (e.g. cap was lowered, or the file
+        // was produced by an unbounded build) must not blow the working
+        // set on read. Insert up to the cap, then warn-and-stop. The
+        // dropped tail of paths is simply re-scanned next run.
         for (p, e) in entries {
-            let i = shard_index(&p);
-            idx.shards[i].write().insert(p, e);
+            if !idx.try_insert(p, e) {
+                break;
+            }
         }
         idx
     }
@@ -268,8 +330,43 @@ impl MerkleIndex {
             merged.extend(shard.read().iter().map(|(p, e)| (p.clone(), *e)));
         }
         // In-memory entries layer on top - last-write-wins by path.
+        // These are the paths we observed THIS scan, so they're the most
+        // valuable; insert them after the on-disk set so they win, and
+        // remember the set so the cap step below keeps them first.
+        let mut in_memory_paths = std::collections::HashSet::<PathBuf>::new();
         for shard in &self.shards {
-            merged.extend(shard.read().iter().map(|(p, e)| (p.clone(), *e)));
+            for (p, e) in shard.read().iter() {
+                merged.insert(p.clone(), *e);
+                in_memory_paths.insert(p.clone());
+            }
+        }
+        // Enforce the entry cap on the persisted set too. Both inputs are
+        // already cap-bounded individually (load truncates, in-memory
+        // `record` truncates), but their UNION can be up to ~2x the cap.
+        // Truncate, preferring paths observed this scan (in-memory) so a
+        // capped save keeps the freshest fingerprints. Without this, a
+        // monorepo whose on-disk and in-memory path sets barely overlap
+        // could write a file ~2x the budget, which the next load would
+        // then truncate anyway - so cap it here for an honest on-disk size.
+        if self.max_entries != 0 && merged.len() > self.max_entries {
+            let mut kept = HashMap::<PathBuf, CacheEntry>::with_capacity(self.max_entries);
+            // Freshest first.
+            for p in &in_memory_paths {
+                if kept.len() >= self.max_entries {
+                    break;
+                }
+                if let Some(e) = merged.get(p) {
+                    kept.insert(p.clone(), *e);
+                }
+            }
+            // Fill remaining budget from carried-over on-disk paths.
+            for (p, e) in &merged {
+                if kept.len() >= self.max_entries {
+                    break;
+                }
+                kept.entry(p.clone()).or_insert(*e);
+            }
+            merged = kept;
         }
         let entries: HashMap<String, EntryV2> = merged
             .iter()
@@ -369,8 +466,7 @@ impl MerkleIndex {
         size: u64,
         content_hash: [u8; 32],
     ) {
-        let i = shard_index(&path);
-        self.shards[i].write().insert(
+        self.try_insert(
             path,
             CacheEntry {
                 mtime_ns,
@@ -378,6 +474,58 @@ impl MerkleIndex {
                 hash: content_hash,
             },
         );
+    }
+
+    /// Insert or update one entry, honoring [`Self::max_entries`].
+    ///
+    /// Returns `true` if the entry is now present (inserted or updated),
+    /// `false` if it was a NEW path dropped because the cap is reached.
+    /// Updates to an already-present path always succeed (they don't grow
+    /// the working set) so an over-cap scan never corrupts existing state.
+    /// The first drop emits a single WARN; subsequent drops are silent to
+    /// avoid a log storm on a multi-million-file overflow.
+    fn try_insert(&self, path: PathBuf, entry: CacheEntry) -> bool {
+        let i = shard_index(&path);
+        {
+            // Fast path: updating a path we already track is a
+            // replacement, not growth - always allowed, no cap check.
+            // Scope the write guard so it is released before we read
+            // sibling shards for the cap check below (parking_lot
+            // RwLock is non-reentrant; re-locking shard `i` would
+            // deadlock).
+            let mut shard = self.shards[i].write();
+            if shard.contains_key(&path) {
+                shard.insert(path, entry);
+                return true;
+            }
+        }
+        // `max_entries == 0` means unbounded (opt-in legacy behavior).
+        // The cap is a soft budget checked against `approx_count` (O(1),
+        // no shard scan). Concurrent new-path inserts across shards can
+        // overshoot by at most the number of in-flight `record` calls -
+        // bounded and harmless (a few entries over budget, never
+        // unbounded growth).
+        use std::sync::atomic::Ordering;
+        if self.max_entries != 0 && self.approx_count.load(Ordering::Relaxed) >= self.max_entries {
+            if !self.cap_warned.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    cap = self.max_entries,
+                    "merkle index entry cap reached; new paths will not be \
+                     cached this run (they are re-scanned next run). Raise \
+                     the cap for very large trees if the rescan cost matters."
+                );
+            }
+            return false;
+        }
+        // Re-acquire the shard write lock for the actual insert. A racing
+        // writer may have inserted this same new path in the gap; only
+        // bump the approximate count when WE created a new key, so the
+        // counter doesn't drift above true growth on update races.
+        let is_new = self.shards[i].write().insert(path, entry).is_none();
+        if is_new {
+            self.approx_count.fetch_add(1, Ordering::Relaxed);
+        }
+        true
     }
 
     /// Remove `path` from the index so the next scan treats it as new and

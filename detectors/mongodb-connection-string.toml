@@ -10,12 +10,14 @@ severity = "critical"
 keywords = ["mongodb", "mongo"]
 
 [[detector.patterns]]
-# Widen the host class to accept Kubernetes service names (`mongo`) and
-# docker hostnames, not just dotted-FQDN hosts. Empty username
-# (`mongodb://:pass@host`) is also accepted for parity with redis.
-# The capture deliberately stops at the host (excludes the trailing
-# `/db?retryWrites=true`) so the credential surface matches the existing
-# contract harness; SecretBench scoring uses substring containment, so
-# the host-bounded capture remains contained in the labeled full URL.
-regex = '''mongodb(?:\+srv)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
-description = "MongoDB connection string with credentials (host-bounded capture)"
+# Require a non-empty username and a dotted-FQDN host (at least one `.`
+# in the host part). Dropping the mandatory dot let bare `mongo` /
+# `localhost` k8s/docker hostnames and empty-user `mongodb://:pass@host`
+# strings match, which were the FP driver. Restoring `[^:@\s"']+` for the
+# user and a `host(.host)+` shape re-anchors to a real connection string.
+# The capture stops at the host (excludes the trailing `/db?...`) so the
+# credential surface matches the existing contract harness; SecretBench
+# scoring uses substring containment, so the host-bounded capture remains
+# contained in the labeled full URL.
+regex = '''mongodb(?:\+srv)?://[^:@\s"']+:[^@\s"'']+@[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+'''
+description = "MongoDB connection string with credentials (dotted-host, non-empty user)"

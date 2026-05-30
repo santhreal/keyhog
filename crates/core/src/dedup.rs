@@ -43,7 +43,9 @@ pub struct DedupedMatch {
     #[serde(with = "crate::finding::serde_arc_str")]
     pub credential: Arc<str>,
     /// SHA-256 hash of the original credential for internal correlation.
-    pub credential_hash: String,
+    /// Raw 32 bytes (matching `Finding`/`RawMatch`); hex at the serde boundary.
+    #[serde(with = "crate::finding::serde_hash_hex")]
+    pub credential_hash: [u8; 32],
     /// Optional companion credentials extracted nearby.
     pub companions: HashMap<String, String>,
     /// Primary source location.
@@ -65,7 +67,7 @@ impl std::fmt::Debug for DedupedMatch {
                 "credential",
                 &format_args!("<redacted {} bytes>", self.credential.len()),
             )
-            .field("credential_hash", &self.credential_hash)
+            .field("credential_hash", &crate::finding::hex_encode(&self.credential_hash))
             .field(
                 "companions",
                 &format_args!("<{} redacted companions>", self.companions.len()),
@@ -223,7 +225,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
 
     // Group by (credential_hash, primary_location.file_path) - splitting by
     // file keeps file-scope dedup intact when the caller used DedupScope::File.
-    type GroupKey = (String, Option<Arc<str>>);
+    type GroupKey = ([u8; 32], Option<Arc<str>>);
     let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::new();
     for m in deduped {
         let key = (
@@ -339,9 +341,9 @@ fn max_confidence(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
     }
 }
 
-fn sha256_hash(s: &str) -> String {
+fn sha256_hash(s: &str) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
-    hex::encode(hasher.finalize())
+    hasher.finalize().into()
 }

@@ -23,6 +23,29 @@
 //! equivalent of the sharded `GpuLiteralSet::scan` path.
 //!
 //! [`CompiledScanner`]: super::CompiledScanner
+//!
+//! # Status: not yet wired into the live GPU dispatch path
+//!
+//! This module is a **migration target**, not dead-per-audit: it is intended to
+//! replace per-shard `GpuLiteralSet`-style dispatch (see `gpu_literal_phase1`)
+//! with a persistent kernel that keeps the four ABI
+//! buffers resident across dispatches, removing per-batch launch + buffer
+//! (re)allocation overhead. Two things are still missing before it can carry
+//! real scan traffic, and both live OUTSIDE this file:
+//!
+//! 1. **Declaration / engagement.** `engine/mod.rs` must declare
+//!    `mod megakernel;` and `CompiledScanner` must hold a [`MegakernelSession`]
+//!    (behind a `OnceLock`, like the other GPU resources) so that
+//!    `scan_coalesced_gpu_phase1` can prefer [`MegakernelSession::submit_scan`]
+//!    over per-shard dispatch when a session bootstraps.
+//! 2. **Hit decoding.** [`MegakernelSession::submit_scan`] cannot yet decode
+//!    [`LiteralMatch`] triples out of the IO-queue readback because the vyre
+//!    megakernel program is not configured with the literal-set opcode
+//!    handlers (a `vyre-runtime` change). Until that lands, `submit_scan`
+//!    returns an empty match set - see the explicit gate at its decode site.
+//!
+//! Do not delete this module to satisfy a dead-code lint: the wiring above is
+//! the fix, deletion is not.
 
 use std::sync::Arc;
 
@@ -34,6 +57,15 @@ use vyre_runtime::PipelineError;
 use vyre_libs::scan::LiteralMatch;
 
 /// Megakernel session configuration.
+///
+/// Config taxonomy: this is a **Tier-3 transport/runtime config** (GPU ring
+/// geometry and launch policy). It is orthogonal to detection tuning and is
+/// explicitly **outside the benchmark-coherence contract** - changing
+/// `slot_count` / `workgroup_size_x` / `tenant_count` cannot move a detection
+/// metric, so the benchmark never touches it. Tier 1 is the unified detection
+/// config (`keyhog_core::config::ScanConfig`); Tier 2 is subsystem configs
+/// nested inside it where they affect detection (e.g. `MultilineConfig` inside
+/// `ScannerConfig`). See `keyhog_core::config` for the canonical 3-tier model.
 #[derive(Debug, Clone)]
 pub struct MegakernelSessionConfig {
     /// Number of ring-buffer slots (rounded up to workgroup width).
@@ -162,13 +194,17 @@ impl MegakernelSession {
         // Dispatch and read back.
         let readback = self.buffers.dispatch(&self.kernel)?;
 
-        // Decode literal matches from the readback IO queue bytes.
-        // The megakernel stores match triples in the IO-queue output buffer.
-        // For now, return an empty match set - the actual decoding depends on
-        // the opcode handlers wired into the megakernel program, which are
-        // not yet configured for literal-set scanning.  This placeholder
-        // ensures the session lifecycle is exercisable end-to-end while the
-        // FileBatch hook stabilizes.
+        // Decode literal matches from the readback IO-queue bytes.
+        //
+        // GAP (tracked, see module-level "Status" doc): the megakernel stores
+        // match triples in the IO-queue output buffer, but decoding them into
+        // `LiteralMatch` requires the literal-set opcode handlers in the vyre
+        // megakernel program, which are not yet configured (a `vyre-runtime`
+        // change). Until that lands this path is intentionally degraded to an
+        // empty match set rather than a fabricated result. This is NOT a
+        // silent stub: the session is not engaged on the live dispatch path
+        // (no `mod megakernel;` in `engine/mod.rs`), so no real scan relies on
+        // this return value. Decoding `io_queue_bytes` is the remaining work.
         let _readback_io = readback.io_queue_bytes;
         let matches = Vec::new();
 

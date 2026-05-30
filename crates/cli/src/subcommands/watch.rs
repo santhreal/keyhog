@@ -22,7 +22,17 @@ use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::mpsc::channel;
+use std::time::{Duration, Instant};
+
+/// Within this window, a repeat event for the *same path and same content*
+/// (e.g. the Create+Modify burst notify emits for a single new-file write,
+/// KH-GAP-109) is suppressed so we print one finding set per real change,
+/// not one per inotify event. A genuine later edit (different content) is
+/// always re-scanned because the content hash changes.
+const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
 pub fn run(args: WatchArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
@@ -57,6 +67,11 @@ pub fn run(args: WatchArgs) -> Result<()> {
         .watch(&watch_root, RecursiveMode::Recursive)
         .map_err(|e| anyhow::anyhow!("failed to watch {}: {e}", watch_root.display()))?;
 
+    // Per-path dedupe state: last (scan time, content hash) seen for a path.
+    // notify fires Create then Modify for a single new-file write, which
+    // without this would print every finding twice (KH-GAP-109).
+    let mut recently_scanned: HashMap<PathBuf, (Instant, u64)> = HashMap::new();
+
     for event in rx {
         let event = match event {
             Ok(e) => e,
@@ -76,13 +91,30 @@ pub fn run(args: WatchArgs) -> Result<()> {
             if path.is_dir() || should_skip(&path) {
                 continue;
             }
-            scan_file(&scanner, &path);
+            scan_file(&scanner, &path, &mut recently_scanned);
         }
     }
     Ok(())
 }
 
-fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
+/// FNV-1a hash of the file contents. Cheap, allocation-free, and good
+/// enough to tell "same bytes as the event we just scanned" from a real
+/// edit - we only need to suppress the duplicate inotify event, not to
+/// resist collisions.
+fn content_hash(data: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in data.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+fn scan_file(
+    scanner: &CompiledScanner,
+    path: &std::path::Path,
+    recently_scanned: &mut HashMap<PathBuf, (Instant, u64)>,
+) {
     let data = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(_) => return, // not text, deleted, or permission denied - skip
@@ -90,6 +122,22 @@ fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
     if data.is_empty() {
         return;
     }
+
+    // Dedupe the Create+Modify burst: if we scanned this exact content for
+    // this path within DEDUP_WINDOW, skip - notify already gave us a finding
+    // for it. A real edit changes the hash and is always re-scanned.
+    let now = Instant::now();
+    let hash = content_hash(&data);
+    if let Some((last, last_hash)) = recently_scanned.get(path) {
+        if *last_hash == hash && now.duration_since(*last) < DEDUP_WINDOW {
+            return;
+        }
+    }
+    recently_scanned.insert(path.to_path_buf(), (now, hash));
+    // Evict stale entries so the map can't grow without bound on a
+    // long-lived daemon watching a churning tree.
+    recently_scanned.retain(|_, (last, _)| now.duration_since(*last) < DEDUP_WINDOW);
+
     let chunk = Chunk {
         data: data.into(),
         metadata: ChunkMetadata {

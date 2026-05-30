@@ -140,7 +140,9 @@ impl Baseline {
             .iter()
             .map(|f| BaselineEntry {
                 detector_id: f.detector_id.to_string(),
-                credential_hash: format!("sha256:{}", f.credential_hash),
+                // `credential_hash` is the raw 32 bytes; the baseline stores the
+                // hex form prefixed with the algorithm (hex at the serde boundary).
+                credential_hash: format!("sha256:{}", keyhog_core::hex_encode(&f.credential_hash)),
                 file_path: f.location.file_path.as_ref().map(|p| p.to_string()),
                 line: f.location.line,
                 status: "acknowledged".to_string(),
@@ -176,7 +178,7 @@ impl Baseline {
         for finding in findings {
             let key = (
                 finding.detector_id.to_string(),
-                format!("sha256:{}", finding.credential_hash),
+                format!("sha256:{}", keyhog_core::hex_encode(&finding.credential_hash)),
             );
             if !existing.contains(&key) {
                 self.entries.push(BaselineEntry {
@@ -205,7 +207,7 @@ impl Baseline {
     /// O(N) - for hot paths (e.g. filtering a large finding set against a
     /// baseline) prefer `contains_set` + `index_set` to amortize lookups.
     pub fn contains(&self, finding: &VerifiedFinding) -> bool {
-        let hash = format!("sha256:{}", finding.credential_hash);
+        let hash = format!("sha256:{}", keyhog_core::hex_encode(&finding.credential_hash));
         self.entries
             .iter()
             .any(|e| e.detector_id == finding.detector_id.as_ref() && e.credential_hash == hash)
@@ -233,7 +235,7 @@ impl Baseline {
             .filter(|f| {
                 let key = (
                     f.detector_id.to_string(),
-                    format!("sha256:{}", f.credential_hash),
+                    format!("sha256:{}", keyhog_core::hex_encode(&f.credential_hash)),
                 );
                 !index.contains(&key)
             })

@@ -208,7 +208,7 @@ impl Allowlist {
     ///     metadata: std::collections::HashMap::new(),
     ///     additional_locations: Vec::new(),
     ///     confidence: None,
-    ///     credential_hash: "hash".to_string(),
+    ///     credential_hash: [0u8; 32],
     /// };
     /// assert!(allowlist.is_allowed(&finding));
     /// ```
@@ -238,12 +238,20 @@ impl Allowlist {
     /// assert!(!allowlist.is_hash_allowed("demo_ABC12345"));
     /// ```
     pub fn is_hash_allowed(&self, credential: &str) -> bool {
-        self.matches_ignored_hash(credential)
+        parse_sha256_hex(credential).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
     }
 
     /// Check if a hex-encoded SHA-256 hash is allowlisted.
     pub fn is_raw_hash_ignored(&self, hash_hex: &str) -> bool {
-        self.matches_ignored_hash(hash_hex)
+        parse_sha256_hex(hash_hex).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
+    }
+
+    /// Check if a finding's raw 32-byte SHA-256 hash is allowlisted - the
+    /// scan-path entry that takes the `[u8; 32]` form directly (no hex
+    /// round-trip). Siblings `is_hash_allowed` / `is_raw_hash_ignored` accept
+    /// the hex-string form for `.keyhogignore` self-checks and CLI input.
+    pub fn is_hash_ignored(&self, hash: &[u8; 32]) -> bool {
+        self.matches_ignored_hash(hash)
     }
 
     /// Check whether a raw path matches an ignored-path glob.
@@ -263,18 +271,15 @@ impl Allowlist {
             .any(|pattern| glob_match_normalized(pattern, &normalized))
     }
 
-    fn matches_ignored_hash(&self, input: &str) -> bool {
-        // Only compare against the parsed-hex form. Earlier versions also
-        // hashed the raw input as a fallback, which silently encouraged users
-        // to put plaintext credentials in `.keyhogignore` (the file is often
-        // committed by accident - see audit release-2026-04-26). The
-        // `hash:` parser already rejects non-64-hex inputs at load time, so
-        // every legitimate suppressing entry passes through `parse_sha256_hex`
-        // here.
-        if let Some(hash_bytes) = parse_sha256_hex(input) {
-            return self.credential_hashes.contains(&hash_bytes);
-        }
-        false
+    fn matches_ignored_hash(&self, hash: &[u8; 32]) -> bool {
+        // Direct byte-set membership. Suppressing `hash:` entries are parsed
+        // from 64-hex into this same `[u8; 32]` form at load time
+        // (`parse_sha256_hex`), and findings carry the raw bytes, so no hex
+        // round-trip happens here. (Earlier versions also hashed raw input as a
+        // fallback, which silently encouraged plaintext in `.keyhogignore` - the
+        // file is often committed by accident; that path is intentionally gone,
+        // see audit release-2026-04-26.)
+        self.credential_hashes.contains(hash)
     }
 }
 

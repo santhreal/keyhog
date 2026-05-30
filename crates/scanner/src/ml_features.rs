@@ -405,10 +405,20 @@ fn unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
 }
 
 fn contains_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
-    !needle.is_empty()
-        && haystack
-            .windows(needle.len())
-            .any(|window| window.eq_ignore_ascii_case(needle))
+    if needle.is_empty() {
+        return false;
+    }
+    // `ci_find` skims via `memchr2` over the needle's first byte (lower/upper
+    // case), which is only correct when the needle is already ASCII-lowercase.
+    // The const context fragments and typical config keywords already are, so
+    // the common path delegates straight through with no allocation; only a
+    // mixed/upper-case config keyword pays for a one-off lowercase copy.
+    if needle.iter().any(u8::is_ascii_uppercase) {
+        let lowered: Vec<u8> = needle.to_ascii_lowercase();
+        crate::ascii_ci::ci_find(haystack, &lowered)
+    } else {
+        crate::ascii_ci::ci_find(haystack, needle)
+    }
 }
 
 fn contains_any_ascii_case_insensitive(haystack: &[u8], needles: &[String]) -> bool {

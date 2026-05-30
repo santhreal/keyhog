@@ -108,11 +108,17 @@ pub fn is_encoded_binary(candidate: &str) -> bool {
 }
 
 /// Placeholder words that mark a credential as a documentation sample, not a
-/// real secret. Shared with `confidence::penalties::contains_placeholder_word`
-/// for the SURFACE form; this module's [`decoded_contains_placeholder`] runs
-/// the same check against the BASE64 / HEX decoded form so a base64-wrapped
-/// `AKIAEXAMPLEEXAMPLE12` (= `QUtJQUVYQU1QTEVFWEFNUExFMTI=`) is still caught.
-const DECODED_PLACEHOLDER_WORDS: &[&[u8]] = &[
+/// real secret. The single source of truth for the lowercase byte-slice
+/// placeholder set: consumed for the SURFACE form by
+/// `confidence::penalties::contains_placeholder_word` and for the BASE64 / HEX
+/// decoded form by this module's [`decoded_contains_placeholder`] (so a
+/// base64-wrapped `AKIAEXAMPLEEXAMPLE12` = `QUtJQUVYQU1QTEVFWEFNUExFMTI=` is
+/// still caught).
+///
+/// Excludes ambiguous tokens by design: `test` (real Stripe `sk_test_` keys),
+/// `password` (connection strings `redis://user:password@host`), `admin` /
+/// `root` (legitimate credentials), `qwerty` (weak but real password).
+pub const PLACEHOLDER_WORDS: &[&[u8]] = &[
     b"example",
     b"dummy",
     b"fake",
@@ -121,31 +127,42 @@ const DECODED_PLACEHOLDER_WORDS: &[&[u8]] = &[
     b"changeme",
 ];
 
-/// Shape-only check: does `value` look like a uniform base64 blob with no
-/// structure markers? Criteria - 44+ chars long, multiple-of-4 length
-/// or trailing `=` padding, every char in the standard base64 alphabet,
-/// AND (contains `+` / `/` punct OR has padding OR has high alphabet
-/// diversity). Matches the `random-base64-protobuf` corpus shape (random
-/// bytes base64-encoded into a `password=`/`secret=` slot) without firing
-/// on real service-anchored credentials:
-///   * AWS secret access keys (40 base62 chars, no +/, no padding) - too short
-///   * GitHub PATs (40+ chars but contain `_`) - skipped (alphabet check)
-///   * npm tokens (36 chars base62) - too short, skipped
-///   * Stripe keys (32 chars, `sk_`/`pk_` prefix with `_`) - skipped
-///   * Slack tokens (xox*-prefixed with `-`) - skipped
-///   * JWT tokens (`.` separators) - skipped
-///   * OAuth bearer tokens with `-`/`_` (base64url) - skipped via alphabet
+/// Unified shape-only gate for the "uniform random base64 blob" class - the
+/// single parameterized definition behind every base64-protobuf-decoy gate in
+/// the scanner. Reconciles two previously-divergent copies (this module's
+/// penalty-path [`looks_like_uniform_base64_blob`] and the entropy-path's
+/// `engine::fallback_entropy_helpers::entropy_path_looks_like_random_base64_blob`)
+/// so their length/diversity bands are tuned in one place and can never drift
+/// in opposite directions un-benched again.
 ///
-/// Used by `confidence::penalties::apply_post_ml_penalties` as the generic-
-/// detector branch's "this is a random base64 blob, not a credential" gate.
-/// Mirror v27 had 56 base64-protobuf FPs surviving every other suppression;
-/// this is the dedicated gate for that class. v33 widened the floor from
-/// 60 to 44 and added a high-diversity admit so pure-alphanumeric base64
-/// (lacking +/) is also slammed - 14+ FPs in the corpus relied on the
-/// gap.
+/// Returns true when `value`:
+///   1. has length in `min_len..=max_len`, AND
+///   2. is a multiple-of-4 length OR carries trailing `=` padding, AND
+///   3. uses only the standard base64 alphabet (`A-Za-z0-9`, `=`, `+`, `/`) -
+///      any `-`/`_`/`.`/other char rejects, which clears base64url tokens
+///      (GitHub PATs, OAuth bearers), JWTs (`.`), and Slack (`-`), AND
+///   4. satisfies an admit clause: contains `+`/`/` punctuation, OR has
+///      padding, OR (length is mult-of-4 AND alphabet diversity >=
+///      `min_diversity` distinct alphanumeric chars). The diversity admit
+///      catches pure-alphanumeric base64 (no `+/`) that random-byte encodings
+///      reach but placeholders / English words never do at the band floor.
+///
+/// `min_diversity == 0` disables the diversity admit (only punctuation /
+/// padding then qualify) - that is how a caller wanting the stricter
+/// "structural punctuation required" behavior (the entropy path's intent)
+/// opts out of the diversity wedge while still sharing this band + alphabet
+/// skeleton. The entropy path additionally requires BOTH `+` and `/`; it
+/// composes that tightening on top of this gate in its own wrapper (it owns
+/// that file boundary), calling here for the band + alphabet + padding
+/// skeleton.
 #[must_use]
-pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
-    if !(44..=600).contains(&value.len()) {
+pub fn is_random_base64_blob(
+    value: &str,
+    min_len: usize,
+    max_len: usize,
+    min_diversity: u32,
+) -> bool {
+    if !(min_len..=max_len).contains(&value.len()) {
         return false;
     }
     let has_padding = value.ends_with("==") || value.ends_with('=');
@@ -173,10 +190,39 @@ pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
     //   * +/  punctuation in standard base64 alphabet, OR
     //   * trailing `=` padding (length already validated as mult-of-4 path
     //     above), OR
-    //   * length is mult-of-4 AND alphabet diversity >= 32 distinct
-    //     alphanumeric chars (random bytes encoded; placeholders / words
-    //     never reach this diversity at >= 44 chars).
-    has_b64_punct || has_padding || (length_mult_4 && distinct_alnum >= 32)
+    //   * length is mult-of-4 AND alphabet diversity >= `min_diversity`
+    //     distinct alphanumeric chars (random bytes encoded; placeholders /
+    //     words never reach this diversity at the band floor). A zero
+    //     `min_diversity` disables this admit (punct / padding only).
+    has_b64_punct
+        || has_padding
+        || (min_diversity != 0 && length_mult_4 && distinct_alnum >= min_diversity)
+}
+
+/// Shape-only check: does `value` look like a uniform base64 blob with no
+/// structure markers? Thin wrapper over [`is_random_base64_blob`] with the
+/// penalty-path band (44..=600) and diversity floor (32). Matches the
+/// `random-base64-protobuf` corpus shape (random bytes base64-encoded into a
+/// `password=`/`secret=` slot) without firing on real service-anchored
+/// credentials:
+///   * AWS secret access keys (40 base62 chars, no +/, no padding) - too short
+///   * GitHub PATs (40+ chars but contain `_`) - skipped (alphabet check)
+///   * npm tokens (36 chars base62) - too short, skipped
+///   * Stripe keys (32 chars, `sk_`/`pk_` prefix with `_`) - skipped
+///   * Slack tokens (xox*-prefixed with `-`) - skipped
+///   * JWT tokens (`.` separators) - skipped
+///   * OAuth bearer tokens with `-`/`_` (base64url) - skipped via alphabet
+///
+/// Used by `confidence::penalties::apply_post_ml_penalties` as the generic-
+/// detector branch's "this is a random base64 blob, not a credential" gate.
+/// Mirror v27 had 56 base64-protobuf FPs surviving every other suppression;
+/// this is the dedicated gate for that class. v33 widened the floor from
+/// 60 to 44 and added a high-diversity admit so pure-alphanumeric base64
+/// (lacking +/) is also slammed - 14+ FPs in the corpus relied on the
+/// gap.
+#[must_use]
+pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
+    is_random_base64_blob(value, 44, 600, 32)
 }
 
 /// True when `value` base64-decodes to bytes that are themselves all in
@@ -292,7 +338,7 @@ fn compute_decoded_contains_placeholder(candidate: &str) -> bool {
     if bytes.is_empty() {
         return false;
     }
-    DECODED_PLACEHOLDER_WORDS.iter().any(|word| {
+    PLACEHOLDER_WORDS.iter().any(|word| {
         bytes
             .windows(word.len())
             .any(|window| window.eq_ignore_ascii_case(word))

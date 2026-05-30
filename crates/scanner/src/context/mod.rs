@@ -14,8 +14,8 @@ pub use false_positive::{
     is_false_positive_context, is_false_positive_context_with_path, is_false_positive_match_context,
 };
 pub use inference::{
-    infer_context, infer_context_with_documentation, is_known_example_credential,
-    is_sequential_placeholder,
+    infer_context, infer_context_with_documentation, infer_context_with_regions,
+    is_known_example_credential, is_sequential_placeholder, ContextRegions,
 };
 
 const ASSIGNMENT_CONFIDENCE_MULTIPLIER: f64 = 1.0;

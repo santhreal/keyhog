@@ -70,12 +70,14 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             documentation_lines,
         );
-        if crate::pipeline::should_suppress_named_detector_finding(
+        let weak_anchor = crate::pipeline::detector_weak_anchor(detector);
+        if crate::pipeline::should_suppress_named_detector_finding_weak(
             credential,
             chunk.metadata.path.as_deref(),
             inferred_context,
             Some(chunk.metadata.source_type.as_str()),
             detector.id.as_ref(),
+            weak_anchor,
         ) {
             return;
         }
@@ -97,7 +99,7 @@ impl CompiledScanner {
         let entropy = match_entropy(credential.as_bytes());
 
         let is_generic = detector.id.starts_with("generic-") && detector.id != "generic-private-key";
-        let is_weakly_anchored = crate::pipeline::is_weakly_anchored_named_detector(&detector.id);
+        let is_weakly_anchored = weak_anchor;
         if is_generic || is_weakly_anchored {
             // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
             // have lower entropy than random strings. A blanket 3.5 floor misses them.
@@ -138,7 +140,7 @@ impl CompiledScanner {
         // positive-evidence rule the shape-gate bypass already uses so the
         // gate stays load-bearing for generic-* but never buries a named hit.
         let is_named_detector = crate::confidence::is_service_anchored_detector(&detector.id)
-            && !crate::pipeline::is_weakly_anchored_named_detector(&detector.id);
+            && !weak_anchor;
         let Some(score_result) = self.match_confidence(
             entry,
             chunk,

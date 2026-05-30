@@ -104,40 +104,8 @@ pub fn match_entropy(data: &[u8]) -> f64 {
 
 #[cfg(not(feature = "entropy"))]
 fn fallback_entropy(data: &[u8]) -> f64 {
-    if data.is_empty() {
-        return 0.0;
-    }
-
-    // 4-way parallel histogram: same strategy as entropy_fast.rs
-    let mut c0 = [0u32; 256];
-    let mut c1 = [0u32; 256];
-    let mut c2 = [0u32; 256];
-    let mut c3 = [0u32; 256];
-
-    let chunks = data.chunks_exact(4);
-    let remainder = chunks.remainder();
-    for chunk in chunks {
-        c0[chunk[0] as usize] += 1;
-        c1[chunk[1] as usize] += 1;
-        c2[chunk[2] as usize] += 1;
-        c3[chunk[3] as usize] += 1;
-    }
-    for &byte in remainder {
-        c0[byte as usize] += 1;
-    }
-
-    let mut counts = [0u32; 256];
-    for j in 0..256 {
-        counts[j] = c0[j] + c1[j] + c2[j] + c3[j];
-    }
-
-    let len = data.len() as f64;
-    let mut entropy = 0.0;
-    for &count in &counts {
-        if count > 0 {
-            let p = count as f64 / len;
-            entropy -= p * p.log2();
-        }
-    }
-    entropy
+    // Delegate to the maintained 8-way scalar histogram (with null-run
+    // fast-path + log2-table). entropy_fast is feature-independent, so this
+    // avoids carrying a stale, less-optimized fork of the same algorithm.
+    crate::entropy_fast::shannon_entropy_scalar(data)
 }

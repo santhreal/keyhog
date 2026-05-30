@@ -299,6 +299,15 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
 }
 
 pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
+    // The preset (`--fast` / `--deep`) is a BASE, not a terminal state. It
+    // seeds decode-depth / entropy / ml defaults; the per-flag overrides below
+    // then layer on top. Pre-fix this function early-returned at the preset, so
+    // `--deep --min-confidence 0.9` (or `--deep --entropy-threshold 5.0`, or any
+    // `--known-prefixes` / keyword list) silently dropped the explicit override
+    // - a coherence leak where "what the operator asked for" != "what ran". Only
+    // `--no-decode` / `--no-entropy` are clap-conflicting with the presets
+    // (`conflicts_with_all` on the `fast`/`deep` flags), so every other override
+    // is a legitimate refinement of the preset base and must take effect.
     let mut config = if args.fast {
         ScannerConfig::fast()
     } else if args.deep {
@@ -306,10 +315,6 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     } else {
         ScannerConfig::default()
     };
-
-    if args.fast || args.deep {
-        return config;
-    }
 
     if let Some(depth) = args.decode_depth {
         config.max_decode_depth = depth;
@@ -321,7 +326,13 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.min_confidence = conf;
     }
 
-    config.entropy_enabled = !args.no_entropy;
+    // `--no-entropy` conflicts with the presets at the clap layer, so under a
+    // preset this is always `true` (entropy stays whatever the preset set). For
+    // the no-preset path it honours the flag. Likewise `--no-decode` is preset-
+    // conflicting; decode-depth above still applies for the no-preset path.
+    if !(args.fast || args.deep) {
+        config.entropy_enabled = !args.no_entropy;
+    }
     if let Some(threshold) = args.entropy_threshold {
         config.entropy_threshold = threshold;
     }
@@ -345,4 +356,132 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.placeholder_keywords = args.placeholder_keywords.clone();
     }
     config
+}
+
+/// The single resolved scan configuration: the END of the precedence chain
+/// `compiled-default -> [scan] table -> flat ConfigFile fields -> CLI flags`,
+/// already merged into the engine's [`ScannerConfig`] PLUS the post-scan policy
+/// the live worker needs (the per-detector confidence floors and the global
+/// floor / ml gate read in `orchestrator/postprocess.rs`).
+///
+/// This exists to kill the "tuned != benched != shipped" leak: before it, the
+/// scan-time floor lived in `ScannerConfig.min_confidence` (declared default
+/// 0.5) while the post-scan floor was re-derived in `postprocess.rs` from
+/// `args.min_confidence.unwrap_or(0.3)` - a SECOND, different literal, gated on
+/// `!no_ml`. Two floors meant the value the operator set, the value the engine
+/// applied, and the value postprocess applied could all disagree. Resolving
+/// once and handing the live worker this struct makes "what runs" a single,
+/// printable answer (see `--print-effective-config`).
+#[derive(Debug, Clone)]
+pub struct ResolvedScanConfig {
+    /// Engine-side config consumed by `CompiledScanner::with_config`.
+    pub scanner: ScannerConfig,
+    /// The global post-scan confidence floor a finding must clear to be
+    /// reported. This is `scanner.min_confidence` - the SAME resolved value the
+    /// engine uses, never a re-read of the raw args or a second literal. The
+    /// live worker reads THIS, not `args.min_confidence.unwrap_or(0.3)`.
+    pub min_confidence: f64,
+    /// Whether ML confidence scoring is enabled. Mirrors `scanner.ml_enabled`.
+    /// The post-scan floor applies regardless of this: disabling ML changes how
+    /// confidence is *computed*, not whether a `--min-confidence` floor the
+    /// operator set is honoured. (Pre-fix the floor was gated on `!no_ml`, so
+    /// `--no-ml` silently bypassed `--min-confidence` entirely.)
+    pub ml_enabled: bool,
+    /// Per-detector floors from `.keyhog.toml` `[detector.<id>] min_confidence`.
+    /// Take precedence over `min_confidence` for the matching detector id.
+    pub detector_min_confidence: std::collections::HashMap<String, f64>,
+}
+
+/// Resolve the full scan configuration in one place: run the precedence merge
+/// (compiled default -> `[scan]` table -> flat `ConfigFile` fields -> CLI flags)
+/// via [`apply_config_file`], build the engine [`ScannerConfig`], and surface
+/// the post-scan policy (global floor, ml gate, per-detector floors) so the live
+/// worker consumes a resolved struct instead of re-reading raw args + a literal.
+///
+/// `args` is mutated in place by the config-file merge (CLI flags already win;
+/// the merge only fills fields the operator left at their default), exactly as
+/// the orchestrator's pre-existing `apply_config_file(&mut args)` call did. The
+/// caller keeps the same `args` for the surfaces that still read it directly
+/// (severity filter, dedup scope, verify/show-secrets gating).
+pub fn resolve_scan_config(args: &mut ScanArgs) -> ResolvedScanConfig {
+    let outcome = crate::config::apply_config_file(args);
+    let scanner = build_scanner_config(args);
+    // The post-scan floor is the SAME value the engine resolved - read it back
+    // off the built config rather than re-deriving from `args`, so the two can
+    // never drift. `ScannerConfig::from`/`sanitise` already clamped NaN/range.
+    let min_confidence = scanner.min_confidence;
+    let ml_enabled = scanner.ml_enabled;
+    ResolvedScanConfig {
+        scanner,
+        min_confidence,
+        ml_enabled,
+        detector_min_confidence: outcome.detector_min_confidence,
+    }
+}
+
+/// Hidden `--print-effective-config` surface: the coherence oracle. Returns
+/// `true` when the dump was requested (the caller should then print-and-exit
+/// SUCCESS without scanning), `false` for a normal scan.
+///
+/// Triggered today by the `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` env var, matching
+/// the existing env-or-flag precedent (`KEYHOG_BACKEND`/`--backend`,
+/// `KEYHOG_THREADS`/`--threads`). The hidden `--print-effective-config` clap
+/// flag (a field on `ScanArgs`, wired by the args owner) should set that env
+/// var or call this same helper, so the two surfaces share one code path. The
+/// env path keeps the oracle functional for tooling / dogfood snapshots
+/// independent of the clap layer. Writes the rendered block to stdout so it is
+/// captured by the same `--output`-less stdout path the formatted report uses.
+pub fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> bool {
+    let requested = std::env::var("KEYHOG_PRINT_EFFECTIVE_CONFIG")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !requested {
+        return false;
+    }
+    print!("{}", render_effective_config(resolved));
+    true
+}
+
+/// Render the resolved scan config as a stable, human + machine readable block
+/// for the hidden `--print-effective-config` flag - the coherence oracle. It
+/// answers "what will actually run?" in one place: the resolved engine config
+/// AND the post-scan floors, so a test (or an operator) can assert that the
+/// tuned value, the benched value, and the shipped value are the same number.
+///
+/// Emitted as deterministic `key = value` lines (sorted detector floors) rather
+/// than JSON so it is greppable and diffable in dogfood snapshots without a
+/// serde derive on the engine `ScannerConfig` (which lives in another crate).
+pub fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
+    use std::fmt::Write as _;
+    let s = &resolved.scanner;
+    let mut out = String::new();
+    let _ = writeln!(out, "[effective-config]");
+    let _ = writeln!(out, "min_confidence = {}", resolved.min_confidence);
+    let _ = writeln!(out, "ml_enabled = {}", resolved.ml_enabled);
+    let _ = writeln!(out, "ml_weight = {}", s.ml_weight);
+    let _ = writeln!(out, "entropy_enabled = {}", s.entropy_enabled);
+    let _ = writeln!(out, "entropy_threshold = {}", s.entropy_threshold);
+    let _ = writeln!(
+        out,
+        "entropy_in_source_files = {}",
+        s.entropy_in_source_files
+    );
+    let _ = writeln!(out, "max_decode_depth = {}", s.max_decode_depth);
+    let _ = writeln!(out, "max_decode_bytes = {}", s.max_decode_bytes);
+    let _ = writeln!(out, "scan_comments = {}", s.scan_comments);
+    let _ = writeln!(out, "unicode_normalization = {}", s.unicode_normalization);
+    let _ = writeln!(out, "known_prefixes = {}", s.known_prefixes.len());
+    let _ = writeln!(out, "secret_keywords = {}", s.secret_keywords.len());
+    let _ = writeln!(out, "test_keywords = {}", s.test_keywords.len());
+    let _ = writeln!(
+        out,
+        "placeholder_keywords = {}",
+        s.placeholder_keywords.len()
+    );
+    let mut floors: Vec<(&String, &f64)> = resolved.detector_min_confidence.iter().collect();
+    floors.sort_by(|a, b| a.0.cmp(b.0));
+    for (id, floor) in floors {
+        let _ = writeln!(out, "detector_min_confidence.{id} = {floor}");
+    }
+    out
 }

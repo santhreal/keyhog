@@ -13,25 +13,19 @@ pub struct AlphabetMask {
 
 impl AlphabetMask {
     /// Create a mask from a slice of bytes.
+    ///
+    /// Building a 256-bit presence histogram is a scatter (each byte sets one
+    /// bit in one of four `u64` lanes), which AVX2/SSE2 cannot express without
+    /// per-element gather/scatter. The previous `is_x86_feature_detected!`
+    /// dispatch here selected between `from_bytes_avx2` (a 4-byte-unrolled
+    /// scalar loop) and `from_bytes_sse2` (a byte-for-byte copy of the scalar
+    /// loop): all three bodies do identical scalar work, so the per-call CPUID
+    /// branch and `#[target_feature]` codegen bought zero throughput. We call
+    /// the scalar body directly; its 4-byte unroll already auto-vectorizes
+    /// under `-C target-cpu`. The `from_bytes_{avx2,sse2,neon}` variants are
+    /// retained for the prefilter-robustness differential proptest, which
+    /// asserts each SIMD-gated body matches the scalar fallback.
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx2") {
-                // SAFETY: We just checked for AVX2 support.
-                return unsafe { Self::from_bytes_avx2(bytes) };
-            }
-            if is_x86_feature_detected!("sse2") {
-                // SAFETY: SSE2 is a baseline for x86_64 but we gate it for clarity.
-                return unsafe { Self::from_bytes_sse2(bytes) };
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            // SAFETY: ARM NEON is always available on aarch64.
-            return unsafe { Self::from_bytes_neon(bytes) };
-        }
-
         Self::from_bytes_scalar(bytes)
     }
 

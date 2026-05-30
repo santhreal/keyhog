@@ -101,10 +101,14 @@ pub const MAX_ML_CACHE_ENTRIES: usize = 1024;
 pub const MAX_ML_CACHE_BYTES: usize = 256 * 1024;
 #[cfg(feature = "ml")]
 pub const ML_CONTEXT_RADIUS_LINES: usize = 5;
-#[cfg(feature = "ml")]
-pub const ML_WEIGHT: f64 = 0.6;
-#[cfg(feature = "ml")]
-pub const HEURISTIC_WEIGHT: f64 = 0.4;
+// The ML/heuristic blend weight is NOT a compile-time constant: it is the
+// runtime-configurable `ScannerConfig::ml_weight` knob (default seeded from
+// `keyhog_core::config::ScanConfig`, overridable via `.keyhog.toml` and the
+// `--ml-weight` CLI flag, clamped to [0,1] in `ScannerConfig::sanitise`).
+// The blend at `apply_ml_batch_scores` reads `self.config.ml_weight` and
+// `(1.0 - self.config.ml_weight)`. The former `ML_WEIGHT`/`HEURISTIC_WEIGHT`
+// consts were a dead parallel source of truth (tuned!=shipped) and have been
+// removed so there is exactly one place the weight lives.
 
 #[cfg(not(feature = "multiline"))]
 #[derive(Debug, Clone)]

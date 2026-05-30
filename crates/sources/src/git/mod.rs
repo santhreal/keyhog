@@ -88,12 +88,20 @@ mod capped_line_tests {
 
         let n = read_capped_line(&mut r, &mut buf, 10).unwrap();
         assert_eq!(n, 101, "consumed all 100 bytes + the newline");
-        assert_eq!(buf.len(), 10, "buffered bytes capped at max despite a 100-byte line");
+        assert_eq!(
+            buf.len(),
+            10,
+            "buffered bytes capped at max despite a 100-byte line"
+        );
         assert!(buf.iter().all(|&b| b == b'x'));
 
         let n2 = read_capped_line(&mut r, &mut buf, 10).unwrap();
         assert_eq!(n2, 5);
-        assert_eq!(&buf[..], b"next\n", "stream stayed aligned; next line intact");
+        assert_eq!(
+            &buf[..],
+            b"next\n",
+            "stream stayed aligned; next line intact"
+        );
 
         assert_eq!(read_capped_line(&mut r, &mut buf, 10).unwrap(), 0, "EOF");
     }

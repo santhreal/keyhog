@@ -11,15 +11,15 @@ fn compressed_input_uses_size_cap() {
 
     let read_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/read.rs"
+        "/src/filesystem/read/bytes.rs"
     ))
-    .expect("read.rs");
+    .expect("read/bytes.rs");
     assert!(
         read_src.contains("compressed file exceeds size cap"),
         "oversize compressed input must log refusal"
     );
     assert!(
         read_src.contains("fn read_file_for_compressed_input"),
-        "compressed input helper must exist in read.rs"
+        "compressed input helper must exist in read/bytes.rs"
     );
 }

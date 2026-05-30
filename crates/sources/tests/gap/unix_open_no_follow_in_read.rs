@@ -4,9 +4,9 @@
 fn unix_open_no_follow_in_read() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/read.rs"
+        "/src/filesystem/read/raw.rs"
     ))
-    .expect("read.rs");
+    .expect("read/raw.rs");
     assert!(
         src.contains("O_NOFOLLOW"),
         "open_file_safe must set O_NOFOLLOW on unix"

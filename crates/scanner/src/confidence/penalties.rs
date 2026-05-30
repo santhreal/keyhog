@@ -1,17 +1,10 @@
-const PLACEHOLDER_WORDS: &[&[u8]] = &[
-    b"example",
-    b"dummy",
-    b"fake",
-    b"sample",
-    b"placeholder",
-    b"changeme",
-    // NOT included: "test" (appears in sk_test_ which is a real Stripe test key),
-    // "password" (appears in connection strings like redis://user:password@host),
-    // "admin"/"root" (legitimate credentials, not placeholders),
-    // "qwerty" (weak but real password, not a placeholder)
-];
-
 use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
+// Single source of truth for the placeholder-word set. Previously this module
+// kept a byte-identical local copy of `decode_structure`'s array (the same six
+// lowercase words, the same "NOT included" exclusions); the two drifted apart
+// is exactly the duplication this consolidation removes. The surface-form and
+// decoded-form placeholder checks now read the one exported const.
+use crate::decode_structure::PLACEHOLDER_WORDS;
 
 /// Sanitize a confidence value so a NaN or infinity entering the
 /// pipeline can never reach the final finding.
@@ -37,20 +30,18 @@ pub fn finalize_confidence(score: f64) -> f64 {
 }
 
 /// Check if a credential contains a known placeholder word (case-insensitive).
+///
+/// Delegates to the crate's canonical SIMD-skimming substring search
+/// (`ascii_ci::ci_find`, a `memchr2` first-byte skim) instead of the naive
+/// `windows().any(eq_ignore_ascii_case)` scan this module used to re-implement.
+/// Every entry of `PLACEHOLDER_WORDS` is an ASCII-lowercase byte literal, which
+/// is exactly `ci_find`'s "needle already lowercase" contract, so no per-call
+/// lowering is needed and the hot path pays one `memchr2` skim per word.
 pub fn contains_placeholder_word(credential: &str) -> bool {
+    let haystack = credential.as_bytes();
     PLACEHOLDER_WORDS
         .iter()
-        .any(|word| contains_ascii_case_insensitive(credential, word))
-}
-
-fn contains_ascii_case_insensitive(haystack: &str, needle: &[u8]) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle))
+        .any(|word| crate::ascii_ci::ci_find(haystack, word))
 }
 
 /// Compute the ratio of unique bytes to total bytes.

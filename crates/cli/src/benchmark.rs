@@ -20,17 +20,14 @@ pub struct BackendBenchmark {
     pub bytes_scanned: usize,
 }
 
-pub fn startup_summary(detector_count: usize, backend_label: &str) -> String {
-    let gpu = format_gpu_summary();
-    format!(
-        "KeyHog v{} | GPU: {} | Backend: {} | {} detectors",
-        env!("CARGO_PKG_VERSION"),
-        gpu,
-        backend_label,
-        detector_count
-    )
-}
-
+/// Format a one-line GPU summary string for hardware-aware reporting.
+///
+/// The shipping startup banner is built by `keyhog_core::banner::print_banner`
+/// plus `keyhog_scanner::hw_probe::startup_banner` (see `orchestrator/run.rs`);
+/// there is intentionally no second `startup_summary` banner builder here.
+/// This helper remains as standalone, independently tested public surface
+/// (`tests/gate/benchmark_gpu_summary_nonempty.rs`) for callers that want just
+/// the GPU portion.
 pub fn format_gpu_summary() -> String {
     let hw = probe_hardware();
     match (&hw.gpu_name, hw.gpu_vram_mb) {

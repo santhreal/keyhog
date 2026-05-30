@@ -141,15 +141,18 @@ impl ScanOrchestrator {
                 .with_config(scanner_config),
         );
 
-        // Detector regexes compile lazily on first use, which makes a one-shot
-        // scan of a single file (or stdin) start in milliseconds instead of
-        // paying the whole-corpus compile up front. For a DIRECTORY scan -
-        // many files where each detector fires repeatedly - warm them all in
-        // parallel now so no single file stalls on a detector's first-use
-        // compile; the cost amortizes immediately over the walk.
-        if args.path.as_deref().is_some_and(|p| p.is_dir()) {
-            scanner.warm();
-        }
+        // Detector regexes compile lazily on first use. Warm the whole set in
+        // parallel now, on every scan, instead of letting the first file pay a
+        // serial first-touch compile of each detector. The earlier `is_dir`
+        // gate was meant to keep one-shot single-file/stdin startup fast, but it
+        // backfired: a single-file scan then fell into a SERIAL lazy compile of
+        // all 891 regexes on the hot path (~340ms measured), strictly slower
+        // than the parallel `warm()` a directory scan got. Single file, stdin,
+        // pre-commit hooks and editor integrations all hit that worst case.
+        // `warm()` is idempotent and a no-op for already-compiled patterns, so
+        // warming unconditionally costs nothing the lazy path would not have
+        // paid anyway - it just parallelizes it.
+        scanner.warm();
 
         let signatures: std::collections::HashSet<Arc<str>> = detectors
             .iter()

@@ -78,14 +78,23 @@ pub(crate) mod structured;
 pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
 pub mod telemetry;
+/// Shared FNV-1a hash + content-keyed memoization primitives. Single home for
+/// the seed every per-scan cache keys on, plus the bounded thread-local cache
+/// helper they all share, so a hash change can never re-key only some caches.
+pub(crate) mod util_hash;
 /// Unicode normalization and homoglyph defense.
 pub mod unicode_hardening;
 
-pub(crate) fn sha256_hash(s: &str) -> String {
+/// SHA-256 of a credential as the raw 32 inline bytes - matching
+/// `Finding::credential_hash: [u8; 32]`. Hex encoding is deferred to the
+/// serde/reporter boundary (`keyhog_core::hex_encode`), keeping the pre-dedup
+/// hot path zero-heap. All `credential_hash:` assignment sites forward this
+/// value straight into the `[u8; 32]` field, so the byte form is required.
+pub(crate) fn sha256_hash(s: &str) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
-    hex::encode(hasher.finalize())
+    hasher.finalize().into()
 }
 
 #[cfg(feature = "simd")]

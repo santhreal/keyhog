@@ -10,6 +10,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| io::Error::other(format!("OUT_DIR is not set: {error}")))?;
     let output_path = Path::new(&out_dir).join("embedded_detectors.rs");
 
+    // Build provenance: pin "what is benched" to a commit. The v32 F1=0.8896
+    // vs HEAD F1=0.801 comparison was unverifiable because both binaries
+    // reported the same `v0.5.37` and the result JSONs carried an empty
+    // version - so a regression could not be bisected. Stamping the git SHA
+    // into the binary makes every future scan trace back to an exact commit
+    // and lets the bench fail-closed when it scores a stale build.
+    stamp_git_hash(Path::new(&manifest_dir));
+
     let candidates = [
         Path::new(&manifest_dir).join("detectors"),
         Path::new(&manifest_dir)
@@ -24,6 +32,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .find(|path| path.exists() && path.is_dir());
     let Some(detectors_dir) = detectors_dir else {
         println!("cargo:warning=detectors/ directory not found, embedded detectors will be empty");
+        // Always emit the digest, even for the empty set, so consumers can
+        // rely on `env!("KEYHOG_DETECTOR_DIGEST")` existing unconditionally and
+        // the bench can fail-closed on a binary that baked in zero detectors
+        // instead of hitting a missing-env compile error.
+        println!(
+            "cargo:rustc-env=KEYHOG_DETECTOR_DIGEST={}",
+            detector_set_digest(&[])
+        );
         write_embedded_detectors(&output_path, &[])?;
         return Ok(());
     };
@@ -39,6 +55,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+
+    // Build provenance: stamp the digest of the EXACT detector set that is
+    // about to be baked into the binary. The CLI surfaces this so the
+    // benchmark can assert the running binary's embedded detectors match the
+    // on-disk `detectors/` tree (cargo's `rerun-if-changed` cannot be trusted
+    // across in-place TOML edits, so a fresh-from-this-build digest is the
+    // authoritative answer to "what got compiled in"). Self-contained FNV-1a
+    // (no build-dependency on a hashing crate) — it identifies the set, it is
+    // not a security primitive.
+    let detector_digest = detector_set_digest(&entries);
+    println!("cargo:rustc-env=KEYHOG_DETECTOR_DIGEST={detector_digest}");
 
     write_embedded_detectors(&output_path, &entries)?;
 
@@ -137,6 +164,93 @@ fn write_embedded_detectors(output_path: &PathBuf, entries: &[(String, String)])
             ),
         )
     })
+}
+
+/// Resolve the current git commit and emit it as `cargo:rustc-env=GIT_HASH`,
+/// registering `rerun-if-changed` on the files that hold the SHA so a new
+/// commit re-stamps the binary.
+///
+/// Failure is non-fatal: a `cargo package` / crates.io build has no `.git`
+/// tree, and a worktree may be checked out without `git` on PATH. In those
+/// cases we stamp the sentinel `unknown` rather than abort the build - the
+/// detector digest and version still ship, and the CLI prints `unknown` for
+/// the SHA. `CARGO_MANIFEST_DIR` is `crates/core`, so the workspace `.git`
+/// lives two directories up.
+fn stamp_git_hash(manifest_dir: &Path) {
+    let workspace_root = manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(manifest_dir);
+    let git_dir = workspace_root.join(".git");
+
+    // Re-run when HEAD moves (checkout / new commit on the same branch). HEAD
+    // is usually `ref: refs/heads/<branch>`, so the branch ref file holds the
+    // SHA that actually changes per commit - watch both. `.git/packed-refs`
+    // covers a freshly cloned tree whose loose ref has been packed away.
+    let head_file = git_dir.join("HEAD");
+    println!("cargo:rerun-if-changed={}", head_file.display());
+    if let Some(ref_path) = head_ref_path(&git_dir) {
+        println!("cargo:rerun-if-changed={}", ref_path.display());
+    }
+    println!(
+        "cargo:rerun-if-changed={}",
+        git_dir.join("packed-refs").display()
+    );
+
+    let hash = git_hash(workspace_root).unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=GIT_HASH={hash}");
+}
+
+/// Path to the ref file referenced by `.git/HEAD` (e.g.
+/// `.git/refs/heads/main`), or `None` when HEAD is detached or unreadable.
+fn head_ref_path(git_dir: &Path) -> Option<PathBuf> {
+    let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let reference = head.trim().strip_prefix("ref:")?.trim();
+    Some(git_dir.join(reference))
+}
+
+/// `git rev-parse HEAD`, trimmed. `None` if git is absent or the command
+/// fails (no repo, shallow placeholder, etc.).
+fn git_hash(workspace_root: &Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(workspace_root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let hash = String::from_utf8(output.stdout).ok()?;
+    let hash = hash.trim();
+    if hash.is_empty() {
+        None
+    } else {
+        Some(hash.to_string())
+    }
+}
+
+/// Digest of the exact embedded detector set (sorted `(name, content)` pairs),
+/// as a stable lowercase-hex string. FNV-1a 64-bit over name+content of every
+/// entry, mirroring the scanner build script's `model_version` hash so both
+/// build scripts speak the same self-contained, build-dependency-free dialect.
+/// This identifies "which detectors got compiled in"; it is not a tamper seal.
+fn detector_set_digest(entries: &[(String, String)]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |bytes: &[u8]| {
+        for &b in bytes {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for (name, content) in entries {
+        mix(name.as_bytes());
+        // NUL separator so ("ab","c") and ("a","bc") cannot collide.
+        mix(&[0]);
+        mix(content.as_bytes());
+        mix(&[0]);
+    }
+    format!("{}-{hash:016x}", entries.len())
 }
 
 fn file_name(path: &Path) -> io::Result<String> {

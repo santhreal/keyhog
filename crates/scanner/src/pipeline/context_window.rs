@@ -2,13 +2,55 @@ use crate::types::*;
 use keyhog_core::Chunk;
 use std::borrow::Cow;
 
-pub fn local_context_window(text: &str, line: usize, radius: usize) -> String {
-    // Avoid collecting all lines just to slice 2*radius. Iterator-based
-    // approach skips lines before the window and takes only what's needed.
-    let start = line.saturating_sub(radius).saturating_sub(1);
-    let end = line + radius;
-    let window: Vec<&str> = text.lines().skip(start).take(end - start).collect();
-    window.join("\n")
+/// Borrow the `[line - radius, line + radius]` window directly out of `text`.
+///
+/// `line` is 1-based. Returns a `&str` slice of the original buffer: no
+/// `Vec<&str>` collect, no `join` re-allocation, and no O(file)
+/// `lines().skip()` prefix walk (which iterates and discards every skipped
+/// line). We locate the two byte boundaries with `memchr` newline scans -
+/// O(window) for the start instead of O(file) - and slice once. Callers that
+/// need ownership call `.to_string()` (still one alloc total, down from two).
+pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
+    let bytes = text.as_bytes();
+    // Byte offset where the first window line begins. Walk forward over the
+    // `(line - radius - 1)` newlines that precede the window; if `line` is so
+    // small the window starts at line 1, the start offset is simply 0.
+    let lines_before = line.saturating_sub(radius).saturating_sub(1);
+    let mut start = 0usize;
+    for _ in 0..lines_before {
+        match memchr::memchr(b'\n', &bytes[start..]) {
+            Some(pos) => start = start + pos + 1,
+            // Fewer lines than the window asks for: clamp to end of text.
+            None => return "",
+        }
+    }
+    // Byte offset just past the last window line. Skip `(2*radius + 1)` line
+    // terminators from `start`; the slice excludes the trailing newline so a
+    // single-line window (radius 0) returns the bare line with no `\n`.
+    let window_lines = radius.saturating_mul(2).saturating_add(1);
+    let mut end = start;
+    for n in 0..window_lines {
+        match memchr::memchr(b'\n', &bytes[end..]) {
+            Some(pos) => {
+                // The terminator of the final window line is excluded; for
+                // earlier lines it is kept so neighbours stay `\n`-joined.
+                end = if n + 1 == window_lines {
+                    end + pos
+                } else {
+                    end + pos + 1
+                };
+                if n + 1 == window_lines {
+                    break;
+                }
+            }
+            // Window runs to (or past) EOF: take everything that remains.
+            None => {
+                end = bytes.len();
+                break;
+            }
+        }
+    }
+    &text[start..end]
 }
 
 /// Compute the byte offsets for every line in a string.

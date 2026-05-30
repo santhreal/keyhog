@@ -650,23 +650,25 @@ fn lockdown_bails_on_verify_flag() {
     }
 }
 
+/// Start a real `keyhog daemon` over a Unix socket in a throwaway
+/// `XDG_RUNTIME_DIR`, blocking until the socket binds (or panicking on
+/// a 30s timeout). Returns the runtime `TempDir` (its `keyhog.sock`
+/// lives at `<runtime>/keyhog.sock`) plus the daemon `Child` so the
+/// caller can `XDG_RUNTIME_DIR`-pin its scan client to the same socket
+/// and tear the daemon down with `stop_daemon` afterwards.
+///
+/// Factored out of the per-route daemon e2e tests so the start/wait
+/// boilerplate isn't copy-pasted (NO DUPLICATION): the ScanPath,
+/// ScanText/stdin, example-suppression-wire, and `daemon status`
+/// tests all drive the same real listener through this one helper.
 #[cfg(unix)]
-#[test]
-fn daemon_wire_scan_path_finds_planted_secret() {
-    use std::process::{Child, Command, Stdio};
+fn start_daemon() -> (TempDir, std::process::Child) {
+    use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
     let runtime = TempDir::new().expect("runtime dir");
-    let dir = TempDir::new().expect("fixture dir");
-    let fixture = dir.path().join("daemon_planted.txt");
-    std::fs::write(
-        &fixture,
-        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
-    )
-    .unwrap();
-
     let detectors = workspace_detectors();
-    let mut daemon: Child = Command::new(binary())
+    let daemon = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
         .args([
             "daemon",
@@ -688,6 +690,36 @@ fn daemon_wire_scan_path_finds_planted_secret() {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
+    (runtime, daemon)
+}
+
+/// Tear down a daemon started by `start_daemon`: ask it to stop over
+/// the socket, then make sure the child is reaped.
+#[cfg(unix)]
+fn stop_daemon(runtime: &TempDir, daemon: &mut std::process::Child) {
+    use std::process::Command;
+    let _ = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["daemon", "stop"])
+        .output();
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+}
+
+#[cfg(unix)]
+#[test]
+fn daemon_wire_scan_path_finds_planted_secret() {
+    use std::process::Command;
+
+    let dir = TempDir::new().expect("fixture dir");
+    let fixture = dir.path().join("daemon_planted.txt");
+    std::fs::write(
+        &fixture,
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+    )
+    .unwrap();
+
+    let (runtime, mut daemon) = start_daemon();
 
     let scan = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
@@ -696,12 +728,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
         .output()
         .expect("daemon scan");
 
-    let _ = Command::new(binary())
-        .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["daemon", "stop"])
-        .output();
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    stop_daemon(&runtime, &mut daemon);
 
     assert_eq!(
         scan.status.code(),
@@ -718,6 +745,196 @@ fn daemon_wire_scan_path_finds_planted_secret() {
             Some("aws-access-key" | "hot-aws_key")
         )),
         "daemon wire path must return an AWS finding; got {arr:?}"
+    );
+}
+
+/// ScanText twin of `daemon_wire_scan_path_finds_planted_secret`.
+///
+/// `keyhog scan --daemon` has two client routes (subcommands/scan.rs
+/// `run_via_daemon`): `--stdin` sends `Request::ScanText`, a single
+/// file path sends `Request::ScanPath`. The path route is covered by
+/// the test above; this drives the stdin/ScanText route - the
+/// pre-commit / IDE-save fast path the daemon exists for (see the
+/// `daemon/protocol.rs` ScanText doc) - over a REAL bound socket
+/// rather than the in-memory `tokio::io::duplex` mock the unit test
+/// uses. Pipes a planted AWS key into `keyhog scan --daemon --stdin
+/// --format json` and asserts exit 1 + the AWS finding came back over
+/// the wire.
+#[cfg(unix)]
+#[test]
+fn daemon_wire_scan_stdin_finds_planted_secret() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let (runtime, mut daemon) = start_daemon();
+
+    let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
+    let mut child = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon", "--stdin", "--format", "json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon stdin scan");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(fixture.as_bytes())
+        .expect("pipe fixture to stdin");
+    let scan = child.wait_with_output().expect("daemon stdin scan output");
+
+    stop_daemon(&runtime, &mut daemon);
+
+    assert_eq!(
+        scan.status.code(),
+        Some(1),
+        "daemon --stdin scan must find secret (exit 1); stderr={}",
+        String::from_utf8_lossy(&scan.stderr)
+    );
+    let findings: serde_json::Value =
+        serde_json::from_slice(&scan.stdout).expect("daemon stdin stdout is JSON");
+    let arr = findings.as_array().expect("array");
+    assert!(
+        arr.iter().any(|f| matches!(
+            f.get("detector_id").and_then(|v| v.as_str()),
+            Some("aws-access-key" | "hot-aws_key")
+        )),
+        "daemon ScanText/stdin wire path must return an AWS finding; got {arr:?}"
+    );
+}
+
+/// Wire-v2 telemetry over the real socket on the ScanText/stdin route.
+///
+/// `daemon/protocol.rs` bumped the wire to v2 specifically so
+/// `ScanResults` could carry `engine_example_suppressions` (and
+/// `dogfood_events`) back to the client - the suppressed-example
+/// counter that drives the reporter's "matched + suppressed N as known
+/// examples" summary. That field was previously only round-tripped in
+/// the `tokio::io::duplex` unit test (`unit/daemon_wire.rs`), never
+/// asserted end-to-end. Here we pipe an AWS-published EXAMPLE token
+/// (suppressed by the bundled test-fixture entry on the daemon side)
+/// into `keyhog scan --daemon --stdin --format text`, and assert the
+/// client reporter distinguishes suppressed-example from a clean repo -
+/// which is only possible if the daemon's `engine_example_suppressions`
+/// count survived the wire and was merged into the client's telemetry
+/// (`run_via_daemon` -> `unwrap_scan_results` -> `add_example_suppressions`).
+#[cfg(unix)]
+#[test]
+fn daemon_wire_stdin_example_suppression_summary_propagates() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let (runtime, mut daemon) = start_daemon();
+
+    // AWS-published EXAMPLE credential: matched then suppressed as a
+    // known example on the daemon side, so the wire-v2 suppression
+    // count - not a finding - is what must reach the client.
+    let fixture = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n";
+    let mut child = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon", "--stdin", "--format", "text"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon stdin example scan");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(fixture.as_bytes())
+        .expect("pipe example fixture to stdin");
+    let scan = child
+        .wait_with_output()
+        .expect("daemon stdin example scan output");
+
+    stop_daemon(&runtime, &mut daemon);
+
+    let stdout = String::from_utf8_lossy(&scan.stdout);
+    assert!(
+        stdout.contains("example/test key") && stdout.contains("suppressed"),
+        "wire-v2 engine_example_suppressions must propagate over the real \
+         socket so the daemon client distinguishes suppressed-example from a \
+         clean repo. Got stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Your code is clean."),
+        "the clean-repo summary must NOT fire when the daemon suppressed an \
+         example credential and reported a non-zero wire-v2 count. \
+         Got stdout: {stdout}"
+    );
+}
+
+/// `keyhog daemon status` against a RUNNING daemon over the real
+/// socket. The previously-covered daemon e2e only drove start ->
+/// `--daemon` scan -> stop; the documented Status payload (args.rs:
+/// "uptime, scans served, active scans, and detector count") was only
+/// exercised by orphaned adversarial tests for the *absent*-daemon
+/// error path. Here we start a daemon, issue one real scan over the
+/// socket (so scans-served increments off zero), then run `keyhog
+/// daemon status` against the live socket and assert exit 0 + the
+/// payload reports scans-served and a real detector count.
+#[cfg(unix)]
+#[test]
+fn daemon_status_reports_payload_after_live_scan() {
+    use std::process::Command;
+
+    let dir = TempDir::new().expect("fixture dir");
+    let fixture = dir.path().join("daemon_status_planted.txt");
+    std::fs::write(
+        &fixture,
+        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+    )
+    .unwrap();
+
+    let (runtime, mut daemon) = start_daemon();
+
+    // One real scan over the socket so the served counter is provably
+    // non-zero in the status payload below.
+    let scan = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon", "--format", "json"])
+        .arg(&fixture)
+        .output()
+        .expect("daemon scan before status");
+    assert_eq!(
+        scan.status.code(),
+        Some(1),
+        "pre-status daemon scan must find the planted key; stderr={}",
+        String::from_utf8_lossy(&scan.stderr)
+    );
+
+    let status = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["daemon", "status"])
+        .output()
+        .expect("daemon status");
+
+    stop_daemon(&runtime, &mut daemon);
+
+    assert_eq!(
+        status.status.code(),
+        Some(0),
+        "`daemon status` against a live daemon must exit 0; stderr={}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let out = String::from_utf8_lossy(&status.stdout);
+    assert!(
+        out.contains("scans served"),
+        "status payload must report scans-served; got: {out}"
+    );
+    assert!(
+        out.contains("detectors"),
+        "status payload must report the detector count; got: {out}"
+    );
+    // The served counter must reflect the real scan we issued, not a
+    // hardcoded zero: "0 scans served" would mean the live Health
+    // payload didn't see our request.
+    assert!(
+        !out.contains("0 scans served"),
+        "status must report the scan we issued (non-zero scans-served); got: {out}"
     );
 }
 

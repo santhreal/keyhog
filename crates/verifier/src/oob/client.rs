@@ -50,6 +50,8 @@ pub enum InteractshError {
     Poll { status: u16, body: String },
     #[error("interactsh response shape unexpected: {0}")]
     BadResponse(String),
+    #[error("interactsh collector host blocked by SSRF guard: {0}")]
+    BlockedCollector(String),
     #[error("interactsh AES key unwrap failed: {0}")]
     AesUnwrap(String),
     #[error("interactsh interaction decrypt failed: {0}")]
@@ -241,6 +243,22 @@ impl InteractshClient {
 
         let server = normalize_server(server);
 
+        // SSRF gate (kimi verifier audit MEDIUM finding). The OOB collector
+        // traffic - register/poll/deregister - does NOT flow through
+        // `resolved_client_for_url`, which is the only place the verify path
+        // enforces private-IP / DNS-rebinding protection. Without a gate here,
+        // `--oob-server 169.254.169.254` (cloud metadata), `127.0.0.1`, or any
+        // RFC1918 host turns the unattended poller into an SSRF primitive that
+        // also leaks the session secret (embedded in the poll query string) to
+        // an internal service. We validate the collector host BEFORE the first
+        // request: first the URL-string check (literal IPs, integer/hex/octal
+        // encodings, `localhost`/`.internal`/`.local`), then a post-resolution
+        // IP check so a hostname that resolves to a private address - the DNS
+        // rebinding case a 'trusted' hostname cannot rule out - is refused too.
+        // The check is a pure validation: re-running it is a no-op, so the fix
+        // is idempotent.
+        ssrf_check_collector(&server).await?;
+
         let body = RegisterRequest {
             public_key: &public_key_b64,
             secret_key: &secret_key,
@@ -424,6 +442,63 @@ pub struct MintedUrl {
     pub host: String,
     /// `https://<host>` - convenience for HTTP-shaped probes.
     pub url: String,
+}
+
+/// SSRF guard for the OOB collector host. Mirrors the protection
+/// `resolved_client_for_url` applies to every credential-verify URL, which the
+/// OOB register/poll/deregister path otherwise bypasses entirely.
+///
+/// Two layers, both pure validation (idempotent - re-running refuses or passes
+/// identically with no side effects):
+///
+/// 1. URL-string check (`is_private_url`): rejects literal private/loopback/
+///    link-local/multicast IPs, integer/hex/octal-encoded IPs, and the
+///    `localhost` / `.internal` / `.local` / `.localdomain` suffixes before any
+///    network I/O.
+/// 2. Post-resolution IP check: resolves the host once and rejects if ANY
+///    answer is a private address. This is the DNS-rebinding defense - a
+///    hostname an operator believes is a benign collector can still resolve to
+///    `169.254.169.254` or `127.0.0.1`, and the unattended poller embeds the
+///    session secret in its query string, so an internal target is both an
+///    SSRF and a secret-disclosure sink.
+///
+/// `normalize_server` has already force-upgraded to `https://` and stripped any
+/// trailing slash, so `server` here is `https://<host>` with no path.
+async fn ssrf_check_collector(server: &str) -> Result<(), InteractshError> {
+    if crate::ssrf::is_private_url(server) {
+        return Err(InteractshError::BlockedCollector(format!(
+            "{server} resolves to a private/loopback/link-local address"
+        )));
+    }
+
+    // Resolve once and re-check every answer to defeat DNS rebinding. A
+    // resolution failure here is NOT fatal: the subsequent register POST will
+    // surface the real transport/DNS error with the engine's own diagnostics.
+    // We only refuse when we positively observe a private resolved IP.
+    let url = match url::Url::parse(server) {
+        Ok(u) => u,
+        // `normalize_server` cannot produce an unparseable URL, but if it
+        // somehow does, refuse rather than fall through to an unchecked POST.
+        Err(_) => {
+            return Err(InteractshError::BlockedCollector(format!(
+                "{server} is not a parseable collector URL"
+            )))
+        }
+    };
+    if let Some(host) = url.host_str() {
+        let port = url.port_or_known_default().unwrap_or(443);
+        if let Ok(addrs) = crate::ssrf::resolve_dns_cached(&format!("{host}:{port}")).await {
+            if addrs
+                .iter()
+                .any(|addr| crate::ssrf::is_private_ip_addr(&addr.ip()))
+            {
+                return Err(InteractshError::BlockedCollector(format!(
+                    "{server} resolves to a private/loopback/link-local address"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Accept `oast.fun`, `oast.fun/`, `https://oast.fun`, `https://oast.fun/`.

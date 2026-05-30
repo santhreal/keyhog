@@ -82,6 +82,15 @@ pub struct ConfigFile {
     // e.g. lockdown enforcement was active when it never reached the
     // runtime.
     //
+    // The `[detector.X]` floors/disables additionally ship in the binary via
+    // the compiled Tier-A defaults (`SHIPPED_DETECTOR_FLOORS` /
+    // `SHIPPED_DISABLED_DETECTORS`), so they apply on the bench/default path
+    // too - not only when a user authors a `.keyhog.toml`. A file
+    // `[detector.X]` entry overrides the compiled floor for that id. This is
+    // the fix for the "tuned != benched != shipped" leak: the only Tier-A knob
+    // that can suppress a specific noisy detector now reaches the very runs
+    // that set the headline metric.
+    //
     // `[allowlist]` is still parse-only: its governance flags
     // (require_reason / require_approved_by / max_expires_days) need the
     // allowlist evaluator to enforce them, which is not yet built, so the
@@ -149,6 +158,52 @@ pub struct LockdownSection {
     pub require: Option<bool>,
 }
 
+/// Compiled-in Tier-A per-detector confidence floors that ship inside the
+/// binary, independent of any on-disk `.keyhog.toml`. This is the fix for the
+/// "tuned != benched != shipped" leak: `[detector.<id>] min_confidence`
+/// overrides used to exist ONLY in a user-authored `.keyhog.toml`, so the
+/// bench and every default scan (which find no such file and short-circuit to
+/// `ConfigOutcome::default()`) never exercised them. Floors listed here are
+/// seeded into every `ConfigOutcome` regardless of whether a config file is
+/// present, so the benched/default path runs the same per-detector tuning the
+/// shipped binary carries. A user `.keyhog.toml` `[detector.<id>]
+/// min_confidence` overrides the compiled value for that id (operator intent
+/// wins per-detector); ids only listed here still apply on the no-file path.
+///
+/// Entries are `(detector_id, floor)`. Edit this table to raise the floor on a
+/// specific noisy detector (e.g. loosened twilio / connection-string ones)
+/// without requiring the operator to author a TOML; the change ships in the
+/// binary and the bench picks it up automatically. Tier B (the detector
+/// corpus) stays in `rules/`; this is the Tier-A scalar knob.
+pub const SHIPPED_DETECTOR_FLOORS: &[(&str, f64)] = &[];
+
+/// Compiled-in Tier-A detector disables that ship inside the binary, same
+/// rationale as [`SHIPPED_DETECTOR_FLOORS`]: a detector listed here is dropped
+/// from the loaded corpus on every path, including the no-config bench/default
+/// path. A user `.keyhog.toml` `[detector.<id>] enabled = true` cannot
+/// re-enable a compiled disable today (the merge is additive); keep this table
+/// for detectors that must never fire by default.
+pub const SHIPPED_DISABLED_DETECTORS: &[&str] = &[];
+
+/// Build the baseline [`ConfigOutcome`] from the compiled-in Tier-A defaults.
+/// Every return path of [`apply_config_file`] starts from this (not the empty
+/// `ConfigOutcome::default()`), so the per-detector floors / disables that ship
+/// in the binary reach the benched and default scans even when no
+/// `.keyhog.toml` exists on disk.
+fn shipped_config_outcome() -> ConfigOutcome {
+    ConfigOutcome {
+        disabled_detectors: SHIPPED_DISABLED_DETECTORS
+            .iter()
+            .map(|id| (*id).to_string())
+            .collect(),
+        require_lockdown: false,
+        detector_min_confidence: SHIPPED_DETECTOR_FLOORS
+            .iter()
+            .map(|(id, floor)| ((*id).to_string(), *floor))
+            .collect(),
+    }
+}
+
 /// Search for `.keyhog.toml` starting from the scan root, walking up to the
 /// filesystem root. Returns `None` when no config file is found.
 pub fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
@@ -176,6 +231,14 @@ pub fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
 
 /// Outcome of merging `.keyhog.toml` into `ScanArgs`, beyond the in-place
 /// `args` mutations: the things the caller must still act on.
+///
+/// Prefer [`crate::orchestrator_config::resolve_scan_config`] over calling
+/// [`apply_config_file`] directly: it runs this same merge and then folds the
+/// result into a single [`crate::orchestrator_config::ResolvedScanConfig`] - the
+/// engine `ScannerConfig` PLUS the post-scan floors - so the live worker reads
+/// one resolved struct instead of re-deriving the confidence floor from raw
+/// `args` (the "tuned != benched != shipped" leak). `detector_min_confidence`
+/// here is the source the resolved struct carries through to post-processing.
 #[derive(Debug, Default)]
 pub struct ConfigOutcome {
     /// Detector ids disabled via `[detector.<id>] enabled = false`; the caller
@@ -212,7 +275,10 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
 
     let config_path = match config_path {
         Some(path) => path,
-        None => return ConfigOutcome::default(),
+        // No `.keyhog.toml` on the walk-up path (the bench/default case): still
+        // ship the compiled Tier-A floors/disables so tuned == benched ==
+        // shipped, instead of the empty `ConfigOutcome::default()`.
+        None => return shipped_config_outcome(),
     };
 
     let raw = match std::fs::read_to_string(&config_path) {
@@ -222,7 +288,7 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
                 path = %config_path.display(),
                 "failed to read .keyhog.toml: {error}"
             );
-            return ConfigOutcome::default();
+            return shipped_config_outcome();
         }
     };
 
@@ -238,7 +304,7 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
                 path = %config_path.display(),
                 "failed to parse .keyhog.toml: {error}"
             );
-            return ConfigOutcome::default();
+            return shipped_config_outcome();
         }
     };
 
@@ -471,11 +537,18 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     // were README-documented; the confidence floor used to be parsed and
     // silently ignored (the disabled toggle was wired earlier). Drain the map
     // once into both outputs.
-    let mut disabled_detectors = Vec::new();
-    let mut detector_min_confidence = std::collections::HashMap::new();
+    //
+    // Start from the compiled Tier-A defaults (`shipped_config_outcome`) so the
+    // shipped floors/disables apply even when the `.keyhog.toml` does not
+    // mention that detector, then layer the file on top: a file
+    // `min_confidence` overrides the compiled floor for that id, and file
+    // disables union with the compiled disables.
+    let baseline = shipped_config_outcome();
+    let mut disabled_detectors = baseline.disabled_detectors;
+    let mut detector_min_confidence = baseline.detector_min_confidence;
     if let Some(map) = config.detector {
         for (id, section) in map {
-            if section.enabled == Some(false) {
+            if section.enabled == Some(false) && !disabled_detectors.contains(&id) {
                 disabled_detectors.push(id.clone());
             }
             if let Some(conf) = section.min_confidence {

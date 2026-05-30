@@ -49,7 +49,7 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
             escape_csv(&finding.service),
             escape_csv(&finding.severity.to_string()),
             escape_csv(&finding.credential_redacted),
-            escape_csv(&finding.credential_hash),
+            escape_csv(&crate::hex_encode(&finding.credential_hash)),
             escape_csv(&finding.location.source),
             escape_csv(file_path_str),
             escape_csv(&line_str),

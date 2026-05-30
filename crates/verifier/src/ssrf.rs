@@ -6,20 +6,47 @@
 use dashmap::DashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-static DNS_CACHE: std::sync::OnceLock<DashMap<String, Arc<Vec<SocketAddr>>>> =
-    std::sync::OnceLock::new();
+/// Cached A/AAAA records expire after this long so a long-running verification
+/// session does not pin stale records (and an attacker-influenced wildcard host
+/// cannot keep an entry alive indefinitely).
+const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// Hard cap on distinct host:port entries. Bounds memory regardless of how many
+/// unique (e.g. `*.evil.example`) hostnames a scan resolves: once the cap is hit
+/// the cache is cleared rather than grown without limit.
+const DNS_CACHE_MAX_ENTRIES: usize = 4096;
+
+/// `(inserted_at, resolved addresses)` so expired entries can be detected on read.
+type DnsCacheEntry = (Instant, Arc<Vec<SocketAddr>>);
+
+static DNS_CACHE: std::sync::OnceLock<DashMap<String, DnsCacheEntry>> = std::sync::OnceLock::new();
 
 /// Cached DNS resolution to avoid redundant lookups during live API credential validation.
+///
+/// Entries are bounded both in age (`DNS_CACHE_TTL`) and count
+/// (`DNS_CACHE_MAX_ENTRIES`) so the cache cannot grow without limit for the
+/// lifetime of the process.
 pub async fn resolve_dns_cached(host_port: &str) -> std::io::Result<Vec<SocketAddr>> {
     let cache = DNS_CACHE.get_or_init(DashMap::new);
-    if let Some(addrs) = cache.get(host_port) {
-        return Ok((**addrs.value()).clone());
+    if let Some(entry) = cache.get(host_port) {
+        let (inserted_at, addrs) = entry.value();
+        if inserted_at.elapsed() < DNS_CACHE_TTL {
+            return Ok((**addrs).clone());
+        }
+        // Stale: drop the read guard before mutating to avoid deadlock.
+        drop(entry);
+        cache.remove(host_port);
     }
     // Perform lookup
     let addrs: Vec<SocketAddr> = tokio::net::lookup_host(host_port).await?.collect();
     if !addrs.is_empty() {
-        cache.insert(host_port.to_string(), Arc::new(addrs.clone()));
+        // Bound entry count: clear rather than grow unbounded when the cap is hit.
+        if cache.len() >= DNS_CACHE_MAX_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(host_port.to_string(), (Instant::now(), Arc::new(addrs.clone())));
     }
     Ok(addrs)
 }

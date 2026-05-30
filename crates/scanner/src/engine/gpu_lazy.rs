@@ -1,5 +1,19 @@
 use super::*;
 
+/// Tracks whether the subgroup-coalesced match-append form
+/// (subgroup_ballot + subgroup_shuffle -> `_vyre_match_leader`) is
+/// enabled for the AC GPU dispatch Program. Held forced-off because
+/// vyre's substrate-neutral pre-emit lowering rejects that form on
+/// every backend (CUDA and wgpu both: "_vyre_match_leader referenced
+/// before binding", Innovation I.17). This is a named, greppable
+/// dead-path marker rather than a silent inline `false`: once the
+/// vyre IR gap is closed, flipping this to `true` re-enables the
+/// ~32x atomic-contention reduction on the shared match-count buffer
+/// across every backend in one place. The interim contention win
+/// (per-workgroup local reduction -> one atomic add per group) lives
+/// in the kernel builder, not here.
+const AC_GPU_SUBGROUP_COALESCE: bool = false;
+
 impl CompiledScanner {
     /// Lazily compile the GPU literal-set on first call. Returns `None`
     /// when no compatible adapter was detected at probe time.
@@ -91,7 +105,7 @@ impl CompiledScanner {
                 // bit-identical match output, just with more atomic
                 // pressure on the shared count buffer.
                 let backend_id = self.gpu_backend.as_ref().map(|b| b.id()).unwrap_or("none");
-                let use_subgroup_coalesce = false;
+                let use_subgroup_coalesce = AC_GPU_SUBGROUP_COALESCE;
                 let program = vyre_libs::scan::classic_ac::build_ac_bounded_ranges_program_ext(
                     &matcher.dfa,
                     pattern_count,

@@ -151,12 +151,16 @@ impl RuleSuppressor {
             return false;
         }
         let path = finding.location.file_path.as_deref().unwrap_or("");
+        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
+        // against the hex form (see the module-doc example). Hex-encode into a
+        // local that outlives `ctx`'s borrow below.
+        let credential_hash_hex = crate::finding::hex_encode(&finding.credential_hash);
         let ctx = FindingContext {
             detector_id: finding.detector_id.as_ref(),
             service: finding.service.as_ref(),
             severity: finding.severity,
             path,
-            credential_hash: finding.credential_hash.as_str(),
+            credential_hash: &credential_hash_hex,
         };
         self.rules.iter().any(|rule| evaluate_formula(rule, &ctx))
     }

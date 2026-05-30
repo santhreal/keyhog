@@ -35,9 +35,38 @@ impl CompiledScanner {
                 break;
             }
 
-            for (pattern_idx, pattern) in HOT_PATTERNS.iter().enumerate() {
+            // First-byte (plus one disambiguating byte) dispatch instead of
+            // an O(8) linear re-compare against every HOT_PATTERNS entry at
+            // every sieve hit. SimdSieve already located the hit but only
+            // yields the offset, so we still have to identify WHICH literal
+            // matched - but the 8 hot literals are mutually-exclusive
+            // prefixes keyed by their first byte (`g`/`s`/`A`/`S`/`x`), so a
+            // single byte (two for the `s`/`A`/`x` collision pairs) selects
+            // the lone candidate. That collapses the per-hit cost from 8 full
+            // slice compares to one dispatch + one confirming compare. The
+            // returned index is verified against the full literal below so
+            // behavior is byte-identical to the old linear scan, just without
+            // the redundant 7 compares.
+            //
+            //   0 ghp_     `g`
+            //   1 sk-proj- `s` then `k`
+            //   2 AKIA     `A` then `K`
+            //   3 ASIA     `A` then `S`
+            //   4 SG.      `S`
+            //   5 xoxb-    `x` then 4th byte `b`
+            //   6 xoxp-    `x` then 4th byte `p`
+            //   7 sq0csp-  `s` then `q`
+            let Some(pattern_idx) = hot_pattern_index_at(text_bytes, offset) else {
+                continue;
+            };
+            {
+                let pattern = HOT_PATTERNS[pattern_idx];
                 let end = offset + pattern.len();
-                if end > text_bytes.len() || &text_bytes[offset..end] != *pattern {
+                // Confirm the full literal. `hot_pattern_index_at` only
+                // inspects the first 1-2 bytes, so a candidate whose tail
+                // diverges (e.g. `xoxq-`, `sk-pXoj-`) is rejected here exactly
+                // as the old `&text_bytes[offset..end] != *pattern` guard did.
+                if end > text_bytes.len() || &text_bytes[offset..end] != pattern {
                     continue;
                 }
 
@@ -279,8 +308,54 @@ impl CompiledScanner {
                     },
                     self.config.max_matches_per_chunk,
                 );
-                break;
+                // A single sieve offset can match at most one hot literal
+                // (the 8 are mutually-exclusive prefixes), so there is no
+                // remaining candidate to skip - fall through to the next
+                // offset. This replaces the old `break` out of the per-offset
+                // 8-pattern loop, which is now gone.
             }
         }
+    }
+}
+
+/// Resolve a sieve hit at `offset` to the single
+/// [`crate::simdsieve_prefilter::HOT_PATTERNS`] index whose literal can begin
+/// there, or `None` if no hot literal does.
+///
+/// SimdSieve yields only the offset of a prefix hit, not which needle fired,
+/// so the caller would otherwise re-compare all 8 hot literals at every hit
+/// (`O(hits x 8 x patternlen)`). The 8 hot literals are mutually-exclusive
+/// prefixes keyed almost entirely by their first byte, so one byte (a second
+/// byte for the `s`/`A`/`x` collision pairs) selects the lone candidate. The
+/// caller still confirms the full literal, so this is a dispatch, not the
+/// verification - a wrong tail (`xoxq-`, `sk-Xroj-`) is rejected by the
+/// caller's full-slice compare exactly as before.
+///
+/// Index-parallel with [`crate::simdsieve_prefilter::HOT_PATTERNS`]:
+///   0 `ghp_`  1 `sk-proj-`  2 `AKIA`  3 `ASIA`
+///   4 `SG.`   5 `xoxb-`     6 `xoxp-` 7 `sq0csp-`
+#[cfg(feature = "simdsieve")]
+#[inline]
+fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
+    let rest = text_bytes.get(offset..)?;
+    match *rest.first()? {
+        b'g' => Some(0),                 // ghp_
+        b'S' => Some(4),                 // SG.
+        b's' => match *rest.get(1)? {    // sk-proj- vs sq0csp-
+            b'k' => Some(1),
+            b'q' => Some(7),
+            _ => None,
+        },
+        b'A' => match *rest.get(1)? {    // AKIA vs ASIA
+            b'K' => Some(2),
+            b'S' => Some(3),
+            _ => None,
+        },
+        b'x' => match *rest.get(3)? {    // xoxb- vs xoxp- (share `xox`)
+            b'b' => Some(5),
+            b'p' => Some(6),
+            _ => None,
+        },
+        _ => None,
     }
 }

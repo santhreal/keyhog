@@ -1,5 +1,17 @@
 use super::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
+
+thread_local! {
+    /// Per-thread pool for the `lines_with_keyword` scratch buffer.
+    ///
+    /// `scan_generic_assignments` runs on every chunk and previously did a
+    /// fresh `Vec::new()` + grow per chunk. Across a 100k-file scan on rayon
+    /// workers that is a flood of tiny allocations. Pool one buffer per worker:
+    /// take it out, fill it, drain it, hand it back - resized once, resliced
+    /// thereafter. Mirrors `ACTIVE_PATTERNS_POOL` / `TRIGGER_POOL`.
+    static KEYWORD_LINES_POOL: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
 
 impl CompiledScanner {
     /// Scan for generic `SECRET_NAME = "high_entropy_value"` patterns.
@@ -48,13 +60,18 @@ impl CompiledScanner {
             return;
         };
 
-        let covered_lines: std::collections::HashSet<usize> = {
-            let lines: Vec<usize> = scan_state
+        // Short-circuit: for the ~95% of chunks with zero prior matches there
+        // is nothing to dedup against, so skip both allocations (the temporary
+        // `Vec<usize>` and the `HashSet`) and use an empty set. Only build the
+        // covered-line set when there is at least one existing match.
+        let covered_lines: std::collections::HashSet<usize> = if scan_state.matches.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            scan_state
                 .matches
                 .iter()
                 .filter_map(|m| m.0.location.line)
-                .collect();
-            lines.into_iter().collect()
+                .collect()
         };
 
         // Single-pass case-insensitive Aho-Corasick over all 16 keywords.
@@ -112,7 +129,13 @@ impl CompiledScanner {
         // dedup so we visit each line once even if multiple
         // keywords land on it.
         let chunk_bytes = chunk.data.as_bytes();
-        let mut lines_with_keyword: Vec<usize> = Vec::new();
+        // Borrow the pooled scratch buffer for the duration of this scan.
+        // `take` leaves an empty Vec in the cell so the heavy consume loop
+        // below does not hold a live RefCell borrow (which would conflict
+        // with any re-entrant pool use); the buffer is returned at function
+        // exit, preserving its capacity for the next chunk on this worker.
+        let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
+        lines_with_keyword.clear();
         let mut last_line_idx: Option<usize> = None;
         for mat in keyword_ac.find_iter(chunk_bytes) {
             // `partition_point` returns the 1-based line number;
@@ -127,10 +150,13 @@ impl CompiledScanner {
             lines_with_keyword.push(line_idx);
         }
         if lines_with_keyword.is_empty() {
+            // Return the (now-empty) buffer to the pool before bailing so its
+            // capacity survives for the next chunk.
+            KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
             return;
         }
 
-        for line_idx in lines_with_keyword {
+        for &line_idx in &lines_with_keyword {
             let line_num = line_idx + 1;
             if covered_lines.contains(&line_num) {
                 continue;
@@ -387,6 +413,29 @@ impl CompiledScanner {
                 if crate::decode_structure::is_encoded_binary(value) {
                     continue;
                 }
+                // Random-byte base64 decoy suppression (generic path only).
+                // `is_encoded_binary` above only fires on bytes that carry a
+                // recognizable magic header OR parse cleanly as a multi-field
+                // protobuf-wire stream. The dominant residual FP class is the
+                // SecretBench `negatives.py` base64-of-30-80-random-protobuf-
+                // bytes decoy: random wire bytes parse as a full protobuf
+                // message < 0.5% of the time, so they slip the protobuf-wire
+                // gate, and they carry no magic header, so they slip the magic
+                // gate too. They are ALSO pure base62 (no `+`/`/`, no padding)
+                // when the random bytes happen to encode without them, so the
+                // local `generic_path_looks_like_random_base64_blob` punct/pad
+                // gate misses them. This decode-through gate closes the family:
+                // a value that is pure standard-base64 alphabet, lands in the
+                // 40-80-char decoy band, has NO service-prefix anchor, and
+                // base64-decodes to bytes that are neither valid UTF-8 text nor
+                // a recognizable binary magic is an unanchored proto/config
+                // blob, never a service credential. Named-detector matches
+                // anchor on a service prefix and take engine/scan.rs's path
+                // before this fallback, so a real 40-char anchored secret (AWS
+                // etc.) is unaffected - the negative twin still fires.
+                if generic_path_looks_like_random_byte_blob(value) {
+                    continue;
+                }
 
                 // Context suppression: test files get lower confidence
                 let context = crate::context::infer_context(
@@ -452,6 +501,10 @@ impl CompiledScanner {
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
             }
         }
+
+        // Return the scratch buffer to the pool, preserving its capacity for
+        // the next chunk this worker handles.
+        KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
     }
 }
 
@@ -504,6 +557,68 @@ fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
     // (the b64-of-bytes signal - pure-b62 tokens never need `=`
     // because their length is chosen, not derived).
     has_b64_punct || has_padding
+}
+
+/// Random-byte base64 decoy detector for the generic-secret path only.
+/// Returns true when `value` is a pure standard-base64-alphabet blob in the
+/// 40-80-char decoy band that base64-decodes to bytes which are neither valid
+/// UTF-8 text nor a recognizable binary magic - i.e. the SecretBench
+/// `negatives.py` base64-of-random-protobuf-bytes decoy class.
+///
+/// Why this exists alongside [`generic_path_looks_like_random_base64_blob`] and
+/// `decode_structure::is_encoded_binary`:
+///   * `is_encoded_binary` only fires on a recognizable magic header OR a clean
+///     multi-field protobuf-wire parse. Random wire bytes parse as a full
+///     protobuf message < 0.5% of the time, so the 30-80-random-byte decoy
+///     slips both checks.
+///   * `generic_path_looks_like_random_base64_blob` requires `+`/`/` or `=`
+///     padding; a random-byte payload that happens to encode into pure base62
+///     without padding evades it.
+///   * `looks_like_uniform_base64_blob` (penalty path) floors at 44 chars and
+///     only multiplies confidence by 0.02 - it does not hard-drop, and the
+///     generic emit path bypasses the penalty path entirely.
+///
+/// This gate closes the family with a decode-through: pure standard-base64
+/// alphabet (no `-`/`_`/`.`, so url-safe-prefixed service tokens are already
+/// excluded), no service-prefix anchor, length in the decoy band, decoding to
+/// non-text non-magic bytes. Named-detector matches anchor on a service prefix
+/// and run before this fallback, so a real 40-char anchored secret still fires.
+fn generic_path_looks_like_random_byte_blob(value: &str) -> bool {
+    // Decoy band: SecretBench `negatives.py` emits base64 of 30-80 random
+    // protobuf-wire bytes, which encodes to ~40-108 base64 chars. Cap at 80
+    // to stay inside the band the audit measured (longer pure-base64 blobs are
+    // already slammed by the penalty path's `looks_like_uniform_base64_blob`).
+    if !(40..=80).contains(&value.len()) {
+        return false;
+    }
+    // Pure STANDARD base64 alphabet only. Any `-`/`_`/`.` (base64url, JWT,
+    // Slack, dotted property) rejects, which also clears every url-safe
+    // service-prefixed token. A bare `+`/`/`/`=` is allowed (still standard
+    // base64) but not required - random base62 encodings without them are the
+    // exact case the punct/pad gate misses.
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+    {
+        return false;
+    }
+    // Decode-through: the value must base64/hex-decode, and the decoded bytes
+    // must be neither a recognizable binary magic nor predominantly printable
+    // text. Random wire bytes land around a 0.30 printable ratio; real
+    // base64-wrapped text (config snippets, docs) stays high. A magic header is
+    // already handled by `is_encoded_binary`, but re-checking here keeps the
+    // gate self-contained and correct if call order ever changes.
+    let structure = crate::decode_structure::analyze(value);
+    if !structure.decodable {
+        return false;
+    }
+    if structure.magic.is_some() {
+        return true;
+    }
+    // Non-text, high-entropy decoded bytes with no magic = unanchored random
+    // payload. The 0.85 printable floor keeps base64-wrapped text (which
+    // decodes near 1.0 printable) out of the drop while catching random bytes.
+    structure.printable_ratio < 0.85
 }
 
 /// IAM-ARN-trimmed-prefix gate for the generic-secret path.

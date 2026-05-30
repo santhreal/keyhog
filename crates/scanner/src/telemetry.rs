@@ -100,7 +100,10 @@ pub fn record_example_suppression(
         return;
     }
 
-    let redacted = redact_credential(credential);
+    // KH-disc: use the single canonical redaction policy (`keyhog_core::redact`)
+    // so dogfood output matches finding output - the bespoke 6-char-prefix
+    // helper leaked up to 6 of 8 bytes of short credentials.
+    let redacted = keyhog_core::redact(credential).into_owned();
     if let Ok(mut events) = t.events.lock() {
         events.push(DogfoodEvent::ExampleSuppressed {
             detector: detector.to_string(),
@@ -198,23 +201,5 @@ pub fn reset() {
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
-    }
-}
-
-/// Redact a credential for safe inclusion in dogfood output: keep a
-/// short prefix (so the user can recognise which detector fired) and
-/// mask the rest. Never emits the full credential - the whole point of
-/// `--dogfood` is "show me decisions", not "leak the secrets I'm
-/// scanning for to my terminal scrollback or log file".
-fn redact_credential(credential: &str) -> String {
-    const PREFIX_KEEP: usize = 6;
-    let take = credential.char_indices().nth(PREFIX_KEEP);
-    match take {
-        Some((end_byte, _)) => format!(
-            "{}…[redacted {} chars]",
-            &credential[..end_byte],
-            credential.chars().count().saturating_sub(PREFIX_KEEP)
-        ),
-        None => "[redacted]".to_string(),
     }
 }

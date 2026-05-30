@@ -1,8 +1,7 @@
 //! Archive adversarial coverage for the filesystem source.
 //!
-//! `.zip` is listed in `SKIP_EXTENSIONS` today, so the archive-unpack branch
-//! in `filesystem.rs` is not exercised via normal directory walks. These tests
-//! pin that contract and verify gzip decompression still surfaces inner text.
+//! Archive extraction must surface inner text while preserving the path of the
+//! archive entry that carried the secret.
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -20,7 +19,7 @@ fn write_gzip(path: &Path, plaintext: &[u8]) {
 }
 
 #[test]
-fn zip_extension_skipped_in_default_filesystem_walk() {
+fn zip_archive_inner_text_is_scanned_in_default_filesystem_walk() {
     let dir = tempfile::tempdir().unwrap();
     let secret = b"GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab\n";
     let file = File::create(dir.path().join("outer.zip")).unwrap();
@@ -32,10 +31,19 @@ fn zip_extension_skipped_in_default_filesystem_walk() {
     zip.finish().unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let count = source.chunks().flatten().count();
-    assert_eq!(
-        count, 0,
-        ".zip files are in SKIP_EXTENSIONS - archive unpack path is not reached via walk"
+    let chunks: Vec<_> = source.chunks().flatten().collect();
+    assert!(
+        chunks.iter().any(|c| c
+            .data
+            .contains(concat!("gh", "p_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab"))),
+        ".zip archive payload must be scanned; got {chunks:?}"
+    );
+    assert!(
+        chunks
+            .iter()
+            .filter_map(|c| c.metadata.path.as_deref())
+            .any(|p| p.contains("outer.zip//config.env")),
+        ".zip archive entry path must be surfaced; got {chunks:?}"
     );
 }
 

@@ -13,9 +13,15 @@
 pub(super) fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
     // Cheap shape gate before paying for the decode allocation.
     // Standard base64 alphabet (`[A-Za-z0-9+/=]`) and url-safe
-    // (`[A-Za-z0-9_\-=]`). Length must be ≥ 8 so we don't waste
-    // cycles on every 4-char identifier we see.
-    if credential.len() < 8 || credential.len() > 4096 {
+    // (`[A-Za-z0-9_\-=]`). Length must be >= 8 so we don't waste
+    // cycles on every 4-char identifier we see. The upper bound shares
+    // the canonical decode ceiling (`keyhog_core::encoding`) so every
+    // base64 decode in the workspace honors one cap, not a per-file
+    // literal. Suppression peeks at small wrapped fixtures, so the
+    // shared ceiling is purely a DoS backstop here.
+    if credential.len() < 8
+        || credential.len() > keyhog_core::encoding::MAX_STANDARD_BASE64_INPUT_BYTES
+    {
         return None;
     }
     let valid = credential.chars().all(|c| {
