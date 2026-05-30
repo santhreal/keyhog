@@ -33,6 +33,15 @@
 //!   case_05_scan_format_jsonl     - `scan --format jsonl <tmp>/tree/`
 //!   case_06_scan_severity_high    - `scan --severity high <tmp>/tree/`
 //!   case_07_scan_no_default_excl  - `scan --no-default-excludes <tmp>/tree/`
+//!   case_08_scan_format_csv       - `scan --format csv <tmp>/tree/`
+//!   case_09_scan_format_junit     - `scan --format junit <tmp>/tree/`
+//!
+//! The HTML format is not byte-snapshotted: its `rawFindings` payload embeds
+//! a serde JSON dump whose field set tracks `VerifiedFinding`, so a byte
+//! snapshot would churn on every unrelated struct change. Instead
+//! `html_format_report_contains_finding` drives the real binary and asserts
+//! the document is well-formed (DOCTYPE) and carries the planted key's
+//! detector inside the embedded findings payload.
 //!
 //! Each case uses `--no-daemon` so the in-process pipeline runs (snapshots
 //! must not depend on whether a `keyhog daemon` happens to be up on the
@@ -262,16 +271,25 @@ fn normalize(raw: &str, tempdir_root: &Path) -> String {
     out = rewrite_quoted_after(&out, "\"finding_id\":");
     out = rewrite_quoted_after(&out, "\"id\":");
 
-    // 10. Trailing-zero whitespace at end of lines: some emitters add a
-    //     trailing space when a field is empty. Drop it to avoid editor
-    //     whitespace nits causing drift.
+    // 10. Drop keyhog's GPU/CUDA backend-probe diagnostics, then trim trailing
+    //     whitespace. The GPU lines are emitted only when a discrete GPU is
+    //     present but unusable (VRAM exhausted, driver error); they never
+    //     appear on a no-GPU host or CI runner, so they are host/moment noise
+    //     that must not enter a snapshot. Trailing whitespace is dropped to
+    //     avoid editor nits causing drift.
     let trimmed: String = out
         .lines()
+        .filter(|l| !is_gpu_backend_diagnostic(l))
         .map(|l| l.trim_end_matches([' ', '\t']).to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    // Preserve trailing newline if the original had one.
-    if out.ends_with('\n') && !trimmed.ends_with('\n') {
+    // Preserve a trailing newline only when real content survives filtering.
+    // Stripping a GPU-diagnostic-only stderr leaves an empty body; returning ""
+    // (not "\n") makes it byte-identical to a clean no-GPU run, so the snapshot
+    // no longer drifts with transient VRAM pressure.
+    if trimmed.is_empty() {
+        String::new()
+    } else if out.ends_with('\n') && !trimmed.ends_with('\n') {
         format!("{trimmed}\n")
     } else {
         trimmed
@@ -339,6 +357,20 @@ fn replace_re_like(
         }
     }
     out
+}
+
+/// True for keyhog's GPU-probe stderr diagnostics, emitted only when a discrete
+/// GPU is present but unusable (VRAM exhausted, driver error). Matched on the
+/// specific backend phrases, not bare "gpu"/"cuda", so a real finding line is
+/// never dropped. These lines are absent on no-GPU hosts and CI, so stripping
+/// them keeps the snapshot stable across hardware and transient VRAM pressure.
+fn is_gpu_backend_diagnostic(line: &str) -> bool {
+    line.contains("CUDA backend")
+        || line.contains("CUDA context")
+        || line.contains("CUDA_ERROR")
+        || line.contains("backend unavailable")
+        || line.contains("backend acquisition failed")
+        || line.contains("DriverError")
 }
 
 fn next_char_boundary(s: &str, mut i: usize) -> usize {
@@ -634,6 +666,80 @@ fn case_07_scan_no_default_excludes() {
         dir.path(),
     );
     snap("case_07_scan_no_default_excludes", captured, dir.path());
+}
+
+#[test]
+fn case_08_scan_format_csv() {
+    let dir = write_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "csv", &tree_s],
+        dir.path(),
+    );
+    snap("case_08_scan_format_csv", captured, dir.path());
+}
+
+#[test]
+fn case_09_scan_format_junit() {
+    let dir = write_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "junit", &tree_s],
+        dir.path(),
+    );
+    snap("case_09_scan_format_junit", captured, dir.path());
+}
+
+/// HTML is verified structurally rather than by byte snapshot (see the module
+/// header): the embedded `rawFindings` JSON tracks `VerifiedFinding`'s field
+/// set, which would make a byte snapshot churn on unrelated struct changes.
+/// This still drives the REAL binary end-to-end and asserts the document is a
+/// well-formed HTML page that actually carries the planted AWS key finding,
+/// so it fails loudly if the HTML path ever emits an empty or finding-less
+/// report.
+#[test]
+fn html_format_report_contains_finding() {
+    let dir = write_tree();
+    let tree = dir.path().join("tree");
+    let tree_s = tree.to_string_lossy().into_owned();
+    let captured = run_keyhog(
+        &["scan", "--no-daemon", "--format", "html", &tree_s],
+        dir.path(),
+    );
+    let out = captured.stdout;
+
+    assert!(
+        out.contains("<!DOCTYPE html>"),
+        "html report is not a well-formed document: {:?}",
+        &out[..out.len().min(120)]
+    );
+    assert!(
+        out.contains("<title>KeyHog Secret Scan Report</title>"),
+        "html report missing title"
+    );
+
+    // The in-page script renders from `const rawFindings = [...]`. Pull the
+    // array literal and assert it is non-empty and carries the planted AWS
+    // key. The scanner redacts the credential to `first4...last4`, so the
+    // `AKIA` prefix of the planted key survives into `credential_redacted`.
+    let line = out
+        .lines()
+        .find(|l| l.trim_start().starts_with("const rawFindings = "))
+        .expect("rawFindings assignment present in html report");
+    let start = line.find('[').expect("rawFindings array opens");
+    let end = line.rfind(']').expect("rawFindings array closes");
+    let json = &line[start..=end];
+    assert_ne!(json, "[]", "html report embedded zero findings for a planted key");
+    assert!(
+        json.contains("\"service\":\"aws\""),
+        "html findings payload missing the planted AWS finding: {json}"
+    );
+    assert!(
+        json.contains(AWS_KEY_PREFIX),
+        "html findings payload missing the redacted AKIA key prefix: {json}"
+    );
 }
 
 fn snap(case: &str, captured: Captured, tempdir_root: &Path) {

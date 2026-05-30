@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="keyhog" tests="1" failures="1" errors="0" time="0.0">
+    <testcase name="<TMP>/tree/planted.txt:1:aws-access-key" classname="keyhog.findings" time="0.0">
+      <failure message="Secret detected: AWS Access Key (id: aws-access-key)" type="critical">
+        <![CDATA[
+Detector Name: AWS Access Key
+Detector ID:   aws-access-key
+Service:       aws
+Severity:      critical
+Source:        filesystem
+File Path:     <TMP>/tree/planted.txt
+Line:          1
+Offset:        19
+Redacted:      AKIA...7XYA
+Hash:          01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2
+Verification:  skipped
+Confidence:    0.8
+        ]]>
+      </failure>
+    </testcase>
+  </testsuite>
+</testsuites>
