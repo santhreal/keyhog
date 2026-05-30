@@ -11,6 +11,18 @@ path:demo-secret.env
 # CHANGELOG entries quote release notes that paste example credentials
 # verbatim - they are documentation about findings, not live secrets.
 path:CHANGELOG.md
+# integration-smoke ships a base64-encoded seed of well-known AWS docs
+# examples + an `xoxb-` slack token shape + a `ghp_` GitHub PAT shape;
+# the workflow base64-decodes them on the runner so the scanner under
+# test can confirm it finds them. v0.5.37's decode-through composition
+# now follows the base64 in the workflow source too, surfacing those
+# planted fixtures as findings on the dogfood scan.
+path:.github/workflows/integration-smoke.yml
+# Bundled test-fixture suppression list: the very purpose of the file
+# is to enumerate known-public sample credentials (Stripe docs example,
+# GitHub docs example, etc.) so keyhog can suppress them by hash. The
+# fixture credentials live in this file verbatim by design.
+path:crates/cli/data/suppressions/test-fixtures.toml
 # Detector unit tests + examples carry sample credentials by design.
 path:crates/scanner/examples/
 path:crates/cli/src/benchmark.rs
