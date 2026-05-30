@@ -54,17 +54,43 @@ Caused by: no matching package named `vyre-libs` found
 
 ## Unblock path
 
-1. **Publish vyre 0.6.1 from the upstream vyre repo** (not this checkout
-   — `vendor/vyre/` is a frozen snapshot, vyre's actual development
-   happens in the standalone vyre repo). Order:
-   - `vyre-foundation 0.6.x` (if not already at 0.6 series on crates.io)
-   - `vyre-macros 0.6.1` (already there)
-   - `vyre-core 0.6.1` (currently published as `vyre 0.4.1`, needs the bump)
-   - `vyre-primitives 0.6.1`
-   - `vyre-libs 0.6.1`
-   - `vyre-runtime 0.6.1`
-   - `vyre-driver-wgpu 0.6.1`
-   - `vyre-driver-cuda 0.6.1`
+1. **Publish vyre 0.6.1 from the upstream vyre repo**
+   (`/media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre`;
+   `vendor/vyre/` in this checkout is a frozen snapshot, the canonical
+   source lives in the standalone vyre repo). The dep chain is deeper
+   than the keyhog-facing crates would suggest. Confirmed via
+   `cargo publish --dry-run -p vyre-foundation`:
+
+   ```
+   error: failed to prepare local package for uploading
+   Caused by: failed to select a version for the requirement `vyre-spec = "^0.6.1"`
+   candidate versions found which didn't match: 0.4.1, 0.1.1, 0.1.0
+   ```
+
+   So the full publish order (leaf → root) is roughly:
+
+   ```
+   vyre-spec 0.6.1            (crates.io has 0.4.1)
+   vyre-foundation 0.6.1      (crates.io has 0.4.1)
+   vyre-macros 0.6.1          (already on crates.io at 0.6.1)
+   vyre-primitives 0.6.1      (crates.io has 0.4.1)
+   vyre-reference 0.6.1       (crates.io has 0.4.1)
+   vyre-lower 0.6.1           (crates.io has 0.4.1)
+   vyre-intrinsics 0.6.1      (crates.io has 0.4.1)
+   vyre-self-substrate 0.6.1  (crates.io has 0.4.1)
+   vyre-conform 0.6.1         (crates.io has 0.1.0)
+   vyre (= vyre-core) 0.6.1   (crates.io has 0.4.1)
+   vyre-driver 0.6.1          (crates.io has 0.4.1)
+   vyre-libs 0.6.1            (NOT PUBLISHED)
+   vyre-runtime 0.6.1         (NOT PUBLISHED)
+   vyre-driver-wgpu 0.6.1     (NOT PUBLISHED; old name was vyre-wgpu 0.1.0)
+   vyre-driver-cuda 0.6.1     (NOT PUBLISHED)
+   ```
+
+   That's 14 publishes per release cut, each requiring its own
+   `cargo publish` + ~30 s crates.io index wait + the CLAUDE.md
+   "read every file + run every test" gate. This is a multi-hour
+   focused vyre-publish session, not a side-task of a keyhog session.
 
 2. **Bump the keyhog workspace** if vyre publishes anything different
    from 0.6.1 (e.g. 0.6.2), then re-run the dry-run below.
