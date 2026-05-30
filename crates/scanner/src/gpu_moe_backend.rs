@@ -241,12 +241,13 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     let device = gpu.device();
     let queue = gpu.queue();
 
-    // Flatten features into a contiguous f32 buffer
-    let flat_features: Vec<f32> = features.iter().flat_map(|f| f.iter().copied()).collect();
-
+    // `&[[f32; INPUT_DIM]]` is already a contiguous `f32` block, so reinterpret
+    // it in place rather than copying every feature into a fresh `Vec<f32>`
+    // (the old `flat_map().collect()` allocated batch_size * INPUT_DIM * 4 bytes
+    // per GPU dispatch for no reason). `[f32; N]` is `Pod`, so the cast is sound.
     let input_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("input"),
-        contents: bytemuck::cast_slice(&flat_features),
+        contents: bytemuck::cast_slice(features),
         usage: wgpu::BufferUsages::STORAGE,
     });
 

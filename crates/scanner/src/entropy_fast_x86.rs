@@ -44,9 +44,15 @@ pub(crate) unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
         i += 1;
     }
 
-    // Process 32 bytes per iteration and filter contiguous null bytes
-    let end32 = len & !31;
-    while i < end32 {
+    // Process 32 bytes per iteration and filter contiguous null bytes.
+    //
+    // The alignment prologue above advances `i` so that `ptr + i` is 32-byte
+    // aligned (required by `_mm256_load_si256`). The loop bound must therefore
+    // be expressed as "a full 32-byte read still fits", i.e. `i + 32 <= len`,
+    // NOT `len & !31`: the latter ignores the prologue's `pad` offset and, when
+    // `pad > 0`, both reads past the end of `data` and loads from a
+    // non-32-aligned address on the last iteration.
+    while i + 32 <= len {
         let chunk_v = _mm256_load_si256(ptr.add(i) as *const _);
         if _mm256_testz_si256(chunk_v, chunk_v) == 1 {
             active_len -= 32;
@@ -240,9 +246,12 @@ pub(crate) unsafe fn shannon_entropy_sse2(data: &[u8]) -> f64 {
         i += 1;
     }
 
-    let end32 = len & !31;
+    // As in the AVX2 path: the 16-byte alignment prologue offsets `i` by
+    // `pad`, so the aligned-load loop must stop when a full 32-byte read
+    // (two 16-byte `_mm_load_si128`s) would run past `len`. `len & !31`
+    // ignores `pad` and over-reads / loads off-alignment when `pad > 0`.
     let zeros = _mm_setzero_si128();
-    while i < end32 {
+    while i + 32 <= len {
         let v0 = _mm_load_si128(ptr.add(i) as *const _);
         let v1 = _mm_load_si128(ptr.add(i + 16) as *const _);
 
