@@ -17,17 +17,11 @@
 //!
 //! Run with `cargo test --release --test rule_pipeline_shard_probe -- --nocapture`.
 
-use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
-use vyre_libs::scan::{compile_regex_set, RegexCompileError};
+mod support;
+use support::paths::detector_dir;
 
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
+use keyhog_scanner::CompiledScanner;
+use vyre_libs::scan::{compile_regex_set, RegexCompileError};
 
 #[test]
 fn shard_distribution_under_state_cap() {

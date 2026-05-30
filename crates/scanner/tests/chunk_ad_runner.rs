@@ -1,6 +1,9 @@
 //! Validate contract TOMLs listed in KEYHOG_CHUNK_IDS (newline-separated paths or IDs).
 //! Used by Round-1 parallel agents to gate their chunk without running the full suite.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -26,14 +29,6 @@ struct Positive {
 #[derive(Debug, Deserialize)]
 struct Negative {
     text: String,
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn contracts_dir() -> PathBuf {

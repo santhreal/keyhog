@@ -18,6 +18,9 @@
 //! 348 contracts × ~2 positives × 10 variants ≈ **6 900 cases per
 //! run**.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -45,14 +48,6 @@ struct Positive {
     credential: String,
     #[allow(dead_code)]
     reason: String,
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn contracts_dir() -> PathBuf {

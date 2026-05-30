@@ -25,18 +25,13 @@
 //! sets MUST agree at the stackblitz offset (and globally, on this
 //! slice).
 
+mod support;
+use support::paths::detector_dir;
+
 use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn bench_corpus_path() -> PathBuf {
     PathBuf::from("/media/mukund-thiru/SanthData/keyhog-bench-corpora/big_with_secrets.txt")

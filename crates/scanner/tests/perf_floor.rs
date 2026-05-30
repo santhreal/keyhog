@@ -26,9 +26,11 @@
 //! ~540 MiB/s; this per-chunk single-thread test floors at ~12 MiB/s
 //! and asserts at 8 MiB/s with 33% headroom under measured.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 use std::time::Instant;
 
 const FIXTURE_BYTES: usize = 4 * 1024 * 1024;
@@ -46,14 +48,6 @@ const FIXTURE_BYTES: usize = 4 * 1024 * 1024;
 // reliably trips this. Bump the floor when the per-chunk number
 // ratchets up AND is stable across 3 runs on the dev box.
 const MIN_THROUGHPUT_MIB_PER_S: f64 = 8.0;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 /// Build a 4 MiB fixture of pseudo-Go source with ZERO planted
 /// credentials. Real K8s code has ~0.14 findings per MiB, so the

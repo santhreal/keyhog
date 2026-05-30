@@ -4,6 +4,9 @@
 //! derived from the canonical positive. Each twin is also split across a
 //! chunk boundary to exercise reassembly without false positives.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -33,14 +36,6 @@ struct Negative {
     text: String,
     #[allow(dead_code)]
     reason: String,
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn contracts_dir() -> PathBuf {

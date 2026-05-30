@@ -20,19 +20,13 @@
 //! noise doesn't redden the gate, but a 2× algorithmic regression
 //! reliably trips at least one cell.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Instant;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
