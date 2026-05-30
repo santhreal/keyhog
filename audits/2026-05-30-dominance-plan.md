@@ -813,6 +813,19 @@ Verified gates:
 Remaining source-coherence findings surfaced by the green all-tests runs:
 
 - `crates/sources/src/filesystem.rs` is still over 500 lines.
-- `crates/sources/src/github_org.rs` is still over 500 lines.
 - `crates/sources/src/web.rs` is still over 500 lines.
 - `property::http_fuzz` remains the long-running source-package property module and needs a bounded CI profile before it can be part of the fast source gate.
+
+## Executed Patch Set: GitHub Org Split
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- ARCHITECTURE: split git-error redaction out of `github_org.rs` into `github_org/sanitize.rs`.
+- COHERENCE: `github_org.rs` is now 488 lines and no longer emits the 500-line modularity warning in the source gates.
+
+Verified gates:
+
+- `cargo fmt -p keyhog-sources`
+- `cargo test -p keyhog-sources --all-features --test all_tests github -- --nocapture`
