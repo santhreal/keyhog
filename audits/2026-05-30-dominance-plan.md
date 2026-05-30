@@ -772,3 +772,47 @@ Red gate captured:
 
 - `cargo test -p keyhog-sources` fails because `crates/sources/tests/s3_ambient_credential_forward.rs` imports `keyhog_sources::s3` without enabling the `s3` feature.
 - `cargo test -p keyhog-sources --all-features` reaches real tests, then fails on existing textual gates outside this patch batch and enters long HTTP property tests; the run was terminated after the failing set was captured and the process consumed about six CPU minutes with no new output.
+
+## Executed Patch Set: Source Test Coherence
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- COHERENCE: source-crate no-inline-test gates now pass under default and all-features builds for every registered source gate.
+- TESTING: moved filesystem path normalization, binary literal/section extraction, GitHub repo/clone validation, HTTP user-agent, and web SSRF/redaction/DNS-pin contracts into registered external tests.
+- UTILIZATION: added a hidden `keyhog_sources::testing` facade so external tests can exercise internal contracts without leaving test modules embedded in production files.
+- AUDIT HUNTS: fixed the oversize-file skip-counter assertion so parallel tests cannot turn another legitimate oversize skip into a false failure.
+
+Changed code/tests:
+
+- `crates/sources/src/lib.rs`
+- `crates/sources/src/binary/{literals,mod,sections}.rs`
+- `crates/sources/src/filesystem.rs`
+- `crates/sources/src/github_org.rs`
+- `crates/sources/src/http.rs`
+- `crates/sources/src/web.rs`
+- `crates/sources/tests/unit/internal_contracts.rs`
+- `crates/sources/tests/unit/file_gate.rs`
+- `crates/sources/tests/adversarial/max_file_size_skips_oversize_plain_file.rs`
+
+Verified gates:
+
+- `cargo fmt -p keyhog-sources`
+- `cargo test -p keyhog-sources --test all_tests no_inline_tests -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests no_unwrap_expect -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests internal_contracts -- --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests internal_contracts -- --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests no_inline_tests -- --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests no_unwrap_expect -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests -- --skip property::http_fuzz --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests -- --skip property::http_fuzz --nocapture`
+- `cargo test -p keyhog-sources --lib`
+- `git diff --check`
+
+Remaining source-coherence findings surfaced by the green all-tests runs:
+
+- `crates/sources/src/filesystem.rs` is still over 500 lines.
+- `crates/sources/src/github_org.rs` is still over 500 lines.
+- `crates/sources/src/web.rs` is still over 500 lines.
+- `property::http_fuzz` remains the long-running source-package property module and needs a bounded CI profile before it can be part of the fast source gate.

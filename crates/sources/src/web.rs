@@ -49,7 +49,7 @@ const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 /// Datadog, journald), defeating the whole point of running a secret
 /// scanner. Replace the userinfo with `***` so the URL stays
 /// recognisable but the credential never leaves the process.
-fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
     let scheme_end = match url.find("://") {
         Some(idx) => idx + 3,
         None => return std::borrow::Cow::Borrowed(url),
@@ -87,7 +87,7 @@ fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
 /// of defense the verifier uses in `crates/verifier/src/ssrf.rs` (via
 /// the bogon crate); duplicating without the crate dep keeps WebSource
 /// from pulling in verifier-only crypto deps just for this gate.
-fn is_disallowed_web_host(url: &str) -> bool {
+pub(crate) fn is_disallowed_web_host(url: &str) -> bool {
     let parsed = match reqwest::Url::parse(url) {
         Ok(u) => u,
         Err(_) => return true, // refuse malformed
@@ -137,7 +137,7 @@ fn is_disallowed_ipv6(ip: std::net::Ipv6Addr) -> bool {
 /// the actual `IpAddr` we run the same v4/v6 rules against it to defeat a
 /// public-looking name that resolves to a private/loopback/metadata IP
 /// (DNS-rebinding). Mirrors the verifier's `is_private_ip_addr` gate.
-fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+pub(crate) fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
     match ip {
         std::net::IpAddr::V4(v4) => is_disallowed_ipv4(v4),
         std::net::IpAddr::V6(v6) => is_disallowed_ipv6(v6),
@@ -208,159 +208,6 @@ fn ssrf_revalidating_redirect_policy() -> reqwest::redirect::Policy {
 /// doesn't reach across modules for a single constant.
 const REDIRECT_LIMIT: usize = 5;
 
-#[cfg(test)]
-mod web_host_filter_tests {
-    use super::is_disallowed_web_host;
-
-    #[test]
-    fn rejects_cloud_metadata_endpoints() {
-        assert!(is_disallowed_web_host(
-            "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-        ));
-        assert!(is_disallowed_web_host(
-            "http://metadata.google.internal/computeMetadata/v1/"
-        ));
-    }
-
-    #[test]
-    fn rejects_loopback_and_private() {
-        assert!(is_disallowed_web_host("http://127.0.0.1/"));
-        assert!(is_disallowed_web_host("http://10.0.0.5/"));
-        assert!(is_disallowed_web_host("http://192.168.1.1/"));
-        assert!(is_disallowed_web_host("http://172.16.0.5/"));
-        assert!(is_disallowed_web_host("http://[::1]/"));
-        assert!(is_disallowed_web_host("http://localhost/"));
-        assert!(is_disallowed_web_host("http://machine.local/"));
-        assert!(is_disallowed_web_host("http://svc.internal/api"));
-    }
-
-    #[test]
-    fn rejects_malformed_or_hostless() {
-        assert!(is_disallowed_web_host("not a url"));
-        assert!(is_disallowed_web_host("file:///etc/passwd"));
-    }
-
-    #[test]
-    fn accepts_real_public_hosts() {
-        assert!(!is_disallowed_web_host("https://example.com/"));
-        assert!(!is_disallowed_web_host("https://cdn.jsdelivr.net/app.js"));
-        assert!(!is_disallowed_web_host(
-            "https://api.github.com/repos/foo/bar"
-        ));
-    }
-
-    /// Macro-wiring regression: prove that an `HttpClientConfig.proxy`
-    /// passed via `WebSource::with_http_config` ends up baked into the
-    /// reqwest client the source actually uses. Without this assertion
-    /// the only thing pinning the proxy behavior was the one-line
-    /// `.proxy(proxy)` call in `blocking_client_builder`, and a future
-    /// refactor that swaps to a custom builder (which has happened
-    /// before for the verifier, see `verify/request.rs`) would silently
-    /// drop the proxy with no test to catch it.
-    #[test]
-    fn web_source_threads_proxy_into_blocking_client_builder() {
-        // We can't read back the proxy config from a built reqwest Client
-        // (no public accessor), but we CAN assert the builder accepts the
-        // exact policy contract we expect: a proxy URL through
-        // `blocking_client_builder` returns Ok, and a malformed URL
-        // returns Err. If the builder ever stops applying `proxy`, the
-        // Err case below would change to Ok (since malformed URLs go
-        // through reqwest's Proxy::all which is the validation gate).
-        let cfg_ok = crate::http::HttpClientConfig {
-            proxy: Some("http://127.0.0.1:8080".into()),
-            ..Default::default()
-        };
-        assert!(
-            crate::http::blocking_client_builder(&cfg_ok)
-                .and_then(|b| b.build().map_err(|e| e.to_string()))
-                .is_ok(),
-            "valid proxy URL must build a client; if this fails, the source-side \
-             proxy plumbing is broken before it ever leaves WebSource"
-        );
-
-        let cfg_bad = crate::http::HttpClientConfig {
-            proxy: Some("not a url".into()),
-            ..Default::default()
-        };
-        assert!(
-            crate::http::blocking_client_builder(&cfg_bad).is_err(),
-            "malformed proxy URL must be rejected at builder time, not silently \
-             skipped. If this passes, `--proxy` validation is gone and bad URLs \
-             reach reqwest as a no-op default."
-        );
-    }
-
-    /// Regression for the IPv4-mapped IPv6 SSRF bypass.
-    /// `Ipv6Addr::is_loopback()` only returns `true` for the literal `::1`,
-    /// so an attacker URL like `http://[::ffff:127.0.0.1]/` previously
-    /// passed every disallow gate and let the WebSource exfil to the
-    /// machine'"'"'s own loopback service. The fix unwraps an IPv4-mapped
-    /// IPv6 into its underlying IPv4 first and runs the v4 disallow
-    /// rules against it.
-    #[test]
-    fn rejects_ipv4_mapped_ipv6_loopback_and_private() {
-        assert!(
-            is_disallowed_web_host("http://[::ffff:127.0.0.1]/"),
-            "::ffff:127.0.0.1 must route to v4 loopback check"
-        );
-        assert!(
-            is_disallowed_web_host("http://[::ffff:10.0.0.1]/"),
-            "::ffff:10.0.0.1 must route to v4 private check"
-        );
-        assert!(
-            is_disallowed_web_host("http://[::ffff:169.254.169.254]/"),
-            "::ffff:169.254.169.254 (cloud-metadata via v6-mapped form) must block"
-        );
-        assert!(
-            is_disallowed_web_host("http://[::ffff:192.168.1.1]/"),
-            "::ffff:192.168.1.1 (private via v6-mapped form) must block"
-        );
-        assert!(
-            is_disallowed_web_host("http://[::ffff:172.16.0.5]/"),
-            "::ffff:172.16.0.5 (private via v6-mapped form) must block"
-        );
-    }
-}
-
-#[cfg(test)]
-mod redact_url_tests {
-    use super::redact_url;
-
-    #[test]
-    fn passes_through_urls_without_userinfo() {
-        for ok in &[
-            "https://example.com/path",
-            "http://example.com:8080/p?q=1",
-            "https://example.com/path/with/@symbol/in/it",
-        ] {
-            assert_eq!(redact_url(ok), *ok, "unchanged for {ok:?}");
-        }
-    }
-
-    #[test]
-    fn strips_userinfo() {
-        assert_eq!(
-            redact_url("https://user:SECRET@host/path"),
-            "https://***@host/path"
-        );
-        assert_eq!(
-            redact_url("https://user@host/path?q=1"),
-            "https://***@host/path?q=1"
-        );
-        assert_eq!(
-            redact_url("http://x:y@example.com:8080/p#frag"),
-            "http://***@example.com:8080/p#frag"
-        );
-    }
-
-    #[test]
-    fn does_not_confuse_path_at_with_userinfo() {
-        // The `@` is in the path, NOT the authority - must NOT redact.
-        let url = "https://example.com/orgs/foo/users/@me";
-        assert_eq!(redact_url(url), url);
-    }
-}
-
 /// Whole-path SSRF-gate tests for the redirect + DNS-rebinding defenses.
 ///
 /// These exercise the REAL `build_web_client` / `resolve_and_screen`
@@ -371,102 +218,6 @@ mod redact_url_tests {
 /// path was wide open. A redirecting-server whole-path test still needs a
 /// DNS-control harness (tracked in tests/adversarial; see needs_cross_file),
 /// but the post-DNS IP screening and the policy wiring are pinned here.
-#[cfg(test)]
-mod ssrf_resolve_pin_tests {
-    use super::{build_web_client, is_disallowed_ip, resolve_and_screen};
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-    #[test]
-    fn resolved_ip_screen_matches_string_filter() {
-        // Loopback / private / link-local / metadata IPs must be rejected
-        // once DNS hands us the literal address (DNS-rebinding defense).
-        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
-        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5))));
-        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 5))));
-        assert!(is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-            169, 254, 169, 254
-        ))));
-        assert!(is_disallowed_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
-        // An IPv4-mapped IPv6 of loopback must also be caught.
-        assert!(is_disallowed_ip(IpAddr::V6(
-            "::ffff:127.0.0.1".parse().unwrap()
-        )));
-        // A real public IP passes.
-        assert!(!is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
-    }
-
-    #[test]
-    fn resolve_and_screen_rejects_loopback_literal() {
-        // `127.0.0.1` resolves to itself; the post-DNS screen must refuse it
-        // and the error must NOT echo the address.
-        let err = resolve_and_screen("127.0.0.1", 80).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("private / loopback"),
-            "expected loopback refusal, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn resolve_and_screen_accepts_loopback_via_pin_only_for_public() {
-        // Sanity: a literal public IP screens clean and is returned for
-        // pinning. (No DNS lookup is performed for IP literals.)
-        let addrs = resolve_and_screen("1.1.1.1", 443).expect("public IP must pass");
-        assert!(!addrs.is_empty(), "must return at least one pinned addr");
-        assert!(addrs.iter().all(|a| !is_disallowed_ip(a.ip())));
-    }
-
-    #[test]
-    fn build_web_client_refuses_loopback_resolving_host_when_direct() {
-        // Direct connection (no proxy): a host that resolves to loopback is
-        // refused at client-build time, before any request leaves the
-        // process. This is the DNS-screening half of the SSRF fix wired
-        // through the real `build_web_client`.
-        let cfg = crate::http::HttpClientConfig::default();
-        let res = build_web_client(&cfg, "http://127.0.0.1:9/", false);
-        assert!(
-            res.is_err(),
-            "loopback-resolving host must be refused on the direct path"
-        );
-    }
-
-    #[test]
-    fn build_web_client_builds_for_public_host_when_direct() {
-        // A real public host resolves to public IPs and builds a pinned
-        // client. (Network-dependent: skipped cleanly if DNS is unavailable
-        // in the sandbox - the resolution failure is itself a safe refusal,
-        // so either Ok or a DNS-failure Err is acceptable here.)
-        let cfg = crate::http::HttpClientConfig::default();
-        match build_web_client(&cfg, "https://example.com/app.js", false) {
-            Ok(_) => {}
-            Err(e) => {
-                let m = e.to_string();
-                assert!(
-                    m.contains("DNS resolution failed") || m.contains("no addresses"),
-                    "public host should build or fail only on DNS, got: {m}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn build_web_client_skips_pin_under_proxy() {
-        // With a proxy in use, DNS is the proxy's job - we must NOT pre-resolve
-        // (which would refuse a private-resolving name the proxy is meant to
-        // reach), so a loopback-resolving host builds fine when proxied.
-        let cfg = crate::http::HttpClientConfig {
-            proxy: Some("http://127.0.0.1:8080".into()),
-            ..Default::default()
-        };
-        let res = build_web_client(&cfg, "http://127.0.0.1:9/", true);
-        assert!(
-            res.is_ok(),
-            "under a proxy the source must skip DNS pinning and let the proxy resolve"
-        );
-    }
-}
-
 /// Web content source that fetches JavaScript, source maps, and WASM from URLs.
 ///
 /// URLs ending in `.wasm` are treated as binary and have strings extracted.
@@ -592,7 +343,7 @@ impl WebSource {
 ///      connect (DNS-rebinding). Skipped under a proxy, where DNS is the
 ///      proxy's job and pinning would be moot (mirrors the verifier's
 ///      `proxy_in_use` short-circuit in verify/request.rs).
-fn build_web_client(
+pub(crate) fn build_web_client(
     cfg: &crate::http::HttpClientConfig,
     url: &str,
     proxy_in_use: bool,
@@ -635,7 +386,10 @@ fn build_web_client(
 /// address list for `resolve_to_addrs` pinning. Uses the blocking
 /// `ToSocketAddrs` resolver to match the blocking client - no tokio
 /// runtime required on the source path.
-fn resolve_and_screen(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, SourceError> {
+pub(crate) fn resolve_and_screen(
+    host: &str,
+    port: u16,
+) -> Result<Vec<std::net::SocketAddr>, SourceError> {
     use std::net::ToSocketAddrs;
     let addrs: Vec<std::net::SocketAddr> = (host, port)
         .to_socket_addrs()

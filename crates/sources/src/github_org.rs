@@ -94,7 +94,7 @@ struct GitHubRepo {
 /// repo-name alphabet ([A-Za-z0-9._-], 1..=100 chars). Closes a
 /// path-traversal vector where a compromised API response can drive
 /// `temp_root.join(&repo.name)` outside the temp dir.
-fn validate_repo_name(name: &str) -> Result<(), SourceError> {
+pub(crate) fn validate_repo_name(name: &str) -> Result<(), SourceError> {
     if name.is_empty() || name.len() > 100 {
         return Err(SourceError::Other(format!(
             "github: refusing repo with out-of-range name length ({})",
@@ -122,7 +122,7 @@ fn validate_repo_name(name: &str) -> Result<(), SourceError> {
 /// scheme are arbitrary-code-execution gadgets in git's transport
 /// negotiation. We accept only `https://<host>/...` URLs because that
 /// is the only shape the GitHub API ever returns for public repos.
-fn validate_clone_url(url: &str) -> Result<(), SourceError> {
+pub(crate) fn validate_clone_url(url: &str) -> Result<(), SourceError> {
     if !url.starts_with("https://") {
         return Err(SourceError::Other(format!(
             "github: refusing non-https clone URL (potential ext::/ssh:// RCE vector): {url:?}"
@@ -140,60 +140,6 @@ fn validate_clone_url(url: &str) -> Result<(), SourceError> {
         )));
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod url_name_validation_tests {
-    use super::{validate_clone_url, validate_repo_name};
-
-    #[test]
-    fn accepts_normal_repo_names() {
-        for ok in &["keyhog", "keyhog.rs", "Cool-Repo_2", "a", &"x".repeat(100)] {
-            assert!(validate_repo_name(ok).is_ok(), "should accept {ok:?}");
-        }
-    }
-
-    #[test]
-    fn rejects_path_traversal_repo_names() {
-        for bad in &[
-            "..",
-            ".",
-            "",
-            "../etc/passwd",
-            "subdir/repo",
-            "back\\slash",
-            "weird*name",
-            "name with space",
-            &"x".repeat(101),
-        ] {
-            assert!(validate_repo_name(bad).is_err(), "should reject {bad:?}");
-        }
-    }
-
-    #[test]
-    fn accepts_https_clone_urls() {
-        for ok in &[
-            "https://github.com/santhsecurity/keyhog.git",
-            "https://ghe.example.com/org/repo.git",
-        ] {
-            assert!(validate_clone_url(ok).is_ok(), "should accept {ok:?}");
-        }
-    }
-
-    #[test]
-    fn rejects_dangerous_clone_urls() {
-        for bad in &[
-            "ext::sh -c whoami",
-            "ssh://git@github.com/org/repo.git",
-            "git@github.com:org/repo.git",
-            "file:///etc/passwd",
-            "http://insecure.example/repo.git",
-            "https://example.com/repo with space.git",
-            "https://example.com/repo\nwith\nnewlines",
-        ] {
-            assert!(validate_clone_url(bad).is_err(), "should reject {bad:?}");
-        }
-    }
 }
 
 fn collect_org_chunks(

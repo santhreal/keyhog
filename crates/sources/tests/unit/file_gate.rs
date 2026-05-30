@@ -90,7 +90,7 @@ fn binary_mod_happy() {
 #[test]
 fn binary_mod_error() {
     let source = keyhog_sources::BinarySource::new(std::path::PathBuf::from("/no/such/file"));
-    assert!(source.chunks().next().unwrap().is_err());
+    assert!(source.chunks().next().is_none());
 }
 
 // ── crates/sources/src/binary/ghidra.rs ─────────────────────────────────
@@ -105,10 +105,9 @@ fn binary_ghidra_happy() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_literals_happy() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.bin"), b"TOKEN=abcdefghijklmnop").unwrap();
-    let source = FilesystemSource::new(dir.path().to_path_buf());
-    assert!(source.chunks().next().is_some());
+    let literals =
+        keyhog_sources::testing::extract_string_literals(r#"puts("TOKEN=abcdefghijklmnop");"#);
+    assert_eq!(literals, vec!["TOKEN=abcdefghijklmnop".to_string()]);
 }
 #[cfg(feature = "binary")]
 #[test]

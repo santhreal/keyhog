@@ -70,7 +70,7 @@ pub(crate) fn display_path(path: &Path) -> String {
     }
 }
 
-fn strip_unc_prefix(s: &str) -> &str {
+pub(crate) fn strip_unc_prefix(s: &str) -> &str {
     // Two shapes Rust may emit on Windows:
     //   `\\?\C:\Users\me\src` (drive-letter form - the common case)
     //   `\\?\UNC\server\share\dir` (network share form)
@@ -90,37 +90,6 @@ fn strip_unc_prefix(s: &str) -> &str {
     }
 }
 
-#[cfg(test)]
-mod display_path_tests {
-    use super::strip_unc_prefix;
-
-    #[test]
-    fn strip_unc_drive_letter() {
-        assert_eq!(
-            strip_unc_prefix(r"\\?\C:\Users\me\src\app.env"),
-            r"C:\Users\me\src\app.env"
-        );
-    }
-
-    #[test]
-    fn strip_unc_leaves_normal_paths_alone() {
-        assert_eq!(strip_unc_prefix(r"C:\Users\me"), r"C:\Users\me");
-        assert_eq!(
-            strip_unc_prefix("/home/me/src/app.env"),
-            "/home/me/src/app.env"
-        );
-    }
-
-    #[test]
-    fn strip_unc_share() {
-        // `\\?\UNC\server\share\file` → the prefix gets trimmed but the
-        // bare share form is left intact (we don't try to rebuild `\\`).
-        assert_eq!(
-            strip_unc_prefix(r"\\?\UNC\server\share\file"),
-            r"UNC\server\share\file"
-        );
-    }
-}
 /// Default overlap between consecutive windows. 4 KiB matches the
 /// longest plausible secret span we want to catch across the cut.
 const DEFAULT_WINDOW_OVERLAP: usize = 4 * 1024;

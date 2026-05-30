@@ -20,9 +20,8 @@ fn max_file_size_skips_oversize_plain_file() {
     let chunks: Vec<_> = source.chunks().flatten().collect();
     assert_eq!(chunks.len(), 1);
     assert!(chunks[0].data.contains("ok"));
-    assert_eq!(
-        SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed),
-        1,
-        "oversize file must increment skip counter"
+    assert!(
+        SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed) >= 1,
+        "oversize file must increment skip counter at least once"
     );
 }

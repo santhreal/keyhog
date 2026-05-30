@@ -7,6 +7,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Sources
 
 - Fix `keyhog-sources` default test compilation by marking the S3 ambient credential forwarding integration test as requiring the `s3` feature.
+- Move source-crate inline tests for filesystem, binary literals/sections, GitHub org, HTTP policy, and web SSRF helpers behind registered external tests, restoring the no-inline-test and no-production-unwrap gates under default and all-features source builds.
 
 ## v0.5.37 - 2026-05-29 - Mirror benchmark: F1 0.7815 to 0.8896 (closes the gap to betterleaks 0.892)
 

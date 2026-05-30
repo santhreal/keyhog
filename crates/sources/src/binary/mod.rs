@@ -300,6 +300,6 @@ pub(crate) fn extract_printable_strings(
 }
 
 mod ghidra;
-mod literals;
+pub(crate) mod literals;
 #[cfg(feature = "binary")]
-mod sections;
+pub(crate) mod sections;

@@ -144,38 +144,3 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
         Some(chunks)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A scanner must never crash on bad input. Garbage bytes are not a
-    /// parseable object file: `Object::parse` returns `Err` and we must
-    /// return `None`, not panic.
-    #[test]
-    fn returns_none_on_garbage_bytes() {
-        let junk = [0x12u8, 0x34, 0x56, 0x78, 0x9a, 0xbc];
-        assert!(extract_sections(&junk, "junk.bin").is_none());
-    }
-
-    /// Empty input also parses to no object and yields `None`.
-    #[test]
-    fn returns_none_on_empty_input() {
-        assert!(extract_sections(&[], "empty.bin").is_none());
-    }
-
-    /// Regression for the section offset/size overflow guard: an input
-    /// starting with the ELF magic but otherwise truncated/corrupt must be
-    /// handled without panicking. Whatever goblin makes of these bytes,
-    /// the saturating_add on `start + size` keeps every slice in-bounds.
-    #[test]
-    fn truncated_elf_magic_does_not_panic() {
-        // ELF magic followed by 64-bit/little-endian class bytes then a
-        // run of 0xFF that, if interpreted as a section offset/size, would
-        // overflow usize on the `start + size` add the guard now saturates.
-        let mut bytes = vec![0x7f, b'E', b'L', b'F', 2, 1, 1, 0];
-        bytes.extend(std::iter::repeat(0xFF).take(120));
-        // Must return without panicking; result shape is irrelevant.
-        let _ = extract_sections(&bytes, "trunc.elf");
-    }
-}
