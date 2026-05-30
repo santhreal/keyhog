@@ -66,12 +66,18 @@ fn load_f32_slice(offset: usize, count: usize) -> &'static [f32] {
 
 /// Return the full flattened weight buffer (used by GPU batch inference).
 ///
+/// Only the GPU MoE backend consumes the flat buffer. The CPU path uses the
+/// per-layer accessors below, so leaving this symbol exported in the lean
+/// build would surface as dead code. Gating it on `feature = "gpu"` keeps
+/// the build clean without an `#[allow(dead_code)]` evasion.
+///
 /// # Examples
 ///
 /// ```rust,ignore
 /// use keyhog_scanner::ml_weights::all_weights_slice;
 /// assert!(!all_weights_slice().is_empty());
 /// ```
+#[cfg(feature = "gpu")]
 pub fn all_weights_slice() -> &'static [f32] {
     all_weights()
 }
