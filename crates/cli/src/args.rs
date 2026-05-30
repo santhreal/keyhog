@@ -433,6 +433,9 @@ pub enum OutputFormat {
     Json,
     Jsonl,
     Sarif,
+    Csv,
+    Html,
+    Junit,
 }
 
 #[derive(Clone, ValueEnum, PartialEq)]

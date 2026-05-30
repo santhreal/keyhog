@@ -3,7 +3,8 @@
 use crate::args::{OutputFormat, ScanArgs};
 use anyhow::{Context, Result};
 use keyhog_core::{
-    JsonReporter, JsonlReporter, Reporter, SarifReporter, TextReporter, VerifiedFinding,
+    CsvReporter, HtmlReporter, JsonReporter, JsonlReporter, JunitReporter, Reporter, SarifReporter,
+    TextReporter, VerifiedFinding,
 };
 use std::io::{self, IsTerminal};
 
@@ -69,6 +70,9 @@ fn report_with<W: std::io::Write + 'static + Send>(
         OutputFormat::Json => finish_reporter(JsonReporter::new(w)?, findings),
         OutputFormat::Jsonl => finish_reporter(JsonlReporter::new(w), findings),
         OutputFormat::Sarif => finish_reporter(SarifReporter::new(w), findings),
+        OutputFormat::Csv => finish_reporter(CsvReporter::new(w)?, findings),
+        OutputFormat::Html => finish_reporter(HtmlReporter::new(w), findings),
+        OutputFormat::Junit => finish_reporter(JunitReporter::new(w), findings),
     }
 }
 
