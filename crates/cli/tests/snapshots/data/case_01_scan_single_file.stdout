@@ -1,0 +1,15 @@
+  ┌    CRITICAL ─── AWS Access Key
+  │ Secret:     AKIA...7XYA
+  │ Location:   <TMP>/planted.txt:1
+  │ Confidence: ■■■■□□  80%
+  │ Action:     Revoke immediately and rotate.
+  └─────────────────────────────────────────────
+
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1 secret found · 1 unverified
+
+  1. Revoke active secrets in the provider's dashboard.
+  2. Remove credentials from codebase and git history.
+  3. Use a secure secret manager or environment variables.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

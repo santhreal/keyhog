@@ -1,0 +1,2 @@
+detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence
+aws-access-key,AWS Access Key,aws,critical,AKIA...7XYA,01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2,filesystem,<TMP>/tree/planted.txt,1,19,,,,skipped,0.8

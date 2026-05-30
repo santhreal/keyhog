@@ -1,7 +1,0 @@
-error: compiling scanner from 891 detector specs: failed to compile regex for detector pirsch-api-token pattern 0: regex parse error:
-    (?-i)\bpa_[a-zA-Z0-9]{32,40}(?![A-Za-z0-9])
-                                ^^^
-error: look-around, including look-ahead and look-behind, is not supported. Fix: correct the detector regex or capture group configuration: regex parse error:
-    (?-i)\bpa_[a-zA-Z0-9]{32,40}(?![A-Za-z0-9])
-                                ^^^
-error: look-around, including look-ahead and look-behind, is not supported
