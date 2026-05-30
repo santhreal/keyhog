@@ -17,10 +17,11 @@ readme = "README.md"
 status = "alpha"
 
 [features]
-# GPU is ALWAYS compiled in — keyhog auto-routes to GPU/SIMD/CPU based on
-# hardware probe, OS, and workload size. There is no "no-GPU" build profile;
-# the runtime gracefully degrades when no compatible adapter is found.
-default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
+# Default = full desktop experience: GPU stack + Hyperscan + SIMD prefilter +
+# every ML/decode/multiline data path. Strip with `--no-default-features
+# --features ci` to drop the GPU drivers and Hyperscan for a maximally-light
+# CI binary (no libhs link, no wgpu/Vulkan probe, ~150ms cold-start).
+default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "gpu"]
 ml = []
 entropy = []
 decode = []
@@ -28,24 +29,37 @@ multiline = []
 simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
 simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
-gpu = []  # GPU stack is mandatory; feature exists for CLI compatibility
-# CUDA is now the PRIMARY GPU backend on Linux and is always compiled there
-# (see the `[target.'cfg(target_os = "linux")'.dependencies]` block below) —
-# no feature flag needed. cudarc loads libcuda/libnvrtc DYNAMICALLY at runtime
-# (cudarc `dynamic-loading`), so the binary builds with no CUDA toolkit present
-# and a host without an NVIDIA driver simply falls back to wgpu. macOS / Windows
-# never compile CUDA and route through wgpu. This `cuda` feature is retained as
-# a no-op alias so existing `--features cuda` invocations keep working.
-cuda = []
+# GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), the
+# vyre wgpu driver, the vyre runtime megakernel, and on Linux the vyre CUDA
+# driver. cudarc still loads libcuda/libnvrtc DYNAMICALLY at runtime so a
+# `gpu`-on build that lands on a driverless host falls back to wgpu and a
+# driverless+adapter-less host falls all the way back to the CPU path. Turning
+# the feature OFF removes wgpu/vulkan/EGL linkage entirely — the lean CI
+# path. `vyre`/`vyre_libs` stay on either way because their CPU primitives
+# are woven into the scan types.
+gpu = [
+    "dep:wgpu",
+    "dep:pollster",
+    "dep:bytemuck",
+    "dep:vyre-driver-wgpu",
+    "dep:vyre-runtime",
+    "dep:vyre-driver-cuda",
+]
+# CUDA acquisition lives inside the `gpu` feature and is exercised on Linux
+# via cudarc `dynamic-loading` so the same `gpu` build works with or without a
+# CUDA toolkit at install time. This `cuda` alias is retained as a no-op for
+# legacy `--features cuda` invocations.
+cuda = ["gpu"]
 
 [dependencies]
 keyhog-core = { workspace = true }
-# GPU stack is mandatory — auto-routes to GPU vs SIMD vs scalar based on the
-# hardware probe at startup. wgpu is the cross-platform device backend; vyre
-# provides the GPU AC literal-set scanner.
-wgpu = { workspace = true }
-pollster = { workspace = true }
-bytemuck = { workspace = true }
+# GPU stack — optional, gated by the `gpu` feature so the lean CI build does
+# not link wgpu and does not probe Vulkan/EGL at startup. `vyre`/`vyre_libs`
+# are kept unconditional because their CPU primitives (LiteralMatch,
+# GpuLiteralSet, RulePipeline) are woven into the scan types.
+wgpu = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
 aho-corasick = { workspace = true }
 regex = { workspace = true }
 # AST-walking literal extraction (compiler_prefix.rs).
@@ -65,8 +79,8 @@ zeroize = { workspace = true }
 hyperscan = { workspace = true, optional = true }
 vyre = { workspace = true }
 vyre_libs = { workspace = true, features = ["matching-nfa", "matching-regex", "intern"] }
-vyre-driver-wgpu = { workspace = true }
-vyre-runtime = { workspace = true, features = ["megakernel-batch"] }
+vyre-driver-wgpu = { workspace = true, optional = true }
+vyre-runtime = { workspace = true, optional = true, features = ["megakernel-batch"] }
 
 simdsieve = { workspace = true, optional = true }
 dashmap = { workspace = true }
@@ -91,10 +105,11 @@ toml = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { workspace = true }
-# CUDA is the primary GPU backend on Linux: always compiled, loaded
-# dynamically at runtime (cudarc dynamic-loading) so no toolkit is needed to
-# build and a driverless host falls back to wgpu. macOS / Windows omit it.
-vyre-driver-cuda = { workspace = true, features = ["cuda"] }
+# CUDA is the primary GPU backend on Linux when the `gpu` feature is on. The
+# crate loads libcuda/libnvrtc dynamically at runtime (cudarc dynamic-loading)
+# so a `gpu`-on build with no CUDA toolkit installed still compiles and a
+# driverless host falls back to wgpu. macOS / Windows never compile CUDA.
+vyre-driver-cuda = { workspace = true, optional = true, features = ["cuda"] }
 
 # Optional: Vectorscan SIMD backend
 

@@ -9,9 +9,14 @@
 //! - 6 experts: Linear(41→32)+ReLU → Linear(32→16)+ReLU → Linear(16→1)
 //! - Output: sigmoid(weighted sum of expert logits)
 
+// Both submodules lean on the wgpu device/queue + bytemuck cast helpers.
+// They only exist in `gpu`-on builds; the public API in this module
+// short-circuits to "no GPU" via the `cfg` arms below when off.
+#[cfg(feature = "gpu")]
 #[path = "gpu_shader.rs"]
 mod gpu_shader;
 
+#[cfg(feature = "gpu")]
 #[path = "gpu_moe_backend.rs"]
 mod backend;
 
@@ -62,9 +67,12 @@ pub fn batch_ml_inference(
             })
             .collect();
 
+        #[cfg(feature = "gpu")]
         if let Some(scores) = backend::batch_score_features(&features) {
             return scores;
         }
+        // Bind `features` so the no-`gpu` build doesn't lint it unused.
+        let _ = &features;
 
         candidates
             .par_iter()
@@ -99,7 +107,14 @@ pub fn batch_ml_inference(
 /// let _ = gpu_available();
 /// ```
 pub fn gpu_available() -> bool {
-    backend::get_gpu().is_some()
+    #[cfg(feature = "gpu")]
+    {
+        backend::get_gpu().is_some()
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        false
+    }
 }
 
 /// Result from an explicit GPU adapter and dispatch self-test.
@@ -122,6 +137,7 @@ pub struct VyreGpuSelfTest {
     pub coalesced_matches: usize,
 }
 
+#[cfg(feature = "gpu")]
 static GPU_SELF_TEST_CACHE: std::sync::OnceLock<std::result::Result<GpuSelfTest, String>> =
     std::sync::OnceLock::new();
 
@@ -131,6 +147,15 @@ static GPU_SELF_TEST_CACHE: std::sync::OnceLock<std::result::Result<GpuSelfTest,
 /// adapter initialized and that the MoE compute shader can run at least one
 /// production-sized batch.
 pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
+    #[cfg(not(feature = "gpu"))]
+    {
+        return Err(
+            "GPU support not compiled in (lean ci build). Rebuild with `--features gpu` \
+             (or the default profile) to exercise the wgpu/CUDA path."
+                .to_string(),
+        );
+    }
+    #[cfg(feature = "gpu")]
     GPU_SELF_TEST_CACHE
         .get_or_init(|| {
             const SELF_TEST_BATCH: usize = 64;
@@ -176,6 +201,16 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
 /// Keyhog's MoE GPU scorer. Both `direct_matches` and `coalesced_matches` are
 /// populated from real GPU scans - see audit release-2026-04-26 for the prior
 /// rigged-test bug where `coalesced_matches` was hardcoded.
+#[cfg(not(feature = "gpu"))]
+pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
+    Err(
+        "vyre GPU self-test not available in the lean ci build (no wgpu driver compiled in). \
+         Rebuild with `--features gpu`."
+            .to_string(),
+    )
+}
+
+#[cfg(feature = "gpu")]
 pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
     use vyre_driver_wgpu::WgpuBackend;
     use vyre_libs::scan::GpuLiteralSet;
@@ -241,6 +276,16 @@ pub struct VyreAcKernelSelfTest {
 /// Returns `Err` when GPU acquisition didn't happen during
 /// compile, when phase-1 returned the CPU-degrade variant, or when
 /// the dispatch returned zero hits for the planted literal.
+#[cfg(not(feature = "gpu"))]
+pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
+    Err(
+        "vyre AC-kernel self-test not available in the lean ci build. \
+         Rebuild with `--features gpu` to exercise the GPU AC phase-1 path."
+            .to_string(),
+    )
+}
+
+#[cfg(feature = "gpu")]
 pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
     use crate::engine::{CompiledScanner, GpuPhase1Output};
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
@@ -311,6 +356,7 @@ pub fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
     if env_no_gpu() {
         return (false, None, None);
     }
+    #[cfg(feature = "gpu")]
     if let Some(gpu) = backend::get_gpu() {
         return (true, Some(gpu.gpu_name().to_string()), gpu.vram_mb());
     }
