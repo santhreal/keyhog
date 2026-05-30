@@ -1,0 +1,124 @@
+<div class="report-container">
+  <!-- Header -->
+  <header>
+    <div class="logo-section">
+      <h1>🐗 Key<span>Hog</span></h1>
+      <p>Developer-first Secret Scanning Report &bull; Verified Findings</p>
+    </div>
+    <div class="theme-selector">
+      <button class="theme-btn active" onclick="setTheme('obsidian')">OBSIDIAN</button>
+      <button class="theme-btn" onclick="setTheme('cyberpunk')">CYBERPUNK</button>
+      <button class="theme-btn" onclick="setTheme('win98')">WIN98</button>
+      <button class="theme-btn" onclick="setTheme('matrix')">MATRIX</button>
+    </div>
+  </header>
+
+  <!-- Content Grid -->
+  <div class="dashboard-grid">
+    <!-- Sidebar Controls & Metrics -->
+    <div class="sidebar">
+      <!-- Metrics Summary -->
+      <div class="card">
+        <h2>Summary</h2>
+        <div class="metric-row">
+          <div class="stat-box">
+            <div class="stat-val" id="cnt-total">0</div>
+            <div class="stat-lbl">Total</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="cnt-live" style="color: var(--color-live);">0</div>
+            <div class="stat-lbl">Live</div>
+          </div>
+        </div>
+        <div class="metric-row">
+          <div class="stat-box">
+            <div class="stat-val" id="cnt-critical" style="color: var(--color-critical);">0</div>
+            <div class="stat-lbl">Critical</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="cnt-high" style="color: var(--color-high);">0</div>
+            <div class="stat-lbl">High</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Severity Chart -->
+      <div class="card">
+        <h2>Severity Breakdown</h2>
+        <div class="chart-container">
+          <svg class="chart-svg" viewBox="0 0 42 42">
+            <circle class="chart-hole" cx="21" cy="21" r="15.91549430918954"></circle>
+            <circle class="chart-segment" id="seg-critical" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-critical)"></circle>
+            <circle class="chart-segment" id="seg-high" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-high)"></circle>
+            <circle class="chart-segment" id="seg-medium" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-medium)"></circle>
+            <circle class="chart-segment" id="seg-low" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-low)"></circle>
+            <circle class="chart-segment" id="seg-info" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-info)"></circle>
+            <circle class="chart-segment" id="seg-client" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-client-safe)"></circle>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Top Services Chart -->
+      <div class="card">
+        <h2>Top Services</h2>
+        <div class="chart-bar-container" id="service-bars">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+
+      <!-- Filters Panel -->
+      <div class="card">
+        <h2>Filter Severity</h2>
+        <div class="filter-group">
+          <label><input type="checkbox" id="fil-critical" checked onchange="applyFilters()"> Critical</label>
+          <label><input type="checkbox" id="fil-high" checked onchange="applyFilters()"> High</label>
+          <label><input type="checkbox" id="fil-medium" checked onchange="applyFilters()"> Medium</label>
+          <label><input type="checkbox" id="fil-low" checked onchange="applyFilters()"> Low</label>
+          <label><input type="checkbox" id="fil-info" checked onchange="applyFilters()"> Info</label>
+          <label><input type="checkbox" id="fil-client-safe" checked onchange="applyFilters()"> Client Safe</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Findings Listing -->
+    <div class="findings-panel">
+      <div class="card">
+        <h2>Findings</h2>
+        
+        <!-- Search bar -->
+        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." oninput="applyFilters()">
+
+        <!-- Status Filter Tabs -->
+        <div class="tabs">
+          <button class="tab-btn active" id="tab-all" onclick="setStatusTab('all')">ALL</button>
+          <button class="tab-btn" id="tab-live" onclick="setStatusTab('live')">LIVE</button>
+          <button class="tab-btn" id="tab-revoked" onclick="setStatusTab('revoked')">REVOKED</button>
+          <button class="tab-btn" id="tab-unverifiable" onclick="setStatusTab('unverifiable')">UNVERIFIABLE</button>
+        </div>
+
+        <!-- Table view -->
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Detector</th>
+                <th>Service</th>
+                <th>File Path & Line</th>
+                <th>Severity</th>
+                <th>Verification</th>
+              </tr>
+            </thead>
+            <tbody id="findings-table-body">
+              <!-- Populated dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty state helper -->
+        <div class="empty-state" id="empty-view" style="display: none;">
+          No findings match the active search and filter criteria.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
