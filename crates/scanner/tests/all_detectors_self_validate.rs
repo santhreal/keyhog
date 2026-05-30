@@ -15,20 +15,15 @@
 //! claim of "ships X detectors" is honest. A detector that loads
 //! but never fires is decoration.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use keyhog_core::Chunk;
 use keyhog_core::ChunkMetadata;
 use keyhog_scanner::CompiledScanner;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn contracts_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

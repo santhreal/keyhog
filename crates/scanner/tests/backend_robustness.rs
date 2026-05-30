@@ -17,18 +17,12 @@
 //!   * One huge chunk (large enough to cross MAX_SCAN_CHUNK_BYTES).
 //!   * Concurrent scans from multiple threads (Send/Sync invariant).
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scanner() -> &'static Arc<CompiledScanner> {
     static SCANNER: OnceLock<Arc<CompiledScanner>> = OnceLock::new();

@@ -15,18 +15,11 @@
 //! only ran scan_generic_assignments, never scan_fallback_patterns.
 //! The detector was silently dead on its own canonical input.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {
         data: text.into(),

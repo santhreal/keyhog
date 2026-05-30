@@ -11,6 +11,9 @@
 //! lego-block move: build the harness once, instantiate per
 //! detector by writing data, not code.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -73,14 +76,6 @@ struct ScaleBudget {
     max_seconds: f64,
     #[allow(dead_code)]
     note: String,
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn contracts_dir() -> PathBuf {

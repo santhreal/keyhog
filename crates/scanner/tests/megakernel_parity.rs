@@ -10,18 +10,11 @@
 //! identical findings. Adapter/init failure or divergence panics -
 //! no silent skip, no WARN-only downgrade.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {
         data: text.into(),

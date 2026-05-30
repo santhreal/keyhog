@@ -14,10 +14,11 @@
 //! re-lowers the confidence floor below the CLI's default
 //! min_confidence filter.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
-
 const PEM_YAML: &str = r#"api_key: my-real-app-key
 tls_private_key: |
   -----BEGIN RSA PRIVATE KEY-----
@@ -26,14 +27,6 @@ tls_private_key: |
   Pve1M6CgtxzBSBRKasyo1SSq+T21dxfF1yAUHk
   -----END RSA PRIVATE KEY-----
 "#;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scan() -> Vec<keyhog_core::RawMatch> {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");

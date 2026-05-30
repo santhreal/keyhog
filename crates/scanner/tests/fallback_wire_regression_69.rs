@@ -6,19 +6,13 @@
 //! and `scan_prepared_with_pattern_hits`. This test asserts the wire
 //! is alive - if a future refactor drops the call again, this
 //! catches it.
+
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use regex::Regex;
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
 #[test]
 fn asana_regex_matches_standalone() {
     let re = Regex::new(r"1/[0-9]{16,20}/[a-zA-Z0-9]{32,48}").expect("compile");

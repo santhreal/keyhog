@@ -17,19 +17,13 @@
 //! credential surfaces. GPU/MegaScan cells silently SKIP when no
 //! compatible adapter is present.
 
+mod support;
+use support::paths::detector_dir;
+
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::sync::OnceLock;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();

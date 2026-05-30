@@ -21,20 +21,14 @@
 //! handful of generators - exactly the "thousands of tests" coverage
 //! the GPU axis needs.
 
+mod support;
+use support::paths::detector_dir;
+
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use proptest::prelude::*;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, OnceLock};
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 /// Cache the compiled scanner across all property cases. Re-compiling
 /// 889 detectors per case would push a 1024-case property run from

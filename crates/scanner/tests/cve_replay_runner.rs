@@ -18,6 +18,9 @@
 //! suite has zero CVE-replay coverage. Each new entry must be a
 //! verbatim public-leak fixture with an auditable `source_url`.
 
+mod support;
+use support::paths::detector_dir;
+
 use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -40,14 +43,6 @@ struct CveEntry {
     #[allow(dead_code)]
     description: String,
     leaked_text: String,
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn cve_replay_dir() -> PathBuf {
