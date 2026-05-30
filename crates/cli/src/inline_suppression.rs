@@ -3,7 +3,12 @@
 use keyhog_core::RawMatch;
 use std::collections::HashMap;
 
-const INLINE_SUPPRESSION_DIRECTIVE: &str = "keyhog:ignore";
+const INLINE_SUPPRESSION_DIRECTIVES: &[&str] = &[
+    "keyhog:ignore",
+    "keyhog:allow",
+    "gitleaks:allow",
+    "betterleaks:allow",
+];
 const DETECTOR_DIRECTIVE_PREFIX: &str = "detector=";
 const INLINE_COMMENT_MARKERS: &[&str] = &["//", "#", "--", "/*", "<!--"];
 
@@ -99,13 +104,17 @@ fn comment_segments(line: &str) -> impl Iterator<Item = &str> {
 }
 
 fn extract_directive_from_comment(comment: &str) -> Option<String> {
-    let directive_index = comment.find(INLINE_SUPPRESSION_DIRECTIVE)?;
-    if comment[..directive_index]
-        .chars()
-        .any(|character| !character.is_whitespace())
-    {
-        return None;
+    for &dir in INLINE_SUPPRESSION_DIRECTIVES {
+        if let Some(directive_index) = comment.find(dir) {
+            if comment[..directive_index]
+                .chars()
+                .any(|character| !character.is_whitespace())
+            {
+                continue;
+            }
+            let directive = &comment[directive_index..];
+            return Some(directive.to_string());
+        }
     }
-    let directive = &comment[directive_index..];
-    Some(directive.to_string())
+    None
 }
