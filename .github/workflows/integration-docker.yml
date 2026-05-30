@@ -21,10 +21,21 @@ on:
       - 'Cargo.*'
   workflow_dispatch:
 
+# A new push to main supersedes the prior image, so cancel any in-flight run on
+# the same ref rather than letting glibc+musl fat-LTO rebuilds pile up. This was
+# the source of the multi-hour "queued" backlog: no concurrency gate meant every
+# push to crates/** stacked a fresh from-scratch matrix behind the previous one.
+concurrency:
+  group: docker-integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   matrix:
     name: ${{ matrix.variant }} integration
     runs-on: ubuntu-latest
+    # A clean from-scratch glibc/musl release build is ~15-25 min; 45 caps a
+    # hung job well under the 6h default that let runs sit queued for hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

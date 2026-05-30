@@ -20,14 +20,6 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
-# Tokens for the deploy job. Pages deploys need write access to the
-# Pages-managed branch + an OIDC token; we scope tightly so a malicious
-# docs PR cannot escalate.
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 # Don't queue parallel deploys -- the latest push wins.
 concurrency:
   group: pages-${{ github.ref }}
@@ -37,6 +29,11 @@ jobs:
   build:
     name: Build mdBook
     runs-on: ubuntu-latest
+    # Per-job permissions: this repo rejects dispatch of any workflow that
+    # declares a TOP-LEVEL `permissions:` block (1-3s exit, 0 jobs -- see
+    # health-check.yml / keyhog.yml). Per-job is equivalent and dispatch-safe.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +65,12 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    # Pages deploy needs write + OIDC; scoped to this job only (top-level
+    # permissions is rejected at dispatch on this repo, which is why the
+    # docs site stopped publishing).
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
