@@ -47,7 +47,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 ```yaml
 - id: keyhog
-  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.35
+  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
   with:
     fail-on-findings: 'false'
 
