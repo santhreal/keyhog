@@ -337,6 +337,28 @@ impl Severity {
             Severity::Info => Severity::Info,
         }
     }
+
+    /// Canonical lowercase string for this severity, matching the serde
+    /// `kebab-case` wire form (`client-safe`, not `clientsafe`). This is the
+    /// single source of truth for rendering a severity as text; reporters and
+    /// any other surface should go through `Display`/`as_str` rather than
+    /// reaching for `format!("{:?}")`, which diverges for `ClientSafe`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::ClientSafe => "client-safe",
+            Severity::Low => "low",
+            Severity::Medium => "medium",
+            Severity::High => "high",
+            Severity::Critical => "critical",
+        }
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// HTTP method for verification requests.

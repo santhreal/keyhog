@@ -1,6 +1,9 @@
 //! Reporting logic for scan results.
 
+mod csv;
+mod html;
 mod json;
+mod junit;
 mod sarif;
 mod text;
 
@@ -13,7 +16,10 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
+pub use csv::CsvReporter;
+pub use html::HtmlReporter;
 pub use json::{JsonArrayReporter, JsonReporter, JsonlReporter};
+pub use junit::JunitReporter;
 pub use sarif::SarifReporter;
 pub use text::TextReporter;
 
