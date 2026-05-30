@@ -348,8 +348,17 @@ impl std::fmt::Display for SensitiveString {
 }
 
 impl std::fmt::Debug for SensitiveString {
+    /// Refuse to print the inner string. `SensitiveString` backs scan-chunk
+    /// data (`Chunk::data`), which can contain raw credential material -
+    /// decoded secrets, `.env` lines, archive-entry bytes. The previous impl
+    /// emitted `SensitiveString("<raw content>")`, leaking those bytes into
+    /// any `{:?}` print, `tracing::debug!(?chunk)` span, or panic message.
+    /// Mirror the `Credential::Debug` byte-count redaction (kimi-wave1
+    /// finding 1.1). Note: `Display` intentionally still exposes the bytes -
+    /// callers that genuinely need the content format with `{}`, which is the
+    /// auditable surface; `{:?}` must never be one.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SensitiveString({:?})", self.as_str())
+        write!(f, "SensitiveString(<redacted {} bytes>)", self.inner.len())
     }
 }
 

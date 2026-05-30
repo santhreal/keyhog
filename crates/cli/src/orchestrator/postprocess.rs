@@ -149,7 +149,16 @@ impl ScanOrchestrator {
                     return false;
                 }
                 if let Some(conf) = m.confidence {
-                    if !self.args.no_ml && conf < self.args.min_confidence.unwrap_or(0.3) {
+                    // Per-detector floor from `.keyhog.toml`
+                    // `[detector.<id>] min_confidence` takes precedence and
+                    // applies unconditionally (it is an explicit per-detector
+                    // policy, not the ML gate). Falls back to the global
+                    // `--min-confidence` floor, which stays gated on `!no_ml`.
+                    if let Some(floor) = self.detector_min_confidence.get(m.detector_id.as_ref()) {
+                        if conf < *floor {
+                            return false;
+                        }
+                    } else if !self.args.no_ml && conf < self.args.min_confidence.unwrap_or(0.3) {
                         return false;
                     }
                 }

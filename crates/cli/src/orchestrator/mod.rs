@@ -40,6 +40,11 @@ pub struct ScanOrchestrator {
     /// their findings are filtered here in `filter_and_resolve` - making the
     /// documented toggle work for every detector, hot or TOML.
     pub(crate) disabled_detectors: std::collections::HashSet<String>,
+    /// Per-detector confidence floors from `.keyhog.toml`
+    /// `[detector.<id>] min_confidence = <f>`. Applied in `filter_and_resolve`:
+    /// a finding from `<id>` below this threshold is dropped, overriding the
+    /// global `--min-confidence`. Empty when no per-detector overrides are set.
+    pub(crate) detector_min_confidence: std::collections::HashMap<String, f64>,
 }
 
 impl ScanOrchestrator {
@@ -66,6 +71,7 @@ impl ScanOrchestrator {
         }
         let cfg = apply_config_file(&mut args);
         let disabled_detectors = cfg.disabled_detectors;
+        let detector_min_confidence = cfg.detector_min_confidence;
 
         // `[lockdown] require = true` is a fail-closed security control: refuse
         // to run unless the operator consciously passed --lockdown. Previously
@@ -168,6 +174,7 @@ impl ScanOrchestrator {
             signatures,
             test_fixture_suppressions,
             disabled_detectors: disabled_detectors.into_iter().collect(),
+            detector_min_confidence,
         })
     }
 
@@ -228,6 +235,7 @@ impl ScanOrchestrator {
             signatures,
             test_fixture_suppressions,
             disabled_detectors: std::collections::HashSet::new(),
+            detector_min_confidence: std::collections::HashMap::new(),
         }
     }
 }

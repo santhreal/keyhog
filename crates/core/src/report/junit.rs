@@ -133,3 +133,72 @@ fn escape_xml_attr(val: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_support::sample_finding;
+    use super::JunitReporter;
+    use crate::Reporter;
+
+    fn render(finding: &crate::VerifiedFinding) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut reporter = JunitReporter::new(&mut buf);
+            reporter.report(finding).expect("report finding");
+            reporter.finish().expect("finish");
+        }
+        String::from_utf8(buf).expect("utf8 junit output")
+    }
+
+    #[test]
+    fn junit_wraps_finding_in_testsuites_with_failure() {
+        let out = render(&sample_finding());
+
+        // XML prolog + envelope.
+        assert!(
+            out.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n"),
+            "missing XML prolog/testsuites open: {out:?}"
+        );
+        assert!(out.trim_end().ends_with("</testsuites>"), "no testsuites close: {out:?}");
+
+        // One finding -> one test, one failure, zero errors.
+        assert!(
+            out.contains(
+                "<testsuite name=\"keyhog\" tests=\"1\" failures=\"1\" errors=\"0\" time=\"0.0\">"
+            ),
+            "testsuite counts wrong: {out:?}"
+        );
+
+        // Testcase name is file:line:detector for a fully-located finding.
+        assert!(
+            out.contains(
+                "<testcase name=\"config/app.env:12:aws-access-key\" classname=\"keyhog.findings\" time=\"0.0\">"
+            ),
+            "testcase name wrong: {out:?}"
+        );
+
+        // The <failure> message carries the detector name with XML special
+        // characters escaped (& -> &amp; first, then < > "), and the severity
+        // becomes the failure type attribute.
+        assert!(
+            out.contains(
+                "<failure message=\"Secret detected: AWS Key, &quot;prod&quot; &lt;a&amp;b&gt; (id: aws-access-key)\" type=\"high\">"
+            ),
+            "failure message/type not escaped as expected: {out:?}"
+        );
+
+        // The CDATA detail block carries the live verification verdict.
+        assert!(out.contains("<![CDATA["), "no CDATA block: {out:?}");
+        assert!(out.contains("Verification:  live"), "verification verdict missing: {out:?}");
+        assert!(out.contains("Confidence:    0.875"), "confidence missing: {out:?}");
+    }
+
+    #[test]
+    fn junit_escapes_ampersand_before_angle_brackets() {
+        // Ordering guard: `&` must be escaped first so a literal `<` in the
+        // input does not get double-escaped into `&amp;lt;`.
+        assert_eq!(super::escape_xml_attr("a&b<c>"), "a&amp;b&lt;c&gt;");
+        assert_eq!(super::escape_xml_attr("\"q\""), "&quot;q&quot;");
+        assert_eq!(super::escape_xml_attr("it's"), "it&apos;s");
+    }
+}

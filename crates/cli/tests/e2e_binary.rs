@@ -882,6 +882,52 @@ fn config_detector_disable_drops_findings() {
 }
 
 #[test]
+fn config_detector_min_confidence_floor_drops_findings() {
+    // `[detector.<id>] min_confidence = <f>` is a per-detector confidence
+    // floor: a finding from that detector below the floor is dropped, taking
+    // precedence over the global --min-confidence. README-documented but
+    // parsed-and-silently-ignored before this wiring (it was decoded into
+    // DetectorSection.min_confidence and never consumed).
+    //
+    // The AWS key fires under both the hot-pattern fast path (`hot-aws_key`)
+    // and the TOML `aws-access-key` detector, so the floor must be set on both
+    // to fully suppress it - same shadowing as the disable test.
+    let aws = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
+
+    // Baseline: the key is found.
+    let (_o, _e, before) = scan_dir_with_config(aws, "", &[]);
+    assert_eq!(before, Some(1), "baseline: the AWS key must be found");
+
+    // A floor of 1.0 is unreachable by any real confidence (scores are < 1.0),
+    // so it must drop every finding from these detectors -> exit 0.
+    let (out_hi, _e, code_hi) = scan_dir_with_config(
+        aws,
+        "[detector.hot-aws_key]\nmin_confidence = 1.0\n\
+         [detector.aws-access-key]\nmin_confidence = 1.0\n",
+        &[],
+    );
+    assert_eq!(
+        code_hi,
+        Some(0),
+        "a per-detector min_confidence floor of 1.0 must suppress the finding; stdout={out_hi}"
+    );
+
+    // A floor of 0.0 is below any confidence, so the finding survives - proving
+    // the floor value (not merely the table's presence) is what drives the drop.
+    let (_o, _e, code_lo) = scan_dir_with_config(
+        aws,
+        "[detector.hot-aws_key]\nmin_confidence = 0.0\n\
+         [detector.aws-access-key]\nmin_confidence = 0.0\n",
+        &[],
+    );
+    assert_eq!(
+        code_lo,
+        Some(1),
+        "a per-detector min_confidence floor of 0.0 must keep the finding"
+    );
+}
+
+#[test]
 fn config_lockdown_require_refuses_without_flag() {
     // `[lockdown] require = true` is a fail-closed security control: refuse to
     // run unless --lockdown is passed (README: "refuse to run without

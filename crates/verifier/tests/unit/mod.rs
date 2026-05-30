@@ -1,3 +1,4 @@
+pub mod bogon;
 pub mod cache;
 pub mod domain_allowlist;
 pub mod file_gate;
