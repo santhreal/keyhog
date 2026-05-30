@@ -1,6 +1,12 @@
+#![cfg(feature = "gpu")]
+
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{gpu, CompiledScanner, ScanBackend};
 
+// File-level `#![cfg(feature = "gpu")]` (top of file) gates the whole
+// suite out of the lean ci build. `vyre_gpu_self_test` returns a
+// "not available" Err there, which would turn these `expect()` calls
+// into spurious panics.
 #[test]
 fn gpu_adapter_and_dispatch_are_available() {
     let result = gpu::vyre_gpu_self_test()

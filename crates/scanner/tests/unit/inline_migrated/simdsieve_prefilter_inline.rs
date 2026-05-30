@@ -7,6 +7,11 @@
 //! `*_key` label - so the same secret surfaces with the same identity on
 //! every platform. This pins that mapping so a table edit that desyncs the
 //! arrays (or regresses an id back to a `hot-*` form) fails CI.
+//!
+//! The arrays are only exported under the `simdsieve` feature, so the
+//! lean ci build (which drops simdsieve to kill its prefilter footprint)
+//! skips this regression too.
+#![cfg(feature = "simdsieve")]
 
 use keyhog_scanner::testing::{
     HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,

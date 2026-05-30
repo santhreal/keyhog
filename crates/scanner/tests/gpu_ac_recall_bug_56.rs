@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Reproducer for task #56 - GPU AC kernel drops the
 //! `stackblitz-credentials` finding at offset 1801032 of
 //! `big_with_secrets.txt` while CPU SIMD and GPU literal-set both

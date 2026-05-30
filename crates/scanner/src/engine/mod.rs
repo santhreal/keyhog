@@ -121,6 +121,11 @@ pub struct CompiledScanner {
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
     pub(crate) ac: Option<AhoCorasick>,
     pub(crate) gpu_backend: Option<Arc<dyn vyre::VyreBackend>>,
+    // Only the `gpu` build holds a concrete wgpu handle — its sole purpose
+    // is to reach `dispatch_borrowed_batch`, which the trait object can't
+    // express. Without the feature, the CUDA / wgpu drivers aren't linked
+    // at all and `gpu_backend` is always None.
+    #[cfg(feature = "gpu")]
     pub(crate) wgpu_backend: Option<Arc<vyre_driver_wgpu::WgpuBackend>>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
