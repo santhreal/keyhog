@@ -10,6 +10,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Move source-crate inline tests for filesystem, binary literals/sections, GitHub org, HTTP policy, and web SSRF helpers behind registered external tests, restoring the no-inline-test and no-production-unwrap gates under default and all-features source builds.
 - Split GitHub org git-error redaction into a focused submodule so `github_org.rs` is back under the 500-line modularity target.
 - Split WebSource SSRF, URL redaction, redirect validation, and DNS pinning helpers into `web/ssrf.rs`, bringing `web.rs` under the 500-line modularity target.
+- Split filesystem extraction and walker/filter policy into `filesystem/extract.rs` and `filesystem/filter.rs`, bringing the filesystem source below the 500-line modularity target and registering the zip archive skip-list regression gate.
 
 ## v0.5.37 - 2026-05-29 - Mirror benchmark: F1 0.7815 to 0.8896 (closes the gap to betterleaks 0.892)
 

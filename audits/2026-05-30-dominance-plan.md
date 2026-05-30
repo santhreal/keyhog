@@ -812,7 +812,6 @@ Verified gates:
 
 Remaining source-coherence findings surfaced by the green all-tests runs:
 
-- `crates/sources/src/filesystem.rs` is still over 500 lines.
 - `property::http_fuzz` remains the long-running source-package property module and needs a bounded CI profile before it can be part of the fast source gate.
 
 ## Executed Patch Set: GitHub Org Split
@@ -843,3 +842,25 @@ Verified gates:
 
 - `cargo fmt -p keyhog-sources`
 - `cargo test -p keyhog-sources --test all_tests web -- --nocapture`
+
+## Executed Patch Set: Filesystem Source Split
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- ARCHITECTURE: split filesystem per-entry extraction into `filesystem/extract.rs` and walker/default-skip policy into `filesystem/filter.rs`.
+- DEDUPLICATION: moved the read gate and walker extension checks to the same `SKIP_EXTENSIONS` source in `filesystem/filter.rs`.
+- COHERENCE: `filesystem.rs` is now 324 lines, `filesystem/extract.rs` is 380 lines, and `filesystem/filter.rs` is 234 lines; the filesystem file-size/no-inline/no-unwrap gates now cover all three files.
+- TESTING: registered the zip archive skip-list regression in `gap::mod`, so aggregate source tests now prove `.zip` reaches archive extraction instead of the extension denylist.
+
+Verified gates:
+
+- `cargo fmt -p keyhog-sources`
+- `cargo test -p keyhog-sources --test all_tests filesystem -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests gap:: -- --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests filesystem -- --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests gap:: -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests -- --skip property::http_fuzz --nocapture`
+- `cargo test -p keyhog-sources --all-features --test all_tests -- --skip property::http_fuzz --nocapture`
+- `git diff --check`
