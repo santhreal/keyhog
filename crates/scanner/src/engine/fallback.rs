@@ -289,7 +289,17 @@ impl CompiledScanner {
 
         // Checksum validation is handled in process_match (early reject for Invalid,
         // confidence floor for Valid). No need to re-validate here.
-        let heuristic_conf = raw_conf * context.confidence_multiplier();
+        // The fixture opt-out must also bypass this pre-ML context multiplier;
+        // otherwise the lower score is baked into `heuristic_conf`.
+        let context_multiplier = match context {
+            crate::context::CodeContext::TestCode | crate::context::CodeContext::Documentation
+                if !self.config.penalize_test_paths =>
+            {
+                1.0
+            }
+            _ => context.confidence_multiplier(),
+        };
+        let heuristic_conf = raw_conf * context_multiplier;
         let score_result = self.calculate_final_score(
             heuristic_conf,
             context,
@@ -311,7 +321,12 @@ impl CompiledScanner {
                     confidence
                 };
 
-                if context.should_hard_suppress(final_score) {
+                // Keep comment hard-suppression separate from the fixture
+                // opt-out; comments stay controlled by `--scan-comments`.
+                let hard_suppressed = context.should_hard_suppress(final_score)
+                    && (self.config.penalize_test_paths
+                        || matches!(context, crate::context::CodeContext::Comment));
+                if hard_suppressed {
                     None
                 } else {
                     Some(MlScoreResult::Final(final_score))

@@ -115,6 +115,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Deduplicate dogfood example-suppression telemetry by detector, path, credential hash, and reason so repeated scan paths do not inflate suppression counts.
 - Tighten the batch-flush regression test to assert exact static-detector recall across the >4096 chunk boundary without underflowing when unrelated detectors emit findings.
 - Let strongly service-anchored UUID detectors bypass the generic UUID shape suppressor, restoring default recall for Braze, Heroku, Codecov, and Consul-style credentials while keeping generic UUID captures suppressed.
+- Skip the pre-ML test/docs context multiplier when `--no-suppress-test-fixtures` is active, so the opt-out preserves the full heuristic confidence for real findings under fixture paths.
 
 ### Sources
 

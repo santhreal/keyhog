@@ -322,7 +322,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     let optout_findings: serde_json::Value =
         serde_json::from_str(&optout_json).expect("opt-out stdout is JSON");
     let optout_arr = optout_findings.as_array().expect("array");
-    let surfaced = optout_arr.iter().any(|f| {
+    let surfaced = optout_arr.iter().find(|f| {
         f.get("detector_id").and_then(|v| v.as_str()) == Some("generic-password")
             && f.pointer("/location/line").and_then(|v| v.as_u64()) == Some(1)
             && f.pointer("/location/file_path")
@@ -330,8 +330,16 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
                 .is_some_and(|p| p.contains("/tests/fixtures/"))
     });
     assert!(
-        surfaced,
+        surfaced.is_some(),
         "--no-suppress-test-fixtures must surface test-path findings; got {optout_json}"
+    );
+    let confidence = surfaced
+        .and_then(|f| f.get("confidence"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or_default();
+    assert!(
+        confidence >= 0.69,
+        "fixture opt-out must bypass pre-ML test-path down-weighting; got {confidence}"
     );
 }
 

@@ -2046,3 +2046,17 @@ Verified gates:
 
 - `PYTHONPATH=benchmarks python3 -m pytest benchmarks/bench/tests/test_scanners.py -q`
 - `KEYHOG_REQUIRE_GPU=1 timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `status=pass`, `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.
+
+## Executed Patch Set: Fixture Opt-Out Pre-ML Confidence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: `ScannerConfig::penalize_test_paths=false` now reaches the fallback pre-ML heuristic-confidence multiplier, not only the later post-ML/path gates.
+- CAPABILITY: real low-confidence credentials under test/docs paths keep their full heuristic score when the operator asks KeyHog not to special-case fixtures.
+- TESTING: strengthened the real-binary `--no-suppress-test-fixtures` e2e to assert the surfaced test-path finding keeps confidence above the old `0.21` down-weighted score.
+
+Verified gates:
+
+- `cargo test -p keyhog --test e2e_binary no_suppress_test_fixtures_surfaces_test_path_findings -- --nocapture`
