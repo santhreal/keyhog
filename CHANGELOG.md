@@ -48,6 +48,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Add `python -m bench run` / `make run` to execute one measured scanner/corpus row, emit `RunResult` JSON, score labeled corpora, compute throughput, and preserve scanner exit code and timeout state in artifacts.
 - Add `python -m bench leaderboard` / `make leaderboard` to run the default scanner matrix, including Nosey Parker, and write one `RunResult` JSON artifact per scanner/config row.
 - Add generated benchmark markdown reports plus README injection/check gates, and document the benchmark harness under `benchmarks/README.md`.
+- Cache native CredData source-file lines while building benchmark labels, avoiding repeated full-file reads for files that contain multiple positive rows.
 - Prefer the freshly built release `keyhog` binary in benchmark runs, with explicit `KEYHOG_BIN` and constructor overrides still taking precedence, so leaderboard runs score the current source instead of a stale PATH install.
 - Add `python -m bench analyze` / `make analyze` to mine false-negative and false-positive examples through the same corpus adapters, scanner adapters, and overlap scorer as the leaderboard.
 - Stop the benchmark Makefile from exporting a desktop-specific default `KEYHOG_BIN`; unset runs now use the adapter's host-local fresh-binary resolver.

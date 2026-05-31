@@ -153,21 +153,9 @@ def _to_int(s: Any, default: int = -1) -> int:
         return default
 
 
-def _extract_value(file_path: pathlib.Path, line_start: int, line_end: int,
-                   value_start: int, value_end: int) -> str:
-    """Slice the literal secret from the file at the CredData span. Returns ""
-    on any inconsistency (missing file, out-of-range, whole-line markup) — a
-    positive whose value can't be anchored to a real on-disk byte range is
-    dropped by the caller rather than guessed, keeping the corpus free of
-    fabricated truth."""
+def _slice_value_from_lines(lines: list[str], line_start: int, line_end: int,
+                            value_start: int, value_end: int) -> str:
     if line_start <= 0 or value_start < 0:
-        return ""
-    try:
-        # latin-1: source files are arbitrary bytes; we only need a stable
-        # byte-faithful substring for the containment overlap, not valid UTF-8.
-        with open(file_path, "r", encoding="latin-1") as fh:
-            lines = fh.read().splitlines()
-    except OSError:
         return ""
     if line_start > len(lines):
         return ""
@@ -184,6 +172,23 @@ def _extract_value(file_path: pathlib.Path, line_start: int, line_end: int,
     last_line = lines[line_end - 1]
     last = last_line[:value_end] if value_end >= 0 else last_line
     return "\n".join([first, *middle, last])
+
+
+def _extract_value(file_path: pathlib.Path, line_start: int, line_end: int,
+                   value_start: int, value_end: int) -> str:
+    """Slice the literal secret from the file at the CredData span. Returns ""
+    on any inconsistency (missing file, out-of-range, whole-line markup) — a
+    positive whose value can't be anchored to a real on-disk byte range is
+    dropped by the caller rather than guessed, keeping the corpus free of
+    fabricated truth."""
+    try:
+        # latin-1: source files are arbitrary bytes; we only need a stable
+        # byte-faithful substring for the containment overlap, not valid UTF-8.
+        with open(file_path, "r", encoding="latin-1") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return ""
+    return _slice_value_from_lines(lines, line_start, line_end, value_start, value_end)
 
 
 class CredDataCorpus(Corpus):
@@ -251,6 +256,17 @@ class CredDataCorpus(Corpus):
             )
         out: list[LabeledRecord] = []
         dropped_no_value = 0
+        line_cache: dict[pathlib.Path, list[str] | None] = {}
+
+        def cached_lines(path: pathlib.Path) -> list[str] | None:
+            if path not in line_cache:
+                try:
+                    with open(path, "r", encoding="latin-1") as fh:
+                        line_cache[path] = fh.read().splitlines()
+                except OSError:
+                    line_cache[path] = None
+            return line_cache[path]
+
         for csv_path in sorted(meta.glob("*.csv")):
             with open(csv_path, newline="") as fh:
                 for row in csv.DictReader(fh):
@@ -270,7 +286,9 @@ class CredDataCorpus(Corpus):
                     ve = _to_int(row.get("ValueEnd"), -1)
                     secret = ""
                     if label:
-                        secret = _extract_value(self._root / rel, ls, le, vs, ve)
+                        lines = cached_lines(self._root / rel)
+                        if lines is not None:
+                            secret = _slice_value_from_lines(lines, ls, le, vs, ve)
                         if not secret:
                             dropped_no_value += 1
                             continue

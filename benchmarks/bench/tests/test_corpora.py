@@ -1,5 +1,7 @@
+import builtins
 import csv
 import json
+import pathlib
 
 from bench import hardware
 from bench.corpora import resolve_corpus
@@ -154,6 +156,80 @@ def test_creddata_corpus_loads_csv_and_ignores_templates(tmp_path):
     assert records[0].line_start == 7
     assert records[1].ignore is True
     assert corpus.info().labeled_positives == 1
+
+
+def test_creddata_native_meta_reuses_file_reads(tmp_path, monkeypatch):
+    meta = tmp_path / "meta"
+    data_dir = tmp_path / "data" / "repo-one"
+    meta.mkdir()
+    data_dir.mkdir(parents=True)
+    source = data_dir / "settings.txt"
+    source.write_text(
+        "alpha SECRET_ONE tail\n"
+        "beta SECRET_TWO tail\n",
+        encoding="latin-1",
+    )
+    with open(meta / "repo-one.csv", "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "Id",
+                "FileID",
+                "Domain",
+                "RepoName",
+                "FilePath",
+                "LineStart",
+                "LineEnd",
+                "GroundTruth",
+                "ValueStart",
+                "ValueEnd",
+                "CryptographyKey",
+                "PredefinedPattern",
+                "Category",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "Id": "1",
+                "FileID": "settings",
+                "FilePath": "data/repo-one/settings.txt",
+                "LineStart": "1",
+                "LineEnd": "1",
+                "GroundTruth": "T",
+                "ValueStart": "6",
+                "ValueEnd": "16",
+                "Category": "Auth:Token",
+            }
+        )
+        writer.writerow(
+            {
+                "Id": "2",
+                "FileID": "settings",
+                "FilePath": "data/repo-one/settings.txt",
+                "LineStart": "2",
+                "LineEnd": "2",
+                "GroundTruth": "T",
+                "ValueStart": "5",
+                "ValueEnd": "15",
+                "Category": "Auth:Token",
+            }
+        )
+
+    real_open = builtins.open
+    source_opens = []
+
+    def counting_open(path, *args, **kwargs):
+        if pathlib.Path(path) == source:
+            source_opens.append(path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", counting_open)
+
+    records = CredDataCorpus(root=tmp_path).records()
+
+    assert [record.secret for record in records] == ["SECRET_ONE", "SECRET_TWO"]
+    assert len(source_opens) == 1
 
 
 def test_resolve_corpus_known_adapters(tmp_path):
