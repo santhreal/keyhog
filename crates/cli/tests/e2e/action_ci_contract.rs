@@ -910,6 +910,21 @@ fn composite_action_exposes_scan_duration_output() {
 }
 
 #[test]
+fn composite_action_artifact_name_is_job_scoped() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        !manifest.contains("name: keyhog-report\n"),
+        "workflow artifacts must not use one constant name; matrix CI jobs would collide"
+    );
+    assert!(
+        manifest.contains(
+            "name: keyhog-report-${{ github.job }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}"
+        ),
+        "artifact name must include job and scan-duration context to avoid common matrix/retry collisions"
+    );
+}
+
+#[test]
 fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(

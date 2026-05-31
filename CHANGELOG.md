@@ -28,6 +28,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Dogfood the composite Action's real-binary text-report path, proving actual KeyHog `format: text` output is counted through the wrapper's stable `Secret:` field contract.
 - Parse every committed GitHub workflow and the composite Action manifest in the local Action contract suite, and assert the manifest remains a composite action with executable steps.
 - Add semantic workflow-shape contracts for every committed GitHub workflow, requiring a name, trigger, jobs mapping, runner or reusable-workflow target, and executable step definitions.
+- Scope composite Action artifact names by GitHub job and scan duration so matrix CI jobs do not collide on a single `keyhog-report` artifact name.
 
 ### Benchmarks
 
