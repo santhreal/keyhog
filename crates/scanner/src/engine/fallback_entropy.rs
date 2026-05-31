@@ -77,7 +77,6 @@ impl CompiledScanner {
             &self.config.placeholder_keywords,
             Some(&skip_lines),
         );
-
         for entropy_match in entropy_matches {
             let (detector_id_value, detector_name_value, service_value) =
                 classify_entropy_detector(&entropy_match.keyword);
@@ -224,10 +223,17 @@ impl CompiledScanner {
             if crate::pipeline::looks_like_scheme_prefixed_uri(&entropy_match.value) {
                 continue;
             }
+            let high_entropy_punctuation_payload = entropy_match.entropy >= 4.8
+                && entropy_match.value.len() >= 40
+                && (entropy_match.value.contains('+') || entropy_match.value.contains('/'));
             // Punctuation-decorated identifier (`--api-secret`,
             // `&gss_token`, `@v_password`, `!!apiKey`, `Password:`,
             // `privateAccessToken!`, `/etc/passwd:/etc/passwd:ro`).
-            if crate::pipeline::looks_like_punctuation_decorated_identifier(&entropy_match.value) {
+            if !high_entropy_punctuation_payload
+                && crate::pipeline::looks_like_punctuation_decorated_identifier(
+                    &entropy_match.value,
+                )
+            {
                 continue;
             }
             // URL / path-fragment shape (`user/settings/password`,
@@ -389,7 +395,9 @@ impl CompiledScanner {
             // dumps and k8s `data:` field values that the named-
             // detector path missed because they have no service-
             // specific keyword anchor.
-            if entropy_path_looks_like_random_base64_blob(&entropy_match.value) {
+            if !high_entropy_punctuation_payload
+                && entropy_path_looks_like_random_base64_blob(&entropy_match.value)
+            {
                 continue;
             }
 
@@ -408,7 +416,9 @@ impl CompiledScanner {
             // protobuf-wire parse) so it never false-suppresses a
             // real secret. Memoized in `decode_structure`, so the
             // cost is a single bytes-hash + cache lookup.
-            if crate::decode_structure::is_encoded_binary(&entropy_match.value) {
+            if !high_entropy_punctuation_payload
+                && crate::decode_structure::is_encoded_binary(&entropy_match.value)
+            {
                 continue;
             }
             // Same gate for the decoded-form placeholder check: a

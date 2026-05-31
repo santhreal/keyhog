@@ -27,6 +27,38 @@ use proptest::prelude::*;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+const BASE64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const KEYWORD_FREE_MIN_LEN: usize = 56;
+
+fn shannon_entropy(data: &[u8]) -> f64 {
+    let mut freq = [0u32; 256];
+    for &byte in data {
+        freq[byte as usize] += 1;
+    }
+
+    let len = data.len() as f64;
+    if len == 0.0 {
+        return 0.0;
+    }
+
+    let mut entropy = 0.0;
+    for &count in &freq {
+        if count == 0 {
+            continue;
+        }
+        let p = count as f64 / len;
+        entropy -= p * p.log2();
+    }
+    entropy
+}
+
+fn build_token(indices: &[u8], alphabet: &[u8]) -> String {
+    indices
+        .iter()
+        .map(|idx| alphabet[*idx as usize] as char)
+        .collect()
+}
+
 fn detector_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.pop();
@@ -67,26 +99,22 @@ proptest! {
     /// middle, planted as the value of a `TOKEN=` line, must surface
     /// SOMEWHERE in the finding set. Before the fix the run gate
     /// pre-screened the chunk out because the `+` split the run.
-    ///
-    /// Body distribution: each character is drawn from a 16-symbol
-    /// alphabet so the body's distinct-character count is always
-    /// >= 16 - well above the diversity floor downstream gates use.
-    /// The contract under test is the entropy-RUN gate (the run
-    /// continues across `+`), not the per-credential diversity floor;
-    /// constraining the random draws to high-diversity input isolates
-    /// the gate we are locking down.
     #[test]
     fn b64_secret_with_internal_plus_surfaces(
-        idxs in prop::collection::vec(0u8..16u8, 59),
+        idxs in prop::collection::vec(0u8..64u8, 59).prop_filter(
+            "high-entropy-like body",
+            |idxs| {
+                let body = build_token(idxs, BASE64_ALPHABET);
+                let (head, tail) = body.split_at(29);
+                let body = format!("{head}+{tail}");
+                shannon_entropy(body.as_bytes()) > 4.8_f64
+            }
+        ),
     ) {
-        // 16-symbol alphabet: 4 upper, 4 lower, 4 digit, 4 base64-safe.
-        // Every character pool has size 16 so distinct_alnum(body) is
-        // guaranteed high regardless of which indices the shrinker
-        // settles on.
-        let alphabet: &[u8] = b"AKQZakqz0379bcde";
-        let chars: String = idxs.iter().map(|i| alphabet[*i as usize] as char).collect();
+        let chars: String = build_token(&idxs, BASE64_ALPHABET);
         let (head, tail) = chars.split_at(29);
         let body = format!("{head}+{tail}");
+        prop_assert!(shannon_entropy(body.as_bytes()) > 4.8_f64, "generated body must clear the 4.8 entropy gate");
         prop_assert_eq!(body.len(), 60);
         let line = format!("export TOKEN={body}\n");
 
@@ -96,10 +124,10 @@ proptest! {
             .any(|m| m.credential.as_ref().contains(&body));
         prop_assert!(
             surfaced,
-            "60-char base64 body with internal `+` must surface in some \
-             finding; line={:?} matches={:?}",
+            "60-char base64 body with internal `+` must surface in some finding; line={:?} matches={:?}",
             line,
-            matches.iter()
+            matches
+                .iter()
                 .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
                 .collect::<Vec<_>>()
         );
@@ -129,14 +157,22 @@ fn short_alnum_with_plus_does_not_create_phantom_finding() {
 
 #[test]
 fn separator_only_run_without_keywords_is_admitted() {
-    const TOKEN_CHARS: &[u8] = b"Ab1QwZy0+_/=";
-    let mut token = String::with_capacity(72);
-    for i in 0..56 {
-        token.push(TOKEN_CHARS[(i * 7) % TOKEN_CHARS.len()] as char);
-        if i % 14 == 13 {
-            token.push(if i % 3 == 0 { '-' } else { '_' });
-        }
+    let mut token_bytes = Vec::with_capacity(KEYWORD_FREE_MIN_LEN + 4);
+    while token_bytes.len() < KEYWORD_FREE_MIN_LEN + 4 {
+        token_bytes.extend_from_slice(BASE64_ALPHABET);
     }
+    token_bytes.truncate(KEYWORD_FREE_MIN_LEN + 4);
+
+    token_bytes[10] = b'-';
+    token_bytes[24] = b'_';
+    token_bytes[38] = b'-';
+    token_bytes[52] = b'_';
+
+    let token = String::from_utf8(token_bytes).expect("token bytes are printable ascii");
+    assert!(
+        shannon_entropy(token.as_bytes()) > 5.8_f64,
+        "punctuation-separated high-entropy token must clear keyword-free entropy floor"
+    );
 
     let matches = scan(format!("cfg: {token}\n"));
     let surfaced = matches
@@ -145,6 +181,23 @@ fn separator_only_run_without_keywords_is_admitted() {
     assert!(
         surfaced,
         "punctuation-separated high-entropy run should be admitted via entropy-run gate without keyword anchors; token={token} matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn token_with_plus_is_not_dropped_as_encoded_binary() {
+    let token = "TVoAAAAAAhBANBBCDDDOIAKEGGEXq+BPrbcMHUYAZCNJQIdKLeRJHOFfFCLS";
+    let matches = scan(format!("SECRET={token}\n"));
+    let surfaced = matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(token));
+    assert!(
+        surfaced,
+        "high-entropy base64-like token with internal `+` must not be suppressed as encoded binary; matches={:?}",
         matches
             .iter()
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))

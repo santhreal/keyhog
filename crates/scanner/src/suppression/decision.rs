@@ -20,6 +20,7 @@ pub(super) fn should_suppress_inner(
     source_type: Option<&str>,
     skip_b64_decode_recheck: bool,
     bypass_shape_gates: bool,
+    entropy_hint: Option<f64>,
 ) -> bool {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
@@ -72,7 +73,15 @@ pub(super) fn should_suppress_inner(
     {
         return true;
     }
-    if !bypass_shape_gates && has_n_or_more_consecutive_identical(credential, 5) {
+    let has_n_plus = has_n_or_more_consecutive_identical(credential, 5);
+    let suppresses_repetitive_run =
+        has_n_plus && !entropy_hint.is_some_and(|entropy| entropy >= 4.8 && credential.len() >= 40);
+    let high_entropy_base64_candidate = entropy_hint.is_some_and(|entropy| {
+        entropy >= 4.8
+            && credential.len() >= 40
+            && (credential.contains('+') || credential.contains('/'))
+    });
+    if !bypass_shape_gates && suppresses_repetitive_run {
         return true;
     }
     if !bypass_shape_gates && has_repeated_block_mask(credential) {
@@ -330,7 +339,10 @@ pub(super) fn should_suppress_inner(
     // Named detectors with service-specific anchors bypass the b64-blob
     // gate too (e.g. AWS_SECRET_ACCESS_KEY=<40b64> would otherwise be
     // dropped as a protobuf-shaped blob).
-    if !bypass_shape_gates && looks_like_standard_base64_blob(credential) {
+    if !bypass_shape_gates
+        && !high_entropy_base64_candidate
+        && looks_like_standard_base64_blob(credential)
+    {
         return true;
     }
 
@@ -429,6 +441,7 @@ pub(super) fn should_suppress_inner(
                     source_type,
                     true,
                     bypass_shape_gates,
+                    None,
                 )
             {
                 return true;

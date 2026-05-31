@@ -143,7 +143,6 @@ impl CompiledScanner {
                     continue;
                 };
                 let value = value_match.as_str();
-
                 // Entropy gate: reject low-entropy values (variable names, prose)
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
                 // Per-length entropy floor: short tokens (API keys) have lower
@@ -286,7 +285,12 @@ impl CompiledScanner {
                 // `&gss_recv_token` (C pointer), `@v_password` (SQL bind),
                 // `!!apiKeyOrOAuthToken` (JS coercion), `Password:` (UI label),
                 // `privateAccessToken!` (TS non-null assertion).
-                if crate::pipeline::looks_like_punctuation_decorated_identifier(value) {
+                let high_entropy_punctuation_payload = entropy >= 4.8
+                    && value.len() >= 40
+                    && (value.contains('+') || value.contains('/'));
+                if !high_entropy_punctuation_payload
+                    && crate::pipeline::looks_like_punctuation_decorated_identifier(value)
+                {
                     continue;
                 }
                 // URL / path-fragment shape: `user/settings/password` (gogs
@@ -327,7 +331,7 @@ impl CompiledScanner {
                 // through this gate, so service-specific recall is
                 // preserved. SecretBench-medium 15k seed-0: ~10 FPs/
                 // shard × 256 shards = ~2.5k FPs from this path alone.
-                if generic_path_looks_like_random_base64_blob(value) {
+                if generic_path_looks_like_random_base64_blob(value, entropy) {
                     continue;
                 }
 
@@ -357,11 +361,12 @@ impl CompiledScanner {
                 // a +14 TP recall gain. Net: catastrophic. Hold the strict
                 // variant: hash-digest / UUID values in credential slots are
                 // dominated by image digests and resource IDs in real source.
-                if crate::pipeline::should_suppress_known_example_credential_with_source(
+                if crate::suppression::api::should_suppress_known_example_credential_with_source_and_entropy(
                     value,
                     chunk.metadata.path.as_deref(),
                     crate::context::CodeContext::Unknown,
                     Some(chunk.metadata.source_type.as_str()),
+                    entropy,
                 ) {
                     continue;
                 }
@@ -381,7 +386,9 @@ impl CompiledScanner {
                 // candidate that base64/hex-decodes to identifiable binary
                 // bytes (PNG / gzip / ELF / protobuf-wire) is embedded data,
                 // not a credential.
-                if crate::decode_structure::is_encoded_binary(value) {
+                if !high_entropy_punctuation_payload
+                    && crate::decode_structure::is_encoded_binary(value)
+                {
                     continue;
                 }
                 // Random-byte base64 decoy suppression (generic path only).
@@ -404,7 +411,9 @@ impl CompiledScanner {
                 // anchor on a service prefix and take engine/scan.rs's path
                 // before this fallback, so a real 40-char anchored secret (AWS
                 // etc.) is unaffected - the negative twin still fires.
-                if generic_path_looks_like_random_byte_blob(value) {
+                if !high_entropy_punctuation_payload
+                    && generic_path_looks_like_random_byte_blob(value)
+                {
                     continue;
                 }
 
@@ -472,7 +481,6 @@ impl CompiledScanner {
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
             }
         }
-
         // Return the scratch buffer to the pool, preserving its capacity for
         // the next chunk this worker handles.
         KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
@@ -496,9 +504,9 @@ impl CompiledScanner {
 ///   1. Length in `[40, 300]` (covers both the 40-80 protobuf
 ///      sweet spot and the longer 80-300 k8s `data:` blobs).
 ///   2. Alphabet ⊆ `[A-Za-z0-9+/=]` (standard base64, not url-safe).
-///   3. EITHER contains a standard-base64 punctuation char (`+`/`/`)
-///      OR ends with `=`/`==` padding (signaling the value is the
-///      base64 encoding of a byte-aligned arbitrary-bytes payload).
+///   3. Contains both `+` and `/`, or has padding with at least one of
+///      them, which is a stronger byte-level signal than pure text-like
+///      pure-base62 strings.
 ///      Real provider tokens are pure base62 without padding
 ///      because their length isn't derived from base64 of bytes -
 ///      AKIA + 16, ghp_ + 36, sk_live_ + 24, etc. all land on
@@ -507,7 +515,13 @@ impl CompiledScanner {
 ///      payload happens to encode random bytes into pure-b62
 ///      characters but still needs the `==` padding to round out.
 ///   4. Length is a multiple of 4 OR ends with `=`/`==` padding.
-fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
+fn generic_path_looks_like_random_base64_blob(value: &str, entropy: f64) -> bool {
+    const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
+
+    if entropy >= HIGH_ENTROPY_BASE64_CUTOFF {
+        return false;
+    }
+
     if !(40..=300).contains(&value.len()) {
         return false;
     }
@@ -516,18 +530,19 @@ fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
     if !has_padding && !length_mult_4 {
         return false;
     }
-    let mut has_b64_punct = false;
+    let mut has_plus = false;
+    let mut has_slash = false;
     for c in value.chars() {
         match c {
             'A'..='Z' | 'a'..='z' | '0'..='9' | '=' => {}
-            '+' | '/' => has_b64_punct = true,
+            '+' => has_plus = true,
+            '/' => has_slash = true,
             _ => return false,
         }
     }
-    // Either standard-base64 punctuation OR explicit padding
-    // (the b64-of-bytes signal - pure-b62 tokens never need `=`
-    // because their length is chosen, not derived).
-    has_b64_punct || has_padding
+    // Require both `+` and `/` from a real byte-distribution sample, or
+    // padded payloads with at least one of them.
+    (has_plus && has_slash) || (has_padding && (has_plus || has_slash))
 }
 
 /// Random-byte base64 decoy detector for the generic-secret path only.
@@ -564,12 +579,17 @@ fn generic_path_looks_like_random_byte_blob(value: &str) -> bool {
     }
     // Pure STANDARD base64 alphabet only. Any `-`/`_`/`.` (base64url, JWT,
     // Slack, dotted property) rejects, which also clears every url-safe
-    // service-prefixed token. A bare `+`/`/`/`=` is allowed (still standard
-    // base64) but not required - random base62 encodings without them are the
-    // exact case the punct/pad gate misses.
+    // service-prefixed token.
+    // Require at least one pure-base62 path here: this branch is for the
+    // long tail of random-binary decoys that missed the punct/pad gate.
+    // Strings with `+`/`/` are already covered by the random-base64 gate
+    // once both punctuation marks are present.
+    if value.bytes().any(|b| matches!(b, b'+' | b'/')) {
+        return false;
+    }
     if !value
         .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+        .all(|b| b.is_ascii_alphanumeric() || b == b'=')
     {
         return false;
     }

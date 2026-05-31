@@ -37,7 +37,26 @@ pub fn should_suppress_known_example_credential_with_source(
     context: context::CodeContext,
     source_type: Option<&str>,
 ) -> bool {
-    should_suppress_inner(credential, path, context, source_type, false, false)
+    should_suppress_inner(credential, path, context, source_type, false, false, None)
+}
+
+/// Entropy-aware variant for high-entropy generic/entropy fallbacks.
+pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
+    credential: &str,
+    path: Option<&str>,
+    context: context::CodeContext,
+    source_type: Option<&str>,
+    entropy: f64,
+) -> bool {
+    should_suppress_inner(
+        credential,
+        path,
+        context,
+        source_type,
+        false,
+        false,
+        Some(entropy),
+    )
 }
 
 /// Variant for named-detector findings that have already matched a
@@ -307,6 +326,7 @@ pub fn should_suppress_named_detector_finding_weak(
         source_type,
         false,
         bypass_shape_gates,
+        None,
     )
 }
 

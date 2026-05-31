@@ -7,8 +7,8 @@
 //! `scan_state.matches` or queues an `MlPendingMatch` for the post-scan
 //! ML batch.
 
-use super::CompiledScanner;
 use super::scan_filters::*;
+use super::CompiledScanner;
 use crate::context;
 use crate::pipeline::*;
 use crate::types::*;

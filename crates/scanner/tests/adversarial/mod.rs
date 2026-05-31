@@ -145,6 +145,7 @@ pub mod round1_cross_file_reassembly_does_not_cannibalize_singleton;
 pub mod round1_decoded_is_base64_blob_property;
 pub mod round1_detector_id_invariant_property;
 pub mod round1_entropy_prose_and_symbolic_password_relax;
+pub mod round1_entropy_run_admits_base64_with_internal_punct;
 pub mod round1_env_parser_backtick_and_inline_comment_through_scanner;
 pub mod round1_hcl_block_and_k8s_line_attribution;
 pub mod round1_reverse_decoder_2char_prefix_floor;
