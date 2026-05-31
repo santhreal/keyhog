@@ -59,10 +59,12 @@ runs:
     - name: Resolve KeyHog version
       id: version
       shell: bash
+      env:
+        KEYHOG_ACTION_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        if [[ -n "${{ inputs.version }}" ]]; then
-          v="${{ inputs.version }}"
+        if [[ -n "${KEYHOG_ACTION_VERSION:-}" ]]; then
+          v="$KEYHOG_ACTION_VERSION"
         else
           # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
           # Tagged refs: strip the leading "v"; everything else falls
@@ -70,8 +72,14 @@ runs:
           ref="${GITHUB_ACTION_REF:-main}"
           v="${ref#v}"
         fi
-        echo "version=$v" >> "$GITHUB_OUTPUT"
-        echo "Resolved keyhog version: $v"
+        case "$v" in
+          "" | *[!A-Za-z0-9._/-]*)
+            echo "::error title=KeyHog::Invalid version '$v'. Use only letters, digits, dot, dash, underscore, or slash."
+            exit 2
+            ;;
+        esac
+        printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
+        printf 'Resolved keyhog version: %s\n' "$v"
 
     - name: Detect platform asset name
       id: asset
@@ -92,12 +100,15 @@ runs:
     - name: Try downloading prebuilt binary
       id: download
       shell: bash
+      env:
+        KEYHOG_ASSET_NAME: ${{ steps.asset.outputs.name }}
+        KEYHOG_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
       run: |
         set -euo pipefail
-        asset="${{ steps.asset.outputs.name }}"
-        version="${{ steps.version.outputs.version }}"
+        asset="${KEYHOG_ASSET_NAME:-}"
+        version="${KEYHOG_RESOLVED_VERSION:-}"
         if [[ -z "$asset" ]] || [[ -z "$version" ]]; then
-          echo "no asset name / version — skipping download"
+          echo "no asset name / version - skipping download"
           echo "found=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
@@ -108,7 +119,7 @@ runs:
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "Downloaded prebuilt $asset for v$version"
         else
-          echo "Release asset missing at $url — falling back to source build"
+          echo "Release asset missing at $url - falling back to source build"
           echo "found=false" >> "$GITHUB_OUTPUT"
         fi
 
@@ -156,10 +167,12 @@ runs:
     - name: Compute output filename
       id: outfile
       shell: bash
+      env:
+        KEYHOG_ACTION_FORMAT: ${{ inputs.format }}
       run: |
         set -euo pipefail
         ext="json"
-        case "${{ inputs.format }}" in
+        case "${KEYHOG_ACTION_FORMAT:-sarif}" in
           sarif) ext="sarif" ;;
           jsonl) ext="jsonl" ;;
           text)  ext="txt" ;;
@@ -185,12 +198,14 @@ runs:
       id: report-check
       if: always()
       shell: bash
+      env:
+        KEYHOG_REPORT_NAME: ${{ steps.outfile.outputs.name }}
       run: |
-        if [[ -f "${{ steps.outfile.outputs.name }}" ]]; then
+        if [[ -f "$KEYHOG_REPORT_NAME" ]]; then
           echo "exists=true" >> "$GITHUB_OUTPUT"
         else
           echo "exists=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=KeyHog::Scan report '${{ steps.outfile.outputs.name }}' missing; skipping SARIF + artifact upload."
+          echo "::warning title=KeyHog::Scan report '$KEYHOG_REPORT_NAME' missing; skipping SARIF + artifact upload."
         fi
 
     - name: Upload SARIF to code-scanning
@@ -216,6 +231,15 @@ runs:
     - name: Fail when findings reported
       if: inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0'
       shell: bash
+      env:
+        KEYHOG_FINDINGS: ${{ steps.scan.outputs.findings }}
+        KEYHOG_SEVERITY: ${{ inputs.severity }}
       run: |
-        echo "::error title=KeyHog::${{ steps.scan.outputs.findings }} finding(s) at or above '${{ inputs.severity }}' severity. Set fail-on-findings:false to ignore."
+        case "${KEYHOG_FINDINGS:-}" in
+          "" | *[!0-9]*)
+            echo "::error title=KeyHog::Invalid findings output '${KEYHOG_FINDINGS:-}'."
+            exit 3
+            ;;
+        esac
+        echo "::error title=KeyHog::${KEYHOG_FINDINGS} finding(s) at or above '${KEYHOG_SEVERITY}' severity. Set fail-on-findings:false to ignore."
         exit 1

@@ -87,6 +87,30 @@ fn combined_output(output: &Output) -> String {
     )
 }
 
+fn manifest_run_blocks(manifest: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut current: Option<String> = None;
+    for line in manifest.lines() {
+        if line.starts_with("    - name:") {
+            if let Some(block) = current.take() {
+                blocks.push(block);
+            }
+        }
+        if line.trim_start() == "run: |" {
+            current = Some(String::new());
+            continue;
+        }
+        if let Some(block) = current.as_mut() {
+            block.push_str(line);
+            block.push('\n');
+        }
+    }
+    if let Some(block) = current {
+        blocks.push(block);
+    }
+    blocks
+}
+
 #[test]
 fn action_runs_real_keyhog_and_counts_sarif_findings() {
     let dir = TempDir::new().expect("tempdir");
@@ -453,6 +477,44 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
     assert!(
         manifest.contains("KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
         "composite action must validate upload-sarif in the tested script"
+    );
+}
+
+#[test]
+fn composite_action_shell_blocks_do_not_inline_untrusted_expressions() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let mut offenders = Vec::new();
+    for block in manifest_run_blocks(&manifest) {
+        for line in block.lines() {
+            if line.contains("${{ inputs.") || line.contains("${{ steps.") {
+                offenders.push(line.trim().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "composite action shell blocks must receive inputs/step outputs through env, not direct interpolation: {offenders:#?}"
+    );
+}
+
+#[test]
+fn composite_action_version_output_is_validated_before_github_output() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        manifest.contains("KEYHOG_ACTION_VERSION: ${{ inputs.version }}"),
+        "version input must enter shell through env"
+    );
+    assert!(
+        manifest.contains("*[!A-Za-z0-9._/-]*"),
+        "version resolver must reject chars that can inject GITHUB_OUTPUT or shell syntax"
+    );
+    assert!(
+        manifest.contains("printf 'version=%s\\n' \"$v\" >> \"$GITHUB_OUTPUT\""),
+        "version resolver must write a single validated output line"
+    );
+    assert!(
+        !manifest.contains("echo \"version=$v\" >> \"$GITHUB_OUTPUT\""),
+        "version resolver must not echo an unvalidated output assignment"
     );
 }
 

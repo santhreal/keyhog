@@ -1157,6 +1157,21 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Composite Action Shell Interpolation Hardening
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: user-controlled Action inputs are no longer interpolated directly into composite-action bash blocks; they enter through environment variables where shell syntax cannot be injected into the script body.
+- WIRING: resolved `version`, `format`, report name, fail output, and download inputs now use explicit env names at the step boundary.
+- COHERENCE: the version resolver validates release/ref characters before writing the single-line `version` output to `GITHUB_OUTPUT`.
+- TESTING: manifest-level CI contracts reject `${{ inputs.* }}` and `${{ steps.* }}` inside `run:` blocks and lock the validated version output writer.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31
