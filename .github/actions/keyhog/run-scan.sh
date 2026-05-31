@@ -121,7 +121,7 @@ count_from_report() {
   case "$report_format" in
     sarif)
       if command -v jq >/dev/null 2>&1; then
-        jq '[.runs[].results[]] | length' "$report_path"
+        jq 'if (.runs | type) == "array" then [.runs[] | if type != "object" then error("keyhog SARIF run must be an object") elif (has("results") and (.results | type) != "array") then error("keyhog SARIF results must be an array") else (.results // [])[] end] | length else error("keyhog SARIF report must contain a top-level runs array") end' "$report_path"
       elif command -v python3 >/dev/null 2>&1; then
         python3 - "$report_path" <<'PY'
 import json
@@ -130,7 +130,19 @@ import sys
 with open(sys.argv[1], "r", encoding="utf-8") as f:
     sarif = json.load(f)
 
-print(sum(len(run.get("results", [])) for run in sarif.get("runs", [])))
+if not isinstance(sarif, dict) or not isinstance(sarif.get("runs"), list):
+    raise SystemExit("keyhog SARIF report must contain a top-level runs array")
+
+count = 0
+for run in sarif["runs"]:
+    if not isinstance(run, dict):
+        raise SystemExit("keyhog SARIF run must be an object")
+    results = run.get("results", [])
+    if not isinstance(results, list):
+        raise SystemExit("keyhog SARIF results must be an array")
+    count += len(results)
+
+print(count)
 PY
       else
         return 2
@@ -138,7 +150,7 @@ PY
       ;;
     json)
       if command -v jq >/dev/null 2>&1; then
-        jq 'length' "$report_path"
+        jq 'if type == "array" then length else error("keyhog JSON report must be a top-level array") end' "$report_path"
       elif command -v python3 >/dev/null 2>&1; then
         python3 - "$report_path" <<'PY'
 import json

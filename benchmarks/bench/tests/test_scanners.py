@@ -3,6 +3,7 @@ import sqlite3
 import sys
 
 from bench import scanners
+from bench.scanners import keyhog as keyhog_adapter
 from bench.scanners import base
 
 
@@ -124,6 +125,48 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
     assert betterleaks.exit_success(0)
     assert not betterleaks.exit_success(1)
     assert scanners.resolve_scanner("kingfisher").exit_success(200)
+
+
+def test_keyhog_benchmark_prefers_fresh_release_binary(monkeypatch, tmp_path):
+    target_dir = tmp_path / "cargo-target"
+    release_dir = target_dir / "release"
+    release_dir.mkdir(parents=True)
+    binary = release_dir / "keyhog"
+    binary.write_text("#!/bin/sh\n")
+
+    monkeypatch.delenv("KEYHOG_BIN", raising=False)
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target_dir))
+
+    assert scanners.resolve_scanner("keyhog").binary == str(binary)
+
+
+def test_keyhog_benchmark_binary_overrides_win(monkeypatch, tmp_path):
+    target_dir = tmp_path / "cargo-target"
+    (target_dir / "release").mkdir(parents=True)
+    (target_dir / "release" / "keyhog").write_text("#!/bin/sh\n")
+
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target_dir))
+    monkeypatch.setenv("KEYHOG_BIN", "/env/keyhog")
+
+    assert scanners.KeyhogScanner().binary == "/env/keyhog"
+    assert scanners.KeyhogScanner(binary="/explicit/keyhog").binary == "/explicit/keyhog"
+
+
+def test_keyhog_benchmark_reads_cargo_config_target_dir(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    target_dir = tmp_path / "configured-target"
+    (target_dir / "release").mkdir(parents=True)
+    (target_dir / "release" / "keyhog").write_text("#!/bin/sh\n")
+    (home / ".cargo").mkdir(parents=True)
+    (home / ".cargo" / "config.toml").write_text(
+        f'[build]\ntarget-dir = "{target_dir}"\n'
+    )
+
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+    monkeypatch.delenv("KEYHOG_BIN", raising=False)
+    monkeypatch.setattr(keyhog_adapter.pathlib.Path, "home", lambda: home)
+
+    assert scanners.resolve_scanner("keyhog").binary == str(target_dir / "release" / "keyhog")
 
 
 def test_run_measured_falls_back_without_gnu_time(monkeypatch):

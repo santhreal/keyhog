@@ -10,6 +10,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Update the CI workflow guide to lead with the hardened composite GitHub Action, including SARIF/artifact/summary behavior and baseline adoption.
 - Move the composite Action scan/count/summary path into a tested local script, validate `format`/`severity`/`verify` before scanner invocation, expose the raw `exit-code` output, sanitize job-summary cells, and count text reports by the stable `Secret:` field instead of a non-portable box-drawing grep.
 - Validate `fail-on-findings` and `upload-sarif` in the same tested scan script before invoking KeyHog, escape untrusted values in GitHub workflow commands, and surface live-verification parse failures as nonzero findings instead of clean CI output.
+- Validate composite Action JSON and SARIF report shapes consistently across jq and Python counting paths so malformed clean reports fail closed instead of being miscounted as findings.
 - Route composite Action shell inputs and step outputs through environment variables instead of direct bash interpolation, and validate the resolved version before writing it to `GITHUB_OUTPUT`.
 - Keep composite Action usage errors from reflecting rejected version/findings values back into GitHub workflow command bodies.
 - Verify downloaded composite Action release assets against their `.sha256` files before execution, install the Linux Hyperscan runtime on the prebuilt path, and dogfood the local composite Action from `.github/workflows/keyhog.yml`.
@@ -26,6 +27,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Add `python -m bench run` / `make run` to execute one measured scanner/corpus row, emit `RunResult` JSON, score labeled corpora, compute throughput, and preserve scanner exit code and timeout state in artifacts.
 - Add `python -m bench leaderboard` / `make leaderboard` to run the default scanner matrix, including Nosey Parker, and write one `RunResult` JSON artifact per scanner/config row.
 - Add generated benchmark markdown reports plus README injection/check gates, and document the benchmark harness under `benchmarks/README.md`.
+- Prefer the freshly built release `keyhog` binary in benchmark runs, with explicit `KEYHOG_BIN` and constructor overrides still taking precedence, so leaderboard runs score the current source instead of a stale PATH install.
+- Add `python -m bench analyze` / `make analyze` to mine false-negative and false-positive examples through the same corpus adapters, scanner adapters, and overlap scorer as the leaderboard.
+- Stop the benchmark Makefile from exporting a desktop-specific default `KEYHOG_BIN`; unset runs now use the adapter's host-local fresh-binary resolver.
 - Treat benchmark scanner exit codes through per-scanner success contracts so Keyhog findings exits are accepted while competitor invocation failures become errored `RunResult` rows instead of clean zero-finding rows.
 - Treat Kingfisher's completed finding-run exit code as successful and probe Titus versions through `titus version`.
 - Point scanner benchmark runs at manifest-free, neutrally named `corpus/` scan trees and measure corpus bytes/files from that same scan root so answer keys and path-context penalties cannot inflate or suppress benchmark results.

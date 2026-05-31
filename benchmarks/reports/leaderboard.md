@@ -4,7 +4,7 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.8578** | 0.9861 | 0.7590 | 2321 | 1.27s | 1064 MB |
+| 1 | **KeyHog** | **0.8934** | 0.9871 | 0.8160 | 2484 | 1.17s | 1109 MB |
 | 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.42s | 329 MB |
 | 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 4.59s | 493 MB |
 | 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 2.63s | 119 MB |
