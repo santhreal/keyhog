@@ -2014,3 +2014,20 @@ Verified gates:
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
 - `tests/integration/entrypoints_check.sh`
 - `bash -n .github/actions/keyhog/run-scan.sh tests/integration/entrypoints_check.sh`
+
+## Executed Patch Set: Test-Fixture Opt-Out Confidence Coherence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: `--no-suppress-test-fixtures` now reaches `ScannerConfig::penalize_test_paths`, so the same operator flag disables fixture value suppressions, test/example path confidence penalties, and test/docs hard suppression.
+- CAPABILITY: recall audits and competitor differentials can now surface real low-confidence credentials committed under `tests/fixtures` instead of silently dropping them by path context.
+- COHERENCE: scanner helper tests, CLI config tests, real-binary e2e, changelog, and audit plan now describe the same flag contract.
+- TESTING: added a real-binary `--no-daemon` e2e that proves a `tests/fixtures` finding is absent by default and present with `--no-suppress-test-fixtures`.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests confidence_path_penalty -- --nocapture`
+- `cargo test -p keyhog --test all_tests build_scanner_config_no_suppress_disables_test_path_penalty -- --nocapture`
+- `cargo test -p keyhog --test e2e_binary no_suppress_test_fixtures_surfaces_test_path_findings -- --nocapture`

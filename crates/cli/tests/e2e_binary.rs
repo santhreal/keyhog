@@ -278,6 +278,63 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     );
 }
 
+#[test]
+fn no_suppress_test_fixtures_surfaces_test_path_findings() {
+    let fixture = "DATABASE_URL=postgres://admin:S3cr3tP4ssw0rd@db.example.com:5432/prod\n";
+
+    let dir = TempDir::new().expect("tempdir");
+    let fixture_dir = dir.path().join("tests").join("fixtures");
+    std::fs::create_dir_all(&fixture_dir).expect("create fixture dir");
+    let path = fixture_dir.join("planted.env");
+    std::fs::write(&path, fixture).expect("write fixture");
+
+    let default_out = Command::new(binary())
+        .arg("scan")
+        .arg("--no-daemon")
+        .arg("--format")
+        .arg("json")
+        .arg("--min-confidence")
+        .arg("0.0")
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan (default)");
+    let default_json = String::from_utf8_lossy(&default_out.stdout);
+    let default_findings: serde_json::Value =
+        serde_json::from_str(&default_json).expect("default-mode stdout is JSON");
+    assert_eq!(
+        default_findings.as_array().map(Vec::len),
+        Some(0),
+        "default mode should suppress low-confidence test-path findings; got {default_json}"
+    );
+
+    let optout_out = Command::new(binary())
+        .arg("scan")
+        .arg("--no-daemon")
+        .arg("--no-suppress-test-fixtures")
+        .arg("--format")
+        .arg("json")
+        .arg("--min-confidence")
+        .arg("0.0")
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan (opt-out)");
+    let optout_json = String::from_utf8_lossy(&optout_out.stdout);
+    let optout_findings: serde_json::Value =
+        serde_json::from_str(&optout_json).expect("opt-out stdout is JSON");
+    let optout_arr = optout_findings.as_array().expect("array");
+    let surfaced = optout_arr.iter().any(|f| {
+        f.get("detector_id").and_then(|v| v.as_str()) == Some("generic-password")
+            && f.pointer("/location/line").and_then(|v| v.as_u64()) == Some(1)
+            && f.pointer("/location/file_path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|p| p.contains("/tests/fixtures/"))
+    });
+    assert!(
+        surfaced,
+        "--no-suppress-test-fixtures must surface test-path findings; got {optout_json}"
+    );
+}
+
 /// Regression for the demo-secret.env UX bug originally flagged
 /// in TODO.md (2026-05-17): scanning a file that holds an
 /// AWS-published EXAMPLE credential (AKIAIOSFODNN7EXAMPLE) used to

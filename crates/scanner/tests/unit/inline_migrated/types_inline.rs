@@ -25,6 +25,7 @@ mod sanitise_tests {
             secret_keywords: vec![],
             test_keywords: vec![],
             placeholder_keywords: vec![],
+            penalize_test_paths: true,
         }
     }
 

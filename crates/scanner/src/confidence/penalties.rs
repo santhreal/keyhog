@@ -258,13 +258,19 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
 }
 
 /// Apply path-based confidence penalties for matches in test, example, or dummy directories.
-pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
+///
+/// `penalize = false` is the scanner side of `--no-suppress-test-fixtures`.
+/// The NaN-safety barrier still runs in every branch.
+pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>, penalize: bool) -> f64 {
     // Even when there's no path to inspect, the score must still pass
     // through the NaN-safety barrier - a NaN entering this function
     // would otherwise propagate verbatim into the final finding.
     let Some(path) = path else {
         return finalize_confidence(score);
     };
+    if !penalize {
+        return finalize_confidence(score);
+    }
     // Per-segment ASCII-case-insensitive compare - no full-path
     // lowercase allocation per match.
     let is_test_like = path.split(['/', '\\']).any(|component| {

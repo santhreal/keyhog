@@ -325,6 +325,9 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     if let Some(conf) = args.min_confidence {
         config.min_confidence = conf;
     }
+    // Keep the fixture opt-out coherent: skip both value suppressions and the
+    // test/example path confidence penalty.
+    config.penalize_test_paths = !args.no_suppress_test_fixtures;
 
     // `--no-entropy` conflicts with the presets at the clap layer, so under a
     // preset this is always `true` (entropy stays whatever the preset set). For

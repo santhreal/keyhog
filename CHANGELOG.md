@@ -54,6 +54,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### CLI
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
+- Make `--no-suppress-test-fixtures` also disable test/example path confidence penalties and hard suppression, so real secrets under `tests/fixtures` can be surfaced for recall audits.
 - Document the canonical `.keyhog.toml` precedence, nested `[scan]` / `[detector.<id>]` / `[lockdown]` tables, and bench-tuned config defaults in the README, mdBook reference, example config, and config tests.
 - Make `--git-staged --exclude-paths` apply to the staged-file include set instead of letting explicitly staged paths bypass excludes.
 - Run the CLI on Tokio's current-thread runtime so plain filesystem scans do not spawn a full async worker pool alongside the Rayon scanner threads.
