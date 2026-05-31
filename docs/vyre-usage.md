@@ -547,7 +547,7 @@ dispatches × 100 µs collapsed into 1). Not a 10× win on its own - the
 real prize is step 7, moving per-chunk extraction onto the same
 megakernel via `OpcodeHandler`s for entropy + regex eval.
 
-## Other unfinished wires (deferred from this session)
+## Remaining Vyre Wires
 
 - **`shadow`/`speculate` for CI dispatch validation.** vyre's shadow
   module is for validating ops against multiple backends inside vyre;
@@ -556,9 +556,8 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
   `--validate-backend` CLI flag for runtime opt-in dual dispatch
   was prototyped but reverted: cleanly hijacking `scan_sources` to
   re-run with a forced backend needs source iterator re-creation,
-  which is more invasive than a session-end commit warrants.
-  Future-work: add the flag with a proper `Sources::reify()` helper
-  that lets the orchestrator replay the same logical input twice.
+  which requires a proper `Sources::reify()` helper that lets the
+  orchestrator replay the same logical input twice.
 
 - **`matching::substring` as keyword pre-filter.** vyre's
   `substring_search(haystack, needle)` is a single-needle GPU
@@ -570,28 +569,27 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
 
 - **`matching::cooperative_dfa` as alternative literal engine.**
   Real candidate but adds a third backend variant alongside
-  `Gpu` (literal-set) and `MegaScan` (regex-NFA). Defer until we
-  can benchmark vs the megakernel literal-DFA path landing in
-  the next session.
+  `Gpu` (literal-set) and `MegaScan` (regex-NFA). Benchmark it
+  against the megakernel literal-DFA path before adding the route.
 
 - **`fuse_programs` for decode + scan.** Need to pre-compose
   `decode::inflate` (or `decode::ziftsieve`) with `GpuLiteralSet` /
   `RulePipeline` programs into one dispatch via
   `vyre_foundation::execution_plan::fusion::fuse_programs`. Modest
   perf win on `.zst`-heavy corpora (npm, Docker layers) but no
-  effect on regular source trees. ~2 days.
+  effect on regular source trees.
 
 - **`nn::moe` replacing the hand-rolled MoE in `gpu.rs`.** ~620 LoC
   of bespoke wgpu+WGSL gone, composed from `vyre_libs::nn::{moe,
   linear, activation, norm}`. Risky parity work - needs bit-equal
   output validation against `ml_scorer.rs` on the existing weight
-  set. ~3 days.
+  set.
 
 - **`runtime::uring::GpuMappedBuffer` for filesystem reads.**
   Eliminates a 256 MiB heap → GPU memcpy per batch on big files.
   Linux-only (io_uring); needs vyre-runtime `uring` feature opt-in
   + careful `GpuStream<'a>` lifetime work in `sources/filesystem/
-  read.rs`. ~3 days.
+  read.rs`.
 
 - **vyre `rule` engine for declarative `.keyhogignore.toml`.**
   Vyre's `RuleCondition` AST (PatternExists, PatternCountGte,

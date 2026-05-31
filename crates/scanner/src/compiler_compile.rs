@@ -223,9 +223,9 @@ pub fn compile_pattern(
             source,
         });
     }
-    // The matcher is NOT built here - it is deferred to first use via
+    // The matcher is NOT built here - it is built on first use via
     // `LazyRegex` (see types.rs). Building the whole corpus up front cost
-    // ~450ms-2.3s per invocation; deferral lets a scan compile only the
+    // ~450ms-2.3s per invocation; lazy build lets a scan compile only the
     // patterns the Aho-Corasick prefilter actually selects.
     Ok(CompiledPattern {
         detector_index,

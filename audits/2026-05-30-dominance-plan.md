@@ -1512,3 +1512,16 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-sources --test all_tests filesystem_reader_pool_is_smaller_than_scan_pool_on_large_hosts -- --nocapture`
+
+## Executed Patch Set: Vyre Roadmap Wording Cleanup
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: removed stale handoff/session wording and human-time estimates from `docs/vyre-usage.md`; remaining Vyre work is described as concrete technical wires and parity gates.
+- ARCHITECTURE: scanner comments now describe lazy regex/ML behavior without implying handoff or postponed ownership.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests vyre_usage -- --nocapture`

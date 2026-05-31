@@ -183,7 +183,7 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
     }
 }
 
-/// Deferred ML match waiting for batch inference at the end of a scan.
+/// Queued ML match waiting for batch inference at the end of a scan.
 #[cfg(feature = "ml")]
 #[derive(Debug, Clone)]
 pub struct MlPendingMatch {
@@ -232,7 +232,7 @@ pub struct ScanState {
     #[cfg(feature = "ml")]
     pub ml_cache_bytes: usize,
     #[cfg(feature = "ml")]
-    /// Detector matches deferred for batch ML scoring at the end of the scan.
+    /// Detector matches queued for batch ML scoring at the end of the scan.
     pub ml_pending: Vec<MlPendingMatch>,
 }
 
