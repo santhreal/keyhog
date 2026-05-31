@@ -24,6 +24,12 @@ fn test_remove_zero_width() {
 }
 
 #[test]
+fn soft_hyphen_inside_credential_is_removed_not_promoted_to_hyphen() {
+    let normalized = normalize_homoglyphs("token=abcde12345\u{00AD}67890");
+    assert_eq!(normalized, "token=abcde1234567890");
+}
+
+#[test]
 fn test_full_normalize() {
     let text = "ghp_\u{0065}\u{0308}secret"; // ë (decomposed)
     let normalized = full_normalize(text);
