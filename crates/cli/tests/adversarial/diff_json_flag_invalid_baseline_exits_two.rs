@@ -1,6 +1,6 @@
 //! Adversarial: diff --json with invalid baseline exits 2.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

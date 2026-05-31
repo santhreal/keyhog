@@ -25,6 +25,7 @@ pub const BASELINE_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Baseline {
     pub version: u32,
+    #[serde(default = "default_created")]
     pub created: String,
     pub entries: Vec<BaselineEntry>,
     #[serde(skip)]
@@ -36,7 +37,7 @@ pub struct Baseline {
 pub struct BaselineEntry {
     pub detector_id: String,
     pub credential_hash: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "path", skip_serializing_if = "Option::is_none")]
     pub file_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
@@ -46,6 +47,10 @@ pub struct BaselineEntry {
 
 fn default_status() -> String {
     "acknowledged".to_string()
+}
+
+fn default_created() -> String {
+    "unknown".to_string()
 }
 
 /// Heuristic used only to turn an opaque serde error into an actionable hint:

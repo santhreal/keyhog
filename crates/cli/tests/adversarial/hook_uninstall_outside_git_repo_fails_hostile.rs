@@ -1,6 +1,6 @@
 //! Adversarial: hook uninstall outside git repo must fail.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

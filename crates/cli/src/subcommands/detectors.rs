@@ -72,6 +72,10 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         return Ok(());
     }
 
+    if args.search.is_some() && filtered.is_empty() {
+        return Ok(());
+    }
+
     if let Some(q) = args.search.as_deref() {
         println!(
             "Loaded {} detectors ({source}); {} match '{q}':",

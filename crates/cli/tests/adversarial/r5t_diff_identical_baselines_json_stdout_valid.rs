@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: diff identical baselines emits valid JSON with --json.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

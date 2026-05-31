@@ -1,6 +1,6 @@
 //! Adversarial: four concurrent scans must each emit independent valid JSON arrays.
 
-use crate::adversarial::support::{binary, workspace_detectors};
+use crate::support::{binary, workspace_detectors};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -24,7 +24,10 @@ fn concurrent_json_output_integrity() {
                 .stderr(Stdio::piped())
                 .output()
                 .expect("spawn");
-            (output.status.code(), String::from_utf8_lossy(&output.stdout).into_owned())
+            (
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+            )
         }));
     }
 
@@ -32,6 +35,9 @@ fn concurrent_json_output_integrity() {
         let (code, stdout) = handle.join().expect("thread");
         assert_eq!(code, Some(0));
         let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
-        assert!(parsed.is_array(), "concurrent stdout must stay a JSON array");
+        assert!(
+            parsed.is_array(),
+            "concurrent stdout must stay a JSON array"
+        );
     }
 }

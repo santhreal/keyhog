@@ -35,13 +35,21 @@ use std::time::{Duration, Instant};
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
 pub fn run(args: WatchArgs) -> Result<()> {
+    let watch_root = std::fs::canonicalize(&args.path)
+        .with_context(|| format!("canonicalize {}", args.path.display()))?;
+    if !watch_root.is_dir() {
+        anyhow::bail!(
+            "watch path '{}' is not a directory. \
+             Fix: pass a directory to monitor, or run `keyhog scan {}` for a one-shot file scan.",
+            watch_root.display(),
+            watch_root.display()
+        );
+    }
+
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     let detector_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors)
         .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?;
-
-    let watch_root = std::fs::canonicalize(&args.path)
-        .with_context(|| format!("canonicalize {}", args.path.display()))?;
 
     if !args.quiet {
         eprintln!(

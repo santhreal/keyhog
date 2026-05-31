@@ -1,6 +1,6 @@
 //! Adversarial: daemon start --help documents --socket without starting server.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: backend rejects unknown trailing arg.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

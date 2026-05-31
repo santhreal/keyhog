@@ -1,6 +1,6 @@
 //! Adversarial: scan --baseline with missing file must exit 2.
 
-use crate::adversarial::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

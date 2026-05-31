@@ -2,5 +2,5 @@
 
 #[test]
 fn concurrent_four_scans_json_unix() {
-    crate::adversarial::support::oracle_concurrent_four_scans_json();
+    crate::support::oracle_concurrent_four_scans_json();
 }

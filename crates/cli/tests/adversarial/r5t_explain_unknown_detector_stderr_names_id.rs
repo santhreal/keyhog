@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: explain unknown detector stderr names id.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

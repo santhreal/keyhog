@@ -76,6 +76,13 @@ fn keyhog_workflow() -> PathBuf {
         .expect("keyhog.yml exists")
 }
 
+fn ci_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/ci.yml")
+        .canonicalize()
+        .expect("ci.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -351,6 +358,23 @@ fn github_workflows_keep_triggered_executable_job_shape() {
             }
         }
     }
+}
+
+#[test]
+fn ci_workflow_runs_standalone_cli_suites() {
+    let workflow = fs::read_to_string(ci_workflow()).expect("read ci.yml");
+    assert!(
+        workflow.contains("cargo test -p keyhog --test property"),
+        "CI must run the standalone CLI property suite instead of relying on all_tests"
+    );
+    assert!(
+        workflow.contains("cargo test -p keyhog --test adversarial"),
+        "CI must run the standalone CLI adversarial suite instead of relying on all_tests"
+    );
+    assert!(
+        workflow.contains("--test-threads=4"),
+        "adversarial CI must bound test parallelism because each test spawns keyhog"
+    );
 }
 
 #[test]
@@ -1057,7 +1081,7 @@ fn composite_action_exposes_scan_duration_output() {
 }
 
 #[test]
-fn composite_action_artifact_name_is_job_scoped() {
+fn composite_action_artifact_name_is_matrix_scoped() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     let artifact_step = manifest
         .split("- name: Upload scan report as workflow artifact")
@@ -1075,9 +1099,9 @@ fn composite_action_artifact_name_is_job_scoped() {
     );
     assert!(
         artifact_step.contains(
-            "name: keyhog-report-${{ github.job }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}"
+            "name: keyhog-report-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}"
         ),
-        "artifact name must include job and scan-duration context to avoid common matrix/retry collisions"
+        "artifact name must include job, matrix index, run attempt, and scan-duration context to avoid matrix/retry collisions"
     );
 }
 

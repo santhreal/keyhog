@@ -1,6 +1,6 @@
 //! Adversarial: hook install refuses to overwrite foreign pre-commit hook.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

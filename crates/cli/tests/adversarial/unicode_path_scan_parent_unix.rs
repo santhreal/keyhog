@@ -2,5 +2,5 @@
 
 #[test]
 fn unicode_path_scan_parent_unix() {
-    crate::adversarial::support::oracle_unicode_path_scan();
+    crate::support::oracle_unicode_path_scan();
 }

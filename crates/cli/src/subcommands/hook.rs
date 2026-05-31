@@ -49,19 +49,23 @@ const HOOK_MARKER: &str = "KeyHog pre-commit hook";
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum HookCommand {
     /// Install a git pre-commit hook in the current repository
-    Install,
+    Install {
+        /// Replace an existing non-KeyHog pre-commit hook.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
     /// Remove the KeyHog pre-commit hook from the current repository
     Uninstall,
 }
 
 pub fn run(command: HookCommand) -> Result<ExitCode> {
     match command {
-        HookCommand::Install => install(),
+        HookCommand::Install { force } => install(force),
         HookCommand::Uninstall => uninstall(),
     }
 }
 
-fn install() -> Result<ExitCode> {
+fn install(force: bool) -> Result<ExitCode> {
     let git_dir = find_git_dir()?;
     let hooks_dir = git_dir.join("hooks");
     let hook_path = hooks_dir.join("pre-commit");
@@ -72,22 +76,27 @@ fn install() -> Result<ExitCode> {
     if hook_path.exists() {
         let existing = std::fs::read_to_string(&hook_path)
             .with_context(|| format!("reading existing hook at {}", hook_path.display()))?;
-        if existing.contains(HOOK_MARKER) {
+        if existing.contains(HOOK_MARKER) && !force {
             eprintln!(
                 "KeyHog pre-commit hook is already installed at {}.",
                 hook_path.display()
             );
             return Ok(ExitCode::SUCCESS);
         }
-        anyhow::bail!(
-            "a pre-commit hook already exists at {}. Remove it manually or run `keyhog hook uninstall` first.",
-            hook_path.display()
-        );
+        if !force {
+            anyhow::bail!(
+                "a pre-commit hook already exists at {}. Remove it manually, \
+                 run `keyhog hook uninstall` if it was installed by KeyHog, \
+                 or pass `--force` to replace it.",
+                hook_path.display()
+            );
+        }
     }
 
     let mut file = std::fs::OpenOptions::new()
         .write(true)
-        .create_new(true)
+        .create(true)
+        .truncate(true)
         .open(&hook_path)
         .with_context(|| format!("creating hook at {}", hook_path.display()))?;
 
@@ -107,8 +116,13 @@ fn install() -> Result<ExitCode> {
     }
 
     eprintln!(
-        "KeyHog pre-commit hook installed at {}.",
-        hook_path.display()
+        "KeyHog pre-commit hook {} at {}.",
+        if force {
+            "installed/updated"
+        } else {
+            "installed"
+        },
+        hook_path.display(),
     );
     Ok(ExitCode::SUCCESS)
 }

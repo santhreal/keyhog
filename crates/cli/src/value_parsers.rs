@@ -73,6 +73,17 @@ pub fn parse_decode_depth(s: &str) -> Result<usize, String> {
     }
 }
 
+pub fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
+    let val: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+    if val == 0 {
+        Err("--threads must be greater than zero".to_string())
+    } else {
+        Ok(val)
+    }
+}
+
 pub fn parse_byte_size(s: &str) -> Result<usize, String> {
     let trimmed = s.trim();
     // Empty input keeps the historical Ok(0) contract - clap callers

@@ -3,7 +3,7 @@
 #[cfg(unix)]
 #[test]
 fn keyhog_detectors_valid_path_unix() {
-    use crate::adversarial::support::{binary, workspace_detectors, write_temp_file};
+    use crate::support::{binary, workspace_detectors, write_temp_file};
     use std::process::Command;
 
     let (_dir, path) = write_temp_file("clean.txt", "ok\n");

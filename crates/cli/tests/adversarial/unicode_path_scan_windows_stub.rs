@@ -2,5 +2,5 @@
 
 #[test]
 fn unicode_path_scan_windows_stub() {
-    crate::adversarial::support::oracle_unicode_path_scan();
+    crate::support::oracle_unicode_path_scan();
 }

@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: diff rejects non-JSON before file.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -19,5 +19,8 @@ fn r5t_diff_before_not_json_exits_two() {
         .expect("spawn");
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.is_empty(), "invalid before baseline must explain failure");
+    assert!(
+        !stderr.is_empty(),
+        "invalid before baseline must explain failure"
+    );
 }

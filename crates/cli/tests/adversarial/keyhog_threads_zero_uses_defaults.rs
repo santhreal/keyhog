@@ -1,6 +1,6 @@
 //! Adversarial: KEYHOG_THREADS=0 must not crash; scan completes.
 
-use crate::adversarial::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]
@@ -12,5 +12,10 @@ fn keyhog_threads_zero_uses_defaults() {
         .arg(&path)
         .output()
         .expect("spawn");
-    assert_eq!(output.status.code(), Some(0), "stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

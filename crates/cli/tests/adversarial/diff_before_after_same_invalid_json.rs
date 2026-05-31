@@ -1,6 +1,6 @@
 //! Adversarial: diff identical corrupt baselines exits 2.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

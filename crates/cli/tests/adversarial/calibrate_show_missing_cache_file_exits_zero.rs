@@ -1,6 +1,6 @@
 //! Adversarial: calibrate --show with missing cache prints header and exits 0.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

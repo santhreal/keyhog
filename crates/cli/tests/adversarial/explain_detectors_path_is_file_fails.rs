@@ -1,6 +1,6 @@
 //! Adversarial: explain --detectors pointing at file fails.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

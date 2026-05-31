@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: explain without detector id exits 2.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

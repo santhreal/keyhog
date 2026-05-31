@@ -3,11 +3,11 @@
 #[cfg(unix)]
 #[test]
 fn invalid_utf8_filename_windows_stub() {
-    crate::adversarial::support::oracle_invalid_utf8_filename_rejected();
+    crate::support::oracle_invalid_utf8_filename_rejected();
 }
 
 #[cfg(not(unix))]
 #[test]
 fn invalid_utf8_filename_windows_stub() {
-    crate::adversarial::support::oracle_unicode_path_scan();
+    crate::support::oracle_unicode_path_scan();
 }

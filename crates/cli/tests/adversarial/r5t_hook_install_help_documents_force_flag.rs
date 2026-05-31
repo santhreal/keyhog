@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: hook install --help documents --force.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]
@@ -11,5 +11,8 @@ fn r5t_hook_install_help_documents_force_flag() {
         .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("--force"), "hook install help must document --force; got: {stdout}");
+    assert!(
+        stdout.contains("--force"),
+        "hook install help must document --force; got: {stdout}"
+    );
 }

@@ -1,13 +1,25 @@
 //! R5-T adversarial non-scan: hook uninstall on clean repo without hook exits 0.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn init_git(dir: &std::path::Path) {
-    std::process::Command::new("git").args(["init", "-q"]).current_dir(dir).status().unwrap();
-    std::process::Command::new("git").args(["config", "user.email", "r5t@test"]).current_dir(dir).status().unwrap();
-    std::process::Command::new("git").args(["config", "user.name", "R5T"]).current_dir(dir).status().unwrap();
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir)
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.email", "r5t@test"])
+        .current_dir(dir)
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.name", "R5T"])
+        .current_dir(dir)
+        .status()
+        .unwrap();
 }
 
 #[test]
