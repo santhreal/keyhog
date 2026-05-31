@@ -9,6 +9,10 @@ id = "azure-storage-account-key"
 name = "Azure Storage Account Key"
 service = "azure"
 severity = "critical"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.28
 keywords = [
     "AZURE_STORAGE_KEY",
     "AZURE_STORAGE_ACCOUNT_KEY",

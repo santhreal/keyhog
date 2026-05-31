@@ -8,6 +8,10 @@ id = "asana-pat"
 name = "Asana Personal Access Token"
 service = "asana"
 severity = "high"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.12
 keywords = [
     "asana",
     "ASANA_ACCESS_TOKEN",

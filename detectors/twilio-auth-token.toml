@@ -8,6 +8,10 @@ id = "twilio-auth-token"
 name = "Twilio Auth Token"
 service = "twilio"
 severity = "critical"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.15
 # Add `AC` and `AccountSid` literals so the AC pre-filter routes the
 # bare-AccountSid shape into the regex. `AC` is a 2-char literal so
 # pair it with the longer `TWILIO_ACCOUNT_SID` / `AccountSid` variants

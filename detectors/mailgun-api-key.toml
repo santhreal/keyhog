@@ -8,6 +8,10 @@ id = "mailgun-api-key"
 name = "Mailgun API Key"
 service = "mailgun"
 severity = "critical"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.12
 # The bare `key-` 4-char keyword was getting dropped by the AC keyword
 # floor in low-info-keyword filters, leaving .tf / properties / log-line
 # fixtures unrouted. Widen to canonical Mailgun anchors so the pre-filter

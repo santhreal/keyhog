@@ -1250,3 +1250,17 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog --test all_tests main_uses_current_thread_tokio_runtime -- --nocapture`
+
+## Executed Patch Set: Deterministic Floor Override Campaign
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: kept the deterministic SecretBench floor-override batch for strongly vendor-anchored detectors after `KEYHOG_NO_GPU=1` scoring removed GPU MoE near-floor variance from the measurement.
+- RESEARCH: reconciled `score.py` and clean-negative FP analysis; the broad batch adds recall on label-positive fixtures while clean-negative false positives stay flat.
+- COHERENCE: `backlog/detection.md`, detector TOML floors, and changelog now agree on the kept floor-override set.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`

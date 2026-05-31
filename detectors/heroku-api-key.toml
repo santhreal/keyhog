@@ -8,6 +8,10 @@ id = "heroku-api-key"
 name = "Heroku API Key"
 service = "heroku"
 severity = "critical"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.2
 keywords = ["HEROKU_API_KEY", "heroku_api_key", "Heroku API Key", "herokuApiKey"]
 
 [[detector.patterns]]

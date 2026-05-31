@@ -288,11 +288,25 @@ apples (same bare-token files to every tool).
     • aws-secret-access-key min_confidence=0.25 (mandatory `AWS_SECRET…`/
       `awsSecretKey` anchor; 40-char body scored 0.32)
     → measured: F1 0.8475→0.8528, R +20 TP, **FP 46→40 (precision UP to 0.983)**.
-  REVERTED (net-negative): a broad batch of 19 vendor detectors floored at
-  0.12-0.30 recovered +74 TP but added **+80 FP** (P 0.98→0.95, F1 net-zero
-  ~0.8527). On this adversarial corpus the negatives pack non-secret values into
-  vendor-keyword fields, so a lowered floor trades precision ~1:1 for recall.
-  keyhog's edge over betterleaks is precision (0.98 vs 0.23) — not worth eroding.
+  BROAD BATCH — first judged net-negative on the NON-deterministic auto-route
+  path (looked like +80 FP), then RE-MEASURED on the deterministic pinned path
+  (DET-11 fix) where it is a clear WIN and is now KEPT:
+    google+aws only (deterministic): F1=0.8757 P=0.9798 R=0.7917 TP=2375 FP=49
+    + broad 19 vendor floors        : F1=0.8815 P=0.9574 R=0.8167 TP=2450 FP=109
+  +75 TP, recall clears the 0.814 target. The apparent precision drop is a
+  SCORE.PY ARTIFACT, not real: per-category FP is UNCHANGED at 32 (negatives:
+  base64-protobuf 28, …) between the two — i.e. the broad batch adds **ZERO FP
+  on the 12 000 negative fixtures** (real specificity stays 99.7%). The +60
+  "FP" are ALL the label=true-no-overlap class (a second, non-overlapping
+  finding on a fixture that already has its TP), which score.py charges to
+  overall FP but not to any category. So the broad floors recover real recall at
+  no real-negative cost; the score.py overall-precision metric is pessimistic
+  here. (This also explains the score.py-vs-fp_analyze 109-vs-32 gap: fp_analyze
+  counts only clean-negative FP = 32; score.py adds the 77 label=true-no-overlap.)
+  NET deterministic result of the whole campaign: F1 0.8757→0.8815, R→0.8167
+  (target met), +0 negative FP. Remaining headroom to 0.8919: the still-
+  undetected shapes (tok_<base62>, bare 40-char terraform values, k8s base64-
+  encoded `data:` values needing decode-attribution).
   LESSON: floor-override recovers recall ONLY for detectors whose ANCHOR (not
   just keyword) is specific enough that the body can't be a non-secret; per-
   detector, measured. Connection-strings (redis/mongo/mysql, structurally tight

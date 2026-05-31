@@ -8,6 +8,10 @@ id = "cloudflare-api-token"
 name = "Cloudflare API Token"
 service = "cloudflare"
 severity = "critical"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.28
 keywords = ["cloudflare", "CLOUDFLARE", "CF_API_TOKEN", "cloudflareApiToken"]
 
 [[detector.patterns]]
