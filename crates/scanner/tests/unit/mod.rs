@@ -106,6 +106,5 @@ pub mod segment_attribution;
 // shape_gates: uses `std::borrow::Cow` import that triggers a warning,
 // and has type issues. Fixed separately.
 pub mod shape_gates;
-// structured_parsers: requires `keyhog_scanner::testing` parsers.
-// pub mod structured_parsers;
+pub mod structured_parsers;
 pub mod unicode_hardening;

@@ -7,6 +7,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Scanner
 
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
+- Split structured parsers by format family, move the remaining inline parser contracts into registered external tests, and extend parser gates across the whole parser module tree.
 
 ### Sources
 
