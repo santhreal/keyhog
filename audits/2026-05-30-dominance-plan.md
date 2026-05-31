@@ -1171,3 +1171,51 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-sources --test all_tests default_windowing_splits_multimegabyte_source_files -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests windowed_path -- --nocapture`
+
+## Executed Patch Set: Commented Config Assignment Recall
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: commented-out config assignments now retain assignment context, covering `# KEY=value`, `// token = value`, C block comments, and HTML comments around config lines.
+- TESTING: added a context unit gate for commented assignment inference across shell, C/JS, block, and HTML comment syntaxes.
+- INTROSPECTION: the full per-detector contract runner dropped from the broad commented-assignment evasion cluster to 26 remaining detector-specific failures.
+- COHERENCE: bare prose comments still infer `Comment`; the change only lifts comment lines with assignment or mapping syntax after the comment marker.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests commented_assignment_context -- --nocapture`
+
+Red gate captured:
+
+- `cargo test -p keyhog-scanner --test contracts_runner every_contract_passes_positives_negatives_evasions -- --nocapture` remains red with 26 detector-specific failures after this shared-context fix.
+
+## Executed Patch Set: Google OAuth Anchored Confidence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: Google OAuth client IDs with the `.apps.googleusercontent.com` anchor no longer fall below the global confidence floor solely because their base62-ish body has low entropy.
+- GENERALIZATION: the detector-local floor is justified by unique literal anchors rather than broadening global confidence policy.
+- COHERENCE: documented the detector-specific floor rationale beside the detector patterns and in the changelog.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
+
+## Executed Patch Set: AWS Secret Anchored Confidence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: anchored AWS secret-access-key assignments no longer fall below the global confidence floor solely because a valid 40-character body has moderate entropy.
+- GENERALIZATION: this uses the detector-local reviewed floor path for strongly anchored service tokens instead of relaxing generic base64/hash suppression.
+- COHERENCE: documented the mandatory anchor rationale in the detector and changelog.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`

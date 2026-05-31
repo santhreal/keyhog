@@ -13,6 +13,22 @@ fn comment_context() {
 }
 
 #[test]
+fn commented_assignment_context() {
+    for line in [
+        "# API_KEY=sk-proj-abc123",
+        "// token = sk-proj-abc123",
+        "/* SECRET: sk-proj-abc123 */",
+        "<!-- OPENAI_API_KEY=sk-proj-abc123 -->",
+    ] {
+        assert_eq!(
+            infer_context(&[line], 0, None),
+            CodeContext::Assignment,
+            "{line:?} should be treated as a commented-out config assignment"
+        );
+    }
+}
+
+#[test]
 fn test_file_context() {
     let lines = vec!["key = sk-proj-abc123"];
     assert_eq!(

@@ -340,6 +340,9 @@ pub fn infer_context_with_documentation(
     if is_in_encrypted_block(lines, line_idx) {
         return CodeContext::Encrypted;
     }
+    if is_commented_assignment_line(trimmed) {
+        return CodeContext::Assignment;
+    }
     if is_comment_line(trimmed) {
         return CodeContext::Comment;
     }
@@ -376,6 +379,9 @@ pub fn infer_context_with_regions(
     }
     if regions.is_encrypted(line_idx) {
         return CodeContext::Encrypted;
+    }
+    if is_commented_assignment_line(trimmed) {
+        return CodeContext::Assignment;
     }
     if is_comment_line(trimmed) {
         return CodeContext::Comment;
@@ -444,6 +450,40 @@ fn is_comment_line(trimmed: &str) -> bool {
         || trimmed.starts_with("*/")
         || trimmed.starts_with("rem ")
         || trimmed.starts_with("REM ")
+}
+
+fn is_commented_assignment_line(trimmed: &str) -> bool {
+    let Some(comment_body) = strip_comment_prefix(trimmed) else {
+        return false;
+    };
+    let body = comment_body
+        .trim_start()
+        .trim_end_matches("*/")
+        .trim_end_matches("-->")
+        .trim();
+    has_assignment_operator(body) || has_yaml_mapping(body)
+}
+
+fn strip_comment_prefix(trimmed: &str) -> Option<&str> {
+    if let Some(rest) = trimmed.strip_prefix("//") {
+        Some(rest)
+    } else if let Some(rest) = trimmed.strip_prefix('#') {
+        Some(rest)
+    } else if trimmed.starts_with("--") && !trimmed.starts_with("---") {
+        trimmed.strip_prefix("--")
+    } else if let Some(rest) = trimmed.strip_prefix("/*") {
+        Some(rest)
+    } else if let Some(rest) = trimmed.strip_prefix("<!--") {
+        Some(rest)
+    } else if let Some(rest) = trimmed.strip_prefix("<#") {
+        Some(rest)
+    } else if let Some(rest) = trimmed.strip_prefix("* ") {
+        Some(rest)
+    } else if let Some(rest) = trimmed.strip_prefix("rem ") {
+        Some(rest)
+    } else {
+        trimmed.strip_prefix("REM ")
+    }
 }
 
 fn is_assignment_line(trimmed: &str) -> bool {
