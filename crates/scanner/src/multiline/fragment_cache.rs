@@ -261,10 +261,6 @@ fn shard_fold(h: usize, b: u8) -> usize {
     h.wrapping_mul(31).wrapping_add(b as usize)
 }
 
-fn shard_index(key: &str) -> usize {
-    key.bytes().fold(0usize, shard_fold) % SHARD_COUNT
-}
-
 /// Shard index for a fragment without materializing the joined `prefix\0scope`
 /// key as a `String`. Folds `prefix`, the `\0` separator, then `scope` in the
 /// exact byte order `scoped_key` produces, so a fragment maps to the same shard
@@ -427,9 +423,10 @@ mod tests {
         ];
         for (prefix, scope) in cases {
             let joined = format!("{prefix}\0{scope}");
+            let joined_key_hash = joined.bytes().fold(0usize, shard_fold) % SHARD_COUNT;
             assert_eq!(
                 shard_index_of(prefix, scope),
-                shard_index(&joined),
+                joined_key_hash,
                 "shard hash drift for prefix={prefix:?} scope={scope:?}"
             );
         }
