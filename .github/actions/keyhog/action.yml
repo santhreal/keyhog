@@ -49,6 +49,9 @@ outputs:
   exit-code:
     description: 'Raw keyhog process exit code: 0 clean, 1 findings, 10 live findings under --verify.'
     value: ${{ steps.scan.outputs.exit-code }}
+  duration-ms:
+    description: 'Wall-clock scan duration in milliseconds, measured by the Action wrapper.'
+    value: ${{ steps.scan.outputs.duration-ms }}
   report:
     description: 'Path to the produced scan report (relative to the workspace).'
     value: ${{ steps.outfile.outputs.name }}

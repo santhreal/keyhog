@@ -1556,3 +1556,20 @@ Observed gates:
 
 - `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` exits 2 with `literals=true, backend=true, matcher=true`.
 - `cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` passes only by emitting the runtime GPU-degrade warning and falling back to SIMD/CPU.
+
+## Executed Patch Set: Composite Action Missing-Report Gate
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: the tested scan wrapper now treats every missing requested report as a CI failure, including `keyhog` exit 0, instead of publishing `findings=0` and relying on a later artifact warning.
+- SPEED: the wrapper emits `duration-ms` and records duration in the GitHub Step Summary so production CI runs can track scan cost without log scraping.
+- TESTING: added e2e action contracts for clean-exit/missing-report failure and the duration output path.
+- COHERENCE: updated the buildless integration entrypoint gate so it validates the composite manifest plus `run-scan.sh` instead of looking for moved scanner logic only in YAML.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+- `tests/integration/entrypoints_check.sh`
+- `bash -n .github/actions/keyhog/run-scan.sh tests/integration/entrypoints_check.sh`

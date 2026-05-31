@@ -46,23 +46,26 @@ else
 fi
 
 ACT="$ROOT/.github/actions/keyhog/action.yml"
-if [ -f "$ACT" ]; then
+SCAN="$ROOT/.github/actions/keyhog/run-scan.sh"
+if [ -f "$ACT" ] && [ -f "$SCAN" ]; then
   # Denylisted (nonexistent) flags must not appear anywhere in the Action -
   # whole-file scan so it stays robust to how the invocation is assembled
   # (inline `keyhog scan ...` or an `args=(scan ...)` array).
-  if grep -qE -- "$DENY" "$ACT"; then
-    echo "FAIL action.yml uses a nonexistent keyhog flag:"
-    grep -nE -- "$DENY" "$ACT" | sed 's/^/    /'
+  if grep -qE -- "$DENY" "$ACT" "$SCAN"; then
+    echo "FAIL GitHub Action entrypoint uses a nonexistent keyhog flag:"
+    grep -nE -- "$DENY" "$ACT" "$SCAN" | sed 's/^/    /'
     fail=1
   else
-    note "OK   action.yml: no denylisted keyhog flags"
+    note "OK   GitHub Action entrypoint: no denylisted keyhog flags"
   fi
-  # The Action must actually invoke the keyhog CLI: inline `keyhog scan` or the
-  # args-array form `keyhog "${args[@]}"`.
-  if grep -qE 'keyhog (scan|"\$\{args\[@\]\}")' "$ACT"; then
-    note "OK   action.yml: invokes the keyhog scan CLI"
+  # The Action must actually invoke the tested local scan script, and that
+  # script must build a scan argv and execute `keyhog "${args[@]}"`.
+  if grep -q "run-scan.sh" "$ACT" \
+     && grep -q "args=(scan" "$SCAN" \
+     && grep -q 'keyhog "${args\[@\]}"' "$SCAN"; then
+    note "OK   GitHub Action entrypoint: invokes the tested keyhog scan CLI"
   else
-    echo "FAIL action.yml does not invoke 'keyhog scan' (inline or args-array)."
+    echo "FAIL GitHub Action entrypoint does not route through run-scan.sh to 'keyhog scan'."
     fail=1
   fi
   # SARIF upload should be guarded so a fork PR (no security-events:write) does
@@ -74,22 +77,23 @@ if [ -f "$ACT" ]; then
   fi
   # Findings counting is a CI security boundary. Missing jq / malformed JSON
   # must not become findings=0 after the scanner already returned exit 1/10.
-  if grep -q "count_from_report()" "$ACT" \
-     && grep -q "Could not parse.*keyhog exited" "$ACT" \
-     && ! grep -q "jq .*|| echo 0" "$ACT"; then
-    note "OK   action.yml: report counting fails closed when parser/report fails"
+  if grep -q "count_from_report()" "$SCAN" \
+     && grep -q "Could not parse.*keyhog exited" "$SCAN" \
+     && grep -q "but did not write" "$SCAN" \
+     && ! grep -q "jq .*|| echo 0" "$SCAN"; then
+    note "OK   GitHub Action entrypoint: report counting fails closed when parser/report fails"
   else
-    echo "FAIL action.yml findings counting must fail closed; do not convert parser failures to findings=0."
+    echo "FAIL GitHub Action entrypoint findings counting must fail closed; do not convert parser/missing-report failures to findings=0."
     fail=1
   fi
-  if grep -q "GITHUB_STEP_SUMMARY" "$ACT" && grep -q "### KeyHog scan" "$ACT"; then
-    note "OK   action.yml: writes a GitHub Step Summary"
+  if grep -q "GITHUB_STEP_SUMMARY" "$SCAN" && grep -q "### KeyHog scan" "$SCAN"; then
+    note "OK   GitHub Action entrypoint: writes a GitHub Step Summary"
   else
-    echo "FAIL action.yml must write a concise GITHUB_STEP_SUMMARY for CI triage."
+    echo "FAIL GitHub Action entrypoint must write a concise GITHUB_STEP_SUMMARY for CI triage."
     fail=1
   fi
 else
-  echo "FAIL .github/actions/keyhog/action.yml missing - the documented Action does not exist."
+  echo "FAIL .github/actions/keyhog/action.yml or run-scan.sh missing - the documented Action does not exist."
   fail=1
 fi
 

@@ -30,6 +30,25 @@ gha_notice() {
   printf '::notice title=KeyHog::%s\n' "$(gha_escape "$1")"
 }
 
+now_ms() {
+  if [[ -n "${EPOCHREALTIME:-}" ]]; then
+    local seconds="${EPOCHREALTIME%.*}"
+    local micros="${EPOCHREALTIME#*.}"
+    micros="${micros}000000"
+    micros="${micros:0:6}"
+    printf '%s\n' "$((10#$seconds * 1000 + 10#$micros / 1000))"
+    return
+  fi
+
+  local nanos
+  nanos="$(date +%s%N 2>/dev/null || true)"
+  if [[ "$nanos" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$((10#$nanos / 1000000))"
+  else
+    printf '%s000\n' "$(date +%s)"
+  fi
+}
+
 case "$severity" in
   info | low | medium | high | critical) ;;
   *)
@@ -84,10 +103,16 @@ if [[ -n "$baseline" ]]; then
   args+=(--baseline "$baseline")
 fi
 
+scan_start_ms="$(now_ms)"
 set +e
 keyhog "${args[@]}"
 keyhog_exit=$?
 set -e
+scan_end_ms="$(now_ms)"
+duration_ms="$((scan_end_ms - scan_start_ms))"
+if (( duration_ms < 0 )); then
+  duration_ms=0
+fi
 
 count_from_report() {
   local report_format="$1"
@@ -160,6 +185,11 @@ PY
 }
 
 findings=0
+if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
+  gha_error "keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
+  exit "$keyhog_exit"
+fi
+
 if [[ -f "$report" ]]; then
   if parsed_findings="$(count_from_report "$format" "$report" 2>/dev/null)"; then
     findings="$parsed_findings"
@@ -170,8 +200,8 @@ if [[ -f "$report" ]]; then
     gha_error "Could not parse clean scan report '$report'."
     exit 3
   fi
-elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
-  gha_error "keyhog reported findings but did not write '$report'."
+else
+  gha_error "keyhog exited $keyhog_exit but did not write '$report'."
   exit 3
 fi
 
@@ -179,15 +209,12 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
     echo "findings=$findings"
     echo "exit-code=$keyhog_exit"
+    echo "duration-ms=$duration_ms"
   } >> "$GITHUB_OUTPUT"
 fi
 
 gha_notice "Found $findings finding(s) at or above '$severity' severity."
-
-if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
-  gha_error "keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
-  exit "$keyhog_exit"
-fi
+gha_notice "Scan completed in ${duration_ms} ms."
 
 if [[ "$keyhog_exit" == "10" ]]; then
   gha_error "LIVE credential(s) confirmed by --verify (exit 10)."
@@ -214,6 +241,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '| Report | %s |\n' "$(md_cell "$report")"
     printf '| Findings | %s |\n' "$(md_cell "$findings")"
     printf '| Exit code | %s |\n' "$(md_cell "$keyhog_exit")"
+    printf '| Duration | %s |\n' "$(md_cell "${duration_ms} ms")"
     printf '| Fail on findings | %s |\n' "$(md_cell "$fail_on_findings")"
     printf '| Upload SARIF | %s |\n' "$(md_cell "$upload_sarif")"
     if [[ -n "$baseline" ]]; then

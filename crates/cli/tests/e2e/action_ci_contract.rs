@@ -247,10 +247,21 @@ exit 1
         gh_output.contains("exit-code=1"),
         "raw scanner exit must be exposed; got {gh_output}"
     );
+    assert!(
+        gh_output
+            .lines()
+            .any(|line| line.starts_with("duration-ms=")
+                && line["duration-ms=".len()..].parse::<u64>().is_ok()),
+        "scan duration must be exposed as milliseconds; got {gh_output}"
+    );
 
     let summary = summary_file(&dir);
     assert!(summary.contains("| Findings | `2` |"), "summary={summary}");
     assert!(summary.contains("| Exit code | `1` |"), "summary={summary}");
+    assert!(
+        summary.contains("| Duration | `"),
+        "summary must expose scan duration; summary={summary}"
+    );
     assert!(
         summary.contains("| Fail on findings | `true` |"),
         "summary={summary}"
@@ -377,6 +388,32 @@ exit 1
         Some(3),
         "findings exit without report must fail closed; stderr={}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn action_rejects_clean_exit_without_report() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+"#,
+    );
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "clean exit without report must fail closed; output={}",
+        combined_output(&output)
+    );
+    assert!(
+        combined_output(&output)
+            .contains("keyhog exited 0 but did not write 'keyhog-results.sarif'."),
+        "missing clean report must be operator-visible; output={}",
+        combined_output(&output)
     );
 }
 
@@ -522,6 +559,19 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
     assert!(
         manifest.contains("KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
         "composite action must validate upload-sarif in the tested script"
+    );
+}
+
+#[test]
+fn composite_action_exposes_scan_duration_output() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        manifest.contains("duration-ms:"),
+        "composite action must expose scan duration for CI performance tracking"
+    );
+    assert!(
+        manifest.contains("value: ${{ steps.scan.outputs.duration-ms }}"),
+        "duration output must come from the tested scan script"
     );
 }
 
