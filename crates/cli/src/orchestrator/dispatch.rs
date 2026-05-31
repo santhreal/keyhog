@@ -580,11 +580,15 @@ impl ScanOrchestrator {
         //
         // Measured flat optimum on small-file filesystem corpora: finer
         // batches keep the outer parallel bridge balanced while bounding
-        // in-flight chunk memory; deeper buffering lets the drain thread stay
-        // ahead without exposing operator-facing knobs.
+        // in-flight chunk memory; buffering at roughly one batch per four
+        // workers lets the drain thread stay ahead without letting small-file
+        // corpora prefetch thousands of windows into RAM.
         const FUSED_BATCH: usize = 16;
-        const FUSED_DEPTH: usize = 256;
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(FUSED_DEPTH);
+        let fused_depth = rayon::current_num_threads()
+            .saturating_add(3)
+            .saturating_div(4)
+            .clamp(2, 8);
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(fused_depth);
         let drain = std::thread::spawn(move || {
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(FUSED_BATCH);
             'sources: for source in &sources {
@@ -700,10 +704,11 @@ impl ScanOrchestrator {
 
         if std::env::var("KH_PERF").is_ok() {
             eprintln!(
-                "KH_PERF scan_sources_fused: wall={:.2}s findings={} scanned={}",
+                "KH_PERF scan_sources_fused: wall={:.2}s findings={} scanned={} fused_depth={}",
                 sc_t0.elapsed().as_secs_f64(),
                 findings.len(),
                 crate::SCANNED_CHUNKS.load(Ordering::Relaxed),
+                fused_depth,
             );
         }
 
