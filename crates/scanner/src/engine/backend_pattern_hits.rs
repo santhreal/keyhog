@@ -74,35 +74,26 @@ impl CompiledScanner {
 
             if offsets_safe {
                 // Cheap per-pattern pre-filter to shrink the bitmap
-                // before the (still whole-chunk) regex extraction
-                // pass. The GPU literal-set matches *prefixes* with
-                // weaker discrimination than Hyperscan's NFA match -
-                // on a 64 MiB random alphanumeric blob ~2 k distinct
-                // detector prefixes fire spuriously and feed
-                // `extract_confirmed_patterns` ~128 GB of redundant
-                // regex work (60× slower than SIMD). For each unique
-                // hit position we ask the pattern's own regex
-                // anchored at the literal: did this prefix actually
-                // belong to a match? Only patterns that pass make it
-                // into the bitmap, so extract walks ~10-50 patterns
-                // (Hyperscan-equivalent) instead of ~2 000.
-                const PRE_MARGIN: u32 = 128;
-                const POST_MARGIN: u32 = 1024;
-                // A pattern's *first* literal hit may sit at a
-                // position where the full regex doesn't match yet -
-                // e.g. `z85` appearing in random alphanumerics at
-                // mid-line vs at end-of-line where the regex
-                // `(?:z85)[=:\s]+[…]{20,}` actually fires. Earlier
-                // versions of the filter `Rejected` a pattern on the
-                // first window miss and skipped its remaining hits;
-                // that collapsed Corpus B recall from 207 → 23. The
-                // current scheme is "confirm once, then skip": every
-                // remaining hit of a pattern is checked until one
-                // returns true OR the hit list is exhausted. Worst
-                // case = 320 k `is_match` calls on 1 KiB windows
-                // (~3 s); typical case = ~2 k confirms quickly and
-                // the rest of the hits short-circuit on
-                // `confirmed[pat_idx]`.
+                // before the (still whole-chunk) regex EXTRACTION pass.
+                // The GPU literal-set/AC matches *prefixes* with weaker
+                // discrimination than Hyperscan's NFA match - on a 64 MiB
+                // random alphanumeric blob ~2 k distinct detector prefixes
+                // fire spuriously and would feed `extract_confirmed_patterns`
+                // ~128 GB of redundant regex work (60× slower than SIMD). For
+                // each distinct hit pid we ask the pattern's own regex: does it
+                // match this chunk at all? Only patterns that pass enter the
+                // bitmap, so extract walks ~10-50 patterns (Hyperscan-
+                // equivalent) instead of ~2 000.
+                //
+                // is_match runs over the WHOLE chunk, not a window around the
+                // hit: the GPU AC positions are unreliable (see the loop
+                // below), and a window derived from them dropped real matches
+                // deep in large files. `confirmed[]` guarantees each pid's
+                // regex runs at most once, and the fold above deduped
+                // `per_pattern_hits` to ~one entry per distinct pid, so the
+                // is_match count is bounded by the number of distinct detector
+                // literals present - the same prune the cheap-filter always
+                // did, now position-independent and sound vs SIMD.
                 let mut tight_bitmap = vec![0u64; total_patterns.div_ceil(64)];
                 let mut confirmed = vec![false; total_patterns];
                 let text = scan_text;
@@ -172,10 +163,15 @@ impl CompiledScanner {
                             }
                             &self.fallback[fb].0
                         };
-                        if entry.regex.get().is_match(window) {
+                        if entry.regex.get().is_match(text) {
                             tight_bitmap[cand_idx / 64] |= 1u64 << (cand_idx % 64);
-                            confirmed[cand_idx] = true;
                         }
+                        // Mark checked regardless of outcome: the whole-chunk
+                        // is_match verdict is position-independent and
+                        // deterministic, so a later hit for the same pid would
+                        // reach the same result - never re-scan the chunk for
+                        // an already-evaluated pid.
+                        confirmed[cand_idx] = true;
                     }
                 }
                 // Expand the cheap-filter-confirmed roots to their
