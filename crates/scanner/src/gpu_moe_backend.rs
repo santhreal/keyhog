@@ -3,12 +3,15 @@
 use super::gpu_shader::MOE_SHADER;
 
 use bytemuck::{Pod, Zeroable};
+use std::sync::mpsc::TryRecvError;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 
 /// Minimum batch size before GPU dispatch is worthwhile.
 /// Below this, CPU is faster due to GPU dispatch overhead.
 const GPU_BATCH_THRESHOLD: usize = 64;
+const DEFAULT_GPU_MOE_TIMEOUT_MS: u64 = 30_000;
 
 // Single source of truth for the feature width: the MoE input dimension is the
 // ML feature-vector length. Kept in lockstep with the WGSL `INPUT_DIM` in
@@ -59,6 +62,18 @@ impl GpuContext {
 }
 
 static GPU: OnceLock<Option<GpuContext>> = OnceLock::new();
+
+fn gpu_moe_timeout() -> Duration {
+    static TIMEOUT: OnceLock<Duration> = OnceLock::new();
+    *TIMEOUT.get_or_init(|| {
+        let ms = std::env::var("KEYHOG_GPU_MOE_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|&value| value > 0)
+            .unwrap_or(DEFAULT_GPU_MOE_TIMEOUT_MS);
+        Duration::from_millis(ms)
+    })
+}
 
 fn init_gpu() -> Result<GpuContext, Box<dyn std::error::Error + Send + Sync>> {
     // Reuse the vyre WgpuBackend's device instead of creating a second one.
@@ -321,31 +336,41 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     slice.map_async(wgpu::MapMode::Read, move |result| {
         let _ = sender.send(result);
     });
-    // wgpu 25 replaced `Maintain::Wait` (infallible) with `PollType::Wait`
-    // returning `Result<PollStatus, PollError>`. A poll error here means the
-    // device was lost or the wait timed out, so the map callback below would
-    // never fire — surface it and fall back to CPU MoE rather than block.
-    if let Err(error) = device.poll(wgpu::PollType::Wait) {
-        tracing::warn!(
-            ?error,
-            "GPU MoE device.poll() failed; falling back to CPU MoE for this scan"
-        );
-        return None;
-    }
+    let timeout = gpu_moe_timeout();
+    let deadline = Instant::now() + timeout;
+    let map_recv = loop {
+        match receiver.try_recv() {
+            Ok(result) => break result,
+            Err(TryRecvError::Disconnected) => {
+                tracing::warn!(
+                    "GPU MoE staging-buffer callback disconnected; falling back to CPU MoE for this scan"
+                );
+                return None;
+            }
+            Err(TryRecvError::Empty) => {}
+        }
 
-    // GPU MoE staging-buffer read. The double `.ok()?` here used
-    // to swallow BOTH the channel `recv` failure (the wgpu callback
-    // was never invoked) AND the `map_async` failure (driver
-    // rejected the map) silently, falling back to the CPU MoE
-    // path without any breadcrumb. Surface both as a warn so the
-    // operator can see why their RTX-class card stopped accelerating
-    // confidence scoring mid-scan.
-    let map_recv = match receiver.recv() {
-        Ok(r) => r,
-        Err(error) => {
-            tracing::warn!(%error, "GPU MoE staging-buffer recv() failed; falling back to CPU MoE for this scan");
+        if Instant::now() >= deadline {
+            tracing::warn!(
+                ?timeout,
+                "GPU MoE staging-buffer readback timed out; falling back to CPU MoE for this scan"
+            );
             return None;
         }
+
+        if let Err(error) = device.poll(wgpu::PollType::Poll) {
+            tracing::warn!(
+                ?error,
+                "GPU MoE device.poll() failed; falling back to CPU MoE for this scan"
+            );
+            return None;
+        }
+
+        if let Ok(result) = receiver.try_recv() {
+            break result;
+        }
+
+        std::thread::sleep(Duration::from_millis(1));
     };
     if let Err(error) = map_recv {
         tracing::warn!(

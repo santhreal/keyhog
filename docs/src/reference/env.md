@@ -31,6 +31,7 @@ documented here with default, effect, and a typical use case.
 | `KEYHOG_NO_GPU`     | (unset)     | If set to `1`, skip the GPU probe entirely. Useful for CI where the runner reports a software-rendered GPU and you'd rather force CPU. Mirrored by `CI=true`/`GITHUB_ACTIONS=true` auto-detection. |
 | `KEYHOG_REQUIRE_GPU` | (unset)    | If set to `1`, refuse to run when no usable GPU adapter is detected. Useful for self-hosted runners where a regression on GPU initialization should fail loudly, not silently fall back to CPU. |
 | `KEYHOG_GPU_KERNEL` | `auto`      | Override the GPU dispatch kernel pick. Mostly a development knob for benchmarking individual kernel implementations. |
+| `KEYHOG_GPU_MOE_TIMEOUT_MS` | `30000` | Deadline for one GPU MoE confidence readback. On timeout KeyHog falls back to CPU MoE for that batch instead of parking a scan worker forever. |
 
 ## Threading + chunking
 

@@ -1141,3 +1141,18 @@ Verified gates:
 Red gate captured:
 
 - `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite:: -- --nocapture` now passes 53/57. Remaining disagreements are bare Heroku UUID positives, Cyrillic `о` being correctly normalized to `o` and routed as `gho_`, and a Stripe chunk-boundary "near miss" whose length still satisfies the shipped Stripe detector.
+
+## Executed Patch Set: GPU MoE Readback Deadline
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: removed an unbounded GPU readback wait from the MoE confidence path so one stalled callback cannot pin a scan worker forever.
+- UTILIZATION: `KEYHOG_GPU_MOE_TIMEOUT_MS` gives operators a bounded runtime knob while keeping the default desktop path GPU-accelerated.
+- AUDIT HUNTS: replaced `device.poll(PollType::Wait)` and `receiver.recv()` with a deadline-bound `PollType::Poll` loop, nonblocking channel checks, and CPU MoE fallback on timeout, disconnect, poll error, or map error.
+- COHERENCE: documented the new env var in the env reference, CLI reference, install docs, performance backlog, and changelog.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests gpu_moe_readback_uses_bounded_polling -- --nocapture`
