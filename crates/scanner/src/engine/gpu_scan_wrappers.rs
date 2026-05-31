@@ -47,7 +47,16 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         backend: ScanBackend,
     ) -> GpuPhase1Output {
-        super::gpu_forced::deny_silent_gpu_degrade(self, backend);
+        self.gpu_degrade_done_with_reason(chunks, backend, None)
+    }
+
+    pub(crate) fn gpu_degrade_done_with_reason(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: ScanBackend,
+        reason: Option<&str>,
+    ) -> GpuPhase1Output {
+        super::gpu_forced::deny_silent_gpu_degrade_with_reason(self, backend, reason);
         GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks))
     }
 }

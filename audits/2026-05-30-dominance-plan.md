@@ -1573,3 +1573,23 @@ Verified gates:
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
 - `tests/integration/entrypoints_check.sh`
 - `bash -n .github/actions/keyhog/run-scan.sh tests/integration/entrypoints_check.sh`
+
+## Executed Patch Set: GPU Degrade Reason Propagation
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- INTROSPECTION: verified crates.io still publishes `vyre` 0.6.1 as the latest release, so the performance lane remains fixing dispatch soundness/fusion against the current API rather than bumping a dependency.
+- COHERENCE: `KEYHOG_REQUIRE_GPU=1` hard-fail output and `backend --self-test` now preserve the concrete degrade reason when the AC path sees degenerate Vyre match triples.
+- AUDIT HUNTS: the red RTX 5090 self-test still identifies the same Vyre CUDA AC corruption class, but the operator-facing warning no longer collapses it into a generic dispatch failure.
+
+Observed commands:
+
+- `cargo search vyre --limit 10`
+- `RUST_LOG=keyhog::routing=debug timeout 90s /mnt/FlareTraining/santh-archive/cargo-target/debug/keyhog backend --self-test`
+
+Verified gates:
+
+- `cargo build -p keyhog`
+- `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`

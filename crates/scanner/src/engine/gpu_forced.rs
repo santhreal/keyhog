@@ -78,6 +78,14 @@ pub fn gpu_forced_unavailable_message(
 /// KEYHOG_NO_GPU=1 to silence the warning, or KEYHOG_REQUIRE_GPU=1
 /// to exit (2) instead.
 pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
+    deny_silent_gpu_degrade_with_reason(scanner, backend, None);
+}
+
+pub fn deny_silent_gpu_degrade_with_reason(
+    scanner: &CompiledScanner,
+    backend: ScanBackend,
+    reason: Option<&str>,
+) {
     if let Some(msg) = gpu_forced_unavailable_message(scanner, backend) {
         eprintln!("keyhog: {msg}");
         std::process::exit(2);
@@ -87,26 +95,44 @@ pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) 
     }
     let (no_gpu, require_gpu) = cached_gpu_env_flags();
     if require_gpu {
-        eprintln!(
-            "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU dispatch failed at runtime \
+        if let Some(reason) = reason {
+            eprintln!(
+                "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU dispatch failed at runtime \
+({reason}) (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
+                scanner.gpu_literals.is_some(),
+                scanner.gpu_backend.is_some(),
+                scanner.gpu_matcher().is_some(),
+            );
+        } else {
+            eprintln!(
+                "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU dispatch failed at runtime \
 (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
-            scanner.gpu_literals.is_some(),
-            scanner.gpu_backend.is_some(),
-            scanner.gpu_matcher().is_some(),
-        );
+                scanner.gpu_literals.is_some(),
+                scanner.gpu_backend.is_some(),
+                scanner.gpu_matcher().is_some(),
+            );
+        }
         std::process::exit(2);
     }
     if no_gpu {
         return;
     }
     if RUNTIME_DEGRADE_WARNED.set(()).is_ok() {
-        eprintln!(
-            "keyhog: GPU dispatch failed at runtime; this scan and any subsequent \
+        if let Some(reason) = reason {
+            eprintln!(
+                "keyhog: GPU dispatch failed at runtime ({reason}); this scan and any subsequent \
+ones in this process degrade to CPU/SIMD. Set KEYHOG_NO_GPU=1 to silence, or \
+KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+            );
+        } else {
+            eprintln!(
+                "keyhog: GPU dispatch failed at runtime; this scan and any subsequent \
 ones in this process degrade to CPU/SIMD. Often a transient driver issue or a \
 program the GPU lowering pipeline rejects (check the preceding tracing::error \
 line for the underlying message). Set KEYHOG_NO_GPU=1 to silence, or \
 KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
-        );
+            );
+        }
     }
 }
 
