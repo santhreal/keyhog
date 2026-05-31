@@ -43,6 +43,7 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         "json",
         "--show-secrets",
         "--no-suppress-test-fixtures",
+        "--no-daemon",
     ]);
     cmd.env("KEYHOG_BACKEND", backend);
     if no_gpu {
@@ -108,6 +109,42 @@ fn gpu_and_simd_return_identical_findings() {
         gpu, simd,
         "GPU and SIMD finding sets diverge (gpu_parity).\n  in SIMD not GPU: {:?}\n  in GPU not SIMD: {:?}",
         simd.difference(&gpu).collect::<Vec<_>>(),
+        gpu.difference(&simd).collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn gpu_does_not_add_decoded_license_key_false_positive() {
+    let dir = std::env::temp_dir().join(format!("kh-gpu-fp-parity-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mk tmp dir");
+    let file = dir.join("mirror-neg-0009383.yaml");
+    std::fs::write(
+        &file,
+        concat!(
+            "apiVersion: v1\n",
+            "kind: Secret\n",
+            "metadata:\n",
+            "  name: token-secret\n",
+            "type: Opaque\n",
+            "data:\n",
+            "  token: Slc1VUstVE1aSTItV0lDREMtVDAwN00tSUFWT1A=\n",
+        ),
+    )
+    .expect("write fixture");
+    let path = file.to_str().unwrap();
+
+    let simd = findings(path, "simd", true);
+    let gpu = findings(path, "gpu", false);
+
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        simd.is_empty(),
+        "fixture should remain clean on the SIMD coalesced path, got {simd:?}"
+    );
+    assert_eq!(
+        gpu, simd,
+        "GPU added decoded false positives absent from SIMD.\n  in GPU not SIMD: {:?}",
         gpu.difference(&simd).collect::<Vec<_>>(),
     );
 }

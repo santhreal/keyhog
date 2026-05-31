@@ -231,11 +231,9 @@ pub(super) fn push_decoded_text_chunk_spliced(
     // occurrence so the companion context survives. Cap the splice
     // path on chunk size so a multi-MB parent doesn't blow memory.
     const MAX_SPLICE_PARENT_BYTES: usize = 256 * 1024;
-    let payload = if !original_encoded.is_empty()
-        && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES
-        && chunk.data.as_str().contains(original_encoded)
-    {
-        chunk.data.as_str().replacen(original_encoded, &text, 1)
+    let payload = if !original_encoded.is_empty() && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES {
+        splice_decoded_payload(chunk.data.as_str(), original_encoded, &text, decoder_name)
+            .unwrap_or(text)
     } else {
         text
     };
@@ -267,6 +265,40 @@ pub(super) fn push_decoded_text_chunk_spliced(
             size_bytes: chunk.metadata.size_bytes,
         },
     });
+}
+
+fn splice_decoded_payload(
+    parent: &str,
+    original_encoded: &str,
+    decoded_text: &str,
+    decoder_name: &str,
+) -> Option<String> {
+    let start = parent.find(original_encoded)?;
+    let mut end = start + original_encoded.len();
+
+    if decoder_name == "base64" {
+        end = consume_adjacent_base64_padding(parent.as_bytes(), end);
+    }
+
+    let mut payload = String::with_capacity(parent.len() - (end - start) + decoded_text.len());
+    payload.push_str(&parent[..start]);
+    payload.push_str(decoded_text);
+    payload.push_str(&parent[end..]);
+    Some(payload)
+}
+
+fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {
+    let mut end = start;
+    while end < parent.len() && parent[end] == b'=' && end - start < 2 {
+        end += 1;
+    }
+    if end == start {
+        return start;
+    }
+    match parent.get(end).copied() {
+        None | Some(b'\n' | b'\r' | b'\t' | b' ' | b';' | b',' | b'"' | b'\'' | b'`') => end,
+        _ => start,
+    }
 }
 
 pub(super) fn decode_candidates<F>(
