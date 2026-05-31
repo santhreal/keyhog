@@ -25,6 +25,29 @@ pub fn explicit_backend_override() -> Option<keyhog_scanner::hw_probe::ScanBacke
     keyhog_scanner::hw_probe::forced_backend_from_env_uncached()
 }
 
+fn backend_requires_legacy_gpu_pipeline(
+    explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
+) -> bool {
+    match explicit {
+        Some(keyhog_scanner::hw_probe::ScanBackend::Gpu)
+        | Some(keyhog_scanner::hw_probe::ScanBackend::MegaScan) => true,
+        Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)
+        | Some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback) => false,
+        // `ScanBackend` is #[non_exhaustive]: an unknown future backend stays
+        // on the legacy pipeline, which auto-routes/handles every backend,
+        // rather than silently forcing the CPU fused path.
+        Some(_) => true,
+        None => false,
+    }
+}
+
+#[doc(hidden)]
+pub fn backend_requires_legacy_gpu_pipeline_for_test(
+    explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
+) -> bool {
+    backend_requires_legacy_gpu_pipeline(explicit)
+}
+
 impl ScanOrchestrator {
     pub(crate) fn scan_sources(
         &self,
@@ -473,10 +496,16 @@ impl ScanOrchestrator {
 
     /// Decide whether a scan runs on the fused parallel read+scan path.
     ///
-    /// Engaged only for the CPU/SIMD backend on filesystem sources:
-    /// * **GPU** (forced, or auto-selected on a real GPU host) keeps the
-    ///   coalesced per-batch pipeline so `gpu_parity` and the large-buffer
-    ///   dispatch are untouched.
+    /// Engaged for filesystem sources unless the operator explicitly forced a
+    /// GPU backend:
+    /// * **GPU/MegaScan forced by the user** keeps the coalesced per-batch
+    ///   pipeline so `gpu_parity` and the large-buffer dispatch are untouched.
+    ///   Default/auto filesystem scans stay fused on GPU hosts because the
+    ///   current filesystem source emits ordinary files in 1 MiB windows while
+    ///   high-tier GPU routing has a 2 MiB per-chunk floor. Treating "GPU
+    ///   available" as "GPU in play" therefore sent CredData-shaped
+    ///   many-file scans through the legacy single scanner-thread funnel even
+    ///   though batch routing selected SIMD anyway.
     /// * **Non-filesystem sources** (git, stdin, docker, ...) may emit
     ///   *gapless* chunks where `scan_chunk_boundaries` is load-bearing; the
     ///   fused path scans each chunk independently and relies on the
@@ -487,20 +516,7 @@ impl ScanOrchestrator {
         if std::env::var_os("KEYHOG_LEGACY_PIPELINE").is_some() {
             return false;
         }
-        let explicit = explicit_backend_override();
-        let hw = keyhog_scanner::hw_probe::probe_hardware();
-        let gpu_in_play = match explicit {
-            Some(keyhog_scanner::hw_probe::ScanBackend::Gpu)
-            | Some(keyhog_scanner::hw_probe::ScanBackend::MegaScan) => true,
-            Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)
-            | Some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback) => false,
-            // `ScanBackend` is #[non_exhaustive]: an unknown future backend
-            // stays on the legacy pipeline (it auto-routes/handles any
-            // backend), rather than silently forcing the CPU fused path.
-            Some(_) => true,
-            None => hw.gpu_available && !hw.gpu_is_software && !keyhog_scanner::gpu::env_no_gpu(),
-        };
-        if gpu_in_play {
+        if backend_requires_legacy_gpu_pipeline(explicit_backend_override()) {
             return false;
         }
         !sources.is_empty()
