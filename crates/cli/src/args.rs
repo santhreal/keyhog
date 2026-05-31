@@ -12,7 +12,7 @@ use std::path::PathBuf;
 #[command(
     name = "keyhog",
     about = "KeyHog: The developer-first secret scanner.\nFind leaked credentials in your code before hackers do. Fast, accurate, and verifying.",
-    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   Runtime error (e.g., config error, unreadable path)\n  3   `detectors --audit` flagged a detector quality issue\n  4   `backend --self-test` failed (GPU/SIMD probe error)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
+    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   Runtime error (e.g., config error, unreadable path)\n  3   System error (local environment failure or detector-corpus audit failure)\n  4   `backend --self-test` failed (GPU/SIMD probe error)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
     disable_version_flag = true
 )]
 pub struct Cli {
@@ -303,7 +303,7 @@ pub struct UninstallArgs {
 #[derive(Parser)]
 pub struct WatchArgs {
     /// Directory to watch recursively. Defaults to the current directory.
-    #[arg(default_value = ".")]
+    #[arg(value_name = "PATH", default_value = ".")]
     pub path: PathBuf,
     /// Detector TOML directory. Falls back to embedded corpus if missing.
     #[arg(short, long, default_value = "detectors")]

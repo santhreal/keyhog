@@ -22,6 +22,9 @@ use anyhow::Result;
 use std::process::ExitCode;
 
 pub fn run(args: DiffArgs) -> Result<ExitCode> {
+    ensure_baseline_input(&args.before)?;
+    ensure_baseline_input(&args.after)?;
+
     let before = Baseline::load(&args.before)?;
     let after = Baseline::load(&args.after)?;
 
@@ -78,6 +81,16 @@ pub fn run(args: DiffArgs) -> Result<ExitCode> {
     } else {
         Ok(ExitCode::from(1))
     }
+}
+
+fn ensure_baseline_input(path: &std::path::Path) -> Result<()> {
+    if path.is_file() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "baseline file {} does not exist or is not a regular file",
+        path.display()
+    );
 }
 
 fn print_human(

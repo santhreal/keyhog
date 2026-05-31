@@ -13,7 +13,8 @@ and prints findings. The exit code carries the verdict:
 |-----------|--------------------------------------------|
 | `0`       | Scan finished, no findings                 |
 | `1`       | Findings present, none confirmed live      |
-| `2`       | Runtime error - bad config, bad path, I/O failure |
+| `2`       | User error - bad config, bad path, unsupported flag |
+| `3`       | System error - local I/O/source failure or detector-corpus audit failure |
 | `10`      | Live credential confirmed under `--verify` |
 | `11`      | Scanner thread panicked; re-run before trusting results |
 

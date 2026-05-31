@@ -1,10 +1,10 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
+use super::ScanOrchestrator;
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{
     dump_dogfood_trace, report_completion_summary, report_oversize_skip_summary,
 };
-use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::orchestrator_config::print_effective_config_if_requested;
 use anyhow::Result;
@@ -18,7 +18,9 @@ pub const EXIT_SCANNER_PANIC: u8 = 11;
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
         let start = Instant::now();
-        let show_progress = std::io::stderr().is_terminal();
+        let stderr_is_tty = std::io::stderr().is_terminal();
+        let show_progress = self.args.progress || stderr_is_tty;
+        let progress_ansi = stderr_is_tty && std::env::var_os("NO_COLOR").is_none();
 
         if self.args.dogfood {
             keyhog_scanner::telemetry::enable_dogfood();
@@ -133,7 +135,7 @@ impl ScanOrchestrator {
         if show_progress {
             let _ = keyhog_core::banner::print_banner(
                 &mut std::io::stderr(),
-                true,
+                progress_ansi,
                 true,
                 self.detectors.len(),
             );
@@ -296,7 +298,7 @@ impl ScanOrchestrator {
 
         let elapsed = start.elapsed().as_secs_f64();
         if show_progress {
-            report_completion_summary(report_findings.len(), elapsed);
+            report_completion_summary(report_findings.len(), elapsed, progress_ansi);
         } else {
             report_oversize_skip_summary();
         }
