@@ -1898,3 +1898,19 @@ Verified gates:
 
 - `bash -n .github/actions/keyhog/run-scan.sh`
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+
+## Executed Patch Set: AC GPU Degrade Reason Completion
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED / UTILIZATION: reran the real RTX 5090 `backend --self-test`; MoE still passes, AC still degrades because Vyre emits degenerate triples, and a probe of CUDA subgroup coalescing still fails neutral lowering on `_vyre_match_leader`.
+- CI UX: AC GPU runtime failures now carry the concrete backend cause into the same operator-visible degrade and `KEYHOG_REQUIRE_GPU=1` hard-fail path, instead of relying on tracing output that many CI jobs do not show.
+- AUDIT HUNTS: batched dispatch errors, per-shard dispatch errors, missing/truncated output buffers, and match-cap overflow all fail closed with specific reasons before CPU/SIMD recall-preserving fallback.
+- TESTING: extended the scanner gap contract so future AC GPU failure branches cannot return a generic degrade warning.
+
+Verified gates:
+
+- `RUST_LOG=keyhog::routing=debug timeout 120s cargo run -p keyhog -- backend --self-test` confirmed the live RTX 5090 path still reports MoE PASS, literal-set KNOWN, and AC FAIL on degenerate triples with the concrete reason in stderr.
+- `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`

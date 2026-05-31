@@ -171,7 +171,12 @@ impl CompiledScanner {
                         shards = sub_end - sub_start,
                         "AC GPU batched dispatch failed, falling back to CPU: {e}"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!("AC GPU batched dispatch failed: {e}");
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
             };
 
@@ -184,7 +189,12 @@ impl CompiledScanner {
                             shard_index = i,
                             "AC GPU shard within batch failed, falling back to CPU: {e}"
                         );
-                        return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                        let reason = format!("AC GPU shard {i} dispatch failed: {e}");
+                        return self.gpu_degrade_done_with_reason(
+                            chunks,
+                            crate::hw_probe::ScanBackend::Gpu,
+                            Some(&reason),
+                        );
                     }
                 };
                 if outputs.len() < 2 {
@@ -193,7 +203,15 @@ impl CompiledScanner {
                         outputs = outputs.len(),
                         "AC GPU shard output buffer count too small; falling back to CPU"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!(
+                        "AC GPU shard {i} returned {} output buffer(s), expected at least 2",
+                        outputs.len()
+                    );
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
                 let count_bytes = &outputs[0];
                 let matches_bytes = &outputs[1];
@@ -202,7 +220,15 @@ impl CompiledScanner {
                         shard_index = i,
                         "AC GPU shard count buffer truncated; falling back to CPU"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!(
+                        "AC GPU shard {i} returned truncated count buffer ({} byte(s), expected 4)",
+                        count_bytes.len()
+                    );
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
                 let count = u32::from_le_bytes([
                     count_bytes[0],
@@ -217,7 +243,15 @@ impl CompiledScanner {
                         shard_index = i,
                         "AC GPU shard exceeded program cap: truncation possible; falling back to CPU"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!(
+                        "AC GPU shard {i} reported {count} matches, exceeding cap {}",
+                        super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH
+                    );
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
                 let shard_matches = vyre_libs::scan::dispatch_io::unpack_match_triples(
                     matches_bytes,
