@@ -74,14 +74,14 @@ pub fn preprocess_multiline(
     let (structural_joined, structural_mappings) =
         collect_structural_fragments(&lines, structural_base, fragment_cache);
 
-    // Defer the full-chunk `text.to_string()` copy until we know there is
+    // Delay the full-chunk `text.to_string()` copy until we know there is
     // actually something to append. When neither a real concatenation join nor
     // a structural fragment was found (the common case for a chunk that merely
     // tripped a concatenation indicator), `final_text` would equal the input
     // verbatim, so we skip pushing `joined_text`/structural segments into a new
     // buffer. The chain `mappings` are still emitted unshifted (matching the
     // original path, which only shifts them when the join is appended) so the
-    // offset→line map is byte-identical to the non-deferred result.
+    // offset→line map is byte-identical to the eager-copy result.
     if !will_append && structural_joined.is_empty() {
         let mut original_mappings = identity_line_mappings(text, original_end);
         original_mappings.extend(mappings);

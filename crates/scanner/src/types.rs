@@ -187,7 +187,7 @@ pub struct LazyRegex {
     /// Detector patterns are case-insensitive + CRLF-aware + size-bounded
     /// (the `shared_regex_compile` build); homoglyph-expanded fallback
     /// variants use plain defaults (the old `Regex::new`). Tracked so the
-    /// deferred build reproduces the exact regex the eager path produced.
+    /// lazy build reproduces the exact regex the eager path produced.
     case_insensitive: bool,
     cell: Arc<std::sync::OnceLock<Arc<Regex>>>,
 }
@@ -286,7 +286,7 @@ pub struct CompiledCompanion {
 }
 
 pub use crate::scanner_config::{ScanState, ScannerConfig};
-// `MlPendingMatch` only exists with the `ml` feature (it is the batch-deferral
+// `MlPendingMatch` only exists with the `ml` feature (it is the batch-queue
 // record); re-export it under the same gate so the lean / `--no-default-features`
 // build resolves the import set instead of failing with E0432.
 #[cfg(feature = "ml")]

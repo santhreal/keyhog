@@ -86,7 +86,7 @@ pub mod unicode_hardening;
 pub(crate) mod util_hash;
 
 /// SHA-256 of a credential as the raw 32 inline bytes - matching
-/// `Finding::credential_hash: [u8; 32]`. Hex encoding is deferred to the
+/// `Finding::credential_hash: [u8; 32]`. Hex encoding happens at the
 /// serde/reporter boundary (`keyhog_core::hex_encode`), keeping the pre-dedup
 /// hot path zero-heap. All `credential_hash:` assignment sites forward this
 /// value straight into the `[u8; 32]` field, so the byte form is required.
