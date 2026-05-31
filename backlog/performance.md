@@ -103,6 +103,53 @@ real tree. Items carry the data that proves them.
   Separately: the `codesandbox-api-token` detector firing on `CSB_`/`csb_`
   enum identifiers is a precision bug (logged to detection.md).
 
+- **PERF-07b · DET-11 · FIXED+VERIFIED 2026-05-31 · GPU MoE used a DIFFERENT
+  activation function than the CPU MoE** — the WGSL shader (`gpu_shader.rs`)
+  applied the true logistic `1/(1+exp(-x))` while the CPU MoE
+  (`ml_scorer::sigmoid`) uses a rational approximation
+  `0.5+0.5*x/(1+|x|)` clamped at ±6. These diverge by up to ~0.05 in the
+  mid-range — far wider than the near-floor band — so the GPU MoE produced
+  systematically different confidences than the benched CPU MoE. Impact: the
+  auto-route default flipped ~80 near-floor findings on the SecretBench mirror
+  vs the SIMD-pinned bench (the swing that forced `KEYHOG_NO_GPU=1` to be
+  pinned for reproducibility), and forced `--backend gpu` on the kernel scored
+  14 vs SIMD's 18. This is the MoE-CONFIDENCE layer, distinct from PERF-07's
+  AC-LITERAL layer. FIX: shader now mirrors the CPU rational sigmoid + clamps
+  (GPU-only change; SIMD/CPU path untouched). GUARDS: `gpu_shader::tests`
+  (asserts the shader uses the rational form, not the logistic; documents the
+  ~0.05 divergence); `score.py` now honors a caller-provided `KEYHOG_NO_GPU`
+  (defaults to deterministic) so the SAME scorer can dogfood the GPU path.
+  VERIFIED: mirror `KEYHOG_NO_GPU=1` and `KEYHOG_NO_GPU=0` now byte-identical
+  (P=0.9207 R=0.8167 F1=0.8656, TP=2450 FP=211 FN=550 both) — the GPU MoE no
+  longer diverges, so "tuned==benched==shipped" holds whichever backend a GPU
+  user's batch routes to. The pin is now determinism-only, not a hidden bug.
+
+- **PERF-07c · FIXED+VERIFIED 2026-05-31 · GPU AC literal automaton produced a
+  DIFFERENT trigger set than the Hyperscan DB (PERF-07 residual)** —
+  discovered by the all-backend kernel dogfood 2026-05-31. With the DET-11
+  sigmoid fixed, forced `--backend gpu` on the kernel still diverged: 14
+  findings vs SIMD 18. Root causes were split across three layers: (1) GPU
+  no-hit chunks skipped active fallback patterns; (2) source/config files such
+  as `Kconfig` and `syscall.tbl` still ran Caesar decode and produced
+  GPU-only decoded false positives once fallback admission was fixed; (3) the
+  CUDA literal-set path can emit impossible `end <= start` triples, which
+  corrupt chunk attribution before phase 2.
+
+  Fixes: GPU no-hit phase 2 now admits chunks with a real active fallback set;
+  GPU phase 2 unions the canonical CPU AC roots before extraction so admitted
+  chunks fail closed against literal-set drift; corrupt GPU AC triples degrade
+  the batch to the SIMD/CPU literal path before attribution; Caesar decode now
+  skips source/config paths lacking ordinary code extensions; decoded-source
+  aliases no longer displace original file locations during dedup.
+
+  Verified: the targeted Linux subset that reproduced PERF-07c now emits
+  byte-identical sorted JSON for forced SIMD and forced GPU:
+  `devcycle-api-credentials` x2, `generic-secret` x1, and
+  `saltstack-credentials` x2. The former `azure-container-registry-token`
+  miss was a SIMD false positive fixed by the ACR hex-constant suppression;
+  the former `fireworks-ai-api-key` and `github-oauth-access-token` GPU extras
+  were Caesar decode false positives on source/config paths.
+
 ## Parallelism
 
 - **PERF-08 · HIGH · kernel scan is matching-bound + only ~4 of 16 cores hot
