@@ -9,7 +9,14 @@ import pathlib
 from . import hardware
 from .analyze import analyze as analyze_examples, print_report
 from .leaderboard import run_leaderboard
-from .report import build_sections, inject, load_results, write_reports
+from .report import (
+    build_sections,
+    inject,
+    load_results,
+    render_calibration,
+    write_calibration_reports,
+    write_reports,
+)
 from .runner import resolve_corpus_with_root, run_once, write_result
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -78,6 +85,41 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _calibrate(args: argparse.Namespace) -> int:
+    import sys
+
+    from .scanners import resolve_scanner
+    from .score import score
+
+    corpus = resolve_corpus_with_root(args.corpus, args.corpus_root)
+    records = corpus.records()
+    if not records:
+        raise SystemExit(f"corpus {args.corpus!r} is unlabeled — calibration needs labels")
+    scanner = resolve_scanner(args.scanner, binary=args.scanner_bin)
+    if not scanner.available():
+        raise SystemExit(f"{args.scanner} binary not found: {scanner.binary}")
+
+    findings, _stats = scanner.run(corpus.scan_root, scanner.default_config())
+    detection = score(records, findings, corpus.file_root)
+    positives = corpus.info().labeled_positives
+
+    written = write_calibration_reports(
+        detection, args.corpus, positives, args.reports)
+    print(f"{args.scanner} on {args.corpus}: "
+          f"{len(detection.per_detector)} detectors fired, "
+          f"overall P={detection.overall.precision():.4f} "
+          f"R={detection.overall.recall():.4f} "
+          f"F1={detection.overall.f1():.4f}", file=sys.stderr)
+    print(render_calibration(detection), file=sys.stderr)
+    for name, path in written.items():
+        print(f"wrote {path}", file=sys.stderr)
+    if args.emit_toml:
+        emit = pathlib.Path(args.emit_toml)
+        emit.write_text(written["calibration.toml"].read_text())
+        print(f"wrote overlay {emit}", file=sys.stderr)
+    return 0
+
+
 def _analyze(args: argparse.Namespace) -> int:
     import sys
     report = analyze_examples(
@@ -130,6 +172,17 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--check", action="store_true",
                         help="Exit 1 if --inject would change the README (idempotence gate).")
 
+    calibrate = sub.add_parser(
+        "calibrate",
+        help="Per-detector P/R/F1 + measured min_confidence floor recommendations.")
+    calibrate.add_argument("--scanner", default="keyhog")
+    calibrate.add_argument("--corpus", default="mirror")
+    calibrate.add_argument("--scanner-bin", default=None)
+    calibrate.add_argument("--corpus-root", default=None)
+    calibrate.add_argument("--reports", type=pathlib.Path, default=pathlib.Path("reports"))
+    calibrate.add_argument("--emit-toml", default=None,
+                           help="Also write the lossless min_confidence overlay here.")
+
     analyze = sub.add_parser("analyze", help="Mine FP/FN examples for a scanner and corpus.")
     analyze.add_argument("--scanner", default="keyhog")
     analyze.add_argument("--corpus", default="mirror")
@@ -148,6 +201,8 @@ def main(argv: list[str] | None = None) -> int:
         return _leaderboard(args)
     if args.cmd == "report":
         return _report(args)
+    if args.cmd == "calibrate":
+        return _calibrate(args)
     if args.cmd == "analyze":
         return _analyze(args)
     parser.error(f"unknown command {args.cmd}")

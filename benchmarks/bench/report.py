@@ -22,7 +22,7 @@ import json
 import pathlib
 import sys
 
-from .schema import RunResult
+from .schema import Detection, RunResult
 
 _BENCH_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _REPO_ROOT = _BENCH_ROOT.parent
@@ -178,6 +178,89 @@ def render_gaps(results: list[RunResult], corpus: str) -> str:
         "|---|---|---|---|---|",
         *out_lines,
     ])
+
+
+# -- per-detector calibration -------------------------------------------
+
+
+def render_per_detector(detection: Detection, corpus_positives: int,
+                        top: int | None = None) -> str:
+    """Per-detector precision/recall + the measured ``min_confidence`` floor.
+
+    One row per detector that fired, FP-heavy first — the tuning worklist:
+    a low-precision, high-FP detector with a non-zero lossless floor is a
+    free precision win; a high ``unique_tp`` detector is recall-critical and
+    must be tuned carefully. ``RecallShare`` is the fraction of the corpus's
+    positives this detector *alone* accounts for.
+    """
+    from .calibrate import recommend_all
+
+    recs = recommend_all(detection.per_detector)
+    if not recs:
+        return "_No keyhog detectors fired (per-detector stats require a " \
+               "keyhog run that emits confidence)._"
+    if top:
+        recs = recs[:top]
+    lines = [
+        "| Detector | TP | FP | Precision | UniqueTP | RecallShare | "
+        "Lossless floor | FP cut | F1 floor | F1 P |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for r in recs:
+        share = (r.unique_tp / corpus_positives) if corpus_positives else 0.0
+        lossless = f"**{r.lossless_floor:.2f}**" if r.actionable else f"{r.lossless_floor:.2f}"
+        lines.append(
+            f"| `{r.detector_id}` | {r.tp} | {r.fp} | {r.current_precision:.3f} | "
+            f"{r.unique_tp} | {share:.3f} | {lossless} | "
+            f"{r.lossless_fp_cut} | {r.f1_floor:.2f} | {r.f1_precision:.3f} |"
+        )
+    return "\n".join(lines)
+
+
+def render_calibration(detection: Detection) -> str:
+    """The actionable lossless floor bumps, as a summary table."""
+    from .calibrate import actionable, recommend_all
+
+    wins = actionable(recommend_all(detection.per_detector))
+    if not wins:
+        return "_No lossless `min_confidence` bumps available on this corpus._"
+    total_fp_cut = sum(r.lossless_fp_cut for r in wins)
+    lines = [
+        f"{len(wins)} detector(s) can losslessly cut **{total_fp_cut}** false "
+        f"positive(s) — each floor below removes ≥1 FP and loses 0 TP on this corpus.",
+        "",
+        "| Detector | Current P | FP | Recommended floor | FP cut |",
+        "|---|---|---|---|---|",
+    ]
+    for r in wins:
+        lines.append(
+            f"| `{r.detector_id}` | {r.current_precision:.3f} | {r.fp} | "
+            f"**{r.lossless_floor:.2f}** | {r.lossless_fp_cut} |"
+        )
+    return "\n".join(lines)
+
+
+def write_calibration_reports(detection: Detection, corpus: str,
+                              corpus_positives: int,
+                              reports_dir: pathlib.Path) -> dict[str, pathlib.Path]:
+    """Write ``per_detector.md`` + ``calibration.md`` + ``calibration.toml``."""
+    from .calibrate import recommend_all, to_toml_overlay
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    per_det = f"# Per-detector scoring — {corpus}\n\n" \
+              f"{render_per_detector(detection, corpus_positives)}\n"
+    calib = f"# min_confidence calibration — {corpus}\n\n" \
+            f"{render_calibration(detection)}\n"
+    overlay = to_toml_overlay(recommend_all(detection.per_detector))
+    written = {
+        "per_detector.md": reports_dir / "per_detector.md",
+        "calibration.md": reports_dir / "calibration.md",
+        "calibration.toml": reports_dir / "calibration.toml",
+    }
+    written["per_detector.md"].write_text(per_det)
+    written["calibration.md"].write_text(calib)
+    written["calibration.toml"].write_text(overlay)
+    return written
 
 
 # -- injection ----------------------------------------------------------

@@ -21,6 +21,26 @@ from dataclasses import asdict, dataclass, field
 
 from . import SCHEMA_VERSION
 
+# ── confidence histogram resolution ───────────────────────────────────
+# Per-detector findings are bucketed into CONF_BINS bins of width
+# CONF_BIN_WIDTH over [0, 1]. 0.05 is the min_confidence tuning resolution
+# keyhog detectors are configured at (TOML floors are 2-decimal: 0.40,
+# 0.60, …), so a bin maps 1:1 onto a settable floor. Bin ``k`` covers
+# ``[k*0.05, (k+1)*0.05)``; a min_confidence threshold of ``k*0.05`` drops
+# exactly bins ``0..k-1``.
+CONF_BINS = 20
+CONF_BIN_WIDTH = 1.0 / CONF_BINS
+
+
+def conf_bin(confidence: float) -> int:
+    """Bucket a confidence in [0, 1] into ``[0, CONF_BINS-1]`` (clamped)."""
+    idx = int(confidence / CONF_BIN_WIDTH)
+    if idx < 0:
+        return 0
+    if idx >= CONF_BINS:
+        return CONF_BINS - 1
+    return idx
+
 
 # ── detection: the SecretBench-paper confusion-matrix arithmetic ──────
 # Ported verbatim from tools/secretbench/scoring/score.py::Outcome so the
@@ -64,6 +84,75 @@ class Outcome:
 
 
 @dataclass
+class DetectorStat:
+    """Per-detector confusion stats + confidence histograms, the signal the
+    per-detector ``min_confidence`` tuning loop consumes.
+
+    * ``tp`` — labeled positive *records* this detector caught (deduped per
+      record, matching the overall scorer's record-counting TP semantics).
+    * ``fp`` — false-firing *findings* attributed to this detector.
+    * ``unique_tp`` — positives that **only** this detector caught; raising
+      its floor risks losing exactly these, so this is the recall-criticality
+      that gates a safe threshold bump.
+    * ``tp_hist`` / ``fp_hist`` — :data:`CONF_BINS`-bin confidence histograms
+      of the detector's TP and FP findings. A TP record is binned at the max
+      confidence among the findings that caught it. These let
+      :mod:`bench.calibrate` compute the floor that drops FPs without losing
+      TPs — without persisting every raw finding.
+
+    Precision is exact (TP/FP are both counts of the detector's own output);
+    recall is corpus-relative (``unique_tp`` / corpus positives) and computed
+    by the report, which knows the corpus total.
+    """
+
+    tp: int = 0
+    fp: int = 0
+    unique_tp: int = 0
+    tp_hist: list[int] = field(default_factory=lambda: [0] * CONF_BINS)
+    fp_hist: list[int] = field(default_factory=lambda: [0] * CONF_BINS)
+
+    def precision(self) -> float:
+        d = self.tp + self.fp
+        return self.tp / d if d else 0.0
+
+    def add_tp(self, confidence: float | None) -> None:
+        self.tp += 1
+        if confidence is not None:
+            self.tp_hist[conf_bin(confidence)] += 1
+
+    def add_fp(self, confidence: float | None) -> None:
+        self.fp += 1
+        if confidence is not None:
+            self.fp_hist[conf_bin(confidence)] += 1
+
+    def to_json(self) -> dict:
+        return {
+            "tp": self.tp,
+            "fp": self.fp,
+            "unique_tp": self.unique_tp,
+            "precision": round(self.precision(), 4),
+            "tp_hist": list(self.tp_hist),
+            "fp_hist": list(self.fp_hist),
+        }
+
+    @classmethod
+    def from_json(cls, d: dict) -> "DetectorStat":
+        def _hist(key: str) -> list[int]:
+            raw = d.get(key) or []
+            hist = [int(x) for x in raw][:CONF_BINS]
+            hist += [0] * (CONF_BINS - len(hist))
+            return hist
+
+        return cls(
+            tp=int(d.get("tp", 0)),
+            fp=int(d.get("fp", 0)),
+            unique_tp=int(d.get("unique_tp", 0)),
+            tp_hist=_hist("tp_hist"),
+            fp_hist=_hist("fp_hist"),
+        )
+
+
+@dataclass
 class Detection:
     """Overall + per-category confusion matrices for a labeled corpus.
 
@@ -74,11 +163,15 @@ class Detection:
 
     overall: Outcome = field(default_factory=Outcome)
     per_category: dict[str, Outcome] = field(default_factory=dict)
+    per_detector: dict[str, DetectorStat] = field(default_factory=dict)
 
     def to_json(self) -> dict:
         return {
             "overall": self.overall.to_json(),
             "per_category": {c: o.to_json() for c, o in sorted(self.per_category.items())},
+            "per_detector": {
+                d: s.to_json() for d, s in sorted(self.per_detector.items())
+            },
         }
 
     @classmethod
@@ -87,6 +180,10 @@ class Detection:
             overall=Outcome.from_json(d.get("overall", {})),
             per_category={
                 c: Outcome.from_json(o) for c, o in (d.get("per_category") or {}).items()
+            },
+            per_detector={
+                det: DetectorStat.from_json(s)
+                for det, s in (d.get("per_detector") or {}).items()
             },
         )
 

@@ -63,6 +63,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Refresh the committed mirror benchmark README/report timing and RSS values from the current KeyHog run.
 - Refresh the committed benchmark perf tables so the CredData result artifacts appear in README and `benchmarks/reports/perf.md` instead of leaving the report-check gate stale.
 - Make `python -m bench report --check` read-only and compare generated report files as well as README injection markers, so the CI gate proves report freshness instead of silently formatting tracked reports.
+- Add per-detector benchmark confidence histograms plus `python -m bench calibrate`, producing measured `min_confidence` floor reports and TOML overlays for lossless false-positive cuts on labeled corpora.
 - Add competitor overall precision to the per-category benchmark gap table so recall-only category wins expose their cross-category false-positive cost.
 - Probe for actual GNU `time` support before wrapping benchmark subprocesses, so BSD/macOS `/usr/bin/time` falls back to `resource.getrusage` instead of breaking scanner runs.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
