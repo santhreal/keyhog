@@ -17,6 +17,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Remove the per-candidate ASCII lowercase allocation from ML file-type feature extraction by using the shared byte-level case-insensitive matcher for static context markers.
 - Skip eager CUDA/wgpu acquisition when the CLI route is explicitly CPU/SIMD or when default/auto filesystem scans will run through the fused CPU/SIMD pipeline. Explicit `--backend gpu`/`--backend megascan` still forces GPU initialization.
 - Remove an unconditional 16-match vector reserve from the no-Hyperscan-hit fallback path; chunks that pass fallback plausibility gates but produce no matches now stay allocation-free until reassembly has real work.
+- Increase fused filesystem coalesced batches from 16 to 32 chunks after same-host CredData measurement showed better nested phase amortization without the RSS regression seen at 64 chunks.
+- Warm runtime regexes used by generic-assignment fallback, multiline reassembly, shared assignment parsing, and Slack checksum validation during the existing scanner warm-up instead of compiling them inside scan workers on the first matching batch.
 
 ### Detection
 

@@ -19,3 +19,7 @@ use std::sync::LazyLock;
 pub(crate) static ASSIGN_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(r#"(?i)([a-z0-9_-]{2,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_-]{4,})["'`](?:;|,)?$"#).ok()
 });
+
+pub(crate) fn warm_runtime_regexes() {
+    let _ = ASSIGN_RE.as_ref();
+}

@@ -3,6 +3,24 @@ use super::preprocessor::extract_prefix;
 use crate::fragment_cache::FragmentCache;
 use crate::shared_regexes::ASSIGN_RE;
 use regex::Regex;
+use std::sync::LazyLock;
+
+static CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*([a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8})\s*;?\s*$"#,
+    )
+    .ok()
+});
+
+static TVAR_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#)
+        .ok()
+});
+
+pub(super) fn warm_runtime_regexes() {
+    let _ = CONCAT_RE.as_ref();
+    let _ = TVAR_RE.as_ref();
+}
 
 pub(super) fn collect_structural_fragments(
     lines: &[&str],
@@ -167,12 +185,6 @@ fn resolve_concat_reference(
     line: &str,
     var_values: &std::collections::HashMap<String, (usize, String)>,
 ) -> Option<String> {
-    static CONCAT_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
-        Regex::new(
-            r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*([a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8})\s*;?\s*$"#,
-        )
-        .ok()
-    });
     let re = CONCAT_RE.as_ref()?;
     let caps = re.captures(line)?;
     let rhs = caps.get(1)?.as_str();
@@ -253,12 +265,6 @@ fn resolve_template_reference(
 /// frequently terse (`${a}`). Only built when the `}${` concat signal is
 /// present, so the extra regex never runs on ordinary code.
 fn collect_template_vars(lines: &[&str]) -> std::collections::HashMap<String, String> {
-    static TVAR_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
-        Regex::new(
-            r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#,
-        )
-        .ok()
-    });
     let mut map = std::collections::HashMap::new();
     if let Some(re) = TVAR_RE.as_ref() {
         for line in lines {
