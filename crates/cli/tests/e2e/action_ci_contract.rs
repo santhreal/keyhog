@@ -29,6 +29,13 @@ fn release_workflow() -> PathBuf {
         .expect("release.yml exists")
 }
 
+fn keyhog_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/keyhog.yml")
+        .canonicalize()
+        .expect("keyhog.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -574,6 +581,66 @@ fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     assert!(
         manifest.contains("Invalid findings output."),
         "fail step should still explain invalid findings output"
+    );
+}
+
+#[test]
+fn composite_action_verifies_downloaded_release_asset() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        manifest.contains("Install Vectorscan/Hyperscan runtime (Linux prebuilt)"),
+        "Linux release binary path must install the runtime library it links against"
+    );
+    assert!(
+        manifest.contains("libhyperscan5"),
+        "Linux prebuilt path must install libhyperscan5 before executing the release asset"
+    );
+    assert!(
+        manifest.contains("curl -fL --retry 2 \"$url.sha256\""),
+        "prebuilt download must fetch the matching release checksum"
+    );
+    assert!(
+        manifest.contains("sha256sum -c \"$asset.sha256\"")
+            || manifest.contains("shasum -a 256 -c \"$asset.sha256\""),
+        "prebuilt download must verify the checksum before adding keyhog to PATH"
+    );
+    assert!(
+        manifest.contains("Release asset or checksum missing"),
+        "missing checksum must fall back to source build instead of running an unchecked binary"
+    );
+}
+
+#[test]
+fn keyhog_workflow_dogfoods_local_composite_action() {
+    let workflow = fs::read_to_string(keyhog_workflow()).expect("read keyhog.yml");
+    assert!(
+        workflow.contains("uses: ./.github/actions/keyhog"),
+        "repo CI must dogfood the bundled composite action, not a divergent inline scanner"
+    );
+    assert!(
+        workflow.contains("fail-on-findings: 'false'"),
+        "repo CI should preserve strict-marker gating while still uploading findings"
+    );
+    assert!(
+        workflow.contains("KEYHOG_FINDINGS: ${{ steps.keyhog.outputs.findings }}"),
+        "strict-marker step must receive action findings through env"
+    );
+    assert!(
+        workflow.contains("KEYHOG_EXIT_CODE: ${{ steps.keyhog.outputs.exit-code }}"),
+        "strict-marker step must receive action exit code through env"
+    );
+
+    let mut offenders = Vec::new();
+    for block in yaml_literal_run_blocks(&workflow) {
+        for line in block.lines() {
+            if line.contains("${{ steps.keyhog.outputs.") {
+                offenders.push(line.trim().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "keyhog workflow shell blocks must receive action outputs through env, not direct interpolation: {offenders:#?}"
     );
 }
 
