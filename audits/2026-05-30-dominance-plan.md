@@ -459,7 +459,7 @@ Competitor best:
 Keyhog current:
 
 - Multiple public/testing hooks and computed states exist; some may be one-path-only.
-- `CsrU32` exists as a hot-path optimization but must be verified as fully adopted or removed.
+- `CsrU32` is now adopted for the scanner hot index maps; continue checking for other half-wired computed state.
 
 Gaps:
 
@@ -1171,6 +1171,21 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests fallback_always_active_sparse -- --nocapture`
+
+## Executed Patch Set: CSR Hot Index Maps
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: `prefix_propagation`, same-prefix siblings, fallback keyword routing, and SIMD Hyperscan dedup maps now use compact CSR storage instead of per-row heap allocations.
+- UTILIZATION: the previously half-wired `CsrU32` hot-path optimization is now adopted by scanner state rather than sitting as dead internal code.
+- ARCHITECTURE: scanner index-map storage is now one primitive with one row lookup contract, while external compiler builders can keep returning ordinary `Vec<Vec<usize>>`.
+- TESTING: added a gap gate that locks the hot maps to `CsrU32` and rejects nested `Vec<Vec<usize>>` regression.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests csr_hot_maps_adopted -- --nocapture`
 
 ## Executed Patch Set: GPU MoE Readback Deadline
 

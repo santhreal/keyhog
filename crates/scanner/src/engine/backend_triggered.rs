@@ -171,7 +171,10 @@ impl CompiledScanner {
                 };
                 if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
                     for &pattern_index in original_indices {
-                        self.mark_triggered_pattern(&mut triggered_patterns, pattern_index);
+                        self.mark_triggered_pattern(
+                            &mut triggered_patterns,
+                            pattern_index as usize,
+                        );
                     }
                 }
             }
@@ -204,8 +207,9 @@ impl CompiledScanner {
             return;
         }
         triggered_patterns[pattern_index / 64] |= 1u64 << (pattern_index % 64);
-        if pattern_index < self.prefix_propagation.len() {
-            for &propagated_index in &self.prefix_propagation[pattern_index] {
+        if let Some(propagated_indices) = self.prefix_propagation.get(pattern_index) {
+            for &propagated_index in propagated_indices {
+                let propagated_index = propagated_index as usize;
                 if propagated_index / 64 < triggered_patterns.len() {
                     triggered_patterns[propagated_index / 64] |= 1u64 << (propagated_index % 64);
                 }

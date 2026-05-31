@@ -133,8 +133,8 @@ pub enum MlScoreResult<'a> {
 /// zero data bytes instead of a header, element width halves to `u32`, and
 /// lookups are contiguous. Build it once from the existing
 /// `Vec<Vec<usize>>`-producing builders via `From` (or directly with
-/// `from_rows`); reads go through [`CsrU32::get`] / [`CsrU32::row`] /
-/// [`CsrU32::len`], mirroring the slice/`Vec` API the old field type exposed.
+/// `from_rows`); reads go through [`CsrU32::get`], mirroring the slice/`Vec`
+/// API the old field type exposed.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CsrU32 {
     /// All rows concatenated, in row order.
@@ -167,18 +167,6 @@ impl CsrU32 {
         Self { data, offsets }
     }
 
-    /// Number of rows (parallel to the literal/pattern table it indexes).
-    #[inline]
-    pub(crate) fn len(&self) -> usize {
-        self.offsets.len().saturating_sub(1)
-    }
-
-    /// True when the table has no rows.
-    #[inline]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Row `i` as a contiguous slice, or `None` when `i` is out of range.
     /// Replaces `Vec::get(i) -> Option<&Vec<usize>>` on the hot lookup path.
     #[inline]
@@ -186,14 +174,6 @@ impl CsrU32 {
         let start = *self.offsets.get(i)? as usize;
         let end = *self.offsets.get(i + 1)? as usize;
         Some(&self.data[start..end])
-    }
-
-    /// Row `i` as a slice, returning an empty slice when out of range.
-    /// Convenience for call sites that already bounds-checked against
-    /// [`CsrU32::len`] and previously wrote `table[i].as_slice()`.
-    #[inline]
-    pub(crate) fn row(&self, i: usize) -> &[u32] {
-        self.get(i).unwrap_or(&[])
     }
 }
 
@@ -238,18 +218,18 @@ pub struct CompiledScanner {
     pub(crate) fused_decode_programs: OnceLock<Option<gpu_decode_scan::FusedDecodeScanPrograms>>,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     pub(crate) ac_map: Vec<CompiledPattern>,
-    pub(crate) prefix_propagation: Vec<Vec<usize>>,
+    pub(crate) prefix_propagation: CsrU32,
     pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
     pub(crate) detectors: Vec<DetectorSpec>,
-    pub(crate) same_prefix_patterns: Vec<Vec<usize>>,
+    pub(crate) same_prefix_patterns: CsrU32,
     pub(crate) fallback_keyword_ac: Option<AhoCorasick>,
-    pub(crate) fallback_keyword_to_patterns: Vec<Vec<usize>>,
+    pub(crate) fallback_keyword_to_patterns: CsrU32,
     pub(crate) fallback_always_active_indices: Vec<usize>,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]
-    pub(crate) hs_index_map: Vec<Vec<usize>>,
+    pub(crate) hs_index_map: CsrU32,
     /// Precise-regex validator per hot-pattern slot (index-parallel with
     /// `simdsieve_prefilter::HOT_PATTERNS`). The hot fast-path runs each
     /// literal-prefix candidate through these before emitting so it can never

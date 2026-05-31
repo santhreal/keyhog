@@ -158,7 +158,7 @@ impl CompiledScanner {
                 let keyword_idx = mat.pattern().as_usize();
                 if let Some(pattern_indices) = self.fallback_keyword_to_patterns.get(keyword_idx) {
                     for &pattern_idx in pattern_indices {
-                        scratch.mark(pattern_idx);
+                        scratch.mark(pattern_idx as usize);
                     }
                 }
             }

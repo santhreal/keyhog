@@ -107,8 +107,8 @@ impl CompiledScanner {
             let _ = gpu_disabled;
             (None, None)
         };
-        let prefix_propagation = build_prefix_propagation(&state.ac_literals);
-        let same_prefix_patterns = build_same_prefix_patterns(&state.ac_literals);
+        let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
+        let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
         // Build the Hyperscan scanner BEFORE the keyword fallback so we
         // learn which ac_map patterns Hyperscan rejected (over-long, or an
@@ -130,13 +130,14 @@ impl CompiledScanner {
                         let keywords = detectors[pattern.detector_index].keywords.clone();
                         state.fallback.push((pattern, keywords));
                     }
-                    (Some(scanner), index_map)
+                    (Some(scanner), CsrU32::from(index_map))
                 }
-                None => (None, Vec::new()),
+                None => (None, CsrU32::default()),
             };
 
         let (fallback_keyword_ac, fallback_keyword_to_patterns) =
             build_fallback_keyword_ac(&state.fallback);
+        let fallback_keyword_to_patterns = CsrU32::from(fallback_keyword_to_patterns);
         // Precompute always-active fallback indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full fallback table.
         let fallback_always_active_indices: Vec<usize> = state
