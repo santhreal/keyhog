@@ -13,16 +13,20 @@ def test_keyhog_normalizer_reads_json_array_shape():
         {
             "detector_id": "github-classic-pat",
             "credential_redacted": "ghp_secret",
+            "confidence": 0.87,
             "location": {"file_path": "secret.env", "line": 4},
         }
     ]
 
+    # confidence rides along (the calibration loop's tuning signal); absent
+    # confidence normalises to None, exercised in the additional-locations test.
     assert scanners._normalize_keyhog(data) == [
         {
             "file": "secret.env",
             "line": 4,
             "value": "ghp_secret",
             "detector": "github-classic-pat",
+            "confidence": 0.87,
         }
     ]
 
@@ -46,18 +50,21 @@ def test_keyhog_normalizer_scores_additional_locations_as_findings():
             "line": 1,
             "value": "-----BEGIN EC PRIVATE KEY-----",
             "detector": "ssh-private-key",
+            "confidence": None,
         },
         {
             "file": "alias.pem",
             "line": 1,
             "value": "-----BEGIN EC PRIVATE KEY-----",
             "detector": "ssh-private-key",
+            "confidence": None,
         },
         {
             "file": "legacy-path.pem",
             "line": 2,
             "value": "-----BEGIN EC PRIVATE KEY-----",
             "detector": "ssh-private-key",
+            "confidence": None,
         },
     ]
 

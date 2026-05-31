@@ -91,6 +91,7 @@ def _normalize_keyhog(data: object) -> list[Finding]:
             continue
         value = finding.get("credential_redacted") or finding.get("credential") or ""
         detector = finding.get("detector_id") or finding.get("detector_name") or ""
+        confidence = finding.get("confidence")
 
         locations = []
         loc = finding.get("location")
@@ -106,6 +107,7 @@ def _normalize_keyhog(data: object) -> list[Finding]:
                 "line": _line(loc.get("line")),
                 "value": value,
                 "detector": detector,
+                "confidence": confidence,
             }
             key = (
                 normalized["file"],

@@ -1,12 +1,15 @@
 from bench.schema import (
+    CONF_BINS,
     CorpusInfo,
     Detection,
+    DetectorStat,
     Host,
     Outcome,
     RunResult,
     Scanner,
     ScannerConfig,
     Speed,
+    conf_bin,
 )
 
 
@@ -33,6 +36,40 @@ def test_run_result_round_trips_losslessly():
     assert decoded.to_json() == encoded
     assert decoded.scanner.config_id == "simd-nocache-nodaemon-full"
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-nodaemon-full.json"
+
+
+def test_per_detector_round_trips_with_histograms():
+    aws = DetectorStat(unique_tp=2)
+    aws.add_tp(0.91)   # tp -> 1
+    aws.add_tp(0.62)   # tp -> 2
+    aws.add_fp(0.41)   # fp -> 1
+    assert aws.tp == 2 and aws.fp == 1  # add_* drives both count and histogram
+    detection = Detection(
+        overall=Outcome(tp=2, fp=1, fn=0),
+        per_detector={"aws-secret-access-key": aws},
+    )
+    result = RunResult(detection=detection)
+
+    encoded = result.to_json()
+    decoded = RunResult.from_json(encoded)
+
+    assert decoded.to_json() == encoded
+    rt = decoded.detection.per_detector["aws-secret-access-key"]
+    assert rt.tp == 2 and rt.fp == 1 and rt.unique_tp == 2
+    assert len(rt.tp_hist) == CONF_BINS and len(rt.fp_hist) == CONF_BINS
+    assert sum(rt.tp_hist) == 2  # two TP findings carried confidence
+    assert sum(rt.fp_hist) == 1
+    assert round(rt.precision(), 4) == 0.6667
+
+
+def test_conf_bin_buckets_and_clamps():
+    assert conf_bin(0.0) == 0
+    assert conf_bin(0.049) == 0
+    assert conf_bin(0.05) == 1
+    assert conf_bin(0.99) == CONF_BINS - 1
+    assert conf_bin(1.0) == CONF_BINS - 1  # clamp, never out of range
+    assert conf_bin(1.7) == CONF_BINS - 1
+    assert conf_bin(-0.3) == 0
 
 
 def test_outcome_metrics_handle_zero_denominators():

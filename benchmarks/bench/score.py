@@ -29,7 +29,7 @@ import pathlib
 from collections import defaultdict
 
 from .corpora.base import LabeledRecord
-from .schema import Detection, Outcome
+from .schema import Detection, DetectorStat, Outcome
 
 # A normalised finding is a plain dict: {file, line, value, detector}.
 Finding = dict
@@ -157,26 +157,49 @@ def _file_category(recs: list[LabeledRecord]) -> str:
 # ── the scorer ─────────────────────────────────────────────────────────
 
 
+def _max_conf(a: float | None, b: float | None) -> float | None:
+    """Carry the higher confidence of two findings that hit the same record;
+    ``None`` (scanner reported no confidence) loses to any real value."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return a if a >= b else b
+
+
 def score(
     records: list[LabeledRecord],
     findings: list[Finding],
     file_root: pathlib.Path,
 ) -> Detection:
-    """Attribute ``findings`` against ground-truth ``records``."""
+    """Attribute ``findings`` against ground-truth ``records``.
+
+    Populates ``per_category`` (taxonomy buckets) and ``per_detector``
+    (keyhog detector id) confusion matrices. Per-detector FP is per-finding;
+    per-detector TP is per-record (deduped), so a detector that fires three
+    times on one secret scores one TP — matching the overall TP semantics.
+    A record's TP confidence is the max over the findings that caught it.
+    """
     det = Detection()
     per_cat: dict[str, Outcome] = defaultdict(Outcome)
+    per_det: dict[str, DetectorStat] = defaultdict(DetectorStat)
 
     by_key, aliases = _build_file_index(records, file_root)
     hit_ids: set[str] = set()
+    # record id -> {detector_id: max confidence of a finding that caught it}
+    record_hits: dict[str, dict[str, float | None]] = defaultdict(dict)
     fp_total = 0
 
     for f in findings:
+        detector = f.get("detector") or ""
+        conf = f.get("confidence")
         fpath = f.get("file") or ""
         key = _resolve_finding_file(fpath, aliases) if fpath else None
         if key is None:
             # Finding on a file with no record at all -> false positive.
             fp_total += 1
             per_cat["unknown"].fp += 1
+            per_det[detector].add_fp(conf)
             continue
         recs = by_key[key]
         value = f.get("value") or ""
@@ -187,6 +210,8 @@ def score(
             if rec.label and not rec.ignore and overlap(value, rec.secret):
                 hit_ids.add(rec.id)
                 matched_positive = True
+                hits = record_hits[rec.id]
+                hits[detector] = _max_conf(hits.get(detector), conf)
         if matched_positive:
             continue
 
@@ -197,6 +222,14 @@ def score(
         # Otherwise: a finding on a known file that hit no positive secret.
         fp_total += 1
         per_cat[_file_category(recs)].fp += 1
+        per_det[detector].add_fp(conf)
+
+    # Per-detector TP + unique_tp, attributed per caught record.
+    for hits in record_hits.values():
+        for detector, conf in hits.items():
+            per_det[detector].add_tp(conf)
+        if len(hits) == 1:
+            per_det[next(iter(hits))].unique_tp += 1
 
     # Credit TP/FN per positive record.
     for rec in records:
@@ -212,4 +245,5 @@ def score(
 
     det.overall.fp = fp_total
     det.per_category = dict(per_cat)
+    det.per_detector = dict(per_det)
     return det
