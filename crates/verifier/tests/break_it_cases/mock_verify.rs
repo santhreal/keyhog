@@ -79,7 +79,7 @@ async fn test_verify_large_payload() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),
@@ -161,7 +161,7 @@ async fn test_verify_malformed_response() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),
@@ -225,7 +225,7 @@ async fn test_verify_zero_concurrency() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -302,7 +302,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: Arc::from("same_secret"),
-            credential_hash: "hash".to_string(),
+            credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,
@@ -368,7 +368,7 @@ async fn test_verify_slow_loris_timeout() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -414,7 +414,7 @@ async fn test_verify_max_inflight_keys() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -520,7 +520,7 @@ async fn verifier_routes_through_configured_proxy() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),

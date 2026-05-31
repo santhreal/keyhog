@@ -73,7 +73,7 @@ async fn test_verify_json_path_exhaustion() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -169,7 +169,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
         service: Arc::from("aws"),
         severity: Severity::Critical,
         credential: Arc::from(""), // empty
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -245,7 +245,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
         service: Arc::from("aws"),
         severity: Severity::Critical,
         credential: Arc::from("AKIA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -317,7 +317,7 @@ async fn test_verify_bad_header_templates() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("val\r\nInjected-Header: 1\r\n\0"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

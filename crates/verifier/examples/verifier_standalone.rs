@@ -26,7 +26,7 @@ async fn main() -> Result<(), keyhog_verifier::VerifyError> {
             service: "demo".into(),
             severity: Severity::High,
             credential: "demo_ABC12345".into(),
-            credential_hash: "hash".into(),
+            credential_hash: [0u8; 32],
             companions: std::collections::HashMap::new(),
             location: MatchLocation {
                 source: "example".into(),

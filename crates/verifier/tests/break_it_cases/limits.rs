@@ -65,7 +65,7 @@ async fn test_verify_long_unicode_surrogates() {
         credential: Arc::from(
             String::from_utf8_lossy(b"secret\xEF\xBF\xBD\xED\xA0\x80\xED\xB0\x80test").into_owned(),
         ),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -135,7 +135,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
                 service: Arc::from("test"),
                 severity: Severity::Critical,
                 credential: Arc::from("secret"),
-                credential_hash: "hash".to_string(),
+                credential_hash: [0u8; 32],
                 primary_location: MatchLocation { source: Arc::from(""), file_path: None, line: None, offset: 0, commit: None, author: None, date: None },
                 additional_locations: vec![],
                 companions: comps,
@@ -193,7 +193,7 @@ async fn test_verify_duplicate_entries_same_key() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: Arc::from("secret"),
-            credential_hash: "hash".to_string(),
+            credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,

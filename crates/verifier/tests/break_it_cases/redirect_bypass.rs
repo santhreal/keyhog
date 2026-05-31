@@ -110,7 +110,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from("test")),
