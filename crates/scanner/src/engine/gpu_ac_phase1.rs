@@ -259,7 +259,11 @@ impl CompiledScanner {
                  emit bug PERF-07c. Degrading this batch to the SIMD/CPU literal \
                  path to preserve recall parity."
             );
-            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU AC emitted degenerate match triples (end <= start); vyre CUDA emit bug PERF-07c"),
+            );
         }
         super::gpu_postprocess::fold_overlapping_same_pid_inplace(&mut matches);
         let total_patterns = self.ac_map.len() + self.fallback.len();

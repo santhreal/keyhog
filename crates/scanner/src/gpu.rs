@@ -345,9 +345,8 @@ literal. Indicates either a phase-1 lowering regression or a workgroup-size mism
             })
         }
         GpuPhase1Output::Done(_) => Err(
-            "AC phase 1 returned Done (CPU fallback) instead of Hits. The GPU AC \
-program, the GPU matcher, or the GPU backend wasn't available at scan time even \
-though compile said one was acquired."
+            "AC phase 1 degraded to SIMD/CPU at runtime despite an acquired GPU stack. \
+Check the preceding keyhog warning for the exact dispatch or match-corruption cause."
                 .to_string(),
         ),
     }
