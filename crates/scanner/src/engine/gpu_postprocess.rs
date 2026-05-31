@@ -17,6 +17,36 @@
 
 use vyre_libs::scan::LiteralMatch;
 
+/// Minimum raw GPU literal/AC hits before the density guard can reroute.
+///
+/// Small synthetic chunks can legitimately have a high hit/byte ratio, but
+/// the absolute work is tiny. The path that hurts production is a large
+/// coalesced batch returning hundreds of thousands of prefix hits, then
+/// phase 2 spending seconds confirming regexes that SIMD would have rejected
+/// as an NFA prefilter.
+pub const DENSE_PHASE2_MIN_HITS: usize = 100_000;
+
+/// If the GPU prefilter returns at least one hit per this many input bytes,
+/// phase 2 is expected to be slower than the SIMD coalesced path.
+pub const DENSE_PHASE2_BYTES_PER_HIT: usize = 128;
+
+/// Large many-file batches with dense literal-prefix output are pathological
+/// for the two-phase literal GPU path: phase 1 is fast, but phase 2 has to
+/// confirm too many broad detector prefixes on CPU. Rerouting that batch
+/// through the existing SIMD coalesced scanner preserves the finding contract
+/// and avoids turning permissive prefixes into thousands of whole-chunk regex
+/// confirmations.
+#[must_use]
+pub fn gpu_phase2_hits_are_dense(
+    match_count: usize,
+    buffer_len: usize,
+    chunk_count: usize,
+) -> bool {
+    match_count >= DENSE_PHASE2_MIN_HITS
+        && chunk_count > 1
+        && match_count.saturating_mul(DENSE_PHASE2_BYTES_PER_HIT) >= buffer_len
+}
+
 /// Sort by `(pid, start, end)`, fold same-pid overlapping spans, then
 /// re-sort by `start`. The downstream chunk-attribution walk expects
 /// matches in start-ascending order; the per-pid fold collapses the

@@ -365,7 +365,7 @@ pub struct DetectorArgs {
     pub detectors: PathBuf,
     /// Filter detectors by substring match (case-insensitive) against id,
     /// name, service, and keywords. Useful for finding detectors in the
-    /// 891-strong corpus (e.g. `keyhog detectors --search aws`).
+    /// 894-strong corpus (e.g. `keyhog detectors --search aws`).
     #[arg(short, long)]
     pub search: Option<String>,
     /// Print full detector spec (regex, prefixes, keywords) instead of

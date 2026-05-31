@@ -6,7 +6,7 @@
 //! primitives. The pipeline-fuzz file (`scanner_fuzz.rs`) covers the
 //! `CompiledScanner::scan` hot path with random bytes and a
 //! 2-detector synthetic set. Both leave a gap that's only visible
-//! once the WHOLE 891-detector corpus is on the bench: a single
+//! once the WHOLE 894-detector corpus is on the bench: a single
 //! malformed regex, a bogus severity tag, or a `severity = "critical"`
 //! detector shipped with no positive fixture can ride for releases
 //! because no per-detector test would catch it across all detectors
@@ -46,7 +46,7 @@
 //!      and silently miss real-world appearances.
 //!
 //! Case budgets: 1_000+ per property (CLAUDE.md proptest 1k-iter
-//! floor). The expensive setup is the 891-detector `CompiledScanner`
+//! floor). The expensive setup is the 894-detector `CompiledScanner`
 //! build (~2-3s); we pay it once via `LazyLock` and amortise across
 //! all properties.
 
@@ -95,7 +95,7 @@ static DETECTORS: LazyLock<Vec<DetectorSpec>> = LazyLock::new(|| {
     // running over a shrunken space. Floor + fail-loud.
     assert!(
         detectors.len() >= 800,
-        "detector corpus shrank to {} - expected >= 800 (headline is 891). \
+        "detector corpus shrank to {} - expected >= 800 (headline is 894). \
          Sampler proptests below depend on a full corpus to exercise the cross-set invariants.",
         detectors.len(),
     );
@@ -337,7 +337,7 @@ proptest! {
     /// duplicates a fraction of `contracts_runner`, but it's the
     /// proptest gate that turns a "missed one detector when adding
     /// the next one" regression into a property failure rather than
-    /// a single line in a 891-row report.
+    /// a single line in a 894-row report.
     ///
     /// Pairs with `every_critical_severity_detector_has_a_positive_
     /// contract_fixture` above: the foreach guarantees a fixture

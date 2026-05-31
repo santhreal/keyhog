@@ -42,7 +42,7 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     };
 
     // Apply --search filter case-insensitively against the four most useful
-    // fields. The 888-strong corpus is otherwise hard to navigate by eye -
+    // fields. The 894-strong corpus is otherwise hard to navigate by eye -
     // `keyhog detectors --search aws` should beat `grep -r aws detectors/`.
     fn contains_ci(haystack: &str, needle: &[u8]) -> bool {
         if needle.is_empty() || needle.len() > haystack.len() {

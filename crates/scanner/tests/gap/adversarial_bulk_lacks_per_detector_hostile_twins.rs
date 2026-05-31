@@ -1,4 +1,4 @@
-//! KH-GAP-128: Bulk contract multipliers scale to 891 detectors but lack
+//! KH-GAP-128: Bulk contract multipliers scale to 894 detectors but lack
 //! per-detector hostile near-miss / positive twin oracles (only top-10 covered).
 
 use std::path::PathBuf;

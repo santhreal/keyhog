@@ -1,4 +1,4 @@
-//! KH-GAP-094: `--search` help still says "888-strong corpus" while runtime loads 891.
+//! KH-GAP-094: `--search` help still says "888-strong corpus" while runtime loads 894.
 
 use crate::e2e::support::binary;
 use std::process::Command;
@@ -13,7 +13,7 @@ fn detectors_search_help_does_not_undercount_embedded_corpus() {
     let help = String::from_utf8_lossy(&output.stdout);
     assert!(
         !help.contains("888-strong"),
-        "detectors --search help must not claim 888 detectors when embedded corpus is 891; help={help}"
+        "detectors --search help must not claim 888 detectors when embedded corpus is 894; help={help}"
     );
 }
 
@@ -26,7 +26,7 @@ fn detectors_listing_reports_at_least_891_loaded() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("891"),
-        "detectors banner must reflect current embedded count (891); stdout={stdout}"
+        stdout.contains("894"),
+        "detectors banner must reflect current embedded count (894); stdout={stdout}"
     );
 }

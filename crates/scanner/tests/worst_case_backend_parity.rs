@@ -1,6 +1,6 @@
 //! Full-corpus multi-backend worst-case parity (KH-GAP-125).
 //!
-//! Loads the full detector corpus (891 rules) and runs the synthetic
+//! Loads the full detector corpus (894 rules) and runs the synthetic
 //! worst-case fixture set from `backend_parity_matrix` plus chunk-boundary
 //! straddle cases on SimdCpu (reference), CpuFallback, and GPU when
 //! available. Megakernel parity is waived under KH-GAP-043 until expiry.
@@ -161,7 +161,7 @@ fn full_corpus_multi_backend_worst_case_parity() {
         }
     };
     assert!(
-        detectors.len() >= 891,
+        detectors.len() >= 894,
         "worst-case parity must exercise the full detector corpus (got {})",
         detectors.len()
     );

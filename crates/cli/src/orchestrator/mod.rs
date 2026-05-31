@@ -165,7 +165,7 @@ impl ScanOrchestrator {
         // serial first-touch compile of each detector. The earlier `is_dir`
         // gate was meant to keep one-shot single-file/stdin startup fast, but it
         // backfired: a single-file scan then fell into a SERIAL lazy compile of
-        // all 891 regexes on the hot path (~340ms measured), strictly slower
+        // all 894 regexes on the hot path (~340ms measured), strictly slower
         // than the parallel `warm()` a directory scan got. Single file, stdin,
         // pre-commit hooks and editor integrations all hit that worst case.
         // `warm()` is idempotent and a no-op for already-compiled patterns, so

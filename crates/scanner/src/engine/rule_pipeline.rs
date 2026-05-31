@@ -188,4 +188,11 @@ pub fn megascan_input_len() -> usize {
 }
 
 /// Output buffer cap for the AC GPU kernel, per shard dispatch.
-pub const AC_GPU_MAX_MATCHES_PER_DISPATCH: u32 = 1_000_000;
+///
+/// The AC path is a prefilter, not the final matcher. A 4 MiB shard that
+/// emits more than 32k literal-prefix hits is already past one hit per 128
+/// bytes, which is the measured point where CPU phase-2 confirmation loses
+/// to the SIMD coalesced scanner. Keeping the cap near that density lets the
+/// host detect pathological prefix floods without allocating multi-megabyte
+/// readback buffers for every shard in a large batch.
+pub const AC_GPU_MAX_MATCHES_PER_DISPATCH: u32 = 32_768;

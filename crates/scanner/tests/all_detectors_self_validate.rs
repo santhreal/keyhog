@@ -217,7 +217,7 @@ fn detector_contract_coverage_meets_floor() {
         .len();
     let total = detectors_on_disk.len();
     let ratio = covered as f64 / total.max(1) as f64;
-    // Floor: 38% (current ~346/891). Raising this floor is a separate
+    // Floor: 38% (current ~346/894). Raising this floor is a separate
     // patch - adding a detector without raising the floor lets recall
     // regressions slip in; raising the floor without first writing
     // contracts breaks CI.

@@ -77,7 +77,7 @@ Lists every detector in the embedded corpus.
 keyhog detectors                  # human-readable, grouped by service
 keyhog detectors --json           # one JSON object per detector
 keyhog detectors --json | jq length
-891
+894
 ```
 
 ## `keyhog explain <DETECTOR_ID>`

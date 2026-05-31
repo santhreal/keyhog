@@ -11,7 +11,7 @@ fn contracts_dir() -> PathBuf {
 #[test]
 fn contracts_evasion_coverage_meets_minimum_floor() {
     // Floor raised by LR1-A9 (+5 hand-written evasion TOMLs). Target is
-    // eventual 891/891; this gate prevents regressions while bulk backfill
+    // eventual 894/894; this gate prevents regressions while bulk backfill
     // continues.
     const MIN_WITH_EVASION: usize = 760;
 

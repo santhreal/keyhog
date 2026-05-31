@@ -13,7 +13,7 @@
 //!   wgpu adapter, plain CPU regex otherwise). To force a backend, set
 //!   `KEYHOG_BACKEND={cpu,simd,gpu}` before invoking.
 //! - The "patterns" axis re-builds the scanner from a slice of the
-//!   embedded detector corpus. 889 detectors total; we slice 10 / 100 /
+//!   embedded detector corpus. 894 detectors total; we slice 10 / 100 /
 //!   500 / 889 to expose how dispatch overhead amortizes.
 
 use criterion::{

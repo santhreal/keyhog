@@ -253,10 +253,23 @@ impl CompiledScanner {
                         cap = super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH,
                         count,
                         shard_index = i,
-                        "AC GPU shard exceeded program cap: truncation possible; falling back to CPU"
+                        "AC GPU shard exceeded dense-prefix cap; rerouting batch through SIMD coalesced scan"
                     );
+                    if self.simd_prefilter.is_some() {
+                        if std::env::var_os("KH_PERF").is_some() {
+                            eprintln!(
+                                "KH_PERF gpu_ac_cap_reroute: chunks={} shard={} shard_matches={} cap={} shard_bytes={}",
+                                chunks.len(),
+                                i,
+                                count,
+                                super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH,
+                                shard_ranges[i].1 - shard_ranges[i].0
+                            );
+                        }
+                        return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
+                    }
                     let reason = format!(
-                        "AC GPU shard {i} reported {count} matches, exceeding cap {}",
+                        "AC GPU shard {i} reported {count} matches, exceeding dense-prefix cap {} and no SIMD fallback is available",
                         super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH
                     );
                     return self.gpu_degrade_done_with_reason(
@@ -321,6 +334,31 @@ impl CompiledScanner {
                 crate::hw_probe::ScanBackend::Gpu,
                 Some("GPU AC emitted degenerate match triples (end <= start); vyre CUDA emit bug PERF-07c"),
             );
+        }
+        if self.simd_prefilter.is_some()
+            && super::gpu_postprocess::gpu_phase2_hits_are_dense(
+                matches.len(),
+                buffer.len(),
+                chunks.len(),
+            )
+        {
+            tracing::warn!(
+                target: "keyhog::routing",
+                raw_matches = matches.len(),
+                buffer_bytes = buffer.len(),
+                chunks = chunks.len(),
+                "GPU AC prefix output is too dense for phase 2; rerouting this batch through SIMD coalesced scan",
+            );
+            if std::env::var_os("KH_PERF").is_some() {
+                eprintln!(
+                    "KH_PERF gpu_ac_dense_phase2_reroute: chunks={} buffer_bytes={} raw_matches={} bytes_per_hit={:.1}",
+                    chunks.len(),
+                    buffer.len(),
+                    matches.len(),
+                    buffer.len() as f64 / matches.len().max(1) as f64
+                );
+            }
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
         }
         super::gpu_postprocess::fold_overlapping_same_pid_inplace(&mut matches);
         let total_patterns = self.ac_map.len() + self.fallback.len();

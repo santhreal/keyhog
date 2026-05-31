@@ -1,4 +1,4 @@
-//! KH-GAP-094: `--search` help must match embedded detector count (891).
+//! KH-GAP-094: `--search` help must match embedded detector count (894).
 
 use crate::e2e::support::binary;
 use std::process::Command;
@@ -13,10 +13,10 @@ fn detectors_search_help_does_not_undercount_embedded_corpus() {
     let help = String::from_utf8_lossy(&output.stdout);
     assert!(
         !help.contains("888-strong"),
-        "detectors --search help must not claim 888 detectors when embedded corpus is 891; help={help}"
+        "detectors --search help must not claim 888 detectors when embedded corpus is 894; help={help}"
     );
     assert!(
-        help.contains("891-strong"),
-        "detectors --search help must cite 891-strong corpus; help={help}"
+        help.contains("894-strong"),
+        "detectors --search help must cite 894-strong corpus; help={help}"
     );
 }

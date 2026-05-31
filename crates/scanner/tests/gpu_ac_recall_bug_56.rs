@@ -7,7 +7,7 @@
 //! documented this as a known-broken cell pending a real fix.
 //!
 //! Reproduction strategy: drive a real `CompiledScanner` (loads the
-//! full 889-detector set, identical to what the binary uses) over
+//! full 894-detector set, identical to what the binary uses) over
 //! the actual bench-corpus slice that contains the missed secret,
 //! then compare SIMD vs GPU AC findings. The slice is read directly
 //! from the persisted bench corpus on disk so the bug we reproduce

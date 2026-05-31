@@ -37,7 +37,7 @@ const FIXTURE_BYTES: usize = 4 * 1024 * 1024;
 
 // Single-thread floor on a 4 MiB benign Go-source fixture. Measured
 // steady-state on the dev machine (RTX 5090 + 9950X) was ~12 MiB/s
-// per-chunk single-thread for 889 detectors loaded. The K8s
+// per-chunk single-thread for 894 detectors loaded. The K8s
 // differential bench's ~540 MiB/s number is rayon-parallelized
 // across many small files; this test is the per-chunk single-thread
 // floor.
