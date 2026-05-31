@@ -206,7 +206,8 @@ pub struct ScanSystemArgs {
 /// NaN/negative-guarded, with committed test fixtures). `ScanSystemArgs::space`
 /// is a `u64`; the shared parser yields a sanity-capped `usize` (< usize::MAX/2),
 /// so the widening cast is lossless on every supported platform.
-fn parse_space_bytes(s: &str) -> Result<u64, String> {
+#[doc(hidden)]
+pub fn parse_space_bytes(s: &str) -> Result<u64, String> {
     crate::value_parsers::parse_byte_size(s).map(|bytes| bytes as u64)
 }
 
@@ -444,86 +445,5 @@ impl CliDedupScope {
             Self::File => DedupScope::File,
             Self::None => DedupScope::None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::{CommandFactory, Parser};
-
-    const GIB: u64 = 1024 * 1024 * 1024;
-
-    // `parse_space_bytes` is the thin `u64` adapter over the shared
-    // `value_parsers::parse_byte_size`. These assert the exact byte counts
-    // (not just `is_ok`) so the test fails if the adapter ever drops the
-    // multiplier or the cast becomes lossy.
-    #[test]
-    fn parse_space_bytes_resolves_gib_suffix_exactly() {
-        assert_eq!(parse_space_bytes("50G").unwrap(), 50 * GIB);
-        assert_eq!(parse_space_bytes("1T").unwrap(), 1024 * GIB);
-        assert_eq!(parse_space_bytes("500M").unwrap(), 500 * 1024 * 1024);
-    }
-
-    #[test]
-    fn parse_space_bytes_handles_fractional() {
-        // 1.5 GiB, exercising the f64 path of the shared parser through the cast.
-        assert_eq!(parse_space_bytes("1.5G").unwrap(), GIB + GIB / 2);
-    }
-
-    #[test]
-    fn parse_space_bytes_rejects_bare_number() {
-        // The footgun guard inherited from the shared parser: a unitless
-        // "50" is ambiguous against the GiB-scale defaults and must error
-        // rather than silently mean 50 bytes (the old args.rs copy's bug).
-        assert!(parse_space_bytes("50").is_err());
-    }
-
-    #[test]
-    fn parse_space_bytes_rejects_unknown_suffix() {
-        assert!(parse_space_bytes("5Z").is_err());
-    }
-
-    #[test]
-    fn parse_space_bytes_empty_is_zero() {
-        // Empty input keeps the shared parser's documented Ok(0) contract.
-        assert_eq!(parse_space_bytes("").unwrap(), 0);
-    }
-
-    // Drive the value_parser through the real clap tree: `keyhog scan-system
-    // --space 2G` must resolve `space` to exactly 2 GiB. This proves the
-    // wiring end-to-end, not just the bare function.
-    #[test]
-    fn scan_system_space_flag_parses_through_clap() {
-        let cli = Cli::parse_from(["keyhog", "scan-system", "--space", "2G"]);
-        match cli.command {
-            Some(Command::ScanSystem(args)) => assert_eq!(args.space, 2 * GIB),
-            other => panic!("expected ScanSystem command, got something else: {}", other.is_some()),
-        }
-    }
-
-    #[test]
-    fn scan_system_space_default_is_50_gib() {
-        let cli = Cli::parse_from(["keyhog", "scan-system"]);
-        match cli.command {
-            Some(Command::ScanSystem(args)) => assert_eq!(args.space, 50 * GIB),
-            _ => panic!("expected ScanSystem command"),
-        }
-    }
-
-    #[test]
-    fn scan_system_rejects_unitless_space() {
-        // The clap layer must surface the parser error for `--space 50`.
-        let err = Cli::try_parse_from(["keyhog", "scan-system", "--space", "50"]);
-        assert!(err.is_err(), "unitless --space 50 must be rejected by the value_parser");
-    }
-
-    // clap's own consistency check across the WHOLE command tree: catches
-    // duplicate arg ids, bad `conflicts_with`/`requires` references, and
-    // short/long collisions in any subcommand. Fails loudly at test time
-    // instead of panicking at runtime on first use.
-    #[test]
-    fn cli_definition_is_internally_consistent() {
-        Cli::command().debug_assert();
     }
 }
