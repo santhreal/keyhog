@@ -24,6 +24,7 @@ class _ScannerAdapter(Protocol):
     def available(self) -> bool: ...
     def version(self) -> str: ...
     def default_config(self) -> ScannerConfig: ...
+    def exit_success(self, code: int) -> bool: ...
     def run(
         self,
         root: pathlib.Path,
@@ -93,7 +94,7 @@ def run_once(
         findings, stats = scanner.run(corpus.scan_root, cfg)
     except Exception as exc:
         return _unavailable_result(scanner, version, cfg, corpus, f"{type(exc).__name__}: {exc}")
-    return build_result(
+    result = build_result(
         scanner_name=scanner.name,
         scanner_version=version,
         cfg=cfg,
@@ -101,6 +102,11 @@ def run_once(
         findings=findings,
         stats=stats,
     )
+    if stats.timed_out:
+        result.error = "scanner timed out"
+    elif not scanner.exit_success(stats.exit_code):
+        result.error = f"scanner exited {stats.exit_code}"
+    return result
 
 
 def write_result(result: RunResult, output: str | pathlib.Path | None = None) -> None:

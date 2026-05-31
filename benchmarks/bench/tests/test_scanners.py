@@ -113,6 +113,18 @@ def test_requested_competitor_adapters_resolve_to_measured_scanners():
         assert cfg.daemon == "off"
 
 
+def test_scanner_exit_contracts_distinguish_findings_from_failures():
+    keyhog = scanners.resolve_scanner("keyhog")
+    betterleaks = scanners.resolve_scanner("betterleaks")
+
+    assert keyhog.exit_success(0)
+    assert keyhog.exit_success(1)
+    assert keyhog.exit_success(10)
+    assert not keyhog.exit_success(2)
+    assert betterleaks.exit_success(0)
+    assert not betterleaks.exit_success(1)
+
+
 def test_run_measured_falls_back_without_gnu_time(monkeypatch):
     monkeypatch.setattr(base, "_GNU_TIME", None)
 

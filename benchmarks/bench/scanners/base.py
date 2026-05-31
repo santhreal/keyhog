@@ -192,6 +192,8 @@ class Scanner(ABC):
     binary_name: str = ""
     #: env var that overrides the binary path (e.g. KEYHOG_BIN)
     binary_env: str = ""
+    #: process exit codes that still mean the scanner completed.
+    success_exit_codes: tuple[int, ...] = (0,)
 
     def __init__(self, binary: str | None = None):
         self._binary = binary
@@ -210,6 +212,9 @@ class Scanner(ABC):
 
     def version(self) -> str:
         return probe_version(self.binary)
+
+    def exit_success(self, code: int) -> bool:
+        return code in self.success_exit_codes
 
     def default_config(self) -> ScannerConfig:
         """The single config used for the headline leaderboard."""
