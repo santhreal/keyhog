@@ -25,6 +25,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Require composite Action JSONL report lines to be finding objects, so clean malformed JSONL fails closed and findings-exit malformed JSONL cannot be counted as zero findings.
 - Make verified-live credentials (`keyhog` exit 10 under `verify: "true"`) fail the composite Action after report/SARIF upload even when ordinary findings are configured as advisory with `fail-on-findings: "false"`.
 - Execute the composite Action final fail step in the CI contract suite, proving live credentials preserve exit 10, ordinary findings preserve exit 1, and malformed `exit-code` output fails closed without workflow-command reflection.
+- Dogfood the composite Action's real-binary text-report path, proving actual KeyHog `format: text` output is counted through the wrapper's stable `Secret:` field contract.
 
 ### Benchmarks
 

@@ -258,6 +258,57 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
 }
 
 #[test]
+fn action_runs_real_keyhog_and_counts_text_findings() {
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path().join("repo");
+    fs::create_dir(&repo).expect("create repo");
+    fs::write(
+        repo.join("secret.env"),
+        "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n",
+    )
+    .expect("write planted secret");
+
+    let binary = keyhog_binary();
+    let binary_dir = binary
+        .parent()
+        .expect("binary parent")
+        .to_str()
+        .expect("utf-8 binary dir");
+    let output = run_action_with_path_prefix(
+        &dir,
+        binary_dir,
+        &[
+            ("KEYHOG_SCAN_PATH", "repo"),
+            ("KEYHOG_FORMAT", "text"),
+            ("KEYHOG_OUTPUT", "real-keyhog.txt"),
+            ("KEYHOG_SEVERITY", "high"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "real keyhog text findings exit must remain on action findings path; output={}",
+        combined_output(&output)
+    );
+
+    let gh_output = output_file(&dir);
+    assert!(
+        gh_output.contains("findings=1"),
+        "real text report count must surface through GITHUB_OUTPUT; got {gh_output}"
+    );
+
+    let report = fs::read_to_string(dir.path().join("real-keyhog.txt")).expect("read text report");
+    assert!(
+        report.contains("Secret:"),
+        "text report must carry the stable finding field counted by the action; report={report}"
+    );
+    assert!(
+        report.contains("AWS Access Key") || report.contains("aws"),
+        "text report should carry the planted AWS finding: {report}"
+    );
+}
+
+#[test]
 fn action_counts_sarif_findings_and_writes_ci_summary() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(

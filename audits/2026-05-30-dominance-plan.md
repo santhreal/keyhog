@@ -1940,3 +1940,16 @@ Vector coverage:
 Verified gates:
 
 - `! rg -n 'unverified or verified-live|bad config, panic|CI gates should look for|only depends on whether ANY finding exists' docs/src docs/DROP_IN_USAGE.md`
+
+## Executed Patch Set: Real Text Action Count Dogfood
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: the composite Action contract now runs the real `keyhog` binary through `format: text`, not only SARIF, and proves the wrapper reports the finding count through `GITHUB_OUTPUT`.
+- WIRING: the text report counter is pinned to the actual TextReporter `Secret:` field emitted by KeyHog, closing the gap where the production text path was only covered by a stubbed report.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
