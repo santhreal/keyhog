@@ -301,12 +301,10 @@ real tree. Items carry the data that proves them.
   `scan_prepared_with_pattern_hits` / `post_process_matches` for empty-hit
   chunks unless the chunk has multiline split-secret indicators, secret
   assignment keywords, known secret prefixes, or a long entropy run. Static
-  regression gate added; forced `gpu_parity` remains a separate red gate
-  because the runtime GPU dispatch currently hard-fails under
-  `KEYHOG_REQUIRE_GPU=1`; current `keyhog backend --self-test` exits 4 when
-  the AC path degrades on degenerate Vyre match triples. The JSON form
-  `keyhog backend --self-test --json` is the CI-readable proof for this
-  state.
+  regression gate added. UPDATE 2026-05-31: the forced-GPU correctness gate
+  no longer hard-fails during preflight, and the RTX 5090 JSON self-test now
+  reports `vyre_ac_kernel=pass`; GPU-default large-tree speed remains a
+  routing/architecture problem rather than a corrupt-readback problem.
   UPDATE 2026-05-30 (head-to-head, current binary, RTX 5090 host): the
   phase2 no-hit gate helped (300 s → 204 s) but GPU-default is STILL the
   worst path on the kernel on every axis:
