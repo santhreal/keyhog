@@ -146,17 +146,13 @@ impl CompiledScanner {
 
     fn populate_active_fallback(&self, data: &str, scratch: &mut ActivePatternsScratch) {
         if let Some(keyword_ac) = &self.fallback_keyword_ac {
-            // Seed from the precomputed `fallback_always_active` table - one
-            // pass over a bool slice marks the patterns with no ≥4-char
-            // keyword (they run on every chunk). The table is built once at
-            // scanner construction. Then the keyword AC adds the patterns
-            // whose keyword is actually present in this chunk. `mark` dedups
-            // so a pattern that is both always-active and keyword-triggered
-            // appears once.
-            for (index, &always) in self.fallback_always_active.iter().enumerate() {
-                if always {
-                    scratch.mark(index);
-                }
+            // Seed from the precomputed sparse always-active list. Patterns
+            // with no >=4-char keyword run on every admitted fallback chunk;
+            // storing their indices directly avoids a full bool-table scan per
+            // chunk. Then keyword AC adds patterns whose keyword is present.
+            // `mark` dedups if a pattern is both always-active and keyworded.
+            for &index in &self.fallback_always_active_indices {
+                scratch.mark(index);
             }
             for mat in keyword_ac.find_iter(data) {
                 let keyword_idx = mat.pattern().as_usize();

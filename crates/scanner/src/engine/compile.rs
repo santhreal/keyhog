@@ -137,17 +137,19 @@ impl CompiledScanner {
 
         let (fallback_keyword_ac, fallback_keyword_to_patterns) =
             build_fallback_keyword_ac(&state.fallback);
-        // Precompute the per-pattern "always-active" bitmap so the per-chunk
-        // hot path avoids walking every pattern's keyword list. See the
-        // doc comment on the field for rationale.
-        let fallback_always_active: Vec<bool> = state
+        // Precompute always-active fallback indices so the per-chunk hot path
+        // seeds the sparse active set without scanning the full fallback table.
+        let fallback_always_active_indices: Vec<usize> = state
             .fallback
             .iter()
+            .enumerate()
             // Mirrors `compiler::build_fallback_keyword_ac`'s
             // 4-char floor - see the rationale comment there. The
             // experimental 3-char floor measured a net F1 regression
             // on SecretBench-medium, so both checks stay at 4.
-            .map(|(_, keywords)| !keywords.iter().any(|k| k.len() >= 4))
+            .filter_map(|(index, (_, keywords))| {
+                (!keywords.iter().any(|k| k.len() >= 4)).then_some(index)
+            })
             .collect();
 
         log_quality_warnings(&state.quality_warnings);
@@ -214,7 +216,7 @@ impl CompiledScanner {
             same_prefix_patterns,
             fallback_keyword_ac,
             fallback_keyword_to_patterns,
-            fallback_always_active,
+            fallback_always_active_indices,
             #[cfg(feature = "simd")]
             simd_prefilter,
             #[cfg(feature = "simd")]

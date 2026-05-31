@@ -98,7 +98,7 @@ pub enum MlScoreResult<'a> {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
     #[cfg(feature = "ml")]
-    /// ML scoring is deferred to a batch call at the end of the scan.
+    /// ML scoring is batched at the end of the scan.
     Pending {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
@@ -245,7 +245,7 @@ pub struct CompiledScanner {
     pub(crate) same_prefix_patterns: Vec<Vec<usize>>,
     pub(crate) fallback_keyword_ac: Option<AhoCorasick>,
     pub(crate) fallback_keyword_to_patterns: Vec<Vec<usize>>,
-    pub(crate) fallback_always_active: Vec<bool>,
+    pub(crate) fallback_always_active_indices: Vec<usize>,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]

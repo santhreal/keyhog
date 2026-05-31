@@ -1157,6 +1157,21 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Sparse Fallback Activation
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: the fallback scanner no longer scans a dense always-active bool table across every fallback detector for each admitted chunk; always-active seeds are precomputed as sparse indices.
+- DEDUPLICATION: the active fallback path is now sparse end to end: precomputed always-active indices plus keyword-hit indices feed the same stamped dedup primitive.
+- COHERENCE: the perf contract is locked with a gap test that rejects reintroducing a dense `Vec<bool>` always-active table on the hot path.
+- INNOVATION: this is the KeyHog-side half of the Vyre/performance track: remove CPU fallback waste before pushing larger regex/literal fusion into the shared engine.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests fallback_always_active_sparse -- --nocapture`
+
 ## Executed Patch Set: GPU MoE Readback Deadline
 
 Date: 2026-05-31
