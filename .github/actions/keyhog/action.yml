@@ -96,6 +96,8 @@ runs:
           Linux/x86_64)   name="keyhog-linux-x86_64" ;;
           Darwin/x86_64)  name="keyhog-macos-x86_64" ;;
           Darwin/arm64)   name="keyhog-macos-aarch64" ;;
+          MINGW*/x86_64 | MSYS*/x86_64 | CYGWIN*/x86_64)
+                           name="keyhog-windows-x86_64.exe" ;;
           *)              name="" ;;
         esac
         echo "name=$name" >> "$GITHUB_OUTPUT"
@@ -138,8 +140,12 @@ runs:
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          cp "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/keyhog"
-          chmod +x "$RUNNER_TEMP/keyhog"
+          bin_name="keyhog"
+          case "$asset" in
+            *.exe) bin_name="keyhog.exe" ;;
+          esac
+          cp "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/$bin_name"
+          chmod +x "$RUNNER_TEMP/$bin_name"
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "Downloaded and verified prebuilt $asset for v$version"
         else
