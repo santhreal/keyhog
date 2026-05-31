@@ -1653,3 +1653,19 @@ Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
 - Real-binary smoke through `resolve_scanner` over GitHub/AWS/Slack fixtures: Keyhog, Betterleaks, Nosey Parker, Titus, Kingfisher, and TruffleHog all invoked; Keyhog/Nosey/Titus flagged the GitHub sample, Betterleaks flagged the Slack sample, and Kingfisher/TruffleHog completed cleanly on the synthetic fixture set.
+
+## Executed Patch Set: Benchmark RunResult Runner
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: `python -m bench run <scanner> <corpus>` now binds scanner adapters, corpus adapters, scoring, host capture, throughput calculation, and JSON output into one artifact-producing path.
+- COHERENCE: `make run` exposes the same entrypoint with `SCANNER`, `CORPUS`, and `OUTPUT` variables, and `RunResult` now serializes scanner `exit_code` plus `timed_out` instead of dropping measured process state.
+- TESTING: runner tests cover scoring, throughput, JSON output round-trip, and mirror root mapping.
+- DOGFOODING: ran the CLI runner on a tiny manifest-free mirror fixture with the real Keyhog binary and validated the JSON artifact.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+- `cd benchmarks && python3 -m bench run keyhog mirror --corpus-root <tmp-fixture> --output /tmp/keyhog-bench-run.json && python3 -m json.tool /tmp/keyhog-bench-run.json >/dev/null`

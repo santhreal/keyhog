@@ -231,6 +231,8 @@ class RunResult:
     detection: Detection = field(default_factory=Detection)
     speed: Speed = field(default_factory=Speed)
     finding_count: int = 0
+    exit_code: int = 0
+    timed_out: bool = False
     available: bool = True
     error: str = ""
 
@@ -244,6 +246,8 @@ class RunResult:
             "detection": self.detection.to_json(),
             "speed": self.speed.to_json(),
             "finding_count": self.finding_count,
+            "exit_code": self.exit_code,
+            "timed_out": self.timed_out,
             "available": self.available,
             "error": self.error,
         }
@@ -259,6 +263,8 @@ class RunResult:
             detection=Detection.from_json(d.get("detection", {})),
             speed=Speed.from_json(d.get("speed", {})),
             finding_count=int(d.get("finding_count", 0)),
+            exit_code=int(d.get("exit_code", 0)),
+            timed_out=bool(d.get("timed_out", False)),
             available=bool(d.get("available", True)),
             error=d.get("error", ""),
         )

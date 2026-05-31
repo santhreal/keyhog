@@ -23,6 +23,8 @@ def test_run_result_round_trips_losslessly():
         detection=Detection(overall=Outcome(tp=2, fp=1, fn=0)),
         speed=Speed(wall_ms=12.345, throughput_mb_s=10.0, peak_rss_kb=4096),
         finding_count=3,
+        exit_code=1,
+        timed_out=False,
     )
 
     encoded = result.to_json()

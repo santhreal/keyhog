@@ -6,7 +6,7 @@ import argparse
 import json
 
 from . import hardware
-from .corpora import resolve_corpus
+from .runner import resolve_corpus_with_root, run_once, write_result
 
 
 def _host() -> int:
@@ -15,10 +15,21 @@ def _host() -> int:
 
 
 def _corpus(args: argparse.Namespace) -> int:
-    corpus = resolve_corpus(args.name, root=args.root if args.name == "kernel" else None)
+    corpus = resolve_corpus_with_root(args.name, args.root)
     info = corpus.info()
     print(json.dumps(info.to_json(), indent=2, sort_keys=True))
     return 0
+
+
+def _run(args: argparse.Namespace) -> int:
+    result = run_once(
+        scanner_name=args.scanner,
+        corpus_name=args.corpus,
+        scanner_binary=args.scanner_bin,
+        corpus_root=args.corpus_root,
+    )
+    write_result(result, args.output)
+    return 0 if result.available and not result.error else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,11 +42,20 @@ def main(argv: list[str] | None = None) -> int:
     corpus.add_argument("name")
     corpus.add_argument("--root", default=None)
 
+    run = sub.add_parser("run", help="Run one scanner/corpus benchmark and emit RunResult JSON.")
+    run.add_argument("scanner")
+    run.add_argument("corpus")
+    run.add_argument("--scanner-bin", default=None)
+    run.add_argument("--corpus-root", default=None)
+    run.add_argument("--output", default="-")
+
     args = parser.parse_args(argv)
     if args.cmd == "host":
         return _host()
     if args.cmd == "corpus":
         return _corpus(args)
+    if args.cmd == "run":
+        return _run(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 
