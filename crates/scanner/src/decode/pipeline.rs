@@ -231,11 +231,21 @@ pub(super) fn push_decoded_text_chunk_spliced(
     // occurrence so the companion context survives. Cap the splice
     // path on chunk size so a multi-MB parent doesn't blow memory.
     const MAX_SPLICE_PARENT_BYTES: usize = 256 * 1024;
-    let payload = if !original_encoded.is_empty() && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES {
-        splice_decoded_payload(chunk.data.as_str(), original_encoded, &text, decoder_name)
-            .unwrap_or(text)
+    let (base_offset, payload) = if !original_encoded.is_empty()
+        && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES
+    {
+        match splice_decoded_payload(chunk.data.as_str(), original_encoded, &text, decoder_name) {
+            // The decoded credential now sits `win_start` bytes into the
+            // windowed payload's parent slice, so shift base_offset to keep
+            // the reported file offset anchored to the real position.
+            Some((win_start, spliced)) => (
+                chunk.metadata.base_offset.saturating_add(win_start),
+                spliced,
+            ),
+            None => (chunk.metadata.base_offset, text),
+        }
     } else {
-        text
+        (chunk.metadata.base_offset, text)
     };
 
     decoded_chunks.push(Chunk {
@@ -251,8 +261,10 @@ pub(super) fn push_decoded_text_chunk_spliced(
             // synthetic stream. Per-blob precision (offset OF the
             // encoded blob in parent) would need `extract_encoded_values`
             // to return positions too - a follow-up. This is strictly
-            // closer to the truth.
-            base_offset: chunk.metadata.base_offset,
+            // closer to the truth. When splicing succeeds we additionally
+            // shift by the context-window start so the offset points near the
+            // blob's real position, not just the parent's origin.
+            base_offset,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),
@@ -267,12 +279,57 @@ pub(super) fn push_decoded_text_chunk_spliced(
     });
 }
 
+/// Bytes of surrounding parent text kept on each side of the spliced-in
+/// decoded credential. The splice exists ONLY to keep the decoded value's
+/// companion anchor (assignment key / `Authorization:` header / `api_key=`
+/// prefix) adjacent so companion-anchored detectors still fire. That anchor
+/// always sits within a line or two of the credential, so a few hundred bytes
+/// of context on each side is plenty.
+///
+/// Why this is bounded (perf, not cosmetics): the previous implementation
+/// spliced the decoded text into a copy of the ENTIRE parent, producing one
+/// parent-sized decoded chunk PER candidate. On a 156 KB source file with
+/// ~1800 splice candidates (every quoted string / `key=value` / hex/base64
+/// run) that spawned ~280 MB of decoded chunks - each then rescanned by the
+/// full engine and recursively re-decoded - an O(candidates × file_size)
+/// blowup that pinned a single b43/main.c scan at ~15s. Windowing makes each
+/// spliced chunk O(window), turning the whole pass linear. Recall is
+/// unaffected because no detector reaches across hundreds of bytes for its
+/// anchor.
+const SPLICE_CONTEXT_WINDOW: usize = 512;
+
+/// Round `idx` down to the nearest UTF-8 char boundary in `s` (stable-Rust
+/// stand-in for the unstable `str::floor_char_boundary`). Used to snap the
+/// splice context window so it never slices a multi-byte codepoint.
+fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+fn ceil_char_boundary(s: &str, mut idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    while idx < s.len() && !s.is_char_boundary(idx) {
+        idx += 1;
+    }
+    idx
+}
+
+/// Returns `(window_start, payload)` where `window_start` is the byte offset
+/// in `parent` at which `payload` begins, so the caller can keep the reported
+/// finding offset anchored to the real file position.
 fn splice_decoded_payload(
     parent: &str,
     original_encoded: &str,
     decoded_text: &str,
     decoder_name: &str,
-) -> Option<String> {
+) -> Option<(usize, String)> {
     let start = parent.find(original_encoded)?;
     let mut end = start + original_encoded.len();
 
@@ -280,11 +337,16 @@ fn splice_decoded_payload(
         end = consume_adjacent_base64_padding(parent.as_bytes(), end);
     }
 
-    let mut payload = String::with_capacity(parent.len() - (end - start) + decoded_text.len());
-    payload.push_str(&parent[..start]);
+    // Keep only a bounded window of parent context around the encoded blob.
+    let win_start = floor_char_boundary(parent, start.saturating_sub(SPLICE_CONTEXT_WINDOW));
+    let win_end = ceil_char_boundary(parent, end.saturating_add(SPLICE_CONTEXT_WINDOW));
+
+    let mut payload =
+        String::with_capacity((win_end - win_start) - (end - start) + decoded_text.len());
+    payload.push_str(&parent[win_start..start]);
     payload.push_str(decoded_text);
-    payload.push_str(&parent[end..]);
-    Some(payload)
+    payload.push_str(&parent[end..win_end]);
+    Some((win_start, payload))
 }
 
 fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {

@@ -62,6 +62,7 @@ pub mod r5_reverse_subdir_wired;
 pub mod r5_top50_near_miss_wired_in_adversarial_mod;
 pub mod santh_contract_dir_exists;
 pub mod scanner_src_files_exceed_standard_500_loc;
+pub mod simd_no_hit_multiline_fast_path;
 pub mod single_line_implicit_concat_not_appended;
 pub mod suppression_postprocess_exceeds_modularity_cap;
 pub mod suppression_shape_gate_pipeline_twins_incomplete;

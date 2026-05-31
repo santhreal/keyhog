@@ -319,6 +319,9 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     if let Some(depth) = args.decode_depth {
         config.max_decode_depth = depth;
     }
+    if args.no_decode {
+        config.max_decode_depth = 0;
+    }
     if let Some(size) = args.decode_size_limit {
         config.max_decode_bytes = size;
     }
@@ -341,7 +344,7 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     }
     config.entropy_in_source_files = args.entropy_source_files;
     config.scan_comments = args.scan_comments;
-    config.ml_enabled = !args.no_ml;
+    config.ml_enabled = !args.fast && !args.no_ml;
     if let Some(weight) = args.ml_weight {
         config.ml_weight = weight;
     }

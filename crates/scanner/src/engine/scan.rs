@@ -106,6 +106,7 @@ impl CompiledScanner {
             // need owned Vecs in the result so phase 2 can consume them, but
             // empty-result chunks return `None` and skip the alloc entirely.
             let words_needed = ac_len.div_ceil(64);
+            let _p1 = std::time::Instant::now();
             let triggers: Vec<Option<Vec<u64>>> = chunks
                 .par_iter()
                 .map(|chunk| {
@@ -155,6 +156,7 @@ impl CompiledScanner {
                     })
                 })
                 .collect();
+            let _p1e = _p1.elapsed();
 
             // The phase-1 telemetry is purely a tracing::info! line, which
             // is off at the default log level. `total_hs_matches` is a full
@@ -179,6 +181,7 @@ impl CompiledScanner {
             }
 
             // Phase 2: Full extraction on hit files + multiline fallback (parallel).
+            let _p2 = std::time::Instant::now();
             let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
                 .par_iter()
                 .zip(triggers.into_par_iter())
@@ -199,7 +202,21 @@ impl CompiledScanner {
                     if crate::multiline::has_concatenation_indicators(&chunk.data)
                         && has_secret_keyword_fast(chunk.data.as_bytes())
                     {
-                        return self.scan(chunk);
+                        let prepared = self.prepare_chunk(chunk);
+                        if prepared.preprocessed.text.as_bytes() != chunk.data.as_bytes() {
+                            let triggered = self.collect_triggered_patterns_for_backend(
+                                &prepared.preprocessed.text,
+                                ScanBackend::SimdCpu,
+                            );
+                            let mut matches = self.scan_prepared_with_triggered(
+                                prepared,
+                                ScanBackend::SimdCpu,
+                                triggered,
+                                None,
+                            );
+                            self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
+                            return matches;
+                        }
                     }
 
                     // Task #69 follow-up: scan_fallback_patterns runs the
@@ -314,12 +331,23 @@ impl CompiledScanner {
                 })
                 .collect();
 
+            let _p2e = _p2.elapsed();
             // Cross-chunk reassembly: synthesize a thin boundary buffer
             // from the tail of each chunk + head of its right neighbour
             // (same file, gapless) and scan it. Catches secrets split
             // across the 64 MiB scan-window boundary that in-chunk scan
             // can't see.
+            let _bt = std::time::Instant::now();
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+            if std::env::var_os("KH_PERF").is_some() {
+                eprintln!(
+                    "KH_PERF scan_coalesced: chunks={} p1={:.3}s p2={:.3}s boundary={:.3}s",
+                    chunks.len(),
+                    _p1e.as_secs_f64(),
+                    _p2e.as_secs_f64(),
+                    _bt.elapsed().as_secs_f64()
+                );
+            }
             results
         } // #[cfg(feature = "simd")] block
     } // scan_coalesced

@@ -77,3 +77,31 @@ fn scan_effective_config_baked_values_equal_explicit_flags() {
     assert!(from_config.contains("max_decode_bytes = 262144"));
     assert!(from_config.contains("ml_enabled = false"));
 }
+
+#[test]
+fn scan_effective_config_no_decode_sets_depth_zero() {
+    let (stdout, stderr, code) = effective_config(&["scan", "--no-daemon", "--no-decode"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("max_decode_depth = 0"),
+        "--no-decode must reach the printed engine config; stdout={stdout}"
+    );
+}
+
+#[test]
+fn scan_effective_config_fast_disables_decode_entropy_and_ml() {
+    let (stdout, stderr, code) = effective_config(&["scan", "--no-daemon", "--fast"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "ml_enabled = false",
+        "entropy_enabled = false",
+        "max_decode_depth = 0",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "--fast effective config missing `{required}`; stdout={stdout}"
+        );
+    }
+}

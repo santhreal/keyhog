@@ -6,6 +6,7 @@ pub mod allowlist_root_file_without_parent_falls_back_dot;
 pub mod build_scanner_config_deep_mode;
 pub mod build_scanner_config_fast_mode;
 pub mod build_scanner_config_no_suppress_disables_test_path_penalty;
+pub mod build_scanner_config_respects_no_decode;
 pub mod build_scanner_config_respects_no_entropy;
 pub mod build_scanner_config_respects_no_ml;
 pub mod explicit_backend_cpu_fallback_aliases;

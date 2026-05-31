@@ -62,6 +62,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Scanner
 
+- Replace the SIMD coalesced no-hit multiline fallback's full `scan()` re-entry with a prepared multiline-text scan, eliminating decode/postprocess recursion on large ordinary source files; the Linux `drivers/net` subset dropped from ~15.6 s to 0.62 s wall and the full warm-cache kernel scan from ~90 s to 3.43 s.
+- Window decoded splice-back context around the encoded payload instead of cloning the whole parent file per decoded candidate, bounding candidate-dense decode-through work while preserving nearby companion anchors.
+- Warm lazy regex transition caches with a representative no-match search during scanner warm-up so the first real source batch does not pay serial DFA first-touch cost.
+- Add `KH_PERF=1` scan timing for coalesced phase splits and orchestrator scan/receive wait time, keeping perf diagnosis operator-visible without changing default output.
+- Wire `--no-decode` to `max_decode_depth = 0` in the engine config and keep `--fast` coherent by disabling decode, entropy, and ML in the printed effective config.
 - Build KeyHog's production GPU AC dispatch program with a bound atomic match slot so each emitted `(pattern,start,end)` triple uses one counter value; the live RTX 5090 backend self-test now reports `vyre_ac_kernel=pass` and recommends GPU instead of degrading on degenerate triples.
 - Let `KEYHOG_REQUIRE_GPU=1` proceed when the GPU stack is healthy, while still hard-failing on concrete runtime degradation; required-GPU parity now reaches assertions instead of exiting during preflight.
 - Preserve concrete literal-set GPU degrade reasons too, so diagnostic `KEYHOG_GPU_KERNEL=literal-set` failures name the failed branch, shard, and cap/output condition.

@@ -190,10 +190,17 @@ impl ScanOrchestrator {
                     }
                 };
 
+            let sc_t0 = std::time::Instant::now();
+            let mut scan_dur = std::time::Duration::ZERO;
+            let mut recv_dur = std::time::Duration::ZERO;
+            let mut last_end = std::time::Instant::now();
             for batch in rx {
+                recv_dur += last_end.elapsed();
                 if batch.is_empty() {
+                    last_end = std::time::Instant::now();
                     continue;
                 }
+                let _scan_start = std::time::Instant::now();
                 let scanned_count = batch.len();
                 // Explicit KEYHOG_BACKEND wins; otherwise auto-route this batch
                 // by size/pattern-count/hardware. Auto-routed Gpu/MegaScan land
@@ -304,8 +311,19 @@ impl ScanOrchestrator {
                         crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
                     }
                 }
+                scan_dur += _scan_start.elapsed();
+                last_end = std::time::Instant::now();
             }
             drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+            if std::env::var("KH_PERF").is_ok() {
+                let wall = sc_t0.elapsed().as_secs_f64().max(1e-9);
+                eprintln!(
+                    "KH_PERF scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
+                    wall, scan_dur.as_secs_f64(), recv_dur.as_secs_f64(),
+                    100.0 * scan_dur.as_secs_f64() / wall,
+                    100.0 * recv_dur.as_secs_f64() / wall,
+                );
+            }
             findings
         });
 

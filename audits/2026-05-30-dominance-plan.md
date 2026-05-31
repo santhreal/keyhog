@@ -2075,3 +2075,28 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests decode_chunk_base64_splice_consumes_padding -- --nocapture`
 - `cargo test -p keyhog --test gpu_simd_parity gpu_does_not_add_decoded_license_key_false_positive -- --nocapture`
+
+## Executed Patch Set: Kernel Decode-Recursion Perf Fix
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: isolated the full-kernel wall-clock bottleneck to a no-Hyperscan-hit multiline fallback that re-entered full scan/postprocess decode on large source files; `b43/main.c` dropped from ~15.7 s to 0.27 s, `drivers/net` from ~15.6 s to 0.62 s, and the full warm-cache kernel scan from ~90.4 s to 3.43 s.
+- INSUFFICIENCY / WIRING: `--no-decode` now reaches `ScannerConfig.max_decode_depth = 0`, and `--fast` now actually disables ML in addition to decode and entropy in the printed effective config.
+- GENERALIZATION: decoded splice-back now keeps a bounded context window around the encoded payload, preserving companion anchors without cloning and rescanning the whole parent file for every decoded candidate.
+- UTILIZATION: `KH_PERF=1` exposes coalesced p1/p2/boundary timing plus orchestrator scan/receive-wait timing for direct dogfood measurements.
+- UTILIZATION / GPU: the real RTX 5090 backend self-test remains green with `status=pass`, `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.
+
+Verified gates:
+
+- `/usr/bin/time -v env KH_PERF=1 KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd /mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog scan --format json --show-secrets --no-suppress-test-fixtures --backend simd --no-daemon --output /tmp/keyhog-b43-main-final.json /mnt/FlareTraining/santh-corpus/repos/linux/drivers/net/wireless/broadcom/b43/main.c`
+- `/usr/bin/time -v env KH_PERF=1 KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd /mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog scan --format json --show-secrets --no-suppress-test-fixtures --backend simd --no-daemon --output /tmp/keyhog-drivers-net-final.json /mnt/FlareTraining/santh-corpus/repos/linux/drivers/net`
+- `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd timeout 180s /mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog scan --format json --show-secrets --no-suppress-test-fixtures --backend simd --no-daemon --output /tmp/keyhog-kernel-simd-final.json /mnt/FlareTraining/santh-corpus/repos/linux`
+- `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd /mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog scan --format json --show-secrets --no-suppress-test-fixtures --backend simd --no-daemon --output /tmp/keyhog-creddata-simd-final-warm.json benchmarks/corpora/creddata/CredData/data`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog --test all_tests build_scanner_config_respects_no_decode -- --nocapture`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog --test all_tests scan_effective_config -- --nocapture`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests simd_no_hit_multiline_branch_does_not_reenter_full_scan -- --nocapture`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests splice_windows_context_instead_of_whole_parent -- --nocapture`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests gpu_phase2_empty_hit_fast_path -- --nocapture`
+- `/mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog backend --self-test --json`
