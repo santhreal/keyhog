@@ -254,6 +254,11 @@ real tree. Items carry the data that proves them.
   runtime. Size the runtime to demand (lazy / current-thread until a network
   source or verification is actually used), or cap workers. Pure overhead at
   scale.
+  FIX LANDED 2026-05-31: the CLI entrypoint now uses
+  `#[tokio::main(flavor = "current_thread")]`, keeping async signal handling,
+  daemon, update, repair, and verifier futures on a single runtime thread while
+  scan parallelism remains in Rayon. Regression gate:
+  `main_uses_current_thread_tokio_runtime`.
 
 - **PERF-04 · LOW · dedicated reader pool doubles rayon thread count** — the
   PERF-01 fix adds a reader pool sized to the global pool, so a 32-core box
