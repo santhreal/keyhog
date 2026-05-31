@@ -6,7 +6,10 @@ making next. Vyre is a ~30-crate GPU compute framework - this doc
 catalogues every crate it ships so future wires don't have to
 re-discover the surface.
 
-Updated 2026-05-08, against vendored vyre v0.6.0.
+Updated 2026-05-30, against workspace-pinned vyre v0.6.1 from crates.io.
+`vendor/vyre/` is a reference/offline-development snapshot only; the workspace
+does not build against it unless the root `Cargo.toml` is intentionally switched
+back to path dependencies.
 
 ## What keyhog uses today
 
@@ -104,7 +107,8 @@ The SPIR-V backend (Vulkan-only path). Same surface as wgpu.
 
 ### vyre-driver-cuda
 
-CUDA backend (only on upstream HEAD; not in v0.6.0 vendor).
+CUDA backend, shipped through the workspace `cuda` feature via
+`vyre-driver-cuda = 0.6.1`.
 
 ### vyre-driver-reference
 
@@ -252,7 +256,7 @@ Derive + attribute macros: `define_op`, `vyre_ast_registry`,
 `derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
 by primitive authors.
 
-## v0.5.5 status - everything wired so far
+## v0.5.37 status - everything wired so far
 
 | Wire                                 | Status      | Where                                                  |
 | ------------------------------------ | ----------- | ------------------------------------------------------ |
@@ -261,12 +265,32 @@ by primitive authors.
 | GPU dispatch sharding                | ✅ shipped  | `engine/scan_gpu.rs::scan_coalesced_gpu`               |
 | `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
 | `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
-| Megakernel scaffold (gated)          | ⏳ partial  | `engine/megakernel_dispatch.rs` (needs vyre per-pattern hits) |
+| Megakernel scaffold (gated)          | partial     | `engine/megakernel.rs` (needs vyre per-pattern hits) |
 | `cooperative_dfa` alt literal engine | ⏳ pending  | needs keyhog GPU dispatch infrastructure (entry below) |
 | `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
 | `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
 | `GpuMappedBuffer` zero-copy I/O      | ⏳ pending  | Linux-only + lifetime work (entry below)               |
-| Vyre HEAD upgrade                    | ❌ blocked  | API restructure broke `BatchDispatcher` API surface   |
+| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.1` on 2026-05-30    |
+
+## Innovation lane
+
+The performance path that can dominate competitors is not more regexes; it is
+fewer host/device round trips and less CPU post-processing after a GPU prefilter
+hit. The lane is:
+
+1. Make GPU routing non-silent on known GPU hosts through
+   `KEYHOG_REQUIRE_GPU=1` gates and benchmark backend traces.
+2. Keep the current sharded `GpuLiteralSet` path as the production floor.
+3. Upgrade Vyre as soon as a published release exposes per-pattern hit reporting
+   for the megakernel DFA path.
+4. Fuse decode, literal matching, boundary extraction, entropy scoring, and
+   confidence prefeatures into one resident GPU program when parity gates pass.
+5. Measure against CPU/SIMD/GPU on the same corpus artifact before changing
+   routing thresholds.
+
+This is the categorical advantage over Betterleaks, Titus, Nosey Parker, and
+Kingfisher: one scanner surface with GPU-prefilter, decode-through recall,
+structured-source expansion, verification, and deterministic backend parity.
 
 ## Pending-wire entry points (concrete)
 
@@ -281,7 +305,8 @@ not new research - anyone picking up the work has the contract.
 - Compile Program once at scanner construction via vyre `pipeline::compile`
 - Per-batch dispatch: upload input/transitions/accept, allocate matches, call `pipeline.dispatch_borrowed(...)`, read back
 - Wire as a new `ScanBackend::CooperativeDfa` variant alongside `Gpu` and `MegaScan`. Route via `select_backend` once benchmarked vs literal-set.
-- Effort: 2-3 days. Mostly the dispatch infrastructure (which is the same as megakernel scaffolding - would unblock both).
+- Scope: new backend variant, dispatch wrapper, parity tests, and benchmark
+  threshold update.
 
 ### `fuse_programs` for decode + scan
 
@@ -290,7 +315,8 @@ not new research - anyone picking up the work has the contract.
 - Build a scan Program: `vyre_libs::matching::cooperative_dfa::cooperative_dfa_scan(...)`
 - `fuse_programs(&[decode_prog, scan_prog])` produces one Program; vyre auto-resolves shared buffer names (decode's output buffer should be named the same as scan's input buffer).
 - Source-side: `crates/sources/src/filesystem/read.rs` currently CPU-decompresses via `ziftsieve` then hands plaintext to `scan_coalesced`. Switch `.zst` / `.gz` inputs to keep compressed bytes + dispatch fused program.
-- Effort: 3 days. Mostly the source/scanner boundary refactor.
+- Scope: source/scanner boundary refactor, fused-program construction, parity
+  tests against CPU decompression, and compressed-corpus benchmark artifact.
 - Payoff: ~50% wall-time reduction on `.zst`-heavy corpora (npm, Docker image layers); zero effect on regular source trees.
 
 ### `nn::moe` replacing `gpu.rs` MoE
@@ -304,8 +330,8 @@ not new research - anyone picking up the work has the contract.
 - Bit-equal validation against `ml_scorer.rs`'s CPU MoE outputs on
   the existing weight set. The weights load path stays the same;
   only the dispatch path swaps.
-- Effort: 3 days + correctness validation. Risky - replacing
-  working code; needs a parity test harness that compares MoE
+- Scope: replace the existing GPU MoE dispatch path and add a parity test harness
+  that compares MoE
   outputs across CPU / current-GPU / new-vyre-GPU paths.
 - Payoff: ~600 LoC deleted, automatic benefit from vyre kernel
   improvements, identical compute semantics.
@@ -321,8 +347,8 @@ not new research - anyone picking up the work has the contract.
 - Lifetime work: `GpuStream<'a>` ties the buffer to the dispatch
   scope; keyhog needs to thread the lifetime through `Source`,
   `Chunk`, and the scanner's per-chunk extraction phase.
-- Effort: 3 days. Linux-only - Windows / macOS keep the
-  read-then-copy path.
+- Scope: Linux-only source/scanner lifetime threading and routing fallback;
+  Windows / macOS keep the read-then-copy path.
 - Payoff: eliminates a 256 MiB heap → GPU memcpy per batch on
   big-file scans.
 
@@ -376,21 +402,23 @@ are estimable. Listed best-bang-for-buck first.
    `pattern_exists`, …) that compose into rule trees. Wins:
    declarative `.keyhogignore.toml` (`suppress when file_size > 10K AND
    pattern_count(test_kw) >= 2`); user-defined gates; consistent eval
-   model. Effort: ~2 days (schema + parser + eval).
+   model. Scope: schema, parser, evaluator wiring, and suppressions parity
+   tests.
 
 3. **`runtime::uring::GpuMappedBuffer` for filesystem reads.**
    `crates/sources/src/filesystem/read.rs` reads file content into
    `Vec<u8>` then copies to GPU. `GpuMappedBuffer` io_urings the file
    directly into a GPU-mapped buffer - eliminates a 256 MiB copy per
-   batch on the GPU dispatch path. Effort: ~3 days; needs vyre-runtime
-   feature opt-in + careful lifetime work.
+   batch on the GPU dispatch path. Scope: vyre-runtime feature opt-in, source
+   lifetime work, and read-vs-mapped throughput gates.
 
 4. **`fuse_programs` to bundle decode + scan dispatches.**
    When scanning a `.zst` archive today: read on CPU → decode on CPU
    (`ziftsieve`) → copy plaintext to GPU → dispatch literal-set. With
    `fuse_programs(decode::inflate, GpuLiteralSet)` it becomes one GPU
-   dispatch. Saves ~50% wall time on compressed-corpus scans. Effort:
-   ~2 days.
+   dispatch. Saves ~50% wall time on compressed-corpus scans. Scope:
+   fused-program builder, compressed-input source contract, and compressed-corpus
+   benchmark gate.
 
 5. **`nn::moe` + `nn::linear` replacing `gpu.rs`'s hand-rolled MoE.**
    `gpu.rs` is ~620 lines of bespoke wgpu+WGSL for an MoE confidence
@@ -398,17 +426,18 @@ are estimable. Listed best-bang-for-buck first.
    `nn::linear` + `nn::activation` + `nn::norm`. Wins: ~600 lines
    deleted, automatic benefit from vyre kernel improvements. Risk:
    medium - needs parity tests against `ml_scorer.rs` outputs.
-   Effort: ~3 days plus correctness validation.
+   Scope: GPU MoE replacement plus CPU/current-GPU/new-Vyre-GPU parity.
 
 6. **`shadow`/`speculate` for CI dispatch validation.**
    In CI, run every GPU dispatch on TWO backends (vyre-driver-wgpu +
    vyre-driver-reference) and assert identical results. Catches GPU
-   driver regressions before users see them. Effort: ~1 day.
+   driver regressions before users see them. Scope: backend shadow dispatch
+   contract and CI-only routing.
 
 7. **`replay::RingLog` for deterministic scan rerun.**
    Record every dispatch + result; on a flaky test, replay the exact
    same sequence to bisect. Useful for debugging GPU non-determinism
-   reports. Effort: ~1 day (mostly wiring).
+   reports. Scope: replay log plumbing and deterministic rerun test.
 
 8. ⏳ **`vyre-driver-megakernel` to bundle the per-chunk extraction
    onto GPU** - IN PROGRESS (scaffolding committed, dispatch loop
@@ -436,14 +465,16 @@ are estimable. Listed best-bang-for-buck first.
    - Build `FileBatch` from `chunks` + per-chunk offset attribution
      in scan_gpu.rs's existing `entries` walk
 
-   Effort: 3-5 days. Biggest single perf win available.
+   Scope: dispatch hook, per-pattern hit reporting, parity, and benchmark
+   threshold update. Biggest single perf win available.
 
 9. **CPU-side entropy-fast SIMD-isation.**
    The benchmark shows per-chunk extraction is the bottleneck even
    without megakernel. `crates/scanner/src/entropy_fast.rs` already
    has thread-local FNV cache; widening the byte histogram to AVX-512
    (16-lane gather + popcnt) would lift per-chunk throughput 2-4×
-   without GPU work. Effort: 1-2 days.
+   without GPU work. Scope: AVX-512 implementation, scalar fallback, and criterion
+   perf gate.
 
 ## Megakernel wiring - status + architectural finding
 
@@ -584,25 +615,15 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
   setup overhead - slower than literal-set on the full corpus.
   Megakernel fusion (item 8) is the right fix.
 
-- **vyre's regex frontend MAX_REP cap.** The vendored v0.6.0 caps
-  bounded repetitions at `{0,64}` / `{,64}`; upstream HEAD has this
-  removed (the state-cap is the source of truth). A re-vendor against
-  HEAD picks it up but currently breaks dep-version pinning across
-  the workspace (rayon `=1.11` vs `=1.12`, smallvec `=1.14` vs `^1.15.1`,
-  …) and renames + adds workspace members. The vyre-side fix lands
-  when an upstream tag releases with pin-relaxed dependency
-  declarations.
+- **vyre regex/frontend release cadence.** The workspace is on crates.io
+  `0.6.1`, so publishability is no longer blocked by path dependencies. Future
+  upgrades should go through `scripts/vendor-vyre-gated.sh` only when testing an
+  unreleased source tree; released upgrades should change the workspace pins and
+  run scanner GPU/CPU parity plus source aggregate gates.
 
-- **Vyre is not on crates.io.** All path-deps in `vendor/vyre/`. This
-  blocks `cargo publish` of `keyhog-scanner` and `keyhog` (the binary
-  crate). Resolved when vyre publishes its workspace to crates.io.
+## Shipping gates
 
-## Realistic shipping cadence
-
-Items 1 was a single session. Items 2–7 are each a multi-day scope
-of work - wiring a vyre primitive end-to-end into keyhog requires:
-adding the dependency feature, writing the dispatch glue, validating
-against the existing path, and shipping correctness tests.
-
-"Wire all" of vyre is multi-month engineering. The audit above is
-the work plan; pick from items 2–8 by user priority.
+Each wire requires the same gates: dependency feature, dispatch glue, CPU/GPU
+parity, adversarial corpus replay, benchmark artifact, and routing-threshold
+update. The work is complete only when the benchmark and parity artifacts agree
+at the same commit.

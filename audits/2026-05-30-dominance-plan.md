@@ -883,3 +883,23 @@ Verified gates:
 - `cargo test -p keyhog-sources --test all_tests -- --nocapture`
 - `cargo test -p keyhog-sources --all-features --test all_tests -- --nocapture`
 - `git diff --check`
+
+## Executed Patch Set: Vyre Performance Innovation Lane
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- RESEARCH: verified the current published Vyre release through crates.io before changing the roadmap; the workspace pin is already at the latest `vyre = 0.6.1`.
+- SPEED: clarified that the dominance path is fused GPU work, not detector breadth: require backend traces, keep sharded `GpuLiteralSet` as the floor, then fuse decode, literal matching, boundary extraction, entropy, and confidence prefeatures after parity.
+- COHERENCE: updated `docs/vyre-usage.md` to stop claiming vendored `0.6.0`, path-dependency publish blockers, stale megakernel paths, or human-time shipping cadence.
+- TESTING: added a scanner gap test that compares the root workspace Vyre pin to `docs/vyre-usage.md` and fails on stale "not on crates.io" / vendored `0.6.0` claims.
+- COMPATIBILITY: fixed stale scanner `RawMatch` fixtures to use the production `[u8; 32]` credential-hash contract instead of string hashes.
+
+Verified gates:
+
+- `cargo search vyre --limit 10`
+- `cargo fmt -p keyhog-scanner`
+- `cargo test -p keyhog-scanner --test all_tests vyre_usage -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests resolution -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests record_window_match -- --nocapture`

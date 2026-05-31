@@ -10,7 +10,7 @@ fn demo_match(offset: usize) -> RawMatch {
         service: Arc::from("test"),
         severity: Severity::Low,
         credential: Arc::from("abc"),
-        credential_hash: "abc".into(),
+        credential_hash: [1u8; 32],
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

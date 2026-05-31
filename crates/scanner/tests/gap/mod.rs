@@ -56,3 +56,4 @@ pub mod scanner_src_files_exceed_standard_500_loc;
 pub mod single_line_implicit_concat_not_appended;
 pub mod suppression_postprocess_exceeds_modularity_cap;
 pub mod suppression_shape_gate_pipeline_twins_incomplete;
+pub mod vyre_usage_matches_workspace_pin;

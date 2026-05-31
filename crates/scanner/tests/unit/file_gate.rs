@@ -959,7 +959,7 @@ fn resolution_happy() {
         service: Arc::from("s"),
         severity: Severity::High,
         credential: Arc::from("same"),
-        credential_hash: "h".into(),
+        credential_hash: [0u8; 32],
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("t"),
