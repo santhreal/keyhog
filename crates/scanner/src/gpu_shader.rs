@@ -114,7 +114,20 @@ for (var e = 0u; e < EXPERT_COUNT; e++) {
     score_logit += gate_probs[e] * expert_forward(idx, e);
 }
 
-// Sigmoid
-outputs[idx] = 1.0 / (1.0 + exp(-score_logit));
+// Sigmoid - MUST match the CPU `ml_scorer::sigmoid` rational approximation
+// (0.5 + 0.5*x/(1+|x|), clamped at +/-6), NOT the true logistic
+// 1/(1+exp(-x)). The two diverge by up to ~0.05 in the mid-range, far wider
+// than the near-floor band, which was systematically flipping ~80 SecretBench
+// findings between the GPU and CPU/SIMD paths - the divergence that forced
+// KEYHOG_NO_GPU=1 to be pinned for a reproducible bench (DET-11). The model
+// floors are tuned and benched against this CPU approximation, so the shipped
+// GPU path must reproduce it for tuned==benched==shipped to hold for GPU users.
+if (score_logit <= -6.0) {
+    outputs[idx] = 0.0;
+} else if (score_logit >= 6.0) {
+    outputs[idx] = 1.0;
+} else {
+    outputs[idx] = 0.5 + 0.5 * score_logit / (1.0 + abs(score_logit));
+}
 }
 "#;

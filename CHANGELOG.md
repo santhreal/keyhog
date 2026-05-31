@@ -31,6 +31,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Tighten CodeSandbox token bodies to base62 so caseless matching no longer reports `CSB_...` SCREAMING_SNAKE enum identifiers as API tokens.
 - Correct the EPA detector contract fixtures to the documented 32-40 character API-key length so contract failures name real detector behavior.
 - Bound GPU MoE confidence readback with a default 30 s deadline and `KEYHOG_GPU_MOE_TIMEOUT_MS`, falling back to CPU MoE instead of parking scan workers on stalled GPU callbacks.
+- Match the GPU MoE output activation to the CPU/SIMD rational sigmoid so near-floor confidence decisions no longer diverge from the benchmarked scorer.
 - Lower filesystem source windows to 1 MiB with 128 KiB overlap so multi-MiB files feed the scanner as parallel chunks instead of serial internal re-windowing inside one worker.
 - Classify commented-out config assignments as assignment context so `# KEY=value`, `// token = value`, and HTML/block-commented config lines retain leak confidence while prose comments stay comment context.
 - Close the per-detector positive/negative/evasion contract runner by tightening required companions, Anthropic legacy length enforcement, exact service anchors, short-prefix routing, multi-line Azure endpoint matching, and generated contract fixtures that had lost their service anchors.

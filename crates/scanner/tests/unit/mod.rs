@@ -86,6 +86,7 @@ pub mod file_gate;
 pub mod flaw_investigation;
 pub mod gates;
 pub mod gpu_cases;
+pub mod gpu_shader_activation;
 // gpu_regex_dfa_basic: requires `keyhog_scanner::engine::{build_regex_dfa, RegexDfaError}`
 // which are not publicly exported. Needs engine API export or test restructuring.
 // pub mod gpu_regex_dfa_basic;
