@@ -16,6 +16,7 @@ Status: active plan
 - 2026-05-30: Hot-pattern fast-path location mapping now uses the preprocessor's original-line map, preventing structured `.env` synthetic lines from surfacing as past-EOF additional locations.
 - 2026-05-30: Scanner crate gate found stale `DetectorSpec::min_confidence` fixtures, an AVX-512 entropy parity gap on tiny/null-containing inputs, and residual weak-anchor misclassification for reviewed service-specific 32/40-hex API-key detectors; each is now wired into tests and detector data.
 - 2026-05-30: CI Action contract suite now parses every committed GitHub workflow plus the composite Action manifest, and asserts the manifest remains a composite action with executable steps instead of relying only on text grep.
+- 2026-05-30: CI workflow contracts now prove every committed workflow has a name, trigger, jobs mapping, runner/reusable-workflow target, and executable step definitions so valid-but-dead workflow YAML cannot silently ship.
 
 ## Dominance Contract
 
