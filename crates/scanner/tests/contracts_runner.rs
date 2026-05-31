@@ -134,6 +134,21 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("scanner compile from contract runner")
 }
 
+fn timing_budgets_are_enforced() -> bool {
+    if !cfg!(debug_assertions) {
+        return true;
+    }
+
+    std::env::current_exe().is_ok_and(|path| {
+        path.components().any(|component| {
+            matches!(
+                component.as_os_str().to_str(),
+                Some("release-fast" | "release" | "bench")
+            )
+        })
+    })
+}
+
 /// Bucket findings by their credential string so the per-fixture
 /// assertions are O(1) hash lookups, not O(n) linear scans, when
 /// the runner gets large.
@@ -269,13 +284,12 @@ fn every_contract_passes_positives_negatives_evasions() {
 
 #[test]
 fn every_contract_perf_budget_holds() {
-    // Perf budgets are calibrated for the OPTIMIZED build CI runs this gate
-    // under (`cargo test --profile release-fast`, see .github/workflows/ci.yml).
-    // A plain `cargo test` builds the dev/debug profile, where regex matching
-    // is 10-40x slower and EVERY budget blows by design - a debug-mode false
-    // alarm, not a regression. Skip loudly rather than report ~50 phantom
-    // failures that send the next reader chasing a perf bug that isn't there.
-    if cfg!(debug_assertions) {
+    // Perf budgets are calibrated for optimized builds. A plain `cargo test`
+    // builds the dev/debug profile, where regex matching is 10-40x slower and
+    // EVERY budget blows by design - a debug-mode false alarm, not a
+    // regression. `release-fast` deliberately keeps debug assertions enabled,
+    // so do not use `cfg!(debug_assertions)` as the optimization proxy.
+    if !timing_budgets_are_enforced() {
         eprintln!(
             "every_contract_perf_budget_holds: SKIPPED (debug build). Perf budgets \
              only hold under optimization. Enforce with:\n  \
@@ -401,13 +415,13 @@ fn every_contract_scale_gate_holds() {
                 matches.len(),
             ));
         }
-        // Correctness (the credential still surfaces in a multi-MB fixture)
-        // is checked above in every build. The wall-clock budget, like the
+        // Correctness (the credential still surfaces in a multi-MB fixture) is
+        // checked above in every build. The wall-clock budget, like the
         // per-detector perf budget, only holds under optimization - skip the
-        // timing assertion in debug so a plain `cargo test` doesn't report
+        // timing assertion in a plain dev/debug test so it doesn't report
         // phantom "scale budget exceeded" failures from 10-40x-slower debug
         // regex matching. CI enforces it via `--profile release-fast`.
-        if !cfg!(debug_assertions) && elapsed > scale.max_seconds {
+        if timing_budgets_are_enforced() && elapsed > scale.max_seconds {
             failures.push(format!(
                 "{}: scale budget exceeded - {:.3}s > budget {:.3}s ({})",
                 c.detector_id,
