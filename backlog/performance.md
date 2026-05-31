@@ -162,6 +162,22 @@ real tree. Items carry the data that proves them.
   `gpu_and_simd_produce_identical_findings_on_same_corpus` reaches assertions
   and passes.
 
+- **PERF-07d · FIXED+VERIFIED 2026-05-31 · Forced GPU on CredData spent the
+  run confirming dense literal-prefix floods on CPU** — CredData's 11,393-file
+  corpus produced GPU AC batches with 1.2M, 11.0M, and 10.4M literal-prefix
+  hits. Phase 1 itself was fast, but phase 2 then confirmed broad prefixes
+  across thousands of chunks; the pre-fix forced-GPU run did not complete in
+  45 s and peaked around 5.1 GB RSS. FIX: the AC readback cap is now aligned
+  to the measured dense-prefix loss point (32,768 triples per shard), cap
+  overflow reroutes the batch through the SIMD coalesced scanner, and the
+  existing whole-batch density guard catches dense outputs that fit under the
+  cap. This is a backend execution guard, not detector policy. VERIFIED on
+  the live RTX 5090: forced GPU CredData completes in **5.04 s wall, 3.89 GB
+  RSS** on the first cap-guard run and **6.16 s wall, 4.04 GB RSS** warm, down
+  from the 45 s timeout; current SIMD is **4.43 s wall, 2.65 GB RSS**. The
+  forced-GPU and SIMD outputs both emit 2263 findings and match exactly by
+  detector id, credential hash, file, and offset.
+
 ## Parallelism
 
 - **PERF-08 · HIGH · kernel scan is matching-bound + only ~4 of 16 cores hot

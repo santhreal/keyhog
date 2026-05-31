@@ -7,6 +7,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Performance
 
 - Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded — an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.
+- Bound the GPU AC prefilter's per-shard readback and reroute dense literal-prefix batches through the SIMD coalesced scanner before CPU phase 2 explodes. Forced-GPU CredData now completes in ~5.0 s instead of timing out at 45 s / 5.1 GB RSS, with byte-stable detector/hash/file/offset parity against the current SIMD run.
 
 ### Coherence
 
@@ -70,6 +71,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Scanner
 
+- Add a dense-prefix circuit breaker for GPU AC/literal-set phase 1: once a batch produces prefix hits at the measured phase-2 loss point, KeyHog keeps the successful GPU probe but scans that batch with the SIMD coalesced path instead of confirming millions of broad prefixes on CPU.
 - Replace the SIMD coalesced no-hit multiline fallback's full `scan()` re-entry with a prepared multiline-text scan, eliminating decode/postprocess recursion on large ordinary source files; the Linux `drivers/net` subset dropped from ~15.6 s to 0.62 s wall and the full warm-cache kernel scan from ~90 s to 3.43 s.
 - Window decoded splice-back context around the encoded payload instead of cloning the whole parent file per decoded candidate, bounding candidate-dense decode-through work while preserving nearby companion anchors.
 - Warm lazy regex transition caches with a representative no-match search during scanner warm-up so the first real source batch does not pay serial DFA first-touch cost.
