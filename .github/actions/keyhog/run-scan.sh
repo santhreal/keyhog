@@ -9,6 +9,7 @@ verify="${KEYHOG_VERIFY:-false}"
 baseline="${KEYHOG_BASELINE:-}"
 fail_on_findings="${KEYHOG_FAIL_ON_FINDINGS:-true}"
 upload_sarif="${KEYHOG_UPLOAD_SARIF:-true}"
+print_effective_config="${KEYHOG_PRINT_EFFECTIVE_CONFIG:-false}"
 
 gha_escape() {
   local value="$1"
@@ -89,6 +90,19 @@ case "$upload_sarif" in
     ;;
 esac
 
+case "$print_effective_config" in
+  1 | true | TRUE | True)
+    print_effective_config=true
+    ;;
+  0 | false | FALSE | False)
+    print_effective_config=false
+    ;;
+  *)
+    gha_error "Invalid KEYHOG_PRINT_EFFECTIVE_CONFIG '$print_effective_config'. Use '1', '0', 'true', or 'false'."
+    exit 2
+    ;;
+esac
+
 args=(scan
   --path "$scan_path"
   --severity "$severity"
@@ -103,9 +117,18 @@ if [[ -n "$baseline" ]]; then
   args+=(--baseline "$baseline")
 fi
 
+if [[ "$print_effective_config" == "true" ]]; then
+  KEYHOG_PRINT_EFFECTIVE_CONFIG=1 keyhog "${args[@]}"
+  config_exit=$?
+  if [[ "$config_exit" != "0" ]]; then
+    gha_error "keyhog effective-config preflight exited $config_exit before scanning."
+    exit "$config_exit"
+  fi
+fi
+
 scan_start_ms="$(now_ms)"
 set +e
-keyhog "${args[@]}"
+KEYHOG_PRINT_EFFECTIVE_CONFIG=0 keyhog "${args[@]}"
 keyhog_exit=$?
 set -e
 scan_end_ms="$(now_ms)"
