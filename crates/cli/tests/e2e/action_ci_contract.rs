@@ -42,6 +42,26 @@ fn github_yaml_paths() -> Vec<PathBuf> {
     paths
 }
 
+fn github_workflow_paths() -> Vec<PathBuf> {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root exists");
+    let workflow_dir = repo.join(".github/workflows");
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(&workflow_dir).expect("read .github/workflows") {
+        let path = entry.expect("workflow dir entry").path();
+        if matches!(
+            path.extension().and_then(|ext| ext.to_str()),
+            Some("yml" | "yaml")
+        ) {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths
+}
+
 fn release_workflow() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../.github/workflows/release.yml")
@@ -225,6 +245,17 @@ fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
     blocks
 }
 
+fn yaml_get<'a>(
+    mapping: &'a serde_yaml::Mapping,
+    key: impl Into<String>,
+) -> Option<&'a serde_yaml::Value> {
+    mapping.get(serde_yaml::Value::String(key.into()))
+}
+
+fn workflow_trigger<'a>(mapping: &'a serde_yaml::Mapping) -> Option<&'a serde_yaml::Value> {
+    yaml_get(mapping, "on").or_else(|| mapping.get(serde_yaml::Value::Bool(true)))
+}
+
 #[test]
 fn github_action_and_workflows_parse_as_yaml() {
     for path in github_yaml_paths() {
@@ -236,6 +267,85 @@ fn github_action_and_workflows_parse_as_yaml() {
             "{} top-level YAML must be a mapping",
             path.display()
         );
+    }
+}
+
+#[test]
+fn github_workflows_keep_triggered_executable_job_shape() {
+    for path in github_workflow_paths() {
+        let text = fs::read_to_string(&path).expect("read workflow YAML");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&text)
+            .unwrap_or_else(|err| panic!("{} must parse as YAML: {err}", path.display()));
+        let root = parsed
+            .as_mapping()
+            .unwrap_or_else(|| panic!("{} top-level YAML must be a mapping", path.display()));
+
+        let name = yaml_get(root, "name")
+            .and_then(serde_yaml::Value::as_str)
+            .unwrap_or("");
+        assert!(
+            !name.trim().is_empty(),
+            "{} must name the workflow",
+            path.display()
+        );
+        assert!(
+            workflow_trigger(root).is_some(),
+            "{} must declare at least one trigger",
+            path.display()
+        );
+
+        let jobs = yaml_get(root, "jobs")
+            .and_then(serde_yaml::Value::as_mapping)
+            .unwrap_or_else(|| panic!("{} must declare a jobs mapping", path.display()));
+        assert!(
+            !jobs.is_empty(),
+            "{} must declare at least one job",
+            path.display()
+        );
+
+        for (job_name, job_value) in jobs {
+            let job_name = job_name.as_str().unwrap_or("<non-string job name>");
+            let job = job_value
+                .as_mapping()
+                .unwrap_or_else(|| panic!("{} job {job_name} must be a mapping", path.display()));
+            let has_runner = yaml_get(job, "runs-on").is_some() || yaml_get(job, "uses").is_some();
+            assert!(
+                has_runner,
+                "{} job {job_name} must declare runs-on or uses",
+                path.display()
+            );
+            if let Some(steps) = yaml_get(job, "steps") {
+                let steps = steps.as_sequence().unwrap_or_else(|| {
+                    panic!("{} job {job_name} steps must be a sequence", path.display())
+                });
+                assert!(
+                    !steps.is_empty(),
+                    "{} job {job_name} must have at least one step",
+                    path.display()
+                );
+                for (idx, step) in steps.iter().enumerate() {
+                    let step = step.as_mapping().unwrap_or_else(|| {
+                        panic!(
+                            "{} job {job_name} step {} must be a mapping",
+                            path.display(),
+                            idx + 1
+                        )
+                    });
+                    assert!(
+                        yaml_get(step, "run").is_some() || yaml_get(step, "uses").is_some(),
+                        "{} job {job_name} step {} must run a command or use an action",
+                        path.display(),
+                        idx + 1
+                    );
+                }
+            } else {
+                assert!(
+                    yaml_get(job, "uses").is_some(),
+                    "{} job {job_name} must declare steps unless it calls a reusable workflow",
+                    path.display()
+                );
+            }
+        }
     }
 }
 

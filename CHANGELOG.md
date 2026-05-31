@@ -27,6 +27,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Execute the composite Action final fail step in the CI contract suite, proving live credentials preserve exit 10, ordinary findings preserve exit 1, and malformed `exit-code` output fails closed without workflow-command reflection.
 - Dogfood the composite Action's real-binary text-report path, proving actual KeyHog `format: text` output is counted through the wrapper's stable `Secret:` field contract.
 - Parse every committed GitHub workflow and the composite Action manifest in the local Action contract suite, and assert the manifest remains a composite action with executable steps.
+- Add semantic workflow-shape contracts for every committed GitHub workflow, requiring a name, trigger, jobs mapping, runner or reusable-workflow target, and executable step definitions.
 
 ### Benchmarks
 
