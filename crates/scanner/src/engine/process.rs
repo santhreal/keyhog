@@ -7,8 +7,8 @@
 //! `scan_state.matches` or queues an `MlPendingMatch` for the post-scan
 //! ML batch.
 
-use super::scan_filters::*;
 use super::CompiledScanner;
+use super::scan_filters::*;
 use crate::context;
 use crate::pipeline::*;
 use crate::types::*;
@@ -51,6 +51,19 @@ impl CompiledScanner {
         }
         let line = match_line_number(preprocessed, line_offsets, match_start);
         if is_within_hex_context(data, match_start, match_end) {
+            return;
+        }
+        // Digest-fragment guard: a fixed-length hex credential (e.g. a {32}-hex
+        // API-key body) whose contiguous hex run is EXTENDED by adjacent hex
+        // digits to digest length (>=40) is a slice of a SHA-1 (40) / SHA-256
+        // (64) / git-commit hash, not a standalone key. `is_within_hex_context`
+        // only fires when hex surrounds the match on BOTH sides; a detector
+        // that matches the leading 32 hex of a 64-hex digest has hex only
+        // AFTER, so it slipped through (etherscan/iterable firing on a sha256
+        // substring). Real 32-hex keys (Twilio auth token, Datadog, Algolia,
+        // Azure subscription) are delimiter-bounded (before==after==0) and are
+        // never suppressed here, so recall is preserved.
+        if is_hex_digest_fragment(data, match_start, match_end, credential) {
             return;
         }
         // Probabilistic gate: fast rejection of obvious non-secrets (UUIDs, low-diversity
@@ -124,13 +137,24 @@ impl CompiledScanner {
             if entropy < entropy_floor {
                 return;
             }
-            let camel_transitions = credential
-                .as_bytes()
-                .windows(2)
-                .filter(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
-                .count();
-            if camel_transitions >= 2 && !credential.chars().any(|ch| ch.is_ascii_digit()) {
-                return;
+            // camelCase-without-digits is the false-positive shape (Java/Go
+            // identifiers like `getUserName`); real tokens almost always carry
+            // a digit. The cheap digit scan (ASCII bytes, no UTF-8 decode via
+            // `chars()`) runs first so any credential containing a digit skips
+            // the O(n) camel-transition window walk entirely. Only no-digit
+            // credentials pay for the count, and `take(2)` stops it as soon as
+            // the >=2 threshold is reached. Behavior is identical to the prior
+            // `transitions >= 2 && !has_digit` gate.
+            if !credential.bytes().any(|b| b.is_ascii_digit()) {
+                let camel_transitions = credential
+                    .as_bytes()
+                    .windows(2)
+                    .filter(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
+                    .take(2)
+                    .count();
+                if camel_transitions >= 2 {
+                    return;
+                }
             }
         }
 
@@ -229,4 +253,39 @@ impl CompiledScanner {
             }
         }
     }
+}
+
+/// True when `credential` (a pure-hex token at `data[start..end]`) is a slice
+/// of a longer contiguous hex run reaching digest length (>=40 chars: SHA-1,
+/// git commit SHA, or SHA-256). Such a match is a fragment of a hash, never a
+/// standalone key. A genuine fixed-length hex API key is delimiter-bounded
+/// (the byte before and after is `"`/`=`/whitespace/EOL, not another hex
+/// digit), so `before == 0 && after == 0` and this returns false - recall on
+/// real 32/40/64-hex keys is preserved.
+pub(super) fn is_hex_digest_fragment(
+    data: &str,
+    start: usize,
+    end: usize,
+    credential: &str,
+) -> bool {
+    if credential.len() < 16 || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    let bytes = data.as_bytes();
+    if start > end || end > bytes.len() {
+        return false;
+    }
+    let before = bytes[..start]
+        .iter()
+        .rev()
+        .take_while(|b| b.is_ascii_hexdigit())
+        .count();
+    let after = bytes[end..]
+        .iter()
+        .take_while(|b| b.is_ascii_hexdigit())
+        .count();
+    if before == 0 && after == 0 {
+        return false;
+    }
+    before + credential.len() + after >= 40
 }

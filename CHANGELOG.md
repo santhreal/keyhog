@@ -77,6 +77,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
 - Wire the full CLI contract-test module set into `all_tests`, fix the newly enforced public contracts for `diff` missing-baseline exit codes, explicit piped `--progress`, optional `watch [PATH]` help, and top-level exit-code docs.
+- Harden hex-token false-positive suppression against digest fragments, tighten several 32-hex detector anchors to word boundaries, make Appsmith environment anchors case-insensitive, split SARIF serialization structs out of the streaming reporter, and upgrade weak CLI/decode assertions to identity-level checks.
 - Make `--no-suppress-test-fixtures` also disable test/example path confidence penalties and hard suppression, so real secrets under `tests/fixtures` can be surfaced for recall audits.
 - Document the canonical `.keyhog.toml` precedence, nested `[scan]` / `[detector.<id>]` / `[lockdown]` tables, and bench-tuned config defaults in the README, mdBook reference, example config, and config tests.
 - Make `--git-staged --exclude-paths` apply to the staged-file include set instead of letting explicitly staged paths bypass excludes.
