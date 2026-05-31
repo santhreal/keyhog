@@ -1607,3 +1607,16 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests fallback_always_active_seed_is_sparse_not_dense_bool_scan -- --nocapture`
+
+## Executed Patch Set: CI Guide Composite Action Alignment
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: `docs/src/workflows/ci.md` now leads GitHub Actions users to the hardened composite Action instead of an older install-and-upload snippet that bypassed the tested wrapper.
+- UX: the guide describes the report artifact, Code Scanning upload, job summary, raw exit code, finding count, duration, and baseline adoption path in the same terms as the Action README.
+
+Verified gates:
+
+- `rg -n "santhsecurity/keyhog/.github/actions/keyhog|duration|baseline" docs/src/workflows/ci.md`
