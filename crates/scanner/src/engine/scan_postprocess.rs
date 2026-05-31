@@ -416,14 +416,12 @@ impl CompiledScanner {
             // `--scan-comments` opts the Comment context out of the
             // ML-blended confidence multiplier so a real credential in
             // a `// TODO: rotate this …` comment surfaces with the
-            // same weight as one on a bare assignment line. TestCode
-            // and Documentation contexts stay penalised regardless -
-            // both produce orders-of-magnitude more EXAMPLE noise
-            // than real leaks.
+            // same weight as one on a bare assignment line. Test/docs contexts
+            // stay penalized unless `--no-suppress-test-fixtures` is active.
             let context_penalty_applies = match pending.code_context {
                 crate::context::CodeContext::Comment => !self.config.scan_comments,
                 crate::context::CodeContext::TestCode
-                | crate::context::CodeContext::Documentation => true,
+                | crate::context::CodeContext::Documentation => self.config.penalize_test_paths,
                 _ => false,
             };
             if context_penalty_applies && final_score < 0.95 {
@@ -438,6 +436,7 @@ impl CompiledScanner {
             let final_score = crate::confidence::apply_path_confidence_penalties(
                 final_score,
                 pending.raw_match.location.file_path.as_deref(),
+                self.config.penalize_test_paths,
             );
             let final_score = if let Some(floor) =
                 crate::confidence::known_prefix_confidence_floor(&pending.credential)
@@ -456,7 +455,12 @@ impl CompiledScanner {
                 &pending.raw_match.detector_id,
             );
 
-            if !pending.code_context.should_hard_suppress(final_score) {
+            // The fixture opt-out disables test/docs hard suppression too; low
+            // confidence comments still follow `--scan-comments`.
+            let hard_suppressed = pending.code_context.should_hard_suppress(final_score)
+                && (self.config.penalize_test_paths
+                    || matches!(pending.code_context, crate::context::CodeContext::Comment));
+            if !hard_suppressed {
                 let mut raw_match = pending.raw_match;
                 raw_match.confidence = Some(final_score);
                 scan_state.push_match(raw_match, self.config.max_matches_per_chunk);

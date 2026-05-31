@@ -49,6 +49,9 @@ pub struct ScannerConfig {
     pub test_keywords: Vec<String>,
     /// Keywords indicating a placeholder value (e.g. "change_me", "todo").
     pub placeholder_keywords: Vec<String>,
+    /// Apply test/example path confidence and hard-suppression heuristics.
+    /// The CLI disables this for `--no-suppress-test-fixtures`.
+    pub penalize_test_paths: bool,
 }
 
 impl Default for ScannerConfig {
@@ -174,6 +177,9 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
             secret_keywords: config.secret_keywords,
             test_keywords: config.test_keywords,
             placeholder_keywords: config.placeholder_keywords,
+            // Scanner-only knob; the CLI flips it off for
+            // `--no-suppress-test-fixtures`.
+            penalize_test_paths: true,
         };
         // Defensive clamp + NaN scrub on every user-influenced
         // numeric field. Idempotent. See `ScannerConfig::sanitise`
