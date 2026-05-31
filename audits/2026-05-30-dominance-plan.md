@@ -1669,3 +1669,17 @@ Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
 - `cd benchmarks && python3 -m bench run keyhog mirror --corpus-root <tmp-fixture> --output /tmp/keyhog-bench-run.json && python3 -m json.tool /tmp/keyhog-bench-run.json >/dev/null`
+
+## Executed Patch Set: Benchmark Measurement Portability
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: benchmark subprocess measurement now verifies actual GNU `time` support before adding `-v -o`, preventing BSD/macOS `/usr/bin/time` from breaking every scanner row.
+- SPEED: Linux keeps GNU peak-RSS capture when available; other hosts still produce wall time and best-effort RSS through `resource.getrusage`.
+- TESTING: added a fallback-path unit test that forces GNU time unavailable and proves `run_measured` still captures stdout, exit code, wall time, and RSS.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`

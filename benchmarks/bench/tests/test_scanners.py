@@ -1,7 +1,9 @@
 import json
 import sqlite3
+import sys
 
 from bench import scanners
+from bench.scanners import base
 
 
 def test_keyhog_normalizer_reads_json_array_shape():
@@ -109,3 +111,18 @@ def test_requested_competitor_adapters_resolve_to_measured_scanners():
         assert cfg.backend == "default"
         assert cfg.cache == "off"
         assert cfg.daemon == "off"
+
+
+def test_run_measured_falls_back_without_gnu_time(monkeypatch):
+    monkeypatch.setattr(base, "_GNU_TIME", None)
+
+    stdout, stderr, stats = base.run_measured(
+        [sys.executable, "-c", "print('ok')"],
+        timeout=30,
+    )
+
+    assert stdout.strip() == "ok"
+    assert stderr == ""
+    assert stats.exit_code == 0
+    assert stats.wall_ms > 0
+    assert stats.peak_rss_kb > 0
