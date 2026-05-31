@@ -1046,6 +1046,19 @@ Red gate captured:
 
 - `cargo test -p keyhog-scanner --test contracts_runner every_contract_passes_positives_negatives_evasions -- --nocapture` is red across many pre-existing detector contracts, so it is not a clean CodeSandbox-only proof gate.
 
+## Executed Patch Set: EPA Contract Length Coherence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- TESTING: corrected EPA contract positives/evasions from a 52-character value to a 40-character value matching the detector's documented `32-40` character API-key contract.
+- COHERENCE: the fixture reason now matches the actual byte length being tested, so future contract failures point at detector behavior instead of stale generated fixture data.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests epa_api_key -- --nocapture`
+
 ## Executed Patch Set: GitHub Action CI Fail-Closed UX
 
 Date: 2026-05-31
