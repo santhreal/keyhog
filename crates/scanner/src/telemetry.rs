@@ -16,7 +16,9 @@
 //! argument. Tests reset state via `reset()`.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -47,6 +49,7 @@ struct Telemetry {
     dogfood_enabled: AtomicBool,
     example_suppressions: AtomicUsize,
     events: Mutex<Vec<DogfoodEvent>>,
+    seen_example_suppressions: Mutex<HashSet<String>>,
 }
 
 // Global lock-free telemetry counters (KH-116)
@@ -93,6 +96,27 @@ pub fn record_example_suppression(
     reason: &'static str,
 ) {
     let t = cell();
+    let credential_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(credential.as_bytes());
+        let digest = hasher.finalize();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&digest);
+        keyhog_core::hex_encode(&bytes)
+    };
+    let key = format!(
+        "{}\0{}\0{}\0{}",
+        detector,
+        path.unwrap_or(""),
+        credential_hash,
+        reason
+    );
+    if let Ok(mut seen) = t.seen_example_suppressions.lock() {
+        if !seen.insert(key) {
+            return;
+        }
+    }
+
     t.example_suppressions.fetch_add(1, Ordering::Relaxed);
 
     // KH-120: Wrap dogfood logging events behind static capability flags to eliminate overhead during silent scans.
@@ -201,5 +225,8 @@ pub fn reset() {
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
+    }
+    if let Ok(mut seen) = t.seen_example_suppressions.lock() {
+        seen.clear();
     }
 }

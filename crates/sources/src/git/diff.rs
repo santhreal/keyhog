@@ -87,27 +87,27 @@ fn stream_added_lines(
     head_ref: Option<&str>,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let base_ref = super::validate_ref_name(base_ref)?;
-    let head_ref = super::validate_ref_name(head_ref.unwrap_or("HEAD"))?;
+    let head_ref = head_ref.map(super::validate_ref_name).transpose()?;
     let repo_root = super::canonical_repo_root(repo_path)?;
     let repo_arg = super::validate_repo_path(&repo_root)?;
 
     // Verify the refs exist first
     super::verify_ref(&repo_arg, &base_ref)?;
-    super::verify_ref(&repo_arg, &head_ref)?;
     let base_commit = super::get_commit_hash(&repo_arg, &base_ref)?;
-    let head_commit = super::get_commit_hash(&repo_arg, &head_ref)?;
+    let head_commit = if let Some(head_ref) = head_ref.as_deref() {
+        super::verify_ref(&repo_arg, head_ref)?;
+        Some(super::get_commit_hash(&repo_arg, head_ref)?)
+    } else {
+        None
+    };
 
     // Run git diff to get unified diff output
     let mut command = Command::new(super::git_bin()?);
-    command.args([
-        "-C",
-        &repo_arg,
-        "diff",
-        "-U0",
-        "--end-of-options",
-        &base_commit,
-        &head_commit,
-    ]);
+    command.args(["-C", &repo_arg, "diff", "-U0", "--end-of-options"]);
+    command.arg(&base_commit);
+    if let Some(head_commit) = head_commit.as_deref() {
+        command.arg(head_commit);
+    }
 
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
@@ -120,8 +120,9 @@ fn stream_added_lines(
     let mut reader = std::io::BufReader::new(stdout);
 
     // Get commit info for metadata
-    let author = super::get_commit_author(&repo_arg, &head_commit)?;
-    let date = super::get_commit_date(&repo_arg, &head_commit)?;
+    let metadata_commit = head_commit.unwrap_or_else(|| base_commit.clone());
+    let author = super::get_commit_author(&repo_arg, &metadata_commit)?;
+    let date = super::get_commit_date(&repo_arg, &metadata_commit)?;
 
     let mut current_path: Option<String> = None;
     let mut current_content = String::new();
@@ -158,7 +159,7 @@ fn stream_added_lines(
                                     base_offset: 0,
                                     source_type: "git-diff".into(),
                                     path: Some(path.clone()),
-                                    commit: Some(head_commit.clone()),
+                                    commit: Some(metadata_commit.clone()),
                                     author: Some(author.clone()),
                                     date: Some(date.clone()),
                                     mtime_ns: None,
@@ -185,7 +186,7 @@ fn stream_added_lines(
                                 base_offset: 0,
                                 source_type: "git-diff".into(),
                                 path: Some(path),
-                                commit: Some(head_commit.clone()),
+                                commit: Some(metadata_commit.clone()),
                                 author: Some(author.clone()),
                                 date: Some(date.clone()),
                                 mtime_ns: None,
@@ -235,7 +236,7 @@ fn stream_added_lines(
                                 base_offset: 0,
                                 source_type: "git-diff".into(),
                                 path: Some(path.clone()),
-                                commit: Some(head_commit.clone()),
+                                commit: Some(metadata_commit.clone()),
                                 author: Some(author.clone()),
                                 date: Some(date.clone()),
                                 mtime_ns: None,

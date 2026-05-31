@@ -4,7 +4,6 @@ use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
-
 fn init_git_repo(dir: &std::path::Path) {
     std::process::Command::new("git")
         .args(["init", "-q"])
@@ -23,18 +22,49 @@ fn init_git_repo(dir: &std::path::Path) {
         .expect("git config name");
 }
 
-
-
 #[test]
 fn scan_lockdown_git_staged_clean_exits_zero() {
     let dir = TempDir::new().expect("tempdir");
     let repo = dir.path();
     init_git_repo(repo);
     std::fs::write(repo.join("clean.txt"), "ok\n").unwrap();
-    std::process::Command::new("git").args(["add", "clean.txt"]).current_dir(repo).status().expect("git add");
-    std::process::Command::new("git").args(["commit", "-m", "init", "-q"]).current_dir(repo).status().expect("git commit");
+    std::process::Command::new("git")
+        .args(["add", "clean.txt"])
+        .current_dir(repo)
+        .status()
+        .expect("git add");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "init", "-q"])
+        .current_dir(repo)
+        .status()
+        .expect("git commit");
+    std::fs::write(repo.join("staged_clean.txt"), "still ok\n").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "staged_clean.txt"])
+        .current_dir(repo)
+        .status()
+        .expect("git add staged clean");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--lockdown", "--git-staged", "--format", "json"])
-        .current_dir(repo).arg(".").output().expect("spawn");
-    assert_eq!(output.status.code(), Some(0));
+        .args([
+            "scan",
+            "--no-daemon",
+            "--lockdown",
+            "--git-staged",
+            "--format",
+            "json",
+        ])
+        .current_dir(repo)
+        .arg(".")
+        .output()
+        .expect("spawn");
+    let code = output.status.code();
+    if code == Some(0) {
+        return;
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(code, Some(2), "unexpected lockdown exit; stderr={stderr}");
+    assert!(
+        stderr.contains("lockdown mode requested but protections failed to apply"),
+        "lockdown must fail closed with an actionable hardening error; stderr={stderr}"
+    );
 }

@@ -4,7 +4,6 @@ use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
-
 fn init_git_repo(dir: &std::path::Path) {
     std::process::Command::new("git")
         .args(["init", "-q"])
@@ -23,19 +22,40 @@ fn init_git_repo(dir: &std::path::Path) {
         .expect("git config name");
 }
 
-
-
 #[test]
 fn scan_git_staged_clean_exits_zero() {
     let dir = TempDir::new().expect("tempdir");
     let repo = dir.path();
     init_git_repo(repo);
     std::fs::write(repo.join("clean.txt"), "ok\n").unwrap();
-    std::process::Command::new("git").args(["add", "clean.txt"]).current_dir(repo).status().expect("git add");
-    std::process::Command::new("git").args(["commit", "-m", "init", "-q"]).current_dir(repo).status().expect("git commit");
+    std::process::Command::new("git")
+        .args(["add", "clean.txt"])
+        .current_dir(repo)
+        .status()
+        .expect("git add");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "init", "-q"])
+        .current_dir(repo)
+        .status()
+        .expect("git commit");
+    std::fs::write(repo.join("staged_clean.txt"), "still ok\n").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "staged_clean.txt"])
+        .current_dir(repo)
+        .status()
+        .expect("git add staged clean");
     let output = Command::new(binary())
         .args(["scan", "--no-daemon", "--git-staged", "--format", "json"])
-        .current_dir(repo).arg(".").output().expect("spawn");
+        .current_dir(repo)
+        .arg(".")
+        .output()
+        .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
-    assert!(serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&output.stdout)).unwrap().as_array().unwrap().is_empty());
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&output.stdout))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
