@@ -1216,6 +1216,21 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner shard_index_of_matches_joined_key_hash -- --nocapture`
 
+## Executed Patch Set: GPU MoE Sigmoid Parity
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: GPU MoE confidence now uses the same rational sigmoid as CPU/SIMD scoring, so near-floor confidence decisions match the benchmarked path.
+- COHERENCE: the shader comment, CPU scorer formula, tests, and changelog now agree that the rational activation is the shipped contract.
+- TESTING: added external scanner unit tests that prove the true logistic diverges beyond the near-floor band and reject reintroducing the logistic shader formula.
+- INNOVATION: this removes one reason benchmark scoring had to pin `KEYHOG_NO_GPU=1`, moving the GPU acceleration path closer to tuned-equals-shipped behavior.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests gpu_shader -- --nocapture`
+
 ## Executed Patch Set: GPU MoE Readback Deadline
 
 Date: 2026-05-31
