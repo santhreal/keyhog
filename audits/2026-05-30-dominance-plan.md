@@ -2003,10 +2003,10 @@ Date: 2026-05-31
 
 Vector coverage:
 
-- CI UX: trusted GitHub Actions runs with `upload-sarif: 'true'` now fail closed when Code Scanning upload fails, so a green CI job cannot silently lack annotations.
-- AUDIT HUNTS: fork pull requests keep the existing advisory upload behavior because their restricted token commonly lacks `security-events: write`; the workflow artifact remains available for review.
+- CI UX: trusted GitHub Actions runs with `upload-sarif: 'true'` now fail closed when Code Scanning upload fails, so a green CI job cannot silently lack annotations; the report artifact still uploads under `always()` when the report exists.
+- AUDIT HUNTS: fork pull requests keep the existing advisory upload behavior because their restricted token commonly lacks `security-events: write`; the workflow artifact remains available for review in both fork and trusted-failure cases.
 - COHERENCE: Action README, CI guide, changelog, and composite Action YAML now describe the same trusted-vs-fork upload policy.
-- TESTING: added a composite Action manifest contract that rejects unconditional `continue-on-error: true` on the SARIF upload step.
+- TESTING: added composite Action manifest contracts that reject unconditional `continue-on-error: true` on the SARIF upload step and require artifact upload to run under `always()`.
 
 Verified gates:
 
