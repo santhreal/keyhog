@@ -86,6 +86,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Scanner
 
+- Bound Bright Data 64-hex matches to a trailing hex boundary, accept uppercase hex, and fix malformed 65-hex contract/adversarial fixtures so detector-contract failures represent real misses instead of digest-slice suppression.
 - Let Avalara license-key matches surface without requiring a nearby account-id companion; the account ID is still captured for verification when present, but standalone `avalara_license_key` fixtures no longer get dropped before reporting.
 - Normalize U+00AD soft hyphen as an evasion character instead of promoting digit-adjacent occurrences to ASCII `-`, restoring contiguous credential matching for soft-hyphen-split secrets.
 - Lower the anchored AWS session-token body floor from 80 to 64 characters so committed 77-character `AWS_SESSION_TOKEN` fixtures and their soft-hyphen variants are detected by the service detector instead of relying on generic fallback behavior.

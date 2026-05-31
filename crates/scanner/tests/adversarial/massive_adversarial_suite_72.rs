@@ -792,7 +792,7 @@ fn adv72_brightcove_api_credentials_evade_lrm_must_fire() {
 fn adv72_brightdata_credentials_normal_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -809,7 +809,7 @@ fn adv72_brightdata_credentials_wrong_prefix_must_silent() {
 fn adv72_brightdata_credentials_evade_zwsp_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200B}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200B}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -818,7 +818,7 @@ fn adv72_brightdata_credentials_evade_zwsp_must_fire() {
 fn adv72_brightdata_credentials_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{00AD}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{00AD}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -827,7 +827,7 @@ fn adv72_brightdata_credentials_evade_soft_hyphen_must_fire() {
 fn adv72_brightdata_credentials_evade_zwnj_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200C}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200C}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -836,7 +836,7 @@ fn adv72_brightdata_credentials_evade_zwnj_must_fire() {
 fn adv72_brightdata_credentials_evade_zwj_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200D}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200D}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -845,7 +845,7 @@ fn adv72_brightdata_credentials_evade_zwj_must_fire() {
 fn adv72_brightdata_credentials_evade_zwnbsp_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{FEFF}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{FEFF}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -854,7 +854,7 @@ fn adv72_brightdata_credentials_evade_zwnbsp_must_fire() {
 fn adv72_brightdata_credentials_evade_word_joiner_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{2060}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{2060}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -863,7 +863,7 @@ fn adv72_brightdata_credentials_evade_word_joiner_must_fire() {
 fn adv72_brightdata_credentials_evade_mongolian_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{180E}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{180E}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -872,7 +872,7 @@ fn adv72_brightdata_credentials_evade_mongolian_must_fire() {
 fn adv72_brightdata_credentials_evade_rtl_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{202E}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{202E}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -881,7 +881,7 @@ fn adv72_brightdata_credentials_evade_rtl_must_fire() {
 fn adv72_brightdata_credentials_evade_pop_dir_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{202C}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{202C}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
@@ -890,7 +890,7 @@ fn adv72_brightdata_credentials_evade_pop_dir_must_fire() {
 fn adv72_brightdata_credentials_evade_lrm_must_fire() {
     assert_detector_fires(
         "brightdata-credentials",
-        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200E}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7",
+        "brightdata=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\u{200E}3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b7c4d3a5e9f1b",
     );
 }
