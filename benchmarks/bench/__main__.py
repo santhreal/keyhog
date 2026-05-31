@@ -8,7 +8,10 @@ import pathlib
 
 from . import hardware
 from .leaderboard import run_leaderboard
+from .report import build_sections, inject, load_results, write_reports
 from .runner import resolve_corpus_with_root, run_once, write_result
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _host() -> int:
@@ -48,6 +51,32 @@ def _leaderboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def _report(args: argparse.Namespace) -> int:
+    import sys
+    results = load_results(args.results)
+    write_reports(results, args.corpus, args.reports)
+    if not (args.inject or args.check):
+        return 0
+    readme = pathlib.Path(args.readme)
+    original = readme.read_text() if readme.exists() else ""
+    updated = original
+    for name, body in build_sections(results, args.corpus).items():
+        updated = inject(updated, name, body)
+    if args.check:
+        if updated != original:
+            print("README bench tables are STALE: `make report` would change it.",
+                  file=sys.stderr)
+            return 1
+        print("README bench tables are up to date.", file=sys.stderr)
+        return 0
+    if updated != original:
+        readme.write_text(updated)
+        print(f"injected bench tables into {readme}", file=sys.stderr)
+    else:
+        print("README unchanged (markers absent or already current).", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark helpers.")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -73,6 +102,17 @@ def main(argv: list[str] | None = None) -> int:
     leaderboard.add_argument("--corpus-root", default=None)
     leaderboard.add_argument("--out", type=pathlib.Path, default=None)
 
+    report = sub.add_parser("report", help="Render benchmark markdown reports.")
+    report.add_argument("--results", type=pathlib.Path, default=pathlib.Path("results"))
+    report.add_argument("--reports", type=pathlib.Path, default=pathlib.Path("reports"))
+    report.add_argument("--corpus", default="mirror")
+    report.add_argument("--readme", type=pathlib.Path, default=_REPO_ROOT / "README.md",
+                        help="README to inject generated tables into (between BENCH markers).")
+    report.add_argument("--inject", action="store_true",
+                        help="Rewrite the README between <!-- BENCH:* --> markers.")
+    report.add_argument("--check", action="store_true",
+                        help="Exit 1 if --inject would change the README (idempotence gate).")
+
     args = parser.parse_args(argv)
     if args.cmd == "host":
         return _host()
@@ -82,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args)
     if args.cmd == "leaderboard":
         return _leaderboard(args)
+    if args.cmd == "report":
+        return _report(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 

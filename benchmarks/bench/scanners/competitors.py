@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sqlite3
 import tempfile
 
@@ -189,6 +190,7 @@ class KingfisherScanner(Scanner):
     name = "kingfisher"
     binary_name = "kingfisher"
     binary_env = "KINGFISHER_BIN"
+    success_exit_codes = (0, 200)
 
     def variants(self) -> list[ScannerConfig]:
         return [ScannerConfig(backend="default", cache="off", daemon="off", mode="low-no-validate")]
@@ -278,6 +280,22 @@ class TitusScanner(Scanner):
 
     def variants(self) -> list[ScannerConfig]:
         return [ScannerConfig(backend="default", cache="off", daemon="off", mode="no-validate")]
+
+    def version(self) -> str:
+        if not self.available():
+            return ""
+        try:
+            completed = subprocess.run(
+                [self.binary, "version"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        out = (completed.stdout or completed.stderr or "").strip()
+        return " ".join(line.strip() for line in out.splitlines() if line.strip())
 
     def run(
         self,

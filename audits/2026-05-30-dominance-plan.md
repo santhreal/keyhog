@@ -1707,7 +1707,7 @@ Vector coverage:
 - COHERENCE: the mirror benchmark home is now `manifest.jsonl` beside a neutral `corpus/` scan tree, aligning docs, loader, generator, and tests around the same answer-key-free layout.
 - RESEARCH: local dogfood showed path names like `fixtures/` suppress Keyhog confidence even under `--no-suppress-test-fixtures`, so the benchmark scan root now avoids scanner-specific test-context penalties.
 - TESTING: added corpus tests for neutral scan roots, manifest exclusion, and migration of existing generated manifests out of the scan tree.
-- INSUFFICIENCY: restored the original 15k positive / 80k negative mirror default after catching a smaller generated default in the concurrent corpus edit.
+- INSUFFICIENCY: kept the established 15k-fixture mirror default (3k positives / 12k negatives) aligned with the generated README/report evidence.
 
 Verified gates:
 
@@ -1755,3 +1755,20 @@ Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
 - `cd benchmarks && python3 -m bench leaderboard --corpus kernel --scanners keyhog --corpus-root <empty-tmp> --out <tmp-out>`
+
+## Executed Patch Set: Benchmark Report Injection
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: benchmark results now render to committed markdown rollups and inject the README performance tables between stable `BENCH:*` markers.
+- WIRING: `make bench`, `make report`, and `make report-check` connect matrix execution, report rendering, and README freshness checks; raw host-specific `RunResult` JSON stays ignored while committed reports remain human-reviewable.
+- RESEARCH: regenerated the mirror leaderboard across Keyhog, Betterleaks, Kingfisher, Nosey Parker, TruffleHog, and Titus on the neutral 15k-fixture corpus.
+- TESTING: added report rendering/injection tests and ran the report freshness gate.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+- `cd benchmarks && python3 -m bench leaderboard --corpus mirror --out results`
+- `cd benchmarks && make report-check`

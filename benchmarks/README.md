@@ -1,0 +1,103 @@
+# keyhog benchmarks
+
+A reproducible, multi-corpus, multi-config evaluation harness. One importable
+Python package (`bench/`) replaces the scattered scripts that used to live
+under `tools/secretbench/scoring/`: every run produces one `RunResult` JSON on
+a single schema, so one scorer, one report generator, and one test suite serve
+every **scanner × config × corpus × host** combination.
+
+The competitor tables in the top-level [`../README.md`](../README.md) are
+**generated** by `make report` (between `<!-- BENCH:* -->` markers) — never
+hand-edited.
+
+## Quick start
+
+```bash
+make mirror     # generate the 15k synthetic SecretBench-mirror corpus (off-git, neutral layout)
+make bench      # run every scanner on the mirror -> results/<host>/
+make report     # render reports/ + inject the leaderboard into ../README.md
+make test       # pytest the package (scorer truth, loaders, injection idempotence)
+```
+
+The release keyhog binary is resolved from `$KEYHOG_BIN`, else the cargo
+target-dir at `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog`,
+else `keyhog` on `PATH`. Build it first (cargo is slow — background it):
+`make keyhog` or `cargo build --release -p keyhog`.
+
+## What it measures
+
+- **Detection** — TP / FP / FN → precision / recall / F1, overall and
+  per-category, by the SecretBench containment rule (a finding's surfaced
+  value contains or is contained-in a labeled secret).
+- **Speed** — wall time + throughput (MB/s) + peak RSS (`/usr/bin/time -v`),
+  per run.
+- **Host** — OS / kernel / CPU / cores / RAM / GPU + VRAM, captured per run so
+  desktop / santhserver / Windows-ThinkPad / macOS results aggregate into one
+  matrix.
+- **Config** — keyhog's `backend × cache × daemon × mode` axes; each competitor
+  carries its own knob (kingfisher confidence, etc.) in the same `config_id`.
+
+## Two fairness rules (baked into every corpus)
+
+Both were proven against the live keyhog binary, not assumed:
+
+1. **The answer key is excluded from the scan tree.** A scanner pointed at a
+   dir containing `manifest.jsonl` (every labeled secret in plaintext) "finds"
+   those secrets — betterleaks fires **9392** spurious matches on the mirror
+   manifest, kingfisher **7581**. Layout keeps the manifest a *sibling* of the
+   scan tree: `<home>/manifest.jsonl` beside `<home>/corpus/<shards>`; scanners
+   only ever see `corpus/`.
+2. **The scan dir has a neutral name** (`corpus`, never `fixtures`/`test`).
+   keyhog applies a path-context test-fixture confidence penalty under
+   "fixtures"-shaped paths that `--no-suppress-test-fixtures` does *not*
+   override — the same 15k files scored 1880 findings under `fixtures/` vs 2484
+   under a neutral name (tracked as MC-15 in `../backlog/macro-coherence.md`).
+
+On the fair mirror keyhog scores **F1 = 0.8578** (P 0.986 / R 0.759), #1 ahead
+of every competitor; see the generated table in the top-level README.
+
+## Layout
+
+```
+benchmarks/
+  bench/                  importable package
+    schema.py             RunResult + nested records (the common contract)
+    hardware.py           host capture
+    score.py              overlap/attribution scorer (bit-identical to legacy score.py)
+    corpora/              mirror · homefield · creddata · perf(kernel) adapters
+    scanners/             keyhog (+config matrix) · betterleaks · kingfisher · trufflehog · titus · noseyparker
+    runner.py             one (scanner,config,corpus) measurement -> RunResult
+    leaderboard.py        the matrix: run many scanners/configs, write results/<host>/, rank
+    report.py             results -> markdown + idempotent README injection
+    tests/                pytest
+  corpora/                generated data (git-ignored; reproducible via `make mirror` / `make creddata`)
+  results/<host>/         one RunResult JSON per run (git-ignored; regenerable)
+  reports/                generated markdown (committed): leaderboard.md · perf.md · gaps.md
+```
+
+## Corpora
+
+| name | what | labels | get it |
+|---|---|---|---|
+| `mirror` | 15k synthetic SecretBench-shape (3k positives / 12k negatives) | yes | `make mirror` |
+| `homefield-betterleaks` | betterleaks' own `tps`/`fps` rule examples | yes | harvested |
+| `homefield-kingfisher` | kingfisher's own rule examples | yes | harvested |
+| `creddata` | [Samsung/CredData](https://github.com/Samsung/CredData) (~11k files, pinned commit) | yes (T=pos, F/X=neg) | `make creddata` |
+| `kernel` | Linux kernel tree | no (perf only) | set `KEYHOG_BENCH_KERNEL` |
+
+## Tiers
+
+- `quick` — every scanner at its default config (the README leaderboard).
+- `perf` — keyhog's full `backend × cache × daemon × mode` matrix on one
+  corpus, for the speed/RSS table:
+  `python -m bench.leaderboard --tier perf --corpus kernel --scanners keyhog --matrix backend,cache,daemon,mode`.
+
+## Reproducibility
+
+Scoring pins `KEYHOG_NO_GPU=1` for the deterministic SIMD path on the default
+`simd-*` configs; the `gpu`/`auto` configs set `KEYHOG_NO_GPU=0` to dogfood the
+GPU path (GPU↔SIMD parity is a separate release gate). The CredData corpus is
+pinned to an exact commit so a score is reproducible against a fixed dataset
+revision. The scorer is bit-identical to the legacy
+`tools/secretbench/scoring/score.py` on the same input (regression-anchored in
+`bench/tests/test_score.py`).

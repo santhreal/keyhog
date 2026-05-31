@@ -126,7 +126,7 @@ class MirrorCorpus(Corpus):
                 ))
         return out
 
-    def ensure(self, positives: int = 15000, negatives: int = 80000, seed: int = 0) -> None:
+    def ensure(self, positives: int = 3000, negatives: int = 12000, seed: int = 0) -> None:
         """Generate the corpus into the split layout if absent (idempotent).
 
         The generator emits a flat tree (manifest + shards); we point it at
@@ -162,8 +162,8 @@ def _main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Mirror corpus management.")
     ap.add_argument("--ensure", action="store_true",
                     help="Generate the corpus if its manifest is absent.")
-    ap.add_argument("--positives", type=int, default=15000)
-    ap.add_argument("--negatives", type=int, default=80000)
+    ap.add_argument("--positives", type=int, default=3000)
+    ap.add_argument("--negatives", type=int, default=12000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--corpus-dir", default=None)
     args = ap.parse_args(argv)

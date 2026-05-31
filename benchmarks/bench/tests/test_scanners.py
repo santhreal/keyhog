@@ -123,6 +123,7 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
     assert not keyhog.exit_success(2)
     assert betterleaks.exit_success(0)
     assert not betterleaks.exit_success(1)
+    assert scanners.resolve_scanner("kingfisher").exit_success(200)
 
 
 def test_run_measured_falls_back_without_gnu_time(monkeypatch):
