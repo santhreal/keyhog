@@ -67,3 +67,7 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
     }
     ChecksumResult::NotApplicable
 }
+
+pub(crate) fn warm_runtime_regexes() {
+    slack::warm_runtime_regexes();
+}

@@ -1,6 +1,35 @@
 use super::*;
+use aho_corasick::AhoCorasick;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::LazyLock;
+
+static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
+    // The keyword -> value bridge accepts:
+    //   1. `key = "v"` / `key="v"` (Python/Ruby/JS/sh)
+    //   2. `key: "v"` (YAML, modern JSON-ish)
+    //   3. `"key": "v"` (JSON - closing quote of key is allowed before `:`)
+    //   4. `const KEY: &str = "v"` (Rust with type)
+    regex::Regex::new(
+        r#"(?i)(?:secret|password|passwd|pwd|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
+    ).ok()
+});
+
+static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
+    AhoCorasick::builder()
+        .ascii_case_insensitive(true)
+        .build(
+            super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
+                .iter()
+                .copied(),
+        )
+        .ok()
+});
+
+pub(crate) fn warm_generic_assignment_runtime() {
+    let _ = GENERIC_RE.as_ref();
+    let _ = KEYWORD_AC.as_ref();
+}
 
 thread_local! {
     /// Per-thread pool for the `lines_with_keyword` scratch buffer.
@@ -28,34 +57,6 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
-        use std::sync::LazyLock;
-        static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-            // The keyword → value bridge accepts:
-            //   1. `key = "v"` / `key="v"` (Python/Ruby/JS/sh)
-            //   2. `key: "v"` (YAML, modern JSON-ish)
-            //   3. `"key": "v"` (JSON - closing quote of key is
-            //      allowed BEFORE the `:`)
-            //   4. `const KEY: &str = "v"` (Rust with type) - an
-            //      optional `: &?TypeName =` segment between
-            //      keyword and value (handles `&str`, `String`,
-            //      `Cow<str>`, etc.). The `&?[A-Za-z_]` opener +
-            //      `[A-Za-z0-9_]*` tail keeps the type-name
-            //      narrowly recognizable and reject mid-line code.
-            // Closing quote `["'\u{60}]?` permitted between keyword
-            // and `[:=]` to cover JSON. Then a `[:=]` mandatory.
-            // Optional `[:=]` after a type segment for Rust. Value
-            // capture as before. `:` stays in the value alphabet so
-            // `nginx@sha256:<hex>` captures intact (defect #76).
-            // `.` is in the separator class alongside `_`/`-` so dotted
-            // property-key forms like `api.key`, `private.key`, `client.secret`
-            // are recognized. Common in `.properties`, `.toml`, helm-values,
-            // and TF locals. The dot is bounded inside the keyword shape; the
-            // value bridge still requires a `=`/`:` after, so this does not
-            // open up method-chain false-matches.
-            regex::Regex::new(
-                r#"(?i)(?:secret|password|passwd|pwd|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
-            ).ok()
-        });
         let Some(generic_re) = GENERIC_RE.as_ref() else {
             return;
         };
@@ -80,23 +81,6 @@ impl CompiledScanner {
         // every keyword simultaneously. On an 8 MiB no-hit corpus this drops
         // the scan_generic_assignments pre-filter from ~16 × 240 ms of
         // window-scan to a single AC pass.
-        use aho_corasick::AhoCorasick;
-        // LazyLock<Option<_>> + .ok() - a panic inside a LazyLock initializer
-        // poisons the static for the rest of the process and crashes every
-        // subsequent worker thread that touches it. Convert to a soft
-        // fallback so an aho-corasick version bump that tightens validation
-        // degrades to "no keyword prefilter" (worst case: same precision,
-        // slightly slower scan) instead of killing the whole scanner.
-        static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-            AhoCorasick::builder()
-                .ascii_case_insensitive(true)
-                .build(
-                    super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
-                        .iter()
-                        .copied(),
-                )
-                .ok()
-        });
         let Some(keyword_ac) = KEYWORD_AC.as_ref() else {
             tracing::warn!(
                 "generic-assignment keyword AC failed to compile; \

@@ -578,12 +578,12 @@ impl ScanOrchestrator {
         // cost. The drain thread only groups chunks + enforces the 512 MiB
         // ceiling; merkle hashing + scanning run in parallel in the consumer.
         //
-        // Measured flat optimum on small-file filesystem corpora: finer
-        // batches keep the outer parallel bridge balanced while bounding
-        // in-flight chunk memory; buffering at roughly one batch per four
-        // workers lets the drain thread stay ahead without letting small-file
-        // corpora prefetch thousands of windows into RAM.
-        const FUSED_BATCH: usize = 16;
+        // Measured flat optimum on small-file filesystem corpora: 32 chunks
+        // amortises the nested `scan_coalesced` phase costs better than 16
+        // without the RSS bump seen at 64; buffering at roughly one batch per
+        // four workers lets the drain thread stay ahead without letting
+        // small-file corpora prefetch thousands of windows into RAM.
+        const FUSED_BATCH: usize = 32;
         let fused_depth = rayon::current_num_threads()
             .saturating_add(3)
             .saturating_div(4)

@@ -305,6 +305,10 @@ impl CompiledScanner {
         self.fallback.par_iter().for_each(|(p, _)| {
             let _ = p.regex.get().find(WARM_SAMPLE);
         });
+        crate::shared_regexes::warm_runtime_regexes();
+        fallback_generic::warm_generic_assignment_runtime();
+        crate::multiline::warm_runtime_regexes();
+        crate::checksum::warm_runtime_regexes();
     }
 
     /// Iterator over the FINAL regex source strings (post anchoring /

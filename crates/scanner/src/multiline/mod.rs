@@ -14,3 +14,8 @@ pub(crate) use config::has_concatenation_indicators;
 pub use config::{LineMapping, MultilineConfig, PreprocessedText};
 pub(crate) use preprocessor::extract_prefix;
 pub use preprocessor::preprocess_multiline;
+
+pub(crate) fn warm_runtime_regexes() {
+    config::warm_runtime_regexes();
+    structural::warm_runtime_regexes();
+}

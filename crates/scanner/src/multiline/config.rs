@@ -4,6 +4,17 @@ use std::sync::LazyLock;
 const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
 
+static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*[a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}\s*;?\s*$"#,
+    )
+    .ok()
+});
+
+pub(crate) fn warm_runtime_regexes() {
+    let _ = VAR_REF_CONCAT_RE.as_ref();
+}
+
 /// A mapping from an offset in the joined text back to the original line number.
 #[derive(Debug, Clone)]
 pub struct LineMapping {
@@ -219,12 +230,6 @@ fn has_var_ref_concat_line(line: &str) -> bool {
     if !line.contains('+') {
         return false;
     }
-    static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-        Regex::new(
-            r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*[a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}\s*;?\s*$"#,
-        )
-        .ok()
-    });
     VAR_REF_CONCAT_RE
         .as_ref()
         .is_some_and(|re| re.is_match(line))

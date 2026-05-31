@@ -17,6 +17,11 @@ static SLACK_USER_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     regex::Regex::new(r"^xoxp-[0-9]{10,15}-[0-9]{10,15}(?:-[0-9]{10,13})?-[a-zA-Z0-9]{24,40}$").ok()
 });
 
+pub(crate) fn warm_runtime_regexes() {
+    let _ = SLACK_BOT_RE.as_ref();
+    let _ = SLACK_USER_RE.as_ref();
+}
+
 impl SlackTokenValidator {
     fn is_valid_slack_bot(credential: &str) -> bool {
         SLACK_BOT_RE
