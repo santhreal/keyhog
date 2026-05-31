@@ -17,6 +17,7 @@ Status: active plan
 - 2026-05-30: Scanner crate gate found stale `DetectorSpec::min_confidence` fixtures, an AVX-512 entropy parity gap on tiny/null-containing inputs, and residual weak-anchor misclassification for reviewed service-specific 32/40-hex API-key detectors; each is now wired into tests and detector data.
 - 2026-05-30: CI Action contract suite now parses every committed GitHub workflow plus the composite Action manifest, and asserts the manifest remains a composite action with executable steps instead of relying only on text grep.
 - 2026-05-30: CI workflow contracts now prove every committed workflow has a name, trigger, jobs mapping, runner/reusable-workflow target, and executable step definitions so valid-but-dead workflow YAML cannot silently ship.
+- 2026-05-30: Committed mirror benchmark report tables refreshed from current `benchmarks/results`; report-check proves README injection is byte-stable, and the current gap table now names private-key recall as the largest competitor delta.
 
 ## Dominance Contract
 
