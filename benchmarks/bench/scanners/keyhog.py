@@ -64,6 +64,7 @@ class KeyhogScanner(Scanner):
     name = "keyhog"
     binary_name = "keyhog"
     binary_env = "KEYHOG_BIN"
+    success_exit_codes = (0, 1, 10)
 
     # ── config matrix ──────────────────────────────────────────────────
 

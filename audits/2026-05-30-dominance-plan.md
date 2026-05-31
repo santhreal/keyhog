@@ -1712,3 +1712,17 @@ Vector coverage:
 Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+
+## Executed Patch Set: Benchmark Exit-Code Contracts
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: benchmark scanner adapters now expose accepted exit codes, and the runner marks unexpected scanner exits as `RunResult.error` instead of treating them as clean empty-result rows.
+- COHERENCE: Keyhog's findings exits (`1`, `10`) are accepted as completed scans, while Betterleaks and other competitor adapters keep the default clean-exit-only contract unless explicitly widened.
+- TESTING: added unit coverage for scanner exit contracts and reran the benchmark package gate.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`

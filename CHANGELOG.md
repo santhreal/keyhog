@@ -24,6 +24,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Add measured benchmark scanner adapters for Betterleaks, Kingfisher, Nosey Parker, Titus, and TruffleHog, with command-specific JSON normalization tests and generated-corpus ignore rules.
 - Add `python -m bench run` / `make run` to execute one measured scanner/corpus row, emit `RunResult` JSON, score labeled corpora, compute throughput, and preserve scanner exit code and timeout state in artifacts.
+- Treat benchmark scanner exit codes through per-scanner success contracts so Keyhog findings exits are accepted while competitor invocation failures become errored `RunResult` rows instead of clean zero-finding rows.
 - Point scanner benchmark runs at manifest-free, neutrally named `corpus/` scan trees and measure corpus bytes/files from that same scan root so answer keys and path-context penalties cannot inflate or suppress benchmark results.
 - Probe for actual GNU `time` support before wrapping benchmark subprocesses, so BSD/macOS `/usr/bin/time` falls back to `resource.getrusage` instead of breaking scanner runs.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
