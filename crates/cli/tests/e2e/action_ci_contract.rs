@@ -710,6 +710,89 @@ exit 0
 }
 
 #[test]
+fn action_effective_config_preflight_report_cannot_mask_real_scan_missing_report() {
+    let dir = TempDir::new().expect("tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    let calls = dir.path().join("calls.txt");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '%s output=%s\n' "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" "$out" >> "$CALLS_FILE"
+if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" == "1" ]]; then
+  cat > "$out" <<'JSON'
+{"runs":[{"results":[]}]}
+JSON
+  exit 0
+fi
+if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" != "0" ]]; then
+  echo "real scan must clear KEYHOG_PRINT_EFFECTIVE_CONFIG; got ${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >&2
+  exit 42
+fi
+exit 1
+"#,
+    );
+
+    let calls_path = calls.to_string_lossy().into_owned();
+    let runner_temp_path = runner_temp.to_string_lossy().into_owned();
+    let output = run_action(
+        &dir,
+        &[
+            ("CALLS_FILE", calls_path.as_str()),
+            ("RUNNER_TEMP", runner_temp_path.as_str()),
+            ("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "a stale preflight report must not hide a real findings exit without a report; output={combined}"
+    );
+    assert!(
+        combined.contains("keyhog exited 1 but did not write 'keyhog-results.sarif'"),
+        "missing real report must be operator-visible; output={combined}"
+    );
+
+    let calls_text = fs::read_to_string(&calls).expect("read calls");
+    let mut lines = calls_text.lines();
+    let preflight = lines.next().expect("preflight call");
+    let real_scan = lines.next().expect("real scan call");
+    assert!(
+        lines.next().is_none(),
+        "action should invoke exactly one preflight and one real scan; calls={calls_text}"
+    );
+    let preflight_output = preflight
+        .strip_prefix("1 output=")
+        .expect("preflight output path recorded");
+    assert_ne!(
+        preflight_output, "keyhog-results.sarif",
+        "preflight must not use the final report path"
+    );
+    assert_eq!(
+        real_scan, "0 output=keyhog-results.sarif",
+        "real scan must own the final report path"
+    );
+    assert!(
+        !Path::new(preflight_output).exists(),
+        "preflight scratch report should be removed"
+    );
+    assert!(
+        !dir.path().join("keyhog-results.sarif").exists(),
+        "test stub never wrote the real report"
+    );
+}
+
+#[test]
 fn action_treats_malformed_findings_report_as_at_least_one_finding() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(

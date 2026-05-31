@@ -48,6 +48,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Make the composite GitHub Action fail closed when report parsing fails after a findings exit code, and write a concise GitHub Step Summary for CI triage.
 - Run the composite Action's `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` pass as a preflight, then clear the print-only env for the real scan so CI gets the resolved scanner/post-process policy without losing the report.
 - Keep the effective-config preflight advisory and omit `--verify` from that preflight so older binaries that ignore the print-only env cannot block report/SARIF upload or double-run live verification.
+- Isolate the composite Action's effective-config preflight report in a scratch file, preventing legacy binaries that write during preflight from masking a real findings exit that failed to produce the final report.
 - Teach the composite Action to select the published `keyhog-windows-x86_64.exe` asset on Windows bash runners and preserve the `.exe` install name after checksum verification.
 - Teach the composite Action to select `keyhog-linux-x86_64-cuda` on CUDA-ready Linux runners and preserve `--features cuda` when falling back to a source build.
 - Guard the composite Action's final findings failure step on present scan outputs so wrapper/runtime failures are not rewritten as misleading "Invalid findings output" failures after artifact/report handling.
