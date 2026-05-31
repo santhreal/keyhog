@@ -11,6 +11,11 @@ name = "Sourcegraph Access Token"
 service = "sourcegraph"
 severity = "high"
 keywords = ["sgp_", "slk_", "sourcegraph"]
+# The sgp_/slk_ vendor prefix is strong evidence on its own; the 40/64-hex
+# body scores below the global 0.40 floor on entropy alone (DET-18). Self-
+# declare a lower floor so the detector ships working. FP risk is negligible —
+# almost nothing else takes the shape `sgp_<40 hex>` / `slk_<64 hex>`.
+min_confidence = 0.2
 
 [[detector.patterns]]
 regex = 'sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}'
