@@ -78,6 +78,117 @@ that proves them.
   Likely parallel-chunk / dedup iteration order or a GPU race on borderline
   confidences. Make the finding set order-independent (sort before dedup floor).
 
+## Recall investigation (2026-05-30) - the corpus discriminator
+
+- A keyword-anchored generic credential detector (catch `*secret*/*api_key* = <value>`)
+  was tried two ways and BOTH tank F1: gate-exempt +119 TP / **+1630 FP** (F1→0.669);
+  ML-gated (`generic-` id) +21 TP / **+575 FP** (F1→0.767). The SecretBench
+  negatives are engineered to defeat keyword+entropy heuristics.
+- WHY: the label=false fixtures pack SPECIFIC non-secret decoy shapes into
+  credential-named fields - AWS ARNs (`arn:aws:iam::...`), template placeholders
+  (`<your-token>`), git commit SHAs, docker digests (`nginx@sha256:...`), npm
+  integrity (`sha512-...`), base64-protobuf. The positives are random base64/hex/
+  uuid values in the SAME field shapes. So the discriminator is NOT the keyword or
+  the value entropy - it is whether the value matches a known DECOY shape.
+- DET-14 · the real recall lever: a decoy-AWARE generic assignment detector that
+  fires on a credential-keyword assignment but is post-filtered to reject the decoy
+  families above (extend `looks_like_hash_digest` + add ARN / docker-digest /
+  npm-integrity / `sha256:`/`sha512-` prefix / `<placeholder>` guards). keyhog has
+  some guards (`is_known_example_credential`, `looks_like_hash_digest`) but they do
+  not cover ARN / sha512-integrity / docker-digest / protobuf, which is why the
+  generic detector false-fired. This is the precision-bounded path to recovering
+  the ~150 random-value credential-assignment FNs without an FP explosion.
+- Other clean levers (no FP risk): DET-15 k8s/json base64 decode-attribution
+  (keyhog decodes + reports the inner value; ground truth is the encoded literal,
+  so ~67 detected secrets score FN - report the encoded span); DET-16 `sk_test_` /
+  GCP `.apps.googleusercontent.com` are detected by existing detectors but dropped
+  (test-key / client-safe / confidence-floor) - un-suppress the detected-but-cut.
+
+## Home-turf benchmark (competitors' own fixtures) — 2026-05-30
+
+New diversified corpora under `tools/secretbench/homefield/` harvested from the
+competitors' OWN shipped labeled truth (betterleaks `tps`/`fps`, kingfisher
+`examples`/`negative_examples`), scored by the canonical `score.py`. Apples-to-
+apples (same bare-token files to every tool).
+
+- **DET-17 · HIGH · keyhog LOSES to trufflehog on betterleaks' home turf** —
+  betterleaks-turf (116 pos / 201 neg):
+    keyhog     F1=0.2132 P=0.259 R=0.181 (TP=21 FP=60 FN=95)
+    trufflehog F1=0.3529 P=0.556 R=0.259 (TP=30 FP=24 FN=86)
+  keyhog dominates the generic-credential SecretBench mirror (0.845) but loses
+  here because betterleaks' 152-rule catalog is SERVICE-SPECIFIC and keyhog has
+  fewer named detectors. Two fixable causes:
+  1. RECALL — ~40 services keyhog misses entirely (real capability gaps):
+     openai-api-key (6 missed!), anthropic-admin-api-key (`sk-ant-admin01-`),
+     sumologic-access-token, sourcegraph-access-token, gitea-access-token,
+     sidekiq-sensitive-url (12), slack-config/user-token, etsy-access-token,
+     grafana-cloud-api-token, greptile-api-key, assemblyai-api-key, cursor-api-key,
+     deepgram-api-key, openrouter-api-key, planetscale-id, gitlab-rrt,
+     aws-bedrock-api-key, cerebras-api-key, flyio, curl --user / --header inline
+     auth. (A few harvested tps are noise — e.g. a `beamer-api-token` "secret"
+     that is actually a tree-drawing line — discount those.)
+  2. PRECISION — keyhog over-fires on betterleaks' deliberate near-miss
+     negatives: gcp-api-key (16!), huggingface-access-token (4), anthropic (2),
+     flyio (2), stability-ai (2). The gcp-api-key detector matches the AIza…
+     shape too loosely; tighten it against the gcp negatives.
+  ACTION (capability roadmap): add the missing service detectors (Tier-B TOMLs)
+  and tighten gcp-api-key, then re-run `homefield/run.sh betterleaks` and aim to
+  pass trufflehog. Every missed positive here is a "cannot detect X" product gap.
+
+  FULL 4-WAY LEADERBOARD (2026-05-30, pre-detector-additions):
+    betterleaks turf (116 pos / 201 neg):
+      betterleaks F1=0.607  trufflehog F1=0.353  kingfisher F1=0.444  keyhog F1=0.213
+      → keyhog LAST. Loss is recall (service coverage) + the gcp shape-decoys.
+    kingfisher turf (1881 pos / 26 neg):
+      keyhog F1=0.492 (P=0.997 R=0.327)  trufflehog F1=0.284 (P=0.997 R=0.165)  [home tool pending]
+      → keyhog BEATS trufflehog (broader catalog), near-perfect precision (2 FP).
+    SecretBench mirror (generic): keyhog 0.845 >> all competitors (0.36-0.53).
+  So keyhog is precision-dominant and wins generic + kingfisher turf, but loses
+  betterleaks turf on recall. The lever is service-detector breadth, NOT tuning.
+
+  gcp DECISION (no overfit): betterleaks' gcp-api-key NEGATIVES are shape-valid
+  `AIzaSy…` decoys it rejects via entropy/allowlist. keyhog's named google-api-key
+  detector flags all shape-valid AIza keys by design (recall-first, entropy-
+  bypassed). Passing these would require allowlisting betterleaks' specific
+  example values = gaming the bench (Law 9). NOT doing that. The only honest
+  tightening is an entropy floor that rejects the genuinely-low-entropy decoys
+  (e.g. the sequential-alphabet one); realistic AIza decoys stay flagged.
+
+  LANDED + VERIFIED (2026-05-30, first detector batch):
+  - openai: added sk-svcacct-/sk-admin- patterns (were 6 FNs). WORKS.
+    Mirror F1 improved 0.8455 → **0.8634** (P 0.986, R 0.742→0.768, FP 41→32).
+  - grafana-cloud-api-key (glc_/glsa_/eyJrIjoi): WORKS (eyJrIjoi base64 fires).
+  - sourcegraph-access-token (sgp_/slk_) + cursor-api-key (key_<64hex>): LOAD but
+    do NOT fire — see DET-18 (hex-body shape-gate). Blocked, not value gain yet.
+  Home-turf delta (fresh binary on PATH): betterleaks-turf F1 0.213 → **0.293**
+  (TP 21→29, FP 60→53); kingfisher-turf 0.492 → 0.495 (P held 0.997).
+
+  ⚠ PROVENANCE NOTE: `score.py` runs `keyhog` from PATH (`shutil.which`). A stale
+  `~/.local/bin/keyhog` with the SAME "v0.5.37" version string masqueraded as the
+  fresh build and produced a phantom FP=1442 / F1=0.685 "regression" mid-session.
+  The fresh build is F1=0.8634. ALWAYS prepend the release dir to PATH (or `cp`
+  the fresh binary over `~/.local/bin/keyhog`) before scoring — the version
+  string is NOT a reliable provenance signal (collides across builds).
+
+- **DET-18 · HIGH · hex-body service tokens are suppressed by the hash-digest
+  shape-gate** — a new service detector whose token body is hex
+  (sourcegraph `sgp_<40hex>`/`slk_<64hex>`, cursor `key_<64hex>`, linode-style
+  PATs) LOADS but never emits: the value has the shape of a sha1 (40 hex) /
+  sha256 (64 hex) digest, so the shape-gate that correctly suppresses the
+  sha1/sha256/git-sha decoy negatives also kills the real token. base62/
+  alphanumeric tokens (openai sk-svcacct-, anthropic sk-ant-, stripe sk_live_,
+  grafana eyJrIjoi) are unaffected. The `is_service_anchored_detector` bypass
+  covers the char-diversity/entropy PENALTIES (penalties.rs) but NOT the
+  pre-confidence hash-digest shape-gate in `suppression/`. FIX: let a
+  distinctive-PREFIX named detector (the prefix proves it is not a bare digest)
+  override `looks_like_bare_hex_digest`/`looks_like_prefixed_hash_digest` —
+  WITHOUT reopening the decoy FPs (the decoys have NO service prefix, so gating
+  the override on "named detector matched AND match starts with its literal
+  vendor prefix" is safe). This is the unblocker for every hex-bodied service.
+  EXTENSIBILITY IMPACT: today you cannot add a hex-token service by dropping in
+  a TOML — it silently never fires. That violates the Tier-B data-driven
+  contract (a detector should be addable as data). High-leverage to fix once.
+
 ## Open
 
 - **DET-08 · HIGH · min_confidence is non-monotonic in FP** — raising the floor

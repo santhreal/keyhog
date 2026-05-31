@@ -1,0 +1,31 @@
+# Docs: https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/
+# Format: `glc_<base64>` cloud access-policy tokens, `glsa_<32>_<8 hex>`
+#         service-account tokens, and legacy `eyJrIjoi…` API keys (base64 of
+#         a {"k":"…"} JSON blob). All carry distinctive vendor prefixes.
+# Added: home-turf bench (DET-17) — grafana fixtures were false-negatives.
+
+[detector]
+id = "grafana-cloud-api-key"
+name = "Grafana Cloud API Key"
+service = "grafana"
+severity = "high"
+keywords = ["glc_", "glsa_", "eyJrIjoi", "grafana"]
+
+[[detector.patterns]]
+regex = 'glc_[A-Za-z0-9+/]{40,150}={0,2}'
+description = "Grafana Cloud access-policy token (glc_…)"
+group = 0
+
+[[detector.patterns]]
+regex = 'glsa_[A-Za-z0-9]{32}_[a-fA-F0-9]{8}'
+description = "Grafana service-account token (glsa_<32>_<8 hex>)"
+group = 0
+
+[[detector.patterns]]
+regex = 'eyJrIjoi[A-Za-z0-9+/]{40,380}={0,2}'
+description = "Grafana legacy API key (base64 of {\"k\":…})"
+group = 0
+
+[[detector.tests]]
+test_positive = 'GRAFANA_TOKEN=glsa_HOruNAb7SOiCdshU7algkrq7FDsNSLAa_5e1c2d3f'
+test_negative = "GRAFANA_URL=https://grafana.example.com/dashboards"

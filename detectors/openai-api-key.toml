@@ -1,18 +1,34 @@
 # Docs: https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key
-# Format: Project keys start with 'sk-proj-' plus 100+ chars; Legacy keys start with 'sk-' plus 48 alphanumeric chars
+# Format: Project keys start with 'sk-proj-' plus 100+ chars; service-account
+#         keys 'sk-svcacct-' and admin keys 'sk-admin-' share the same url-safe
+#         body (…T3BlbkFJ… infix); legacy keys 'sk-' plus 48 alphanumeric chars.
 # Verify: Bearer token sent to api.openai.com/v1/models, returns 200 on success
-# Prefix: sk-proj-, sk-
+# Prefix: sk-proj-, sk-svcacct-, sk-admin-, sk-
 
 [detector]
 id = "openai-api-key"
 name = "OpenAI API Key"
 service = "openai"
 severity = "critical"
-keywords = ["sk-proj-", "sk-"]
+keywords = ["sk-proj-", "sk-svcacct-", "sk-admin-", "sk-"]
 
 [[detector.patterns]]
 regex = 'sk-proj-[a-zA-Z0-9_-]{40,164}'
 description = "OpenAI project API key (sk-proj-)"
+
+[[detector.patterns]]
+# Service-account keys (sk-svcacct-) — introduced after the proj- form and
+# absent from the original detector, so every `sk-svcacct-…` key fell through
+# to the generic path and scored as a false-negative on betterleaks' own
+# openai fixtures (home-turf bench, DET-17). Same url-safe body as proj keys;
+# the distinctive 11-char prefix keeps FP risk negligible.
+regex = 'sk-svcacct-[a-zA-Z0-9_-]{40,200}'
+description = "OpenAI service-account API key (sk-svcacct-)"
+
+[[detector.patterns]]
+# Admin keys (sk-admin-) — same story as sk-svcacct- above.
+regex = 'sk-admin-[a-zA-Z0-9_-]{40,200}'
+description = "OpenAI admin API key (sk-admin-)"
 
 [[detector.patterns]]
 regex = 'sk-[a-zA-Z0-9]{48}'

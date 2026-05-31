@@ -1,0 +1,22 @@
+# Docs: https://docs.cursor.com/ (API keys issued for the Cursor agent/API)
+# Format: `key_` followed by exactly 64 hex chars (a 256-bit token).
+# Added: home-turf bench (DET-17) — cursor fixtures were false-negatives.
+# Precision: `key_` is a common variable name, but `key_` immediately
+# followed by EXACTLY 64 hex chars (and a word boundary) is a specific,
+# high-entropy shape that ordinary identifiers do not take.
+
+[detector]
+id = "cursor-api-key"
+name = "Cursor API Key"
+service = "cursor"
+severity = "high"
+keywords = ["key_", "cursor"]
+
+[[detector.patterns]]
+regex = 'key_[0-9a-fA-F]{64}'
+description = "Cursor API key (key_<64 hex>)"
+group = 0
+
+[[detector.tests]]
+test_positive = "CURSOR_API_KEY=key_8c5a7657fc397e114def1b51dd520410ad50ece61e30b64261ff369ab275ef29"
+test_negative = "primary_key_id = 42"
