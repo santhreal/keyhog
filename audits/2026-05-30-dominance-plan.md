@@ -996,7 +996,7 @@ Date: 2026-05-31
 Vector coverage:
 
 - SPEED: keeps the AC cheap-filter bounded to one regex `is_match` per candidate pid while avoiding repeated window probes for the same pid.
-- CAPABILITY: aligns GPU root confirmation with SIMD trigger semantics by evaluating detector regexes over the whole prepared chunk before precise extraction, preventing narrow-window misses for wider-context detector regexes.
+- CAPABILITY: aligns GPU root confirmation with SIMD trigger semantics by evaluating detector regexes over the whole prepared chunk before precise extraction, preventing narrow-window misses for wider-context detector regexes; GPU phase-1 also ASCII-folds literals and coalesced haystacks so lowercase detector anchors match uppercase source occurrences the way Hyperscan's caseless path does.
 - COHERENCE: the implementation now matches the existing code comments that described whole-chunk, position-independent confirmation.
 - TESTING: GPU self-test passed on the RTX 5090; the StackBlitz GPU recall narrow-window test ran but skipped its corpus-dependent assertion because the local bench corpus file is absent; added and ran a real-binary GPU/SIMD parity integration gate for far-offset and caseless literal-prefix regressions.
 - AUDIT HUNTS: the known forced-GPU synthetic parity gate still hard-fails before assertions with runtime GPU dispatch degradation, so the red gate remains recorded.
@@ -1010,6 +1010,21 @@ Verified gates:
 Red gate captured:
 
 - `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
+
+## Executed Patch Set: Forced-GPU Hard-Fail Without Panic
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: replaced the production `panic!` in the forced-GPU unavailable path with explicit stderr and exit code 2, matching the rest of the GPU hard-fail contract.
+- COHERENCE: the doc comment now says the path exits instead of panicking.
+- UX: `KEYHOG_BACKEND=gpu` on an unusable GPU stack reports `keyhog: ...` without a Rust panic backtrace.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests gpu_forced -- --nocapture`
+- `cargo test -p keyhog --test gpu_simd_parity -- --nocapture`
 
 ## Executed Patch Set: GitHub Action CI Fail-Closed UX
 

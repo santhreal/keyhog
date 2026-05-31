@@ -71,7 +71,7 @@ pub fn gpu_forced_unavailable_message(
     ))
 }
 
-/// Panic with an explicit message when env forces GPU and the stack
+/// Exit with an explicit message when env forces GPU and the stack
 /// is down. Otherwise, when the scanner asked for GPU but is about
 /// to degrade to CPU at runtime, emit a one-shot stderr warning so
 /// the user sees the silent fallback they didn't ask for. Set
@@ -79,7 +79,8 @@ pub fn gpu_forced_unavailable_message(
 /// to exit (2) instead.
 pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
     if let Some(msg) = gpu_forced_unavailable_message(scanner, backend) {
-        panic!("{msg}");
+        eprintln!("keyhog: {msg}");
+        std::process::exit(2);
     }
     if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
         return;

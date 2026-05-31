@@ -133,8 +133,8 @@ impl CompiledScanner {
                     // `sb_[a-zA-Z0-9_-]{20,}`; the kernel emits only the
                     // first pid, and its regex doesn't match the
                     // stackblitz token. So we check `pid` AND every
-                    // `same_prefix_patterns[pid]` sibling against this
-                    // hit's window - the first sibling whose regex
+                    // `same_prefix_patterns[pid]` sibling against the
+                    // whole chunk - the first sibling whose regex
                     // matches gets confirmed (its own bit), and the
                     // downstream `expand_triggered_patterns` then fans
                     // out to the rest of the sibling set. Correctness:
