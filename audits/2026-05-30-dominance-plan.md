@@ -1914,3 +1914,16 @@ Verified gates:
 
 - `RUST_LOG=keyhog::routing=debug timeout 120s cargo run -p keyhog -- backend --self-test` confirmed the live RTX 5090 path still reports MoE PASS, literal-set KNOWN, and AC FAIL on degenerate triples with the concrete reason in stderr.
 - `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
+
+## Executed Patch Set: CI Advisory-Mode Documentation Coherence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: the mdBook CI workflow, drop-in usage guide, and integration PR template now state the same advisory-mode contract as the composite Action metadata and README.
+- CI UX: rollout docs distinguish ordinary advisory findings from verified-live credentials, which still fail after report/SARIF/artifact upload with exit code `10`.
+
+Verified gates:
+
+- `rg -n 'fail-on-findings|verified-live|exit code' docs/src/workflows/ci.md docs/DROP_IN_USAGE.md docs/INTEGRATION_PR_TEMPLATE.md`

@@ -37,6 +37,10 @@ to **Security -> Code scanning**, attaches the report as a workflow
 artifact, and prints a job summary with the finding count, raw exit code,
 and scan duration.
 
+`fail-on-findings: 'false'` makes ordinary findings advisory after the
+report/SARIF/artifact are written. A `--verify` scan that confirms a live
+credential still fails the action with KeyHog exit code `10`.
+
 To adopt on a repo that already has known findings, generate and commit a
 baseline once, then wire it into the action:
 
@@ -179,6 +183,10 @@ The release scan verifies what's live, useful for the changelog
   org secrets to forked-PR runners, so a verifier endpoint that needs
   authentication won't run. Findings still get reported as
   unverified; that's correct behavior.
+- **Advisory mode:** `fail-on-findings: 'false'` keeps unverified
+  findings from blocking a PR, but verified-live credentials still
+  fail after uploads so the report is preserved and the merge stays
+  blocked.
 - **Shallow clones:** `actions/checkout` defaults to `fetch-depth: 1`,
   which only fetches HEAD. A `--git-history` scan against a shallow
   clone sees zero commits. Set `fetch-depth: 0` if you want history.

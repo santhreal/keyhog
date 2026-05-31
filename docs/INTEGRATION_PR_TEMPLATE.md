@@ -135,7 +135,9 @@ download step is a no-op when the binary already exists on PATH.
   a rotation guide for the matching vendor.
 - To raise the bar (block on medium+), change `severity: high` to
   `severity: medium`. To make findings advisory (no merge block),
-  add `fail-on-findings: 'false'` to the action `with:` block.
+  add `fail-on-findings: 'false'` to the action `with:` block. This
+  does not make verified-live credentials advisory; `verify: 'true'`
+  findings that exit `10` still fail after reports are uploaded.
 - To suppress a known-public test fixture without touching code,
   drop its path or content hash in `.keyhogignore` at repo root
   (`path:tests/fixtures/`, `hash:<sha256>`, or `id:<detector-id>`).

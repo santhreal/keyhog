@@ -153,6 +153,11 @@ in CI (auto-disables GPU on hosted runners), ~10 s wall-clock for a
 Ubuntu runners. No Python, no JVM, no Docker daemon. SARIF auto-uploads
 to GitHub code-scanning.
 
+Use `fail-on-findings: 'false'` when you want ordinary findings to be
+advisory during rollout. If you also set `verify: 'true'`, any
+verified-live credential still fails the job with exit code `10` after
+the SARIF report and workflow artifact are uploaded.
+
 **Adopt without breaking an existing repo.** If your tree already
 contains findings keyhog would flag, generate a baseline once, commit
 it, and the action will only fail on NEW secrets going forward:
