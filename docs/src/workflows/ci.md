@@ -1,8 +1,8 @@
 # CI integration
 
 A CI step that catches leaked credentials before they ship. Three
-patterns: GitHub Actions, GitLab CI, generic shell. All exit non-zero
-on findings, which is what CI wants.
+patterns: GitHub Actions, GitLab CI, generic shell. The examples gate
+on findings and keep machine-readable reports available for triage.
 
 ## GitHub Actions
 
@@ -18,29 +18,37 @@ on:
 jobs:
   keyhog:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # scan full history, not just HEAD
-      - name: Install keyhog
-        run: curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
-      - name: Scan repo
-        run: ~/.local/bin/keyhog scan . --format sarif > keyhog.sarif
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
         with:
-          sarif_file: keyhog.sarif
+          path: .
+          severity: high
+          format: sarif
 ```
 
-The `upload-sarif` action posts findings to the **Security -> Code
-scanning** tab. `if: always()` makes sure findings show up even when
-the scan exits non-zero.
+The composite action installs KeyHog, writes a SARIF report, uploads it
+to **Security -> Code scanning**, attaches the report as a workflow
+artifact, and prints a job summary with the finding count, raw exit code,
+and scan duration.
 
-To scan ONLY git history (the more common pre-merge gate):
+To adopt on a repo that already has known findings, generate and commit a
+baseline once, then wire it into the action:
+
+```bash
+keyhog scan --create-baseline .keyhog-baseline.json
+git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
+```
 
 ```yaml
-      - name: Scan history
-        run: ~/.local/bin/keyhog scan --git-history . --format sarif > keyhog.sarif
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+        with:
+          baseline: .keyhog-baseline.json
 ```
 
 ## GitLab CI
