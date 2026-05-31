@@ -2031,3 +2031,18 @@ Verified gates:
 - `cargo test -p keyhog-scanner --test all_tests confidence_path_penalty -- --nocapture`
 - `cargo test -p keyhog --test all_tests build_scanner_config_no_suppress_disables_test_path_penalty -- --nocapture`
 - `cargo test -p keyhog --test e2e_binary no_suppress_test_fixtures_surfaces_test_path_findings -- --nocapture`
+
+## Executed Patch Set: Benchmark GPU Rows Fail Closed
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED / UTILIZATION: explicit `gpu` and `megascan` KeyHog benchmark configs now set `KEYHOG_REQUIRE_GPU=1`, so a result cannot be published as a GPU timing after silently degrading to CPU/SIMD.
+- COHERENCE: SIMD/CPU benchmark rows explicitly set `KEYHOG_REQUIRE_GPU=0`, preventing a globally exported require flag from contaminating deterministic no-GPU rows.
+- TESTING: benchmark adapter contracts assert env mapping for `simd`, `auto`, `gpu`, and `megascan` configs.
+
+Verified gates:
+
+- `PYTHONPATH=benchmarks python3 -m pytest benchmarks/bench/tests/test_scanners.py -q`
+- `KEYHOG_REQUIRE_GPU=1 timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `status=pass`, `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.

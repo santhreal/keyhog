@@ -5,6 +5,7 @@ import sys
 from bench import scanners
 from bench.scanners import keyhog as keyhog_adapter
 from bench.scanners import base
+from bench.schema import ScannerConfig
 
 
 def test_keyhog_normalizer_reads_json_array_shape():
@@ -160,6 +161,27 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
     assert betterleaks.exit_success(0)
     assert not betterleaks.exit_success(1)
     assert scanners.resolve_scanner("kingfisher").exit_success(200)
+
+
+def test_keyhog_gpu_benchmark_rows_require_real_gpu():
+    scanner = scanners.KeyhogScanner()
+
+    assert scanner._env(ScannerConfig(backend="gpu")) == {
+        "KEYHOG_NO_GPU": "0",
+        "KEYHOG_REQUIRE_GPU": "1",
+    }
+    assert scanner._env(ScannerConfig(backend="megascan")) == {
+        "KEYHOG_NO_GPU": "0",
+        "KEYHOG_REQUIRE_GPU": "1",
+    }
+    assert scanner._env(ScannerConfig(backend="auto")) == {
+        "KEYHOG_NO_GPU": "0",
+        "KEYHOG_REQUIRE_GPU": "0",
+    }
+    assert scanner._env(ScannerConfig(backend="simd")) == {
+        "KEYHOG_NO_GPU": "1",
+        "KEYHOG_REQUIRE_GPU": "0",
+    }
 
 
 def test_keyhog_benchmark_prefers_fresh_release_binary(monkeypatch, tmp_path):

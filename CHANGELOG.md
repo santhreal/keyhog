@@ -50,6 +50,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Add competitor overall precision to the per-category benchmark gap table so recall-only category wins expose their cross-category false-positive cost.
 - Probe for actual GNU `time` support before wrapping benchmark subprocesses, so BSD/macOS `/usr/bin/time` falls back to `resource.getrusage` instead of breaking scanner runs.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
+- Make explicit KeyHog GPU benchmark rows set `KEYHOG_REQUIRE_GPU=1`, preventing GPU/MegaScan timings from silently measuring CPU fallback when the GPU path is broken.
 
 ### CLI
 
