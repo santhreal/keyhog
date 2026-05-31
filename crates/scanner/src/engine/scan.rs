@@ -312,10 +312,6 @@ impl CompiledScanner {
                             triggered,
                             None,
                         );
-                        // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing
-                        if matches.capacity() < 16 {
-                            matches.reserve(16 - matches.len());
-                        }
                         // Preserve cross-file fragment reassembly that
                         // the previous no-hit branch did. The fragment
                         // cache is mostly populated by named-detector

@@ -194,6 +194,19 @@ impl std::ops::Index<usize> for CsrU32 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GpuInitPolicy {
+    /// Honor KEYHOG_NO_GPU / CI auto-disable.
+    FromEnvironment,
+    /// Acquire a GPU backend when hardware is present, regardless of
+    /// KEYHOG_NO_GPU. Used when the operator explicitly forces GPU.
+    ForceEnabled,
+    /// Skip CUDA/wgpu acquisition. Used when the selected CLI path cannot
+    /// route to GPU, avoiding startup and RSS overhead without changing scan
+    /// results.
+    ForceDisabled,
+}
+
 pub struct CompiledScanner {
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
     pub(crate) ac: Option<AhoCorasick>,

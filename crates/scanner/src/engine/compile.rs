@@ -2,6 +2,13 @@ use super::*;
 
 impl CompiledScanner {
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
+        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromEnvironment)
+    }
+
+    pub fn compile_with_gpu_policy(
+        detectors: Vec<DetectorSpec>,
+        gpu_policy: GpuInitPolicy,
+    ) -> Result<Self> {
         // `state` is only mutated under `feature = "simd"` (the
         // Hyperscan-reject reroute below). Lean builds would lint it
         // unused-mut otherwise.
@@ -31,10 +38,22 @@ impl CompiledScanner {
         // operator would see a confusing "GPU MoE init failed" warning
         // after burning ~250ms on cold-start. Set KEYHOG_NO_GPU=0 in CI
         // to opt back in on self-hosted GPU runners.
-        let gpu_disabled = crate::gpu::env_no_gpu();
+        let gpu_disabled = match gpu_policy {
+            GpuInitPolicy::FromEnvironment => crate::gpu::env_no_gpu(),
+            GpuInitPolicy::ForceEnabled => false,
+            GpuInitPolicy::ForceDisabled => true,
+        };
         if gpu_disabled {
-            let in_ci = crate::gpu::is_ci_environment() && std::env::var("KEYHOG_NO_GPU").is_err();
-            if in_ci {
+            let disabled_by_policy = matches!(gpu_policy, GpuInitPolicy::ForceDisabled);
+            let in_ci = !disabled_by_policy
+                && crate::gpu::is_ci_environment()
+                && std::env::var("KEYHOG_NO_GPU").is_err();
+            if disabled_by_policy {
+                tracing::info!(
+                    target: "keyhog::routing",
+                    "GPU init bypassed by caller policy; scanner will use CPU/SIMD paths"
+                );
+            } else if in_ci {
                 tracing::info!(
                     target: "keyhog::routing",
                     "CI environment detected (CI= or platform-specific marker set); bypassing CUDA/wgpu init. \

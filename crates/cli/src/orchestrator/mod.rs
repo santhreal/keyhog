@@ -13,7 +13,7 @@ use crate::orchestrator_config::{
 };
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, RawMatch, Source};
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,6 +21,11 @@ pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
 #[doc(hidden)]
 pub use dispatch::{backend_requires_legacy_gpu_pipeline_for_test, explicit_backend_override};
+
+#[doc(hidden)]
+pub fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
+    gpu_init_policy_for_args(args)
+}
 
 #[doc(hidden)]
 pub fn allowlist_root_for_test(path: &std::path::Path) -> std::path::PathBuf {
@@ -152,8 +157,9 @@ impl ScanOrchestrator {
         effective_config.min_confidence = effective_config.scanner.min_confidence;
         effective_config.ml_enabled = effective_config.scanner.ml_enabled;
 
+        let gpu_init_policy = gpu_init_policy_for_args(&args);
         let scanner = Arc::new(
-            CompiledScanner::compile(detectors.clone())
+            CompiledScanner::compile_with_gpu_policy(detectors.clone(), gpu_init_policy)
                 .with_context(|| {
                     format!("compiling scanner from {} detector specs", detectors.len())
                 })?
@@ -269,6 +275,97 @@ impl ScanOrchestrator {
             },
         }
     }
+}
+
+fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
+    if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
+        return policy;
+    }
+    if let Some(policy) = explicit_backend_override().map(backend_gpu_policy) {
+        return policy;
+    }
+    if filesystem_auto_scan_cannot_route_gpu(args)
+        && std::env::var("KEYHOG_REQUIRE_GPU").as_deref() != Ok("1")
+        && !env_explicitly_enables_gpu()
+    {
+        return GpuInitPolicy::ForceDisabled;
+    }
+    GpuInitPolicy::FromEnvironment
+}
+
+fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
+    let name = name?.trim().to_ascii_lowercase();
+    match name.as_str() {
+        "gpu" | "gpu-zero-copy" | "literal-set" | "mega-scan" | "megascan" | "gpu-mega-scan"
+        | "regex-nfa" | "rule-pipeline" => Some(GpuInitPolicy::ForceEnabled),
+        "simd" | "simd-regex" | "hyperscan" | "cpu" | "cpu-fallback" | "scalar" => {
+            Some(GpuInitPolicy::ForceDisabled)
+        }
+        "auto" => None,
+        _ => None,
+    }
+}
+
+fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
+    match backend {
+        keyhog_scanner::ScanBackend::Gpu | keyhog_scanner::ScanBackend::MegaScan => {
+            GpuInitPolicy::ForceEnabled
+        }
+        keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback => {
+            GpuInitPolicy::ForceDisabled
+        }
+        _ => GpuInitPolicy::FromEnvironment,
+    }
+}
+
+fn env_explicitly_enables_gpu() -> bool {
+    std::env::var("KEYHOG_NO_GPU")
+        .map(|v| matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
+        .unwrap_or(false)
+}
+
+fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
+    if std::env::var_os("KEYHOG_LEGACY_PIPELINE").is_some() {
+        return false;
+    }
+    if args.path.is_none() {
+        return false;
+    }
+    if args.stdin {
+        return false;
+    }
+    #[cfg(feature = "binary")]
+    if args.binary {
+        return false;
+    }
+    #[cfg(feature = "git")]
+    if args.git_blobs.is_some() || args.git_diff.is_some() || args.git_history.is_some() {
+        return false;
+    }
+    #[cfg(feature = "github")]
+    if args.github_org.is_some() {
+        return false;
+    }
+    #[cfg(feature = "s3")]
+    if args.s3_bucket.is_some() {
+        return false;
+    }
+    #[cfg(feature = "docker")]
+    if args.docker_image.is_some() {
+        return false;
+    }
+    #[cfg(feature = "web")]
+    if args.url.is_some() {
+        return false;
+    }
+    if args
+        .source
+        .as_ref()
+        .is_some_and(|sources| !sources.is_empty())
+    {
+        return false;
+    }
+    true
 }
 
 // `reporting::dump_dogfood_trace` is consumed by sibling `run.rs` via
