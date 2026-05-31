@@ -368,3 +368,55 @@ real tree. Items carry the data that proves them.
   The real lever is large files/repos via GPU coalescing + per-file overhead;
   re-measure once PERF-01/02 land and the kernel scan completes, then chase
   the 100x absolute-speed target against a kernel-scan wall-clock baseline.
+
+## PERF-08 — kernel scan is COMPUTE-bound + ~65% SERIAL, not IO, not matching (2026-05-31)
+
+Fresh baseline (current binary): full kernel 90.4s wall / 185% CPU / 2.4GB RSS.
+Thread-scaling sweep on a 6772-file / 160MB kernel subset (drivers/net):
+
+  | --threads | wall   | CPU  |
+  |-----------|--------|------|
+  | 1         | 24.8s  | 101% |
+  | 4         | 15.6s  | 163% |
+  | 16        | 16.1s  | 184% |
+  | 32        | 16.2s  | 192% |
+
+Speedup saturates at ~4 threads, max 1.55x over single-thread → Amdahl serial
+fraction ~0.65. CPU plateaus at ~1.9 cores on a 32-thread box.
+
+NOT IO-bound: corpus is local NVMe ext4 and fully page-cached — raw
+`cat $(subset)` reads 160MB in 0.06s (File system inputs: 0). So the 16s is
+keyhog CPU, and ~65% of it runs single-threaded.
+
+NOT the matching: `scan_coalesced` (scan.rs) already `par_iter`s chunks on the
+global pool; phase-1 HS prefilter rejects ~95% cheaply, phase-2 extracts ~5%.
+The parallel matching is a SMALL fraction of wall. The serial 65% is the
+pipeline FRAMING: single dispatch consumer draining `sync_channel(64)` one chunk
+at a time → batching → `scan_chunk_boundaries` post-pass (serial, O(chunks)) →
+result aggregation, plus per-file UTF-8 decode on the reader pool. These run
+regardless of --threads, so more cores don't help.
+
+Tooling BLOCKED for a symbolised profile: `perf_event_paranoid=4` (needs sudo to
+lower) and the release binary is `strip="symbols"` (0 nm symbols). A proper next
+step needs either (a) sudo to drop paranoid + a `debug=line-tables` profiling
+build, or (b) valgrind/callgrind on a tiny subset (no perf_event needed) to name
+the exact serial frame. Do NOT ship a speculative hot-path change first — the
+prior reader-pull rewrite (PERF-05) regressed 84→103s doing exactly that.
+
+Candidate levers once profiled: (1) parallelise `scan_chunk_boundaries`;
+(2) batch-pull from the reader channel instead of one chunk at a time;
+(3) move UTF-8 decode off the critical path / scan bytes directly;
+(4) the 58% fallback-AC-sweep finding (PERF earlier) — verify under a real profile.
+
+### PERF-08 addendum — wall-clock profiling is BLOCKED in this sandbox (2026-05-31)
+All three profilers are unavailable here: `perf` (perf_event_paranoid=4, needs
+sudo), `valgrind` (not installed), `gdb` attach (ptrace blocked by the sandbox:
+"ptrace: Inappropriate ioctl for device"; ptrace_scope=1 also forbids sibling
+attach). A symbolised build exists (CARGO_PROFILE_RELEASE_DEBUG=line-tables-only,
+29483 syms) but cannot be sampled in-place. To profile, run on the host outside
+the sandbox: `sudo sysctl kernel.perf_event_paranoid=1` then
+`perf record -g --call-graph dwarf <symbolised keyhog> scan <subset>` /
+`perf report`, OR install valgrind and `valgrind --tool=callgrind`. Until then
+the serial frame is INFERRED (framing: single-consumer drain + scan_chunk_boundaries
++ utf8 decode), not measured. No speculative hot-path change shipped (PERF-05
+regressed doing that).

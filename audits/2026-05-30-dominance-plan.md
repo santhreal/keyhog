@@ -2060,3 +2060,18 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog --test e2e_binary no_suppress_test_fixtures_surfaces_test_path_findings -- --nocapture`
+
+## Executed Patch Set: Base64 Splice Padding Parity
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: isolated a GPU-only false-positive class where decoded base64 payloads inherited the source token's adjacent `=` padding after splice-back, turning a clean decoded license-key string into a detector input with a stale suffix.
+- COHERENCE: the decode splice now consumes at most two base64 padding bytes only when the next byte is a delimiter, keeping hex/URL/Z85 splices unchanged and avoiding detector/source-code overrides.
+- TESTING: added a decoder unit regression for the padded splice and a real-binary GPU-vs-SIMD parity case using the mirror negative Kubernetes Secret that exposed the bug.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests decode_chunk_base64_splice_consumes_padding -- --nocapture`
+- `cargo test -p keyhog --test gpu_simd_parity gpu_does_not_add_decoded_license_key_false_positive -- --nocapture`
