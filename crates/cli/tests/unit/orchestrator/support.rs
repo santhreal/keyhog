@@ -48,6 +48,7 @@ pub fn make_detector() -> DetectorSpec {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["STATIC_SECRET".into()],
+        min_confidence: None,
     }
 }
 

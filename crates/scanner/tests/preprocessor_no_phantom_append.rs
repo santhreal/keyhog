@@ -149,7 +149,7 @@ fn dedup_suppresses_same_file_same_line_additional_location() {
     use std::collections::HashMap;
     use std::sync::Arc;
     let primary = RawMatch {
-        credential_hash: "h".to_string(),
+        credential_hash: [1u8; 32],
         detector_id: Arc::from("test-detector"),
         detector_name: Arc::from("Test Detector"),
         service: Arc::from("test"),

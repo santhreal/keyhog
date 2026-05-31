@@ -12,6 +12,7 @@ impl CompiledScanner {
     pub(crate) fn scan_hot_patterns_fast(
         &self,
         text: &str,
+        preprocessed: &ScannerPreprocessedText,
         line_offsets: &[usize],
         chunk: &Chunk,
         scan_state: &mut ScanState,
@@ -243,11 +244,7 @@ impl CompiledScanner {
                     continue;
                 }
 
-                // Same partition_point binary-search idiom as
-                // `match_line_number` - `line_offsets` is sorted
-                // ascending, so the first offset > `offset` IS the
-                // 1-based line number directly.
-                let line = line_offsets.partition_point(|&lo| lo <= offset).max(1);
+                let line = crate::pipeline::match_line_number(preprocessed, line_offsets, offset);
 
                 // Use the pre-formatted static tables - eliminates the
                 // two `format!()` heap allocations the perf kimi audit
@@ -339,19 +336,22 @@ impl CompiledScanner {
 fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
     let rest = text_bytes.get(offset..)?;
     match *rest.first()? {
-        b'g' => Some(0),                 // ghp_
-        b'S' => Some(4),                 // SG.
-        b's' => match *rest.get(1)? {    // sk-proj- vs sq0csp-
+        b'g' => Some(0), // ghp_
+        b'S' => Some(4), // SG.
+        b's' => match *rest.get(1)? {
+            // sk-proj- vs sq0csp-
             b'k' => Some(1),
             b'q' => Some(7),
             _ => None,
         },
-        b'A' => match *rest.get(1)? {    // AKIA vs ASIA
+        b'A' => match *rest.get(1)? {
+            // AKIA vs ASIA
             b'K' => Some(2),
             b'S' => Some(3),
             _ => None,
         },
-        b'x' => match *rest.get(3)? {    // xoxb- vs xoxp- (share `xox`)
+        b'x' => match *rest.get(3)? {
+            // xoxb- vs xoxp- (share `xox`)
             b'b' => Some(5),
             b'p' => Some(6),
             _ => None,
