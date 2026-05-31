@@ -1259,6 +1259,21 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests gpu_no_hit_fallback_admission -- --nocapture`
 
+## Executed Patch Set: Azure Container Registry Hex-Constant Suppression
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- INSUFFICIENCY: the Azure Container Registry username pattern still treated C access-control register constants such as `ACR_USER 0x00000000` as credentials.
+- COHERENCE: the detector now rejects `0x...` hex constants in the username capture while retaining the existing JWT and username contract positives.
+- DOGFOODING: the targeted Linux kernel subset comparison identified this as a SIMD false positive rather than a GPU recall miss after the GPU fallback-admission fix.
+- TESTING: the Azure Container Registry detector contract includes the exact `ACR_USER 0x00000000` negative shape.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31
