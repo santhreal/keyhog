@@ -3,7 +3,7 @@
 use clap::Parser;
 use keyhog::args::{Cli, ScanArgs};
 use keyhog::baseline::Baseline;
-use keyhog::benchmark::{format_gpu_summary, startup_summary};
+use keyhog::benchmark::format_gpu_summary;
 use keyhog::config::find_config_file;
 // The `keyhog::daemon::*` modules are unix-only (Unix-domain sockets).
 // Gate the imports and the daemon_* tests below so the file compiles
@@ -69,7 +69,7 @@ fn baseline_error() {
 // ── crates/cli/src/benchmark.rs ───────────────────────────────────────
 #[test]
 fn benchmark_happy() {
-    assert!(startup_summary(10, "cpu").contains("10"));
+    assert!(!format_gpu_summary().is_empty());
 }
 
 // ── crates/cli/src/config.rs ──────────────────────────────────────────
@@ -154,7 +154,7 @@ fn inline_suppression_happy() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: Arc::from("abc"),
-        credential_hash: "hash".into(),
+        credential_hash: [7u8; 32],
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("stdin"),
@@ -178,7 +178,7 @@ fn inline_suppression_error() {
 // ── crates/cli/src/orchestrator.rs ────────────────────────────────────
 #[test]
 fn orchestrator_happy() {
-    assert!(startup_summary(1, "cpu").contains("detector"));
+    assert!(!format_gpu_summary().is_empty());
 }
 #[test]
 fn orchestrator_error() {

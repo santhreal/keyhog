@@ -14,7 +14,7 @@ fn make_finding(
         service: Arc::from("test"),
         severity: Severity::High,
         credential_redacted: "***".into(),
-        credential_hash: credential_hash.to_string(),
+        credential_hash: test_hash(credential_hash),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: file_path.map(Arc::from),
@@ -31,6 +31,18 @@ fn make_finding(
     }
 }
 
+fn test_hash(seed: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for (idx, byte) in seed.as_bytes().iter().copied().take(32).enumerate() {
+        out[idx] = byte;
+    }
+    out
+}
+
+fn baseline_hash(seed: &str) -> String {
+    format!("sha256:{}", keyhog_core::hex_encode(&test_hash(seed)))
+}
+
 #[test]
 fn baseline_creation_produces_expected_entries() {
     let findings = vec![
@@ -42,7 +54,7 @@ fn baseline_creation_produces_expected_entries() {
     assert_eq!(baseline.version, 1);
     assert_eq!(baseline.entries.len(), 2);
     assert_eq!(baseline.entries[0].detector_id, "aws-key");
-    assert_eq!(baseline.entries[0].credential_hash, "sha256:def456");
+    assert_eq!(baseline.entries[0].credential_hash, baseline_hash("def456"));
     assert_eq!(
         baseline.entries[0].file_path,
         Some("src/aws.py".to_string())
@@ -86,7 +98,7 @@ fn baseline_does_not_suppress_new_findings() {
 
     let filtered = baseline.filter_new(&new_findings);
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].credential_hash, "newhash");
+    assert_eq!(filtered[0].credential_hash, test_hash("newhash"));
 }
 
 #[test]

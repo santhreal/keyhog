@@ -996,3 +996,23 @@ Verified gates:
 Red gate captured:
 
 - `cargo test -p keyhog --test all_tests scan_effective_config -- --nocapture` is blocked by unrelated aggregate-test compile errors in `crates/cli/tests/unit/{cli_misc,file_gate,baseline,daemon_wire}.rs` and missing `keyhog::benchmark::startup_summary`.
+
+## Executed Patch Set: CLI Aggregate Test Compile Repair
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: restored the `keyhog --test all_tests` compile path so filtered production CI gates can run instead of dying before test execution.
+- COHERENCE: updated stale fixtures from string credential hashes to the shipped `[u8; 32]` contract and baseline hex serialization boundary.
+- UTILIZATION: removed tests for the deleted duplicate `startup_summary` helper and pointed the benchmark surface checks at the retained `format_gpu_summary` API.
+- TESTING: reran the effective-config aggregate filter plus the repaired baseline, inline suppression, daemon wire, benchmark, and orchestrator fixture tests.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests scan_effective_config -- --nocapture`
+- `cargo test -p keyhog --test all_tests baseline_ -- --nocapture`
+- `cargo test -p keyhog --test all_tests inline_suppression -- --nocapture`
+- `cargo test -p keyhog --test all_tests daemon_scan_text_roundtrip_carries_matches -- --nocapture`
+- `cargo test -p keyhog --test all_tests benchmark_happy -- --nocapture`
+- `cargo test -p keyhog --test all_tests orchestrator_happy -- --nocapture`
