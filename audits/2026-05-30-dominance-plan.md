@@ -975,3 +975,24 @@ Verified gates:
 - `bash tests/integration/entrypoints_check.sh`
 - `python3 - <<'PY' ... yaml.safe_load(...) ... PY` for `.github/actions/keyhog/action.yml`, `.github/workflows/ci.yml`, and `.github/workflows/keyhog.yml`
 - Extracted `.github/actions/keyhog/action.yml` `Run scan` block through `yaml.safe_load`, substituted GitHub expressions, and ran `bash -n`
+
+## Executed Patch Set: Effective Config CI Oracle
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` now reaches the real scan path and exits before source validation, giving CI a stable dump of the policy that would run.
+- WIRING: scan construction now uses `resolve_scan_config` once, carries disabled detectors and lockdown requirements through the same resolved object, and stores the effective engine/post-process policy on `ScanOrchestrator`.
+- INSUFFICIENCY: post-processing no longer re-derives confidence from raw args or bypasses the floor under `--no-ml`; it reads the resolved scanner floor.
+- TESTING: added an e2e contract for source-free oracle output and config-file-vs-CLI byte identity.
+
+Verified gates:
+
+- `cargo build -p keyhog --bin keyhog`
+- `KEYHOG_PRINT_EFFECTIVE_CONFIG=1 /mnt/FlareTraining/santh-archive/cargo-target/debug/keyhog scan --no-daemon`
+- `KEYHOG_PRINT_EFFECTIVE_CONFIG=1 ... scan --config <tmp/.keyhog.toml>` byte-compared with equivalent explicit flags
+
+Red gate captured:
+
+- `cargo test -p keyhog --test all_tests scan_effective_config -- --nocapture` is blocked by unrelated aggregate-test compile errors in `crates/cli/tests/unit/{cli_misc,file_gate,baseline,daemon_wire}.rs` and missing `keyhog::benchmark::startup_summary`.

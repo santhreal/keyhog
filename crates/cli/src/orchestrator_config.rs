@@ -371,7 +371,7 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
 /// `!no_ml`. Two floors meant the value the operator set, the value the engine
 /// applied, and the value postprocess applied could all disagree. Resolving
 /// once and handing the live worker this struct makes "what runs" a single,
-/// printable answer (see `--print-effective-config`).
+/// printable answer (see `KEYHOG_PRINT_EFFECTIVE_CONFIG=1`).
 #[derive(Debug, Clone)]
 pub struct ResolvedScanConfig {
     /// Engine-side config consumed by `CompiledScanner::with_config`.
@@ -390,6 +390,11 @@ pub struct ResolvedScanConfig {
     /// Per-detector floors from `.keyhog.toml` `[detector.<id>] min_confidence`.
     /// Take precedence over `min_confidence` for the matching detector id.
     pub detector_min_confidence: std::collections::HashMap<String, f64>,
+    /// Detector ids disabled via `.keyhog.toml` `[detector.<id>] enabled = false`.
+    /// These are dropped from the loaded corpus before scanner compilation.
+    pub disabled_detectors: std::collections::HashSet<String>,
+    /// Whether `.keyhog.toml` requires lockdown mode for this scan.
+    pub require_lockdown: bool,
 }
 
 /// Resolve the full scan configuration in one place: run the precedence merge
@@ -416,20 +421,18 @@ pub fn resolve_scan_config(args: &mut ScanArgs) -> ResolvedScanConfig {
         min_confidence,
         ml_enabled,
         detector_min_confidence: outcome.detector_min_confidence,
+        disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
+        require_lockdown: outcome.require_lockdown,
     }
 }
 
-/// Hidden `--print-effective-config` surface: the coherence oracle. Returns
+/// Hidden effective-config surface: the coherence oracle. Returns
 /// `true` when the dump was requested (the caller should then print-and-exit
 /// SUCCESS without scanning), `false` for a normal scan.
 ///
 /// Triggered today by the `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` env var, matching
 /// the existing env-or-flag precedent (`KEYHOG_BACKEND`/`--backend`,
-/// `KEYHOG_THREADS`/`--threads`). The hidden `--print-effective-config` clap
-/// flag (a field on `ScanArgs`, wired by the args owner) should set that env
-/// var or call this same helper, so the two surfaces share one code path. The
-/// env path keeps the oracle functional for tooling / dogfood snapshots
-/// independent of the clap layer. Writes the rendered block to stdout so it is
+/// `KEYHOG_THREADS`/`--threads`). Writes the rendered block to stdout so it is
 /// captured by the same `--output`-less stdout path the formatted report uses.
 pub fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> bool {
     let requested = std::env::var("KEYHOG_PRINT_EFFECTIVE_CONFIG")
@@ -443,7 +446,7 @@ pub fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> boo
 }
 
 /// Render the resolved scan config as a stable, human + machine readable block
-/// for the hidden `--print-effective-config` flag - the coherence oracle. It
+/// for the hidden env-var coherence oracle. It
 /// answers "what will actually run?" in one place: the resolved engine config
 /// AND the post-scan floors, so a test (or an operator) can assert that the
 /// tuned value, the benched value, and the shipped value are the same number.
@@ -470,6 +473,11 @@ pub fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     let _ = writeln!(out, "max_decode_bytes = {}", s.max_decode_bytes);
     let _ = writeln!(out, "scan_comments = {}", s.scan_comments);
     let _ = writeln!(out, "unicode_normalization = {}", s.unicode_normalization);
+    let _ = writeln!(
+        out,
+        "disabled_detectors = {}",
+        resolved.disabled_detectors.len()
+    );
     let _ = writeln!(out, "known_prefixes = {}", s.known_prefixes.len());
     let _ = writeln!(out, "secret_keywords = {}", s.secret_keywords.len());
     let _ = writeln!(out, "test_keywords = {}", s.test_keywords.len());

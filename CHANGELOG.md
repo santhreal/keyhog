@@ -7,6 +7,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### CI / GitHub Action
 
 - Make the composite GitHub Action fail closed when report parsing fails after a findings exit code, and write a concise GitHub Step Summary for CI triage.
+- Wire `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` into the real scan path so CI can print the resolved scanner/post-process policy and verify config-file values match explicit flags before scanning.
+
+### CLI
+
+- Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
 
 ### Scanner
 

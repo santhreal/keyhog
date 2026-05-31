@@ -158,21 +158,11 @@ impl ScanOrchestrator {
                         if conf < *floor {
                             return false;
                         }
-                    } else if !self.args.no_ml
-                        && conf
-                            < self
-                                .args
-                                .min_confidence
-                                .unwrap_or(keyhog_core::ScanConfig::default().min_confidence)
-                    {
-                        // When `--min-confidence` is unset the floor falls back to the
-                        // canonical `ScanConfig::default().min_confidence` (single source
-                        // of truth in crates/core/src/config.rs), NOT a bare literal. This
-                        // is the post-scan confidence gate for named-detector / entropy
-                        // findings; its sibling is the scan-time generic-fallback gate at
-                        // crates/scanner/src/engine/fallback_generic.rs (`confidence <
-                        // self.config.min_confidence`). Both now resolve to the same value
-                        // so the tuned == benched == shipped floor stays coherent.
+                    } else if conf < self.effective_config.min_confidence {
+                        // The post-scan confidence gate reads the same resolved
+                        // value that configured the scanner. Disabling ML changes
+                        // confidence scoring; it must not bypass an explicit
+                        // operator floor.
                         return false;
                     }
                 }
