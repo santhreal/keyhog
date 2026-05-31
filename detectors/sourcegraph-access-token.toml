@@ -1,0 +1,32 @@
+# Docs: https://sourcegraph.com/docs/cli/how-tos/creating_an_access_token
+# Format: `sgp_` access tokens — either `sgp_<40 hex>` (dotcom) or
+#         `sgp_<16 hex|local>_<40 hex>` (instance-scoped); `slk_<64 hex>`
+#         license keys. Distinctive 4-char vendor prefixes.
+# Added: home-turf bench (DET-17) — betterleaks/kingfisher both ship
+#        sourcegraph fixtures keyhog had no detector for (false-negatives).
+
+[detector]
+id = "sourcegraph-access-token"
+name = "Sourcegraph Access Token"
+service = "sourcegraph"
+severity = "high"
+keywords = ["sgp_", "slk_", "sourcegraph"]
+
+[[detector.patterns]]
+regex = 'sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}'
+description = "Sourcegraph instance-scoped access token (sgp_<id>_<token>)"
+group = 0
+
+[[detector.patterns]]
+regex = 'sgp_[a-fA-F0-9]{40}'
+description = "Sourcegraph dotcom access token (sgp_<token>)"
+group = 0
+
+[[detector.patterns]]
+regex = 'slk_[a-fA-F0-9]{64}'
+description = "Sourcegraph license key (slk_<64 hex>)"
+group = 0
+
+[[detector.tests]]
+test_positive = "SRC_ACCESS_TOKEN=sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f"
+test_negative = "SRC_ENDPOINT=https://sourcegraph.example.com"
