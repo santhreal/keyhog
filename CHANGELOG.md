@@ -20,6 +20,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Restore the aggregate CLI `all_tests` target after the credential-hash storage contract changed from hex strings to inline `[u8; 32]` bytes.
 - Move the remaining CLI inline unit tests for args, hook coherence, and scan-system finding retention into registered aggregate tests while preserving the source gates against inline tests and production unwraps.
 
+### Benchmarks
+
+- Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
+
 ### CLI
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.

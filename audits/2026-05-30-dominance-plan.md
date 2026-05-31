@@ -1620,3 +1620,18 @@ Vector coverage:
 Verified gates:
 
 - `rg -n "santhsecurity/keyhog/.github/actions/keyhog|duration|baseline" docs/src/workflows/ci.md`
+
+## Executed Patch Set: Benchmark Contract Package
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: replaced an incomplete benchmark package surface with tested schema, host, scoring, and corpus adapter commands; the Makefile no longer advertises missing runner/report modules.
+- RESEARCH: the benchmark contract preserves SecretBench overlap scoring and adds corpus adapters for mirror, competitor homefield, CredData, and kernel performance measurements.
+- TESTING: added Python package tests for `RunResult` round trips, zero-denominator metrics, base64/escape overlap, TP/FP/FN/ignore attribution, corpus loading, corpus resolution, and hardware JSON capture.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py && python3 -m pytest -q bench/tests`
+- `cd benchmarks && python3 -m bench host >/tmp/keyhog-bench-host.json && python3 -m bench corpus kernel >/tmp/keyhog-bench-kernel.json && python3 -m json.tool /tmp/keyhog-bench-host.json >/dev/null && python3 -m json.tool /tmp/keyhog-bench-kernel.json >/dev/null`
