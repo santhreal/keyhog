@@ -6,13 +6,25 @@ static GPU_AC_DEGENERATE_DISABLED: std::sync::atomic::AtomicBool =
 impl CompiledScanner {
     pub fn scan_coalesced_gpu_ac_phase1(&self, chunks: &[keyhog_core::Chunk]) -> GpuPhase1Output {
         let Some(matcher) = self.gpu_matcher() else {
-            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU literal matcher unavailable for AC dispatch"),
+            );
         };
         let Some(program) = self.ac_gpu_program() else {
-            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU AC dispatch program unavailable"),
+            );
         };
         if self.gpu_backend.is_none() {
-            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU backend handle unavailable for AC dispatch"),
+            );
         }
         if GPU_AC_DEGENERATE_DISABLED.load(std::sync::atomic::Ordering::Relaxed) {
             return self.gpu_degrade_done_with_reason(

@@ -37,10 +37,18 @@ impl CompiledScanner {
         // ready: no compiled matcher (no adapter at probe time), the cached
         // device went away, or the persistent backend is missing.
         let Some(matcher) = self.gpu_matcher() else {
-            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU literal-set matcher unavailable"),
+            );
         };
         if self.gpu_backend.is_none() {
-            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU backend handle unavailable for literal-set dispatch"),
+            );
         }
 
         let (entries, mut buffer) = super::gpu_coalesce::coalesce_chunks(chunks);
@@ -294,7 +302,12 @@ impl CompiledScanner {
                             shards = sub_end - sub_start,
                             "GPU batched dispatch failed, falling back to CPU: {e}"
                         );
-                        return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                        let reason = format!("GPU literal-set batched dispatch failed: {e}");
+                        return self.gpu_degrade_done_with_reason(
+                            chunks,
+                            crate::hw_probe::ScanBackend::Gpu,
+                            Some(&reason),
+                        );
                     }
                 };
 
@@ -307,7 +320,12 @@ impl CompiledScanner {
                             shard_index = i,
                             "GPU shard within batch failed, falling back to CPU: {e}"
                         );
-                        return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                        let reason = format!("GPU literal-set shard {i} dispatch failed: {e}");
+                        return self.gpu_degrade_done_with_reason(
+                            chunks,
+                            crate::hw_probe::ScanBackend::Gpu,
+                            Some(&reason),
+                        );
                     }
                 };
                 if outputs.len() < 2 {
@@ -316,7 +334,15 @@ impl CompiledScanner {
                         outputs = outputs.len(),
                         "GPU shard output buffer count too small; falling back to CPU"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!(
+                        "GPU literal-set shard {i} returned {} output buffer(s), expected at least 2",
+                        outputs.len()
+                    );
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
                 let count_bytes = &outputs[0];
                 let matches_bytes = &outputs[1];
@@ -325,7 +351,15 @@ impl CompiledScanner {
                         shard_index = i,
                         "GPU shard count buffer truncated; falling back to CPU"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!(
+                        "GPU literal-set shard {i} returned truncated count buffer ({} byte(s), expected 4)",
+                        count_bytes.len()
+                    );
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
                 let count = u32::from_le_bytes([
                     count_bytes[0],
@@ -341,7 +375,14 @@ impl CompiledScanner {
                         shard_index = i,
                         "GPU shard exceeded its cap: truncation possible; falling back to CPU"
                     );
-                    return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+                    let reason = format!(
+                        "GPU literal-set shard {i} reported {count} matches, exceeding cap {shard_cap}"
+                    );
+                    return self.gpu_degrade_done_with_reason(
+                        chunks,
+                        crate::hw_probe::ScanBackend::Gpu,
+                        Some(&reason),
+                    );
                 }
                 let shard_matches = vyre_libs::scan::dispatch_io::unpack_match_triples(
                     matches_bytes,

@@ -59,6 +59,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Scanner
 
+- Build KeyHog's production GPU AC dispatch program with a bound atomic match slot so each emitted `(pattern,start,end)` triple uses one counter value; the live RTX 5090 backend self-test now reports `vyre_ac_kernel=pass` and recommends GPU instead of degrading on degenerate triples.
+- Let `KEYHOG_REQUIRE_GPU=1` proceed when the GPU stack is healthy, while still hard-failing on concrete runtime degradation; required-GPU parity now reaches assertions instead of exiting during preflight.
+- Preserve concrete literal-set GPU degrade reasons too, so diagnostic `KEYHOG_GPU_KERNEL=literal-set` failures name the failed branch, shard, and cap/output condition.
 - Add `keyhog backend --self-test --json`, preserving exit `4` for runtime GPU degradation while exposing stable CI fields for overall status, recommended fallback backend, and each GPU/Vyre probe.
 - Thread GPU runtime-degrade reasons into the hard-fail warning path, so `KEYHOG_REQUIRE_GPU=1` and `backend --self-test` name degenerate Vyre AC match triples instead of reporting only a generic GPU dispatch failure.
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
