@@ -2100,3 +2100,24 @@ Verified gates:
 - `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests splice_windows_context_instead_of_whole_parent -- --nocapture`
 - `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests gpu_phase2_empty_hit_fast_path -- --nocapture`
 - `/mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog backend --self-test --json`
+
+## Executed Patch Set: CredData Forced-GPU Dense Prefix Cap
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED / UTILIZATION: forced `--backend gpu` on CredData no longer spends the run confirming millions of permissive literal-prefix hits on CPU; dense GPU AC output now trips a bounded readback cap and reroutes that batch through the SIMD coalesced scanner.
+- ARCHITECTURE: the guard lives in GPU postprocess/phase-1 execution, not in detector policy or source-code detector overrides; detector data remains the authority for matching semantics.
+- AUDIT HUNTS: the fix caps per-shard GPU readback memory before the previous 11M-hit batches allocate large host buffers, reducing the measured RSS cliff while preserving recall.
+- COHERENCE: `KEYHOG_REQUIRE_GPU=1` still proves the GPU stack is healthy and dispatches the AC kernel; only the pathological confirmation phase is rerouted after a successful GPU cap signal.
+- TESTING: added unit coverage for the dense-prefix threshold and updated the AC output-cap contract; live GPU parity still passes.
+
+Verified gates:
+
+- `/usr/bin/time -v env KH_PERF=1 KEYHOG_REQUIRE_GPU=1 KEYHOG_BACKEND=gpu timeout 120s /mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog scan --format json --show-secrets --no-suppress-test-fixtures --backend gpu --no-daemon --output /tmp/keyhog-creddata-full-gpu-capguard.json benchmarks/corpora/creddata/CredData/data`
+- `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd /mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog scan --format json --show-secrets --no-suppress-test-fixtures --backend simd --no-daemon --output /tmp/keyhog-creddata-simd-current.json benchmarks/corpora/creddata/CredData/data`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests dense_phase2_guard -- --nocapture`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog cargo test -p keyhog-scanner --test all_tests ac_gpu_max_matches_is_dense_prefix_cap -- --nocapture`
+- `/mnt/FlareTraining/santh-archive/cargo-target/keyhog/release/keyhog backend --self-test --json`
+- `CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target/keyhog KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
