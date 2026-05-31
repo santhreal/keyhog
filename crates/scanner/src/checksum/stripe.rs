@@ -19,8 +19,10 @@ impl ChecksumValidator for StripeTokenValidator {
         let Some(payload) = prefixes.iter().find_map(|p| credential.strip_prefix(p)) else {
             return ChecksumResult::NotApplicable;
         };
-        // Stripe key payloads are 24-32 alphanumeric characters
-        if payload.len() < 24 || payload.len() > 48 {
+        // Stripe does not publish a checksum. Keep this validator aligned
+        // with the detector contract: enforce the family and alphabet, but
+        // do not reject long live keys that still satisfy the regex.
+        if payload.len() < 24 || payload.len() > 128 {
             return ChecksumResult::Invalid;
         }
         if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {

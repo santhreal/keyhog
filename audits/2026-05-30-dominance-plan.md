@@ -14,6 +14,7 @@ Status: active plan
 - 2026-05-30: CLI source hygiene gate repaired by moving args, hook, and scan-system inline contracts into registered aggregate tests; scan-system redaction checks now assert the real raw hash bytes instead of stale fake hash strings.
 - 2026-05-30: Structured named-detector recall audit found the generic UUID suppressor still firing under strong service anchors; the UUID gate is now bypassed only for strongly anchored detectors and remains active for generic/entropy UUID captures.
 - 2026-05-30: Hot-pattern fast-path location mapping now uses the preprocessor's original-line map, preventing structured `.env` synthetic lines from surfacing as past-EOF additional locations.
+- 2026-05-30: Scanner crate gate found stale `DetectorSpec::min_confidence` fixtures, an AVX-512 entropy parity gap on tiny/null-containing inputs, and residual weak-anchor misclassification for reviewed service-specific 32/40-hex API-key detectors; each is now wired into tests and detector data.
 
 ## Dominance Contract
 
@@ -1027,3 +1028,28 @@ Verified gates:
 - `cargo test -p keyhog --test all_tests daemon_scan_text_roundtrip_carries_matches -- --nocapture`
 - `cargo test -p keyhog --test all_tests benchmark_happy -- --nocapture`
 - `cargo test -p keyhog --test all_tests orchestrator_happy -- --nocapture`
+
+## Executed Patch Set: Scanner Adversarial Recall/Precision Batch
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: preserved hot-pattern substring validation on the fast path while adding a single next-byte boundary check for overlong known-prefix candidates.
+- CAPABILITY: restored Discord bot-token standalone and cross-chunk recall for base64 snowflake prefixes above the old 10-59 route.
+- TESTING: drove fixes from isolated adversarial failures, then widened to the first massive adversarial module.
+- AUDIT HUNTS: fixed Unicode evasion gaps for C0 controls, combining marks, bidi isolates, line/paragraph separators, unusual Unicode spaces, and soft-hyphen separator impersonation.
+- COHERENCE: kept detector quality gates green after splitting Discord prefix alternation under the 64-branch cap.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite::adv_discord_bot_token_normal_must_fire -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests adversarial::chunk_boundary::chunk_boundary_discord_bot_split_reassembled -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite::adv_aws_access_key_too_long_must_silent -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite_10::adv10_arbitrum_wrong_prefix_must_silent -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite::adv_slack_bot_token_evade_soft_hyphen_dash_must_fire -- --nocapture`
+
+Red gate captured:
+
+- `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite:: -- --nocapture` now passes 53/57. Remaining disagreements are bare Heroku UUID positives, Cyrillic `о` being correctly normalized to `o` and routed as `gho_`, and a Stripe chunk-boundary "near miss" whose length still satisfies the shipped Stripe detector.

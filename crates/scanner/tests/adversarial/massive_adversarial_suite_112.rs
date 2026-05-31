@@ -1116,5 +1116,3 @@ fn adv112_opsgenie_api_key_evade_lrm_must_fire() {
         "6b15696d-bb3e-5040-215f-e28bb6ac69a4",
     );
 }
-
-

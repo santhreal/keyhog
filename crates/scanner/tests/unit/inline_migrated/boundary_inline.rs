@@ -31,6 +31,7 @@ fn straddle_detector() -> DetectorSpec {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["STRADDLE".into()],
+        min_confidence: None,
     }
 }
 

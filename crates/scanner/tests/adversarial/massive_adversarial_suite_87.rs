@@ -1116,5 +1116,3 @@ fn adv87_flipt_api_token_evade_lrm_must_fire() {
         "flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7",
     );
 }
-
-

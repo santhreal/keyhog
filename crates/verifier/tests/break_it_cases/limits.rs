@@ -30,6 +30,7 @@ async fn test_verify_long_unicode_surrogates() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some("http://127.0.0.1:1".to_string()),
             method: Some(HttpMethod::Get),
@@ -103,6 +104,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
                 patterns: vec![],
                 companions: vec![],
                 keywords: vec![],
+                min_confidence: None,
                 verify: Some(VerifySpec {
                     url: Some("http://127.0.0.1:1/{{companion.a}}".to_string()),
                     method: Some(HttpMethod::Get),
@@ -156,6 +158,7 @@ async fn test_verify_duplicate_entries_same_key() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some("http://127.0.0.1:1/".to_string()),
             method: Some(HttpMethod::Get),

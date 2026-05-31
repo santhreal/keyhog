@@ -466,10 +466,7 @@ fn adv133_teamwork_api_token_normal_must_fire() {
 
 #[test]
 fn adv133_teamwork_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "teamwork-api-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("teamwork-api-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +907,7 @@ fn adv133_thehive_api_key_normal_must_fire() {
 
 #[test]
 fn adv133_thehive_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "thehive-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("thehive-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv133_threatconnect_api_key_evade_lrm_must_fire() {
         "05166866232440590975",
     );
 }
-
-

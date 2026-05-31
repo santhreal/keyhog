@@ -346,19 +346,12 @@ fn adv98_invision_api_key_evade_lrm_must_fire() {
 
 #[test]
 fn adv98_ip_api_credentials_normal_must_fire() {
-    assert_detector_fires(
-        "ip-api-credentials",
-        "IPAPI_KEY=WnGcEBigw6",
-        "WnGcEBigw6",
-    );
+    assert_detector_fires("ip-api-credentials", "IPAPI_KEY=WnGcEBigw6", "WnGcEBigw6");
 }
 
 #[test]
 fn adv98_ip_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "ip-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxx",
-    );
+    assert_detector_silent("ip-api-credentials", "dummy_prefix_0 =xxxxxxxxxx");
 }
 
 #[test]
@@ -457,19 +450,12 @@ fn adv98_ip_api_credentials_evade_lrm_must_fire() {
 
 #[test]
 fn adv98_ipinfo_api_token_normal_must_fire() {
-    assert_detector_fires(
-        "ipinfo-api-token",
-        "IPINFO=ic1pO5L3hs",
-        "ic1pO5L3hs",
-    );
+    assert_detector_fires("ipinfo-api-token", "IPINFO=ic1pO5L3hs", "ic1pO5L3hs");
 }
 
 #[test]
 fn adv98_ipinfo_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "ipinfo-api-token",
-        "dummy_prefix_0 =xxxxxxxxxx",
-    );
+    assert_detector_silent("ipinfo-api-token", "dummy_prefix_0 =xxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +896,7 @@ fn adv98_japan_egov_api_key_normal_must_fire() {
 
 #[test]
 fn adv98_japan_egov_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "japan-egov-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("japan-egov-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1099,3 @@ fn adv98_jetadmin_credentials_evade_lrm_must_fire() {
         "n-vvhk24chLYNYgsYTCfMLag",
     );
 }
-
-

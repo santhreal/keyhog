@@ -8,6 +8,7 @@ id = "crowdin-api-token"
 name = "Crowdin API Token"
 service = "crowdin"
 severity = "high"
+min_confidence = 0.2
 keywords = ["CROWDIN", "CROWDIN_API_KEY", "CROWDIN_TOKEN", "crowdin.com"]
 
 [[detector.patterns]]

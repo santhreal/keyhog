@@ -30,7 +30,7 @@ pub mod thresholds;
 pub use banner::startup_banner;
 pub use select::{
     clear_test_backend_override, forced_backend_from_env, forced_backend_from_env_uncached,
-    select_backend, set_test_backend_override,
+    select_backend, select_backend_for_batch, set_test_backend_override,
 };
 pub use tier::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,

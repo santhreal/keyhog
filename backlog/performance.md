@@ -54,6 +54,39 @@ real tree. Items carry the data that proves them.
   exceeding a deadline, falls back to SIMD, and disables GPU for the rest of
   the run so one stall can't poison the whole scan.
 
+- **PERF-07 · SHIP-BLOCKER · GPU path produces a DIFFERENT finding set than
+  SIMD on identical input (gpu_parity violated in production)** — confirmed
+  2026-05-30 on the kernel, release-fast, warm cache:
+    default (auto-route)  129.66 s  264 % CPU  19 findings
+    simd-forced           119.15 s  173 % CPU  22 findings
+  The two finding sets are NOT equal. Diff: 4 `codesandbox-api-token` hits in
+  `drivers/gpu/drm/amd/include/soc21_enum.h` (lines 20267-20272) present under
+  SIMD, ABSENT under the auto-routed (GPU) default; and 1 `github-oauth-access-
+  token` in `tools/perf/arch/arm/entry/syscalls/syscall.tbl:1` present under
+  default, absent under SIMD. So a scan's result depends on which backend a
+  batch happened to route to — non-reproducible, and hardware/batch-order
+  dependent. dispatch.rs itself flags this as a release blocker
+  ("SIMD and GPU MUST produce identical findings ... That equivalence is not
+  self-evident") — it is now PROVEN false. For a secret scanner this is
+  fail-OPEN: a GPU recall gap silently drops real secrets by default. (Here the
+  dropped 4 are codesandbox-on-`CSB_`-enum FALSE positives, so GPU looked
+  "better" by luck — but the divergence is the bug, and the next file it could
+  drop a real credential.) Also a coherence break: benchmarks pin
+  `KEYHOG_BACKEND=simd` (F1 measured on SIMD), so the SHIPPED default diverges
+  from the BENCHED accuracy — tuned != shipped.
+  CONSEQUENCE: defaulting to GPU is unsafe until parity is proven by a
+  differential test (every detector, GPU vs SIMD, on a fixed corpus, byte-exact
+  finding sets). The dominance routing gate (PERF-06) reduced but did NOT
+  eliminate GPU engagement on the kernel (large-file clusters still cross the
+  50%% bar), so the divergence persists. Two directions, both viable — pending
+  a decision: (A) make the SCAN default SIMD (GPU opt-in via KEYHOG_BACKEND=gpu)
+  so shipped==benched and the default is deterministic + recall-safe; or
+  (B) root-cause and fix the GPU literal/AC vs SIMD-hyperscan match divergence
+  (match-cap truncation? shard-boundary misses? coalesce file-edge attribution?)
+  and gate the release on a byte-exact differential.
+  Separately: the `codesandbox-api-token` detector firing on `CSB_`/`csb_`
+  enum identifiers is a precision bug (logged to detection.md).
+
 ## Parallelism
 
 - **PERF-05 · HIGH · kernel scan uses ~1.6 cores of 32 (pipeline serialization)** —
@@ -79,6 +112,32 @@ real tree. Items carry the data that proves them.
   single-cursor enumeration that `par_bridge` pulls through a shared mutex.
   Lever: cut per-file read overhead and parallelise enumeration; ~30 cores
   sit idle waiting for the reader.
+  REFINEMENT 2026-05-30 (SIMD path, off-CPU profile + allocator A/B):
+  • ALLOCATOR RULED OUT. Three back-to-back kernel scans — default glibc
+    malloc, jemalloc via LD_PRELOAD, and glibc tuned (MALLOC_ARENA_MAX etc.)
+    — all land at 108–111 s @ ~165 % CPU. If malloc arena/mmap_lock
+    contention were the limiter, jemalloc would have unlocked cores; it moved
+    the needle <3 %. The earlier `__mprotect`/`osq_lock` kernel-time was a
+    symptom, not the cause. Do NOT add a `#[global_allocator]` for this.
+  • OFF-CPU PROFILE (per-thread kernel-stack sampling, 16-phys/32-logical
+    Ryzen 9950X): in the SIMD path essentially ONE worker is in R at any
+    instant; ~87 threads parked in `futex_do_wait`. Reader threads
+    (`keyhog-reader-N`) are blocked on the inner `sync_channel(64)` SEND
+    (futex) — NOT in `vfs_read`/D-state — so the scan is NOT I/O-bound; raw
+    parallel read of all 94k files is 0.7 s. 32 idle `tokio-rt-worker`
+    threads confirm PERF-03 (async runtime spun up for a pure fs scan).
+  • ARITHMETIC: 86–96 s for ~1.4 GB at ~1.8 effective cores ⇒ ~156
+    core-seconds of real work ⇒ ~1.66 ms/file of CPU somewhere, funnelled to
+    <2 cores. Pure single-stream Hyperscan would do this in seconds, so the
+    cost is per-file FIXED overhead in a serial stage, not match throughput.
+    Pinning the exact frame needs a symbolized build (release strips; built
+    release-fast for the flamegraph). Prime suspects: the SINGLE dispatch
+    producer thread draining the 64-deep inner channel one chunk at a time
+    and the SINGLE scanner thread, both `std::thread` (process-named
+    `keyhog`), each a funnel every one of 94k chunks crosses. Candidate fix:
+    fold read+scan into one rayon parallel pipeline (worker reads AND scans a
+    file end-to-end, no central funnel) and reserve the coalesce/GPU model
+    for genuinely large files. Measure on the kernel before/after.
 
 - **PERF-06 · HIGH · GPU auto-routing (the DEFAULT) is catastrophically slow on
   large trees** — the default (GPU) backend did NOT finish the kernel in 300 s
@@ -97,6 +156,36 @@ real tree. Items carry the data that proves them.
   regression gate added; forced `gpu_parity` remains a separate red gate
   because the runtime GPU dispatch currently hard-fails under
   `KEYHOG_REQUIRE_GPU=1` even though `keyhog backend --self-test` passes.
+  UPDATE 2026-05-30 (head-to-head, current binary, RTX 5090 host): the
+  phase2 no-hit gate helped (300 s → 204 s) but GPU-default is STILL the
+  worst path on the kernel on every axis:
+    gpu-default  204.05 s  523 % CPU  4.08 GB RSS
+    simd-forced   96.24 s  179 % CPU  2.34 GB RSS
+    simd+no-gpu   86.65 s  190 % CPU  2.20 GB RSS
+  GPU-default is 2.1x SLOWER, 3x CPU, ~1.8x RSS than SIMD, and one run hit
+  the PERF-02 unbounded-wait stall (110 s "lucky" → 204 s → near-hang across
+  three runs = non-deterministic). ROOT CAUSE (deeper than phase2): routing
+  decided on the COALESCED batch total. The kernel's ~94k ~12 KiB files
+  coalesce into 256 MiB batches that clear the 16 MiB high-tier solo floor,
+  so EVERY batch routed to GPU even though no single file is GPU-sized. The
+  GPU then re-scans every byte, surfaces a literal hit for every detector
+  prefix across 256 MiB, and hands the CPU the same per-chunk phase-2 it
+  would have run anyway — plus coalesce/PCIe/readback the SIMD path skips.
+  FIX LANDED 2026-05-30: `select_backend_for_batch(caps, total, patterns,
+  large_chunk_bytes)` (crates/scanner/src/hw_probe/select.rs) gates GPU on
+  large-chunk DOMINANCE — large-file bytes (chunks >= the tier per-file floor)
+  must be >= half the coalesced batch. A largest-single-chunk guard was tried
+  first and FAILED in verification: the kernel's 55 files >= 2 MiB are
+  sprinkled through the walk, so nearly every 4096-file batch caught one and
+  still routed to GPU (default measured 158 s, 326 % CPU — mixed path). The
+  dominance bar a tiny-file swarm can never clear no matter how the large
+  files cluster, while a big-file-dominated batch still gets the device.
+  `KEYHOG_BACKEND=gpu` override and the simd-pinned benchmarks are unchanged.
+  dispatch.rs sums per-batch large-chunk bytes (chunks >= gpu_min_bytes floor)
+  and passes them. 7 new routing_matrix tests lock the contract (pure-swarm →
+  SIMD, few-large-riding-along → SIMD, large-dominated → GPU, 50%% boundary
+  inclusive, env-override, single-large-file equivalence, no-GPU). 29/29
+  routing tests green. Verifying default-path wall-clock on release-fast next.
 
 ## Resource / overhead
 

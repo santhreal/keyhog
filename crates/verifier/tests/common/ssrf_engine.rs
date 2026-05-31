@@ -42,6 +42,7 @@ pub async fn verify_url_blocked_as_private(url: &str) -> String {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url.to_string()),
             method: Some(HttpMethod::Get),

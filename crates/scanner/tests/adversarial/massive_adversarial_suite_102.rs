@@ -13,19 +13,12 @@ use oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv102_libsql_credentials_normal_must_fire() {
-    assert_detector_fires(
-        "libsql-credentials",
-        "libsql://78167825",
-        "78167825",
-    );
+    assert_detector_fires("libsql-credentials", "libsql://78167825", "78167825");
 }
 
 #[test]
 fn adv102_libsql_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "libsql-credentials",
-        "dummy_prefix_0://xxxxxxxx",
-    );
+    assert_detector_silent("libsql-credentials", "dummy_prefix_0://xxxxxxxx");
 }
 
 #[test]
@@ -799,10 +792,7 @@ fn adv102_livekit_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv102_livekit_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "livekit-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxx",
-    );
+    assert_detector_silent("livekit-api-credentials", "dummy_prefix_0 =xxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1106,3 @@ fn adv102_locationiq_api_token_evade_lrm_must_fire() {
         "pk.b02a70db24b788f217af47231d91e27e96c388b92f008b39c24addc0706",
     );
 }
-
-

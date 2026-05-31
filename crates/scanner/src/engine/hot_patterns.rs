@@ -112,7 +112,14 @@ impl CompiledScanner {
                     Some(Some(validator)) => match validator.find(credential) {
                         // `^`-anchored, so any match starts at 0; trim the
                         // delimiter-bounded capture down to the real token.
-                        Some(m) => &credential[..m.end()],
+                        Some(m) => {
+                            if m.end() < credential.len()
+                                && credential.as_bytes()[m.end()].is_ascii_alphanumeric()
+                            {
+                                continue;
+                            }
+                            &credential[..m.end()]
+                        }
                         None => continue,
                     },
                     // No validator for this slot (square, or out of range):

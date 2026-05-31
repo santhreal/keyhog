@@ -577,10 +577,7 @@ fn adv107_modal_api_token_normal_must_fire() {
 
 #[test]
 fn adv107_modal_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "modal-api-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("modal-api-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -679,19 +676,12 @@ fn adv107_modal_api_token_evade_lrm_must_fire() {
 
 #[test]
 fn adv107_mongodb_atlas_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "mongodb-atlas-api-key",
-        "ATLAS=eHIfkXby",
-        "eHIfkXby",
-    );
+    assert_detector_fires("mongodb-atlas-api-key", "ATLAS=eHIfkXby", "eHIfkXby");
 }
 
 #[test]
 fn adv107_mongodb_atlas_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "mongodb-atlas-api-key",
-        "dummy_prefix_0 =xxxxxxxx",
-    );
+    assert_detector_silent("mongodb-atlas-api-key", "dummy_prefix_0 =xxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1106,3 @@ fn adv107_moosend_api_key_evade_lrm_must_fire() {
         "a4f4f-7a6c28--633f18a1a2b0ff571464fc",
     );
 }
-
-

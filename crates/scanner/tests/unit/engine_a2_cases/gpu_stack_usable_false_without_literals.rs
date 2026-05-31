@@ -17,6 +17,7 @@ fn gpu_stack_usable_false_without_literals() {
         companions: vec![],
         verify: None,
         keywords: vec!["x".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

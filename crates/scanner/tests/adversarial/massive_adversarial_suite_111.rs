@@ -244,10 +244,7 @@ fn adv111_ntfy_credentials_normal_must_fire() {
 
 #[test]
 fn adv111_ntfy_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "ntfy-credentials",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("ntfy-credentials", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -355,10 +352,7 @@ fn adv111_nuvei_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv111_nuvei_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "nuvei-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("nuvei-api-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -466,10 +460,7 @@ fn adv111_octopus_deploy_api_key_normal_must_fire() {
 
 #[test]
 fn adv111_octopus_deploy_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "octopus-deploy-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("octopus-deploy-api-key", "dummyxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv111_onedrive_access_token_evade_lrm_must_fire() {
         "eyJ0eXFHAOW1dcFx6CSwxQjhHI2t-8Yz9L0gGN39H67mlO6DjJsMq8.eyJtMwzbKxqpVlfyPWYAk43XzRf2DLgpt3nsGWdU.v_Dd9gVB5bLy1nXh91hk3v0sk2ZZaFjFbUgA7D7EL",
     );
 }
-
-

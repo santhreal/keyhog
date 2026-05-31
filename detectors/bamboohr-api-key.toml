@@ -8,6 +8,7 @@ id = "bamboohr-api-key"
 name = "BambooHR API Key"
 service = "bamboohr"
 severity = "critical"
+min_confidence = 0.2
 keywords = ["BAMBOOHR_API_KEY", "bamboo_hr", "bamboohr"]
 
 [[detector.patterns]]

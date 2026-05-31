@@ -466,10 +466,7 @@ fn adv78_convertkit_api_key_normal_must_fire() {
 
 #[test]
 fn adv78_convertkit_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "convertkit-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("convertkit-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -688,10 +685,7 @@ fn adv78_cortex_api_key_normal_must_fire() {
 
 #[test]
 fn adv78_cortex_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "cortex-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("cortex-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +904,7 @@ fn adv78_courier_api_key_normal_must_fire() {
 
 #[test]
 fn adv78_courier_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "courier-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("courier-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1012,7 @@ fn adv78_covalent_api_key_normal_must_fire() {
 
 #[test]
 fn adv78_covalent_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "covalent-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("covalent-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1104,3 @@ fn adv78_covalent_api_key_evade_lrm_must_fire() {
         "cqt_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5",
     );
 }
-
-

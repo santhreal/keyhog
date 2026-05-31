@@ -82,6 +82,81 @@ pub fn select_backend(
     ScanBackend::CpuFallback
 }
 
+/// Batch-aware backend routing. Identical to [`select_backend`] for the CPU
+/// tiers, but adds a structural guard before the GPU branch: `large_chunk_bytes`
+/// is the number of bytes in the batch that live in *large* chunks - chunks at
+/// or above the tier's `gpu_min_bytes` floor (the per-file size below which a
+/// chunk can never carry its share of the device-dispatch cost).
+///
+/// `select_backend` decides on `workload_bytes` alone - the coalesced batch
+/// total. That conflates two workloads the GPU treats very differently:
+///
+///   * a batch *dominated* by genuinely large files (e.g. minified bundles,
+///     data blobs, generated headers) - the GPU's massively-parallel literal/
+///     AC kernel scans those contiguous regions far faster than one Hyperscan
+///     core, amortizing the fixed per-batch device-dispatch + PCIe-copy +
+///     readback + host-side match-attribution cost; and
+///   * a *swarm* of tiny files whose sizes merely SUM past the GPU floor
+///     (the Linux kernel: 94k files, 1.5 GiB, but only 55 files >= 2 MiB and a
+///     single 22 MiB max - the tiny files coalesce into 256 MiB batches). Here
+///     the GPU re-scans every byte, surfaces a literal hit for every detector-
+///     prefix occurrence across the whole buffer, then hands the CPU the SAME
+///     per-chunk phase-2 confirmation it would have run anyway - plus the
+///     coalesce/copy/readback the SIMD path never pays. Measured on the kernel
+///     this routes ~2.1x SLOWER (204 s vs 96 s) at ~3x peak RSS (4.1 vs 2.3
+///     GiB), and the unbounded device wait can stall the whole scan when the
+///     driver drops a completion.
+///
+/// A largest-chunk guard is not enough: the kernel's 55 large files are
+/// sprinkled through the walk, so nearly every 4096-file batch catches one and
+/// would still route to GPU. The robust signal is DOMINANCE - GPU engages only
+/// when large-chunk bytes are at least half the batch, so a tiny-file swarm
+/// never qualifies no matter how the large files cluster, while a batch that is
+/// mostly big-file data still gets the device. An explicit `KEYHOG_BACKEND`
+/// override still wins (forced/diagnostic GPU path unchanged), and benchmarks
+/// pin `KEYHOG_BACKEND=simd`, so this only changes the *default* routing for
+/// many-small-file trees - the common real-world scan.
+#[must_use]
+pub fn select_backend_for_batch(
+    caps: &HardwareCaps,
+    workload_bytes: u64,
+    pattern_count: usize,
+    large_chunk_bytes: u64,
+) -> ScanBackend {
+    if let Some(forced) = backend_env_override() {
+        return forced;
+    }
+
+    if crate::gpu::env_no_gpu() {
+        if caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon {
+            return ScanBackend::SimdCpu;
+        }
+        return ScanBackend::CpuFallback;
+    }
+
+    // Structural guard: GPU only when large-chunk bytes DOMINATE the batch
+    // (>= half the total). The device cost is paid on the whole coalesced
+    // buffer, so it pays off only when most of those bytes are genuinely
+    // large-file data the GPU can accelerate - not tiny files riding along.
+    // A swarm of small files can never clear this no matter how a few large
+    // files cluster in the walk; a big-file-dominated batch still does.
+    let large_dominates =
+        large_chunk_bytes > 0 && large_chunk_bytes.saturating_mul(2) >= workload_bytes;
+    if large_dominates && gpu_could_engage(caps, workload_bytes, pattern_count) {
+        return ScanBackend::Gpu;
+    }
+
+    if caps.hyperscan_available {
+        return ScanBackend::SimdCpu;
+    }
+
+    if caps.has_avx512 || caps.has_avx2 || caps.has_neon {
+        return ScanBackend::SimdCpu;
+    }
+
+    ScanBackend::CpuFallback
+}
+
 /// Cheap, side-effect-free pre-check: could a scan of `workload_bytes` over
 /// `pattern_count` patterns *ever* route to [`ScanBackend::Gpu`] on this
 /// hardware? This is exactly the GPU branch condition inside

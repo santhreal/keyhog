@@ -68,6 +68,7 @@ fn valid_detector() -> DetectorSpec {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["demo_".into()],
+        min_confidence: None,
     }
 }
 

@@ -16,6 +16,7 @@ fn scan_skips_detectors_directory_path() {
         companions: vec![],
         verify: None,
         keywords: vec!["secret".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

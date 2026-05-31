@@ -244,10 +244,7 @@ fn adv113_optimizely_sdk_key_normal_must_fire() {
 
 #[test]
 fn adv113_optimizely_sdk_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "optimizely-sdk-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("optimizely-sdk-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -577,10 +574,7 @@ fn adv113_ovh_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv113_ovh_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "ovh-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("ovh-api-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv113_paddle_api_key_evade_lrm_must_fire() {
         "pdl_live_apikey_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5",
     );
 }
-
-

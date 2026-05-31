@@ -244,10 +244,7 @@ fn adv93_greynoise_api_key_normal_must_fire() {
 
 #[test]
 fn adv93_greynoise_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "greynoise-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("greynoise-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -688,10 +685,7 @@ fn adv93_hanko_api_key_normal_must_fire() {
 
 #[test]
 fn adv93_hanko_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "hanko-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("hanko-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv93_hashicorp_vault_approle_credentials_evade_lrm_must_fire() {
         "6994e225-eb46-e3ed-0312-0e0c10f2b2b7",
     );
 }
-
-

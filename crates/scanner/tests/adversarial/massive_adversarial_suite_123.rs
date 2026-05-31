@@ -577,10 +577,7 @@ fn adv123_routee_api_key_normal_must_fire() {
 
 #[test]
 fn adv123_routee_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "routee-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("routee-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv123_salesforce_access_token_evade_lrm_must_fire() {
         "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB",
     );
 }
-
-

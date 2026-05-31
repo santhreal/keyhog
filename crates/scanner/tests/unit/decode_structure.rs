@@ -116,9 +116,7 @@ fn non_encoded_text_is_not_decodable() {
 #[test]
 fn base64_wrapping_aws_example_credential_is_caught() {
     // base64("AKIAEXAMPLEEXAMPLE12") = "QUtJQUVYQU1QTEVFWEFNUExFMTI="
-    assert!(decoded_contains_placeholder(
-        "QUtJQUVYQU1QTEVFWEFNUExFMTI="
-    ));
+    assert!(decoded_contains_placeholder("QUtJQUVYQU1QTEVFWEFNUExFMTI="));
 }
 
 #[test]
@@ -131,8 +129,7 @@ fn base64_wrapping_stripe_placeholder_is_caught() {
 #[test]
 fn base64_of_real_random_secret_passes() {
     // base64 of a random-looking 24-byte secret must NOT be flagged.
-    let s = base64::engine::general_purpose::STANDARD
-        .encode(b"random_24_byte_secret_aBc");
+    let s = base64::engine::general_purpose::STANDARD.encode(b"random_24_byte_secret_aBc");
     assert!(!decoded_contains_placeholder(&s));
 }
 

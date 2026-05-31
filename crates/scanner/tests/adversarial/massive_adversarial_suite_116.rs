@@ -244,10 +244,7 @@ fn adv116_pirsch_api_token_normal_must_fire() {
 
 #[test]
 fn adv116_pirsch_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "pirsch-api-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("pirsch-api-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv116_planetscale_service_token_evade_lrm_must_fire() {
         "pscale_tkn_EwD5ne5cVM87vVUvFegDFbHqRWPLuPfgovlAxiHFhIB",
     );
 }
-
-

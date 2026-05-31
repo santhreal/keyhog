@@ -38,6 +38,9 @@ impl CompiledScanner {
     ) {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, match_start, match_end);
+        if detector.id == "aws-access-key" && credential.len() != 20 {
+            return;
+        }
         let line = match_line_number(preprocessed, line_offsets, match_start);
         if is_within_hex_context(data, match_start, match_end) {
             return;
@@ -98,12 +101,17 @@ impl CompiledScanner {
         };
         let entropy = match_entropy(credential.as_bytes());
 
-        let is_generic = detector.id.starts_with("generic-") && detector.id != "generic-private-key";
+        let is_generic =
+            detector.id.starts_with("generic-") && detector.id != "generic-private-key";
         let is_weakly_anchored = weak_anchor;
         if is_generic || is_weakly_anchored {
             // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
             // have lower entropy than random strings. A blanket 3.5 floor misses them.
-            let floor_id = if is_weakly_anchored { "generic-api-key" } else { detector.id.as_str() };
+            let floor_id = if is_weakly_anchored {
+                "generic-api-key"
+            } else {
+                detector.id.as_str()
+            };
             let entropy_floor = generic_entropy_floor(floor_id, credential.len());
             if entropy < entropy_floor {
                 return;
@@ -139,8 +147,8 @@ impl CompiledScanner {
         // floor, silently deleting real secrets. Mirror the same anchor=
         // positive-evidence rule the shape-gate bypass already uses so the
         // gate stays load-bearing for generic-* but never buries a named hit.
-        let is_named_detector = crate::confidence::is_service_anchored_detector(&detector.id)
-            && !weak_anchor;
+        let is_named_detector =
+            crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
         let Some(score_result) = self.match_confidence(
             entry,
             chunk,

@@ -16,6 +16,7 @@ fn scan_cpu_fallback_finds_match() {
         companions: vec![],
         verify: None,
         keywords: vec!["tok".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

@@ -22,10 +22,7 @@ fn adv86_fastspring_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv86_fastspring_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "fastspring-api-credentials",
-        "dummy_prefix_0 =xxxxxxxx",
-    );
+    assert_detector_silent("fastspring-api-credentials", "dummy_prefix_0 =xxxxxxxx");
 }
 
 #[test]
@@ -577,10 +574,7 @@ fn adv86_figma_api_token_normal_must_fire() {
 
 #[test]
 fn adv86_figma_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "figma-api-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("figma-api-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +793,7 @@ fn adv86_figma_pat_normal_must_fire() {
 
 #[test]
 fn adv86_figma_pat_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "figma-pat",
-        "dummyxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("figma-pat", "dummyxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +901,7 @@ fn adv86_filebase_api_key_normal_must_fire() {
 
 #[test]
 fn adv86_filebase_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "filebase-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("filebase-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1009,7 @@ fn adv86_finicity_partner_credentials_normal_must_fire() {
 
 #[test]
 fn adv86_finicity_partner_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "finicity-partner-credentials",
-        "dummy_prefix_0 =xxxxxxx",
-    );
+    assert_detector_silent("finicity-partner-credentials", "dummy_prefix_0 =xxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1101,3 @@ fn adv86_finicity_partner_credentials_evade_lrm_must_fire() {
         "1234567",
     );
 }
-
-

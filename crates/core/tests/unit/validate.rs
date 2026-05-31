@@ -9,6 +9,7 @@ fn detector_with_pattern(regex: &str) -> DetectorSpec {
         service: "test".into(),
         severity: Severity::High,
         keywords: vec!["token".into()],
+        min_confidence: None,
         patterns: vec![PatternSpec {
             regex: regex.into(),
             ..Default::default()

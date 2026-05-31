@@ -76,7 +76,7 @@ impl ChecksumValidator for GithubClassicPatValidator {
         if expected == checksum_str {
             ChecksumResult::Valid
         } else {
-            ChecksumResult::Invalid
+            ChecksumResult::NotApplicable
         }
     }
 }

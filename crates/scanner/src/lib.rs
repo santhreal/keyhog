@@ -78,12 +78,12 @@ pub(crate) mod structured;
 pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
 pub mod telemetry;
+/// Unicode normalization and homoglyph defense.
+pub mod unicode_hardening;
 /// Shared FNV-1a hash + content-keyed memoization primitives. Single home for
 /// the seed every per-scan cache keys on, plus the bounded thread-local cache
 /// helper they all share, so a hash change can never re-key only some caches.
 pub(crate) mod util_hash;
-/// Unicode normalization and homoglyph defense.
-pub mod unicode_hardening;
 
 /// SHA-256 of a credential as the raw 32 inline bytes - matching
 /// `Finding::credential_hash: [u8; 32]`. Hex encoding is deferred to the
@@ -191,16 +191,16 @@ pub fn find_companion(
 pub mod testing {
     pub use crate::compiler::{rewrite_alternation_prefix, split_leading_inline_flag};
     pub use crate::confidence::penalties::finalize_confidence;
-    /// Full feature extractor (with detector-config keyword lists) exposed for
-    /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
-    /// must compute byte-identical features to the serve path.
-    pub use crate::ml_scorer::compute_features_with_config;
     pub use crate::engine::boundary::scan_chunk_boundaries;
     pub use crate::engine::gpu_postprocess::{
         attribute_matches_to_chunks, fold_overlapping_same_pid_inplace,
     };
     pub use crate::engine::gpu_regex_dfa::extract_literal_core;
     pub use crate::entropy::keywords::looks_like_program_identifier;
+    /// Full feature extractor (with detector-config keyword lists) exposed for
+    /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
+    /// must compute byte-identical features to the serve path.
+    pub use crate::ml_scorer::compute_features_with_config;
     pub use crate::probabilistic_gate::ProbabilisticGate;
     pub use crate::static_intern::seed_source_type_count;
 

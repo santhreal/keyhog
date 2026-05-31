@@ -133,10 +133,7 @@ fn adv118_posthog_api_key_normal_must_fire() {
 
 #[test]
 fn adv118_posthog_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "posthog-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("posthog-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv118_presto_trino_credentials_evade_lrm_must_fire() {
         "SecretPass123",
     );
 }
-
-

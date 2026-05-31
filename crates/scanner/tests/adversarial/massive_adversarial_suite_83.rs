@@ -22,10 +22,7 @@ fn adv83_drake_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv83_drake_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "drake-api-credentials",
-        "dummy_prefix_0 =xxxxxx",
-    );
+    assert_detector_silent("drake-api-credentials", "dummy_prefix_0 =xxxxxx");
 }
 
 #[test]
@@ -688,10 +685,7 @@ fn adv83_druid_credentials_normal_must_fire() {
 
 #[test]
 fn adv83_druid_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "druid-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("druid-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv83_dwolla_client_credentials_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4",
     );
 }
-
-

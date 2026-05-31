@@ -46,6 +46,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             companions: vec![],
             verify: None,
             keywords: vec!["key".into()],
+            min_confidence: None,
         },
         DetectorSpec {
             id: "fuzz-plain".into(),
@@ -61,6 +62,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             companions: vec![],
             verify: None,
             keywords: vec!["AKIA".into()],
+            min_confidence: None,
         },
     ]
 }

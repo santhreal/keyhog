@@ -8,6 +8,7 @@ id = "azure-openai-api-key"
 name = "Azure OpenAI API Key"
 service = "azure-openai"
 severity = "critical"
+min_confidence = 0.2
 keywords = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "azure-openai", "api-key"]
 
 [[detector.patterns]]

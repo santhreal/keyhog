@@ -244,10 +244,7 @@ fn adv67_autoblocks_api_key_normal_must_fire() {
 
 #[test]
 fn adv67_autoblocks_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "autoblocks-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("autoblocks-api-key", "dummyxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +796,7 @@ fn adv67_aws_access_key_normal_must_fire() {
 
 #[test]
 fn adv67_aws_access_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "aws-access-key",
-        "dummyxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("aws-access-key", "dummyxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv67_aws_cognito_client_secret_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
-
-

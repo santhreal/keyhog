@@ -109,8 +109,13 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
 /// All compiled pattern source strings the scanner currently holds.
 /// Returned as `Vec<String>` so the proptest sampler can index into
 /// it cheaply without borrowing across the proptest macro boundary.
-static PATTERN_REGEX_SRCS: LazyLock<Vec<String>> =
-    LazyLock::new(|| SCANNER.pattern_regex_strs().into_iter().map(String::from).collect());
+static PATTERN_REGEX_SRCS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    SCANNER
+        .pattern_regex_strs()
+        .into_iter()
+        .map(String::from)
+        .collect()
+});
 
 static CONTRACTS: LazyLock<Vec<ContractFile>> = LazyLock::new(|| {
     let dir = contracts_dir();
@@ -191,7 +196,9 @@ fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
 }
 
 fn any_credential_contains(matches: &[keyhog_core::RawMatch], needle: &str) -> bool {
-    matches.iter().any(|m| m.credential.as_ref().contains(needle))
+    matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(needle))
 }
 
 // One-time invariant: every critical-severity detector MUST have a

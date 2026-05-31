@@ -35,9 +35,22 @@ pub fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Arc<Vec<V
         tracing::warn!("GPU literal set contains an empty literal; disabling GPU literal scan");
         return None;
     }
+    // ASCII-lowercase every literal for the GPU automaton. The SIMD path
+    // compiles Hyperscan with `PatternFlags::CASELESS` unconditionally
+    // (simd.rs), so detection is case-INSENSITIVE for every pattern. The GPU
+    // AC / literal-set DFA matches bytes exactly, so a lowercase literal prefix
+    // (e.g. `csb_`) never fires on an uppercase occurrence (`CSB_...`) and the
+    // GPU path silently drops matches SIMD finds - the PERF-07 gpu_parity
+    // violation, proven on drivers/gpu/drm/amd/include/soc21_enum.h (SIMD 4
+    // findings, GPU 0). The GPU phase-1 paths lowercase the coalesced haystack
+    // to the same fold before matching; lowercasing the literal set here is the
+    // other half of that case-insensitive contract. ASCII fold is position-
+    // preserving (1 byte -> 1 byte, only A-Z affected), so match offsets map
+    // back unchanged and phase 2 re-confirms on the original mixed-case bytes
+    // with the caseless regex.
     let literals: Vec<Vec<u8>> = ac_literals
         .iter()
-        .map(|literal| literal.as_bytes().to_vec())
+        .map(|literal| literal.to_ascii_lowercase().into_bytes())
         .collect();
     if literals.is_empty() {
         None
@@ -239,8 +252,7 @@ const REGEX_CACHE_SHARDS: usize = 64;
 /// load many different detector sets.
 const REGEX_CACHE_CAPACITY: usize = 8192;
 
-type RegexCacheShard =
-    parking_lot::Mutex<lru::LruCache<String, std::sync::Arc<Regex>>>;
+type RegexCacheShard = parking_lot::Mutex<lru::LruCache<String, std::sync::Arc<Regex>>>;
 
 static REGEX_CACHE: std::sync::OnceLock<Box<[RegexCacheShard]>> = std::sync::OnceLock::new();
 

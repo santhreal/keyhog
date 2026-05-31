@@ -11,15 +11,19 @@ severity = "critical"
 # `discord` routes the loose non-[MN] pattern (which now requires the
 # literal in-window); the MT*/Mj*/ND*/NT* b64 snowflake prefixes route
 # the strict [MN] production form.
-keywords = ["discord", "DISCORD", "MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk", "MjA", "MjE", "MjI", "MjM", "MjQ", "NDA", "NDE", "NDI", "NDM", "NDQ", "NDU", "NDY", "NDc", "NDg", "NDk", "NTA", "NTE", "NTI", "NTM", "NTQ", "NTU", "NTY", "NTc", "NTg", "NTk"]
+keywords = ["discord", "DISCORD", "MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk", "MjA", "MjE", "MjI", "MjM", "MjQ", "NDA", "NDE", "NDI", "NDM", "NDQ", "NDU", "NDY", "NDc", "NDg", "NDk", "NTA", "NTE", "NTI", "NTM", "NTQ", "NTU", "NTY", "NTc", "NTg", "NTk", "NjA", "NjE", "NjI", "NjM", "NjQ", "NjU", "NjY", "Njc", "Njg", "Njk", "NzA", "NzE", "NzI", "NzM", "NzQ", "NzU", "NzY", "Nzc", "Nzg", "Nzk", "ODA", "ODE", "ODI", "ODM", "ODQ", "ODU", "ODY", "ODc", "ODg", "ODk", "OTA", "OTE", "OTI", "OTM", "OTQ", "OTU", "OTY", "OTc", "OTg", "OTk"]
 
 
 [[detector.patterns]]
 # Strict shape: real Discord production bot tokens have b64-encoded
 # snowflake user_ids that start with [MN]. Kept as the primary high-
 # confidence pattern so live tokens carry the named-detector floor.
-regex = '[MN][A-Za-z0-9_-]{22,24}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
-description = "Discord bot token (production [MN]-prefixed snowflake form)"
+regex = '(?:MTA|MTE|MTI|MTM|MTQ|MTU|MTY|MTc|MTg|MTk|MjA|MjE|MjI|MjM|MjQ|MjU|MjY|Mjc|Mjg|Mjk|MzA|MzE|MzI|MzM|MzQ|MzU|MzY|Mzc|Mzg|Mzk|NDA|NDE|NDI|NDM|NDQ|NDU|NDY|NDc|NDg|NDk|NTA|NTE|NTI|NTM|NTQ|NTU|NTY|NTc|NTg|NTk|NjA|NjE|NjI|NjM|NjQ|NjU|NjY|Njc|Njg|Njk)[A-Za-z0-9_-]{20,25}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
+description = "Discord bot token (production base64 snowflake form, 10-69 prefix)"
+
+[[detector.patterns]]
+regex = '(?:NzA|NzE|NzI|NzM|NzQ|NzU|NzY|Nzc|Nzg|Nzk|ODA|ODE|ODI|ODM|ODQ|ODU|ODY|ODc|ODg|ODk|OTA|OTE|OTI|OTM|OTQ|OTU|OTY|OTc|OTg|OTk)[A-Za-z0-9_-]{20,25}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
+description = "Discord bot token (production base64 snowflake form, 70-99 prefix)"
 
 [[detector.patterns]]
 # Loose shape: the SecretBench mirror generates synthetic tokens whose

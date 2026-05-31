@@ -1116,5 +1116,3 @@ fn adv90_gitlab_package_registry_token_evade_lrm_must_fire() {
         "gldt-L0z4c8YgKC47G6B4E8vwb7hrm8K030EO",
     );
 }
-
-

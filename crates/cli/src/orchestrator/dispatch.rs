@@ -200,10 +200,30 @@ impl ScanOrchestrator {
                 // in the same streaming arms as the explicit choice below.
                 let chosen_backend = explicit_backend_override().or_else(|| {
                     let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
-                    Some(keyhog_scanner::hw_probe::select_backend(
+                    // Large-chunk DOMINANCE drives the GPU/SIMD decision: the
+                    // device cost is paid on the whole coalesced buffer, so GPU
+                    // pays off only when most of the batch is genuinely large-
+                    // file data it can accelerate. A swarm of tiny files (the
+                    // kernel tree: 94k files, only 55 >= 2 MiB, sprinkled
+                    // through the walk) never clears the dominance bar no matter
+                    // how the large files cluster, so it stays on SIMD - measured
+                    // 2.1x faster + 3x less RSS than routing the coalesced total
+                    // to the GPU. `large_chunk_bytes` sums only chunks at/above
+                    // the tier's per-file GPU floor. See `select_backend_for_batch`.
+                    let tier = keyhog_scanner::hw_probe::classify_gpu_tier(
+                        hw_caps.gpu_name.as_deref(),
+                    );
+                    let gpu_floor = keyhog_scanner::hw_probe::gpu_min_bytes_for_tier(tier);
+                    let large_chunk_bytes: u64 = batch
+                        .iter()
+                        .map(|c| c.data.len() as u64)
+                        .filter(|&n| n >= gpu_floor)
+                        .sum();
+                    Some(keyhog_scanner::hw_probe::select_backend_for_batch(
                         &hw_caps,
                         batch_bytes,
                         pattern_count,
+                        large_chunk_bytes,
                     ))
                 });
                 match chosen_backend {

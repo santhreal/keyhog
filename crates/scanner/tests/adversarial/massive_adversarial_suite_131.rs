@@ -688,10 +688,7 @@ fn adv131_strapi_api_token_normal_must_fire() {
 
 #[test]
 fn adv131_strapi_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "strapi-api-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("strapi-api-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv131_stytch_magic_link_credentials_evade_lrm_must_fire() {
         "public-token-nn0jNL1VcvphMW3FPn9XgheHCSC4NgTYnDOA",
     );
 }
-
-

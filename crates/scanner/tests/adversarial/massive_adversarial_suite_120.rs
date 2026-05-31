@@ -22,10 +22,7 @@ fn adv120_pusher_app_key_normal_must_fire() {
 
 #[test]
 fn adv120_pusher_app_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "pusher-app-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("pusher-app-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -355,10 +352,7 @@ fn adv120_qdrant_api_key_normal_must_fire() {
 
 #[test]
 fn adv120_qdrant_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "qdrant-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("qdrant-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -466,10 +460,7 @@ fn adv120_qualys_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv120_qualys_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "qualys-api-credentials",
-        "dummy_prefix_0: xxxxxxxxxxxx",
-    );
+    assert_detector_silent("qualys-api-credentials", "dummy_prefix_0: xxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +901,7 @@ fn adv120_rabbitmq_management_credentials_normal_must_fire() {
 
 #[test]
 fn adv120_rabbitmq_management_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "rabbitmq-management-credentials",
-        "dummy_prefix_0 =xxxxx",
-    );
+    assert_detector_silent("rabbitmq-management-credentials", "dummy_prefix_0 =xxxxx");
 }
 
 #[test]
@@ -1116,5 +1104,3 @@ fn adv120_radar_io_api_key_evade_lrm_must_fire() {
         "prj_live_eZXI8wIQE11eWntR0gMwrohdFkqbTcI4npM6AovMe5Wowx31UK",
     );
 }
-
-

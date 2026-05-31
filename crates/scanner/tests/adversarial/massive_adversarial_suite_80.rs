@@ -22,10 +22,7 @@ fn adv80_databricks_token_normal_must_fire() {
 
 #[test]
 fn adv80_databricks_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "databricks-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("databricks-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +907,7 @@ fn adv80_deepseek_api_key_normal_must_fire() {
 
 #[test]
 fn adv80_deepseek_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "deepseek-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("deepseek-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv80_deezer_api_key_evade_lrm_must_fire() {
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
     );
 }
-
-

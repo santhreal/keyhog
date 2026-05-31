@@ -26,6 +26,7 @@ fn pure_placeholder_not_flagged() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["AKIA".into()],
+        min_confidence: None,
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n");
@@ -60,6 +61,7 @@ fn example_suppression_is_recorded_in_telemetry() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["AKIA".into()],
+        min_confidence: None,
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
@@ -93,6 +95,7 @@ fn dogfood_captures_redacted_event() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["AKIA".into()],
+        min_confidence: None,
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
@@ -133,6 +136,7 @@ fn github_pat_example_suppressed() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["ghp_".into()],
+        min_confidence: None,
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("token = ghp_example_0001_xxxxxxxxxxxxxxxxxxxx\n");

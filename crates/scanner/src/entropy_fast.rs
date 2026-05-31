@@ -330,4 +330,15 @@ mod tests {
             "expected ~2.0 bits/byte for 4 equal symbols, got {e}"
         );
     }
+
+    #[test]
+    fn simd_null_bytes_match_scalar_semantics() {
+        let data = b"\0\0\0ABCDABCD\0EFGH1234\0";
+        let simd = shannon_entropy_simd(data);
+        let scalar = shannon_entropy_scalar(data);
+        assert!(
+            (simd - scalar).abs() < f64::EPSILON,
+            "SIMD/scalar null-byte entropy diverged: simd={simd} scalar={scalar}"
+        );
+    }
 }

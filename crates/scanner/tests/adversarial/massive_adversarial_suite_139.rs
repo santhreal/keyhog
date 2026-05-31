@@ -133,10 +133,7 @@ fn adv139_writer_api_key_normal_must_fire() {
 
 #[test]
 fn adv139_writer_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "writer-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("writer-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv139_zendesk_chat_credentials_evade_lrm_must_fire() {
         "a8ad2fc7e8a7d712303a5288a071d1c7",
     );
 }
-
-

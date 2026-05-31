@@ -10,6 +10,7 @@ fn make(id: &str) -> DetectorSpec {
         service: id.to_string(),
         severity: Severity::Medium,
         keywords: vec![],
+        min_confidence: None,
         patterns: vec![PatternSpec { regex: format!("{id}-[A-Z]+"), ..Default::default() }],
         companions: vec![CompanionSpec { name: "k".into(), regex: "v=([A-Z]+)".into(), within_lines: 3, required: false }],
         verify: None,

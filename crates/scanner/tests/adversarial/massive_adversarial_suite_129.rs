@@ -910,10 +910,7 @@ fn adv129_sovos_api_key_normal_must_fire() {
 
 #[test]
 fn adv129_sovos_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "sovos-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("sovos-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv129_spacelift_api_key_evade_lrm_must_fire() {
         "eyJlh4gmpKuEvkwmoEhlBA1QPdLCTuoARuZx70KNqa6sYa6CucvELAWX-rSml4JuHm66N5_FJv7ONZs3urH.eyJ_Y-lC08IeiZDhXg-1jL475aE_LHd7Uu1E5C9N1.682JzA4aHBY6IEDHZhBz9uu2yN3cULBuNnWy",
     );
 }
-
-

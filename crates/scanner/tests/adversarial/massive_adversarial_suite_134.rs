@@ -799,10 +799,7 @@ fn adv134_travisci_token_normal_must_fire() {
 
 #[test]
 fn adv134_travisci_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "travisci-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("travisci-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv134_trello_api_token_evade_lrm_must_fire() {
         "ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_",
     );
 }
-
-

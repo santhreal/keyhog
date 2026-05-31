@@ -128,32 +128,48 @@ pub fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
 /// returned `Cow::Borrowed` with no allocation. Only inputs containing actual
 /// homoglyphs/zero-width/RTL characters take the slow per-char-rebuild path.
 pub fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
-    if text.is_ascii() || !contains_evasion(text) {
+    if text.is_ascii() && !contains_ascii_evasion(text.as_bytes()) {
         return std::borrow::Cow::Borrowed(text);
     }
-    std::borrow::Cow::Owned(
-        text.chars()
-            .map(|ch| {
-                if let Some(latin) = cyrillic_to_latin(ch) {
-                    return latin;
-                }
-                if let Some(latin) = greek_to_latin(ch) {
-                    return latin;
-                }
-                if is_fullwidth(ch) {
-                    return fullwidth_to_ascii(ch);
-                }
-                if is_zero_width(ch) {
-                    return '\0';
-                }
-                if is_rtl_override(ch) {
-                    return '\0';
-                }
-                ch
-            })
-            .filter(|&ch| ch != '\0')
-            .collect(),
-    )
+    if !text.is_ascii() && !contains_evasion(text) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut normalized = String::with_capacity(text.len());
+    for (idx, &ch) in chars.iter().enumerate() {
+        if ch == '\u{00AD}' {
+            let prev = idx.checked_sub(1).and_then(|i| chars.get(i)).copied();
+            let next = chars.get(idx + 1).copied();
+            if prev.is_some_and(|c| c.is_ascii_digit())
+                || next.is_some_and(|c| c.is_ascii_digit())
+            {
+                normalized.push('-');
+            }
+            continue;
+        }
+        if let Some(latin) = cyrillic_to_latin(ch) {
+            normalized.push(latin);
+            continue;
+        }
+        if let Some(latin) = greek_to_latin(ch) {
+            normalized.push(latin);
+            continue;
+        }
+        if is_fullwidth(ch) {
+            normalized.push(fullwidth_to_ascii(ch));
+            continue;
+        }
+        if is_zero_width(ch)
+            || is_rtl_override(ch)
+            || is_unicode_separator_evasion(ch)
+            || is_combining_mark(ch)
+            || is_ascii_evasion_control(ch)
+        {
+            continue;
+        }
+        normalized.push(ch);
+    }
+    std::borrow::Cow::Owned(normalized)
 }
 
 /// Full Unicode normalization (NFC + homoglyph replacement)
@@ -164,7 +180,21 @@ pub fn full_normalize(text: &str) -> String {
 
 /// Check if text contains potential evasion
 pub fn contains_evasion(text: &str) -> bool {
-    !detect_unicode_attacks(text).is_empty()
+    contains_ascii_evasion(text.as_bytes())
+        || !detect_unicode_attacks(text).is_empty()
+        || text
+            .chars()
+            .any(|ch| is_unicode_separator_evasion(ch) || is_combining_mark(ch))
+}
+
+fn contains_ascii_evasion(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t'))
+}
+
+fn is_ascii_evasion_control(ch: char) -> bool {
+    ch.is_ascii_control() && !matches!(ch, '\n' | '\r' | '\t')
 }
 
 fn cyrillic_to_latin(ch: char) -> Option<char> {
@@ -274,8 +304,27 @@ fn is_zero_width(ch: char) -> bool {
         '\u{180E}' | // Mongolian Vowel Separator
         '\u{200E}' | // Left-to-Right Mark
         '\u{200F}' | // Right-to-Left Mark
-        '\u{00AD}' // Soft Hyphen
+        '\u{00AD}' | // Soft Hyphen
+        '\u{2066}' | // Left-to-Right Isolate
+        '\u{2067}' | // Right-to-Left Isolate
+        '\u{2068}' | // First Strong Isolate
+        '\u{2069}' // Pop Directional Isolate
     )
+}
+
+fn is_unicode_separator_evasion(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{2000}'..='\u{200A}' | // En/em/thin/hair and related spaces
+        '\u{2028}' | // Line Separator
+        '\u{2029}' | // Paragraph Separator
+        '\u{205F}' | // Medium Mathematical Space
+        '\u{3000}' // Ideographic Space
+    )
+}
+
+fn is_combining_mark(ch: char) -> bool {
+    matches!(ch, '\u{0300}'..='\u{036F}')
 }
 
 /// RTL override characters

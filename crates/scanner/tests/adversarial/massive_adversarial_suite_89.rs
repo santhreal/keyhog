@@ -133,10 +133,7 @@ fn adv89_generic_password_normal_must_fire() {
 
 #[test]
 fn adv89_generic_password_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "generic-password",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("generic-password", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1018,7 @@ fn adv89_github_app_private_key_normal_must_fire() {
 
 #[test]
 fn adv89_github_app_private_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "github-app-private-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("github-app-private-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv89_github_app_private_key_evade_lrm_must_fire() {
         "-----BEGIN RSA PRIVATE KEY-----",
     );
 }
-
-

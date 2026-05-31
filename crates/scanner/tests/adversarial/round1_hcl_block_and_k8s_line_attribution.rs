@@ -183,7 +183,11 @@ data:\n  \
         .collect();
     let ghp_lines: Vec<_> = matches
         .iter()
-        .filter(|m| m.credential.as_ref().contains("ghp_RqWzKp9YnVxA4HsM2BdLeJ7TfGoN3CuI8XbE"))
+        .filter(|m| {
+            m.credential
+                .as_ref()
+                .contains("ghp_RqWzKp9YnVxA4HsM2BdLeJ7TfGoN3CuI8XbE")
+        })
         .filter_map(|m| m.location.line)
         .collect();
 

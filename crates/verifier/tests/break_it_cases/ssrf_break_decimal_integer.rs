@@ -9,6 +9,7 @@ async fn ssrf_break_decimal_integer() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url.into()),
             method: Some(HttpMethod::Get),

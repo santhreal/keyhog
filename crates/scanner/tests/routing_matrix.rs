@@ -21,7 +21,8 @@
 
 use keyhog_scanner::hw_probe::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,
-    gpu_solo_bytes_for_tier, select_backend, GpuTier, HardwareCaps, ScanBackend,
+    gpu_solo_bytes_for_tier, select_backend, select_backend_for_batch, GpuTier, HardwareCaps,
+    ScanBackend,
 };
 use std::sync::Mutex;
 
@@ -546,4 +547,143 @@ fn scan_backend_labels_are_stable() {
     assert_eq!(ScanBackend::MegaScan.label(), "gpu-mega-scan");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");
+}
+
+// ────────────────────────────────────────────────────────────────────
+// CELL N: batch-aware routing - select_backend_for_batch()
+//
+// Locks the structural guard that keeps a tiny-file SWARM off the GPU
+// even when the coalesced batch total clears every byte/pattern floor.
+// The Linux-kernel-tree regression: 94k files, 1.5 GiB, but only 55 files
+// >= 2 MiB (max 22 MiB) sprinkled through the walk. `select_backend`
+// (total-bytes only) coalesced them into 256 MiB batches and routed every
+// one to the GPU - 2.1x SLOWER than SIMD. The 4th arg is now
+// `large_chunk_bytes` (bytes in chunks at/above the tier floor); GPU
+// engages only when those bytes DOMINATE the batch (>= half), which a
+// sprinkling of large files can never reach.
+// ────────────────────────────────────────────────────────────────────
+
+/// THE REGRESSION: high-tier GPU, batch total well past the solo floor,
+/// but no large-file bytes at all (a pure swarm). Must route SIMD.
+#[test]
+fn batch_swarm_of_tiny_files_stays_simd_despite_huge_total() {
+    let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
+    let total = 256 * 1024 * 1024;
+    with_env(None, || {
+        assert_eq!(
+            select_backend_for_batch(&caps, total, 5_000, 0),
+            ScanBackend::SimdCpu,
+            "pure tiny-file swarm (0 large-chunk bytes) must stay on SIMD"
+        );
+        // The plain total-only router would have (wrongly) picked GPU,
+        // proving the dominance guard is what changed the decision.
+        assert_eq!(
+            select_backend(&caps, total, 5_000),
+            ScanBackend::Gpu,
+            "sanity: total-only select_backend still routes the same total to GPU"
+        );
+    });
+}
+
+/// THE REALISTIC REGRESSION: the kernel batch isn't a PURE swarm - a few
+/// large files ride along (e.g. ~30 MiB of >=2 MiB files in a 256 MiB
+/// batch = ~12%). Below the 50% dominance bar -> SIMD. This is the case
+/// the largest-single-chunk guard got wrong (one 22 MiB file -> GPU).
+#[test]
+fn batch_few_large_files_riding_along_stay_simd() {
+    let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
+    let total = 256 * 1024 * 1024;
+    let large = 30 * 1024 * 1024; // ~12% of the batch is large-file bytes
+    with_env(None, || {
+        assert_eq!(
+            select_backend_for_batch(&caps, total, 5_000, large),
+            ScanBackend::SimdCpu,
+            "large bytes below the 50% dominance bar must stay on SIMD"
+        );
+    });
+}
+
+/// POSITIVE: large-file bytes dominate the batch (whole batch is one big
+/// region) and the total qualifies gpu_could_engage -> GPU. A minified
+/// bundle / data blob is exactly what the GPU kernel is for.
+#[test]
+fn batch_large_dominated_routes_gpu() {
+    let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
+    let tier = classify_gpu_tier(caps.gpu_name.as_deref());
+    let solo = gpu_solo_bytes_for_tier(tier);
+    with_env(None, || {
+        assert_eq!(
+            select_backend_for_batch(&caps, solo, 1, solo),
+            ScanBackend::Gpu,
+            "a batch that is entirely large-file bytes must engage the GPU"
+        );
+    });
+}
+
+/// BOUNDARY: large-chunk bytes exactly at the 50% dominance line -> GPU
+/// (the bar is inclusive: `large*2 >= total`). One byte under -> SIMD.
+#[test]
+fn batch_dominance_boundary_is_inclusive() {
+    let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
+    let tier = classify_gpu_tier(caps.gpu_name.as_deref());
+    let solo = gpu_solo_bytes_for_tier(tier);
+    // total chosen >= solo so gpu_could_engage is satisfied; the point under
+    // test is the >= 50% large-byte share.
+    let total = solo.max(64 * 1024 * 1024);
+    with_env(None, || {
+        assert_eq!(
+            select_backend_for_batch(&caps, total, 5_000, total / 2),
+            ScanBackend::Gpu,
+            "large bytes == half the batch is inclusive -> GPU"
+        );
+        assert_eq!(
+            select_backend_for_batch(&caps, total, 5_000, total / 2 - 1),
+            ScanBackend::SimdCpu,
+            "one byte below the 50% line -> SIMD"
+        );
+    });
+}
+
+/// Env override still wins: KEYHOG_BACKEND=gpu forces GPU even with zero
+/// large-chunk bytes (diagnostic/forced path is unchanged).
+#[test]
+fn batch_env_override_gpu_wins_over_dominance_guard() {
+    let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
+    with_env(Some("gpu"), || {
+        assert_eq!(
+            select_backend_for_batch(&caps, 1024, 10, 0),
+            ScanBackend::Gpu,
+            "explicit KEYHOG_BACKEND=gpu overrides the dominance guard"
+        );
+    });
+}
+
+/// Equivalence: a single-file batch (the whole workload is one large chunk,
+/// so large_chunk_bytes == workload_bytes) must agree with the total-only
+/// router. This keeps the new entry point a strict refinement for the
+/// one-big-file case the GPU was originally tuned for.
+#[test]
+fn batch_single_large_file_matches_select_backend() {
+    let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
+    with_env(None, || {
+        for bytes in [2 * 1024 * 1024u64, 16 * 1024 * 1024, 1 << 30] {
+            assert_eq!(
+                select_backend_for_batch(&caps, bytes, 5_000, bytes),
+                select_backend(&caps, bytes, 5_000),
+                "single large-file batch ({bytes} B) must match select_backend"
+            );
+        }
+    });
+}
+
+/// No-GPU caps: the guard is moot, always a CPU tier (matches select_backend).
+#[test]
+fn batch_no_gpu_caps_routes_cpu() {
+    let caps = caps_no_gpu(true, true);
+    with_env(None, || {
+        assert_eq!(
+            select_backend_for_batch(&caps, 1 << 30, 10_000, 1 << 30),
+            ScanBackend::SimdCpu,
+        );
+    });
 }

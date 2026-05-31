@@ -11,6 +11,7 @@ async fn test_ssrf_integer_ips() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url.to_string()),
             method: Some(HttpMethod::Get),
@@ -88,6 +89,7 @@ async fn test_ssrf_integer_ips() {
             patterns: vec![],
             companions: vec![],
             keywords: vec![],
+            min_confidence: None,
             verify: Some(VerifySpec {
                 url: Some(url.to_string()),
                 method: Some(HttpMethod::Get),
@@ -174,6 +176,7 @@ async fn test_ssrf_malformed_urls() {
             patterns: vec![],
             companions: vec![],
             keywords: vec![],
+            min_confidence: None,
             verify: Some(VerifySpec {
                 url: Some(url.to_string()),
                 method: Some(HttpMethod::Get),
@@ -249,6 +252,7 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
             patterns: vec![],
             companions: vec![],
             keywords: vec![],
+            min_confidence: None,
             verify: Some(VerifySpec {
                 url: Some(url.to_string()),
                 method: Some(HttpMethod::Get),
@@ -309,6 +313,7 @@ async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some("https://attacker.example.com/exfil".to_string()),
             method: Some(HttpMethod::Get),

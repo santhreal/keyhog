@@ -133,10 +133,7 @@ fn adv108_mouseflow_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv108_mouseflow_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "mouseflow-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxx",
-    );
+    assert_detector_silent("mouseflow-api-credentials", "dummy_prefix_0 =xxxxxxxxxx");
 }
 
 #[test]
@@ -466,10 +463,7 @@ fn adv108_mx_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv108_mx_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "mx-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("mx-api-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv108_namely_api_credentials_evade_lrm_must_fire() {
         "iLTnnJ2eXTQr7V8YOPWz",
     );
 }
-
-

@@ -19,6 +19,7 @@ fn catastrophic_backtracking_input_does_not_hang() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["token".into()],
+        min_confidence: None,
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
 

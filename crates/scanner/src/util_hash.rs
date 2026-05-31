@@ -106,8 +106,15 @@ mod tests {
         });
 
         assert_eq!(first, 42);
-        assert_eq!(second, 42, "second lookup must hit the cache, not recompute");
-        assert_eq!(calls.get(), 1, "compute must run exactly once for a repeat key");
+        assert_eq!(
+            second, 42,
+            "second lookup must hit the cache, not recompute"
+        );
+        assert_eq!(
+            calls.get(),
+            1,
+            "compute must run exactly once for a repeat key"
+        );
     }
 
     #[test]
@@ -122,6 +129,9 @@ mod tests {
         }
         memoize_by_hash(&CAP_CACHE, 99, 3, || 99);
         let len = CAP_CACHE.with(|c| c.borrow().len());
-        assert!(len <= 3, "cache must stay bounded by max_entries, got {len}");
+        assert!(
+            len <= 3,
+            "cache must stay bounded by max_entries, got {len}"
+        );
     }
 }

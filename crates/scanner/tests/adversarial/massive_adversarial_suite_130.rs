@@ -133,10 +133,7 @@ fn adv130_spiderfoot_api_key_normal_must_fire() {
 
 #[test]
 fn adv130_spiderfoot_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "spiderfoot-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("spiderfoot-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1018,7 @@ fn adv130_ssh_private_key_normal_must_fire() {
 
 #[test]
 fn adv130_ssh_private_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "ssh-private-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("ssh-private-key", "dummyxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv130_ssh_private_key_evade_lrm_must_fire() {
         "-----BEGIN PRIVATE KEY-----",
     );
 }
-
-

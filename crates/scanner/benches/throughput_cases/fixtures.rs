@@ -244,6 +244,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             companions: Vec::new(),
             verify: None,
             keywords: vec!["AKIA".into(), "ASIA".into(), "aws".into()],
+            min_confidence: None,
         },
         DetectorSpec {
             id: "github-pat".into(),
@@ -267,6 +268,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             companions: Vec::new(),
             verify: None,
             keywords: vec!["ghp_".into(), "github".into()],
+            min_confidence: None,
         },
         DetectorSpec {
             id: "slack-bot-token".into(),
@@ -282,6 +284,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             companions: Vec::new(),
             verify: None,
             keywords: vec!["xoxb".into(), "slack".into()],
+            min_confidence: None,
         },
         DetectorSpec {
             id: "openai-api-key".into(),
@@ -305,6 +308,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             companions: Vec::new(),
             verify: None,
             keywords: vec!["sk-proj-".into(), "sk-".into(), "openai".into()],
+            min_confidence: None,
         },
         DetectorSpec {
             id: "stripe-secret-key".into(),
@@ -320,6 +324,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             companions: Vec::new(),
             verify: None,
             keywords: vec!["sk_live_".into(), "stripe".into()],
+            min_confidence: None,
         },
         DetectorSpec {
             id: "sendgrid-api-key".into(),
@@ -335,6 +340,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             companions: Vec::new(),
             verify: None,
             keywords: vec!["SG.".into(), "sendgrid".into()],
+            min_confidence: None,
         },
     ]
 }

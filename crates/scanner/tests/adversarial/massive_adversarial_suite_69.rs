@@ -910,10 +910,7 @@ fn adv69_backblaze_b2_app_key_v2_normal_must_fire() {
 
 #[test]
 fn adv69_backblaze_b2_app_key_v2_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "backblaze-b2-app-key-v2",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("backblaze-b2-app-key-v2", "dummyxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv69_baidu_maps_api_key_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q",
     );
 }
-
-

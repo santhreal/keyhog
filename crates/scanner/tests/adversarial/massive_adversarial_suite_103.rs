@@ -910,10 +910,7 @@ fn adv103_lorawan_credentials_normal_must_fire() {
 
 #[test]
 fn adv103_lorawan_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "lorawan-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("lorawan-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv103_losant_api_credentials_evade_lrm_must_fire() {
         "FJkepLYelHEQDonIVhEJ",
     );
 }
-
-

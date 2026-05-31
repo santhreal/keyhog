@@ -19,6 +19,7 @@ fn compiled_scanner_accepts_minimal_detector() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![det]);

@@ -47,6 +47,7 @@ pub fn token_detector() -> DetectorSpec {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["TESTKEY_".into()],
+        min_confidence: None,
     }
 }
 

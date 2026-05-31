@@ -8,6 +8,7 @@ async fn ssrf_break_allowlist_attacker_host() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some("https://attacker.example.com/exfil".into()),
             method: Some(HttpMethod::Get),

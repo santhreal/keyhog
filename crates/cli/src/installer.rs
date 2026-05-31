@@ -587,6 +587,7 @@ pub fn scan_engine_self_test() -> Result<bool> {
             client_safe: false,
         }],
         keywords: vec!["KHDOCTOR".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector])?;

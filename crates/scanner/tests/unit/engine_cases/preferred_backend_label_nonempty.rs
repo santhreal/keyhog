@@ -16,6 +16,7 @@ fn preferred_backend_label_nonempty() {
         companions: vec![],
         verify: None,
         keywords: vec!["x".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

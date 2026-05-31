@@ -41,6 +41,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["sk-proj-".into(), "sk-".into(), "openai".into()],
+        min_confidence: None,
     }]
 }
 

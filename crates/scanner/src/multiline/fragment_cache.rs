@@ -146,8 +146,8 @@ impl FragmentCache {
                     let f1 = &cluster[i];
                     let f2 = &cluster[j];
 
-                    let near = f1.path == f2.path
-                        && (f1.line as isize - f2.line as isize).abs() < 100;
+                    let near =
+                        f1.path == f2.path && (f1.line as isize - f2.line as isize).abs() < 100;
 
                     if near {
                         let mut joined = Zeroizing::new(String::new());
@@ -203,8 +203,8 @@ impl FragmentCache {
                     let f1 = &cluster[i];
                     let f2 = &cluster[j];
 
-                    let near = f1.path == f2.path
-                        && (f1.line as isize - f2.line as isize).abs() < 100;
+                    let near =
+                        f1.path == f2.path && (f1.line as isize - f2.line as isize).abs() < 100;
 
                     if near {
                         let mut joined = Zeroizing::new(String::new());

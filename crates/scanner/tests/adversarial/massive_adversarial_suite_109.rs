@@ -1021,10 +1021,7 @@ fn adv109_newrelic_user_api_key_normal_must_fire() {
 
 #[test]
 fn adv109_newrelic_user_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "newrelic-user-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("newrelic-user-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv109_newrelic_user_api_key_evade_lrm_must_fire() {
         "NRAK-2EYOINJXROC0URJH7T52XQYNDJX",
     );
 }
-
-

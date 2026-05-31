@@ -799,10 +799,7 @@ fn adv88_freshdesk_api_key_normal_must_fire() {
 
 #[test]
 fn adv88_freshdesk_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "freshdesk-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("freshdesk-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv88_fullstory_api_key_evade_lrm_must_fire() {
         "na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn",
     );
 }
-
-

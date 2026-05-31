@@ -1021,10 +1021,7 @@ fn adv81_directus_api_token_normal_must_fire() {
 
 #[test]
 fn adv81_directus_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "directus-api-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("directus-api-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv81_directus_api_token_evade_lrm_must_fire() {
         "C372xGw30nSx5QdQuTxy",
     );
 }
-
-

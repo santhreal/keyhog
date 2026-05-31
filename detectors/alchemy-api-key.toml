@@ -8,6 +8,7 @@ id = "alchemy-api-key"
 name = "Alchemy API Key"
 service = "alchemy"
 severity = "critical"
+min_confidence = 0.2
 keywords = ["alchemy", "ALCHEMY_API_KEY", "ALCHEMY_APIKEY", "alchemy_api_key", "alchemy.com"]
 
 [[detector.patterns]]

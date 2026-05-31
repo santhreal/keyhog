@@ -59,6 +59,7 @@ async fn test_verify_all_logic() {
             oob: None,
         }),
         keywords: vec![],
+        min_confidence: None,
         ..Default::default()
     };
 

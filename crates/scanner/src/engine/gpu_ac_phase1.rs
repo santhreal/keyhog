@@ -14,6 +14,19 @@ impl CompiledScanner {
 
         let (entries, mut buffer) = super::gpu_coalesce::coalesce_chunks(chunks);
 
+        // ASCII-lowercase the coalesced haystack so the AC literal automaton
+        // matches case-INSENSITIVELY, exactly like the SIMD Hyperscan path
+        // (compiled CASELESS for every pattern). Without this the GPU drops
+        // matches on uppercase occurrences of lowercase literal prefixes
+        // (PERF-07 gpu_parity: `csb_` literal vs `CSB_...` in soc21_enum.h ->
+        // SIMD 4, GPU 0). The literal set is lowercased to the same fold in
+        // `build_gpu_literals`. This buffer is the phase-1 PREFILTER only -
+        // phase 2 re-confirms each hit on the ORIGINAL chunk bytes with the
+        // caseless regex - and ASCII fold is 1-byte-to-1-byte (only A-Z), so
+        // the match offsets attributed back to chunks are unchanged and the
+        // reported credential keeps its original case.
+        buffer.make_ascii_lowercase();
+
         // Same buffer 4-alignment trick as `scan_coalesced_gpu`: lets
         // every shard pass `&buffer[start..end]` straight to vyre's
         // u32-typed haystack input instead of running pack_haystack_u32

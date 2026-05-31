@@ -19,6 +19,7 @@ fn build_compile_state_accepts_valid_detector() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let state = build_compile_state(&[det]);

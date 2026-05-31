@@ -125,9 +125,7 @@ fn caesar_decoder_does_not_fire_on_credential_url_line() {
     for m in &matches {
         let id = m.detector_id.as_ref();
         assert!(
-            !id.ends_with(":caesar")
-                && !id.ends_with(":rot13")
-                && !id.contains("decoded-caesar"),
+            !id.ends_with(":caesar") && !id.ends_with(":rot13") && !id.contains("decoded-caesar"),
             "caesar suffix on detector_id forbidden when URL is on the \
              same line: id={} credential={:?}",
             id,

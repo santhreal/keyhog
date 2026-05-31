@@ -10,6 +10,7 @@ fn compute_spec_hash_changes_when_severity_changes() {
         service: "sev".into(),
         severity: Severity::Medium,
         keywords: vec![],
+        min_confidence: None,
         patterns: vec![PatternSpec {
             regex: "[A-Z]{40}".into(),
             ..Default::default()
