@@ -67,35 +67,40 @@ pub fn batch_ml_inference(
         let features: Vec<[f32; crate::ml_scorer::NUM_FEATURES]> = candidates
             .par_iter()
             .map(|(text, ctx)| {
-                crate::ml_scorer::compute_features_with_config(
-                    text,
-                    ctx,
-                    &config.known_prefixes,
-                    &config.secret_keywords,
-                    &config.test_keywords,
-                    &config.placeholder_keywords,
-                )
+                if text.is_empty() {
+                    [0.0; crate::ml_scorer::NUM_FEATURES]
+                } else {
+                    crate::ml_scorer::compute_features_with_config(
+                        text,
+                        ctx,
+                        &config.known_prefixes,
+                        &config.secret_keywords,
+                        &config.test_keywords,
+                        &config.placeholder_keywords,
+                    )
+                }
             })
             .collect();
 
         #[cfg(feature = "gpu")]
-        if let Some(scores) = backend::batch_score_features(&features) {
+        if let Some(mut scores) = backend::batch_score_features(&features) {
+            for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
+                if text.is_empty() {
+                    *score = 0.0;
+                }
+            }
             return scores;
         }
-        // Bind `features` so the no-`gpu` build doesn't lint it unused.
-        let _ = &features;
 
         candidates
             .par_iter()
-            .map(|(text, ctx)| {
-                crate::ml_scorer::score_with_config(
-                    text,
-                    ctx,
-                    &config.known_prefixes,
-                    &config.secret_keywords,
-                    &config.test_keywords,
-                    &config.placeholder_keywords,
-                )
+            .zip(features.par_iter())
+            .map(|((text, _ctx), features)| {
+                if text.is_empty() {
+                    0.0
+                } else {
+                    crate::ml_scorer::score_features(features)
+                }
             })
             .collect()
     }

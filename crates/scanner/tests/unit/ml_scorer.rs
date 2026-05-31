@@ -1,4 +1,8 @@
-use keyhog_scanner::ml_scorer::score_with_config;
+use keyhog_scanner::ml_scorer::{compute_features_public, score_with_config};
+
+const FILE_TYPE_OFFSET: usize = 32;
+const CONFIG_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET;
+const CI_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET + 2;
 
 fn test_score(text: &str, context: &str) -> f64 {
     score_with_config(
@@ -87,6 +91,27 @@ fn base64_binary_scores_below_real_secret() {
     assert!(
         png_score < 0.3,
         "base64-of-PNG must score below the report floor, got {png_score:.3}"
+    );
+}
+
+#[test]
+fn file_type_context_markers_are_ascii_case_insensitive() {
+    let ci = compute_features_public(
+        concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"),
+        "path=.GITHUB/WORKFLOWS/build.yml\nJOBS:\n  scan:",
+    );
+    assert_eq!(
+        ci[CI_FILE_TYPE_INDEX], 1.0,
+        "mixed-case CI markers must classify as CI context"
+    );
+
+    let config = compute_features_public(
+        "sk-proj-EXAMPLE000000000000000000000000000000000000000000000000000000000000",
+        "OPENAI_API_KEY=value\nsource=SETTINGS.YAML",
+    );
+    assert_eq!(
+        config[CONFIG_FILE_TYPE_INDEX], 1.0,
+        "mixed-case config markers must classify as config context"
     );
 }
 

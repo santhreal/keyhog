@@ -81,6 +81,33 @@ fn dedup_merges_distinct_companion_values() {
 }
 
 #[test]
+fn dedup_same_offset_uses_total_location_tiebreak() {
+    let mut low_line = sample_match("det1", "secret1", "file1.txt");
+    low_line.location.offset = 4096;
+    low_line.location.line = Some(17);
+
+    let mut high_line = low_line.clone();
+    high_line.location.line = Some(42);
+
+    let forward = dedup_matches(
+        vec![high_line.clone(), low_line.clone()],
+        &DedupScope::Credential,
+    );
+    let reverse = dedup_matches(vec![low_line, high_line], &DedupScope::Credential);
+
+    for deduped in [forward, reverse] {
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(
+            deduped[0].primary_location.line,
+            Some(17),
+            "same-offset overlapping-window aliases need a deterministic primary"
+        );
+        assert_eq!(deduped[0].additional_locations.len(), 1);
+        assert_eq!(deduped[0].additional_locations[0].line, Some(42));
+    }
+}
+
+#[test]
 fn dedup_none_scope() {
     let matches = vec![
         sample_match("det1", "secret1", "file1.txt"),

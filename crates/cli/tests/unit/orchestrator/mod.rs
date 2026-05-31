@@ -27,6 +27,7 @@ pub mod orchestrator_reporting_module_exists;
 pub mod orchestrator_run_module_defines_exit_codes;
 pub mod orchestrator_scanner_accessor_returns_compiled;
 pub mod pipeline_finds_secret_in_single_source_single_chunk;
+pub mod pipeline_fused_and_legacy_agree;
 pub mod pipeline_handles_empty_source;
 pub mod pipeline_no_findings_when_corpus_clean;
 pub mod pipeline_processes_chunks_across_multiple_sources;

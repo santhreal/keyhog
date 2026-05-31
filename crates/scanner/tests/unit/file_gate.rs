@@ -13,7 +13,9 @@ use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::entropy_fast::shannon_entropy_simd;
 use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
 use keyhog_scanner::jwt::{analyze, looks_like_jwt};
-use keyhog_scanner::ml_scorer::{compute_features_public, model_version, score, NUM_FEATURES};
+use keyhog_scanner::ml_scorer::{
+    compute_features_public, model_version, score, score_with_config, NUM_FEATURES,
+};
 use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
 use keyhog_scanner::prefix_trie::build_propagation_table;
 use keyhog_scanner::resolution::resolve_matches;
@@ -739,6 +741,50 @@ fn gpu_happy() {
     );
     assert_eq!(scores.len(), 1);
 }
+
+#[test]
+fn gpu_small_batch_cpu_fallback_matches_configured_moe() {
+    let mut config = ScannerConfig::default();
+    config.known_prefixes = vec!["ghp_".to_string(), "sk-".to_string()];
+    config.secret_keywords = vec!["TOKEN".to_string(), "API_KEY".to_string()];
+    config.test_keywords = vec!["test".to_string()];
+    config.placeholder_keywords = vec!["YOUR_".to_string()];
+    let candidates = [
+        (
+            concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"),
+            "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+        ),
+        (
+            "d41d8cd98f00b204e9800998ecf8427e",
+            "checksum = d41d8cd98f00b204e9800998ecf8427e",
+        ),
+        ("", "TOKEN="),
+    ];
+
+    let scores = batch_ml_inference(&candidates, &config);
+    let expected: Vec<f64> = candidates
+        .iter()
+        .map(|(text, context)| {
+            score_with_config(
+                text,
+                context,
+                &config.known_prefixes,
+                &config.secret_keywords,
+                &config.test_keywords,
+                &config.placeholder_keywords,
+            )
+        })
+        .collect();
+
+    assert_eq!(scores.len(), expected.len());
+    for (index, (score, expected)) in scores.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (*score - *expected).abs() <= f64::EPSILON,
+            "candidate {index} score drifted: batch={score:.9}, scalar={expected:.9}"
+        );
+    }
+}
+
 #[test]
 fn gpu_error() {
     let (_avail, _name, _vram) = gpu_probe();

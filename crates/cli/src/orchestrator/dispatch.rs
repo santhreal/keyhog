@@ -34,6 +34,19 @@ impl ScanOrchestrator {
     ) -> Vec<RawMatch> {
         use std::sync::atomic::Ordering;
 
+        // Fused parallel read+scan path for CPU/SIMD filesystem scans. The
+        // legacy batch pipeline below funnels the parallel reader's output
+        // through one main-thread drain + one scanner thread running 23
+        // sequential per-batch `par_iter`s, which pins a 32-core box at ~9
+        // cores (measured: kernel scan flat from 1->32 threads). The fused
+        // path scans every chunk on the global rayon pool as it streams in,
+        // so reads and scans overlap continuously across all cores. GPU keeps
+        // the coalesced batch pipeline (preserves gpu_parity + large-buffer
+        // dispatch); see `should_use_fused_pipeline`.
+        if self.should_use_fused_pipeline(&sources) {
+            return self.scan_sources_fused(sources, show_progress, merkle);
+        }
+
         keyhog_sources::reset_skipped_over_max_size();
 
         let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -413,20 +426,40 @@ impl ScanOrchestrator {
             let _ = h.join();
         }
 
+        self.finalize_incremental(
+            merkle.as_ref(),
+            incremental_path.as_deref(),
+            skipped_unchanged,
+            &findings,
+        );
+
+        findings
+    }
+
+    /// Persist the merkle index after a scan and log skip stats. Shared by
+    /// the legacy batch pipeline and the fused parallel path so both honour
+    /// the same incremental-mode safety contract.
+    fn finalize_incremental(
+        &self,
+        merkle: Option<&Arc<keyhog_core::merkle_index::MerkleIndex>>,
+        incremental_path: Option<&std::path::Path>,
+        skipped_unchanged: usize,
+        findings: &[RawMatch],
+    ) {
         if skipped_unchanged > 0 {
             tracing::info!(
                 skipped = skipped_unchanged,
                 "incremental scan: skipped unchanged files"
             );
         }
-        if let (Some(idx), Some(path)) = (merkle.as_ref(), incremental_path.as_deref()) {
+        if let (Some(idx), Some(path)) = (merkle, incremental_path) {
             // Incremental-mode safety: never persist a file that produced a
             // finding. Otherwise an unchanged secret-bearing file would be
             // skipped on the next run and the secret would silently vanish from
             // the report (exit 0) - the exact "missed detection forever" this
             // index must not cause. Dropping the entry forces a re-scan + re-
             // report next time; clean files stay cached so the speedup holds.
-            for m in &findings {
+            for m in findings {
                 if let Some(fp) = m.location.file_path.as_deref() {
                     idx.forget(std::path::Path::new(fp));
                 }
@@ -436,6 +469,236 @@ impl ScanOrchestrator {
                 tracing::warn!(error = %e, "failed to persist merkle index");
             }
         }
+    }
+
+    /// Decide whether a scan runs on the fused parallel read+scan path.
+    ///
+    /// Engaged only for the CPU/SIMD backend on filesystem sources:
+    /// * **GPU** (forced, or auto-selected on a real GPU host) keeps the
+    ///   coalesced per-batch pipeline so `gpu_parity` and the large-buffer
+    ///   dispatch are untouched.
+    /// * **Non-filesystem sources** (git, stdin, docker, ...) may emit
+    ///   *gapless* chunks where `scan_chunk_boundaries` is load-bearing; the
+    ///   fused path scans each chunk independently and relies on the
+    ///   filesystem source's 128 KiB window *overlap* (for which the boundary
+    ///   pass is already a no-op) to cover seam-straddling secrets.
+    /// * `KEYHOG_LEGACY_PIPELINE=1` forces the batch path (A/B + escape hatch).
+    fn should_use_fused_pipeline(&self, sources: &[Box<dyn Source>]) -> bool {
+        if std::env::var_os("KEYHOG_LEGACY_PIPELINE").is_some() {
+            return false;
+        }
+        let explicit = explicit_backend_override();
+        let hw = keyhog_scanner::hw_probe::probe_hardware();
+        let gpu_in_play = match explicit {
+            Some(keyhog_scanner::hw_probe::ScanBackend::Gpu)
+            | Some(keyhog_scanner::hw_probe::ScanBackend::MegaScan) => true,
+            Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)
+            | Some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback) => false,
+            // `ScanBackend` is #[non_exhaustive]: an unknown future backend
+            // stays on the legacy pipeline (it auto-routes/handles any
+            // backend), rather than silently forcing the CPU fused path.
+            Some(_) => true,
+            None => hw.gpu_available && !hw.gpu_is_software && !keyhog_scanner::gpu::env_no_gpu(),
+        };
+        if gpu_in_play {
+            return false;
+        }
+        !sources.is_empty()
+            && sources
+                .iter()
+                .all(|s| s.as_any().is::<keyhog_sources::FilesystemSource>())
+    }
+
+    /// Fused parallel read+scan: stream chunks off the source's parallel
+    /// reader pool and scan each on the global rayon pool via `par_bridge`,
+    /// so I/O and CPU overlap continuously across all cores with no
+    /// single-thread drain and no per-batch barrier.
+    ///
+    /// A small drain thread bridges the source's non-`Send` chunk iterator
+    /// into a bounded `Send` channel that the global pool consumes; the
+    /// reader pool (dedicated, inside the source) and the global scan pool
+    /// are distinct, so neither starves the other (the deadlock the legacy
+    /// pipeline's dedicated reader pool was built to avoid).
+    fn scan_sources_fused(
+        &self,
+        sources: Vec<Box<dyn Source>>,
+        show_progress: bool,
+        merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
+    ) -> Vec<RawMatch> {
+        use rayon::iter::{ParallelBridge, ParallelIterator};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        keyhog_sources::reset_skipped_over_max_size();
+
+        let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let progress_handle = if show_progress && !self.args.stream {
+            let done = Arc::clone(&progress_done);
+            let started_t = Instant::now();
+            Some(std::thread::spawn(move || {
+                super::reporting::progress_ticker(done, started_t)
+            }))
+        } else {
+            None
+        };
+
+        let incremental_path = self.incremental_cache_path();
+        let scanner = Arc::clone(&self.scanner);
+        let stream = self.args.stream;
+
+        let skipped_unchanged = Arc::new(AtomicUsize::new(0));
+        let sc_t0 = Instant::now();
+
+        // Bridge the source's `!Send` chunk iterator into a `Send` channel of
+        // BATCHES that the global pool consumes via `par_bridge`. Reusing
+        // `scan_coalesced` per batch keeps the finding set bit-identical to the
+        // legacy pipeline (same scan entry, same phase-1 HS prefilter + no-hit
+        // gating); parallelising ACROSS batches is what removes the legacy
+        // single scanner-thread funnel that pinned a 32-core box at ~9 cores.
+        // `scan_coalesced` already calls the HS prefilter concurrently from its
+        // own internal `par_iter`, so invoking it from several batch workers at
+        // once is the same proven concurrency model, just wider. Batches are
+        // small enough that the outer `par_bridge` keeps every core busy and
+        // large enough to amortise scan_coalesced's per-batch phase/collect
+        // cost. The drain thread only groups chunks + enforces the 512 MiB
+        // ceiling; merkle hashing + scanning run in parallel in the consumer.
+        //
+        const FUSED_BATCH: usize = 128;
+        const FUSED_DEPTH: usize = 128;
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(FUSED_DEPTH);
+        let drain = std::thread::spawn(move || {
+            let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(FUSED_BATCH);
+            'sources: for source in &sources {
+                for chunk_result in source.chunks() {
+                    match chunk_result {
+                        Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
+                            batch.push(c);
+                            if batch.len() >= FUSED_BATCH {
+                                if tx.send(std::mem::take(&mut batch)).is_err() {
+                                    break 'sources;
+                                }
+                                batch = Vec::with_capacity(FUSED_BATCH);
+                            }
+                        }
+                        Ok(c) => {
+                            let mb = c.data.len() / (1024 * 1024);
+                            let path = c.metadata.path.as_deref().unwrap_or("<unknown>");
+                            tracing::warn!(
+                                path = %path,
+                                size_mb = mb,
+                                "skipping chunk over 512 MiB scan ceiling"
+                            );
+                        }
+                        Err(e) => tracing::warn!("source: {e}"),
+                    }
+                }
+            }
+            if !batch.is_empty() {
+                let _ = tx.send(batch);
+            }
+        });
+
+        let stream_writer = if stream {
+            Some(std::sync::Mutex::new(std::io::LineWriter::new(
+                std::io::stderr(),
+            )))
+        } else {
+            None
+        };
+
+        let merkle_ref = merkle.as_ref();
+        let skipped_ref = &skipped_unchanged;
+        let stream_ref = stream_writer.as_ref();
+        let scanner_ref = scanner.as_ref();
+
+        let findings: Vec<RawMatch> = rx
+            .into_iter()
+            .par_bridge()
+            .flat_map_iter(|batch| {
+                // Incremental skip (parallel across batches): hash each chunk
+                // and drop the ones the merkle index already has unchanged.
+                // Mirrors the legacy producer: record metadata for every chunk
+                // seen (changed or not); `finalize_incremental` later forgets
+                // any path that produced a finding.
+                let batch: Vec<keyhog_core::Chunk> = if let Some(idx) = merkle_ref {
+                    batch
+                        .into_iter()
+                        .filter(|c| {
+                            let Some(path_str) = c.metadata.path.as_deref() else {
+                                return true;
+                            };
+                            let chunk_hash = keyhog_core::merkle_index::MerkleIndex::hash_content(
+                                c.data.as_bytes(),
+                            );
+                            let path = std::path::PathBuf::from(path_str);
+                            let unchanged = idx.unchanged(&path, &chunk_hash);
+                            idx.record_with_metadata(
+                                path,
+                                c.metadata.mtime_ns.unwrap_or(0),
+                                c.metadata.size_bytes.unwrap_or(0),
+                                chunk_hash,
+                            );
+                            if unchanged {
+                                skipped_ref.fetch_add(1, Ordering::Relaxed);
+                            }
+                            !unchanged
+                        })
+                        .collect()
+                } else {
+                    batch
+                };
+                if batch.is_empty() {
+                    return Vec::new();
+                }
+
+                crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+                let per_chunk = scanner_ref.scan_coalesced(&batch);
+                crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+
+                let mut out: Vec<RawMatch> = Vec::new();
+                let mut batch_findings = 0usize;
+                for chunk_findings in per_chunk {
+                    batch_findings += chunk_findings.len();
+                    if let Some(w) = stream_ref {
+                        if let Ok(mut w) = w.lock() {
+                            for m in &chunk_findings {
+                                stream_finding_preview(&mut *w, m);
+                            }
+                        }
+                    }
+                    out.extend(chunk_findings);
+                }
+                if batch_findings > 0 {
+                    crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                }
+                out
+            })
+            .collect();
+
+        // Drain thread only moves chunks; it finishes once the source is
+        // exhausted and the channel is consumed.
+        let _ = drain.join();
+
+        if std::env::var("KH_PERF").is_ok() {
+            eprintln!(
+                "KH_PERF scan_sources_fused: wall={:.2}s findings={} scanned={}",
+                sc_t0.elapsed().as_secs_f64(),
+                findings.len(),
+                crate::SCANNED_CHUNKS.load(Ordering::Relaxed),
+            );
+        }
+
+        progress_done.store(true, Ordering::Relaxed);
+        if let Some(h) = progress_handle {
+            let _ = h.join();
+        }
+
+        let skipped_unchanged = skipped_unchanged.load(Ordering::Relaxed);
+        self.finalize_incremental(
+            merkle.as_ref(),
+            incremental_path.as_deref(),
+            skipped_unchanged,
+            &findings,
+        );
 
         findings
     }

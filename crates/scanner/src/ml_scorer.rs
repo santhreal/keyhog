@@ -92,6 +92,11 @@ pub fn score_with_config(
     score
 }
 
+/// Score precomputed model features without recomputing text/context signals.
+pub(crate) fn score_features(features: &[f32; NUM_FEATURES]) -> f64 {
+    forward_pass(features) as f64
+}
+
 /// Return the embedded model version string for diagnostics and CLI output.
 pub fn model_version() -> &'static str {
     ml_weights::MODEL_VERSION
