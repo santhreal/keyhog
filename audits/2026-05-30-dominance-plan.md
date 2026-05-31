@@ -1187,6 +1187,20 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests csr_hot_maps_adopted -- --nocapture`
 
+## Executed Patch Set: Fragment Cache Dead Hash Wrapper
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- UTILIZATION: removed the unused production `shard_index(&str)` wrapper; production fragment-cache routing now exposes only the allocation-free `(prefix, scope)` shard path.
+- SPEED: the hot record path remains allocation-free for shard selection, and the equivalence test still proves the slice-pair hash matches the joined-key byte order.
+- COHERENCE: the scanner warning for `shard_index` is gone instead of being hidden.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner shard_index_of_matches_joined_key_hash -- --nocapture`
+
 ## Executed Patch Set: GPU MoE Readback Deadline
 
 Date: 2026-05-31
