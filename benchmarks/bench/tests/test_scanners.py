@@ -26,6 +26,41 @@ def test_keyhog_normalizer_reads_json_array_shape():
     ]
 
 
+def test_keyhog_normalizer_scores_additional_locations_as_findings():
+    data = [
+        {
+            "detector_id": "ssh-private-key",
+            "credential_redacted": "-----BEGIN EC PRIVATE KEY-----",
+            "location": {"file_path": "primary.pem", "line": 1},
+            "additional_locations": [
+                {"file_path": "alias.pem", "line": 1},
+                {"file": "legacy-path.pem", "line": "2"},
+            ],
+        }
+    ]
+
+    assert scanners._normalize_keyhog(data) == [
+        {
+            "file": "primary.pem",
+            "line": 1,
+            "value": "-----BEGIN EC PRIVATE KEY-----",
+            "detector": "ssh-private-key",
+        },
+        {
+            "file": "alias.pem",
+            "line": 1,
+            "value": "-----BEGIN EC PRIVATE KEY-----",
+            "detector": "ssh-private-key",
+        },
+        {
+            "file": "legacy-path.pem",
+            "line": 2,
+            "value": "-----BEGIN EC PRIVATE KEY-----",
+            "detector": "ssh-private-key",
+        },
+    ]
+
+
 def test_betterleaks_normalizer_reads_gitleaks_json_shape():
     data = [{"File": "a.env", "StartLine": 2, "Secret": "sekret", "RuleID": "aws"}]
 

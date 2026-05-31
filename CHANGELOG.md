@@ -43,6 +43,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Point scanner benchmark runs at manifest-free, neutrally named `corpus/` scan trees and measure corpus bytes/files from that same scan root so answer keys and path-context penalties cannot inflate or suppress benchmark results.
 - Apply the same manifest-free neutral scan-root contract to competitor homefield corpora.
 - Refresh the committed mirror benchmark README and report tables from the current `benchmarks/results` artifacts, including updated per-scanner runtime/RSS values and the current private-key category gap.
+- Score KeyHog `additional_locations` in the benchmark adapter so deduplicated credential aliases count toward per-file recall instead of being reported as false negatives; mirror private-key F1 is now 1.000 and the overall mirror F1 rises to 0.9108.
 - Probe for actual GNU `time` support before wrapping benchmark subprocesses, so BSD/macOS `/usr/bin/time` falls back to `resource.getrusage` instead of breaking scanner runs.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
 

@@ -82,16 +82,38 @@ def _normalize_keyhog(data: object) -> list[Finding]:
         data.get("findings") if isinstance(data, dict) else []
     )
     norm: list[Finding] = []
+    seen: set[tuple[str, int, str, str]] = set()
     for finding in records or []:
         if not isinstance(finding, dict):
             continue
-        loc = finding.get("location") if isinstance(finding.get("location"), dict) else {}
-        norm.append({
-            "file": loc.get("file_path") or loc.get("file") or "",
-            "line": _line(loc.get("line")),
-            "value": finding.get("credential_redacted") or finding.get("credential") or "",
-            "detector": finding.get("detector_id") or finding.get("detector_name") or "",
-        })
+        value = finding.get("credential_redacted") or finding.get("credential") or ""
+        detector = finding.get("detector_id") or finding.get("detector_name") or ""
+
+        locations = []
+        loc = finding.get("location")
+        if isinstance(loc, dict):
+            locations.append(loc)
+        additional = finding.get("additional_locations")
+        if isinstance(additional, list):
+            locations.extend(loc for loc in additional if isinstance(loc, dict))
+
+        for loc in locations:
+            normalized = {
+                "file": loc.get("file_path") or loc.get("file") or "",
+                "line": _line(loc.get("line")),
+                "value": value,
+                "detector": detector,
+            }
+            key = (
+                normalized["file"],
+                normalized["line"],
+                normalized["value"],
+                normalized["detector"],
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            norm.append(normalized)
     return norm
 
 
