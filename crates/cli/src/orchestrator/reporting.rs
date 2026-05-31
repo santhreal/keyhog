@@ -26,17 +26,28 @@ pub(crate) fn stream_finding_preview<W: Write>(w: &mut W, m: &RawMatch) {
     );
 }
 
-pub(crate) fn report_completion_summary(count: usize, elapsed: f64) {
+pub(crate) fn report_completion_summary(count: usize, elapsed: f64, ansi: bool) {
     if count == 0 {
-        eprintln!(
-            "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
-            elapsed
-        );
+        if ansi {
+            eprintln!(
+                "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
+                elapsed
+            );
+        } else {
+            eprintln!("\n✨ Scan complete! Found 0 secrets in {:.2}s.", elapsed);
+        }
     } else {
-        eprintln!(
-            "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
-            count, elapsed
-        );
+        if ansi {
+            eprintln!(
+                "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
+                count, elapsed
+            );
+        } else {
+            eprintln!(
+                "\n✨ Scan complete! Found {} secrets in {:.2}s.",
+                count, elapsed
+            );
+        }
     }
     report_oversize_skip_summary();
 }

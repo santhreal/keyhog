@@ -14,6 +14,7 @@ pub mod config_file_size_cap;
 pub mod config_no_inline_tests;
 pub mod config_no_unwrap_expect;
 pub mod config_non_empty;
+pub mod contract_modules_all_wired;
 pub mod daemon_client_file_size_cap;
 pub mod daemon_client_no_inline_tests;
 pub mod daemon_client_no_unwrap_expect;
