@@ -11,12 +11,12 @@ severity = "high"
 keywords = ["csb_", "csb_api", "CODESANDBOX", "codesandbox"]
 
 [[detector.patterns]]
-regex = 'csb_api_[a-zA-Z0-9_-]{20,}'
-description = "CodeSandbox API token with csb_api_ prefix"
+regex = 'csb_api_[a-zA-Z0-9]{20,}'
+description = "CodeSandbox API token with csb_api_ prefix and base62 body"
 
 [[detector.patterns]]
-regex = 'csb_[a-zA-Z0-9_-]{20,}'
-description = "CodeSandbox token with csb_ prefix"
+regex = 'csb_[a-zA-Z0-9]{20,}'
+description = "CodeSandbox token with csb_ prefix and base62 body"
 
 [detector.verify]
 method = "GET"

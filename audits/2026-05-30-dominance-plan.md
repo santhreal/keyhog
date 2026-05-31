@@ -1026,6 +1026,26 @@ Verified gates:
 - `cargo test -p keyhog-scanner --test all_tests gpu_forced -- --nocapture`
 - `cargo test -p keyhog --test gpu_simd_parity -- --nocapture`
 
+## Executed Patch Set: CodeSandbox Enum False-Positive Kill
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- PRECISION: changed CodeSandbox token bodies from `[A-Za-z0-9_-]{20,}` to base62 `[A-Za-z0-9]{20,}`, preserving shipped positives while rejecting SCREAMING_SNAKE enum identifiers such as `CSB_MACHINE_STALLED_BY_CSB_MEMORY`.
+- RESEARCH: checked current public CodeSandbox SDK/API-token references; public docs expose the token as `CSB_API_KEY` / API token but do not publish a character-level token grammar, so the detector contract follows the shipped positive corpus and the observed false-positive class.
+- COHERENCE: added the negative to the detector contract so CPU/SIMD/GPU parity improvements cannot reintroduce the Linux-header false positive as a "valid" match.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests adv77_codesandbox_api_token_normal_must_fire -- --nocapture`
+- `cargo test -p keyhog --test gpu_simd_parity -- --nocapture`
+- Real CLI negative scan of `PERF_ENGG_CSB_MACHINE_STALLED_BY_CSB_MEMORY = 0x000000bd` produced `[]` with exit 0.
+
+Red gate captured:
+
+- `cargo test -p keyhog-scanner --test contracts_runner every_contract_passes_positives_negatives_evasions -- --nocapture` is red across many pre-existing detector contracts, so it is not a clean CodeSandbox-only proof gate.
+
 ## Executed Patch Set: GitHub Action CI Fail-Closed UX
 
 Date: 2026-05-31
