@@ -149,6 +149,13 @@ real tree. Items carry the data that proves them.
   miss was a SIMD false positive fixed by the ACR hex-constant suppression;
   the former `fireworks-ai-api-key` and `github-oauth-access-token` GPU extras
   were Caesar decode false positives on source/config paths.
+  OPEN RED GATE: `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test
+  gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus` still
+  exits 2 before assertions because the current Vyre GPU dispatch degrades at
+  runtime (`literals=true, backend=true, matcher=true`). Without
+  `KEYHOG_REQUIRE_GPU=1`, the same parity test passes by degrading to
+  SIMD/CPU. The blocker is Vyre dispatch soundness, not KeyHog's phase-2
+  finding parity.
 
 ## Parallelism
 
