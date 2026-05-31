@@ -31,3 +31,16 @@ def test_report_inject_replaces_marker_body():
     updated = report.inject(original, "perf", "new")
 
     assert updated == "a\n<!-- BENCH:perf:start -->\nnew\n<!-- BENCH:perf:end -->\nz"
+
+
+def test_gap_report_shows_competitor_overall_precision_cost():
+    keyhog = _result("keyhog", 3, 20.0)
+    keyhog.detection.per_category = {"generic": Outcome(tp=1, fp=0, fn=2)}
+    noisy = _result("betterleaks", 2, 10.0)
+    noisy.detection.overall = Outcome(tp=2, fp=8, fn=3)
+    noisy.detection.per_category = {"generic": Outcome(tp=3, fp=0, fn=0)}
+
+    text = report.render_gaps([keyhog, noisy], "mirror")
+
+    assert "Competitor overall precision" in text
+    assert "| `generic` | 0.500 | BetterLeaks 1.000 | +0.500 | 0.200 |" in text

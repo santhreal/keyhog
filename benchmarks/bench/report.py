@@ -163,18 +163,18 @@ def render_gaps(results: list[RunResult], corpus: str) -> str:
                 continue
             o = r.detection.per_category.get(cat)
             if o and o.f1() > kh_f1v + 1e-9 and (best is None or o.f1() > best[1]):
-                best = (r.scanner.name, o.f1())
+                best = (r.scanner.name, o.f1(), r.detection.overall.precision())
         if best:
             out_lines.append(
                 f"| `{cat}` | {kh_f1v:.3f} | {_name(best[0])} {best[1]:.3f} | "
-                f"+{best[1]-kh_f1v:.3f} |"
+                f"+{best[1]-kh_f1v:.3f} | {best[2]:.3f} |"
             )
     if not out_lines:
         return "_keyhog matches or beats every competitor in every category on " \
                f"`{corpus}`._"
     return "\n".join([
-        "| Category | KeyHog F1 | Best competitor | Gap |",
-        "|---|---|---|---|",
+        "| Category | KeyHog F1 | Best competitor | Gap | Competitor overall precision |",
+        "|---|---|---|---|---|",
         *out_lines,
     ])
 
