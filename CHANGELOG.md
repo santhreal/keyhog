@@ -16,6 +16,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
 - Make `--git-staged --exclude-paths` apply to the staged-file include set instead of letting explicitly staged paths bypass excludes.
+- Run the CLI on Tokio's current-thread runtime so plain filesystem scans do not spawn a full async worker pool alongside the Rayon scanner threads.
 
 ### Scanner
 

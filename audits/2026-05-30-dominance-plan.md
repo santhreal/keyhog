@@ -1236,3 +1236,17 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
 - `cargo test -p keyhog-scanner --test contracts_runner every_contract_passes_positives_negatives_evasions -- --nocapture`
+
+## Executed Patch Set: Current-Thread CLI Runtime
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: removed the default multi-thread Tokio runtime from plain CLI startup so filesystem scans do not carry an idle async worker pool beside the Rayon scanner/readers.
+- ARCHITECTURE: scan parallelism remains owned by Rayon; async commands still run on Tokio without allocating one worker per core by default.
+- TESTING: added a CLI gap gate that locks `#[tokio::main(flavor = "current_thread")]` into `main.rs`.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests main_uses_current_thread_tokio_runtime -- --nocapture`
