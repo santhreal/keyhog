@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: scan-system rejects zero thread count.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

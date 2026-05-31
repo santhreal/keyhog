@@ -1,11 +1,12 @@
 //! KH-GAP-140: CLI ships empty `property/` and `concurrent/` mods — STANDARD categories 3/5 missing.
 //!
 //! This is the watchdog for the orphaned-test-file class of rot: a directory under
-//! `tests/` may accumulate `#[test]`-bearing `.rs` files while its `mod.rs` declares
-//! fewer (or zero) `mod` items, so those tests never compile or run. The guard walks
-//! every test category at test time and fails when any `mod.rs` declares fewer modules
-//! than there are test-bearing `.rs` files in that directory. For the watchdog itself to
-//! run it must be declared in `gap/mod.rs` (KH-GAP-140 cross-file fix).
+//! `tests/` may accumulate `#[test]`-bearing `.rs` files while its module manifest
+//! declares fewer (or zero) `mod` items, so those tests never compile or run. The
+//! guard walks every test category at test time and fails when the category's
+//! `mod.rs` or standalone `tests/<category>.rs` manifest declares fewer modules
+//! than there are test-bearing `.rs` files in that directory. For the watchdog
+//! itself to run it must be declared in `gap/mod.rs` (KH-GAP-140 cross-file fix).
 
 use std::path::{Path, PathBuf};
 
@@ -24,8 +25,7 @@ fn test_bearing_files(dir: &Path) -> Vec<String> {
                     }
                     let src = std::fs::read_to_string(&path).unwrap_or_default();
                     if src.contains("#[test]") {
-                        path.file_stem()
-                            .map(|s| s.to_string_lossy().into_owned())
+                        path.file_stem().map(|s| s.to_string_lossy().into_owned())
                     } else {
                         None
                     }
@@ -37,9 +37,21 @@ fn test_bearing_files(dir: &Path) -> Vec<String> {
     files
 }
 
-/// Count of `mod` declarations in `mod.rs` (matches `pub mod x;` and `mod x;`).
-fn declared_mods(mod_rs: &Path) -> Vec<String> {
-    let src = std::fs::read_to_string(mod_rs).unwrap_or_default();
+/// Return the category's module manifest. Standalone test binaries like
+/// `tests/adversarial.rs` intentionally keep heavy suites out of `all_tests`.
+fn declaration_manifest(base: &Path, category: &str) -> PathBuf {
+    let standalone = base.join(format!("{category}.rs"));
+    if standalone.exists() {
+        standalone
+    } else {
+        base.join(category).join("mod.rs")
+    }
+}
+
+/// Count of module declarations in the category manifest (matches `pub mod x;`
+/// and `mod x;`).
+fn declared_mods(manifest: &Path) -> Vec<String> {
+    let src = std::fs::read_to_string(manifest).unwrap_or_default();
     let mut mods: Vec<String> = src
         .lines()
         .filter_map(|line| {
@@ -48,7 +60,9 @@ fn declared_mods(mod_rs: &Path) -> Vec<String> {
             if line.starts_with("//") {
                 return None;
             }
-            let rest = line.strip_prefix("pub mod ").or_else(|| line.strip_prefix("mod "))?;
+            let rest = line
+                .strip_prefix("pub mod ")
+                .or_else(|| line.strip_prefix("mod "))?;
             let name = rest.trim_end_matches(';').trim();
             // Reject inline modules (`mod x { ... }`) and anything non-leaf.
             if name.is_empty() || name.contains(['{', ' ', ':']) {
@@ -62,14 +76,16 @@ fn declared_mods(mod_rs: &Path) -> Vec<String> {
 }
 
 /// STANDARD Test Contract categories 3 (property) and 5 (concurrent) must each ship
-/// at least one test module, and every test-bearing file must be declared in `mod.rs`.
+/// at least one test module, and every test-bearing file must be declared in the
+/// category manifest.
 #[test]
 fn property_and_concurrent_categories_have_tests() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     for category in ["property", "concurrent"] {
         let dir = base.join(category);
+        let manifest = declaration_manifest(&base, category);
         let files = test_bearing_files(&dir);
-        let declared = declared_mods(&dir.join("mod.rs"));
+        let declared = declared_mods(&manifest);
         assert!(
             !files.is_empty() || !declared.is_empty(),
             "tests/{category}/ must ship at least one test module per STANDARD Test Contract"
@@ -77,8 +93,9 @@ fn property_and_concurrent_categories_have_tests() {
         let missing: Vec<&String> = files.iter().filter(|f| !declared.contains(f)).collect();
         assert!(
             missing.is_empty(),
-            "tests/{category}/mod.rs declares {} module(s) but {} test-bearing file(s) exist; \
+            "{} declares {} module(s) but {} test-bearing file(s) exist; \
              orphaned (never-compiled) test files: {:?}",
+            manifest.strip_prefix(&base).unwrap_or(&manifest).display(),
             declared.len(),
             files.len(),
             missing
@@ -87,7 +104,8 @@ fn property_and_concurrent_categories_have_tests() {
 }
 
 /// Watchdog over ALL test categories: every `tests/<dir>/` that contains test-bearing
-/// `.rs` files must declare each of them in its `mod.rs`, so no test silently rots.
+/// `.rs` files must declare each of them in its category manifest, so no test
+/// silently rots.
 #[test]
 fn no_test_category_has_orphaned_files() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -98,18 +116,19 @@ fn no_test_category_has_orphaned_files() {
         if !dir.is_dir() {
             continue;
         }
-        // Only directories that act as a category (have a mod.rs) are guarded.
-        let mod_rs = dir.join("mod.rs");
-        if !mod_rs.exists() {
+        let category = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let manifest = declaration_manifest(&base, &category);
+        // Only directories that act as a category (have a manifest) are guarded.
+        if !manifest.exists() {
             continue;
         }
-        let category = dir.file_name().unwrap().to_string_lossy().into_owned();
         let files = test_bearing_files(&dir);
-        let declared = declared_mods(&mod_rs);
+        let declared = declared_mods(&manifest);
         let missing: Vec<&String> = files.iter().filter(|f| !declared.contains(f)).collect();
         if !missing.is_empty() {
             offenders.push(format!(
-                "tests/{category}/mod.rs: {} declared vs {} test files; orphaned: {:?}",
+                "{}: {} declared vs {} test files; orphaned: {:?}",
+                manifest.strip_prefix(&base).unwrap_or(&manifest).display(),
                 declared.len(),
                 files.len(),
                 missing
@@ -118,7 +137,7 @@ fn no_test_category_has_orphaned_files() {
     }
     assert!(
         offenders.is_empty(),
-        "orphaned test files detected (declared in no mod.rs, so never compiled/run):\n{}",
+        "orphaned test files detected (declared in no category manifest, so never compiled/run):\n{}",
         offenders.join("\n")
     );
 }

@@ -12,6 +12,14 @@ pub fn run(args: CalibrateArgs) -> Result<()> {
         .clone()
         .or_else(keyhog_core::calibration::default_cache_path)
         .context("could not resolve calibration cache path; pass --cache <PATH> explicitly")?;
+    if cache_path.is_dir() {
+        anyhow::bail!(
+            "calibration cache path '{}' is a directory. \
+             Fix: pass a file path such as '{}'.",
+            cache_path.display(),
+            cache_path.join("calibration.json").display()
+        );
+    }
 
     let calibration = Calibration::load(&cache_path);
 

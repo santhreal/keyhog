@@ -1,6 +1,6 @@
 //! Adversarial: watch --detectors pointing at a file must fail.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

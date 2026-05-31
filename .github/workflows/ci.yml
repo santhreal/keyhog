@@ -137,6 +137,14 @@ jobs:
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       - name: cli all_tests
         run: cargo test -p keyhog --test all_tests --profile release-fast
+      # Property (proptest) suite - its own bounded binary (was orphaned: empty
+      # property/mod.rs + missing proptest dep, so it never compiled or ran).
+      - name: cli property
+        run: cargo test -p keyhog --test property --profile release-fast
+      # Adversarial CLI suite - its own bounded binary because each test spawns
+      # keyhog; folding it into all_tests drove OOM/SIGKILL in CI.
+      - name: cli adversarial
+        run: cargo test -p keyhog --test adversarial --profile release-fast -- --test-threads=4
       # Detector-corpus integrity: every embedded detector must load, compile
       # into the scanner backend, declare a >=3-char keyword, carry metadata +
       # >=1 pattern, and the canonical-shape smoke set must fire. A detector

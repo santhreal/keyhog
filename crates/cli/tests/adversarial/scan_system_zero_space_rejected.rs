@@ -1,6 +1,6 @@
 //! Adversarial: scan-system --space 0 rejected.
 
-use crate::adversarial::support::{binary, workspace_detectors};
+use crate::support::{binary, workspace_detectors};
 use std::process::Command;
 
 #[test]

@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: completion rejects unknown shell name.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

@@ -1,6 +1,6 @@
 //! Adversarial: scan-system with unreadable detectors dir exits non-zero.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

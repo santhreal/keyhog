@@ -192,6 +192,10 @@ pub struct ScanSystemArgs {
     #[arg(long, default_value = "detectors")]
     pub detectors: PathBuf,
 
+    /// Number of parallel scanning threads (default: number of CPU cores).
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_thread_count)]
+    pub threads: Option<usize>,
+
     /// Apply hardening protections (mlocked + coredump-blocked) and
     /// refuse the operations that weaken detection or expand attack
     /// surface. See `keyhog scan --lockdown` for the full list.

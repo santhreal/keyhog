@@ -1,6 +1,6 @@
 //! Adversarial: scan-system lockdown + include-network must fail closed.
 
-use crate::adversarial::support::{binary, workspace_detectors};
+use crate::support::{binary, workspace_detectors};
 use std::process::Command;
 
 #[test]

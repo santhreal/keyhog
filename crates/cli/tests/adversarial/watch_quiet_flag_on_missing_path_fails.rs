@@ -1,6 +1,6 @@
 //! Adversarial: watch --quiet on missing path still fails fast.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

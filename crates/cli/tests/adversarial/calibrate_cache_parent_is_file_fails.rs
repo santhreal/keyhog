@@ -1,6 +1,6 @@
 //! Adversarial: calibrate --cache pointing at a directory/file mismatch fails.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -22,7 +22,9 @@ fn calibrate_cache_parent_is_file_fails() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        combined.contains("calibr") || combined.contains("cache") || combined.contains("Is a directory"),
+        combined.contains("calibr")
+            || combined.contains("cache")
+            || combined.contains("Is a directory"),
         "calibrate with directory cache path must fail; got: {combined}"
     );
 }

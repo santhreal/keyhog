@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: diff reports exit 1 when after has NEW entries.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

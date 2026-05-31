@@ -10,7 +10,7 @@ fn hook_install_subcommand_is_selected() {
         Some(Command::Hook { command }) => {
             assert!(matches!(
                 command,
-                keyhog::subcommands::hook::HookCommand::Install
+                keyhog::subcommands::hook::HookCommand::Install { .. }
             ));
         }
         other => panic!("expected Hook subcommand"),

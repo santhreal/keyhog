@@ -1,6 +1,6 @@
 //! Adversarial: daemon status with no server must exit 2.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

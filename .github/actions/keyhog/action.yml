@@ -295,7 +295,7 @@ runs:
       if: always() && steps.report-check.outputs.exists == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: keyhog-report-${{ github.job }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}
+        name: keyhog-report-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}
         path: ${{ steps.outfile.outputs.name }}
         if-no-files-found: warn
 

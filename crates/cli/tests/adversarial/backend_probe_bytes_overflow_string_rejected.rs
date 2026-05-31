@@ -1,6 +1,6 @@
 //! Adversarial: backend --probe-bytes non-numeric rejected at parse.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

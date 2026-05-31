@@ -1,6 +1,6 @@
 //! R5-T adversarial non-scan: calibrate show unknown detector exits 2.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

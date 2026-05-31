@@ -61,6 +61,9 @@ pub fn run(args: DiffArgs) -> Result<ExitCode> {
                 serde_json::to_value(&unchanged_entries)?
             },
             "summary": {
+                "new": new_entries.len(),
+                "resolved": resolved_entries.len(),
+                "unchanged": unchanged_entries.len(),
                 "new_count": new_entries.len(),
                 "resolved_count": resolved_entries.len(),
                 "unchanged_count": unchanged_entries.len(),

@@ -3,5 +3,5 @@
 #[cfg(unix)]
 #[test]
 fn invalid_utf8_filename_rejected_unix() {
-    crate::adversarial::support::oracle_invalid_utf8_filename_rejected();
+    crate::support::oracle_invalid_utf8_filename_rejected();
 }

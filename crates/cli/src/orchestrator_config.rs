@@ -141,6 +141,7 @@ pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
+    validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
         // The parse cache lives in the user's XDG cache dir, NOT inside the
         // detectors directory. A system install puts detectors under a
@@ -206,6 +207,7 @@ fn detector_cache_path(source_dir: &Path) -> Option<std::path::PathBuf> {
 /// Falls through to the embedded TOML corpus when no detectors dir
 /// exists, matching `load_detectors_with_cache`'s behaviour.
 pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
+    validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
         let loaded = load_detectors(path).map_err(anyhow::Error::from)?;
         require_non_empty_detectors(&loaded, path)?;
@@ -256,12 +258,33 @@ pub(crate) fn require_non_empty_detectors(
 // `pub` (was pub(crate)) so the relocated explain test loads the embedded
 // corpus through the same path production uses (no_inline_tests_in_src gate).
 pub fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+    validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
         let loaded = load_detectors(path).context("loading detectors from directory")?;
         require_non_empty_detectors(&loaded, path)?;
         return Ok(loaded);
     }
     load_detectors_embedded_or_fail(path)
+}
+
+fn validate_detector_path_for_scan(path: &Path) -> Result<()> {
+    if path.exists() && !path.is_dir() {
+        anyhow::bail!(
+            "detectors path '{}' is not a directory. \
+             Fix: pass a directory containing detector TOML files, or omit \
+             --detectors to use the embedded corpus.",
+            path.display()
+        );
+    }
+    if !path.exists() && path != Path::new("detectors") {
+        anyhow::bail!(
+            "detectors directory '{}' does not exist. \
+             Fix: pass an existing detector directory, or omit --detectors to \
+             use the embedded corpus.",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {

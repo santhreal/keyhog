@@ -1,6 +1,10 @@
 //! Shared helpers for adversarial CLI integration tests.
 
-pub use crate::e2e::support::{binary, run, scan_path, write_temp_file, workspace_detectors};
+#[path = "../e2e/support.rs"]
+#[allow(dead_code)]
+mod e2e_support;
+
+pub use e2e_support::{binary, workspace_detectors, write_temp_file};
 
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Barrier};
@@ -52,7 +56,10 @@ pub fn oracle_concurrent_four_scans_json() {
                 .stderr(Stdio::piped())
                 .output()
                 .expect("spawn");
-            (output.status.code(), String::from_utf8_lossy(&output.stdout).into_owned())
+            (
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+            )
         }));
     }
     for h in handles {

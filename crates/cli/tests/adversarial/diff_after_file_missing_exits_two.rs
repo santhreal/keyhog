@@ -1,6 +1,6 @@
 //! Adversarial: diff with missing after file exits 2.
 
-use crate::adversarial::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

@@ -131,6 +131,12 @@ impl FindingSink {
 }
 
 pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
+    if args.space == 0 {
+        anyhow::bail!("scan-system --space must be greater than zero bytes");
+    }
+    let hw = keyhog_scanner::hw_probe::probe_hardware();
+    crate::orchestrator_config::configure_threads(args.threads, hw.physical_cores);
+
     // kimi-wave3 §5: lockdown forbids --include-network on scan-system
     // because NFS/SMB/sshfs mounts host other tenants' data and a
     // scan-system run would walk straight through them.

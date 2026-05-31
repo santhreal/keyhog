@@ -1,6 +1,6 @@
 //! Adversarial: scan-system rejects unknown --space suffix.
 
-use crate::adversarial::support::{binary, workspace_detectors};
+use crate::support::{binary, workspace_detectors};
 use std::process::Command;
 
 #[test]

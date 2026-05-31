@@ -1,6 +1,6 @@
 //! Adversarial: non-numeric KEYHOG_THREADS must not abort startup.
 
-use crate::adversarial::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

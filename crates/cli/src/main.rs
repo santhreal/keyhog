@@ -179,6 +179,8 @@ async fn main() -> ExitCode {
                 // the EXIT_SCANNER_PANIC subcode (11) is the specific
                 // marker so CI can tell a panic from disk-full.
                 EXIT_SCANNER_PANIC
+            } else if error.chain().any(is_user_io_error) {
+                EXIT_USER_ERROR
             } else if error.chain().any(|e| e.is::<std::io::Error>()) {
                 EXIT_SYSTEM_ERROR
             } else {
@@ -187,6 +189,21 @@ async fn main() -> ExitCode {
             ExitCode::from(code)
         }
     }
+}
+
+fn is_user_io_error(error: &(dyn std::error::Error + 'static)) -> bool {
+    let Some(io) = error.downcast_ref::<std::io::Error>() else {
+        return false;
+    };
+    matches!(
+        io.kind(),
+        std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::PermissionDenied
+            | std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::InvalidInput
+            | std::io::ErrorKind::InvalidData
+            | std::io::ErrorKind::AlreadyExists
+    )
 }
 
 fn print_version_info() {

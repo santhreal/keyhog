@@ -1,6 +1,6 @@
 //! Adversarial: KEYHOG_BACKEND env is honored during scan dispatch.
 
-use crate::adversarial::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

@@ -2764,6 +2764,7 @@ dependencies = [
  "libc",
  "minisign-verify",
  "notify",
+ "proptest",
  "ratatui",
  "rayon",
  "regex",
