@@ -1,7 +1,7 @@
 //! Migrated from src/structured/parsers.rs
 
 use keyhog_scanner::testing::{
-    parse_docker_compose, parse_env, parse_jupyter, parse_k8s_secret, parse_tfstate,
+    parse_docker_compose, parse_env, parse_hcl, parse_jupyter, parse_k8s_secret, parse_tfstate,
 };
 
 /// `parse_env` round-trips simple KEY=VALUE lines and tracks line
@@ -196,4 +196,203 @@ stringData:
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].context, "token");
     assert_eq!(pairs[0].value, "my-plain-token");
+}
+
+/// Backtick-quoted env values get stripped of their wrapping quotes.
+#[test]
+fn env_backtick_quotes_are_stripped() {
+    let text = "API_KEY=`ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234`";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].context, "API_KEY");
+    assert_eq!(
+        pairs[0].value, "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234",
+        "backtick wrap must be removed, got {:?}",
+        pairs[0].value
+    );
+}
+
+/// Inline `# comment` after an unquoted value is dropped.
+#[test]
+fn env_inline_comment_is_stripped_for_unquoted_value() {
+    let text = "DB_PASS=p4ssw0rd # rotate quarterly";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].value, "p4ssw0rd");
+}
+
+/// A `#` inside a quoted value is part of the literal string.
+#[test]
+fn env_inline_comment_preserved_inside_quotes() {
+    let text = "PASSPHRASE=\"my#hard#pw # not-a-comment\"";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(
+        pairs[0].value, "my#hard#pw # not-a-comment",
+        "quoted body must be returned verbatim, hash and all"
+    );
+}
+
+/// A `#` with no preceding whitespace is part of the unquoted value.
+#[test]
+fn env_hash_without_whitespace_is_not_a_comment() {
+    let text = "URL_FRAG=https://example.com/foo#section";
+    let pairs = parse_env(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(
+        pairs[0].value, "https://example.com/foo#section",
+        "hash without leading space is part of the value"
+    );
+}
+
+/// Leading-`=` lines are skipped because they have no key context.
+#[test]
+fn env_leading_equals_skips_empty_key() {
+    let text = "=orphan_value\nVALID=ok";
+    let pairs = parse_env(text);
+    let keys: Vec<_> = pairs.iter().map(|p| p.context.as_str()).collect();
+    assert_eq!(keys, vec!["VALID"]);
+}
+
+/// HCL variable defaults emit the variable name and value pair.
+#[test]
+fn hcl_variable_default_extracts_pair() {
+    let text = r#"variable "datadog_api_key" {
+  type    = string
+  default = "c1cdaa22e7c59a95d7abcfc816bac151"
+}
+
+resource "null_resource" "deploy" {}
+"#;
+    let pairs = parse_hcl(text);
+    let dd: Vec<_> = pairs
+        .iter()
+        .filter(|p| p.context == "datadog_api_key")
+        .collect();
+    assert_eq!(
+        dd.len(),
+        1,
+        "expected exactly one datadog_api_key pair, got pairs={:?}",
+        pairs
+            .iter()
+            .map(|p| (&p.context, &p.value))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(dd[0].value, "c1cdaa22e7c59a95d7abcfc816bac151");
+    assert_eq!(
+        dd[0].line, 3,
+        "value lives on line 3 (default = ...), not the block header line"
+    );
+}
+
+/// Unquoted HCL defaults must not emit synthetic credential pairs.
+#[test]
+fn hcl_variable_default_unquoted_is_skipped() {
+    let text = r#"variable "enable_logging" {
+  type    = bool
+  default = true
+}
+"#;
+    let pairs = parse_hcl(text);
+    assert!(
+        pairs.iter().all(|p| p.context != "enable_logging"),
+        "unquoted bool default must NOT produce a pair, got {:?}",
+        pairs
+            .iter()
+            .map(|p| (&p.context, &p.value))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Flat tfvars assignments are captured as context/value pairs.
+#[test]
+fn hcl_flat_tfvars_assignment_extracts_pair() {
+    let text = r#"region          = "us-east-1"
+slack_webhook   = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+"#;
+    let pairs = parse_hcl(text);
+    let webhook: Vec<_> = pairs
+        .iter()
+        .filter(|p| p.context == "slack_webhook")
+        .collect();
+    assert_eq!(
+        webhook.len(),
+        1,
+        "expected one slack_webhook pair, got {:?}",
+        pairs
+            .iter()
+            .map(|p| (&p.context, &p.value))
+            .collect::<Vec<_>>()
+    );
+    assert!(webhook[0].value.starts_with("https://hooks.slack.com/"));
+}
+
+/// HCL block headers must not be parsed as flat assignments.
+#[test]
+fn hcl_resource_header_is_not_flat_assignment() {
+    let text = r#"resource "aws_iam_role" "ci" {
+  name = "ci-role"
+}
+"#;
+    let pairs = parse_hcl(text);
+    assert!(
+        pairs.iter().all(|p| p.context != "resource"),
+        "resource header must not produce a flat pair, got {:?}",
+        pairs
+            .iter()
+            .map(|p| (&p.context, &p.value))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Duplicate k8s `data:` payloads are attributed to their own key lines.
+#[test]
+fn k8s_duplicate_encoded_values_get_distinct_lines() {
+    let text = r#"apiVersion: v1
+kind: Secret
+metadata:
+  name: dup-test
+type: Opaque
+data:
+  primary: aGVsbG8=
+  backup: aGVsbG8=
+"#;
+    let pairs = parse_k8s_secret(text);
+    let primary = pairs
+        .iter()
+        .find(|p| p.context == "primary")
+        .expect("primary key expected");
+    let backup = pairs
+        .iter()
+        .find(|p| p.context == "backup")
+        .expect("backup key expected");
+    assert_eq!(primary.value, "hello");
+    assert_eq!(backup.value, "hello");
+    assert_ne!(
+        primary.line, backup.line,
+        "duplicate b64 payloads must land on different lines"
+    );
+    assert_eq!(primary.line, 7, "primary sits on line 7");
+    assert_eq!(backup.line, 8, "backup sits on line 8");
+}
+
+/// A GitLab PAT base64-wrapped in `data:` decodes to plaintext.
+#[test]
+fn k8s_data_decodes_glpat_token() {
+    use base64::Engine as _;
+
+    let pat = format!("{}-{}", "glpat", "FczMULYzu_vDI5jQiW9I");
+    let encoded = base64::engine::general_purpose::STANDARD.encode(pat.as_bytes());
+    let text = format!(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: secret-key-secret\ntype: Opaque\ndata:\n  secret-key: {encoded}\n"
+    );
+    let pairs = parse_k8s_secret(&text);
+    let secret = pairs
+        .iter()
+        .find(|p| p.context == "secret-key")
+        .expect("secret-key pair expected");
+    assert_eq!(
+        secret.value, pat,
+        "decoded value must equal the plaintext glpat token"
+    );
 }

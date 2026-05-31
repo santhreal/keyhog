@@ -903,3 +903,20 @@ Verified gates:
 - `cargo test -p keyhog-scanner --test all_tests vyre_usage -- --nocapture`
 - `cargo test -p keyhog-scanner --test all_tests resolution -- --nocapture`
 - `cargo test -p keyhog-scanner --test all_tests record_window_match -- --nocapture`
+
+## Executed Patch Set: Structured Parser Split
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- ARCHITECTURE: split `structured/parsers.rs` into `env`, `yaml`, `json`, `hcl`, and shared line-attribution modules with one re-export point.
+- INSUFFICIENCY: moved the remaining inline parser contracts into `crates/scanner/tests/unit/inline_migrated/parsers_inline.rs` and enabled the standalone structured parser test module.
+- COHERENCE: extended parser no-inline, no-unwrap, non-empty, and line-cap gates across the whole parser module tree instead of only the old monolith.
+- TESTING: preserved parser contracts for env comments/quotes, HCL defaults/tfvars/block headers, k8s duplicate base64 line attribution, docker-compose recursion, tfstate recursion, and Jupyter array source attribution.
+
+Verified gates:
+
+- `cargo fmt -p keyhog-scanner`
+- `cargo test -p keyhog-scanner --test all_tests structured_parsers -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests parsers_inline -- --nocapture`

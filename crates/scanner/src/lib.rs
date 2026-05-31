@@ -265,6 +265,6 @@ pub mod testing {
     };
 
     pub use crate::structured::parsers::{
-        parse_docker_compose, parse_env, parse_jupyter, parse_k8s_secret, parse_tfstate,
+        parse_docker_compose, parse_env, parse_hcl, parse_jupyter, parse_k8s_secret, parse_tfstate,
     };
 }

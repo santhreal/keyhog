@@ -46,7 +46,10 @@ fn parse_env_comment_lines_excluded() {
 fn parse_env_blank_lines_excluded() {
     let text = "\n\n\nFOO=bar\n\n";
     let pairs = parse_env(text);
-    assert!(!pairs.is_empty(), "non-empty .env with a pair should produce results");
+    assert!(
+        !pairs.is_empty(),
+        "non-empty .env with a pair should produce results"
+    );
 }
 
 #[test]
@@ -88,7 +91,9 @@ services:
     let pairs = parse_docker_compose(text);
     // Should extract the API_KEY pair
     assert!(
-        pairs.iter().any(|p| p.value.contains("fake_docker_secret_value")),
+        pairs
+            .iter()
+            .any(|p| p.value.contains("fake_docker_secret_value")),
         "docker-compose env value must be extracted"
     );
 }
@@ -113,9 +118,7 @@ fn parse_k8s_secret_base64_data_extracted() {
     // Kubernetes secrets store values as base64
     use base64::Engine;
     let b64_val = base64::engine::general_purpose::STANDARD.encode(b"fake_k8s_secret_value");
-    let text = format!(
-        "apiVersion: v1\nkind: Secret\ndata:\n  my-key: {b64_val}\n"
-    );
+    let text = format!("apiVersion: v1\nkind: Secret\ndata:\n  my-key: {b64_val}\n");
     let pairs = parse_k8s_secret(&text);
     // Should extract and decode the base64 value
     assert!(
@@ -159,7 +162,9 @@ fn parse_tfstate_sensitive_attributes_extracted() {
     // Should extract the sensitive attribute
     if !pairs.is_empty() {
         assert!(
-            pairs.iter().any(|p| p.value.contains("fake_tf_secret_value")),
+            pairs
+                .iter()
+                .any(|p| p.value.contains("fake_tf_secret_value")),
             "tfstate sensitive attribute must be extracted"
         );
     }
@@ -192,7 +197,9 @@ fn parse_jupyter_code_cell_with_assignment_extracted() {
     // Should extract the assignment from the notebook cell
     if !pairs.is_empty() {
         assert!(
-            pairs.iter().any(|p| p.value.contains("fake_notebook_secret_value")),
+            pairs
+                .iter()
+                .any(|p| p.value.contains("fake_notebook_secret_value")),
             "Jupyter code cell secret must be extracted"
         );
     }
