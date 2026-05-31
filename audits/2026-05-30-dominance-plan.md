@@ -1726,3 +1726,16 @@ Vector coverage:
 Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+
+## Executed Patch Set: Homefield Corpus Neutral Scan Root
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: competitor homefield corpora now follow the same `manifest.jsonl` beside neutral `corpus/` scan-tree contract as mirror.
+- TESTING: added a homefield corpus test proving scanners see only the neutral scan tree and not the answer key.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
