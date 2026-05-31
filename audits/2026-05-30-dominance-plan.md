@@ -959,7 +959,7 @@ Vector coverage:
 - SPEED: GPU phase2 now skips `prepare_chunk`, `scan_prepared_with_pattern_hits`, and `post_process_matches` for empty-hit chunks that do not need fallback scanning.
 - COHERENCE: the GPU no-hit admission policy now mirrors SIMD coalesced routing: multiline split-secret indicators, assignment keywords, known secret prefixes, or long entropy runs still route through fallback scanning.
 - TESTING: added a scanner gap gate that proves the empty-hit check happens before `prepare_chunk` and keeps the keyword/entropy admission policy wired.
-- AUDIT HUNTS: captured the remaining forced-GPU red gate separately; `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` fails because runtime GPU dispatch degrades before parity assertions, while `keyhog backend --self-test` passes on the RTX 5090.
+- AUDIT HUNTS: captured the forced-GPU red gate separately; `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` fails because runtime GPU dispatch degrades before parity assertions. Current `keyhog backend --self-test` exits 4 on the RTX 5090 when the AC path degrades on degenerate Vyre match triples.
 
 Verified gates:
 
@@ -998,7 +998,7 @@ Vector coverage:
 - SPEED: keeps the AC cheap-filter bounded to one regex `is_match` per candidate pid while avoiding repeated window probes for the same pid.
 - CAPABILITY: aligns GPU root confirmation with SIMD trigger semantics by evaluating detector regexes over the whole prepared chunk before precise extraction, preventing narrow-window misses for wider-context detector regexes; GPU phase-1 also ASCII-folds literals and coalesced haystacks so lowercase detector anchors match uppercase source occurrences the way Hyperscan's caseless path does.
 - COHERENCE: the implementation now matches the existing code comments that described whole-chunk, position-independent confirmation.
-- TESTING: GPU self-test passed on the RTX 5090; the StackBlitz GPU recall narrow-window test ran but skipped its corpus-dependent assertion because the local bench corpus file is absent; added and ran a real-binary GPU/SIMD parity integration gate for far-offset and caseless literal-prefix regressions.
+- TESTING: the StackBlitz GPU recall narrow-window test ran but skipped its corpus-dependent assertion because the local bench corpus file is absent; added and ran a real-binary GPU/SIMD parity integration gate for far-offset and caseless literal-prefix regressions. Current full GPU self-test status is recorded in the required-GPU gate entry below.
 - AUDIT HUNTS: the known forced-GPU synthetic parity gate still hard-fails before assertions with runtime GPU dispatch degradation, so the red gate remains recorded.
 
 Verified gates:

@@ -239,7 +239,7 @@ fn run_self_test() -> Result<ExitCode> {
             if known_lowering_gap {
                 println!(
                     "\x1b[33mKNOWN\x1b[0m vyre IR lowering rejects literal_set's subgroup form; \
-                     scans use the AC kernel instead (works on this box)."
+                     scans use the AC kernel path checked below."
                 );
             } else {
                 println!("\x1b[31mFAIL\x1b[0m  {error}");

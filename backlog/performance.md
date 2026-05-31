@@ -273,7 +273,8 @@ real tree. Items carry the data that proves them.
   assignment keywords, known secret prefixes, or a long entropy run. Static
   regression gate added; forced `gpu_parity` remains a separate red gate
   because the runtime GPU dispatch currently hard-fails under
-  `KEYHOG_REQUIRE_GPU=1` even though `keyhog backend --self-test` passes.
+  `KEYHOG_REQUIRE_GPU=1`; current `keyhog backend --self-test` exits 4 when
+  the AC path degrades on degenerate Vyre match triples.
   UPDATE 2026-05-30 (head-to-head, current binary, RTX 5090 host): the
   phase2 no-hit gate helped (300 s → 204 s) but GPU-default is STILL the
   worst path on the kernel on every axis:
