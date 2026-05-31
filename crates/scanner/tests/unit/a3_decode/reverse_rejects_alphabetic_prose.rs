@@ -5,10 +5,7 @@ use keyhog_scanner::decode::decode_chunk;
 
 #[test]
 fn alphabetic_prose_emits_no_reverse_chunks() {
-    for text in [
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        "0123456789abcdefghijklmnopqr",
-    ] {
+    for text in ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0123456789abcdefghijklmnopqr"] {
         let chunk = Chunk {
             data: text.into(),
             metadata: Default::default(),

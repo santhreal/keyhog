@@ -20,6 +20,9 @@ fn rust_source_comment_produces_no_caesar_chunks() {
             .iter()
             .all(|c| !c.metadata.source_type.contains("/caesar")),
         "Caesar decoder must not run on .rs source files; got {:?}",
-        decoded.iter().map(|c| &c.metadata.source_type).collect::<Vec<_>>()
+        decoded
+            .iter()
+            .map(|c| &c.metadata.source_type)
+            .collect::<Vec<_>>()
     );
 }

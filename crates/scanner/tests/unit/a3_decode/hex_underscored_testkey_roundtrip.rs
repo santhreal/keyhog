@@ -7,7 +7,10 @@ const VALID_CREDENTIAL: &str = "TESTKEY_aK7xP9mQ2wE5rT8yU1iO";
 
 #[test]
 fn underscored_testkey_hex_decodes_to_credential() {
-    let hex: String = VALID_CREDENTIAL.bytes().map(|b| format!("{b:02x}")).collect();
+    let hex: String = VALID_CREDENTIAL
+        .bytes()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     let underscored = hex
         .as_bytes()
         .chunks(4)

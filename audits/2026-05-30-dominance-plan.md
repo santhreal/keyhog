@@ -1541,3 +1541,18 @@ Verified commands:
 - `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd keyhog scan --no-daemon --format json --output /tmp/keyhog-amd-include-simd.json /mnt/FlareTraining/santh-corpus/repos/linux/drivers/gpu/drm/amd/include`
 - `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=cpu keyhog scan --no-daemon --format json --output /tmp/keyhog-amd-include-cpu.json /mnt/FlareTraining/santh-corpus/repos/linux/drivers/gpu/drm/amd/include`
 - `diff -u /tmp/keyhog-amd-include-simd.sorted.json /tmp/keyhog-amd-include-cpu.sorted.json`
+
+## Executed Measurement: Required-GPU Parity Gate Status
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- TESTING: reran the hard required-GPU parity gate after the AC recall and decode-attribution fixes.
+- COHERENCE: recorded that the red gate is a runtime GPU dispatch degradation before assertions, not a SIMD/GPU finding-set mismatch.
+- RESEARCH: the committed GPU route still fails before parity assertions, so the blocker remains in Vyre dispatch soundness.
+
+Observed gates:
+
+- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` exits 2 with `literals=true, backend=true, matcher=true`.
+- `cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` passes only by emitting the runtime GPU-degrade warning and falling back to SIMD/CPU.
