@@ -66,12 +66,35 @@ def scan_roots(file_paths: list[pathlib.Path]) -> list[pathlib.Path]:
 
 # ── measured subprocess ───────────────────────────────────────────────
 
-_GNU_TIME = shutil.which("gtime") or "/usr/bin/time"
+def _find_gnu_time() -> str | None:
+    candidates = [shutil.which("gtime"), "/usr/bin/time"]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = pathlib.Path(candidate)
+        if not path.exists():
+            continue
+        try:
+            completed = subprocess.run(
+                [str(path), "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if "GNU" in f"{completed.stdout}\n{completed.stderr}":
+            return str(path)
+    return None
+
+
+_GNU_TIME = _find_gnu_time()
 _RSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
 
 
 def _has_gnu_time() -> bool:
-    return pathlib.Path(_GNU_TIME).exists() or shutil.which("gtime") is not None
+    return _GNU_TIME is not None
 
 
 def run_measured(
@@ -94,6 +117,7 @@ def run_measured(
         rss_file = tempfile.NamedTemporaryFile(
             mode="r", suffix=".time", delete=False)
         rss_file.close()
+        assert _GNU_TIME is not None
         run_cmd = [_GNU_TIME, "-v", "-o", rss_file.name, *cmd]
 
     rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
