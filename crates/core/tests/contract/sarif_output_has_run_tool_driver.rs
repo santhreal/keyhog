@@ -15,7 +15,7 @@ fn sample_finding() -> VerifiedFinding {
         service: "oracle".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****"),
-        credential_hash: "deadbeef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.env".into()),

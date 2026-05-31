@@ -49,6 +49,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Union canonical CPU AC trigger roots into GPU phase 2 before extraction so admitted GPU chunks cannot under-trigger raw detectors relative to the scanner's case-insensitive literal set.
 - Treat nearby decoded-source duplicates as aliases during dedup so `filesystem/json` views do not displace the original file location when both represent the same credential.
 - Skip Caesar decoding for source/config paths such as `Kconfig`, `Makefile`, `.tbl`, `.mk`, and `.cmake`, preventing ROT-N false positives from kernel config and syscall-table text.
+- Bring the core unified test harness back onto the raw `[u8; 32]` credential-hash contract and move CSV/HTML/JUnit reporter tests out of `src`, restoring `keyhog-core --test all_tests`.
 - Tighten the Azure Container Registry username pattern so `ACR_USER 0x00000000` C register constants do not report as credentials.
 - Remove the dead fragment-cache `shard_index` wrapper so production keeps only the allocation-free slice-pair shard path.
 - Lower the AWS secret-access-key detector confidence floor for anchored `AWS_SECRET_ACCESS_KEY`-style assignments so valid 40-character bodies are not dropped below the global floor.

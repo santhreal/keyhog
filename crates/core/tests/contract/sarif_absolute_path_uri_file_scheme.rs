@@ -1,4 +1,6 @@
-use keyhog_core::{MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -9,7 +11,7 @@ fn synthetic_finding() -> VerifiedFinding {
         service: "test".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****redacted"),
-        credential_hash: "abcdefabcdefabcdef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.env".into()),
@@ -37,6 +39,8 @@ fn sarif_absolute_path_uri_uses_file_scheme() {
         r.finish().expect("finish");
     }
     let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
-    let loc_uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"].as_str();
+    let loc_uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+        ["artifactLocation"]["uri"]
+        .as_str();
     assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
 }

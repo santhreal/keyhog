@@ -11,7 +11,7 @@ fn synthetic_finding() -> VerifiedFinding {
         service: "test".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****redacted"),
-        credential_hash: "abcdefabcdefabcdef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.env".into()),

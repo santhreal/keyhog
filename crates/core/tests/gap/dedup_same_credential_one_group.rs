@@ -6,8 +6,10 @@ use std::collections::HashMap;
 
 const CREDENTIAL: &str = "secret-alpha";
 const DETECTOR: &str = "oracle-detector";
-const EXPECTED_CREDENTIAL_HASH: &str =
-    "64ecef5aac3a8511ce62357b4b861d7367364103373201727fee8420c68b79e7";
+const EXPECTED_CREDENTIAL_HASH: [u8; 32] = [
+    0x64, 0xec, 0xef, 0x5a, 0xac, 0x3a, 0x85, 0x11, 0xce, 0x62, 0x35, 0x7b, 0x4b, 0x86, 0x1d, 0x73,
+    0x67, 0x36, 0x41, 0x03, 0x37, 0x32, 0x01, 0x72, 0x7f, 0xee, 0x84, 0x20, 0xc6, 0x8b, 0x79, 0xe7,
+];
 
 fn sample_match(path: &str, offset: usize) -> RawMatch {
     RawMatch {
@@ -16,7 +18,7 @@ fn sample_match(path: &str, offset: usize) -> RawMatch {
         service: "oracle".into(),
         severity: Severity::High,
         credential: CREDENTIAL.into(),
-        credential_hash: format!("stale-hash-{path}"),
+        credential_hash: [0; 32],
         companions: HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),

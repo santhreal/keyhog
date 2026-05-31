@@ -15,7 +15,7 @@ fn finding(
         service: Arc::from(service),
         severity: sev,
         credential_redacted: std::borrow::Cow::Borrowed("REDACTED"),
-        credential_hash: hash.to_string(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),

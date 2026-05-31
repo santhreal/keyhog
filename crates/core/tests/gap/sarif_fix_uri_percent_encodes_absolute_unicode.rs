@@ -1,7 +1,9 @@
 //! SARIF `fixes[].artifactChanges[].artifactLocation.uri` must percent-encode
 //! absolute unicode paths the same way as result `locations[]` URIs.
 
-use keyhog_core::{MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -12,7 +14,7 @@ fn synthetic_finding(path: &str) -> VerifiedFinding {
         service: "test".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****redacted"),
-        credential_hash: "abcdefabcdefabcdef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some(path.into()),

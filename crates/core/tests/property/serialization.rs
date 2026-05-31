@@ -17,7 +17,7 @@ proptest! {
             service: serv.clone().into(),
             severity: Severity::High,
             credential_redacted: Cow::Owned(cred.clone()),
-            credential_hash: "hash".to_string(),
+            credential_hash: [0; 32],
             location: MatchLocation {
                 source: "fs".into(),
                 file_path: Some("a.txt".into()),

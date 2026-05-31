@@ -1,6 +1,8 @@
 //! Contract: JSONL reporter emits one parseable object per finding line.
 
-use keyhog_core::{JsonlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    JsonlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -11,8 +13,16 @@ fn sample() -> VerifiedFinding {
         service: "test".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****"),
-        credential_hash: "abc".into(),
-        location: MatchLocation { source: "fs".into(), file_path: Some("a.env".into()), line: Some(1), offset: 0, commit: None, author: None, date: None },
+        credential_hash: [0; 32],
+        location: MatchLocation {
+            source: "fs".into(),
+            file_path: Some("a.env".into()),
+            line: Some(1),
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: vec![],

@@ -11,7 +11,7 @@ fn synthetic_finding() -> VerifiedFinding {
         service: Arc::from("test"),
         severity: Severity::High,
         credential_redacted: std::borrow::Cow::Borrowed("****redacted"),
-        credential_hash: "abcdefabcdefabcdef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config.env")),

@@ -11,7 +11,7 @@ fn sample_finding() -> VerifiedFinding {
         service: "slack".into(),
         severity: Severity::Critical,
         credential_redacted: Cow::Borrowed("xoxb***************"),
-        credential_hash: "".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.py".into()),

@@ -15,10 +15,13 @@ fn raw_hash_lookup_with_non_ascii_64_bytes_returns_false_not_panic() {
     // 62 ASCII hex chars + one 2-byte UTF-8 char 'é' = 64 bytes, 63 chars.
     // Odd-offset multibyte boundary is exactly the panic trigger.
     let needle = format!("{}{}", "a".repeat(61), "é"); // 61 + 2 bytes = 63... extend.
-    // Build a value that is exactly 64 bytes long and not pure-ASCII.
+                                                       // Build a value that is exactly 64 bytes long and not pure-ASCII.
     let value = format!("{}é", "b".repeat(62)); // 62 + 2 = 64 bytes.
     assert_eq!(value.len(), 64, "test fixture must be 64 bytes");
-    assert!(!value.is_char_boundary(63), "fixture must have an odd-offset multibyte char");
+    assert!(
+        !value.is_char_boundary(63),
+        "fixture must have an odd-offset multibyte char"
+    );
 
     let allowlist = Allowlist::parse("");
     // Must not panic and must not be considered an ignored hash.

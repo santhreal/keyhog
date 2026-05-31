@@ -12,13 +12,6 @@ pub mod sarif_uri;
 
 pub mod banner;
 
-// Shared reporter test fixtures. Declared unconditionally here (the
-// `report_no_inline_tests` gate forbids any test-config attribute token in
-// this file); the module file itself is gated as test-only via an inner
-// attribute, so it compiles to nothing outside test builds. See
-// `report/test_support.rs`.
-mod test_support;
-
 use std::io::Write;
 
 use crate::VerifiedFinding;
