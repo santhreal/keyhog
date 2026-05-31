@@ -562,8 +562,12 @@ impl ScanOrchestrator {
         // cost. The drain thread only groups chunks + enforces the 512 MiB
         // ceiling; merkle hashing + scanning run in parallel in the consumer.
         //
-        const FUSED_BATCH: usize = 128;
-        const FUSED_DEPTH: usize = 128;
+        // Measured flat optimum on small-file filesystem corpora: finer
+        // batches keep the outer parallel bridge balanced while bounding
+        // in-flight chunk memory; deeper buffering lets the drain thread stay
+        // ahead without exposing operator-facing knobs.
+        const FUSED_BATCH: usize = 16;
+        const FUSED_DEPTH: usize = 256;
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(FUSED_DEPTH);
         let drain = std::thread::spawn(move || {
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(FUSED_BATCH);
