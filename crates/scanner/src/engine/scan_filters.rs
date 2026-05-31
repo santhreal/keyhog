@@ -136,7 +136,8 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
-/// Single-pass scan for a contiguous run of base62 (alphanumeric) bytes
+/// Single-pass scan for a contiguous run of base62-style bytes (including
+/// common secret-token separators).
 /// of length >= `MIN_ENTROPY_RUN`. The keyword-gated fallback drop in
 /// `scan_coalesced` (no-HS-hit branch) historically required the chunk
 /// to contain a generic-assignment / secret keyword before routing
@@ -157,7 +158,7 @@ pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
     const MIN_ENTROPY_RUN: usize = 32;
     let mut run = 0usize;
     for &b in data {
-        if b.is_ascii_alphanumeric() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'+' | b'/' | b'=') {
             run += 1;
             if run >= MIN_ENTROPY_RUN {
                 return true;

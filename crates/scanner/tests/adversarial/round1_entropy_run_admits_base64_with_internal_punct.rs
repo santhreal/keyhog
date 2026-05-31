@@ -126,3 +126,28 @@ fn short_alnum_with_plus_does_not_create_phantom_finding() {
         "8-char short body must not produce a phantom credential finding"
     );
 }
+
+#[test]
+fn separator_only_run_without_keywords_is_admitted() {
+    const TOKEN_CHARS: &[u8] = b"Ab1QwZy0+_/=";
+    let mut token = String::with_capacity(72);
+    for i in 0..56 {
+        token.push(TOKEN_CHARS[(i * 7) % TOKEN_CHARS.len()] as char);
+        if i % 14 == 13 {
+            token.push(if i % 3 == 0 { '-' } else { '_' });
+        }
+    }
+
+    let matches = scan(format!("cfg: {token}\n"));
+    let surfaced = matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(&token));
+    assert!(
+        surfaced,
+        "punctuation-separated high-entropy run should be admitted via entropy-run gate without keyword anchors; token={token} matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}

@@ -1,10 +1,10 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
-use super::ScanOrchestrator;
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{
     dump_dogfood_trace, report_completion_summary, report_oversize_skip_summary,
 };
+use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::orchestrator_config::print_effective_config_if_requested;
 use anyhow::Result;
@@ -300,7 +300,7 @@ impl ScanOrchestrator {
         if show_progress {
             report_completion_summary(report_findings.len(), elapsed, progress_ansi);
         } else {
-            report_oversize_skip_summary();
+            report_oversize_skip_summary(false);
         }
         dump_dogfood_trace();
 
