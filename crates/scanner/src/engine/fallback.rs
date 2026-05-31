@@ -145,6 +145,12 @@ impl CompiledScanner {
     }
 
     pub(crate) fn has_active_fallback_patterns_for_chunk(&self, data: &str) -> bool {
+        if self.fallback.is_empty() {
+            return false;
+        }
+        if !self.fallback_always_active_indices.is_empty() || self.fallback_keyword_ac.is_none() {
+            return true;
+        }
         self.with_active_fallback_patterns(data, |_, active_patterns| !active_patterns.is_empty())
     }
 
