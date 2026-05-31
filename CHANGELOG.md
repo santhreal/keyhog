@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### CI / GitHub Action
 
+- Make the composite GitHub Action fail closed when KeyHog exits cleanly without writing the requested report, and expose `duration-ms` in the Action outputs and job summary for CI performance tracking.
 - Move the composite Action scan/count/summary path into a tested local script, validate `format`/`severity`/`verify` before scanner invocation, expose the raw `exit-code` output, sanitize job-summary cells, and count text reports by the stable `Secret:` field instead of a non-portable box-drawing grep.
 - Validate `fail-on-findings` and `upload-sarif` in the same tested scan script before invoking KeyHog, escape untrusted values in GitHub workflow commands, and surface live-verification parse failures as nonzero findings instead of clean CI output.
 - Route composite Action shell inputs and step outputs through environment variables instead of direct bash interpolation, and validate the resolved version before writing it to `GITHUB_OUTPUT`.
