@@ -8,6 +8,7 @@
 - Move WebSource SSRF/redaction/DNS-pinning helpers into `web/ssrf.rs`, bringing `web.rs` under the 500-line modularity target.
 - Move filesystem per-entry extraction into `filesystem/extract.rs` and walker/filter policy into `filesystem/filter.rs`, bringing `filesystem.rs` under the 500-line modularity target and wiring the zip archive skip-list regression into the aggregate source tests.
 - Fix HTTP property-test env isolation, split 10k-case policy fuzzing from bounded reqwest builder/client smoke fuzzing, and use direct proptest regression files for HTTP/filesystem property tests so aggregate source gates run without `http_fuzz` skips.
+- Run filesystem reading on a dedicated Rayon pool so bounded-channel backpressure cannot starve scanner work on the global Rayon pool during large-tree scans.
 
 ## 0.2.1
 

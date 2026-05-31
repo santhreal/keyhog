@@ -920,3 +920,20 @@ Verified gates:
 - `cargo fmt -p keyhog-scanner`
 - `cargo test -p keyhog-scanner --test all_tests structured_parsers -- --nocapture`
 - `cargo test -p keyhog-scanner --test all_tests parsers_inline -- --nocapture`
+
+## Executed Patch Set: Filesystem Reader Deadlock Fix
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- SPEED: fixed the large-tree scan hang by moving filesystem reader `par_bridge` work off the global Rayon pool used by scanner `par_iter`.
+- ARCHITECTURE: kept source reading and scanner execution as separate scheduling domains; bounded-channel backpressure remains, but it can no longer starve the scanner workers that drain the channel.
+- DOGFOODING: reran the real Linux kernel corpus scan with SIMD forced; the release binary completed in 93.52s wall, peak RSS 2.2GB, 22 findings, exit 1 for findings.
+- INTROSPECTION: recorded the remaining scale bottlenecks in `backlog/performance.md`: GPU wait bounding, reader throughput, GPU phase2 cheap-reject parity, and runtime sizing.
+
+Verified gates:
+
+- `cargo test -p keyhog-sources --test all_tests filesystem -- --nocapture`
+- `cargo test -p keyhog-sources --test all_tests gap:: -- --nocapture`
+- `timeout 180s env KEYHOG_NO_GPU=1 /mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend simd --no-daemon --format json --output /tmp/keyhog-kernel-scan.json /mnt/FlareTraining/santh-corpus/repos/linux`

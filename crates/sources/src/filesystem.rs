@@ -280,6 +280,32 @@ impl Source for FilesystemSource {
         // (ignore::WalkBuilder::build_parallel); the gap was never
         // throughput, it was concurrency.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
+
+        // DEADLOCK FIX (large-tree scan hang). The reader below uses
+        // `par_bridge()`, and each task BLOCKS on `tx.send` once the bounded
+        // channel (64) fills - that backpressure is intentional. The hazard
+        // is the POOL it runs on. Previously this spawned thread had no rayon
+        // context, so `par_bridge` ran on the GLOBAL pool - the SAME pool the
+        // downstream scanner uses for `scan_coalesced` (`chunks.par_iter()`).
+        // On a large tree the pipeline saturates: every global worker parks in
+        // `send` (channel full), so the scanner's `par_iter` can never get a
+        // worker to do the scanning that would drain the channel and release
+        // the readers. Reader-blocks-on-send and scanner-needs-worker form a
+        // cycle and the whole scan deadlocks (all threads parked in futex at
+        // ~0% CPU). Small trees drain before full saturation, which is why the
+        // SecretBench mirror never exposed it but the Linux kernel (94k files)
+        // hangs every time, under both the SIMD and GPU backends.
+        //
+        // Running the reader on a DEDICATED pool breaks the cycle: the reader
+        // threads may all park in `send`, but the global pool stays free for
+        // the scanner, which drains the channel, which unblocks the readers.
+        // If the dedicated pool can't be built we fall back to the global pool
+        // (degrading to the old behaviour) rather than failing the scan.
+        let reader_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(std::cmp::max(2, rayon::current_num_threads()))
+            .thread_name(|i| format!("keyhog-reader-{i}"))
+            .build()
+            .ok();
         std::thread::spawn(move || {
             use rayon::iter::{ParallelBridge, ParallelIterator};
             // `par_bridge()` pulls entries from the lazy walk iterator on
@@ -294,25 +320,33 @@ impl Source for FilesystemSource {
             // old `.with_min_len(64)` floor. The bridge splits shallowly off
             // a single producer, so the stack stays bounded for any corpus
             // size without a grain knob.
-            entries.par_bridge().for_each_with(tx, |tx, entry| {
-                // `emit` returns false once the receiver is gone (scan
-                // cancelled / orchestrator shut down); `process_entry`
-                // stops producing the moment that happens instead of
-                // churning chunks no one will read. Emitting through a
-                // callback (rather than returning a Vec) keeps the
-                // windowed-file path streaming - one window's String is
-                // resident at a time, not the whole file.
-                let mut emit = |chunk: Result<Chunk, SourceError>| tx.send(chunk).is_ok();
-                process_entry(
-                    entry,
-                    &merkle,
-                    &skipped,
-                    max_size,
-                    window_size,
-                    window_overlap,
-                    &mut emit,
-                );
-            });
+            let pump = move || {
+                entries.par_bridge().for_each_with(tx, |tx, entry| {
+                    // `emit` returns false once the receiver is gone (scan
+                    // cancelled / orchestrator shut down); `process_entry`
+                    // stops producing the moment that happens instead of
+                    // churning chunks no one will read. Emitting through a
+                    // callback (rather than returning a Vec) keeps the
+                    // windowed-file path streaming - one window's String is
+                    // resident at a time, not the whole file.
+                    let mut emit = |chunk: Result<Chunk, SourceError>| tx.send(chunk).is_ok();
+                    process_entry(
+                        entry,
+                        &merkle,
+                        &skipped,
+                        max_size,
+                        window_size,
+                        window_overlap,
+                        &mut emit,
+                    );
+                });
+            };
+            // Run the reader on the dedicated pool so it cannot starve the
+            // scanner's global-pool `par_iter` (see DEADLOCK FIX above).
+            match reader_pool {
+                Some(pool) => pool.install(pump),
+                None => pump(),
+            }
         });
 
         Box::new(rx.into_iter())
