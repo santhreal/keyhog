@@ -19,6 +19,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Remove an unconditional 16-match vector reserve from the no-Hyperscan-hit fallback path; chunks that pass fallback plausibility gates but produce no matches now stay allocation-free until reassembly has real work.
 - Increase fused filesystem coalesced batches from 16 to 32 chunks after same-host CredData measurement showed better nested phase amortization without the RSS regression seen at 64 chunks.
 - Warm runtime regexes used by generic-assignment fallback, multiline reassembly, shared assignment parsing, and Slack checksum validation during the existing scanner warm-up instead of compiling them inside scan workers on the first matching batch.
+- Gate no-Hyperscan-hit bare-entropy admission on the same path/config policy as the entropy fallback, avoiding source-file prepare/fallback work when `entropy_in_source_files=false` while preserving bare entropy recall in config/secret files.
 
 ### Detection
 

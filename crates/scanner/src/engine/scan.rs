@@ -259,16 +259,24 @@ impl CompiledScanner {
                     // this, that category sat at recall 0.36 on the
                     // SecretBench mirror; the entropy fallback never
                     // saw the chunk because no keyword admitted it.
-                    // Hash/UUID FPs are still suppressed downstream by
-                    // looks_like_hash_digest / is_uuid_v4_shape, so the
-                    // wider gate trades pipeline cost for recall, not
-                    // FPs. Cost cap stays at 32 KB so monorepo scans
-                    // (gitlabhq, etc.) don't pay per-chunk fallback
-                    // walks on >32 KB source files.
+                    //
+                    // Keep this gate aligned with scan_entropy_fallback's
+                    // own path/config admission. A high-entropy run inside
+                    // `src/*.rs` cannot produce an entropy finding when
+                    // `entropy_in_source_files=false`, so admitting that
+                    // chunk only pays prepare/fallback/generic work before
+                    // entropy immediately returns.
+                    let data = chunk.data.as_bytes();
+                    let entropy_admits = self.config.entropy_enabled
+                        && crate::entropy::is_entropy_appropriate(
+                            chunk.metadata.path.as_deref(),
+                            self.config.entropy_in_source_files,
+                        )
+                        && has_high_entropy_run_fast(data);
                     if chunk.data.len() <= 32 * 1024
-                        && (has_generic_assignment_keyword(chunk.data.as_bytes())
-                            || has_secret_keyword_fast(chunk.data.as_bytes())
-                            || has_high_entropy_run_fast(chunk.data.as_bytes()))
+                        && (has_generic_assignment_keyword(data)
+                            || has_secret_keyword_fast(data)
+                            || entropy_admits)
                     {
                         // KH perf: this is a no-HS-hit chunk - phase 1
                         // already ran the Hyperscan automaton over these

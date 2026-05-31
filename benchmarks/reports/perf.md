@@ -8,6 +8,6 @@
 | KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.94s | 1.2 MB/s | 1077 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.53s | 0.9 MB/s | 117 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | creddata | 4.02s | 241.3 MB/s | 1807 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.95s | 246.1 MB/s | 2035 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.88s | 0.5 MB/s | 421 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | creddata | 8.13s | 119.4 MB/s | 657 MB |
