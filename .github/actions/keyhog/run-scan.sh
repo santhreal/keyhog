@@ -7,11 +7,33 @@ format="${KEYHOG_FORMAT:-sarif}"
 report="${KEYHOG_OUTPUT:-keyhog-results.sarif}"
 verify="${KEYHOG_VERIFY:-false}"
 baseline="${KEYHOG_BASELINE:-}"
+fail_on_findings="${KEYHOG_FAIL_ON_FINDINGS:-true}"
+upload_sarif="${KEYHOG_UPLOAD_SARIF:-true}"
+
+gha_escape() {
+  local value="$1"
+  value="${value//%/%25}"
+  value="${value//$'\r'/%0D}"
+  value="${value//$'\n'/%0A}"
+  printf '%s' "$value"
+}
+
+gha_error() {
+  printf '::error title=KeyHog::%s\n' "$(gha_escape "$1")"
+}
+
+gha_warning() {
+  printf '::warning title=KeyHog::%s\n' "$(gha_escape "$1")"
+}
+
+gha_notice() {
+  printf '::notice title=KeyHog::%s\n' "$(gha_escape "$1")"
+}
 
 case "$severity" in
   info | low | medium | high | critical) ;;
   *)
-    echo "::error title=KeyHog::Invalid severity '$severity'. Use one of: info, low, medium, high, critical."
+    gha_error "Invalid severity '$severity'. Use one of: info, low, medium, high, critical."
     exit 2
     ;;
 esac
@@ -19,7 +41,7 @@ esac
 case "$format" in
   sarif | json | jsonl | text) ;;
   *)
-    echo "::error title=KeyHog::Invalid format '$format'. Use one of: sarif, json, jsonl, text."
+    gha_error "Invalid format '$format'. Use one of: sarif, json, jsonl, text."
     exit 2
     ;;
 esac
@@ -27,7 +49,23 @@ esac
 case "$verify" in
   true | false) ;;
   *)
-    echo "::error title=KeyHog::Invalid verify '$verify'. Use 'true' or 'false'."
+    gha_error "Invalid verify '$verify'. Use 'true' or 'false'."
+    exit 2
+    ;;
+esac
+
+case "$fail_on_findings" in
+  true | false) ;;
+  *)
+    gha_error "Invalid fail-on-findings '$fail_on_findings'. Use 'true' or 'false'."
+    exit 2
+    ;;
+esac
+
+case "$upload_sarif" in
+  true | false) ;;
+  *)
+    gha_error "Invalid upload-sarif '$upload_sarif'. Use 'true' or 'false'."
     exit 2
     ;;
 esac
@@ -108,13 +146,13 @@ if [[ -f "$report" ]]; then
     findings="$parsed_findings"
   elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
     findings=1
-    echo "::warning title=KeyHog::Could not parse '$report'; keyhog exited $keyhog_exit, so treating the scan as having findings."
+    gha_warning "Could not parse '$report'; keyhog exited $keyhog_exit, so treating the scan as having findings."
   else
-    echo "::error title=KeyHog::Could not parse clean scan report '$report'."
+    gha_error "Could not parse clean scan report '$report'."
     exit 3
   fi
 elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
-  echo "::error title=KeyHog::keyhog reported findings but did not write '$report'."
+  gha_error "keyhog reported findings but did not write '$report'."
   exit 3
 fi
 
@@ -125,15 +163,15 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   } >> "$GITHUB_OUTPUT"
 fi
 
-echo "::notice title=KeyHog::Found $findings finding(s) at or above '$severity' severity."
+gha_notice "Found $findings finding(s) at or above '$severity' severity."
 
 if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
-  echo "::error title=KeyHog::keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
+  gha_error "keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
   exit "$keyhog_exit"
 fi
 
 if [[ "$keyhog_exit" == "10" ]]; then
-  echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
+  gha_error "LIVE credential(s) confirmed by --verify (exit 10)."
 fi
 
 md_cell() {
@@ -157,6 +195,8 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '| Report | %s |\n' "$(md_cell "$report")"
     printf '| Findings | %s |\n' "$(md_cell "$findings")"
     printf '| Exit code | %s |\n' "$(md_cell "$keyhog_exit")"
+    printf '| Fail on findings | %s |\n' "$(md_cell "$fail_on_findings")"
+    printf '| Upload SARIF | %s |\n' "$(md_cell "$upload_sarif")"
     if [[ -n "$baseline" ]]; then
       printf '| Baseline | %s |\n' "$(md_cell "$baseline")"
     fi

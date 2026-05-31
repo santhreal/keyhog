@@ -176,6 +176,8 @@ runs:
         KEYHOG_VERIFY: ${{ inputs.verify }}
         KEYHOG_BASELINE: ${{ inputs.baseline }}
         KEYHOG_OUTPUT: ${{ steps.outfile.outputs.name }}
+        KEYHOG_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
       run: |
         bash "${{ github.action_path }}/run-scan.sh"
 

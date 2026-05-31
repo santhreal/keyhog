@@ -15,6 +15,13 @@ fn action_script() -> PathBuf {
         .expect("action run-scan.sh exists")
 }
 
+fn action_manifest() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/actions/keyhog/action.yml")
+        .canonicalize()
+        .expect("action.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -70,6 +77,14 @@ fn output_file(dir: &TempDir) -> String {
 
 fn summary_file(dir: &TempDir) -> String {
     fs::read_to_string(dir.path().join("summary.md")).expect("read GITHUB_STEP_SUMMARY")
+}
+
+fn combined_output(output: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 #[test]
@@ -167,6 +182,14 @@ exit 1
     let summary = summary_file(&dir);
     assert!(summary.contains("| Findings | `2` |"), "summary={summary}");
     assert!(summary.contains("| Exit code | `1` |"), "summary={summary}");
+    assert!(
+        summary.contains("| Fail on findings | `true` |"),
+        "summary={summary}"
+    );
+    assert!(
+        summary.contains("| Upload SARIF | `true` |"),
+        "summary={summary}"
+    );
 }
 
 #[test]
@@ -199,6 +222,43 @@ exit 1
     assert!(
         output_file(&dir).contains("findings=1"),
         "parse failure after findings exit must not become zero findings"
+    );
+}
+
+#[test]
+fn action_treats_live_malformed_report_as_at_least_one_finding() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{not-json\n' > "$out"
+exit 10
+"#,
+    );
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "malformed live report should keep CI on findings path; output={}",
+        combined_output(&output)
+    );
+    assert!(
+        output_file(&dir).contains("findings=1"),
+        "parse failure after live exit must not become zero findings"
+    );
+    assert!(
+        combined_output(&output).contains("LIVE credential(s) confirmed by --verify (exit 10)."),
+        "live verification exit must remain operator-visible"
     );
 }
 
@@ -309,6 +369,91 @@ exit 0
             "{key}={value} must fail before running keyhog"
         );
     }
+}
+
+#[test]
+fn action_validates_policy_booleans_before_invoking_scanner() {
+    let dir = TempDir::new().expect("tempdir");
+    let invoked = dir.path().join("invoked");
+    write_stub(
+        &dir,
+        &format!(
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+printf invoked > '{}'
+exit 0
+"#,
+            invoked.display()
+        ),
+    );
+
+    for (key, value) in [
+        ("KEYHOG_FAIL_ON_FINDINGS", "maybe"),
+        ("KEYHOG_UPLOAD_SARIF", "maybe"),
+    ] {
+        let output = run_action(&dir, &[(key, value)]);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{key}={value} should be a usage error; output={}",
+            combined_output(&output)
+        );
+        assert!(
+            !invoked.exists(),
+            "{key}={value} must fail before running keyhog"
+        );
+    }
+}
+
+#[test]
+fn action_escapes_workflow_command_values() {
+    let dir = TempDir::new().expect("tempdir");
+    let invoked = dir.path().join("invoked");
+    write_stub(
+        &dir,
+        &format!(
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+printf invoked > '{}'
+exit 0
+"#,
+            invoked.display()
+        ),
+    );
+
+    let injected = "bad\n::warning title=Owned::forged";
+    let output = run_action(&dir, &[("KEYHOG_SEVERITY", injected)]);
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "invalid severity should be a usage error; output={combined}"
+    );
+    assert!(
+        combined.contains("Invalid severity 'bad%0A::warning title=Owned::forged'"),
+        "workflow command value must encode newlines; output={combined}"
+    );
+    assert!(
+        !combined.contains("bad\n::warning title=Owned::forged"),
+        "workflow command value must not allow a second command line; output={combined}"
+    );
+    assert!(
+        !invoked.exists(),
+        "invalid severity must fail before running keyhog"
+    );
+}
+
+#[test]
+fn composite_action_passes_policy_inputs_to_scanner_script() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        manifest.contains("KEYHOG_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}"),
+        "composite action must validate fail-on-findings in the tested script"
+    );
+    assert!(
+        manifest.contains("KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
+        "composite action must validate upload-sarif in the tested script"
+    );
 }
 
 #[test]

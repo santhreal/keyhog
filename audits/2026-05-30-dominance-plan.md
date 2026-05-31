@@ -1142,6 +1142,21 @@ Red gate captured:
 
 - `cargo test -p keyhog-scanner --test all_tests adversarial::massive_adversarial_suite:: -- --nocapture` now passes 53/57. Remaining disagreements are bare Heroku UUID positives, Cyrillic `о` being correctly normalized to `o` and routed as `gho_`, and a Stripe chunk-boundary "near miss" whose length still satisfies the shipped Stripe detector.
 
+## Executed Patch Set: GitHub Action CI Policy Hardening
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: the composite Action now passes `fail-on-findings` and `upload-sarif` into the tested scan script, so typoed policy booleans fail before scanner invocation instead of silently weakening CI behavior.
+- AUDIT HUNTS: GitHub workflow command messages now escape percent, CR, and LF in untrusted values, blocking newline command injection through action inputs and report paths.
+- TESTING: the action contract covers malformed live-verification reports, policy boolean validation, workflow-command escaping, and manifest-to-script policy wiring.
+- COHERENCE: CI summary output now records the resolved fail/upload policy alongside path, severity, format, report, findings, and scanner exit code.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ -- --nocapture`
+
 ## Executed Patch Set: GPU MoE Readback Deadline
 
 Date: 2026-05-31
