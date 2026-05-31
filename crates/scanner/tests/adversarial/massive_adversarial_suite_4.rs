@@ -4,11 +4,15 @@
 //! folding, confidence aggregation, companion merging, and location equivalence.
 
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, redact, DedupScope, DedupedMatch, MatchLocation, RawMatch,
-    Severity,
+    dedup_cross_detector, dedup_matches, redact, DedupScope, MatchLocation, RawMatch, Severity,
 };
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+fn credential_hash(credential: &str) -> [u8; 32] {
+    Sha256::digest(credential.as_bytes()).into()
+}
 
 // Helper to build a RawMatch
 fn make_raw_match(
@@ -27,7 +31,7 @@ fn make_raw_match(
         service: Arc::from(format!("Service-{detector_id}")),
         severity,
         credential: Arc::from(credential),
-        credential_hash: format!("{:x}", md5::compute(credential)),
+        credential_hash: credential_hash(credential),
         companions,
         location: MatchLocation {
             source: Arc::from("test"),

@@ -1,6 +1,12 @@
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use keyhog_scanner::resolution::resolve_matches;
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
+
+fn credential_hash(credential: &str) -> [u8; 32] {
+    Sha256::digest(credential.as_bytes()).into()
+}
+
 fn make_match(detector_id: &str, credential: &str, confidence: Option<f64>) -> RawMatch {
     RawMatch {
         detector_id: Arc::from(detector_id),
@@ -8,7 +14,7 @@ fn make_match(detector_id: &str, credential: &str, confidence: Option<f64>) -> R
         service: Arc::from("test"),
         severity: Severity::High,
         credential: Arc::from(credential),
-        credential_hash: format!("hash-{}", credential),
+        credential_hash: credential_hash(credential),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

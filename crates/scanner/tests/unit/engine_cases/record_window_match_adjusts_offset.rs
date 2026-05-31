@@ -14,7 +14,7 @@ fn record_window_match_adjusts_offset() {
         service: Arc::from("test"),
         severity: Severity::Low,
         credential: Arc::from("345"),
-        credential_hash: "345".into(),
+        credential_hash: [3u8; 32],
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),

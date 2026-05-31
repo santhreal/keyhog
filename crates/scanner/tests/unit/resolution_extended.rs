@@ -5,8 +5,13 @@
 /// passthrough, and priority score ordering.
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use keyhog_scanner::resolution::resolve_matches;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+fn credential_hash(credential: &str) -> [u8; 32] {
+    Sha256::digest(credential.as_bytes()).into()
+}
 
 fn make_match_at(
     detector_id: &str,
@@ -21,7 +26,7 @@ fn make_match_at(
         service: Arc::from("test"),
         severity: Severity::High,
         credential: Arc::from(credential),
-        credential_hash: format!("hash-{credential}"),
+        credential_hash: credential_hash(credential),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),
