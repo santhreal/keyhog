@@ -91,8 +91,11 @@ impl CompiledScanner {
             let Some(scanner) = &self.simd_prefilter else {
                 // Hyperscan failed to initialize at compile time - fall back
                 // to per-chunk parallel SimdCpu (or whichever backend the
-                // scanner picks). Was serial; now uses rayon.
-                return chunks.par_iter().map(|c| self.scan(c)).collect();
+                // scanner picks), then preserve cross-window boundary recall.
+                let mut results: Vec<Vec<keyhog_core::RawMatch>> =
+                    chunks.par_iter().map(|c| self.scan(c)).collect();
+                super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+                return results;
             };
 
             let ac_len = self.ac_map.len();

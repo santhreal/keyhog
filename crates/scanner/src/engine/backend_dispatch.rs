@@ -52,10 +52,12 @@ impl CompiledScanner {
             super::gpu_forced::deny_silent_gpu_degrade(self, backend);
             let fallback_backend = self.degraded_backend_after_gpu_failure();
             use rayon::prelude::*;
-            return chunks
+            let mut results: Vec<Vec<RawMatch>> = chunks
                 .par_iter()
                 .map(|chunk| self.scan_with_backend(chunk, fallback_backend))
                 .collect();
+            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+            return results;
         }
 
         match backend {
