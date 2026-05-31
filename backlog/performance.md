@@ -125,15 +125,17 @@ real tree. Items carry the data that proves them.
     `KEYHOG_BACKEND=simd` (6.86 s) was actually SLOWER than `=cpu` (5.56 s) on
     the 467 MB amd/include dir: Hyperscan adds coalesce/dispatch overhead with
     no net matching-throughput win because aho_corasick already does the work.
-  - Only ~4 workers hot because DEFAULT_WINDOW_SIZE = 64 MiB
+  - Only ~4 workers hot because DEFAULT_WINDOW_SIZE was 64 MiB
     (crates/sources/src/filesystem.rs:21) and the kernel's LARGEST file is
     22 MiB, so NO file is windowed - every file is a single chunk pinned to one
     rayon worker. A batch's heavy work lives in its few large single-chunk
     files, so per-batch `par_iter` lights ~4 workers and parks the other 12.
-  LEVERS (measure each on the kernel before/after; do NOT hand-tune blind):
-    L1 (parallelism, ~4x ceiling): window files at ~1-4 MiB so multi-MB files
-       split into CPU-count sub-chunks that spread across workers. Watch the
-       4 KiB overlap for boundary-spanning secrets and extra per-chunk cost.
+  FIX LANDED 2026-05-31 (L1): source-level default windows are now 1 MiB with
+  128 KiB overlap, matching the scanner's chunk/overlap contract. Multi-MB
+  source files now enter the scanner as independent chunks that `par_iter` can
+  spread across workers instead of one worker serially re-windowing the file.
+  Regression gate: `default_windowing_splits_multimegabyte_source_files`.
+  Remaining measured levers:
     L2 (biggest single cost): gate/shrink the fallback keyword-AC sweep - it
        re-scans full content on every chunk. Tighten its bloom/keyword gate, or
        fold fallback-detector keywords into the hyperscan DB so there is ONE

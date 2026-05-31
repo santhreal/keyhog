@@ -15,10 +15,13 @@ mod read;
 
 use extract::process_entry;
 use filter::walker_config;
-/// Default window size for the >64 MiB scanning path. Overridable on a
-/// per-source basis (see `with_window_config`) so tests can exercise
-/// the windowed flow without writing 64 MiB+ fixtures.
-const DEFAULT_WINDOW_SIZE: usize = 64 * 1024 * 1024;
+/// Default source-level window size for the large-file scanning path.
+///
+/// Keep this aligned with the scanner's 1 MiB max chunk size so a multi-MiB
+/// source file enters the scanner as many independent chunks instead of one
+/// worker serially re-windowing the entire file. The overlap below preserves
+/// boundary-spanning secrets.
+const DEFAULT_WINDOW_SIZE: usize = 1024 * 1024;
 
 /// Convert a `Path` to a user-facing display string, stripping the
 /// `\\?\` UNC verbatim prefix on Windows. `std::fs::canonicalize` on
@@ -57,9 +60,10 @@ pub(crate) fn strip_unc_prefix(s: &str) -> &str {
     }
 }
 
-/// Default overlap between consecutive windows. 4 KiB matches the
-/// longest plausible secret span we want to catch across the cut.
-const DEFAULT_WINDOW_OVERLAP: usize = 4 * 1024;
+/// Default overlap between consecutive source windows. 128 KiB matches the
+/// scanner's own window overlap and covers PEM-sized and multiline secrets
+/// that straddle a source cut.
+const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
 
 /// Scans files in a directory tree.
 pub struct FilesystemSource {
@@ -86,7 +90,7 @@ pub struct FilesystemSource {
     skipped: Arc<AtomicUsize>,
     /// Window size for the big-file scan path. Tests override this via
     /// `with_window_config` to exercise the windowed flow without
-    /// writing the 64 MiB fixtures the production threshold requires.
+    /// writing the 1 MiB fixtures the production threshold requires.
     window_size: usize,
     /// Bytes of overlap between consecutive windows. Same rationale.
     window_overlap: usize,
@@ -112,7 +116,7 @@ impl FilesystemSource {
     }
 
     /// Override the windowed-scan parameters. Production callers stick
-    /// with the defaults (64 MiB / 4 KiB); tests use this to exercise
+    /// with the defaults (1 MiB / 128 KiB); tests use this to exercise
     /// the multi-window path on tiny fixtures. `window_size` must
     /// strictly exceed `overlap` (the underlying slicer asserts this).
     pub fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {

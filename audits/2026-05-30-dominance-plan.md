@@ -1156,3 +1156,18 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests gpu_moe_readback_uses_bounded_polling -- --nocapture`
+
+## Executed Patch Set: Source-Level Large-File Parallelism
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: lowered filesystem source windows from 64 MiB to 1 MiB so multi-MiB files become independent chunks before scanner batching and can occupy many rayon workers.
+- COHERENCE: raised source overlap from 4 KiB to 128 KiB to match the scanner's own long-secret boundary contract.
+- TESTING: added a default-path source integration gate proving a 1.2 MB text file emits multiple `filesystem/windowed` chunks with the expected base offsets.
+- INTROSPECTION: this implements the L1 parallelism lever from PERF-08 while preserving the measured L2 literal/regex pass as a separate root cause in the performance backlog.
+
+Verified gates:
+
+- `cargo test -p keyhog-sources --test all_tests default_windowing_splits_multimegabyte_source_files -- --nocapture`
