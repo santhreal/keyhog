@@ -92,6 +92,11 @@ benchmarks/
 | `creddata` | [Samsung/CredData](https://github.com/Samsung/CredData) (~11k files, pinned commit) | yes (T=pos, F/X=neg) | `make creddata` |
 | `kernel` | Linux kernel tree | no (perf only) | set `KEYHOG_BENCH_KERNEL` |
 
+Benchmarked tools and datasets are credited with their licenses in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Competitor corpora and
+CredData are **gitignored / fetched locally** — keyhog redistributes none of
+their data.
+
 ## Tiers
 
 - `quick` — every scanner at its default config (the README leaderboard).
