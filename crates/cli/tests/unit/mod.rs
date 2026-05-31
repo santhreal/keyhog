@@ -1,3 +1,4 @@
+pub mod args_parse_space_bytes;
 pub mod baseline;
 pub mod cli_misc;
 // daemon module + wire tests are unix-only (Unix-domain sockets).
@@ -14,5 +15,7 @@ pub mod sources;
 pub mod style;
 pub mod subcommands_detectors;
 pub mod subcommands_explain;
+pub mod subcommands_hook;
+pub mod subcommands_scan_system;
 pub mod test_fixture_suppressions;
 pub mod value_parsers;

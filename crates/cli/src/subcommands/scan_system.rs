@@ -37,7 +37,8 @@ use std::sync::Arc;
 /// resident set at this ceiling so memory is bounded independent of corpus
 /// secret-density. Beyond the cap we stop retaining findings but keep counting
 /// them, so the exit-code contract (0 = clean, 1 = findings) still holds.
-const MAX_RESIDENT_FINDINGS: usize = 1_000_000;
+#[doc(hidden)]
+pub const MAX_RESIDENT_FINDINGS: usize = 1_000_000;
 
 /// Bounded collector for system-scan findings.
 ///
@@ -46,7 +47,8 @@ const MAX_RESIDENT_FINDINGS: usize = 1_000_000;
 /// the total count seen even after the cap is hit. Conversion happens per
 /// chunk in `scan_mount`/`scan_git_history`, so raw matches are dropped as
 /// soon as they are produced rather than accumulated.
-struct FindingSink {
+#[doc(hidden)]
+pub struct FindingSink {
     redacted: Vec<keyhog_core::RedactedFinding>,
     total: u64,
     cap: usize,
@@ -54,11 +56,13 @@ struct FindingSink {
 }
 
 impl FindingSink {
-    fn new() -> Self {
+    #[doc(hidden)]
+    pub fn new() -> Self {
         Self::with_cap(MAX_RESIDENT_FINDINGS)
     }
 
-    fn with_cap(cap: usize) -> Self {
+    #[doc(hidden)]
+    pub fn with_cap(cap: usize) -> Self {
         Self {
             redacted: Vec::new(),
             total: 0,
@@ -70,7 +74,8 @@ impl FindingSink {
     /// Convert and absorb a chunk's worth of raw matches, dropping the raw
     /// (plaintext-bearing) matches immediately. Retains up to the resident
     /// cap; counts everything.
-    fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
+    #[doc(hidden)]
+    pub fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
         for m in &matches {
             self.total += 1;
             if self.redacted.len() < self.cap {
@@ -87,8 +92,41 @@ impl FindingSink {
         // `matches` (the plaintext-bearing RawMatch Vec) is dropped here.
     }
 
-    fn is_empty(&self) -> bool {
+    #[doc(hidden)]
+    pub fn is_empty(&self) -> bool {
         self.total == 0
+    }
+
+    #[doc(hidden)]
+    pub fn total(&self) -> u64 {
+        self.total
+    }
+
+    #[doc(hidden)]
+    pub fn retained_len(&self) -> usize {
+        self.redacted.len()
+    }
+
+    #[doc(hidden)]
+    pub fn cap(&self) -> usize {
+        self.cap
+    }
+
+    #[doc(hidden)]
+    pub fn capped_warned(&self) -> bool {
+        self.capped_warned
+    }
+
+    #[doc(hidden)]
+    pub fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
+        self.redacted
+            .get(index)
+            .map(|finding| finding.credential_hash)
+    }
+
+    #[doc(hidden)]
+    pub fn retained_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&self.redacted)
     }
 }
 
@@ -371,110 +409,5 @@ fn scan_git_history(
     {
         let _ = (scanner, repo, bytes_scanned, space_cap, out);
         tracing::warn!("git history scan requires the `git` feature; skipping");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use keyhog_core::{MatchLocation, RawMatch, Severity};
-
-    /// Build a distinct plaintext-bearing `RawMatch` for sink tests. Each `i`
-    /// yields a unique credential so we can prove redaction never leaks it.
-    fn raw_match(i: usize) -> RawMatch {
-        let credential = format!("AKIA_SECRET_PLAINTEXT_{i:08}");
-        RawMatch {
-            detector_id: Arc::from("aws-access-key"),
-            detector_name: Arc::from("AWS Access Key"),
-            service: Arc::from("aws"),
-            severity: Severity::High,
-            credential: Arc::from(credential.as_str()),
-            // Distinct raw 32-byte hash per `i` (the field is `[u8; 32]`, not a
-            // string); `i + 1` keeps i=0 off the all-zero "no identity" sentinel.
-            credential_hash: {
-                let mut h = [0u8; 32];
-                h[..8].copy_from_slice(&((i as u64) + 1).to_le_bytes());
-                h
-            },
-            companions: std::collections::HashMap::new(),
-            location: MatchLocation {
-                source: Arc::from("filesystem"),
-                file_path: Some(Arc::from(format!("/tmp/leak{i}.env").as_str())),
-                line: Some(i + 1),
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            entropy: Some(4.2),
-            confidence: Some(0.9),
-        }
-    }
-
-    #[test]
-    fn sink_starts_empty() {
-        let sink = FindingSink::new();
-        assert!(sink.is_empty());
-        assert_eq!(sink.total, 0);
-        assert!(sink.redacted.is_empty());
-    }
-
-    #[test]
-    fn sink_absorbs_and_counts_below_cap() {
-        let mut sink = FindingSink::new();
-        sink.absorb((0..10).map(raw_match).collect());
-        assert_eq!(sink.total, 10);
-        assert_eq!(sink.redacted.len(), 10);
-        assert!(!sink.is_empty());
-    }
-
-    #[test]
-    fn sink_retains_only_redacted_never_plaintext() {
-        // The whole point of the audit fix: raw matches are converted to a
-        // disk-safe RedactedFinding immediately and the plaintext-bearing
-        // RawMatch Vec is dropped. The serialized sink must never contain the
-        // plaintext credential bytes.
-        let mut sink = FindingSink::new();
-        sink.absorb(vec![raw_match(7)]);
-        let json = serde_json::to_string(&sink.redacted).unwrap();
-        assert!(
-            !json.contains("AKIA_SECRET_PLAINTEXT_00000007"),
-            "plaintext credential leaked into retained findings: {json}"
-        );
-        // But the redacted preview + hash are present.
-        assert_eq!(sink.redacted.len(), 1);
-        assert_eq!(sink.redacted[0].credential_hash, "hash7");
-    }
-
-    #[test]
-    fn sink_caps_resident_set_but_keeps_counting() {
-        // Resident memory is bounded by the cap regardless of how many findings
-        // stream through (audit: unbounded findings Vec). Use a small injected
-        // cap so the invariant is proven without a million-element allocation.
-        let cap = 3;
-        let mut sink = FindingSink::with_cap(cap);
-
-        // Absorb far more findings than the cap, across multiple chunks.
-        sink.absorb((0..2).map(raw_match).collect());
-        sink.absorb((2..50).map(raw_match).collect());
-
-        // Counted: every finding increments `total`.
-        assert_eq!(sink.total, 50);
-        // Bounded: resident set never grows past the cap.
-        assert_eq!(sink.redacted.len(), cap);
-        // Warned exactly once that the cap was hit.
-        assert!(sink.capped_warned);
-        // Still reports non-empty so the exit-code contract holds.
-        assert!(!sink.is_empty());
-
-        // The retained set is the FIRST `cap` findings (insertion order).
-        assert_eq!(sink.redacted[0].credential_hash, "hash0");
-        assert_eq!(sink.redacted[cap - 1].credential_hash, format!("hash{}", cap - 1));
-    }
-
-    #[test]
-    fn default_cap_is_the_module_ceiling() {
-        let sink = FindingSink::new();
-        assert_eq!(sink.cap, MAX_RESIDENT_FINDINGS);
     }
 }
