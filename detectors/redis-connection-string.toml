@@ -8,6 +8,7 @@ name = "Redis Connection String"
 service = "redis"
 severity = "high"
 keywords = ["redis", "REDIS_URL"]
+min_confidence = 0.2
 
 [[detector.patterns]]
 # Alternation form `(?:rediss|redis)` instead of `rediss?`. The prefix

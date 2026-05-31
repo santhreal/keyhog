@@ -1563,7 +1563,7 @@ Date: 2026-05-31
 
 Vector coverage:
 
-- WIRING: the tested scan wrapper now treats every missing requested report as a CI failure, including `keyhog` exit 0, instead of publishing `findings=0` and relying on a later artifact warning.
+- WIRING: the tested scan wrapper now treats every missing requested report as a CI failure, including `keyhog` exit 0, instead of publishing `findings=0` and relying on a subsequent artifact warning.
 - SPEED: the wrapper emits `duration-ms` and records duration in the GitHub Step Summary so production CI runs can track scan cost without log scraping.
 - TESTING: added e2e action contracts for clean-exit/missing-report failure and the duration output path.
 - COHERENCE: updated the buildless integration entrypoint gate so it validates the composite manifest plus `run-scan.sh` instead of looking for moved scanner logic only in YAML.
@@ -1690,7 +1690,7 @@ Date: 2026-05-31
 
 Vector coverage:
 
-- SPEED: after the first impossible Vyre AC readback, later GPU AC batches in the process skip the known-corrupt dispatch and go straight to the SIMD/CPU recall-preserving path.
+- SPEED: after the first impossible Vyre AC readback, subsequent GPU AC batches in the process skip the known-corrupt dispatch and go straight to the SIMD/CPU recall-preserving path.
 - AUDIT HUNTS: the circuit breaker keeps the existing fail-closed `end <= start` guard and makes the corruption sticky for process lifetime instead of rediscovering it batch by batch.
 - TESTING: extended the scanner gap contract to require both the degenerate-triple guard and the process-level skip path.
 
@@ -1820,3 +1820,34 @@ Verified gates:
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
 - `cd benchmarks && make help`
 - `cd benchmarks && python3 -m bench analyze --help`
+
+## Executed Patch Set: GPU-Inclusive Database URL Confidence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- UTILIZATION: the mirror gap analyzer exposed `database-connection-string` misses where named Redis/MySQL/PostgreSQL detectors emitted findings only below the default confidence floor.
+- AUDIT HUNTS: verified the path through the real GPU backend on the RTX 5090; Vyre AC currently emits degenerate triples and degrades to SIMD/CPU, so GPU evidence is recorded instead of replaced by `KEYHOG_NO_GPU=1` runs.
+- COHERENCE: the confidence model no longer treats `example.org` in the host of a named credential-bearing URL as proof that the password-bearing URL is a placeholder.
+- WIRING: Redis, MySQL, and PostgreSQL connection-string detectors now ship reviewed `0.20` detector floors so the CLI post-process gate reports the named URL findings without lowering the global floor.
+- WIRING: the PostgreSQL detector now uses explicit `postgresql|postgres` alternation and `pg-url`/`PG_URL` context keywords so the plain `postgres://` branch self-activates and clears the detector floor when structured decoding surfaces only a k8s Secret key plus URL.
+- GPU/SIMD PHASE 2: cheap-filter confirmation and coalesced no-hit trigger collection now run against preprocessed text when structured decoding changes the chunk, so decoded structured credentials can activate detector roots even when the original file only contains base64.
+- COHERENCE: match resolution now treats `generic-*` as fallback priority instead of service-specific priority, so a high-confidence decoded password fragment cannot hide the named database-URL finding on the same source line.
+- TESTING: added positive and negative unit contracts: named credential URLs survive documentation-like hosts, while placeholder words inside URL userinfo still crush confidence.
+
+Verified gates:
+
+- `cargo fmt -p keyhog-scanner -- --check`
+- `cargo test -p keyhog-scanner --test all_tests confidence_penalties -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests resolution -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests postgresql_connection_string -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests k8s_secret_decoded_postgres_url_self_activates_without_database_url_keyword -- --nocapture`
+- `cargo test -p keyhog-scanner --test contracts_runner every_contract_passes_positives_negatives_evasions -- --nocapture`
+- `cargo build --release -p keyhog --bin keyhog`
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend gpu --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/8b/mirror-pos-0000139.py` reported `redis-connection-string` after GPU AC degraded on degenerate Vyre triples.
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend auto --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/8b/mirror-pos-0000139.py` reported `redis-connection-string`.
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend gpu --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/a7/mirror-pos-0000167.yaml` reported `mysql-connection-string` after GPU AC degraded on degenerate Vyre triples.
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend gpu --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/4c/mirror-pos-0000332.yaml` reported `postgresql-connection-string` after GPU AC degraded on degenerate Vyre triples.
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend auto --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/4c/mirror-pos-0000332.yaml` reported `postgresql-connection-string`.
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog backend --self-test` confirmed RTX 5090 MoE PASS, literal-set KNOWN, and Vyre AC FAIL on degenerate triples.

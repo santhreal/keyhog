@@ -40,6 +40,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### CLI
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
+- Document the canonical `.keyhog.toml` precedence, nested `[scan]` / `[detector.<id>]` / `[lockdown]` tables, and bench-tuned config defaults in the README, mdBook reference, example config, and config tests.
 - Make `--git-staged --exclude-paths` apply to the staged-file include set instead of letting explicitly staged paths bypass excludes.
 - Run the CLI on Tokio's current-thread runtime so plain filesystem scans do not spawn a full async worker pool alongside the Rayon scanner threads.
 
@@ -71,6 +72,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Degrade GPU AC batches that emit impossible `end <= start` match triples before chunk attribution, preserving recall when the current CUDA literal-set path returns corrupt ranges.
 - Circuit-break the GPU AC dispatch path for the rest of the process after one degenerate Vyre readback, avoiding repeated known-corrupt GPU dispatch cost while preserving SIMD/CPU recall.
 - Union canonical CPU AC trigger roots into GPU phase 2 before extraction so admitted GPU chunks cannot under-trigger raw detectors relative to the scanner's case-insensitive literal set.
+- Stop placeholder scoring from crushing named credential-bearing database URLs solely because the hostname contains `example.org`; placeholder words inside the username/password remain penalized, Redis/MySQL/PostgreSQL URL detectors now ship reviewed `0.20` confidence floors, PostgreSQL recognizes `pg-url`/`PG_URL` context and seeds both `postgresql://` and `postgres://` branches, coalesced no-hit batches recollect triggers from structured preprocessed text, and match resolution now lets service-specific detectors beat higher-confidence generic fallbacks on the same line.
 - Treat nearby decoded-source duplicates as aliases during dedup so `filesystem/json` views do not displace the original file location when both represent the same credential.
 - Skip Caesar decoding for source/config paths such as `Kconfig`, `Makefile`, `.tbl`, `.mk`, and `.cmake`, preventing ROT-N false positives from kernel config and syscall-table text.
 - Bring the core unified test harness back onto the raw `[u8; 32]` credential-hash contract and move CSV/HTML/JUnit reporter tests out of `src`, restoring `keyhog-core --test all_tests`.

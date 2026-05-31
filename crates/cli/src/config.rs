@@ -39,9 +39,11 @@ pub struct ConfigFile {
     pub max_commits: Option<usize>,
     /// Show full credentials (not redacted).
     pub show_secrets: Option<bool>,
-    /// Maximum depth for recursive decoding (1-10, default: 4).
+    /// Maximum depth for recursive decoding (1-10, default: 10 — the canonical
+    /// `ScanConfig::default().max_decode_depth`).
     pub decode_depth: Option<usize>,
-    /// Maximum file size for decode-through scanning (default: 64KB).
+    /// Maximum file size for decode-through scanning (default: 512KB — the
+    /// canonical `ScanConfig::default().max_decode_bytes`).
     pub decode_size_limit: Option<String>,
     /// Enable entropy scanning in source code files.
     pub entropy_source_files: Option<bool>,
@@ -60,7 +62,8 @@ pub struct ConfigFile {
     /// (typical detectors stay under it). The `--regex-dfa-limit` CLI flag
     /// overrides this.
     pub regex_dfa_limit: Option<String>,
-    /// ML weight for confidence scoring, 0.0-1.0 (default: 0.6).
+    /// ML weight for confidence scoring, 0.0-1.0 (default: 0.5 — the canonical
+    /// `ScanConfig::default().ml_weight`).
     pub ml_weight: Option<f64>,
     /// Known secret prefixes used to boost confidence.
     pub known_prefixes: Option<Vec<String>>,

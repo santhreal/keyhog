@@ -492,20 +492,24 @@ Per-repo defaults via `.keyhog.toml`:
 ```toml
 [scan]
 severity = "high"
-min_confidence = 0.5
+min_confidence = 0.40          # canonical default; raise toward 0.85 for fewer FPs
 exclude = ["**/test/fixtures/**", "vendor/"]
 
 [detector.generic-api-key]
 enabled = false                # noisy detector? turn it off (hot-* fast-path
                                # ids like `hot-aws_key` are disabled the same way)
 
+[detector.twilio-api-key]
+min_confidence = 0.6           # per-detector floor; overrides the global one
+
 [lockdown]
 require = true                 # refuse to run unless --lockdown is passed
 ```
 
-Precedence (later overrides earlier): compiled defaults → system →
-user → repo → env → CLI flags. Full reference:
-[`site/config.html`](./site/config.html).
+Precedence (rightmost wins): compiled defaults → `.keyhog.toml`
+(walked up from the scan path) → CLI flags. The canonical defaults live in
+`ScanConfig::default()` (`crates/core/src/config.rs`). Full reference:
+[`docs/src/reference/configuration.md`](./docs/src/reference/configuration.md).
 
 Suppress specific findings (not whole detectors) with a `.keyhogignore`
 file by hash, path glob, or detector id - see

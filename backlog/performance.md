@@ -206,6 +206,31 @@ real tree. Items carry the data that proves them.
        batches overlap, but conflicts with the GPU coalesce/memory model.
   The 100x kernel target needs L1 x L2 together (parallelism x halving the
   per-chunk matching work), not any single lever.
+  UPDATE 2026-05-31 (current full-kernel baseline + a refuted reader-side
+  hypothesis): release binary, full `/mnt/FlareTraining/santh-corpus/repos/linux`
+  (94825 files, 2.0 GB), `KEYHOG_NO_GPU=1 --backend simd --no-daemon`:
+  **84.2 s wall, 213 % CPU (≈2 of 32 cores), 17 findings, 2.29 GB RSS.**
+  Confirms the scan is pipeline-serialised, NOT matching-bound, on the full
+  tree (so the L2 fallback-AC fold is the wrong lever here — it only helps the
+  big-file subdir profile).
+  TESTED + REVERTED: replaced the reader `par_bridge()` with a bounded-batch
+  `into_par_iter` (512/batch) on the theory the bridge's single-mutex cursor
+  serialised the 94k tiny-file pull. It **regressed** to 102.7 s / 175 % CPU —
+  LESS parallel, not more. So the readers are NOT pull-bound; they block on the
+  inner `sync_channel(64)` SEND (downstream-limited, matching PERF-05's off-CPU
+  profile), and a per-batch barrier only cut the bridge's continuous
+  read↔send overlap. Reader pull contention is a DEAD END; do not retry it.
+  NARROWED LEVER: the consumer side. ≈2 effective cores live in the single
+  main-thread chunk drain (`dispatch.rs` `for chunk_result in source.chunks()`)
+  + the single scanner thread; `scan_coalesced`'s per-chunk preprocessing
+  (line offsets / code-line / doc-comment / unicode) par_iters per batch but
+  STARVES between batches because the per-chunk channel handoffs (94k ×
+  send/recv across two single-thread funnels) can't refill it. REQUIRED
+  MEASUREMENT: profile `scan_coalesced` preprocessing parallelism + the
+  per-chunk funnel with a symbolised build; the fix is to stop routing every tiny chunk
+  through one drain thread (e.g. per-file end-to-end scan on the SIMD/CPU path,
+  reserving coalescing for genuinely large files — L3, constrained by the GPU
+  coalesce model). Verify finding-set parity (17) + wall on the kernel.
 
 - **PERF-05 · HIGH · kernel scan uses ~1.6 cores of 32 (pipeline serialization)** —
   after the PERF-01 fix the kernel scan COMPLETES but runs at ~162 % CPU with

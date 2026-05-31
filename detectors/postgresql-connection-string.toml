@@ -7,9 +7,13 @@ id = "postgresql-connection-string"
 name = "PostgreSQL Connection String"
 service = "postgresql"
 severity = "critical"
-keywords = ["postgresql", "postgres", "DATABASE_URL"]
+keywords = ["postgresql", "postgres", "postgres_url", "POSTGRES_URL", "pg-url", "PG_URL", "DATABASE_URL"]
+min_confidence = 0.2
 
 [[detector.patterns]]
+# Keep explicit alternation instead of `postgres(?:ql)?`: the AC prefix
+# extractor otherwise does not reliably seed the plain `postgres://` branch,
+# so decoded k8s `data:` values without nearby `DATABASE_URL` context miss.
 # Widen the host class to accept Kubernetes service names (`postgres-db`)
 # and docker hostnames (`postgres`), not just dotted-FQDN hosts. The
 # previous regex required `.` in the host and missed every short-host
@@ -17,5 +21,5 @@ keywords = ["postgresql", "postgres", "DATABASE_URL"]
 # now for parity with the redis pattern. The capture deliberately stops
 # at the host (excludes the trailing `/db?query`) so the credential
 # surface matches the existing contract harness.
-regex = '''postgres(?:ql)?://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
+regex = '''(?:postgresql|postgres)://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+'''
 description = "PostgreSQL connection string with credentials (host-bounded capture)"

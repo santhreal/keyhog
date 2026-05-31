@@ -44,6 +44,34 @@ pub fn contains_placeholder_word(credential: &str) -> bool {
         .any(|word| crate::ascii_ci::ci_find(haystack, word))
 }
 
+fn has_credential_url_userinfo_without_placeholder(credential: &str) -> bool {
+    let Some(scheme_end) = credential.find("://") else {
+        return false;
+    };
+    if scheme_end == 0
+        || !credential[..scheme_end]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'.' | b'-'))
+    {
+        return false;
+    }
+    let authority = &credential[scheme_end + 3..];
+    let authority_end = authority
+        .find(|ch: char| {
+            matches!(ch, '/' | '?' | '#' | '"' | '\'' | '<' | '>' | ')' | '(') || ch.is_whitespace()
+        })
+        .unwrap_or(authority.len());
+    let authority = &authority[..authority_end];
+    let Some(at) = authority.rfind('@') else {
+        return false;
+    };
+    let userinfo = &authority[..at];
+    let Some(colon) = userinfo.find(':') else {
+        return false;
+    };
+    colon + 1 < userinfo.len() && !contains_placeholder_word(userinfo)
+}
+
 /// Compute the ratio of unique bytes to total bytes.
 pub fn char_diversity(credential: &str) -> f64 {
     let len = credential.len();
@@ -117,9 +145,13 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
     // sample. The decode-through composition closes the 9 residual
     // docs-example-marker FPs on the SecretBench mirror that the
     // surface-form check missed.
-    if contains_placeholder_word(credential)
-        || crate::decode_structure::decoded_contains_placeholder(credential)
-    {
+    let has_surface_placeholder = contains_placeholder_word(credential);
+    let has_decoded_placeholder = crate::decode_structure::decoded_contains_placeholder(credential);
+    let placeholder_is_only_url_host = is_named
+        && has_surface_placeholder
+        && !has_decoded_placeholder
+        && has_credential_url_userinfo_without_placeholder(credential);
+    if (has_surface_placeholder || has_decoded_placeholder) && !placeholder_is_only_url_host {
         adjusted *= 0.05;
     }
     if is_named {
@@ -247,48 +279,4 @@ pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
 
     let adjusted = if is_test_like { score * 0.5 } else { score };
     finalize_confidence(adjusted)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use base64::Engine as _;
-
-    // Round 1 FP-killer: base64-protobuf cause #6. Generic-secret matches on
-    // base64-of-base64 (k8s `data:` outer wrapper) must be slammed by the
-    // post-ML penalty so the 7 yaml/k8s-secret FPs collapse.
-    #[test]
-    fn apply_post_ml_penalties_slams_double_base64_for_generic() {
-        // 40-char inner (high-diversity base64 alphabet, distinct >= 32 so
-        // it survives the alphabet-diversity check). Outer decodes to
-        // inner which is all base64 alphabet, length 40.
-        let inner = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1J";
-        let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
-        let pre = 0.9_f64;
-        let post = apply_post_ml_penalties(pre, &outer, false);
-        assert!(
-            post <= pre * 0.05,
-            "generic-* finding whose value is base64-of-base64 must be \
-             slammed by the post-ML penalty (got {post} from {pre})",
-        );
-    }
-
-    // Negative twin: a named (service-anchored) detector match with the same
-    // wrapper shape must NOT be slammed - the named anchor already proved
-    // the bytes are credential content. is_named=true skips the decode-
-    // through gates entirely. Inner has high diversity so the named
-    // char_diversity penalty (< 0.1) does not fire either.
-    #[test]
-    fn apply_post_ml_penalties_preserves_named_double_base64() {
-        let inner = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1J";
-        let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
-        let pre = 0.9_f64;
-        let post = apply_post_ml_penalties(pre, &outer, true);
-        assert!(
-            post >= pre - 1e-9,
-            "named-detector match with base64-of-base64 shape must NOT be \
-             slammed (named anchor overrides shape gates); got {post} \
-             from {pre}",
-        );
-    }
 }

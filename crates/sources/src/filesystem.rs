@@ -338,6 +338,18 @@ impl Source for FilesystemSource {
             // old `.with_min_len(64)` floor. The bridge splits shallowly off
             // a single producer, so the stack stays bounded for any corpus
             // size without a grain knob.
+            //
+            // PERF NOTE (2026-05-31): a bounded-batch `into_par_iter` variant
+            // was tried here on the theory that the bridge's single-mutex
+            // cursor serialised the 94k-tiny-file pull. It REGRESSED the
+            // kernel scan (84.2 s -> 102.7 s, 213% -> 175% CPU): the readers
+            // are not pull-bound, they block on the inner `sync_channel(64)`
+            // SEND (downstream-limited, confirmed by PERF-05's off-CPU
+            // profile), and the per-batch barrier only cut overlap. The real
+            // lever is the DOWNSTREAM single-thread funnel (one main-thread
+            // chunk drain + one scanner thread), not the reader pull. Left as
+            // par_bridge; do not "optimise" the reader without a measurement
+            // that isolates the consumer side first.
             let pump = move || {
                 entries.par_bridge().for_each_with(tx, |tx, entry| {
                     // `emit` returns false once the receiver is gone (scan

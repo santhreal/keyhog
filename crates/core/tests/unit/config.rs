@@ -12,14 +12,18 @@ fn default_config_valid() {
     // halve recall on a swath of real corpora. Pre-2026-05-24 the
     // assertion was just `validate().is_ok()`, which the empty
     // default config also satisfies.
+    // Pin the canonical bench-tuned floor EXACTLY (SecretBench-mirror
+    // grid-sweep: 0.40 maximises F1). Changing the shipped default without
+    // re-tuning + updating this assertion breaks tuned == benched == shipped,
+    // so the pin is intentionally tight, not a loose range.
     assert!(
-        config.min_confidence >= 0.4 && config.min_confidence <= 0.6,
-        "default min_confidence should be ~0.5 (was 0.3 historically); got {}",
+        (config.min_confidence - 0.40).abs() < 1e-9,
+        "default min_confidence must be the canonical tuned 0.40; got {}",
         config.min_confidence
     );
-    assert!(
-        config.max_decode_depth >= 4,
-        "default decode depth too shallow: {}",
+    assert_eq!(
+        config.max_decode_depth, 10,
+        "default max_decode_depth must be the canonical 10 (decode-through depth); got {}",
         config.max_decode_depth
     );
     assert!(config.entropy_enabled, "entropy must default to on");
