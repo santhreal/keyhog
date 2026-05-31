@@ -981,7 +981,7 @@ Vector coverage:
 - COHERENCE: corrected the Action baseline producer docs to `keyhog scan --create-baseline`, documented the raw `exit-code` output, and kept Action metadata/README/summary fields aligned.
 - WIRING: the Action now passes path, severity, format, verify, baseline, and output through env into one argv builder that preserves paths with spaces and exposes both finding count and raw scanner exit.
 - AUDIT HUNTS: invalid `format`, `severity`, and `verify` fail before invoking `keyhog`; malformed clean reports and findings exits without reports fail closed; malformed findings reports are still treated as at least one finding; markdown summary cells escape pipes, backticks, and newlines.
-- TESTING: added nine simulated-Action e2e contracts covering SARIF count, text count, malformed reports, missing reports, input validation, verify/baseline argv wiring, output propagation, and summary sanitization.
+- TESTING: added nine simulated-Action e2e contracts covering SARIF count, text count, malformed reports, missing reports, input validation, verify/baseline argv wiring, output propagation, and summary sanitization, plus a real-binary Action harness that scans a planted AWS key and parses the produced SARIF.
 - SPEED / INNOVATION: kept Vyre work on the measured lane already captured in this audit: the workspace is pinned to crates.io `vyre` 0.6.1, so the next performance gain is fused GPU work and backend trace gates, not detector breadth or speculative dependency churn.
 
 Verified gates:
@@ -998,13 +998,14 @@ Vector coverage:
 - SPEED: keeps the AC cheap-filter bounded to one regex `is_match` per candidate pid while avoiding repeated window probes for the same pid.
 - CAPABILITY: aligns GPU root confirmation with SIMD trigger semantics by evaluating detector regexes over the whole prepared chunk before precise extraction, preventing narrow-window misses for wider-context detector regexes.
 - COHERENCE: the implementation now matches the existing code comments that described whole-chunk, position-independent confirmation.
-- TESTING: GPU self-test passed on the RTX 5090; the StackBlitz GPU recall narrow-window test ran but skipped its corpus-dependent assertion because the local bench corpus file is absent.
+- TESTING: GPU self-test passed on the RTX 5090; the StackBlitz GPU recall narrow-window test ran but skipped its corpus-dependent assertion because the local bench corpus file is absent; added and ran a real-binary GPU/SIMD parity integration gate for far-offset and caseless literal-prefix regressions.
 - AUDIT HUNTS: the known forced-GPU synthetic parity gate still hard-fails before assertions with runtime GPU dispatch degradation, so the red gate remains recorded.
 
 Verified gates:
 
 - `/mnt/FlareTraining/santh-archive/cargo-target/debug/keyhog backend --self-test`
 - `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_ac_recall_bug_56 gpu_ac_kernel_finds_stackblitz_token_in_narrow_window -- --nocapture`
+- `cargo test -p keyhog --test gpu_simd_parity -- --nocapture`
 
 Red gate captured:
 
@@ -1018,7 +1019,7 @@ Vector coverage:
 
 - COHERENCE: the composite Action no longer treats report parser failures as zero findings.
 - CI UX: Action users now get a GitHub Step Summary with path, severity floor, format, report, finding count, exit code, and baseline.
-- AUDIT HUNTS: if `keyhog` exits 1 or 10 but no report exists, the Action exits as a scanner failure instead of letting a later `findings=0` path pass.
+- AUDIT HUNTS: if `keyhog` exits 1 or 10 but no report exists, the Action exits as a scanner failure instead of letting a subsequent `findings=0` path pass.
 - TESTING: the entry-point integration gate now asserts fail-closed report counting and Step Summary wiring.
 
 Verified gates:
