@@ -16,6 +16,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Align generic-assignment chunk and line prefilters with the actual assignment-key grammar instead of broad `api`/`auth`/`private` substrings. CredData keeps the same true positives with three fewer false positives, while the mirror benchmark gains seven true positives with no added false positives.
 - Remove the per-candidate ASCII lowercase allocation from ML file-type feature extraction by using the shared byte-level case-insensitive matcher for static context markers.
 
+### Detection
+
+- Suppress TypeScript non-null source identifiers like `privateAccessToken!` only when the trailing bang follows a credential-named camelCase identifier with no digits. Real password bodies ending in `!` such as Snowflake/Sourcetree fixtures remain reportable.
+
 ### Coherence
 
 - Reconcile the advertised detector/pattern counts to the binary's actual embedded corpus (894 detectors, 1658 patterns) across README, docs, banner, contract fixtures, and the compiled count gates. The canonical source of truth is `keyhog detectors` / `keyhog doctor`.
@@ -52,6 +56,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Parse every committed GitHub workflow and the composite Action manifest in the local Action contract suite, and assert the manifest remains a composite action with executable steps.
 - Add semantic workflow-shape contracts for every committed GitHub workflow, requiring a name, trigger, jobs mapping, runner or reusable-workflow target, and executable step definitions.
 - Scope composite Action artifact names by GitHub job, matrix job index, run attempt, and scan duration so matrix CI jobs do not collide on a single `keyhog-report` artifact name.
+- Keep `--lockdown` fail-closed on non-empty KeyHog cache directories while allowing an empty `$XDG_CACHE_HOME/keyhog` directory that the process or a prior interrupted run created without findings.
 
 ### Benchmarks
 

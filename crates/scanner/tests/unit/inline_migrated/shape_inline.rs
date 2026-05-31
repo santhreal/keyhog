@@ -27,18 +27,21 @@ fn tier_a_markers_are_syntactic_only() {
 }
 
 #[test]
-fn tier_b_collision_is_leading_slash_or_bang_only() {
+fn tier_b_collision_keeps_real_bang_passwords() {
     // `/`-led base64 (paloalto/line) and `!`-led secrets (keystonejs) are
-    // FP-shaped for unanchored generic matches.
+    // FP-shaped for unanchored generic matches. A trailing `!` is suppressed
+    // only when it is a TS non-null source identifier.
     assert!(looks_like_credential_colliding_punctuation(
         "/7j3M6glXEI5gvG5"
     ));
     assert!(looks_like_credential_colliding_punctuation(
         "!t1c!_Axt_7ARTF"
     ));
-    // A *trailing* `!` is deliberately NOT collision (a password ending `!`
-    // is common); this is what lets snowflake/sourcetree surface in a JSON
-    // envelope via the generic detector.
+    assert!(looks_like_credential_colliding_punctuation(
+        "privateAccessToken!"
+    ));
+    // A password ending `!` is common; this is what lets snowflake/sourcetree
+    // surface in a JSON envelope via the generic detector.
     assert!(!looks_like_credential_colliding_punctuation(
         "SnowFlakePass123!"
     ));

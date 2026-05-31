@@ -50,6 +50,7 @@ pub mod load_detectors_from_str_rejects_invalid_toml;
 pub mod load_sweeps_stale_tmp_files_left_by_killed_processes;
 pub mod load_with_mismatched_spec_invalidates_cache;
 pub mod load_with_spec_when_disk_has_no_spec_invalidates;
+pub mod lockdown_disk_cache_violations;
 pub mod lookup_returns_full_tuple;
 pub mod missing_cache_returns_empty;
 pub mod missing_file_returns_empty;

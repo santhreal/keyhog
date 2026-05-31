@@ -375,8 +375,9 @@ pub fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
 /// * leading `!` - JS truthy coercion (`!!token`) OR a session secret that
 ///   legitimately starts `!` (keystonejs `!t1c!_…`).
 ///
-/// A *trailing* `!` is intentionally NOT here (see the body note): a password
-/// ending `!` is too common to treat as decoration.
+/// A trailing `!` is decoration only for source-identifier bodies such as
+/// `privateAccessToken!` (TypeScript non-null assertion). Password bodies like
+/// `SnowFlakePass123!` are common and must not be suppressed.
 ///
 /// For an *unanchored* generic/entropy match these are FP signals, so this is
 /// applied Tier-B only. A named, service-anchored detector (e.g. the regex
@@ -388,13 +389,37 @@ pub fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
         return false;
     }
     let bytes = value.as_bytes();
-    // NOTE: a *trailing* `!` is deliberately NOT treated as decoration. It was
-    // once a TS-non-null heuristic (`token!`), but a password ending in `!` is
-    // extremely common (`SnowFlakePass123!`), and the rule suppressed real
-    // secrets dropped into JSON envelopes (`{"secret":"SnowFlakePass123!"}`) -
-    // the only path that can catch those is the generic detector (Tier-B). The
-    // narrow TS-non-null gain didn't justify the recall loss.
-    bytes[0] == b'!' || bytes[0] == b'/'
+    bytes[0] == b'!' || bytes[0] == b'/' || looks_like_ts_non_null_identifier(bytes)
+}
+
+fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
+    if !bytes.ends_with(b"!") || bytes.len() < 9 {
+        return false;
+    }
+    let body = &bytes[..bytes.len() - 1];
+    if !body.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_') {
+        return false;
+    }
+    if body.iter().any(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let has_camel_transition = body
+        .windows(2)
+        .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase());
+    if !has_camel_transition {
+        return false;
+    }
+    [
+        b"token".as_slice(),
+        b"secret".as_slice(),
+        b"key".as_slice(),
+        b"password".as_slice(),
+        b"passwd".as_slice(),
+        b"auth".as_slice(),
+        b"credential".as_slice(),
+    ]
+    .iter()
+    .any(|needle| crate::ascii_ci::ci_find(body, needle))
 }
 
 /// Combined Tier-A + body-collision punctuation filter. Retained for the
