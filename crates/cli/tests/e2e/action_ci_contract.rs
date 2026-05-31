@@ -4,7 +4,7 @@ use std::env;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
@@ -80,15 +80,19 @@ fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-fn write_stub(dir: &TempDir, body: &str) -> PathBuf {
-    let path = dir.path().join("keyhog");
-    fs::write(&path, body).expect("write keyhog stub");
+fn write_executable(path: &Path, body: &str) {
+    fs::write(path, body).expect("write executable test stub");
     #[cfg(unix)]
     {
-        let mut perms = fs::metadata(&path).expect("stub metadata").permissions();
+        let mut perms = fs::metadata(path).expect("stub metadata").permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(&path, perms).expect("chmod stub");
+        fs::set_permissions(path, perms).expect("chmod stub");
     }
+}
+
+fn write_stub(dir: &TempDir, body: &str) -> PathBuf {
+    let path = dir.path().join("keyhog");
+    write_executable(&path, body);
     path
 }
 
@@ -1280,6 +1284,121 @@ fn composite_action_verifies_downloaded_release_asset() {
     assert!(
         manifest.contains("Release asset or checksum missing"),
         "missing checksum must fall back to source build instead of running an unchecked binary"
+    );
+}
+
+#[test]
+fn composite_action_detects_windows_release_asset() {
+    let dir = TempDir::new().expect("tempdir");
+    write_executable(
+        &dir.path().join("uname"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  -s) printf 'MINGW64_NT-10.0\n' ;;
+  -m) printf 'x86_64\n' ;;
+  *) exit 2 ;;
+esac
+"#,
+    );
+    let output_path = dir.path().join("github-output.txt");
+    let output_path_str = output_path.to_string_lossy().into_owned();
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let output = run_manifest_bash_step(
+        "Detect platform asset name",
+        &[
+            ("PATH", path.as_str()),
+            ("GITHUB_OUTPUT", output_path_str.as_str()),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "Windows asset detection must run under bash; output={combined}"
+    );
+    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
+    assert!(
+        github_output.contains("name=keyhog-windows-x86_64.exe"),
+        "Windows GitHub runners must use the published prebuilt asset; output={github_output}"
+    );
+}
+
+#[test]
+fn composite_action_download_preserves_windows_exe_name() {
+    let dir = TempDir::new().expect("tempdir");
+    let fake_bin = dir.path().join("bin");
+    fs::create_dir(&fake_bin).expect("create fake bin");
+    write_executable(
+        &fake_bin.join("curl"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "-o" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+if [[ -z "$out" ]]; then
+  exit 9
+fi
+case "$out" in
+  *.sha256) printf 'fake  keyhog-windows-x86_64.exe\n' > "$out" ;;
+  *) printf 'windows-binary' > "$out" ;;
+esac
+"#,
+    );
+    write_executable(
+        &fake_bin.join("sha256sum"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+"#,
+    );
+    let output_path = dir.path().join("github-output.txt");
+    let output_path_str = output_path.to_string_lossy().into_owned();
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let runner_temp = dir.path().join("runner-temp");
+    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
+    fs::create_dir(&runner_temp).expect("create runner temp");
+    let output = run_manifest_bash_step(
+        "Try downloading prebuilt binary",
+        &[
+            ("PATH", path.as_str()),
+            ("GITHUB_OUTPUT", output_path_str.as_str()),
+            ("RUNNER_TEMP", runner_temp_str.as_str()),
+            ("KEYHOG_ASSET_NAME", "keyhog-windows-x86_64.exe"),
+            ("KEYHOG_RESOLVED_VERSION", "0.5.37"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "Windows prebuilt download path must complete with local fake tools; output={combined}"
+    );
+    assert!(
+        runner_temp.join("keyhog.exe").is_file(),
+        "Windows prebuilt must be installed as keyhog.exe so PATH lookup can execute it"
+    );
+    assert!(
+        !runner_temp.join("keyhog").exists(),
+        "Windows prebuilt must not be renamed to an extensionless binary"
+    );
+    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
+    assert!(
+        github_output.contains("found=true"),
+        "verified Windows prebuilt download must advertise found=true; output={github_output}"
     );
 }
 
