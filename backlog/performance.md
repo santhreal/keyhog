@@ -310,10 +310,13 @@ real tree. Items carry the data that proves them.
 - **PERF-04 · LOW · dedicated reader pool doubles rayon thread count** — the
   PERF-01 fix adds a reader pool sized to the global pool, so a 32-core box
   runs ~64 rayon threads (+ codewalk + tokio). Intentional (read/scan
-  overlap is the point) and OS-scheduled, but revisit sizing once PERF-01 is
-  verified — readers are I/O/decode-bound and may need fewer threads than the
-  CPU-bound scanner. Measure read-vs-scan balance on the kernel and right-size
-  (candidate: readers = max(2, cores/2)).
+  overlap is the point) and OS-scheduled, but reader work is I/O/decode-bound
+  and needs fewer threads than CPU-bound scanning. FIX LANDED 2026-05-31:
+  `FilesystemSource` now sizes the dedicated reader pool to half the scanner
+  pool with a 16-thread cap and a two-thread minimum. A 32-core host now runs
+  16 reader workers instead of 32, preserving the deadlock fix while reducing
+  scheduler pressure on large-tree scans. Gate:
+  `filesystem_reader_pool_is_smaller_than_scan_pool_on_large_hosts`.
 
 ## Throughput (mirror, for reference — not the scale target)
 

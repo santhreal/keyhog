@@ -66,6 +66,8 @@ mod web;
 pub use binary::BinarySource;
 #[cfg(feature = "docker")]
 pub use docker::DockerImageSource;
+#[doc(hidden)]
+pub use filesystem::reader_pool_thread_count_for_test;
 pub use filesystem::FilesystemSource;
 #[cfg(feature = "git")]
 pub use git::GitDiffSource;
