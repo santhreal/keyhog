@@ -33,7 +33,10 @@ pub(crate) fn sample_finding() -> VerifiedFinding {
         service: Arc::from("aws"),
         severity: Severity::High,
         credential_redacted: std::borrow::Cow::Borrowed("AKIA...7XYA"),
-        credential_hash: "deadbeef".into(),
+        credential_hash: [
+            0xde, 0xad, 0xbe, 0xef, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
+        ],
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),

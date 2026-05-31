@@ -67,7 +67,10 @@ impl std::fmt::Debug for DedupedMatch {
                 "credential",
                 &format_args!("<redacted {} bytes>", self.credential.len()),
             )
-            .field("credential_hash", &crate::finding::hex_encode(&self.credential_hash))
+            .field(
+                "credential_hash",
+                &crate::finding::hex_encode(&self.credential_hash),
+            )
             .field(
                 "companions",
                 &format_args!("<{} redacted companions>", self.companions.len()),
@@ -146,6 +149,16 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
 
         match groups.get_mut(&key) {
             Some(existing) => {
+                if is_decoder_alias_pair(&existing.primary_location, &matched.location) {
+                    if is_decoder_location(&existing.primary_location)
+                        && !is_decoder_location(&matched.location)
+                    {
+                        existing.primary_location = matched.location;
+                    }
+                    merge_companions(&mut existing.companions, matched.companions);
+                    existing.confidence = max_confidence(existing.confidence, matched.confidence);
+                    continue;
+                }
                 // Drop locations that are the same (file_path, line) as the
                 // primary OR any already-recorded additional. They are the
                 // structured-preprocessor synthetic alias of an original
@@ -196,6 +209,29 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     let mut deduped: Vec<(DedupKey, DedupedMatch)> = groups.into_iter().collect();
     deduped.sort_by(|a, b| a.0.cmp(&b.0));
     deduped.into_iter().map(|(_, v)| v).collect()
+}
+
+fn is_decoder_alias_pair(a: &MatchLocation, b: &MatchLocation) -> bool {
+    if a.file_path != b.file_path || a.commit != b.commit {
+        return false;
+    }
+    if is_decoder_location(a) == is_decoder_location(b) {
+        return false;
+    }
+    match (a.line, b.line) {
+        (Some(left), Some(right)) if left.abs_diff(right) <= 1 => return true,
+        _ => {}
+    }
+    a.offset.abs_diff(b.offset) <= 16
+}
+
+fn is_decoder_location(location: &MatchLocation) -> bool {
+    const DECODER_SUFFIXES: &[&str] = &[
+        "/base64", "/hex", "/url", "/json", "/z85", "/reverse", "/caesar",
+    ];
+    DECODER_SUFFIXES
+        .iter()
+        .any(|suffix| location.source.ends_with(suffix))
 }
 
 /// Cross-detector dedup at emit time.

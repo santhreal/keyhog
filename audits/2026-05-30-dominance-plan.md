@@ -1274,6 +1274,32 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
 
+## Executed Patch Set: GPU AC Recall Parity and Decode Attribution
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: GPU phase 2 still uses the GPU hit list as the accelerator, but admitted chunks now union the canonical CPU AC trigger roots before extraction so the GPU path fails closed when the literal-set trigger set drifts.
+- CAPABILITY: forced GPU scans of the targeted Linux subset now preserve the same five detector findings and source locations as forced SIMD after corrupt GPU AC triples degrade to the CPU/SIMD literal path.
+- INSUFFICIENCY: GPU AC batches with impossible `end <= start` triples now degrade before chunk attribution instead of feeding corrupt ranges into phase 2.
+- COHERENCE: decoded-source aliases no longer displace original file locations during dedup when both represent the same nearby credential.
+- TESTING: wired the existing Caesar decode unit cases into the unified scanner harness and added guards for Kconfig/syscall-table paths, GPU AC degenerate triples, GPU phase-2 CPU-root union, and core decoded-alias dedup.
+- DOGFOODING: reran the exact `/tmp/keyhog-gpu-divergence-subset` forced SIMD/GPU comparison and confirmed byte-identical sorted JSON output.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests a3_decode -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests gpu_phase2_unions_cpu_ac_roots -- --nocapture`
+- `cargo test -p keyhog-scanner --test all_tests gpu_no_hit_fallback_admission -- --nocapture`
+- `cargo test -p keyhog-core --lib`
+- `cargo test -p keyhog-core --test dedup_decoder_alias -- --nocapture`
+- `cargo build --profile release-fast -p keyhog`
+- `KEYHOG_NO_GPU=1 keyhog scan --backend simd --no-daemon --format json --output /tmp/keyhog-subset-simd.json /tmp/keyhog-gpu-divergence-subset`
+- `KEYHOG_NO_GPU=0 keyhog scan --backend gpu --no-daemon --format json --output /tmp/keyhog-subset-gpu.json /tmp/keyhog-gpu-divergence-subset`
+- `diff -u /tmp/keyhog-subset-simd.sorted.json /tmp/keyhog-subset-gpu.sorted.json`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31

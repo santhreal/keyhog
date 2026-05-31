@@ -34,12 +34,19 @@ const SOURCE_CODE_EXTENSIONS: &[&str] = &[
     ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala", ".c", ".cc",
     ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cs", ".rb", ".php", ".swift", ".m", ".mm", ".sh",
     ".bash", ".zsh", ".fish", ".lua", ".pl", ".pm", ".sql", ".html", ".htm", ".css", ".scss",
-    ".sass", ".vue", ".svelte", ".md", ".rst", ".txt", ".adoc",
+    ".sass", ".vue", ".svelte", ".md", ".rst", ".txt", ".adoc", ".tbl", ".mk", ".cmake",
 ];
+
+const SOURCE_CODE_FILENAMES: &[&str] = &["kconfig", "makefile", "cmakelists.txt"];
 
 pub fn is_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
-    let lower = p.to_ascii_lowercase();
+    let lower = p.replace('\\', "/").to_ascii_lowercase();
+    if let Some(file_name) = lower.rsplit('/').next() {
+        if SOURCE_CODE_FILENAMES.contains(&file_name) {
+            return true;
+        }
+    }
     SOURCE_CODE_EXTENSIONS
         .iter()
         .any(|ext| lower.ends_with(ext))
@@ -124,8 +131,8 @@ impl Decoder for CaesarDecoder {
             // kimi-decode audit: caesar_shift is the identity for
             // digits / punctuation / non-ASCII. A pure-digit candidate
             // (e.g. a 16-digit PIN) produces 25 IDENTICAL shifts, all
-            // equal to the original. The seen-set later dedups them
-            // but each unnecessarily walks the full detector pipeline
+            // equal to the original. The downstream seen-set dedups them,
+            // but each still unnecessarily walks the full detector pipeline
             // and emits a bare decoded chunk that scans the same text
             // we already scanned in the parent. Skip if the input has
             // no a-z/A-Z character to shift.

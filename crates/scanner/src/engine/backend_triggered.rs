@@ -184,7 +184,7 @@ impl CompiledScanner {
         self.collect_triggered_patterns_cpu(text)
     }
 
-    fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {
+    pub(crate) fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {
         let mut triggered_patterns = vec![0u64; self.ac_map.len().div_ceil(64)];
         if let Some(ac) = &self.ac {
             for ac_match in ac.find_iter(text.as_bytes()) {
