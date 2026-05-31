@@ -43,6 +43,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Keep the deterministic SecretBench floor-override batch for strongly vendor-anchored detectors, raising mirror recall to the target range without adding clean-negative false positives.
 - Store always-active fallback detectors as sparse indices instead of a dense bool table, keeping fallback activation O(active patterns + keyword hits) per admitted chunk.
 - Adopt compact `CsrU32` storage for hot scanner index maps (`prefix_propagation`, same-prefix siblings, fallback keyword routing, and SIMD Hyperscan dedup maps) instead of leaving the optimization half-wired.
+- Preserve cross-chunk boundary reassembly when GPU batch dispatch degrades to CPU or SIMD coalescing falls back because the prefilter is unavailable.
 - Remove the dead fragment-cache `shard_index` wrapper so production keeps only the allocation-free slice-pair shard path.
 - Lower the AWS secret-access-key detector confidence floor for anchored `AWS_SECRET_ACCESS_KEY`-style assignments so valid 40-character bodies are not dropped below the global floor.
 - Lower the Google OAuth client-secret detector confidence floor for uniquely anchored `GOCSPX-`, `GOOGLE_CLIENT_SECRET`, and `.apps.googleusercontent.com` shapes so low-entropy client IDs are not dropped.

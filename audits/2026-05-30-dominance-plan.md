@@ -1230,6 +1230,20 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Degraded Batch Boundary Recall
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: GPU batch dispatch that degrades to CPU now still runs cross-chunk boundary reassembly, so credentials split across adjacent windows keep the same recall as normal CPU/SIMD batch paths.
+- WIRING: the SIMD coalesced fallback used when the Hyperscan prefilter is unavailable also runs boundary reassembly after parallel per-chunk scanning.
+- TESTING: scanner gap contracts reject removing boundary reassembly from either degraded batch branch.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests degraded_batch_paths_preserve_boundaries -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31

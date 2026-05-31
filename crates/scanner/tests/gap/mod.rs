@@ -11,6 +11,7 @@ pub mod context_sequential_placeholder_strips_prefix;
 pub mod context_tokio_async_fn_test_body_is_test_code;
 pub mod cross_platform_cfg_gates_absent;
 pub mod csr_hot_maps_adopted;
+pub mod degraded_batch_paths_preserve_boundaries;
 pub mod decode_pipeline_exceeds_modularity_cap;
 pub mod detector_contract_coverage_100pct;
 pub mod docs_megakernel_env_claim_matches_engine;
