@@ -31,6 +31,12 @@ fn scan_max_file_size_skips_oversized_file() {
         "oversized file must be skipped (exit 0); stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains('\x1b'),
+        "non-progress mode should not emit ANSI escapes; got: {}",
+        stderr
+    );
     let findings: serde_json::Value =
         serde_json::from_slice(&output.stdout).unwrap_or_else(|_| serde_json::json!([]));
     assert!(

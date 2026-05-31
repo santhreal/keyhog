@@ -24,6 +24,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Detection
 
 - Suppress TypeScript non-null source identifiers like `privateAccessToken!` only when the trailing bang follows a credential-named camelCase identifier with no digits. Real password bodies ending in `!` such as Snowflake/Sourcetree fixtures remain reportable.
+- Broaden the SIMD/no-HS-hit entropy-run admission gate to treat base64/base64url separators (`-`, `_`, `+`, `/`, `=`) as part of the same token, restoring recall for separators-only secret forms in `generic-high-entropy-string` corpus paths without opening new broadening routes.
+- Fix telemetry dogfood assertions and related redaction tests to match canonical `keyhog_core::redact` output shape (`prefix...suffix`) rather than legacy fixed-prefix assumptions.
 
 ### Coherence
 
@@ -95,6 +97,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
 - Wire the full CLI contract-test module set into `all_tests`, fix the newly enforced public contracts for `diff` missing-baseline exit codes, explicit piped `--progress`, optional `watch [PATH]` help, and top-level exit-code docs.
+- In non-progress mode, keep `--max-file-size` skip-summary output plain-text (no ANSI color escapes) so JSON/text automation pipelines stay parse-stable.
 - Harden hex-token false-positive suppression against digest fragments, tighten several 32-hex detector anchors to word boundaries, make Appsmith environment anchors case-insensitive, split SARIF serialization structs out of the streaming reporter, and upgrade weak CLI/decode assertions to identity-level checks.
 - Split the previously orphaned adversarial/property CLI suites into standalone CI test binaries and fix the surfaced contract drift: user-named missing resources exit 2, watch rejects non-directories, scan-system validates `--space`/`--threads`, hook install exposes real `--force`, detector search no-matches are script-clean, and legacy baseline/diff JSON remains accepted.
 - Make `--no-suppress-test-fixtures` also disable test/example path confidence penalties and hard suppression, so real secrets under `tests/fixtures` can be surfaced for recall audits.

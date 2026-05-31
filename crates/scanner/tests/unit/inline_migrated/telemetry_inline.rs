@@ -42,10 +42,21 @@ fn dogfood_captures_events() {
             ..
         } => {
             assert_eq!(detector, "aws-access-key");
-            assert!(credential_redacted.starts_with("AKIAIO"));
+            assert!(
+                credential_redacted.starts_with("AKIA"),
+                "should keep service prefix: {credential_redacted}"
+            );
             assert!(
                 !credential_redacted.contains("EXAMPLE"),
                 "must not leak the full value"
+            );
+            assert!(
+                credential_redacted.ends_with("MPLE"),
+                "short redaction truncation should keep provider tail bytes: {credential_redacted}"
+            );
+            assert!(
+                credential_redacted.contains("..."),
+                "must contain an ellipsis separator when redacting a long credential"
             );
             assert_eq!(reason.as_ref(), "ends_with_EXAMPLE");
         }
@@ -70,7 +81,9 @@ fn redaction_keeps_prefix_only() {
             ..
         } => credential_redacted.as_str(),
     };
-    assert!(red.starts_with("AKIAIO"));
+    assert!(red.starts_with("AKIA"));
+    assert!(red.contains("..."));
+    assert!(red.ends_with("MPLE"));
     assert!(!red.contains("EXAMPLE"));
 }
 

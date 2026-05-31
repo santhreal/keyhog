@@ -49,7 +49,7 @@ pub(crate) fn report_completion_summary(count: usize, elapsed: f64, ansi: bool) 
             );
         }
     }
-    report_oversize_skip_summary();
+    report_oversize_skip_summary(ansi);
 }
 
 /// Live progress ticker - overwrites the previous line via CR every
@@ -82,16 +82,23 @@ pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started:
     let _ = err.flush();
 }
 
-pub(crate) fn report_oversize_skip_summary() {
+pub(crate) fn report_oversize_skip_summary(ansi: bool) {
     use std::sync::atomic::Ordering;
     let skipped = keyhog_sources::SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed);
     if skipped == 0 {
         return;
     }
-    eprintln!(
-        "\x1b[33m{}\x1b[0m file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
-        skipped
-    );
+    if ansi {
+        eprintln!(
+            "\x1b[33m{}\x1b[0m file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
+            skipped
+        );
+    } else {
+        eprintln!(
+            "{} file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
+            skipped
+        );
+    }
 }
 
 /// Dump the captured dogfood events as a single JSON object on stderr.

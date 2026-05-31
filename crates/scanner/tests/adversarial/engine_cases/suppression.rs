@@ -1,4 +1,5 @@
 use super::support::*;
+use keyhog_scanner::telemetry::DogfoodEvent;
 use std::sync::{Mutex, OnceLock};
 
 /// Tests that touch the process-global `keyhog_scanner::telemetry` state
@@ -102,20 +103,34 @@ fn dogfood_captures_redacted_event() {
     let _ = scanner.scan(&chunk);
     let events = keyhog_scanner::telemetry::drain_events();
     // Other tests may run concurrently and fire their own suppressions
-    // while dogfood is globally enabled, so don't assume index 0 is ours
-    // - find the AKIAIO event explicitly.
-    let aws_event = events
+    // while dogfood is enabled, so don't assume index 0 is ours.
+    let redacted = events
         .iter()
-        .find(|e| serde_json::to_string(e).unwrap().contains("AKIAIO"))
+        .find_map(|event| match event {
+            DogfoodEvent::ExampleSuppressed {
+                credential_redacted,
+                reason,
+                ..
+            } if reason.contains("EXAMPLE") => Some(credential_redacted.as_str()),
+            _ => None,
+        })
         .expect("--dogfood must capture this AKIA suppression event");
-    let serialized = serde_json::to_string(aws_event).unwrap();
+
     assert!(
-        !serialized.contains(concat!("AK", "IAIOSFODNN7EXAMPLE")),
-        "redacted output must NOT contain the full credential: {serialized}"
+        !redacted.contains(concat!("AK", "IAIOSFODNN7EXAMPLE")),
+        "redacted output must NOT contain the full credential: {redacted}"
     );
     assert!(
-        serialized.contains("AKIAIO"),
-        "redacted output should preserve a short prefix so the user recognises the detector: {serialized}"
+        redacted.starts_with("AKIA"),
+        "redacted output should include the provider prefix: {redacted}"
+    );
+    assert!(
+        redacted.contains("..."),
+        "redacted output should keep an ellipsis separator: {redacted}"
+    );
+    assert!(
+        redacted.ends_with("MPLE"),
+        "redacted output should retain trailing bytes for verification: {redacted}"
     );
     keyhog_scanner::telemetry::reset();
 }
