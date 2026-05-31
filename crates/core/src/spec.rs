@@ -48,6 +48,21 @@ pub struct DetectorSpec {
     /// High-performance pre-filtering keywords.
     #[serde(default)]
     pub keywords: Vec<String>,
+    /// Self-declared per-detector confidence floor, in `[0.0, 1.0]`.
+    ///
+    /// When set, findings from THIS detector use this floor instead of the
+    /// global `--min-confidence` / `[scan] min_confidence`. A detector with a
+    /// distinctive vendor prefix (e.g. sourcegraph `sgp_<40hex>`, cursor
+    /// `key_<64hex>`) is high-confidence by virtue of the prefix even when the
+    /// body is low-entropy hex that the generic confidence model scores below
+    /// the global floor; the detector author declares that here so the
+    /// detector ships working out of the box. Costs nothing at scan time —
+    /// it is a single O(1) map lookup at the post-scan floor gate, on an
+    /// already-compiled corpus. An operator `.keyhog.toml`
+    /// `[detector.<id>] min_confidence` still overrides this self-declared
+    /// default. `None` (the default) means "use the global floor".
+    #[serde(default)]
+    pub min_confidence: Option<f64>,
 }
 
 /// A regex pattern with optional capture group and description.

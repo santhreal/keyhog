@@ -170,24 +170,28 @@ apples (same bare-token files to every tool).
   the fresh binary over `~/.local/bin/keyhog`) before scoring — the version
   string is NOT a reliable provenance signal (collides across builds).
 
-- **DET-18 · HIGH · hex-body service tokens are suppressed by the hash-digest
-  shape-gate** — a new service detector whose token body is hex
+- **DET-18 · HIGH · hex-body service tokens are cut by the confidence floor**
+  (CORRECTED — earlier draft mis-blamed the shape-gate; verified it is the
+  confidence floor). A new service detector whose token body is hex
   (sourcegraph `sgp_<40hex>`/`slk_<64hex>`, cursor `key_<64hex>`, linode-style
-  PATs) LOADS but never emits: the value has the shape of a sha1 (40 hex) /
-  sha256 (64 hex) digest, so the shape-gate that correctly suppresses the
-  sha1/sha256/git-sha decoy negatives also kills the real token. base62/
-  alphanumeric tokens (openai sk-svcacct-, anthropic sk-ant-, stripe sk_live_,
-  grafana eyJrIjoi) are unaffected. The `is_service_anchored_detector` bypass
-  covers the char-diversity/entropy PENALTIES (penalties.rs) but NOT the
-  pre-confidence hash-digest shape-gate in `suppression/`. FIX: let a
-  distinctive-PREFIX named detector (the prefix proves it is not a bare digest)
-  override `looks_like_bare_hex_digest`/`looks_like_prefixed_hash_digest` —
-  WITHOUT reopening the decoy FPs (the decoys have NO service prefix, so gating
-  the override on "named detector matched AND match starts with its literal
-  vendor prefix" is safe). This is the unblocker for every hex-bodied service.
-  EXTENSIBILITY IMPACT: today you cannot add a hex-token service by dropping in
-  a TOML — it silently never fires. That violates the Tier-B data-driven
-  contract (a detector should be addable as data). High-leverage to fix once.
+  PATs) LOADS and MATCHES but is dropped: scanned bare at `--min-confidence 0.0`
+  it fires (`sourcegraph-access-token`, **confidence 0.28**); at the default
+  0.40 floor it is cut. NOT the shape-gate — `strip_hash_algo_prefix` only
+  recognizes `sha256:`/`sha512:`/`sha1:`/`md5:` prefixes, so `sgp_<hex>` is
+  neither a prefixed- nor bare-hex digest. The real cause: the confidence model
+  under-weights the distinctive VENDOR PREFIX (`sgp_`/`key_`) for a low-entropy
+  hex body. base62/alphanumeric tokens clear the floor on entropy alone (openai
+  sk-svcacct- ~100 base62 chars, anthropic sk-ant-, stripe sk_live_, grafana
+  eyJrIjoi). FIX: give a named detector whose match BEGINS WITH its literal
+  vendor prefix a confidence boost (the unique prefix is strong evidence the
+  value is real, independent of body entropy), then re-score the mirror to
+  confirm FP stays ~32 (the boost is gated on the vendor-prefix literal, which
+  the sha1/sha256/git-sha decoy negatives do not carry, so no FP reopening).
+  EXTENSIBILITY IMPACT: today you cannot add a low-entropy-hex-token service by
+  dropping in a TOML — it matches but is floored away silently. Violates the
+  Tier-B data-driven contract (a detector should be addable as data). The
+  sourcegraph/cursor TOMLs are committed and will activate the moment this
+  confidence boost lands.
 
 ## Open
 

@@ -72,7 +72,10 @@ impl ScanOrchestrator {
         }
         let mut effective_config = resolve_scan_config(&mut args);
         let disabled_detectors = effective_config.disabled_detectors.clone();
-        let detector_min_confidence = effective_config.detector_min_confidence.clone();
+        // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
+        // detector self-declared floors (DetectorSpec::min_confidence, merged
+        // below once the corpus is loaded) fill the gaps.
+        let mut detector_min_confidence = effective_config.detector_min_confidence.clone();
 
         // `[lockdown] require = true` is a fail-closed security control: refuse
         // to run unless the operator consciously passed --lockdown. Previously
@@ -102,6 +105,20 @@ impl ScanOrchestrator {
         } else {
             load_detectors_with_cache(&detectors_path)?
         };
+
+        // Seed self-declared per-detector floors from the corpus. `or_insert`
+        // means an operator `.keyhog.toml` value (already present) wins; a
+        // detector that declares `min_confidence` in its own TOML supplies the
+        // default for any id the operator did not pin. Clamped to [0,1] so a
+        // malformed spec can never invert the gate. Zero scan-time cost: the
+        // post-scan floor gate already does this map lookup per finding.
+        for d in &detectors {
+            if let Some(mc) = d.min_confidence {
+                detector_min_confidence
+                    .entry(d.id.clone())
+                    .or_insert(mc.clamp(0.0, 1.0));
+            }
+        }
 
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
         // disabled detectors from the corpus so they never compile or fire.
