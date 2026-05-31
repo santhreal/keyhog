@@ -182,6 +182,12 @@ real tree. Items carry the data that proves them.
   source files now enter the scanner as independent chunks that `par_iter` can
   spread across workers instead of one worker serially re-windowing the file.
   Regression gate: `default_windowing_splits_multimegabyte_source_files`.
+  REMEASURED 2026-05-31 after L1/current-thread runtime/reader-pool sizing on
+  `/mnt/FlareTraining/santh-corpus/repos/linux/drivers/gpu/drm/amd/include`
+  (467 MB, 543 files, release-fast, `KEYHOG_NO_GPU=1`): SIMD 1.26 s wall,
+  4.93 s user, 460% CPU, 1.52 GB RSS; CPU fallback 1.30 s wall, 4.88 s user,
+  443% CPU, 1.55 GB RSS; both emit zero findings and byte-identical sorted
+  JSON. The old 5.56-6.86 s amd/include numbers are no longer representative.
   Remaining measured levers:
     L2 (biggest single cost): gate/shrink the fallback keyword-AC sweep - it
        re-scans full content on every chunk. Tighten its bloom/keyword gate, or

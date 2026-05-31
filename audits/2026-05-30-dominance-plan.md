@@ -1525,3 +1525,19 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests vyre_usage -- --nocapture`
+
+## Executed Measurement: AMD Include SIMD/CPU Remeasure
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: remeasured the 467 MB Linux `drivers/gpu/drm/amd/include` workload after the windowing, current-thread runtime, and reader-pool sizing fixes.
+- COHERENCE: updated `backlog/performance.md` so PERF-08 no longer relies on stale 5.56-6.86 s amd/include timings.
+- TESTING: forced SIMD and forced CPU fallback emitted zero findings and byte-identical sorted JSON on the workload.
+
+Verified commands:
+
+- `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=simd keyhog scan --no-daemon --format json --output /tmp/keyhog-amd-include-simd.json /mnt/FlareTraining/santh-corpus/repos/linux/drivers/gpu/drm/amd/include`
+- `/usr/bin/time -v env KEYHOG_NO_GPU=1 KEYHOG_BACKEND=cpu keyhog scan --no-daemon --format json --output /tmp/keyhog-amd-include-cpu.json /mnt/FlareTraining/santh-corpus/repos/linux/drivers/gpu/drm/amd/include`
+- `diff -u /tmp/keyhog-amd-include-simd.sorted.json /tmp/keyhog-amd-include-cpu.sorted.json`
