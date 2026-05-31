@@ -3,7 +3,7 @@
 One step in your workflow. Findings fail the job, the report uploads to
 GitHub code-scanning, and a copy of the report attaches as a workflow
 artifact for download. The job summary shows the scan path, severity floor,
-report name, exit code, and finding count for fast PR triage.
+report name, raw exit code, and finding count for fast PR triage.
 
 ```yaml
 - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
@@ -60,6 +60,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | Output | Description |
 | --- | --- |
 | `findings` | Number of findings at or above `severity`. |
+| `exit-code` | Raw `keyhog` process exit: `0` clean, `1` findings, `10` live findings under `--verify`. |
 | `report`   | Path to the produced report file. |
 
 ## What it costs your CI

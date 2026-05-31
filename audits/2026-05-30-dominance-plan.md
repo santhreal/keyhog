@@ -971,6 +971,24 @@ Red gate captured:
 
 - `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
 
+## Executed Patch Set: Composite Action CI Contract Harness
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: moved the composite Action scan/count/summary path out of inline YAML into `.github/actions/keyhog/run-scan.sh`, so the production CI behavior is locally executable and covered by the CLI aggregate test target.
+- COHERENCE: corrected the Action baseline producer docs to `keyhog scan --create-baseline`, documented the raw `exit-code` output, and kept Action metadata/README/summary fields aligned.
+- WIRING: the Action now passes path, severity, format, verify, baseline, and output through env into one argv builder that preserves paths with spaces and exposes both finding count and raw scanner exit.
+- AUDIT HUNTS: invalid `format`, `severity`, and `verify` fail before invoking `keyhog`; malformed clean reports and findings exits without reports fail closed; malformed findings reports are still treated as at least one finding; markdown summary cells escape pipes, backticks, and newlines.
+- TESTING: added nine simulated-Action e2e contracts covering SARIF count, text count, malformed reports, missing reports, input validation, verify/baseline argv wiring, output propagation, and summary sanitization.
+- SPEED / INNOVATION: kept Vyre work on the measured lane already captured in this audit: the workspace is pinned to crates.io `vyre` 0.6.1, so the next performance gain is fused GPU work and backend trace gates, not detector breadth or speculative dependency churn.
+
+Verified gates:
+
+- `bash -n .github/actions/keyhog/run-scan.sh`
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+
 ## Executed Patch Set: GitHub Action CI Fail-Closed UX
 
 Date: 2026-05-31

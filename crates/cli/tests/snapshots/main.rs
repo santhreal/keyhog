@@ -474,8 +474,7 @@ fn rewrite_durations(raw: &str) -> String {
                 // Reject things like "1ssomething" - the suffix must end
                 // at a non-alnum boundary so we don't eat real words.
                 let after = j + sb.len();
-                let next_ok =
-                    after == bytes.len() || !bytes[after].is_ascii_alphanumeric();
+                let next_ok = after == bytes.len() || !bytes[after].is_ascii_alphanumeric();
                 if next_ok {
                     suffix_len = sb.len();
                     break;
@@ -833,7 +832,10 @@ fn html_format_report_contains_finding() {
     let start = line.find('[').expect("rawFindings array opens");
     let end = line.rfind(']').expect("rawFindings array closes");
     let json = &line[start..=end];
-    assert_ne!(json, "[]", "html report embedded zero findings for a planted key");
+    assert_ne!(
+        json, "[]",
+        "html report embedded zero findings for a planted key"
+    );
     assert!(
         json.contains("\"service\":\"aws\""),
         "html findings payload missing the planted AWS finding: {json}"
@@ -946,7 +948,10 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
         record.push(field);
         records.push(record);
     }
-    assert!(!in_quotes, "CSV ended inside an unterminated quoted field: malformed output");
+    assert!(
+        !in_quotes,
+        "CSV ended inside an unterminated quoted field: malformed output"
+    );
     records
 }
 
@@ -966,15 +971,34 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
     );
 
     let expected = json_finding_count(&tree_s, dir.path());
-    assert!(expected > 0, "fixture must plant >=1 finding for a meaningful csv row-count check");
+    assert!(
+        expected > 0,
+        "fixture must plant >=1 finding for a meaningful csv row-count check"
+    );
 
     let records = parse_csv(&captured.stdout);
-    assert!(!records.is_empty(), "csv output had no records at all: {:?}", captured.stdout);
+    assert!(
+        !records.is_empty(),
+        "csv output had no records at all: {:?}",
+        captured.stdout
+    );
 
     const HEADER: &[&str] = &[
-        "detector_id", "detector_name", "service", "severity", "credential_redacted",
-        "credential_hash", "source", "file_path", "line", "offset", "commit", "author",
-        "date", "verification", "confidence",
+        "detector_id",
+        "detector_name",
+        "service",
+        "severity",
+        "credential_redacted",
+        "credential_hash",
+        "source",
+        "file_path",
+        "line",
+        "offset",
+        "commit",
+        "author",
+        "date",
+        "verification",
+        "confidence",
     ];
     assert_eq!(
         records[0], HEADER,
@@ -1058,7 +1082,10 @@ fn junit_format_is_well_formed_and_counts_match_findings() {
     let xml = &captured.stdout;
 
     let expected = json_finding_count(&tree_s, dir.path());
-    assert!(expected > 0, "fixture must plant >=1 finding for a meaningful junit count check");
+    assert!(
+        expected > 0,
+        "fixture must plant >=1 finding for a meaningful junit count check"
+    );
 
     // Envelope: prolog + balanced <testsuites> + a single <testsuite>.
     assert!(
@@ -1081,12 +1108,12 @@ fn junit_format_is_well_formed_and_counts_match_findings() {
     );
 
     // <testsuite> count attributes must equal the ground-truth finding count.
-    let tests = xml_attr(xml, "testsuite", "tests")
-        .expect("junit <testsuite> has a tests attribute");
-    let failures = xml_attr(xml, "testsuite", "failures")
-        .expect("junit <testsuite> has a failures attribute");
-    let errors = xml_attr(xml, "testsuite", "errors")
-        .expect("junit <testsuite> has an errors attribute");
+    let tests =
+        xml_attr(xml, "testsuite", "tests").expect("junit <testsuite> has a tests attribute");
+    let failures =
+        xml_attr(xml, "testsuite", "failures").expect("junit <testsuite> has a failures attribute");
+    let errors =
+        xml_attr(xml, "testsuite", "errors").expect("junit <testsuite> has an errors attribute");
     assert_eq!(
         tests,
         expected.to_string(),
@@ -1097,7 +1124,10 @@ fn junit_format_is_well_formed_and_counts_match_findings() {
         expected.to_string(),
         "junit testsuite failures=\"{failures}\" disagrees with json finding count {expected}"
     );
-    assert_eq!(errors, "0", "junit testsuite errors should be 0, got {errors}");
+    assert_eq!(
+        errors, "0",
+        "junit testsuite errors should be 0, got {errors}"
+    );
 
     // Exactly N testcase/failure pairs, balanced open/close.
     assert_eq!(
@@ -1161,7 +1191,10 @@ fn normalize_redacts_tempdir_paths() {
     std::fs::write(&path, b"x").expect("write");
     let input = format!("scanned {}\n", path.display());
     let got = normalize(&input, dir.path());
-    assert!(got.contains("<TMP>"), "expected <TMP> placeholder in: {got}");
+    assert!(
+        got.contains("<TMP>"),
+        "expected <TMP> placeholder in: {got}"
+    );
     assert!(
         !got.contains(dir.path().to_str().unwrap()),
         "raw tempdir path leaked into normalised output: {got}"

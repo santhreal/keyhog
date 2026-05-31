@@ -36,7 +36,7 @@ inputs:
   baseline:
     description: |
       Path to a keyhog baseline file (produced by
-      `keyhog scan --format json --output baseline.json` and committed to the
+      `keyhog scan --create-baseline baseline.json` and committed to the
       repo). Findings already present in the baseline are suppressed, so the
       job blocks only NEW secrets. This is the standard way to adopt keyhog in
       a repo that already has findings, without a noisy failing first run.
@@ -46,6 +46,9 @@ outputs:
   findings:
     description: 'Number of findings at or above `severity` (parsed from the report).'
     value: ${{ steps.scan.outputs.findings }}
+  exit-code:
+    description: 'Raw keyhog process exit code: 0 clean, 1 findings, 10 live findings under --verify.'
+    value: ${{ steps.scan.outputs.exit-code }}
   report:
     description: 'Path to the produced scan report (relative to the workspace).'
     value: ${{ steps.outfile.outputs.name }}
@@ -166,132 +169,15 @@ runs:
     - name: Run scan
       id: scan
       shell: bash
+      env:
+        KEYHOG_SCAN_PATH: ${{ inputs.path }}
+        KEYHOG_SEVERITY: ${{ inputs.severity }}
+        KEYHOG_FORMAT: ${{ inputs.format }}
+        KEYHOG_VERIFY: ${{ inputs.verify }}
+        KEYHOG_BASELINE: ${{ inputs.baseline }}
+        KEYHOG_OUTPUT: ${{ steps.outfile.outputs.name }}
       run: |
-        set -uo pipefail
-        # Assemble args as an array so paths with spaces stay intact and
-        # optional flags are only appended when set.
-        args=(scan
-          --path "${{ inputs.path }}"
-          --severity "${{ inputs.severity }}"
-          --format "${{ inputs.format }}"
-          --output "${{ steps.outfile.outputs.name }}")
-        if [[ "${{ inputs.verify }}" == "true" ]]; then
-          args+=(--verify)
-        fi
-        # Wire the documented `baseline` input through to --baseline. Before
-        # this it was silently ignored, so adopters who set `baseline:` still
-        # had the job fail on every PRE-EXISTING finding instead of only NEW
-        # ones - the exact opposite of what the input promises.
-        if [[ -n "${{ inputs.baseline }}" ]]; then
-          args+=(--baseline "${{ inputs.baseline }}")
-        fi
-        # Run scan but DON'T exit on non-zero so we can count findings
-        # before deciding whether to fail the job.
-        set +e
-        keyhog "${args[@]}"
-        keyhog_exit=$?
-        set -e
-
-        count_from_report() {
-          local format="$1"
-          local report="$2"
-          case "$format" in
-            sarif)
-              if command -v jq >/dev/null 2>&1; then
-                jq '[.runs[].results[]] | length' "$report"
-              elif command -v python3 >/dev/null 2>&1; then
-                python3 - "$report" <<'PY'
-        import json
-        import sys
-        with open(sys.argv[1], "r", encoding="utf-8") as f:
-            sarif = json.load(f)
-        print(sum(len(run.get("results", [])) for run in sarif.get("runs", [])))
-        PY
-              else
-                return 2
-              fi
-              ;;
-            json)
-              if command -v jq >/dev/null 2>&1; then
-                jq 'length' "$report"
-              elif command -v python3 >/dev/null 2>&1; then
-                python3 - "$report" <<'PY'
-        import json
-        import sys
-        with open(sys.argv[1], "r", encoding="utf-8") as f:
-            report = json.load(f)
-        if not isinstance(report, list):
-            raise SystemExit("keyhog JSON report must be a top-level array")
-        print(len(report))
-        PY
-              else
-                return 2
-              fi
-              ;;
-            jsonl)
-              awk 'END { print NR + 0 }' "$report"
-              ;;
-            text)
-              grep -cE '^[[:space:]]+\xe2\x94\x8c' "$report" 2>/dev/null || true
-              ;;
-          esac
-        }
-
-        # Count findings from the report regardless of exit code. This must
-        # fail closed: if the scanner returned a findings exit code but the
-        # report parser is unavailable or the report is malformed, expose at
-        # least one finding instead of silently reporting zero.
-        report="${{ steps.outfile.outputs.name }}"
-        findings=0
-        if [[ -f "$report" ]]; then
-          if parsed_findings="$(count_from_report "${{ inputs.format }}" "$report" 2>/dev/null)"; then
-            findings="$parsed_findings"
-          elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
-            findings=1
-            echo "::warning title=KeyHog::Could not parse '$report'; keyhog exited $keyhog_exit, so treating the scan as having findings."
-          else
-            echo "::error title=KeyHog::Could not parse clean scan report '$report'."
-            exit 3
-          fi
-        elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
-          echo "::error title=KeyHog::keyhog reported findings but did not write '$report'."
-          exit 3
-        fi
-        echo "findings=$findings" >> "$GITHUB_OUTPUT"
-        echo "::notice title=KeyHog::Found $findings finding(s) at or above '${{ inputs.severity }}' severity."
-
-        # 0 = clean, 1 = findings, 10 = LIVE credentials confirmed under
-        # --verify - all "the scan ran, here is the result", handled by the
-        # findings / fail-on-findings logic in the next step. Anything else
-        # (2 user error, 3 system error, 11 scanner panic) is a genuine
-        # failure. Without the `!= 10` guard a --verify run that CONFIRMS a
-        # live leak would be mislabeled "Scanner crashed" and skip the findings
-        # path - the worst outcome reported as a tooling bug.
-        if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
-          echo "::error title=KeyHog::keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
-          exit "$keyhog_exit"
-        fi
-        if [[ "$keyhog_exit" == "10" ]]; then
-          echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
-        fi
-
-        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-          {
-            echo "### KeyHog scan"
-            echo
-            echo "| Field | Value |"
-            echo "| --- | --- |"
-            echo "| Path | \`${{ inputs.path }}\` |"
-            echo "| Severity floor | \`${{ inputs.severity }}\` |"
-            echo "| Format | \`${{ inputs.format }}\` |"
-            echo "| Report | \`${report}\` |"
-            echo "| Findings | \`${findings}\` |"
-            echo "| Exit code | \`${keyhog_exit}\` |"
-            if [[ -n "${{ inputs.baseline }}" ]]; then
-              echo "| Baseline | \`${{ inputs.baseline }}\` |"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-        fi
+        bash "${{ github.action_path }}/run-scan.sh"
 
     - name: Check report exists before SARIF upload
       id: report-check
