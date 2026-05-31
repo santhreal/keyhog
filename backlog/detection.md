@@ -321,3 +321,41 @@ apples (same bare-token files to every tool).
       SAME state — the two scorers disagree 3x (likely fp_analyze omits the
       label=true-no-overlap FP class). Reconcile; the bench's own tools must
       agree or tuning flies blind.
+
+## DET-12 — cryptographic-private-key collapse FIXED (2026-05-31), F1 0.8902 → 0.9108
+
+Surfaced by `benchmarks/` end-to-end run (gaps table: cryptographic-private-key
+F1=0.400, +0.600 behind Kingfisher 1.000). Root-caused on the live binary:
+
+- `ssh-private-key` matched a HEADER-ONLY marker (`-----BEGIN EC PRIVATE KEY-----`)
+  with no body capture. Every distinct EC/PKCS#8/RSA/DSA key of a type produced
+  the byte-identical credential string, so `DedupScope::Credential` (core/dedup.rs
+  keys on `(detector_id, credential)`) correctly folded N distinct leaked keys
+  into ONE finding (the rest → additional_locations). Scorer counts primaries →
+  N keys scored as 1 TP.
+- The header match also WON the per-(file,line) resolver (resolution.rs: service-
+  specific +10 NAMED_DETECTOR_SCORE) over the generic `private-key` full-block
+  match, so the distinct full-block credential was discarded.
+- PGP was spared only because `ssh-private-key`'s regex omitted the PGP header,
+  leaving `private-key` (full BEGIN…END capture) to fire → distinct → 26/26.
+
+Proof (112 cryptographic-private-key positives, mirror): 28/112 caught before
+(EC 1/26, PKCS#8 PRIVATE KEY 1/47, no-header 0/13, PGP 26/26); a 3-EC-file dir
+collapsed to 1 finding. After fix: **112/112** on 112 distinct files
+(private-key 26 + ssh-private-key 86). Overall mirror: F1 0.8902→**0.9108**,
+R 0.8107→**0.8457**, P 0.9870→0.9868 (flat), 2476→2583 findings.
+
+Fix: `ssh-private-key.toml` now captures the full per-algorithm-paired BEGIN…END
+block so each key's credential is distinct, and the homoglyph alternation
+compiler preserves the selected branch suffix instead of creating a header-only
+fallback regex for full-branch alternations. Migrated the dependent contracts
+that relied on ssh's header safety net
+(`private-key.toml`, `github-app-private-key.toml`) from bare-header (shape) to
+full-block positives asserting body capture; `google-artifact-registry-key` was
+self-satisfied (its own JSON-structure regex), unaffected.
+
+Generalization swept (vectors 6/7): no sibling PRIMARY detector captures a
+constant. `vertexai-service-account`/`google-artifact-registry-key` capture
+variable JSON fields (project_id/client_email) → distinct; docusign's
+`BEGIN RSA PRIVATE KEY` is a COMPANION (evidence), not a credential-bearing
+finding → cannot collapse. ssh-private-key was the unique instance.

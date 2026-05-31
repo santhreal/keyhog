@@ -21,6 +21,8 @@ Status: active plan
 - 2026-05-30: Private-key benchmark gap traced to scorer normalization, not scanner recall: KeyHog emitted duplicate PEM appearances as `additional_locations`, while the adapter scored only the primary location. The adapter now expands those aliases, mirror private-key F1 is 1.000, and overall mirror F1 is 0.9108.
 - 2026-05-30: Generic-high-entropy gap audit found BetterLeaks' category win comes with broad false-positive cost outside that category (overall precision 0.231). Gap reporting now includes competitor overall precision so category deltas cannot hide precision regressions.
 - 2026-05-30: Composite Action artifact uploads now include the GitHub job id and scan duration in the artifact name, preventing the default `keyhog-report` name from colliding in common matrix CI layouts.
+- 2026-05-30: SSH/TLS PEM private-key detector now captures full BEGIN/END blocks with paired algorithm boundaries, and the homoglyph alternation compiler preserves branch-local suffixes instead of creating header-only fallback regexes. Regression coverage proves header-only PEM markers stay silent and two distinct EC keys remain two credential-dedup findings.
+- 2026-05-30: GPU backend self-test was run on the RTX 5090 host without `KEYHOG_NO_GPU`: MoE passed, `vyre_literal_set` reported the known subgroup lowering limitation, and `vyre_ac_kernel` failed on degenerate match triples before degrading to SIMD/CPU. This remains a real Vyre AC correctness/performance finding, not a no-GPU skip.
 
 ## Dominance Contract
 

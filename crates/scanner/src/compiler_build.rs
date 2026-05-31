@@ -106,7 +106,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                         // Simple case: prefix is the literal head of the regex.
                         format!("{expanded_prefix}{suffix}")
                     } else if let Some(rewritten) =
-                        rewrite_alternation_prefix(&pattern.regex, &expanded_prefix)
+                        rewrite_alternation_prefix(&pattern.regex, prefix, &expanded_prefix)
                     {
                         // Alternation case: regex is `(?:p1|p2|...)body`. Replace
                         // the leading `(?:...)` with the expanded prefix so the
@@ -190,7 +190,11 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
 /// from inside `(?:ghp_|github_pat_)`, the homoglyph compiler needs the
 /// matching surgical rewrite to splice the expanded prefix into the
 /// regex without losing the trailing body constraint.
-pub fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<String> {
+pub fn rewrite_alternation_prefix(
+    regex: &str,
+    prefix: &str,
+    expanded_prefix: &str,
+) -> Option<String> {
     // Strip a leading inline flag group like `(?i)`.
     let (flag_prefix, body) = split_leading_inline_flag(regex);
     // Only consider non-capturing groups - `(?:p1|p2|...)`. A bare
@@ -251,7 +255,42 @@ pub fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<
     }
     // Trailing body after the alternation group.
     let suffix = &body[close + 1..];
-    Some(format!("{flag_prefix}{expanded_prefix}{suffix}"))
+    for alt in split_top_level_alternatives(inside) {
+        if let Some(branch_suffix) = alt.strip_prefix(prefix) {
+            return Some(format!(
+                "{flag_prefix}{expanded_prefix}{branch_suffix}{suffix}"
+            ));
+        }
+    }
+    None
+}
+
+fn split_top_level_alternatives(group: &str) -> Vec<&str> {
+    let mut alts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0i32;
+    let mut in_class = false;
+    let mut escaped = false;
+    for (idx, ch) in group.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => depth -= 1,
+            '|' if depth == 0 && !in_class => {
+                alts.push(&group[start..idx]);
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    alts.push(&group[start..]);
+    alts
 }
 
 pub fn split_leading_inline_flag(s: &str) -> (&str, &str) {

@@ -10,13 +10,17 @@ service = "ssh"
 severity = "critical"
 keywords = ["BEGIN", "PRIVATE KEY", "OPENSSH", "RSA", "EC PRIVATE", "DSA"]
 
+# Capture the full BEGIN/END block, not just the header marker. Header-only
+# captures are identical across distinct keys of the same type and collapse
+# under credential-scope dedup. BEGIN/END variants are paired explicitly so
+# adjacent or malformed PEM blocks cannot over-capture across mismatched ends.
 [[detector.patterns]]
-regex = "-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
-description = "SSH/TLS private key in PEM format"
+regex = '(?:-----BEGIN RSA PRIVATE KEY-----[\s\S]*?-----END RSA PRIVATE KEY-----|-----BEGIN EC PRIVATE KEY-----[\s\S]*?-----END EC PRIVATE KEY-----|-----BEGIN DSA PRIVATE KEY-----[\s\S]*?-----END DSA PRIVATE KEY-----|-----BEGIN OPENSSH PRIVATE KEY-----[\s\S]*?-----END OPENSSH PRIVATE KEY-----|-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----)'
+description = "SSH/TLS private key in PEM format (full BEGIN/END block)"
 
 [[detector.patterns]]
-regex = "-----BEGIN ENCRYPTED PRIVATE KEY-----"
-description = "Encrypted private key (still sensitive - password may be weak)"
+regex = '-----BEGIN ENCRYPTED PRIVATE KEY-----[\s\S]*?-----END ENCRYPTED PRIVATE KEY-----'
+description = "Encrypted private key, full block (still sensitive - password may be weak)"
 
 [detector.verify]
 method = "GET"

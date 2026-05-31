@@ -7,33 +7,50 @@ use keyhog_scanner::compiler::{
 
 #[test]
 fn alternation_rewrite_basic() {
-    let out = rewrite_alternation_prefix("(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}", "[gɡ]hp_");
+    let out = rewrite_alternation_prefix("(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}", "ghp_", "[gɡ]hp_");
     assert_eq!(out.unwrap(), "[gɡ]hp_[a-zA-Z0-9_]{36}");
 }
 
 #[test]
 fn alternation_rewrite_with_inline_flag() {
-    let out = rewrite_alternation_prefix("(?i)(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}", "[gɡ]hp_");
+    let out = rewrite_alternation_prefix(
+        "(?i)(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}",
+        "ghp_",
+        "[gɡ]hp_",
+    );
     assert_eq!(out.unwrap(), "(?i)[gɡ]hp_[a-zA-Z0-9_]{36}");
 }
 
 #[test]
 fn alternation_rewrite_with_alternative_flag_prefix() {
-    let out = rewrite_alternation_prefix("(?i:abc|def)\\w+", "[a]bc");
+    let out = rewrite_alternation_prefix("(?i:abc|def)\\w+", "abc", "[a]bc");
     assert_eq!(out.unwrap(), "[a]bc\\w+");
 }
 
 #[test]
 fn alternation_rewrite_handles_nested_groups() {
     // Inner `(\d+)` should not confuse the depth tracker.
-    let out = rewrite_alternation_prefix("(?:abc(?:\\d{2})|def)body", "[a]bc");
-    assert_eq!(out.unwrap(), "[a]bcbody");
+    let out = rewrite_alternation_prefix("(?:abc(?:\\d{2})|def)body", "abc", "[a]bc");
+    assert_eq!(out.unwrap(), "[a]bc(?:\\d{2})body");
+}
+
+#[test]
+fn alternation_rewrite_preserves_branch_local_suffix() {
+    let out = rewrite_alternation_prefix(
+        "(?:-----BEGIN RSA PRIVATE KEY-----[\\s\\S]*?-----END RSA PRIVATE KEY-----|-----BEGIN EC PRIVATE KEY-----[\\s\\S]*?-----END EC PRIVATE KEY-----)",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "-----B[EΕ]GIN [EΕ]C PRIV[AΑ]T[EΕ] K[EΕ]Y-----",
+    );
+    assert_eq!(
+        out.unwrap(),
+        "-----B[EΕ]GIN [EΕ]C PRIV[AΑ]T[EΕ] K[EΕ]Y-----[\\s\\S]*?-----END EC PRIVATE KEY-----"
+    );
 }
 
 #[test]
 fn alternation_rewrite_returns_none_for_literal_head() {
     // No leading group → caller should fall through to strip_prefix.
-    let out = rewrite_alternation_prefix("AKIA[A-Z0-9]{16}", "[a]kia");
+    let out = rewrite_alternation_prefix("AKIA[A-Z0-9]{16}", "AKIA", "[a]kia");
     assert!(out.is_none());
 }
 
@@ -47,6 +64,7 @@ fn alternation_rewrite_returns_none_for_capturing_full_pattern() {
     // `FLWSECK_TEST-short-X`. Refuse to rewrite capturing groups.
     let out = rewrite_alternation_prefix(
         "(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)",
+        "FLWSECK_TEST-",
         "FLW[SСＳ]ECK_TEST-",
     );
     assert!(
@@ -60,7 +78,7 @@ fn alternation_rewrite_returns_none_for_capturing_full_pattern() {
 fn alternation_rewrite_returns_none_for_singleton_group() {
     // `(?:foobody)` has no `|` so it's not an alternation; rewriting
     // would silently drop the `body` part. Refuse.
-    let out = rewrite_alternation_prefix("(?:foobody)tail", "[fF]oo");
+    let out = rewrite_alternation_prefix("(?:foobody)tail", "foo", "[fF]oo");
     assert!(out.is_none());
 }
 
