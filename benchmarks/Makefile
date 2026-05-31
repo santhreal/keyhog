@@ -9,6 +9,7 @@
 #   make mirror            # generate the 15k synthetic mirror corpus if absent
 #   make creddata          # print Samsung/CredData corpus info
 #   make kernel-info       # print perf corpus info
+#   make run               # run SCANNER=keyhog CORPUS=mirror once
 #   make keyhog            # build the release binary (run in background; cargo is slow)
 
 BENCH_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -19,10 +20,13 @@ PY        ?= python3
 # cargo target-dir (see ~/.cargo/config.toml target-dir), else PATH.
 CARGO_TARGET_DIR ?= /mnt/FlareTraining/santh-archive/cargo-target
 KEYHOG_BIN       ?= $(CARGO_TARGET_DIR)/release/keyhog
+SCANNER          ?= keyhog
+CORPUS           ?= mirror
+OUTPUT           ?= -
 
 export KEYHOG_BIN
 
-.PHONY: help test host mirror creddata kernel-info keyhog clean
+.PHONY: help test host mirror creddata kernel-info run keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -41,6 +45,9 @@ creddata:
 
 kernel-info:
 	cd $(BENCH_DIR) && $(PY) -m bench corpus kernel
+
+run:
+	cd $(BENCH_DIR) && $(PY) -m bench run "$(SCANNER)" "$(CORPUS)" --output "$(OUTPUT)"
 
 # Build is intentionally NOT auto-run by other targets: cargo workspace
 # builds are slow and the harness wants them backgrounded.
