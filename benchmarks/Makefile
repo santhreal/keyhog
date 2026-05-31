@@ -1,6 +1,6 @@
-# keyhog benchmarking framework — entrypoints.
+# keyhog benchmarking framework - entrypoints.
 #
-# Every target is a thin wrapper over `python3 -m bench …` so the logic
+# Every target is a thin wrapper over `python3 -m bench ...` so the logic
 # lives in the tested package, not the Makefile. Paths resolve relative to
 # this file so it works from any cwd.
 #
@@ -10,7 +10,10 @@
 #   make creddata          # print Samsung/CredData corpus info
 #   make kernel-info       # print perf corpus info
 #   make run               # run SCANNER=keyhog CORPUS=mirror once
-#   make leaderboard       # run SCANNERS over CORPUS into OUT
+#   make bench             # run all SCANNERS over CORPUS -> results/<host>/
+#   make leaderboard       # alias of bench (run SCANNERS over CORPUS into OUT)
+#   make report            # render reports/ + inject the leaderboard into ../README.md
+#   make report-check      # CI gate: fail if the README tables are stale
 #   make keyhog            # build the release binary (run in background; cargo is slow)
 
 BENCH_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -22,13 +25,14 @@ PY        ?= python3
 CARGO_TARGET_DIR ?= /mnt/FlareTraining/santh-archive/cargo-target
 KEYHOG_BIN       ?= $(CARGO_TARGET_DIR)/release/keyhog
 SCANNER          ?= keyhog
+SCANNERS         ?= keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus
 CORPUS           ?= mirror
 OUTPUT           ?= -
 OUT              ?= results
 
 export KEYHOG_BIN
 
-.PHONY: help test host mirror creddata kernel-info run leaderboard keyhog clean
+.PHONY: help test host mirror creddata kernel-info run bench leaderboard report report-check keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -51,8 +55,14 @@ kernel-info:
 run:
 	cd $(BENCH_DIR) && $(PY) -m bench run "$(SCANNER)" "$(CORPUS)" --output "$(OUTPUT)"
 
-leaderboard:
+bench leaderboard:
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)"
+
+report:
+	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" --inject
+
+report-check:
+	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" --check
 
 # Build is intentionally NOT auto-run by other targets: cargo workspace
 # builds are slow and the harness wants them backgrounded.

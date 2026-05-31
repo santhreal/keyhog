@@ -23,6 +23,10 @@ dogfood-output*.json
 # Generated benchmark corpora; reproducible with `make -C benchmarks mirror`
 # and full of synthetic secret-shaped fixtures.
 benchmarks/corpora/
+# Raw per-run RunResult JSONs are host-specific and regenerable with
+# `make -C benchmarks bench`; the committed, human-facing rollups live in
+# benchmarks/reports/ and the injected ../README.md tables.
+benchmarks/results/
 
 # Pre-existing local-noise paths
 __pycache__/
