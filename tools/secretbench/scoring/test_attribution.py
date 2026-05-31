@@ -308,6 +308,32 @@ def test_run_keyhog_real_binary_normalizes_finding() -> None:
         assert not clean_hits, f"keyhog fired on the clean file: {clean_hits}"
 
 
+def test_run_keyhog_defaults_gpu_off_but_honors_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory() as d:
+        tmp = pathlib.Path(d)
+        fixture = tmp / "fixture.env"
+        fixture.write_text("plain=true\n")
+        capture = tmp / "env.txt"
+        stub = tmp / "keyhog"
+        stub.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib\n"
+            "pathlib.Path(os.environ['KEYHOG_ENV_CAPTURE']).write_text("
+            "os.environ.get('KEYHOG_NO_GPU', '<unset>'))\n"
+            "print(json.dumps([]))\n"
+        )
+        stub.chmod(0o755)
+
+        monkeypatch.delenv("KEYHOG_NO_GPU", raising=False)
+        monkeypatch.setenv("KEYHOG_ENV_CAPTURE", str(capture))
+        assert score.run_keyhog([fixture], binary=str(stub)) == []
+        assert capture.read_text() == "1"
+
+        monkeypatch.setenv("KEYHOG_NO_GPU", "0")
+        assert score.run_keyhog([fixture], binary=str(stub)) == []
+        assert capture.read_text() == "0"
+
+
 def test_run_trufflehog_real_binary_normalizes_finding() -> None:
     """Walker->scorer integration pair mirrored for trufflehog: REAL
     trufflehog binary -> REAL run_trufflehog -> assert the normalized

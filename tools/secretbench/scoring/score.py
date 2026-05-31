@@ -248,20 +248,21 @@ def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[d
     # `--format json --show-secrets --no-suppress-test-fixtures`
     # combination is what makes scoring apples-to-apples with
     # trufflehog/kingfisher/betterleaks (which don't suppress demo tokens).
-    # REPRODUCIBILITY: pin the deterministic CPU path. The default (auto-route)
-    # backend runs the GPU MoE confidence scorer when a discrete GPU is present,
-    # and GPU-float MoE produces slightly different confidence than the CPU MoE
-    # - so findings sitting near the global min-confidence floor flip in/out
-    # run-to-run. Measured on this mirror: SIMD-pinned is bit-stable (2430,
-    # 2430) while the auto-route default varies (2353, 2341) AND finds ~80
-    # FEWER (near-floor findings the GPU MoE scores just under the floor). A
-    # bench that can't reproduce its own number can't measure a tuning delta,
-    # and "tuned==benched==shipped" requires scoring the same deterministic path
-    # the leaderboard claims. `KEYHOG_NO_GPU=1` forces CPU MoE + SIMD; the
-    # GPU-MoE confidence non-determinism itself is tracked as a shipped-
-    # correctness bug (DET-11 root cause) separately.
+    # REPRODUCIBILITY: default to the deterministic CPU/SIMD path, but honor a
+    # caller-provided KEYHOG_NO_GPU so the SAME scorer can dogfood the GPU/auto
+    # path (`KEYHOG_NO_GPU=0 score.py ...`) and confirm GPU==CPU parity.
+    #   DET-11 (FIXED): the GPU MoE shader applied the *true logistic*
+    #   1/(1+exp(-x)) while the CPU MoE uses a rational sigmoid approximation
+    #   (0.5+0.5*x/(1+|x|)). Those differ by ~0.05 in the mid-range, so ~80
+    #   near-floor findings flipped between the GPU and CPU/SIMD paths and the
+    #   auto-route default varied run-to-run (measured here: 2353 vs 2341) while
+    #   SIMD-pinned was bit-stable (2430, 2430). The shader now mirrors the CPU
+    #   rational sigmoid (see gpu_shader.rs / crates/cli/tests/gpu_simd_parity.rs),
+    #   so all backends agree.
+    # The pin therefore now buys determinism only, not a hidden divergence, and
+    # "tuned==benched==shipped" holds whichever backend a GPU user actually hits.
     env = dict(os.environ)
-    env["KEYHOG_NO_GPU"] = "1"
+    env.setdefault("KEYHOG_NO_GPU", "1")
     norm: list[dict] = []
     for parent in _scan_roots(file_paths):
         cmd = [

@@ -1186,6 +1186,21 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Release Workflow Tag Injection Hardening
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: manual `workflow_dispatch` release tags are no longer interpolated directly into bash; every release job reads the tag from env, validates the `v` plus digit prefix, rejects shell metacharacters/control bytes, and writes `GITHUB_OUTPUT` with `printf`.
+- WIRING: build, signing, container publish, and floating-major-tag jobs now share the same release-tag validation contract before checkout, release upload, signing, Docker tags, or git tag movement.
+- COHERENCE: follow-up release shell steps receive the validated tag through `KEYHOG_RELEASE_TAG`, keeping release behavior aligned with the composite Action shell-input contract.
+- TESTING: the action/CI contract now checks `release.yml` for raw `${{ inputs.tag }}` inside literal shell blocks and locks the validated output writer.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31
@@ -1240,10 +1255,13 @@ Vector coverage:
 - COHERENCE: the shader comment, CPU scorer formula, tests, and changelog now agree that the rational activation is the shipped contract.
 - TESTING: added external scanner unit tests that prove the true logistic diverges beyond the near-floor band and reject reintroducing the logistic shader formula.
 - INNOVATION: this removes one reason benchmark scoring had to pin `KEYHOG_NO_GPU=1`, moving the GPU acceleration path closer to tuned-equals-shipped behavior.
+- DOGFOODING: SecretBench scoring still defaults to deterministic CPU/SIMD, but now honors a caller-provided `KEYHOG_NO_GPU=0` so the canonical scorer can run the shipped GPU/auto path during parity checks.
 
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests gpu_shader -- --nocapture`
+- `python3 tools/secretbench/scoring/test_attribution.py`
+- `python3 -m py_compile tools/secretbench/scoring/score.py`
 
 ## Executed Patch Set: GPU MoE Readback Deadline
 

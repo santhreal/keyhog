@@ -85,14 +85,29 @@ jobs:
       - name: Resolve tag
         id: tag
         shell: bash
+        env:
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.tag }}" ]]; then
-            tag="${{ inputs.tag }}"
+          if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
+            tag="$KEYHOG_RELEASE_INPUT_TAG"
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          case "$tag" in
+            v[0-9]*) ;;
+            *)
+              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
+              exit 2
+              ;;
+          esac
+          case "$tag" in
+            *[!A-Za-z0-9._-]*)
+              echo "::error title=KeyHog::Release tag contains an invalid character."
+              exit 2
+              ;;
+          esac
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           echo "Building release assets for $tag"
 
       - uses: actions/checkout@v4
@@ -154,9 +169,13 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          KEYHOG_RELEASE_ASSET: ${{ matrix.asset }}
         shell: bash
         run: |
           set -euo pipefail
+          tag="$KEYHOG_RELEASE_TAG"
+          asset="$KEYHOG_RELEASE_ASSET"
           # Create the release if it doesn't already exist; `|| true`
           # silently no-ops the create when the tag-trigger has already
           # produced a draft release.
@@ -166,14 +185,14 @@ jobs:
           # `set -euo pipefail`, dropping the upload for that matrix arm.
           # The trailing `|| true` on the create swallows the "second to
           # try wins" no-op so both arms reach the upload step.
-          gh release view "${{ steps.tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "${{ steps.tag.outputs.tag }}" \
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "${{ steps.tag.outputs.tag }}" \
-              --notes "Prebuilt keyhog binaries for ${{ steps.tag.outputs.tag }}. See CHANGELOG.md." || true
-          gh release upload "${{ steps.tag.outputs.tag }}" \
-            "${{ matrix.asset }}" \
-            "${{ matrix.asset }}.sha256" \
+              --title "$tag" \
+              --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md." || true
+          gh release upload "$tag" \
+            "$asset" \
+            "$asset.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 
@@ -192,14 +211,29 @@ jobs:
       - name: Resolve tag
         id: tag
         shell: bash
+        env:
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.tag }}" ]]; then
-            tag="${{ inputs.tag }}"
+          if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
+            tag="$KEYHOG_RELEASE_INPUT_TAG"
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          case "$tag" in
+            v[0-9]*) ;;
+            *)
+              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
+              exit 2
+              ;;
+          esac
+          case "$tag" in
+            *[!A-Za-z0-9._-]*)
+              echo "::error title=KeyHog::Release tag contains an invalid character."
+              exit 2
+              ;;
+          esac
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
       - name: Install rsign2
@@ -210,6 +244,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           KEYHOG_MINISIGN_SECRET_KEY: ${{ secrets.KEYHOG_MINISIGN_SECRET_KEY }}
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -218,7 +253,7 @@ jobs:
             echo "Set it with: gh secret set KEYHOG_MINISIGN_SECRET_KEY --repo $GITHUB_REPOSITORY" >&2
             exit 1
           fi
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="$KEYHOG_RELEASE_TAG"
           workdir="$(mktemp -d)"
           cd "$workdir"
           # Pull the just-uploaded binaries (and their .sha256 siblings).
@@ -251,11 +286,30 @@ jobs:
       - name: Resolve tag
         id: tag
         shell: bash
+        env:
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.tag }}" ]]; then tag="${{ inputs.tag }}"; else tag="${GITHUB_REF##refs/tags/}"; fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
+            tag="$KEYHOG_RELEASE_INPUT_TAG"
+          else
+            tag="${GITHUB_REF##refs/tags/}"
+          fi
+          case "$tag" in
+            v[0-9]*) ;;
+            *)
+              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
+              exit 2
+              ;;
+          esac
+          case "$tag" in
+            *[!A-Za-z0-9._-]*)
+              echo "::error title=KeyHog::Release tag contains an invalid character."
+              exit 2
+              ;;
+          esac
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
@@ -291,19 +345,40 @@ jobs:
       - name: Resolve tag
         id: tag
         shell: bash
+        env:
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.tag }}" ]]; then tag="${{ inputs.tag }}"; else tag="${GITHUB_REF##refs/tags/}"; fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
+            tag="$KEYHOG_RELEASE_INPUT_TAG"
+          else
+            tag="${GITHUB_REF##refs/tags/}"
+          fi
+          case "$tag" in
+            v[0-9]*) ;;
+            *)
+              echo "::error title=KeyHog::Release tag must start with v followed by a digit."
+              exit 2
+              ;;
+          esac
+          case "$tag" in
+            *[!A-Za-z0-9._-]*)
+              echo "::error title=KeyHog::Release tag contains an invalid character."
+              exit 2
+              ;;
+          esac
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 0
       - name: Force-move v<major> to this release
         shell: bash
+        env:
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="$KEYHOG_RELEASE_TAG"
           major="${tag%%.*}"   # v0.5.35 -> v0
           git tag -f "$major" "${tag}^{}"
           git push -f origin "refs/tags/$major"
