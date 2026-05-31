@@ -5,6 +5,13 @@ Repo: `/media/mukund-thiru/SanthData/Santh/software/keyhog`
 GPU probe: `NVIDIA GeForce RTX 5090, 32607 MiB, driver 570.211.01`
 Status: active plan
 
+## Execution Log
+
+- 2026-05-30: Effective-config oracle wired into the real scan path; config files and explicit flags now resolve to the same operator-visible policy before scanning.
+- 2026-05-30: Aggregate CLI fixture drift repaired for the inline `[u8; 32]` credential-hash contract.
+- 2026-05-30: Git source audit found and fixed three production contract issues: default `--git-diff HEAD` now scans uncommitted worktree changes, `--git-staged --exclude-paths` cannot bypass excludes through the staged include list, and clean staged-mode tests now stage a real clean file instead of relying on whole-tree fallback.
+- 2026-05-30: Dogfood example-suppression telemetry now deduplicates repeated detector/path/credential/reason events, and the pipeline batch-flush regression now proves exact static detector recall without arithmetic overflow from unrelated detector emissions.
+
 ## Dominance Contract
 
 Keyhog dominates Betterleaks, Titus, Nosey Parker, and Kingfisher only when every gate in this file passes against pinned competitor builds and current Keyhog source. Dominance is measured, not claimed.

@@ -64,11 +64,15 @@ pub fn build_sources(
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
 
     #[cfg(feature = "git")]
-    let staged_files = if args.git_staged {
+    let mut staged_files = if args.git_staged {
         get_staged_files(args.path.as_deref())?
     } else {
         Vec::new()
     };
+    #[cfg(feature = "git")]
+    if args.git_staged {
+        filter_staged_files_by_cli_excludes(&mut staged_files, args);
+    }
 
     let merged_ignore_paths = merge_scan_ignore_paths(args, ignore_paths);
 
@@ -316,6 +320,32 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
     }
 
     Ok(files)
+}
+
+#[cfg(feature = "git")]
+fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs) {
+    let Some(excludes) = args.exclude_paths.as_ref() else {
+        return;
+    };
+    let base = args
+        .path
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("."));
+    files.retain(|path| {
+        let rel = path.strip_prefix(&base).unwrap_or(path);
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        !excludes.iter().any(|exclude| {
+            let exclude = exclude.replace('\\', "/");
+            rel == exclude || rel.ends_with(&format!("/{exclude}"))
+        })
+    });
+    if files.is_empty() {
+        files.push(base.join(".keyhog-empty-staged-include-set"));
+    }
 }
 
 /// Bridge to allow Arc<dyn Source> from registry to be used as Box<dyn Source>.

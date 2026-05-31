@@ -13,15 +13,19 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### CLI
 
 - Use the resolved scan config as the single confidence-floor source for scanner setup and post-processing, including `--no-ml` runs.
+- Make `--git-staged --exclude-paths` apply to the staged-file include set instead of letting explicitly staged paths bypass excludes.
 
 ### Scanner
 
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
 - Split structured parsers by format family, move the remaining inline parser contracts into registered external tests, and extend parser gates across the whole parser module tree.
 - Add the SIMD coalesced no-hit plausibility gate to GPU phase2 so empty-hit chunks skip prepare/post-process work unless they still need fallback scanning.
+- Deduplicate dogfood example-suppression telemetry by detector, path, credential hash, and reason so repeated scan paths do not inflate suppression counts.
+- Tighten the batch-flush regression test to assert exact static-detector recall across the >4096 chunk boundary without underflowing when unrelated detectors emit findings.
 
 ### Sources
 
+- Fix default `--git-diff HEAD` to compare the base commit against uncommitted worktree changes rather than resolving both sides to `HEAD`.
 - Fix `keyhog-sources` default test compilation by marking the S3 ambient credential forwarding integration test as requiring the `s3` feature.
 - Move source-crate inline tests for filesystem, binary literals/sections, GitHub org, HTTP policy, and web SSRF helpers behind registered external tests, restoring the no-inline-test and no-production-unwrap gates under default and all-features source builds.
 - Split GitHub org git-error redaction into a focused submodule so `github_org.rs` is back under the 500-line modularity target.

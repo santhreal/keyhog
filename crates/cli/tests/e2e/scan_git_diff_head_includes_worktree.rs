@@ -27,8 +27,9 @@ fn scan_git_diff_head_includes_uncommitted_worktree_changes() {
         .expect("git config name");
 
     std::fs::write(repo.join("clean.txt"), "ok\n").unwrap();
+    std::fs::write(repo.join("secret.env"), "SAFE=1\n").unwrap();
     std::process::Command::new("git")
-        .args(["add", "clean.txt"])
+        .args(["add", "clean.txt", "secret.env"])
         .current_dir(repo)
         .status()
         .expect("git add");
