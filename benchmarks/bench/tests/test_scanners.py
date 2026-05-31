@@ -204,6 +204,36 @@ def test_keyhog_benchmark_prefers_fresh_release_binary(monkeypatch, tmp_path):
     assert scanners.resolve_scanner("keyhog").binary == str(binary)
 
 
+def test_keyhog_benchmark_uses_release_fast_when_release_missing(monkeypatch, tmp_path):
+    target_dir = tmp_path / "cargo-target"
+    release_fast_dir = target_dir / "release-fast"
+    release_fast_dir.mkdir(parents=True)
+    binary = release_fast_dir / "keyhog"
+    binary.write_text("#!/bin/sh\n")
+
+    monkeypatch.delenv("KEYHOG_BIN", raising=False)
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target_dir))
+
+    assert scanners.resolve_scanner("keyhog").binary == str(binary)
+
+
+def test_keyhog_benchmark_prefers_release_over_release_fast(monkeypatch, tmp_path):
+    target_dir = tmp_path / "cargo-target"
+    release_dir = target_dir / "release"
+    release_fast_dir = target_dir / "release-fast"
+    release_dir.mkdir(parents=True)
+    release_fast_dir.mkdir(parents=True)
+    release_binary = release_dir / "keyhog"
+    release_fast_binary = release_fast_dir / "keyhog"
+    release_binary.write_text("#!/bin/sh\n")
+    release_fast_binary.write_text("#!/bin/sh\n")
+
+    monkeypatch.delenv("KEYHOG_BIN", raising=False)
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target_dir))
+
+    assert scanners.resolve_scanner("keyhog").binary == str(release_binary)
+
+
 def test_keyhog_benchmark_binary_overrides_win(monkeypatch, tmp_path):
     target_dir = tmp_path / "cargo-target"
     (target_dir / "release").mkdir(parents=True)
