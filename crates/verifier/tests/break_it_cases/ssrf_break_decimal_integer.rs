@@ -33,7 +33,7 @@ async fn ssrf_break_decimal_integer() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".into(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

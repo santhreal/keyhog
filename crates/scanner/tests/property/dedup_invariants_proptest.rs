@@ -65,7 +65,7 @@ fn arb_raw_match() -> impl Strategy<Value = RawMatch> {
             service: Arc::from("mock_service"),
             severity: Severity::Medium,
             credential: Arc::from(cred.as_str()),
-            credential_hash: "mock_hash".to_string(),
+            credential_hash: [0u8; 32],
             companions: HashMap::new(),
             location: MatchLocation {
                 source: Arc::from("filesystem"),
@@ -367,7 +367,7 @@ fn test_boundary_defensive_dedup_prevents_duplicate_reports() {
         service: Arc::from("dummy_service"),
         severity: Severity::Medium,
         credential: Arc::from("mock_credential"),
-        credential_hash: "12345".to_string(),
+        credential_hash: [0u8; 32],
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),

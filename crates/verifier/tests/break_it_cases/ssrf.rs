@@ -35,7 +35,7 @@ async fn test_ssrf_integer_ips() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,
@@ -113,7 +113,7 @@ async fn test_ssrf_integer_ips() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: Arc::from("secret"),
-            credential_hash: "hash".to_string(),
+            credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,
@@ -200,7 +200,7 @@ async fn test_ssrf_malformed_urls() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: Arc::from("secret"),
-            credential_hash: "hash".to_string(),
+            credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,
@@ -276,7 +276,7 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
             service: Arc::from("test"),
             severity: Severity::Critical,
             credential: Arc::from("secret"),
-            credential_hash: "hash".to_string(),
+            credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
                 file_path: None,
@@ -337,7 +337,7 @@ async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
         service: Arc::from("test"),
         severity: Severity::Critical,
         credential: Arc::from("secret"),
-        credential_hash: "hash".to_string(),
+        credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
             file_path: None,

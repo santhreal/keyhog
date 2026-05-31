@@ -13,7 +13,7 @@ fn dummy_match(file_path: Option<&str>, line: Option<usize>, detector_id: &str) 
         service: Arc::from("test"),
         severity: Severity::High,
         credential: Arc::from("secret"),
-        credential_hash: String::new(),
+        credential_hash: [0u8; 32],
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),

@@ -11,7 +11,7 @@ fn empty_credential_match_has_zero_len_secret() {
         service: Arc::from("demo"),
         severity: Severity::High,
         credential: Arc::from(""),
-        credential_hash: "hash".into(),
+        credential_hash: [0u8; 32],
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("fs"),

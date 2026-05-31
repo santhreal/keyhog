@@ -76,7 +76,7 @@ async fn test_verify_all_logic() {
         service: "test".into(),
         severity: Severity::High,
         credential: "same-credential".into(),
-        credential_hash: "hash".into(),
+        credential_hash: [0u8; 32],
         companions: HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),
