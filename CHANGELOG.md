@@ -28,6 +28,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Tighten CodeSandbox token bodies to base62 so caseless matching no longer reports `CSB_...` SCREAMING_SNAKE enum identifiers as API tokens.
 - Correct the EPA detector contract fixtures to the documented 32-40 character API-key length so contract failures name real detector behavior.
 - Bound GPU MoE confidence readback with a default 30 s deadline and `KEYHOG_GPU_MOE_TIMEOUT_MS`, falling back to CPU MoE instead of parking scan workers on stalled GPU callbacks.
+- Lower filesystem source windows to 1 MiB with 128 KiB overlap so multi-MiB files feed the scanner as parallel chunks instead of serial internal re-windowing inside one worker.
 - Match AVX-512 entropy semantics to the scalar/SSE/AVX2 paths for small, misaligned, and null-containing inputs.
 - Let detector-authored `min_confidence` floors mark reviewed service-specific hex-token shapes as strongly anchored, restoring wrapper recall for common 32/40-hex API-key detectors without relaxing generic hash suppression.
 - Rewrite the MongoDB connection-string detector host tail to avoid nested quantifiers while preserving dotted-host recall.

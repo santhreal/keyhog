@@ -380,6 +380,28 @@ fn windowed_path_emits_multiple_chunks_with_overlap() {
 }
 
 #[test]
+fn default_windowing_splits_multimegabyte_source_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("large.log");
+    let content = vec![b'a'; 1_200_000];
+    fs::write(&p, &content).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(
+        chunks.len(),
+        2,
+        "default source windowing should split >1MiB files into parallel scan chunks"
+    );
+    assert!(chunks
+        .iter()
+        .all(|chunk| chunk.metadata.source_type == "filesystem/windowed"));
+    assert_eq!(chunks[0].metadata.base_offset, 0);
+    assert_eq!(chunks[1].metadata.base_offset, 1024 * 1024 - 128 * 1024);
+}
+
+#[test]
 fn windowed_path_finds_secret_in_overlap_region() {
     // Correctness invariant of the overlap parameter: a secret whose
     // bytes lie wholly within the overlap region must appear FULLY in
