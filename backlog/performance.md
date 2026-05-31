@@ -420,3 +420,44 @@ the sandbox: `sudo sysctl kernel.perf_event_paranoid=1` then
 the serial frame is INFERRED (framing: single-consumer drain + scan_chunk_boundaries
 + utf8 decode), not measured. No speculative hot-path change shipped (PERF-05
 regressed doing that).
+
+### PERF-08 resolution — decode recursion, not serial framing, was the dominant kernel wall (2026-05-31)
+
+The symbolised-profile hypothesis above was superseded by `KH_PERF` phase
+timing plus directory isolation. The hot file was:
+
+`/mnt/FlareTraining/santh-corpus/repos/linux/drivers/net/wireless/broadcom/b43/main.c`
+
+It is a 156 KB C source file with zero findings. Before the fix it cost
+15.7 s wall by entering the no-Hyperscan-hit multiline branch, which called
+full `scan(chunk)`. That re-entered postprocess decode on ordinary source,
+spliced thousands of decoded candidates back into parent-sized chunks, and
+rescanned them.
+
+Fixes landed:
+
+- The SIMD coalesced no-hit multiline path now scans changed multiline
+  preprocessed text directly and does not re-enter full scan/postprocess
+  decode.
+- Decoded splice-back keeps a bounded context window around the encoded
+  payload instead of cloning the whole parent file per candidate.
+- `--no-decode` now really sets `max_decode_depth = 0`; `--fast` now prints
+  and runs with decode, entropy, and ML disabled.
+- `KH_PERF=1` now reports coalesced p1/p2/boundary and orchestrator
+  scan/receive-wait timing.
+
+Measured warm-cache results on the RTX 5090 host, SIMD forced:
+
+| workload | before | after |
+|----------|--------|-------|
+| `b43/main.c` | 15.7 s wall, p2 15.6 s, 0 findings | 0.27 s wall, p2 0.093 s, 0 findings |
+| `drivers/net` | 15.6 s wall, p2 batch 15.15 s, 1 finding | 0.62 s wall, p2 batches 0.194 s + 0.084 s, 1 finding |
+| full Linux kernel | 90.4 s wall / 2.4 GB RSS | 3.43 s wall / 2.1 GB RSS |
+| CredData warm SIMD | 4.19 s wall / 2.64 GB RSS baseline | 4.59 s wall / 2.67 GB RSS |
+
+The full-kernel finding count changed from the older 22-finding artifact to
+15; the seven removed findings are stale source-code false positives
+(`0x000...` register constants and `CSB_*COUNT/RESULT` enum-style symbols),
+not planted credentials. Live GPU evidence remains green:
+`backend --self-test --json` reports RTX 5090 `status=pass`,
+`recommended_backend=gpu`, and `vyre_ac_kernel=pass`.

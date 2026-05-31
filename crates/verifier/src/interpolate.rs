@@ -218,15 +218,25 @@ mod tests {
         assert!(!body.contains('?'), "query separator leaked: {body}");
         assert!(!body.contains("?q=1"), "query string leaked: {body}");
         // Exactly the template's own 4 quotes remain; none injected by the host.
-        assert_eq!(body.matches('"').count(), 4, "stray quote leaked into JSON: {body}");
+        assert_eq!(
+            body.matches('"').count(),
+            4,
+            "stray quote leaked into JSON: {body}"
+        );
         // The slash present in the output is only the template's own `/cb`,
         // never the injected `/x`.
         assert!(!body.contains("/x"), "injected path leaked: {body}");
-        assert!(body.contains("abc123.evil.com"), "legit host bytes dropped: {body}");
+        assert!(
+            body.contains("abc123.evil.com"),
+            "legit host bytes dropped: {body}"
+        );
 
         let url = interpolate("{{interactsh.url}}/cb", "cred", &comps);
         // Scheme is preserved, host is sanitized, injected query/path gone.
-        assert!(url.starts_with("https://abc123.evil.com/cb"), "url malformed: {url}");
+        assert!(
+            url.starts_with("https://abc123.evil.com/cb"),
+            "url malformed: {url}"
+        );
         assert!(!url.contains("?q=1"), "query leaked into url: {url}");
     }
 
@@ -262,7 +272,10 @@ mod tests {
     fn sanitize_oob_value_charset() {
         // Folds case, keeps `[a-z0-9.-]`, drops everything else.
         assert_eq!(sanitize_oob_value("AbC-1.2_x/y@z "), "abc-1.2xyz");
-        assert_eq!(sanitize_oob_value("good.host-1.oast.fun"), "good.host-1.oast.fun");
+        assert_eq!(
+            sanitize_oob_value("good.host-1.oast.fun"),
+            "good.host-1.oast.fun"
+        );
         assert_eq!(sanitize_oob_value("\u{0}\u{7f}<>'\""), "");
     }
 }

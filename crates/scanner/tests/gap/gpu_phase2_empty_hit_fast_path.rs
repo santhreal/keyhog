@@ -9,7 +9,7 @@ fn gpu_phase2_empty_hits_skip_uninteresting_chunks_before_prepare() {
     let src = std::fs::read_to_string(scanner_root().join("src/engine/gpu_phase2.rs"))
         .expect("gpu_phase2 source readable");
     let empty_hit_gate = src
-        .find("hits.is_empty() && !gpu_phase2_should_scan_no_hit_chunk(chunk)")
+        .find("hits.is_empty() && !self.gpu_phase2_should_scan_no_hit_chunk(chunk)")
         .expect("gpu phase2 must gate empty-hit chunks");
     let prepare = src
         .find("let prepared = self.prepare_chunk(chunk);")

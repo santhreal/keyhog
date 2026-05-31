@@ -325,9 +325,9 @@ pub mod serde_hash_hex {
     {
         let s = String::deserialize(deserializer)?;
         let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        bytes.try_into().map_err(|_| {
-            serde::de::Error::invalid_length(s.len() / 2, &"32-byte SHA-256 digest")
-        })
+        bytes
+            .try_into()
+            .map_err(|_| serde::de::Error::invalid_length(s.len() / 2, &"32-byte SHA-256 digest"))
     }
 }
 

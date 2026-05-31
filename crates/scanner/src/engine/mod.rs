@@ -276,11 +276,21 @@ impl CompiledScanner {
     /// which means to measure match throughput, not one-time compilation.
     pub fn warm(&self) {
         use rayon::prelude::*;
+        // Warm the lazy regex transition caches in parallel so the first real
+        // source batch does not serialize DFA first-touch under worker load.
+        const WARM_SAMPLE: &str = concat!(
+            "int main(void){ char *buf = malloc(4096); for(size_t i=0;i<len;i++){ ",
+            "config.timeout_ms = 30000; user_id=0x1f3b9c; const KEY = \"abcDEF0123456789\"; ",
+            "https://example.org/api/v2?token=eyJhbGciOi&id=550e8400-e29b-41d4-a716; ",
+            "base64=QUtJQUlPU0ZPRE5ON0VYQU1QTEU= sha=da39a3ee5e6b4b0d3255bfef95601890; ",
+            "snake_case_name camelCaseName SCREAMING_CASE path/to/file.rs node_modules ",
+            "} /* comment */ // trailing\n\t<xml attr='v'>text</xml> {\"json\":true,\"n\":42}"
+        );
         self.ac_map.par_iter().for_each(|p| {
-            let _ = p.regex.get();
+            let _ = p.regex.get().find(WARM_SAMPLE);
         });
         self.fallback.par_iter().for_each(|(p, _)| {
-            let _ = p.regex.get();
+            let _ = p.regex.get().find(WARM_SAMPLE);
         });
     }
 

@@ -143,7 +143,8 @@ fn gpu_does_not_add_decoded_license_key_false_positive() {
         "fixture should remain clean on the SIMD coalesced path, got {simd:?}"
     );
     assert_eq!(
-        gpu, simd,
+        gpu,
+        simd,
         "GPU added decoded false positives absent from SIMD.\n  in GPU not SIMD: {:?}",
         gpu.difference(&simd).collect::<Vec<_>>(),
     );

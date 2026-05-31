@@ -115,6 +115,66 @@ fn hex_decode_strips_underscore_separators() {
 }
 
 #[test]
+fn splice_windows_context_instead_of_whole_parent() {
+    // Regression for the decode-splice O(candidates × file_size) blowup.
+    // `splice_decoded_payload` used to embed each decoded credential into a
+    // copy of the ENTIRE parent, so a candidate-dense source file emitted one
+    // parent-sized chunk PER candidate - each then rescanned and recursively
+    // re-decoded. A single 156 KB b43/main.c pinned the scanner at ~15s.
+    // The fix windows the spliced context to ±512 B around the blob. This
+    // test proves both halves of that contract: chunks are bounded (perf) AND
+    // the companion anchor still rides along (recall).
+    use keyhog_core::Chunk;
+    use keyhog_scanner::decode::decode_chunk;
+
+    // base64("AKIAIOSFODNN7EXAMPLE")
+    let b64_secret = "QUtJQUlPU0ZPRE5ON0VYQU1QTEU=";
+
+    // A large, candidate-dense parent: every line is an assignment value, the
+    // exact shape that produced ~1800 splice candidates on the real file. The
+    // credential sits in the middle with its companion anchor adjacent.
+    let mut parent = String::new();
+    for i in 0..400 {
+        parent.push_str(&format!(
+            "config_param_{i:04} = \"plainvalue{i:04}padding\"\n"
+        ));
+    }
+    parent.push_str(&format!("aws_secret_access_key = \"{b64_secret}\"\n"));
+    for i in 400..800 {
+        parent.push_str(&format!(
+            "config_param_{i:04} = \"plainvalue{i:04}padding\"\n"
+        ));
+    }
+    let parent_len = parent.len();
+    assert!(
+        parent_len > 16 * 1024,
+        "parent must be large enough to exercise the blowup (was {parent_len})"
+    );
+
+    let chunk = Chunk::from(parent);
+    let decoded = decode_chunk(&chunk, 2, true, None, None);
+
+    // Windowing: no decoded chunk may approach the parent size. Bound is
+    // 2*SPLICE_CONTEXT_WINDOW (1024) + decoded value + slack. If splice still
+    // copied the whole parent, chunks would be ~parent_len.
+    let max_chunk = decoded.iter().map(|c| c.data.len()).max().unwrap_or(0);
+    assert!(
+        max_chunk < 4 * 1024,
+        "decoded chunk {max_chunk} B must be windowed, not parent-sized ({parent_len} B)"
+    );
+
+    // Recall preserved: the decoded credential and its companion anchor must
+    // co-occur in some chunk so companion-anchored detectors still fire.
+    assert!(
+        decoded.iter().any(|c| {
+            let s = c.data.as_str();
+            s.contains("AKIAIOSFODNN7EXAMPLE") && s.contains("aws_secret_access_key")
+        }),
+        "decoded secret must keep its companion anchor adjacent after windowing"
+    );
+}
+
+#[test]
 fn underscores_alone_dont_create_phantom_matches() {
     // Underscore-only string strips to empty, must not match.
     let found = find_hex_strings("\"_____________________________\"", 32);

@@ -46,7 +46,10 @@ pub async fn resolve_dns_cached(host_port: &str) -> std::io::Result<Vec<SocketAd
         if cache.len() >= DNS_CACHE_MAX_ENTRIES {
             cache.clear();
         }
-        cache.insert(host_port.to_string(), (Instant::now(), Arc::new(addrs.clone())));
+        cache.insert(
+            host_port.to_string(),
+            (Instant::now(), Arc::new(addrs.clone())),
+        );
     }
     Ok(addrs)
 }
