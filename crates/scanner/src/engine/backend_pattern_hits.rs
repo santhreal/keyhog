@@ -21,20 +21,13 @@ impl CompiledScanner {
             &mut scan_state,
         );
 
-        // Preprocessor offset-invariance check: if multiline reassembly
-        // or unicode normalization changed the text length, raw-chunk
-        // offsets no longer map 1:1 to preprocessed-text offsets and
-        // anchored extraction would emit matches at the wrong column.
-        // For small drift (~hundreds of bytes on a 64 MiB chunk -
-        // typical for Rust/Go/Python source after multiline string
-        // reassembly), we still run the cheap-filter against
-        // `chunk.data` (which IS the GPU's coordinate system) and let
-        // the downstream `extract_confirmed_patterns` recover the
-        // multiline-reassembled positions via its own full-chunk
-        // sweep. We only fall all the way back to the legacy bitmap
-        // path when drift exceeds the largest credential we expect
-        // (matches the literal-set engine would have triggered on
-        // the multiline-reassembled credential alone).
+        // Preprocessor offset-invariance check: if structured decoding,
+        // multiline reassembly, or unicode normalization changed the text
+        // length, raw-chunk offsets no longer map 1:1 to preprocessed-text
+        // offsets. Phase-2 confirmation and extraction must still read the
+        // preprocessed text because it is the only place decoded credentials
+        // exist (for example k8s Secret data). GPU hit coordinates are not
+        // trusted below; they are used only as pids.
         let offset_drift = prepared
             .chunk
             .data
@@ -45,18 +38,7 @@ impl CompiledScanner {
         // chunk).
         const MAX_TOLERATED_DRIFT: usize = 10 * 1024;
         let drift_tolerable = offset_drift <= MAX_TOLERATED_DRIFT;
-        let scan_text = if prepared.preprocessed.text.len() == prepared.chunk.data.len() {
-            // Strict offset parity - scan the preprocessed text (the
-            // same one extract_confirmed_patterns will walk).
-            prepared.preprocessed.text.as_str()
-        } else {
-            // Drift present - the cheap-filter needs to scan the
-            // chunk.data coordinate system the GPU returned, so the
-            // literal-hit positions land inside the right window.
-            // Extraction still uses preprocessed.text downstream,
-            // so it remains the source of truth for credentials.
-            prepared.chunk.data.as_ref()
-        };
+        let scan_text = prepared.preprocessed.text.as_str();
         let offsets_safe = drift_tolerable;
         let start_ts = std::time::Instant::now();
         tracing::debug!(

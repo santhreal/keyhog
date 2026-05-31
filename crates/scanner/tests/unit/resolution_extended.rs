@@ -145,6 +145,34 @@ fn higher_confidence_named_detector_wins_over_lower() {
 }
 
 #[test]
+fn service_detector_wins_over_higher_confidence_generic_password_on_same_line() {
+    let url = "postgres://tkoyplem:leFamejio5QaxS6lotTs9Li9@qlohkubwfkqj.example.org";
+    let service = make_match_at(
+        "postgresql-connection-string",
+        url,
+        Some(0.22),
+        "secret.yaml",
+        7,
+    );
+    let generic = make_match_at(
+        "generic-password",
+        "leFamejio5QaxS6lotTs9Li9",
+        Some(0.70),
+        "secret.yaml",
+        7,
+    );
+
+    let resolved = resolve_matches(vec![generic, service]);
+
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(
+        resolved[0].detector_id.as_ref(),
+        "postgresql-connection-string"
+    );
+    assert_eq!(resolved[0].credential.as_ref(), url);
+}
+
+#[test]
 fn entropy_detector_with_prefix_treated_as_entropy() {
     // Detectors starting with "entropy-" should also be suppressed near named
     let named = make_match_at(

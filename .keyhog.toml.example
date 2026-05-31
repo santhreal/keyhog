@@ -51,7 +51,7 @@ no_entropy = false
 # ADVANCED ENCODING OPTIONS
 # ============================================================================
 
-# Maximum depth for recursive decoding (1-10, default: 4)
+# Maximum depth for recursive decoding (1-10, default: 10)
 # - 2: Fast, basic detection
 # - 4: catches double/triple encoding
 # - 8: catches sophisticated evasion
@@ -183,3 +183,39 @@ show_secrets = false
 # `keyhog watch <path>` starts a notify-based file watcher and re-scans
 # any modified file with the same compiled detector corpus. Sub-100ms
 # detection on file save. No config knob — invoke as a separate command.
+
+# ============================================================================
+# NESTED TABLES  (must come AFTER every flat key above — TOML rule)
+# ============================================================================
+# All flat keys above also have a nested equivalent. Use either shape; if
+# both set the same value the flat form wins. Full reference:
+# docs/src/reference/configuration.md
+
+# [scan] — runtime scan policy (mirrors the flat scalars above).
+# [scan]
+# severity = "high"
+# min_confidence = 0.40
+# format = "sarif"
+# exclude = ["**/test/fixtures/**", "vendor/"]
+# threads = 8
+# dedup = "credential"
+
+# [detector.<id>] — per-detector overrides keyed by detector id
+# (`keyhog detectors` lists ids; `keyhog explain <id>` shows one).
+#   enabled = false          drops the detector from the corpus entirely
+#   min_confidence = <0..1>  per-detector floor; OVERRIDES the global
+#                            min_confidence for findings from this detector.
+# Compiled Tier-A floors ship in the binary (config.rs SHIPPED_DETECTOR_FLOORS)
+# and apply even with no .keyhog.toml; a file entry here overrides the
+# compiled value for that id. (Tier-B = the per-detector `min_confidence`
+# inside each detector TOML under detectors/.)
+# [detector.generic-api-key]
+# enabled = false
+# [detector.twilio-api-key]
+# min_confidence = 0.6
+
+# [lockdown] — refuse to run unless the operator passes --lockdown.
+# A repo that demands maximum-security scanning sets this so a plain
+# `keyhog scan` fails closed rather than silently running unhardened.
+# [lockdown]
+# require = true

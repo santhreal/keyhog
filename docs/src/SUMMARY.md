@@ -24,6 +24,7 @@
 # Reference
 
 - [CLI reference](./reference/cli.md)
+- [Configuration](./reference/configuration.md)
 - [Exit codes](./reference/exit-codes.md)
 - [Environment variables](./reference/env.md)
 

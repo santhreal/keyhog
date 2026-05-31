@@ -31,9 +31,7 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
     // Use (Arc<str>, usize) to avoid per-match String allocation.
     let named_lines: HashSet<(Arc<str>, usize)> = matches
         .iter()
-        .filter(|m| {
-            m.detector_id.as_ref() != "entropy" && !m.detector_id.as_ref().starts_with("entropy-")
-        })
+        .filter(|m| is_service_specific_detector(m.detector_id.as_ref()))
         .filter_map(|m| {
             let path = m
                 .location
@@ -63,6 +61,18 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
         }
         true
     });
+}
+
+fn is_entropy_detector(detector_id: &str) -> bool {
+    detector_id == "entropy" || detector_id.starts_with("entropy-")
+}
+
+fn is_generic_detector(detector_id: &str) -> bool {
+    detector_id.starts_with("generic-") || detector_id == "private-key"
+}
+
+fn is_service_specific_detector(detector_id: &str) -> bool {
+    !is_entropy_detector(detector_id) && !is_generic_detector(detector_id)
 }
 
 fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
@@ -108,10 +118,12 @@ fn best_matches_for_group(group: Vec<RawMatch>) -> Vec<RawMatch> {
 fn match_priority_score(m: &RawMatch) -> f64 {
     let mut score = ENTROPY_MATCH_SCORE;
 
-    // Named detector vs entropy: named always wins.
-    if m.detector_id.as_ref() == "entropy" || m.detector_id.as_ref().starts_with("entropy-") {
-        score += ENTROPY_MATCH_SCORE;
-    } else {
+    // Service-specific detectors beat generic/entropy fallbacks. A
+    // high-confidence generic password that captures only the URL password
+    // must not outrank a lower-confidence database-URL detector on the same
+    // line; the URL detector carries the service contract and fuller
+    // credential boundary.
+    if is_service_specific_detector(m.detector_id.as_ref()) {
         score += NAMED_DETECTOR_SCORE;
     }
 

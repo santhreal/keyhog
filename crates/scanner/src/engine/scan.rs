@@ -273,10 +273,26 @@ impl CompiledScanner {
                         // wants. Saves one full Hyperscan walk per
                         // keyworded no-hit file.
                         let prepared = self.prepare_chunk(chunk);
+                        let triggered =
+                            if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
+                                Vec::new()
+                            } else {
+                                // Phase 1 scanned raw bytes. Structured
+                                // preprocessors append decoded/configured
+                                // credential lines, so a no-hit raw chunk can
+                                // still contain named-detector literal roots in
+                                // the preprocessed text. Recollect only on that
+                                // rare drift path and keep the raw no-hit fast
+                                // path allocation-free.
+                                self.collect_triggered_patterns_for_backend(
+                                    &prepared.preprocessed.text,
+                                    ScanBackend::SimdCpu,
+                                )
+                            };
                         let mut matches = self.scan_prepared_with_triggered(
                             prepared,
                             ScanBackend::SimdCpu,
-                            Vec::new(),
+                            triggered,
                             None,
                         );
                         // KH-01: Pre-allocate raw match output vectors with a capacity of 16 entries to avoid resizing

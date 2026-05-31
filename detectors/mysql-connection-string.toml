@@ -8,6 +8,7 @@ name = "MySQL Connection String"
 service = "mysql"
 severity = "critical"
 keywords = ["mysql", "DATABASE_URL"]
+min_confidence = 0.2
 
 [[detector.patterns]]
 # Widen the host class to accept Kubernetes service names (`mysql-db`),

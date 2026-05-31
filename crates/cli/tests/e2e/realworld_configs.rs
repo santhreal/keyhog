@@ -100,7 +100,7 @@ fn google_api_key_in_js_config() {
 #[test]
 fn postgres_url_with_password() {
     let f = "DATABASE_URL=postgres://admin:S3cr3tP4ssw0rd@db.example.com:5432/prod\n";
-    assert_finds(f, "generic-password", 1);
+    assert_finds(f, "postgresql-connection-string", 1);
 }
 
 #[test]

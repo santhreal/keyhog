@@ -46,6 +46,18 @@ fn shared_scanner() -> &'static CompiledScanner {
 }
 
 fn scan_path(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
+    shared_scanner().scan(&chunk_for_path(body, path))
+}
+
+fn scan_path_coalesced(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
+    shared_scanner()
+        .scan_coalesced(&[chunk_for_path(body, path)])
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+fn chunk_for_path(body: &str, path: &str) -> Chunk {
     let chunk = Chunk {
         data: body.to_string().into(),
         metadata: ChunkMetadata {
@@ -55,7 +67,7 @@ fn scan_path(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    shared_scanner().scan(&chunk)
+    chunk
 }
 
 /// Positive truth: a Terraform `tfvars` flat `name = "value"` line
@@ -207,4 +219,56 @@ data:\n  \
             aws_lines, ghp_lines
         );
     }
+}
+
+#[test]
+fn k8s_secret_decoded_postgres_url_self_activates_without_database_url_keyword() {
+    let yaml = "\
+apiVersion: v1\n\
+kind: Secret\n\
+metadata:\n  name: pg-url-secret\n\
+type: Opaque\n\
+data:\n  pg-url: cG9zdGdyZXM6Ly90a295cGxlbTpsZUZhbWVqaW81UWF4UzZsb3RUczlMaTlAcWxvaGt1Yndma3FqLmV4YW1wbGUub3JnOjU0MzIvdWtmZXJnYmI=\n";
+    let expected = "postgres://tkoyplem:leFamejio5QaxS6lotTs9Li9@qlohkubwfkqj.example.org";
+    let matches = scan_path(yaml, "/repo/k8s/secret.yaml");
+    let coalesced_matches = scan_path_coalesced(yaml, "/repo/k8s/secret.yaml");
+
+    let direct_match = matches.iter().find(|m| {
+        m.detector_id.as_ref() == "postgresql-connection-string"
+            && m.credential.as_ref() == expected
+    });
+    assert!(
+        direct_match.is_some(),
+        "decoded k8s postgres:// URL must self-activate without DATABASE_URL context. Findings: {:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        direct_match
+            .and_then(|m| m.confidence)
+            .is_some_and(|confidence| confidence >= 0.2),
+        "decoded k8s postgres:// URL must clear the detector reporting floor. Finding: {:?}",
+        direct_match.map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+    );
+    let coalesced_match = coalesced_matches.iter().find(|m| {
+        m.detector_id.as_ref() == "postgresql-connection-string"
+            && m.credential.as_ref() == expected
+    });
+    assert!(
+        coalesced_match.is_some(),
+        "coalesced no-raw-hit path must recollect triggers from decoded k8s data. Findings: {:?}",
+        coalesced_matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        coalesced_match
+            .and_then(|m| m.confidence)
+            .is_some_and(|confidence| confidence >= 0.2),
+        "coalesced decoded k8s postgres:// URL must clear the detector reporting floor. Finding: {:?}",
+        coalesced_match.map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+    );
 }
