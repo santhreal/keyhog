@@ -103,7 +103,9 @@ benchmarks/
 
 Scoring pins `KEYHOG_NO_GPU=1` for the deterministic SIMD path on the default
 `simd-*` configs; the `gpu`/`auto` configs set `KEYHOG_NO_GPU=0` to dogfood the
-GPU path (GPU↔SIMD parity is a separate release gate). The CredData corpus is
+GPU path, and explicit `gpu`/`megascan` benchmark rows also set
+`KEYHOG_REQUIRE_GPU=1` so they fail instead of timing a CPU fallback. GPU↔SIMD
+parity is a separate release gate. The CredData corpus is
 pinned to an exact commit so a score is reproducible against a fixed dataset
 revision. The scorer is bit-identical to the legacy
 `tools/secretbench/scoring/score.py` on the same input (regression-anchored in

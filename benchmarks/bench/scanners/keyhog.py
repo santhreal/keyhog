@@ -5,7 +5,9 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
 * **backend** -> ``--backend {simd,cpu,gpu,auto,megascan}``. ``simd``/``cpu``
   pin ``KEYHOG_NO_GPU=1`` for the bit-deterministic path the leaderboard is
   scored on; ``gpu``/``auto``/``megascan`` set ``KEYHOG_NO_GPU=0`` explicitly
-  so a globally-pinned NO_GPU can't silently disable the GPU dogfood.
+  so a globally-pinned NO_GPU can't silently disable the GPU dogfood. Explicit
+  GPU rows also set ``KEYHOG_REQUIRE_GPU=1`` so they fail instead of timing a
+  CPU fallback.
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass — that's the 10-100x monorepo-re-run speedup, measured honestly.
@@ -35,6 +37,7 @@ from .base import Finding, RunStats, Scanner, run_measured
 
 _BACKENDS = ("simd", "cpu", "gpu", "auto", "megascan")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu"}
+_REQUIRE_GPU_BACKENDS = {"gpu", "megascan"}
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
@@ -192,7 +195,10 @@ class KeyhogScanner(Scanner):
         return cmd
 
     def _env(self, cfg: ScannerConfig) -> dict:
-        return {"KEYHOG_NO_GPU": "1" if cfg.backend in _DETERMINISTIC_BACKENDS else "0"}
+        return {
+            "KEYHOG_NO_GPU": "1" if cfg.backend in _DETERMINISTIC_BACKENDS else "0",
+            "KEYHOG_REQUIRE_GPU": "1" if cfg.backend in _REQUIRE_GPU_BACKENDS else "0",
+        }
 
     # ── run ────────────────────────────────────────────────────────────
 
