@@ -56,3 +56,19 @@ fn gpu_ac_self_test_can_report_recorded_degrade_reason() {
         "backend --self-test JSON must receive the concrete GPU degrade reason without scraping stderr"
     );
 }
+
+#[test]
+fn gpu_ac_plain_append_binds_one_atomic_slot_for_triple() {
+    let lazy = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/gpu_lazy.rs"),
+    )
+    .expect("gpu_lazy.rs readable");
+
+    assert!(
+        lazy.contains("fn append_match_bound_slot")
+            && lazy.contains("Node::let_bind(\n            slot_name,\n            Expr::atomic_add")
+            && lazy.contains("Expr::var(slot_name)")
+            && lazy.contains("build_ac_bounded_ranges_program_bound_atomic"),
+        "AC GPU plain append must bind atomic_add once so pattern/start/end are written to the same match slot"
+    );
+}

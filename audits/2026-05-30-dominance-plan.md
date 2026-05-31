@@ -1978,3 +1978,21 @@ Verified gates:
 - `cargo test -p keyhog --test all_tests backend_self_test_json -- --nocapture`
 - `cargo test -p keyhog --test all_tests r5t_backend_help_documents_json_flag -- --nocapture`
 - `timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `moe_kernel=pass`, `vyre_literal_set=known`, and `vyre_ac_kernel=fail` with exit `4`.
+
+## Executed Patch Set: GPU AC Bound Atomic Slot
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED / UTILIZATION: the production GPU AC path now runs to completion on the live RTX 5090 instead of degrading to SIMD/CPU after a corrupt Vyre readback.
+- AUDIT HUNTS: the match-output corruption root cause was isolated to the AC append builder cloning `atomic_add`; KeyHog's bound-slot builder emits one atomic increment and writes pattern/start/end through that same slot.
+- WIRING: `KEYHOG_REQUIRE_GPU=1` no longer kills an already healthy GPU stack during preflight, while concrete runtime degrade reasons still hard-fail the process.
+- COHERENCE: literal-set diagnostic degradations now carry the same concrete reason style as AC degradations, and the backlog no longer describes the RTX 5090 AC self-test as red.
+- TESTING: the scanner gap gate locks the bound-slot builder, the backend self-test JSON proves the actual GPU path, and the required-GPU parity gate now reaches and passes its assertions.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
+- `timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `status=pass`, `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.
+- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`

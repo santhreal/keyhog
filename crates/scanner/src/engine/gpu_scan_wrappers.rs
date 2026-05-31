@@ -42,14 +42,6 @@ impl CompiledScanner {
         }
     }
 
-    pub(crate) fn gpu_degrade_done(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-        backend: ScanBackend,
-    ) -> GpuPhase1Output {
-        self.gpu_degrade_done_with_reason(chunks, backend, None)
-    }
-
     pub(crate) fn gpu_degrade_done_with_reason(
         &self,
         chunks: &[keyhog_core::Chunk],

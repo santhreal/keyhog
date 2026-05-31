@@ -93,6 +93,9 @@ pub fn deny_silent_gpu_degrade_with_reason(
     if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
         return;
     }
+    if reason.is_none() && scanner.gpu_stack_usable() {
+        return;
+    }
     let (no_gpu, require_gpu) = cached_gpu_env_flags();
     if require_gpu {
         if let Some(reason) = reason {

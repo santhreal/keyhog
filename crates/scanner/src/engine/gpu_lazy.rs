@@ -1,4 +1,156 @@
 use super::*;
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+
+fn append_match_bound_slot(
+    hits_buffer: &str,
+    count_buffer: &str,
+    tag: impl Into<Expr>,
+    start: impl Into<Expr>,
+    end: impl Into<Expr>,
+) -> Node {
+    let slot_name = "_keyhog_match_slot";
+    let max_hits = Expr::div(Expr::buf_len(hits_buffer), Expr::u32(3));
+
+    Node::block(vec![
+        Node::let_bind(
+            slot_name,
+            Expr::atomic_add(count_buffer, Expr::u32(0), Expr::u32(1)),
+        ),
+        Node::if_then(
+            Expr::lt(Expr::var(slot_name), max_hits),
+            vec![
+                Node::store(
+                    hits_buffer,
+                    Expr::mul(Expr::var(slot_name), Expr::u32(3)),
+                    tag.into(),
+                ),
+                Node::store(
+                    hits_buffer,
+                    Expr::add(Expr::mul(Expr::var(slot_name), Expr::u32(3)), Expr::u32(1)),
+                    start.into(),
+                ),
+                Node::store(
+                    hits_buffer,
+                    Expr::add(Expr::mul(Expr::var(slot_name), Expr::u32(3)), Expr::u32(2)),
+                    end.into(),
+                ),
+            ],
+        ),
+    ])
+}
+
+fn build_ac_bounded_ranges_program_bound_atomic(
+    dfa: &vyre_libs::scan::dfa::CompiledDfa,
+    pattern_count: u32,
+    max_matches: u32,
+) -> Option<Program> {
+    let output_records_len = u32::try_from(dfa.output_records.len()).ok()?;
+    let max_pattern_len = dfa.max_pattern_len.max(1);
+
+    let haystack = "haystack";
+    let transitions = "transitions";
+    let output_offsets = "output_offsets";
+    let output_records = "output_records";
+    let pattern_lengths = "pattern_lengths";
+    let haystack_len = "haystack_len";
+    let match_count = "match_count";
+    let matches = "matches";
+
+    let i = Expr::var("i");
+    let end = Expr::add(i.clone(), Expr::u32(1));
+    let scan_start = Expr::select(
+        Expr::lt(i.clone(), Expr::u32(max_pattern_len - 1)),
+        Expr::u32(0),
+        Expr::sub(end.clone(), Expr::u32(max_pattern_len)),
+    );
+    let (load_step_byte, step_byte) =
+        vyre_libs::scan::builders::load_packed_byte(haystack, Expr::var("step"));
+
+    let walk_body = vec![
+        Node::let_bind("i", Expr::InvocationId { axis: 0 }),
+        Node::if_then(
+            Expr::lt(i.clone(), Expr::load(haystack_len, Expr::u32(0))),
+            vec![
+                Node::let_bind("state", Expr::u32(0)),
+                Node::let_bind("scan_start", scan_start),
+                Node::let_bind("scan_end", end),
+                Node::loop_for(
+                    "step",
+                    Expr::var("scan_start"),
+                    Expr::var("scan_end"),
+                    vec![
+                        load_step_byte,
+                        Node::assign(
+                            "state",
+                            Expr::load(
+                                transitions,
+                                Expr::add(Expr::mul(Expr::var("state"), Expr::u32(256)), step_byte),
+                            ),
+                        ),
+                    ],
+                ),
+                Node::let_bind("out_begin", Expr::load(output_offsets, Expr::var("state"))),
+                Node::let_bind(
+                    "out_end",
+                    Expr::load(output_offsets, Expr::add(Expr::var("state"), Expr::u32(1))),
+                ),
+                Node::loop_for(
+                    "out_idx",
+                    Expr::var("out_begin"),
+                    Expr::var("out_end"),
+                    vec![
+                        Node::let_bind(
+                            "pattern_id",
+                            Expr::load(output_records, Expr::var("out_idx")),
+                        ),
+                        Node::let_bind(
+                            "pat_len",
+                            Expr::load(pattern_lengths, Expr::var("pattern_id")),
+                        ),
+                        Node::let_bind(
+                            "match_start",
+                            Expr::select(
+                                Expr::lt(Expr::var("scan_end"), Expr::var("pat_len")),
+                                Expr::u32(0),
+                                Expr::sub(Expr::var("scan_end"), Expr::var("pat_len")),
+                            ),
+                        ),
+                        append_match_bound_slot(
+                            matches,
+                            match_count,
+                            Expr::var("pattern_id"),
+                            Expr::var("match_start"),
+                            Expr::var("scan_end"),
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ];
+
+    Some(Program::wrapped(
+        vec![
+            BufferDecl::storage(haystack, 0, BufferAccess::ReadOnly, DataType::U32),
+            BufferDecl::storage(transitions, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(dfa.state_count.saturating_mul(256)),
+            BufferDecl::storage(output_offsets, 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(dfa.state_count.saturating_add(1)),
+            BufferDecl::storage(output_records, 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(output_records_len),
+            BufferDecl::storage(pattern_lengths, 4, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(pattern_count),
+            BufferDecl::storage(haystack_len, 5, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(1),
+            BufferDecl::read_write(match_count, 6, DataType::U32).with_count(1),
+            BufferDecl::output(matches, 7, DataType::U32).with_count(max_matches.saturating_mul(3)),
+        ],
+        [128, 1, 1],
+        vec![vyre_libs::region::wrap_anonymous(
+            "keyhog::matching::classic_ac_bounded_ranges",
+            walk_body,
+        )],
+    ))
+}
 
 /// Tracks whether the subgroup-coalesced match-append form
 /// (subgroup_ballot + subgroup_shuffle -> `_vyre_match_leader`) is
@@ -106,12 +258,20 @@ impl CompiledScanner {
                 // pressure on the shared count buffer.
                 let backend_id = self.gpu_backend.as_ref().map(|b| b.id()).unwrap_or("none");
                 let use_subgroup_coalesce = AC_GPU_SUBGROUP_COALESCE;
-                let program = vyre_libs::scan::classic_ac::build_ac_bounded_ranges_program_ext(
-                    &matcher.dfa,
-                    pattern_count,
-                    super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH,
-                    use_subgroup_coalesce,
-                );
+                let program = if use_subgroup_coalesce {
+                    vyre_libs::scan::classic_ac::build_ac_bounded_ranges_program_ext(
+                        &matcher.dfa,
+                        pattern_count,
+                        super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH,
+                        true,
+                    )
+                } else {
+                    build_ac_bounded_ranges_program_bound_atomic(
+                        &matcher.dfa,
+                        pattern_count,
+                        super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH,
+                    )?
+                };
                 tracing::debug!(
                     target: "keyhog::routing",
                     pattern_count,

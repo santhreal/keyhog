@@ -149,17 +149,18 @@ real tree. Items carry the data that proves them.
   miss was a SIMD false positive fixed by the ACR hex-constant suppression;
   the former `fireworks-ai-api-key` and `github-oauth-access-token` GPU extras
   were Caesar decode false positives on source/config paths.
-  OPEN RED GATE: `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test
-  gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus` still
-  exits 2 before assertions because the current Vyre GPU dispatch degrades at
-  runtime (`literals=true, backend=true, matcher=true`). Without
-  `KEYHOG_REQUIRE_GPU=1`, the same parity test passes by degrading to
-  SIMD/CPU. The blocker is Vyre dispatch soundness, not KeyHog's phase-2
-  finding parity.
-  UPDATE 2026-05-31: `keyhog backend --self-test --json` now exposes this
-  red gate as stable CI data (`status=fail`, `exit_code=4`,
-  `vyre_ac_kernel=fail`) while preserving the real GPU dispatch attempt on
-  RTX 5090 hosts.
+  UPDATE 2026-05-31: the remaining RTX 5090 red gate was split in two and
+  closed. Vyre's plain AC append builder cloned `atomic_add` into the guard
+  and each store, so pattern/start/end could land in different output slots;
+  KeyHog's production AC builder now binds the atomic result once and reuses
+  that slot for all three fields. Separately, `KEYHOG_REQUIRE_GPU=1`
+  preflight was killing healthy GPU scans before dispatch; the strict guard is
+  now a no-op for an already usable GPU stack and still hard-fails on concrete
+  runtime degradation. Verified on the live RTX 5090:
+  `keyhog backend --self-test --json` returns `status=pass`,
+  `recommended_backend=gpu`, and `vyre_ac_kernel=pass`; required-GPU
+  `gpu_and_simd_produce_identical_findings_on_same_corpus` reaches assertions
+  and passes.
 
 ## Parallelism
 
