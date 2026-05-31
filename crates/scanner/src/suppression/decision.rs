@@ -8,8 +8,8 @@ use super::doc_markers::{check_markers, MarkerVerdict};
 use super::shape_gates::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
-    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest,
-    looks_like_standard_base64_blob, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
+    RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::context;
 
@@ -157,9 +157,9 @@ pub(super) fn should_suppress_inner(
     //     generic / entropy detectors. Gate keeps generic FPs out
     //     while letting named hex-anchored detectors fire.
     //
-    //   - UUID v4 (`xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`): Heroku
-    //     API key, Cypress record key, the body of many license-server
-    //     tokens use UUID v4. A named detector with a service-specific
+    //   - UUID v4 (`xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`): Heroku,
+    //     Braze, Codecov, Consul, Cypress record keys, and license-server
+    //     tokens use UUID v4 bodies. A named detector with a service-specific
     //     anchor is positive evidence the UUID is a credential, NOT a
     //     docker image digest or k8s resource ID. Generic / entropy
     //     detectors stay gated because for them a bare UUID is noise.
@@ -172,16 +172,10 @@ pub(super) fn should_suppress_inner(
     // the +60-TP regression of a blanket revert - see 19c9d668):
     //
     //   * ALWAYS-FIRE sub-shapes (even with `bypass_shape_gates` set):
-    //     algo-labelled digests (`sha256:`/`sha512-`/…), 8-4-4-4-12
-    //     UUIDs, and 5x5 dashed serials. NO service-specific detector
-    //     regex ever requests one of THOSE structural shapes as its
-    //     credential body, so a bare `token=`/`integrity:` keyword
-    //     anchor is too weak to override them. A genuinely service-
-    //     specific match carries a known prefix and has already exited
-    //     via `MarkerVerdict::Allow` in `check_markers` before reaching
-    //     here, so anything arriving with one of these decoy shapes is
-    //     an npm-integrity / docker-digest / git-sha / k8s-uid / license
-    //     decoy regardless of the anchor class.
+    //     algo-labelled digests (`sha256:`/`sha512-`/…) and 5x5 dashed
+    //     serials. Service-specific UUID detectors stay alive under
+    //     `bypass_shape_gates`; generic keyword captures of a bare UUID
+    //     still suppress.
     //
     //   * BARE uniform-hex (32/40/48/56/64/72/128-hex) stays gated on
     //     `!bypass_shape_gates`: it is shape-indistinguishable from real
@@ -198,7 +192,7 @@ pub(super) fn should_suppress_inner(
     if !bypass_shape_gates && looks_like_bare_hex_digest(credential) {
         return true;
     }
-    if is_uuid_v4_shape(credential) {
+    if !bypass_shape_gates && is_uuid_v4_shape(credential) {
         return true;
     }
 

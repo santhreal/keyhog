@@ -23,6 +23,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Add the SIMD coalesced no-hit plausibility gate to GPU phase2 so empty-hit chunks skip prepare/post-process work unless they still need fallback scanning.
 - Deduplicate dogfood example-suppression telemetry by detector, path, credential hash, and reason so repeated scan paths do not inflate suppression counts.
 - Tighten the batch-flush regression test to assert exact static-detector recall across the >4096 chunk boundary without underflowing when unrelated detectors emit findings.
+- Let strongly service-anchored UUID detectors bypass the generic UUID shape suppressor, restoring default recall for Braze, Heroku, Codecov, and Consul-style credentials while keeping generic UUID captures suppressed.
 
 ### Sources
 

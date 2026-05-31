@@ -8,3 +8,4 @@
 2026-05-28    text-format, missing-path Add text-format render surface and the exit-2 missing-path usage-error surface.
 2026-05-28    explain, completion       Add explain-detector and bash-completion subcommand surfaces.
 2026-05-28    har-base64-body           Add base64-encoded HAR response body: proves content.encoding decode path.
+2026-05-30    detectors-list            Detector corpus is 894 after adding OpenAI svcacct/admin plus Grafana/Sourcegraph/Cursor rules.

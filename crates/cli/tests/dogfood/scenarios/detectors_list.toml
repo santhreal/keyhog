@@ -2,4 +2,4 @@ description = "detectors subcommand lists the full embedded corpus and exits 0"
 args = ["detectors"]
 exit_code = 0
 max_ms = 20000
-stdout_contains = ["Loaded 891 detectors", "aws-access-key"]
+stdout_contains = ["Loaded 894 detectors", "aws-access-key"]
