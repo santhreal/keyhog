@@ -248,7 +248,7 @@ runs:
         sarif_file: ${{ steps.outfile.outputs.name }}
 
     - name: Upload scan report as workflow artifact
-      if: steps.report-check.outputs.exists == 'true'
+      if: always() && steps.report-check.outputs.exists == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: keyhog-report-${{ github.job }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}

@@ -40,7 +40,9 @@ and scan duration.
 When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
 and same-repo pull requests. Fork pull requests often lack
 `security-events: write`; in that case the upload step is advisory and the
-downloadable SARIF artifact remains available for review.
+downloadable SARIF artifact remains available for review. Trusted upload
+failures also keep the report artifact, so the failed job remains
+diagnosable.
 
 `fail-on-findings: 'false'` makes ordinary findings advisory after the
 report/SARIF/artifact are written. A `--verify` scan that confirms a live

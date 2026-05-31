@@ -912,12 +912,22 @@ fn composite_action_exposes_scan_duration_output() {
 #[test]
 fn composite_action_artifact_name_is_job_scoped() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let artifact_step = manifest
+        .split("- name: Upload scan report as workflow artifact")
+        .nth(1)
+        .and_then(|rest| rest.split("    - name:").next())
+        .expect("artifact upload step exists");
+
+    assert!(
+        artifact_step.contains("if: always() && steps.report-check.outputs.exists == 'true'"),
+        "report artifact upload must still run after scan/SARIF failures so CI users can inspect the report"
+    );
     assert!(
         !manifest.contains("name: keyhog-report\n"),
         "workflow artifacts must not use one constant name; matrix CI jobs would collide"
     );
     assert!(
-        manifest.contains(
+        artifact_step.contains(
             "name: keyhog-report-${{ github.job }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}"
         ),
         "artifact name must include job and scan-duration context to avoid common matrix/retry collisions"
