@@ -937,3 +937,24 @@ Verified gates:
 - `cargo test -p keyhog-sources --test all_tests filesystem -- --nocapture`
 - `cargo test -p keyhog-sources --test all_tests gap:: -- --nocapture`
 - `timeout 180s env KEYHOG_NO_GPU=1 /mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend simd --no-daemon --format json --output /tmp/keyhog-kernel-scan.json /mnt/FlareTraining/santh-corpus/repos/linux`
+
+## Executed Patch Set: GPU Phase2 Empty-Hit Fast Path
+
+Date: 2026-05-30
+
+Vector coverage:
+
+- SPEED: GPU phase2 now skips `prepare_chunk`, `scan_prepared_with_pattern_hits`, and `post_process_matches` for empty-hit chunks that do not need fallback scanning.
+- COHERENCE: the GPU no-hit admission policy now mirrors SIMD coalesced routing: multiline split-secret indicators, assignment keywords, known secret prefixes, or long entropy runs still route through fallback scanning.
+- TESTING: added a scanner gap gate that proves the empty-hit check happens before `prepare_chunk` and keeps the keyword/entropy admission policy wired.
+- AUDIT HUNTS: captured the remaining forced-GPU red gate separately; `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` fails because runtime GPU dispatch degrades before parity assertions, while `keyhog backend --self-test` passes on the RTX 5090.
+
+Verified gates:
+
+- `cargo fmt -p keyhog-scanner`
+- `cargo test -p keyhog-scanner --test all_tests gpu_phase2_empty_hit_fast_path -- --nocapture`
+- `/mnt/FlareTraining/santh-archive/cargo-target/debug/keyhog backend --self-test`
+
+Red gate captured:
+
+- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
