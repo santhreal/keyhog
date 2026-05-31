@@ -224,3 +224,26 @@ apples (same bare-token files to every tool).
   line 34 (single-quote in a single-quoted literal) dropped the detector silently
   (890/891 loaded). Fixed to a triple-quoted literal. Needs the rebuild to embed.
   → also testing T-04 / MC-16 (load-integrity must be a pre-push blocker).
+
+- **DET-19 · MED · CASELESS matching makes lowercase vendor prefixes fire on
+  SCREAMING_SNAKE constants** — Hyperscan is compiled `PatternFlags::CASELESS`
+  for EVERY pattern (simd.rs:64), so a detector with a lowercase literal prefix
+  matches its uppercase form. Proven: `codesandbox-api-token`
+  (`csb_[a-zA-Z0-9_-]{20,}`) fires on `CSB_MACHINE_STALLED_BY_CSB_MEMORY` and 3
+  more enum names in drivers/gpu/drm/amd/include/soc21_enum.h - 4 false
+  positives on a single Linux header. The `[a-zA-Z0-9_-]{20,}` body is the
+  culprit: it admits all-uppercase, underscore-heavy identifiers that real
+  CodeSandbox tokens (`csb_` + dense base62, no SCREAMING_SNAKE) never take.
+  This is a CLASS bug, not one detector: any lowercase 3-4 char vendor prefix
+  (`csb_`, `sgp_`, `glpat-`, `sk_`, …) whose body regex allows `_` + uppercase
+  will match constants in C/Rust/Go headers. On SecretBench negatives packed
+  with credential-named constants this costs precision. Candidate fixes (verify
+  each against the scorer, NOT by eyeball): (a) tighten token bodies to exclude
+  all-uppercase / require a digit / cap underscores; (b) per-pattern case
+  sensitivity (a CASELESS-by-default override so a vendor-prefixed token can opt
+  into case-sensitive matching) - mirrors the per-detector min_confidence
+  override already shipped (DET-18). Measure FP delta on the mirror before/after;
+  do not hand-tune. NOTE: this is independent of the GPU parity work (PERF-07) -
+  there the GPU was *missing* these because it lacked CASELESS; now both backends
+  agree and BOTH (correctly, per the current detector) emit them, so fixing the
+  detector precision fixes both paths at once.

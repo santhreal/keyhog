@@ -22,7 +22,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
 - Route hot-pattern fast-path matches through the preprocessor line map so structured `.env` synthetic lines collapse into the original source line instead of producing past-EOF additional locations.
 - Confirm GPU AC cheap-filter roots against the whole prepared chunk, matching SIMD trigger semantics and avoiding narrow-window recall loss for detector regexes that need wider context.
+- ASCII-fold GPU literal sets and coalesced haystacks before AC/literal-set phase-1 matching so GPU recall matches Hyperscan's caseless detector semantics.
 - Add a real-binary GPU-vs-SIMD parity integration gate for far-offset and caseless literal-prefix regressions.
+- Replace the forced-GPU unavailable-path panic with the same explicit stderr plus exit-2 contract used by the other GPU hard-fail paths.
 - Match AVX-512 entropy semantics to the scalar/SSE/AVX2 paths for small, misaligned, and null-containing inputs.
 - Let detector-authored `min_confidence` floors mark reviewed service-specific hex-token shapes as strongly anchored, restoring wrapper recall for common 32/40-hex API-key detectors without relaxing generic hash suppression.
 - Rewrite the MongoDB connection-string detector host tail to avoid nested quantifiers while preserving dotted-host recall.

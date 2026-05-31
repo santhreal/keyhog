@@ -74,16 +74,32 @@ real tree. Items carry the data that proves them.
   drop a real credential.) Also a coherence break: benchmarks pin
   `KEYHOG_BACKEND=simd` (F1 measured on SIMD), so the SHIPPED default diverges
   from the BENCHED accuracy — tuned != shipped.
-  CONSEQUENCE: defaulting to GPU is unsafe until parity is proven by a
-  differential test (every detector, GPU vs SIMD, on a fixed corpus, byte-exact
-  finding sets). The dominance routing gate (PERF-06) reduced but did NOT
-  eliminate GPU engagement on the kernel (large-file clusters still cross the
-  50%% bar), so the divergence persists. Two directions, both viable — pending
-  a decision: (A) make the SCAN default SIMD (GPU opt-in via KEYHOG_BACKEND=gpu)
-  so shipped==benched and the default is deterministic + recall-safe; or
-  (B) root-cause and fix the GPU literal/AC vs SIMD-hyperscan match divergence
-  (match-cap truncation? shard-boundary misses? coalesce file-edge attribution?)
-  and gate the release on a byte-exact differential.
+  ROOT-CAUSED + FIXED 2026-05-30 (user chose: keep fastest-wins autorouting,
+  fix parity). Two compounding GPU-path bugs, both proven on soc21_enum.h
+  (SIMD 4 codesandbox matches, GPU 0):
+    1. CASE. Hyperscan is compiled `PatternFlags::CASELESS` for EVERY pattern
+       (simd.rs), but the GPU AC literal automaton matched bytes exactly, so a
+       lowercase literal `csb_` never fired on `CSB_…`. FIX: ASCII-lowercase the
+       GPU literal set (build_gpu_literals) AND the coalesced haystack
+       (gpu_ac_phase1 / gpu_literal_phase1) before AC matching; phase-2 still
+       confirms on the ORIGINAL bytes with the caseless regex. Raised AC matches
+       31384 -> 47928 (the uppercase CSB_ enums now hit).
+    2. POSITIONS. The classic_ac_bounded_ranges GPU kernel reports degenerate
+       match positions (observed (0,0)); fold_overlapping_same_pid_inplace then
+       collapsed a pid's 46 hits into one (0,0) span, and the phase-2
+       cheap-filter derived a ~1 KiB window [0,1024] from it -> is_match(window)
+       false even though is_match(whole)=true, so codesandbox was dropped. FIX:
+       the cheap-filter now confirms each hit pid against the WHOLE chunk
+       (position-independent, identical to SIMD's triggered->extract), bounded
+       by distinct-pid count since fold dedups to ~one-per-pid.
+  VERIFIED: soc21_enum.h GPU now 4 == SIMD 4; broader file check PARITY PASS;
+  new release-gate test `crates/cli/tests/gpu_simd_parity.rs` (GPU vs SIMD
+  byte-exact finding sets on a fixture with tokens past 4 KiB padding + an
+  uppercase caseless occurrence) passes. SIMD path untouched (changes are
+  GPU-only: build_gpu_literals + gpu_*_phase1 + GPU phase-2 cheap-filter), so
+  the simd-pinned bench F1 is unaffected. Full-kernel default-vs-simd
+  re-confirmation in progress. Underlying vyre AC position-reporting bug logged
+  separately (the keyhog-side whole-chunk confirm makes it non-blocking).
   Separately: the `codesandbox-api-token` detector firing on `CSB_`/`csb_`
   enum identifiers is a precision bug (logged to detection.md).
 
