@@ -22,7 +22,8 @@ SARIF, upload to code-scanning.
     format: sarif               # text | json | sarif | jsonl
     verify: 'false'             # 'true' to live-verify credentials
     upload-sarif: 'true'        # 'false' to keep the report local-only
-    fail-on-findings: 'true'    # 'false' to make findings advisory
+    fail-on-findings: 'true'    # 'false' makes unverified findings advisory;
+                                # verified-live credentials still fail
     baseline: ''                # path to a committed baseline file; only NEW
                                 # findings (absent from the baseline) fail the job
     version: ''                 # pin a specific release (default: action ref)

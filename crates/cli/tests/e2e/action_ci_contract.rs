@@ -640,6 +640,27 @@ fn composite_action_exposes_scan_duration_output() {
 }
 
 #[test]
+fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        manifest.contains("steps.scan.outputs.exit-code == '10'"),
+        "verified-live credentials must fail the composite Action even when fail-on-findings is false"
+    );
+    assert!(
+        manifest.contains("KEYHOG_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}"),
+        "fail step must receive the raw scanner exit code through env"
+    );
+    assert!(
+        manifest.contains("LIVE credential(s) confirmed by --verify (exit 10)."),
+        "fail step must make the live-credential reason operator-visible"
+    );
+    assert!(
+        manifest.contains("exit 10"),
+        "verified-live credentials should preserve the scanner's exit-10 semantics"
+    );
+}
+
+#[test]
 fn composite_action_shell_blocks_do_not_inline_untrusted_expressions() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     let mut offenders = Vec::new();
