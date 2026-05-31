@@ -13,17 +13,8 @@ impl Decoder for JsonDecoder {
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
-        for json_string in extract_json_strings(&chunk.data) {
-            // Cheap gate: json_unescape() is a copy-through for strings
-            // that contain no `\` escape. Without this gate, every plain
-            // string ≥ 4 chars in JSON would produce a duplicate spliced
-            // chunk that the engine re-scans for nothing - every
-            // `{"k": "EXAMPLE"}` triggered a full extra scan pass.
-            // Kimi-decode audit finding #1.
-            if !json_string.contains('\\') {
-                continue;
-            }
-            if let Ok(unescaped) = json_unescape(&json_string) {
+        for json_string in extract_escaped_json_strings(&chunk.data) {
+            if let Ok(unescaped) = json_unescape(json_string) {
                 // Splice the unescaped value over its escaped form
                 // in the parent so the JSON key (`"api_key": "…"`)
                 // stays adjacent - exactly the companion anchor most
@@ -32,7 +23,7 @@ impl Decoder for JsonDecoder {
                 push_decoded_text_chunk_spliced(
                     &mut decoded_chunks,
                     chunk,
-                    &json_string,
+                    json_string,
                     unescaped,
                     self.name(),
                 );
@@ -42,18 +33,14 @@ impl Decoder for JsonDecoder {
     }
 }
 
-/// Extract JSON string values from text.
-/// Returns the raw content inside JSON string quotes (including escape backslashes).
+/// Extract JSON string values that actually contain escapes.
+/// Returns borrowed raw content inside quotes (including escape backslashes).
 ///
-/// UTF-8 correctness: the inner loop iterates `text` by `char_indices`
-/// (not by raw bytes) so multi-byte UTF-8 sequences (e.g. CJK strings,
-/// emoji) inside JSON values are preserved as a single `char` push,
-/// not split into Latin-1 garbage. The earlier byte-oriented loop
-/// pushed `bytes[i] as char` which interprets every high byte as
-/// U+0080..U+00FF and corrupts any non-ASCII content in the JSON
-/// values keyhog scans for secrets (some service tokens carry CJK
-/// metadata or non-ASCII URLs inside surrounding JSON).
-fn extract_json_strings(text: &str) -> Vec<String> {
+/// Most JSON/NDJSON fixture files are packed with plain keys and values. The
+/// decoder only needs strings containing `\` escapes, so this scanner avoids
+/// allocating a `String` for every ordinary JSON value and borrows only the
+/// escaped spans that can produce a distinct decoded chunk.
+fn extract_escaped_json_strings(text: &str) -> Vec<&str> {
     let mut strings = Vec::new();
     let bytes = text.as_bytes();
     let mut index = 0;
@@ -69,37 +56,38 @@ fn extract_json_strings(text: &str) -> Vec<String> {
             break;
         }
 
-        // Found opening quote - step past it and walk the body as
-        // chars, tracking the byte index so we can resume the outer
-        // memchr scan correctly.
+        // Found opening quote. Walk bytes: `"`, `\`, CR and LF are ASCII and
+        // cannot appear inside a UTF-8 continuation byte, so byte scanning is
+        // UTF-8 safe while avoiding per-character allocation.
         index += 1;
-        let mut content = String::with_capacity(32);
-        let mut escaping = false;
+        let content_start = index;
+        let mut saw_escape = false;
         let mut closed = false;
 
-        for (ci, ch) in text[index..].char_indices() {
-            if escaping {
-                content.push(ch);
-                escaping = false;
-            } else if ch == '\\' {
-                escaping = true;
-                content.push('\\');
-            } else if ch == '"' {
-                closed = true;
-                index += ci + ch.len_utf8();
-                if content.len() >= 4 {
-                    strings.push(content);
+        while index < bytes.len() {
+            match bytes[index] {
+                b'\\' => {
+                    saw_escape = true;
+                    // Skip the escaped byte so `\"` does not terminate this
+                    // string. If the escape is truncated, the string is
+                    // malformed and the outer loop will advance below.
+                    index = index.saturating_add(2);
                 }
-                break;
-            } else if ch == '\n' || ch == '\r' {
-                // JSON strings cannot span lines unescaped - break
-                // BEFORE advancing index so the outer loop resumes
-                // at this line terminator and re-scans for the next
-                // opening quote on the next line.
-                index += ci;
-                break;
-            } else {
-                content.push(ch);
+                b'"' => {
+                    let content_end = index;
+                    index += 1;
+                    closed = true;
+                    if saw_escape && content_end.saturating_sub(content_start) >= 4 {
+                        strings.push(&text[content_start..content_end]);
+                    }
+                    break;
+                }
+                b'\n' | b'\r' => {
+                    // JSON strings cannot span lines unescaped. Leave index
+                    // on the terminator; the outer loop advances once below.
+                    break;
+                }
+                _ => index += 1,
             }
         }
 

@@ -15,6 +15,7 @@ mod decode_chunk_empty_input;
 mod decode_chunk_hex_splices_companion_anchor;
 mod decode_chunk_html_entity_splice;
 mod decode_chunk_inherits_parent_base_offset;
+mod decode_chunk_json_plain_strings_emit_no_layer;
 mod decode_chunk_json_unescape_splices_key;
 mod decode_chunk_rejects_nul_when_validate;
 mod decode_chunk_respects_max_depth;
