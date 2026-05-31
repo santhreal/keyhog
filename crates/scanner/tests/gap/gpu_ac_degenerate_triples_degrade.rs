@@ -11,8 +11,10 @@ fn gpu_ac_degenerate_triples_degrade_to_cpu_path() {
     .expect("gpu_ac_phase1.rs readable");
     assert!(
         phase1.contains("matches.iter().any(|m| m.end <= m.start)")
+            && phase1.contains("GPU_AC_DEGENERATE_DISABLED.load")
+            && phase1.contains("GPU_AC_DEGENERATE_DISABLED.store")
             && phase1.contains("gpu_degrade_done_with_reason(")
             && phase1.contains("GPU AC emitted degenerate match triples (end <= start)"),
-        "GPU AC phase 1 must degrade corrupt degenerate match triples with an operator-visible reason before chunk attribution"
+        "GPU AC phase 1 must degrade corrupt degenerate match triples with an operator-visible reason before chunk attribution and skip later known-corrupt AC dispatches"
     );
 }

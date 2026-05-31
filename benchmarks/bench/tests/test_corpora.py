@@ -34,9 +34,19 @@ def test_mirror_corpus_loads_manifest_jsonl(tmp_path):
     assert corpus.info().labeled_positives == 1
 
 
-def test_mirror_corpus_scans_fixture_tree_without_manifest(tmp_path):
-    fixtures = tmp_path / "fixtures"
-    fixtures.mkdir()
+def test_mirror_corpus_scans_neutral_tree_without_manifest(tmp_path):
+    # Split layout: the answer key (manifest.jsonl) sits at the home root,
+    # while the scan tree is a NEUTRALLY-NAMED subdir ("corpus", never
+    # "fixtures"/"test"). Two regressions are pinned here:
+    #   1. scan_root excludes the manifest (no scanner sees the answer key).
+    #   2. the scan dir name does not trip keyhog's path-based test-fixture
+    #      confidence penalty (same 15k files: 1880 findings under
+    #      "fixtures/" vs 2484 under a neutral name; --no-suppress-test-
+    #      fixtures does NOT override that penalty).
+    scan = tmp_path / "corpus"
+    shard = scan / "aa"
+    shard.mkdir(parents=True)
+    (shard / "one.txt").write_text("secret-one\n", encoding="utf-8")
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(
         json.dumps(
@@ -53,15 +63,29 @@ def test_mirror_corpus_scans_fixture_tree_without_manifest(tmp_path):
         + "\n",
         encoding="utf-8",
     )
-    shard = fixtures / "aa"
-    shard.mkdir()
-    (shard / "one.txt").write_text("secret-one\n", encoding="utf-8")
 
     corpus = MirrorCorpus(corpus_dir=tmp_path)
 
-    assert corpus.scan_root == fixtures
-    assert corpus.file_root == fixtures
+    assert corpus.scan_root == scan
+    assert corpus.file_root == scan
+    assert "fixtures" not in corpus.scan_root.name  # no test-context penalty
+    assert not (corpus.scan_root / "manifest.jsonl").exists()  # answer key excluded
     assert corpus.info().fixture_count == 1
+
+
+def test_mirror_ensure_lifts_existing_manifest_out_of_scan_tree(tmp_path):
+    scan = tmp_path / "corpus"
+    scan.mkdir()
+    (scan / "manifest.jsonl").write_text("", encoding="utf-8")
+    (scan / "manifest.sha256").write_text("hash\n", encoding="utf-8")
+
+    corpus = MirrorCorpus(corpus_dir=tmp_path)
+    corpus.ensure()
+
+    assert (tmp_path / "manifest.jsonl").exists()
+    assert (tmp_path / "manifest.sha256").exists()
+    assert not (scan / "manifest.jsonl").exists()
+    assert not (scan / "manifest.sha256").exists()
 
 
 def test_creddata_corpus_loads_csv_and_ignores_templates(tmp_path):

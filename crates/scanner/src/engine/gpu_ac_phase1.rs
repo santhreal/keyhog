@@ -1,5 +1,8 @@
 use super::*;
 
+static GPU_AC_DEGENERATE_DISABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl CompiledScanner {
     pub fn scan_coalesced_gpu_ac_phase1(&self, chunks: &[keyhog_core::Chunk]) -> GpuPhase1Output {
         let Some(matcher) = self.gpu_matcher() else {
@@ -10,6 +13,13 @@ impl CompiledScanner {
         };
         if self.gpu_backend.is_none() {
             return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+        }
+        if GPU_AC_DEGENERATE_DISABLED.load(std::sync::atomic::Ordering::Relaxed) {
+            return self.gpu_degrade_done_with_reason(
+                chunks,
+                crate::hw_probe::ScanBackend::Gpu,
+                Some("GPU AC previously emitted degenerate match triples (end <= start); skipping known-corrupt Vyre dispatch"),
+            );
         }
 
         let (entries, mut buffer) = super::gpu_coalesce::coalesce_chunks(chunks);
@@ -251,6 +261,7 @@ impl CompiledScanner {
         // never degrades, so the guard auto-clears once vyre's CUDA emit is
         // fixed, with no keyhog change required.
         if matches.iter().any(|m| m.end <= m.start) {
+            GPU_AC_DEGENERATE_DISABLED.store(true, std::sync::atomic::Ordering::Relaxed);
             tracing::warn!(
                 target: "keyhog::routing",
                 raw_matches = matches.len(),
