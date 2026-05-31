@@ -1172,6 +1172,20 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Composite Action Rejection Message Hardening
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: invalid `version` and invalid findings-output values are no longer reflected into GitHub workflow command bodies, closing the rejected-input newline injection path.
+- COHERENCE: usage errors still explain the bad field without echoing attacker-controlled bytes.
+- TESTING: action manifest contracts now reject reintroducing reflected invalid version or findings values.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31

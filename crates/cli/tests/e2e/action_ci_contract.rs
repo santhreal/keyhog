@@ -509,12 +509,33 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must reject chars that can inject GITHUB_OUTPUT or shell syntax"
     );
     assert!(
+        manifest.contains("Invalid version. Use only letters"),
+        "version resolver must not reflect rejected input into a workflow command"
+    );
+    assert!(
+        !manifest.contains("Invalid version '$v'"),
+        "version resolver must not echo the rejected version value"
+    );
+    assert!(
         manifest.contains("printf 'version=%s\\n' \"$v\" >> \"$GITHUB_OUTPUT\""),
         "version resolver must write a single validated output line"
     );
     assert!(
         !manifest.contains("echo \"version=$v\" >> \"$GITHUB_OUTPUT\""),
         "version resolver must not echo an unvalidated output assignment"
+    );
+}
+
+#[test]
+fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    assert!(
+        !manifest.contains("Invalid findings output '${KEYHOG_FINDINGS:-}'"),
+        "fail step must not echo an invalid findings output into a workflow command"
+    );
+    assert!(
+        manifest.contains("Invalid findings output."),
+        "fail step should still explain invalid findings output"
     );
 }
 
