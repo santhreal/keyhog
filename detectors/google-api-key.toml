@@ -8,6 +8,10 @@ id = "google-api-key"
 name = "Google/YouTube API Key"
 service = "google"
 severity = "critical"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.12
 keywords = ["AIza", "AIzaSy", "BLOGGER", "DRIVE_API_KEY", "GOOGLE_ADDRESS_VALIDATION", "GOOGLE_API_KEY", "GOOGLE_DRIVE", "GOOGLE_TRANSLATE_API_KEY", "PLACES_API_KEY", "YOUTUBE", "YOUTUBE_API_KEY", "addressvalidation.googleapis.com", "blogger", "cloudfunctions", "firebase", "google", "google_api_key", "googleapis", "googleapis.com/youtube", "places", "translation.googleapis.com", "youtube"]
 
 [[detector.patterns]]

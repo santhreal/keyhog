@@ -8,6 +8,10 @@ id = "datadog-application-key"
 name = "Datadog Application Key"
 service = "datadog"
 severity = "high"
+# DET-18 floor override: vendor anchor is distinctive; the body scores below the
+# 0.40 global floor on entropy alone, dropping a real token as a false negative
+# (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
+min_confidence = 0.3
 keywords = ["DD-APP-Key", "DD_APP_KEY", "DATADOG_APP_KEY", "datadog_app_key"]
 
 [[detector.patterns]]
