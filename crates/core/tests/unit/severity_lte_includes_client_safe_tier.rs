@@ -24,7 +24,7 @@ fn finding(sev: Severity) -> VerifiedFinding {
         service: Arc::from("aws"),
         severity: sev,
         credential_redacted: std::borrow::Cow::Borrowed("REDACTED"),
-        credential_hash: "h".to_string(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("x")),
@@ -65,9 +65,8 @@ severity_lte = "low"
 #[test]
 fn severity_eq_client_safe_matches_only_client_safe() {
     for spelling in ["client-safe", "client_safe", "CLIENT-SAFE"] {
-        let toml = format!(
-            "[[suppress]]\ndetector = \"aws-access-key\"\nseverity = \"{spelling}\"\n"
-        );
+        let toml =
+            format!("[[suppress]]\ndetector = \"aws-access-key\"\nseverity = \"{spelling}\"\n");
         let s = RuleSuppressor::parse(&toml)
             .unwrap_or_else(|e| panic!("spelling {spelling:?} must parse: {e}"));
         assert!(

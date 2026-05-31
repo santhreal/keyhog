@@ -1,4 +1,7 @@
-use keyhog_core::{dedup_cross_detector, dedup_matches, DedupedMatch, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{
+    dedup_cross_detector, dedup_matches, DedupScope, DedupedMatch, MatchLocation, RawMatch,
+    Severity,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,7 +12,7 @@ fn make_raw(detector: &str, credential: &str, conf: f64) -> RawMatch {
         service: Arc::from(detector.split('-').next().unwrap_or(detector)),
         severity: Severity::High,
         credential: Arc::from(credential),
-        credential_hash: format!("hash_of_{credential}"),
+        credential_hash: [0; 32],
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("test"),
@@ -47,7 +50,13 @@ fn full_dedup_pipeline_is_deterministic_across_input_orders() {
     reversed.reverse();
     let out_b = dedup_cross_detector(dedup_matches(reversed, &scope));
     assert_eq!(fingerprint(&out_a), fingerprint(&out_b));
-    let shuffled = vec![inputs[2].clone(), inputs[4].clone(), inputs[0].clone(), inputs[3].clone(), inputs[1].clone()];
+    let shuffled = vec![
+        inputs[2].clone(),
+        inputs[4].clone(),
+        inputs[0].clone(),
+        inputs[3].clone(),
+        inputs[1].clone(),
+    ];
     let out_c = dedup_cross_detector(dedup_matches(shuffled, &scope));
     assert_eq!(fingerprint(&out_a), fingerprint(&out_c));
 }

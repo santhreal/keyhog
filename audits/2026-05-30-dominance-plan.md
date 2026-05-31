@@ -1300,6 +1300,20 @@ Verified gates:
 - `KEYHOG_NO_GPU=0 keyhog scan --backend gpu --no-daemon --format json --output /tmp/keyhog-subset-gpu.json /tmp/keyhog-gpu-divergence-subset`
 - `diff -u /tmp/keyhog-subset-simd.sorted.json /tmp/keyhog-subset-gpu.sorted.json`
 
+## Executed Patch Set: Core Harness Hash Contract Closure
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: the core unified harness now constructs `RawMatch` and `VerifiedFinding` with the production `[u8; 32]` credential-hash type instead of stale string hashes.
+- WIRING: CSV, HTML, and JUnit reporter tests now live in the `tests/unit` harness rather than inline under `src/report/*`.
+- TESTING: `keyhog-core --test all_tests` now runs 291 tests green after the hash-contract and reporter-test migration.
+
+Verified gates:
+
+- `cargo test -p keyhog-core --test all_tests -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31

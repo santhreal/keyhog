@@ -13,7 +13,7 @@ fn sample_finding() -> VerifiedFinding {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential_redacted: std::borrow::Cow::Borrowed("****"),
-        credential_hash: "abc".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("app.env")),

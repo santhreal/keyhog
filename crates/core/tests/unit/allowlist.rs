@@ -79,7 +79,7 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
         service: "aws".into(),
         severity: Severity::High,
         credential_redacted: "***".into(),
-        credential_hash: "".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("src/main.rs".into()),
@@ -144,7 +144,7 @@ fn gitleaks_detector_ignore_by_id() {
         service: "generic".into(),
         severity: Severity::High,
         credential_redacted: "***".into(),
-        credential_hash: "".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("any/path/file.rs".into()),

@@ -12,7 +12,7 @@ fn finding_with_hostile_path(path: &str) -> VerifiedFinding {
         service: Arc::from("test"),
         severity: Severity::Medium,
         credential_redacted: Cow::Borrowed("****"),
-        credential_hash: "deadbeef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),

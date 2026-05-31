@@ -1,4 +1,6 @@
-use keyhog_core::{MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -9,7 +11,7 @@ fn synthetic_finding() -> VerifiedFinding {
         service: "test".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****redacted"),
-        credential_hash: "abcdefabcdefabcdef".into(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.env".into()),
@@ -35,7 +37,16 @@ fn sarif_output_carries_cwe_and_owasp_taxa() {
         r.finish().expect("finish");
     }
     let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
-    assert_eq!(json["runs"][0]["results"][0]["properties"]["cwe"].as_str(), Some("CWE-798"));
-    assert_eq!(json["runs"][0]["results"][0]["properties"]["owasp"].as_str(), Some("A07:2021"));
-    assert_eq!(json["runs"][0]["taxonomies"][0]["name"].as_str(), Some("CWE"));
+    assert_eq!(
+        json["runs"][0]["results"][0]["properties"]["cwe"].as_str(),
+        Some("CWE-798")
+    );
+    assert_eq!(
+        json["runs"][0]["results"][0]["properties"]["owasp"].as_str(),
+        Some("A07:2021")
+    );
+    assert_eq!(
+        json["runs"][0]["taxonomies"][0]["name"].as_str(),
+        Some("CWE")
+    );
 }

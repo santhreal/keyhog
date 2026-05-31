@@ -6,12 +6,16 @@ use keyhog_core::report::sarif_uri::credential_fingerprints;
 
 #[test]
 fn sarif_partial_fingerprints_present() {
-    let fp = credential_fingerprints("01c2c0cfbc42").expect("non-empty hash yields a fingerprint");
+    let hash = [
+        0x01, 0xc2, 0xc0, 0xcf, 0xbc, 0x42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let fp = credential_fingerprints(&hash).expect("non-zero hash yields a fingerprint");
     assert_eq!(
         fp.get("keyhog/credentialHash/v1").map(String::as_str),
-        Some("01c2c0cfbc42"),
+        Some("01c2c0cfbc420000000000000000000000000000000000000000000000000000"),
         "the credential hash must be the stable dedup key"
     );
-    // An empty hash has no stable identity -> no fingerprint (omitted in SARIF).
-    assert!(credential_fingerprints("").is_none());
+    // An all-zero hash has no stable identity -> no fingerprint (omitted in SARIF).
+    assert!(credential_fingerprints(&[0; 32]).is_none());
 }

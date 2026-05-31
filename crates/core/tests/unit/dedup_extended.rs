@@ -1,7 +1,9 @@
 /// Extended dedup tests: cross-detector dedup, confidence max selection,
 /// companion merge stability, empty input, same-location collapse,
 /// file-scope commit separation, and large batch determinism.
-use keyhog_core::{dedup_cross_detector, dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
+use keyhog_core::{
+    dedup_cross_detector, dedup_matches, DedupScope, MatchLocation, RawMatch, Severity,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -24,7 +26,7 @@ fn make(detector: &str, cred: &str, file: &str, line: usize, conf: Option<f64>) 
         service: Arc::from("svc"),
         severity: Severity::High,
         credential: Arc::from(cred),
-        credential_hash: format!("hash-{cred}"),
+        credential_hash: [0; 32],
         companions: HashMap::new(),
         location: loc(file, line, 0),
         entropy: None,
@@ -118,7 +120,10 @@ fn dedup_credential_scope_output_is_deterministic() {
     let order2 = dedup_matches(vec![m2, m1], &DedupScope::Credential);
     let ids1: Vec<&str> = order1.iter().map(|m| m.detector_id.as_ref()).collect();
     let ids2: Vec<&str> = order2.iter().map(|m| m.detector_id.as_ref()).collect();
-    assert_eq!(ids1, ids2, "dedup output must be deterministic regardless of input order");
+    assert_eq!(
+        ids1, ids2,
+        "dedup output must be deterministic regardless of input order"
+    );
 }
 
 // ── dedup_cross_detector ──────────────────────────────────────────────────────
@@ -140,8 +145,20 @@ fn cross_detector_dedup_empty_passes_through() {
 #[test]
 fn cross_detector_collapses_same_cred_two_detectors() {
     // Two matches with the SAME credential hash but different detectors → should collapse to 1.
-    let m1 = make("detector-a", "FAKE_CRED_IOTA_000000000", "f.env", 1, Some(0.9));
-    let m2 = make("detector-b", "FAKE_CRED_IOTA_000000000", "f.env", 1, Some(0.7));
+    let m1 = make(
+        "detector-a",
+        "FAKE_CRED_IOTA_000000000",
+        "f.env",
+        1,
+        Some(0.9),
+    );
+    let m2 = make(
+        "detector-b",
+        "FAKE_CRED_IOTA_000000000",
+        "f.env",
+        1,
+        Some(0.7),
+    );
     let deduped = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     let cross = dedup_cross_detector(deduped);
     assert_eq!(
@@ -181,7 +198,11 @@ fn cross_detector_picks_highest_severity_as_tiebreak() {
     let deduped = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     let cross = dedup_cross_detector(deduped);
     assert_eq!(cross.len(), 1);
-    assert_eq!(cross[0].detector_id.as_ref(), "det-a", "Critical severity should win tiebreak");
+    assert_eq!(
+        cross[0].detector_id.as_ref(),
+        "det-a",
+        "Critical severity should win tiebreak"
+    );
 }
 
 #[test]

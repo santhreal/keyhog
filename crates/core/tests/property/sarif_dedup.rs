@@ -15,7 +15,7 @@
 //!    input (we never invent locations).
 //! 3. **No-loss for unique inputs** - every uniquely-keyed input
 //!    survives.
-//! 4. **Stable ordering** - first occurrence wins; second + later
+//! 4. **Stable ordering** - first occurrence wins; subsequent
 //!    copies are dropped. (Matches the dedup's `HashSet::insert`
 //!    behavior, which is what the SARIF spec orders by source-order.)
 //! 5. **Survives the JSON round-trip** - serializing the deduped
@@ -67,7 +67,7 @@ fn finding_with_additional(additional: Vec<MatchLocation>) -> VerifiedFinding {
         service: "test".into(),
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****"),
-        credential_hash: "deadbeef".to_string(),
+        credential_hash: [0; 32],
         location: MatchLocation {
             source: "fs".into(),
             file_path: Some(std::sync::Arc::<str>::from("primary.rs")),

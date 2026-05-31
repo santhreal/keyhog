@@ -12,7 +12,7 @@ fn cross_detector_single_input_passthrough() {
         service: Arc::from("solo"),
         severity: Severity::Low,
         credential: Arc::from("x"),
-        credential_hash: "h".into(),
+        credential_hash: [0; 32],
         companions: HashMap::new(),
         primary_location: MatchLocation {
             source: Arc::from("t"),

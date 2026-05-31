@@ -39,8 +39,14 @@ fn sensitive_string_debug_does_not_emit_content() {
 fn sensitive_string_debug_empty_string_does_not_panic() {
     let s = SensitiveString::from("");
     let out = format!("{s:?}");
-    assert!(out.contains("redacted"), "empty SensitiveString Debug must indicate redaction; got: {out}");
-    assert!(!out.is_empty(), "empty SensitiveString Debug must not be empty");
+    assert!(
+        out.contains("redacted"),
+        "empty SensitiveString Debug must indicate redaction; got: {out}"
+    );
+    assert!(
+        !out.is_empty(),
+        "empty SensitiveString Debug must not be empty"
+    );
 }
 
 #[test]

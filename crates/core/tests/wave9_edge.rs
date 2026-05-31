@@ -38,7 +38,7 @@ fn raw(cred: &str) -> RawMatch {
         service: "s".into(),
         severity: Severity::High,
         credential: cred.into(),
-        credential_hash: format!("hash-{cred}"),
+        credential_hash: [0; 32],
         companions: Default::default(),
         location: loc(),
         entropy: None,

@@ -7,7 +7,7 @@ fn finding(
     service: &str,
     sev: Severity,
     path: &str,
-    hash: &str,
+    hash: [u8; 32],
 ) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
@@ -15,7 +15,7 @@ fn finding(
         service: Arc::from(service),
         severity: sev,
         credential_redacted: std::borrow::Cow::Borrowed("REDACTED"),
-        credential_hash: hash.to_string(),
+        credential_hash: hash,
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),
@@ -33,23 +33,13 @@ fn finding(
 }
 #[test]
 fn credential_hash_eq_matches() {
+    let deadbeef_hash = [0xde; 32];
+    let feedface_hash = [0xfe; 32];
     let toml = r#"
 [[suppress]]
-credential_hash = "deadbeefdeadbeefdeadbeefdeadbeef"
+credential_hash = "dededededededededededededededededededededededededededededededede"
 "#;
     let s = RuleSuppressor::parse(toml).expect("parse");
-    assert!(s.matches(&finding(
-        "x",
-        "x",
-        Severity::High,
-        "p",
-        "deadbeefdeadbeefdeadbeefdeadbeef"
-    )));
-    assert!(!s.matches(&finding(
-        "x",
-        "x",
-        Severity::High,
-        "p",
-        "feedfacefeedfacefeedfacefeedface"
-    )));
+    assert!(s.matches(&finding("x", "x", Severity::High, "p", deadbeef_hash)));
+    assert!(!s.matches(&finding("x", "x", Severity::High, "p", feedface_hash)));
 }
