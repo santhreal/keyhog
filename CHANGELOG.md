@@ -32,6 +32,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Run the composite Action's `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` pass as a preflight, then clear the print-only env for the real scan so CI gets the resolved scanner/post-process policy without losing the report.
 - Keep the effective-config preflight advisory and omit `--verify` from that preflight so older binaries that ignore the print-only env cannot block report/SARIF upload or double-run live verification.
 - Teach the composite Action to select the published `keyhog-windows-x86_64.exe` asset on Windows bash runners and preserve the `.exe` install name after checksum verification.
+- Teach the composite Action to select `keyhog-linux-x86_64-cuda` on CUDA-ready Linux runners and preserve `--features cuda` when falling back to a source build.
 - Restore the aggregate CLI `all_tests` target after the credential-hash storage contract changed from hex strings to inline `[u8; 32]` bytes.
 - Move the remaining CLI inline unit tests for args, hook coherence, and scan-system finding retention into registered aggregate tests while preserving the source gates against inline tests and production unwraps.
 - Require composite Action JSONL report lines to be finding objects, so clean malformed JSONL fails closed and findings-exit malformed JSONL cannot be counted as zero findings.

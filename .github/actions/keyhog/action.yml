@@ -92,8 +92,38 @@ runs:
         set -euo pipefail
         os="$(uname -s)"
         arch="$(uname -m)"
+        linux_cuda_ready=false
+        if [[ "$os/$arch" == "Linux/x86_64" ]]; then
+          if command -v nvidia-smi >/dev/null 2>&1 &&
+             nvidia-smi -L 2>/dev/null | grep -q "GPU "; then
+            libcuda_present=false
+            if ldconfig -p 2>/dev/null | grep -q "libcuda\\.so"; then
+              libcuda_present=true
+            else
+              for p in /usr/lib/x86_64-linux-gnu/libcuda.so /usr/lib64/libcuda.so \
+                       /usr/local/cuda/lib64/libcuda.so /opt/cuda/lib64/libcuda.so; do
+                if [[ -e "$p" ]]; then
+                  libcuda_present=true
+                  break
+                fi
+              done
+            fi
+            if [[ "$libcuda_present" == "true" ]] &&
+               { command -v nvcc >/dev/null 2>&1 ||
+                 [[ -n "${CUDA_HOME:-}" && -d "$CUDA_HOME" ]] ||
+                 [[ -d /usr/local/cuda || -d /opt/cuda ]]; }; then
+              linux_cuda_ready=true
+            fi
+          fi
+        fi
         case "$os/$arch" in
-          Linux/x86_64)   name="keyhog-linux-x86_64" ;;
+          Linux/x86_64)
+            if [[ "$linux_cuda_ready" == "true" ]]; then
+              name="keyhog-linux-x86_64-cuda"
+            else
+              name="keyhog-linux-x86_64"
+            fi
+            ;;
           Darwin/x86_64)  name="keyhog-macos-x86_64" ;;
           Darwin/arm64)   name="keyhog-macos-aarch64" ;;
           MINGW*/x86_64 | MSYS*/x86_64 | CYGWIN*/x86_64)
@@ -104,7 +134,7 @@ runs:
         echo "Asset name for $os/$arch: ${name:-<none — source build>}"
 
     - name: Install Vectorscan/Hyperscan runtime (Linux prebuilt)
-      if: steps.asset.outputs.name == 'keyhog-linux-x86_64'
+      if: startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')
       shell: bash
       run: |
         set -euo pipefail
@@ -169,9 +199,12 @@ runs:
     - name: Build keyhog from source (fallback)
       if: steps.download.outputs.found != 'true'
       shell: bash
+      env:
+        KEYHOG_ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        KEYHOG_ASSET_NAME: ${{ steps.asset.outputs.name }}
       run: |
         set -euo pipefail
-        cd "${{ github.action_path }}/../../.."
+        cd "$KEYHOG_ACTION_SOURCE_ROOT"
         # Only Linux ships keyhog's default `simd` feature (libhyperscan-dev).
         # macOS has no homebrew formula for libhyperscan; Windows has no
         # libhyperscan at all. Both fall to the `portable` feature subset
@@ -180,7 +213,11 @@ runs:
         # source-build path crashed at link time on a missing `-lhs`.
         case "$(uname -s)" in
           Linux*)
-            cargo build --release -p keyhog
+            if [[ "${KEYHOG_ASSET_NAME:-}" == "keyhog-linux-x86_64-cuda" ]]; then
+              cargo build --release -p keyhog --features cuda
+            else
+              cargo build --release -p keyhog
+            fi
             ;;
           *)
             cargo build --release -p keyhog --no-default-features --features portable
