@@ -22,7 +22,7 @@ Status: active plan
 - 2026-05-30: Generic-high-entropy gap audit found BetterLeaks' category win comes with broad false-positive cost outside that category (overall precision 0.231). Gap reporting now includes competitor overall precision so category deltas cannot hide precision regressions.
 - 2026-05-30: Composite Action artifact uploads now include the GitHub job id and scan duration in the artifact name, preventing the default `keyhog-report` name from colliding in common matrix CI layouts.
 - 2026-05-30: SSH/TLS PEM private-key detector now captures full BEGIN/END blocks with paired algorithm boundaries, and the homoglyph alternation compiler preserves branch-local suffixes instead of creating header-only fallback regexes. Regression coverage proves header-only PEM markers stay silent and two distinct EC keys remain two credential-dedup findings.
-- 2026-05-30: GPU backend self-test was run on the RTX 5090 host without `KEYHOG_NO_GPU`: MoE passed, `vyre_literal_set` reported the known subgroup lowering limitation, and `vyre_ac_kernel` failed on degenerate match triples before degrading to SIMD/CPU. This remains a real Vyre AC correctness/performance finding, not a no-GPU skip.
+- 2026-05-30: GPU backend self-test was run on the RTX 5090 host without `KEYHOG_NO_GPU`: MoE passed, `vyre_literal_set` reported the known subgroup lowering limitation, and `vyre_ac_kernel` failed on degenerate match triples before degrading to SIMD/CPU. Superseded 2026-05-31 by the bound-atomic AC builder: the same RTX 5090 JSON self-test now reports `vyre_ac_kernel=pass`.
 
 ## Dominance Contract
 
@@ -967,7 +967,7 @@ Vector coverage:
 - SPEED: GPU phase2 now skips `prepare_chunk`, `scan_prepared_with_pattern_hits`, and `post_process_matches` for empty-hit chunks that do not need fallback scanning.
 - COHERENCE: the GPU no-hit admission policy now mirrors SIMD coalesced routing: multiline split-secret indicators, assignment keywords, known secret prefixes, or long entropy runs still route through fallback scanning.
 - TESTING: added a scanner gap gate that proves the empty-hit check happens before `prepare_chunk` and keeps the keyword/entropy admission policy wired.
-- AUDIT HUNTS: captured the forced-GPU red gate separately; `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` fails because runtime GPU dispatch degrades before parity assertions. Current `keyhog backend --self-test` exits 4 on the RTX 5090 when the AC path degrades on degenerate Vyre match triples.
+- AUDIT HUNTS: captured the forced-GPU red gate separately; at this checkpoint `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` failed because runtime GPU dispatch degraded before parity assertions. Superseded 2026-05-31: the bound-atomic AC builder and strict-GPU guard fix make the RTX 5090 self-test and required-GPU parity pass.
 
 Verified gates:
 
@@ -1593,8 +1593,8 @@ Vector coverage:
 
 Observed gates:
 
-- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` exits 2 with `literals=true, backend=true, matcher=true`.
-- `cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` passes only by emitting the runtime GPU-degrade warning and falling back to SIMD/CPU.
+- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` exited 2 with `literals=true, backend=true, matcher=true` at this checkpoint; superseded 2026-05-31 by the strict-GPU guard fix.
+- `cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture` passed only by emitting the runtime GPU-degrade warning and falling back to SIMD/CPU at this checkpoint; superseded 2026-05-31 by required-GPU parity passing on the live RTX 5090.
 
 ## Executed Patch Set: Composite Action Missing-Report Gate
 
@@ -1889,7 +1889,7 @@ Verified gates:
 - `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend gpu --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/a7/mirror-pos-0000167.yaml` reported `mysql-connection-string` after GPU AC degraded on degenerate Vyre triples.
 - `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend gpu --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/4c/mirror-pos-0000332.yaml` reported `postgresql-connection-string` after GPU AC degraded on degenerate Vyre triples.
 - `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend auto --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/4c/mirror-pos-0000332.yaml` reported `postgresql-connection-string`.
-- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog backend --self-test` confirmed RTX 5090 MoE PASS, literal-set KNOWN, and Vyre AC FAIL on degenerate triples.
+- `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog backend --self-test` confirmed RTX 5090 MoE PASS, literal-set KNOWN, and Vyre AC FAIL on degenerate triples at this checkpoint; superseded 2026-05-31 by `backend --self-test --json` reporting `vyre_ac_kernel=pass`.
 
 ## Executed Patch Set: Action JSONL Object Validation
 
@@ -1913,14 +1913,14 @@ Date: 2026-05-31
 
 Vector coverage:
 
-- SPEED / UTILIZATION: reran the real RTX 5090 `backend --self-test`; MoE still passes, AC still degrades because Vyre emits degenerate triples, and a probe of CUDA subgroup coalescing still fails neutral lowering on `_vyre_match_leader`.
+- SPEED / UTILIZATION: reran the real RTX 5090 `backend --self-test`; at this checkpoint MoE still passed, AC still degraded because Vyre emitted degenerate triples, and a probe of CUDA subgroup coalescing still failed neutral lowering on `_vyre_match_leader`. Superseded 2026-05-31 by the KeyHog bound-atomic AC builder for the non-subgroup path.
 - CI UX: AC GPU runtime failures now carry the concrete backend cause into the same operator-visible degrade and `KEYHOG_REQUIRE_GPU=1` hard-fail path, instead of relying on tracing output that many CI jobs do not show.
 - AUDIT HUNTS: batched dispatch errors, per-shard dispatch errors, missing/truncated output buffers, and match-cap overflow all fail closed with specific reasons before CPU/SIMD recall-preserving fallback.
 - TESTING: extended the scanner gap contract so future AC GPU failure branches cannot return a generic degrade warning.
 
 Verified gates:
 
-- `RUST_LOG=keyhog::routing=debug timeout 120s cargo run -p keyhog -- backend --self-test` confirmed the live RTX 5090 path still reports MoE PASS, literal-set KNOWN, and AC FAIL on degenerate triples with the concrete reason in stderr.
+- `RUST_LOG=keyhog::routing=debug timeout 120s cargo run -p keyhog -- backend --self-test` confirmed the live RTX 5090 path still reported MoE PASS, literal-set KNOWN, and AC FAIL on degenerate triples with the concrete reason in stderr at this checkpoint; superseded 2026-05-31 by JSON self-test `vyre_ac_kernel=pass`.
 - `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
 
 ## Executed Patch Set: CI Advisory-Mode Documentation Coherence
@@ -1969,7 +1969,7 @@ Date: 2026-05-31
 Vector coverage:
 
 - CI UX: `keyhog backend --self-test --json` now emits stable `ok`, `status`, `exit_code`, `recommended_backend`, and per-probe records so production CI can consume GPU health without scraping ANSI text.
-- SPEED / UTILIZATION: the RTX 5090 path is still exercised as a real GPU path, not a no-GPU skip; MoE passes while the production Vyre AC kernel remains a red exit-4 gate on degenerate match triples.
+- SPEED / UTILIZATION: the RTX 5090 path is still exercised as a real GPU path, not a no-GPU skip; at this checkpoint MoE passed while the production Vyre AC kernel remained a red exit-4 gate on degenerate match triples. Superseded 2026-05-31 by the bound-atomic AC builder.
 - COHERENCE: README, mdBook CI guidance, exit-code docs, changelog, and tests now describe the same JSON self-test contract.
 - TESTING: added renderer and real-binary no-GPU skip contracts, then reran the actual GPU self-test JSON command on the live RTX 5090 host.
 
@@ -1977,7 +1977,7 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests backend_self_test_json -- --nocapture`
 - `cargo test -p keyhog --test all_tests r5t_backend_help_documents_json_flag -- --nocapture`
-- `timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `moe_kernel=pass`, `vyre_literal_set=known`, and `vyre_ac_kernel=fail` with exit `4`.
+- `timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `moe_kernel=pass`, `vyre_literal_set=known`, and `vyre_ac_kernel=fail` with exit `4` at this checkpoint; superseded 2026-05-31 by `status=pass`, `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.
 
 ## Executed Patch Set: GPU AC Bound Atomic Slot
 
@@ -2011,3 +2011,6 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog --test all_tests composite_action_sarif_upload_fails_closed_on_trusted_runs -- --nocapture`
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+- `tests/integration/entrypoints_check.sh`
+- `bash -n .github/actions/keyhog/run-scan.sh tests/integration/entrypoints_check.sh`
