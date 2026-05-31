@@ -24,13 +24,40 @@ impl<W: Write + Send> CsvReporter<W> {
 
 impl<W: Write + Send> Reporter for CsvReporter<W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
-        let line_str = finding.location.line.map(|l| l.to_string()).unwrap_or_default();
-        let commit_str = finding.location.commit.as_ref().map(|c| c.as_ref()).unwrap_or_default();
-        let author_str = finding.location.author.as_ref().map(|a| a.as_ref()).unwrap_or_default();
-        let date_str = finding.location.date.as_ref().map(|d| d.as_ref()).unwrap_or_default();
-        let file_path_str = finding.location.file_path.as_ref().map(|f| f.as_ref()).unwrap_or_default();
-        let confidence_str = finding.confidence.map(|c| c.to_string()).unwrap_or_default();
-        
+        let line_str = finding
+            .location
+            .line
+            .map(|l| l.to_string())
+            .unwrap_or_default();
+        let commit_str = finding
+            .location
+            .commit
+            .as_ref()
+            .map(|c| c.as_ref())
+            .unwrap_or_default();
+        let author_str = finding
+            .location
+            .author
+            .as_ref()
+            .map(|a| a.as_ref())
+            .unwrap_or_default();
+        let date_str = finding
+            .location
+            .date
+            .as_ref()
+            .map(|d| d.as_ref())
+            .unwrap_or_default();
+        let file_path_str = finding
+            .location
+            .file_path
+            .as_ref()
+            .map(|f| f.as_ref())
+            .unwrap_or_default();
+        let confidence_str = finding
+            .confidence
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+
         let verification_str = match &finding.verification {
             crate::VerificationResult::Live => "live".to_string(),
             crate::VerificationResult::Revoked => "revoked".to_string(),
@@ -118,10 +145,13 @@ mod tests {
         // confidence renders as `0.875`.
         assert_eq!(
             lines.next().expect("data row"),
-            "aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef,filesystem,config/app.env,12,5,,,,live,0.875",
+            "aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef00000000000000000000000000000000000000000000000000000000,filesystem,config/app.env,12,5,,,,live,0.875",
         );
 
-        assert!(lines.next().is_none(), "exactly one data row expected: {out:?}");
+        assert!(
+            lines.next().is_none(),
+            "exactly one data row expected: {out:?}"
+        );
     }
 
     #[test]
@@ -130,7 +160,10 @@ mod tests {
         // RFC-4180 quoting or quote-doubling fails loudly rather than
         // silently corrupting CSV parsers downstream.
         assert_eq!(super::escape_csv("a,b"), "\"a,b\"");
-        assert_eq!(super::escape_csv("she said \"hi\""), "\"she said \"\"hi\"\"\"");
+        assert_eq!(
+            super::escape_csv("she said \"hi\""),
+            "\"she said \"\"hi\"\"\""
+        );
         // A plain field is emitted bare (no surrounding quotes).
         assert_eq!(super::escape_csv("plain"), "plain");
     }

@@ -234,6 +234,33 @@ impl CompiledScanner {
             "AC GPU batched scan completed"
         );
 
+        // PERF-07c correctness guard: a sound AC kernel emits `end = i + 1`
+        // and `start = end - pat_len` with `pat_len >= 1`, so EVERY real match
+        // has `end > start`. A triple with `end <= start` (observed: a flood of
+        // degenerate `(pid=0, start=0, end=0)`) is impossible from correct
+        // output. The vyre CUDA PTX emit path currently produces such triples;
+        // folded to `(0,0)` they mis-attribute every PID to chunk 0 of a
+        // coalesced batch, silently dropping real hits in chunks > 0 - a
+        // fail-OPEN recall gap that only manifests on multi-file batches
+        // (single-file scans put the target in chunk 0 and mask it). Until the
+        // emitter is fixed (tracked as the vyre GPU upgrade), detect the
+        // corruption and degrade THIS batch to the SIMD/CPU literal path, which
+        // is correct and - measured on the kernel - actually faster than the
+        // GPU AC path here. The GPU MoE scorer still runs in phase 2. This is
+        // self-validating: a backend that emits sound triples (zero degenerate)
+        // never degrades, so the guard auto-clears once vyre's CUDA emit is
+        // fixed, with no keyhog change required.
+        if matches.iter().any(|m| m.end <= m.start) {
+            tracing::warn!(
+                target: "keyhog::routing",
+                raw_matches = matches.len(),
+                chunks = chunks.len(),
+                "GPU AC emitted degenerate match triples (end <= start); vyre CUDA \
+                 emit bug PERF-07c. Degrading this batch to the SIMD/CPU literal \
+                 path to preserve recall parity."
+            );
+            return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
+        }
         super::gpu_postprocess::fold_overlapping_same_pid_inplace(&mut matches);
         let total_patterns = self.ac_map.len() + self.fallback.len();
         let per_chunk_hits = super::gpu_postprocess::attribute_matches_to_chunks(
