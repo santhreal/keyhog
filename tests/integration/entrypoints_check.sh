@@ -68,12 +68,15 @@ if [ -f "$ACT" ] && [ -f "$SCAN" ]; then
     echo "FAIL GitHub Action entrypoint does not route through run-scan.sh to 'keyhog scan'."
     fail=1
   fi
-  # SARIF upload should be guarded so a fork PR (no security-events:write) does
-  # not hard-fail the whole workflow.
-  if grep -q "continue-on-error: true" "$ACT" && grep -q "upload-sarif" "$ACT"; then
-    note "OK   action.yml: SARIF upload is fork-PR safe (continue-on-error)"
+  # SARIF upload should be advisory only for fork PRs (no
+  # security-events:write), while trusted CI must fail closed if the user asked
+  # for Code Scanning upload.
+  if grep -q "continue-on-error: \${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}" "$ACT" \
+     && grep -q "upload-sarif" "$ACT"; then
+    note "OK   action.yml: SARIF upload is trusted-fail-closed and fork-PR advisory"
   else
-    echo "WARN action.yml: SARIF upload step should be continue-on-error for fork PRs."
+    echo "FAIL action.yml: SARIF upload must fail closed on trusted runs and be advisory only for fork PRs."
+    fail=1
   fi
   # Findings counting is a CI security boundary. Missing jq / malformed JSON
   # must not become findings=0 after the scanner already returned exit 1/10.

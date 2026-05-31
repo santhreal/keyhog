@@ -238,8 +238,11 @@ runs:
       # whole external contributor PR fails on this step instead of just
       # missing the code-scanning surface. The downloadable workflow artifact
       # below stays available either way, so reviewers can grab the SARIF.
+      # Trusted pushes/PRs are different: upload-sarif=true is an explicit
+      # production CI contract, so upload failures must fail closed instead
+      # of silently passing without Code Scanning annotations.
       if: inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true'
-      continue-on-error: true
+      continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.outfile.outputs.name }}
