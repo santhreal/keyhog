@@ -74,7 +74,7 @@ runs:
         fi
         case "$v" in
           "" | *[!A-Za-z0-9._/-]*)
-            echo "::error title=KeyHog::Invalid version '$v'. Use only letters, digits, dot, dash, underscore, or slash."
+            echo "::error title=KeyHog::Invalid version. Use only letters, digits, dot, dash, underscore, or slash."
             exit 2
             ;;
         esac
@@ -237,7 +237,7 @@ runs:
       run: |
         case "${KEYHOG_FINDINGS:-}" in
           "" | *[!0-9]*)
-            echo "::error title=KeyHog::Invalid findings output '${KEYHOG_FINDINGS:-}'."
+            echo "::error title=KeyHog::Invalid findings output."
             exit 3
             ;;
         esac
