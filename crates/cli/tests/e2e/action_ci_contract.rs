@@ -22,6 +22,26 @@ fn action_manifest() -> PathBuf {
         .expect("action.yml exists")
 }
 
+fn github_yaml_paths() -> Vec<PathBuf> {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root exists");
+    let mut paths = vec![action_manifest()];
+    let workflow_dir = repo.join(".github/workflows");
+    for entry in fs::read_dir(&workflow_dir).expect("read .github/workflows") {
+        let path = entry.expect("workflow dir entry").path();
+        if matches!(
+            path.extension().and_then(|ext| ext.to_str()),
+            Some("yml" | "yaml")
+        ) {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths
+}
+
 fn release_workflow() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../.github/workflows/release.yml")
@@ -203,6 +223,46 @@ fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
         blocks.push(block);
     }
     blocks
+}
+
+#[test]
+fn github_action_and_workflows_parse_as_yaml() {
+    for path in github_yaml_paths() {
+        let text = fs::read_to_string(&path).expect("read GitHub YAML");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&text)
+            .unwrap_or_else(|err| panic!("{} must parse as YAML: {err}", path.display()));
+        assert!(
+            matches!(parsed, serde_yaml::Value::Mapping(_)),
+            "{} top-level YAML must be a mapping",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn composite_action_manifest_keeps_composite_runs_shape() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let parsed: serde_yaml::Value =
+        serde_yaml::from_str(&manifest).expect("action.yml parses as YAML");
+    let root = parsed.as_mapping().expect("action.yml is a mapping");
+    let runs = root
+        .get(serde_yaml::Value::String("runs".to_string()))
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect("action.yml declares runs");
+    assert_eq!(
+        runs.get(serde_yaml::Value::String("using".to_string()))
+            .and_then(serde_yaml::Value::as_str),
+        Some("composite"),
+        "action.yml must remain a composite action"
+    );
+    let steps = runs
+        .get(serde_yaml::Value::String("steps".to_string()))
+        .and_then(serde_yaml::Value::as_sequence)
+        .expect("composite action declares steps");
+    assert!(
+        !steps.is_empty(),
+        "composite action must have at least one executable step"
+    );
 }
 
 #[test]
