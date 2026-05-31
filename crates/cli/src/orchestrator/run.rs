@@ -6,6 +6,7 @@ use super::reporting::{
 };
 use super::ScanOrchestrator;
 use crate::baseline::Baseline;
+use crate::orchestrator_config::print_effective_config_if_requested;
 use anyhow::Result;
 use keyhog_core::{VerificationResult, VerifiedFinding};
 use std::io::IsTerminal;
@@ -27,6 +28,10 @@ impl ScanOrchestrator {
             unsafe {
                 std::env::set_var("KEYHOG_BACKEND", backend);
             }
+        }
+
+        if print_effective_config_if_requested(&self.effective_config) {
+            return Ok(std::process::ExitCode::SUCCESS);
         }
 
         let hardening = keyhog_core::hardening::apply_default_protections();

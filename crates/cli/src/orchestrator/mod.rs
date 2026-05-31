@@ -7,10 +7,9 @@ mod reporting;
 mod run;
 
 use crate::args::ScanArgs;
-use crate::config::apply_config_file;
 use crate::orchestrator_config::{
-    auto_discover_detectors, build_scanner_config, configure_threads, load_detectors_no_cache,
-    load_detectors_with_cache,
+    auto_discover_detectors, configure_threads, load_detectors_no_cache, load_detectors_with_cache,
+    resolve_scan_config, ResolvedScanConfig,
 };
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, RawMatch, Source};
@@ -45,6 +44,8 @@ pub struct ScanOrchestrator {
     /// a finding from `<id>` below this threshold is dropped, overriding the
     /// global `--min-confidence`. Empty when no per-detector overrides are set.
     pub(crate) detector_min_confidence: std::collections::HashMap<String, f64>,
+    /// Fully resolved scan policy used by the engine and post-processing.
+    pub(crate) effective_config: ResolvedScanConfig,
 }
 
 impl ScanOrchestrator {
@@ -69,15 +70,15 @@ impl ScanOrchestrator {
         if args.git_staged && args.path.is_none() {
             args.path = Some(PathBuf::from("."));
         }
-        let cfg = apply_config_file(&mut args);
-        let disabled_detectors = cfg.disabled_detectors;
-        let detector_min_confidence = cfg.detector_min_confidence;
+        let mut effective_config = resolve_scan_config(&mut args);
+        let disabled_detectors = effective_config.disabled_detectors.clone();
+        let detector_min_confidence = effective_config.detector_min_confidence.clone();
 
         // `[lockdown] require = true` is a fail-closed security control: refuse
         // to run unless the operator consciously passed --lockdown. Previously
         // this config was parsed and silently ignored, so a repo that believed
         // it mandated lockdown ran unprotected (README documents it as active).
-        if cfg.require_lockdown && !args.lockdown {
+        if effective_config.require_lockdown && !args.lockdown {
             anyhow::bail!(
                 ".keyhog.toml sets [lockdown] require = true, but --lockdown was not passed. \
                  Re-run with --lockdown to enforce the configured hardening, or remove the \
@@ -123,22 +124,23 @@ impl ScanOrchestrator {
             }
         }
 
-        let mut scanner_config = build_scanner_config(&args);
-
         if let Some(mem_mb) = hw.total_memory_mb {
             if mem_mb < 4096 {
-                scanner_config.max_matches_per_chunk =
-                    scanner_config.max_matches_per_chunk.min(500);
-                scanner_config.max_decode_bytes = scanner_config.max_decode_bytes.min(256 * 1024);
+                effective_config.scanner.max_matches_per_chunk =
+                    effective_config.scanner.max_matches_per_chunk.min(500);
+                effective_config.scanner.max_decode_bytes =
+                    effective_config.scanner.max_decode_bytes.min(256 * 1024);
             }
         }
+        effective_config.min_confidence = effective_config.scanner.min_confidence;
+        effective_config.ml_enabled = effective_config.scanner.ml_enabled;
 
         let scanner = Arc::new(
             CompiledScanner::compile(detectors.clone())
                 .with_context(|| {
                     format!("compiling scanner from {} detector specs", detectors.len())
                 })?
-                .with_config(scanner_config),
+                .with_config(effective_config.scanner.clone()),
         );
 
         // Detector regexes compile lazily on first use. Warm the whole set in
@@ -176,8 +178,9 @@ impl ScanOrchestrator {
             scanner,
             signatures,
             test_fixture_suppressions,
-            disabled_detectors: disabled_detectors.into_iter().collect(),
+            disabled_detectors,
             detector_min_confidence,
+            effective_config,
         })
     }
 
@@ -239,6 +242,14 @@ impl ScanOrchestrator {
             test_fixture_suppressions,
             disabled_detectors: std::collections::HashSet::new(),
             detector_min_confidence: std::collections::HashMap::new(),
+            effective_config: ResolvedScanConfig {
+                scanner: keyhog_scanner::ScannerConfig::default(),
+                min_confidence: keyhog_scanner::ScannerConfig::default().min_confidence,
+                ml_enabled: keyhog_scanner::ScannerConfig::default().ml_enabled,
+                detector_min_confidence: std::collections::HashMap::new(),
+                disabled_detectors: std::collections::HashSet::new(),
+                require_lockdown: false,
+            },
         }
     }
 }
