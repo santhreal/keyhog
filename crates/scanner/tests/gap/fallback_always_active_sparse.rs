@@ -21,6 +21,10 @@ fn fallback_always_active_seed_is_sparse_not_dense_bool_scan() {
         "fallback hot path must seed from sparse always-active indices"
     );
     assert!(
+        fallback.contains("!self.fallback_always_active_indices.is_empty()"),
+        "fallback active-set probe should short-circuit when always-active fallback detectors make the chunk active unconditionally"
+    );
+    assert!(
         !fallback.contains("fallback_always_active.iter().enumerate()"),
         "fallback hot path must not rescan a dense always-active table"
     );

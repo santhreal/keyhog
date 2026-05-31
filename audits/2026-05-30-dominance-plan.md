@@ -1593,3 +1593,17 @@ Verified gates:
 
 - `cargo build -p keyhog`
 - `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
+
+## Executed Patch Set: Fallback Active-Set Admission Short-Circuit
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: GPU no-hit chunk admission now returns immediately when always-active fallback detectors or a missing fallback keyword prefilter make the active fallback set unconditional.
+- DEDUPLICATION: the fast path stays inside the shared `has_active_fallback_patterns_for_chunk` primitive used by GPU phase 2, rather than adding a second approximation to the GPU path.
+- TESTING: extended the sparse always-active fallback gate to lock in the unconditional-admission short-circuit.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests fallback_always_active_seed_is_sparse_not_dense_bool_scan -- --nocapture`

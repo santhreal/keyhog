@@ -46,6 +46,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Default SecretBench scoring to the deterministic CPU/SIMD path with `KEYHOG_NO_GPU=1`, while honoring a caller-provided `KEYHOG_NO_GPU=0` so the same scorer can dogfood GPU parity after the MoE activation fix.
 - Keep the deterministic SecretBench floor-override batch for strongly vendor-anchored detectors, raising mirror recall to the target range without adding clean-negative false positives.
 - Store always-active fallback detectors as sparse indices instead of a dense bool table, keeping fallback activation O(active patterns + keyword hits) per admitted chunk.
+- Short-circuit GPU no-hit fallback admission when always-active fallback detectors or a missing keyword prefilter make the active set unconditional, avoiding a redundant keyword-AC pass on those chunks.
 - Adopt compact `CsrU32` storage for hot scanner index maps (`prefix_propagation`, same-prefix siblings, fallback keyword routing, and SIMD Hyperscan dedup maps) instead of leaving the optimization half-wired.
 - Preserve cross-chunk boundary reassembly when GPU batch dispatch degrades to CPU or SIMD coalescing falls back because the prefilter is unavailable.
 - Route GPU no-hit chunks through phase 2 when the real fallback active set is non-empty, preserving prefixless detector recall on large GPU-routed files.
