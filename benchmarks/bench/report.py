@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 
 from .schema import RunResult
 
@@ -209,14 +210,39 @@ def build_sections(results: list[RunResult], corpus: str) -> dict[str, str]:
 
 def write_reports(results: list[RunResult], corpus: str,
                   reports_dir: pathlib.Path) -> None:
-    reports_dir.mkdir(parents=True, exist_ok=True)
     sections = build_sections(results, corpus)
-    (reports_dir / "leaderboard.md").write_text(
-        f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n")
-    (reports_dir / "perf.md").write_text(
-        f"# Performance\n\n{sections['perf']}\n")
-    (reports_dir / "gaps.md").write_text(
-        f"# Per-category gaps - {corpus}\n\n{sections['gaps']}\n")
+    reports = {
+        "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
+        "perf.md": f"# Performance\n\n{sections['perf']}\n",
+        "gaps.md": f"# Per-category gaps - {corpus}\n\n{sections['gaps']}\n",
+    }
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    for name, body in reports.items():
+        (reports_dir / name).write_text(body)
+
+
+def stale_report_paths(
+    results: list[RunResult],
+    corpus: str,
+    reports_dir: pathlib.Path,
+) -> list[pathlib.Path]:
+    sections = build_sections(results, corpus)
+    expected = {
+        "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
+        "perf.md": f"# Performance\n\n{sections['perf']}\n",
+        "gaps.md": f"# Per-category gaps - {corpus}\n\n{sections['gaps']}\n",
+    }
+    stale = []
+    for name, body in expected.items():
+        path = reports_dir / name
+        try:
+            current = path.read_text()
+        except OSError:
+            stale.append(path)
+            continue
+        if current != body:
+            stale.append(path)
+    return stale
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -231,7 +257,6 @@ def _main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     results = load_results(pathlib.Path(args.results))
-    write_reports(results, args.corpus, pathlib.Path(args.reports))
     sections = build_sections(results, args.corpus)
 
     print(sections["leaderboard"])
@@ -243,17 +268,30 @@ def _main(argv: list[str] | None = None) -> int:
         for name, body in sections.items():
             updated = inject(updated, name, body)
         if args.check:
-            if updated != original:
-                print("README is stale: `make report` would change it.", file=__import__("sys").stderr)
+            stale_reports = stale_report_paths(
+                results,
+                args.corpus,
+                pathlib.Path(args.reports),
+            )
+            if stale_reports:
+                joined = ", ".join(str(path) for path in stale_reports)
+                print(
+                    f"Benchmark reports are stale: `make report` would change {joined}.",
+                    file=sys.stderr,
+                )
                 return 1
-            print("README bench tables are up to date.", file=__import__("sys").stderr)
+            if updated != original:
+                print("README is stale: `make report` would change it.", file=sys.stderr)
+                return 1
+            print("README bench tables are up to date.", file=sys.stderr)
             return 0
         if updated != original:
             readme.write_text(updated)
-            print(f"injected bench tables into {readme}", file=__import__("sys").stderr)
+            print(f"injected bench tables into {readme}", file=sys.stderr)
         else:
             print("README unchanged (no markers found or already current).",
-                  file=__import__("sys").stderr)
+                  file=sys.stderr)
+    write_reports(results, args.corpus, pathlib.Path(args.reports))
     return 0
 
 

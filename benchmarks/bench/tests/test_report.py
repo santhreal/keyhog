@@ -1,3 +1,5 @@
+import json
+
 from bench import report
 from bench.schema import CorpusInfo, Detection, Outcome, RunResult
 from bench.schema import Scanner as ScannerRecord
@@ -31,6 +33,48 @@ def test_report_inject_replaces_marker_body():
     updated = report.inject(original, "perf", "new")
 
     assert updated == "a\n<!-- BENCH:perf:start -->\nnew\n<!-- BENCH:perf:end -->\nz"
+
+
+def test_report_check_does_not_write_stale_reports(tmp_path, capsys):
+    result = _result("keyhog", 5, 20.0)
+    results_dir = tmp_path / "results"
+    reports_dir = tmp_path / "reports"
+    readme = tmp_path / "README.md"
+    results_dir.mkdir()
+    (results_dir / "run.json").write_text(json.dumps(result.to_json()), encoding="utf-8")
+
+    text = "\n".join([
+        "<!-- BENCH:leaderboard:start -->",
+        "old",
+        "<!-- BENCH:leaderboard:end -->",
+        "<!-- BENCH:perf:start -->",
+        "old",
+        "<!-- BENCH:perf:end -->",
+        "<!-- BENCH:gaps:start -->",
+        "old",
+        "<!-- BENCH:gaps:end -->",
+        "",
+    ])
+    sections = report.build_sections([result], "mirror")
+    for name, body in sections.items():
+        text = report.inject(text, name, body)
+    readme.write_text(text, encoding="utf-8")
+
+    code = report._main([
+        "--results",
+        str(results_dir),
+        "--reports",
+        str(reports_dir),
+        "--readme",
+        str(readme),
+        "--corpus",
+        "mirror",
+        "--check",
+    ])
+
+    assert code == 1
+    assert not reports_dir.exists()
+    assert "Benchmark reports are stale" in capsys.readouterr().err
 
 
 def test_gap_report_shows_competitor_overall_precision_cost():
