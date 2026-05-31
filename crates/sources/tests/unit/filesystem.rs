@@ -1,5 +1,5 @@
 use keyhog_core::Source;
-use keyhog_sources::FilesystemSource;
+use keyhog_sources::{reader_pool_thread_count_for_test, FilesystemSource};
 use std::path::PathBuf;
 
 #[test]
@@ -18,4 +18,12 @@ fn filesystem_source_yields_file_contents() {
 fn filesystem_source_missing_path_yields_nothing() {
     let source = FilesystemSource::new(PathBuf::from("/tmp/keyhog-missing-path-xyzzy-999"));
     assert!(source.chunks().next().is_none());
+}
+
+#[test]
+fn filesystem_reader_pool_is_smaller_than_scan_pool_on_large_hosts() {
+    assert_eq!(reader_pool_thread_count_for_test(1), 2);
+    assert_eq!(reader_pool_thread_count_for_test(4), 2);
+    assert_eq!(reader_pool_thread_count_for_test(32), 16);
+    assert_eq!(reader_pool_thread_count_for_test(64), 16);
 }

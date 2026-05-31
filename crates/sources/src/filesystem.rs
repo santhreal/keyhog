@@ -65,6 +65,19 @@ pub(crate) fn strip_unc_prefix(s: &str) -> &str {
 /// that straddle a source cut.
 const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
 
+const MAX_READER_POOL_THREADS: usize = 16;
+
+fn reader_pool_thread_count(scanner_threads: usize) -> usize {
+    let scanner_threads = scanner_threads.max(1);
+    let half_scan_pool = scanner_threads.div_ceil(2);
+    half_scan_pool.clamp(2, MAX_READER_POOL_THREADS)
+}
+
+#[doc(hidden)]
+pub fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
+    reader_pool_thread_count(scanner_threads)
+}
+
 /// Scans files in a directory tree.
 pub struct FilesystemSource {
     root: PathBuf,
@@ -303,10 +316,11 @@ impl Source for FilesystemSource {
         // Running the reader on a DEDICATED pool breaks the cycle: the reader
         // threads may all park in `send`, but the global pool stays free for
         // the scanner, which drains the channel, which unblocks the readers.
-        // If the dedicated pool can't be built we fall back to the global pool
-        // (degrading to the old behaviour) rather than failing the scan.
+        // Size that pool below the scanner pool: reads and archive/string
+        // extraction need overlap, not a second full CPU pool competing with
+        // scan workers on large trees.
         let reader_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(std::cmp::max(2, rayon::current_num_threads()))
+            .num_threads(reader_pool_thread_count(rayon::current_num_threads()))
             .thread_name(|i| format!("keyhog-reader-{i}"))
             .build()
             .ok();

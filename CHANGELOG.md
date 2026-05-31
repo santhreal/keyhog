@@ -71,6 +71,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Sources
 
 - Fix default `--git-diff HEAD` to compare the base commit against uncommitted worktree changes rather than resolving both sides to `HEAD`.
+- Size the dedicated filesystem reader pool to half the scanner pool with a 16-thread cap, preserving deadlock-free read/scan overlap without doubling runnable workers on high-core hosts.
 - Fix `keyhog-sources` default test compilation by marking the S3 ambient credential forwarding integration test as requiring the `s3` feature.
 - Move source-crate inline tests for filesystem, binary literals/sections, GitHub org, HTTP policy, and web SSRF helpers behind registered external tests, restoring the no-inline-test and no-production-unwrap gates under default and all-features source builds.
 - Split GitHub org git-error redaction into a focused submodule so `github_org.rs` is back under the 500-line modularity target.

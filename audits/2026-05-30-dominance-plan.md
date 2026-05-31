@@ -1498,3 +1498,17 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
+
+## Executed Patch Set: Filesystem Reader Pool Sizing
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: the filesystem producer still uses a dedicated reader pool to avoid reader/scanner deadlock, but the pool is now half the scanner pool with a 16-thread cap instead of a second full-size CPU pool.
+- UTILIZATION: large-tree scans on 32-core hosts run 16 reader workers plus scanner workers instead of 32 reader workers competing with the scan pool.
+- TESTING: added a source unit contract for the two-thread floor, half-pool sizing, and 16-thread cap.
+
+Verified gates:
+
+- `cargo test -p keyhog-sources --test all_tests filesystem_reader_pool_is_smaller_than_scan_pool_on_large_hosts -- --nocapture`
