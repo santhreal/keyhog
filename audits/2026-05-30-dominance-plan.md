@@ -13,6 +13,7 @@ Status: active plan
 - 2026-05-30: Dogfood example-suppression telemetry now deduplicates repeated detector/path/credential/reason events, and the pipeline batch-flush regression now proves exact static detector recall without arithmetic overflow from unrelated detector emissions.
 - 2026-05-30: CLI source hygiene gate repaired by moving args, hook, and scan-system inline contracts into registered aggregate tests; scan-system redaction checks now assert the real raw hash bytes instead of stale fake hash strings.
 - 2026-05-30: Structured named-detector recall audit found the generic UUID suppressor still firing under strong service anchors; the UUID gate is now bypassed only for strongly anchored detectors and remains active for generic/entropy UUID captures.
+- 2026-05-30: Hot-pattern fast-path location mapping now uses the preprocessor's original-line map, preventing structured `.env` synthetic lines from surfacing as past-EOF additional locations.
 
 ## Dominance Contract
 
@@ -37,7 +38,7 @@ Competitor source clones in `/tmp/keyhog-competitors`:
 
 Keyhog source evidence:
 
-- 891 detector TOMLs.
+- 894 detector TOMLs.
 - 2917 Rust files under `crates`, including tests; 36,178 Rust LOC in production crates from the current checked command output.
 - Latest visible SecretBench mirror result: `tools/secretbench/results/keyhog-v32-2026-05-29.json`, F1 0.8896, precision 0.9716, recall 0.8203, TP 2461, FP 72, FN 539.
 - Existing benchmark adapters cover Keyhog, TruffleHog, Gitleaks, and Betterleaks in `tools/secretbench/scoring/score.py`; leaderboard evidence does not yet prove Titus, Nosey Parker, or Kingfisher dominance.
@@ -116,7 +117,7 @@ What Keyhog must beat:
 
 Strengths:
 
-- Detector corpus is already close to Kingfisher scale at 891 TOMLs.
+- Detector corpus is already close to Kingfisher scale at 894 TOMLs.
 - Scanner has serious high-performance architecture: Hyperscan/SIMD, GPU routing, megascan/rule pipeline, AC gates, fallback paths, multiline reconstruction, decode-through scanning, BLAKE3 Merkle skip, daemon/watch/system scan.
 - Security posture is stronger than most peers in several places: SSRF gates, DNS pinning, redirect revalidation, proxy coherency, OOB validation, hardening, coredump/ptrace controls, redaction discipline, archive bomb guards, symlink/path traversal tests.
 - Test surface is large and adversarial by default.
@@ -163,6 +164,7 @@ Plan:
 - Record process startup, warm daemon, CPU/SIMD, GPU, peak RSS, bytes/sec, findings/sec, and operator-visible first finding latency.
 - Add `KEYHOG_REQUIRE_GPU=1` and known-host GPU allowlist for RTX 5090/4090/santhserver.
 - Make reports include selected backend and bytes per backend.
+- Keep the Vyre track pinned to measured gains: the workspace is already on current crates.io `vyre` 0.6.1, so performance innovation means upstreamable batch dispatch, multi-buffer residency, literal/regex kernel fusion, and zero-copy result compaction work against `vendor/vyre`/crates.io parity gates.
 
 Dominance gate:
 

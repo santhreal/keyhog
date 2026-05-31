@@ -15,6 +15,7 @@ impl CompiledScanner {
         #[cfg(feature = "simdsieve")]
         self.scan_hot_patterns_fast(
             &prepared.preprocessed.text,
+            &prepared.preprocessed,
             &line_offsets,
             prepared.chunk,
             &mut scan_state,
