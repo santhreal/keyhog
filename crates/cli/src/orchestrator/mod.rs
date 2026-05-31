@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
 #[doc(hidden)]
-pub use dispatch::explicit_backend_override;
+pub use dispatch::{backend_requires_legacy_gpu_pipeline_for_test, explicit_backend_override};
 
 #[doc(hidden)]
 pub fn allowlist_root_for_test(path: &std::path::Path) -> std::path::PathBuf {
