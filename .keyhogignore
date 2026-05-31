@@ -197,6 +197,11 @@ hash:d958bea220901fe230d4387420fc824757df47783f2d79ef7cfff99bff31ba0a
 hash:d87feb2a98b486e4ced10e33e459d82fad6df7083432ab2548e5d5e67f943e73
 hash:381a4f9e363361fe674d68bee7f8d38045d8a60e24f1aefb5b9e3bca7084163d
 hash:cd757e6a240a57d33e1c1daac2f2a1511ef635c9bee7eb88785d6498c9f5fe8a
+# engine/mod.rs WARM_SAMPLE: a synthetic string concat (JWT fragment, base64'd
+# AKIAIOSFODNN7EXAMPLE, a UUID) used ONLY to warm the lazy-regex DFA caches in
+# parallel before the first real batch. It deliberately contains secret SHAPES
+# so the detection regexes touch their transition tables; it is not a secret.
+hash:3301c53957d9fa995b5ac610c71ba113ec0f41615a0e215c1b119181c34d6b7d
 path:tailwind/
 path:target/
 path:test_extract
@@ -207,6 +212,12 @@ path:tests/data/
 path:tests/fixtures/
 path:test_walk
 path:test_walk.rs
+# Benchmark tooling + fixtures (migrated to benchmarks/; the live corpus is
+# gitignored). tools/secretbench/ holds intentional secret-shaped fixtures —
+# mirror/providers.py token templates, results/*.md differential dumps,
+# scoring/ test fixtures — none are live secrets. Path-suppress the dir so the
+# dog-food self-scan stays at 0.
+path:tools/secretbench/
 # Tooling
 hash:03d104c669e3c7b6be7f989db8b12c8b910d3be8c1e2a73c9369d3cc0ba803b5
 hash:091652c1b31bff45e34cd898488baa49a69db7a06884c9fa48b219f91517792f
