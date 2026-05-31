@@ -18,6 +18,7 @@ Status: active plan
 - 2026-05-30: CI Action contract suite now parses every committed GitHub workflow plus the composite Action manifest, and asserts the manifest remains a composite action with executable steps instead of relying only on text grep.
 - 2026-05-30: CI workflow contracts now prove every committed workflow has a name, trigger, jobs mapping, runner/reusable-workflow target, and executable step definitions so valid-but-dead workflow YAML cannot silently ship.
 - 2026-05-30: Committed mirror benchmark report tables refreshed from current `benchmarks/results`; report-check proves README injection is byte-stable, and the current gap table now names private-key recall as the largest competitor delta.
+- 2026-05-30: Private-key benchmark gap traced to scorer normalization, not scanner recall: KeyHog emitted duplicate PEM appearances as `additional_locations`, while the adapter scored only the primary location. The adapter now expands those aliases, mirror private-key F1 is 1.000, and overall mirror F1 is 0.9108.
 
 ## Dominance Contract
 
