@@ -1201,6 +1201,21 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Composite Action Release-Asset Verification
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: the composite Action no longer executes a downloaded release binary unless the matching `.sha256` asset downloads and verifies; missing checksums fall back to a source build instead of silently trusting the binary.
+- WIRING: the Linux prebuilt path now installs the Hyperscan/Vectorscan runtime before running the release asset, aligning the public Action path with the repo's previously separate dogfood workflow.
+- DOGFOODING: `.github/workflows/keyhog.yml` now invokes `./.github/actions/keyhog` directly with strict-marker gating preserved, so the production Action path is exercised by KeyHog's own push/PR scanner.
+- TESTING: action contracts now lock checksum verification, Linux runtime installation, local Action dogfooding, and env-based handling of Action outputs in the strict-marker shell step.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31

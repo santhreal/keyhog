@@ -97,6 +97,15 @@ runs:
         echo "name=$name" >> "$GITHUB_OUTPUT"
         echo "Asset name for $os/$arch: ${name:-<none — source build>}"
 
+    - name: Install Vectorscan/Hyperscan runtime (Linux prebuilt)
+      if: steps.asset.outputs.name == 'keyhog-linux-x86_64'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends libhyperscan5 || \
+          sudo apt-get install -y --no-install-recommends libhyperscan-dev
+
     - name: Try downloading prebuilt binary
       id: download
       shell: bash
@@ -114,12 +123,23 @@ runs:
         fi
         url="https://github.com/santhsecurity/keyhog/releases/download/v${version}/${asset}"
         echo "Trying $url"
-        if curl -fL --retry 2 "$url" -o "$RUNNER_TEMP/keyhog" 2>/dev/null; then
+        if curl -fL --retry 2 "$url" -o "$RUNNER_TEMP/$asset" 2>/dev/null &&
+           curl -fL --retry 2 "$url.sha256" -o "$RUNNER_TEMP/$asset.sha256" 2>/dev/null; then
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
+          elif command -v shasum >/dev/null 2>&1; then
+            (cd "$RUNNER_TEMP" && shasum -a 256 -c "$asset.sha256")
+          else
+            echo "::warning title=KeyHog::No SHA256 verifier on runner; falling back to source build."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/keyhog"
           chmod +x "$RUNNER_TEMP/keyhog"
           echo "found=true" >> "$GITHUB_OUTPUT"
-          echo "Downloaded prebuilt $asset for v$version"
+          echo "Downloaded and verified prebuilt $asset for v$version"
         else
-          echo "Release asset missing at $url - falling back to source build"
+          echo "Release asset or checksum missing at $url - falling back to source build"
           echo "found=false" >> "$GITHUB_OUTPUT"
         fi
 
