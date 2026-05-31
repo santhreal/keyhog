@@ -989,6 +989,27 @@ Verified gates:
 - `bash -n .github/actions/keyhog/run-scan.sh`
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
 
+## Executed Patch Set: GPU AC Cheap-Filter Whole-Chunk Confirmation
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: keeps the AC cheap-filter bounded to one regex `is_match` per candidate pid while avoiding repeated window probes for the same pid.
+- CAPABILITY: aligns GPU root confirmation with SIMD trigger semantics by evaluating detector regexes over the whole prepared chunk before precise extraction, preventing narrow-window misses for wider-context detector regexes.
+- COHERENCE: the implementation now matches the existing code comments that described whole-chunk, position-independent confirmation.
+- TESTING: GPU self-test passed on the RTX 5090; the StackBlitz GPU recall narrow-window test ran but skipped its corpus-dependent assertion because the local bench corpus file is absent.
+- AUDIT HUNTS: the known forced-GPU synthetic parity gate still hard-fails before assertions with runtime GPU dispatch degradation, so the red gate remains recorded.
+
+Verified gates:
+
+- `/mnt/FlareTraining/santh-archive/cargo-target/debug/keyhog backend --self-test`
+- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_ac_recall_bug_56 gpu_ac_kernel_finds_stackblitz_token_in_narrow_window -- --nocapture`
+
+Red gate captured:
+
+- `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
+
 ## Executed Patch Set: GitHub Action CI Fail-Closed UX
 
 Date: 2026-05-31

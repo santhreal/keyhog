@@ -234,16 +234,7 @@ impl CompiledScanner {
             "AC GPU batched scan completed"
         );
 
-        let dbg_cf = std::env::var_os("KEYHOG_DEBUG_CHEAPFILTER").is_some();
-        if dbg_cf {
-            let c = matches.iter().filter(|m| m.pattern_id == 598).count();
-            eprintln!("[ac-phase1] raw matches pid598={c} (total {})", matches.len());
-        }
         super::gpu_postprocess::fold_overlapping_same_pid_inplace(&mut matches);
-        if dbg_cf {
-            let c = matches.iter().filter(|m| m.pattern_id == 598).count();
-            eprintln!("[ac-phase1] post-fold pid598={c} (total {})", matches.len());
-        }
         let total_patterns = self.ac_map.len() + self.fallback.len();
         let per_chunk_hits = super::gpu_postprocess::attribute_matches_to_chunks(
             &matches,
