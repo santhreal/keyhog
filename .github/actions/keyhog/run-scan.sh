@@ -108,6 +108,7 @@ args=(scan
   --severity "$severity"
   --format "$format"
   --output "$report")
+config_args=("${args[@]}")
 
 if [[ "$verify" == "true" ]]; then
   args+=(--verify)
@@ -115,14 +116,16 @@ fi
 
 if [[ -n "$baseline" ]]; then
   args+=(--baseline "$baseline")
+  config_args+=(--baseline "$baseline")
 fi
 
 if [[ "$print_effective_config" == "true" ]]; then
-  KEYHOG_PRINT_EFFECTIVE_CONFIG=1 keyhog "${args[@]}"
+  set +e
+  KEYHOG_PRINT_EFFECTIVE_CONFIG=1 keyhog "${config_args[@]}"
   config_exit=$?
+  set -e
   if [[ "$config_exit" != "0" ]]; then
-    gha_error "keyhog effective-config preflight exited $config_exit before scanning."
-    exit "$config_exit"
+    gha_warning "keyhog effective-config preflight exited $config_exit; continuing with the real scan so reports and SARIF are still produced."
   fi
 fi
 

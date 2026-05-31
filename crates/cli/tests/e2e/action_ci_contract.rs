@@ -605,6 +605,83 @@ exit 0
 }
 
 #[test]
+fn action_effective_config_preflight_is_advisory_and_never_verifies() {
+    let dir = TempDir::new().expect("tempdir");
+    let calls = dir.path().join("calls.txt");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+has_verify=false
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --output)
+      shift
+      out="$1"
+      ;;
+    --verify)
+      has_verify=true
+      ;;
+  esac
+  shift || true
+done
+printf '%s verify=%s\n' "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" "$has_verify" >> "$CALLS_FILE"
+if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" == "1" ]]; then
+  if [[ "$has_verify" == "true" ]]; then
+    echo "preflight must not run live verification" >&2
+    exit 43
+  fi
+  echo "legacy binary ignored effective-config env and returned findings" >&2
+  exit 1
+fi
+if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" != "0" ]]; then
+  echo "real scan must clear KEYHOG_PRINT_EFFECTIVE_CONFIG; got ${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >&2
+  exit 42
+fi
+if [[ "$has_verify" != "true" ]]; then
+  echo "real scan must preserve --verify" >&2
+  exit 44
+fi
+cat > "$out" <<'JSON'
+{"runs":[{"results":[]}]}
+JSON
+exit 0
+"#,
+    );
+
+    let calls_path = calls.to_string_lossy().into_owned();
+    let output = run_action(
+        &dir,
+        &[
+            ("CALLS_FILE", calls_path.as_str()),
+            ("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1"),
+            ("KEYHOG_VERIFY", "true"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "preflight failures must not block report-producing scans; output={combined}"
+    );
+    assert!(
+        combined
+            .contains("keyhog effective-config preflight exited 1; continuing with the real scan"),
+        "preflight fallback warning must be operator-visible; output={combined}"
+    );
+    assert_eq!(
+        fs::read_to_string(&calls).expect("read calls"),
+        "1 verify=false\n0 verify=true\n",
+        "preflight must skip --verify, while the real scan preserves it"
+    );
+    assert!(
+        output_file(&dir).contains("findings=0"),
+        "real scan report must still be parsed after advisory preflight"
+    );
+}
+
+#[test]
 fn action_treats_malformed_findings_report_as_at_least_one_finding() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(
