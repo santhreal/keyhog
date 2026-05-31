@@ -17,7 +17,7 @@ description = "Azure OpenAI API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:api-key|api_key)[=:\\s\"\\']+([a-f0-9]{32}).*\\.openai\\.azure\\.com"
+regex = "(?:api-key|api_key)[=:\\s\"\\']+([a-f0-9]{32})(?s:.*)\\.openai\\.azure\\.com"
 description = "Azure OpenAI api-key header with endpoint context"
 group = 1
 

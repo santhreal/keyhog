@@ -22,7 +22,7 @@ group = 0
 # zero of the 40 modern sk-ant- fixtures, leaving them to fall through
 # to the generic-secret path. `sk-ant-` is a vendor-specific 7-char
 # prefix with no documented collisions.
-regex = 'sk-ant-[A-Za-z0-9_-]{80,120}'
+regex = 'sk-ant-(?:[A-Z0-9_b-z-][A-Za-z0-9_-]{79,119}|a[A-Z0-9_a-oq-z-][A-Za-z0-9_-]{78,118}|ap[A-Z0-9_a-hj-z-][A-Za-z0-9_-]{77,117}|api[A-Za-z1-9_-][A-Za-z0-9_-]{76,116}|api0[A-Za-z0-24-9_-][A-Za-z0-9_-]{75,115}|api03[A-Za-z0-9_][A-Za-z0-9_-]{74,114})'
 description = "Anthropic API key (modern sk-ant-<url-safe>...)"
 group = 0
 

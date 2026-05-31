@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -247,6 +248,20 @@ def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[d
     # `--format json --show-secrets --no-suppress-test-fixtures`
     # combination is what makes scoring apples-to-apples with
     # trufflehog/kingfisher/betterleaks (which don't suppress demo tokens).
+    # REPRODUCIBILITY: pin the deterministic CPU path. The default (auto-route)
+    # backend runs the GPU MoE confidence scorer when a discrete GPU is present,
+    # and GPU-float MoE produces slightly different confidence than the CPU MoE
+    # - so findings sitting near the global min-confidence floor flip in/out
+    # run-to-run. Measured on this mirror: SIMD-pinned is bit-stable (2430,
+    # 2430) while the auto-route default varies (2353, 2341) AND finds ~80
+    # FEWER (near-floor findings the GPU MoE scores just under the floor). A
+    # bench that can't reproduce its own number can't measure a tuning delta,
+    # and "tuned==benched==shipped" requires scoring the same deterministic path
+    # the leaderboard claims. `KEYHOG_NO_GPU=1` forces CPU MoE + SIMD; the
+    # GPU-MoE confidence non-determinism itself is tracked as a shipped-
+    # correctness bug (DET-11 root cause) separately.
+    env = dict(os.environ)
+    env["KEYHOG_NO_GPU"] = "1"
     norm: list[dict] = []
     for parent in _scan_roots(file_paths):
         cmd = [
@@ -256,6 +271,7 @@ def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[d
         ]
         completed = subprocess.run(
             cmd, capture_output=True, text=True, check=False, timeout=1800,
+            env=env,
         )
         out = completed.stdout.strip()
         if not out:

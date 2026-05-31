@@ -41,6 +41,14 @@ impl CompiledScanner {
         if detector.id == "aws-access-key" && credential.len() != 20 {
             return;
         }
+        if detector.id == "anthropic-api-key" {
+            const LEGACY_PREFIX: &str = "sk-ant-api03-";
+            if let Some(body) = credential.strip_prefix(LEGACY_PREFIX) {
+                if !(80..=120).contains(&body.len()) {
+                    return;
+                }
+            }
+        }
         let line = match_line_number(preprocessed, line_offsets, match_start);
         if is_within_hex_context(data, match_start, match_end) {
             return;

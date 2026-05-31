@@ -72,11 +72,35 @@ that proves them.
   512KB. Either document the cap as a tier or fold it into a single resolved
   config that the effective-config oracle prints.
 
-- **DET-11 · MED · detection is slightly non-deterministic** — two identical
-  no-flag bench runs on the same binary: FP 41 vs 51, TP 2227 vs 2232, F1 0.8455
-  vs 0.8450 (~±10 FP, ±0.0005 F1). Small, but a scanner should be deterministic.
-  Likely parallel-chunk / dedup iteration order or a GPU race on borderline
-  confidences. Make the finding set order-independent (sort before dedup floor).
+- **DET-11 · HIGH · ROOT-CAUSED: GPU MoE confidence scorer makes the DEFAULT
+  scan non-deterministic AND lower-recall than the CPU path** — 2026-05-30, far
+  bigger than first thought. On the 15k mirror, identical back-to-back scans:
+    SIMD-pinned (KEYHOG_NO_GPU=1): 2430, 2430 findings  → BIT-STABLE
+    default (auto-route):          2353, 2341 findings  → varies AND ~80 fewer
+  Root cause: the scan auto-routes by default, and on a discrete-GPU host the
+  MoE confidence scorer runs on the GPU. GPU-float MoE produces confidences that
+  differ slightly from the CPU MoE, so findings sitting near the global 0.40
+  min-confidence floor flip in/out run-to-run - non-deterministic, and the GPU
+  scores ~80 of them just UNDER the floor, so the default ships LOWER recall
+  than the deterministic CPU path. This is a second parity dimension beyond
+  PERF-07 (which fixed the literal/regex FINDING SET): CONFIDENCE is not GPU/CPU-
+  equal. Two consequences:
+    1. tuned != shipped: the leaderboard's "SIMD" number is NOT what a default
+       (GPU) install produces - the default is worse and unstable.
+    2. fine detection tuning was flying blind: F1 deltas of ~0.005 are smaller
+       than the ±0.02 auto-route swing, so every floor-tuning measurement on the
+       default path was noise (see DET-20's reverted broad batch - the "+80 FP"
+       was largely this flicker, not the detectors).
+  FIX LANDED (bench): score.py now pins KEYHOG_NO_GPU=1 (deterministic CPU MoE +
+  SIMD). Result is bit-stable: run1==run2 EXACTLY (F1=0.8757 P=0.9798 R=0.7917
+  TP=2375 FP=49 FN=625 with the google+aws floor overrides). All future tuning
+  measures this path.
+  FIX REMAINING (ship): make GPU MoE confidence deterministic + CPU-equal, OR
+  quantise confidence so near-floor flips can't happen, OR run confidence on CPU
+  always (GPU MoE is a minor scoring speedup). Until then the DEFAULT scan is
+  non-reproducible and slightly lower-recall than `KEYHOG_NO_GPU=1`. Also
+  consider a stable secondary sort on the finding set (detector,file,offset)
+  before the floor gate so ordering can never matter.
 
 ## Recall investigation (2026-05-30) - the corpus discriminator
 
@@ -247,3 +271,39 @@ apples (same bare-token files to every tool).
   there the GPU was *missing* these because it lacked CASELESS; now both backends
   agree and BOTH (correctly, per the current detector) emit them, so fixing the
   detector precision fixes both paths at once.
+
+- **DET-20 · recall floor-override campaign (SecretBench mirror, 2026-05-30)** —
+  systematic recovery of floor-gated recall. Baseline (post-parity, simd):
+  P=0.9799 R=0.7467 F1=0.8475 (TP=2240 FP=46 FN=760). FN by category: cloud-
+  service-credential 283, api-key 231, generic-high-entropy 129, db-connection
+  66, auth-key 24. A floor-gate analyzer (scan corpus at --min-confidence 0,
+  cross-ref manifest, find label=true fixtures whose best overlapping finding
+  scores < the 0.40 global floor) found **150 floor-gated recoverable TPs**,
+  ALL from vendor-anchored detectors the entropy confidence model under-rates:
+  heroku(22), redis-conn(21,conf0.01), google-oauth(19), aws-session(11),
+  azure-sub(7), algolia/newrelic(6), asana/datadog/google-api/mongo/twilio(5)…
+  WINS KEPT (precise anchors, FP-safe):
+    • google-oauth-client-secret min_confidence=0.15 (`.apps.googleusercontent.com`
+      anchor; client-ID body scored 0.22)
+    • aws-secret-access-key min_confidence=0.25 (mandatory `AWS_SECRET…`/
+      `awsSecretKey` anchor; 40-char body scored 0.32)
+    → measured: F1 0.8475→0.8528, R +20 TP, **FP 46→40 (precision UP to 0.983)**.
+  REVERTED (net-negative): a broad batch of 19 vendor detectors floored at
+  0.12-0.30 recovered +74 TP but added **+80 FP** (P 0.98→0.95, F1 net-zero
+  ~0.8527). On this adversarial corpus the negatives pack non-secret values into
+  vendor-keyword fields, so a lowered floor trades precision ~1:1 for recall.
+  keyhog's edge over betterleaks is precision (0.98 vs 0.23) — not worth eroding.
+  LESSON: floor-override recovers recall ONLY for detectors whose ANCHOR (not
+  just keyword) is specific enough that the body can't be a non-secret; per-
+  detector, measured. Connection-strings (redis/mongo/mysql, structurally tight
+  `scheme://u:p@host`, score 0.01) are candidates for a near-zero floor after
+  the non-determinism fix below.
+  BLOCKERS surfaced:
+    • DET-11 non-determinism is REAL and ±15 TP run-to-run (score.py: TP
+      2334/2319/2317 across identical runs) — this is larger than the F1 deltas
+      we're tuning, so fine per-detector floor work is unreliable until fixed.
+      Likely parallel/GPU finding-order or a dedup race; must root-cause.
+    • TOOLING: score.py reports FP=120 where fp_analyze.py reports FP=41 on the
+      SAME state — the two scorers disagree 3x (likely fp_analyze omits the
+      label=true-no-overlap FP class). Reconcile; the bench's own tools must
+      agree or tuning flies blind.

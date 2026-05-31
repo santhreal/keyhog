@@ -1219,3 +1219,20 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
+
+## Executed Patch Set: Contract Runner Closure
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: restored every per-detector positive/evasion contract that was still failing after the shared commented-assignment fix.
+- INSUFFICIENCY: fixed required-companion enforcement data for Avalara, Anthropic legacy lower-bound leakage, missing AWS session capture groups, Zendesk subdomain email/token shape, Alertmanager `USERNAME` alternation ordering, Azure OpenAI endpoint matching across lines, and short-prefix Pirsch routing.
+- COHERENCE: corrected generated evasions that had stripped the service anchor down to a generic `secret` key, and replaced repeated synthetic positive bodies that were shaped like placeholders instead of plausible credentials.
+- TESTING: the full per-detector contract runner is now green, and detector loading/quality validation stays green across all 894 TOML detectors.
+- INTROSPECTION: SecretBench scoring now pins `KEYHOG_NO_GPU=1` so detector-floor experiments compare deterministic CPU/SIMD results instead of GPU MoE near-floor variance.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_detectors_self_validate -- --nocapture`
+- `cargo test -p keyhog-scanner --test contracts_runner every_contract_passes_positives_negatives_evasions -- --nocapture`

@@ -8,11 +8,17 @@ id = "algolia-api-key"
 name = "Algolia API Key"
 service = "algolia"
 severity = "medium"
+min_confidence = 0.20
 keywords = ["ALGOLIA_API_KEY", "algolia_api_key", "search_api_key", "ALGOLIA_SEARCH_KEY"]
 
 [[detector.patterns]]
 regex = "(?i)algolia[_.-]?(?:api|search)[_.-]?key[=:\\s\"']+([a-f0-9]{32})"
 description = "Algolia API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?i)search[_-]?api[_-]?key[=:\\s\"']+([a-f0-9]{32})"
+description = "Algolia search_api_key YAML/env form"
 group = 1
 
 [[detector.companions]]

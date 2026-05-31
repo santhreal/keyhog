@@ -8,6 +8,7 @@ id = "pirsch-api-token"
 name = "Pirsch Analytics API Token"
 service = "pirsch"
 severity = "medium"
+min_confidence = 0.25
 keywords = ["pa_", "PIRSCH_CLIENT_ID", "pirsch.io"]
 
 [[detector.patterns]]
@@ -16,7 +17,7 @@ keywords = ["pa_", "PIRSCH_CLIENT_ID", "pirsch.io"]
 # high-entropy run (e.g. cross-file reassembled fragments that happen
 # to spell `pa_<random alnum>`). Pirsch tokens are documented as 32-40
 # chars; the negative lookahead prevents merging into a longer run.
-regex = "(?-i)\\bpa_[a-zA-Z0-9]{32,40}\\b"
+regex = "pa_[a-zA-Z0-9]{32,40}"
 description = "Pirsch access key starting with pa_ prefix (length-bounded)"
 
 [[detector.patterns]]

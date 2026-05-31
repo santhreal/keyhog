@@ -43,6 +43,8 @@ pub const KNOWN_PREFIXES: &[&str] = &[
     "sk-proj-",
     "sk-ant-",
     "sk-",
+    // Google API keys
+    "AIza",
     // SendGrid
     "SG.",
     // HuggingFace
