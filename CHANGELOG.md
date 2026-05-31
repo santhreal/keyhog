@@ -28,6 +28,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
 - Remove stale handoff/session wording from the Vyre roadmap and scanner lazy-build comments so the docs describe concrete remaining wires instead of time-boxed handoffs.
+- Stop the backend self-test from claiming the AC kernel works before the AC self-test has actually passed.
 - Route hot-pattern fast-path matches through the preprocessor line map so structured `.env` synthetic lines collapse into the original source line instead of producing past-EOF additional locations.
 - Confirm GPU AC cheap-filter roots against the whole prepared chunk, matching SIMD trigger semantics and avoiding narrow-window recall loss for detector regexes that need wider context.
 - ASCII-fold GPU literal sets and coalesced haystacks before AC/literal-set phase-1 matching so GPU recall matches Hyperscan's caseless detector semantics.
