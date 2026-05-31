@@ -72,9 +72,9 @@ impl CompiledScanner {
         // Task #69 - these detectors were silently dead in EVERY hot
         // code path that builds a triggered bitmap. The keyword-AC
         // pre-filter inside `scan_fallback_patterns` keeps cost
-        // bounded to detectors whose ≥4-char keyword appears in the
-        // chunk; fallback patterns with no usable keyword are marked
-        // `fallback_always_active = true` so they run on every chunk.
+        // bounded to detectors whose >=4-char keyword appears in the
+        // chunk; fallback patterns with no usable keyword are seeded
+        // from `fallback_always_active_indices` so they run on every chunk.
         self.scan_fallback_patterns(
             &prepared.preprocessed,
             line_offsets,

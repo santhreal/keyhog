@@ -18,6 +18,7 @@ pub mod entropy_keywords_inline_tests_in_src;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
 pub mod file_gate_matrix_scanner_missing_submodule_rows;
 pub mod findings_registry_integrity;
+pub mod fallback_always_active_sparse;
 pub mod gpu_forced_backend_no_silent_degrade;
 pub mod gpu_moe_readback_bounded;
 pub mod gpu_phase2_empty_hit_fast_path;
