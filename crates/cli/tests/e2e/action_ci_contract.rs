@@ -372,6 +372,70 @@ exit 0
 }
 
 #[test]
+fn action_rejects_object_shaped_clean_json_report() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{"findings":[{"detector_id":"one"}]}\n' > "$out"
+exit 0
+"#,
+    );
+
+    let output = run_action(
+        &dir,
+        &[
+            ("KEYHOG_FORMAT", "json"),
+            ("KEYHOG_OUTPUT", "keyhog-results.json"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "object-shaped clean json report must fail closed; output={}",
+        combined_output(&output)
+    );
+}
+
+#[test]
+fn action_rejects_sarif_with_non_array_results() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{"runs":[{"results":{"not":"an array"}}]}\n' > "$out"
+exit 0
+"#,
+    );
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "SARIF results must be arrays; output={}",
+        combined_output(&output)
+    );
+}
+
+#[test]
 fn action_rejects_findings_exit_without_report() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(

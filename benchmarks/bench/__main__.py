@@ -7,6 +7,7 @@ import json
 import pathlib
 
 from . import hardware
+from .analyze import analyze as analyze_examples, print_report
 from .leaderboard import run_leaderboard
 from .report import build_sections, inject, load_results, write_reports
 from .runner import resolve_corpus_with_root, run_once, write_result
@@ -77,6 +78,22 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analyze(args: argparse.Namespace) -> int:
+    import sys
+    report = analyze_examples(
+        args.scanner,
+        args.corpus,
+        corpus_root=args.corpus_root,
+        scanner_binary=args.scanner_bin,
+    )
+    n_fn = sum(len(v) for v in report["fn"].values())
+    n_fp = sum(len(v) for v in report["fp"].values())
+    print(f"{args.scanner} on {args.corpus}: {n_fn} missed positives, "
+          f"{n_fp} false fires", file=sys.stderr)
+    print_report(report, args.top)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark helpers.")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -113,6 +130,13 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--check", action="store_true",
                         help="Exit 1 if --inject would change the README (idempotence gate).")
 
+    analyze = sub.add_parser("analyze", help="Mine FP/FN examples for a scanner and corpus.")
+    analyze.add_argument("--scanner", default="keyhog")
+    analyze.add_argument("--corpus", default="mirror")
+    analyze.add_argument("--scanner-bin", default=None)
+    analyze.add_argument("--corpus-root", default=None)
+    analyze.add_argument("--top", type=int, default=15, help="examples per category")
+
     args = parser.parse_args(argv)
     if args.cmd == "host":
         return _host()
@@ -124,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
         return _leaderboard(args)
     if args.cmd == "report":
         return _report(args)
+    if args.cmd == "analyze":
+        return _analyze(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 

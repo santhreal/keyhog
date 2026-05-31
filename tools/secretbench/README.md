@@ -1,3 +1,11 @@
+> Superseded by [`../../benchmarks/`](../../benchmarks/).
+> The active eval harness now lives in `benchmarks/` as one tested package:
+> corpus adapters, scanner adapters, scorer, matrix runner, and README report
+> generator. Run `make -C benchmarks bench && make -C benchmarks report`.
+> This directory keeps `scoring/score.py` as the scorer regression anchor and
+> the corpus generators wrapped by the new adapters. The text below is
+> historical.
+
 # secretbench — keyhog vs the SecretBench corpus
 
 Drop-in benchmarking harness against the **SecretBench** dataset

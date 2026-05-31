@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -33,6 +35,39 @@ from .base import Finding, RunStats, Scanner, run_measured
 
 _BACKENDS = ("simd", "cpu", "gpu", "auto", "megascan")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu"}
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+
+def _cargo_target_dir() -> pathlib.Path | None:
+    """Resolve the cargo target-dir for this repo: ``CARGO_TARGET_DIR`` env,
+    else the ``target-dir`` key in ``~/.cargo/config.toml`` / ``config``, else
+    ``<repo>/target``. Machine-agnostic: reads the host's own cargo config."""
+    env = os.environ.get("CARGO_TARGET_DIR")
+    if env:
+        return pathlib.Path(env)
+    for cfg in (pathlib.Path.home() / ".cargo" / "config.toml",
+                pathlib.Path.home() / ".cargo" / "config"):
+        try:
+            text = cfg.read_text()
+        except OSError:
+            continue
+        m = re.search(r'(?m)^\s*target-dir\s*=\s*"([^"]+)"', text)
+        if m:
+            return pathlib.Path(m.group(1))
+    default = _REPO_ROOT / "target"
+    return default if default.exists() else None
+
+
+def _freshly_built_keyhog() -> str | None:
+    """The release binary the current source builds to, so a bare
+    ``python -m bench`` scores HEAD, not a stale ``keyhog`` on PATH (the
+    stale-binary footgun that silently reported worse recall; backlog MC-06)."""
+    target = _cargo_target_dir()
+    if target is None:
+        return None
+    candidate = target / "release" / "keyhog"
+    return str(candidate) if candidate.exists() else None
 
 
 def _line(value: object) -> int:
@@ -65,6 +100,18 @@ class KeyhogScanner(Scanner):
     binary_name = "keyhog"
     binary_env = "KEYHOG_BIN"
     success_exit_codes = (0, 1, 10)
+
+    @property
+    def binary(self) -> str:
+        # Explicit override wins; else the freshly-built release binary (so
+        # the bench scores HEAD, not a stale PATH install); else PATH.
+        if self._binary:
+            return self._binary
+        env = os.environ.get(self.binary_env)
+        if env:
+            return env
+        fresh = _freshly_built_keyhog()
+        return fresh or self.binary_name
 
     # ── config matrix ──────────────────────────────────────────────────
 

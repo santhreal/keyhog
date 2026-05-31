@@ -1772,3 +1772,51 @@ Verified gates:
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
 - `cd benchmarks && python3 -m bench leaderboard --corpus mirror --out results`
 - `cd benchmarks && make report-check`
+
+## Executed Patch Set: Benchmark Head Binary Resolution
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: benchmark docs no longer handwrite transient mirror scores; the generated README/report path is the single visible source for current leaderboard numbers.
+- WIRING: the Keyhog benchmark adapter now prefers the freshly built release binary from `CARGO_TARGET_DIR`, cargo config, or the repo target dir while preserving explicit constructor and `KEYHOG_BIN` overrides.
+- DOGFOODING: this closes the stale-PATH benchmark failure mode where a leaderboard run could silently score an older installed `keyhog` instead of the source under review.
+- TESTING: added adapter contracts for fresh release lookup, override precedence, and cargo config target-dir discovery.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+
+## Executed Patch Set: Action Report Shape Validation
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: the composite Action no longer lets jq count top-level JSON object keys as findings or flatten SARIF runs whose `results` field is not an array.
+- COHERENCE: jq and Python report-counting paths now enforce the same JSON array and SARIF `runs[]/results[]` shape contracts.
+- WIRING: malformed clean reports still take the fail-closed exit-3 path, while findings/live scanner exits keep the existing nonzero-finding parse-failure behavior.
+- TESTING: added e2e contracts for object-shaped JSON reports and SARIF runs with non-array results.
+
+Verified gates:
+
+- `bash -n .github/actions/keyhog/run-scan.sh`
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+
+## Executed Patch Set: Benchmark Gap Analyzer Wiring
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- INSUFFICIENCY: promoted the FP/FN example miner from an untracked helper into the benchmark package interface instead of leaving count-only reports without a detector-tuning path.
+- WIRING: added `python -m bench analyze` and `make analyze`, including scanner binary and corpus root arguments, so leaderboard gaps can be replayed through the same adapters and overlap attribution.
+- COHERENCE: the benchmark Makefile no longer exports a desktop-specific `KEYHOG_BIN` by default; unset runs reach the adapter's host-local fresh-binary resolver.
+- TESTING: added analyzer contracts for false-negative grouping, false-positive grouping, ignored records, unknown files, and package CLI dispatch.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+- `cd benchmarks && make help`
+- `cd benchmarks && python3 -m bench analyze --help`

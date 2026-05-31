@@ -283,7 +283,7 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.8578** | 0.9861 | 0.7590 | 2321 | 1.27s | 1064 MB |
+| 1 | **KeyHog** | **0.8934** | 0.9871 | 0.8160 | 2484 | 1.17s | 1109 MB |
 | 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.42s | 329 MB |
 | 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 4.59s | 493 MB |
 | 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 2.63s | 119 MB |
@@ -298,7 +298,7 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 |---|---|---|---|---|---|
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 0.71s | 3.3 MB/s | 183 MB |
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.72s | 3.2 MB/s | 526 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.27s | 1.8 MB/s | 1064 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.17s | 2.0 MB/s | 1109 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.42s | 1.6 MB/s | 329 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.63s | 0.9 MB/s | 119 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.59s | 0.5 MB/s | 493 MB |
@@ -309,8 +309,6 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 <!-- BENCH:gaps:start -->
 | Category | KeyHog F1 | Best competitor | Gap |
 |---|---|---|---|
-| `api-key` | 0.852 | BetterLeaks 0.872 | +0.019 |
-| `cloud-service-credential` | 0.767 | BetterLeaks 0.820 | +0.053 |
 | `generic-high-entropy-string` | 0.446 | BetterLeaks 0.893 | +0.447 |
 | `webhook-url-token` | 0.976 | Kingfisher 1.000 | +0.024 |
 <!-- BENCH:gaps:end -->
@@ -541,7 +539,8 @@ crates/
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
 detectors/    891 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)
-tools/        SecretBench mirror + scoring + leaderboard harness
+benchmarks/   Reproducible eval harness: corpora, scanner adapters, scorer, README report generator
+tools/        Legacy SecretBench scripts (superseded by benchmarks/; score.py kept as the scorer regression anchor)
 ```
 
 Two-phase coalesced scan:
