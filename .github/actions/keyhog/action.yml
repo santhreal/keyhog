@@ -31,7 +31,8 @@ inputs:
     description: |
       Fail the workflow when any finding at or above `severity` is reported.
       Set to "false" to keep the job green and rely on the uploaded SARIF
-      surfacing in code-scanning instead.
+      surfacing in code-scanning instead. Verified-live credentials under
+      `verify: "true"` always fail after reports are uploaded.
     default: 'true'
   baseline:
     description: |
@@ -252,10 +253,11 @@ runs:
         if-no-files-found: warn
 
     - name: Fail when findings reported
-      if: inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0'
+      if: (inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0') || steps.scan.outputs.exit-code == '10'
       shell: bash
       env:
         KEYHOG_FINDINGS: ${{ steps.scan.outputs.findings }}
+        KEYHOG_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
         KEYHOG_SEVERITY: ${{ inputs.severity }}
       run: |
         case "${KEYHOG_FINDINGS:-}" in
@@ -264,5 +266,20 @@ runs:
             exit 3
             ;;
         esac
+        case "${KEYHOG_EXIT_CODE:-}" in
+          0 | 1 | 10) ;;
+          "" | *[!0-9]*)
+            echo "::error title=KeyHog::Invalid exit-code output."
+            exit 3
+            ;;
+          *)
+            echo "::error title=KeyHog::Unexpected scan exit code ${KEYHOG_EXIT_CODE}."
+            exit "$KEYHOG_EXIT_CODE"
+            ;;
+        esac
+        if [[ "$KEYHOG_EXIT_CODE" == "10" ]]; then
+          echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
+          exit 10
+        fi
         echo "::error title=KeyHog::${KEYHOG_FINDINGS} finding(s) at or above '${KEYHOG_SEVERITY}' severity. Set fail-on-findings:false to ignore."
         exit 1

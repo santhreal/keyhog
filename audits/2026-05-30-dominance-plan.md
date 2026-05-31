@@ -989,6 +989,22 @@ Verified gates:
 - `bash -n .github/actions/keyhog/run-scan.sh`
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
 
+## Executed Patch Set: Action Live-Credential Hard Fail
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: `fail-on-findings: "false"` now means ordinary findings are advisory; verified-live credentials from `verify: "true"` still fail the composite Action after report/SARIF/artifact steps have a chance to run.
+- COHERENCE: the Action README, input description, raw exit-code output, and fail step all preserve `keyhog` exit-10 semantics for live credentials.
+- AUDIT HUNTS: the fail step validates the raw exit-code output through env before branching, so malformed output cannot be interpolated into shell or GitHub workflow commands.
+- TESTING: added an Action manifest contract proving exit 10 bypasses advisory findings policy.
+
+Verified gates:
+
+- `bash -n .github/actions/keyhog/run-scan.sh`
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+
 ## Executed Patch Set: GPU AC Cheap-Filter Whole-Chunk Confirmation
 
 Date: 2026-05-31
