@@ -29,7 +29,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Parse JSONL reports in the composite Action instead of counting raw lines, so blank lines do not inflate findings and malformed clean JSONL fails closed.
 - Validate manual release tags in every release workflow job before writing `GITHUB_OUTPUT`, and route validated tags through environment variables in follow-up shell steps.
 - Make the composite GitHub Action fail closed when report parsing fails after a findings exit code, and write a concise GitHub Step Summary for CI triage.
-- Wire `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` into the real scan path so CI can print the resolved scanner/post-process policy and verify config-file values match explicit flags before scanning.
+- Run the composite Action's `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` pass as a preflight, then clear the print-only env for the real scan so CI gets the resolved scanner/post-process policy without losing the report.
 - Restore the aggregate CLI `all_tests` target after the credential-hash storage contract changed from hex strings to inline `[u8; 32]` bytes.
 - Move the remaining CLI inline unit tests for args, hook coherence, and scan-system finding retention into registered aggregate tests while preserving the source gates against inline tests and production unwraps.
 - Require composite Action JSONL report lines to be finding objects, so clean malformed JSONL fails closed and findings-exit malformed JSONL cannot be counted as zero findings.

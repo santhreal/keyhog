@@ -543,6 +543,68 @@ exit 1
 }
 
 #[test]
+fn action_prints_effective_config_before_real_scan_when_enabled() {
+    let dir = TempDir::new().expect("tempdir");
+    let calls = dir.path().join("calls.txt");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >> "$CALLS_FILE"
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" == "1" ]]; then
+  printf '[effective-config]\nmin_confidence = 0.4\n'
+  exit 0
+fi
+if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" != "0" ]]; then
+  echo "real scan must clear KEYHOG_PRINT_EFFECTIVE_CONFIG; got ${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >&2
+  exit 42
+fi
+cat > "$out" <<'JSON'
+{"runs":[{"results":[]}]}
+JSON
+exit 0
+"#,
+    );
+
+    let calls_path = calls.to_string_lossy().into_owned();
+    let output = run_action(
+        &dir,
+        &[
+            ("CALLS_FILE", calls_path.as_str()),
+            ("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "effective-config preflight must not replace the real scan; output={}",
+        combined_output(&output)
+    );
+    assert!(
+        combined_output(&output).contains("[effective-config]"),
+        "CI log must include the resolved effective config; output={}",
+        combined_output(&output)
+    );
+    assert_eq!(
+        fs::read_to_string(&calls).expect("read calls"),
+        "1\n0\n",
+        "action must run print-only preflight first, then real scan with print disabled"
+    );
+    assert!(
+        output_file(&dir).contains("findings=0"),
+        "real scan report must still be parsed after preflight"
+    );
+}
+
+#[test]
 fn action_treats_malformed_findings_report_as_at_least_one_finding() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(
@@ -893,6 +955,10 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
     assert!(
         manifest.contains("KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
         "composite action must validate upload-sarif in the tested script"
+    );
+    assert!(
+        manifest.contains("KEYHOG_PRINT_EFFECTIVE_CONFIG: \"1\""),
+        "composite action must print the resolved scanner config before the real scan"
     );
 }
 

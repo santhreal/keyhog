@@ -215,6 +215,7 @@ runs:
         KEYHOG_OUTPUT: ${{ steps.outfile.outputs.name }}
         KEYHOG_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
+        KEYHOG_PRINT_EFFECTIVE_CONFIG: "1"
       run: |
         bash "${{ github.action_path }}/run-scan.sh"
 
