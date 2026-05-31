@@ -12,8 +12,12 @@ use keyhog_core::DetectorSpec;
 use std::path::Path;
 
 fn embedded() -> Vec<DetectorSpec> {
-    // A non-existent detectors dir forces the embedded-corpus fallback.
-    load_detectors_or_embedded(Path::new("__keyhog_no_such_detectors_dir__"))
+    // The default `detectors` sentinel: `validate_detector_path_for_scan`
+    // exempts it from the "explicit path must exist" check, so when no
+    // `detectors/` dir is present in the test cwd it falls back to the embedded
+    // corpus (the production default). An explicit non-existent path now errors
+    // by design, so we must use the sentinel, not a bogus directory name.
+    load_detectors_or_embedded(Path::new("detectors"))
         .expect("embedded detector corpus must load")
 }
 
