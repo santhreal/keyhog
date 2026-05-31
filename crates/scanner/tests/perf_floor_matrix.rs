@@ -128,7 +128,7 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
     // Floors calibrated from the first matrix run on a 9950X + RTX 5090
     // (perf_floor_matrix log, 2026-05-21). Measured steady-state was 1.0-
     // 2.5 MiB/s across all backends/sizes/shapes on small fixtures - the
-    // hot path is dominated by 889-detector compile/intern overhead, not
+    // hot path is dominated by 894-detector compile/intern overhead, not
     // per-byte scanning. Floors sit at 50% of measured so a 2x regression
     // on any cell trips; the hard-throughput numbers live in
     // crates/scanner/benches/scan_throughput.rs.

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 891 detectors - gpu" width="560" />
+  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 894 detectors - gpu" width="560" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 ---
 
 **keyhog** scans source trees, git history, Docker images, S3 buckets, and
-running systems for leaked credentials. **891 service-specific detectors**,
+running systems for leaked credentials. **894 service-specific detectors**,
 decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
 zero runtime configuration. Default `keyhog scan .` works out of the box.
 
@@ -47,7 +47,7 @@ fails only on NEW secrets.
 For ultra-lean CI installs there's now `cargo install keyhog
 --no-default-features --features ci`: 13 MB binary (vs 22 MB full),
 ~140 ms cold-start, no Hyperscan dependency, no wgpu/Vulkan probe,
-no libstdc++ link. Same 891 detectors, same ML/entropy/decode/multiline
+no libstdc++ link. Same 894 detectors, same ML/entropy/decode/multiline
 data paths. Use this profile in self-built CI images where binary size
 or container cold-start matters; the prebuilt installer above stays the
 default for a turnkey single-binary download.
@@ -57,7 +57,7 @@ lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 
 ### How it works
 
-keyhog compiles its 891 detectors into a single Hyperscan NFA database,
+keyhog compiles its 894 detectors into a single Hyperscan NFA database,
 decodes nested encodings before matching, calibrates confidence per
 detector via Bayesian Beta(α,β) feedback, and routes every scan to the
 fastest hardware backend present:
@@ -77,7 +77,7 @@ build, whether the fast path or the full regex engine made the find.
 Backend selection is automatic. On startup:
 
 ```
-keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
+keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 894 detectors
 ```
 
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
@@ -218,7 +218,7 @@ mid-scan (state is unreliable, re-run before trusting). Matches
 
 ## What it catches
 
-891 service-specific detectors with checksum / companion validation:
+894 service-specific detectors with checksum / companion validation:
 
 - **Cloud providers** . AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
@@ -248,7 +248,7 @@ verification handler. Adding a new detector is 5–10 lines of TOML;
 the [contributor guide](./CONTRIBUTING.md) walks through it.
 
 Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
-loads all 891 with severity + service + keyword filter.
+loads all 894 with severity + service + keyword filter.
 
 ## Why higher recall, fewer false positives
 
@@ -546,7 +546,7 @@ crates/
   sources/    File system, git (staged/diff/history), stdin, Docker, S3, GitHub org, web
   verifier/   Live credential verification (341 detectors carry an active `[detector.verify]` endpoint)
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
-detectors/    891 TOML files (data, not code)
+detectors/    894 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)
 benchmarks/   Reproducible eval harness: corpora, scanner adapters, scorer, README report generator
 tools/        Legacy SecretBench scripts (superseded by benchmarks/; score.py kept as the scorer regression anchor)

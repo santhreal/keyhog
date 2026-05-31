@@ -6,7 +6,7 @@ credentials.
 
 ```text
 $ keyhog scan .
-keyhog v0.5.37 │ 891 detectors │ 1647 patterns │ avx-512 + hyperscan + cuda
+keyhog v0.5.37 │ 894 detectors │ 1658 patterns │ avx-512 + hyperscan + cuda
 
 scanned 12,841 files in 1.4 s
 3 findings · 0 verified live · 1041 example fixtures suppressed
@@ -23,7 +23,7 @@ has:
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
-The list of detectors ships in TOML files under `detectors/`. There are 891
+The list of detectors ships in TOML files under `detectors/`. There are 894
 of them today, covering ~750 distinct services. Anyone can add or override
 them without touching Rust code.
 

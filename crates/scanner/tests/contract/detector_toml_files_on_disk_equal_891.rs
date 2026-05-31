@@ -1,4 +1,4 @@
-//! Contract: `detectors/*.toml` file count matches the shipped 891 catalog.
+//! Contract: `detectors/*.toml` file count matches the shipped 894 catalog.
 
 use std::path::PathBuf;
 
@@ -12,7 +12,7 @@ fn detector_dir() -> PathBuf {
 
 #[test]
 fn detector_toml_files_on_disk_equal_891() {
-    const EXPECTED: usize = 891;
+    const EXPECTED: usize = 894;
 
     let count = std::fs::read_dir(detector_dir())
         .expect("detectors directory readable")
@@ -22,6 +22,6 @@ fn detector_toml_files_on_disk_equal_891() {
 
     assert_eq!(
         count, EXPECTED,
-        "detectors/ must contain exactly {EXPECTED} TOML files - README and loader both claim 891"
+        "detectors/ must contain exactly {EXPECTED} TOML files - README and loader both claim 894"
     );
 }

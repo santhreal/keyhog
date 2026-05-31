@@ -70,7 +70,7 @@ full = [
 # NO GPU/vyre drivers, NO live verification, NO TUI, NO Ghidra, and NO git/web/
 # cloud source backends (the always-on filesystem + stdin path covers
 # `keyhog scan .` / `keyhog scan --stdin`, which is how CI scans a checked-out
-# tree). Keeps the full 891-detector corpus + ML + entropy + decode-through +
+# tree). Keeps the full 894-detector corpus + ML + entropy + decode-through +
 # multiline + token efficiency. Instant start, smallest binary - the profile CI
 # integrations should use. Git-history / cloud scanning is opt-in on top
 # (`--features ci,git`) or via the fuller `portable` profile.

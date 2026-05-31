@@ -193,7 +193,7 @@ pub mod testing {
     pub use crate::confidence::penalties::finalize_confidence;
     pub use crate::engine::boundary::scan_chunk_boundaries;
     pub use crate::engine::gpu_postprocess::{
-        attribute_matches_to_chunks, fold_overlapping_same_pid_inplace,
+        attribute_matches_to_chunks, fold_overlapping_same_pid_inplace, gpu_phase2_hits_are_dense,
     };
     pub use crate::engine::gpu_regex_dfa::extract_literal_core;
     pub use crate::entropy::keywords::looks_like_program_identifier;

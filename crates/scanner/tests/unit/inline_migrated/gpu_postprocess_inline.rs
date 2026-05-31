@@ -1,5 +1,7 @@
 //! Migrated from src/engine/gpu_postprocess.rs
-use keyhog_scanner::testing::{attribute_matches_to_chunks, fold_overlapping_same_pid_inplace};
+use keyhog_scanner::testing::{
+    attribute_matches_to_chunks, fold_overlapping_same_pid_inplace, gpu_phase2_hits_are_dense,
+};
 use vyre_libs::scan::LiteralMatch;
 
 #[test]
@@ -181,4 +183,19 @@ fn attribute_match_at_chunk_end() {
     let matches = vec![LiteralMatch::new(1, 90, 100)];
     let per_chunk = attribute_matches_to_chunks(&matches, &entries, 10, 1);
     assert_eq!(per_chunk[0], vec![(1, 90, 100)]);
+}
+
+#[test]
+fn dense_phase2_guard_trips_on_creddata_shape() {
+    assert!(
+        gpu_phase2_hits_are_dense(1_306_914, 56_467_764, 4_096),
+        "CredData forced-GPU batch produced one literal hit per ~43 bytes and must reroute"
+    );
+}
+
+#[test]
+fn dense_phase2_guard_ignores_small_or_sparse_batches() {
+    assert!(!gpu_phase2_hits_are_dense(99_999, 1_000_000, 4_096));
+    assert!(!gpu_phase2_hits_are_dense(100_000, 100_000_000, 4_096));
+    assert!(!gpu_phase2_hits_are_dense(1_000_000, 16_000_000, 1));
 }

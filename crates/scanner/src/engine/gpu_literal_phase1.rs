@@ -409,6 +409,31 @@ impl CompiledScanner {
             elapsed_ms,
             "vyre GPU batched scan completed"
         );
+        if self.simd_prefilter.is_some()
+            && super::gpu_postprocess::gpu_phase2_hits_are_dense(
+                matches.len(),
+                buffer.len(),
+                chunks.len(),
+            )
+        {
+            tracing::warn!(
+                target: "keyhog::routing",
+                raw_matches = matches.len(),
+                buffer_bytes = buffer.len(),
+                chunks = chunks.len(),
+                "GPU literal prefix output is too dense for phase 2; rerouting this batch through SIMD coalesced scan",
+            );
+            if std::env::var_os("KH_PERF").is_some() {
+                eprintln!(
+                    "KH_PERF gpu_literal_dense_phase2_reroute: chunks={} buffer_bytes={} raw_matches={} bytes_per_hit={:.1}",
+                    chunks.len(),
+                    buffer.len(),
+                    matches.len(),
+                    buffer.len() as f64 / matches.len().max(1) as f64
+                );
+            }
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
+        }
         // Per-pid dedup + chunk attribution lives in `gpu_postprocess`,
         // shared with the AC kernel phase-1 path. The downstream
         // `scan_prepared_with_pattern_hits` consumer requires matches

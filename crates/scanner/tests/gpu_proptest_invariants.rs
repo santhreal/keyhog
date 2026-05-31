@@ -31,7 +31,7 @@ use std::collections::BTreeSet;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Cache the compiled scanner across all property cases. Re-compiling
-/// 889 detectors per case would push a 1024-case property run from
+/// 894 detectors per case would push a 1024-case property run from
 /// seconds into minutes.
 ///
 /// The returned `MutexGuard` serializes scanner access ACROSS test

@@ -1,4 +1,4 @@
-//! Contract: README claims 891 detectors - tree must match exactly.
+//! Contract: README claims 894 detectors - tree must match exactly.
 
 use std::path::PathBuf;
 
@@ -14,7 +14,7 @@ fn readme_detector_count_matches_disk() {
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("toml"))
         .count();
     assert_eq!(
-        count, 891,
-        "README contract: 891 detector TOMLs on disk, found {count}"
+        count, 894,
+        "README contract: 894 detector TOMLs on disk, found {count}"
     );
 }

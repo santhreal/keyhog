@@ -2,7 +2,7 @@
 //!
 //! `backend_parity_matrix.rs` uses 6 synthetic fixtures; `gpu_parity.rs` uses one
 //! boundary corpus; megakernel full parity is waived (KH-GAP-043). No oracle runs
-//! all 891 detectors × all backends on adversarial worst-case fixtures.
+//! all 894 detectors × all backends on adversarial worst-case fixtures.
 
 use std::path::PathBuf;
 

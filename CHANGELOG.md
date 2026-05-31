@@ -4,6 +4,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### Performance
+
+- Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded — an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.
+
+### Coherence
+
+- Reconcile the advertised detector/pattern counts to the binary's actual embedded corpus (894 detectors, 1658 patterns) across README, docs, banner, contract fixtures, and the compiled count gates. The canonical source of truth is `keyhog detectors` / `keyhog doctor`.
+
 ### CI / GitHub Action
 
 - Fail Code Scanning SARIF uploads closed on trusted pushes and same-repo PRs while keeping fork-PR permission failures advisory and always preserving the report artifact when it exists.

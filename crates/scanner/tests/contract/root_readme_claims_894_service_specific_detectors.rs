@@ -1,4 +1,4 @@
-//! Contract: root README claims 891 service-specific detectors.
+//! Contract: root README claims 894 service-specific detectors.
 
 use std::path::PathBuf;
 
@@ -15,7 +15,7 @@ fn root_readme_claims_891_service_specific_detectors() {
         .expect("root README.md readable");
 
     assert!(
-        readme.contains("891 service-specific"),
-        "README must claim 891 service-specific detectors - front-page count drift breaks catalog trust"
+        readme.contains("894 service-specific"),
+        "README must claim 894 service-specific detectors - front-page count drift breaks catalog trust"
     );
 }
