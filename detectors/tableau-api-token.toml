@@ -8,6 +8,7 @@ id = "tableau-api-token"
 name = "Tableau Personal Access Token"
 service = "tableau"
 severity = "high"
+min_confidence = 0.20
 keywords = ["TABLEAU", "tableau", "PAT_NAME", "PAT_SECRET"]
 
 [[detector.patterns]]

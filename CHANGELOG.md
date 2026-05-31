@@ -30,6 +30,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Bound GPU MoE confidence readback with a default 30 s deadline and `KEYHOG_GPU_MOE_TIMEOUT_MS`, falling back to CPU MoE instead of parking scan workers on stalled GPU callbacks.
 - Lower filesystem source windows to 1 MiB with 128 KiB overlap so multi-MiB files feed the scanner as parallel chunks instead of serial internal re-windowing inside one worker.
 - Classify commented-out config assignments as assignment context so `# KEY=value`, `// token = value`, and HTML/block-commented config lines retain leak confidence while prose comments stay comment context.
+- Close the per-detector positive/negative/evasion contract runner by tightening required companions, Anthropic legacy length enforcement, exact service anchors, short-prefix routing, multi-line Azure endpoint matching, and generated contract fixtures that had lost their service anchors.
+- Pin SecretBench scoring to the deterministic CPU/SIMD path with `KEYHOG_NO_GPU=1` so detector-floor tuning is measured against stable finding counts while GPU MoE confidence variance is investigated separately.
 - Lower the AWS secret-access-key detector confidence floor for anchored `AWS_SECRET_ACCESS_KEY`-style assignments so valid 40-character bodies are not dropped below the global floor.
 - Lower the Google OAuth client-secret detector confidence floor for uniquely anchored `GOCSPX-`, `GOOGLE_CLIENT_SECRET`, and `.apps.googleusercontent.com` shapes so low-entropy client IDs are not dropped.
 - Match AVX-512 entropy semantics to the scalar/SSE/AVX2 paths for small, misaligned, and null-containing inputs.

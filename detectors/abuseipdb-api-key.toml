@@ -8,6 +8,7 @@ id = "abuseipdb-api-key"
 name = "AbuseIPDB API Key"
 service = "abuseipdb"
 severity = "medium"
+min_confidence = 0.25
 keywords = ["ABUSEIPDB_API_KEY", "ABUSEIPDB", "abuseipdb"]
 
 [[detector.patterns]]

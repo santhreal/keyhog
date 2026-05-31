@@ -11,9 +11,9 @@ severity = "high"
 keywords = ["zendesk", "ZENDESK", "/token", "zendesk_api_token", "ZENDESK_API_TOKEN"]
 
 [[detector.patterns]]
-regex = "[a-zA-Z0-9_\\-]+@([a-zA-Z0-9_\\-]+)\\.[a-zA-Z]{2,}/token:([a-zA-Z0-9]{40})"
+regex = "[a-zA-Z0-9_.\\-]+@[a-zA-Z0-9_.\\-]+\\.zendesk\\.com/token:([a-zA-Z0-9]{40})"
 description = "Zendesk API token with email (email/token:format)"
-group = 2
+group = 1
 
 [[detector.patterns]]
 regex = "(?:zendesk|ZENDESK)[_\\-\\s]*(?:api[_\\-\\s]*token|API[_\\-\\s]*TOKEN)[=:\\s\\\"']+([a-zA-Z0-9]{40})"
