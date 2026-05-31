@@ -22,6 +22,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Move the remaining CLI inline unit tests for args, hook coherence, and scan-system finding retention into registered aggregate tests while preserving the source gates against inline tests and production unwraps.
 - Require composite Action JSONL report lines to be finding objects, so clean malformed JSONL fails closed and findings-exit malformed JSONL cannot be counted as zero findings.
 - Make verified-live credentials (`keyhog` exit 10 under `verify: "true"`) fail the composite Action after report/SARIF upload even when ordinary findings are configured as advisory with `fail-on-findings: "false"`.
+- Execute the composite Action final fail step in the CI contract suite, proving live credentials preserve exit 10, ordinary findings preserve exit 1, and malformed `exit-code` output fails closed without workflow-command reflection.
 
 ### Benchmarks
 
