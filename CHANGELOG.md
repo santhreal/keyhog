@@ -11,6 +11,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Route composite Action shell inputs and step outputs through environment variables instead of direct bash interpolation, and validate the resolved version before writing it to `GITHUB_OUTPUT`.
 - Keep composite Action usage errors from reflecting rejected version/findings values back into GitHub workflow command bodies.
 - Verify downloaded composite Action release assets against their `.sha256` files before execution, install the Linux Hyperscan runtime on the prebuilt path, and dogfood the local composite Action from `.github/workflows/keyhog.yml`.
+- Parse JSONL reports in the composite Action instead of counting raw lines, so blank lines do not inflate findings and malformed clean JSONL fails closed.
 - Validate manual release tags in every release workflow job before writing `GITHUB_OUTPUT`, and route validated tags through environment variables in follow-up shell steps.
 - Make the composite GitHub Action fail closed when report parsing fails after a findings exit code, and write a concise GitHub Step Summary for CI triage.
 - Wire `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` into the real scan path so CI can print the resolved scanner/post-process policy and verify config-file values match explicit flags before scanning.

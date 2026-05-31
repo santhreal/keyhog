@@ -1216,6 +1216,20 @@ Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ -- --nocapture`
 
+## Executed Patch Set: Composite Action JSONL Fail-Closed Parsing
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- AUDIT HUNTS: JSONL report parsing no longer trusts raw line counts; blank lines are ignored and malformed clean JSONL now trips the same fail-closed report-parse path as SARIF/JSON.
+- COHERENCE: `format=jsonl` now has the same report-integrity contract as `format=json` and `format=sarif` in the composite Action.
+- TESTING: action contracts cover valid JSONL with blank lines and malformed clean JSONL.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests action_ -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31
