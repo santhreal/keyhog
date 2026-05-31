@@ -188,16 +188,26 @@ pub fn apply_lockdown_protections() -> HardeningReport {
     report
 }
 
-/// In lockdown mode, the engine refuses to start if any keyhog cache
+/// In lockdown mode, the engine refuses to start if any non-empty keyhog cache
 /// exists on disk - caches survive across runs and are exactly the
 /// "credentials accidentally written to disk" exfil vector lockdown is
 /// supposed to prevent. Returns the offending paths, empty if clean.
+///
+/// Only a cache dir with content can expose past findings. An empty
+/// `<cache>/keyhog` dir - e.g. one keyhog itself just created at startup, or a
+/// leftover from an interrupted run - has nothing to leak, so it is not a
+/// violation. Flagging mere existence made `--lockdown` self-defeating: keyhog
+/// creates its cache root early in startup, so the gate tripped on its own
+/// freshly-made empty dir on any machine.
 #[must_use]
 pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     let mut hits = Vec::new();
     if let Some(cache_root) = dirs::cache_dir() {
         let keyhog_root = cache_root.join("keyhog");
-        if keyhog_root.exists() {
+        let has_content = std::fs::read_dir(&keyhog_root)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false);
+        if has_content {
             hits.push(keyhog_root);
         }
     }
