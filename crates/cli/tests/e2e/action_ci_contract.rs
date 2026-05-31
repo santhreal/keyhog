@@ -22,6 +22,13 @@ fn action_manifest() -> PathBuf {
         .expect("action.yml exists")
 }
 
+fn release_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/release.yml")
+        .canonicalize()
+        .expect("release.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -106,6 +113,37 @@ fn manifest_run_blocks(manifest: &str) -> Vec<String> {
         }
     }
     if let Some(block) = current {
+        blocks.push(block);
+    }
+    blocks
+}
+
+fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
+    let lines: Vec<&str> = yaml.lines().collect();
+    let mut blocks = Vec::new();
+    let mut idx = 0;
+    while idx < lines.len() {
+        let line = lines[idx];
+        if line.trim_start() != "run: |" {
+            idx += 1;
+            continue;
+        }
+
+        let run_indent = line.len() - line.trim_start().len();
+        idx += 1;
+        let mut block = String::new();
+        while idx < lines.len() {
+            let block_line = lines[idx];
+            if !block_line.trim().is_empty() {
+                let indent = block_line.len() - block_line.trim_start().len();
+                if indent <= run_indent {
+                    break;
+                }
+            }
+            block.push_str(block_line);
+            block.push('\n');
+            idx += 1;
+        }
         blocks.push(block);
     }
     blocks
@@ -536,6 +574,47 @@ fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     assert!(
         manifest.contains("Invalid findings output."),
         "fail step should still explain invalid findings output"
+    );
+}
+
+#[test]
+fn release_workflow_validates_manual_tag_before_shell_outputs() {
+    let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
+    let mut offenders = Vec::new();
+    for block in yaml_literal_run_blocks(&workflow) {
+        for line in block.lines() {
+            if line.contains("${{ inputs.tag }}") {
+                offenders.push(line.trim().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "release workflow shell blocks must receive workflow_dispatch tag through env, not direct interpolation: {offenders:#?}"
+    );
+    assert!(
+        workflow.contains("KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}"),
+        "manual release tag must enter shell through a named env var"
+    );
+    assert!(
+        workflow.contains("v[0-9]*)"),
+        "release tag resolver must require a v-prefixed numeric release tag"
+    );
+    assert!(
+        workflow.contains("*[!A-Za-z0-9._-]*)"),
+        "release tag resolver must reject shell metacharacters, spaces, and newlines"
+    );
+    assert!(
+        workflow.contains("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\""),
+        "release tag resolver must write a single validated output line"
+    );
+    assert!(
+        !workflow.contains("echo \"tag=$tag\" >> \"$GITHUB_OUTPUT\""),
+        "release tag resolver must not echo an unvalidated output assignment"
+    );
+    assert!(
+        workflow.contains("KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}"),
+        "validated release tag output should enter follow-up shell steps through env"
     );
 }
 

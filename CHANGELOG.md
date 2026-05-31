@@ -10,6 +10,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Validate `fail-on-findings` and `upload-sarif` in the same tested scan script before invoking KeyHog, escape untrusted values in GitHub workflow commands, and surface live-verification parse failures as nonzero findings instead of clean CI output.
 - Route composite Action shell inputs and step outputs through environment variables instead of direct bash interpolation, and validate the resolved version before writing it to `GITHUB_OUTPUT`.
 - Keep composite Action usage errors from reflecting rejected version/findings values back into GitHub workflow command bodies.
+- Validate manual release tags in every release workflow job before writing `GITHUB_OUTPUT`, and route validated tags through environment variables in follow-up shell steps.
 - Make the composite GitHub Action fail closed when report parsing fails after a findings exit code, and write a concise GitHub Step Summary for CI triage.
 - Wire `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` into the real scan path so CI can print the resolved scanner/post-process policy and verify config-file values match explicit flags before scanning.
 - Restore the aggregate CLI `all_tests` target after the credential-hash storage contract changed from hex strings to inline `[u8; 32]` bytes.
@@ -36,7 +37,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Lower filesystem source windows to 1 MiB with 128 KiB overlap so multi-MiB files feed the scanner as parallel chunks instead of serial internal re-windowing inside one worker.
 - Classify commented-out config assignments as assignment context so `# KEY=value`, `// token = value`, and HTML/block-commented config lines retain leak confidence while prose comments stay comment context.
 - Close the per-detector positive/negative/evasion contract runner by tightening required companions, Anthropic legacy length enforcement, exact service anchors, short-prefix routing, multi-line Azure endpoint matching, and generated contract fixtures that had lost their service anchors.
-- Pin SecretBench scoring to the deterministic CPU/SIMD path with `KEYHOG_NO_GPU=1` so detector-floor tuning is measured against stable finding counts while GPU MoE confidence variance is investigated separately.
+- Default SecretBench scoring to the deterministic CPU/SIMD path with `KEYHOG_NO_GPU=1`, while honoring a caller-provided `KEYHOG_NO_GPU=0` so the same scorer can dogfood GPU parity after the MoE activation fix.
 - Keep the deterministic SecretBench floor-override batch for strongly vendor-anchored detectors, raising mirror recall to the target range without adding clean-negative false positives.
 - Store always-active fallback detectors as sparse indices instead of a dense bool table, keeping fallback activation O(active patterns + keyword hits) per admitted chunk.
 - Adopt compact `CsrU32` storage for hot scanner index maps (`prefix_propagation`, same-prefix siblings, fallback keyword routing, and SIMD Hyperscan dedup maps) instead of leaving the optimization half-wired.
