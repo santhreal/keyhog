@@ -20,6 +20,10 @@ docs/book/
 *.dogfood
 dogfood-output*.json
 
+# Generated benchmark corpora; reproducible with `make -C benchmarks mirror`
+# and full of synthetic secret-shaped fixtures.
+benchmarks/corpora/
+
 # Pre-existing local-noise paths
 __pycache__/
 .keyhog-cache.json

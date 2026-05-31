@@ -22,6 +22,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Benchmarks
 
+- Add measured benchmark scanner adapters for Betterleaks, Kingfisher, Nosey Parker, Titus, and TruffleHog, with command-specific JSON normalization tests and generated-corpus ignore rules.
+- Point scanner benchmark runs at manifest-free fixture trees and measure corpus bytes/files from that same scan root so answer keys cannot inflate findings or throughput.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
 
 ### CLI

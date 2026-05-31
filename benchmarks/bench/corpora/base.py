@@ -64,6 +64,21 @@ class Corpus(ABC):
         ``root``; CredData overrides it (manifest dir != data dir)."""
         return self.root
 
+    @property
+    def scan_root(self) -> pathlib.Path:
+        """The path a scanner is actually pointed at — the fixture tree with
+        the ground-truth manifest/answer-key EXCLUDED. Defaults to ``root``;
+        corpora whose manifest lives inside ``root`` override this to the
+        manifest-free subtree (e.g. ``root/fixtures``).
+
+        This is the fairness boundary: a scanner that reads the manifest
+        would "find" every labeled secret in plaintext — measured on the 15k
+        mirror, betterleaks fires 9392 spurious matches on ``manifest.jsonl``
+        and kingfisher 7581. No scanner is ever shown the answer key, so the
+        comparison reflects detection skill, not whether a tool happens to
+        skip a data file keyhog already ignores."""
+        return self.root
+
     @abstractmethod
     def records(self) -> list[LabeledRecord]:
         """Ground-truth records. Empty list for a perf-only corpus."""
@@ -83,10 +98,13 @@ class Corpus(ABC):
         )
 
     # ── size probes (best-effort; never raise) ────────────────────────
+    # Measured over scan_root (the manifest-free tree the scanner sees) so
+    # throughput MB/s is bytes-actually-scanned and the answer key never
+    # inflates the corpus size.
 
     def _tree_bytes(self) -> int:
         total = 0
-        root = self.root
+        root = self.scan_root
         if not root.exists():
             return 0
         for p in root.rglob("*"):
@@ -98,7 +116,7 @@ class Corpus(ABC):
         return total
 
     def _tree_file_count(self) -> int:
-        root = self.root
+        root = self.scan_root
         if not root.exists():
             return 0
         n = 0
