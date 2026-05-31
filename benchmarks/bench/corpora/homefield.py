@@ -8,7 +8,10 @@ us ask the only fair "home turf" question: how close does keyhog get on a
 competitor's own truth, and which services they cover that keyhog misses (a
 capability gap, not a tuning gap).
 
-Same manifest shape as the mirror, so the loader is shared.
+Same manifest shape and the same split layout as the mirror (answer key at
+``<home>/manifest.jsonl``, scan tree under a neutrally-named
+``<home>/corpus/`` — see :mod:`bench.corpora.mirror` for why both rules are
+mandatory), so the loader is shared.
 """
 
 from __future__ import annotations
@@ -27,9 +30,9 @@ _REPO_ROOT = _BENCH_ROOT.parent
 _TURFS = ("betterleaks", "kingfisher")
 
 
-def _candidate_dirs(turf: str) -> list[pathlib.Path]:
+def _candidate_homes(turf: str) -> list[pathlib.Path]:
     return [
-        _BENCH_ROOT / "corpora" / "homefield" / turf / "corpus",
+        _BENCH_ROOT / "corpora" / "homefield" / turf,
         _REPO_ROOT / "tools" / "secretbench" / "homefield" / turf / "corpus",
     ]
 
@@ -41,19 +44,32 @@ class HomefieldCorpus(Corpus):
         self.turf = turf
         self.name = f"homefield-{turf}"
         if corpus_dir is not None:
-            self._dir = pathlib.Path(corpus_dir)
+            self._home = pathlib.Path(corpus_dir)
         else:
-            self._dir = next(
-                (d for d in _candidate_dirs(turf) if (d / "manifest.jsonl").exists()),
-                _candidate_dirs(turf)[0],
+            self._home = next(
+                (d for d in _candidate_homes(turf) if (d / "manifest.jsonl").exists()),
+                _candidate_homes(turf)[0],
             )
 
     @property
+    def _scan_dir(self) -> pathlib.Path:
+        sub = self._home / "corpus"
+        return sub if sub.is_dir() else self._home
+
+    @property
     def root(self) -> pathlib.Path:
-        return self._dir
+        return self._home
+
+    @property
+    def scan_root(self) -> pathlib.Path:
+        return self._scan_dir
+
+    @property
+    def file_root(self) -> pathlib.Path:
+        return self._scan_dir
 
     def records(self) -> list[LabeledRecord]:
-        man = self._dir / "manifest.jsonl"
+        man = self._home / "manifest.jsonl"
         if not man.exists():
             raise SystemExit(
                 f"home-turf manifest missing: {man}\n"

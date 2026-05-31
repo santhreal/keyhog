@@ -4,6 +4,7 @@ import json
 from bench import hardware
 from bench.corpora import resolve_corpus
 from bench.corpora.creddata import CredDataCorpus
+from bench.corpora.homefield import HomefieldCorpus
 from bench.corpora.mirror import MirrorCorpus
 
 
@@ -86,6 +87,35 @@ def test_mirror_ensure_lifts_existing_manifest_out_of_scan_tree(tmp_path):
     assert (tmp_path / "manifest.sha256").exists()
     assert not (scan / "manifest.jsonl").exists()
     assert not (scan / "manifest.sha256").exists()
+
+
+def test_homefield_corpus_scans_neutral_tree_without_manifest(tmp_path):
+    scan = tmp_path / "corpus"
+    shard = scan / "aa"
+    shard.mkdir(parents=True)
+    (shard / "one.txt").write_text("secret-one\n", encoding="utf-8")
+    (tmp_path / "manifest.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "one",
+                "secret": "secret-one",
+                "label": True,
+                "category": "api",
+                "on_disk_path": "aa/one.txt",
+                "start_line": 1,
+                "end_line": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    corpus = HomefieldCorpus(turf="betterleaks", corpus_dir=tmp_path)
+
+    assert corpus.scan_root == scan
+    assert corpus.file_root == scan
+    assert not (corpus.scan_root / "manifest.jsonl").exists()
+    assert corpus.info().fixture_count == 1
 
 
 def test_creddata_corpus_loads_csv_and_ignores_templates(tmp_path):
