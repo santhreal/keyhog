@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 
 from . import hardware
+from .leaderboard import run_leaderboard
 from .runner import resolve_corpus_with_root, run_once, write_result
 
 
@@ -32,6 +34,20 @@ def _run(args: argparse.Namespace) -> int:
     return 0 if result.available and not result.error else 1
 
 
+def _leaderboard(args: argparse.Namespace) -> int:
+    scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
+    axes = [a.strip() for a in args.matrix.split(",")] if args.matrix else None
+    run_leaderboard(
+        args.corpus,
+        scanners,
+        tier=args.tier,
+        matrix_axes=axes,
+        corpus_root=args.corpus_root,
+        out_dir=args.out,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark helpers.")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -49,6 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--corpus-root", default=None)
     run.add_argument("--output", default="-")
 
+    leaderboard = sub.add_parser("leaderboard", help="Run a scanner leaderboard matrix.")
+    leaderboard.add_argument("--corpus", default="mirror")
+    leaderboard.add_argument("--scanners", default="keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus")
+    leaderboard.add_argument("--tier", choices=("quick", "perf"), default="quick")
+    leaderboard.add_argument("--matrix", default=None)
+    leaderboard.add_argument("--corpus-root", default=None)
+    leaderboard.add_argument("--out", type=pathlib.Path, default=None)
+
     args = parser.parse_args(argv)
     if args.cmd == "host":
         return _host()
@@ -56,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         return _corpus(args)
     if args.cmd == "run":
         return _run(args)
+    if args.cmd == "leaderboard":
+        return _leaderboard(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 

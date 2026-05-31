@@ -10,6 +10,7 @@
 #   make creddata          # print Samsung/CredData corpus info
 #   make kernel-info       # print perf corpus info
 #   make run               # run SCANNER=keyhog CORPUS=mirror once
+#   make leaderboard       # run SCANNERS over CORPUS into OUT
 #   make keyhog            # build the release binary (run in background; cargo is slow)
 
 BENCH_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -23,10 +24,11 @@ KEYHOG_BIN       ?= $(CARGO_TARGET_DIR)/release/keyhog
 SCANNER          ?= keyhog
 CORPUS           ?= mirror
 OUTPUT           ?= -
+OUT              ?= results
 
 export KEYHOG_BIN
 
-.PHONY: help test host mirror creddata kernel-info run keyhog clean
+.PHONY: help test host mirror creddata kernel-info run leaderboard keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -48,6 +50,9 @@ kernel-info:
 
 run:
 	cd $(BENCH_DIR) && $(PY) -m bench run "$(SCANNER)" "$(CORPUS)" --output "$(OUTPUT)"
+
+leaderboard:
+	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)"
 
 # Build is intentionally NOT auto-run by other targets: cargo workspace
 # builds are slow and the harness wants them backgrounded.

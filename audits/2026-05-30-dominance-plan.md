@@ -1739,3 +1739,19 @@ Vector coverage:
 Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+
+## Executed Patch Set: Benchmark Leaderboard Matrix
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- WIRING: added `python -m bench leaderboard` and `make leaderboard` so the benchmark harness can emit one `RunResult` JSON artifact per scanner/config row instead of only one manual run at a time.
+- RESEARCH: the default matrix includes Keyhog, Betterleaks, Kingfisher, Nosey Parker, TruffleHog, and Titus.
+- COHERENCE: leaderboard rows reuse the same corpus resolver, manifest-free scan root, scorer, output writer, and scanner exit-code contracts as `bench run`.
+- TESTING: added leaderboard tests for default competitor coverage and unexpected-exit artifact errors, then dogfooded the CLI on an empty kernel corpus rooted at a temporary directory.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+- `cd benchmarks && python3 -m bench leaderboard --corpus kernel --scanners keyhog --corpus-root <empty-tmp> --out <tmp-out>`
