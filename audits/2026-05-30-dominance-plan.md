@@ -989,6 +989,21 @@ Verified gates:
 - `bash -n .github/actions/keyhog/run-scan.sh`
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
 
+## Executed Patch Set: Action Fail-Step Execution Contracts
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: the composite Action's final fail shell block is now executed directly in the local contract suite, not only inspected as YAML text.
+- COHERENCE: live verified credentials preserve `keyhog` exit 10 and ordinary finding failures preserve exit 1 with the operator-visible count/severity message.
+- AUDIT HUNTS: malformed `exit-code` output is tested as workflow-command injection input and must fail closed without reflecting the untrusted value.
+
+Verified gates:
+
+- `bash -n .github/actions/keyhog/run-scan.sh`
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+
 ## Executed Patch Set: Action Live-Credential Hard Fail
 
 Date: 2026-05-31

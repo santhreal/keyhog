@@ -125,6 +125,55 @@ fn manifest_run_blocks(manifest: &str) -> Vec<String> {
     blocks
 }
 
+fn manifest_run_block_for_step(manifest: &str, step_name: &str) -> String {
+    let lines: Vec<&str> = manifest.lines().collect();
+    let needle = format!("- name: {step_name}");
+    let mut idx = lines
+        .iter()
+        .position(|line| line.trim() == needle)
+        .unwrap_or_else(|| panic!("manifest step '{step_name}' exists"));
+
+    while idx < lines.len() && lines[idx].trim_start() != "run: |" {
+        idx += 1;
+    }
+    assert!(
+        idx < lines.len(),
+        "manifest step '{step_name}' must have a literal run block"
+    );
+
+    let run_indent = lines[idx].len() - lines[idx].trim_start().len();
+    let content_indent = run_indent + 2;
+    idx += 1;
+    let mut block = String::new();
+    while idx < lines.len() {
+        let line = lines[idx];
+        if !line.trim().is_empty() {
+            let indent = line.len() - line.trim_start().len();
+            if indent <= run_indent {
+                break;
+            }
+        }
+        block.push_str(
+            line.get(content_indent..)
+                .unwrap_or_else(|| line.trim_start()),
+        );
+        block.push('\n');
+        idx += 1;
+    }
+    block
+}
+
+fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let block = manifest_run_block_for_step(&manifest, step_name);
+    let mut cmd = Command::new("bash");
+    cmd.arg("-c").arg(block);
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
+    cmd.output().expect("run manifest shell block")
+}
+
 fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
     let lines: Vec<&str> = yaml.lines().collect();
     let mut blocks = Vec::new();
@@ -657,6 +706,81 @@ fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
     assert!(
         manifest.contains("exit 10"),
         "verified-live credentials should preserve the scanner's exit-10 semantics"
+    );
+}
+
+#[test]
+fn composite_action_fail_step_exits_ten_for_live_credentials() {
+    let output = run_manifest_bash_step(
+        "Fail when findings reported",
+        &[
+            ("KEYHOG_FINDINGS", "1"),
+            ("KEYHOG_EXIT_CODE", "10"),
+            ("KEYHOG_SEVERITY", "high"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "live verified credentials must preserve scanner exit 10; output={combined}"
+    );
+    assert!(
+        combined.contains("LIVE credential(s) confirmed by --verify (exit 10)."),
+        "live failure reason must be operator-visible; output={combined}"
+    );
+    assert!(
+        !combined.contains("Set fail-on-findings:false"),
+        "live credentials must not be described as advisory findings; output={combined}"
+    );
+}
+
+#[test]
+fn composite_action_fail_step_exits_one_for_advisory_findings() {
+    let output = run_manifest_bash_step(
+        "Fail when findings reported",
+        &[
+            ("KEYHOG_FINDINGS", "2"),
+            ("KEYHOG_EXIT_CODE", "1"),
+            ("KEYHOG_SEVERITY", "critical"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "ordinary findings must preserve the existing fail-on-findings contract; output={combined}"
+    );
+    assert!(
+        combined.contains("2 finding(s) at or above 'critical' severity"),
+        "ordinary findings failure must include count and severity; output={combined}"
+    );
+}
+
+#[test]
+fn composite_action_fail_step_rejects_invalid_exit_code_without_reflection() {
+    let injected = "10\n::warning title=Owned::forged";
+    let output = run_manifest_bash_step(
+        "Fail when findings reported",
+        &[
+            ("KEYHOG_FINDINGS", "1"),
+            ("KEYHOG_EXIT_CODE", injected),
+            ("KEYHOG_SEVERITY", "high"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "invalid exit-code output must fail closed; output={combined}"
+    );
+    assert!(
+        combined.contains("Invalid exit-code output."),
+        "invalid exit-code failure must be actionable; output={combined}"
+    );
+    assert!(
+        !combined.contains("::warning title=Owned::forged"),
+        "invalid exit-code value must not be reflected into workflow commands; output={combined}"
     );
 }
 
