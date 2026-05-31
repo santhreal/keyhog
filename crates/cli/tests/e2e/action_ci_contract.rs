@@ -15,6 +15,10 @@ fn action_script() -> PathBuf {
         .expect("action run-scan.sh exists")
 }
 
+fn keyhog_binary() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
+
 fn write_stub(dir: &TempDir, body: &str) -> PathBuf {
     let path = dir.path().join("keyhog");
     fs::write(&path, body).expect("write keyhog stub");
@@ -27,11 +31,12 @@ fn write_stub(dir: &TempDir, body: &str) -> PathBuf {
     path
 }
 
-fn run_action(dir: &TempDir, envs: &[(&str, &str)]) -> Output {
+fn run_action_with_path_prefix(dir: &TempDir, path_prefix: &str, envs: &[(&str, &str)]) -> Output {
     let output_path = dir.path().join("github-output.txt");
     let summary_path = dir.path().join("summary.md");
     let path = format!(
-        "{}:{}",
+        "{}:{}:{}",
+        path_prefix,
         dir.path().display(),
         env::var("PATH").expect("PATH is set")
     );
@@ -55,12 +60,68 @@ fn run_action(dir: &TempDir, envs: &[(&str, &str)]) -> Output {
     cmd.output().expect("run action script")
 }
 
+fn run_action(dir: &TempDir, envs: &[(&str, &str)]) -> Output {
+    run_action_with_path_prefix(dir, dir.path().to_str().expect("utf-8 tempdir"), envs)
+}
+
 fn output_file(dir: &TempDir) -> String {
     fs::read_to_string(dir.path().join("github-output.txt")).expect("read GITHUB_OUTPUT")
 }
 
 fn summary_file(dir: &TempDir) -> String {
     fs::read_to_string(dir.path().join("summary.md")).expect("read GITHUB_STEP_SUMMARY")
+}
+
+#[test]
+fn action_runs_real_keyhog_and_counts_sarif_findings() {
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path().join("repo");
+    fs::create_dir(&repo).expect("create repo");
+    fs::write(
+        repo.join("secret.env"),
+        "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n",
+    )
+    .expect("write planted secret");
+
+    let binary = keyhog_binary();
+    let binary_dir = binary
+        .parent()
+        .expect("binary parent")
+        .to_str()
+        .expect("utf-8 binary dir");
+    let output = run_action_with_path_prefix(
+        &dir,
+        binary_dir,
+        &[
+            ("KEYHOG_SCAN_PATH", "repo"),
+            ("KEYHOG_FORMAT", "sarif"),
+            ("KEYHOG_OUTPUT", "real-keyhog.sarif"),
+            ("KEYHOG_SEVERITY", "high"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "real keyhog findings exit must remain on action findings path; stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let gh_output = output_file(&dir);
+    assert!(
+        gh_output.contains("findings=1"),
+        "real SARIF report count must surface through GITHUB_OUTPUT; got {gh_output}"
+    );
+
+    let sarif = fs::read_to_string(dir.path().join("real-keyhog.sarif")).expect("read SARIF");
+    assert!(
+        sarif.contains("\"runs\""),
+        "SARIF report must contain runs: {sarif}"
+    );
+    assert!(
+        sarif.contains("aws"),
+        "SARIF report should carry the planted AWS finding: {sarif}"
+    );
 }
 
 #[test]
