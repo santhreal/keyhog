@@ -784,6 +784,84 @@ exit 1
 }
 
 #[test]
+fn action_counts_jsonl_reports_by_valid_json_lines() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+cat > "$out" <<'JSONL'
+{"detector_id":"one"}
+
+{"detector_id":"two"}
+JSONL
+exit 1
+"#,
+    );
+
+    let output = run_action(
+        &dir,
+        &[
+            ("KEYHOG_FORMAT", "jsonl"),
+            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "jsonl findings exit should stay on findings path; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output_file(&dir).contains("findings=2"),
+        "jsonl report count must ignore blank lines and parse JSON values"
+    );
+}
+
+#[test]
+fn action_rejects_malformed_clean_jsonl_report() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{not-json}\n' > "$out"
+exit 0
+"#,
+    );
+
+    let output = run_action(
+        &dir,
+        &[
+            ("KEYHOG_FORMAT", "jsonl"),
+            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "malformed clean jsonl report must fail closed; output={}",
+        combined_output(&output)
+    );
+}
+
+#[test]
 fn action_sanitizes_markdown_summary_cells() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(

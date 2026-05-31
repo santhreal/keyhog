@@ -132,7 +132,26 @@ PY
       fi
       ;;
     jsonl)
-      awk 'END { print NR + 0 }' "$report_path"
+      if command -v jq >/dev/null 2>&1; then
+        jq -s 'length' "$report_path"
+      elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$report_path" <<'PY'
+import json
+import sys
+
+count = 0
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    for line in f:
+        if not line.strip():
+            continue
+        json.loads(line)
+        count += 1
+
+print(count)
+PY
+      else
+        return 2
+      fi
       ;;
     text)
       grep -c 'Secret:' "$report_path" 2>/dev/null || true
