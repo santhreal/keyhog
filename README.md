@@ -289,12 +289,12 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.9108** | 0.9868 | 0.8457 | 2583 | 1.24s | 1119 MB |
-| 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.36s | 337 MB |
-| 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 4.22s | 427 MB |
-| 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 2.58s | 117 MB |
-| 5 | Nosey Parker | 0.4078 | 0.3414 | 0.5063 | 4532 | 0.75s | 283 MB |
-| 6 | BetterLeaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 0.63s | 206 MB |
+| 1 | **KeyHog** | **0.9108** | 0.9868 | 0.8457 | 2583 | 1.94s | 1077 MB |
+| 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.73s | 308 MB |
+| 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 4.88s | 421 MB |
+| 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 2.53s | 117 MB |
+| 5 | Nosey Parker | 0.4078 | 0.3414 | 0.5063 | 4532 | 0.75s | 285 MB |
+| 6 | BetterLeaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 0.77s | 192 MB |
 <!-- BENCH:leaderboard:end -->
 
 ### Speed & memory
@@ -302,14 +302,14 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 <!-- BENCH:perf:start -->
 | Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
 |---|---|---|---|---|---|
-| BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 0.63s | 3.7 MB/s | 206 MB |
-| Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.75s | 3.1 MB/s | 283 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.24s | 1.9 MB/s | 1119 MB |
-| TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.36s | 1.7 MB/s | 337 MB |
-| Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.58s | 0.9 MB/s | 117 MB |
+| Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.75s | 3.1 MB/s | 285 MB |
+| BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 0.77s | 3.0 MB/s | 192 MB |
+| TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.73s | 1.3 MB/s | 308 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.94s | 1.2 MB/s | 1077 MB |
+| Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.53s | 0.9 MB/s | 117 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
-| Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.22s | 0.5 MB/s | 427 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | creddata | 4.65s | 209.0 MB/s | 2580 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 4.04s | 240.3 MB/s | 1816 MB |
+| Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.88s | 0.5 MB/s | 421 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | creddata | 8.13s | 119.4 MB/s | 657 MB |
 <!-- BENCH:perf:end -->
 

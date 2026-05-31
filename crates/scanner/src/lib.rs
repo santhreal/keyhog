@@ -104,8 +104,8 @@ mod simdsieve_prefilter;
 
 pub(crate) mod shared_regexes;
 
-pub use engine::CompiledScanner;
 pub use engine::GpuPhase1Output;
+pub use engine::{CompiledScanner, GpuInitPolicy};
 pub use error::{Result, ScanError};
 pub use hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
 pub use types::ScannerConfig;

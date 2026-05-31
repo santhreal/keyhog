@@ -15,6 +15,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Make the JSON escape decoder borrow only escaped string spans instead of allocating every plain JSON key/value before discarding it. Escaped JSON recall stays covered by the splice contract, unescaped JSON emits no redundant `/json` layer, and the CredData benchmark row remains detection-identical while trimming allocator work on large JSON/NDJSON fixtures.
 - Align generic-assignment chunk and line prefilters with the actual assignment-key grammar instead of broad `api`/`auth`/`private` substrings. CredData keeps the same true positives with three fewer false positives, while the mirror benchmark gains seven true positives with no added false positives.
 - Remove the per-candidate ASCII lowercase allocation from ML file-type feature extraction by using the shared byte-level case-insensitive matcher for static context markers.
+- Skip eager CUDA/wgpu acquisition when the CLI route is explicitly CPU/SIMD or when default/auto filesystem scans will run through the fused CPU/SIMD pipeline. Explicit `--backend gpu`/`--backend megascan` still forces GPU initialization.
+- Remove an unconditional 16-match vector reserve from the no-Hyperscan-hit fallback path; chunks that pass fallback plausibility gates but produce no matches now stay allocation-free until reassembly has real work.
 
 ### Detection
 
@@ -79,6 +81,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Refresh the committed benchmark perf tables so the CredData result artifacts appear in README and `benchmarks/reports/perf.md` instead of leaving the report-check gate stale.
 - Make `python -m bench report --check` read-only and compare generated report files as well as README injection markers, so the CI gate proves report freshness instead of silently formatting tracked reports.
 - Add per-detector benchmark confidence histograms plus `python -m bench calibrate`, producing measured `min_confidence` floor reports and TOML overlays for lossless false-positive cuts on labeled corpora.
+- Keep the KeyHog benchmark `auto` backend row on the same deterministic fused filesystem route as production default scans, while forced `gpu`/`megascan` rows still require a real GPU.
 - Add competitor overall precision to the per-category benchmark gap table so recall-only category wins expose their cross-category false-positive cost.
 - Probe for actual GNU `time` support before wrapping benchmark subprocesses, so BSD/macOS `/usr/bin/time` falls back to `resource.getrusage` instead of breaking scanner runs.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.

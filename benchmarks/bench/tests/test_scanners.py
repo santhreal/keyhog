@@ -182,7 +182,7 @@ def test_keyhog_gpu_benchmark_rows_require_real_gpu():
         "KEYHOG_REQUIRE_GPU": "1",
     }
     assert scanner._env(ScannerConfig(backend="auto")) == {
-        "KEYHOG_NO_GPU": "0",
+        "KEYHOG_NO_GPU": "1",
         "KEYHOG_REQUIRE_GPU": "0",
     }
     assert scanner._env(ScannerConfig(backend="simd")) == {
