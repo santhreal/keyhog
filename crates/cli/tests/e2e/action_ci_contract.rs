@@ -1273,6 +1273,10 @@ fn composite_action_verifies_downloaded_release_asset() {
         "Linux prebuilt path must install libhyperscan5 before executing the release asset"
     );
     assert!(
+        manifest.contains("startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')"),
+        "both CPU and CUDA Linux prebuilts must install the Hyperscan runtime they link against"
+    );
+    assert!(
         manifest.contains("curl -fL --retry 2 \"$url.sha256\""),
         "prebuilt download must fetch the matching release checksum"
     );
@@ -1284,6 +1288,135 @@ fn composite_action_verifies_downloaded_release_asset() {
     assert!(
         manifest.contains("Release asset or checksum missing"),
         "missing checksum must fall back to source build instead of running an unchecked binary"
+    );
+}
+
+#[test]
+fn composite_action_detects_cuda_linux_release_asset() {
+    let dir = TempDir::new().expect("tempdir");
+    let fake_bin = dir.path().join("bin");
+    fs::create_dir(&fake_bin).expect("create fake bin");
+    write_executable(
+        &fake_bin.join("uname"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  -s) printf 'Linux\n' ;;
+  -m) printf 'x86_64\n' ;;
+  *) exit 2 ;;
+esac
+"#,
+    );
+    write_executable(
+        &fake_bin.join("nvidia-smi"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  -L) printf 'GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-test)\n' ;;
+  *) printf 'NVIDIA GeForce RTX 5090\n' ;;
+esac
+"#,
+    );
+    write_executable(
+        &fake_bin.join("ldconfig"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+printf 'libcuda.so.1 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libcuda.so.1\n'
+"#,
+    );
+    write_executable(
+        &fake_bin.join("nvcc"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+"#,
+    );
+    let output_path = dir.path().join("github-output.txt");
+    let output_path_str = output_path.to_string_lossy().into_owned();
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let output = run_manifest_bash_step(
+        "Detect platform asset name",
+        &[
+            ("PATH", path.as_str()),
+            ("GITHUB_OUTPUT", output_path_str.as_str()),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "CUDA Linux asset detection must run under bash; output={combined}"
+    );
+    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
+    assert!(
+        github_output.contains("name=keyhog-linux-x86_64-cuda"),
+        "CUDA-ready Linux runners must use the published CUDA prebuilt asset; output={github_output}"
+    );
+}
+
+#[test]
+fn composite_action_source_build_preserves_cuda_feature_request() {
+    let dir = TempDir::new().expect("tempdir");
+    let fake_bin = dir.path().join("bin");
+    let source_root = dir.path().join("source");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&fake_bin).expect("create fake bin");
+    fs::create_dir(&source_root).expect("create source root");
+    fs::create_dir(&runner_temp).expect("create runner temp");
+    let cargo_args = dir.path().join("cargo-args.txt");
+    write_executable(
+        &fake_bin.join("uname"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+printf 'Linux\n'
+"#,
+    );
+    write_executable(
+        &fake_bin.join("cargo"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" > "$CARGO_ARGS_FILE"
+mkdir -p target/release
+printf 'fake-keyhog' > target/release/keyhog
+chmod +x target/release/keyhog
+"#,
+    );
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let source_root_str = source_root.to_string_lossy().into_owned();
+    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
+    let cargo_args_str = cargo_args.to_string_lossy().into_owned();
+    let output = run_manifest_bash_step(
+        "Build keyhog from source (fallback)",
+        &[
+            ("PATH", path.as_str()),
+            ("KEYHOG_ACTION_SOURCE_ROOT", source_root_str.as_str()),
+            ("RUNNER_TEMP", runner_temp_str.as_str()),
+            ("KEYHOG_ASSET_NAME", "keyhog-linux-x86_64-cuda"),
+            ("CARGO_ARGS_FILE", cargo_args_str.as_str()),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "CUDA source-build fallback must run with fake cargo; output={combined}"
+    );
+    let args = fs::read_to_string(&cargo_args).expect("read cargo args");
+    assert!(
+        args.contains("--features\ncuda\n"),
+        "CUDA source fallback must preserve the requested CUDA feature; args={args}"
+    );
+    assert!(
+        runner_temp.join("keyhog").is_file(),
+        "source-build fallback must still install the built binary into RUNNER_TEMP"
     );
 }
 
