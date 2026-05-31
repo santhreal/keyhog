@@ -958,3 +958,20 @@ Verified gates:
 Red gate captured:
 
 - `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
+
+## Executed Patch Set: GitHub Action CI Fail-Closed UX
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: the composite Action no longer treats report parser failures as zero findings.
+- CI UX: Action users now get a GitHub Step Summary with path, severity floor, format, report, finding count, exit code, and baseline.
+- AUDIT HUNTS: if `keyhog` exits 1 or 10 but no report exists, the Action exits as a scanner failure instead of letting a later `findings=0` path pass.
+- TESTING: the entry-point integration gate now asserts fail-closed report counting and Step Summary wiring.
+
+Verified gates:
+
+- `bash tests/integration/entrypoints_check.sh`
+- `python3 - <<'PY' ... yaml.safe_load(...) ... PY` for `.github/actions/keyhog/action.yml`, `.github/workflows/ci.yml`, and `.github/workflows/keyhog.yml`
+- Extracted `.github/actions/keyhog/action.yml` `Run scan` block through `yaml.safe_load`, substituted GitHub expressions, and ran `bash -n`

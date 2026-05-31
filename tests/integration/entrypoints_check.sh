@@ -72,6 +72,22 @@ if [ -f "$ACT" ]; then
   else
     echo "WARN action.yml: SARIF upload step should be continue-on-error for fork PRs."
   fi
+  # Findings counting is a CI security boundary. Missing jq / malformed JSON
+  # must not become findings=0 after the scanner already returned exit 1/10.
+  if grep -q "count_from_report()" "$ACT" \
+     && grep -q "Could not parse.*keyhog exited" "$ACT" \
+     && ! grep -q "jq .*|| echo 0" "$ACT"; then
+    note "OK   action.yml: report counting fails closed when parser/report fails"
+  else
+    echo "FAIL action.yml findings counting must fail closed; do not convert parser failures to findings=0."
+    fail=1
+  fi
+  if grep -q "GITHUB_STEP_SUMMARY" "$ACT" && grep -q "### KeyHog scan" "$ACT"; then
+    note "OK   action.yml: writes a GitHub Step Summary"
+  else
+    echo "FAIL action.yml must write a concise GITHUB_STEP_SUMMARY for CI triage."
+    fail=1
+  fi
 else
   echo "FAIL .github/actions/keyhog/action.yml missing - the documented Action does not exist."
   fail=1

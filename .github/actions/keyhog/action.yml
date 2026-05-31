@@ -192,26 +192,70 @@ runs:
         keyhog_exit=$?
         set -e
 
-        # Count findings from the report regardless of exit code.
+        count_from_report() {
+          local format="$1"
+          local report="$2"
+          case "$format" in
+            sarif)
+              if command -v jq >/dev/null 2>&1; then
+                jq '[.runs[].results[]] | length' "$report"
+              elif command -v python3 >/dev/null 2>&1; then
+                python3 - "$report" <<'PY'
+        import json
+        import sys
+        with open(sys.argv[1], "r", encoding="utf-8") as f:
+            sarif = json.load(f)
+        print(sum(len(run.get("results", [])) for run in sarif.get("runs", [])))
+        PY
+              else
+                return 2
+              fi
+              ;;
+            json)
+              if command -v jq >/dev/null 2>&1; then
+                jq 'length' "$report"
+              elif command -v python3 >/dev/null 2>&1; then
+                python3 - "$report" <<'PY'
+        import json
+        import sys
+        with open(sys.argv[1], "r", encoding="utf-8") as f:
+            report = json.load(f)
+        if not isinstance(report, list):
+            raise SystemExit("keyhog JSON report must be a top-level array")
+        print(len(report))
+        PY
+              else
+                return 2
+              fi
+              ;;
+            jsonl)
+              awk 'END { print NR + 0 }' "$report"
+              ;;
+            text)
+              grep -cE '^[[:space:]]+\xe2\x94\x8c' "$report" 2>/dev/null || true
+              ;;
+          esac
+        }
+
+        # Count findings from the report regardless of exit code. This must
+        # fail closed: if the scanner returned a findings exit code but the
+        # report parser is unavailable or the report is malformed, expose at
+        # least one finding instead of silently reporting zero.
         report="${{ steps.outfile.outputs.name }}"
         findings=0
         if [[ -f "$report" ]]; then
-          case "${{ inputs.format }}" in
-            sarif)
-              findings=$(jq '[.runs[].results[]] | length' "$report" 2>/dev/null || echo 0) ;;
-            json)
-              # JsonArrayReporter emits a top-level array of findings.
-              findings=$(jq 'length' "$report" 2>/dev/null || echo 0) ;;
-            jsonl)
-              findings=$(wc -l < "$report" | tr -d ' ') ;;
-            text)
-              # Text format starts each finding with a box-drawing top:
-              # `  ┌ <severity> ─── <detector>`. Counting that line is
-              # the only stable signal short of re-parsing colored
-              # output. For machine-counted exact tallies prefer
-              # format=json or format=sarif.
-              findings=$(grep -cE '^[[:space:]]+\xe2\x94\x8c' "$report" 2>/dev/null || echo 0) ;;
-          esac
+          if parsed_findings="$(count_from_report "${{ inputs.format }}" "$report" 2>/dev/null)"; then
+            findings="$parsed_findings"
+          elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
+            findings=1
+            echo "::warning title=KeyHog::Could not parse '$report'; keyhog exited $keyhog_exit, so treating the scan as having findings."
+          else
+            echo "::error title=KeyHog::Could not parse clean scan report '$report'."
+            exit 3
+          fi
+        elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
+          echo "::error title=KeyHog::keyhog reported findings but did not write '$report'."
+          exit 3
         fi
         echo "findings=$findings" >> "$GITHUB_OUTPUT"
         echo "::notice title=KeyHog::Found $findings finding(s) at or above '${{ inputs.severity }}' severity."
@@ -229,6 +273,24 @@ runs:
         fi
         if [[ "$keyhog_exit" == "10" ]]; then
           echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
+        fi
+
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          {
+            echo "### KeyHog scan"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Path | \`${{ inputs.path }}\` |"
+            echo "| Severity floor | \`${{ inputs.severity }}\` |"
+            echo "| Format | \`${{ inputs.format }}\` |"
+            echo "| Report | \`${report}\` |"
+            echo "| Findings | \`${findings}\` |"
+            echo "| Exit code | \`${keyhog_exit}\` |"
+            if [[ -n "${{ inputs.baseline }}" ]]; then
+              echo "| Baseline | \`${{ inputs.baseline }}\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Check report exists before SARIF upload
