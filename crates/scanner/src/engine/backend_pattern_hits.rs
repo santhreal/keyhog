@@ -47,7 +47,7 @@ impl CompiledScanner {
         let drift_tolerable = offset_drift <= MAX_TOLERATED_DRIFT;
         let scan_text = if prepared.preprocessed.text.len() == prepared.chunk.data.len() {
             // Strict offset parity - scan the preprocessed text (the
-            // same one extract_confirmed_patterns will walk later).
+            // same one extract_confirmed_patterns will walk).
             prepared.preprocessed.text.as_str()
         } else {
             // Drift present - the cheap-filter needs to scan the
@@ -140,12 +140,9 @@ impl CompiledScanner {
                     // out to the rest of the sibling set. Correctness:
                     // bitmap is by-pid, never by-literal, so we cannot
                     // confuse two pids that share a prefix.
-                    let siblings = if pat_idx < self.same_prefix_patterns.len() {
-                        self.same_prefix_patterns[pat_idx].as_slice()
-                    } else {
-                        &[]
-                    };
-                    let candidates = std::iter::once(pat_idx).chain(siblings.iter().copied());
+                    let siblings = self.same_prefix_patterns.get(pat_idx).unwrap_or(&[]);
+                    let candidates =
+                        std::iter::once(pat_idx).chain(siblings.iter().map(|&idx| idx as usize));
                     for cand_idx in candidates {
                         if cand_idx >= total_patterns {
                             continue;
@@ -168,7 +165,7 @@ impl CompiledScanner {
                         }
                         // Mark checked regardless of outcome: the whole-chunk
                         // is_match verdict is position-independent and
-                        // deterministic, so a later hit for the same pid would
+                        // deterministic, so a subsequent hit for the same pid would
                         // reach the same result - never re-scan the chunk for
                         // an already-evaluated pid.
                         confirmed[cand_idx] = true;

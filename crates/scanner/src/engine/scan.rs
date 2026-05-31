@@ -137,6 +137,7 @@ impl CompiledScanner {
                             };
                             if let Some(orig) = self.hs_index_map.get(dedup_id) {
                                 for &idx in orig {
+                                    let idx = idx as usize;
                                     if idx < ac_len {
                                         scratch[idx / 64] |= 1u64 << (idx % 64);
                                     }
@@ -284,7 +285,7 @@ impl CompiledScanner {
                         // cache is mostly populated by named-detector
                         // matches that scan_inner now produces (e.g.
                         // an `AWS_ACCESS_KEY=` match in one .env file
-                        // gets recorded for later reassembly with an
+                        // gets recorded for subsequent reassembly with an
                         // `AWS_SECRET=` match in another).
                         self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                         return matches;

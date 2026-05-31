@@ -313,6 +313,7 @@ impl CompiledScanner {
                 // for this pattern rather than crashing the scan.
                 if let Some(siblings) = self.same_prefix_patterns.get(pat_idx) {
                     for &other_idx in siblings {
+                        let other_idx = other_idx as usize;
                         // Same defensive bound on the expanded write -
                         // a stale sibling index past the bitmask end
                         // would otherwise panic via bounds-checked
