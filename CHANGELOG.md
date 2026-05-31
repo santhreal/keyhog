@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### CI / GitHub Action
 
+- Fail Code Scanning SARIF uploads closed on trusted pushes and same-repo PRs while keeping fork-PR permission failures advisory with the report artifact still uploaded.
 - Make the composite GitHub Action fail closed when KeyHog exits cleanly without writing the requested report, and expose `duration-ms` in the Action outputs and job summary for CI performance tracking.
 - Update the CI workflow guide to lead with the hardened composite GitHub Action, including SARIF/artifact/summary behavior and baseline adoption.
 - Align CI rollout docs with the composite Action's advisory-mode contract: ordinary findings can be non-blocking, but verified-live credentials still fail after report/SARIF/artifact upload.

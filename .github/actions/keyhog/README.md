@@ -10,7 +10,10 @@ report name, raw exit code, finding count, and scan duration for fast PR triage.
 ```
 
 That's it. Defaults: scan the whole repo, fail on `high` or above, output
-SARIF, upload to code-scanning.
+SARIF, upload to code-scanning. With `upload-sarif: 'true'`, Code Scanning
+upload failures fail closed on trusted pushes and same-repo PRs. Fork PRs can
+lack `security-events: write`; those upload failures stay advisory and the
+SARIF report remains attached as a workflow artifact.
 
 ## Full reference
 

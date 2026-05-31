@@ -37,6 +37,11 @@ to **Security -> Code scanning**, attaches the report as a workflow
 artifact, and prints a job summary with the finding count, raw exit code,
 and scan duration.
 
+When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
+and same-repo pull requests. Fork pull requests often lack
+`security-events: write`; in that case the upload step is advisory and the
+downloadable SARIF artifact remains available for review.
+
 `fail-on-findings: 'false'` makes ordinary findings advisory after the
 report/SARIF/artifact are written. A `--verify` scan that confirms a live
 credential still fails the action with KeyHog exit code `10`.

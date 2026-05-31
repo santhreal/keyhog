@@ -1996,3 +1996,18 @@ Verified gates:
 - `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
 - `timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `status=pass`, `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.
 - `KEYHOG_REQUIRE_GPU=1 cargo test -p keyhog-scanner --test gpu_parity gpu_and_simd_produce_identical_findings_on_same_corpus -- --nocapture`
+
+## Executed Patch Set: Trusted SARIF Upload Fail-Closed
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: trusted GitHub Actions runs with `upload-sarif: 'true'` now fail closed when Code Scanning upload fails, so a green CI job cannot silently lack annotations.
+- AUDIT HUNTS: fork pull requests keep the existing advisory upload behavior because their restricted token commonly lacks `security-events: write`; the workflow artifact remains available for review.
+- COHERENCE: Action README, CI guide, changelog, and composite Action YAML now describe the same trusted-vs-fork upload policy.
+- TESTING: added a composite Action manifest contract that rejects unconditional `continue-on-error: true` on the SARIF upload step.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests composite_action_sarif_upload_fails_closed_on_trusted_runs -- --nocapture`

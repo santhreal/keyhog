@@ -925,6 +925,31 @@ fn composite_action_artifact_name_is_job_scoped() {
 }
 
 #[test]
+fn composite_action_sarif_upload_fails_closed_on_trusted_runs() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let upload_step = manifest
+        .split("- name: Upload SARIF to code-scanning")
+        .nth(1)
+        .and_then(|rest| rest.split("    - name:").next())
+        .expect("SARIF upload step exists");
+
+    assert!(
+        upload_step.contains("uses: github/codeql-action/upload-sarif@v3"),
+        "SARIF upload must use the GitHub Code Scanning action"
+    );
+    assert!(
+        upload_step.contains(
+            "continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}"
+        ),
+        "SARIF upload may be advisory only for fork PR permission failures; trusted CI uploads must fail closed"
+    );
+    assert!(
+        !upload_step.contains("continue-on-error: true"),
+        "unconditional SARIF upload tolerance hides broken production Code Scanning integrations"
+    );
+}
+
+#[test]
 fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
