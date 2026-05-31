@@ -140,8 +140,7 @@ pub fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
         if ch == '\u{00AD}' {
             let prev = idx.checked_sub(1).and_then(|i| chars.get(i)).copied();
             let next = chars.get(idx + 1).copied();
-            if prev.is_some_and(|c| c.is_ascii_digit())
-                || next.is_some_and(|c| c.is_ascii_digit())
+            if prev.is_some_and(|c| c.is_ascii_digit()) || next.is_some_and(|c| c.is_ascii_digit())
             {
                 normalized.push('-');
             }
@@ -315,7 +314,8 @@ fn is_zero_width(ch: char) -> bool {
 fn is_unicode_separator_evasion(ch: char) -> bool {
     matches!(
         ch,
-        '\u{2000}'..='\u{200A}' | // En/em/thin/hair and related spaces
+        '\u{2000}'
+            ..='\u{200A}' | // En/em/thin/hair and related spaces
         '\u{2028}' | // Line Separator
         '\u{2029}' | // Paragraph Separator
         '\u{205F}' | // Medium Mathematical Space

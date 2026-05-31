@@ -47,12 +47,12 @@ real tree. Items carry the data that proves them.
   (`[vkrt]/[vkcf]/[vkps]`, `libnvidia-glcore.so`) idle in cond_wait while a
   keyhog worker was parked — work submitted, completion never observed.
   Violates the "never wait for something" rule.
-  FIX (planned): bound every GPU wait. Replace `PollType::Wait` with a
-  `PollType::Poll` deadline loop + CPU fallback, and `recv()` with
-  `recv_timeout()`. Belt-and-suspenders: a dispatch-level watchdog
-  (`crates/cli/src/orchestrator/dispatch.rs`) that abandons a GPU batch
-  exceeding a deadline, falls back to SIMD, and disables GPU for the rest of
-  the run so one stall can't poison the whole scan.
+  FIX LANDED 2026-05-31: GPU MoE readback now uses a bounded
+  `PollType::Poll` loop plus nonblocking channel checks. The default
+  deadline is 30 s and `KEYHOG_GPU_MOE_TIMEOUT_MS=<MS>` tunes it. A timeout,
+  device-poll error, callback disconnect, or `map_async` error falls back to
+  CPU MoE for that batch instead of parking a rayon worker forever. Static
+  gate: `gpu_moe_readback_bounded`.
 
 - **PERF-07 · SHIP-BLOCKER · GPU path produces a DIFFERENT finding set than
   SIMD on identical input (gpu_parity violated in production)** — confirmed
@@ -104,6 +104,46 @@ real tree. Items carry the data that proves them.
   enum identifiers is a precision bug (logged to detection.md).
 
 ## Parallelism
+
+- **PERF-08 · HIGH · kernel scan is matching-bound + only ~4 of 16 cores hot
+  (flat perf profile, release-fast, 2026-05-30)** — supersedes the earlier
+  "serial funnel" guess in PERF-05. A flat (no-call-graph) `perf record -F 999`
+  over a SIMD kernel scan shows where the CPU actually goes:
+    PER-THREAD: keyhog-worker-6 37%, worker-1 29%, worker-0 15%, worker-8 14%,
+                all others < 2%. readers ~0%, producer ("keyhog") 0.77%.
+    TOP SELF SYMBOLS: aho_corasick Teddy `find` 43%+8.5%+4.4%+1.7%+0.9% ~= 58%,
+                regex_automata hybrid `find_fwd` 15% + meta strategy ~3%,
+                memchr ~5%, keyhog extract/preprocess ~1%.
+  Findings:
+  - NOT I/O-bound, NOT a producer/reader funnel (readers+producer < 1%), NOT
+    allocation (jemalloc A/B was flat, PERF-05 refinement). It is CPU-bound in
+    LITERAL+REGEX matching.
+  - Hyperscan IS live (`HS ready compiled=1629 unsupported=0`), so phase-1 is
+    fine. The 58% aho_corasick is the SECOND full-content pass: the fallback
+    keyword-AC sweep (`scan_fallback_patterns`, runs on EVERY chunk per Task
+    #69) + generic-assignment scan - additive to hyperscan phase-1.
+    `KEYHOG_BACKEND=simd` (6.86 s) was actually SLOWER than `=cpu` (5.56 s) on
+    the 467 MB amd/include dir: Hyperscan adds coalesce/dispatch overhead with
+    no net matching-throughput win because aho_corasick already does the work.
+  - Only ~4 workers hot because DEFAULT_WINDOW_SIZE = 64 MiB
+    (crates/sources/src/filesystem.rs:21) and the kernel's LARGEST file is
+    22 MiB, so NO file is windowed - every file is a single chunk pinned to one
+    rayon worker. A batch's heavy work lives in its few large single-chunk
+    files, so per-batch `par_iter` lights ~4 workers and parks the other 12.
+  LEVERS (measure each on the kernel before/after; do NOT hand-tune blind):
+    L1 (parallelism, ~4x ceiling): window files at ~1-4 MiB so multi-MB files
+       split into CPU-count sub-chunks that spread across workers. Watch the
+       4 KiB overlap for boundary-spanning secrets and extra per-chunk cost.
+    L2 (biggest single cost): gate/shrink the fallback keyword-AC sweep - it
+       re-scans full content on every chunk. Tighten its bloom/keyword gate, or
+       fold fallback-detector keywords into the hyperscan DB so there is ONE
+       literal pass, not two. Recall-sensitive (Task #69) - guard with the
+       differential + mirror F1.
+    L3: don't batch-barrier the scanner - a single global `par_iter` over all
+       chunks (instead of per-batch) would let heavy chunks from different
+       batches overlap, but conflicts with the GPU coalesce/memory model.
+  The 100x kernel target needs L1 x L2 together (parallelism x halving the
+  per-chunk matching work), not any single lever.
 
 - **PERF-05 · HIGH · kernel scan uses ~1.6 cores of 32 (pipeline serialization)** —
   after the PERF-01 fix the kernel scan COMPLETES but runs at ~162 % CPU with

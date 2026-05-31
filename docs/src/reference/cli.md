@@ -63,6 +63,7 @@ runtime error.
 |---------------------------------------|-----------------------------------------------------------------------|
 | `KEYHOG_BACKEND=gpu\|simd\|cpu\|auto`  | Force a scan backend instead of letting the auto-router choose.        |
 | `KEYHOG_NO_GPU=1`                     | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. Use this when Metal / CUDA init blocks on a given host (Apple Silicon Mac configurations have reproduced this) and you want predictable startup. |
+| `KEYHOG_GPU_MOE_TIMEOUT_MS=<MS>`       | Bound one GPU MoE confidence readback. Default `30000`; timeout falls back to CPU MoE for that batch. |
 | `KEYHOG_PER_CHUNK_TIMEOUT_MS=<MS>`    | Attach an `Instant` deadline to every chunk scan. Default unset = no timeout (original behaviour). Recommend `30000` for production scans where bounded latency matters more than scan completeness. |
 | `KEYHOG_THREADS=<N>`                  | Pin the rayon worker count. Default = physical-core count.            |
 | `KEYHOG_DETECTORS=<DIR>`              | Override the auto-discovered detector directory.                       |
