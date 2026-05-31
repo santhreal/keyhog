@@ -14,6 +14,7 @@ use keyhog_scanner::hw_probe::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_solo_bytes_for_tier, probe_hardware,
     select_backend, thresholds, GpuTier,
 };
+use serde::Serialize;
 use std::process::ExitCode;
 
 /// Exit code for `backend --self-test` when one of the GPU dispatch
@@ -23,7 +24,7 @@ const EXIT_SELF_TEST_FAILED: u8 = 4;
 
 pub fn run(args: BackendArgs) -> Result<ExitCode> {
     if args.self_test {
-        return run_self_test();
+        return run_self_test(args.json);
     }
     print_backend_report(&args)?;
     Ok(ExitCode::SUCCESS)
@@ -182,8 +183,103 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_self_test() -> Result<ExitCode> {
-    println!("## GPU self-test");
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendSelfTestStatus {
+    Pass,
+    Fail,
+    Known,
+    Skip,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackendSelfTestProbe {
+    pub name: &'static str,
+    pub status: BackendSelfTestStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scores: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_buffer_mb: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direct_matches: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coalesced_matches: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matches: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<&'static str>,
+}
+
+impl BackendSelfTestProbe {
+    fn pass(name: &'static str) -> Self {
+        Self {
+            name,
+            status: BackendSelfTestStatus::Pass,
+            message: None,
+            adapter_name: None,
+            scores: None,
+            max_buffer_mb: None,
+            direct_matches: None,
+            coalesced_matches: None,
+            matches: None,
+            backend_id: None,
+        }
+    }
+
+    fn fail(name: &'static str, message: String) -> Self {
+        Self {
+            status: BackendSelfTestStatus::Fail,
+            message: Some(message),
+            ..Self::pass(name)
+        }
+    }
+
+    fn known(name: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: BackendSelfTestStatus::Known,
+            message: Some(message.into()),
+            ..Self::pass(name)
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackendSelfTestReport {
+    pub ok: bool,
+    pub status: BackendSelfTestStatus,
+    pub exit_code: u8,
+    pub gpu_available: bool,
+    pub gpu_is_software: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_max_buffer_mb: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_backend: Option<&'static str>,
+    pub probes: Vec<BackendSelfTestProbe>,
+}
+
+impl BackendSelfTestReport {
+    fn exit_code(&self) -> ExitCode {
+        ExitCode::from(self.exit_code)
+    }
+}
+
+fn run_self_test(json: bool) -> Result<ExitCode> {
+    let report = collect_self_test_report();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_self_test_report(&report);
+    }
+    Ok(report.exit_code())
+}
+
+fn collect_self_test_report() -> BackendSelfTestReport {
     let hw = probe_hardware();
 
     if !hw.gpu_available || hw.gpu_is_software {
@@ -192,25 +288,44 @@ fn run_self_test() -> Result<ExitCode> {
         } else {
             "only software adapter (llvmpipe/lavapipe/swiftshader): won't be used for scans"
         };
-        println!("  \x1b[33mSKIP\x1b[0m: {reason}");
-        // Skip is not a failure - gracefully exit 0 so CI on a headless
-        // runner without a GPU doesn't block the release.
-        return Ok(ExitCode::SUCCESS);
+        return BackendSelfTestReport {
+            ok: true,
+            status: BackendSelfTestStatus::Skip,
+            exit_code: 0,
+            gpu_available: hw.gpu_available,
+            gpu_is_software: hw.gpu_is_software,
+            gpu_name: hw.gpu_name.clone(),
+            gpu_max_buffer_mb: hw.gpu_vram_mb,
+            recommended_backend: Some("simd-regex"),
+            probes: vec![BackendSelfTestProbe {
+                name: "gpu_adapter",
+                status: BackendSelfTestStatus::Skip,
+                message: Some(reason.to_string()),
+                adapter_name: None,
+                scores: None,
+                max_buffer_mb: None,
+                direct_matches: None,
+                coalesced_matches: None,
+                matches: None,
+                backend_id: None,
+            }],
+        };
     }
 
     let mut all_ok = true;
+    let mut probes = Vec::with_capacity(3);
 
     // Test 1: keyhog's MoE compute dispatch.
-    print!("  moe_kernel       ... ");
     match keyhog_scanner::gpu::gpu_self_test() {
-        Ok(report) => println!(
-            "\x1b[32mPASS\x1b[0m  ({}, scores={}, max_buffer={} MB)",
-            report.adapter_name,
-            report.scores,
-            report.vram_mb.unwrap_or(0)
-        ),
+        Ok(report) => {
+            let mut probe = BackendSelfTestProbe::pass("moe_kernel");
+            probe.adapter_name = Some(report.adapter_name);
+            probe.scores = Some(report.scores);
+            probe.max_buffer_mb = report.vram_mb;
+            probes.push(probe);
+        }
         Err(error) => {
-            println!("\x1b[31mFAIL\x1b[0m  {error}");
+            probes.push(BackendSelfTestProbe::fail("moe_kernel", error));
             all_ok = false;
         }
     }
@@ -226,23 +341,24 @@ fn run_self_test() -> Result<ExitCode> {
     // missing GPU stack. We report it as a known limitation so
     // operators don't conclude their GPU is broken when scans
     // actually still run on the AC kernel path.
-    print!("  vyre_literal_set ... ");
     match keyhog_scanner::gpu::vyre_gpu_self_test() {
-        Ok(report) => println!(
-            "\x1b[32mPASS\x1b[0m  (direct={}, coalesced={})",
-            report.direct_matches, report.coalesced_matches
-        ),
+        Ok(report) => {
+            let mut probe = BackendSelfTestProbe::pass("vyre_literal_set");
+            probe.direct_matches = Some(report.direct_matches);
+            probe.coalesced_matches = Some(report.coalesced_matches);
+            probes.push(probe);
+        }
         Err(error) => {
             let known_lowering_gap = error.contains("_vyre_match_leader")
                 || error.contains("canonical pre-emit lowering")
                 || error.contains("subgroup_ballot");
             if known_lowering_gap {
-                println!(
-                    "\x1b[33mKNOWN\x1b[0m vyre IR lowering rejects literal_set's subgroup form; \
-                     scans use the AC kernel path checked below."
-                );
+                probes.push(BackendSelfTestProbe::known(
+                    "vyre_literal_set",
+                    "vyre IR lowering rejects literal_set's subgroup form; scans use the AC kernel path checked below",
+                ));
             } else {
-                println!("\x1b[31mFAIL\x1b[0m  {error}");
+                probes.push(BackendSelfTestProbe::fail("vyre_literal_set", error));
                 all_ok = false;
             }
         }
@@ -252,28 +368,106 @@ fn run_self_test() -> Result<ExitCode> {
     // GPU backend after the literal_set rejection moved everything to
     // AC by default). Build a minimal one-detector CompiledScanner
     // and route a scan through scan_coalesced_gpu_ac_phase1.
-    print!("  vyre_ac_kernel   ... ");
     match keyhog_scanner::gpu::vyre_ac_kernel_self_test() {
-        Ok(report) => println!(
-            "\x1b[32mPASS\x1b[0m  (matches={}, backend={})",
-            report.matches, report.backend_id
-        ),
+        Ok(report) => {
+            let mut probe = BackendSelfTestProbe::pass("vyre_ac_kernel");
+            probe.matches = Some(report.matches);
+            probe.backend_id = Some(report.backend_id);
+            probes.push(probe);
+        }
         Err(error) => {
-            println!("\x1b[31mFAIL\x1b[0m  {error}");
+            probes.push(BackendSelfTestProbe::fail("vyre_ac_kernel", error));
             all_ok = false;
         }
     }
 
+    BackendSelfTestReport {
+        ok: all_ok,
+        status: if all_ok {
+            BackendSelfTestStatus::Pass
+        } else {
+            BackendSelfTestStatus::Fail
+        },
+        exit_code: if all_ok { 0 } else { EXIT_SELF_TEST_FAILED },
+        gpu_available: hw.gpu_available,
+        gpu_is_software: hw.gpu_is_software,
+        gpu_name: hw.gpu_name.clone(),
+        gpu_max_buffer_mb: hw.gpu_vram_mb,
+        recommended_backend: if all_ok {
+            Some("gpu")
+        } else {
+            Some("simd-regex")
+        },
+        probes,
+    }
+}
+
+fn print_self_test_report(report: &BackendSelfTestReport) {
+    println!("## GPU self-test");
+    if report.status == BackendSelfTestStatus::Skip {
+        let message = report
+            .probes
+            .first()
+            .and_then(|probe| probe.message.as_deref())
+            .unwrap_or("GPU self-test skipped");
+        println!("  \x1b[33mSKIP\x1b[0m: {message}");
+        return;
+    }
+
+    for probe in &report.probes {
+        print!("  {:<17} ... ", probe.name);
+        match probe.status {
+            BackendSelfTestStatus::Pass => print_pass_probe(probe),
+            BackendSelfTestStatus::Fail => {
+                let message = probe.message.as_deref().unwrap_or("probe failed");
+                println!("\x1b[31mFAIL\x1b[0m  {message}");
+            }
+            BackendSelfTestStatus::Known => {
+                let message = probe.message.as_deref().unwrap_or("known limitation");
+                println!("\x1b[33mKNOWN\x1b[0m {message}.");
+            }
+            BackendSelfTestStatus::Skip => {
+                let message = probe.message.as_deref().unwrap_or("probe skipped");
+                println!("\x1b[33mSKIP\x1b[0m  {message}");
+            }
+        }
+    }
+
     println!();
-    if all_ok {
+    if report.ok {
         println!("\x1b[32m✓ GPU self-test passed\x1b[0m, scans on this box can route to GPU.");
-        Ok(ExitCode::SUCCESS)
     } else {
         eprintln!(
             "\x1b[31m✗ GPU self-test failed\x1b[0m, keyhog will fall back to SIMD/CPU on this box."
         );
-        Ok(ExitCode::from(EXIT_SELF_TEST_FAILED))
     }
+}
+
+fn print_pass_probe(probe: &BackendSelfTestProbe) {
+    match probe.name {
+        "moe_kernel" => println!(
+            "\x1b[32mPASS\x1b[0m  ({}, scores={}, max_buffer={} MB)",
+            probe.adapter_name.as_deref().unwrap_or("unknown adapter"),
+            probe.scores.unwrap_or(0),
+            probe.max_buffer_mb.unwrap_or(0)
+        ),
+        "vyre_literal_set" => println!(
+            "\x1b[32mPASS\x1b[0m  (direct={}, coalesced={})",
+            probe.direct_matches.unwrap_or(0),
+            probe.coalesced_matches.unwrap_or(0)
+        ),
+        "vyre_ac_kernel" => println!(
+            "\x1b[32mPASS\x1b[0m  (matches={}, backend={})",
+            probe.matches.unwrap_or(0),
+            probe.backend_id.unwrap_or("unknown")
+        ),
+        _ => println!("\x1b[32mPASS\x1b[0m"),
+    }
+}
+
+#[doc(hidden)]
+pub fn render_self_test_json_for_contract(report: &BackendSelfTestReport) -> Result<String> {
+    serde_json::to_string_pretty(report).map_err(Into::into)
 }
 
 fn fmt_bytes(n: u64) -> String {

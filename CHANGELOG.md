@@ -59,6 +59,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Scanner
 
+- Add `keyhog backend --self-test --json`, preserving exit `4` for runtime GPU degradation while exposing stable CI fields for overall status, recommended fallback backend, and each GPU/Vyre probe.
 - Thread GPU runtime-degrade reasons into the hard-fail warning path, so `KEYHOG_REQUIRE_GPU=1` and `backend --self-test` name degenerate Vyre AC match triples instead of reporting only a generic GPU dispatch failure.
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
 - Remove stale handoff/session wording from the Vyre roadmap and scanner lazy-build comments so the docs describe concrete remaining wires instead of time-boxed handoffs.

@@ -35,3 +35,24 @@ fn gpu_ac_dispatch_failures_preserve_operator_visible_reasons() {
         "Every AC GPU runtime-dispatch failure must carry a concrete reason into KEYHOG_REQUIRE_GPU/user-visible degrade output"
     );
 }
+
+#[test]
+fn gpu_ac_self_test_can_report_recorded_degrade_reason() {
+    let engine =
+        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/mod.rs"))
+            .expect("engine/mod.rs readable");
+    let wrapper = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/gpu_scan_wrappers.rs"),
+    )
+    .expect("gpu_scan_wrappers.rs readable");
+    let gpu = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/gpu.rs"))
+        .expect("gpu.rs readable");
+
+    assert!(
+        engine.contains("gpu_last_degrade_reason")
+            && engine.contains("last_gpu_degrade_reason")
+            && wrapper.contains("gpu_last_degrade_reason")
+            && gpu.contains("last_gpu_degrade_reason()"),
+        "backend --self-test JSON must receive the concrete GPU degrade reason without scraping stderr"
+    );
+}

@@ -57,6 +57,11 @@ impl CompiledScanner {
         reason: Option<&str>,
     ) -> GpuPhase1Output {
         super::gpu_forced::deny_silent_gpu_degrade_with_reason(self, backend, reason);
+        if let Some(reason) = reason {
+            if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
+                *slot = Some(reason.to_string());
+            }
+        }
         GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks))
     }
 }
