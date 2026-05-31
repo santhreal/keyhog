@@ -13,19 +13,12 @@ use oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv137_usps_webtools_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "usps-webtools-api-key",
-        "USPS_USER=prEZZ_",
-        "prEZZ_",
-    );
+    assert_detector_fires("usps-webtools-api-key", "USPS_USER=prEZZ_", "prEZZ_");
 }
 
 #[test]
 fn adv137_usps_webtools_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "usps-webtools-api-key",
-        "dummy_prefix_0 =xxxxxx",
-    );
+    assert_detector_silent("usps-webtools-api-key", "dummy_prefix_0 =xxxxxx");
 }
 
 #[test]
@@ -355,10 +348,7 @@ fn adv137_vercel_api_token_v2_normal_must_fire() {
 
 #[test]
 fn adv137_vercel_api_token_v2_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "vercel-api-token-v2",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("vercel-api-token-v2", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -577,10 +567,7 @@ fn adv137_vercel_edge_function_credentials_normal_must_fire() {
 
 #[test]
 fn adv137_vercel_edge_function_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "vercel-edge-function-credentials",
-        "dummyxxxxxxxxx",
-    );
+    assert_detector_silent("vercel-edge-function-credentials", "dummyxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +897,7 @@ fn adv137_vercel_token_normal_must_fire() {
 
 #[test]
 fn adv137_vercel_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "vercel-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("vercel-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1100,3 @@ fn adv137_vimeo_api_credentials_evade_lrm_must_fire() {
         "15eed71e4d259e740161a1091da6649b",
     );
 }
-
-

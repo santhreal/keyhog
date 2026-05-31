@@ -20,6 +20,7 @@ fn demo_detector() -> DetectorSpec {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     }
 }

@@ -799,10 +799,7 @@ fn adv68_axiom_api_token_normal_must_fire() {
 
 #[test]
 fn adv68_axiom_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "axiom-api-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("axiom-api-token", "dummyxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv68_azure_container_registry_token_evade_lrm_must_fire() {
         "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ",
     );
 }
-
-

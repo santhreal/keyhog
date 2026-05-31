@@ -16,6 +16,7 @@ fn scan_chunks_preserves_chunk_count() {
         companions: vec![],
         verify: None,
         keywords: vec!["x".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

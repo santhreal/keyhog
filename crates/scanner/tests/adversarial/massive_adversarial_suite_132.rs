@@ -466,10 +466,7 @@ fn adv132_sumsub_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv132_sumsub_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "sumsub-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxx",
-    );
+    assert_detector_silent("sumsub-api-credentials", "dummy_prefix_0 =xxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv132_supabase_service_key_evade_lrm_must_fire() {
         "eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX",
     );
 }
-
-

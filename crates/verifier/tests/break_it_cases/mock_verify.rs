@@ -46,6 +46,7 @@ async fn test_verify_large_payload() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url),
             method: Some(HttpMethod::Get),
@@ -127,6 +128,7 @@ async fn test_verify_malformed_response() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url),
             method: Some(HttpMethod::Get),
@@ -198,6 +200,7 @@ async fn test_verify_zero_concurrency() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some("http://127.0.0.1:1".to_string()),
             method: None,
@@ -265,6 +268,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url),
             method: None,
@@ -339,6 +343,7 @@ async fn test_verify_slow_loris_timeout() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url),
             timeout_ms: Some(100),
@@ -472,6 +477,7 @@ async fn verifier_routes_through_configured_proxy() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             // Use a hostname that will NEVER resolve - if the proxy
             // isn't wired through, reqwest would try to DNS-lookup

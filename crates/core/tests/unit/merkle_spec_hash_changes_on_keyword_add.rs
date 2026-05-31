@@ -11,6 +11,7 @@ fn merkle_compute_spec_hash_changes_when_keywords_change() {
         service: "test".into(),
         severity: Severity::Medium,
         keywords: vec!["secret".into()],
+        min_confidence: None,
         patterns: vec![PatternSpec { regex: "[A-Z0-9]{32}".into(), ..Default::default() }],
         companions: vec![],
         verify: None,

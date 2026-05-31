@@ -9,6 +9,7 @@ async fn ssrf_break_link_local_metadata() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url.into()),
             method: Some(HttpMethod::Get),

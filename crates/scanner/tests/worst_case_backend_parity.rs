@@ -10,10 +10,10 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
+use support::paths::detector_dir;
 type FindingKey = (String, String, usize);
 
 fn make_chunk(text: &str, path: &str, base_offset: usize) -> Chunk {

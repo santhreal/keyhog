@@ -16,6 +16,7 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["demo_".into()],
+        min_confidence: None,
     }])?;
 
     let matches = scanner.scan(&Chunk {

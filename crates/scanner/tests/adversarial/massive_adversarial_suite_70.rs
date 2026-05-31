@@ -1116,5 +1116,3 @@ fn adv70_bitbucket_app_password_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5",
     );
 }
-
-

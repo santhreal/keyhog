@@ -33,6 +33,7 @@ async fn test_verify_json_path_exhaustion() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url),
             success: Some(SuccessSpec {
@@ -129,6 +130,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             auth: Some(keyhog_core::AuthSpec::AwsV4 {
                 service: "sts".to_string(),
@@ -202,6 +204,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             auth: Some(keyhog_core::AuthSpec::AwsV4 {
                 service: "sts".to_string(),
@@ -278,6 +281,7 @@ async fn test_verify_bad_header_templates() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some("http://127.0.0.1:1".to_string()),
             method: Some(HttpMethod::Get),

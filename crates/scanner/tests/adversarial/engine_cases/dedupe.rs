@@ -16,6 +16,7 @@ fn multiple_secrets_on_same_line_all_detected() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["xoxb-".into()],
+        min_confidence: None,
     };
     let detector2 = DetectorSpec {
         id: "aws-key".into(),
@@ -31,6 +32,7 @@ fn multiple_secrets_on_same_line_all_detected() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["AKIA".into()],
+        min_confidence: None,
     };
     let scanner = CompiledScanner::compile(vec![detector1, detector2]).unwrap();
     let aws_key = format!("AKIA{}", "R7VXNPLMQ3HSKWJT");

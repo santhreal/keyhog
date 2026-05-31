@@ -355,10 +355,7 @@ fn adv121_raygun_api_key_normal_must_fire() {
 
 #[test]
 fn adv121_raygun_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "raygun-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("raygun-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv121_remitly_api_credentials_evade_lrm_must_fire() {
         "L_7WqtXx_S2EwRDJn_OAdB13uj-8I08qHBVCJL2W7pHG9-TxaHPMP9_9jW9x",
     );
 }
-
-

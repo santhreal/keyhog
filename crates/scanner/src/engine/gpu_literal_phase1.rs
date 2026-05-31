@@ -45,6 +45,14 @@ impl CompiledScanner {
 
         let (entries, mut buffer) = super::gpu_coalesce::coalesce_chunks(chunks);
 
+        // ASCII-lowercase the coalesced haystack so the literal-set automaton
+        // matches case-INSENSITIVELY, matching the SIMD Hyperscan path (CASELESS
+        // for every pattern) and the lowercased literal set from
+        // `build_gpu_literals`. Prefilter-only buffer (phase 2 re-confirms on
+        // original bytes); ASCII fold is position-preserving so offsets are
+        // unchanged. See PERF-07 / gpu_ac_phase1 for the full rationale.
+        buffer.make_ascii_lowercase();
+
         // 4-byte align the coalesced buffer so every shard slice can be
         // passed to vyre's u32-typed haystack input WITHOUT a per-shard
         // `pack_haystack_u32` call. The pack helper is a 2x memcopy

@@ -133,10 +133,7 @@ fn adv119_private_key_normal_must_fire() {
 
 #[test]
 fn adv119_private_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "private-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("private-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv119_puppet_enterprise_token_evade_lrm_must_fire() {
         "df2C-IwsG2vZK2btF61X",
     );
 }
-
-

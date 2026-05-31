@@ -77,6 +77,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
         patterns: vec![],
         companions: vec![],
         keywords: vec![],
+        min_confidence: None,
         verify: Some(VerifySpec {
             url: Some(url),
             method: Some(HttpMethod::Get),

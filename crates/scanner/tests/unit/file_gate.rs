@@ -57,6 +57,7 @@ fn demo_detector(regex: &str, keyword: &str) -> DetectorSpec {
         companions: vec![],
         verify: None,
         keywords: vec![keyword.into()],
+        min_confidence: None,
         ..Default::default()
     }
 }
@@ -469,6 +470,7 @@ fn engine_backend_happy() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![det]).unwrap();
@@ -502,6 +504,7 @@ fn engine_backend_error() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![det]).unwrap();

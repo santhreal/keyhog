@@ -466,10 +466,7 @@ fn adv104_mailgun_api_key_normal_must_fire() {
 
 #[test]
 fn adv104_mailgun_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "mailgun-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("mailgun-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +907,7 @@ fn adv104_maltego_api_key_normal_must_fire() {
 
 #[test]
 fn adv104_maltego_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "maltego-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("maltego-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1015,7 @@ fn adv104_mandrill_api_key_normal_must_fire() {
 
 #[test]
 fn adv104_mandrill_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "mandrill-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("mandrill-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv104_mandrill_api_key_evade_lrm_must_fire() {
         "SzsANQcSgpqa5WgOrklNRy",
     );
 }
-
-

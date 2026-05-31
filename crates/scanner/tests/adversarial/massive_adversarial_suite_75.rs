@@ -244,10 +244,7 @@ fn adv75_checkout_com_api_key_normal_must_fire() {
 
 #[test]
 fn adv75_checkout_com_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "checkout-com-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("checkout-com-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -688,10 +685,7 @@ fn adv75_chromadb_api_key_normal_must_fire() {
 
 #[test]
 fn adv75_chromadb_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "chromadb-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("chromadb-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1015,7 @@ fn adv75_clerk_api_key_normal_must_fire() {
 
 #[test]
 fn adv75_clerk_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "clerk-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("clerk-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv75_clerk_api_key_evade_lrm_must_fire() {
         "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5",
     );
 }
-
-

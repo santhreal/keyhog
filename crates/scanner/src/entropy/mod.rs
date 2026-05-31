@@ -126,9 +126,11 @@ pub fn is_entropy_appropriate_with_content(
     text: &str,
     secret_keywords: &[String],
 ) -> bool {
-    let has_secret_keyword_line =
-        !keywords::find_keyword_assignment_lines(&text.lines().collect::<Vec<_>>(), secret_keywords)
-            .is_empty();
+    let has_secret_keyword_line = !keywords::find_keyword_assignment_lines(
+        &text.lines().collect::<Vec<_>>(),
+        secret_keywords,
+    )
+    .is_empty();
     is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
 }
 

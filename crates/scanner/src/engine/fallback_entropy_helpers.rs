@@ -197,7 +197,9 @@ pub(crate) fn keyword_is_credential_anchor(keyword: &str) -> bool {
         "access-key",
         "accesskey",
     ];
-    CREDENTIAL_ANCHORS.iter().any(|anchor| lower.contains(anchor))
+    CREDENTIAL_ANCHORS
+        .iter()
+        .any(|anchor| lower.contains(anchor))
 }
 
 #[cfg(all(test, feature = "entropy"))]

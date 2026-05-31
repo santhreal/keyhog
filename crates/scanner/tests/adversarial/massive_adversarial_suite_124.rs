@@ -22,10 +22,7 @@ fn adv124_saltstack_credentials_normal_must_fire() {
 
 #[test]
 fn adv124_saltstack_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "saltstack-credentials",
-        "dummy_prefix_0 =xxxxxxxxx",
-    );
+    assert_detector_silent("saltstack-credentials", "dummy_prefix_0 =xxxxxxxxx");
 }
 
 #[test]
@@ -244,10 +241,7 @@ fn adv124_sap_api_key_normal_must_fire() {
 
 #[test]
 fn adv124_sap_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "sap-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxx",
-    );
+    assert_detector_silent("sap-api-key", "dummy_prefix_0 =xxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv124_scrapingbee_api_key_evade_lrm_must_fire() {
         "cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l",
     );
 }
-
-

@@ -1021,10 +1021,7 @@ fn adv77_cohere_api_key_normal_must_fire() {
 
 #[test]
 fn adv77_cohere_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "cohere-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("cohere-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv77_cohere_api_key_evade_lrm_must_fire() {
         "co_K3p7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU",
     );
 }
-
-

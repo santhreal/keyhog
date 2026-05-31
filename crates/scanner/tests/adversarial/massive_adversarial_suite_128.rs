@@ -244,10 +244,7 @@ fn adv128_smartproxy_credentials_normal_must_fire() {
 
 #[test]
 fn adv128_smartproxy_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "smartproxy-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("smartproxy-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -688,10 +685,7 @@ fn adv128_smugmug_api_key_normal_must_fire() {
 
 #[test]
 fn adv128_smugmug_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "smugmug-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("smugmug-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1015,7 @@ fn adv128_snowflake_credentials_normal_must_fire() {
 
 #[test]
 fn adv128_snowflake_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "snowflake-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("snowflake-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv128_snowflake_credentials_evade_lrm_must_fire() {
         "SnowFlakePass123!",
     );
 }
-
-

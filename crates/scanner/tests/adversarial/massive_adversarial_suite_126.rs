@@ -1116,5 +1116,3 @@ fn adv126_shopify_webhook_secret_evade_lrm_must_fire() {
         "28bda45ee8d94d15c3aadcf94e59f0d6e63244c0",
     );
 }
-
-

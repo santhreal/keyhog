@@ -78,10 +78,27 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
 
     let ptr = chunk.as_ptr();
     let mut i = 0usize;
+    let mut active_len = len;
 
-    // Process 16 bytes per iteration (2 bytes × 8 lanes)
-    let end16 = len & !15;
-    while i < end16 {
+    // Match the scalar contract exactly: fully-null 8-byte chunks are ignored
+    // as binary padding, while null bytes inside a mixed 8-byte chunk still
+    // participate in the histogram.
+    let end8 = len & !7;
+    while i < end8 {
+        if *ptr.add(i) == 0
+            && *ptr.add(i + 1) == 0
+            && *ptr.add(i + 2) == 0
+            && *ptr.add(i + 3) == 0
+            && *ptr.add(i + 4) == 0
+            && *ptr.add(i + 5) == 0
+            && *ptr.add(i + 6) == 0
+            && *ptr.add(i + 7) == 0
+        {
+            active_len -= 8;
+            i += 8;
+            continue;
+        }
+
         c0[*ptr.add(i) as usize] += 1;
         c1[*ptr.add(i + 1) as usize] += 1;
         c2[*ptr.add(i + 2) as usize] += 1;
@@ -90,19 +107,16 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
         c5[*ptr.add(i + 5) as usize] += 1;
         c6[*ptr.add(i + 6) as usize] += 1;
         c7[*ptr.add(i + 7) as usize] += 1;
-        c0[*ptr.add(i + 8) as usize] += 1;
-        c1[*ptr.add(i + 9) as usize] += 1;
-        c2[*ptr.add(i + 10) as usize] += 1;
-        c3[*ptr.add(i + 11) as usize] += 1;
-        c4[*ptr.add(i + 12) as usize] += 1;
-        c5[*ptr.add(i + 13) as usize] += 1;
-        c6[*ptr.add(i + 14) as usize] += 1;
-        c7[*ptr.add(i + 15) as usize] += 1;
-        i += 16;
+        i += 8;
     }
     // Remainder
     while i < len {
-        c0[*ptr.add(i) as usize] += 1;
+        let byte = *ptr.add(i);
+        if byte == 0 {
+            active_len -= 1;
+        } else {
+            c0[byte as usize] += 1;
+        }
         i += 1;
     }
 
@@ -140,9 +154,24 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
         }
     }
 
+    if active_len == 0 {
+        return 0.0;
+    }
+
+    if active_len <= 255 {
+        let table = crate::entropy_fast::get_log2_table();
+        let mut sum = 0.0;
+        for &count in &counts {
+            if count > 0 {
+                sum += table[count as usize];
+            }
+        }
+        return (active_len as f64).log2() - sum / (active_len as f64);
+    }
+
     // ── Entropy: vectorized polynomial log2 in 8-wide f64 lanes ──
     let mut sum_v = _mm512_setzero_pd();
-    let len_v = _mm512_set1_pd(len as f64);
+    let len_v = _mm512_set1_pd(active_len as f64);
 
     for k in (0..256).step_by(8) {
         let counts_v = _mm256_loadu_si256(counts[k..].as_ptr() as *const __m256i);

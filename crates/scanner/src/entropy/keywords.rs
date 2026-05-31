@@ -297,8 +297,9 @@ fn looks_like_english_prose(value: &str) -> bool {
             .iter()
             .all(|t| t.len() >= 2 && t.bytes().all(|b| b.is_ascii_alphabetic()));
         if all_alpha {
-            let has_lowercase_word =
-                tokens.iter().any(|t| t.len() >= 3 && t.bytes().all(|b| b.is_ascii_lowercase()));
+            let has_lowercase_word = tokens
+                .iter()
+                .any(|t| t.len() >= 3 && t.bytes().all(|b| b.is_ascii_lowercase()));
             if has_lowercase_word {
                 return true;
             }
@@ -359,7 +360,9 @@ mod english_prose_tests {
         assert!(entropy_value_looks_like_prose(
             "thisismyverylongpassphraseinpurelowercase"
         ));
-        assert!(!entropy_value_looks_like_prose("Abcd1234EfGhIjKlMnOpQrStUvWx"));
+        assert!(!entropy_value_looks_like_prose(
+            "Abcd1234EfGhIjKlMnOpQrStUvWx"
+        ));
     }
 
     #[test]
@@ -372,9 +375,7 @@ mod english_prose_tests {
         assert!(looks_like_english_prose(
             "this is the description of something"
         ));
-        assert!(looks_like_english_prose(
-            "Session opened with handle XYZ"
-        ));
+        assert!(looks_like_english_prose("Session opened with handle XYZ"));
     }
 
     #[test]
@@ -384,9 +385,7 @@ mod english_prose_tests {
         // classified as prose - real credentials get pasted into
         // values that may carry surrounding whitespace from naive
         // shell joins, and we must not over-suppress them.
-        assert!(!looks_like_english_prose(
-            "key=Hk9PqRsTuV4kYBiZ0Q1A2B3C"
-        ));
+        assert!(!looks_like_english_prose("key=Hk9PqRsTuV4kYBiZ0Q1A2B3C"));
     }
 
     #[test]
@@ -562,7 +561,12 @@ fn second_half_entropy(value: &str) -> f64 {
 }
 
 pub fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-    passes_plausibility_checks(value, PlausibilityMode::Lenient, placeholder_keywords, false)
+    passes_plausibility_checks(
+        value,
+        PlausibilityMode::Lenient,
+        placeholder_keywords,
+        false,
+    )
 }
 
 pub fn is_secret_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
@@ -615,10 +619,7 @@ mod strict_secret_tests {
         // credential-keyword anchored context. Catches the FN class
         // described in the generic-password investigator findings
         // (Y6NPMwS*rWGUv!JQnSG6a#D14, 1E1B3b4Ho$U4kYBi, etc.).
-        assert!(passes_strict_secret_checks(
-            "1E1B3b4Ho$U4kYBi",
-            true,
-        ));
+        assert!(passes_strict_secret_checks("1E1B3b4Ho$U4kYBi", true,));
         assert!(passes_strict_secret_checks(
             "Y6NPMwS*rWGUv!JQnSG6a#D14",
             true,
@@ -631,10 +632,7 @@ mod strict_secret_tests {
         // and NO symbol stays rejected even in credential context - the
         // anchor + symbol-set combo is what lifts the floor; alphanumeric
         // alone is indistinguishable from CamelCase identifiers.
-        assert!(!passes_strict_secret_checks(
-            "abcdefghij1234567",
-            true,
-        ));
+        assert!(!passes_strict_secret_checks("abcdefghij1234567", true,));
     }
 
     #[test]
@@ -644,10 +642,7 @@ mod strict_secret_tests {
         // not enough signal without the keyword anchor.
         // `H!l$o-w0rld-pas` has symbols and ~3.7 entropy, below the
         // 4.5 blanket floor, with no anchor - must stay rejected.
-        assert!(!passes_strict_secret_checks(
-            "H!l$o-w0rld-pas",
-            false,
-        ));
+        assert!(!passes_strict_secret_checks("H!l$o-w0rld-pas", false,));
     }
 
     #[test]

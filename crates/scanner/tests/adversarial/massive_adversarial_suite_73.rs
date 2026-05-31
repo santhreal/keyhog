@@ -1116,5 +1116,3 @@ fn adv73_canvas_api_token_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S",
     );
 }
-
-

@@ -577,10 +577,7 @@ fn adv100_klaviyo_api_key_normal_must_fire() {
 
 #[test]
 fn adv100_klaviyo_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "klaviyo-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("klaviyo-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +796,7 @@ fn adv100_kubernetes_secret_normal_must_fire() {
 
 #[test]
 fn adv100_kubernetes_secret_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "kubernetes-secret",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("kubernetes-secret", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv100_langsmith_api_key_evade_lrm_must_fire() {
         "lsv2_2N3dA6wXmQZ_VE_a5BVw1MJiCSD_9g3UNuU331_CHUDbpwbCvIcW6Xr2MkH0iMzzAI0icqZYux-IOHF7uuMj6WIktqXwNq",
     );
 }
-
-

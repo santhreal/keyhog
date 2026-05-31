@@ -8,6 +8,7 @@ id = "flickr-api-key"
 name = "Flickr API Key"
 service = "flickr"
 severity = "medium"
+min_confidence = 0.2
 keywords = ["FLICKR", "flickr"]
 
 [[detector.patterns]]

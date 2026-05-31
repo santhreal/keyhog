@@ -901,19 +901,12 @@ fn adv92_google_secret_manager_credentials_evade_lrm_must_fire() {
 
 #[test]
 fn adv92_gotify_token_normal_must_fire() {
-    assert_detector_fires(
-        "gotify-token",
-        "GOTIFY=HNGeqyx6CjQ29z3",
-        "HNGeqyx6CjQ29z3",
-    );
+    assert_detector_fires("gotify-token", "GOTIFY=HNGeqyx6CjQ29z3", "HNGeqyx6CjQ29z3");
 }
 
 #[test]
 fn adv92_gotify_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "gotify-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("gotify-token", "dummy_prefix_0 =xxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1109,3 @@ fn adv92_goto_connect_api_credentials_evade_lrm_must_fire() {
         "uwtOQIbhxpxmFoKM1Ue8",
     );
 }
-
-

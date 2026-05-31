@@ -22,10 +22,7 @@ fn adv99_jfrog_api_key_normal_must_fire() {
 
 #[test]
 fn adv99_jfrog_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "jfrog-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("jfrog-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -133,10 +130,7 @@ fn adv99_jitsu_api_key_normal_must_fire() {
 
 #[test]
 fn adv99_jitsu_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "jitsu-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("jitsu-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +793,7 @@ fn adv99_kafka_sasl_credentials_normal_must_fire() {
 
 #[test]
 fn adv99_kafka_sasl_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "kafka-sasl-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("kafka-sasl-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv99_kaltura_api_credentials_evade_lrm_must_fire() {
         "f503022fc2f47fcf4f8fefe42c30bba9",
     );
 }
-
-

@@ -15,6 +15,7 @@ async fn main() -> Result<(), keyhog_verifier::VerifyError> {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["demo_".into()],
+        min_confidence: None,
     };
 
     let engine = VerificationEngine::new(&[detector], VerifyConfig::default())?;

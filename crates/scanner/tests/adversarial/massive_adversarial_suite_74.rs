@@ -1116,5 +1116,3 @@ fn adv74_cfengine_credentials_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3Yz+",
     );
 }
-
-

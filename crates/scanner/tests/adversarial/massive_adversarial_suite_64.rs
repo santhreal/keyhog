@@ -1116,5 +1116,3 @@ fn adv64_amazon_advertising_api_credentials_evade_lrm_must_fire() {
         "amzn1.application-oa2-client.Kp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
-
-

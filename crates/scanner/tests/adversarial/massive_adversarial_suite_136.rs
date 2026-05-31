@@ -133,10 +133,7 @@ fn adv136_unleash_api_token_normal_must_fire() {
 
 #[test]
 fn adv136_unleash_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "unleash-api-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("unleash-api-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv136_usda_api_key_evade_lrm_must_fire() {
         "1XcqoEeyy5Y9Vh0tDmTMEw04Uksa5KSO8uRS",
     );
 }
-
-

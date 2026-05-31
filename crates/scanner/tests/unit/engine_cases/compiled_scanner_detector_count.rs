@@ -16,6 +16,7 @@ fn compiled_scanner_detector_count() {
         companions: vec![],
         verify: None,
         keywords: vec!["x".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d.clone(), d]).unwrap();

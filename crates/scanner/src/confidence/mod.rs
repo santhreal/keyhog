@@ -55,7 +55,10 @@ pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
 /// the generic entropy fallback) rather than a hardcoded const. The "high"
 /// tier fires at `entropy_threshold`; the "very high" tier (full
 /// [`ENTROPY_WEIGHT`]) fires at `entropy_threshold + VERY_HIGH_ENTROPY_MARGIN`.
-pub fn compute_confidence_with_threshold(signals: &ConfidenceSignals, entropy_threshold: f64) -> f64 {
+pub fn compute_confidence_with_threshold(
+    signals: &ConfidenceSignals,
+    entropy_threshold: f64,
+) -> f64 {
     let mut score = SCORE_ZERO;
     let mut max_possible = SCORE_ZERO;
 

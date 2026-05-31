@@ -24,6 +24,7 @@ fn compiled_scanner_pattern_count() {
         companions: vec![],
         verify: None,
         keywords: vec!["x".into(), "y".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

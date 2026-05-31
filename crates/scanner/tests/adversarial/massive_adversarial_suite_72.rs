@@ -1116,5 +1116,3 @@ fn adv72_budibase_credentials_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5",
     );
 }
-
-

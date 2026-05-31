@@ -133,10 +133,7 @@ fn adv106_meilisearch_api_key_normal_must_fire() {
 
 #[test]
 fn adv106_meilisearch_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "meilisearch-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("meilisearch-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -244,10 +241,7 @@ fn adv106_memcached_sasl_credentials_normal_must_fire() {
 
 #[test]
 fn adv106_memcached_sasl_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "memcached-sasl-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxx",
-    );
+    assert_detector_silent("memcached-sasl-credentials", "dummy_prefix_0 =xxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +904,7 @@ fn adv106_minio_access_key_normal_must_fire() {
 
 #[test]
 fn adv106_minio_access_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "minio-access-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxx",
-    );
+    assert_detector_silent("minio-access-key", "dummy_prefix_0 =xxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv106_minio_presigned_credentials_evade_lrm_must_fire() {
         "adminuser12345",
     );
 }
-
-

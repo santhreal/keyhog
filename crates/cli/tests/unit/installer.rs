@@ -1,7 +1,7 @@
 use keyhog::installer::{
-    asset_name, is_newer, looks_like_native_executable, parse_semver, reap_stale_binaries,
-    replace_running_binary, scan_engine_self_test, verify_release_signature, Asset,
-    download_verified_asset, http_client,
+    asset_name, download_verified_asset, http_client, is_newer, looks_like_native_executable,
+    parse_semver, reap_stale_binaries, replace_running_binary, scan_engine_self_test,
+    verify_release_signature, Asset,
 };
 
 #[test]
@@ -186,7 +186,6 @@ fn reap_only_touches_this_binarys_stashes() {
     assert!(other.exists(), "unrelated files must be left alone");
     assert!(exe.exists(), "the live binary must never be reaped");
 }
-
 
 // Supply-chain: a missing `.minisig` must FAIL CLOSED. A forged 404 on the
 // signature URL (active MITM / compromised CDN serving a tampered binary)

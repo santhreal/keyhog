@@ -543,7 +543,10 @@ mod tests {
         let v = "NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor";
         assert_eq!(v.len(), 44);
         let distinct: std::collections::BTreeSet<char> = v.chars().collect();
-        assert!(distinct.len() >= 32, "fixture must have >= 32 distinct chars");
+        assert!(
+            distinct.len() >= 32,
+            "fixture must have >= 32 distinct chars"
+        );
         assert!(
             looks_like_uniform_base64_blob(v),
             "44-char pure-alphanumeric mult-of-4 base64 with high alphabet \

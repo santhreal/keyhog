@@ -372,6 +372,9 @@ pub fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
     if id.starts_with("generic-") || id.starts_with("entropy-") || id == "private-key" {
         return false;
     }
+    if spec.min_confidence.is_some() {
+        return false;
+    }
     RESIDUAL_WEAK_ANCHORED.contains(&id)
         || spec
             .patterns

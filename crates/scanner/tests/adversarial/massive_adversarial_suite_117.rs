@@ -466,10 +466,7 @@ fn adv117_plivo_voice_auth_normal_must_fire() {
 
 #[test]
 fn adv117_plivo_voice_auth_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "plivo-voice-auth",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("plivo-voice-auth", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -688,10 +685,7 @@ fn adv117_podio_client_credentials_normal_must_fire() {
 
 #[test]
 fn adv117_podio_client_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "podio-client-credentials",
-        "dummy_prefix_0 =xxxxxxx",
-    );
+    assert_detector_silent("podio-client-credentials", "dummy_prefix_0 =xxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1015,7 @@ fn adv117_portkey_api_key_normal_must_fire() {
 
 #[test]
 fn adv117_portkey_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "portkey-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("portkey-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1107,3 @@ fn adv117_portkey_api_key_evade_lrm_must_fire() {
         "pk-SGCmR9nq82QroR8eUzNlOh8xfR4XOrMZ",
     );
 }
-
-

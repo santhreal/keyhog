@@ -16,6 +16,7 @@ fn pattern_regex_strs_includes_ac_and_fallback() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

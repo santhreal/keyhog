@@ -133,10 +133,7 @@ fn adv125_seaweedfs_credentials_normal_must_fire() {
 
 #[test]
 fn adv125_seaweedfs_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "seaweedfs-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxx",
-    );
+    assert_detector_silent("seaweedfs-credentials", "dummy_prefix_0 =xxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv125_sentry_api_key_legacy_evade_lrm_must_fire() {
         "26551c665f4a3f14f1162c872eddb8bc",
     );
 }
-
-

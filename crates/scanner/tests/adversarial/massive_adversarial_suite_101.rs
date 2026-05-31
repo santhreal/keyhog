@@ -22,10 +22,7 @@ fn adv101_lark_app_id_normal_must_fire() {
 
 #[test]
 fn adv101_lark_app_id_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "lark-app-id",
-        "dummy app_id xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("lark-app-id", "dummy app_id xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -235,19 +232,12 @@ fn adv101_lastfm_api_key_evade_lrm_must_fire() {
 
 #[test]
 fn adv101_lastpass_dev_creds_normal_must_fire() {
-    assert_detector_fires(
-        "lastpass-dev-creds",
-        "lastpass id=9860386",
-        "9860386",
-    );
+    assert_detector_fires("lastpass-dev-creds", "lastpass id=9860386", "9860386");
 }
 
 #[test]
 fn adv101_lastpass_dev_creds_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "lastpass-dev-creds",
-        "dummy_prefix_0 =xxxxxxx",
-    );
+    assert_detector_silent("lastpass-dev-creds", "dummy_prefix_0 =xxxxxxx");
 }
 
 #[test]
@@ -355,10 +345,7 @@ fn adv101_lattice_api_key_normal_must_fire() {
 
 #[test]
 fn adv101_lattice_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "lattice-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("lattice-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -910,10 +897,7 @@ fn adv101_leptonai_api_token_normal_must_fire() {
 
 #[test]
 fn adv101_leptonai_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "leptonai-api-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("leptonai-api-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1100,3 @@ fn adv101_library_of_congress_api_key_evade_lrm_must_fire() {
         "7SV8BoWRCkMYwW_50l67mLp7zeC1",
     );
 }
-
-

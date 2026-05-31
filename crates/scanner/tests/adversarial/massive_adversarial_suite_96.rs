@@ -22,10 +22,7 @@ fn adv96_hotjar_api_key_normal_must_fire() {
 
 #[test]
 fn adv96_hotjar_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "hotjar-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("hotjar-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv96_ibm_watson_translator_api_key_evade_lrm_must_fire() {
         "9L9h4aeLVfr2jH1xPSxwKcksZMTREx",
     );
 }
-
-

@@ -43,9 +43,15 @@ fn placeholder_words_skip_the_floor() {
     );
 
     // Other placeholder words: DUMMY, FAKE, SAMPLE, CHANGEME (case-insensitive).
-    assert_eq!(known_prefix_confidence_floor("ghp_DUMMYabcdef0123456"), None);
+    assert_eq!(
+        known_prefix_confidence_floor("ghp_DUMMYabcdef0123456"),
+        None
+    );
     assert_eq!(known_prefix_confidence_floor("ghp_fakeabcdef0123456"), None);
-    assert_eq!(known_prefix_confidence_floor("ghp_SAMPLEabcdef012345"), None);
+    assert_eq!(
+        known_prefix_confidence_floor("ghp_SAMPLEabcdef012345"),
+        None
+    );
     assert_eq!(known_prefix_confidence_floor("AKIACHANGEME12345678"), None);
 }
 

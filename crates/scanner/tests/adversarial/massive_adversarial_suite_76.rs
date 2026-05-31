@@ -244,10 +244,7 @@ fn adv76_clickatell_api_key_normal_must_fire() {
 
 #[test]
 fn adv76_clickatell_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "clickatell-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("clickatell-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -466,10 +463,7 @@ fn adv76_clickup_api_token_normal_must_fire() {
 
 #[test]
 fn adv76_clickup_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "clickup-api-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("clickup-api-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv76_cloudflare_kv_credentials_evade_lrm_must_fire() {
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
     );
 }
-
-

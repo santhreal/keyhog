@@ -688,10 +688,7 @@ fn adv84_elevenlabs_api_key_normal_must_fire() {
 
 #[test]
 fn adv84_elevenlabs_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "elevenlabs-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("elevenlabs-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +796,7 @@ fn adv84_eloqua_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv84_eloqua_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "eloqua-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("eloqua-api-credentials", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv84_epa_api_key_evade_lrm_must_fire() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
     );
 }
-
-

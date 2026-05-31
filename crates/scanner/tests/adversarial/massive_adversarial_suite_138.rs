@@ -124,19 +124,12 @@ fn adv138_virustotal_api_key_evade_lrm_must_fire() {
 
 #[test]
 fn adv138_vonage_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "vonage-api-key",
-        "NEXMO_API_KEY=f3ed3778",
-        "f3ed3778",
-    );
+    assert_detector_fires("vonage-api-key", "NEXMO_API_KEY=f3ed3778", "f3ed3778");
 }
 
 #[test]
 fn adv138_vonage_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "vonage-api-key",
-        "dummy_prefix_0 =xxxxxxxx",
-    );
+    assert_detector_silent("vonage-api-key", "dummy_prefix_0 =xxxxxxxx");
 }
 
 #[test]
@@ -355,10 +348,7 @@ fn adv138_wasabi_access_key_normal_must_fire() {
 
 #[test]
 fn adv138_wasabi_access_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "wasabi-access-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("wasabi-access-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1021,10 +1011,7 @@ fn adv138_worldpay_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv138_worldpay_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "worldpay-api-credentials",
-        "dummy_prefix_0 =xxxxxxxxxxxx",
-    );
+    assert_detector_silent("worldpay-api-credentials", "dummy_prefix_0 =xxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1103,3 @@ fn adv138_worldpay_api_credentials_evade_lrm_must_fire() {
         "VkPWCSH92J12",
     );
 }
-
-

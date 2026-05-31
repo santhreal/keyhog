@@ -19,6 +19,7 @@ fn test_scan_timeout_respects_deadline() {
         companions: vec![],
         verify: None,
         keywords: vec!["a".into()],
+        min_confidence: None,
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -79,6 +80,7 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
         companions: vec![],
         verify: None,
         keywords: vec![],
+        min_confidence: None,
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();

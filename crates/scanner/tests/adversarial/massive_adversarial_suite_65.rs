@@ -244,10 +244,7 @@ fn adv65_anrok_api_key_normal_must_fire() {
 
 #[test]
 fn adv65_anrok_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "anrok-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("anrok-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +796,7 @@ fn adv65_apify_api_token_normal_must_fire() {
 
 #[test]
 fn adv65_apify_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "apify-api-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("apify-api-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv65_appium_cloud_credentials_evade_lrm_must_fire() {
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
     );
 }
-
-

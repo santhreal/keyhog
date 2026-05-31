@@ -799,10 +799,7 @@ fn adv114_passbase_api_key_normal_must_fire() {
 
 #[test]
 fn adv114_passbase_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "passbase-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("passbase-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv114_payload_cms_api_key_evade_lrm_must_fire() {
         "c191374f-c337-41b5-4a8b-64b48783d13f",
     );
 }
-
-

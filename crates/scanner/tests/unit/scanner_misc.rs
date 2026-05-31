@@ -42,6 +42,7 @@ fn build_compile_state_collects_literals_for_detector() {
         companions: vec![],
         verify: None,
         keywords: vec!["ghp_".into()],
+        min_confidence: None,
         ..Default::default()
     }];
     let state = build_compile_state(&detectors).unwrap();
@@ -74,6 +75,7 @@ fn build_compile_state_errors_on_invalid_regex() {
         companions: vec![],
         verify: None,
         keywords: vec![],
+        min_confidence: None,
         ..Default::default()
     }];
     assert!(build_compile_state(&detectors).is_err());
@@ -205,6 +207,7 @@ fn structured_env_preprocessing_surfaces_key_value_via_scan() {
         companions: vec![],
         verify: None,
         keywords: vec!["ghp_".into()],
+        min_confidence: None,
         ..Default::default()
     }])
     .unwrap();

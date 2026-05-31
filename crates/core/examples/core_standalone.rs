@@ -18,6 +18,7 @@ fn main() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["demo_".into()],
+        min_confidence: None,
     };
 
     let issues = validate_detector(&detector);

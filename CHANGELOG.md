@@ -20,6 +20,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Align the Vyre performance roadmap with the workspace-pinned crates.io `vyre` 0.6.1 release, add a doc/pin coherence gate, and fix stale scanner `RawMatch` test fixtures to use the production credential-hash contract.
 - Route hot-pattern fast-path matches through the preprocessor line map so structured `.env` synthetic lines collapse into the original source line instead of producing past-EOF additional locations.
+- Match AVX-512 entropy semantics to the scalar/SSE/AVX2 paths for small, misaligned, and null-containing inputs.
+- Let detector-authored `min_confidence` floors mark reviewed service-specific hex-token shapes as strongly anchored, restoring wrapper recall for common 32/40-hex API-key detectors without relaxing generic hash suppression.
+- Rewrite the MongoDB connection-string detector host tail to avoid nested quantifiers while preserving dotted-host recall.
+- Restore Discord bot-token recall for current base64 snowflake prefixes, including tokens split across adjacent chunks.
+- Reject overlong AWS access-key hot-path substrings instead of reporting the valid-length prefix inside a longer alphanumeric run.
+- Expand Unicode evasion normalization across C0 controls, combining marks, bidi isolates, unusual separators, and context-sensitive soft hyphen separators.
+- Keep checksum validation from deleting structurally valid legacy GitHub classic PATs and long Stripe secret keys where no public checksum contract exists.
+- Add a left boundary to Arbitrum API-key anchors so embedded words like `barbitrum-api-key` do not satisfy the detector.
 - Split structured parsers by format family, move the remaining inline parser contracts into registered external tests, and extend parser gates across the whole parser module tree.
 - Add the SIMD coalesced no-hit plausibility gate to GPU phase2 so empty-hit chunks skip prepare/post-process work unless they still need fallback scanning.
 - Deduplicate dogfood example-suppression telemetry by detector, path, credential hash, and reason so repeated scan paths do not inflate suppression counts.

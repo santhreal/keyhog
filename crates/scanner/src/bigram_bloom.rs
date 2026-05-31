@@ -156,9 +156,8 @@ impl BigramBloom {
     /// bool instead of re-deriving density per call.
     fn recompute_saturation(&mut self) {
         // `popcount * DENOM >= SLOTS * NUMER`  avoids any float / division.
-        self.saturated =
-            self.popcount() as u64 * SATURATION_DENOMINATOR as u64
-                >= TABLE_SLOTS as u64 * SATURATION_NUMERATOR as u64;
+        self.saturated = self.popcount() as u64 * SATURATION_DENOMINATOR as u64
+            >= TABLE_SLOTS as u64 * SATURATION_NUMERATOR as u64;
     }
 
     /// Returns `true` when the chunk contains AT LEAST ONE bigram present

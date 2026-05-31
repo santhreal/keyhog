@@ -40,6 +40,7 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
         companions: vec![],
         verify: None,
         keywords: vec!["api_key".into()],
+        min_confidence: None,
         ..Default::default()
     }])
     .expect("compile scanner");

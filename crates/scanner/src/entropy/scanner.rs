@@ -250,9 +250,7 @@ fn is_canonical_non_secret_shape(value: &str) -> bool {
             && bytes[13] == b'-'
             && bytes[18] == b'-'
             && bytes[23] == b'-'
-            && value
-                .bytes()
-                .all(|b| b == b'-' || b.is_ascii_hexdigit())
+            && value.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
         {
             return true;
         }
@@ -283,7 +281,9 @@ fn is_canonical_non_secret_shape(value: &str) -> bool {
         let groups: Vec<&str> = value.split('-').collect();
         if groups.len() == 5
             && groups.iter().all(|g| {
-                g.len() == 5 && g.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+                g.len() == 5
+                    && g.bytes()
+                        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
             })
         {
             return true;
@@ -426,7 +426,8 @@ mod canonical_shape_tests {
     #[test]
     fn npm_sha512_integrity_dropped_under_anchor() {
         // npm-lock-integrity `integrity: "sha512-<base64>"`.
-        let integrity = "sha512-Z+Pm5Wd0RfQVq2A9KzWfYBceZ8xQk1aTfLmN0pXyZ2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2w==";
+        let integrity =
+            "sha512-Z+Pm5Wd0RfQVq2A9KzWfYBceZ8xQk1aTfLmN0pXyZ2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2w==";
         assert!(is_canonical_non_secret_shape(integrity));
         let e = shannon_entropy(integrity.as_bytes());
         assert!(!candidate_is_plausible(
@@ -440,7 +441,10 @@ mod canonical_shape_tests {
     #[test]
     fn license_serial_5x5_dropped_under_secret_anchor() {
         // 5x5 dashed uppercase license serial `SECRET="JQQJN-..."`.
-        for serial in ["JQQJN-VBWHG-XYZ12-AB3CD-EF4GH", "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY"] {
+        for serial in [
+            "JQQJN-VBWHG-XYZ12-AB3CD-EF4GH",
+            "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY",
+        ] {
             assert_eq!(serial.len(), 29);
             assert!(is_canonical_non_secret_shape(serial), "{serial}");
             let e = shannon_entropy(serial.as_bytes());
@@ -458,7 +462,12 @@ mod canonical_shape_tests {
         let secret = "Y6NPMwS*rWGUv!JQnSG6a#D14";
         assert!(!is_canonical_non_secret_shape(secret));
         let e = shannon_entropy(secret.as_bytes());
-        assert!(candidate_is_plausible(secret, e, &credential_context(), &[]));
+        assert!(candidate_is_plausible(
+            secret,
+            e,
+            &credential_context(),
+            &[]
+        ));
     }
 
     #[test]

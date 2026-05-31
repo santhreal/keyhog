@@ -19,5 +19,5 @@ keywords = ["mongodb", "mongo"]
 # credential surface matches the existing contract harness; SecretBench
 # scoring uses substring containment, so the host-bounded capture remains
 # contained in the labeled full URL.
-regex = '''mongodb(?:\+srv)?://[^:@\s"']+:[^@\s"'']+@[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+'''
+regex = '''mongodb(?:\+srv)?://[^:@\s"']+:[^@\s"'']+@[a-zA-Z0-9_-]+\.[a-zA-Z0-9._-]+'''
 description = "MongoDB connection string with credentials (dotted-host, non-empty user)"

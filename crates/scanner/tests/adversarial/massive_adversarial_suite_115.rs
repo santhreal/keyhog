@@ -244,10 +244,7 @@ fn adv115_percy_token_normal_must_fire() {
 
 #[test]
 fn adv115_percy_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "percy-token",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("percy-token", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv115_pinterest_access_token_evade_lrm_must_fire() {
         "cvxs2sDMfkbwkGohlpD2BuQhAcqkYTI0nCInqbKrMfyX87TPRTfNvVVq89b9VGLi",
     );
 }
-
-

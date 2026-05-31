@@ -1021,10 +1021,7 @@ fn adv97_intelowl_api_key_normal_must_fire() {
 
 #[test]
 fn adv97_intelowl_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "intelowl-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("intelowl-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv97_intelowl_api_key_evade_lrm_must_fire() {
         "3hjArTco0NPvH-0aKSYr",
     );
 }
-
-

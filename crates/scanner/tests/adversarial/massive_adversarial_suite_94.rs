@@ -133,10 +133,7 @@ fn adv94_hasura_admin_secret_normal_must_fire() {
 
 #[test]
 fn adv94_hasura_admin_secret_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "hasura-admin-secret",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("hasura-admin-secret", "dummy_prefix_0 =xxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -346,19 +343,12 @@ fn adv94_headspin_api_token_evade_lrm_must_fire() {
 
 #[test]
 fn adv94_heap_analytics_key_normal_must_fire() {
-    assert_detector_fires(
-        "heap-analytics-key",
-        "heap.load(73405814",
-        "73405814",
-    );
+    assert_detector_fires("heap-analytics-key", "heap.load(73405814", "73405814");
 }
 
 #[test]
 fn adv94_heap_analytics_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "heap-analytics-key",
-        "dummy.load(xxxxxxxx",
-    );
+    assert_detector_silent("heap-analytics-key", "dummy.load(xxxxxxxx");
 }
 
 #[test]
@@ -457,19 +447,12 @@ fn adv94_heap_analytics_key_evade_lrm_must_fire() {
 
 #[test]
 fn adv94_heap_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "heap-api-key",
-        "HEAP_APP_ID=4876475938",
-        "4876475938",
-    );
+    assert_detector_fires("heap-api-key", "HEAP_APP_ID=4876475938", "4876475938");
 }
 
 #[test]
 fn adv94_heap_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "heap-api-key",
-        "dummy_prefix_0 =xxxxxxxxxx",
-    );
+    assert_detector_silent("heap-api-key", "dummy_prefix_0 =xxxxxxxxxx");
 }
 
 #[test]
@@ -577,10 +560,7 @@ fn adv94_helicone_api_key_normal_must_fire() {
 
 #[test]
 fn adv94_helicone_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "helicone-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("helicone-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -799,10 +779,7 @@ fn adv94_helpscout_api_key_normal_must_fire() {
 
 #[test]
 fn adv94_helpscout_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "helpscout-api-key",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("helpscout-api-key", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1093,3 @@ fn adv94_heroku_api_key_evade_lrm_must_fire() {
         "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d",
     );
 }
-
-

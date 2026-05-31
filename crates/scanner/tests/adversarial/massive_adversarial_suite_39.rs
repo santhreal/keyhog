@@ -358,10 +358,7 @@ fn adv39_heap_analytics_key_normal_must_fire() {
 
 #[test]
 fn adv39_heap_analytics_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "heap-analytics-key",
-        "TEAP_APP_ID = \"837462910\"",
-    );
+    assert_detector_silent("heap-analytics-key", "TEAP_APP_ID = \"837462910\"");
 }
 
 #[test]
@@ -397,19 +394,12 @@ fn adv39_heap_analytics_key_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv39_heap_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "heap-api-key",
-        "HEAP_ID = \"98237461028\"",
-        "98237461028",
-    );
+    assert_detector_fires("heap-api-key", "HEAP_ID = \"98237461028\"", "98237461028");
 }
 
 #[test]
 fn adv39_heap_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "heap-api-key",
-        "TEAP_ID = \"98237461028\"",
-    );
+    assert_detector_silent("heap-api-key", "TEAP_ID = \"98237461028\"");
 }
 
 #[test]
@@ -486,5 +476,3 @@ fn adv39_helicone_api_key_evade_homoglyph_must_fire() {
         "sk-heliconeauth1234567890abcdef",
     );
 }
-
-

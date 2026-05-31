@@ -133,10 +133,7 @@ fn adv127_sigfox_api_credentials_normal_must_fire() {
 
 #[test]
 fn adv127_sigfox_api_credentials_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "sigfox-api-credentials",
-        "dummy_prefix_0 =xxxxxxxx",
-    );
+    assert_detector_silent("sigfox-api-credentials", "dummy_prefix_0 =xxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv127_slack_oauth_secret_evade_lrm_must_fire() {
         "5dc021e5826e61d6f10397f40939ef3b33a169fa",
     );
 }
-
-

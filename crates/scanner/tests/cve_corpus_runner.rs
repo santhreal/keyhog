@@ -56,8 +56,8 @@ fn corpus_path() -> PathBuf {
 
 fn load_corpus() -> CorpusFile {
     let path = corpus_path();
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     toml::from_str::<CorpusFile>(&text)
         .unwrap_or_else(|e| panic!("malformed {}: {e}", path.display()))
 }

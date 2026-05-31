@@ -8,6 +8,7 @@ id = "datadog-api-key"
 name = "Datadog API Key"
 service = "datadog"
 severity = "critical"
+min_confidence = 0.2
 keywords = ["DD-API-Key", "DD_API_KEY", "DATADOG_API_KEY", "datadog_api_key"]
 
 [[detector.patterns]]

@@ -22,10 +22,7 @@ fn adv122_render_api_key_normal_must_fire() {
 
 #[test]
 fn adv122_render_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "render-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("render-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv122_riotgames_api_key_evade_lrm_must_fire() {
         "RGAPI-1x7iIVThNxv00OGy7e01fGwtDdH4q1cEvkyVY5luPUZNG6PPBYspYuVsxZUTn7zML",
     );
 }
-
-

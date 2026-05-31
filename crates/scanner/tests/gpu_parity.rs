@@ -9,10 +9,10 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use support::gpu_gate::{assert_gpu_not_silent_empty, require_gpu_or_panic};
+use support::paths::detector_dir;
 
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {

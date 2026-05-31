@@ -76,7 +76,7 @@ fn contract_ids_on_disk() -> BTreeSet<String> {
 #[test]
 fn every_detector_loads() {
     let dir = detector_dir();
-    
+
     let mut files = std::fs::read_dir(&dir)
         .expect("read_dir")
         .flatten()
@@ -104,7 +104,9 @@ fn every_detector_loads() {
             }
             Ok(file) => {
                 let issues = keyhog_core::validate_detector(&file.detector);
-                let has_errors = issues.iter().any(|issue| matches!(issue, keyhog_core::QualityIssue::Error(_)));
+                let has_errors = issues
+                    .iter()
+                    .any(|issue| matches!(issue, keyhog_core::QualityIssue::Error(_)));
                 if has_errors {
                     println!("Quality Gate Errors in {}:", path.display());
                     for issue in issues {

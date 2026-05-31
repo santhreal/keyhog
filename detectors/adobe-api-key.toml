@@ -8,6 +8,7 @@ id = "adobe-api-key"
 name = "Adobe API Key (Client ID)"
 service = "adobe"
 severity = "high"
+min_confidence = 0.2
 keywords = ["ADOBE", "CLIENT_ID", "adobe_io"]
 
 [[detector.patterns]]

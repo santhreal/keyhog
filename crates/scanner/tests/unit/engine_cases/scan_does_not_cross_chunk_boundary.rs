@@ -16,6 +16,7 @@ fn scan_does_not_cross_chunk_boundary() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();

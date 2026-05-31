@@ -355,10 +355,7 @@ fn adv82_dnsimple_api_token_normal_must_fire() {
 
 #[test]
 fn adv82_dnsimple_api_token_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "dnsimple-api-token",
-        "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("dnsimple-api-token", "dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -466,10 +463,7 @@ fn adv82_dockerhub_pat_normal_must_fire() {
 
 #[test]
 fn adv82_dockerhub_pat_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "dockerhub-pat",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("dockerhub-pat", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1110,3 @@ fn adv82_doppler_service_token_evade_lrm_must_fire() {
         "dp.st.cRiCPXCEbAx0HUAk0YxfFEVLFJxdd60s3Gg1K5Qf",
     );
 }
-
-

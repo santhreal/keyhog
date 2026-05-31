@@ -107,6 +107,26 @@ impl CompiledScanner {
                 let mut confirmed = vec![false; total_patterns];
                 let text = scan_text;
                 let text_len = text.len();
+                let dbg_cf = std::env::var_os("KEYHOG_DEBUG_CHEAPFILTER").is_some();
+                if dbg_cf {
+                    let uniq: std::collections::BTreeSet<u32> =
+                        per_pattern_hits.iter().map(|&(pid, _, _)| pid).collect();
+                    let csb: Vec<usize> = (0..self.ac_map.len())
+                        .filter(|&i| self.ac_map[i].regex.get().as_str().contains("csb"))
+                        .collect();
+                    let csb_hit: Vec<u32> = per_pattern_hits
+                        .iter()
+                        .map(|&(pid, _, _)| pid)
+                        .filter(|&pid| csb.contains(&(pid as usize)))
+                        .collect();
+                    eprintln!(
+                        "[cheapfilter] hits={} uniq_pids={} csb_ac_idxs={:?} csb_pids_in_hits={:?}",
+                        per_pattern_hits.len(),
+                        uniq.len(),
+                        csb,
+                        csb_hit
+                    );
+                }
                 for &(pid, start, end) in &per_pattern_hits {
                     let pat_idx = pid as usize;
                     if pat_idx >= total_patterns {

@@ -1021,10 +1021,7 @@ fn adv91_google_api_key_normal_must_fire() {
 
 #[test]
 fn adv91_google_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "google-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("google-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv91_google_api_key_evade_lrm_must_fire() {
         "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV",
     );
 }
-
-

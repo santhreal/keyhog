@@ -313,6 +313,7 @@ pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
             client_safe: false,
         }],
         keywords: vec!["needle".into()],
+        min_confidence: None,
         ..Default::default()
     };
 

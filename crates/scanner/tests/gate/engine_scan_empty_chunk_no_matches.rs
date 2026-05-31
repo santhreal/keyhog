@@ -19,6 +19,7 @@ fn scan_empty_chunk_produces_no_matches() {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![det]).unwrap();

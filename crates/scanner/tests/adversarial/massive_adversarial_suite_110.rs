@@ -1021,10 +1021,7 @@ fn adv110_novu_api_key_normal_must_fire() {
 
 #[test]
 fn adv110_novu_api_key_wrong_prefix_must_silent() {
-    assert_detector_silent(
-        "novu-api-key",
-        "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    );
+    assert_detector_silent("novu-api-key", "dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 }
 
 #[test]
@@ -1116,5 +1113,3 @@ fn adv110_novu_api_key_evade_lrm_must_fire() {
         "nvu_JYpcTUFDffTRWNapX7YqCQNvLP5lpJRX",
     );
 }
-
-

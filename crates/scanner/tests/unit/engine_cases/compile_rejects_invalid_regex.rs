@@ -16,6 +16,7 @@ fn compile_rejects_invalid_regex() {
         companions: vec![],
         verify: None,
         keywords: vec![],
+        min_confidence: None,
         ..Default::default()
     };
     assert!(CompiledScanner::compile(vec![d]).is_err());

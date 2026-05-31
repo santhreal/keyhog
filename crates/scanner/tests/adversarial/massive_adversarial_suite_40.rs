@@ -486,5 +486,3 @@ fn adv40_hologram_api_key_evade_homoglyph_must_fire() {
         "hologramApiKeyHighEntropySecret40",
     );
 }
-
-
