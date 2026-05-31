@@ -15,6 +15,7 @@ Status: active plan
 - 2026-05-30: Structured named-detector recall audit found the generic UUID suppressor still firing under strong service anchors; the UUID gate is now bypassed only for strongly anchored detectors and remains active for generic/entropy UUID captures.
 - 2026-05-30: Hot-pattern fast-path location mapping now uses the preprocessor's original-line map, preventing structured `.env` synthetic lines from surfacing as past-EOF additional locations.
 - 2026-05-30: Scanner crate gate found stale `DetectorSpec::min_confidence` fixtures, an AVX-512 entropy parity gap on tiny/null-containing inputs, and residual weak-anchor misclassification for reviewed service-specific 32/40-hex API-key detectors; each is now wired into tests and detector data.
+- 2026-05-30: CI Action contract suite now parses every committed GitHub workflow plus the composite Action manifest, and asserts the manifest remains a composite action with executable steps instead of relying only on text grep.
 
 ## Dominance Contract
 

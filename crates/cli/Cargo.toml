@@ -146,6 +146,7 @@ keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }
 keyhog-sources = { workspace = true, default-features = false }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 tempfile = { workspace = true }
 regex = { workspace = true }
 toml = { workspace = true }
