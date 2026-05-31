@@ -67,7 +67,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 | Resource | Value |
 | --- | --- |
-| Prebuilt binary download | ~20 MB once, cached after via `actions/cache` |
+| Prebuilt binary download | ~20 MB binary plus `.sha256`; checksum verified before execution |
 | Cold-start (Hyperscan compile + ML weights load) | ~2 s the first run, ~500 ms warm (Hyperscan DB cached in `~/.cache/keyhog`) |
 | Per-file scan throughput | ~500 MB/s on hosted runners (AVX-512 SIMD + Hyperscan) |
 | Wall-clock for a 5k-file repo | typically under 10 s end-to-end |
@@ -84,11 +84,11 @@ auto-installed Hyperscan shared library on Linux.
 | --- | --- | --- | --- |
 | Linux | x86_64 | yes (full features) | yes |
 | macOS | aarch64 | yes (no Hyperscan) | yes (`portable` feature) |
-| macOS | x86_64 | no | yes (`portable` feature) |
+| macOS | x86_64 | yes (no Hyperscan) | yes (`portable` feature) |
 | Windows | * | no | manual, see DROP_IN_USAGE.md |
 
 The action tries the prebuilt binary first and only falls back to a
-source build when the release asset is missing. macOS builds (both
+source build when the release asset or checksum is missing. macOS builds (both
 prebuilt and source fallback) ship without Hyperscan because there is
 no `libhyperscan-dev` package in homebrew; everything else (entropy,
 multiline reassembly, ML scoring, decode-through, all source backends)
