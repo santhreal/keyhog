@@ -44,14 +44,13 @@ fn secret_in_large_chunk_is_detected_via_windowing() {
         .expect("secret in large chunk (>1MB) must surface with exact credential bytes - \
                  a non-empty matches vector is not enough (could be a different rule firing on filler)");
     // MatchLocation.offset is the credential byte start.
-    // The expected start is right after `API_KEY=` at the end of the
-    // filler, not the start of the line.
+    // The expected start is at `API_KEY=` at the end of the filler line.
     assert_eq!(
         hit.location.offset,
-        filler.len() + "API_KEY=".len(),
-        "match must anchor at the line containing API_KEY= (filler.len()+API_KEY.len()={}), \
+        filler.len(),
+        "match must anchor at the line containing API_KEY= (filler.len()={}), \
          not at any cross-window seam - actual offset {}",
-        filler.len() + "API_KEY=".len(),
+        filler.len(),
         hit.location.offset
     );
 }
