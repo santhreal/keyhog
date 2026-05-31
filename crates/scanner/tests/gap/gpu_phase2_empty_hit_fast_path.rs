@@ -26,7 +26,8 @@ fn gpu_phase2_empty_hits_skip_uninteresting_chunks_before_prepare() {
     assert!(
         src.contains("has_generic_assignment_keyword(data)")
             && src.contains("has_secret_keyword_fast(data)")
-            && src.contains("has_high_entropy_run_fast(data)"),
+            && src.contains("has_high_entropy_run_fast(data)")
+            && src.contains("crate::entropy::is_entropy_appropriate"),
         "GPU no-hit fallback gate must match SIMD's keyword/entropy admission policy"
     );
 }

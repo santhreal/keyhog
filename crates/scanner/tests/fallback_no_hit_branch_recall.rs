@@ -19,7 +19,9 @@ mod support;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
+
+const BARE_ENTROPY_SECRET: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
 fn make_chunk(text: &str, path: &str) -> Chunk {
     Chunk {
         data: text.into(),
@@ -30,6 +32,13 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
             ..Default::default()
         },
     }
+}
+
+fn compile_scanner_with_config(config: ScannerConfig) -> CompiledScanner {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    CompiledScanner::compile(detectors)
+        .expect("compile")
+        .with_config(config)
 }
 
 #[test]
@@ -121,5 +130,56 @@ fn kubernetes_bootstrap_token_canonical_kubeadm_join_fires() {
             .iter()
             .map(|m| (m.detector_id.as_ref().to_string(), m.credential.to_string()))
             .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn bare_entropy_secret_file_still_enters_coalesced_no_hit_branch() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let chunk = make_chunk(
+        &format!("VALUE={BARE_ENTROPY_SECRET}\n"),
+        "config/secrets.env",
+    );
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref() == "entropy-generic"
+            && m.credential.as_ref().contains(BARE_ENTROPY_SECRET)
+    });
+    assert!(
+        entropy_fired,
+        "bare high-entropy value in a secret/config file must still be admitted \
+         through the no-hit coalesced branch; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn bare_entropy_source_file_obeys_default_entropy_source_gate() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let chunk = make_chunk(
+        &format!("const VALUE = \"{BARE_ENTROPY_SECRET}\";\n"),
+        "src/lib.rs",
+    );
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let leaked = results[0]
+        .iter()
+        .any(|m| m.credential.as_ref().contains(BARE_ENTROPY_SECRET));
+    assert!(
+        !leaked,
+        "source files must not emit bare entropy findings unless entropy_source_files is enabled; matches={:?}",
+        results[0]
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
     );
 }

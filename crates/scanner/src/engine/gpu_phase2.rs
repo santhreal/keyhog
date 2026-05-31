@@ -56,6 +56,12 @@ impl CompiledScanner {
         }
 
         let data = chunk.data.as_bytes();
+        let entropy_admits = self.config.entropy_enabled
+            && crate::entropy::is_entropy_appropriate(
+                chunk.metadata.path.as_deref(),
+                self.config.entropy_in_source_files,
+            )
+            && has_high_entropy_run_fast(data);
 
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(&chunk.data)
@@ -67,6 +73,6 @@ impl CompiledScanner {
         chunk.data.len() <= 32 * 1024
             && (has_generic_assignment_keyword(data)
                 || has_secret_keyword_fast(data)
-                || has_high_entropy_run_fast(data))
+                || entropy_admits)
     }
 }
