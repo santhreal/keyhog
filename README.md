@@ -153,6 +153,7 @@ Once installed, keyhog maintains itself - the install script is only
 needed for the first install:
 ```bash
 keyhog doctor                # health check: host probe + end-to-end scan self-test
+keyhog backend --self-test --json # CI-readable GPU path health proof
 keyhog update                # self-update to the latest release (verified download + atomic swap)
 keyhog update --check        # is a newer release available? (exits 10 if yes, 0 if current)
 keyhog update --variant cuda # update to the CUDA build instead of the portable one
@@ -169,6 +170,11 @@ signature against keyhog's embedded public key, and atomically swap the
 running binary in place; a tampered or unsigned-mismatched binary is
 refused. On a healthy host `keyhog update` is the one-command upgrade
 path.
+
+`keyhog backend --self-test --json` is the machine-readable GPU health
+gate for self-hosted runners. It exits `4` when the production GPU scan
+path degrades at runtime and emits stable `ok`, `status`, `exit_code`,
+`recommended_backend`, and per-probe fields for CI routing.
 
 ## Quickstart
 

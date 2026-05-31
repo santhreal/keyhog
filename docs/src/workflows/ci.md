@@ -41,6 +41,12 @@ and scan duration.
 report/SARIF/artifact are written. A `--verify` scan that confirms a live
 credential still fails the action with KeyHog exit code `10`.
 
+Self-hosted GPU runners can add `keyhog backend --self-test --json`
+before the scan. The JSON includes `ok`, `status`, `exit_code`,
+`recommended_backend`, and one record per GPU probe; exit `4` means the
+binary is present but the GPU scan path is not healthy and CI should route
+to SIMD/CPU or fail the GPU lane.
+
 To adopt on a repo that already has known findings, generate and commit a
 baseline once, then wire it into the action:
 

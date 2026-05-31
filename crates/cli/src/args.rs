@@ -236,11 +236,16 @@ pub struct BackendArgs {
     pub patterns: usize,
 
     /// Run the GPU self-tests (MoE compute kernel + vyre literal-set
-    /// dispatch). Prints PASS/FAIL with adapter info and exits with
-    /// code 4 on failure so CI can gate a release on real GPU
-    /// functionality. No-op on systems without a non-software adapter.
+    /// diagnostic + production AC-kernel dispatch). Prints PASS/FAIL
+    /// with adapter info and exits with code 4 on failure so CI can
+    /// gate a release on real GPU functionality. No-op on systems
+    /// without a non-software adapter.
     #[arg(long)]
     pub self_test: bool,
+
+    /// Emit `backend --self-test` as stable JSON for CI health gates.
+    #[arg(long, requires = "self_test")]
+    pub json: bool,
 }
 
 /// Arguments for `keyhog doctor`. The health check is fully automatic; no

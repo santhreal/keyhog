@@ -74,7 +74,8 @@ Returned by the maintenance subcommands, not by `scan`: `keyhog doctor`
 when the install fails its end-to-end self-test, `keyhog repair` when it
 could not restore a working binary, and `keyhog backend` when its
 self-test fails. A health monitor can treat `4` as "binary present but
-not trustworthy."
+not trustworthy." Use `keyhog backend --self-test --json` on self-hosted
+GPU runners when CI needs stable fields instead of stderr scraping.
 
 ## `10` (live credentials, or update available)
 

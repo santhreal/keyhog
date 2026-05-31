@@ -204,6 +204,7 @@ impl CompiledScanner {
             gpu_const_packs: OnceLock::new(),
             gpu_ac_const_packs: OnceLock::new(),
             ac_gpu_program: OnceLock::new(),
+            gpu_last_degrade_reason: std::sync::Mutex::new(None),
 
             rule_pipeline: OnceLock::new(),
             fused_program: OnceLock::new(),

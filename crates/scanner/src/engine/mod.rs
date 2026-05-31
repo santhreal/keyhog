@@ -209,6 +209,7 @@ pub struct CompiledScanner {
     pub(crate) gpu_const_packs: OnceLock<GpuConstPacks>,
     pub(crate) gpu_ac_const_packs: OnceLock<AcConstPacks>,
     pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
+    pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
     /// Fused AC + rule pipeline program (single GPU dispatch instead of two).
     /// Lazily built on first access via `fused_program()`.
@@ -312,6 +313,16 @@ impl CompiledScanner {
     #[must_use]
     pub fn gpu_backend_label(&self) -> Option<&'static str> {
         self.gpu_backend.as_ref().map(|b| b.id())
+    }
+
+    /// Most recent concrete GPU runtime-degrade reason for this compiled
+    /// scanner, if one has occurred. Used by health probes to emit
+    /// machine-readable failure causes without scraping stderr.
+    pub fn last_gpu_degrade_reason(&self) -> Option<String> {
+        self.gpu_last_degrade_reason
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
     /// Return the steady-state backend label used for startup reporting.

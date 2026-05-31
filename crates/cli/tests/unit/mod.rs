@@ -13,6 +13,7 @@ pub mod orchestrator_config;
 pub mod path_validation;
 pub mod sources;
 pub mod style;
+pub mod subcommands_backend;
 pub mod subcommands_detectors;
 pub mod subcommands_explain;
 pub mod subcommands_hook;

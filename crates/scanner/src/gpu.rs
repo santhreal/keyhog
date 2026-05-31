@@ -344,11 +344,14 @@ literal. Indicates either a phase-1 lowering regression or a workgroup-size mism
                 backend_id,
             })
         }
-        GpuPhase1Output::Done(_) => Err(
-            "AC phase 1 degraded to SIMD/CPU at runtime despite an acquired GPU stack. \
-Check the preceding keyhog warning for the exact dispatch or match-corruption cause."
-                .to_string(),
-        ),
+        GpuPhase1Output::Done(_) => {
+            let detail = scanner
+                .last_gpu_degrade_reason()
+                .unwrap_or_else(|| "no concrete degrade reason was recorded".to_string());
+            Err(format!(
+                "AC phase 1 degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
+            ))
+        }
     }
 }
 

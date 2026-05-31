@@ -156,6 +156,10 @@ real tree. Items carry the data that proves them.
   `KEYHOG_REQUIRE_GPU=1`, the same parity test passes by degrading to
   SIMD/CPU. The blocker is Vyre dispatch soundness, not KeyHog's phase-2
   finding parity.
+  UPDATE 2026-05-31: `keyhog backend --self-test --json` now exposes this
+  red gate as stable CI data (`status=fail`, `exit_code=4`,
+  `vyre_ac_kernel=fail`) while preserving the real GPU dispatch attempt on
+  RTX 5090 hosts.
 
 ## Parallelism
 
@@ -299,7 +303,9 @@ real tree. Items carry the data that proves them.
   regression gate added; forced `gpu_parity` remains a separate red gate
   because the runtime GPU dispatch currently hard-fails under
   `KEYHOG_REQUIRE_GPU=1`; current `keyhog backend --self-test` exits 4 when
-  the AC path degrades on degenerate Vyre match triples.
+  the AC path degrades on degenerate Vyre match triples. The JSON form
+  `keyhog backend --self-test --json` is the CI-readable proof for this
+  state.
   UPDATE 2026-05-30 (head-to-head, current binary, RTX 5090 host): the
   phase2 no-hit gate helped (300 s → 204 s) but GPU-default is STILL the
   worst path on the kernel on every axis:

@@ -1961,3 +1961,20 @@ Vector coverage:
 Verified gates:
 
 - `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
+
+## Executed Patch Set: Backend Self-Test JSON Gate
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: `keyhog backend --self-test --json` now emits stable `ok`, `status`, `exit_code`, `recommended_backend`, and per-probe records so production CI can consume GPU health without scraping ANSI text.
+- SPEED / UTILIZATION: the RTX 5090 path is still exercised as a real GPU path, not a no-GPU skip; MoE passes while the production Vyre AC kernel remains a red exit-4 gate on degenerate match triples.
+- COHERENCE: README, mdBook CI guidance, exit-code docs, changelog, and tests now describe the same JSON self-test contract.
+- TESTING: added renderer and real-binary no-GPU skip contracts, then reran the actual GPU self-test JSON command on the live RTX 5090 host.
+
+Verified gates:
+
+- `cargo test -p keyhog --test all_tests backend_self_test_json -- --nocapture`
+- `cargo test -p keyhog --test all_tests r5t_backend_help_documents_json_flag -- --nocapture`
+- `timeout 120s cargo run -p keyhog -- backend --self-test --json` confirmed live RTX 5090 `moe_kernel=pass`, `vyre_literal_set=known`, and `vyre_ac_kernel=fail` with exit `4`.
