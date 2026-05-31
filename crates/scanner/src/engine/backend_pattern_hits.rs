@@ -106,46 +106,32 @@ impl CompiledScanner {
                 let mut tight_bitmap = vec![0u64; total_patterns.div_ceil(64)];
                 let mut confirmed = vec![false; total_patterns];
                 let text = scan_text;
-                let text_len = text.len();
-                let dbg_cf = std::env::var_os("KEYHOG_DEBUG_CHEAPFILTER").is_some();
-                if dbg_cf {
-                    let uniq: std::collections::BTreeSet<u32> =
-                        per_pattern_hits.iter().map(|&(pid, _, _)| pid).collect();
-                    let csb: Vec<usize> = (0..self.ac_map.len())
-                        .filter(|&i| self.ac_map[i].regex.get().as_str().contains("csb"))
-                        .collect();
-                    let csb_hit: Vec<u32> = per_pattern_hits
-                        .iter()
-                        .map(|&(pid, _, _)| pid)
-                        .filter(|&pid| csb.contains(&(pid as usize)))
-                        .collect();
-                    eprintln!(
-                        "[cheapfilter] hits={} uniq_pids={} csb_ac_idxs={:?} csb_pids_in_hits={:?}",
-                        per_pattern_hits.len(),
-                        uniq.len(),
-                        csb,
-                        csb_hit
-                    );
-                }
-                for &(pid, start, end) in &per_pattern_hits {
+                // GPU AC match POSITIONS are unreliable: the
+                // classic_ac_bounded_ranges kernel reports degenerate
+                // `(start,end)` (observed `(0,0)`), and
+                // `fold_overlapping_same_pid_inplace` then collapses a pid's
+                // many literal hits into one such span. A window derived from
+                // those positions made the cheap-filter confirm only matches
+                // in the first ~1 KiB of the chunk, silently dropping every
+                // match deeper in a large file - the gpu_parity violation:
+                // soc21_enum.h has 4 `codesandbox-api-token` matches at line
+                // 20267+, all missed because the folded hit's window was
+                // `[0,1024]`. So we confirm each hit pid against the WHOLE
+                // chunk, position-independent and identical to SIMD's "literal
+                // triggered -> the full regex decides over the whole chunk".
+                // `per_pattern_hits` is deduped to ~one entry per distinct pid
+                // by the fold above, so the is_match count is bounded by the
+                // number of distinct detector literals present in the chunk,
+                // not the raw hit count - and `confirmed[]` makes each pid's
+                // regex run at most once. extract_confirmed_patterns still does
+                // the precise extraction; this only decides which roots enter
+                // the bitmap (the spurious-prefix prune the cheap-filter exists
+                // for).
+                for &(pid, _start, _end) in &per_pattern_hits {
                     let pat_idx = pid as usize;
                     if pat_idx >= total_patterns {
                         continue;
                     }
-                    let scan_start = start.saturating_sub(PRE_MARGIN) as usize;
-                    let window_end = (end.saturating_add(POST_MARGIN) as usize).min(text_len);
-                    if scan_start >= window_end {
-                        continue;
-                    }
-                    let mut snap_start = scan_start;
-                    while snap_start > 0 && !text.is_char_boundary(snap_start) {
-                        snap_start -= 1;
-                    }
-                    let mut snap_end = window_end;
-                    while snap_end < text_len && !text.is_char_boundary(snap_end) {
-                        snap_end += 1;
-                    }
-                    let window = &text[snap_start..snap_end];
 
                     // The GPU AC DFA folds patterns that share a literal
                     // prefix into one trie node - only one pid is emitted

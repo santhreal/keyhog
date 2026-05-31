@@ -210,9 +210,8 @@ impl ScanOrchestrator {
                     // 2.1x faster + 3x less RSS than routing the coalesced total
                     // to the GPU. `large_chunk_bytes` sums only chunks at/above
                     // the tier's per-file GPU floor. See `select_backend_for_batch`.
-                    let tier = keyhog_scanner::hw_probe::classify_gpu_tier(
-                        hw_caps.gpu_name.as_deref(),
-                    );
+                    let tier =
+                        keyhog_scanner::hw_probe::classify_gpu_tier(hw_caps.gpu_name.as_deref());
                     let gpu_floor = keyhog_scanner::hw_probe::gpu_min_bytes_for_tier(tier);
                     let large_chunk_bytes: u64 = batch
                         .iter()

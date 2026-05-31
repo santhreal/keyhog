@@ -40,7 +40,11 @@ fn fixture_dir() -> PathBuf {
         "AWS_KEY = \"AKIA".to_string() + "IOSFODNN7DOGFOOD\"\n",
     )
     .unwrap();
-    fs::write(d.join("clean/notes.txt"), "plain prose, nothing sensitive\n").unwrap();
+    fs::write(
+        d.join("clean/notes.txt"),
+        "plain prose, nothing sensitive\n",
+    )
+    .unwrap();
     d
 }
 
@@ -74,7 +78,10 @@ fn every_detector_toml_is_loaded_by_the_binary() {
         .flatten()
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("toml"))
         .count();
-    assert!(toml_count > 800, "sanity: expected the full detector corpus, saw {toml_count}");
+    assert!(
+        toml_count > 800,
+        "sanity: expected the full detector corpus, saw {toml_count}"
+    );
 
     let (ec, stdout) = run(&["detectors"]);
     assert_eq!(ec, 0, "`keyhog detectors` must succeed");
@@ -84,7 +91,10 @@ fn every_detector_toml_is_loaded_by_the_binary() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .windows(2)
-        .find(|w| w[1].trim_matches(|c: char| !c.is_alphanumeric()).starts_with("detector"))
+        .find(|w| {
+            w[1].trim_matches(|c: char| !c.is_alphanumeric())
+                .starts_with("detector")
+        })
         .and_then(|w| w[0].replace(',', "").parse::<usize>().ok())
         .expect("`keyhog detectors` prints a '<N> detectors' count");
 
@@ -106,12 +116,21 @@ fn output_formats_are_well_formed() {
             ec == 0 || ec == 1,
             "--format {fmt} must exit 0/1 (not a runtime error), got {ec}"
         );
-        assert!(!out.trim().is_empty(), "--format {fmt} produced empty stdout");
+        assert!(
+            !out.trim().is_empty(),
+            "--format {fmt} produced empty stdout"
+        );
         match fmt {
-            "sarif" => assert!(out.contains("\"version\"") && out.contains("\"runs\""), "sarif missing version/runs"),
+            "sarif" => assert!(
+                out.contains("\"version\"") && out.contains("\"runs\""),
+                "sarif missing version/runs"
+            ),
             "html" => assert!(out.contains("<!DOCTYPE html>"), "html missing doctype"),
             "json" | "jsonl" => assert!(out.contains('{'), "json/jsonl produced no object"),
-            "junit" => assert!(out.contains("<testsuite") || out.contains("<testsuites"), "junit missing testsuite"),
+            "junit" => assert!(
+                out.contains("<testsuite") || out.contains("<testsuites"),
+                "junit missing testsuite"
+            ),
             "csv" => assert!(out.contains(','), "csv missing delimiter"),
             _ => {}
         }

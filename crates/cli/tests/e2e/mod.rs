@@ -1,3 +1,4 @@
+pub mod action_ci_contract;
 pub mod backend_prints_selected_backend;
 pub mod calibrate_show_header;
 pub mod cli_surface;

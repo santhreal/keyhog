@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### CI / GitHub Action
 
+- Move the composite Action scan/count/summary path into a tested local script, validate `format`/`severity`/`verify` before scanner invocation, expose the raw `exit-code` output, sanitize job-summary cells, and count text reports by the stable `Secret:` field instead of a non-portable box-drawing grep.
 - Make the composite GitHub Action fail closed when report parsing fails after a findings exit code, and write a concise GitHub Step Summary for CI triage.
 - Wire `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` into the real scan path so CI can print the resolved scanner/post-process policy and verify config-file values match explicit flags before scanning.
 - Restore the aggregate CLI `all_tests` target after the credential-hash storage contract changed from hex strings to inline `[u8; 32]` bytes.
