@@ -20,8 +20,9 @@ group = 1
 # capture matched the "ACR" *inside* "MACRO": LLVM's Dwarf.h
 # `DW_MACRO_lo_user = 0xe0` parsed as ACR(o_lo_)USER = 0xe0 and surfaced
 # `0xe0` as an ACR username (conf 0.8). Dogfood 2026-05-29. The word
-# boundary stops mid-word ACR matches; {8,} drops short hex macro values.
-regex = "(?:\\bACR|azurecr)[\\w]*(?:USERNAME|USER)[=:\\s\"'']+([a-zA-Z0-9_-]{8,})"
+# boundary stops mid-word ACR matches; requiring an alpha/underscore first
+# byte drops C header constants like `ACR_USER 0x00000000`.
+regex = "(?:\\bACR|azurecr)[\\w]*(?:USERNAME|USER)[=:\\s\"'']+([A-Za-z_][A-Za-z0-9_-]{7,})"
 description = "Azure Container Registry username with captured token reference"
 group = 1
 
