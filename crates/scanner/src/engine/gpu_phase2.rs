@@ -14,7 +14,7 @@ impl CompiledScanner {
             .par_iter()
             .zip(per_chunk_hits.into_par_iter())
             .map(|(chunk, hits)| {
-                if hits.is_empty() && !gpu_phase2_should_scan_no_hit_chunk(chunk) {
+                if hits.is_empty() && !self.gpu_phase2_should_scan_no_hit_chunk(chunk) {
                     return Vec::new();
                 }
                 let prepared = self.prepare_chunk(chunk);
@@ -49,19 +49,24 @@ impl CompiledScanner {
         super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
         results
     }
-}
 
-fn gpu_phase2_should_scan_no_hit_chunk(chunk: &keyhog_core::Chunk) -> bool {
-    let data = chunk.data.as_bytes();
+    fn gpu_phase2_should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
+        if self.has_active_fallback_patterns_for_chunk(&chunk.data) {
+            return true;
+        }
 
-    #[cfg(feature = "multiline")]
-    if crate::multiline::has_concatenation_indicators(&chunk.data) && has_secret_keyword_fast(data)
-    {
-        return true;
+        let data = chunk.data.as_bytes();
+
+        #[cfg(feature = "multiline")]
+        if crate::multiline::has_concatenation_indicators(&chunk.data)
+            && has_secret_keyword_fast(data)
+        {
+            return true;
+        }
+
+        chunk.data.len() <= 32 * 1024
+            && (has_generic_assignment_keyword(data)
+                || has_secret_keyword_fast(data)
+                || has_high_entropy_run_fast(data))
     }
-
-    chunk.data.len() <= 32 * 1024
-        && (has_generic_assignment_keyword(data)
-            || has_secret_keyword_fast(data)
-            || has_high_entropy_run_fast(data))
 }

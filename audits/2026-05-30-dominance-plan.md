@@ -1244,6 +1244,21 @@ Verified gates:
 
 - `cargo test -p keyhog-scanner --test all_tests degraded_batch_paths_preserve_boundaries -- --nocapture`
 
+## Executed Patch Set: GPU No-Hit Fallback Admission
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CAPABILITY: GPU phase 2 no longer drops large chunks solely because literal/AC phase 1 found no hits; it now admits chunks whose production fallback active set is non-empty, preserving prefixless detector recall.
+- COHERENCE: the GPU no-hit gate consults the same sparse fallback activation primitive used by CPU/SIMD fallback scanning instead of maintaining a separate keyword/size approximation.
+- TESTING: scanner gap contracts lock the GPU no-hit admission path to the shared active-fallback probe.
+- INNOVATION: correctness-first GPU routing creates the safe floor needed for fused literal/fallback GPU work without accepting fail-open acceleration.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests gpu_no_hit_fallback_admission -- --nocapture`
+
 ## Executed Patch Set: Sparse Fallback Activation
 
 Date: 2026-05-31

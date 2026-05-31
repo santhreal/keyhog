@@ -144,6 +144,10 @@ impl CompiledScanner {
         })
     }
 
+    pub(crate) fn has_active_fallback_patterns_for_chunk(&self, data: &str) -> bool {
+        self.with_active_fallback_patterns(data, |_, active_patterns| !active_patterns.is_empty())
+    }
+
     fn populate_active_fallback(&self, data: &str, scratch: &mut ActivePatternsScratch) {
         if let Some(keyword_ac) = &self.fallback_keyword_ac {
             // Seed from the precomputed sparse always-active list. Patterns
