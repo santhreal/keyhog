@@ -45,6 +45,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Apply the same manifest-free neutral scan-root contract to competitor homefield corpora.
 - Refresh the committed mirror benchmark README and report tables from the current `benchmarks/results` artifacts, including updated per-scanner runtime/RSS values and the current private-key category gap.
 - Score KeyHog `additional_locations` in the benchmark adapter so deduplicated credential aliases count toward per-file recall instead of being reported as false negatives; mirror private-key F1 is now 1.000 and the overall mirror F1 rises to 0.9108.
+- Refresh the committed mirror benchmark README/report timing and RSS values from the current KeyHog run.
 - Add competitor overall precision to the per-category benchmark gap table so recall-only category wins expose their cross-category false-positive cost.
 - Probe for actual GNU `time` support before wrapping benchmark subprocesses, so BSD/macOS `/usr/bin/time` falls back to `resource.getrusage` instead of breaking scanner runs.
 - Add a tested benchmark contract package with shared `RunResult` schema, host capture, SecretBench-compatible scoring, Mirror/Homefield/CredData/Kernel corpus adapters, and honest package entrypoints for host and corpus introspection.
@@ -88,6 +89,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Preserve concrete AC GPU dispatch failure causes in runtime degrade and `KEYHOG_REQUIRE_GPU=1` output, including batched dispatch errors, per-shard errors, missing/truncated output buffers, and match-cap overflow.
 - Treat nearby decoded-source duplicates as aliases during dedup so `filesystem/json` views do not displace the original file location when both represent the same credential.
 - Skip Caesar decoding for source/config paths such as `Kconfig`, `Makefile`, `.tbl`, `.mk`, and `.cmake`, preventing ROT-N false positives from kernel config and syscall-table text.
+- Capture full SSH/TLS PEM private-key blocks instead of header markers, pair BEGIN/END algorithm variants, and preserve branch-local alternation suffixes in homoglyph fallback regexes so distinct private keys cannot collapse under credential-scope dedup.
 - Bring the core unified test harness back onto the raw `[u8; 32]` credential-hash contract and move CSV/HTML/JUnit reporter tests out of `src`, restoring `keyhog-core --test all_tests`.
 - Tighten the Azure Container Registry username pattern so `ACR_USER 0x00000000` C register constants do not report as credentials.
 - Remove the dead fragment-cache `shard_index` wrapper so production keeps only the allocation-free slice-pair shard path.

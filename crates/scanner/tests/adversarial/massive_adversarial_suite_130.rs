@@ -7,6 +7,10 @@
 mod oracle_support;
 use oracle_support::{assert_detector_fires, assert_detector_silent};
 
+const SSH_PRIVATE_KEY_BODY: &str = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC";
+const SSH_PRIVATE_KEY: &str =
+    "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----";
+
 // =========================================================================
 // 1. SPARKPOST API KEY ADVERSARIAL TESTS
 // =========================================================================
@@ -1009,11 +1013,7 @@ fn adv130_squarespace_api_key_evade_lrm_must_fire() {
 
 #[test]
 fn adv130_ssh_private_key_normal_must_fire() {
-    assert_detector_fires(
-        "ssh-private-key",
-        "-----BEGIN PRIVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
-    );
+    assert_detector_fires("ssh-private-key", SSH_PRIVATE_KEY, SSH_PRIVATE_KEY);
 }
 
 #[test]
@@ -1025,8 +1025,10 @@ fn adv130_ssh_private_key_wrong_prefix_must_silent() {
 fn adv130_ssh_private_key_evade_zwsp_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{200B}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{200B}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1034,8 +1036,10 @@ fn adv130_ssh_private_key_evade_zwsp_must_fire() {
 fn adv130_ssh_private_key_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{00AD}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{00AD}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1043,8 +1047,10 @@ fn adv130_ssh_private_key_evade_soft_hyphen_must_fire() {
 fn adv130_ssh_private_key_evade_zwnj_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{200C}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{200C}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1052,8 +1058,10 @@ fn adv130_ssh_private_key_evade_zwnj_must_fire() {
 fn adv130_ssh_private_key_evade_zwj_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{200D}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{200D}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1061,8 +1069,10 @@ fn adv130_ssh_private_key_evade_zwj_must_fire() {
 fn adv130_ssh_private_key_evade_zwnbsp_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{FEFF}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{FEFF}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1070,8 +1080,10 @@ fn adv130_ssh_private_key_evade_zwnbsp_must_fire() {
 fn adv130_ssh_private_key_evade_word_joiner_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{2060}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{2060}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1079,8 +1091,10 @@ fn adv130_ssh_private_key_evade_word_joiner_must_fire() {
 fn adv130_ssh_private_key_evade_mongolian_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{180E}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{180E}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1088,8 +1102,10 @@ fn adv130_ssh_private_key_evade_mongolian_must_fire() {
 fn adv130_ssh_private_key_evade_rtl_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{202E}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{202E}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1097,8 +1113,10 @@ fn adv130_ssh_private_key_evade_rtl_must_fire() {
 fn adv130_ssh_private_key_evade_pop_dir_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{202C}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{202C}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
 
@@ -1106,7 +1124,9 @@ fn adv130_ssh_private_key_evade_pop_dir_must_fire() {
 fn adv130_ssh_private_key_evade_lrm_must_fire() {
     assert_detector_fires(
         "ssh-private-key",
-        "-----BEGIN PR\u{200E}IVATE KEY-----",
-        "-----BEGIN PRIVATE KEY-----",
+        &format!(
+            "-----BEGIN PR\u{200E}IVATE KEY-----\n{SSH_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----"
+        ),
+        SSH_PRIVATE_KEY,
     );
 }
