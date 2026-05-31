@@ -1128,6 +1128,29 @@ fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
 }
 
 #[test]
+fn composite_action_fail_step_waits_for_scan_outputs() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let fail_step = manifest
+        .split("- name: Fail when findings reported")
+        .nth(1)
+        .and_then(|rest| rest.split("    - name:").next())
+        .expect("final fail step exists");
+
+    assert!(
+        fail_step.contains("steps.scan.outputs.findings != ''"),
+        "final findings failure must not run when the scan wrapper failed before writing findings output"
+    );
+    assert!(
+        fail_step.contains("steps.scan.outputs.exit-code != ''"),
+        "final findings failure must not run when the scan wrapper failed before writing exit-code output"
+    );
+    assert!(
+        fail_step.contains("steps.scan.outputs.exit-code == '10'"),
+        "live credential failures must still run through the final fail step"
+    );
+}
+
+#[test]
 fn composite_action_fail_step_exits_ten_for_live_credentials() {
     let output = run_manifest_bash_step(
         "Fail when findings reported",

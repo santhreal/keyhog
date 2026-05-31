@@ -300,7 +300,7 @@ runs:
         if-no-files-found: warn
 
     - name: Fail when findings reported
-      if: (inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0') || steps.scan.outputs.exit-code == '10'
+      if: steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0') || steps.scan.outputs.exit-code == '10')
       shell: bash
       env:
         KEYHOG_FINDINGS: ${{ steps.scan.outputs.findings }}
