@@ -1,0 +1,13 @@
+# keyhog benchmarking framework — pinned dependencies.
+#
+# The core package (schema, hardware, score, runner, report) runs on the
+# Python 3 standard library alone, so a bare checkout can score the mirror
+# corpus with no installs. The pins below cover the two optional paths:
+#
+#   pyarrow  — only needed to load a real SecretBench *.parquet export
+#              (the mirror corpus uses manifest.jsonl and needs nothing).
+#   pytest   — the test suite (make test).
+#
+# Install with:  python3 -m pip install -r requirements.txt
+pyarrow==16.1.0
+pytest==8.2.2

@@ -1,0 +1,215 @@
+"""Overlap/attribution scorer — the SecretBench truth rules.
+
+This is the legacy ``tools/secretbench/scoring/score.py`` attribution logic,
+ported so the numbers are identical, with one generalisation: it groups
+ground-truth records by file so a single file may carry several labeled
+secrets (CredData). The single-record-per-file mirror corpus scores
+bit-identically to the legacy scorer — ``test_score.py`` pins that.
+
+Attribution (SecretBench paper, Basak et al. MSR 2023):
+
+* **True positive** — a finding's surfaced value contains, or is contained
+  in, a labeled secret on a positive record (``overlap`` rule below).
+* **False positive** — a finding that overlaps no positive record on a
+  known file (fires on a negative, or on a positive file but off-secret),
+  or a finding on a file with no records at all.
+* **False negative** — a positive record with no overlapping finding.
+* **Ignored** — a finding overlapping an ``ignore`` record (CredData
+  ``Template``/``X``) counts neither way; ignore records never produce FN.
+
+``overlap`` / ``_normalize_for_overlap`` / ``_try_base64_decode`` are copied
+verbatim from the legacy scorer — same robustness to redaction, escape-
+sequence re-wrapping, and k8s base64 ``data:`` fields.
+"""
+
+from __future__ import annotations
+
+import base64 as _b64
+import pathlib
+from collections import defaultdict
+
+from .corpora.base import LabeledRecord
+from .schema import Detection, Outcome
+
+# A normalised finding is a plain dict: {file, line, value, detector}.
+Finding = dict
+
+
+# ── overlap rule (verbatim from legacy score.py) ──────────────────────
+
+_ESCAPE_NORMALIZE = (
+    ("\\n", "\n"),
+    ("\\r", "\r"),
+    ("\\t", "\t"),
+    ("\\\\", "\\"),
+)
+
+
+def _try_base64_decode(s: str) -> str | None:
+    """Return s base64-decoded as latin-1 text, or None. Lets a captured
+    k8s ``data:`` value (base64) overlap a manifest plaintext secret — the
+    underlying bytes are the same secret, only the surface differs. Mirror
+    v28: 38 FPs traced to exactly this encoding mismatch. Conservative:
+    16+ chars, base64 alphabet, decodes to 8+ bytes, so random ASCII won't
+    fabricate TPs."""
+    if len(s) < 16:
+        return None
+    needs_padding = len(s) % 4
+    candidate = s + "=" * (4 - needs_padding) if needs_padding else s
+    if not all(c.isalnum() or c in ("+", "/", "=", "-", "_") for c in candidate):
+        return None
+    try:
+        raw = _b64.b64decode(candidate, validate=False)
+    except Exception:
+        return None
+    if len(raw) < 8:
+        return None
+    try:
+        return raw.decode("latin-1")
+    except Exception:
+        return None
+
+
+def _normalize_for_overlap(s: str) -> str:
+    """Collapse escaped (``\\n``) and raw (newline) forms so a multi-line
+    secret (PEM key, service-account JSON) reported with literal ``\\n``
+    overlaps the same key stored with real newlines. Mirror v22: 45
+    false-FPs traced to this mismatch."""
+    for esc, raw in _ESCAPE_NORMALIZE:
+        s = s.replace(esc, raw)
+    return s
+
+
+def overlap(a: str, b: str) -> bool:
+    """SecretBench containment rule: either side contains the other, after
+    escape normalisation and a conservative base64 pass."""
+    if not a or not b:
+        return False
+    if a in b or b in a:
+        return True
+    an, bn = _normalize_for_overlap(a), _normalize_for_overlap(b)
+    if an in bn or bn in an:
+        return True
+    a_dec = _try_base64_decode(a)
+    if a_dec and (a_dec in b or b in a_dec):
+        return True
+    b_dec = _try_base64_decode(b)
+    if b_dec and (a in b_dec or b_dec in a):
+        return True
+    return False
+
+
+# ── file-path indexing ────────────────────────────────────────────────
+
+
+def _record_abs_path(rec: LabeledRecord, file_root: pathlib.Path) -> pathlib.Path:
+    return file_root / rec.file_path
+
+
+def _build_file_index(
+    records: list[LabeledRecord], file_root: pathlib.Path
+) -> tuple[dict[str, list[LabeledRecord]], dict[str, str]]:
+    """Group records by file. Returns (by_key, key_aliases) where by_key maps
+    a canonical key -> its records, and key_aliases maps every spelling of a
+    path (resolved, unresolved, relative on_disk_path) to that canonical key
+    so a finding's reported path resolves regardless of how the scanner
+    spelled it (mirrors the legacy rec_by_path multi-key index)."""
+    by_key: dict[str, list[LabeledRecord]] = defaultdict(list)
+    aliases: dict[str, str] = {}
+    for rec in records:
+        abs_path = _record_abs_path(rec, file_root)
+        key = str(abs_path)
+        by_key[key].append(rec)
+        aliases[key] = key
+        try:
+            aliases[str(abs_path.resolve())] = key
+        except OSError:
+            pass
+        aliases[rec.file_path] = key
+    return by_key, aliases
+
+
+def _resolve_finding_file(
+    fpath: str, aliases: dict[str, str]
+) -> str | None:
+    """Map a finding's file path to a canonical record key. Exact first,
+    then the legacy tail-match fallback (a finding path that ends with a
+    known path, or shares the same basename)."""
+    if fpath in aliases:
+        return aliases[fpath]
+    base = fpath.rsplit("/", 1)[-1]
+    for spelling, key in aliases.items():
+        if spelling.endswith(fpath) or fpath.endswith(spelling.rsplit("/", 1)[-1]) \
+                or spelling.rsplit("/", 1)[-1] == base:
+            return key
+    return None
+
+
+def _file_category(recs: list[LabeledRecord]) -> str:
+    """Category an off-secret FP on this file is attributed to: the first
+    positive record's category, else the first record's, else 'unknown'."""
+    for r in recs:
+        if r.label and not r.ignore:
+            return r.category or "unknown"
+    return (recs[0].category if recs else "unknown") or "unknown"
+
+
+# ── the scorer ─────────────────────────────────────────────────────────
+
+
+def score(
+    records: list[LabeledRecord],
+    findings: list[Finding],
+    file_root: pathlib.Path,
+) -> Detection:
+    """Attribute ``findings`` against ground-truth ``records``."""
+    det = Detection()
+    per_cat: dict[str, Outcome] = defaultdict(Outcome)
+
+    by_key, aliases = _build_file_index(records, file_root)
+    hit_ids: set[str] = set()
+    fp_total = 0
+
+    for f in findings:
+        fpath = f.get("file") or ""
+        key = _resolve_finding_file(fpath, aliases) if fpath else None
+        if key is None:
+            # Finding on a file with no record at all -> false positive.
+            fp_total += 1
+            per_cat["unknown"].fp += 1
+            continue
+        recs = by_key[key]
+        value = f.get("value") or ""
+
+        # Did it overlap a positive secret on this file?
+        matched_positive = False
+        for rec in recs:
+            if rec.label and not rec.ignore and overlap(value, rec.secret):
+                hit_ids.add(rec.id)
+                matched_positive = True
+        if matched_positive:
+            continue
+
+        # Did it overlap an ignore record? Drop it (counts neither way).
+        if any(rec.ignore and overlap(value, rec.secret) for rec in recs):
+            continue
+
+        # Otherwise: a finding on a known file that hit no positive secret.
+        fp_total += 1
+        per_cat[_file_category(recs)].fp += 1
+
+    # Credit TP/FN per positive record.
+    for rec in records:
+        if not rec.label or rec.ignore:
+            continue
+        cat = rec.category or "unknown"
+        if rec.id in hit_ids:
+            det.overall.tp += 1
+            per_cat[cat].tp += 1
+        else:
+            det.overall.fn += 1
+            per_cat[cat].fn += 1
+
+    det.overall.fp = fp_total
+    det.per_category = dict(per_cat)
+    return det
