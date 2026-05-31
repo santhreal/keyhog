@@ -19,6 +19,7 @@ pub mod file_gate_matrix_scanner_adversarial_unmarked;
 pub mod file_gate_matrix_scanner_missing_submodule_rows;
 pub mod findings_registry_integrity;
 pub mod gpu_forced_backend_no_silent_degrade;
+pub mod gpu_phase2_empty_hit_fast_path;
 pub mod gpu_require_env_fails_not_skips;
 pub mod gpu_tests_fail_not_skip;
 pub mod inline_migrated_tests_not_wired;

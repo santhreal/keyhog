@@ -2,15 +2,13 @@
 /// Used to gate the multiline fallback - only files that mention
 /// secret/key/token/password are worth reassembling.
 ///
-/// Only the Hyperscan-prefilter path of `scan_coalesced` calls this,
-/// so gate it on `simd` to avoid a dead-code warning in the
-/// no-Hyperscan Windows build.
+/// Used by coalesced SIMD and GPU phase2 no-hit routing to avoid full fallback
+/// scans on chunks that cannot plausibly contain split or prefix-known secrets.
 ///
 /// Single-pass Aho-Corasick over all distinctive prefixes - replaces the
 /// previous loop of N independent `memmem` scans (each O(n)) which traversed
 /// the chunk N times. With the AC automaton the scan is O(n) total, with
 /// one memory walk and shared cache lines.
-#[cfg(feature = "simd")]
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
@@ -80,9 +78,6 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
 /// `ascii_case_insensitive` builder option matches both `secret` and
 /// `SECRET` from a single literal at scan-time, halving the pattern count.
 ///
-/// Same simd gate as [`has_secret_keyword_fast`] - only the
-/// Hyperscan-prefilter path consumes it.
-#[cfg(feature = "simd")]
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
@@ -126,7 +121,6 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 /// suppressed downstream by `looks_like_hash_digest` /
 /// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it
 /// just admits the chunk to the entropy fallback for inspection.
-#[cfg(feature = "simd")]
 pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
     const MIN_ENTROPY_RUN: usize = 32;
     let mut run = 0usize;

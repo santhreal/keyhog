@@ -89,11 +89,14 @@ real tree. Items carry the data that proves them.
   for EVERY chunk in `par_iter`, while SIMD `scan_coalesced` phase2 takes the
   cheap `triggered_opt == None` path for the ~99 % of kernel files with no HS
   hit. So a default `keyhog scan <big-repo>` is >3x slower than it should be
-  and may not complete. FIX: give GPU phase2 the same cheap-reject fast path
-  (skip `prepare_chunk`/`post_process` when that chunk's `per_chunk_hits` is
-  empty), preserving the `gpu_parity` gate; and/or stop `select_backend`
-  routing tiny-file-dominated batches to GPU. Highest-impact realised-speed
-  fix after PERF-01.
+  and may not complete. FIX LANDED: GPU phase2 now uses the same no-hit
+  plausibility gate as SIMD coalesced scans, skipping `prepare_chunk` /
+  `scan_prepared_with_pattern_hits` / `post_process_matches` for empty-hit
+  chunks unless the chunk has multiline split-secret indicators, secret
+  assignment keywords, known secret prefixes, or a long entropy run. Static
+  regression gate added; forced `gpu_parity` remains a separate red gate
+  because the runtime GPU dispatch currently hard-fails under
+  `KEYHOG_REQUIRE_GPU=1` even though `keyhog backend --self-test` passes.
 
 ## Resource / overhead
 
