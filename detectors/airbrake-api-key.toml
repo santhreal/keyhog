@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["AIRBRAKE_API_KEY", "airbrake_api_key", "AIRBRAKE-API-KEY", "AIRBRAKE_PROJECT_KEY", "project_key"]
 
 [[detector.patterns]]
-regex = "(?:AIRBRAKE[_\\-]?API[_\\-]?KEY|airbrake[_\\-]?api[_\\-]?key|AIRBRAKE[_\\-]?PROJECT[_\\-]?KEY|project_key)[=:\\s\\\"']+([a-f0-9]{32})"
+regex = "(?:\\bAIRBRAKE[_\\-]?API[_\\-]?KEY|\\bairbrake[_\\-]?api[_\\-]?key|\\bAIRBRAKE[_\\-]?PROJECT[_\\-]?KEY|\\bproject_key)[=:\\s\\\"']+([a-f0-9]{32})"
 description = "Airbrake project API key (32 hex chars with context anchor)"
 group = 1
 

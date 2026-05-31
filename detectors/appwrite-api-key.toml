@@ -16,7 +16,7 @@ description = "Appwrite API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "X-Appwrite-Key[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+regex = "\\bX-Appwrite-Key[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
 description = "Appwrite API key in header context"
 group = 1
 

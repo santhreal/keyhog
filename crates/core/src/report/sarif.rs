@@ -34,143 +34,9 @@ pub struct SarifReporter<W: Write + Send> {
     any_result: bool,
 }
 
-/// A SARIF rule (tool component rule).
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifRule {
-    id: String,
-    name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    short_description: Option<SarifMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    full_description: Option<SarifMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    help: Option<SarifMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    properties: Option<serde_json::Map<String, serde_json::Value>>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifMessage {
-    text: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifTool {
-    driver: SarifToolDriver,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifToolDriver {
-    name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    information_uri: Option<String>,
-    rules: Vec<SarifRule>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifResult {
-    rule_id: String,
-    level: String,
-    message: SarifMessage,
-    locations: Vec<SarifLocation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    properties: Option<serde_json::Map<String, serde_json::Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    related_locations: Option<Vec<SarifLocation>>,
-    /// SARIF v2.2.0 `fixes[]` - auto-rotation suggestions. Each entry
-    /// proposes replacing the leaked credential with a `${ENV_VAR_NAME}`
-    /// shell-interpolation reference. Tier-B #15 + #17.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fixes: Option<Vec<SarifFix>>,
-    /// SARIF `partialFingerprints` - stable per-finding identity (the
-    /// credential hash) so GitHub code-scanning dedups alerts across runs
-    /// instead of re-opening the same leak every scan. See `sarif_uri`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    partial_fingerprints: Option<std::collections::BTreeMap<String, String>>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifFix {
-    description: SarifMessage,
-    artifact_changes: Vec<SarifArtifactChange>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifArtifactChange {
-    artifact_location: SarifArtifactLocation,
-    replacements: Vec<SarifReplacement>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifReplacement {
-    deleted_region: SarifRegion,
-    inserted_content: SarifSnippet,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifLocation {
-    physical_location: SarifPhysicalLocation,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    logical_locations: Option<Vec<SarifLogicalLocation>>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifPhysicalLocation {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    artifact_location: Option<SarifArtifactLocation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    region: Option<SarifRegion>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifArtifactLocation {
-    uri: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    uri_base_id: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifRegion {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    start_line: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    start_column: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    end_line: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    end_column: Option<usize>,
-    #[serde(rename = "charOffset", skip_serializing_if = "Option::is_none")]
-    char_offset: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    snippet: Option<SarifSnippet>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifSnippet {
-    text: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifLogicalLocation {
-    name: String,
-    kind: String,
-}
+#[path = "sarif_types.rs"]
+mod sarif_types;
+use sarif_types::*;
 
 impl<W: Write + Send> SarifReporter<W> {
     /// Construct a streaming SARIF reporter that writes its document to
@@ -293,9 +159,7 @@ impl<W: Write + Send> SarifReporter<W> {
                             char_offset: None,
                             snippet: None,
                         },
-                        inserted_content: SarifSnippet {
-                            text: replacement,
-                        },
+                        inserted_content: SarifSnippet { text: replacement },
                     }],
                 }],
             }])

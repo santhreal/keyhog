@@ -13,7 +13,18 @@ fn scan_json_required_fields() {
         .as_array()
         .expect("array")
         .clone();
-    assert!(!arr.is_empty());
+    assert_eq!(
+        arr.len(),
+        1,
+        "exactly one finding for the planted ghp_ token"
+    );
+    // Truth: identity of the single finding, not just that fields exist.
+    let only = &arr[0];
+    assert_eq!(only["detector_id"], "github-classic-pat");
+    assert_eq!(only["service"], "github");
+    assert_eq!(only["severity"], "critical");
+    assert_eq!(only["credential_redacted"], "ghp_...qrST");
+    assert_eq!(only["location"]["line"], 1);
     for f in &arr {
         for field in [
             "detector_id",

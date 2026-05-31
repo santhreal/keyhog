@@ -16,7 +16,7 @@ description = "Applitools API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "X-Eyes-Api-Key:\\s*([a-zA-Z0-9_-]{40,})"
+regex = "\\bX-Eyes-Api-Key:\\s*([a-zA-Z0-9_-]{40,})"
 description = "Applitools API key in HTTP header"
 group = 1
 

@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["AGENTA_API_KEY", "ApiKey", "agenta"]
 
 [[detector.patterns]]
-regex = "(?:AGENTA_API_KEY|agenta.api.key)[=:\\s\"'']+([a-f0-9]{32})"
+regex = "(?:\\bAGENTA_API_KEY|\\bagenta\\.api\\.key)[=:\\s\"'']+([a-f0-9]{32})"
 description = "Agenta API key with context anchor"
 group = 1
 

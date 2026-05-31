@@ -21,8 +21,17 @@ fn decode_hex_secret() {
 fn find_base64_in_text() {
     let text = r#"TOKEN = "c2stcHJvai1hYmMxMjM=""#;
     let matches = find_base64_strings(text, 10);
-    assert!(!matches.is_empty());
+    assert_eq!(
+        matches.len(),
+        1,
+        "exactly one base64 string in the assignment"
+    );
     assert_eq!(matches[0].value, "c2stcHJvai1hYmMxMjM=");
+    // Decoding the located span must round-trip to the planted secret.
+    assert_eq!(
+        String::from_utf8(base64_decode(&matches[0].value).unwrap()).unwrap(),
+        "sk-proj-abc123"
+    );
 }
 
 #[test]
