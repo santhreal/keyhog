@@ -69,8 +69,11 @@ def _freshly_built_keyhog() -> str | None:
     target = _cargo_target_dir()
     if target is None:
         return None
-    candidate = target / "release" / "keyhog"
-    return str(candidate) if candidate.exists() else None
+    for profile in ("release", "release-fast"):
+        candidate = target / profile / "keyhog"
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def _line(value: object) -> int:

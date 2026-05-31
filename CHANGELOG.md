@@ -51,6 +51,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Benchmarks
 
+- Let benchmark KeyHog binary resolution fall back to a freshly built `target/release-fast/keyhog` before PATH, while still preferring `target/release/keyhog` when present.
 - Add measured benchmark scanner adapters for Betterleaks, Kingfisher, Nosey Parker, Titus, and TruffleHog, with command-specific JSON normalization tests and generated-corpus ignore rules.
 - Add `python -m bench run` / `make run` to execute one measured scanner/corpus row, emit `RunResult` JSON, score labeled corpora, compute throughput, and preserve scanner exit code and timeout state in artifacts.
 - Add `python -m bench leaderboard` / `make leaderboard` to run the default scanner matrix, including Nosey Parker, and write one `RunResult` JSON artifact per scanner/config row.
