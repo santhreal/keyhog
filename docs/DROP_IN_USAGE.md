@@ -550,8 +550,9 @@ See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
 - `10` - live credentials confirmed (only under `--verify`)
 - `11` - scanner thread panicked mid-scan (state unreliable)
 
-CI gates should look for `exit 1` to mean "block the build" and treat
-`exit 2` as an infrastructure problem to surface to the on-call.
+CI gates should treat `exit 1` and `exit 10` as build-blocking scan
+outcomes. `exit 2` is an infrastructure/configuration problem to surface
+to the on-call.
 
 ---
 

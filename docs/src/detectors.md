@@ -50,7 +50,8 @@ can have multiple detectors (`stripe-secret-key`,
 `stripe-restricted-key`, `stripe-publishable-key`).
 
 `detector.severity` - one of `critical | high | medium | low | client-safe | info`.
-The CLI's exit code only depends on whether ANY finding exists, but
+The CLI exits non-zero when any finding clears the active gate; under
+`--verify`, confirmed live credentials escalate that outcome to exit `10`.
 SARIF / GitHub Code Scanning surface severity prominently.
 
 `client-safe` is the bug-bounty tier for keys public by design

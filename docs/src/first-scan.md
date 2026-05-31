@@ -12,8 +12,10 @@ and prints findings. The exit code carries the verdict:
 | Exit code | Meaning                                    |
 |-----------|--------------------------------------------|
 | `0`       | Scan finished, no findings                 |
-| `1`       | Scan finished, findings present (unverified or verified-live) |
-| `2`       | Runtime error - bad config, panic, I/O failure |
+| `1`       | Findings present, none confirmed live      |
+| `2`       | Runtime error - bad config, bad path, I/O failure |
+| `10`      | Live credential confirmed under `--verify` |
+| `11`      | Scanner thread panicked; re-run before trusting results |
 
 So a CI step that should fail the build when a credential leaks is just:
 
@@ -21,7 +23,8 @@ So a CI step that should fail the build when a credential leaks is just:
 keyhog scan .
 ```
 
-No grep, no jq, no exit-code arithmetic. Findings == exit 1 == build red.
+No grep, no jq, no exit-code arithmetic. Findings exit non-zero, so
+the build goes red; with `--verify`, live credentials use exit `10`.
 
 ## What you get out of it
 
