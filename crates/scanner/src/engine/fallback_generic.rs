@@ -90,24 +90,11 @@ impl CompiledScanner {
         static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
             AhoCorasick::builder()
                 .ascii_case_insensitive(true)
-                .build([
-                    "secret",
-                    "password",
-                    "passwd",
-                    "pwd",
-                    "token",
-                    "api",
-                    "auth",
-                    "credential",
-                    "private",
-                    "signing",
-                    "encryption",
-                    "access",
-                    "client",
-                    "app",
-                    "master",
-                    "license",
-                ])
+                .build(
+                    super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
+                        .iter()
+                        .copied(),
+                )
                 .ok()
         });
         let Some(keyword_ac) = KEYWORD_AC.as_ref() else {

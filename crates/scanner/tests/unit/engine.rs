@@ -206,6 +206,23 @@ fn scan_filters_generic_assignment_fires_with_secret_keyword() {
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
 
+#[test]
+fn scan_filters_generic_assignment_accepts_dotted_and_dashed_keys() {
+    let mut detector = demo_detector();
+    detector.patterns[0].regex = r"ghp_[A-Za-z0-9]{20,}".into();
+    detector.keywords = vec!["ghp_".into()];
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
+
+    for key in ["api.key", "auth-token", "client.secret"] {
+        let matches = scanner.scan(&chunk(&format!("{key} = \"{token}\"")));
+        assert!(
+            matches.iter().any(|m| m.credential.as_ref() == token),
+            "{key} should admit generic assignment scanning"
+        );
+    }
+}
+
 // ── engine/segment_attribution.rs ───────────────────────────────────
 // Covered in segment_attribution.rs unit module.
 
