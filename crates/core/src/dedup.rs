@@ -132,6 +132,11 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
             .file_path
             .cmp(&b.location.file_path)
             .then_with(|| a.location.offset.cmp(&b.location.offset))
+            .then_with(|| a.location.line.cmp(&b.location.line))
+            .then_with(|| a.location.source.cmp(&b.location.source))
+            .then_with(|| a.location.commit.cmp(&b.location.commit))
+            .then_with(|| a.detector_id.cmp(&b.detector_id))
+            .then_with(|| a.credential.cmp(&b.credential))
     });
 
     for matched in matches {

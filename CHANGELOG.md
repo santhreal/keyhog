@@ -8,10 +8,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded — an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.
 - Bound the GPU AC prefilter's per-shard readback and reroute dense literal-prefix batches through the SIMD coalesced scanner before CPU phase 2 explodes. Forced-GPU CredData now completes in ~5.0 s instead of timing out at 45 s / 5.1 GB RSS, with byte-stable detector/hash/file/offset parity against the current SIMD run.
+- Reuse the batch ML feature vectors for small-batch CPU fallback instead of recomputing text/context features after the GPU crossover gate declines the batch. This removes a redundant feature-extraction pass on scanner chunks that emit fewer than 64 ML candidates while keeping scalar MoE scores byte-identical.
+- Route CPU/SIMD filesystem scans through the fused read+scan pipeline so source walking and coalesced scanning overlap across the Rayon pool. `KEYHOG_LEGACY_PIPELINE=1` remains available for A/B verification; CredData SIMD `--no-daemon` keeps byte-identical 2,263-finding JSON output and drops from 6.14 s to 5.13 s on the measured RTX 5090 host.
+- Remove the per-candidate ASCII lowercase allocation from ML file-type feature extraction by using the shared byte-level case-insensitive matcher for static context markers.
 
 ### Coherence
 
 - Reconcile the advertised detector/pattern counts to the binary's actual embedded corpus (894 detectors, 1658 patterns) across README, docs, banner, contract fixtures, and the compiled count gates. The canonical source of truth is `keyhog detectors` / `keyhog doctor`.
+- Make dedup primary/additional location selection deterministic when overlapping filesystem windows report the same credential at the same byte offset with different line metadata.
 
 ### CI / GitHub Action
 

@@ -177,7 +177,7 @@ pub fn compute_features_with_config(
         placeholder_keywords,
     );
     apply_structure_features(&mut f, &text_summary, text_bytes);
-    apply_file_type_feature(&mut f, context);
+    apply_file_type_feature(&mut f, context, context_bytes);
     apply_extra_features(&mut f, context, context_bytes);
     apply_decode_structure_feature(&mut f, text);
     f
@@ -300,49 +300,55 @@ fn apply_structure_features(
     features[27] = (summary.dash_count as f32 / MAX_DASH_COUNT_NORMALIZATION).min(1.0);
 }
 
-fn apply_file_type_feature(features: &mut [f32; NUM_FEATURES], context: &str) {
-    let file_type = infer_file_type(context);
+fn apply_file_type_feature(
+    features: &mut [f32; NUM_FEATURES],
+    context: &str,
+    context_bytes: &[u8],
+) {
+    let file_type = infer_file_type(context, context_bytes);
     features[FILE_TYPE_OFFSET + file_type] = 1.0;
 }
 
-fn infer_file_type(context: &str) -> usize {
-    let context_lower = context.to_ascii_lowercase();
-    if is_binary_context(&context_lower) {
+fn infer_file_type(context: &str, context_bytes: &[u8]) -> usize {
+    if is_binary_context(context_bytes) {
         return BINARY_FILE_TYPE_INDEX;
     }
-    if is_ci_context(&context_lower) {
+    if is_ci_context(context_bytes) {
         return CI_FILE_TYPE_INDEX;
     }
-    if is_infra_context(context, &context_lower) {
+    if is_infra_context(context, context_bytes) {
         return INFRA_FILE_TYPE_INDEX;
     }
-    if is_source_context(context, &context_lower) {
+    if is_source_context(context, context_bytes) {
         return SOURCE_FILE_TYPE_INDEX;
     }
-    if is_config_context(context, &context_lower) {
+    if is_config_context(context, context_bytes) {
         return CONFIG_FILE_TYPE_INDEX;
     }
     OTHER_FILE_TYPE_INDEX
 }
 
-fn is_binary_context(context_lower: &str) -> bool {
-    contains_any(context_lower, BINARY_MARKERS)
+fn is_binary_context(context_bytes: &[u8]) -> bool {
+    contains_any_ascii_case_insensitive_static(context_bytes, BINARY_MARKERS)
 }
 
-fn is_ci_context(context_lower: &str) -> bool {
-    contains_any(context_lower, CI_MARKERS)
+fn is_ci_context(context_bytes: &[u8]) -> bool {
+    contains_any_ascii_case_insensitive_static(context_bytes, CI_MARKERS)
 }
 
-fn is_infra_context(context: &str, context_lower: &str) -> bool {
-    context.contains("from ") || contains_any(context_lower, INFRA_MARKERS)
+fn is_infra_context(context: &str, context_bytes: &[u8]) -> bool {
+    context.contains("from ")
+        || contains_any_ascii_case_insensitive_static(context_bytes, INFRA_MARKERS)
 }
 
-fn is_source_context(context: &str, context_lower: &str) -> bool {
-    contains_any(context, SOURCE_MARKERS) || contains_any(context_lower, SOURCE_EXTENSIONS)
+fn is_source_context(context: &str, context_bytes: &[u8]) -> bool {
+    contains_any(context, SOURCE_MARKERS)
+        || contains_any_ascii_case_insensitive_static(context_bytes, SOURCE_EXTENSIONS)
 }
 
-fn is_config_context(context: &str, context_lower: &str) -> bool {
-    has_unquoted_equals(context) || contains_any(context_lower, CONFIG_MARKERS)
+fn is_config_context(context: &str, context_bytes: &[u8]) -> bool {
+    has_unquoted_equals(context)
+        || contains_any_ascii_case_insensitive_static(context_bytes, CONFIG_MARKERS)
 }
 
 fn has_unquoted_equals(value: &str) -> bool {
@@ -422,6 +428,12 @@ fn contains_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 fn contains_any_ascii_case_insensitive(haystack: &[u8], needles: &[String]) -> bool {
+    needles
+        .iter()
+        .any(|needle| contains_ascii_case_insensitive(haystack, needle.as_bytes()))
+}
+
+fn contains_any_ascii_case_insensitive_static(haystack: &[u8], needles: &[&str]) -> bool {
     needles
         .iter()
         .any(|needle| contains_ascii_case_insensitive(haystack, needle.as_bytes()))
