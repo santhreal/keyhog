@@ -188,26 +188,36 @@ pub fn apply_lockdown_protections() -> HardeningReport {
     report
 }
 
-/// In lockdown mode, the engine refuses to start if any non-empty keyhog cache
-/// exists on disk - caches survive across runs and are exactly the
-/// "credentials accidentally written to disk" exfil vector lockdown is
-/// supposed to prevent. Returns the offending paths, empty if clean.
+/// In lockdown mode, the engine refuses to start if a keyhog cache that could
+/// expose PAST FINDINGS exists on disk - such caches survive across runs and
+/// are exactly the "credentials accidentally written to disk" exfil vector
+/// lockdown is supposed to prevent. Returns the offending paths, empty if clean.
 ///
-/// Only a cache dir with content can expose past findings. An empty
-/// `<cache>/keyhog` dir - e.g. one keyhog itself just created at startup, or a
-/// leftover from an interrupted run - has nothing to leak, so it is not a
-/// violation. Flagging mere existence made `--lockdown` self-defeating: keyhog
-/// creates its cache root early in startup, so the gate tripped on its own
-/// freshly-made empty dir on any machine.
+/// NOT every file under `<cache>/keyhog` qualifies. The compiled Hyperscan
+/// pattern database (`hs-*.db`) is the only thing keyhog writes there by
+/// default; it holds the compiled DETECTOR AUTOMATON - regex shapes - with zero
+/// scan findings or credentials, and keyhog (re)creates it early in startup.
+/// Treating it as a violation made `--lockdown` self-defeating: the gate
+/// tripped on keyhog's own freshly-compiled pattern DB on every machine, so the
+/// flag could never run. Only findings-bearing caches (an incremental/merkle
+/// cache written into this dir) are real lockdown violations.
 #[must_use]
 pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     let mut hits = Vec::new();
     if let Some(cache_root) = dirs::cache_dir() {
         let keyhog_root = cache_root.join("keyhog");
-        let has_content = std::fs::read_dir(&keyhog_root)
-            .map(|mut entries| entries.next().is_some())
+        let has_findings_cache = std::fs::read_dir(&keyhog_root)
+            .map(|entries| {
+                entries.filter_map(Result::ok).any(|e| {
+                    let name = e.file_name();
+                    let name = name.to_string_lossy();
+                    // Compiled-pattern DBs (`hs-*.db`) carry no findings; any
+                    // other file is a potential past-findings cache.
+                    !(name.starts_with("hs-") && name.ends_with(".db"))
+                })
+            })
             .unwrap_or(false);
-        if has_content {
+        if has_findings_cache {
             hits.push(keyhog_root);
         }
     }

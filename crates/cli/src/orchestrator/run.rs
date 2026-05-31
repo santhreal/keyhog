@@ -79,7 +79,7 @@ impl ScanOrchestrator {
                 mlocked = lockdown.mlocked,
                 "lockdown mode active: mlocked + coredump-blocked + cache-free"
             );
-            eprintln!("🔒 LOCKDOWN MODE: all on-disk caches disabled, mlocked, no live verifier");
+            eprintln!("🔒 LOCKDOWN MODE: no findings cache on disk, mlocked, no live verifier");
 
             if self.args.no_default_excludes {
                 anyhow::bail!(
