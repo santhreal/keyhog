@@ -1683,3 +1683,32 @@ Vector coverage:
 Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+
+## Executed Patch Set: GPU AC Degenerate Circuit Breaker
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- SPEED: after the first impossible Vyre AC readback, later GPU AC batches in the process skip the known-corrupt dispatch and go straight to the SIMD/CPU recall-preserving path.
+- AUDIT HUNTS: the circuit breaker keeps the existing fail-closed `end <= start` guard and makes the corruption sticky for process lifetime instead of rediscovering it batch by batch.
+- TESTING: extended the scanner gap contract to require both the degenerate-triple guard and the process-level skip path.
+
+Verified gates:
+
+- `cargo test -p keyhog-scanner --test all_tests gpu_ac_degenerate_triples_degrade -- --nocapture`
+
+## Executed Patch Set: Mirror Corpus Neutral Scan Root
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: the mirror benchmark home is now `manifest.jsonl` beside a neutral `corpus/` scan tree, aligning docs, loader, generator, and tests around the same answer-key-free layout.
+- RESEARCH: local dogfood showed path names like `fixtures/` suppress Keyhog confidence even under `--no-suppress-test-fixtures`, so the benchmark scan root now avoids scanner-specific test-context penalties.
+- TESTING: added corpus tests for neutral scan roots, manifest exclusion, and migration of existing generated manifests out of the scan tree.
+- INSUFFICIENCY: restored the original 15k positive / 80k negative mirror default after catching a smaller generated default in the concurrent corpus edit.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`

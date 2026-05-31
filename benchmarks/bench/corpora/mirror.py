@@ -2,13 +2,33 @@
 
 Wraps the existing generator (``tools/secretbench/mirror/generate.py``) and
 loads its ``manifest.jsonl`` into :class:`LabeledRecord`. One record per
-file (single secret), so it scores bit-identically to the legacy scorer —
-the migration's regression anchor.
+file (single secret), so the per-fixture attribution is identical to the
+legacy scorer — the migration's regression anchor.
 
-The corpus location is resolved in order: explicit ``corpus_dir`` arg, the
-``KEYHOG_BENCH_MIRROR`` env, the new ``benchmarks/corpora/mirror/corpus``
-home, then the legacy ``tools/secretbench/mirror/corpus`` (so this works
-before and after the task-20 migration).
+Layout (the home dir holds both the answer key and the scan tree, kept
+apart so no scanner is ever shown the manifest):
+
+    <home>/manifest.jsonl          the ground-truth answer key
+    <home>/corpus/<shards>/<id>    the fixtures a scanner is pointed at
+
+Two fairness/hygiene rules are baked into this split, both learned the hard
+way against the live keyhog binary:
+
+1. **The manifest is OUTSIDE the scan tree.** A scanner that reads
+   ``manifest.jsonl`` finds every labeled secret in plaintext — betterleaks
+   fires 9392 spurious matches on it, kingfisher 7581. ``scan_root`` is the
+   ``corpus/`` subtree only.
+2. **The scan dir has a NEUTRAL name** (``corpus``, not ``fixtures``/
+   ``test``/``examples``). keyhog applies a path-context confidence penalty
+   to anything living under a "fixtures"-shaped directory, and
+   ``--no-suppress-test-fixtures`` does NOT fully override it: the same 15k
+   files scored 1880 findings under ``fixtures/`` vs 2484 under a neutral
+   name. The corpus must never sit under a path token a scanner treats as
+   "this is test data, relax".
+
+Resolution order for the home: explicit ``corpus_dir`` arg, the
+``KEYHOG_BENCH_MIRROR`` env, the ``benchmarks/corpora/mirror`` home, then the
+legacy ``tools/secretbench/mirror/corpus`` flat home.
 """
 
 from __future__ import annotations
@@ -31,12 +51,15 @@ def _generator_path() -> pathlib.Path:
     return _REPO_ROOT / "tools" / "secretbench" / "mirror" / "generate.py"
 
 
-def _candidate_dirs() -> list[pathlib.Path]:
+def _candidate_homes() -> list[pathlib.Path]:
+    """Dirs that may hold ``manifest.jsonl``. A home is either the new split
+    layout (manifest + ``corpus/`` subtree) or a legacy flat home (manifest
+    + shards in the same dir)."""
     env = os.environ.get("KEYHOG_BENCH_MIRROR")
-    cands = []
+    cands: list[pathlib.Path] = []
     if env:
         cands.append(pathlib.Path(env))
-    cands.append(_BENCH_ROOT / "corpora" / "mirror" / "corpus")
+    cands.append(_BENCH_ROOT / "corpora" / "mirror")
     cands.append(_REPO_ROOT / "tools" / "secretbench" / "mirror" / "corpus")
     return cands
 
@@ -46,45 +69,44 @@ class MirrorCorpus(Corpus):
 
     def __init__(self, corpus_dir: str | pathlib.Path | None = None):
         if corpus_dir is not None:
-            self._dir = pathlib.Path(corpus_dir)
+            # Explicit dir is a flat home (manifest + shards together).
+            self._home = pathlib.Path(corpus_dir)
         else:
-            self._dir = next(
-                (d for d in _candidate_dirs() if (d / "manifest.jsonl").exists()),
-                _candidate_dirs()[0],
+            self._home = next(
+                (d for d in _candidate_homes() if (d / "manifest.jsonl").exists()),
+                _candidate_homes()[0],
             )
 
     @property
-    def root(self) -> pathlib.Path:
-        return self._dir
+    def _scan_dir(self) -> pathlib.Path:
+        """The neutral, manifest-free scan tree: ``<home>/corpus`` in the
+        split layout, else the home itself (legacy flat)."""
+        sub = self._home / "corpus"
+        return sub if sub.is_dir() else self._home
 
     @property
-    def _fixtures_dir(self) -> pathlib.Path | None:
-        """The answer-key-free layout: ``<corpus>/fixtures/<shards>`` beside
-        ``<corpus>/manifest.jsonl``. Present in the migrated benchmarks home;
-        absent in the legacy flat layout (manifest in-tree)."""
-        fx = self._dir / "fixtures"
-        return fx if fx.is_dir() else None
+    def root(self) -> pathlib.Path:
+        return self._home
 
     @property
     def scan_root(self) -> pathlib.Path:
-        # Scanners see only the fixtures, never the sibling manifest.jsonl.
-        return self._fixtures_dir or self._dir
+        return self._scan_dir
 
     @property
     def file_root(self) -> pathlib.Path:
-        # on_disk_path ("00/<id>.ext") is relative to the shard parent, which
-        # is the fixtures dir under the migrated layout, else the corpus dir.
-        return self._fixtures_dir or self._dir
+        # on_disk_path ("00/<id>.ext") is relative to the shard parent.
+        return self._scan_dir
 
     def manifest(self) -> pathlib.Path:
-        return self._dir / "manifest.jsonl"
+        return self._home / "manifest.jsonl"
 
     def records(self) -> list[LabeledRecord]:
         man = self.manifest()
         if not man.exists():
             raise SystemExit(
                 f"mirror manifest missing: {man}\n"
-                f"  generate it with: make mirror  (or python -m bench.corpora.mirror --ensure)"
+                f"  generate it with: make mirror  "
+                f"(or python -m bench.corpora.mirror --ensure)"
             )
         out: list[LabeledRecord] = []
         with open(man) as f:
@@ -105,22 +127,35 @@ class MirrorCorpus(Corpus):
         return out
 
     def ensure(self, positives: int = 15000, negatives: int = 80000, seed: int = 0) -> None:
-        """Generate the corpus if its manifest is absent (idempotent)."""
+        """Generate the corpus into the split layout if absent (idempotent).
+
+        The generator emits a flat tree (manifest + shards); we point it at
+        ``<home>/corpus`` and then lift ``manifest.jsonl`` up to ``<home>``
+        so the answer key sits beside, not inside, the scan tree."""
+        scan_dir = self._home / "corpus"
+        self._lift_manifest_from_scan_dir(scan_dir)
         if self.manifest().exists():
-            print(f"mirror corpus present: {self._dir}", file=sys.stderr)
+            print(f"mirror corpus present: {self._home}", file=sys.stderr)
             return
         gen = _generator_path()
         if not gen.exists():
             raise SystemExit(f"mirror generator not found: {gen}")
-        self._dir.mkdir(parents=True, exist_ok=True)
-        print(f"generating mirror corpus -> {self._dir} "
+        scan_dir.mkdir(parents=True, exist_ok=True)
+        print(f"generating mirror corpus -> {scan_dir} "
               f"({positives}+{negatives}, seed={seed})", file=sys.stderr)
         subprocess.run(
-            [sys.executable, str(gen), "--out", str(self._dir),
+            [sys.executable, str(gen), "--out", str(scan_dir),
              "--positives", str(positives), "--negatives", str(negatives),
              "--seed", str(seed)],
             check=True,
         )
+        self._lift_manifest_from_scan_dir(scan_dir)
+
+    def _lift_manifest_from_scan_dir(self, scan_dir: pathlib.Path) -> None:
+        for meta in ("manifest.jsonl", "manifest.sha256"):
+            src = scan_dir / meta
+            if src.exists():
+                src.replace(self._home / meta)
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -138,7 +173,7 @@ def _main(argv: list[str] | None = None) -> int:
     info = c.info()
     print(f"{c.name}: {info.fixture_count} fixtures, "
           f"{info.labeled_positives} positives, {info.bytes} bytes "
-          f"at {c.root}", file=sys.stderr)
+          f"scan_root={c.scan_root}", file=sys.stderr)
     return 0
 
 

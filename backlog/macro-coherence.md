@@ -28,6 +28,7 @@ issues, distinct from per-site micro fixes.
 - **MC-11 · med · vendor/vyre/ (excluded) vs `vyre =0.6.1` from crates.io** — the engine has a vendored tree kept "for reference" plus the published dep. Two copies of the GPU/SIMD engine source is a divergence trap; document the policy or drop the vendored tree.
 - **MC-12 · med · scanner (6× FNV-1a loops, 5× thread-local FNV caches; 2× base64-blob gates)** — consolidate into one `util_hash` module + one `is_random_base64_blob` helper. (audit W14/W8)
 - **MC-13 · low · suppression surfaces** — `.keyhogignore` (path/hash/inline), `.keyhog/strict`, `audit.toml`, inline `keyhog:ignore`, bundled `test-fixtures.toml` are 5 overlapping allow/suppress mechanisms. Map them in one doc; collapse where they overlap.
+- **MC-15 · high · `--no-suppress-test-fixtures` does not fully disable fixture suppression** — a path-context test-fixture confidence penalty survives the flag. Proven on the bench: the SAME 15k byte-identical fixtures scored **1880** findings when the scan dir was named `fixtures/` vs **2484** under a neutral name (`corpus/`/`data/`), with `--no-suppress-test-fixtures` set in both. The flag's name promises suppression-off; a residual path-based penalty contradicts it — either the flag clears the path penalty too, or rename/redocument. This silently skewed bench numbers until the corpus scan dir was renamed; `benchmarks/` now forbids fixture-shaped scan-dir names. (bench audit)
 
 ## Crate boundaries
 
