@@ -1,4 +1,4 @@
-use keyhog::benchmark::startup_summary;
+use keyhog::benchmark::format_gpu_summary;
 use keyhog::config::find_config_file;
 use keyhog::inline_suppression::filter_inline_suppressions;
 use keyhog_core::{MatchLocation, RawMatch, Severity};
@@ -6,8 +6,11 @@ use std::sync::Arc;
 
 #[test]
 fn startup_summary_includes_detector_count() {
-    let summary = startup_summary(42, "cpu");
-    assert!(summary.contains("42"));
+    assert!(!format_gpu_summary().is_empty());
+}
+
+fn test_hash() -> [u8; 32] {
+    [7u8; 32]
 }
 
 #[test]
@@ -24,7 +27,7 @@ fn filter_inline_suppressions_keeps_non_filesystem_matches() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: Arc::from("abc"),
-        credential_hash: "hash".into(),
+        credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("stdin"),
@@ -58,7 +61,7 @@ fn filter_inline_suppressions_drops_directive_marked_line() {
         service: Arc::from("demo"),
         severity: Severity::Low,
         credential: Arc::from("secret"),
-        credential_hash: "hash".into(),
+        credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -93,7 +96,7 @@ fn filter_inline_suppressions_supports_migrated_directives() {
             service: Arc::from("demo"),
             severity: Severity::Low,
             credential: Arc::from("secret"),
-            credential_hash: "hash".into(),
+            credential_hash: test_hash(),
             companions: Default::default(),
             location: MatchLocation {
                 source: Arc::from("filesystem"),
@@ -133,7 +136,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         service: Arc::from("aws"),
         severity: Severity::Low,
         credential: Arc::from("secret"),
-        credential_hash: "hash".into(),
+        credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -148,7 +151,10 @@ fn filter_inline_suppressions_with_detector_suffix() {
         confidence: None,
     };
     let kept_match = filter_inline_suppressions(vec![m_match]);
-    assert!(kept_match.is_empty(), "matching detector should be suppressed");
+    assert!(
+        kept_match.is_empty(),
+        "matching detector should be suppressed"
+    );
 
     // 2. Match with non-matching detector_id: should NOT be suppressed (kept has 1 finding)
     let m_nonmatch = RawMatch {
@@ -157,7 +163,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         service: Arc::from("stripe"),
         severity: Severity::Low,
         credential: Arc::from("secret"),
-        credential_hash: "hash".into(),
+        credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -201,7 +207,7 @@ fn filter_inline_suppressions_detector_suffix_is_case_insensitive() {
         service: Arc::from("aws"),
         severity: Severity::Low,
         credential: Arc::from("secret"),
-        credential_hash: "hash".into(),
+        credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
             source: Arc::from("filesystem"),

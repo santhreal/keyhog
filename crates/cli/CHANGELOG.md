@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Wire the effective-config oracle into the scan path and keep post-scan confidence filtering on the same resolved floor as the scanner.
+- Update stale unit fixtures for the inline-byte credential-hash contract and removed duplicate startup-summary helper.
 
 ## 0.2.1
 
