@@ -1008,8 +1008,8 @@ fn adv84_env0_api_key_evade_lrm_must_fire() {
 fn adv84_epa_api_key_normal_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1025,8 +1025,8 @@ fn adv84_epa_api_key_wrong_prefix_must_silent() {
 fn adv84_epa_api_key_evade_zwsp_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200B}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200B}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1034,8 +1034,8 @@ fn adv84_epa_api_key_evade_zwsp_must_fire() {
 fn adv84_epa_api_key_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{00AD}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{00AD}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1043,8 +1043,8 @@ fn adv84_epa_api_key_evade_soft_hyphen_must_fire() {
 fn adv84_epa_api_key_evade_zwnj_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200C}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200C}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1052,8 +1052,8 @@ fn adv84_epa_api_key_evade_zwnj_must_fire() {
 fn adv84_epa_api_key_evade_zwj_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200D}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200D}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1061,8 +1061,8 @@ fn adv84_epa_api_key_evade_zwj_must_fire() {
 fn adv84_epa_api_key_evade_zwnbsp_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{FEFF}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{FEFF}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1070,8 +1070,8 @@ fn adv84_epa_api_key_evade_zwnbsp_must_fire() {
 fn adv84_epa_api_key_evade_word_joiner_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{2060}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{2060}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1079,8 +1079,8 @@ fn adv84_epa_api_key_evade_word_joiner_must_fire() {
 fn adv84_epa_api_key_evade_mongolian_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{180E}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{180E}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1088,8 +1088,8 @@ fn adv84_epa_api_key_evade_mongolian_must_fire() {
 fn adv84_epa_api_key_evade_rtl_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{202E}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{202E}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1097,8 +1097,8 @@ fn adv84_epa_api_key_evade_rtl_must_fire() {
 fn adv84_epa_api_key_evade_pop_dir_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{202C}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{202C}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
 
@@ -1106,7 +1106,7 @@ fn adv84_epa_api_key_evade_pop_dir_must_fire() {
 fn adv84_epa_api_key_evade_lrm_must_fire() {
     assert_detector_fires(
         "epa-api-key",
-        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200E}p4Qx7Rm2Sn5Tb8Vw3YzKp4",
-        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4",
+        "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzK\u{200E}p4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
     );
 }
