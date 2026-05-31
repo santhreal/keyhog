@@ -9,6 +9,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Make the composite GitHub Action fail closed when KeyHog exits cleanly without writing the requested report, and expose `duration-ms` in the Action outputs and job summary for CI performance tracking.
 - Update the CI workflow guide to lead with the hardened composite GitHub Action, including SARIF/artifact/summary behavior and baseline adoption.
 - Align CI rollout docs with the composite Action's advisory-mode contract: ordinary findings can be non-blocking, but verified-live credentials still fail after report/SARIF/artifact upload.
+- Correct first-scan, detector, and drop-in exit-code docs so verified-live credentials are consistently documented as exit `10`, not ordinary exit `1`.
 - Move the composite Action scan/count/summary path into a tested local script, validate `format`/`severity`/`verify` before scanner invocation, expose the raw `exit-code` output, sanitize job-summary cells, and count text reports by the stable `Secret:` field instead of a non-portable box-drawing grep.
 - Validate `fail-on-findings` and `upload-sarif` in the same tested scan script before invoking KeyHog, escape untrusted values in GitHub workflow commands, and surface live-verification parse failures as nonzero findings instead of clean CI output.
 - Validate composite Action JSON and SARIF report shapes consistently across jq and Python counting paths so malformed clean reports fail closed instead of being miscounted as findings.

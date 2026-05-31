@@ -1927,3 +1927,16 @@ Vector coverage:
 Verified gates:
 
 - `rg -n 'fail-on-findings|verified-live|exit code' docs/src/workflows/ci.md docs/DROP_IN_USAGE.md docs/INTEGRATION_PR_TEMPLATE.md`
+
+## Executed Patch Set: Exit-Code Documentation Coherence
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- COHERENCE: first-scan, detector-authoring, and drop-in usage docs no longer describe verified-live credentials as ordinary exit `1` findings.
+- CI UX: docs now tell CI consumers to block on both exit `1` and exit `10`, while keeping runtime/configuration failures distinct.
+
+Verified gates:
+
+- `! rg -n 'unverified or verified-live|bad config, panic|CI gates should look for|only depends on whether ANY finding exists' docs/src docs/DROP_IN_USAGE.md`
