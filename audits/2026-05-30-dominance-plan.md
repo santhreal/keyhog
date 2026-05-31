@@ -20,6 +20,7 @@ Status: active plan
 - 2026-05-30: Committed mirror benchmark report tables refreshed from current `benchmarks/results`; report-check proves README injection is byte-stable, and the current gap table now names private-key recall as the largest competitor delta.
 - 2026-05-30: Private-key benchmark gap traced to scorer normalization, not scanner recall: KeyHog emitted duplicate PEM appearances as `additional_locations`, while the adapter scored only the primary location. The adapter now expands those aliases, mirror private-key F1 is 1.000, and overall mirror F1 is 0.9108.
 - 2026-05-30: Generic-high-entropy gap audit found BetterLeaks' category win comes with broad false-positive cost outside that category (overall precision 0.231). Gap reporting now includes competitor overall precision so category deltas cannot hide precision regressions.
+- 2026-05-30: Composite Action artifact uploads now include the GitHub job id and scan duration in the artifact name, preventing the default `keyhog-report` name from colliding in common matrix CI layouts.
 
 ## Dominance Contract
 
