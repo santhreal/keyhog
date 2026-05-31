@@ -170,7 +170,7 @@ PY
       ;;
     jsonl)
       if command -v jq >/dev/null 2>&1; then
-        jq -s 'length' "$report_path"
+        jq -s 'if all(.[]; type == "object") then length else error("keyhog JSONL report lines must be objects") end' "$report_path"
       elif command -v python3 >/dev/null 2>&1; then
         python3 - "$report_path" <<'PY'
 import json
@@ -181,7 +181,9 @@ with open(sys.argv[1], "r", encoding="utf-8") as f:
     for line in f:
         if not line.strip():
             continue
-        json.loads(line)
+        finding = json.loads(line)
+        if not isinstance(finding, dict):
+            raise SystemExit("keyhog JSONL report lines must be objects")
         count += 1
 
 print(count)

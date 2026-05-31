@@ -976,6 +976,85 @@ exit 0
 }
 
 #[test]
+fn action_rejects_non_object_clean_jsonl_report() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '"not-a-finding-object"\n' > "$out"
+exit 0
+"#,
+    );
+
+    let output = run_action(
+        &dir,
+        &[
+            ("KEYHOG_FORMAT", "jsonl"),
+            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "non-object clean jsonl report must fail closed; output={}",
+        combined_output(&output)
+    );
+    assert!(
+        combined_output(&output).contains("Could not parse clean scan report"),
+        "non-object JSONL must be operator-visible as report corruption; output={}",
+        combined_output(&output)
+    );
+}
+
+#[test]
+fn action_treats_non_object_findings_jsonl_as_at_least_one_finding() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '"not-a-finding-object"\n' > "$out"
+exit 1
+"#,
+    );
+
+    let output = run_action(
+        &dir,
+        &[
+            ("KEYHOG_FORMAT", "jsonl"),
+            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "non-object findings jsonl should keep CI on findings path; output={}",
+        combined_output(&output)
+    );
+    assert!(
+        output_file(&dir).contains("findings=1"),
+        "parse failure after findings exit must not become zero findings"
+    );
+}
+
+#[test]
 fn action_sanitizes_markdown_summary_cells() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(

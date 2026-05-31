@@ -1851,3 +1851,19 @@ Verified gates:
 - `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend gpu --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/4c/mirror-pos-0000332.yaml` reported `postgresql-connection-string` after GPU AC degraded on degenerate Vyre triples.
 - `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog scan --backend auto --no-daemon --format json --show-secrets --no-suppress-test-fixtures benchmarks/corpora/mirror/corpus/4c/mirror-pos-0000332.yaml` reported `postgresql-connection-string`.
 - `/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog backend --self-test` confirmed RTX 5090 MoE PASS, literal-set KNOWN, and Vyre AC FAIL on degenerate triples.
+
+## Executed Patch Set: Action JSONL Object Validation
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- CI UX: composite Action JSONL parsing now requires every nonblank JSONL value to be an object, matching the real reporter contract and preventing opaque strings/nulls from becoming fake findings counts.
+- AUDIT HUNTS: clean malformed JSONL fails closed with exit 3, while malformed JSONL after a findings exit stays on the findings path instead of becoming zero findings.
+- COHERENCE: jq and Python fallback parsers now enforce the same JSONL object shape.
+- TESTING: added e2e Action contracts for clean and findings-exit non-object JSONL reports.
+
+Verified gates:
+
+- `bash -n .github/actions/keyhog/run-scan.sh`
+- `cargo test -p keyhog --test all_tests action_ci_contract -- --nocapture`
