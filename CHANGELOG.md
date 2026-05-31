@@ -71,6 +71,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Scanner
 
+- Let Avalara license-key matches surface without requiring a nearby account-id companion; the account ID is still captured for verification when present, but standalone `avalara_license_key` fixtures no longer get dropped before reporting.
+- Normalize U+00AD soft hyphen as an evasion character instead of promoting digit-adjacent occurrences to ASCII `-`, restoring contiguous credential matching for soft-hyphen-split secrets.
+- Lower the anchored AWS session-token body floor from 80 to 64 characters so committed 77-character `AWS_SESSION_TOKEN` fixtures and their soft-hyphen variants are detected by the service detector instead of relying on generic fallback behavior.
 - Add a dense-prefix circuit breaker for GPU AC/literal-set phase 1: once a batch produces prefix hits at the measured phase-2 loss point, KeyHog keeps the successful GPU probe but scans that batch with the SIMD coalesced path instead of confirming millions of broad prefixes on CPU.
 - Replace the SIMD coalesced no-hit multiline fallback's full `scan()` re-entry with a prepared multiline-text scan, eliminating decode/postprocess recursion on large ordinary source files; the Linux `drivers/net` subset dropped from ~15.6 s to 0.62 s wall and the full warm-cache kernel scan from ~90 s to 3.43 s.
 - Window decoded splice-back context around the encoded payload instead of cloning the whole parent file per decoded candidate, bounding candidate-dense decode-through work while preserving nearby companion anchors.

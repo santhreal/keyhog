@@ -134,18 +134,8 @@ pub fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
     if !text.is_ascii() && !contains_evasion(text) {
         return std::borrow::Cow::Borrowed(text);
     }
-    let chars: Vec<char> = text.chars().collect();
     let mut normalized = String::with_capacity(text.len());
-    for (idx, &ch) in chars.iter().enumerate() {
-        if ch == '\u{00AD}' {
-            let prev = idx.checked_sub(1).and_then(|i| chars.get(i)).copied();
-            let next = chars.get(idx + 1).copied();
-            if prev.is_some_and(|c| c.is_ascii_digit()) || next.is_some_and(|c| c.is_ascii_digit())
-            {
-                normalized.push('-');
-            }
-            continue;
-        }
+    for ch in text.chars() {
         if let Some(latin) = cyrillic_to_latin(ch) {
             normalized.push(latin);
             continue;
