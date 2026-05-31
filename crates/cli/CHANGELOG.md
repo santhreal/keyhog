@@ -6,6 +6,7 @@
 - Update stale unit fixtures for the inline-byte credential-hash contract and removed duplicate startup-summary helper.
 - Keep default `--git-diff HEAD` wired to worktree changes, honor CLI excludes for staged-only scans, and refresh git-mode e2e contracts for clean staged inputs and SARIF schema coherence.
 - Move args, hook, and scan-system inline tests into registered aggregate unit modules, including scan-system redaction tests updated for the raw `[u8; 32]` hash contract.
+- Refresh the dogfood detector-count oracle to 894 and keep the structured UUID named-detector default-recall e2e passing.
 
 ## 0.2.1
 
