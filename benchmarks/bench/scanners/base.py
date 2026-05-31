@@ -1,0 +1,229 @@
+"""Scanner contract + shared subprocess measurement.
+
+Every adapter yields normalised findings (``{file, line, value, detector}``)
+and a :class:`RunStats`. Measurement is uniform across scanners:
+
+* **wall** — a monotonic ``perf_counter`` around the whole invocation.
+* **peak RSS** — ``/usr/bin/time -v -o <file>`` parsed for "Maximum resident
+  set size", with a ``resource.getrusage(RUSAGE_CHILDREN)`` fallback where
+  GNU time is absent (macOS / minimal containers). Never raises.
+* **throughput** — corpus bytes / wall, filled in by the runner which knows
+  the corpus size.
+
+Findings always go to a ``--output`` file or stdout that GNU time's report
+never touches (the report lands in a separate ``-o`` file), so parsing the
+two never crosses streams.
+
+Cold-start amortisation (the 257x score.py documents) is preserved:
+``scan_roots`` collapses per-fixture paths to the single common ancestor so
+a recursive scanner pays one warm()/compile/probe over the whole corpus.
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+import re
+import resource
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+from ..schema import ScannerConfig
+
+Finding = dict
+
+
+@dataclass
+class RunStats:
+    wall_ms: float = 0.0
+    peak_rss_kb: int = 0
+    throughput_mb_s: float = 0.0
+    exit_code: int = 0
+    timed_out: bool = False
+
+
+# ── path collapse (verbatim intent from score.py::_scan_roots) ────────
+
+
+def scan_roots(file_paths: list[pathlib.Path]) -> list[pathlib.Path]:
+    """Collapse per-fixture paths to the smallest covering set of dirs so a
+    recursive scanner pays ONE cold-start over the corpus. Single common
+    ancestor when one exists, else distinct parents."""
+    parents = sorted({fp.parent for fp in file_paths})
+    if not parents:
+        return []
+    try:
+        common = pathlib.Path(os.path.commonpath([str(p) for p in parents]))
+    except ValueError:
+        return parents
+    return [common]
+
+
+# ── measured subprocess ───────────────────────────────────────────────
+
+_GNU_TIME = shutil.which("gtime") or "/usr/bin/time"
+_RSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
+
+
+def _has_gnu_time() -> bool:
+    return pathlib.Path(_GNU_TIME).exists() or shutil.which("gtime") is not None
+
+
+def run_measured(
+    cmd: list[str],
+    *,
+    env: dict | None = None,
+    cwd: str | None = None,
+    timeout: int = 1800,
+) -> tuple[str, str, RunStats]:
+    """Run ``cmd``, return (stdout, stderr, RunStats). GNU time captures peak
+    RSS into a private file so the child's own stdout/stderr stay clean for
+    the adapter to parse findings from."""
+    full_env = dict(os.environ)
+    if env:
+        full_env.update(env)
+
+    rss_file = None
+    run_cmd = cmd
+    if _has_gnu_time():
+        rss_file = tempfile.NamedTemporaryFile(
+            mode="r", suffix=".time", delete=False)
+        rss_file.close()
+        run_cmd = [_GNU_TIME, "-v", "-o", rss_file.name, *cmd]
+
+    rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    t0 = time.perf_counter()
+    timed_out = False
+    try:
+        completed = subprocess.run(
+            run_cmd, capture_output=True, text=True, check=False,
+            timeout=timeout, env=full_env, cwd=cwd,
+        )
+        stdout, stderr, rc = completed.stdout, completed.stderr, completed.returncode
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        rc = -1
+        timed_out = True
+    wall_ms = (time.perf_counter() - t0) * 1000.0
+
+    peak_rss_kb = 0
+    if rss_file is not None:
+        try:
+            text = pathlib.Path(rss_file.name).read_text()
+            m = _RSS_RE.search(text)
+            if m:
+                peak_rss_kb = int(m.group(1))
+        except OSError:
+            pass
+        finally:
+            try:
+                os.unlink(rss_file.name)
+            except OSError:
+                pass
+    if peak_rss_kb == 0:
+        # Fallback: RUSAGE_CHILDREN ru_maxrss. Linux reports kB; macOS bytes.
+        after = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        delta = max(after - rusage_before, after)
+        if sys.platform == "darwin":
+            delta //= 1024
+        peak_rss_kb = int(delta)
+
+    return stdout, stderr, RunStats(
+        wall_ms=wall_ms, peak_rss_kb=peak_rss_kb, exit_code=rc, timed_out=timed_out)
+
+
+# ── version probe (verbatim intent from score.py::scanner_version) ────
+
+
+def probe_version(binary: str) -> str:
+    """Best-effort ``<binary> --version`` so a result records exactly which
+    build produced it (closes the stale-binary provenance gap). Returns ""
+    if the binary is absent or the probe fails — never raises."""
+    if shutil.which(binary) is None and not pathlib.Path(binary).exists():
+        return ""
+    try:
+        completed = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True,
+            check=False, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    out = (completed.stdout or completed.stderr or "").strip()
+    return " ".join(line.strip() for line in out.splitlines() if line.strip())
+
+
+# ── the contract ───────────────────────────────────────────────────────
+
+
+class Scanner(ABC):
+    #: short stable id used in result filenames + reports
+    name: str = ""
+    #: default binary name (resolved on PATH unless an env override is set)
+    binary_name: str = ""
+    #: env var that overrides the binary path (e.g. KEYHOG_BIN)
+    binary_env: str = ""
+
+    def __init__(self, binary: str | None = None):
+        self._binary = binary
+
+    @property
+    def binary(self) -> str:
+        if self._binary:
+            return self._binary
+        if self.binary_env and os.environ.get(self.binary_env):
+            return os.environ[self.binary_env]
+        return self.binary_name
+
+    def available(self) -> bool:
+        b = self.binary
+        return shutil.which(b) is not None or pathlib.Path(b).exists()
+
+    def version(self) -> str:
+        return probe_version(self.binary)
+
+    def default_config(self) -> ScannerConfig:
+        """The single config used for the headline leaderboard."""
+        return self.variants()[0]
+
+    @abstractmethod
+    def variants(self) -> list[ScannerConfig]:
+        """Config points this scanner supports. variants()[0] is the default."""
+
+    @abstractmethod
+    def run(self, root: pathlib.Path, cfg: ScannerConfig,
+            output: pathlib.Path | None = None) -> tuple[list[Finding], RunStats]:
+        """Scan ``root`` under ``cfg``; return (normalised findings, stats)."""
+
+
+def resolve_scanner(name: str, **kw) -> Scanner:
+    """Factory: scanner name -> adapter. Lazy imports so a missing binary in
+    one adapter never breaks importing another."""
+    name = name.lower()
+    if name == "keyhog":
+        from .keyhog import KeyhogScanner
+        return KeyhogScanner(**kw)
+    if name == "betterleaks":
+        from .competitors import BetterleaksScanner
+        return BetterleaksScanner(**kw)
+    if name == "kingfisher":
+        from .competitors import KingfisherScanner
+        return KingfisherScanner(**kw)
+    if name == "noseyparker":
+        from .competitors import NoseyparkerScanner
+        return NoseyparkerScanner(**kw)
+    if name == "trufflehog":
+        from .competitors import TrufflehogScanner
+        return TrufflehogScanner(**kw)
+    if name == "titus":
+        from .competitors import TitusScanner
+        return TitusScanner(**kw)
+    raise SystemExit(
+        f"unknown scanner {name!r}; known: keyhog, betterleaks, kingfisher, "
+        f"noseyparker, trufflehog, titus"
+    )

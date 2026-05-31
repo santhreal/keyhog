@@ -34,6 +34,36 @@ def test_mirror_corpus_loads_manifest_jsonl(tmp_path):
     assert corpus.info().labeled_positives == 1
 
 
+def test_mirror_corpus_scans_fixture_tree_without_manifest(tmp_path):
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "id": "one",
+                "secret": "secret-one",
+                "label": True,
+                "category": "api",
+                "on_disk_path": "aa/one.txt",
+                "start_line": 2,
+                "end_line": 2,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    shard = fixtures / "aa"
+    shard.mkdir()
+    (shard / "one.txt").write_text("secret-one\n", encoding="utf-8")
+
+    corpus = MirrorCorpus(corpus_dir=tmp_path)
+
+    assert corpus.scan_root == fixtures
+    assert corpus.file_root == fixtures
+    assert corpus.info().fixture_count == 1
+
+
 def test_creddata_corpus_loads_csv_and_ignores_templates(tmp_path):
     manifest = tmp_path / "manifest.csv"
     with open(manifest, "w", newline="", encoding="utf-8") as handle:

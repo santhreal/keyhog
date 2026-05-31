@@ -57,6 +57,25 @@ class MirrorCorpus(Corpus):
     def root(self) -> pathlib.Path:
         return self._dir
 
+    @property
+    def _fixtures_dir(self) -> pathlib.Path | None:
+        """The answer-key-free layout: ``<corpus>/fixtures/<shards>`` beside
+        ``<corpus>/manifest.jsonl``. Present in the migrated benchmarks home;
+        absent in the legacy flat layout (manifest in-tree)."""
+        fx = self._dir / "fixtures"
+        return fx if fx.is_dir() else None
+
+    @property
+    def scan_root(self) -> pathlib.Path:
+        # Scanners see only the fixtures, never the sibling manifest.jsonl.
+        return self._fixtures_dir or self._dir
+
+    @property
+    def file_root(self) -> pathlib.Path:
+        # on_disk_path ("00/<id>.ext") is relative to the shard parent, which
+        # is the fixtures dir under the migrated layout, else the corpus dir.
+        return self._fixtures_dir or self._dir
+
     def manifest(self) -> pathlib.Path:
         return self._dir / "manifest.jsonl"
 

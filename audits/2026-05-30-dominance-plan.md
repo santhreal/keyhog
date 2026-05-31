@@ -1635,3 +1635,21 @@ Verified gates:
 
 - `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py && python3 -m pytest -q bench/tests`
 - `cd benchmarks && python3 -m bench host >/tmp/keyhog-bench-host.json && python3 -m bench corpus kernel >/tmp/keyhog-bench-kernel.json && python3 -m json.tool /tmp/keyhog-bench-host.json >/dev/null && python3 -m json.tool /tmp/keyhog-bench-kernel.json >/dev/null`
+
+## Executed Patch Set: Benchmark Scanner Adapter Package
+
+Date: 2026-05-31
+
+Vector coverage:
+
+- RESEARCH: added first-class benchmark adapters for Betterleaks, Kingfisher, Nosey Parker, Titus, and TruffleHog so dominance checks can run the installed competitor binaries through the same measured `Scanner` contract as Keyhog.
+- WIRING: each adapter maps its real CLI, validation-off mode, JSON/JSONL report shape, datastore path, and unredacted output path into normalized `{file,line,value,detector}` findings plus wall/RSS/exit-code stats.
+- COHERENCE: removed the duplicate `bench/scanners.py` module and kept one `bench.scanners` package, so Python import behavior cannot silently select the wrong adapter surface.
+- TESTING: normalizer contracts now cover Keyhog, Betterleaks, Kingfisher JSONL, Nosey Parker report JSON, and Titus SQLite datastores; resolver tests lock the requested competitor names into measured scanner classes, and corpus tests prove the mirror scanner root excludes `manifest.jsonl`.
+- AUDIT HUNTS: generated benchmark corpora are ignored because the mirror generator emits secret-shaped fixtures into `benchmarks/corpora/`, while source code and adapter contracts remain tracked.
+- SPEED: corpus byte/file accounting now uses the same manifest-free `scan_root` that scanners receive, so throughput cannot be padded by answer-key bytes.
+
+Verified gates:
+
+- `cd benchmarks && python3 -m py_compile bench/*.py bench/corpora/*.py bench/scanners/*.py && python3 -m pytest -q bench/tests`
+- Real-binary smoke through `resolve_scanner` over GitHub/AWS/Slack fixtures: Keyhog, Betterleaks, Nosey Parker, Titus, Kingfisher, and TruffleHog all invoked; Keyhog/Nosey/Titus flagged the GitHub sample, Betterleaks flagged the Slack sample, and Kingfisher/TruffleHog completed cleanly on the synthetic fixture set.
