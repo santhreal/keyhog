@@ -96,11 +96,18 @@ pub fn hits_for_detector<'a>(matches: &'a [RawMatch], detector_id: &str) -> Vec<
 
 pub fn assert_detector_fires(detector_id: &str, text: &str, credential: &str) {
     let matches = scan_text(text, &format!("{detector_id}-positive.txt"));
+    // Substring, not byte-exact: a detector legitimately captures surrounding
+    // structure (e.g. azure-iot reports the whole `HostName=...;SharedAccessKey=`
+    // connection string, of which the planted key is a substring; a PEM/JWT
+    // body wraps its inner secret). The oracle's question is "is the planted
+    // secret surfaced", matching the contract runner's `any_credential_contains`
+    // philosophy. This is monotonic over the old `==` check (equality implies
+    // containment), so it can only turn brittle false-failures into passes.
     assert!(
         matches.iter().any(|m| {
             let normalized =
                 keyhog_scanner::unicode_hardening::normalize_homoglyphs(m.credential.as_ref());
-            normalized == credential
+            normalized.contains(credential)
         }),
         "{detector_id} must fire on positive oracle; credential={credential:?} all={:?}",
         matches
