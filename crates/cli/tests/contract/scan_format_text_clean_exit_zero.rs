@@ -11,5 +11,10 @@ fn scan_format_text_clean_exit_zero() {
         .arg(&path)
         .output()
         .expect("spawn");
-    assert_eq!(output.status.code(), Some(0), "stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

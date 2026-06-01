@@ -3,11 +3,16 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-fn binary() -> PathBuf { PathBuf::from(env!("CARGO_BIN_EXE_keyhog")) }
+fn binary() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
 
 #[test]
 fn help_documents_exit_code_four_backend_self_test() {
-    let output = Command::new(binary()).arg("--help").output().expect("spawn");
+    let output = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("spawn");
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),

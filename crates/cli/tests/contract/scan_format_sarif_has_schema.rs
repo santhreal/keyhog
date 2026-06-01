@@ -11,6 +11,7 @@ fn scan_format_sarif_has_schema() {
         .arg(&path)
         .output()
         .expect("spawn");
-    let sarif: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("sarif");
+    let sarif: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("sarif");
     assert!(sarif.get("version").is_some(), "sarif must include version");
 }

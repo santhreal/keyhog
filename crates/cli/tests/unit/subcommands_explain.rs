@@ -17,8 +17,7 @@ fn embedded() -> Vec<DetectorSpec> {
     // `detectors/` dir is present in the test cwd it falls back to the embedded
     // corpus (the production default). An explicit non-existent path now errors
     // by design, so we must use the sentinel, not a bogus directory name.
-    load_detectors_or_embedded(Path::new("detectors"))
-        .expect("embedded detector corpus must load")
+    load_detectors_or_embedded(Path::new("detectors")).expect("embedded detector corpus must load")
 }
 
 /// Coherence: every `hot-*` id keyhog can print in a finding must resolve

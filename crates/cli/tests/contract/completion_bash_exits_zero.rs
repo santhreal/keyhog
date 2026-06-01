@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn completion_bash_exits_zero() {
-    let output = Command::new(binary()).args(["completion", "bash"]).output().expect("spawn");
+    let output = Command::new(binary())
+        .args(["completion", "bash"])
+        .output()
+        .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("complete"), "bash completion must contain 'complete'; got: {stdout}");
+    assert!(
+        stdout.contains("complete"),
+        "bash completion must contain 'complete'; got: {stdout}"
+    );
 }

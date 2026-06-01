@@ -9,6 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn calibrate_show_exits_zero() {
-    let output = Command::new(binary()).args(["calibrate", "--show"]).output().expect("spawn");
-    assert_eq!(output.status.code(), Some(0), "calibrate --show must exit 0; stderr={}", String::from_utf8_lossy(&output.stderr));
+    let output = Command::new(binary())
+        .args(["calibrate", "--show"])
+        .output()
+        .expect("spawn");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "calibrate --show must exit 0; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

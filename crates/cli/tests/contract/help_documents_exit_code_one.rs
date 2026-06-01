@@ -9,7 +9,17 @@ fn binary() -> PathBuf {
 
 #[test]
 fn help_documents_exit_code_one() {
-    let output = Command::new(binary()).arg("--help").output().expect("spawn");
-    let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-    assert!(combined.contains("1   Secrets found") || combined.contains("1  Secrets found"), "help must document exit 1; got: {combined}");
+    let output = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("spawn");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("1   Secrets found") || combined.contains("1  Secrets found"),
+        "help must document exit 1; got: {combined}"
+    );
 }

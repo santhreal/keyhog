@@ -27,6 +27,7 @@ fn scan_exclude_paths_suppresses_file() {
         .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let findings: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap_or(serde_json::json!([]));
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+            .unwrap_or(serde_json::json!([]));
     assert!(findings.as_array().is_some_and(|a| a.is_empty()));
 }
