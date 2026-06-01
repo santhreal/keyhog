@@ -93,8 +93,8 @@ fn adv32_fedex_evade_homoglyph_must_fire() {
 fn adv32_figma_normal_must_fire() {
     assert_detector_fires(
         "figma-pat",
-        "figma_token = \"figd_0000000000000000000000000000000000000000000000000000\"",
-        "figd_0000000000000000000000000000000000000000000000000000",
+        "figma_token = \"figd_0000000000000000000000000000000000000000\"",
+        "figd_0000000000000000000000000000000000000000",
     );
 }
 
@@ -102,7 +102,7 @@ fn adv32_figma_normal_must_fire() {
 fn adv32_figma_wrong_prefix_must_silent() {
     assert_detector_silent(
         "figma-pat",
-        "gigma_token = \"figd_0000000000000000000000000000000000000000000000000000\"",
+        "gigma_token = \"figd_0000000000000000000000000000000000000000\"",
     );
 }
 
@@ -110,8 +110,8 @@ fn adv32_figma_wrong_prefix_must_silent() {
 fn adv32_figma_evade_zwsp_must_fire() {
     assert_detector_fires(
         "figma-pat",
-        "figma\u{200B}_token = \"figd_0000000000000000000000000000000000000000000000000000\"",
-        "figd_0000000000000000000000000000000000000000000000000000",
+        "figma\u{200B}_token = \"figd_0000000000000000000000000000000000000000\"",
+        "figd_0000000000000000000000000000000000000000",
     );
 }
 
@@ -120,7 +120,7 @@ fn adv32_figma_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "figma-pat",
         "figma_token = \"figd_000000000000000000000000000000\u{00AD}00000000000000000000\"",
-        "figd_0000000000000000000000000000000000000000000000000000",
+        "figd_0000000000000000000000000000000000000000",
     );
 }
 
@@ -128,7 +128,7 @@ fn adv32_figma_evade_soft_hyphen_must_fire() {
 fn adv32_figma_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "figma-pat",
-        "f\u{0456}gma_token = \"figd_0000000000000000000000000000000000000000000000000000\"",
-        "figd_0000000000000000000000000000000000000000000000000000",
+        "f\u{0456}gma_token = \"figd_0000000000000000000000000000000000000000\"",
+        "figd_0000000000000000000000000000000000000000",
     );
 }

@@ -214,7 +214,7 @@ fn adv12_gov_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_iothub_normal_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpZQ", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpZQ");
 }
 
 #[test]
