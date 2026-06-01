@@ -21,7 +21,7 @@ adversarial test alongside the proving test.
 - `crates/verifier/` - live credential probes (auth/identity
   endpoints) for `--verify`.
 - `crates/cli/` - the `keyhog` binary, subcommands, args, daemon.
-- `detectors/` - 891 TOML detector specs, the project's moat. No
+- `detectors/` - 894 TOML detector specs, the project's moat. No
   Rust code touched when you add one.
 - `vendor/vyre/` - vendored AC/GPU primitives. Path-dep only,
   pinned per-release.
