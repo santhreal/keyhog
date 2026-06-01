@@ -54,9 +54,12 @@ WORKSPACE
 WORKSPACE.bazel
 # Top-level scratch/audit/plan files that belong in the backup monorepo
 # (santhsecurity/Santh) and `.audits/`, not in the standalone prod repo.
+# NB: GAP_FINDINGS.toml is intentionally tracked (not ignored) — six contract
+# tests across core/sources/scanner/cli read it as a source-of-truth registry,
+# mirroring tests/FILE_GATE_MATRIX.toml, which was promoted out of this list for
+# the same reason.
 ROUNDS.md
 TODO.md
-GAP_FINDINGS.toml
 TESTING_PROGRAM.md
 KEYHOG_LINUX_QUALITY_PROGRAM.md
 WAVE*_AGENT_PUSH.md

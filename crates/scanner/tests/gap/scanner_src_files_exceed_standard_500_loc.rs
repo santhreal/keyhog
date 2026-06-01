@@ -1,7 +1,9 @@
-//! KH-GAP-123: Six scanner `src/` files exceed the Santh STANDARD 500 LOC cap.
+//! KH-GAP-123: scanner `src/` files that historically exceeded the Santh
+//! STANDARD 500 LOC cap. The oracle guards them from regressing past the cap.
 //!
-//! Unit gates under `tests/unit/gates/` already fail RED; this gap oracle consolidates
-//! the bar-miss for GAP_FINDINGS tracking.
+//! `hw_probe.rs` was the sixth offender; it was resolved by splitting it into
+//! the `src/hw_probe/` module (every file there is now under the cap), so it is
+//! no longer a single file to measure and has dropped off the watch list.
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +25,6 @@ fn no_scanner_src_file_exceeds_standard_500_loc_cap() {
             manifest.join("src/suppression/mod.rs"),
         ),
         ("engine/backend.rs", manifest.join("src/engine/backend.rs")),
-        ("hw_probe.rs", manifest.join("src/hw_probe.rs")),
         ("gpu.rs", manifest.join("src/gpu.rs")),
         ("compiler.rs", manifest.join("src/compiler.rs")),
     ];
