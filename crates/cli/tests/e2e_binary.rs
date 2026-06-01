@@ -1229,3 +1229,66 @@ fn config_lockdown_require_refuses_without_flag() {
         "the refusal must name lockdown so the operator knows why; stderr={err}"
     );
 }
+
+/// `--precision` is a high-precision mass-scan preset: it must keep genuine
+/// high-confidence secrets while dropping weaker (sub-0.85) findings that the
+/// default floor admits. The AWS secret key scores far higher than the bare
+/// access-key id, so precision keeps the former and drops the latter.
+#[test]
+fn precision_mode_keeps_strong_drops_weak() {
+    let fixture = concat!(
+        "aws_access_key_id = \"AKIA",
+        "QYLPMN5HGT3KZ7WB\"\n",
+        "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
+    );
+    let parse = |s: &str| -> Vec<String> {
+        serde_json::from_str::<serde_json::Value>(s)
+            .ok()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|f| f.get("detector_id").and_then(|d| d.as_str()).map(String::from))
+            .collect()
+    };
+    let (def_out, _e, _c) = scan_text_file(fixture, &[]);
+    let (prec_out, _e2, _c2) = scan_text_file(fixture, &["--precision"]);
+    let def = parse(&def_out);
+    let prec = parse(&prec_out);
+
+    assert!(
+        def.len() >= 2,
+        "default mode should surface both the access-key id and the secret key; got {def:?}"
+    );
+    assert!(
+        def.iter().any(|d| d == "aws-secret-access-key"),
+        "default must find the secret key; got {def:?}"
+    );
+    assert!(
+        prec.iter().any(|d| d == "aws-secret-access-key"),
+        "precision must KEEP the high-confidence secret key; got {prec:?}"
+    );
+    assert!(
+        prec.len() < def.len(),
+        "precision must be strictly tighter than default; default={def:?} precision={prec:?}"
+    );
+    assert!(
+        !prec.iter().any(|d| d == "aws-access-key" || d == "hot-aws_key"),
+        "precision must drop the weaker access-key-id finding (below the 0.85 bar); got {prec:?}"
+    );
+}
+
+/// The scan modes are mutually exclusive: clap must reject `--precision --fast`
+/// rather than silently letting one win.
+#[test]
+fn precision_mode_conflicts_with_fast() {
+    let (_o, err, code) = scan_text_file("ordinary content\n", &["--precision", "--fast"]);
+    assert_eq!(
+        code,
+        Some(2),
+        "clap usage error (exit 2) expected for conflicting --precision --fast; got {code:?}"
+    );
+    assert!(
+        err.contains("cannot be used with") || err.to_lowercase().contains("precision"),
+        "the usage error must name the conflict; stderr={err}"
+    );
+}

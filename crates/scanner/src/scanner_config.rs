@@ -61,6 +61,11 @@ impl Default for ScannerConfig {
 }
 
 impl ScannerConfig {
+    /// Confidence floor for [`ScannerConfig::high_precision`]. Distinct from the
+    /// canonical `ScanConfig::default()` floor (0.40) on purpose: precision mode
+    /// trades recall for a near-zero false-positive rate at mass-scan scale.
+    pub const HIGH_PRECISION_MIN_CONFIDENCE: f64 = 0.85;
+
     pub fn fast() -> Self {
         Self {
             max_decode_depth: 0,
@@ -79,6 +84,35 @@ impl ScannerConfig {
             max_decode_depth: 10,
             ml_enabled: true,
             entropy_enabled: true,
+            ..Default::default()
+        }
+    }
+
+    /// High-precision mass-scan preset: minimise false positives at the cost of
+    /// some recall, for scanning huge corpora where every FP is expensive to
+    /// triage. Fully offline and fast (no ML, no entropy sweep, shallow decode).
+    ///
+    /// - `entropy_enabled = false`: generic high-entropy matching is the single
+    ///   largest FP source; precision mode drops it entirely.
+    /// - `ml_enabled = true` (inherited): ML is the confidence discriminator that
+    ///   lifts genuine secrets over the high floor while leaving FP-shaped tokens
+    ///   below it. Disabling it would crater the scores the 0.85 bar relies on,
+    ///   so precision KEEPS ML (this mode trades recall for precision, not for
+    ///   speed — use `--fast` when speed is the goal).
+    /// - `min_confidence = HIGH_PRECISION_MIN_CONFIDENCE` (0.85): combined with
+    ///   the engine's checksum policy (valid token → floored 0.9, invalid →
+    ///   capped 0.1) and clamped over every detector's self-declared floor, this
+    ///   bar admits checksum-validated tokens and strong ML-scored findings while
+    ///   dropping checksum-failures and weak-signal matches.
+    /// - `max_decode_depth = 1`: deep-decoded payloads are a FP source at scale.
+    ///
+    /// `penalize_test_paths` stays on (the default) to suppress fixture-shaped
+    /// hits. A `--min-confidence` override still layers on top of this preset.
+    pub fn high_precision() -> Self {
+        Self {
+            max_decode_depth: 1,
+            entropy_enabled: false,
+            min_confidence: Self::HIGH_PRECISION_MIN_CONFIDENCE,
             ..Default::default()
         }
     }
