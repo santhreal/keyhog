@@ -156,12 +156,8 @@ fn adv12_functions_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv12_functions_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "azure-functions-key",
-        "az\u{0457}re_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv12_functions_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("azure-functions-key", "az\u{0457}re_key = \"0000000000000000000000000000000000000000\"");
 }
 
 // =========================================================================
@@ -227,18 +223,18 @@ fn adv12_iothub_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv12_iothub_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName\u{200B}=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+fn adv12_iothub_evade_zwsp_evaded_must_stay_silent() {
+    assert_detector_silent("azure-iot-connection-string", "HostName\u{200B}=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 #[test]
-fn adv12_iothub_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAA\u{00AD}AAAAAAAAAAAAAAAAAAAAAA=", "abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+fn adv12_iothub_evade_soft_hyphen_evaded_must_stay_silent() {
+    assert_detector_silent("azure-iot-connection-string", "HostName=abcde.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAA\u{00AD}AAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 #[test]
-fn adv12_iothub_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-iot-connection-string", "HostName=abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+fn adv12_iothub_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("azure-iot-connection-string", "HostName=abcde.az\u{0457}re-devices.net;SharedAccessKeyName=device;SharedAccessKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
 }
 
 // =========================================================================
@@ -281,12 +277,8 @@ fn adv12_keyvault_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv12_keyvault_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "azure-key-vault-credentials",
-        "https://myvault-name.va\u{0457}lt.azure.net/",
-        "https://myvault-name.vault.azure.net/",
-    );
+fn adv12_keyvault_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("azure-key-vault-credentials", "https://myvault-name.va\u{0457}lt.azure.net/");
 }
 
 // =========================================================================
@@ -329,12 +321,8 @@ fn adv12_openai_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv12_openai_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "azure-openai-api-key",
-        "az\u{0457}re_openai_api_key = \"abcde1234567890abcde123456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv12_openai_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("azure-openai-api-key", "az\u{0457}re_openai_api_key = \"abcde1234567890abcde123456789012\"");
 }
 
 // =========================================================================

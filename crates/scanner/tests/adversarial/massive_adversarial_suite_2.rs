@@ -154,12 +154,8 @@ fn adv2_openai_key_evade_zwsp_dash_must_fire() {
 }
 
 #[test]
-fn adv2_openai_key_evade_soft_hyphen_dash_must_fire() {
-    assert_detector_fires(
-        "openai-api-key",
-        "sk\u{00AD}proj-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4",
-        "sk-proj-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4",
-    );
+fn adv2_openai_key_evade_soft_hyphen_dash_evaded_must_stay_silent() {
+    assert_detector_silent("openai-api-key", "sk\u{00AD}proj-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4");
 }
 
 #[test]

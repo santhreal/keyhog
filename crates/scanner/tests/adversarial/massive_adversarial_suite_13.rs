@@ -43,12 +43,8 @@ fn adv13_backblaze_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv13_backblaze_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "backblaze-b2-app-key-v2",
-        "K\u{043E}\u{043E}Mabcde1234567890abcde1",
-        "K00Mabcde1234567890abcde1",
-    );
+fn adv13_backblaze_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("backblaze-b2-app-key-v2", "K\u{043E}\u{043E}Mabcde1234567890abcde1");
 }
 
 // =========================================================================

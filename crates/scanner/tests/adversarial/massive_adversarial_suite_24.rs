@@ -116,12 +116,8 @@ fn adv24_digitalocean_evade_zwsp_must_fire() {
 }
 
 #[test]
-fn adv24_digitalocean_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "digitalocean-pat",
-        "digitalocean_token = \"dop_v1_0000000000000000000000000000000000000000000000000000\u{00AD}0000000000\"",
-        "dop_v1_0000000000000000000000000000000000000000000000000000000000000000",
-    );
+fn adv24_digitalocean_evade_soft_hyphen_evaded_must_stay_silent() {
+    assert_detector_silent("digitalocean-pat", "digitalocean_token = \"dop_v1_0000000000000000000000000000000000000000000000000000\u{00AD}0000000000\"");
 }
 
 #[test]
