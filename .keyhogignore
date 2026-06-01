@@ -11,6 +11,21 @@ path:demo-secret.env
 # CHANGELOG entries quote release notes that paste example credentials
 # verbatim - they are documentation about findings, not live secrets.
 path:CHANGELOG.md
+# Internal planning / analysis docs (gap writeups, perf notes) quote credential
+# shapes verbatim while documenting detector behavior - documentation about
+# findings, not live secrets (same rationale as CHANGELOG.md). The pinned
+# released v0.5.37 dogfood binary flags two: an octopus-deploy shape in prose
+# (performance.md) and a quoted EC private-key header marker (detection.md).
+# Current code already suppresses both. (NB: do not paste the literal credential
+# shapes into the comments below - this file is itself scanned, and the bare
+# EC private-key header marker is exactly what the v0.5.37 ssh detector fires on.)
+path:backlog/
+# Synthetic AWS split-credential reassembly fixture in the multiline fragment
+# cache (all-zero key id || all-placeholder body, no real key material). The
+# source carries an inline keyhog:ignore the current binary honors, but the
+# pinned released v0.5.37 dogfood binary re-emits it from the reassembled
+# fragment, so it is suppressed here by credential hash.
+hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae
 # integration-smoke ships a base64-encoded seed of well-known AWS docs
 # examples + an `xoxb-` slack token shape + a `ghp_` GitHub PAT shape;
 # the workflow base64-decodes them on the runner so the scanner under
