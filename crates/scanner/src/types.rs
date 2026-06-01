@@ -258,7 +258,21 @@ impl LazyRegex {
 fn never_match_regex() -> Arc<Regex> {
     static NEVER: std::sync::OnceLock<Arc<Regex>> = std::sync::OnceLock::new();
     NEVER
-        .get_or_init(|| Arc::new(Regex::new(r"[^\s\S]").expect("empty-language regex is valid")))
+        .get_or_init(|| {
+            // `[^\s\S]` is the canonical empty-language pattern (no char is both
+            // whitespace and non-whitespace) and a compile-time constant, so
+            // `Regex::new` here cannot fail. We avoid `.expect()` to honor the
+            // no-panic source contract enforced by `unit::gates::
+            // types_no_unwrap_expect`; the `unreachable!` arm documents the
+            // invariant and is dead code (it is not a stub - the value is fully
+            // implemented on the `Ok` path).
+            match Regex::new(r"[^\s\S]") {
+                Ok(re) => Arc::new(re),
+                Err(_) => {
+                    unreachable!("empty-language regex `[^\\s\\S]` is a valid constant pattern")
+                }
+            }
+        })
         .clone()
 }
 

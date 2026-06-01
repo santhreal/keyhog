@@ -9,6 +9,7 @@ pub mod hex;
 mod json;
 mod pipeline;
 pub mod reverse;
+mod unicode_escape;
 mod url;
 pub mod util;
 

@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::hex::hex_val;
 use super::pipeline::{decode_candidates, extract_encoded_values};
-use super::util::take_hex_digits;
+use super::unicode_escape::unicode_escape_decode;
 use super::Decoder;
 use crate::context;
 use keyhog_core::Chunk;
@@ -471,28 +471,4 @@ fn find_mime_encoded_words(line: &str) -> Vec<String> {
         }
     }
     words
-}
-
-fn unicode_escape_decode(input: &str) -> Result<String, ()> {
-    let mut decoded_text = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            decoded_text.push(ch);
-            continue;
-        }
-        match chars.next() {
-            Some('u') => {
-                let code = take_hex_digits(&mut chars, 4)?;
-                decoded_text.push(char::from_u32(code).ok_or(())?);
-            }
-            Some('x') => {
-                let code = take_hex_digits(&mut chars, 2)?;
-                decoded_text.push(char::from_u32(code).ok_or(())?);
-            }
-            Some(escaped) => decoded_text.push(escaped),
-            None => return Err(()),
-        }
-    }
-    Ok(decoded_text)
 }

@@ -42,3 +42,49 @@ fn empty_literal_prefix_does_not_panic() {
     let bloom = BigramBloom::from_literal_prefixes(&["".to_string(), "a".to_string()]);
     assert!(bloom.maybe_overlaps(b"abc"));
 }
+
+#[test]
+fn unrolled_matches_scalar_reference_all_lengths() {
+    // A sparse table (won't trip saturation) built from a real prefix.
+    let bloom = BigramBloom::from_literal_prefixes(&[
+        "ghp_".to_string(),
+        "AKIA".to_string(),
+        "xoxb-".to_string(),
+    ]);
+    assert!(!bloom.is_saturated(), "few prefixes must stay unsaturated");
+
+    // Exercise every chunk length from 0..40 so the 4-wide unroll, its tail,
+    // and the group boundary (len % 4) are all covered. The unrolled,
+    // saturation-aware maybe_overlaps must agree with the naive scalar
+    // reference on every non-saturated table.
+    for len in 0..40usize {
+        let chunk: Vec<u8> = (0..len)
+            .map(|i| {
+                let pool = [b'g', b'h', b'p', b'_', b'A', b'K', b'I', b'z', b'1', b'\n'];
+                pool[(i * 7 + 3) % pool.len()]
+            })
+            .collect();
+        assert_eq!(
+            bloom.maybe_overlaps(&chunk),
+            bloom.scalar_overlaps_reference(&chunk),
+            "mismatch at len {len}: {chunk:?}"
+        );
+    }
+}
+
+#[test]
+fn saturated_table_short_circuits_to_true() {
+    let bloom = BigramBloom::saturated_for_test();
+    assert!(bloom.is_saturated());
+    // Even a chunk with zero genuine overlap is admitted once saturated.
+    assert!(bloom.maybe_overlaps(&[0xFFu8; 256]));
+}
+
+#[test]
+fn insert_all_refreshes_saturation() {
+    let mut bloom = BigramBloom::empty();
+    assert!(!bloom.is_saturated());
+    bloom.insert_all(b"ghp_");
+    assert!(!bloom.is_saturated());
+    assert!(bloom.maybe_overlaps(b"....ghp_...."));
+}

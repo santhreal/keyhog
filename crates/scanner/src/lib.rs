@@ -197,12 +197,34 @@ pub mod testing {
     };
     pub use crate::engine::gpu_regex_dfa::extract_literal_core;
     pub use crate::entropy::keywords::looks_like_program_identifier;
+
+    /// Internal entropy shape-classification predicates, exposed for the
+    /// canonical-shape unit tests migrated out of `src/entropy/scanner.rs`
+    /// (KH-GAP-004). `credential_keyword_context` builds the production
+    /// credential anchor so tests need not know the private tuning constants.
+    pub mod entropy_scanner {
+        pub use crate::entropy::keywords::KeywordContext;
+        pub use crate::entropy::scanner::{
+            candidate_is_plausible, credential_keyword_context, is_canonical_non_secret_shape,
+        };
+    }
+
+    /// Internal prose/decoy/strict-secret predicates, exposed for the unit
+    /// tests migrated out of `src/entropy/keywords.rs` (KH-GAP-004).
+    pub mod entropy_keywords {
+        pub use crate::entropy::keywords::{
+            entropy_value_looks_like_prose, is_dash_segmented_alnum_decoy,
+            looks_like_english_prose, passes_strict_secret_checks,
+        };
+    }
     /// Full feature extractor (with detector-config keyword lists) exposed for
     /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
     /// must compute byte-identical features to the serve path.
     pub use crate::ml_scorer::compute_features_with_config;
     pub use crate::probabilistic_gate::ProbabilisticGate;
     pub use crate::static_intern::seed_source_type_count;
+    pub use crate::suppression::shape_gates::looks_like_standard_base64_blob;
+    pub use crate::util_hash::{hash_fast, memoize_by_hash};
 
     pub mod ascii_ci {
         pub use crate::ascii_ci::{ci_find, contains_path_segment, contains_path_segment_two};

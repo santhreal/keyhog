@@ -233,6 +233,38 @@ impl BigramBloom {
     pub fn is_saturated(&self) -> bool {
         self.saturated
     }
+
+    /// Test-only naive reference: "does any bigram of `chunk` have its bit
+    /// set", with NO saturation short-circuit and NO unrolling. The unrolled,
+    /// saturation-aware [`maybe_overlaps`](Self::maybe_overlaps) must agree
+    /// with this on every non-saturated table. Exposed (doc-hidden) so the
+    /// differential test in `tests/unit/bigram_bloom.rs` can reach the private
+    /// `bits`/`bigram_slot` internals it must compare against.
+    #[doc(hidden)]
+    pub fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
+        if chunk.len() < 2 {
+            return true;
+        }
+        chunk.windows(2).any(|w| {
+            let idx = bigram_slot(w[0], w[1]);
+            self.bits[idx >> 6] & (1u64 << (idx & 63)) != 0
+        })
+    }
+
+    /// Test-only constructor of a saturated table (enough full rows to cross
+    /// the saturation threshold), so the external suite can exercise the
+    /// short-circuit path without reaching the private `insert_row` /
+    /// `recompute_saturation` mutators.
+    #[doc(hidden)]
+    pub fn saturated_for_test() -> Self {
+        let mut bloom = Self::empty();
+        // 158 full rows * 256 slots = 40448 set bits > the 3/5 threshold.
+        for a in 0u16..158 {
+            bloom.insert_row(a as u8);
+        }
+        bloom.recompute_saturation();
+        bloom
+    }
 }
 
 /// Direct index into the 65536-bit table: high byte is the first byte,
@@ -244,96 +276,3 @@ fn bigram_slot(a: u8, b: u8) -> usize {
     ((a as usize) << 8) | (b as usize)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Scalar reference: the pre-unroll definition of "does any bigram of
-    /// `chunk` have its bit set", with NO saturation short-circuit. The
-    /// unrolled `maybe_overlaps` must agree with this on every non-saturated
-    /// table.
-    fn reference_overlaps(bloom: &BigramBloom, chunk: &[u8]) -> bool {
-        if chunk.len() < 2 {
-            return true;
-        }
-        chunk.windows(2).any(|w| {
-            let idx = bigram_slot(w[0], w[1]);
-            bloom.bits[idx >> 6] & (1u64 << (idx & 63)) != 0
-        })
-    }
-
-    #[test]
-    fn unrolled_matches_scalar_reference_all_lengths() {
-        // A sparse table (won't trip saturation) built from a real prefix.
-        let bloom = BigramBloom::from_literal_prefixes(&[
-            "ghp_".to_string(),
-            "AKIA".to_string(),
-            "xoxb-".to_string(),
-        ]);
-        assert!(!bloom.is_saturated(), "few prefixes must stay unsaturated");
-
-        // Exercise every chunk length from 0..40 so the 4-wide unroll, its
-        // tail, and the group boundary (len % 4) are all covered.
-        for len in 0..40usize {
-            // Deterministic pseudo-content mixing bytes that are and aren't
-            // in the table.
-            let chunk: Vec<u8> = (0..len)
-                .map(|i| {
-                    let pool = [b'g', b'h', b'p', b'_', b'A', b'K', b'I', b'z', b'1', b'\n'];
-                    pool[(i * 7 + 3) % pool.len()]
-                })
-                .collect();
-            assert_eq!(
-                bloom.maybe_overlaps(&chunk),
-                reference_overlaps(&bloom, &chunk),
-                "mismatch at len {len}: {chunk:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn ghp_prefix_admits_real_token_and_rejects_clean_text() {
-        let bloom = BigramBloom::from_literal_prefixes(&["ghp_".to_string()]);
-        // A chunk containing the GitHub PAT prefix must be admitted.
-        assert!(bloom.maybe_overlaps(b"token = ghp_ABCDEFGHIJ0123456789"));
-        // Text with none of ghp_'s bigrams (or the `_X` / `last||any` rows)
-        // must be rejected - the bloom's whole point.
-        assert!(!bloom.maybe_overlaps(b"the quick brown fox jumps"));
-    }
-
-    #[test]
-    fn short_chunks_are_conservatively_admitted() {
-        let bloom = BigramBloom::from_literal_prefixes(&["ghp_".to_string()]);
-        assert!(bloom.maybe_overlaps(b""));
-        assert!(bloom.maybe_overlaps(b"x"));
-    }
-
-    #[test]
-    fn saturated_table_short_circuits_to_true() {
-        // Fill enough rows to cross the 60% threshold. Each `insert_all` of a
-        // 2-byte literal sets one bit, but `from_literal_prefixes` also fires
-        // `insert_row` (256 slots) per terminal byte; build saturation by
-        // inserting many distinct full rows directly.
-        let mut bloom = BigramBloom::empty();
-        for a in 0u16..=255 {
-            // Cross the 3/5 threshold: 158 full rows * 256 = 40448 > 39322.
-            if a < 158 {
-                bloom.insert_row(a as u8);
-            }
-        }
-        bloom.recompute_saturation();
-        assert!(bloom.is_saturated());
-        // Even a chunk with zero genuine overlap is admitted once saturated.
-        assert!(bloom.maybe_overlaps(&[0xFFu8; 256]));
-    }
-
-    #[test]
-    fn insert_all_refreshes_saturation() {
-        let mut bloom = BigramBloom::empty();
-        assert!(!bloom.is_saturated());
-        // A tiny insert keeps it unsaturated and consistent.
-        bloom.insert_all(b"ghp_");
-        assert!(!bloom.is_saturated());
-        assert!(bloom.maybe_overlaps(b"....ghp_...."));
-    }
-}
