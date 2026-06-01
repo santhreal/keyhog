@@ -4,7 +4,7 @@
 //! have characteristic entropy profiles that help separate true positives.
 
 pub mod keywords;
-mod scanner;
+pub(crate) mod scanner;
 
 pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold, is_sensitive_file};
 

@@ -8,6 +8,21 @@ const MIN_PASSWORD_LEN: usize = 8;
 const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 
+/// Test-only constructor for a credential-anchor [`KeywordContext`] using the
+/// production tuning constants (the low-entropy floor and the credential-context
+/// minimum length). Exposed (doc-hidden, via `testing::entropy_scanner`) so the
+/// canonical-shape tests in `tests/unit/inline_migrated/` can build the same
+/// context the scanner uses, without leaking the private length constant.
+#[doc(hidden)]
+pub fn credential_keyword_context(keyword: &str) -> KeywordContext {
+    KeywordContext {
+        keyword: keyword.to_string(),
+        threshold: LOW_ENTROPY_THRESHOLD,
+        min_len: CREDENTIAL_CONTEXT_MIN_LEN,
+        is_credential_context: true,
+    }
+}
+
 /// Determine whether a file path represents a clearly sensitive file.
 pub fn is_sensitive_file(path: Option<&str>) -> bool {
     let Some(path) = path else { return false };
@@ -205,7 +220,7 @@ fn collect_line_candidates(
     }
 }
 
-fn candidate_is_plausible(
+pub fn candidate_is_plausible(
     candidate: &str,
     entropy: f64,
     context: &KeywordContext,
@@ -240,7 +255,7 @@ fn candidate_is_plausible(
 /// regardless of any surrounding credential keyword, so a generic entropy
 /// anchor must not re-admit them. Service-specific detector regexes (not this
 /// path) own the rare case where such a shape really is a credential.
-fn is_canonical_non_secret_shape(value: &str) -> bool {
+pub fn is_canonical_non_secret_shape(value: &str) -> bool {
     let len = value.len();
 
     // 8-4-4-4-12 UUID / k8s-resource-uid (36 chars, hex groups split by `-`).
@@ -365,117 +380,3 @@ fn keyword_context(
     }
 }
 
-#[cfg(test)]
-mod canonical_shape_tests {
-    use super::*;
-
-    fn credential_context() -> KeywordContext {
-        KeywordContext {
-            keyword: "api_key".to_string(),
-            threshold: LOW_ENTROPY_THRESHOLD,
-            min_len: CREDENTIAL_CONTEXT_MIN_LEN,
-            is_credential_context: true,
-        }
-    }
-
-    #[test]
-    fn sha256_hex_dropped_under_token_anchor() {
-        // `token = "<64-hex>"` must NOT fire: a perfect sha256 shape is a
-        // digest, the generic `token` anchor is too weak to override it.
-        let sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        assert_eq!(sha256.len(), 64);
-        let entropy = shannon_entropy(sha256.as_bytes());
-        assert!(is_canonical_non_secret_shape(sha256));
-        assert!(!candidate_is_plausible(
-            sha256,
-            entropy,
-            &credential_context(),
-            &[]
-        ));
-    }
-
-    #[test]
-    fn sha1_and_git_commit_sha_dropped_under_anchor() {
-        let sha1 = "356a192b7913b04c54574d18c28d46e6395428ab"; // 40-hex
-        assert_eq!(sha1.len(), 40);
-        assert!(is_canonical_non_secret_shape(sha1));
-        let e = shannon_entropy(sha1.as_bytes());
-        assert!(!candidate_is_plausible(sha1, e, &credential_context(), &[]));
-    }
-
-    #[test]
-    fn md5_and_sha512_lengths_dropped() {
-        let md5 = "d41d8cd98f00b204e9800998ecf8427e"; // 32-hex
-        let sha512 = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"; // 128-hex
-        assert_eq!(md5.len(), 32);
-        assert_eq!(sha512.len(), 128);
-        assert!(is_canonical_non_secret_shape(md5));
-        assert!(is_canonical_non_secret_shape(sha512));
-    }
-
-    #[test]
-    fn uuid_dropped_under_secret_anchor() {
-        // 8-4-4-4-12 UUID / k8s-resource-uid wrapped in `secret=<uuid>`.
-        let uuid = "550e8400-e29b-41d4-a716-446655440000";
-        assert_eq!(uuid.len(), 36);
-        assert!(is_canonical_non_secret_shape(uuid));
-        let e = shannon_entropy(uuid.as_bytes());
-        assert!(!candidate_is_plausible(uuid, e, &credential_context(), &[]));
-    }
-
-    #[test]
-    fn npm_sha512_integrity_dropped_under_anchor() {
-        // npm-lock-integrity `integrity: "sha512-<base64>"`.
-        let integrity =
-            "sha512-Z+Pm5Wd0RfQVq2A9KzWfYBceZ8xQk1aTfLmN0pXyZ2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2w==";
-        assert!(is_canonical_non_secret_shape(integrity));
-        let e = shannon_entropy(integrity.as_bytes());
-        assert!(!candidate_is_plausible(
-            integrity,
-            e,
-            &credential_context(),
-            &[]
-        ));
-    }
-
-    #[test]
-    fn license_serial_5x5_dropped_under_secret_anchor() {
-        // 5x5 dashed uppercase license serial `SECRET="JQQJN-..."`.
-        for serial in [
-            "JQQJN-VBWHG-XYZ12-AB3CD-EF4GH",
-            "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY",
-        ] {
-            assert_eq!(serial.len(), 29);
-            assert!(is_canonical_non_secret_shape(serial), "{serial}");
-            let e = shannon_entropy(serial.as_bytes());
-            assert!(
-                !candidate_is_plausible(serial, e, &credential_context(), &[]),
-                "{serial}"
-            );
-        }
-    }
-
-    #[test]
-    fn real_symbolic_credential_under_anchor_still_admitted() {
-        // Negative twin / recall guard: a genuine symbolic password is NOT a
-        // canonical shape and must still fire under the credential anchor.
-        let secret = "Y6NPMwS*rWGUv!JQnSG6a#D14";
-        assert!(!is_canonical_non_secret_shape(secret));
-        let e = shannon_entropy(secret.as_bytes());
-        assert!(candidate_is_plausible(
-            secret,
-            e,
-            &credential_context(),
-            &[]
-        ));
-    }
-
-    #[test]
-    fn non_canonical_hex_length_under_anchor_not_force_dropped() {
-        // Recall guard: a 33-char hex value is not a canonical digest length,
-        // so the shape gate must not drop it; a real key of odd length under
-        // an anchor still surfaces.
-        let oddhex = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"; // 34 chars
-        assert!(!is_canonical_non_secret_shape(oddhex));
-    }
-}
