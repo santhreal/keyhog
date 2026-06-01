@@ -202,6 +202,8 @@ fn cyrillic_to_latin(ch: char) -> Option<char> {
         'һ' => Some('h'), // U+04BB
         'ɡ' => Some('g'), // U+0261
         'ї' => Some('i'), // U+0457
+        'к' => Some('k'), // U+043A (Cyrillic ka — visual 'k')
+        'т' => Some('t'), // U+0442 (Cyrillic te — lowercase often rendered 't')
         // Uppercase
         'А' => Some('A'), // U+0410
         'В' => Some('B'), // U+0412
@@ -214,6 +216,7 @@ fn cyrillic_to_latin(ch: char) -> Option<char> {
         'О' => Some('O'), // U+041E
         'Р' => Some('P'), // U+0420
         'С' => Some('C'), // U+0421
+        'Ѕ' => Some('S'), // U+0405 (Cyrillic capital dze — visual 'S')
         'Т' => Some('T'), // U+0422
         'Х' => Some('X'), // U+0425
         'Ү' => Some('Y'), // U+04AE
