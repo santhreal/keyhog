@@ -226,9 +226,18 @@ def run_keyhog(binary: str, fixtures: list[Fixture]) -> ScannerResult:
         for f in findings_iter:
             if not isinstance(f, dict):
                 continue
-            # keyhog Finding has a `credential` or `match` field
-            # depending on the schema version; accept either.
-            cred = f.get("credential") or f.get("match") or f.get("raw") or ""
+            # keyhog Finding carries the value in `credential_redacted`
+            # (the `--show-secrets` flag makes that field hold the raw
+            # value rather than the masked form); older schema versions
+            # used `credential`/`match`/`raw`. Accept all so a schema
+            # rename can't silently zero out keyhog's findings again.
+            cred = (
+                f.get("credential_redacted")
+                or f.get("credential")
+                or f.get("match")
+                or f.get("raw")
+                or ""
+            )
             if isinstance(cred, str) and cred:
                 found_values.append(cred)
 
