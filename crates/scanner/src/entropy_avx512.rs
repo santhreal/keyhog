@@ -56,103 +56,11 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
         return 0.0;
     }
 
-    // ── Histogram: 8-way parallel to break the load-add-store dependency ──
-    //
-    // A single `counts[b] += 1` has a multi-cycle dependency chain on x86
-    // (load → add → store, plus the index computation). By keeping 8
-    // independent histogram arrays and assigning every 8th byte to each,
-    // we give the out-of-order engine 8 independent chains to schedule,
-    // saturating more load/store ports than a 4-stream split. This is a
-    // scalar histogram with manual ILP, not an AVX-512 gather; the wide
-    // instructions below only accelerate the per-bin merge and the entropy
-    // reduction. The 256-element merge is negligible compared to the
-    // per-byte cost on any input > 256 bytes.
-    let mut c0 = [0u32; 256];
-    let mut c1 = [0u32; 256];
-    let mut c2 = [0u32; 256];
-    let mut c3 = [0u32; 256];
-    let mut c4 = [0u32; 256];
-    let mut c5 = [0u32; 256];
-    let mut c6 = [0u32; 256];
-    let mut c7 = [0u32; 256];
-
-    let ptr = chunk.as_ptr();
-    let mut i = 0usize;
-    let mut active_len = len;
-
-    // Match the scalar contract exactly: fully-null 8-byte chunks are ignored
-    // as binary padding, while null bytes inside a mixed 8-byte chunk still
-    // participate in the histogram.
-    let end8 = len & !7;
-    while i < end8 {
-        if *ptr.add(i) == 0
-            && *ptr.add(i + 1) == 0
-            && *ptr.add(i + 2) == 0
-            && *ptr.add(i + 3) == 0
-            && *ptr.add(i + 4) == 0
-            && *ptr.add(i + 5) == 0
-            && *ptr.add(i + 6) == 0
-            && *ptr.add(i + 7) == 0
-        {
-            active_len -= 8;
-            i += 8;
-            continue;
-        }
-
-        c0[*ptr.add(i) as usize] += 1;
-        c1[*ptr.add(i + 1) as usize] += 1;
-        c2[*ptr.add(i + 2) as usize] += 1;
-        c3[*ptr.add(i + 3) as usize] += 1;
-        c4[*ptr.add(i + 4) as usize] += 1;
-        c5[*ptr.add(i + 5) as usize] += 1;
-        c6[*ptr.add(i + 6) as usize] += 1;
-        c7[*ptr.add(i + 7) as usize] += 1;
-        i += 8;
-    }
-    // Remainder
-    while i < len {
-        let byte = *ptr.add(i);
-        if byte == 0 {
-            active_len -= 1;
-        } else {
-            c0[byte as usize] += 1;
-        }
-        i += 1;
-    }
-
-    // ── Merge the 8 streams into a single histogram ──
-    //
-    // For inputs long enough to amortize the vector setup, merge with
-    // AVX-512 16-wide adds. For short candidates (typical 20-64 byte
-    // tokens) the SIMD setup can exceed a plain scalar count, so fall back
-    // to a scalar merge below the crossover.
-    let mut counts = [0u32; 256];
-    if len >= 256 {
-        let mut j = 0;
-        while j < 256 {
-            let v0 = _mm512_loadu_si512(c0[j..].as_ptr() as *const _);
-            let v1 = _mm512_loadu_si512(c1[j..].as_ptr() as *const _);
-            let v2 = _mm512_loadu_si512(c2[j..].as_ptr() as *const _);
-            let v3 = _mm512_loadu_si512(c3[j..].as_ptr() as *const _);
-            let v4 = _mm512_loadu_si512(c4[j..].as_ptr() as *const _);
-            let v5 = _mm512_loadu_si512(c5[j..].as_ptr() as *const _);
-            let v6 = _mm512_loadu_si512(c6[j..].as_ptr() as *const _);
-            let v7 = _mm512_loadu_si512(c7[j..].as_ptr() as *const _);
-            let sum01 = _mm512_add_epi32(v0, v1);
-            let sum23 = _mm512_add_epi32(v2, v3);
-            let sum45 = _mm512_add_epi32(v4, v5);
-            let sum67 = _mm512_add_epi32(v6, v7);
-            let sum0123 = _mm512_add_epi32(sum01, sum23);
-            let sum4567 = _mm512_add_epi32(sum45, sum67);
-            let sum = _mm512_add_epi32(sum0123, sum4567);
-            _mm512_storeu_si512(counts[j..].as_mut_ptr() as *mut _, sum);
-            j += 16;
-        }
-    } else {
-        for b in 0..256 {
-            counts[b] = c0[b] + c1[b] + c2[b] + c3[b] + c4[b] + c5[b] + c6[b] + c7[b];
-        }
-    }
+    // The byte tally and the null-byte contract live in the shared
+    // `histogram_8way` (8 independent scalar accumulators — counting is
+    // memory-bound, so there is no AVX-512 histogram to win here). The wide
+    // path below accelerates only the entropy reduction over the 256 bins.
+    let (counts, active_len) = crate::entropy_fast::histogram_8way(chunk);
 
     if active_len == 0 {
         return 0.0;

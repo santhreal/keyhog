@@ -3,7 +3,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use crate::entropy_fast::{get_log2_table, shannon_entropy_scalar, HIST_SCRATCH};
+use crate::entropy_fast::{get_log2_table, histogram_8way, shannon_entropy_scalar};
 
 /// AVX2 path: 4-way parallel histogram to break load-add-store dependency chains.
 #[cfg(target_arch = "x86_64")]
@@ -15,114 +15,11 @@ pub(crate) unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
         return 0.0;
     }
 
-    // Get the thread-local scratch buffer
-    let scratch_ptr = HIST_SCRATCH.with(|s| s.get());
-    let scratch = &mut *scratch_ptr;
-
-    // Vectorized zeroing of scratch space before borrowing sub-slices
-    let zero = _mm256_setzero_si256();
-    for j in (0..1024).step_by(8) {
-        _mm256_storeu_si256(scratch[j..].as_mut_ptr() as *mut _, zero);
-    }
-
-    let (c0, rest) = scratch.split_at_mut(256);
-    let (c1, rest) = rest.split_at_mut(256);
-    let (c2, c3) = rest.split_at_mut(256);
-
-    let ptr = data.as_ptr();
-    let mut i = 0usize;
-    let mut active_len = len;
-
-    // Align memory scans to 32-byte boundaries
-    while i < len && (((ptr as usize) + i) & 31) != 0 {
-        let val = *ptr.add(i);
-        if val == 0 {
-            active_len -= 1;
-        } else {
-            c0[val as usize] += 1;
-        }
-        i += 1;
-    }
-
-    // Process 32 bytes per iteration and filter contiguous null bytes.
-    //
-    // The alignment prologue above advances `i` so that `ptr + i` is 32-byte
-    // aligned (required by `_mm256_load_si256`). The loop bound must therefore
-    // be expressed as "a full 32-byte read still fits", i.e. `i + 32 <= len`,
-    // NOT `len & !31`: the latter ignores the prologue's `pad` offset and, when
-    // `pad > 0`, both reads past the end of `data` and loads from a
-    // non-32-aligned address on the last iteration.
-    while i + 32 <= len {
-        let chunk_v = _mm256_load_si256(ptr.add(i) as *const _);
-        if _mm256_testz_si256(chunk_v, chunk_v) == 1 {
-            active_len -= 32;
-            i += 32;
-            continue;
-        }
-
-        c0[*ptr.add(i) as usize] += 1;
-        c1[*ptr.add(i + 1) as usize] += 1;
-        c2[*ptr.add(i + 2) as usize] += 1;
-        c3[*ptr.add(i + 3) as usize] += 1;
-        c0[*ptr.add(i + 4) as usize] += 1;
-        c1[*ptr.add(i + 5) as usize] += 1;
-        c2[*ptr.add(i + 6) as usize] += 1;
-        c3[*ptr.add(i + 7) as usize] += 1;
-        c0[*ptr.add(i + 8) as usize] += 1;
-        c1[*ptr.add(i + 9) as usize] += 1;
-        c2[*ptr.add(i + 10) as usize] += 1;
-        c3[*ptr.add(i + 11) as usize] += 1;
-        c0[*ptr.add(i + 12) as usize] += 1;
-        c1[*ptr.add(i + 13) as usize] += 1;
-        c2[*ptr.add(i + 14) as usize] += 1;
-        c3[*ptr.add(i + 15) as usize] += 1;
-
-        c0[*ptr.add(i + 16) as usize] += 1;
-        c1[*ptr.add(i + 17) as usize] += 1;
-        c2[*ptr.add(i + 18) as usize] += 1;
-        c3[*ptr.add(i + 19) as usize] += 1;
-        c0[*ptr.add(i + 20) as usize] += 1;
-        c1[*ptr.add(i + 21) as usize] += 1;
-        c2[*ptr.add(i + 22) as usize] += 1;
-        c3[*ptr.add(i + 23) as usize] += 1;
-        c0[*ptr.add(i + 24) as usize] += 1;
-        c1[*ptr.add(i + 25) as usize] += 1;
-        c2[*ptr.add(i + 26) as usize] += 1;
-        c3[*ptr.add(i + 27) as usize] += 1;
-        c0[*ptr.add(i + 28) as usize] += 1;
-        c1[*ptr.add(i + 29) as usize] += 1;
-        c2[*ptr.add(i + 30) as usize] += 1;
-        c3[*ptr.add(i + 31) as usize] += 1;
-        i += 32;
-    }
-
-    while i < len {
-        let val = *ptr.add(i);
-        if val == 0 {
-            active_len -= 1;
-        } else {
-            c0[val as usize] += 1;
-        }
-        i += 1;
-    }
-
+    // Histogram + null contract live in the shared `histogram_8way`; counting
+    // is memory-bound, so AVX2 specializes only the entropy reduction below.
+    let (counts, active_len) = histogram_8way(data);
     if active_len == 0 {
         return 0.0;
-    }
-
-    // Merge the 4 histograms using AVX2 vector additions
-    let mut counts = [0u32; 256];
-    let mut j = 0;
-    while j < 256 {
-        let v0 = _mm256_loadu_si256(c0[j..].as_ptr() as *const _);
-        let v1 = _mm256_loadu_si256(c1[j..].as_ptr() as *const _);
-        let v2 = _mm256_loadu_si256(c2[j..].as_ptr() as *const _);
-        let v3 = _mm256_loadu_si256(c3[j..].as_ptr() as *const _);
-        let sum01 = _mm256_add_epi32(v0, v1);
-        let sum23 = _mm256_add_epi32(v2, v3);
-        let sum = _mm256_add_epi32(sum01, sum23);
-        _mm256_storeu_si256(counts[j..].as_mut_ptr() as *mut _, sum);
-        j += 8;
     }
 
     // Log2 Table Lookup optimization for small active length
@@ -226,108 +123,11 @@ pub(crate) unsafe fn shannon_entropy_sse2(data: &[u8]) -> f64 {
         return 0.0;
     }
 
-    let mut c0 = [0u32; 256];
-    let mut c1 = [0u32; 256];
-    let mut c2 = [0u32; 256];
-    let mut c3 = [0u32; 256];
-
-    let ptr = data.as_ptr();
-    let mut i = 0usize;
-    let mut active_len = len;
-
-    // Align to 16-byte boundary
-    while i < len && (((ptr as usize) + i) & 15) != 0 {
-        let val = *ptr.add(i);
-        if val == 0 {
-            active_len -= 1;
-        } else {
-            c0[val as usize] += 1;
-        }
-        i += 1;
-    }
-
-    // As in the AVX2 path: the 16-byte alignment prologue offsets `i` by
-    // `pad`, so the aligned-load loop must stop when a full 32-byte read
-    // (two 16-byte `_mm_load_si128`s) would run past `len`. `len & !31`
-    // ignores `pad` and over-reads / loads off-alignment when `pad > 0`.
-    let zeros = _mm_setzero_si128();
-    while i + 32 <= len {
-        let v0 = _mm_load_si128(ptr.add(i) as *const _);
-        let v1 = _mm_load_si128(ptr.add(i + 16) as *const _);
-
-        let cmp0 = _mm_cmpeq_epi8(v0, zeros);
-        let cmp1 = _mm_cmpeq_epi8(v1, zeros);
-        let mask0 = _mm_movemask_epi8(cmp0) as u32;
-        let mask1 = _mm_movemask_epi8(cmp1) as u32;
-        if mask0 == 0xFFFF && mask1 == 0xFFFF {
-            active_len -= 32;
-            i += 32;
-            continue;
-        }
-
-        c0[*ptr.add(i) as usize] += 1;
-        c1[*ptr.add(i + 1) as usize] += 1;
-        c2[*ptr.add(i + 2) as usize] += 1;
-        c3[*ptr.add(i + 3) as usize] += 1;
-        c0[*ptr.add(i + 4) as usize] += 1;
-        c1[*ptr.add(i + 5) as usize] += 1;
-        c2[*ptr.add(i + 6) as usize] += 1;
-        c3[*ptr.add(i + 7) as usize] += 1;
-        c0[*ptr.add(i + 8) as usize] += 1;
-        c1[*ptr.add(i + 9) as usize] += 1;
-        c2[*ptr.add(i + 10) as usize] += 1;
-        c3[*ptr.add(i + 11) as usize] += 1;
-        c0[*ptr.add(i + 12) as usize] += 1;
-        c1[*ptr.add(i + 13) as usize] += 1;
-        c2[*ptr.add(i + 14) as usize] += 1;
-        c3[*ptr.add(i + 15) as usize] += 1;
-
-        c0[*ptr.add(i + 16) as usize] += 1;
-        c1[*ptr.add(i + 17) as usize] += 1;
-        c2[*ptr.add(i + 18) as usize] += 1;
-        c3[*ptr.add(i + 19) as usize] += 1;
-        c0[*ptr.add(i + 20) as usize] += 1;
-        c1[*ptr.add(i + 21) as usize] += 1;
-        c2[*ptr.add(i + 22) as usize] += 1;
-        c3[*ptr.add(i + 23) as usize] += 1;
-        c0[*ptr.add(i + 24) as usize] += 1;
-        c1[*ptr.add(i + 25) as usize] += 1;
-        c2[*ptr.add(i + 26) as usize] += 1;
-        c3[*ptr.add(i + 27) as usize] += 1;
-        c0[*ptr.add(i + 28) as usize] += 1;
-        c1[*ptr.add(i + 29) as usize] += 1;
-        c2[*ptr.add(i + 30) as usize] += 1;
-        c3[*ptr.add(i + 31) as usize] += 1;
-        i += 32;
-    }
-
-    while i < len {
-        let val = *ptr.add(i);
-        if val == 0 {
-            active_len -= 1;
-        } else {
-            c0[val as usize] += 1;
-        }
-        i += 1;
-    }
-
+    // Histogram + null contract live in the shared `histogram_8way`; counting
+    // is memory-bound, so the SSE2 path specializes only the reduction below.
+    let (counts, active_len) = histogram_8way(data);
     if active_len == 0 {
         return 0.0;
-    }
-
-    // Merge the 4 histograms using SSE2 vector additions
-    let mut counts = [0u32; 256];
-    let mut j = 0;
-    while j < 256 {
-        let v0 = _mm_loadu_si128(c0[j..].as_ptr() as *const _);
-        let v1 = _mm_loadu_si128(c1[j..].as_ptr() as *const _);
-        let v2 = _mm_loadu_si128(c2[j..].as_ptr() as *const _);
-        let v3 = _mm_loadu_si128(c3[j..].as_ptr() as *const _);
-        let sum01 = _mm_add_epi32(v0, v1);
-        let sum23 = _mm_add_epi32(v2, v3);
-        let sum = _mm_add_epi32(sum01, sum23);
-        _mm_storeu_si128(counts[j..].as_mut_ptr() as *mut _, sum);
-        j += 4;
     }
 
     // Log2 Table Lookup optimization for small active length
