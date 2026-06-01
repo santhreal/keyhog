@@ -98,6 +98,11 @@ fn redaction_handles_short_credentials() {
         DogfoodEvent::ExampleSuppressed {
             credential_redacted,
             ..
-        } => assert_eq!(credential_redacted.as_str(), "[redacted]"),
+        } => assert_eq!(
+            credential_redacted.as_str(),
+            "****",
+            "short/empty credentials must be masked by the canonical \
+             keyhog_core::redact policy (<=8 chars -> ****), never leaked verbatim"
+        ),
     }
 }
