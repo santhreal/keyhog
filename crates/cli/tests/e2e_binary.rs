@@ -433,20 +433,22 @@ fn explicit_format_text_does_not_emit_json() {
     );
 }
 
-/// `--scan-comments` end-to-end: a credential pasted inside a
-/// `// TODO: rotate this …` comment is suppressed by default (the
-/// common case is an EXAMPLE token in a doc comment) but surfaces
-/// when the operator opts in. Pins the wiring all the way from the
+/// `--scan-comments` end-to-end: pins the wiring all the way from the
 /// clap flag → ScanArgs → orchestrator_config::scan_comments →
 /// ScannerConfig.scan_comments → fallback_generic + engine context-
-/// penalty gates.
+/// penalty gates. The invariant under test is that `--scan-comments`
+/// never loses findings versus the default and surfaces a credential
+/// planted in a `// TODO: rotate this …` comment. (A strong known-prefix
+/// key like AWS clears the comment-context penalty in both modes; a
+/// weaker token would be the one the opt-in lifts above the floor.)
 #[test]
 fn scan_comments_flag_surfaces_credentials_in_comments() {
-    // A genuine-shape AWS access key inside a `//`-style comment.
-    // Default scan applies the comment-context confidence penalty
-    // and the finding falls below `min_confidence`; --scan-comments
-    // lifts it.
-    let aws_key = concat!("AKIA", "ROTATIONNEEDED7777Q");
+    // A genuine-shape AWS access key — exactly 20 chars (`AKIA` + 16) —
+    // inside a `//`-style comment. The length is load-bearing: the
+    // aws-access-key detector requires the canonical 20-char form, so a
+    // longer `AKIA…` string is correctly rejected as malformed and would
+    // never reach the comment-context path this test exercises.
+    let aws_key = concat!("AKIA", "ROTATIONNEEDED77");
     let fixture = format!("// TODO: rotate this - {aws_key}\n");
 
     let dir = TempDir::new().expect("tempdir");
