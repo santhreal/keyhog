@@ -14,7 +14,10 @@ fn known_prefix_floor_matches_expected_prefixes() {
         Some(0.8)
     );
     assert_eq!(
-        known_prefix_confidence_floor(concat!("AK", "IAIOSFODNN7EXAMPLE")),
+        // A realistic AKIA id, not the AWS docs `...EXAMPLE` key: the floor is
+        // deliberately withheld from placeholder/example credentials, so the
+        // canonical EXAMPLE key correctly returns None and cannot be used here.
+        known_prefix_confidence_floor(concat!("AK", "IAJ4F7K9P2QWX5R8NZ")),
         Some(0.8)
     );
     assert_eq!(
