@@ -155,14 +155,17 @@ fn two_fragments_same_dir_join() {
         candidates.is_empty(),
         "single fragment can't form a join candidate"
     );
-    // Second fragment in the SAME directory with the SAME prefix -
-    // cluster size hits 2, joiner produces both orderings.
+    // Second fragment in the SAME file with the SAME prefix, within the
+    // 100-line window - cluster size hits 2, joiner produces both orderings.
+    // Reassembly is same-file-only (cross-file joins were removed to stop the
+    // sibling-file cannibalization bug; see fragment_cache_inline), so the
+    // pair must share a path to join.
     let frag2 = SecretFragment {
         prefix: "aws_key".to_string(),
         var_name: "AWS_SUFFIX".to_string(),
         value: Zeroizing::new("EXAMPLE".to_string()),
         line: 12,
-        path: Some(Arc::from("/repo/config/b.py")),
+        path: Some(Arc::from("/repo/config/a.py")),
     };
     let candidates = cache.record_and_reassemble(frag2);
     let joined: Vec<String> = candidates.iter().map(|c| c.as_str().to_string()).collect();
@@ -221,9 +224,11 @@ fn three_fragments_emit_all_pairwise_joins() {
         path: Some(Arc::from(path)),
     };
 
+    // Same-file cluster (reassembly is same-file-only): three fragments in
+    // one file within the window emit all ordered pairwise joins.
     cache.record_and_reassemble(frag("p", "A", "111", "/d/a.py", 1));
-    cache.record_and_reassemble(frag("p", "B", "222", "/d/b.py", 2));
-    let candidates = cache.record_and_reassemble(frag("p", "C", "333", "/d/c.py", 3));
+    cache.record_and_reassemble(frag("p", "B", "222", "/d/a.py", 2));
+    let candidates = cache.record_and_reassemble(frag("p", "C", "333", "/d/a.py", 3));
     assert_eq!(
         candidates.len(),
         6,
