@@ -255,7 +255,7 @@ impl CompiledScanner {
                         shard_index = i,
                         "AC GPU shard exceeded dense-prefix cap; rerouting batch through SIMD coalesced scan"
                     );
-                    if self.simd_prefilter.is_some() {
+                    if self.has_simd_prefilter() {
                         if std::env::var_os("KH_PERF").is_some() {
                             eprintln!(
                                 "KH_PERF gpu_ac_cap_reroute: chunks={} shard={} shard_matches={} cap={} shard_bytes={}",
@@ -335,7 +335,7 @@ impl CompiledScanner {
                 Some("GPU AC emitted degenerate match triples (end <= start); vyre CUDA emit bug PERF-07c"),
             );
         }
-        if self.simd_prefilter.is_some()
+        if self.has_simd_prefilter()
             && super::gpu_postprocess::gpu_phase2_hits_are_dense(
                 matches.len(),
                 buffer.len(),

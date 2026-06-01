@@ -409,7 +409,7 @@ impl CompiledScanner {
             elapsed_ms,
             "vyre GPU batched scan completed"
         );
-        if self.simd_prefilter.is_some()
+        if self.has_simd_prefilter()
             && super::gpu_postprocess::gpu_phase2_hits_are_dense(
                 matches.len(),
                 buffer.len(),
