@@ -157,6 +157,20 @@ impl ScanOrchestrator {
         effective_config.min_confidence = effective_config.scanner.min_confidence;
         effective_config.ml_enabled = effective_config.scanner.ml_enabled;
 
+        // High-precision mode: no detector's self-declared (or operator) floor may
+        // sit below the precision bar. 47 detectors ship a low recall-tuned floor
+        // (e.g. `aws-secret-access-key = 0.25`); in default mode that is intended,
+        // but under `--precision` it would silently bypass the high floor and leak
+        // sub-0.85 findings. Clamp every per-detector floor UP to the resolved
+        // precision floor (which honours a `--min-confidence` override on top).
+        // Detectors without a per-detector entry already use the global floor.
+        if args.precision {
+            let floor = effective_config.scanner.min_confidence;
+            for v in detector_min_confidence.values_mut() {
+                *v = v.max(floor);
+            }
+        }
+
         let gpu_init_policy = gpu_init_policy_for_args(&args);
         let scanner = Arc::new(
             CompiledScanner::compile_with_gpu_policy(detectors.clone(), gpu_init_policy)

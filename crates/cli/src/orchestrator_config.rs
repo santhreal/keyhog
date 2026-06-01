@@ -331,7 +331,9 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     // `--no-decode` / `--no-entropy` are clap-conflicting with the presets
     // (`conflicts_with_all` on the `fast`/`deep` flags), so every other override
     // is a legitimate refinement of the preset base and must take effect.
-    let mut config = if args.fast {
+    let mut config = if args.precision {
+        ScannerConfig::high_precision()
+    } else if args.fast {
         ScannerConfig::fast()
     } else if args.deep {
         ScannerConfig::thorough()
@@ -359,7 +361,7 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     // preset this is always `true` (entropy stays whatever the preset set). For
     // the no-preset path it honours the flag. Likewise `--no-decode` is preset-
     // conflicting; decode-depth above still applies for the no-preset path.
-    if !(args.fast || args.deep) {
+    if !(args.fast || args.deep || args.precision) {
         config.entropy_enabled = !args.no_entropy;
     }
     if let Some(threshold) = args.entropy_threshold {

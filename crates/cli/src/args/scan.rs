@@ -296,12 +296,21 @@ pub struct ScanArgs {
     pub source: Option<Vec<String>>,
 
     /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.
-    #[arg(long, conflicts_with_all = ["deep", "no_decode", "no_entropy"])]
+    #[arg(long, conflicts_with_all = ["deep", "precision", "no_decode", "no_entropy"])]
     pub fast: bool,
 
     /// Deep mode: all features enabled.
-    #[arg(long, conflicts_with_all = ["fast", "no_decode", "no_entropy"])]
+    #[arg(long, conflicts_with_all = ["fast", "precision", "no_decode", "no_entropy"])]
     pub deep: bool,
+
+    /// High-precision mode for mass scanning: minimise false positives at the
+    /// cost of some recall. Drops entropy-only and ML-speculative findings,
+    /// raises the confidence floor to 0.85 (so checksum-failing and weak-signal
+    /// matches are suppressed), and uses shallow decode. Stays fully offline
+    /// and fast. Use when triaging false positives across a huge corpus is
+    /// expensive. `--min-confidence` still overrides the floor on top.
+    #[arg(long, conflicts_with_all = ["fast", "deep"])]
+    pub precision: bool,
 
     /// Lockdown mode: maximum security at the cost of throughput. Enables
     /// every protection in `keyhog_core::hardening::apply_lockdown_protections`
