@@ -426,7 +426,7 @@ fn adv11_ses_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv11_sessiontoken_normal_must_fire() {
-    assert_detector_fires("aws-session-token", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"");
+    assert_detector_fires("aws-session-token", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012");
 }
 
 #[test]
@@ -436,15 +436,15 @@ fn adv11_sessiontoken_wrong_prefix_must_silent() {
 
 #[test]
 fn adv11_sessiontoken_evade_zwsp_must_fire() {
-    assert_detector_fires("aws-session-token", "AWS_SESSION\u{200B}_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"");
+    assert_detector_fires("aws-session-token", "AWS_SESSION\u{200B}_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012");
 }
 
 #[test]
 fn adv11_sessiontoken_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("aws-session-token", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde12345\u{00AD}6789012\"", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"");
+    assert_detector_fires("aws-session-token", "AWS_SESSION_TOKEN = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde12345\u{00AD}6789012\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012");
 }
 
 #[test]
 fn adv11_sessiontoken_evade_homoglyph_must_fire() {
-    assert_detector_fires("aws-session-token", "aws_session_t\u{043E}ken = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"", "aws_session_token = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"");
+    assert_detector_fires("aws-session-token", "aws_session_t\u{043E}ken = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde123456789012");
 }

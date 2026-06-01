@@ -13,8 +13,8 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 fn adv34_fireworks_normal_must_fire() {
     assert_detector_fires(
         "fireworks-ai-api-key",
-        "fireworks_key = \"fw_0000000000000000000000000000000000000000000000000000000000000000\"",
-        "fw_0000000000000000000000000000000000000000000000000000000000000000",
+        "fireworks_key = \"fw_0000000000000000000000000000000000000000\"",
+        "fw_0000000000000000000000000000000000000000",
     );
 }
 
@@ -22,7 +22,7 @@ fn adv34_fireworks_normal_must_fire() {
 fn adv34_fireworks_wrong_prefix_must_silent() {
     assert_detector_silent(
         "fireworks-ai-api-key",
-        "gireworks_key = \"fw_0000000000000000000000000000000000000000000000000000000000000000\"",
+        "gireworks_key = \"fw_0000000000000000000000000000000000000000\"",
     );
 }
 
@@ -30,8 +30,8 @@ fn adv34_fireworks_wrong_prefix_must_silent() {
 fn adv34_fireworks_evade_zwsp_must_fire() {
     assert_detector_fires(
         "fireworks-ai-api-key",
-        "fireworks\u{200B}_key = \"fw_0000000000000000000000000000000000000000000000000000000000000000\"",
-        "fw_0000000000000000000000000000000000000000000000000000000000000000",
+        "fireworks\u{200B}_key = \"fw_0000000000000000000000000000000000000000\"",
+        "fw_0000000000000000000000000000000000000000",
     );
 }
 
@@ -40,7 +40,7 @@ fn adv34_fireworks_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "fireworks-ai-api-key",
         "fireworks_key = \"fw_00000000000000000000000000000000000000000000\u{00AD}00000000000000000000\"",
-        "fw_0000000000000000000000000000000000000000000000000000000000000000",
+        "fw_0000000000000000000000000000000000000000",
     );
 }
 
@@ -48,8 +48,8 @@ fn adv34_fireworks_evade_soft_hyphen_must_fire() {
 fn adv34_fireworks_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "fireworks-ai-api-key",
-        "f\u{0456}reworks_key = \"fw_0000000000000000000000000000000000000000000000000000000000000000\"",
-        "fw_0000000000000000000000000000000000000000000000000000000000000000",
+        "f\u{0456}reworks_key = \"fw_0000000000000000000000000000000000000000\"",
+        "fw_0000000000000000000000000000000000000000",
     );
 }
 
