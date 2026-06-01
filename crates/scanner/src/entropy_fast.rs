@@ -4,7 +4,6 @@
 //! entropy calculation. It includes optimized paths for character frequency
 //! counting and parallel logarithmic summation.
 
-use std::cell::UnsafeCell;
 use std::sync::OnceLock;
 
 static LOG2_TABLE: OnceLock<[f64; 256]> = OnceLock::new();
@@ -19,10 +18,6 @@ pub(crate) fn get_log2_table() -> &'static [f64; 256] {
         }
         table
     })
-}
-
-thread_local! {
-    pub(crate) static HIST_SCRATCH: UnsafeCell<[u32; 1024]> = UnsafeCell::new([0u32; 1024]);
 }
 
 /// Fast entropy calculation using unrolled scalar accumulation.
@@ -61,18 +56,28 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
     shannon_entropy_scalar(data)
 }
 
-/// Scalar fallback: 8-way parallel histogram to break load-add-store chains.
+/// Canonical byte-frequency histogram carrying KeyHog's null-byte contract.
 ///
-/// A single `counts[b] += 1` has a 4-cycle dependency chain. By maintaining
-/// 8 independent arrays and interleaving accesses, the OOE engine can issue
-/// 8 independent chains in parallel, yielding maximum throughput on modern CPUs (KH-27).
+/// Bytes are grouped into 8-byte chunks from offset 0. A fully-null chunk is
+/// skipped as binary padding (its 8 bytes leave `active_len`); every other
+/// chunk — including one that merely *contains* nulls — is counted in full, as
+/// is the sub-8 remainder (a lone trailing null drops out). Returns the merged
+/// 256-bin histogram and `active_len` (input length minus the padding bytes).
+///
+/// This is the single definition of that contract. The scalar path and every
+/// SIMD path (`avx2`/`sse2`/`avx512`/`neon`) count through here, so they agree
+/// bit-for-bit regardless of pointer alignment or input length. Folding it into
+/// one helper also removes the divergence an alignment-prologue histogram used
+/// to introduce on short/unaligned inputs, where the byte-at-a-time prologue
+/// dropped *every* null individually instead of honoring the 8-byte contract.
+///
+/// Counting is memory-bound: a single `counts[b] += 1` carries a load-add-store
+/// dependency chain, so 8 independent accumulators (every 8th byte) let the
+/// out-of-order engine issue 8 chains in parallel and saturate the load/store
+/// ports (KH-27). Wider vectors win nothing in the count — they specialize only
+/// the entropy summation over the 256 bins.
 #[inline]
-pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
-    let len = data.len();
-    if len == 0 {
-        return 0.0;
-    }
-
+pub(crate) fn histogram_8way(data: &[u8]) -> ([u32; 256], usize) {
     let mut c0 = [0u32; 256];
     let mut c1 = [0u32; 256];
     let mut c2 = [0u32; 256];
@@ -82,12 +87,11 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
     let mut c6 = [0u32; 256];
     let mut c7 = [0u32; 256];
 
-    let chunks = data.chunks_exact(8);
-    let remainder = chunks.remainder();
-    let mut active_len = len;
+    let mut active_len = data.len();
+    let mut chunks = data.chunks_exact(8);
 
-    for chunk in chunks {
-        // Fast-path null check to speed up binary scanning
+    for chunk in &mut chunks {
+        // Fast-path null check to skip binary padding (KH-27).
         if chunk[0] == 0
             && chunk[1] == 0
             && chunk[2] == 0
@@ -111,7 +115,7 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
         c7[chunk[7] as usize] += 1;
     }
 
-    for &byte in remainder {
+    for &byte in chunks.remainder() {
         if byte == 0 {
             active_len -= 1;
         } else {
@@ -119,14 +123,28 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
         }
     }
 
-    if active_len == 0 {
-        return 0.0;
-    }
-
-    // Merge
     let mut counts = [0u32; 256];
     for j in 0..256 {
         counts[j] = c0[j] + c1[j] + c2[j] + c3[j] + c4[j] + c5[j] + c6[j] + c7[j];
+    }
+
+    (counts, active_len)
+}
+
+/// Shannon entropy in bits/byte over the non-padding bytes of `data`.
+///
+/// Counts through [`histogram_8way`] (the shared null contract), then reduces
+/// with a `count·log2(count)` table for short inputs (`active_len <= 255`,
+/// KH-28) or the direct `-Σ p·log2 p` form for longer ones.
+#[inline]
+pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
+    if data.is_empty() {
+        return 0.0;
+    }
+
+    let (counts, active_len) = histogram_8way(data);
+    if active_len == 0 {
+        return 0.0;
     }
 
     // Log2 Table Lookup optimization for small active length (KH-28)
@@ -143,14 +161,12 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
 
     let len_f = active_len as f64;
     let mut entropy = 0.0;
-
     for &count in &counts {
         if count > 0 {
             let p = count as f64 / len_f;
             entropy -= p * p.log2();
         }
     }
-
     entropy
 }
 
