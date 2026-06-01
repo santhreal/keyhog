@@ -9,6 +9,7 @@ pub mod interactsh_empty_collapses_to_empty;
 pub mod interactsh_id_substitutes_correlation_id;
 pub mod interactsh_url_substitutes_full_url;
 pub mod interpolate;
+pub mod interpolate_inline;
 pub mod lib;
 pub mod oob_accept_filters_protocols;
 pub mod oob_config_defaults_safe;
