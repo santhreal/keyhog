@@ -76,7 +76,14 @@ impl ChecksumValidator for GithubClassicPatValidator {
         if expected == checksum_str {
             ChecksumResult::Valid
         } else {
-            ChecksumResult::NotApplicable
+            // A well-formed `ghp_` + 36-alnum token whose trailing 6-char
+            // base62 CRC32 does not match its 30-char body is fabricated or
+            // corrupted - exactly what the checksum exists to reject. The
+            // algorithm is proven correct by the `github_classic_valid` /
+            // `_all_as_valid` oracles, so a mismatch is `Invalid` (capped to
+            // low confidence), not `NotApplicable`. Mirrors the fine-grained
+            // validator, which already rejects on CRC mismatch.
+            ChecksumResult::Invalid
         }
     }
 }
