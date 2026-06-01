@@ -337,11 +337,14 @@ fn adv_discord_bot_token_chunk_boundary_must_not_fire_near_miss() {
 // =========================================================================
 
 #[test]
-fn adv_homoglyph_cyrillic_o_must_fire() {
-    // Evasion using Cyrillic homoglyph 'о' (U+043E) in GitHub classic prefix
+fn adv_homoglyph_cyrillic_p_must_fire() {
+    // Evasion of the `p` in the GitHub classic `ghp_` prefix using the Cyrillic
+    // homoglyph 'р' (U+0440), which normalizes to Latin 'p'. (Cyrillic 'о'
+    // U+043E maps to 'o' and would reconstruct `gho_` - github-oauth, a
+    // different detector - so evading the p-position needs U+0440.)
     assert_detector_fires(
         "github-classic-pat",
-        "gh\u{043E}_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "gh\u{0440}_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
         "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
     );
 }
