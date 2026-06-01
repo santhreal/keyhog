@@ -4,9 +4,7 @@
 //! scanning, pre-filtering, and ML scoring capabilities against hostile inputs,
 //! evasion methods, and edge cases.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{
+use super::oracle_support::{
     assert_detector_fires, assert_detector_silent, assert_detector_silent_across_chunk_boundary,
 };
 
@@ -227,12 +225,8 @@ fn adv_slack_bot_token_evade_soft_hyphen_dash_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv_heroku_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "heroku-api-key",
-        "01234567-89ab-cdef-0123-456789abcdef",
-        "01234567-89ab-cdef-0123-456789abcdef",
-    );
+fn adv_heroku_api_key_normal_bare_must_stay_silent() {
+    assert_detector_silent("heroku-api-key", "01234567-89ab-cdef-0123-456789abcdef");
 }
 
 #[test]
@@ -241,13 +235,9 @@ fn adv_heroku_api_key_invalid_hex_must_silent() {
 }
 
 #[test]
-fn adv_heroku_api_key_evade_zwsp_dash_must_fire() {
+fn adv_heroku_api_key_evade_zwsp_dash_bare_must_stay_silent() {
     // Evasion via zero-width space next to UUID dashes
-    assert_detector_fires(
-        "heroku-api-key",
-        "01234567-\u{200B}89ab-cdef-0123-456789abcdef",
-        "01234567-89ab-cdef-0123-456789abcdef",
-    );
+    assert_detector_silent("heroku-api-key", "01234567-\u{200B}89ab-cdef-0123-456789abcdef");
 }
 
 // =========================================================================

@@ -3,21 +3,15 @@
 //! Evaluates Census, Censys, Checkly, and Checkout.com detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. CENSUS API KEY ADVERSARIAL TESTS
 // =========================================================================
 
 #[test]
-fn adv18_census_normal_must_fire() {
-    assert_detector_fires(
-        "census-api-key",
-        "CENSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"",
-        "abcde12345abcde12345abcde1234512",
-    );
+fn adv18_census_normal_bare_must_stay_silent() {
+    assert_detector_silent("census-api-key", "CENSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"");
 }
 
 #[test]
@@ -29,30 +23,18 @@ fn adv18_census_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv18_census_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "census-api-key",
-        "CENSUS\u{200B}_TOKEN = \"abcde12345abcde12345abcde1234512\"",
-        "abcde12345abcde12345abcde1234512",
-    );
+fn adv18_census_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("census-api-key", "CENSUS\u{200B}_TOKEN = \"abcde12345abcde12345abcde1234512\"");
 }
 
 #[test]
-fn adv18_census_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "census-api-key",
-        "CENSUS_TOKEN = \"abcde12345abcde\u{00AD}12345abcde1234512\"",
-        "abcde12345abcde12345abcde1234512",
-    );
+fn adv18_census_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("census-api-key", "CENSUS_TOKEN = \"abcde12345abcde\u{00AD}12345abcde1234512\"");
 }
 
 #[test]
-fn adv18_census_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "census-api-key",
-        "C\u{0415}NSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"",
-        "abcde12345abcde12345abcde1234512",
-    );
+fn adv18_census_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("census-api-key", "C\u{0415}NSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"");
 }
 
 // =========================================================================

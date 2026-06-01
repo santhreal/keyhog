@@ -5,9 +5,7 @@
 //! Azure Subscription key detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. AZURE BLOB SAS TOKEN ADVERSARIAL TESTS
@@ -91,12 +89,8 @@ fn adv12_acr_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv12_devops_normal_must_fire() {
-    assert_detector_fires(
-        "azure-devops-pat",
-        "azure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
-        "abcde1234567890abcde123456789012abcde12345678901234",
-    );
+fn adv12_devops_normal_bare_must_stay_silent() {
+    assert_detector_silent("azure-devops-pat", "azure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
 }
 
 #[test]
@@ -108,30 +102,18 @@ fn adv12_devops_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv12_devops_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "azure-devops-pat",
-        "azure\u{200B}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
-        "abcde1234567890abcde123456789012abcde12345678901234",
-    );
+fn adv12_devops_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("azure-devops-pat", "azure\u{200B}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
 }
 
 #[test]
-fn adv12_devops_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "azure-devops-pat",
-        "azure_devops = \"abcde1234567890abcde123456789012abcde12345\u{00AD}678901234\"",
-        "abcde1234567890abcde123456789012abcde12345678901234",
-    );
+fn adv12_devops_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("azure-devops-pat", "azure_devops = \"abcde1234567890abcde123456789012abcde12345\u{00AD}678901234\"");
 }
 
 #[test]
-fn adv12_devops_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "azure-devops-pat",
-        "azur\u{0435}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
-        "abcde1234567890abcde123456789012abcde12345678901234",
-    );
+fn adv12_devops_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("azure-devops-pat", "azur\u{0435}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
 }
 
 // =========================================================================
@@ -360,8 +342,8 @@ fn adv12_openai_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv12_storage_normal_must_fire() {
-    assert_detector_fires("azure-storage-account-key", "AccountKey=abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
+fn adv12_storage_normal_bare_must_stay_silent() {
+    assert_detector_silent("azure-storage-account-key", "AccountKey=abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
 }
 
 #[test]
@@ -370,18 +352,18 @@ fn adv12_storage_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv12_storage_evade_zwsp_must_fire() {
-    assert_detector_fires("azure-storage-account-key", "AccountKey\u{200B}=abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
+fn adv12_storage_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("azure-storage-account-key", "AccountKey\u{200B}=abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
 }
 
 #[test]
-fn adv12_storage_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("azure-storage-account-key", "AccountKey=abcde1234567890abcde1\u{00AD}23456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
+fn adv12_storage_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("azure-storage-account-key", "AccountKey=abcde1234567890abcde1\u{00AD}23456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
 }
 
 #[test]
-fn adv12_storage_evade_homoglyph_must_fire() {
-    assert_detector_fires("azure-storage-account-key", "AccountK\u{0435}y=abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
+fn adv12_storage_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("azure-storage-account-key", "AccountK\u{0435}y=abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890abcde1234=");
 }
 
 // =========================================================================

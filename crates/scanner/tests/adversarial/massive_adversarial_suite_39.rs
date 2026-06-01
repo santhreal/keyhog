@@ -3,9 +3,7 @@
 //! Evaluates hanko, hanko, harbor, hashicorp, hashnode, hasura, headspin, heap, heap, helicone detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. HANKO API KEY ADVERSARIAL TESTS

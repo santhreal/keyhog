@@ -1,8 +1,6 @@
 //! R5-T-SCAN homoglyph must not evade `github-classic-pat` when body is real.
 
-#[path = "../oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use crate::adversarial::oracle_support::scan_text;
 
 #[test]
 fn homoglyph_cyrillic_a_in_ghp_prefix() {

@@ -1,8 +1,6 @@
 //! R5-T-SCAN concat reassembly: python plus aws.
 
-#[path = "../oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use crate::adversarial::oracle_support::scan_text;
 
 #[test]
 fn concat_python_plus_aws() {

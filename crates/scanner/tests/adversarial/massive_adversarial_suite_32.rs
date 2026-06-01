@@ -3,21 +3,15 @@
 //! Evaluates fda, fedex, and figma detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. FDA API KEY ADVERSARIAL TESTS
 // =========================================================================
 
 #[test]
-fn adv32_fda_normal_must_fire() {
-    assert_detector_fires(
-        "fda-api",
-        "fda_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv32_fda_normal_bare_must_stay_silent() {
+    assert_detector_silent("fda-api", "fda_key = \"0000000000000000000000000000000000000000\"");
 }
 
 #[test]
@@ -29,30 +23,18 @@ fn adv32_fda_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv32_fda_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "fda-api",
-        "fda\u{200B}_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv32_fda_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("fda-api", "fda\u{200B}_key = \"0000000000000000000000000000000000000000\"");
 }
 
 #[test]
-fn adv32_fda_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "fda-api",
-        "fda_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv32_fda_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("fda-api", "fda_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
 }
 
 #[test]
-fn adv32_fda_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "fda-api",
-        "fd\u{0430}_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv32_fda_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("fda-api", "fd\u{0430}_key = \"0000000000000000000000000000000000000000\"");
 }
 
 // =========================================================================

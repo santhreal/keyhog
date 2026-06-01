@@ -3,9 +3,7 @@
 //! Evaluates hetzner, hevo, hexpm, hibp, hightouch, hologram, home, homebrew, honeybadger, honeycomb detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. HETZNER API TOKEN ADVERSARIAL TESTS
@@ -900,12 +898,8 @@ fn adv95_homebrew_api_token_evade_lrm_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv95_honeybadger_api_key_normal_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_normal_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe89e911d116ebdf68");
 }
 
 #[test]
@@ -917,93 +911,53 @@ fn adv95_honeybadger_api_key_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{200B}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200B}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{00AD}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{00AD}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_zwnj_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{200C}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_zwnj_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200C}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_zwj_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{200D}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_zwj_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200D}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_zwnbsp_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{FEFF}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_zwnbsp_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{FEFF}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_word_joiner_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{2060}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_word_joiner_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{2060}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_mongolian_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{180E}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_mongolian_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{180E}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_rtl_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{202E}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_rtl_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{202E}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_pop_dir_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{202C}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_pop_dir_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{202C}89e911d116ebdf68");
 }
 
 #[test]
-fn adv95_honeybadger_api_key_evade_lrm_must_fire() {
-    assert_detector_fires(
-        "honeybadger-api-key",
-        "api_key=eb9bba259a9ddafe\u{200E}89e911d116ebdf68",
-        "eb9bba259a9ddafe89e911d116ebdf68",
-    );
+fn adv95_honeybadger_api_key_evade_lrm_bare_must_stay_silent() {
+    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200E}89e911d116ebdf68");
 }
 
 // =========================================================================

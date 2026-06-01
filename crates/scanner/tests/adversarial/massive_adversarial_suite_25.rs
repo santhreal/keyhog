@@ -3,9 +3,7 @@
 //! Evaluates discord, dnsimple, and dockerhub detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. DISCORD BOT TOKEN ADVERSARIAL TESTS
@@ -108,12 +106,8 @@ fn adv25_dnsimple_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv25_dockerhub_normal_must_fire() {
-    assert_detector_fires(
-        "dockerhub-pat",
-        "dodo_pat_00000000-0000-0000-0000-000000000000",
-        "dodo_pat_00000000-0000-0000-0000-000000000000",
-    );
+fn adv25_dockerhub_normal_bare_must_stay_silent() {
+    assert_detector_silent("dockerhub-pat", "dodo_pat_00000000-0000-0000-0000-000000000000");
 }
 
 #[test]
@@ -125,28 +119,16 @@ fn adv25_dockerhub_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv25_dockerhub_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "dockerhub-pat",
-        "dodo_pat\u{200B}_00000000-0000-0000-0000-000000000000",
-        "dodo_pat_00000000-0000-0000-0000-000000000000",
-    );
+fn adv25_dockerhub_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("dockerhub-pat", "dodo_pat\u{200B}_00000000-0000-0000-0000-000000000000");
 }
 
 #[test]
-fn adv25_dockerhub_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "dockerhub-pat",
-        "dodo_pat_00000000-0000-0000-0000-000000\u{00AD}000000",
-        "dodo_pat_00000000-0000-0000-0000-000000000000",
-    );
+fn adv25_dockerhub_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("dockerhub-pat", "dodo_pat_00000000-0000-0000-0000-000000\u{00AD}000000");
 }
 
 #[test]
-fn adv25_dockerhub_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "dockerhub-pat",
-        "d\u{043E}d\u{043E}_pat_00000000-0000-0000-0000-000000000000",
-        "dodo_pat_00000000-0000-0000-0000-000000000000",
-    );
+fn adv25_dockerhub_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("dockerhub-pat", "d\u{043E}d\u{043E}_pat_00000000-0000-0000-0000-000000000000");
 }

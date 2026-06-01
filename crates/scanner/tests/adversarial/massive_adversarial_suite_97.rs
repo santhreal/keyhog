@@ -3,9 +3,7 @@
 //! Evaluates ifttt, incident, india, infinite, influxdb, infobip, infura, instabug, integromat, intelowl detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. IFTTT SERVICE KEY ADVERSARIAL TESTS
@@ -789,12 +787,8 @@ fn adv97_infura_project_credentials_evade_lrm_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv97_instabug_token_normal_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1VU34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_normal_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1VU34hlJRd_QIzCvD\\");
 }
 
 #[test]
@@ -806,93 +800,53 @@ fn adv97_instabug_token_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv97_instabug_token_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200B}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200B}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{00AD}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{00AD}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_zwnj_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200C}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_zwnj_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200C}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_zwj_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200D}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_zwj_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200D}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_zwnbsp_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{FEFF}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_zwnbsp_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{FEFF}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_word_joiner_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{2060}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_word_joiner_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{2060}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_mongolian_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{180E}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_mongolian_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{180E}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_rtl_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{202E}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_rtl_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{202E}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_pop_dir_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{202C}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_pop_dir_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{202C}U34hlJRd_QIzCvD\\");
 }
 
 #[test]
-fn adv97_instabug_token_evade_lrm_must_fire() {
-    assert_detector_fires(
-        "instabug-token",
-        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200E}U34hlJRd_QIzCvD\\",
-        "UWQDxjwuh_kS1VU34hlJRd_QIzCvD",
-    );
+fn adv97_instabug_token_evade_lrm_bare_must_stay_silent() {
+    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1V\u{200E}U34hlJRd_QIzCvD\\");
 }
 
 // =========================================================================

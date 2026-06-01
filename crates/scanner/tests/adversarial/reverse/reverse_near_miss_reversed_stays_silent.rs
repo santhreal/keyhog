@@ -1,8 +1,6 @@
 //! R5-T-SCAN reversed near-miss must not fire.
 
-#[path = "../oracle_support.rs"]
-mod oracle_support;
-use oracle_support::assert_detector_silent;
+use crate::adversarial::oracle_support::assert_detector_silent;
 
 #[test]
 fn reverse_near_miss_reversed_stays_silent() {

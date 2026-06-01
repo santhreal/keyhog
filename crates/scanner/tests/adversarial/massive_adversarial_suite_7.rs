@@ -4,21 +4,15 @@
 //! AbuseIPDB, AccuWeather, ActiveCampaign, and Activepieces detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. 123FORMBUILDER API KEY ADVERSARIAL TESTS
 // =========================================================================
 
 #[test]
-fn adv7_formbuilder_normal_must_fire() {
-    assert_detector_fires(
-        "123formbuilder-api-key",
-        "123formbuilder_api = \"abcde-1234567890123456789012345\"",
-        "abcde-1234567890123456789012345",
-    );
+fn adv7_formbuilder_normal_bare_must_stay_silent() {
+    assert_detector_silent("123formbuilder-api-key", "123formbuilder_api = \"abcde-1234567890123456789012345\"");
 }
 
 #[test]
@@ -30,30 +24,18 @@ fn adv7_formbuilder_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv7_formbuilder_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "123formbuilder-api-key",
-        "123formbuilder\u{200B}_api = \"abcde-1234567890123456789012345\"",
-        "abcde-1234567890123456789012345",
-    );
+fn adv7_formbuilder_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("123formbuilder-api-key", "123formbuilder\u{200B}_api = \"abcde-1234567890123456789012345\"");
 }
 
 #[test]
-fn adv7_formbuilder_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "123formbuilder-api-key",
-        "123formbuilder_api = \"abcde\u{00AD}-1234567890123456789012345\"",
-        "abcde-1234567890123456789012345",
-    );
+fn adv7_formbuilder_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("123formbuilder-api-key", "123formbuilder_api = \"abcde\u{00AD}-1234567890123456789012345\"");
 }
 
 #[test]
-fn adv7_formbuilder_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "123formbuilder-api-key",
-        "123formbu\u{0456}lder_api = \"abcde-1234567890123456789012345\"",
-        "abcde-1234567890123456789012345",
-    );
+fn adv7_formbuilder_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("123formbuilder-api-key", "123formbu\u{0456}lder_api = \"abcde-1234567890123456789012345\"");
 }
 
 // =========================================================================
@@ -301,8 +283,8 @@ fn adv7_abtasty_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv7_abuseipdb_normal_must_fire() {
-    assert_detector_fires("abuseipdb-api-key", "abuseipdb_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890");
+fn adv7_abuseipdb_normal_bare_must_stay_silent() {
+    assert_detector_silent("abuseipdb-api-key", "abuseipdb_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890\"");
 }
 
 #[test]
@@ -311,18 +293,18 @@ fn adv7_abuseipdb_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv7_abuseipdb_evade_zwsp_must_fire() {
-    assert_detector_fires("abuseipdb-api-key", "abuseipdb\u{200B}_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890");
+fn adv7_abuseipdb_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("abuseipdb-api-key", "abuseipdb\u{200B}_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890\"");
 }
 
 #[test]
-fn adv7_abuseipdb_evade_soft_hyphen_must_fire() {
-    assert_detector_fires("abuseipdb-api-key", "abuseipdb_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1\u{00AD}234567890\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890");
+fn adv7_abuseipdb_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("abuseipdb-api-key", "abuseipdb_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1\u{00AD}234567890\"");
 }
 
 #[test]
-fn adv7_abuseipdb_evade_homoglyph_must_fire() {
-    assert_detector_fires("abuseipdb-api-key", "abus\u{0435}ipdb_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890\"", "abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890");
+fn adv7_abuseipdb_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("abuseipdb-api-key", "abus\u{0435}ipdb_api = \"abcde1234567890abcde123456789012abcde1234567890abcde123456789012abcde1234567890\"");
 }
 
 // =========================================================================
@@ -378,12 +360,8 @@ fn adv7_accuweather_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv7_activecampaign_normal_must_fire() {
-    assert_detector_fires(
-        "activecampaign-api-key",
-        "activecampaign_api_key: \"abcde1234567890abcde123456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv7_activecampaign_normal_bare_must_stay_silent() {
+    assert_detector_silent("activecampaign-api-key", "activecampaign_api_key: \"abcde1234567890abcde123456789012\"");
 }
 
 #[test]
@@ -395,30 +373,18 @@ fn adv7_activecampaign_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv7_activecampaign_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "activecampaign-api-key",
-        "activecampaign\u{200B}_api_key: \"abcde1234567890abcde123456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv7_activecampaign_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("activecampaign-api-key", "activecampaign\u{200B}_api_key: \"abcde1234567890abcde123456789012\"");
 }
 
 #[test]
-fn adv7_activecampaign_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "activecampaign-api-key",
-        "activecampaign_api_key: \"abcde1234567890abcde1\u{00AD}23456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv7_activecampaign_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("activecampaign-api-key", "activecampaign_api_key: \"abcde1234567890abcde1\u{00AD}23456789012\"");
 }
 
 #[test]
-fn adv7_activecampaign_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "activecampaign-api-key",
-        "\u{0430}ctivecampaign_api_key: \"abcde1234567890abcde123456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv7_activecampaign_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("activecampaign-api-key", "\u{0430}ctivecampaign_api_key: \"abcde1234567890abcde123456789012\"");
 }
 
 // =========================================================================

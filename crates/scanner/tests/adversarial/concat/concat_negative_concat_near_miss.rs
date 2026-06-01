@@ -1,8 +1,6 @@
 //! R5-T-SCAN concat reassembly: negative concat near miss.
 
-#[path = "../oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use crate::adversarial::oracle_support::scan_text;
 
 #[test]
 fn concat_negative_concat_near_miss() {

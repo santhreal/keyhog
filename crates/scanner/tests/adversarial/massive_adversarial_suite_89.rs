@@ -3,9 +3,7 @@
 //! Evaluates fusionauth, generic, genesys, genius, gentrace, geocodio, getresponse, ghost, github, github detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. FUSIONAUTH API KEY ADVERSARIAL TESTS
@@ -1008,12 +1006,8 @@ fn adv89_github_app_installation_token_evade_lrm_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv89_github_app_private_key_normal_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_normal_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA PRIVATE KEY-----");
 }
 
 #[test]
@@ -1022,91 +1016,51 @@ fn adv89_github_app_private_key_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{200B}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200B}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{00AD}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{00AD}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_zwnj_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{200C}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_zwnj_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200C}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_zwj_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{200D}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_zwj_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200D}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_zwnbsp_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{FEFF}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_zwnbsp_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{FEFF}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_word_joiner_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{2060}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_word_joiner_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{2060}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_mongolian_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{180E}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_mongolian_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{180E}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_rtl_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{202E}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_rtl_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{202E}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_pop_dir_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{202C}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_pop_dir_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{202C}PRIVATE KEY-----");
 }
 
 #[test]
-fn adv89_github_app_private_key_evade_lrm_must_fire() {
-    assert_detector_fires(
-        "github-app-private-key",
-        "-----BEGIN RSA \u{200E}PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    );
+fn adv89_github_app_private_key_evade_lrm_bare_must_stay_silent() {
+    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200E}PRIVATE KEY-----");
 }

@@ -1,8 +1,6 @@
 //! R5-T-SCAN homoglyph must not evade `google-api-key` when body is real.
 
-#[path = "../oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use crate::adversarial::oracle_support::scan_text;
 
 #[test]
 fn homoglyph_mixed_script_google_key() {

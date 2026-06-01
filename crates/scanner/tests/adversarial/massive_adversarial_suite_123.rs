@@ -3,9 +3,7 @@
 //! Evaluates rippling, rocketmatter, rollbar, rome2rio, rootly, routee, rubygems, rudder, rudderstack, salesforce detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. RIPPLING API KEY ADVERSARIAL TESTS

@@ -1,8 +1,6 @@
 //! Cyrillic homoglyphs in AKIA prefix must not evade detection when body is real.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use super::oracle_support::scan_text;
 
 #[test]
 fn unicode_cyrillic_akia_homoglyph_no_evade() {
