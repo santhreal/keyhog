@@ -22,7 +22,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 DETECTORS = REPO / "detectors"
 CONTRACTS = REPO / "crates" / "scanner" / "tests" / "contracts"
-README_CLAIM = "891 service-specific detectors"
+README_CLAIM = "894 service-specific detectors"
 DEFAULT_IDS_FILE = pathlib.Path("/tmp/keyhog-missing-chunk-aa")
 DEFAULT_FAILURES_OUT = REPO / "audits" / "r1-contract-failures-aa.txt"
 
