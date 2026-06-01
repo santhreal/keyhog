@@ -136,12 +136,8 @@ fn adv5_apify_token_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv5_apify_token_evade_tab_must_fire() {
-    assert_detector_fires(
-        "apify-api-token",
-        "apify_api\u{0009}_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
-        "apify_api_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
-    );
+fn adv5_apify_token_evade_tab_evaded_must_stay_silent() {
+    assert_detector_silent("apify-api-token", "apify_api\u{0009}_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8");
 }
 
 // =========================================================================

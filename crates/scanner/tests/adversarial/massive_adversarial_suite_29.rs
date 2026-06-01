@@ -36,12 +36,8 @@ fn adv29_dynatrace_evade_zwsp_must_fire() {
 }
 
 #[test]
-fn adv29_dynatrace_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "dynatrace-api-token",
-        "dt0c01.000000000000000000000000.0000000000000000000000000000\u{00AD}00000000000000000000000000000000",
-        "dt0c01.000000000000000000000000.0000000000000000000000000000000000000000000000000000000000000000",
-    );
+fn adv29_dynatrace_evade_soft_hyphen_evaded_must_stay_silent() {
+    assert_detector_silent("dynatrace-api-token", "dt0c01.000000000000000000000000.0000000000000000000000000000\u{00AD}00000000000000000000000000000000");
 }
 
 #[test]

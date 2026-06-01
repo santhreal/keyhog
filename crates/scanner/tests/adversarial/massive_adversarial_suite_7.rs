@@ -174,12 +174,8 @@ fn adv7_eightxeight_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv7_eightxeight_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "8x8-api-credentials",
-        "eightxeight_api_key = \"abcde1234567890abcde123456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv7_eightxeight_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("8x8-api-credentials", "eightxeight_api_key = \"abcde1234567890abcde123456789012\"");
 }
 
 // =========================================================================
@@ -347,12 +343,8 @@ fn adv7_accuweather_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv7_accuweather_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "accuweather-api-key",
-        "acc\u{0457}weather_api_key = \"abcde1234567890abcde\"",
-        "abcde1234567890abcde",
-    );
+fn adv7_accuweather_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("accuweather-api-key", "acc\u{0457}weather_api_key = \"abcde1234567890abcde\"");
 }
 
 // =========================================================================

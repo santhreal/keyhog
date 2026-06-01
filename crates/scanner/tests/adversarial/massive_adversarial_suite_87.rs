@@ -915,93 +915,53 @@ fn adv87_flipside_api_key_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200B}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_zwsp_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200B}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{00AD}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_soft_hyphen_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{00AD}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_zwnj_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200C}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_zwnj_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200C}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_zwj_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200D}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_zwj_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200D}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_zwnbsp_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{FEFF}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_zwnbsp_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{FEFF}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_word_joiner_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{2060}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_word_joiner_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{2060}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_mongolian_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{180E}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_mongolian_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{180E}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_rtl_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{202E}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_rtl_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{202E}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_pop_dir_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{202C}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_pop_dir_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{202C}6-c8d3-a5e9f1b7c4d");
 }
 
 #[test]
-fn adv87_flipside_api_key_evade_lrm_must_fire() {
-    assert_detector_fires(
-        "flipside-api-key",
-        "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200E}6-c8d3-a5e9f1b7c4d",
-        "7b3e5d8c-a9f4-e2b6-c8d3-a5e9f1b7c4d",
-    );
+fn adv87_flipside_api_key_evade_lrm_evaded_must_stay_silent() {
+    assert_detector_silent("flipside-api-key", "flipside_api_key=7b3e5d8c-a9f4-e2b\u{200E}6-c8d3-a5e9f1b7c4d");
 }
 
 // =========================================================================

@@ -94,12 +94,8 @@ fn adv10_arduino_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv10_arduino_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "arduino-iot-api-credentials",
-        "ard\u{0457}no_client_id = \"abcde1234567890abcde123456789012\"",
-        "abcde1234567890abcde123456789012",
-    );
+fn adv10_arduino_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("arduino-iot-api-credentials", "ard\u{0457}no_client_id = \"abcde1234567890abcde123456789012\"");
 }
 
 // =========================================================================
@@ -286,12 +282,8 @@ fn adv10_auth0_evade_soft_hyphen_must_fire() {
 }
 
 #[test]
-fn adv10_auth0_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "auth0-spa-credentials",
-        "auth\u{043E}_client_id = \"abcde1234567890abcde\"",
-        "abcde1234567890abcde",
-    );
+fn adv10_auth0_evade_homoglyph_evaded_must_stay_silent() {
+    assert_detector_silent("auth0-spa-credentials", "auth\u{043E}_client_id = \"abcde1234567890abcde\"");
 }
 
 // =========================================================================

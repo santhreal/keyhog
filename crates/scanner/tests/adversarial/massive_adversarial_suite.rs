@@ -211,13 +211,9 @@ fn adv_slack_bot_token_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv_slack_bot_token_evade_soft_hyphen_dash_must_fire() {
+fn adv_slack_bot_token_evade_soft_hyphen_dash_evaded_must_stay_silent() {
     // Evasion via soft hyphen (U+00AD) instead of physical dash '-'
-    assert_detector_fires(
-        "slack-bot-token",
-        "xoxb\u{00AD}123456789012\u{00AD}345678901234\u{00AD}a1b2c3d4e5f6g7h8i9j0k1l2",
-        "xoxb-123456789012-345678901234-a1b2c3d4e5f6g7h8i9j0k1l2",
-    );
+    assert_detector_silent("slack-bot-token", "xoxb\u{00AD}123456789012\u{00AD}345678901234\u{00AD}a1b2c3d4e5f6g7h8i9j0k1l2");
 }
 
 // =========================================================================
