@@ -1,8 +1,6 @@
 //! KH-GAP-126 FN twin: near shape-gate boundary realistic password must fire.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use super::oracle_support::scan_text;
 
 #[test]
 fn generic_password_near_shape_gate_boundary_still_fires() {

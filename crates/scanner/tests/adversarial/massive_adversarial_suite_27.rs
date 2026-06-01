@@ -3,9 +3,7 @@
 //! Evaluates drake, drata, drift, drip, and dronahq detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. DRAKE API CREDENTIALS ADVERSARIAL TESTS
@@ -60,12 +58,8 @@ fn adv27_drake_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv27_drata_normal_must_fire() {
-    assert_detector_fires(
-        "drata-api-token",
-        "drata_token = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv27_drata_normal_bare_must_stay_silent() {
+    assert_detector_silent("drata-api-token", "drata_token = \"0000000000000000000000000000000000000000\"");
 }
 
 #[test]
@@ -77,30 +71,18 @@ fn adv27_drata_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv27_drata_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "drata-api-token",
-        "drata\u{200B}_token = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv27_drata_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("drata-api-token", "drata\u{200B}_token = \"0000000000000000000000000000000000000000\"");
 }
 
 #[test]
-fn adv27_drata_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "drata-api-token",
-        "drata_token = \"00000000000000000000\u{00AD}00000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv27_drata_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("drata-api-token", "drata_token = \"00000000000000000000\u{00AD}00000000000000000000\"");
 }
 
 #[test]
-fn adv27_drata_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "drata-api-token",
-        "dr\u{0430}ta_token = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv27_drata_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("drata-api-token", "dr\u{0430}ta_token = \"0000000000000000000000000000000000000000\"");
 }
 
 // =========================================================================

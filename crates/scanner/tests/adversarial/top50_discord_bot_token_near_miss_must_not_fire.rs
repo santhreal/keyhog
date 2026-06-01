@@ -1,8 +1,6 @@
 //! Top-50 detector oracle: `discord-bot-token` near-miss must NOT fire.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::assert_detector_silent;
+use super::oracle_support::assert_detector_silent;
 
 #[test]
 fn top50_discord_bot_token_near_miss_must_not_fire() {

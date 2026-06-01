@@ -49,15 +49,9 @@ fn detector_dir() -> PathBuf {
 }
 
 fn shared_scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
-        let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
-        let mut cfg = ScannerConfig::default();
-        cfg.min_confidence = 0.0;
-        CompiledScanner::compile(detectors)
-            .expect("compile")
-            .with_config(cfg)
-    })
+    // Shared single scanner (LG2): all adversarial full-detector tests
+    // route through one compiled instance instead of one per file.
+    crate::adversarial::oracle_support::production_scanner()
 }
 
 fn scan(body: String, path: &str) -> Vec<keyhog_core::RawMatch> {

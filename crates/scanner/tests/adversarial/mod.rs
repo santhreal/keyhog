@@ -6,6 +6,7 @@ pub mod concat;
 pub mod empty_chunk_no_findings;
 pub mod empty_corpus_zero_findings;
 mod engine;
+pub(crate) mod oracle_support;
 pub mod gpu_decode_scan_adversarial;
 pub mod gpu_program_fusion_adversarial;
 pub mod gpu_regex_dfa_adversarial;

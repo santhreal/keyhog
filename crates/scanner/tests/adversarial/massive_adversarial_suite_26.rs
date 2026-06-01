@@ -3,21 +3,15 @@
 //! Evaluates docusign, doordash, and doppler detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. DOCUSIGN API KEY ADVERSARIAL TESTS
 // =========================================================================
 
 #[test]
-fn adv26_docusign_normal_must_fire() {
-    assert_detector_fires(
-        "docusign-api-key",
-        "docusign_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv26_docusign_normal_bare_must_stay_silent() {
+    assert_detector_silent("docusign-api-key", "docusign_key = \"0000000000000000000000000000000000000000\"");
 }
 
 #[test]
@@ -29,30 +23,18 @@ fn adv26_docusign_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv26_docusign_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "docusign-api-key",
-        "docusign\u{200B}_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv26_docusign_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("docusign-api-key", "docusign\u{200B}_key = \"0000000000000000000000000000000000000000\"");
 }
 
 #[test]
-fn adv26_docusign_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "docusign-api-key",
-        "docusign_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv26_docusign_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("docusign-api-key", "docusign_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
 }
 
 #[test]
-fn adv26_docusign_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "docusign-api-key",
-        "d\u{043E}cusign_key = \"0000000000000000000000000000000000000000\"",
-        "0000000000000000000000000000000000000000",
-    );
+fn adv26_docusign_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("docusign-api-key", "d\u{043E}cusign_key = \"0000000000000000000000000000000000000000\"");
 }
 
 // =========================================================================

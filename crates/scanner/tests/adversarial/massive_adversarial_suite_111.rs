@@ -3,9 +3,7 @@
 //! Evaluates npm, ns1, ntfy, nuvei, octopus, okta, okta, olark, omnisend, onedrive detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. NPM ACCESS TOKEN ADVERSARIAL TESTS

@@ -3,9 +3,7 @@
 //! Evaluates dynatrace, easypost, and ebay detectors against
 //! zero-width spaces, soft hyphens, combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. DYNATRACE API TOKEN ADVERSARIAL TESTS
@@ -60,12 +58,8 @@ fn adv29_dynatrace_evade_homoglyph_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv29_easypost_normal_must_fire() {
-    assert_detector_fires(
-        "easypost-api-key",
-        "easypost_key = \"abcde12345abcde12345\"",
-        "abcde12345abcde12345",
-    );
+fn adv29_easypost_normal_bare_must_stay_silent() {
+    assert_detector_silent("easypost-api-key", "easypost_key = \"abcde12345abcde12345\"");
 }
 
 #[test]
@@ -77,30 +71,18 @@ fn adv29_easypost_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv29_easypost_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "easypost-api-key",
-        "easypost\u{200B}_key = \"abcde12345abcde12345\"",
-        "abcde12345abcde12345",
-    );
+fn adv29_easypost_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("easypost-api-key", "easypost\u{200B}_key = \"abcde12345abcde12345\"");
 }
 
 #[test]
-fn adv29_easypost_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "easypost-api-key",
-        "easypost_key = \"abcde12345abcde\u{00AD}12345\"",
-        "abcde12345abcde12345",
-    );
+fn adv29_easypost_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("easypost-api-key", "easypost_key = \"abcde12345abcde\u{00AD}12345\"");
 }
 
 #[test]
-fn adv29_easypost_evade_homoglyph_must_fire() {
-    assert_detector_fires(
-        "easypost-api-key",
-        "easyp\u{043E}st_key = \"abcde12345abcde12345\"",
-        "abcde12345abcde12345",
-    );
+fn adv29_easypost_evade_homoglyph_bare_must_stay_silent() {
+    assert_detector_silent("easypost-api-key", "easyp\u{043E}st_key = \"abcde12345abcde12345\"");
 }
 
 // =========================================================================

@@ -1,8 +1,6 @@
 //! KH-GAP-164: Invalid embedded checksum must drop named-service matches.
 
-#[path = "../adversarial/oracle_support.rs"]
-mod oracle_support;
-use oracle_support::assert_detector_silent;
+use crate::adversarial::oracle_support::assert_detector_silent;
 
 #[test]
 fn r5_checksum_invalid_drops_named_service_match() {

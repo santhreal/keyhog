@@ -1,8 +1,6 @@
 //! KH-GAP-126 FP twin: shape-gated export DB_PASSWORD must not surface.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::scan_text;
+use super::oracle_support::scan_text;
 
 #[test]
 fn no_generic_password_finding_on_shape_gated_near_miss() {

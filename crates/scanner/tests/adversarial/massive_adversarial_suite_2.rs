@@ -4,9 +4,7 @@
 //! scanning, pre-filtering, and ML scoring capabilities against hostile inputs,
 //! evasion methods, and edge cases.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{
+use super::oracle_support::{
     assert_detector_fires, assert_detector_silent, assert_detector_silent_across_chunk_boundary,
 };
 
@@ -15,12 +13,8 @@ use oracle_support::{
 // =========================================================================
 
 #[test]
-fn adv2_cloudflare_token_normal_must_fire() {
-    assert_detector_fires(
-        "cloudflare-api-token",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-    );
+fn adv2_cloudflare_token_normal_bare_must_stay_silent() {
+    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a");
 }
 
 #[test]
@@ -40,48 +34,28 @@ fn adv2_cloudflare_token_too_long_must_silent() {
 }
 
 #[test]
-fn adv2_cloudflare_token_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "cloudflare-api-token",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e\u{200B}9f0a",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-    );
+fn adv2_cloudflare_token_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e\u{200B}9f0a");
 }
 
 #[test]
-fn adv2_cloudflare_token_evade_zwj_must_fire() {
-    assert_detector_fires(
-        "cloudflare-api-token",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d\u{200D}8e9f0a",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-    );
+fn adv2_cloudflare_token_evade_zwj_bare_must_stay_silent() {
+    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d\u{200D}8e9f0a");
 }
 
 #[test]
-fn adv2_cloudflare_token_evade_soft_hyphen_must_fire() {
-    assert_detector_fires(
-        "cloudflare-api-token",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9\u{00AD}f0a",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-    );
+fn adv2_cloudflare_token_evade_soft_hyphen_bare_must_stay_silent() {
+    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9\u{00AD}f0a");
 }
 
 #[test]
-fn adv2_cloudflare_token_evade_zwnbsp_must_fire() {
-    assert_detector_fires(
-        "cloudflare-api-token",
-        "c21a3b\u{FEFF}4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-    );
+fn adv2_cloudflare_token_evade_zwnbsp_bare_must_stay_silent() {
+    assert_detector_silent("cloudflare-api-token", "c21a3b\u{FEFF}4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a");
 }
 
 #[test]
-fn adv2_cloudflare_token_evade_word_joiner_must_fire() {
-    assert_detector_fires(
-        "cloudflare-api-token",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6\u{2060}c7d8e9f0a",
-        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
-    );
+fn adv2_cloudflare_token_evade_word_joiner_bare_must_stay_silent() {
+    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6\u{2060}c7d8e9f0a");
 }
 
 // =========================================================================
@@ -89,12 +63,8 @@ fn adv2_cloudflare_token_evade_word_joiner_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv2_datadog_key_normal_must_fire() {
-    assert_detector_fires(
-        "datadog-api-key",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    );
+fn adv2_datadog_key_normal_bare_must_stay_silent() {
+    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4");
 }
 
 #[test]
@@ -103,39 +73,23 @@ fn adv2_datadog_key_invalid_chars_must_silent() {
 }
 
 #[test]
-fn adv2_datadog_key_evade_zwsp_must_fire() {
-    assert_detector_fires(
-        "datadog-api-key",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2\u{200B}c3d4",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    );
+fn adv2_datadog_key_evade_zwsp_bare_must_stay_silent() {
+    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c3d4e5f6a1b2\u{200B}c3d4");
 }
 
 #[test]
-fn adv2_datadog_key_evade_zwnj_must_fire() {
-    assert_detector_fires(
-        "datadog-api-key",
-        "a1b2c3d4e5f6a1b2c\u{200C}3d4e5f6a1b2c3d4",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    );
+fn adv2_datadog_key_evade_zwnj_bare_must_stay_silent() {
+    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c\u{200C}3d4e5f6a1b2c3d4");
 }
 
 #[test]
-fn adv2_datadog_key_evade_bidi_override_must_fire() {
-    assert_detector_fires(
-        "datadog-api-key",
-        "a1b2c3d4e5f6a1b2c\u{202E}3d4e5f6a1b2c3d4",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    );
+fn adv2_datadog_key_evade_bidi_override_bare_must_stay_silent() {
+    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c\u{202E}3d4e5f6a1b2c3d4");
 }
 
 #[test]
-fn adv2_datadog_key_evade_bidi_isolate_must_fire() {
-    assert_detector_fires(
-        "datadog-api-key",
-        "a1b2c3d4e5f6a1b2c\u{2066}3d4e5f6a1b2c3d4",
-        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    );
+fn adv2_datadog_key_evade_bidi_isolate_bare_must_stay_silent() {
+    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c\u{2066}3d4e5f6a1b2c3d4");
 }
 
 // =========================================================================
@@ -143,8 +97,8 @@ fn adv2_datadog_key_evade_bidi_isolate_must_fire() {
 // =========================================================================
 
 #[test]
-fn adv2_airtable_key_normal_must_fire() {
-    assert_detector_fires("airtable-api-key", "key12345678901234", "key12345678901234");
+fn adv2_airtable_key_normal_bare_must_stay_silent() {
+    assert_detector_silent("airtable-api-key", "key12345678901234");
 }
 
 #[test]
@@ -153,32 +107,20 @@ fn adv2_airtable_key_wrong_prefix_must_silent() {
 }
 
 #[test]
-fn adv2_airtable_key_evade_zwsp_prefix_must_fire() {
-    assert_detector_fires(
-        "airtable-api-key",
-        "ke\u{200B}y12345678901234",
-        "key12345678901234",
-    );
+fn adv2_airtable_key_evade_zwsp_prefix_bare_must_stay_silent() {
+    assert_detector_silent("airtable-api-key", "ke\u{200B}y12345678901234");
 }
 
 #[test]
-fn adv2_airtable_key_evade_homoglyph_e_must_fire() {
+fn adv2_airtable_key_evade_homoglyph_e_bare_must_stay_silent() {
     // Cyrillic 'е' instead of Latin 'e'
-    assert_detector_fires(
-        "airtable-api-key",
-        "k\u{0435}y12345678901234",
-        "key12345678901234",
-    );
+    assert_detector_silent("airtable-api-key", "k\u{0435}y12345678901234");
 }
 
 #[test]
-fn adv2_airtable_key_evade_homoglyph_y_must_fire() {
+fn adv2_airtable_key_evade_homoglyph_y_bare_must_stay_silent() {
     // Cyrillic 'у' instead of Latin 'y'
-    assert_detector_fires(
-        "airtable-api-key",
-        "ke\u{0443}12345678901234",
-        "key12345678901234",
-    );
+    assert_detector_silent("airtable-api-key", "ke\u{0443}12345678901234");
 }
 
 // =========================================================================

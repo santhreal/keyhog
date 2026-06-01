@@ -3,9 +3,7 @@
 //! Evaluates 123formbuilder, 500px, 8x8, abstract, abtasty, abuseipdb, accuweather, activecampaign, activepieces, adobe detectors against zero-width spaces, soft hyphens,
 //! combining marks, homoglyphs, and control characters.
 
-#[path = "oracle_support.rs"]
-mod oracle_support;
-use oracle_support::{assert_detector_fires, assert_detector_silent};
+use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 // =========================================================================
 // 1. 123FORMBUILDER API KEY ADVERSARIAL TESTS
