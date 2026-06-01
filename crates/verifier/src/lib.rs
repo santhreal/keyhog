@@ -250,6 +250,7 @@ pub(crate) fn into_finding(
 #[doc(hidden)]
 pub mod testing {
     pub use crate::bogon::ip_addr_is_bogon;
+    pub use crate::interpolate::sanitize_oob_value;
     pub use crate::oob::redact_interactsh_error;
     pub use crate::verify::format_sigv4_timestamps;
 }
