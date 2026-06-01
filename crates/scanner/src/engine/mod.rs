@@ -263,6 +263,28 @@ const _: () = {
 };
 
 impl CompiledScanner {
+    /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.
+    ///
+    /// The GPU phase-1 paths reroute a batch through the SIMD coalesced scan
+    /// when the GPU prefix output is too dense for phase 2. That reroute only
+    /// exists when the `simd` feature is on; in `--no-default-features`
+    /// (portable / macOS no-system-libs) builds the `simd_prefilter` field is
+    /// `#[cfg]`-compiled out entirely, so there is nothing to reroute into and
+    /// the answer is always `false`. This accessor keeps the reroute guards
+    /// compiling in every feature combination without scattering
+    /// `#[cfg(feature = "simd")]` across each call site.
+    #[cfg(feature = "simd")]
+    #[inline]
+    pub(crate) fn has_simd_prefilter(&self) -> bool {
+        self.simd_prefilter.is_some()
+    }
+
+    #[cfg(not(feature = "simd"))]
+    #[inline]
+    pub(crate) fn has_simd_prefilter(&self) -> bool {
+        false
+    }
+
     /// Number of loaded detectors.
     pub fn detector_count(&self) -> usize {
         self.detectors.len()
