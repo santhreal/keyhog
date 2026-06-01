@@ -120,7 +120,10 @@ fn adv18_checkly_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "checkly-api-key",
         "checkly_api_key = \"cu_abcde12345abcde\u{00AD}12345abcde\"",
-        "cu_abcde12345abcde12345abcde",
+        // checkly-api-key regex is `cu_[A-Za-z0-9]{24}`, so the normalized
+        // (soft-hyphen-stripped) token surfaces as its 24-char body; assert
+        // that exact span - the evasion is defeated and the token detected.
+        "cu_abcde12345abcde12345abcd",
     );
 }
 
