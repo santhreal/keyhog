@@ -5,10 +5,19 @@
 
 use memmap2::MmapOptions;
 use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 
 use super::decode::{decode_text_file, decode_text_file_owned};
 use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
+
+/// Hard ceiling on a single buffered (non-mmap) whole-file read. Set to the
+/// same 2 GiB sanity cap the mmap path enforces post-open: `--max-file-size`
+/// is validated against a pre-read stat, so a file grown after that stat (a
+/// walker-stat-then-grow TOCTOU) must not be able to OOM the buffered path
+/// either. The mmap twin re-stats and refuses; the buffered path bounds the
+/// read with `.take(MAX_BUFFERED_READ_BYTES)`. (KH-GAP-013)
+const MAX_BUFFERED_READ_BYTES: u64 = MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 pub(in crate::filesystem) fn read_file_buffered(path: &Path) -> Option<String> {
     // The buffered read already owns its `Vec<u8>`. Hand it to the owning
@@ -69,7 +78,7 @@ pub(in crate::filesystem) fn read_file_safe(path: &Path) -> std::io::Result<Vec<
     // If io_uring becomes worthwhile again it should batch hundreds of files
     // through one shared ring - that's a significant rewrite tracked in the
     // backlog, NOT in this hot-path read.
-    let mut file = open_file_safe(path)?;
+    let file = open_file_safe(path)?;
     // Hint to the kernel: this fd will be read sequentially start-to-end.
     // posix_fadvise(POSIX_FADV_SEQUENTIAL) doubles the readahead window
     // and disables prefetching past the end. Free perf on Linux; no-op
@@ -83,8 +92,12 @@ pub(in crate::filesystem) fn read_file_safe(path: &Path) -> std::io::Result<Vec<
         // we ignore it and proceed with the read.
         unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_SEQUENTIAL) };
     }
+    // Bounded read: cap the buffered path at MAX_BUFFERED_READ_BYTES so a
+    // TOCTOU-grown file can't OOM us (the mmap twin re-stats and refuses;
+    // this is the buffered equivalent). Legitimate text files sit far under
+    // the 2 GiB ceiling, so this never truncates real input. (KH-GAP-013)
     let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut file, &mut bytes)?;
+    file.take(MAX_BUFFERED_READ_BYTES).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 

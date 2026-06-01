@@ -16,6 +16,7 @@ pub mod git_uses_resolve_safe_bin;
 pub mod git_validate_repo_path_canonicalizes;
 pub mod http_client_no_auto_gzip;
 pub mod mmap_toctou_sanity_cap_in_read;
+pub mod read_file_safe_capped_in_source;
 pub mod s3_max_object_bytes_in_source;
 pub mod stdin_max_bytes_cap_in_source;
 pub mod unix_open_no_follow_in_read;
