@@ -1,24 +1,6 @@
 # FILE_GATE_MATRIX (LR2-A8 audit artifact)
 #
-# One [[module]] entry per Rust source file in workspace crates/. Used by the
-# A8 harness to enumerate the set of files that need file_gate test coverage
-# and to catch silent module-deletion (a row vanishing here is now a build
-# failure, not a quiet code drop).
-#
-# Regenerate after a module add/remove:
-#   find crates -name "*.rs" -path "*/src/*" | sort | \
-#     awk '{print "[[module]]\npath = \"" $0 "\"\n"}' > tests/FILE_GATE_MATRIX.toml
-
-[[module]]
-path = "crates/cli/src/args/common.rs"
-
-[[module]]
-path = "crates/cli/src/args/detector.rs"
-
-[[module]]
-path = "crates/cli/src/args/enums.rs"
-
-[[module]]
+# One [[module]]
 path = "crates/cli/src/args.rs"
 
 [[module]]
@@ -55,6 +37,9 @@ path = "crates/cli/src/format.rs"
 path = "crates/cli/src/inline_suppression.rs"
 
 [[module]]
+path = "crates/cli/src/installer.rs"
+
+[[module]]
 path = "crates/cli/src/lib.rs"
 
 [[module]]
@@ -62,9 +47,6 @@ path = "crates/cli/src/main.rs"
 
 [[module]]
 path = "crates/cli/src/orchestrator/allowlist.rs"
-
-[[module]]
-path = "crates/cli/src/orchestrator_config.rs"
 
 [[module]]
 path = "crates/cli/src/orchestrator/dispatch.rs"
@@ -82,6 +64,9 @@ path = "crates/cli/src/orchestrator/reporting.rs"
 path = "crates/cli/src/orchestrator/run.rs"
 
 [[module]]
+path = "crates/cli/src/orchestrator_config.rs"
+
+[[module]]
 path = "crates/cli/src/path_validation.rs"
 
 [[module]]
@@ -89,6 +74,9 @@ path = "crates/cli/src/reporting.rs"
 
 [[module]]
 path = "crates/cli/src/sources.rs"
+
+[[module]]
+path = "crates/cli/src/style.rs"
 
 [[module]]
 path = "crates/cli/src/subcommands/backend.rs"
@@ -103,16 +91,16 @@ path = "crates/cli/src/subcommands/completion.rs"
 path = "crates/cli/src/subcommands/daemon.rs"
 
 [[module]]
-path = "crates/cli/src/subcommands/detectors/brace_rewrite.rs"
-
-[[module]]
-path = "crates/cli/src/subcommands/detectors/fix.rs"
-
-[[module]]
 path = "crates/cli/src/subcommands/detectors.rs"
 
 [[module]]
+path = "crates/cli/src/subcommands/detectors/brace_rewrite.rs"
+
+[[module]]
 path = "crates/cli/src/subcommands/diff.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/doctor.rs"
 
 [[module]]
 path = "crates/cli/src/subcommands/explain.rs"
@@ -124,16 +112,16 @@ path = "crates/cli/src/subcommands/hook.rs"
 path = "crates/cli/src/subcommands/mod.rs"
 
 [[module]]
+path = "crates/cli/src/subcommands/repair.rs"
+
+[[module]]
 path = "crates/cli/src/subcommands/scan.rs"
 
 [[module]]
-path = "crates/cli/src/subcommands/scan_system/mounts.rs"
-
-[[module]]
-path = "crates/cli/src/subcommands/scan_system_mounts.rs"
-
-[[module]]
 path = "crates/cli/src/subcommands/scan_system.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/scan_system/mounts.rs"
 
 [[module]]
 path = "crates/cli/src/subcommands/tui/mod.rs"
@@ -145,6 +133,12 @@ path = "crates/cli/src/subcommands/tui/render.rs"
 path = "crates/cli/src/subcommands/tui/worker.rs"
 
 [[module]]
+path = "crates/cli/src/subcommands/uninstall.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/update.rs"
+
+[[module]]
 path = "crates/cli/src/subcommands/watch.rs"
 
 [[module]]
@@ -154,10 +148,10 @@ path = "crates/cli/src/test_fixture_suppressions.rs"
 path = "crates/cli/src/value_parsers.rs"
 
 [[module]]
-path = "crates/core/src/allowlist_metadata.rs"
+path = "crates/core/src/allowlist.rs"
 
 [[module]]
-path = "crates/core/src/allowlist.rs"
+path = "crates/core/src/allowlist_metadata.rs"
 
 [[module]]
 path = "crates/core/src/auto_fix.rs"
@@ -199,19 +193,31 @@ path = "crates/core/src/merkle_spec_hash.rs"
 path = "crates/core/src/registry.rs"
 
 [[module]]
+path = "crates/core/src/report.rs"
+
+[[module]]
 path = "crates/core/src/report/banner.rs"
+
+[[module]]
+path = "crates/core/src/report/csv.rs"
+
+[[module]]
+path = "crates/core/src/report/html.rs"
 
 [[module]]
 path = "crates/core/src/report/json.rs"
 
 [[module]]
-path = "crates/core/src/report.rs"
+path = "crates/core/src/report/junit.rs"
 
 [[module]]
 path = "crates/core/src/report/sarif.rs"
 
 [[module]]
 path = "crates/core/src/report/sarif_taxonomies.rs"
+
+[[module]]
+path = "crates/core/src/report/sarif_types.rs"
 
 [[module]]
 path = "crates/core/src/report/sarif_uri.rs"
@@ -229,16 +235,16 @@ path = "crates/core/src/safe_bin.rs"
 path = "crates/core/src/source.rs"
 
 [[module]]
-path = "crates/core/src/spec/load.rs"
-
-[[module]]
 path = "crates/core/src/spec.rs"
 
 [[module]]
-path = "crates/core/src/spec/validate_regex.rs"
+path = "crates/core/src/spec/load.rs"
 
 [[module]]
 path = "crates/core/src/spec/validate.rs"
+
+[[module]]
+path = "crates/core/src/spec/validate_regex.rs"
 
 [[module]]
 path = "crates/scanner/src/alphabet_filter.rs"
@@ -268,6 +274,9 @@ path = "crates/scanner/src/checksum/slack.rs"
 path = "crates/scanner/src/checksum/stripe.rs"
 
 [[module]]
+path = "crates/scanner/src/compiler.rs"
+
+[[module]]
 path = "crates/scanner/src/compiler_build.rs"
 
 [[module]]
@@ -275,9 +284,6 @@ path = "crates/scanner/src/compiler_compile.rs"
 
 [[module]]
 path = "crates/scanner/src/compiler_prefix.rs"
-
-[[module]]
-path = "crates/scanner/src/compiler.rs"
 
 [[module]]
 path = "crates/scanner/src/confidence/mod.rs"
@@ -310,13 +316,7 @@ path = "crates/scanner/src/decode/base64.rs"
 path = "crates/scanner/src/decode/caesar.rs"
 
 [[module]]
-path = "crates/scanner/src/decode/extract.rs"
-
-[[module]]
 path = "crates/scanner/src/decode/hex.rs"
-
-[[module]]
-path = "crates/scanner/src/decode_impl.rs"
 
 [[module]]
 path = "crates/scanner/src/decode/json.rs"
@@ -325,10 +325,10 @@ path = "crates/scanner/src/decode/json.rs"
 path = "crates/scanner/src/decode/mod.rs"
 
 [[module]]
-path = "crates/scanner/src/decode/pipeline/extractor.rs"
+path = "crates/scanner/src/decode/pipeline.rs"
 
 [[module]]
-path = "crates/scanner/src/decode/pipeline.rs"
+path = "crates/scanner/src/decode/pipeline/extractor.rs"
 
 [[module]]
 path = "crates/scanner/src/decode/reverse.rs"
@@ -343,6 +343,12 @@ path = "crates/scanner/src/decode/url.rs"
 path = "crates/scanner/src/decode/util.rs"
 
 [[module]]
+path = "crates/scanner/src/decode_structure.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/backend.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/backend_dispatch.rs"
 
 [[module]]
@@ -350,9 +356,6 @@ path = "crates/scanner/src/engine/backend_pattern_hits.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/backend_prepared.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/backend.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/backend_triggered.rs"
@@ -367,16 +370,16 @@ path = "crates/scanner/src/engine/compile.rs"
 path = "crates/scanner/src/engine/extract.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_entropy_helpers.rs"
+path = "crates/scanner/src/engine/fallback.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/fallback_entropy.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_generic.rs"
+path = "crates/scanner/src/engine/fallback_entropy_helpers.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback.rs"
+path = "crates/scanner/src/engine/fallback_generic.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_ac_phase1.rs"
@@ -436,19 +439,28 @@ path = "crates/scanner/src/engine/process.rs"
 path = "crates/scanner/src/engine/rule_pipeline.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/scan.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/scan_filters.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/scan.rs"
-
-[[module]]
 path = "crates/scanner/src/engine/segment_attribution.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/windowed.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/keywords.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/scanner.rs"
 
 [[module]]
 path = "crates/scanner/src/entropy_avx512.rs"
@@ -463,22 +475,13 @@ path = "crates/scanner/src/entropy_fast_neon.rs"
 path = "crates/scanner/src/entropy_fast_x86.rs"
 
 [[module]]
-path = "crates/scanner/src/entropy/keywords.rs"
-
-[[module]]
-path = "crates/scanner/src/entropy/mod.rs"
-
-[[module]]
-path = "crates/scanner/src/entropy/scanner.rs"
-
-[[module]]
 path = "crates/scanner/src/error.rs"
 
 [[module]]
-path = "crates/scanner/src/gpu_moe_backend.rs"
+path = "crates/scanner/src/gpu.rs"
 
 [[module]]
-path = "crates/scanner/src/gpu.rs"
+path = "crates/scanner/src/gpu_moe_backend.rs"
 
 [[module]]
 path = "crates/scanner/src/gpu_shader.rs"
@@ -496,13 +499,7 @@ path = "crates/scanner/src/hw_probe/mod.rs"
 path = "crates/scanner/src/hw_probe/platform.rs"
 
 [[module]]
-path = "crates/scanner/src/hw_probe_platform.rs"
-
-[[module]]
 path = "crates/scanner/src/hw_probe/select.rs"
-
-[[module]]
-path = "crates/scanner/src/hw_probe/tests.rs"
 
 [[module]]
 path = "crates/scanner/src/hw_probe/thresholds.rs"
@@ -553,27 +550,6 @@ path = "crates/scanner/src/pipeline/postprocess/mod.rs"
 path = "crates/scanner/src/pipeline/postprocess/raw_match.rs"
 
 [[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression/api.rs"
-
-[[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression_b64.rs"
-
-[[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression_helpers.rs"
-
-[[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression_inner.rs"
-
-[[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression_markers.rs"
-
-[[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression/shape.rs"
-
-[[module]]
-path = "crates/scanner/src/pipeline/postprocess/suppression_tail.rs"
-
-[[module]]
 path = "crates/scanner/src/pipeline/scan_loop.rs"
 
 [[module]]
@@ -595,7 +571,7 @@ path = "crates/scanner/src/probabilistic_gate.rs"
 path = "crates/scanner/src/resolution.rs"
 
 [[module]]
-path = "crates/scanner/src/shape_gates.rs"
+path = "crates/scanner/src/scanner_config.rs"
 
 [[module]]
 path = "crates/scanner/src/shared_regexes.rs"
@@ -616,6 +592,21 @@ path = "crates/scanner/src/structured/mod.rs"
 path = "crates/scanner/src/structured/parsers.rs"
 
 [[module]]
+path = "crates/scanner/src/structured/parsers/env.rs"
+
+[[module]]
+path = "crates/scanner/src/structured/parsers/hcl.rs"
+
+[[module]]
+path = "crates/scanner/src/structured/parsers/json.rs"
+
+[[module]]
+path = "crates/scanner/src/structured/parsers/line.rs"
+
+[[module]]
+path = "crates/scanner/src/structured/parsers/yaml.rs"
+
+[[module]]
 path = "crates/scanner/src/suppression/api.rs"
 
 [[module]]
@@ -634,22 +625,22 @@ path = "crates/scanner/src/suppression/mod.rs"
 path = "crates/scanner/src/suppression/path_filter.rs"
 
 [[module]]
-path = "crates/scanner/src/suppression/shape_gates.rs"
-
-[[module]]
 path = "crates/scanner/src/suppression/shape.rs"
 
 [[module]]
-path = "crates/scanner/src/telemetry.rs"
+path = "crates/scanner/src/suppression/shape_gates.rs"
 
 [[module]]
-path = "crates/scanner/src/test_backend.rs"
+path = "crates/scanner/src/telemetry.rs"
 
 [[module]]
 path = "crates/scanner/src/types.rs"
 
 [[module]]
 path = "crates/scanner/src/unicode_hardening.rs"
+
+[[module]]
+path = "crates/scanner/src/util_hash.rs"
 
 [[module]]
 path = "crates/sources/src/binary/ghidra.rs"
@@ -667,10 +658,13 @@ path = "crates/sources/src/binary/sections.rs"
 path = "crates/sources/src/docker.rs"
 
 [[module]]
-path = "crates/sources/src/filesystem/archive.rs"
+path = "crates/sources/src/filesystem.rs"
 
 [[module]]
-path = "crates/sources/src/filesystem/compressed.rs"
+path = "crates/sources/src/filesystem/extract.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/filter.rs"
 
 [[module]]
 path = "crates/sources/src/filesystem/read/bytes.rs"
@@ -691,31 +685,25 @@ path = "crates/sources/src/filesystem/read/tests.rs"
 path = "crates/sources/src/filesystem/read/window.rs"
 
 [[module]]
-path = "crates/sources/src/filesystem.rs"
-
-[[module]]
-path = "crates/sources/src/filesystem/skip_lists.rs"
-
-[[module]]
-path = "crates/sources/src/filesystem/walk_util.rs"
-
-[[module]]
 path = "crates/sources/src/git/diff.rs"
 
 [[module]]
 path = "crates/sources/src/git/history.rs"
 
 [[module]]
-path = "crates/sources/src/github_org/redact.rs"
+path = "crates/sources/src/git/mod.rs"
+
+[[module]]
+path = "crates/sources/src/git/source.rs"
 
 [[module]]
 path = "crates/sources/src/github_org.rs"
 
 [[module]]
-path = "crates/sources/src/git/mod.rs"
+path = "crates/sources/src/github_org/redact.rs"
 
 [[module]]
-path = "crates/sources/src/git/source.rs"
+path = "crates/sources/src/github_org/sanitize.rs"
 
 [[module]]
 path = "crates/sources/src/har.rs"
@@ -749,6 +737,12 @@ path = "crates/sources/src/timeouts.rs"
 
 [[module]]
 path = "crates/sources/src/web.rs"
+
+[[module]]
+path = "crates/sources/src/web/ssrf.rs"
+
+[[module]]
+path = "crates/verifier/src/bogon.rs"
 
 [[module]]
 path = "crates/verifier/src/cache.rs"
@@ -800,4 +794,3 @@ path = "crates/verifier/src/verify/request.rs"
 
 [[module]]
 path = "crates/verifier/src/verify/response.rs"
-
