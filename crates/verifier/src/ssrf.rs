@@ -213,12 +213,17 @@ pub fn is_private_url(url_str: &str) -> bool {
 
 fn looks_like_malformed_ip(domain: &str) -> bool {
     let parts: Vec<&str> = domain.split('.').collect();
-    // Domains with 4+ dot-separated parts where all parts are numeric-ish (digits, minus, hex prefix)
+    // Domains with 4+ dot-separated parts where every part is an octet-shaped
+    // token a permissive resolver might canonicalize into an IP: decimal,
+    // `0x`-hex, or a (always-invalid) negative octet. The `f` in `0x7f` must
+    // count - the pre-fix `digit|-|x|X` set excluded a..f, leaving an SSRF
+    // bypass via `0x7f.0.0.-1`. `is_ascii_hexdigit` subsumes the old digit
+    // check, so this only widens blocking (fail closed).
     if parts.len() >= 4
         && parts.iter().all(|p| {
             !p.is_empty()
                 && p.chars()
-                    .all(|c| c.is_ascii_digit() || c == '-' || c == 'x' || c == 'X')
+                    .all(|c| c.is_ascii_hexdigit() || c == '-' || c == 'x' || c == 'X')
         })
     {
         return true;
