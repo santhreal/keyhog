@@ -100,9 +100,11 @@ fn stripe_sk_test_exact_48_chars_valid() {
 }
 
 #[test]
-fn stripe_sk_live_49_chars_invalid() {
-    // 49 chars — above 48 maximum
-    let token = "sk_live_".to_string() + &"A".repeat(49);
+fn stripe_sk_live_over_max_length_invalid() {
+    // The validator accepts a 24..=128-char payload - modern Stripe secret
+    // keys run to ~107 chars, so a 48-char cap would reject real keys. 129
+    // chars is above the maximum and must be rejected.
+    let token = "sk_live_".to_string() + &"A".repeat(129);
     assert_eq!(
         StripeTokenValidator.validate(&token),
         ChecksumResult::Invalid
