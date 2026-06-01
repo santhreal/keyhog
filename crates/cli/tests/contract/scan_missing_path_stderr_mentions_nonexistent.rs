@@ -13,7 +13,9 @@ fn scan_missing_path_stderr_mentions_nonexistent() {
     let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
     assert_ne!(output.status.code(), Some(0));
     assert!(
-        stderr.contains("does not exist") || stderr.contains("not found") || stderr.contains("nonexistent"),
+        stderr.contains("does not exist")
+            || stderr.contains("not found")
+            || stderr.contains("nonexistent"),
         "stderr must explain missing path; got: {stderr}"
     );
 }

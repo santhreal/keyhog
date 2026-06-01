@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn scan_help_exits_zero() {
-    let output = Command::new(binary()).args(["scan", "--help"]).output().expect("spawn");
+    let output = Command::new(binary())
+        .args(["scan", "--help"])
+        .output()
+        .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("--format"), "scan help must document --format; got: {stdout}");
+    assert!(
+        stdout.contains("--format"),
+        "scan help must document --format; got: {stdout}"
+    );
 }

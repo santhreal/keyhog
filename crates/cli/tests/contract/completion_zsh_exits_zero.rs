@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn completion_zsh_exits_zero() {
-    let output = Command::new(binary()).args(["completion", "zsh"]).output().expect("spawn");
+    let output = Command::new(binary())
+        .args(["completion", "zsh"])
+        .output()
+        .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("#compdef") || stdout.contains("_keyhog"), "zsh completion expected markers; got: {stdout}");
+    assert!(
+        stdout.contains("#compdef") || stdout.contains("_keyhog"),
+        "zsh completion expected markers; got: {stdout}"
+    );
 }

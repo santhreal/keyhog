@@ -12,5 +12,8 @@ fn short_version_flag_exits_zero() {
     let output = Command::new(binary()).arg("-V").output().expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(env!("CARGO_PKG_VERSION")), "stdout must contain semver; got: {stdout}");
+    assert!(
+        stdout.contains(env!("CARGO_PKG_VERSION")),
+        "stdout must contain semver; got: {stdout}"
+    );
 }

@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn help_includes_detectors_command() {
-    let output = Command::new(binary()).arg("--help").output().expect("spawn");
+    let output = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("spawn");
     assert!(output.status.success(), "exit {:?}", output.status.code());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("detectors"), "help must mention detectors; got: {stdout}");
+    assert!(
+        stdout.contains("detectors"),
+        "help must mention detectors; got: {stdout}"
+    );
 }

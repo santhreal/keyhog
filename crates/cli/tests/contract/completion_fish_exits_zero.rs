@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn completion_fish_exits_zero() {
-    let output = Command::new(binary()).args(["completion", "fish"]).output().expect("spawn");
+    let output = Command::new(binary())
+        .args(["completion", "fish"])
+        .output()
+        .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("keyhog"), "fish completion must mention keyhog; got: {stdout}");
+    assert!(
+        stdout.contains("keyhog"),
+        "fish completion must mention keyhog; got: {stdout}"
+    );
 }

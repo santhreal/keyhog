@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn help_includes_calibrate_command() {
-    let output = Command::new(binary()).arg("--help").output().expect("spawn");
+    let output = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("spawn");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("calibrate"), "help must mention calibrate; got: {stdout}");
+    assert!(
+        stdout.contains("calibrate"),
+        "help must mention calibrate; got: {stdout}"
+    );
 }

@@ -15,7 +15,9 @@ fn gap_mod_wiring_is_consistent() {
         .lines()
         .filter_map(|line| {
             let line = line.trim();
-            let name = line.strip_prefix("pub mod ").or_else(|| line.strip_prefix("mod "))?;
+            let name = line
+                .strip_prefix("pub mod ")
+                .or_else(|| line.strip_prefix("mod "))?;
             let name = name.strip_suffix(';')?;
             name.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_')

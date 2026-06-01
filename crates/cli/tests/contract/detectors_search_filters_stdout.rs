@@ -9,8 +9,14 @@ fn binary() -> PathBuf {
 
 #[test]
 fn detectors_search_filters_stdout() {
-    let output = Command::new(binary()).args(["detectors", "--search", "aws"]).output().expect("spawn");
+    let output = Command::new(binary())
+        .args(["detectors", "--search", "aws"])
+        .output()
+        .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
-    assert!(stdout.contains("aws"), "filtered detectors must mention aws; got: {stdout}");
+    assert!(
+        stdout.contains("aws"),
+        "filtered detectors must mention aws; got: {stdout}"
+    );
 }

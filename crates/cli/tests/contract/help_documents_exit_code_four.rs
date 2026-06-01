@@ -9,7 +9,10 @@ fn binary() -> PathBuf {
 
 #[test]
 fn help_documents_exit_code_four() {
-    let output = Command::new(binary()).arg("--help").output().expect("spawn");
+    let output = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("spawn");
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),

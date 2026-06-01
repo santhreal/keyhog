@@ -10,7 +10,15 @@ fn binary() -> PathBuf {
 #[test]
 fn no_args_exits_zero() {
     let output = Command::new(binary()).output().expect("spawn");
-    assert_eq!(output.status.code(), Some(0), "no-args must exit 0; stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "no-args must exit 0; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Usage:"), "no-args must print usage; got: {stdout}");
+    assert!(
+        stdout.contains("Usage:"),
+        "no-args must print usage; got: {stdout}"
+    );
 }
