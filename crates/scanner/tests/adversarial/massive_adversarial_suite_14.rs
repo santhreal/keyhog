@@ -395,7 +395,7 @@ fn adv14_bluesky_normal_must_fire() {
 fn adv14_bluesky_wrong_prefix_must_silent() {
     assert_detector_silent(
         "bluesky-app-password",
-        "gsky_app_password = \"abcd-efgh-ijkl-mnop\"",
+        "gsky_app_passwurd = \"abcd-efgh-ijkl-mnop\"",
     );
 }
 

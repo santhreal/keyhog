@@ -102,7 +102,7 @@ fn adv18_checkly_normal_must_fire() {
 fn adv18_checkly_wrong_prefix_must_silent() {
     assert_detector_silent(
         "checkly-api-key",
-        "dheckly_api_key = \"cu_abcde12345abcde12345abcde\"",
+        "dheckly_api_key = \"cx_abcde12345abcde12345abcde\"",
     );
 }
 

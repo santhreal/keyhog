@@ -208,7 +208,7 @@ fn adv15_braintree_public_normal_must_fire() {
 fn adv15_braintree_public_wrong_prefix_must_silent() {
     assert_detector_silent(
         "braintree-api-key",
-        "craintree_public_key = \"abcde123_abcde123_abcde123\"",
+        "craintree_public_kex = \"abcde123_abcde123_abcde123\"",
     );
 }
 

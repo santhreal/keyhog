@@ -22,7 +22,7 @@ fn adv25_discord_bot_normal_must_fire() {
 fn adv25_discord_bot_wrong_prefix_must_silent() {
     assert_detector_silent(
         "discord-bot-token",
-        "wiscord_token = \"MTIzNDU2Nzg5MDEyMzQ1Njc4.A1B2C3.D4E5F6G7H8I9J0K1L2M3N4O5P6Q\"",
+        "wiscord_token = \"AAAzNDU2Nzg5MDEyMzQ1Njc4.A1B2C3.D4E5F6G7H8I9J0K1L2M3N4O5P6Q\"",
     );
 }
 

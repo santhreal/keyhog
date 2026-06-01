@@ -102,7 +102,7 @@ fn adv24_digitalocean_normal_must_fire() {
 fn adv24_digitalocean_wrong_prefix_must_silent() {
     assert_detector_silent(
         "digitalocean-pat",
-        "figitalocean_token = \"dop_v1_0000000000000000000000000000000000000000000000000000000000000000\"",
+        "figitalocean_token = \"dxp_v1_0000000000000000000000000000000000000000000000000000000000000000\"",
     );
 }
 

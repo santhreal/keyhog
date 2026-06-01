@@ -71,7 +71,7 @@ fn adv10_arduino_normal_must_fire() {
 fn adv10_arduino_wrong_prefix_must_silent() {
     assert_detector_silent(
         "arduino-iot-api-credentials",
-        "garduino_client_id = \"abcde1234567890abcde123456789012\"",
+        "ardiuno_client_id = \"abcde1234567890abcde123456789012\"",
     );
 }
 
@@ -115,7 +115,7 @@ fn adv10_assemblyai_normal_must_fire() {
 fn adv10_assemblyai_wrong_prefix_must_silent() {
     assert_detector_silent(
         "assemblyai-api-key",
-        "disassemblyai_key = \"abcde1234567890abcde123456789012\"",
+        "disassymblyai_key = \"abcde1234567890abcde123456789012\"",
     );
 }
 
@@ -259,7 +259,7 @@ fn adv10_auth0_normal_must_fire() {
 fn adv10_auth0_wrong_prefix_must_silent() {
     assert_detector_silent(
         "auth0-spa-credentials",
-        "oauth0_client_id = \"abcde1234567890abcde\"",
+        "oxuth0_client_id = \"abcde1234567890abcde\"",
     );
 }
 
@@ -396,7 +396,7 @@ fn adv10_automateio_normal_must_fire() {
 fn adv10_automateio_wrong_prefix_must_silent() {
     assert_detector_silent(
         "automate-io-credentials",
-        "KAUTOMATE_IO = \"abcde1234567890abcde123456789012\"",
+        "KAUTOMXTE_IO = \"abcde1234567890abcde123456789012\"",
     );
 }
 
@@ -444,7 +444,7 @@ fn adv10_avalanche_normal_must_fire() {
 fn adv10_avalanche_wrong_prefix_must_silent() {
     assert_detector_silent(
         "avalanche-api-credentials",
-        "bavalanche-api-key = \"abcde1234567890abcde123456789012\"",
+        "bavalxnche-api-key = \"abcde1234567890abcde123456789012\"",
     );
 }
 

@@ -102,7 +102,7 @@ fn adv32_figma_normal_must_fire() {
 fn adv32_figma_wrong_prefix_must_silent() {
     assert_detector_silent(
         "figma-pat",
-        "gigma_token = \"figd_0000000000000000000000000000000000000000\"",
+        "gigma_token = \"xigd_0000000000000000000000000000000000000000\"",
     );
 }
 

@@ -22,7 +22,7 @@ fn adv34_fireworks_normal_must_fire() {
 fn adv34_fireworks_wrong_prefix_must_silent() {
     assert_detector_silent(
         "fireworks-ai-api-key",
-        "gireworks_key = \"fw_0000000000000000000000000000000000000000\"",
+        "gireworks_key = \"fx_0000000000000000000000000000000000000000\"",
     );
 }
 
