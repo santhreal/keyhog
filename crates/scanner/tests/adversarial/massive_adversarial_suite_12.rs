@@ -24,7 +24,7 @@ fn adv12_blobsas_normal_must_fire() {
 fn adv12_blobsas_wrong_prefix_must_silent() {
     assert_detector_silent(
         "azure-blob-sas-token",
-        "AZURE_STORAGE_SAS_TOKEN = \"?sv=2021-08-06&pig=abcde1234567890abcde\"",
+        "AZURE_STORAGE_SAS_TOKEN = \"?sx=2021-08-06&pig=abcde1234567890abcde\"",
     );
 }
 
@@ -371,7 +371,7 @@ fn adv12_subscription_normal_must_fire() {
 fn adv12_subscription_wrong_prefix_must_silent() {
     assert_detector_silent(
         "azure-subscription-key",
-        "azure_unsubscription_key = \"abcde1234567890abcde123456789012\"",
+        "azure_unsubscriptipn_key = \"abcde1234567890abcde123456789012\"",
     );
 }
 
