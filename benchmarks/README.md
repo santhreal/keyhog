@@ -150,6 +150,19 @@ regenerated only by `make report` on a machine with every competitor installed,
 so a partial-scanner run can never degrade the committed leaderboard. The
 `calibration.toml` overlay it emits is the actionable "what to tune next" signal.
 
+## Cross-device
+
+`cross_device.sh DEVICE=<ssh-alias>` rsyncs the current tree to a device,
+installs keyhog via its per-OS build (Linux: Hyperscan SIMD; macOS:
+`--features portable`, the system-lib-free vyre CPU path), generates the corpus
+on the device's local disk, runs the leaderboard there, and pulls the per-host
+RunResult into `results-cross-device/<device>/` — kept **out** of `results/` so
+a remote host's row can never shadow the canonical README numbers (the README
+report's `canonical_leaderboard` picks newest-per-scanner across everything it
+loads). Compare every host with `python -m bench.cross_compare`; the committed
+snapshot is [`reports/cross-device.md`](reports/cross-device.md). Windows is
+POSIX-incompatible with this script — drive the ThinkPad via PowerShell.
+
 ## Reproducibility
 
 Scoring pins `KEYHOG_NO_GPU=1` for the deterministic SIMD path on the default
