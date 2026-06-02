@@ -1,8 +1,8 @@
 //! Migrated from src/hw_probe.rs
 
 use keyhog_scanner::hw_probe::{
-    classify_gpu_tier, clear_test_backend_override, parse_backend_str, select_backend,
-    set_test_backend_override, thresholds, GpuTier, HardwareCaps, ScanBackend,
+    classify_gpu_tier, clear_test_backend_override, gpu_could_engage, parse_backend_str,
+    select_backend, set_test_backend_override, thresholds, GpuTier, HardwareCaps, ScanBackend,
 };
 
 // NOTE: these tests deliberately do NOT mutate the process-global
@@ -38,29 +38,32 @@ fn clear_env() {
 
 #[test]
 fn gpu_picked_when_workload_huge_solo() {
-    clear_env();
     let caps = caps_with(true, false, true, true);
-    // 256 MiB single file, low pattern count → still GPU (solo
-    // crossover).
-    assert_eq!(
-        select_backend(&caps, thresholds::GPU_BYTES_BREAKEVEN_SOLO, 50),
-        ScanBackend::Gpu
-    );
+    // 256 MiB single file, low pattern count → still clears the GPU crossover
+    // (solo cap). Asserted on the side-effect-free `gpu_could_engage` predicate
+    // rather than `select_backend`: the router additionally degrades a GPU
+    // choice to SIMD on a GPU-less host (`gpu::env_no_gpu()`), so a `== Gpu`
+    // assertion is host-dependent — green on a GPU dev box, red on a GPU-less CI
+    // runner. `gpu_could_engage` is exactly the GPU branch condition, factored
+    // out, and depends only on the passed caps.
+    assert!(gpu_could_engage(
+        &caps,
+        thresholds::GPU_BYTES_BREAKEVEN_SOLO,
+        50
+    ));
 }
 
 #[test]
 fn gpu_picked_when_buffer_big_and_many_patterns() {
-    clear_env();
     let caps = caps_with(true, false, true, true);
-    // 64 MiB + 2K patterns → GPU.
-    assert_eq!(
-        select_backend(
-            &caps,
-            thresholds::GPU_MIN_BYTES,
-            thresholds::GPU_PATTERN_BREAKEVEN
-        ),
-        ScanBackend::Gpu
-    );
+    // 64 MiB + 2K patterns → clears the GPU crossover (see
+    // `gpu_picked_when_workload_huge_solo` for why this asserts
+    // `gpu_could_engage`, not `select_backend == Gpu`).
+    assert!(gpu_could_engage(
+        &caps,
+        thresholds::GPU_MIN_BYTES,
+        thresholds::GPU_PATTERN_BREAKEVEN
+    ));
 }
 
 #[test]
@@ -258,63 +261,46 @@ fn classify_low_tier_gpus() {
 
 #[test]
 fn high_tier_gpu_activates_at_2mib() {
-    clear_env();
     let caps = caps_with_named_gpu("NVIDIA GeForce RTX 5090");
-    // 2 MiB workload + 2K patterns → GPU on RTX 5090.
-    assert_eq!(
-        select_backend(&caps, 2 * 1024 * 1024, thresholds::GPU_PATTERN_BREAKEVEN),
-        ScanBackend::Gpu
-    );
-    // 2 MiB single file (no pattern threshold needed) shouldn't
-    // hit the solo cap (16 MiB on high tier), so falls back to SIMD
-    // when pattern count is low.
-    assert_eq!(
-        select_backend(&caps, 2 * 1024 * 1024, 50),
-        ScanBackend::SimdCpu
-    );
-    // 16 MiB single file → solo cap on high tier → GPU.
-    assert_eq!(
-        select_backend(&caps, 16 * 1024 * 1024, 50),
-        ScanBackend::Gpu
-    );
+    // 2 MiB workload + 2K patterns → clears the GPU crossover on an RTX 5090.
+    assert!(gpu_could_engage(
+        &caps,
+        2 * 1024 * 1024,
+        thresholds::GPU_PATTERN_BREAKEVEN
+    ));
+    // 2 MiB single file with a low pattern count doesn't reach the high-tier
+    // solo cap (16 MiB), so the crossover stays closed.
+    assert!(!gpu_could_engage(&caps, 2 * 1024 * 1024, 50));
+    // 16 MiB single file → solo cap on high tier → crossover opens.
+    assert!(gpu_could_engage(&caps, 16 * 1024 * 1024, 50));
 }
 
 #[test]
 fn mid_tier_gpu_activates_at_16mib() {
-    clear_env();
     let caps = caps_with_named_gpu("NVIDIA GeForce RTX 3070");
-    // 2 MiB on mid-tier is too small — SIMD wins.
-    assert_eq!(
-        select_backend(&caps, 2 * 1024 * 1024, thresholds::GPU_PATTERN_BREAKEVEN),
-        ScanBackend::SimdCpu
-    );
-    // 16 MiB + 2K patterns → GPU.
-    assert_eq!(
-        select_backend(
-            &caps,
-            thresholds::GPU_MIN_BYTES_MID_TIER,
-            thresholds::GPU_PATTERN_BREAKEVEN
-        ),
-        ScanBackend::Gpu
-    );
+    // 2 MiB on mid-tier is too small — crossover stays closed.
+    assert!(!gpu_could_engage(
+        &caps,
+        2 * 1024 * 1024,
+        thresholds::GPU_PATTERN_BREAKEVEN
+    ));
+    // 16 MiB + 2K patterns → crossover opens.
+    assert!(gpu_could_engage(
+        &caps,
+        thresholds::GPU_MIN_BYTES_MID_TIER,
+        thresholds::GPU_PATTERN_BREAKEVEN
+    ));
 }
 
 #[test]
 fn low_tier_gpu_keeps_legacy_64mib_threshold() {
-    clear_env();
     // Unknown adapter name → Low tier → original 64 MiB threshold.
     let caps = caps_with_named_gpu("Mystery GPU");
-    // 16 MiB even with many patterns → SIMD (Low tier needs 64 MiB).
-    assert_eq!(
-        select_backend(&caps, 16 * 1024 * 1024, 5_000),
-        ScanBackend::SimdCpu
-    );
-    assert_eq!(
-        select_backend(
-            &caps,
-            thresholds::GPU_MIN_BYTES,
-            thresholds::GPU_PATTERN_BREAKEVEN
-        ),
-        ScanBackend::Gpu
-    );
+    // 16 MiB even with many patterns → crossover closed (Low tier needs 64 MiB).
+    assert!(!gpu_could_engage(&caps, 16 * 1024 * 1024, 5_000));
+    assert!(gpu_could_engage(
+        &caps,
+        thresholds::GPU_MIN_BYTES,
+        thresholds::GPU_PATTERN_BREAKEVEN
+    ));
 }

@@ -728,66 +728,21 @@ test = "crates/verifier/tests/unit/gates/oob_client_file_size_cap.rs"
 fix_target = "0.6.0"
 
 [[finding]]
-id = "KH-GAP-074"
-severity = "bar-miss"
-status = "fixed"
-crate = "ci-operability"
-title = "KH-GAP-015: fuzz targets are not invoked by any CI workflow."
-test = "coordination/ci-operability/tests/gap/fuzz_not_wired_in_ci.rs"
-fix_target = "0.6.0"
-
-[[finding]]
-id = "KH-GAP-075"
-severity = "bar-miss"
-status = "fixed"
-crate = "ci-operability"
-title = "KH-GAP-014: macOS CI lane never exercises default-features Hyperscan path."
-test = "coordination/ci-operability/tests/gap/macos_ci_skips_hyperscan_default_build.rs"
-fix_target = "0.6.0"
-
-[[finding]]
 id = "KH-GAP-076"
 severity = "bar-miss"
 status = "fixed"
-crate = "ci-operability"
+crate = "scanner"
 title = "Positive invariant: nightly job exports every multiplier strict env var."
-test = "coordination/ci-operability/tests/gap/nightly_exports_all_strict_env_vars.rs"
+test = "crates/scanner/tests/gap/nightly_exports_all_strict_env_vars.rs"
 fix_target = "0.6.0"
 
 [[finding]]
 id = "KH-GAP-077"
 severity = "bar-miss"
 status = "fixed"
-crate = "ci-operability"
+crate = "scanner"
 title = "Positive invariant: runners-nightly.yml lists all 14 contract multipliers."
-test = "coordination/ci-operability/tests/gap/nightly_matrix_has_fourteen_runner_binaries.rs"
-fix_target = "0.6.0"
-
-[[finding]]
-id = "KH-GAP-078"
-severity = "bar-miss"
-status = "fixed"
-crate = "ci-operability"
-title = "KH-GAP-011: PR gate must run all 14 strict runners (TESTING_PROGRAM §3.1)."
-test = "coordination/ci-operability/tests/gap/pr_ci_runs_all_fourteen_strict_runners.rs"
-fix_target = "0.6.0"
-
-[[finding]]
-id = "KH-GAP-079"
-severity = "bar-miss"
-status = "fixed"
-crate = "ci-operability"
-title = "KH-GAP-013: secretbench-nightly builds keyhog without Hyperscan dev libs."
-test = "coordination/ci-operability/tests/gap/secretbench_missing_hyperscan_install.rs"
-fix_target = "0.6.0"
-
-[[finding]]
-id = "KH-GAP-080"
-severity = "bar-miss"
-status = "fixed"
-crate = "ci-operability"
-title = "KH-GAP-012: CI must unset CC so distcc/ccache wrappers cannot poison builds."
-test = "coordination/ci-operability/tests/gap/workflows_unset_cc_distcc_guard.rs"
+test = "crates/scanner/tests/gap/nightly_matrix_has_fourteen_runner_binaries.rs"
 fix_target = "0.6.0"
 
 [[finding]]
@@ -998,30 +953,6 @@ fix_target = "0.6.0"
 # R4-D: site/baseline.html documents create-baseline; README Filter section does not.
 
 [[finding]]
-id = "KH-GAP-111"
-severity = "bar-miss"
-status = "waived"
-crate = "cli"
-title = "Workspace crate READMEs lack cargo-rdme santh status badge (STANDARD README contract)."
-test = "coordination/ci-operability/tests/gap/readme_missing_santh_status_badge.rs"
-fix_target = "0.6.0"
-waiver = "coordination/spec_waivers/cargo_rdme_readme_contract.toml"
-waiver_expires = "2026-08-15"
-# R4-STD: all five crates/*/README.md are hand stubs — no shields.io badge/santh-alpha.
-# R4.2-GAP: SPEC waiver until cargo-rdme migration (expires 2026-08-15).
-
-[[finding]]
-id = "KH-GAP-112"
-severity = "bar-miss"
-status = "fixed"
-crate = "core"
-title = "keyhog-core Cargo.toml uses floating semver pins on 15+ external deps."
-test = "coordination/ci-operability/tests/gap/core_cargo_unpinned_deps.rs"
-fix_target = "0.6.0"
-# R4-STD: STANDARD supply chain requires `=x.y.z` pins; workspace.dependencies pinned but core [dependencies] float.
-# R4.3-SRC: all core [dependencies]/[dev-dependencies] pinned to workspace/lockfile exact versions; gap oracle green.
-
-[[finding]]
 id = "KH-GAP-113"
 severity = "micro-flaw"
 status = "fixed"
@@ -1197,48 +1128,6 @@ title = "context/inference.rs literal #[cfg(test)] string breaks no-inline-tests
 test = "crates/scanner/tests/gap/context_inference_cfg_test_string_breaks_gate.rs"
 fix_target = "0.6.0"
 # R4.3-SCAN-M: RUST_CFG_TEST_ATTR via concat! avoids literal; gate green.
-
-[[finding]]
-id = "KH-GAP-130"
-severity = "bar-miss"
-status = "waived"
-crate = "ci-operability"
-title = "`.github/workflows/ci.yml` is custom 337-line workflow, not STANDARD 5-line santh-ci reuse."
-test = "coordination/ci-operability/tests/gap/ci_yml_not_santh_standard_template.rs"
-fix_target = "0.6.0"
-waiver = "coordination/spec_waivers/ci_yml_santh_ci_migration.toml"
-waiver_expires = "2026-08-15"
-# R4.3-STD: SPEC waiver until santh-ci exposes LFS + 14-runner + fuzz hooks.
-
-[[finding]]
-id = "KH-GAP-131"
-severity = "bar-miss"
-status = "fixed"
-crate = "ci-operability"
-title = "No CI workflow runs STANDARD dogfood (`scan --dogfood` / persona matrix)."
-test = "coordination/ci-operability/tests/gap/no_dogfood_ci_gate.rs"
-fix_target = "0.6.0"
-# R4.3-STD: ci.yml `dogfood` job — release scan --dogfood on demo-secret.env + persona smoke.
-
-[[finding]]
-id = "KH-GAP-132"
-severity = "micro-flaw"
-status = "fixed"
-crate = "ci-operability"
-title = "`coordination/rounds/E2E-SHIP.md` claims OPEN=0 while GAP_FINDINGS has OPEN rows."
-test = "coordination/ci-operability/tests/gap/e2e_ship_open_count_stale.rs"
-fix_target = "0.6.0"
-# R4.3-STD: E2E-SHIP OPEN=15 reconciled with registry.
-
-[[finding]]
-id = "KH-GAP-133"
-severity = "micro-flaw"
-status = "fixed"
-crate = "cli"
-title = "Workspace Cargo.toml authors `security@santh.dev` + license `MIT` drift from STANDARD contract."
-test = "coordination/ci-operability/tests/gap/workspace_cargo_metadata_drift.rs"
-fix_target = "0.6.0"
-# R4.3-STD: contact@santh.dev + MIT OR Apache-2.0 on workspace + crate manifests.
 
 [[finding]]
 id = "KH-GAP-134"
@@ -1547,9 +1436,9 @@ fix_target = "0.6.0"
 id = "KH-GAP-179"
 severity = "bar-miss"
 status = "fixed"
-crate = "ci-operability"
+crate = "scanner"
 title = "WAIVED registry rows and meta waivers lacked dedicated expiry oracles."
-test = "coordination/ci-operability/tests/gap/waived_findings_registry_has_expiry_fields.rs"
+test = "crates/scanner/tests/gap/waived_findings_registry_has_expiry_fields.rs"
 fix_target = "0.6.0"
 # R5-REV-STD: expiry oracles for 043/111/130 + registry waiver_expires field on 130.
 
