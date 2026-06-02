@@ -165,4 +165,13 @@ jobs:
         shell: bash
         env:
           NO_COLOR: "1"
-        run: keyhog backend | head -30
+        # `keyhog backend | head -30` SIGPIPEs keyhog when head closes the pipe
+        # after 30 lines; under the runner's `bash -o pipefail` that surfaces as
+        # exit 141 and spuriously fails the step (seen on Ubuntu, whose routing
+        # matrix prints >30 lines; macOS happened to print fewer and slipped by).
+        # Run backend to completion first so its REAL exit code is the gate
+        # (set -e on the assignment), then cap the display with sed, which reads
+        # the whole stream and never closes early.
+        run: |
+          out="$(keyhog backend)"
+          printf '%s\n' "$out" | sed -n '1,30p'

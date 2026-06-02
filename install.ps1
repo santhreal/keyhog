@@ -15,12 +15,15 @@
 #
 # Common flags:
 #   -Version v0.5.37      pin a release tag (default: latest release with assets)
+#   -FromFile PATH        install a pre-built/pre-downloaded keyhog.exe instead
+#                         of querying GitHub (offline / air-gapped / CI proving).
+#                         A sibling PATH.sha256 is checksum-verified if present.
 #   -InstallDir PATH      override $env:KEYHOG_INSTALL
 #   -Yes                  non-interactive: accept defaults, no prompts
 #   -NoColor              disable ANSI colors
 #
 # Env overrides (same effect as the flags):
-#   $env:KEYHOG_VERSION, $env:KEYHOG_INSTALL, $env:NO_COLOR
+#   $env:KEYHOG_VERSION, $env:KEYHOG_FROM_FILE, $env:KEYHOG_INSTALL, $env:NO_COLOR
 
 [CmdletBinding()]
 param(
@@ -30,6 +33,7 @@ param(
     [switch]$Yes,
     [switch]$NoColor,
     [string]$Version = $env:KEYHOG_VERSION,
+    [string]$FromFile = $env:KEYHOG_FROM_FILE,
     [string]$InstallDir = $(if ($env:KEYHOG_INSTALL) { $env:KEYHOG_INSTALL } else { Join-Path $env:LOCALAPPDATA 'keyhog\bin' })
 )
 
@@ -168,7 +172,24 @@ function Download-Asset {
     $url = "https://github.com/$Repo/releases/download/$($Script:Tag)/$Name"
     if ($Script:Interactive) { Info "Downloading $Name from $($Script:Tag)..." }
     else { Say "keyhog: downloading $url" }
-    Invoke-WebRequest -Uri $url -OutFile $OutPath -UseBasicParsing
+    # Retry transient network failures. GitHub's CDN occasionally drops a
+    # multi-MB transfer mid-stream ("The connection was closed unexpectedly"),
+    # which failed the Windows install-from-scratch smoke even though the asset
+    # was present and correctly named. A single Invoke-WebRequest with no retry
+    # turns one flaky connection into a failed install.
+    $attempts = 5
+    for ($i = 1; $i -le $attempts; $i++) {
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $OutPath -UseBasicParsing
+            return
+        } catch {
+            if ($i -ge $attempts) { throw }
+            $delay = [math]::Min(2 * $i, 10)
+            Warn "  download attempt $i/$attempts failed: $($_.Exception.Message)"
+            Dim  "  retrying in ${delay}s..."
+            Start-Sleep -Seconds $delay
+        }
+    }
 }
 
 function Verify-Checksum {
@@ -200,6 +221,38 @@ function Verify-Checksum {
     return $false
 }
 
+# Verify $BinaryPath against a LOCAL checksum file $SumFile (a `<sha256>  <name>`
+# line, as written by `Get-FileHash ... | Format-Table` or shipped beside a
+# release asset). Used by -FromFile installs so an offline/CI install can still
+# integrity-check the artifact. Returns $true on match or when the file is
+# empty; $false only on an actual mismatch. Mirrors install.sh
+# verify_local_checksum.
+function Verify-LocalChecksum {
+    param($BinaryPath, $SumFile)
+    $expected = $null
+    try {
+        $line = (Get-Content -Path $SumFile -TotalCount 1 -ErrorAction Stop)
+        if ($line) { $expected = ($line -split '\s+')[0] }
+    } catch {
+        Dim "  ($SumFile could not be read; skipping checksum verification)"
+        return $true
+    }
+    if (-not $expected) {
+        Dim "  ($SumFile is empty; skipping checksum verification)"
+        return $true
+    }
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath).Hash.ToLower()
+    if ($hash -eq $expected.ToLower()) {
+        Ok "SHA256 verified ($expected)."
+        return $true
+    }
+    Err "SHA256 mismatch against $SumFile!"
+    Err "  Expected: $expected"
+    Err "  Got:      $hash"
+    Err "Refusing to install the local binary."
+    return $false
+}
+
 # Holds the path to the pre-upgrade binary backup so a failed verification can
 # roll back to the previously-working binary instead of leaving the user with a
 # broken one. $null when there was nothing to back up (fresh install).
@@ -207,24 +260,62 @@ $Script:InstallBackup = $null
 
 function Stage-Install {
     $tmp = [System.IO.Path]::GetTempFileName()
-    try {
-        Download-Asset -Name $Script:Asset -OutPath $tmp
-    } catch {
-        Err "Download failed. Is the release published yet? Browse https://github.com/$Repo/releases"
-        Err "Underlying error: $_"
-        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-        exit 1
+    if ($FromFile) {
+        # Local-binary source: install a pre-built/pre-downloaded artifact
+        # instead of a GitHub release. Everything below (empty-file guard,
+        # backup, atomic swap, Finalize-Install/doctor, rollback) is identical
+        # to the download path - only the origin of $tmp differs. Mirrors
+        # install.sh's --from-file branch.
+        if (-not (Test-Path -PathType Leaf $FromFile)) {
+            Err "-FromFile: no such file: $FromFile"
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
+        try {
+            Copy-Item -Force -Path $FromFile -Destination $tmp
+        } catch {
+            Err "-FromFile: could not read $FromFile : $_"
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
+    } else {
+        try {
+            Download-Asset -Name $Script:Asset -OutPath $tmp
+        } catch {
+            Err "Download failed. Is the release published yet? Browse https://github.com/$Repo/releases"
+            Err "Underlying error: $_"
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
     }
-    # Empty-download guard (parity with install.sh): a 0-byte file would still
+    # Empty-source guard (parity with install.sh): a 0-byte file would still
     # be "installed" as a do-nothing stub. This and the checksum check run
     # BEFORE any overwrite, so a pre-existing working binary is never touched.
     if ((Get-Item $tmp).Length -eq 0) {
-        Err "Downloaded asset $($Script:Asset) is empty (0 bytes)."
-        Err "The release asset may be missing or the download was interrupted."
+        if ($FromFile) {
+            Err "-FromFile source $FromFile is empty (0 bytes)."
+        } else {
+            Err "Downloaded asset $($Script:Asset) is empty (0 bytes)."
+            Err "The release asset may be missing or the download was interrupted."
+        }
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }
-    if (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
+    # Checksum is verified BEFORE we overwrite, so a corrupt artifact can never
+    # replace a working binary. Downloads check against the release's per-asset
+    # .sha256; a -FromFile install checks a sibling PATH.sha256 if the caller
+    # staged one, otherwise trusts the local artifact (provenance is theirs).
+    if ($FromFile) {
+        $localSum = "$FromFile.sha256"
+        if (Test-Path -PathType Leaf $localSum) {
+            if (-not (Verify-LocalChecksum -BinaryPath $tmp -SumFile $localSum)) {
+                Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+                exit 1
+            }
+        } else {
+            Dim "  (no $localSum beside the binary; skipping checksum for local install)"
+        }
+    } elseif (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }
@@ -373,8 +464,16 @@ function Post-Install-Wizard {
 # ============================================================
 
 function Do-Install {
-    Resolve-Asset
-    Resolve-Tag
+    if ($FromFile) {
+        # Local-binary install: no GitHub release lookup, no network.
+        # Asset/Tag are populated for Show-Summary and the verify messages only.
+        $Script:Asset = [System.IO.Path]::GetFileName($FromFile)
+        $Script:Tag = '(local file)'
+        $Script:GpuNote = "installing local binary: $FromFile"
+    } else {
+        Resolve-Asset
+        Resolve-Tag
+    }
     Show-Summary
     if ($Script:Interactive -and -not $Yes) {
         if (-not (Confirm-Choice "Proceed with this install?" 'Y')) { Warn "Aborted."; return }

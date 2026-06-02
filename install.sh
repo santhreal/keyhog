@@ -21,12 +21,18 @@
 #   --variant=cuda      force CUDA variant (Linux only)
 #   --variant=cpu       force the default WGPU + SIMD variant
 #   --install-dir=PATH  override $KEYHOG_INSTALL
+#   --from-file=PATH    install a pre-built/pre-downloaded keyhog binary instead
+#                       of downloading a release (offline / air-gapped installs,
+#                       and CI proving a freshly-built binary). Skips the GitHub
+#                       release lookup; still runs the full backup + atomic swap
+#                       + verify (`keyhog doctor`) + rollback path. If a sibling
+#                       PATH.sha256 exists it is verified before install.
 #   --yes / -y          non-interactive: accept defaults, no prompts
 #   --no-color          disable ANSI colors
 #   --help / -h         show this help and exit
 #
 # Env overrides (same effect as the flags):
-#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, NO_COLOR
+#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, KEYHOG_FROM_FILE, NO_COLOR
 
 set -eu
 
@@ -34,6 +40,7 @@ REPO="santhsecurity/keyhog"
 INSTALL_DIR="${KEYHOG_INSTALL:-$HOME/.local/bin}"
 VERSION="${KEYHOG_VERSION:-}"
 VARIANT="${KEYHOG_VARIANT:-auto}"
+FROM_FILE="${KEYHOG_FROM_FILE:-}"
 MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
@@ -140,7 +147,7 @@ usage() {
     # every transport.
     help_text=""
     if [ -r "$0" ]; then
-        help_text=$(sed -n '2,30p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//')
+        help_text=$(sed -n '2,35p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//')
     fi
     if [ -n "$help_text" ]; then
         printf '%s\n' "$help_text"
@@ -153,8 +160,8 @@ usage() {
 "" \
 "Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
-"        --yes/-y  --no-prompt  --no-color  --help/-h" \
-"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  NO_COLOR"
+"        --from-file=PATH  --yes/-y  --no-prompt  --no-color  --help/-h" \
+"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  NO_COLOR"
     fi
     exit 0
 }
@@ -167,6 +174,7 @@ while [ $# -gt 0 ]; do
         --version=*)       VERSION="${1#--version=}" ;;
         --variant=*)       VARIANT="${1#--variant=}" ;;
         --install-dir=*)   INSTALL_DIR="${1#--install-dir=}" ;;
+        --from-file=*)     FROM_FILE="${1#--from-file=}" ;;
         --yes|-y)          ASSUME_YES=1 ;;
         --no-prompt)       INTERACTIVE=0 ;;
         --no-color)        USE_COLOR=0 ;;
@@ -414,12 +422,20 @@ download_asset() {
     name="$1"
     out="$2"
     url="https://github.com/$REPO/releases/download/$TAG/$name"
+    # --retry rides out transient transfer failures (timeouts, connection
+    # resets, a CDN dropping a multi-MB body mid-stream). Without it a single
+    # flaky connection turns into a failed install - the failure mode that broke
+    # the Windows install smoke. --retry-connrefused also retries the initial
+    # connect; both are POSIX-curl flags available since 7.52.
+    retry="--retry 5 --retry-delay 2 --retry-connrefused"
     if [ "$INTERACTIVE" = "1" ]; then
         info "Downloading $name from $TAG..."
-        curl -fL --progress-bar "$url" -o "$out"
+        # shellcheck disable=SC2086
+        curl -fL $retry --progress-bar "$url" -o "$out"
     else
         printf 'keyhog: downloading %s\n' "$url"
-        curl -fsSL "$url" -o "$out"
+        # shellcheck disable=SC2086
+        curl -fsSL $retry "$url" -o "$out"
     fi
 }
 
@@ -455,6 +471,38 @@ verify_checksum() {
     return 1
 }
 
+# Verify $1 against a LOCAL checksum file $2 (a `<sha256>  <name>` line, as
+# written by `sha256sum binary > binary.sha256` or shipped beside a release
+# asset). Used by --from-file installs so an offline/CI install can still
+# integrity-check the artifact. Returns 0 on match or when no hashing tool is
+# available; 1 only on an actual mismatch.
+verify_local_checksum() {
+    binary="$1"
+    sumfile="$2"
+    expected=$(awk '{print $1}' "$sumfile" 2>/dev/null | head -n1)
+    if [ -z "$expected" ]; then
+        dim "  ($sumfile is empty; skipping checksum verification)"
+        return 0
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$binary" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$binary" | awk '{print $1}')
+    else
+        warn "  (no sha256sum / shasum tool installed, skipping checksum verification)"
+        return 0
+    fi
+    if [ "$expected" = "$actual" ]; then
+        ok "SHA256 verified ($expected)."
+        return 0
+    fi
+    err "SHA256 mismatch against $sumfile!"
+    err "  Expected: $expected"
+    err "  Got:      $actual"
+    err "Refusing to install the local binary."
+    return 1
+}
+
 # Holds the path to the pre-upgrade binary backup so a failed verification can
 # roll back to the previously-working binary instead of leaving the user with a
 # broken one. Empty when there was nothing to back up (fresh install).
@@ -467,7 +515,24 @@ stage_and_install() {
     # shellcheck disable=SC2064
     trap 'rm -f "$tmp" "$staged" 2>/dev/null' EXIT INT TERM
 
-    if ! download_asset "$ASSET" "$tmp" 2>/dev/null; then
+    if [ -n "$FROM_FILE" ]; then
+        # Local-binary source: install a pre-built/pre-downloaded artifact
+        # instead of a GitHub release. Everything below (empty-file guard,
+        # backup, atomic swap, verify_install/doctor, rollback) is identical to
+        # the download path - only the origin of $tmp differs.
+        if [ ! -f "$FROM_FILE" ]; then
+            err "--from-file: no such file: $FROM_FILE"
+            rm -f "$tmp"
+            trap - EXIT INT TERM
+            exit 1
+        fi
+        if ! cp "$FROM_FILE" "$tmp" 2>/dev/null; then
+            err "--from-file: could not read $FROM_FILE"
+            rm -f "$tmp"
+            trap - EXIT INT TERM
+            exit 1
+        fi
+    elif ! download_asset "$ASSET" "$tmp" 2>/dev/null; then
         if [ -n "$ASSET_FALLBACK" ] && [ "$ASSET_FALLBACK" != "$ASSET" ]; then
             warn "$ASSET is not published for $TAG yet. Falling back to $ASSET_FALLBACK."
             if ! download_asset "$ASSET_FALLBACK" "$tmp"; then
@@ -499,9 +564,21 @@ stage_and_install() {
         exit 1
     fi
 
-    # Checksum is also verified BEFORE we overwrite, so a corrupt download can
-    # never replace a working binary.
-    if ! verify_checksum "$tmp" "$ASSET"; then
+    # Checksum is verified BEFORE we overwrite, so a corrupt artifact can never
+    # replace a working binary. Downloads check against the release's per-asset
+    # .sha256; a --from-file install checks a sibling PATH.sha256 if the caller
+    # staged one, otherwise trusts the local artifact (provenance is theirs).
+    if [ -n "$FROM_FILE" ]; then
+        if [ -f "$FROM_FILE.sha256" ]; then
+            if ! verify_local_checksum "$tmp" "$FROM_FILE.sha256"; then
+                rm -f "$tmp"
+                trap - EXIT INT TERM
+                exit 1
+            fi
+        else
+            dim "  (no $FROM_FILE.sha256 beside the binary; skipping checksum for local install)"
+        fi
+    elif ! verify_checksum "$tmp" "$ASSET"; then
         rm -f "$tmp"
         trap - EXIT INT TERM
         exit 1
@@ -746,8 +823,17 @@ install_completions() {
 # ============================================================
 
 do_install() {
-    resolve_asset
-    resolve_tag
+    if [ -n "$FROM_FILE" ]; then
+        # Local-binary install: no GitHub release lookup, no network. ASSET/TAG
+        # are populated for show_summary and the verify messages only.
+        ASSET=$(basename "$FROM_FILE")
+        ASSET_FALLBACK=""
+        TAG="(local file)"
+        GPU_NOTE="installing local binary: $FROM_FILE"
+    else
+        resolve_asset
+        resolve_tag
+    fi
 
     show_summary
 

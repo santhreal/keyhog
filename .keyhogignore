@@ -234,6 +234,18 @@ path:test_walk.rs
 # still sit on disk there — path-suppress it so a local self-scan stays at 0.
 path:tools/secretbench/
 path:tools/diff_bench/
+# Committed differential/leaderboard baselines. The *.json files are keyhog's
+# own structured output (credentials already redacted), and differential-round-*.md
+# is a TP/FP/FN/TN comparison table that quotes the credential SHAPES each scanner
+# (keyhog/trufflehog/gitleaks) surfaced on the TEST corpus — documentation about
+# findings, not live secrets (same rationale as CHANGELOG.md / analysis docs above).
+path:benchmarks/baselines/
+# Mirror-corpus generators assemble SYNTHETIC credentials at runtime to build the
+# benchmark fixtures (providers.py: "Every secret is assembled at runtime from
+# fragments that ... never match a detector heuristic"). The full-feature
+# (ml/decode) self-scan reconstructs a couple of those shapes; they are generator
+# templates for fake test data, not live secrets.
+path:benchmarks/generators/
 # Tooling
 hash:03d104c669e3c7b6be7f989db8b12c8b910d3be8c1e2a73c9369d3cc0ba803b5
 hash:091652c1b31bff45e34cd898488baa49a69db7a06884c9fa48b219f91517792f

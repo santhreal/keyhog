@@ -184,6 +184,14 @@ jobs:
       # instead of on a tag push. v0.5.11 + v0.5.12 both failed because
       # this lane didn't exist.
       - run: cargo build --release -p keyhog --no-default-features --features portable
+      # Prove the freshly-built macOS binary actually INSTALLS and RUNS via
+      # install.sh's --from-file path: doctor self-test (exit 0), seeded scan
+      # (exit 1 + findings), SARIF, and the local-checksum gate. The mocked
+      # detection scenarios never touch a real binary, and integration-smoke is
+      # manual + installs a published release; this is the only gate that proves
+      # current-source -> install -> working binary on macOS, every push.
+      - name: install-from-build proof (macOS)
+        run: bash tests/install/install_from_local_build.sh target/release/keyhog
 
   feature-matrix:
     name: Feature matrix sanity check
@@ -367,6 +375,21 @@ jobs:
             | ./target/release-fast/keyhog scan --stdin --min-confidence 0.0 \
                 --no-suppress-test-fixtures
           test $? -eq 1  # exit 1 = findings detected (expected)
+
+      # Prove current-source -> install -> working binary on Linux via
+      # install.sh's --from-file path (doctor self-test, seeded scan, SARIF,
+      # local-checksum gate). `expect` enables the premium interactive case.
+      - name: install-from-build proof (Linux)
+        run: |
+          sudo apt-get install -y --no-install-recommends expect || true
+          bash tests/install/install_from_local_build.sh target/release-fast/keyhog
+
+      # Dogfood gate: keyhog must find nothing alarming on its OWN repo. The
+      # committed test/benchmark fixtures and credential-shape documentation are
+      # path-suppressed in .keyhogignore; a real leak (or a regression that
+      # un-suppresses one) turns this red.
+      - name: Dogfood self-scan (exit 0 = clean)
+        run: ./target/release-fast/keyhog scan .
 
   publish:
     name: Publish to crates.io
