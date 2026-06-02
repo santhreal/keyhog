@@ -20,6 +20,7 @@ fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
 
 fn create_minimal_detectors() -> Vec<DetectorSpec> {
     vec![DetectorSpec {
+        tests: Vec::new(),
         id: "openai-api-key".into(),
         name: "OpenAI API Key".into(),
         service: "openai".into(),

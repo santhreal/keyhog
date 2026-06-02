@@ -1,6 +1,9 @@
 pub mod action_ci_contract;
 pub mod backend_prints_selected_backend;
 pub mod calibrate_show_header;
+pub mod cli_precision_boundaries;
+pub mod cli_precision_engine_config;
+pub mod cli_precision_mode;
 pub mod cli_surface;
 pub mod daemon_status_no_running_daemon;
 pub mod detectors_json_nonempty;

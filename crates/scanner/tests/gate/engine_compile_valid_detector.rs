@@ -6,6 +6,7 @@ use keyhog_scanner::engine::CompiledScanner;
 #[test]
 fn compiled_scanner_accepts_minimal_detector() {
     let det = DetectorSpec {
+        tests: Vec::new(),
         id: "gate".into(),
         name: "Gate".into(),
         service: "demo".into(),

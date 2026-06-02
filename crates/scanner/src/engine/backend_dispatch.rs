@@ -84,7 +84,17 @@ impl CompiledScanner {
         // and evasion-free inputs (the 99% case) borrow `chunk.data` directly.
         // Only inputs containing actual homoglyphs/zero-width/RTL allocate.
         let data_to_pp: std::borrow::Cow<'_, str> = if self.config.unicode_normalization {
-            crate::unicode_hardening::normalize_homoglyphs(&chunk.data)
+            let normalized = crate::unicode_hardening::normalize_homoglyphs(&chunk.data);
+            // Prefix-anchored interior-control strip: same evasion-hardening
+            // stage as homoglyph normalization (offsets are already in
+            // normalized-text space here). Removes `\t`/`\r` an attacker
+            // inserted inside a credential body after a known structured prefix
+            // (`AKIA<TAB>…`), while leaving structural whitespace untouched.
+            // Borrowed fast path unless such a control is actually present.
+            match crate::unicode_hardening::strip_interior_evasion_controls(&normalized) {
+                std::borrow::Cow::Owned(stripped) => std::borrow::Cow::Owned(stripped),
+                std::borrow::Cow::Borrowed(_) => normalized,
+            }
         } else {
             std::borrow::Cow::Borrowed(&chunk.data)
         };

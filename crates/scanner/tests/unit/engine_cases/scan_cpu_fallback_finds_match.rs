@@ -3,6 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn scan_cpu_fallback_finds_match() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

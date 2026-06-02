@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv28_dropbox_normal_bare_must_stay_silent() {
-    assert_detector_silent("dropbox-access-token", "dropbox_token = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "dropbox-access-token",
+        "dropbox_token = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv28_dropbox_wrong_prefix_must_silent() {
 
 #[test]
 fn adv28_dropbox_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("dropbox-access-token", "dropbox\u{200B}_token = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "dropbox-access-token",
+        "dropbox\u{200B}_token = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv28_dropbox_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("dropbox-access-token", "dropbox_token = \"00000000000000000000\u{00AD}00000000000000000000\"");
+    assert_detector_silent(
+        "dropbox-access-token",
+        "dropbox_token = \"00000000000000000000\u{00AD}00000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv28_dropbox_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("dropbox-access-token", "dropb\u{043E}x_token = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "dropbox-access-token",
+        "dropb\u{043E}x_token = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================
@@ -88,7 +100,10 @@ fn adv28_dune_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv28_dwolla_normal_bare_must_stay_silent() {
-    assert_detector_silent("dwolla-client-credentials", "dwolla_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "dwolla-client-credentials",
+        "dwolla_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
@@ -101,15 +116,24 @@ fn adv28_dwolla_wrong_prefix_must_silent() {
 
 #[test]
 fn adv28_dwolla_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("dwolla-client-credentials", "dwolla\u{200B}_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "dwolla-client-credentials",
+        "dwolla\u{200B}_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
 fn adv28_dwolla_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("dwolla-client-credentials", "dwolla_key = \"abcde12345abcde\u{00AD}12345\"");
+    assert_detector_silent(
+        "dwolla-client-credentials",
+        "dwolla_key = \"abcde12345abcde\u{00AD}12345\"",
+    );
 }
 
 #[test]
 fn adv28_dwolla_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("dwolla-client-credentials", "dw\u{043E}lla_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "dwolla-client-credentials",
+        "dw\u{043E}lla_key = \"abcde12345abcde12345\"",
+    );
 }

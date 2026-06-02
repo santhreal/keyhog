@@ -53,6 +53,31 @@ def test_score_counts_tp_fp_fn_and_ignore_records(tmp_path: pathlib.Path):
     assert "fixture" not in result.per_category
 
 
+def test_per_category_tp_fn_split_and_conservation(tmp_path: pathlib.Path):
+    # Ported from the retired tools/secretbench/scoring/test_attribution.py
+    # ::test_per_category_split — the per-category TP/FN split plus the
+    # conservation invariant (every overall cell is exactly the sum of its
+    # per-category cells), which the other score tests don't assert.
+    root = tmp_path
+    records = [
+        _record("auth_tp", "AKIAQYLPMN5HFIQR7XYA", True, "auth.env", "auth"),
+        _record("cloud_fn", "ya29.cloud-token-missing", True, "cloud.env", "cloud"),
+    ]
+    findings = [
+        {"file": str(root / "auth.env"), "value": "AKIAQYLPMN5HFIQR7XYA"},
+    ]
+
+    result = score(records, findings, root)
+
+    assert result.per_category["auth"].tp == 1
+    assert result.per_category["auth"].fn == 0
+    assert result.per_category["cloud"].tp == 0
+    assert result.per_category["cloud"].fn == 1
+    # Conservation: overall == sum over categories, cell by cell.
+    assert sum(o.tp for o in result.per_category.values()) == result.overall.tp == 1
+    assert sum(o.fn for o in result.per_category.values()) == result.overall.fn == 1
+
+
 def test_per_detector_tp_fp_unique_and_confidence_histograms(tmp_path: pathlib.Path):
     root = tmp_path
     records = [

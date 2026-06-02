@@ -16,7 +16,7 @@ fn generate_contracts_script_readme_claim_is_891() {
         .unwrap_or_else(|e| panic!("read {}: {e}", script.display()));
 
     assert!(
-        text.contains("README_CLAIM = \"894 service-specific detectors\""),
+        text.contains("README_CLAIM = \"899 service-specific detectors\""),
         "generate_contracts.py must pin README_CLAIM to 894 - stale 889 poisons new contract TOMLs"
     );
 }

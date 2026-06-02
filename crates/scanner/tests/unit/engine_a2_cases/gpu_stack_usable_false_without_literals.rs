@@ -4,6 +4,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn gpu_stack_usable_false_without_literals() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "t".into(),
         name: "T".into(),
         service: "s".into(),

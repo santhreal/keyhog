@@ -144,7 +144,7 @@ pub(super) fn should_suppress_inner(
     // (8-4-4-4-12 with version-4 nibble) are almost never secrets in
     // practice - they're git commit IDs, npm-lock integrity hashes,
     // requirements.txt --hash entries, docker image digests, and
-    // k8s resource UIDs. Surfaced by the secretbench mirror corpus
+    // k8s resource UIDs. Surfaced by the mirror bench corpus
     // as the dominant FP class.
     // Known-prefix credentials bypass this (a 64-char hex AWS key
     // shouldn't be filtered) - we already returned Allow above

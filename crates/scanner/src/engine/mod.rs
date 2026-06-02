@@ -459,14 +459,34 @@ impl CompiledScanner {
             }
         }
 
-        if let Some(screen) = &self.alphabet_screen {
-            if !screen.screen(chunk.data.as_bytes()) {
-                crate::telemetry::record_file_skipped();
-                return Vec::new();
+        // Direct-match prefilters: skip chunks that carry none of any
+        // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
+        // FULLY-ENCODED secret (e.g. `data = "<base64-of-ghp_…>"`) carries none
+        // of those - its plaintext prefix only appears AFTER decoding - so the
+        // prefilters would drop it before decode-through could recover it,
+        // silently defeating the decode-through feature on the encoded-only
+        // case. When the prefilter rejects but decode is enabled AND the chunk
+        // carries a long base64/hex run, fall through to a DECODE-ONLY pass
+        // instead of skipping. Bounded: only encoded-looking rejected chunks
+        // pay the decode cost, so normal traffic keeps the fast skip.
+        let alphabet_ok = self
+            .alphabet_screen
+            .as_ref()
+            .map_or(true, |screen| screen.screen(chunk.data.as_bytes()));
+        let bigram_ok =
+            chunk.data.len() < 64 || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
+        if !(alphabet_ok && bigram_ok) {
+            #[cfg(feature = "decode")]
+            if self.config.max_decode_depth > 0
+                && chunk.data.len() <= self.config.max_decode_bytes
+                && crate::decode::has_decodable_payload(chunk.data.as_bytes())
+            {
+                // Direct scan is skipped (the outer bytes match nothing); only
+                // the decoded sub-chunks are scanned, inside post_process.
+                let mut matches = Vec::new();
+                self.post_process_matches(chunk, &mut matches, deadline);
+                return matches;
             }
-        }
-
-        if chunk.data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes()) {
             crate::telemetry::record_file_skipped();
             return Vec::new();
         }

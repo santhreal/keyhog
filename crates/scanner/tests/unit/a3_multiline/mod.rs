@@ -1,14 +1,21 @@
 // LR1-A3: one #[test] per file
 mod backslash_continuation_disabled;
+mod cross_file_different_directory_no_join;
+mod duplicate_fragment_not_recorded_twice;
 mod empty_input;
 mod extract_prefix_strips_part_suffix;
+mod fragment_eviction_max_per_scope;
 mod json_brace_passthrough;
 mod large_file_without_keyword_passthrough;
+mod line_boundary_100_no_join;
+mod line_boundary_99_joins;
 mod line_for_offset_appended_region;
 mod max_join_lines_respected;
 mod phantom_append_single_line_trailing_newline;
 mod plus_concat_disabled;
 mod python_implicit_concat;
+mod same_file_three_way_join;
+mod stamped_reassembly_anchor_path_line;
 mod structural_var_ref_concat;
 mod template_literal_join;
 mod xml_angle_passthrough;

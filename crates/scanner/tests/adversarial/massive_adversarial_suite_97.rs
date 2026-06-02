@@ -788,7 +788,10 @@ fn adv97_infura_project_credentials_evade_lrm_must_fire() {
 
 #[test]
 fn adv97_instabug_token_normal_bare_must_stay_silent() {
-    assert_detector_silent("instabug-token", "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1VU34hlJRd_QIzCvD\\");
+    assert_detector_silent(
+        "instabug-token",
+        "Instabug.Builder()=2D 5?rm):=eZdV!^^_l>.Em ! 5lCpF`l ,'UWQDxjwuh_kS1VU34hlJRd_QIzCvD\\",
+    );
 }
 
 #[test]

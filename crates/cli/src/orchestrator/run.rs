@@ -14,6 +14,10 @@ use std::time::Instant;
 
 pub const EXIT_LIVE_CREDENTIALS: u8 = 10;
 pub const EXIT_SCANNER_PANIC: u8 = 11;
+/// Documented "configuration problem" exit code (see docs/src/reference/exit-codes.md).
+/// Returned when `KEYHOG_REQUIRE_GPU=1` is set but no usable GPU is present, so the
+/// require-GPU contract fails closed instead of silently degrading to CPU.
+pub const EXIT_REQUIRE_GPU_UNMET: u8 = 2;
 
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
@@ -148,6 +152,20 @@ impl ScanOrchestrator {
                     self.scanner.pattern_count(),
                 )
             );
+        }
+
+        // Require-GPU preflight, independent of backend routing. When
+        // KEYHOG_REQUIRE_GPU=1 and no usable GPU adapter is present (or the GPU
+        // self-test fails), fail closed with the documented exit code 2 BEFORE
+        // we warm a backend or scan a byte. This is the no-GPU path the flag
+        // exists for: the scanner library's hard-fail only lives inside the
+        // GPU-selected dispatch paths, which a no-GPU host never reaches
+        // (routing degrades to SimdCpu). Routing the failure through the CLI
+        // ExitCode here - rather than a scanner-lib process::exit - keeps the
+        // exit contract in the CLI layer.
+        if let Err(diagnostic) = keyhog_scanner::gpu::require_gpu_preflight() {
+            eprintln!("keyhog: {diagnostic}");
+            return Ok(std::process::ExitCode::from(EXIT_REQUIRE_GPU_UNMET));
         }
 
         let preferred = self.scanner.select_backend_for_file(0);

@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv26_docusign_normal_bare_must_stay_silent() {
-    assert_detector_silent("docusign-api-key", "docusign_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "docusign-api-key",
+        "docusign_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv26_docusign_wrong_prefix_must_silent() {
 
 #[test]
 fn adv26_docusign_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("docusign-api-key", "docusign\u{200B}_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "docusign-api-key",
+        "docusign\u{200B}_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv26_docusign_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("docusign-api-key", "docusign_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
+    assert_detector_silent(
+        "docusign-api-key",
+        "docusign_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
+    );
 }
 
 #[test]
 fn adv26_docusign_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("docusign-api-key", "d\u{043E}cusign_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "docusign-api-key",
+        "d\u{043E}cusign_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================

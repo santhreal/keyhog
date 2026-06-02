@@ -576,6 +576,7 @@ where
 pub fn scan_engine_self_test() -> Result<bool> {
     const PLANTED: &str = "KHDOCTOR_A1b2C3d4E5f6";
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "kh-doctor-selftest".into(),
         name: "doctor self-test".into(),
         service: "doctor".into(),

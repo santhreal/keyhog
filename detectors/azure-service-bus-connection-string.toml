@@ -1,0 +1,52 @@
+# Docs: https://learn.microsoft.com/azure/service-bus-messaging/service-bus-sas
+# Format: Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<name>;SharedAccessKey=<base64 key>[;EntityPath=<queue|topic>]
+#         SAS form: ...;SharedAccessSignature sig=<sig>&se=<exp>&skn=<keyName>&sr=<resource>
+# Verify: no constant-time HTTP probe (Service Bus uses HMAC-SHA256 SAS over a
+#         canonicalized request, not a Bearer/Basic/Query scheme keyhog can
+#         template). Reported unverified; the key is still flagged.
+# Prefix: Endpoint=sb://
+
+[detector]
+id = "azure-service-bus-connection-string"
+name = "Azure Service Bus Connection String"
+service = "azure-service-bus"
+severity = "critical"
+# The captured SharedAccessKey / SAS body is a base64/hex blob with no
+# leading vendor prefix (the `Endpoint=sb://...servicebus.windows.net`
+# anchor carries the specificity, not the secret body), so on entropy
+# alone it can fall below the 0.40 global floor and be dropped. The
+# `.servicebus.windows.net` host anchor bounds FP risk; declare the floor
+# here (same rationale as azure-storage-account-key / azure-iot).
+min_confidence = 0.5
+keywords = [
+    "servicebus.windows.net",
+    "SharedAccessKey",
+    "SharedAccessKeyName",
+    "Endpoint=sb://",
+    "SERVICEBUS_CONNECTION_STRING",
+]
+
+[[detector.patterns]]
+# Key-name + key form. SharedAccessKey value is a base64 key (Service Bus
+# keys are 44-char base64; allow 32-64 to tolerate truncated/legacy keys).
+# Anchored on the distinctive `.servicebus.windows.net` host so it does NOT
+# collide with the IoT Hub detector (`.azure-devices.net`).
+regex = "Endpoint=sb://[a-zA-Z0-9._-]+\\.servicebus\\.windows\\.net/;SharedAccessKeyName=[a-zA-Z0-9._-]+;SharedAccessKey=([A-Za-z0-9+/]{32,64}={0,2})"
+description = "Azure Service Bus connection string (SharedAccessKey form)"
+group = 1
+
+[[detector.patterns]]
+# Shared Access Signature (SAS) token form: the `sig=` payload is the secret.
+regex = "Endpoint=sb://[a-zA-Z0-9._-]+\\.servicebus\\.windows\\.net/;SharedAccessSignature\\s+sig=([A-Za-z0-9%+/=._-]{20,})"
+description = "Azure Service Bus SAS connection string (SharedAccessSignature form)"
+group = 1
+
+[[detector.patterns]]
+# Env-var / config anchor pointing at a Service Bus connection string.
+regex = "(?:SERVICEBUS|SERVICE_BUS|ServiceBus)[_.]?CONNECTION[_.]?STRING[=:\\s\"'']+(Endpoint=sb://[^\"'']+servicebus\\.windows\\.net[^\"'']+)"
+description = "Azure Service Bus connection string with env-var/key-name anchor"
+group = 1
+
+[[detector.tests]]
+test_positive = "Endpoint=sb://contoso-ns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=NB8zVq3F7pXm2kJdR9sLtY6wEoQa1uHcZbVgXn4MiP0="
+test_negative = "Endpoint=sb://contoso-ns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey"

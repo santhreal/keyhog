@@ -5,7 +5,10 @@ use crate::e2e::support::scan_text_file;
 #[test]
 fn scan_json_required_fields() {
     let (stdout, _, _) = scan_text_file(
-        "GH_TOKEN = \"ghp_aBcD1234EFgh5678ijkl9012MNop3456qrST\"\n",
+        // Checksum-valid GitHub classic PAT (trailing 6 = base62 CRC32 of the
+        // leading 30): a fabricated `ghp_` is now dropped, so the planted token
+        // must validate to surface as the single expected finding.
+        "GH_TOKEN = \"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\"\n",
         &[],
     );
     let arr = serde_json::from_str::<serde_json::Value>(&stdout)
@@ -23,7 +26,7 @@ fn scan_json_required_fields() {
     assert_eq!(only["detector_id"], "github-classic-pat");
     assert_eq!(only["service"], "github");
     assert_eq!(only["severity"], "critical");
-    assert_eq!(only["credential_redacted"], "ghp_...qrST");
+    assert_eq!(only["credential_redacted"], "ghp_...K7n2");
     assert_eq!(only["location"]["line"], 1);
     for f in &arr {
         for field in [

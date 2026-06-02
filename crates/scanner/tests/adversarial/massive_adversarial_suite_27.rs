@@ -59,7 +59,10 @@ fn adv27_drake_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv27_drata_normal_bare_must_stay_silent() {
-    assert_detector_silent("drata-api-token", "drata_token = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "drata-api-token",
+        "drata_token = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -72,17 +75,26 @@ fn adv27_drata_wrong_prefix_must_silent() {
 
 #[test]
 fn adv27_drata_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("drata-api-token", "drata\u{200B}_token = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "drata-api-token",
+        "drata\u{200B}_token = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv27_drata_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("drata-api-token", "drata_token = \"00000000000000000000\u{00AD}00000000000000000000\"");
+    assert_detector_silent(
+        "drata-api-token",
+        "drata_token = \"00000000000000000000\u{00AD}00000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv27_drata_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("drata-api-token", "dr\u{0430}ta_token = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "drata-api-token",
+        "dr\u{0430}ta_token = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================

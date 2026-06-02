@@ -6,6 +6,33 @@ use crate::VerifiedFinding;
 
 use super::{ReportError, Reporter, WriterBackedReporter};
 
+/// Make a serialized JSON string safe to inline inside an HTML `<script>`
+/// element's raw-text content.
+///
+/// `serde_json` escapes JSON string syntax but leaves `<`, `>`, and `/`
+/// untouched, so an attacker-controlled field containing the byte sequence
+/// `</script>` (file path, git author, redacted credential preview, metadata
+/// value, ...) would terminate the script element in the browser's HTML parser
+/// and execute injected markup (stored XSS). Escaping `<`, `>`, and `/` to
+/// `\uXXXX` JSON escapes makes it impossible for `</script` (or any tag close)
+/// to appear in the raw text while still producing a value that `JSON.parse`
+/// and a JS object literal decode to exactly the original string.
+fn escape_for_script(serialized: &str) -> String {
+    let mut out = String::with_capacity(serialized.len());
+    for ch in serialized.chars() {
+        match ch {
+            '<' => out.push_str("\\u003c"),
+            '>' => out.push_str("\\u003e"),
+            '/' => out.push_str("\\u002f"),
+            // U+2028 / U+2029 are valid in JSON but terminate JS statements.
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Dynamic themed HTML findings reporter.
 pub struct HtmlReporter<W: Write + Send> {
     writer: W,
@@ -29,7 +56,24 @@ impl<W: Write + Send> Reporter for HtmlReporter<W> {
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
-        let serialized_findings = serde_json::to_string(&self.findings)?;
+        // VerifiedFinding::verification serializes its unit variants as plain
+        // strings ("dead"/"live"/…) but the Error(String) variant as an object
+        // ({"error":"…"}). The report JS treats `verification` as a string
+        // everywhere (f.verification.toLowerCase()), so an Error finding crashed
+        // the page (blank render). Flatten the object form to the bare "error"
+        // discriminant — uniform with the other variants — before inlining, so
+        // every finding renders. (Full error text is still in json/csv/sarif.)
+        let mut findings_value = serde_json::to_value(&self.findings)?;
+        if let Some(arr) = findings_value.as_array_mut() {
+            for finding in arr {
+                if let Some(v) = finding.get_mut("verification") {
+                    if v.as_object().is_some_and(|o| o.contains_key("error")) {
+                        *v = serde_json::Value::String("error".to_string());
+                    }
+                }
+            }
+        }
+        let serialized_findings = escape_for_script(&serde_json::to_string(&findings_value)?);
 
         writeln!(self.writer, "<!DOCTYPE html>")?;
         writeln!(self.writer, "<html lang=\"en\" data-theme=\"obsidian\">")?;

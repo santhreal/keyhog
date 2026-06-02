@@ -7,7 +7,7 @@ use megakernel_support::assert_cpu_megakernel_parity;
 #[test]
 fn megakernel_cpu_parity_github_pat_sample() {
     assert_cpu_megakernel_parity(
-        "GH_TOKEN=ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ\n",
+        "GH_TOKEN=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\n",
         "adversarial/github.env",
         "github PAT sample",
     );

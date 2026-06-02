@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv18_census_normal_bare_must_stay_silent() {
-    assert_detector_silent("census-api-key", "CENSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"");
+    assert_detector_silent(
+        "census-api-key",
+        "CENSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv18_census_wrong_prefix_must_silent() {
 
 #[test]
 fn adv18_census_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("census-api-key", "CENSUS\u{200B}_TOKEN = \"abcde12345abcde12345abcde1234512\"");
+    assert_detector_silent(
+        "census-api-key",
+        "CENSUS\u{200B}_TOKEN = \"abcde12345abcde12345abcde1234512\"",
+    );
 }
 
 #[test]
 fn adv18_census_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("census-api-key", "CENSUS_TOKEN = \"abcde12345abcde\u{00AD}12345abcde1234512\"");
+    assert_detector_silent(
+        "census-api-key",
+        "CENSUS_TOKEN = \"abcde12345abcde\u{00AD}12345abcde1234512\"",
+    );
 }
 
 #[test]
 fn adv18_census_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("census-api-key", "C\u{0415}NSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"");
+    assert_detector_silent(
+        "census-api-key",
+        "C\u{0415}NSUS_TOKEN = \"abcde12345abcde12345abcde1234512\"",
+    );
 }
 
 // =========================================================================

@@ -3,6 +3,7 @@ use keyhog_scanner::CompiledScanner;
 
 fn hex32_detector() -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "hex32-api-key".into(),
         name: "Hex32 API Key".into(),
         service: "hex32".into(),

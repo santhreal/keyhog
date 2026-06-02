@@ -230,7 +230,7 @@ fn load_all_detectors() -> Vec<DetectorSpec> {
 
 fn create_minimal_detectors() -> Vec<DetectorSpec> {
     vec![
-        DetectorSpec {
+        DetectorSpec { tests: Vec::new(),
             id: "aws-access-key".into(),
             name: "AWS Access Key".into(),
             service: "aws".into(),
@@ -246,7 +246,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             keywords: vec!["AKIA".into(), "ASIA".into(), "aws".into()],
             min_confidence: None,
         },
-        DetectorSpec {
+        DetectorSpec { tests: Vec::new(),
             id: "github-pat".into(),
             name: "GitHub PAT".into(),
             service: "github".into(),
@@ -270,7 +270,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             keywords: vec!["ghp_".into(), "github".into()],
             min_confidence: None,
         },
-        DetectorSpec {
+        DetectorSpec { tests: Vec::new(),
             id: "slack-bot-token".into(),
             name: "Slack Bot Token".into(),
             service: "slack".into(),
@@ -286,7 +286,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             keywords: vec!["xoxb".into(), "slack".into()],
             min_confidence: None,
         },
-        DetectorSpec {
+        DetectorSpec { tests: Vec::new(),
             id: "openai-api-key".into(),
             name: "OpenAI API Key".into(),
             service: "openai".into(),
@@ -310,7 +310,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             keywords: vec!["sk-proj-".into(), "sk-".into(), "openai".into()],
             min_confidence: None,
         },
-        DetectorSpec {
+        DetectorSpec { tests: Vec::new(),
             id: "stripe-secret-key".into(),
             name: "Stripe Secret Key".into(),
             service: "stripe".into(),
@@ -326,7 +326,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
             keywords: vec!["sk_live_".into(), "stripe".into()],
             min_confidence: None,
         },
-        DetectorSpec {
+        DetectorSpec { tests: Vec::new(),
             id: "sendgrid-api-key".into(),
             name: "SendGrid API Key".into(),
             service: "sendgrid".into(),

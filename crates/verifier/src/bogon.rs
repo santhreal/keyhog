@@ -98,7 +98,11 @@ pub fn ip_addr_is_bogon(ip: IpAddr) -> bool {
                 || v.is_link_local()
                 || v.is_broadcast()
                 || v.is_documentation()
-                || v.is_unspecified()
+                // 0.0.0.0/8 "this network" (RFC 1122 §3.2.1.3), not just the
+                // single 0.0.0.0 that `is_unspecified()` matches. 0.0.0.1 et al.
+                // are non-routable and an SSRF target (parity with the fast path
+                // `is_private_ip_addr_fast`, which masks `val & 0xFF000000 == 0`).
+                || v.octets()[0] == 0
             {
                 return true;
             }

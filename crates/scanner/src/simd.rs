@@ -374,5 +374,4 @@ pub(crate) mod backend {
             self.pattern_map.len()
         }
     }
-
 }

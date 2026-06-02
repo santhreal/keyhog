@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv23_definedfi_normal_bare_must_stay_silent() {
-    assert_detector_silent("definedfi-api-key", "definedfi_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "definedfi-api-key",
+        "definedfi_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv23_definedfi_wrong_prefix_must_silent() {
 
 #[test]
 fn adv23_definedfi_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("definedfi-api-key", "definedfi\u{200B}_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "definedfi-api-key",
+        "definedfi\u{200B}_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv23_definedfi_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("definedfi-api-key", "definedfi_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
+    assert_detector_silent(
+        "definedfi-api-key",
+        "definedfi_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
+    );
 }
 
 #[test]
 fn adv23_definedfi_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("definedfi-api-key", "def\u{0456}nedfi_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "definedfi-api-key",
+        "def\u{0456}nedfi_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================
@@ -139,7 +151,10 @@ fn adv23_deno_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv23_descope_normal_bare_must_stay_silent() {
-    assert_detector_silent("descope-api-key", "descope_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "descope-api-key",
+        "descope_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -152,17 +167,26 @@ fn adv23_descope_wrong_prefix_must_silent() {
 
 #[test]
 fn adv23_descope_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("descope-api-key", "descope\u{200B}_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "descope-api-key",
+        "descope\u{200B}_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv23_descope_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("descope-api-key", "descope_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
+    assert_detector_silent(
+        "descope-api-key",
+        "descope_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
+    );
 }
 
 #[test]
 fn adv23_descope_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("descope-api-key", "d\u{0435}scope_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "descope-api-key",
+        "d\u{0435}scope_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================
@@ -171,7 +195,10 @@ fn adv23_descope_evade_homoglyph_bare_must_stay_silent() {
 
 #[test]
 fn adv23_devcycle_normal_bare_must_stay_silent() {
-    assert_detector_silent("devcycle-api-credentials", "devcycle_client_id = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "devcycle-api-credentials",
+        "devcycle_client_id = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
@@ -184,15 +211,24 @@ fn adv23_devcycle_wrong_prefix_must_silent() {
 
 #[test]
 fn adv23_devcycle_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("devcycle-api-credentials", "devcycle\u{200B}_client_id = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "devcycle-api-credentials",
+        "devcycle\u{200B}_client_id = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
 fn adv23_devcycle_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("devcycle-api-credentials", "devcycle_client_id = \"abcde12345abcde\u{00AD}12345\"");
+    assert_detector_silent(
+        "devcycle-api-credentials",
+        "devcycle_client_id = \"abcde12345abcde\u{00AD}12345\"",
+    );
 }
 
 #[test]
 fn adv23_devcycle_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("devcycle-api-credentials", "d\u{0435}vcycle_client_id = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "devcycle-api-credentials",
+        "d\u{0435}vcycle_client_id = \"abcde12345abcde12345\"",
+    );
 }

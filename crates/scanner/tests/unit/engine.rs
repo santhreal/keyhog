@@ -7,6 +7,7 @@ use keyhog_scanner::hw_probe::ScanBackend;
 
 fn demo_detector() -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
         service: "demo".into(),

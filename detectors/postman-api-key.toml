@@ -1,0 +1,50 @@
+# Docs: https://learning.postman.com/docs/developer/postman-api/authentication/
+# Format: PMAK-{24 hex}-{34 hex}  e.g. PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288
+# Verify: GET https://api.getpostman.com/me with the `X-Api-Key` header.
+# Prefix: PMAK-
+
+[detector]
+id = "postman-api-key"
+name = "Postman API Key"
+service = "postman"
+severity = "high"
+# PMAK- is a distinctive, fixed-shape vendor prefix (24-hex + 34-hex body),
+# but it is NOT in the scanner's KNOWN_PREFIXES floor list, so the all-hex
+# body scores below the 0.40 global floor on entropy alone and a real key is
+# dropped as a false negative. The prefix bounds the FP risk; declare the
+# floor here so the detector ships working out of the box (same rationale as
+# azure-storage-account-key).
+min_confidence = 0.5
+keywords = ["PMAK-", "POSTMAN_API_KEY", "postman_api_key", "X-Api-Key"]
+
+[[detector.patterns]]
+# Canonical Postman key: PMAK- then a 24-hex segment, a hyphen, then a
+# 34-hex segment (gitleaks `postman-api-token` shape). Case-insensitive
+# compile covers upper/lower hex; the PMAK- literal prefix anchors it so
+# the body need not carry the false-positive load alone.
+regex = 'PMAK-[a-f0-9]{24}-[a-f0-9]{34}'
+description = "Postman API key (PMAK- prefix, 24-hex + 34-hex body)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.getpostman.com/me"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Api-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "user_id"
+json_path = "user.id"
+
+[[detector.verify.metadata]]
+name = "username"
+json_path = "user.username"
+
+[[detector.tests]]
+test_positive = "PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288"
+test_negative = "NOT_A_SECRET=totally_benign_example_value_123456"

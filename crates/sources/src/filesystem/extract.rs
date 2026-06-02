@@ -195,7 +195,15 @@ pub(super) fn process_entry(
         extract_compressed_chunks(&path, max_size, emit);
         return;
     } else if ext == "har" {
-        if let Ok(bytes) = std::fs::read(&path) {
+        // Route the HAR read through the same no-follow-symlink guard
+        // every other content path uses (`read_file_safe` -> `open_file_safe`
+        // with `O_NOFOLLOW` on Unix / `symlink_metadata` refusal on Windows).
+        // The old `std::fs::read` followed symlinks, so an explicitly
+        // `--include`d `creds.har -> ~/.aws/credentials` symlink (include
+        // paths use `is_file()`, which follows links) would be read and its
+        // target's bytes scanned - the exact link-swap class the archive
+        // branch's guard at the top of this function defends against. (M17)
+        if let Ok(bytes) = read::read_file_safe(&path) {
             let path_str = display_path(&path);
             if let Some(har_chunks) = crate::har::try_expand_har(&bytes, &path_str, max_size) {
                 for chunk in har_chunks {
@@ -232,11 +240,36 @@ pub(super) fn process_entry(
         if let Ok(mut file) = std::fs::File::open(&path) {
             let mut current_offset = 0;
             let mut buffer = vec![0u8; window_size];
-            while let Ok(n) = file.read(&mut buffer) {
-                if n == 0 {
+            loop {
+                // Fill the window with a `read_exact`-style loop. `Read::read`
+                // is permitted to return fewer bytes than requested without
+                // being at EOF (a short read in the middle of a multi-MiB
+                // file); the old `if n < window_size { break }` treated any
+                // short read as EOF and silently dropped the rest of the file,
+                // missing every secret past that point. Only a 0-byte read is
+                // true EOF here. (M15)
+                let mut filled = 0;
+                let mut hit_eof = false;
+                while filled < window_size {
+                    match file.read(&mut buffer[filled..]) {
+                        Ok(0) => {
+                            hit_eof = true;
+                            break;
+                        }
+                        Ok(n) => filled += n,
+                        Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                        Err(_) => {
+                            // A hard read error mid-file: stop scanning this
+                            // file rather than emit a torn window with a wrong
+                            // offset. Anything already emitted is correct.
+                            return;
+                        }
+                    }
+                }
+                if filled == 0 {
                     break;
                 }
-                let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                let data = String::from_utf8_lossy(&buffer[..filled]).into_owned();
                 let chunk = Ok(Chunk {
                     data: data.into(),
                     metadata: ChunkMetadata {
@@ -251,11 +284,20 @@ pub(super) fn process_entry(
                 if !emit(chunk) {
                     return;
                 }
-                if n < window_size {
+                if hit_eof || filled < window_size {
                     break;
                 }
-                let _ = file.seek(SeekFrom::Current(-(window_overlap as i64)));
-                current_offset += n - window_overlap;
+                // Rewind by the overlap so a secret straddling the window cut
+                // is scanned whole in the next window. If the seek fails the
+                // stream position has NOT moved back, so `current_offset` must
+                // track the real position (advance by the full `filled`) to
+                // keep `base_offset` metadata consistent with the bytes we
+                // actually read - otherwise reported finding locations drift.
+                // (M15)
+                match file.seek(SeekFrom::Current(-(window_overlap as i64))) {
+                    Ok(_) => current_offset += filled - window_overlap,
+                    Err(_) => current_offset += filled,
+                }
             }
         }
         return;

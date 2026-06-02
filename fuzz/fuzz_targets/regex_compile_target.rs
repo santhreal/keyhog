@@ -28,6 +28,14 @@ fuzz_target!(|data: &[u8]| {
         regex: regex.to_string(),
         description: None,
         group: None,
+        // `PatternSpec` carries a `client_safe` flag (added when
+        // detectors gained a per-pattern severity downgrade for
+        // intentionally-public keys). The struct is `#[serde(deny_unknown_fields)]`
+        // and NOT `#[non_exhaustive]`, so a struct literal MUST set every
+        // field or the fuzz target fails to compile. A fuzzed regex string
+        // has no client-safe semantics, so `false` (the `#[serde(default)]`
+        // value) is the correct, neutral choice for the compile fuzz.
+        client_safe: false,
     };
     // Any outcome is acceptable EXCEPT panic. The Result branch is
     // discarded - we are not asserting which inputs compile, only

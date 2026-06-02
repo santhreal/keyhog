@@ -3,6 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn warm_backend_cpu_always_true() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

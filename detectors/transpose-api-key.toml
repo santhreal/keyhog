@@ -11,6 +11,11 @@ severity = "high"
 keywords = ["transpose", "TRANSPOSE", "api_key", "apikey"]
 
 [[detector.patterns]]
-regex = "(?:TRANSPOSE|transpose)[_a-zA-Z0-9]*[=:\\s\"'']+([a-f0-9]{32})"
+# Anchor must be the literal `TRANSPOSE` token optionally followed by a
+# key-ish suffix (API_KEY / KEY / TOKEN / SECRET), NOT an arbitrary word
+# continuation. The old `[_a-zA-Z0-9]*` let any identifier *starting* with
+# "transpose" (e.g. `transposeMatrixChecksum=<32hex>`) anchor a generic
+# 32-hex hash/digest, producing false positives on unrelated code.
+regex = "(?:TRANSPOSE|transpose)(?:[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key|KEY|key|TOKEN|token|SECRET|secret))?[=:\\s\"'']+([a-f0-9]{32})"
 description = "Transpose API key with context anchor"
 group = 1

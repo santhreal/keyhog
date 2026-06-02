@@ -1,0 +1,93 @@
+name: bench-nightly
+
+# Runs the unified benchmark package (benchmarks/bench) over the synthetic
+# mirror corpus once a day: generates the corpus, runs keyhog + trufflehog,
+# scores them with the single canonical scorer, renders the leaderboard +
+# per-detector reports, and uploads them as artifacts. A `workflow_dispatch`
+# run accepts corpus-size + seed overrides so a reviewer can reproduce a
+# specific scoreboard locally with the same seed.
+#
+# This replaces the retired tools/secretbench scoring scripts: benchmarks/bench
+# is the ONE source of accuracy truth (corpus generation, scoring, leaderboard,
+# report, and the regression/differential gate). See benchmarks/README.md.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 06:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      positives:
+        description: "Number of labeled positive fixtures"
+        type: number
+        default: 3000
+      negatives:
+        description: "Number of labeled negative fixtures"
+        type: number
+        default: 12000
+      seed:
+        description: "RNG seed for the mirror corpus"
+        type: number
+        default: 0
+
+jobs:
+  leaderboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # Per-job permissions — see keyhog.yml header note. Top-level
+    # `permissions:` rejected at dispatch time on this repo.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bench-nightly
+
+      - name: Build keyhog release binary
+        run: cargo build --release -p keyhog --bin keyhog
+
+      - name: Install trufflehog
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Install bench test deps
+        run: python3 -m pip install pytest
+
+      - name: Scorer self-tests (no scanners needed)
+        run: cd benchmarks && python3 -m pytest -q bench/tests
+
+      - name: Generate mirror corpus
+        env:
+          POSITIVES: ${{ inputs.positives || 3000 }}
+          NEGATIVES: ${{ inputs.negatives || 12000 }}
+          SEED: ${{ inputs.seed || 0 }}
+        run: |
+          cd benchmarks && python3 -m bench.corpora.mirror --ensure \
+            --positives "$POSITIVES" --negatives "$NEGATIVES" --seed "$SEED"
+
+      - name: Run leaderboard (keyhog + trufflehog)
+        env:
+          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
+        run: |
+          cd benchmarks && python3 -m bench leaderboard \
+            --corpus mirror --scanners keyhog,trufflehog --out results
+
+      - name: Render leaderboard + per-detector reports
+        run: |
+          cd benchmarks && python3 -m bench report \
+            --results results --reports reports --corpus mirror
+
+      - name: Upload leaderboard + reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-mirror-leaderboard
+          path: |
+            benchmarks/results/**
+            benchmarks/reports/**
+          retention-days: 30

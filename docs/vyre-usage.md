@@ -603,7 +603,7 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
 ## What blocks "max usage" right now
 
 - **vyre's regex frontend `STATE_CAP = LANES × 32 = 1024` states.**
-  The full 894-detector corpus compiles to an NFA larger than that
+  The full 899-detector corpus compiles to an NFA larger than that
   (ballpark 25k states), so MegaScan currently auto-degrades to the
   literal-set path on the production corpus. Lifted upstream when
   vyre adds either (a) per-subgroup state batching or (b) a

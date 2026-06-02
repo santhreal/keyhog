@@ -457,6 +457,35 @@ impl CompiledScanner {
                 .as_ref()
                 .map(|date| scan_state.intern_metadata(date));
 
+            // Route the entropy-fallback confidence through the SAME canonical
+            // post-ML penalty pipeline the ML / named-detector path uses
+            // (scan_postprocess.rs). The entropy-* detectors are unanchored
+            // fallbacks (`is_named = false`), so the uniform-base64-blob /
+            // encoded-binary / placeholder / diversity shape penalties (×0.02)
+            // apply — penalties this direct `push_match` path historically
+            // BYPASSED, which is the base64-protobuf decoy FP class on the
+            // entropy path. A real high-entropy token clears every check; only a
+            // 44+ char raw-base64-blob / encoded-binary value is slammed below
+            // the floor. Applied BEFORE the checksum floor so a valid embedded
+            // CRC still overrides shape, and the penalized blob stays recoverable
+            // via a lower `--min-confidence`.
+            let confidence = crate::confidence::apply_post_ml_penalties(
+                confidence,
+                &entropy_match.value,
+                false,
+            );
+            // Honor the single checksum policy on this fallback emit path too:
+            // `checksum/mod.rs` documents that EVERY match-emission path routes
+            // through `checksum_adjusted_confidence`, so a prefix-bearing token
+            // (`ghp_`/`npm_`/`github_pat_`/…) carrying an Invalid embedded CRC is
+            // dropped here exactly as on the hot-pattern, regex, and ML paths,
+            // and a Valid one is floored — even when it surfaces via the entropy
+            // fallback rather than its named detector.
+            let Some(confidence) =
+                crate::checksum::checksum_adjusted_confidence(confidence, &entropy_match.value)
+            else {
+                continue;
+            };
             scan_state.push_match(
                 RawMatch {
                     credential_hash: crate::sha256_hash(&entropy_match.value),

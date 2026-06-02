@@ -132,11 +132,26 @@ impl CompiledScanner {
             if covered_lines.contains(&line_num) {
                 continue;
             }
-            let Some(line) = code_lines.get(line_idx) else {
+            let Some(&raw_line) = code_lines.get(line_idx) else {
                 continue;
             };
             // The chunk-level AC told us this line has a keyword;
             // proceed straight to the heavy regex extraction.
+            //
+            // Evasion-resistant extraction: the named-detector path matches on
+            // the homoglyph/zero-width-normalized chunk text, but this generic
+            // fallback historically captured from the raw line, so a soft hyphen
+            // (U+00AD) or other zero-width byte planted *inside* a value
+            // truncated the capture (`abcde12345abcde<U+00AD>12345` ->
+            // `abcde12345abcde`). Normalize the candidate line the same way
+            // before extraction so an evaded secret is recovered whole. The Cow
+            // borrows for pure-ASCII lines (the 99% case), so there is no alloc
+            // and no behavior change off the evasion path. Line indexing, the
+            // keyword AC prefilter, context inference and the reported offset all
+            // remain in raw coordinates; only the captured value is de-evaded,
+            // and an in-value zero-width never shifts the value's start offset.
+            let normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
+            let line: &str = &normalized_line;
 
             for caps in generic_re.captures_iter(line) {
                 let Some(value_match) = caps.get(1) else {
@@ -442,6 +457,36 @@ impl CompiledScanner {
                 let entropy_boost = ((entropy - 3.5) * 0.1).min(0.25);
                 let length_boost = ((value.len() as f64 - 16.0) * 0.005).clamp(0.0, 0.15);
                 let confidence = (base_conf + entropy_boost + length_boost).min(0.95);
+
+                // Route through the SAME canonical post-ML penalty pipeline the
+                // ML / named-detector emit path uses (scan_postprocess.rs). The
+                // generic-secret fallback historically emitted via `push_match`
+                // and BYPASSED it, so the random-base64 / encoded-binary /
+                // placeholder blob penalties (×0.02) never reached this path -
+                // that bypass IS the base64-protobuf FP class (the lost
+                // separation pipeline closed exactly this wiring gap). `is_named
+                // = false`: generic-secret is an unanchored fallback, so the
+                // shape penalties (char-diversity / repeat-run / uniform-base64
+                // -blob / encoded-binary) all apply. A real short/base62 secret
+                // clears every check unchanged; only a 44+ char raw-base64-blob
+                // or encoded-binary value (the decoy class) is slammed ×0.02
+                // below the floor. Applied BEFORE the checksum floor so a valid
+                // embedded CRC still overrides shape and surfaces the token, and
+                // a user can recover the penalized blob with `--min-confidence`.
+                let confidence =
+                    crate::confidence::apply_post_ml_penalties(confidence, value, false);
+
+                // Single checksum policy on the generic-secret fallback emit path
+                // (checksum/mod.rs documents EVERY emission path routes through
+                // this): a prefix-bearing token (`ghp_`/`npm_`/…) with an Invalid
+                // embedded CRC is dropped, and a Valid one is floored to
+                // CHECKSUM_VALID_FLOOR BEFORE the min-confidence gate so a
+                // confirmed token clears the bar even on the fallback path.
+                let Some(confidence) =
+                    crate::checksum::checksum_adjusted_confidence(confidence, value)
+                else {
+                    continue;
+                };
 
                 if confidence < self.config.min_confidence {
                     continue;

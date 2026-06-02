@@ -14,7 +14,7 @@ positive set includes base64-WRAPPED real secrets. The decode-structure feature
 This is the supervised signal behind "if we improve our ML model we can filter
 out base64."
 
-Negative shape lineage follows tools/secretbench/mirror/negatives.py; the binary
+Negative shape lineage follows benchmarks/generators/mirror/negatives.py; the binary
 generators are new (that file's `base64_of_protobuf` produced random bytes, which
 parse as protobuf <0.5% of the time — here we emit a genuine wire message plus
 real magic-byte containers so the decode feature is exercised honestly).

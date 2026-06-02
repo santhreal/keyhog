@@ -3,6 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn warm_backend_cpu_paths_succeed() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "t".into(),
         name: "T".into(),
         service: "s".into(),

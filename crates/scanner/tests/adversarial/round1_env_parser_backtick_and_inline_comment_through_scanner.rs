@@ -63,7 +63,7 @@ fn scan_path(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
 /// `ghp_[A-Za-z0-9]{36,255}`. The body deliberately mixes the full
 /// base62 alphabet so the named detector's downstream entropy/shape
 /// gates do not slam the match for low-entropy.
-const SYNTHETIC_GHP: &str = "ghp_RqWzKp9YnVxA4HsM2BdLeJ7TfGoN3CuI8XbE";
+const SYNTHETIC_GHP: &str = "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";
 
 /// Positive truth: a `.env` line with a BACKTICK-wrapped GitHub PAT
 /// must surface the credential WITHOUT the wrapping backticks. The

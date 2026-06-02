@@ -2,6 +2,21 @@
 
 let activeStatusTab = 'all';
 
+// Escape attacker-controlled finding fields before interpolating them into
+// innerHTML. Finding fields (file paths, git author/commit/date, metadata,
+// redacted credential previews, service names, ...) come straight from the
+// scanned tree and are fully attacker-influenced, so without escaping a value
+// like `<img src=x onerror=alert(1)>` would execute as markup (stored XSS).
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   
@@ -119,7 +134,7 @@ function renderTable(findings) {
     tr.onclick = () => toggleDetails(idx);
 
     const line = finding.location.line ? `:${finding.location.line}` : '';
-    const filePath = finding.location.file_path || '&lt;unknown&gt;';
+    const filePath = finding.location.file_path ? escapeHtml(finding.location.file_path) : '&lt;unknown&gt;';
     const shortPath = `${filePath}${line}`;
 
     const sevKey = finding.severity.toLowerCase();
@@ -141,14 +156,14 @@ function renderTable(findings) {
     }
 
     tr.innerHTML = `
-      <td><strong>${finding.detector_name}</strong><br><small style="color: var(--text-muted); font-size:10px;">${finding.detector_id}</small></td>
-      <td><span style="font-family:monospace; font-size:12px;">${finding.service}</span></td>
+      <td><strong>${escapeHtml(finding.detector_name)}</strong><br><small style="color: var(--text-muted); font-size:10px;">${escapeHtml(finding.detector_id)}</small></td>
+      <td><span style="font-family:monospace; font-size:12px;">${escapeHtml(finding.service)}</span></td>
       <td><span style="font-family:monospace;">${shortPath}</span></td>
-      <td><span class="badge badge-${sevKey}">${finding.severity}</span></td>
+      <td><span class="badge badge-${sevKey}">${escapeHtml(finding.severity)}</span></td>
       <td>
         <span class="status-badge">
           <span class="status-dot ${statusClass}"></span>
-          <span style="font-size:11px;">${statusText}</span>
+          <span style="font-size:11px;">${escapeHtml(statusText)}</span>
         </span>
       </td>
     `;
@@ -160,19 +175,20 @@ function renderTable(findings) {
     detailsTr.id = `details-row-${idx}`;
     detailsTr.className = 'details-row';
 
-    const commitStr = finding.location.commit || 'none';
-    const authorStr = finding.location.author || 'none';
-    const dateStr = finding.location.date || 'none';
+    const commitStr = finding.location.commit ? escapeHtml(finding.location.commit) : 'none';
+    const authorStr = finding.location.author ? escapeHtml(finding.location.author) : 'none';
+    const dateStr = finding.location.date ? escapeHtml(finding.location.date) : 'none';
     const confidenceStr = finding.confidence ? `${Math.round(finding.confidence * 100)}%` : 'none';
 
     // Format companion strings
     let metadataItems = '';
     for (const [k, v] of Object.entries(finding.metadata || {})) {
-      metadataItems += `<div class="details-item"><span class="details-lbl">${k}:</span><span class="details-val">${v}</span></div>`;
+      metadataItems += `<div class="details-item"><span class="details-lbl">${escapeHtml(k)}:</span><span class="details-val">${escapeHtml(v)}</span></div>`;
     }
     if (!metadataItems) metadataItems = '<div style="color: var(--text-muted); font-size:12px;">No provider metadata.</div>';
 
     // Redacted vs Plaintext logic
+    const credRedacted = escapeHtml(finding.credential_redacted);
     const isUnmaskable = finding.credential_redacted.includes('...');
     let unmaskBtnHtml = '';
     if (isUnmaskable) {
@@ -190,20 +206,20 @@ function renderTable(findings) {
               <div class="details-item">
                 <span class="details-lbl">Credential:</span>
                 <span class="cred-box">
-                  <span id="cred-text-${idx}" data-masked="true" data-redacted="${finding.credential_redacted}" data-plaintext="${finding.credential_redacted}">${finding.credential_redacted}</span>
+                  <span id="cred-text-${idx}" data-masked="true" data-redacted="${credRedacted}" data-plaintext="${credRedacted}">${credRedacted}</span>
                   ${unmaskBtnHtml}
                 </span>
               </div>
-              <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${finding.credential_hash}</span></div>
-              <div class="details-item"><span class="details-lbl">Verification Result:</span><span class="details-val">${finding.verification}</span></div>
+              <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span></div>
+              <div class="details-item"><span class="details-lbl">Verification Result:</span><span class="details-val">${escapeHtml(finding.verification)}</span></div>
               <div class="details-item"><span class="details-lbl">Confidence:</span><span class="details-val">${confidenceStr}</span></div>
             </div>
           </div>
           <div class="details-block">
             <h3>Location & Metadata</h3>
             <div class="details-list">
-              <div class="details-item"><span class="details-lbl">Source Type:</span><span class="details-val">${finding.location.source}</span></div>
-              <div class="details-item"><span class="details-lbl">File Offset:</span><span class="details-val">${finding.location.offset} bytes</span></div>
+              <div class="details-item"><span class="details-lbl">Source Type:</span><span class="details-val">${escapeHtml(finding.location.source)}</span></div>
+              <div class="details-item"><span class="details-lbl">File Offset:</span><span class="details-val">${escapeHtml(finding.location.offset)} bytes</span></div>
               <div class="details-item"><span class="details-lbl">Commit ID:</span><span class="details-val">${commitStr}</span></div>
               <div class="details-item"><span class="details-lbl">Author:</span><span class="details-val">${authorStr}</span></div>
               <div class="details-item"><span class="details-lbl">Date:</span><span class="details-val">${dateStr}</span></div>
@@ -290,7 +306,7 @@ function renderMetrics(findings) {
     item.className = 'chart-bar-item';
     item.innerHTML = `
       <div class="chart-bar-label">
-        <span><strong>${name}</strong></span>
+        <span><strong>${escapeHtml(name)}</strong></span>
         <span>${count}</span>
       </div>
       <div class="chart-bar-track">

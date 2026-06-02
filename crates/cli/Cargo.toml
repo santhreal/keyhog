@@ -37,6 +37,19 @@ default = [
     "verify",                   # Live credential verification
     "tui",                      # `keyhog tui` live-scan dashboard
 ]
+# Lean CI aggregator build: the full default surface minus the GPU dispatch
+# stack (`keyhog-scanner/ci-lean`). Used by ci.yml's integration-tests job on
+# GPU-less runners; runners-nightly keeps `gpu` on real GPU hosts.
+ci-lean = [
+    "keyhog-scanner/ci-lean",
+    "git",
+    "web",
+    "github",
+    "s3",
+    "docker",
+    "verify",
+    "tui",
+]
 # Unused Cargo flag — use `keyhog scan --fast` at runtime for pre-commit speed.
 fast = []
 # macOS release builds: every keyhog-scanner data feature, no system-lib deps

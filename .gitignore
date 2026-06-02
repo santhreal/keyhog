@@ -28,10 +28,20 @@ benchmarks/corpora/
 # benchmarks/reports/ and the injected ../README.md tables.
 benchmarks/results/
 
+# Retired bench trees. The generators moved to benchmarks/generators/, the
+# committed baselines to benchmarks/baselines/, and the scorer/differential
+# logic to benchmarks/bench/. Only reproducible/generated leftovers (mirror
+# corpus, ad-hoc result dumps) may still sit on disk here — never commit them.
+tools/secretbench/
+tools/diff_bench/
+
 # Pre-existing local-noise paths
 __pycache__/
 .keyhog-cache.json
 detectors/.keyhog-cache.json
+# Stray ImageMagick render misdirected into a top-level path (12 MB .ps named
+# "pathlib"); generated junk, never part of the source tree.
+/pathlib
 
 # Local coordination scratch — agent handoffs, dispatch notes, dogfood
 # corpora paths. Never published to santhsecurity/keyhog. (STANDARD.md:

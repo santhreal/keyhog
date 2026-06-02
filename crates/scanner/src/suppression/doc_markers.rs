@@ -85,13 +85,21 @@ pub(super) fn check_markers(
         if upper.contains(frag) {
             // Require a word boundary before the fragment to avoid substring
             // false-positions in real secrets (e.g. "CHANGE" inside base64).
+            // `match_indices` yields BYTE offsets, so the preceding character
+            // must be read on a byte boundary (`upper[..idx].chars().next_back()`)
+            // rather than via `chars().nth(idx - 1)` (a CHAR index): mixing the
+            // two mis-reads the boundary char for any credential with a
+            // multibyte char before the match - the same bug the module header
+            // documents and `upper_contains_token` already avoids. Only the
+            // *leading* boundary is checked here (instructional fragments like
+            // `YOUR_API`, `CHANGEME`, `INSERTKEY` are normally followed by
+            // alphanumerics, so a trailing-boundary requirement would miss them).
             let mut positions = upper.match_indices(frag);
             if positions.any(|(idx, _)| {
-                idx == 0
-                    || upper
-                        .chars()
-                        .nth(idx - 1)
-                        .is_none_or(|c| !c.is_alphanumeric())
+                upper[..idx]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !c.is_alphanumeric())
             }) {
                 return MarkerVerdict::Suppress;
             }

@@ -4,6 +4,7 @@ use keyhog_verifier::{dedup_matches, DedupScope, VerificationEngine, VerifyConfi
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), keyhog_verifier::VerifyError> {
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
         service: "demo".into(),

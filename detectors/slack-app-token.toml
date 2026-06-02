@@ -1,0 +1,42 @@
+# Docs: https://docs.slack.dev/authentication/tokens/ (app-level tokens / Socket Mode)
+# Format: xapp-{digit}-{A0-Z0-9 app id}-{digits}-{lowercase hex}
+#         e.g. xapp-1-A012B3CDEFG-1234567890123-abc...hex
+# Verify: POST https://slack.com/api/apps.connections.open with Bearer token.
+# Prefix: xapp-
+
+[detector]
+id = "slack-app-token"
+name = "Slack App-Level Token"
+service = "slack"
+severity = "critical"
+# xapp- is a distinctive 4-segment vendor prefix, but it is NOT in the
+# scanner's KNOWN_PREFIXES floor list (which carries xoxb-/xoxp-/xoxa-/
+# xoxr-/xoxs- but not xapp-/xoxe-), so the captured token can score below
+# the global floor and be dropped. The structured prefix bounds FP risk;
+# declare the per-detector floor so the detector ships working.
+min_confidence = 0.5
+keywords = ["xapp-", "slack", "SLACK_APP_TOKEN", "app-level"]
+
+[[detector.patterns]]
+# gitleaks `slack-app-token` shape: xapp-<digit>-<A-Z0-9>+-<digits>-<lower-hex>.
+# Tighten the trailing secret to a 32+ char floor so it requires a real
+# token body, not the bare 4-segment skeleton.
+regex = 'xapp-[0-9]-[A-Z0-9]+-[0-9]+-[a-f0-9]{32,}'
+description = "Slack app-level token (xapp- prefix, Socket Mode)"
+
+[detector.verify]
+method = "POST"
+url = "https://slack.com/api/apps.connections.open"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+json_path = "ok"
+equals = "true"
+
+[[detector.tests]]
+test_positive = "xapp-1-A012B3CDEFG-1234567890123-1f9a0b7c4e2d6a8b3c5f7e9d0a1b2c3d"
+test_negative = "NOT_A_SECRET=totally_benign_example_value_123456"

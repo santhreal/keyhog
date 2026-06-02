@@ -157,6 +157,18 @@ impl FragmentCache {
                     }
                 }
             }
+            // Determinism: the `cluster` Vec is ordered by fragment
+            // *arrival*, and under a parallel (rayon) scan the order in
+            // which sibling chunks win the per-shard mutex is a thread
+            // race - so the (i, j) pair enumeration above emits the same
+            // *set* of joins in a run-to-run-varying order. That order
+            // then leaks downstream (synthesized match order, and via the
+            // stamped variant the anchor line attached to each glue), so
+            // identical input produced non-deterministic scan output.
+            // Canonicalize on the glued bytes - content-derived, so it is
+            // independent of arrival order - before returning. Join
+            // semantics (which pairs are produced) are untouched.
+            candidates.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
             candidates
         } else {
             Vec::new()
@@ -223,6 +235,22 @@ impl FragmentCache {
                     }
                 }
             }
+            // Determinism (see `record_and_reassemble`): `cluster` is in
+            // race-dependent arrival order under a parallel scan, so the
+            // anchor (`line`) stamped onto each glue - and the emission
+            // order - varied run to run for identical input. A symmetric
+            // pair yields two distinct candidates (`A+B` anchored at A's
+            // line, `B+A` at B's line), so the sort key must be the full
+            // (glued bytes, anchor line) tuple, not the bytes alone, to
+            // give a total content-derived order. Within one full-path
+            // key every fragment shares a `path`, so `path` need not enter
+            // the key.
+            candidates.sort_unstable_by(|a, b| {
+                a.value
+                    .as_bytes()
+                    .cmp(b.value.as_bytes())
+                    .then_with(|| a.line.cmp(&b.line))
+            });
             candidates
         } else {
             Vec::new()
@@ -292,4 +320,3 @@ pub fn shard_index_drift_probe(prefix: &str, scope: &str) -> (usize, usize) {
     let joined_key_shard = joined.bytes().fold(0usize, shard_fold) % SHARD_COUNT;
     (shard_index_of(prefix, scope), joined_key_shard)
 }
-

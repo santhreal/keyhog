@@ -76,10 +76,15 @@ benchmarks/
     leaderboard.py        the matrix: run many scanners/configs, write results/<host>/, rank
     report.py             results -> markdown + idempotent README injection
     analyze.py            top false-negative / false-positive examples from the same scorer
+    gate.py               regression + differential gate (keyhog must lead; CI forcing function)
     tests/                pytest
+  generators/             corpus generators (not git-ignored)
+    mirror/               synthetic SecretBench-shape generator (generate.py + providers/negatives/wrappers)
+    homefield/            competitor home-turf harvesters (harvest_betterleaks.py · harvest_kingfisher.py)
   corpora/                generated data (git-ignored; reproducible via `make mirror` / `make creddata`)
   results/<host>/         one RunResult JSON per run (git-ignored; regenerable)
   reports/                generated markdown (committed): leaderboard.md · perf.md · gaps.md
+  baselines/              committed known-good scoreboard anchors (regression history)
 ```
 
 ## Corpora
@@ -104,6 +109,47 @@ their data.
   corpus, for the speed/RSS table:
   `python -m bench.leaderboard --tier perf --corpus kernel --scanners keyhog --matrix backend,cache,daemon,mode`.
 
+## Gate (CI forcing function)
+
+`python -m bench gate` is the single regression + differential gate (it replaced
+the retired `tools/diff_bench` runner). It runs — or, with `--results <dir>`,
+consumes — a leaderboard, selects the canonical row per scanner with the same
+newest-wins logic as the README table, and exits non-zero unless keyhog both:
+
+- leads every available competitor on F1 **strictly** (`--no-beat-competitors`
+  to skip), and
+- clears the floors you assert: `--min-f1` / `--min-precision` / `--min-recall`,
+  and/or `--baseline <RunResult>` + `--epsilon` (regression vs a committed
+  anchor in `baselines/`).
+
+Exit codes: `0` pass · `1` violation · `2` undecidable (keyhog produced no
+usable result). The `differential-bench` workflow runs it nightly against
+TruffleHog; the `bench-nightly` workflow renders the leaderboard the gate reads.
+
+## Continuous-improvement loop
+
+`make -C benchmarks loop` runs the whole improvement cycle in one command:
+
+    pytest (scorer self-tests) -> ensure corpus -> leaderboard (detection + speed
+    for every scanner) -> calibrate (per-detector min_confidence floor overlay)
+    -> render reports/ -> gate (differential + regression vs baselines/)
+
+It is the local mirror of the scheduled lanes that keep keyhog improving across
+vectors without manual babysitting:
+
+- **detection / differential** — `differential-bench` (nightly): `bench gate`
+  fails red if a competitor overtakes keyhog on F1 **or** keyhog regresses past
+  `baselines/mirror-keyhog-baseline.json` (the committed anchor; ratchet it up
+  after a real gain, never down to hide one).
+- **leaderboard + speed/RSS** — `bench-nightly` (nightly): renders the tables.
+- **strict recall under evasion** — `runners-nightly` (the Rust strict matrix).
+- **test depth** — `ci` (`all_tests`, property, e2e on every push).
+
+`loop` deliberately does **not** `--inject` the README: the published tables are
+regenerated only by `make report` on a machine with every competitor installed,
+so a partial-scanner run can never degrade the committed leaderboard. The
+`calibration.toml` overlay it emits is the actionable "what to tune next" signal.
+
 ## Reproducibility
 
 Scoring pins `KEYHOG_NO_GPU=1` for the deterministic SIMD path on the default
@@ -112,6 +158,6 @@ GPU path, and explicit `gpu`/`megascan` benchmark rows also set
 `KEYHOG_REQUIRE_GPU=1` so they fail instead of timing a CPU fallback. GPU↔SIMD
 parity is a separate release gate. The CredData corpus is
 pinned to an exact commit so a score is reproducible against a fixed dataset
-revision. The scorer is bit-identical to the legacy
-`tools/secretbench/scoring/score.py` on the same input (regression-anchored in
-`bench/tests/test_score.py`).
+revision. The scorer is bit-identical to the now-retired
+`tools/secretbench/scoring/score.py` it replaced (its attribution + per-category
+conservation rules are regression-anchored in `bench/tests/test_score.py`).

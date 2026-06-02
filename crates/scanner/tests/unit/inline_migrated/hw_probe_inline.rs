@@ -1,14 +1,17 @@
 //! Migrated from src/hw_probe.rs
 
 use keyhog_scanner::hw_probe::{
-    classify_gpu_tier, select_backend, thresholds, GpuTier, HardwareCaps, ScanBackend,
+    classify_gpu_tier, clear_test_backend_override, parse_backend_str, select_backend,
+    set_test_backend_override, thresholds, GpuTier, HardwareCaps, ScanBackend,
 };
-use std::sync::Mutex;
 
-/// Cargo runs tests in parallel; mutating the process env is racy across
-/// threads. Serialize every test that touches `KEYHOG_BACKEND` through
-/// this mutex so we don't trample each other's writes.
-static ENV_GUARD: Mutex<()> = Mutex::new(());
+// NOTE: these tests deliberately do NOT mutate the process-global
+// `KEYHOG_BACKEND` env var. A global set to a GPU/MegaScan value races with
+// every concurrent scan in the parallel `all_tests` pool — `gpu_forced` reacts
+// to a forced-but-unavailable GPU by exiting the whole process, which would
+// abort the entire harness. Backend FORCING is exercised via the thread-local
+// `set_test_backend_override` (race-free); the env-string→backend MAPPING is
+// exercised via the pure `parse_backend_str`.
 
 fn caps_with(gpu: bool, soft: bool, hs: bool, avx2: bool) -> HardwareCaps {
     HardwareCaps {
@@ -27,16 +30,14 @@ fn caps_with(gpu: bool, soft: bool, hs: bool, avx2: bool) -> HardwareCaps {
     }
 }
 
+/// Ensure no thread-local backend override leaks in from a prior test reusing
+/// this worker thread, so the auto-routing assertions see a clean slate.
 fn clear_env() {
-    // SAFETY: env mutation is only safe in single-threaded context;
-    // ENV_GUARD makes that true within this test module.
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::remove_var("KEYHOG_BACKEND") };
+    clear_test_backend_override();
 }
 
 #[test]
 fn gpu_picked_when_workload_huge_solo() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with(true, false, true, true);
     // 256 MiB single file, low pattern count → still GPU (solo
@@ -49,7 +50,6 @@ fn gpu_picked_when_workload_huge_solo() {
 
 #[test]
 fn gpu_picked_when_buffer_big_and_many_patterns() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with(true, false, true, true);
     // 64 MiB + 2K patterns → GPU.
@@ -65,7 +65,6 @@ fn gpu_picked_when_buffer_big_and_many_patterns() {
 
 #[test]
 fn gpu_skipped_below_buffer_threshold() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with(true, false, true, true);
     // 63 MiB even with 5K patterns → SimdCpu (under MIN_BYTES).
@@ -77,7 +76,6 @@ fn gpu_skipped_below_buffer_threshold() {
 
 #[test]
 fn gpu_skipped_when_software_renderer() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     // GPU available, but it's llvmpipe — must NEVER pick it.
     let caps = caps_with(true, true, true, true);
@@ -89,7 +87,6 @@ fn gpu_skipped_when_software_renderer() {
 
 #[test]
 fn simd_cpu_when_no_gpu_with_hyperscan() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with(false, false, true, true);
     assert_eq!(
@@ -100,7 +97,6 @@ fn simd_cpu_when_no_gpu_with_hyperscan() {
 
 #[test]
 fn simd_cpu_when_no_gpu_no_hyperscan_but_avx2() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with(false, false, false, true);
     // SIMD CPU features alone still pick the SIMD path (sans Hyperscan).
@@ -112,7 +108,6 @@ fn simd_cpu_when_no_gpu_no_hyperscan_but_avx2() {
 
 #[test]
 fn cpu_fallback_when_no_gpu_no_hyperscan_no_simd() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with(false, false, false, false);
     assert_eq!(
@@ -123,44 +118,37 @@ fn cpu_fallback_when_no_gpu_no_hyperscan_no_simd() {
 
 #[test]
 fn env_override_forces_gpu_even_without_workload() {
-    let _g = ENV_GUARD.lock().unwrap();
-    // SAFETY: ENV_GUARD held above serializes env-mutating tests.
-    unsafe { std::env::set_var("KEYHOG_BACKEND", "gpu") };
+    // Forced backend (via the race-free thread-local override) wins regardless
+    // of workload size or hardware availability.
+    set_test_backend_override(Some(ScanBackend::Gpu));
     let caps = caps_with(false, false, true, true);
-    // No GPU available, no large workload — env still wins.
     assert_eq!(select_backend(&caps, 1024, 10), ScanBackend::Gpu);
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::remove_var("KEYHOG_BACKEND") };
+    clear_test_backend_override();
 }
 
 #[test]
 fn env_override_forces_cpu_fallback() {
-    let _g = ENV_GUARD.lock().unwrap();
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::set_var("KEYHOG_BACKEND", "cpu") };
+    // Forced CpuFallback pins the CPU path even with a big GPU workload.
+    set_test_backend_override(Some(ScanBackend::CpuFallback));
     let caps = caps_with(true, false, true, true);
-    // Big workload + GPU available — env still pins CPU fallback.
     assert_eq!(
         select_backend(&caps, 1024 * 1024 * 1024, 10_000),
         ScanBackend::CpuFallback
     );
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::remove_var("KEYHOG_BACKEND") };
+    clear_test_backend_override();
 }
 
 #[test]
 fn env_override_invalid_value_falls_through_to_auto() {
-    let _g = ENV_GUARD.lock().unwrap();
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::set_var("KEYHOG_BACKEND", "garbage-value") };
+    // An unrecognized KEYHOG_BACKEND value maps to no forced backend...
+    assert!(parse_backend_str("garbage-value").is_none());
+    // ...so selection falls through to auto routing (no override set).
+    clear_test_backend_override();
     let caps = caps_with(false, false, true, true);
-    // Garbage value ignored → falls back to auto routing.
     assert_eq!(
         select_backend(&caps, 1024 * 1024, 100),
         ScanBackend::SimdCpu
     );
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::remove_var("KEYHOG_BACKEND") };
 }
 
 #[test]
@@ -173,41 +161,30 @@ fn backend_label_is_stable() {
 
 #[test]
 fn env_override_accepts_label_aliases() {
-    let _g = ENV_GUARD.lock().unwrap();
-    let caps = caps_with(false, false, true, true);
-
     // Each backend has multiple opt-in aliases; CI runners and Dockerfiles
-    // routinely use the human-readable label as the env value, so all
-    // forms must route to the same backend.
-    for value in ["gpu", "GPU", "Gpu-Zero-Copy", " gpu "] {
-        // SAFETY: ENV_GUARD held above.
-        unsafe { std::env::set_var("KEYHOG_BACKEND", value) };
+    // routinely use the human-readable label as the env value, so all forms
+    // must map to the same backend. Asserted on the pure mapping (no global env).
+    for value in ["gpu", "GPU", "Gpu-Zero-Copy", " gpu ", "literal-set"] {
         assert_eq!(
-            select_backend(&caps, 0, 0),
-            ScanBackend::Gpu,
-            "value {value:?} must route to Gpu"
+            parse_backend_str(value),
+            Some(ScanBackend::Gpu),
+            "value {value:?} must map to Gpu"
         );
     }
     for value in ["simd", "SIMD", "simd-regex", "hyperscan", "HYPERSCAN"] {
-        // SAFETY: ENV_GUARD held above.
-        unsafe { std::env::set_var("KEYHOG_BACKEND", value) };
         assert_eq!(
-            select_backend(&caps, 0, 0),
-            ScanBackend::SimdCpu,
-            "value {value:?} must route to SimdCpu"
+            parse_backend_str(value),
+            Some(ScanBackend::SimdCpu),
+            "value {value:?} must map to SimdCpu"
         );
     }
     for value in ["cpu", "Cpu", "cpu-fallback", "scalar"] {
-        // SAFETY: ENV_GUARD held above.
-        unsafe { std::env::set_var("KEYHOG_BACKEND", value) };
         assert_eq!(
-            select_backend(&caps, 0, 0),
-            ScanBackend::CpuFallback,
-            "value {value:?} must route to CpuFallback"
+            parse_backend_str(value),
+            Some(ScanBackend::CpuFallback),
+            "value {value:?} must map to CpuFallback"
         );
     }
-    // SAFETY: ENV_GUARD held above.
-    unsafe { std::env::remove_var("KEYHOG_BACKEND") };
 }
 
 fn caps_with_named_gpu(name: &str) -> HardwareCaps {
@@ -281,7 +258,6 @@ fn classify_low_tier_gpus() {
 
 #[test]
 fn high_tier_gpu_activates_at_2mib() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with_named_gpu("NVIDIA GeForce RTX 5090");
     // 2 MiB workload + 2K patterns → GPU on RTX 5090.
@@ -305,7 +281,6 @@ fn high_tier_gpu_activates_at_2mib() {
 
 #[test]
 fn mid_tier_gpu_activates_at_16mib() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     let caps = caps_with_named_gpu("NVIDIA GeForce RTX 3070");
     // 2 MiB on mid-tier is too small — SIMD wins.
@@ -326,7 +301,6 @@ fn mid_tier_gpu_activates_at_16mib() {
 
 #[test]
 fn low_tier_gpu_keeps_legacy_64mib_threshold() {
-    let _g = ENV_GUARD.lock().unwrap();
     clear_env();
     // Unknown adapter name → Low tier → original 64 MiB threshold.
     let caps = caps_with_named_gpu("Mystery GPU");

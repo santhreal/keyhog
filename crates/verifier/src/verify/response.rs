@@ -66,12 +66,71 @@ pub(crate) fn evaluate_success(spec: &keyhog_core::SuccessSpec, status: u16, bod
     true
 }
 
+/// Generic "the response body announces a failure" heuristic, used as a
+/// defense-in-depth backstop on top of a detector's explicit success spec.
+///
+/// The hard problem with the original implementation was that it scanned the
+/// lowercased whole body for the bare substrings `invalid` / `error` /
+/// `expired` / `revoked`. That fires on overwhelmingly common *benign* tokens
+/// in a live JSON payload — `"errors":[]`, `"error":null`, `"error_rate":0`,
+/// `"invalid_count":0`, `"expired":false`, or any field/account/repo name that
+/// merely embeds one of those words — and silently flips confirmed-live
+/// credentials to Dead (a recall regression).
+///
+/// To avoid clobbering an explicitly-matched success signal, the check is now
+/// conservative: an error token only counts when it is paired with a value
+/// that actually denotes a present error. For JSON bodies that means an error
+/// key whose value is a non-empty string, a non-empty array/object, or boolean
+/// `true` / numeric non-zero — `null`, `false`, `0`, `[]`, and `{}` are treated
+/// as "no error" exactly as a service author would intend. Non-JSON bodies fall
+/// back to a whole-word (not arbitrary-substring) scan so values like
+/// `error_rate` or `myinvalidatedname` no longer trigger it.
 pub(crate) fn body_indicates_error(body: &str) -> bool {
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+        return json_indicates_error(&json);
+    }
+    // Non-JSON fallback: whole-word match so embedded substrings
+    // (e.g. `error_rate`, `myinvalidatedname`) do not trip the heuristic.
     let lower = body.to_lowercase();
-    lower.contains("invalid")
-        || lower.contains("error")
-        || lower.contains("expired")
-        || lower.contains("revoked")
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| matches!(word, "invalid" | "error" | "expired" | "revoked"))
+}
+
+/// Error key names recognized inside a JSON response body.
+const JSON_ERROR_KEYS: &[&str] = &["error", "errors", "invalid", "expired", "revoked"];
+
+/// Recursively decide whether a JSON body carries a *populated* error signal.
+fn json_indicates_error(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map {
+                let lk = key.to_lowercase();
+                if JSON_ERROR_KEYS.contains(&lk.as_str()) && json_value_is_truthy_error(val) {
+                    return true;
+                }
+                if json_indicates_error(val) {
+                    return true;
+                }
+            }
+            false
+        }
+        serde_json::Value::Array(items) => items.iter().any(json_indicates_error),
+        _ => false,
+    }
+}
+
+/// Whether the value attached to an error key actually denotes a present error.
+/// `null`, `false`, `0`, empty string, `[]`, and `{}` mean "no error".
+fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(true),
+        serde_json::Value::String(s) => !s.is_empty(),
+        serde_json::Value::Array(a) => !a.is_empty(),
+        serde_json::Value::Object(o) => !o.is_empty(),
+    }
 }
 
 pub(crate) fn extract_metadata(specs: &[MetadataSpec], body: &str) -> HashMap<String, String> {

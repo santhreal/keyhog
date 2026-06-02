@@ -528,4 +528,3 @@ fn read_varint(data: &[u8], start: usize) -> Option<(u64, usize)> {
         }
     }
 }
-

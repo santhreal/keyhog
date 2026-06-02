@@ -8,17 +8,20 @@ id = "moralis-api-key"
 name = "Moralis API Key"
 service = "moralis"
 severity = "critical"
-keywords = ["moralis", "MORALIS", "MORALIS_API_KEY", "moralis_api_key", "X-API-Key", "deep-index.moralis.io"]
+keywords = ["moralis", "MORALIS", "MORALIS_API_KEY", "moralis_api_key", "deep-index.moralis.io"]
 
 [[detector.patterns]]
 regex = "(?:MORALIS|moralis)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-zA-Z0-9]{60,})"
 description = "Moralis API key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "X-API-Key[=:\\s\\\"']+([a-zA-Z0-9]{60,})"
-description = "Moralis API key in X-API-Key header"
-group = 1
+# NOTE: a bare `X-API-Key: <60+ alphanumeric>` pattern was removed here.
+# `X-API-Key` is a generic HTTP header shared by dozens of services and
+# Moralis keys carry no distinctive prefix, so the header pattern matched any
+# unrelated service's 60+ char token as a (critical-severity) Moralis key.
+# Moralis is the ONLY detector that ever shipped a bare alphanumeric
+# `X-API-Key` value pattern; precision-anchored recall is provided by the
+# `MORALIS`/`moralis` + API_KEY context pattern above.
 
 [detector.verify]
 method = "GET"

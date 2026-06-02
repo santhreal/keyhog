@@ -38,7 +38,7 @@ async fn test_verify_large_payload() {
     })
     .await;
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det1".to_string(),
         name: "det1".to_string(),
         service: "test".to_string(),
@@ -120,7 +120,7 @@ async fn test_verify_malformed_response() {
     })
     .await;
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det2".to_string(),
         name: "det2".to_string(),
         service: "test".to_string(),
@@ -192,7 +192,7 @@ async fn test_verify_zero_concurrency() {
         ..Default::default()
     };
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_zero".to_string(),
         name: "det_zero".to_string(),
         service: "test".to_string(),
@@ -260,7 +260,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
     })
     .await;
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_dup".to_string(),
         name: "det_dup".to_string(),
         service: "test".to_string(),
@@ -335,7 +335,7 @@ async fn test_verify_slow_loris_timeout() {
     })
     .await;
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_slow".to_string(),
         name: "det_slow".to_string(),
         service: "test".to_string(),
@@ -469,7 +469,7 @@ async fn verifier_routes_through_configured_proxy() {
         }
     });
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "proxy-flow-test".to_string(),
         name: "proxy-flow-test".to_string(),
         service: "test".to_string(),

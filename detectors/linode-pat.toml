@@ -16,8 +16,8 @@ description = "Linode personal access token with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization:\\s*[Bb]earer\\s+([0-9a-f]{64})"
-description = "Linode personal access token in Authorization header"
+regex = "Authorization:\\s*[Bb]earer\\s+([0-9a-f]{64})[^\\n]*linode"
+description = "Linode personal access token in Authorization header (same-line linode anchor; a bare Authorization: Bearer header alone is not service-attributable)"
 group = 1
 
 [detector.verify]

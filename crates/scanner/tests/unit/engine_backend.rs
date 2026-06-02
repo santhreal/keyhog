@@ -3,6 +3,7 @@ use keyhog_scanner::CompiledScanner;
 
 fn demo_scanner() -> CompiledScanner {
     CompiledScanner::compile(vec![DetectorSpec {
+        tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
         service: "demo".into(),

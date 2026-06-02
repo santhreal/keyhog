@@ -18,6 +18,7 @@ fn make_chunk(data: String, base_offset: usize, path: &str) -> Chunk {
 
 fn straddle_detector() -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "straddle-test".into(),
         name: "Straddle Test".into(),
         service: "test".into(),

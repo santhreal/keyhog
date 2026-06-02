@@ -1017,50 +1017,80 @@ fn adv89_github_app_private_key_wrong_prefix_must_silent() {
 
 #[test]
 fn adv89_github_app_private_key_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200B}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{200B}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{00AD}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{00AD}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_zwnj_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200C}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{200C}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_zwj_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200D}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{200D}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_zwnbsp_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{FEFF}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{FEFF}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_word_joiner_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{2060}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{2060}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_mongolian_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{180E}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{180E}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_rtl_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{202E}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{202E}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_pop_dir_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{202C}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{202C}PRIVATE KEY-----",
+    );
 }
 
 #[test]
 fn adv89_github_app_private_key_evade_lrm_bare_must_stay_silent() {
-    assert_detector_silent("github-app-private-key", "-----BEGIN RSA \u{200E}PRIVATE KEY-----");
+    assert_detector_silent(
+        "github-app-private-key",
+        "-----BEGIN RSA \u{200E}PRIVATE KEY-----",
+    );
 }

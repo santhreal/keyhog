@@ -77,8 +77,14 @@ def canonical_leaderboard(results: list[RunResult], corpus: str) -> list[RunResu
     chosen: list[RunResult] = []
     for name, runs in by_scanner.items():
         default_id = _default_config_id(name)
-        pick = next((r for r in runs if r.scanner.config_id == default_id), None)
-        pick = pick or next((r for r in runs if r.available), runs[0])
+        # Prefer the default-config runs; fall back to any available run, then
+        # to all runs. Among the candidates, the MOST RECENT measurement wins
+        # (by generated_at): an archived `results/<commit>/` snapshot must never
+        # shadow the current run just because its path sorts first. This keeps a
+        # regenerated leaderboard authoritative and the README in sync with HEAD.
+        candidates = [r for r in runs if r.scanner.config_id == default_id]
+        candidates = candidates or [r for r in runs if r.available] or runs
+        pick = max(candidates, key=lambda r: r.generated_at or "")
         chosen.append(pick)
     chosen.sort(key=lambda r: r.detection.overall.f1(), reverse=True)
     return chosen

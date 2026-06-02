@@ -22,7 +22,7 @@ async fn test_verify_u32_max_limits() {
 #[tokio::test]
 async fn test_verify_long_unicode_surrogates() {
     // Overlong utf-8 and surrogates in credential strings
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_uni".to_string(),
         name: "det_uni".to_string(),
         service: "test".to_string(),
@@ -96,7 +96,7 @@ rusty_fork::rusty_fork_test! {
 fn test_verify_deeply_nested_interpolations_inner() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let spec = DetectorSpec {
+        let spec = DetectorSpec { tests: Vec::new(),
                 id: "det_interp".to_string(),
                 name: "det_interp".to_string(),
                 service: "test".to_string(),
@@ -150,7 +150,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
 
 #[tokio::test]
 async fn test_verify_duplicate_entries_same_key() {
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_same".to_string(),
         name: "det_same".to_string(),
         service: "test".to_string(),

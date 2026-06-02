@@ -6,7 +6,8 @@ use crate::e2e::support::scan_path;
 use tempfile::TempDir;
 
 fn utf16_file(dir: &std::path::Path, name: &str, little_endian: bool) -> std::path::PathBuf {
-    let text = "token = \"ghp_aB3xK9mZ1qW7rT5vY2nL8pH4jD6sF0gE1cV2\"\n";
+    // Checksum-valid GitHub classic PAT so it survives scoring on every path.
+    let text = "token = \"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\"\n";
     let mut bytes: Vec<u8> = if little_endian {
         vec![0xFF, 0xFE]
     } else {

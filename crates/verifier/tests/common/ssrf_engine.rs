@@ -35,6 +35,7 @@ pub fn deduped_match() -> DedupedMatch {
 
 pub async fn verify_url_blocked_as_private(url: &str) -> String {
     let spec = DetectorSpec {
+        tests: Vec::new(),
         id: "ssrf-test".to_string(),
         name: "ssrf".to_string(),
         service: "test".to_string(),

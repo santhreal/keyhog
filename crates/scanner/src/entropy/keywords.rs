@@ -317,7 +317,6 @@ pub fn entropy_value_looks_like_prose(value: &str) -> bool {
     looks_like_english_prose(value)
 }
 
-
 pub fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
     // Outside a credential-keyword anchor, any >10-char pure-hex value is a
     // checksum/digest, not a credential. Inside one (`apiKey: <hex>`), the
@@ -520,7 +519,6 @@ pub fn is_secret_plausible_with_context(
         is_credential_context,
     )
 }
-
 
 fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
     if placeholder_keywords.iter().any(|placeholder| {

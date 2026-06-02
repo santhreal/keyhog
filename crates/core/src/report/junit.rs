@@ -91,38 +91,62 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
             )?;
 
             writeln!(self.writer, "        <![CDATA[")?;
-            writeln!(self.writer, "Detector Name: {}", finding.detector_name)?;
-            writeln!(self.writer, "Detector ID:   {}", finding.detector_id)?;
-            writeln!(self.writer, "Service:       {}", finding.service)?;
+            writeln!(
+                self.writer,
+                "Detector Name: {}",
+                escape_cdata(&finding.detector_name)
+            )?;
+            writeln!(
+                self.writer,
+                "Detector ID:   {}",
+                escape_cdata(&finding.detector_id)
+            )?;
+            writeln!(
+                self.writer,
+                "Service:       {}",
+                escape_cdata(&finding.service)
+            )?;
             writeln!(self.writer, "Severity:      {}", finding.severity)?;
-            writeln!(self.writer, "Source:        {}", finding.location.source)?;
+            writeln!(
+                self.writer,
+                "Source:        {}",
+                escape_cdata(&finding.location.source)
+            )?;
             if !file_path_str.is_empty() {
-                writeln!(self.writer, "File Path:     {}", file_path_str)?;
+                writeln!(
+                    self.writer,
+                    "File Path:     {}",
+                    escape_cdata(file_path_str)
+                )?;
             }
             if !line_str.is_empty() {
                 writeln!(self.writer, "Line:          {}", line_str)?;
             }
             writeln!(self.writer, "Offset:        {}", finding.location.offset)?;
             if let Some(c) = &finding.location.commit {
-                writeln!(self.writer, "Commit:        {}", c)?;
+                writeln!(self.writer, "Commit:        {}", escape_cdata(c))?;
             }
             if let Some(a) = &finding.location.author {
-                writeln!(self.writer, "Author:        {}", a)?;
+                writeln!(self.writer, "Author:        {}", escape_cdata(a))?;
             }
             if let Some(d) = &finding.location.date {
-                writeln!(self.writer, "Date:          {}", d)?;
+                writeln!(self.writer, "Date:          {}", escape_cdata(d))?;
             }
             writeln!(
                 self.writer,
                 "Redacted:      {}",
-                finding.credential_redacted
+                escape_cdata(&finding.credential_redacted)
             )?;
             writeln!(
                 self.writer,
                 "Hash:          {}",
                 crate::hex_encode(&finding.credential_hash)
             )?;
-            writeln!(self.writer, "Verification:  {}", verification_str)?;
+            writeln!(
+                self.writer,
+                "Verification:  {}",
+                escape_cdata(&verification_str)
+            )?;
             if !confidence_str.is_empty() {
                 writeln!(self.writer, "Confidence:    {}", confidence_str)?;
             }
@@ -152,4 +176,20 @@ fn escape_xml_attr(val: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+/// Neutralize the CDATA terminator inside a value written into a `<![CDATA[…]]>`
+/// body. XML escaping does NOT apply inside CDATA, so an attacker-controlled
+/// field (git author/committer name, file path, or redacted credential bytes)
+/// containing the literal `]]>` would otherwise close the section early and
+/// inject arbitrary markup into the JUnit report a CI system ingests. The
+/// standard mitigation splits the `]]>` token across two CDATA sections
+/// (`]]]]><![CDATA[>`); a conformant XML parser rejoins the surrounding text, so
+/// the displayed value is unchanged. Borrows on the common no-terminator path.
+fn escape_cdata(val: &str) -> std::borrow::Cow<'_, str> {
+    if val.contains("]]>") {
+        std::borrow::Cow::Owned(val.replace("]]>", "]]]]><![CDATA[>"))
+    } else {
+        std::borrow::Cow::Borrowed(val)
+    }
 }

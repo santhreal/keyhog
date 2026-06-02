@@ -200,9 +200,10 @@ impl CompiledScanner {
 
         match score_result {
             super::MlScoreResult::Final(mut confidence) => {
-                // Boost confidence for checksum-validated tokens
+                // Boost confidence for checksum-validated tokens (single
+                // source of truth for the floor; see `checksum::CHECKSUM_VALID_FLOOR`).
                 if checksum_result == crate::checksum::ChecksumResult::Valid {
-                    confidence = confidence.max(0.9);
+                    confidence = confidence.max(crate::checksum::CHECKSUM_VALID_FLOOR);
                 }
                 let raw_match = build_raw_match(
                     detector,

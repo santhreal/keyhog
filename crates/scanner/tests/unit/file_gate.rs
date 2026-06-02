@@ -46,6 +46,7 @@ fn structured_env_chunk(data: &str, path: &str) -> Chunk {
 }
 fn demo_detector(regex: &str, keyword: &str) -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "gate-demo".into(),
         name: "Gate Demo".into(),
         service: "demo".into(),
@@ -459,6 +460,7 @@ fn engine_backend_happy() {
     use keyhog_scanner::engine::CompiledScanner;
     use keyhog_scanner::hw_probe::ScanBackend;
     let det = DetectorSpec {
+        tests: Vec::new(),
         id: "gate".into(),
         name: "Gate".into(),
         service: "demo".into(),
@@ -493,6 +495,7 @@ fn engine_backend_error() {
     use keyhog_scanner::engine::CompiledScanner;
     use keyhog_scanner::hw_probe::ScanBackend;
     let det = DetectorSpec {
+        tests: Vec::new(),
         id: "gate".into(),
         name: "Gate".into(),
         service: "demo".into(),
@@ -642,8 +645,14 @@ fn engine_segment_attribution_error() {
 // ── crates/scanner/src/entropy/keywords.rs ──────────────────────────
 #[test]
 fn entropy_keywords_happy() {
+    // A high-entropy, single-token secret is what the GENERIC plausibility gate
+    // is meant to admit. The previous fixture (`sk-proj-abcdef1234567890`) was a
+    // dash-segmented service-prefixed shape with a sequential body: the generic
+    // path correctly rejects dash-segmented-alnum as a serial decoy (real
+    // `sk-proj-` OpenAI keys are surfaced by their named hot-pattern detector,
+    // not this generic entropy gate), so it was never a valid happy case here.
     assert!(keyhog_scanner::entropy::keywords::is_secret_plausible(
-        "sk-proj-abcdef1234567890",
+        "9fKp2mNqR7vT4wXz8bYsH3jD6gA1cE0uViK5oLtBnW",
         &[]
     ));
 }

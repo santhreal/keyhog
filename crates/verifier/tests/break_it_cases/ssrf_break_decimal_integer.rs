@@ -1,7 +1,7 @@
 #[tokio::test]
 async fn ssrf_break_decimal_integer() {
     let url = "http://2130706433/";
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "ssrf-break".into(),
         name: "ssrf".into(),
         service: "test".into(),

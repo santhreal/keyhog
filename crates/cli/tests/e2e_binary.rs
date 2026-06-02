@@ -90,7 +90,7 @@ fn scan_returns_exit_0_on_clean_file() {
 
 #[test]
 fn scan_json_schema_carries_required_fields() {
-    let fixture = "GH_TOKEN = \"ghp_aBcD1234EFgh5678ijkl9012MNop3456qrST\"\n";
+    let fixture = "GH_TOKEN = \"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\"\n";
     let (stdout, _stderr, _code) = scan_text_file(fixture, &[]);
 
     let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
@@ -131,7 +131,7 @@ fn scan_json_schema_carries_required_fields() {
 /// before it ships.
 ///
 /// README line under audit (root README.md):
-///   `KeyHog vX.Y.Z | ... | 894 detectors (1658 patterns)`
+///   `KeyHog vX.Y.Z | ... | 899 detectors (1666 patterns)`
 ///
 /// When you legitimately change the counts:
 ///   1. Update README.md banner.
@@ -139,8 +139,8 @@ fn scan_json_schema_carries_required_fields() {
 ///   3. CI stays green.
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
-    const README_DETECTOR_COUNT: usize = 894;
-    const README_PATTERN_COUNT: usize = 1658;
+    const README_DETECTOR_COUNT: usize = 899;
+    const README_PATTERN_COUNT: usize = 1666;
 
     let output = Command::new(binary())
         .arg("detectors")
@@ -1247,7 +1247,11 @@ fn precision_mode_keeps_strong_drops_weak() {
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default()
             .iter()
-            .filter_map(|f| f.get("detector_id").and_then(|d| d.as_str()).map(String::from))
+            .filter_map(|f| {
+                f.get("detector_id")
+                    .and_then(|d| d.as_str())
+                    .map(String::from)
+            })
             .collect()
     };
     let (def_out, _e, _c) = scan_text_file(fixture, &[]);
@@ -1272,7 +1276,9 @@ fn precision_mode_keeps_strong_drops_weak() {
         "precision must be strictly tighter than default; default={def:?} precision={prec:?}"
     );
     assert!(
-        !prec.iter().any(|d| d == "aws-access-key" || d == "hot-aws_key"),
+        !prec
+            .iter()
+            .any(|d| d == "aws-access-key" || d == "hot-aws_key"),
         "precision must drop the weaker access-key-id finding (below the 0.85 bar); got {prec:?}"
     );
 }

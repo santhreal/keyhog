@@ -4,6 +4,7 @@ use keyhog_core::{
 
 fn detector_with_pattern(regex: &str) -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "test-detector".into(),
         name: "Test Detector".into(),
         service: "test".into(),

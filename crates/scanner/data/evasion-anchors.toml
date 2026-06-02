@@ -1,0 +1,58 @@
+# Community-extensible Tier-B structured-credential anchor list.
+#
+# Used by `crates/scanner/src/unicode_hardening.rs::strip_interior_evasion_controls`
+# to defeat a specific evasion: an attacker splits a credential body with an
+# ASCII control byte that keyhog otherwise preserves as structural whitespace,
+# e.g. `AKIA<TAB>QYLPMN5HFIQR7XYA` or `ghp_<CR>aBc...`. A blanket strip of TAB/CR
+# would corrupt TSV columns, indentation, and CRLF line ends, so the strip is
+# ANCHORED: a TAB/CR is removed only when it sits INSIDE a credential body that
+# immediately follows one of the distinctive prefixes below (matched at a word
+# boundary). Structural whitespace everywhere else is left untouched.
+#
+# Contract for additions (keep the strip safe):
+#   - Anchor MUST be distinctive enough that a word-boundary match implies "a
+#     credential body follows": prefer >= 4 chars OR a trailing structural
+#     separator (`_`, `-`, `.`). Do NOT add short ambiguous fragments like
+#     `sk-`, `key-`, `SK`, `AC` — they false-anchor on ordinary identifiers.
+#   - This is an evasion-hardening HINT list, intentionally a curated subset of
+#     the detector corpus's prefixes — it is NOT the detection source of truth,
+#     so partial coverage only costs recall-under-evasion, never precision.
+#
+# Contributors: append to the `anchors` array.
+
+anchors = [
+  # AWS access-key id prefixes (always uppercase, fixed 4-char shapes).
+  "AKIA", "ASIA", "AROA", "AIDA", "AGPA", "ANPA", "ANVA", "AIPA",
+  # GitHub token families.
+  "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",
+  # GitLab.
+  "glpat-",
+  # Stripe / restricted / publishable keys (the `_` makes them distinctive).
+  "sk_live_", "sk_test_", "rk_live_", "rk_test_", "pk_live_", "pk_test_",
+  # Google API key.
+  "AIza",
+  # Slack tokens / app-level.
+  "xoxb-", "xoxp-", "xoxa-", "xoxr-", "xoxs-", "xapp-",
+  # OpenAI / Anthropic (full distinctive prefixes only — never bare `sk-`).
+  "sk-proj-", "sk-ant-",
+  # SendGrid (`SG.` is short but boundary-anchored and highly distinctive).
+  "SG.",
+  # Shopify.
+  "shpat_", "shpca_", "shppa_", "shpss_",
+  # Square.
+  "sq0atp-", "sq0csp-",
+  # npm automation tokens.
+  "npm_",
+  # DigitalOcean.
+  "dop_v1_", "doo_v1_", "dor_v1_",
+  # Postman.
+  "PMAK-",
+  # Linear.
+  "lin_api_",
+  # Flutterwave.
+  "FLWSECK-",
+  # Doppler personal tokens.
+  "dp.pt.",
+  # Brevo / Sendinblue.
+  "xkeysib-",
+]

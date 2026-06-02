@@ -233,7 +233,10 @@ fn adv140_zksync_api_credentials_evade_lrm_must_fire() {
 
 #[test]
 fn adv140_zora_api_key_normal_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8wXy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8wXy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
@@ -246,52 +249,82 @@ fn adv140_zora_api_key_wrong_prefix_must_silent() {
 
 #[test]
 fn adv140_zora_api_key_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200B}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200B}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{00AD}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{00AD}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_zwnj_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200C}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200C}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_zwj_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200D}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200D}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_zwnbsp_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{FEFF}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{FEFF}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_word_joiner_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{2060}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{2060}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_mongolian_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{180E}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{180E}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_rtl_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{202E}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{202E}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_pop_dir_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{202C}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{202C}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 #[test]
 fn adv140_zora_api_key_evade_lrm_bare_must_stay_silent() {
-    assert_detector_silent("zora-api-key", "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200E}Xy1zA3bC5dEfGhIj");
+    assert_detector_silent(
+        "zora-api-key",
+        "ZORA API KEY = \"k7mNp2qRs4tUv8w\u{200E}Xy1zA3bC5dEfGhIj",
+    );
 }
 
 // =========================================================================

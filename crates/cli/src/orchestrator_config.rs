@@ -15,6 +15,15 @@ use std::path::{Path, PathBuf};
 /// threads thrashes the OS scheduler without speeding the scan up.
 pub const MAX_THREADS_CAP: usize = 256;
 
+/// Canonical default for `--ml-threshold` (`ScanArgs::ml_threshold`). Single
+/// source of truth for the flag's declared default: the clap `default_value`
+/// literal in `args/scan.rs` stringifies this same value, and
+/// [`build_scanner_config`] compares the parsed flag against it to decide
+/// whether the operator actually moved the knob. An unset flag (value equal to
+/// this default) must leave the canonical confidence floor untouched, so the
+/// fix for a dead `--ml-threshold` does not silently change default behaviour.
+pub const ML_THRESHOLD_DEFAULT: f64 = 0.5;
+
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Resolution order: --threads CLI arg > KEYHOG_THREADS env > physical core
     // count. Physical (not logical) is the right default for CPU-bound regex
@@ -351,7 +360,31 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.max_decode_bytes = size;
     }
     if let Some(conf) = args.min_confidence {
-        config.min_confidence = conf;
+        // Under `--precision` the 0.85 floor is a MINIMUM the operator may
+        // raise but not lower: `--precision --min-confidence 0.9` tightens to
+        // 0.9, while `--precision --min-confidence 0.3` stays at 0.85 (the
+        // documented "`--min-confidence` still overrides the floor on top"
+        // contract is one-directional - it cannot punch a hole in the precision
+        // bar). Every other mode lets the operator set the floor outright.
+        config.min_confidence = if args.precision {
+            conf.max(ScannerConfig::HIGH_PRECISION_MIN_CONFIDENCE)
+        } else {
+            conf
+        };
+    }
+    // `--ml-threshold` is the documented "minimum ML confidence score for
+    // generic entropy secrets" knob. Pre-fix it was parsed + range-validated
+    // but never read by any non-test path, so `--ml-threshold 0.9` silently did
+    // nothing (M21: a dead precision lever giving false confidence). Wire it as
+    // a confidence FLOOR composed with `.max()` - mirroring the precision-mode
+    // composition just above and the "minimum score" wording of the flag - so a
+    // raised threshold tightens the bar a generic/entropy finding must clear,
+    // while a lowered one can never punch below an operator's `--min-confidence`
+    // (or the precision floor). Gated on a real move off the declared default
+    // (`ML_THRESHOLD_DEFAULT`): an unset flag leaves the canonical 0.40 floor
+    // untouched, so behaviour off the bug path is unchanged.
+    if args.ml_threshold != ML_THRESHOLD_DEFAULT {
+        config.min_confidence = config.min_confidence.max(args.ml_threshold);
     }
     // Keep the fixture opt-out coherent: skip both value suppressions and the
     // test/example path confidence penalty.

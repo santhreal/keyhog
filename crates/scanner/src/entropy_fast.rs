@@ -29,11 +29,23 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
     }
 
     // SAFETY: We verify AVX2/SSE2 support via is_x86_feature_detected! before calling specialized paths.
+    //
+    // The wide paths emit instructions beyond their headline ISA, so the runtime
+    // probe must cover *every* feature the target_feature contract enables:
+    //  - the AVX-512 reduction calls `_mm512_cvtepi64_pd` (VCVTQQ2PD), an
+    //    AVX512DQ op, so `avx512dq` is required in addition to f+bw (else SIGILL
+    //    on an f+bw-only CPU/VM) — KH C10/M9.
+    //  - the AVX2 reduction emits `_mm256_fmadd_pd` (VFMADD231PD, an FMA3 op),
+    //    so `fma` is required in addition to `avx2` (else SIGILL on an
+    //    AVX2-without-FMA CPU/VM). Falling through lands on SSE2/scalar.
     unsafe {
-        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+        if is_x86_feature_detected!("avx512f")
+            && is_x86_feature_detected!("avx512bw")
+            && is_x86_feature_detected!("avx512dq")
+        {
             return crate::entropy_avx512::calculate_shannon_entropy(data);
         }
-        if is_x86_feature_detected!("avx2") {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             return crate::entropy_fast_x86::shannon_entropy_avx2(data);
         }
         if is_x86_feature_detected!("sse2") {
@@ -194,49 +206,43 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     has_high_entropy_fast_scalar(data, threshold)
 }
 
+/// Count the distinct byte values present in `data` via a stack-only 256-bit
+/// bitset (4 × u64). O(n) with no allocation; the buffer is already resident in
+/// cache on the entropy hot path.
+///
+/// This is the single source of the high-entropy early-exit decision: the
+/// number of distinct symbols `u` caps Shannon entropy at `log2(u)` bits/byte,
+/// so a buffer whose *whole* contents span fewer than `2^threshold` distinct
+/// bytes provably cannot reach `threshold` and the float-heavy reduction can be
+/// skipped. Counting over the full buffer (not a 12-/16-byte sample) is what
+/// makes the short-circuit sound and makes the scalar and SIMD paths agree
+/// bit-for-bit — a tiny sample could miss a constant run hiding a high-entropy
+/// remainder (false negative) or simply look at different bytes per arch.
+#[inline]
+pub(crate) fn distinct_byte_count(data: &[u8]) -> u32 {
+    let mut seen = [0u64; 4];
+    for &b in data {
+        seen[(b >> 6) as usize] |= 1u64 << (b & 63);
+    }
+    seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones()
+}
+
 /// Scalar fallback for has_high_entropy_fast
 #[inline]
 fn has_high_entropy_fast_scalar(data: &[u8], threshold: f64) -> bool {
-    let len = data.len();
-    if len < 8 {
+    if data.is_empty() {
         return shannon_entropy_scalar(data) >= threshold;
     }
 
-    // Sample 12 bytes: first 4 + middle 4 + last 4.
-    // Count unique bytes via a 256-bit bitset (4 × u64, stack-only).
-    let mut seen = [0u64; 4];
-    let mid = len / 2;
-    let samples = [
-        data[0],
-        data[1],
-        data[2],
-        data[3],
-        data[mid],
-        data[mid + 1],
-        data[mid + 2],
-        data[mid + 3],
-        data[len - 4],
-        data[len - 3],
-        data[len - 2],
-        data[len - 1],
-    ];
-    let mut sample_min = u8::MAX;
-    let mut sample_max = 0u8;
-    for &b in &samples {
-        seen[b as usize / 64] |= 1u64 << (b % 64);
-        sample_min = sample_min.min(b);
-        sample_max = sample_max.max(b);
-    }
-    let unique =
-        seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones();
-    let spread = (sample_max as u32).saturating_sub(sample_min as u32);
-
-    // Early exit (KH-26): automatically bypass full scans for chunks with fewer than 4 unique bytes
-    if (unique < 4 && threshold >= 1.585) || (unique < 4 && spread < 16 && threshold >= 2.0) {
+    // Sound early exit (KH-26): a buffer with `u` distinct byte values can carry
+    // at most log2(u) bits/byte of Shannon entropy. Count distinct bytes over
+    // the FULL buffer and bypass the full reduction only when that ceiling is
+    // strictly below the threshold — never on a non-representative sample.
+    let unique = distinct_byte_count(data);
+    if (unique as f64).log2() < threshold {
         return false;
     }
 
-    // Can't decide from the sample - do the full calculation.
+    // Ceiling permits the threshold - do the full calculation.
     shannon_entropy_simd(data) >= threshold
 }
-

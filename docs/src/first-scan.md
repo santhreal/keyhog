@@ -33,7 +33,7 @@ By default, output is human-readable:
 
 ```text
 $ keyhog scan .
-keyhog v0.5.37 │ 894 detectors │ 1658 patterns │ avx-512 + hyperscan
+keyhog v0.5.37 │ 899 detectors │ 1666 patterns │ avx-512 + hyperscan
 
 src/config/staging.env:14:12  HIGH  stripe-secret-key
                               sk_live_4eC39H…Tcd3Hc (redacted, last 6)

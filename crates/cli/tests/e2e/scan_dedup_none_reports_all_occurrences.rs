@@ -6,7 +6,7 @@ use std::process::Command;
 #[test]
 fn scan_dedup_none_reports_all_occurrences() {
     let key = concat!("AK", "IAQYLPMN5HFIQR7XYA");
-    let gh = concat!("gh", "p_aBcD1234EFgh5678ijkl9012MNop3456qrST");
+    let gh = concat!("gh", "p_aBcD1234EFgh5678ijkl9012MNop343hK7n2");
     let fixture = format!("AWS_ACCESS_KEY_ID = \"{key}\"\nGH_TOKEN = \"{gh}\"\n",);
     let (_dir, path) = write_temp_file("multi.txt", &fixture);
     let output = Command::new(binary())

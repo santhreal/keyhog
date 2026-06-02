@@ -71,7 +71,12 @@ pub fn sanitize_oob_value(s: &str) -> String {
 /// truncate log lines, or terminate strings mid-write in C-FFI sinks.
 /// Real credentials never contain control bytes, so dropping them is
 /// safe and removes the entire attack surface.
-pub(crate) fn sanitize_raw_value(s: &str) -> String {
+///
+/// Exposed via `testing::sanitize_raw_value` (`#[doc(hidden)]`, test-only — not
+/// part of the rendered public API) for the control-byte unit tests migrated
+/// out of this module.
+#[doc(hidden)]
+pub fn sanitize_raw_value(s: &str) -> String {
     s.chars()
         .filter(|c| {
             // Allow tab (0x09) - some legitimate JWT segments / Basic
@@ -195,4 +200,3 @@ pub fn companions_with_oob(
     out.insert(OOB_COMPANION_ID.to_string(), minted_id.to_string());
     out
 }
-

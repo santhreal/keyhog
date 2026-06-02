@@ -38,10 +38,11 @@ use anyhow::{bail, Result};
 use anyhow::Context;
 #[cfg(unix)]
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, RawMatch, VerificationResult, VerifiedFinding,
+    dedup_cross_detector, dedup_matches, RawMatch, RuleSuppressor, VerificationResult,
+    VerifiedFinding,
 };
 #[cfg(unix)]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[cfg(unix)]
@@ -126,6 +127,30 @@ fn daemon_route(args: &ScanArgs) -> DaemonRoute {
         if args.daemon {
             tracing::warn!(
                 "--daemon only supports --stdin or a single regular file (no directories, archives, git, http sources); falling back to in-process"
+            );
+        }
+        return DaemonRoute::Forbidden;
+    }
+
+    // The daemon's client-side finalize (finalize_for_report) applies only
+    // test-fixture suppression + dedup; it does NOT enforce the confidence floor,
+    // --severity, --hide-client-safe, or the --lockdown contract (no mlock /
+    // coredump block, and it would print plaintext under --show-secrets). Routing
+    // a scan that requests any of those over the daemon would silently change
+    // results or bypass a hard security guard — and the opportunistic route flips
+    // on merely because a daemon socket exists. Force the in-process path whenever
+    // such policy is in play, so behavior never depends on whether a daemon
+    // happens to be running.
+    if args.lockdown
+        || args.show_secrets
+        || args.severity.is_some()
+        || args.min_confidence.is_some()
+        || args.hide_client_safe
+    {
+        if args.daemon {
+            tracing::warn!(
+                "--daemon ignored: this scan requests filtering/lockdown/secret-output \
+                 policy the daemon cannot enforce; using the in-process path"
             );
         }
         return DaemonRoute::Forbidden;
@@ -267,13 +292,26 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
         crate::test_fixture_suppressions::TestFixtureSuppressions::bundled()
     };
 
-    // Mirror the in-process orchestrator's behaviour: when this filter
-    // drops a credential, bump the example-suppression telemetry so the
-    // reporter's empty-findings summary distinguishes "no matches at
-    // all" from "matched and suppressed as a known test fixture". The
-    // daemon process runs its own scanner (with its own telemetry
-    // counters that this CLI can't see), so the CLI must record the
-    // suppression itself based on what came back over the wire.
+    // The daemon process runs only the scanner: it does NOT load the
+    // CLI-side `.keyhogignore` allowlist, the `.keyhogignore.toml`
+    // declarative rule suppressor, or apply inline `keyhog:ignore`
+    // comment directives. The in-process orchestrator applies all three
+    // (`filter_and_resolve` + the rule-suppressor pass in `run.rs`).
+    // Without replicating them here, routing an eligible single-file or
+    // stdin scan over the daemon would silently un-suppress findings the
+    // user explicitly allowlisted - results that change purely because a
+    // daemon socket happens to be live. Anchor the allowlist files at the
+    // same root the orchestrator uses: the scanned path's directory, or
+    // "." for the stdin / bare-filename case.
+    let allowlist = load_daemon_allowlist(args);
+
+    // Mirror the in-process orchestrator's behaviour: when the
+    // test-fixture filter drops a credential, bump the example-suppression
+    // telemetry so the reporter's empty-findings summary distinguishes "no
+    // matches at all" from "matched and suppressed as a known test
+    // fixture". The daemon process runs its own scanner (with its own
+    // telemetry counters that this CLI can't see), so the CLI must record
+    // the suppression itself based on what came back over the wire.
     let mut matches: Vec<RawMatch> = matches
         .into_iter()
         .filter(|m| {
@@ -286,16 +324,48 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
                 );
                 return false;
             }
+            // `.keyhogignore` legacy line-based allowlist: path globs,
+            // credential-hash entries, and whole-detector ignores. Same
+            // predicates the orchestrator runs in `filter_and_resolve`.
+            if let Some(path) = m.location.file_path.as_deref() {
+                if allowlist.is_path_ignored(path) {
+                    return false;
+                }
+            }
+            if allowlist.is_hash_ignored(&m.credential_hash) {
+                return false;
+            }
+            if allowlist.ignored_detectors.contains(&*m.detector_id) {
+                return false;
+            }
             true
         })
         .collect();
+
+    // Inline `keyhog:ignore` / `gitleaks:allow` comment suppression. The
+    // shared filter only acts on matches whose source is "filesystem"
+    // (it re-opens `file_path` to read the directive line); daemon
+    // `ScanPath` matches carry the daemon's own `source_type`
+    // ("daemon/scan_path"), so normalise filesystem-backed matches to the
+    // "filesystem" source before the call. A daemon single-file scan IS a
+    // filesystem read, and `file_path` points at the real on-disk file,
+    // so this is the same suppression the in-process path performs.
+    // stdin/`ScanText` matches have no `file_path` and are left untouched
+    // by the filter regardless of source.
+    for m in &mut matches {
+        if m.location.file_path.is_some() && m.location.source.as_ref() != "filesystem" {
+            m.location.source = std::sync::Arc::from("filesystem");
+        }
+    }
+    let mut matches = crate::inline_suppression::filter_inline_suppressions(matches);
+
     matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
 
     let scope = args.dedup.to_core();
     let deduped = dedup_matches(matches, &scope);
     let deduped = dedup_cross_detector(deduped);
 
-    deduped
+    let findings: Vec<VerifiedFinding> = deduped
         .into_iter()
         .map(|m| VerifiedFinding {
             detector_id: m.detector_id,
@@ -314,5 +384,72 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
             additional_locations: m.additional_locations,
             confidence: m.confidence,
         })
+        .collect();
+
+    // `.keyhogignore.toml` declarative rule suppressor (vyre rule engine).
+    // The orchestrator applies this AFTER dedup on the final
+    // `VerifiedFinding` set (see `orchestrator::run`), so we match that
+    // ordering exactly. A missing/empty file is a no-op.
+    let rule_suppressor = load_daemon_rule_suppressor(args);
+    if rule_suppressor.is_empty() {
+        return findings;
+    }
+    findings
+        .into_iter()
+        .filter(|f| !rule_suppressor.matches(f))
         .collect()
+}
+
+/// Resolve the directory used to discover `.keyhogignore` /
+/// `.keyhogignore.toml` for a daemon-routed scan. Mirrors
+/// `orchestrator::allowlist::allowlist_root`: a scanned directory is its
+/// own root, a scanned file delegates to its parent, and the stdin /
+/// bare-filename case falls back to ".".
+#[cfg(unix)]
+fn daemon_allowlist_root(args: &ScanArgs) -> PathBuf {
+    let Some(path) = args.path.as_deref().or(args.input.as_deref()) else {
+        return PathBuf::from(".");
+    };
+    if path.is_dir() {
+        return path.to_path_buf();
+    }
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Load the legacy line-based `.keyhogignore` allowlist for the daemon
+/// route. Returns an empty allowlist when the file is missing or fails to
+/// parse, matching `orchestrator::allowlist::load_allowlist`.
+#[cfg(unix)]
+fn load_daemon_allowlist(args: &ScanArgs) -> keyhog_core::allowlist::Allowlist {
+    let ignore_path = daemon_allowlist_root(args).join(".keyhogignore");
+    if ignore_path.exists() {
+        keyhog_core::allowlist::Allowlist::load(&ignore_path)
+            .unwrap_or_else(|_| keyhog_core::allowlist::Allowlist::empty())
+    } else {
+        keyhog_core::allowlist::Allowlist::empty()
+    }
+}
+
+/// Load the declarative `.keyhogignore.toml` rule suppressor for the
+/// daemon route. A malformed file is logged and treated as empty so a
+/// bad rules file never silently blocks a scan - same posture as
+/// `orchestrator::allowlist::load_rule_suppressor`.
+#[cfg(unix)]
+fn load_daemon_rule_suppressor(args: &ScanArgs) -> RuleSuppressor {
+    let toml_path = daemon_allowlist_root(args).join(".keyhogignore.toml");
+    match RuleSuppressor::load(&toml_path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                file = %toml_path.display(),
+                error = %e,
+                "daemon route: failed to load .keyhogignore.toml; ignoring rules. \
+                 Fix: validate the TOML schema (see docs/keyhogignore-toml.md)."
+            );
+            RuleSuppressor::empty()
+        }
+    }
 }

@@ -69,7 +69,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
     });
 
     let url = format!("http://127.0.0.1:{}/", mock1_port);
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "redir_det".to_string(),
         name: "redir_det".to_string(),
         service: "test".to_string(),

@@ -14,7 +14,10 @@ use super::oracle_support::{
 
 #[test]
 fn adv2_cloudflare_token_normal_bare_must_stay_silent() {
-    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a");
+    assert_detector_silent(
+        "cloudflare-api-token",
+        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
+    );
 }
 
 #[test]
@@ -35,27 +38,42 @@ fn adv2_cloudflare_token_too_long_must_silent() {
 
 #[test]
 fn adv2_cloudflare_token_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e\u{200B}9f0a");
+    assert_detector_silent(
+        "cloudflare-api-token",
+        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e\u{200B}9f0a",
+    );
 }
 
 #[test]
 fn adv2_cloudflare_token_evade_zwj_bare_must_stay_silent() {
-    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d\u{200D}8e9f0a");
+    assert_detector_silent(
+        "cloudflare-api-token",
+        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d\u{200D}8e9f0a",
+    );
 }
 
 #[test]
 fn adv2_cloudflare_token_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9\u{00AD}f0a");
+    assert_detector_silent(
+        "cloudflare-api-token",
+        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9\u{00AD}f0a",
+    );
 }
 
 #[test]
 fn adv2_cloudflare_token_evade_zwnbsp_bare_must_stay_silent() {
-    assert_detector_silent("cloudflare-api-token", "c21a3b\u{FEFF}4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a");
+    assert_detector_silent(
+        "cloudflare-api-token",
+        "c21a3b\u{FEFF}4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
+    );
 }
 
 #[test]
 fn adv2_cloudflare_token_evade_word_joiner_bare_must_stay_silent() {
-    assert_detector_silent("cloudflare-api-token", "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6\u{2060}c7d8e9f0a");
+    assert_detector_silent(
+        "cloudflare-api-token",
+        "c21a3b4c5d6e7f8a9b0c1d2e3f4a5b6\u{2060}c7d8e9f0a",
+    );
 }
 
 // =========================================================================
@@ -74,22 +92,34 @@ fn adv2_datadog_key_invalid_chars_must_silent() {
 
 #[test]
 fn adv2_datadog_key_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c3d4e5f6a1b2\u{200B}c3d4");
+    assert_detector_silent(
+        "datadog-api-key",
+        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2\u{200B}c3d4",
+    );
 }
 
 #[test]
 fn adv2_datadog_key_evade_zwnj_bare_must_stay_silent() {
-    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c\u{200C}3d4e5f6a1b2c3d4");
+    assert_detector_silent(
+        "datadog-api-key",
+        "a1b2c3d4e5f6a1b2c\u{200C}3d4e5f6a1b2c3d4",
+    );
 }
 
 #[test]
 fn adv2_datadog_key_evade_bidi_override_bare_must_stay_silent() {
-    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c\u{202E}3d4e5f6a1b2c3d4");
+    assert_detector_silent(
+        "datadog-api-key",
+        "a1b2c3d4e5f6a1b2c\u{202E}3d4e5f6a1b2c3d4",
+    );
 }
 
 #[test]
 fn adv2_datadog_key_evade_bidi_isolate_bare_must_stay_silent() {
-    assert_detector_silent("datadog-api-key", "a1b2c3d4e5f6a1b2c\u{2066}3d4e5f6a1b2c3d4");
+    assert_detector_silent(
+        "datadog-api-key",
+        "a1b2c3d4e5f6a1b2c\u{2066}3d4e5f6a1b2c3d4",
+    );
 }
 
 // =========================================================================
@@ -155,7 +185,10 @@ fn adv2_openai_key_evade_zwsp_dash_must_fire() {
 
 #[test]
 fn adv2_openai_key_evade_soft_hyphen_dash_evaded_must_stay_silent() {
-    assert_detector_silent("openai-api-key", "sk\u{00AD}proj-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4");
+    assert_detector_silent(
+        "openai-api-key",
+        "sk\u{00AD}proj-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4",
+    );
 }
 
 #[test]
@@ -225,11 +258,14 @@ fn adv2_hybrid_aws_access_key_zwsp_and_homoglyph_must_fire() {
 
 #[test]
 fn adv2_hybrid_github_pat_zwj_and_homoglyph_must_fire() {
-    // Cyrillic 'о' (U+043E) and Zero-width joiner (U+200D)
+    // Cyrillic 'р' (U+0440 -> 'p', reconstructing the ghp_ classic-PAT prefix)
+    // and Zero-width joiner (U+200D). The earlier fixture used U+043E ('о' -> 'o'),
+    // which normalizes to a *valid* gho_ OAuth token rather than the ghp_ classic
+    // PAT this test asserts - the homoglyph must rebuild the ghp_ prefix.
     assert_detector_fires(
         "github-classic-pat",
-        "gh\u{043E}_nJ7tK5mN9q\u{200D}L2rX4sB6vY8zW0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "gh\u{0440}_nJ7tK5mN9q\u{200D}L2rX4sB6vY8zW0pQ3xZ13lXtgZ",
+        "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",
     );
 }
 

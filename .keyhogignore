@@ -227,12 +227,13 @@ path:tests/data/
 path:tests/fixtures/
 path:test_walk
 path:test_walk.rs
-# Benchmark tooling + fixtures (migrated to benchmarks/; the live corpus is
-# gitignored). tools/secretbench/ holds intentional secret-shaped fixtures —
-# mirror/providers.py token templates, results/*.md differential dumps,
-# scoring/ test fixtures — none are live secrets. Path-suppress the dir so the
-# dog-food self-scan stays at 0.
+# Benchmark tooling + fixtures live in benchmarks/ now; the generated corpora
+# (benchmarks/corpora/, benchmarks/results/) are gitignored so the dog-food
+# self-scan skips them. The retired tools/secretbench/ tree is also gitignored,
+# but reproducible/generated leftovers (mirror corpus, ad-hoc result dumps) may
+# still sit on disk there — path-suppress it so a local self-scan stays at 0.
 path:tools/secretbench/
+path:tools/diff_bench/
 # Tooling
 hash:03d104c669e3c7b6be7f989db8b12c8b910d3be8c1e2a73c9369d3cc0ba803b5
 hash:091652c1b31bff45e34cd898488baa49a69db7a06884c9fa48b219f91517792f

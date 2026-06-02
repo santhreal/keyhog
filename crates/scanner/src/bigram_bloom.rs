@@ -275,4 +275,3 @@ impl BigramBloom {
 fn bigram_slot(a: u8, b: u8) -> usize {
     ((a as usize) << 8) | (b as usize)
 }
-

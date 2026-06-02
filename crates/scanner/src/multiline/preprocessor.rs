@@ -66,8 +66,16 @@ pub fn preprocess_multiline(
     // arithmetically (rather than from `final_text.len()`) lets us probe for
     // structural fragments before materializing the extended buffer, so the
     // no-fragment case below can return without ever building it.
+    //
+    // When `will_append` is true the buffer is `text` + '\n' + `joined_text`
+    // and the structural region is push_str'd DIRECTLY onto it (the
+    // `if !appended_any { push('\n') }` separator below is skipped because the
+    // join already pushed one), so the structural content starts at
+    // `original_end + 1 + joined_text.len()` with no extra separator byte. The
+    // `else` branch DOES emit a leading '\n' before the structural region, so
+    // its base is `original_end + 1`.
     let structural_base = if will_append {
-        original_end + 1 + 1 + joined_text.len()
+        original_end + 1 + joined_text.len()
     } else {
         original_end + 1
     };
@@ -288,16 +296,23 @@ fn extract_string_content(line: &str) -> String {
 
 pub(crate) fn extract_quoted_content(s: &str, open: char, close: char) -> Option<String> {
     let mut chars = s.chars().peekable();
-    let mut is_fstring = false;
+    // Only a Python f-string prefix (`f"`/`F"`) where the `f`/`F` directly
+    // abuts the opening quote enables `{...}` interpolation handling. Earlier
+    // code OR'd over every preceding character, so any identifier containing an
+    // `f` (`prefix`, `config`, `final`, `ref`, ...) wrongly flagged the value
+    // as an f-string and silently dropped brace spans from the extracted
+    // secret. Track only the char immediately before the quote and gate on
+    // adjacency. f-string handling is Python-only, so backtick literals never
+    // qualify.
+    let mut prev: Option<char> = None;
     while let Some(&ch) = chars.peek() {
         if ch == open {
             break;
         }
-        if ch == 'f' || ch == 'F' {
-            is_fstring = true;
-        }
+        prev = Some(ch);
         chars.next();
     }
+    let is_fstring = open != '`' && matches!(prev, Some('f') | Some('F'));
 
     if chars.next() != Some(open) {
         return None;
@@ -314,7 +329,21 @@ pub(crate) fn extract_quoted_content(s: &str, open: char, close: char) -> Option
             content.push(ch);
         } else if ch == close {
             return Some(content);
-        } else if is_fstring && ch == '{' && chars.peek() != Some(&'{') {
+        } else if is_fstring && ch == '{' && chars.peek() == Some(&'{') {
+            // Python f-string escaped open brace `{{` -> literal `{`. Consume the
+            // second '{' so it can't be mistaken for the start of an
+            // interpolation (the bug: only the first '{' was protected, then the
+            // second '{' fired the consumer below and ate the literal body).
+            chars.next();
+            content.push('{');
+        } else if is_fstring && ch == '}' && chars.peek() == Some(&'}') {
+            // Python f-string escaped close brace `}}` -> literal `}`.
+            chars.next();
+            content.push('}');
+        } else if is_fstring && ch == '{' {
+            // A real `{expr}` interpolation (escaped `{{`/`}}` are handled above):
+            // a runtime-computed value, not literal secret bytes. Skip it with
+            // nesting so the surrounding literal still reassembles.
             let mut brace_depth = 1;
             for c in chars.by_ref() {
                 if c == '{' {
