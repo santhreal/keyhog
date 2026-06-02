@@ -66,7 +66,12 @@ jobs:
           $tmp = Join-Path $env:RUNNER_TEMP "install.ps1"
           Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
           & powershell -ExecutionPolicy Bypass -File $tmp -Version "${{ inputs.version }}" -Yes
-          Add-Content -Path $env:GITHUB_PATH -Value "$env:USERPROFILE\.local\bin"
+          # install.ps1's default Windows install dir is %LOCALAPPDATA%\keyhog\bin
+          # (param: Join-Path $env:LOCALAPPDATA 'keyhog\bin'), NOT ~/.local/bin —
+          # that was a unix-ism that left keyhog off PATH and failed the Version
+          # step with exit 127. In -Yes (non-interactive) mode the installer does
+          # not mutate PATH itself, so the caller adds the real install dir here.
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\keyhog\bin"
 
       - name: Version
         shell: bash
