@@ -62,7 +62,11 @@ def _leaderboard(args: argparse.Namespace) -> int:
 def _report(args: argparse.Namespace) -> int:
     import sys
     results = load_results(args.results)
-    write_reports(results, args.corpus, args.reports)
+    # --check is a read-only gate (is the README up to date?); it must NOT
+    # rewrite reports/ as a side effect, or a CI/prerelease check run from stale
+    # results/ silently degrades the committed rollups. Only write when rendering.
+    if not args.check:
+        write_reports(results, args.corpus, args.reports)
     if not (args.inject or args.check):
         return 0
     readme = pathlib.Path(args.readme)

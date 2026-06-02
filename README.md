@@ -93,19 +93,22 @@ curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.s
 # Windows (PowerShell)
 iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
 
-# From source (any platform)
+# From source — Linux (default = Hyperscan SIMD; needs libhyperscan-dev + pkg-config)
 git clone https://github.com/santhsecurity/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
-# From crates.io
+# From source / crates.io — macOS, Windows, or any host without Hyperscan
+# (the system-lib-free vyre CPU build — no pkg-config, no GPU stack)
 cargo install keyhog --no-default-features --features portable
 ```
 
-> `install.sh` (signed prebuilt) remains the recommended path because a
-> fresh `cargo install keyhog` source-builds Hyperscan + the GPU stack
-> (~3 minutes on a hosted runner) versus a ~20 MB signed-binary download
-> in ~1 s. `cargo install keyhog` is the right path for developers who
-> want a source build with their toolchain.
+> `install.sh` / `install.ps1` (signed prebuilt) is the recommended path: it
+> auto-selects the right per-host variant and is a ~20 MB download in ~1 s,
+> versus a ~3-minute source build. For a source build, note that the **default**
+> features link Hyperscan (a system lib available on Linux x86_64); on **macOS**
+> (incl. Apple Silicon) and any host without the Hyperscan dev libraries, build
+> with `--no-default-features --features portable` — the vyre CPU path, every
+> detection feature, no system-lib or pkg-config dependency.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.

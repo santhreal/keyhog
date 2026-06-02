@@ -7,10 +7,9 @@
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.82s | 2.8 MB/s | 534 MB |
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | creddata | 0.92s | 1056.3 MB/s | 1743 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 1.04s | 2.2 MB/s | 210 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.26s | 1.8 MB/s | 1133 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.45s | 1.6 MB/s | 322 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.61s | 1.4 MB/s | 1106 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.73s | 1.3 MB/s | 308 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 2.12s | 1.1 MB/s | 1085 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.53s | 0.9 MB/s | 117 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 2.83s | 342.8 MB/s | 252 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
