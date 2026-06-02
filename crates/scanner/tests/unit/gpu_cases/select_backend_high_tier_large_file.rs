@@ -1,5 +1,5 @@
 use keyhog_scanner::hw_probe::{
-    classify_gpu_tier, gpu_solo_bytes_for_tier, select_backend, GpuTier, HardwareCaps, ScanBackend,
+    classify_gpu_tier, gpu_could_engage, gpu_solo_bytes_for_tier, GpuTier, HardwareCaps,
 };
 #[test]
 fn select_backend_high_tier_large_file() {
@@ -21,5 +21,10 @@ fn select_backend_high_tier_large_file() {
         hyperscan_available: true,
     };
     let solo = gpu_solo_bytes_for_tier(tier);
-    assert_eq!(select_backend(&caps, solo, 1), ScanBackend::Gpu);
+    // A high-tier solo-cap workload clears the GPU crossover. Asserted on the
+    // side-effect-free `gpu_could_engage` predicate rather than `select_backend`:
+    // the router additionally degrades a GPU choice to SIMD on a GPU-less host
+    // (`gpu::env_no_gpu()`), so `select_backend(..) == Gpu` is green on a GPU dev
+    // box but red on a GPU-less CI runner. The crossover math is host-independent.
+    assert!(gpu_could_engage(&caps, solo, 1));
 }

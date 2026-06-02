@@ -365,7 +365,8 @@ fn sarif_tool_driver_name_version_information_uri() {
     assert_eq!(driver["name"], "keyhog");
     // informationUri == env!("CARGO_PKG_REPOSITORY") (set in sarif.rs finish()).
     assert_eq!(
-        driver["informationUri"], env!("CARGO_PKG_REPOSITORY"),
+        driver["informationUri"],
+        env!("CARGO_PKG_REPOSITORY"),
         "informationUri must point at the keyhog repository"
     );
     // version == CARGO_PKG_VERSION; the test crate shares the workspace version.
