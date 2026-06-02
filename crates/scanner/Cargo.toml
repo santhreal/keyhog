@@ -22,6 +22,12 @@ status = "alpha"
 # --features ci` to drop the GPU drivers and Hyperscan for a maximally-light
 # CI binary (no libhs link, no wgpu/Vulkan probe, ~150ms cold-start).
 default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "gpu"]
+# Lean CI aggregator build: every default detection/data feature (Hyperscan +
+# SIMD prefilter + ML/decode/multiline) EXCEPT the GPU dispatch stack. The
+# integration-tests job runs the real detection path on GPU-less runners, so
+# the GPU dispatch suites (`#![cfg(feature = "gpu")]`) compile out and run only
+# on runners-nightly (which builds with `--features gpu` on real GPU hosts).
+ci-lean = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
 ml = []
 entropy = []
 decode = []

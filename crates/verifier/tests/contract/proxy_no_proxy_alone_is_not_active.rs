@@ -4,8 +4,7 @@ use keyhog_verifier::proxy_is_active;
 
 #[test]
 fn proxy_no_proxy_alone_is_not_active() {
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::common::proxy_env_lock();
     let saved = [
         ("KEYHOG_PROXY", std::env::var("KEYHOG_PROXY").ok()),
         ("HTTPS_PROXY", std::env::var("HTTPS_PROXY").ok()),

@@ -27,6 +27,7 @@ fn vyre_gpu_scanner_and_coalesced_paths_are_available() {
 #[test]
 fn gpu_batch_preserves_cross_chunk_reassembly() {
     let scanner = CompiledScanner::compile(vec![DetectorSpec {
+        tests: Vec::new(),
         id: "demo-reassembled-token".into(),
         name: "Demo Reassembled Token".into(),
         service: "demo".into(),

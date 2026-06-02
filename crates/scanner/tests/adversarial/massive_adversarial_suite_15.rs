@@ -44,7 +44,10 @@ fn adv15_blur_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv15_blur_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("blur-api-key", "bl\u{0443}r_api_key = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "blur-api-key",
+        "bl\u{0443}r_api_key = \"abcde1234567890abcde\"",
+    );
 }
 
 // =========================================================================

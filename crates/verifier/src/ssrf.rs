@@ -92,8 +92,14 @@ pub fn is_private_ip_addr_fast(ip: &IpAddr) -> bool {
             if val & 0xFFC00000 == 0x64400000 {
                 return true;
             }
-            // 255.255.255.255 (Broadcast)
-            if val == 0xFFFFFFFF {
+            // 240.0.0.0/4 (Reserved, RFC 1112 "future use" / Class E).
+            // This range is not globally routable and includes the limited
+            // broadcast address 255.255.255.255 (0xFFFFFFFF) as its top host.
+            // A defense-in-depth SSRF guard blocks the whole reserved block
+            // fail-closed — nothing legitimate is reachable there, and decimal
+            // IP forms like `http://4294967294/` (255.255.255.254) must not slip
+            // through just because they aren't the exact broadcast value.
+            if val & 0xF0000000 == 0xF0000000 {
                 return true;
             }
             false
@@ -188,8 +194,22 @@ pub fn is_private_url(url_str: &str) -> bool {
                     u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from)
                 } else if let Ok(n) = d.parse::<u32>() {
                     Some(Ipv4Addr::from(n))
+                } else if let Ok(ip) = d.parse::<Ipv4Addr>() {
+                    Some(ip)
                 } else {
-                    d.parse::<Ipv4Addr>().ok()
+                    // Abbreviated dotted forms that glibc/getaddrinfo accept but
+                    // `Ipv4Addr::parse` rejects (it requires exactly 4 octets):
+                    //
+                    //   - 2-part:  http://127.1        → 127.0.0.1
+                    //   - 3-part:  http://172.16.1     → 172.16.0.1
+                    //
+                    // In classic inet_aton semantics the final field packs into
+                    // the trailing low bytes, so the previous octets are the high
+                    // bytes and the last field fills the remainder. Without this
+                    // the URL-string SSRF gate let `https://127.1/` through, and
+                    // on the proxy path (which skips the post-resolution IP veto)
+                    // that was the only gate.
+                    canonicalize_short_form_ipv4(d)
                 };
                 if let Some(ip) = maybe_ip {
                     if is_private_ip_addr_fast(&IpAddr::V4(ip))
@@ -209,6 +229,69 @@ pub fn is_private_url(url_str: &str) -> bool {
     }
 
     false
+}
+
+/// Canonicalize an abbreviated dotted IPv4 (`inet_aton`-style) into a full
+/// [`Ipv4Addr`]. Handles the 1-, 2-, and 3-part short forms a permissive
+/// resolver accepts:
+///
+///   - 1-part  → handled earlier as a bare integer (`http://2130706433`).
+///   - 2-part  `a.b`     → `a` is octet 0, `b` packs into the low 3 bytes
+///                          (`127.1`     → `127.0.0.1`).
+///   - 3-part  `a.b.c`   → `a`, `b` are octets 0/1, `c` packs into the low
+///                          2 bytes (`172.16.1` → `172.16.0.1`).
+///   - 4-part  `a.b.c.d` → standard dotted-quad (already covered by
+///                          `Ipv4Addr::parse`, so not re-handled here).
+///
+/// Each part is parsed per `inet_aton` radix rules: `0x`/`0X` prefix → hex,
+/// a leading `0` → octal, otherwise decimal. Any out-of-range field or parse
+/// failure yields `None` (the caller then falls through to its other checks).
+fn canonicalize_short_form_ipv4(domain: &str) -> Option<Ipv4Addr> {
+    let parts: Vec<&str> = domain.split('.').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        return None;
+    }
+    let values: Option<Vec<u32>> = parts.iter().map(|p| parse_ip_field(p)).collect();
+    let values = values?;
+    let n = values.len();
+    // Leading fields each occupy one byte (must fit in a u8).
+    let mut acc: u32 = 0;
+    for &leading in &values[..n - 1] {
+        if leading > 0xFF {
+            return None;
+        }
+        acc = (acc << 8) | leading;
+    }
+    // The final field packs into the remaining low bytes.
+    let remaining_bytes = 4 - (n - 1);
+    let last = values[n - 1];
+    let max_last = if remaining_bytes >= 4 {
+        u32::MAX
+    } else {
+        (1u32 << (8 * remaining_bytes as u32)) - 1
+    };
+    if last > max_last {
+        return None;
+    }
+    acc = (acc << (8 * remaining_bytes as u32)) | last;
+    Some(Ipv4Addr::from(acc))
+}
+
+/// Parse a single dotted-IP field using `inet_aton` radix rules.
+fn parse_ip_field(part: &str) -> Option<u32> {
+    if part.is_empty() {
+        return None;
+    }
+    if let Some(hex) = part.strip_prefix("0x").or_else(|| part.strip_prefix("0X")) {
+        if hex.is_empty() {
+            return None;
+        }
+        u32::from_str_radix(hex, 16).ok()
+    } else if part.len() > 1 && part.starts_with('0') {
+        u32::from_str_radix(part, 8).ok()
+    } else {
+        part.parse::<u32>().ok()
+    }
 }
 
 fn looks_like_malformed_ip(domain: &str) -> bool {

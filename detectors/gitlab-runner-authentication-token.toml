@@ -1,0 +1,41 @@
+# Docs: https://docs.gitlab.com/security/tokens/ (runner authentication token)
+# Format: glrt- prefix + 20 base64url-safe chars (GitLab 16.0+ replaced the
+#         old registration token). Routable variant: glrt-t<digit>_<body>.<suffix>.
+# Verify: POST https://gitlab.com/api/v4/runners/verify with `token` form field.
+# Prefix: glrt-
+
+[detector]
+id = "gitlab-runner-authentication-token"
+name = "GitLab Runner Authentication Token"
+service = "gitlab"
+severity = "high"
+keywords = ["glrt-", "gitlab", "CI_SERVER_URL", "runner"]
+
+[[detector.patterns]]
+# Standard runner auth token: glrt- then exactly 20 base64url chars
+# (gitleaks `gitlab-runner-authentication-token` shape). The glrt- literal
+# is a strong AC prefilter prefix.
+regex = 'glrt-[0-9a-zA-Z_\-]{20}'
+description = "GitLab runner authentication token (glrt- prefix, 20 chars)"
+
+[[detector.patterns]]
+# Routable runner auth token: glrt-t<digit>_<27-300 chars>.<9 lower-hex/alnum>
+# (gitleaks `gitlab-runner-authentication-token-routable`).
+regex = 'glrt-t[0-9]_[0-9a-zA-Z_\-]{27,300}\.[0-9a-z]{9}'
+description = "GitLab routable runner authentication token (glrt-t<n>_ prefix)"
+
+[detector.verify]
+method = "POST"
+url = "https://gitlab.com/api/v4/runners/verify"
+
+[detector.verify.auth]
+type = "query"
+param = "token"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.tests]]
+test_positive = "glrt-2CR8_eVxiioB1QmzPZwa"
+test_negative = "NOT_A_SECRET=totally_benign_example_value_123456"

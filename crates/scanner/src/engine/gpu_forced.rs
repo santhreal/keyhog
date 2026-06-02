@@ -77,6 +77,25 @@ pub fn gpu_forced_unavailable_message(
 /// the user sees the silent fallback they didn't ask for. Set
 /// KEYHOG_NO_GPU=1 to silence the warning, or KEYHOG_REQUIRE_GPU=1
 /// to exit (2) instead.
+///
+/// ## Why a `std::process::exit(2)` survives in the library here (M12)
+///
+/// The clean fail-closed path for `KEYHOG_REQUIRE_GPU=1` on a no-GPU host
+/// is the CLI preflight ([`crate::gpu::require_gpu_preflight`], called from
+/// `orchestrator::run` before any scan) which returns the documented
+/// `ExitCode` through the CLI - no library `process::exit`, so embedders
+/// stay alive. This function's hard exit covers a *different*, narrower
+/// case: `KEYHOG_BACKEND=gpu`/`mega-scan` FORCED a per-chunk GPU dispatch
+/// that then found the stack unusable, deep inside the parallel scan loop
+/// where there is no `Result` channel back to the caller (it runs under
+/// `par_iter` map closures returning `Vec<RawMatch>`). For that forced-
+/// dispatch contract the no-silent-fallback rule requires an immediate
+/// stop, and the only correct stop signal from inside that closure is the
+/// process exit. The hazard for embedders is bounded: it fires only when
+/// the embedder explicitly forced `KEYHOG_BACKEND=gpu` (or set
+/// `KEYHOG_REQUIRE_GPU=1`) AND reached GPU dispatch with a broken stack -
+/// not on the ordinary no-GPU auto-routing path, which the CLI preflight
+/// now owns.
 pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
     deny_silent_gpu_degrade_with_reason(scanner, backend, None);
 }

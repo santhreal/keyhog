@@ -4,7 +4,7 @@ use keyhog_core::merkle_index::compute_spec_hash;
 use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
 
 fn make(id: &str) -> DetectorSpec {
-    DetectorSpec {
+    DetectorSpec { tests: Vec::new(),
         id: id.to_string(),
         name: id.to_string(),
         service: id.to_string(),

@@ -11,7 +11,14 @@ severity = "critical"
 keywords = ["API-", "OCTOPUS_API_KEY", "X-Octopus-ApiKey"]
 
 [[detector.patterns]]
-regex = "API-[A-Z0-9]{16,}"
+# `(?-i)` forces case-sensitive matching (keyhog compiles every regex
+# case-insensitive by default), so the prefix must be the UPPERCASE `API-`
+# of a real Octopus key, not a lowercase `api-` word. The body must also
+# contain at least one digit: Octopus keys are base-36-style and digit-dense
+# (e.g. API-7X68S9206QLQW4S2FVP), whereas generic uppercase tokens such as
+# `API-DOCUMENTATION` / `API-REFERENCE` / `API-RESPONSE` are pure letters and
+# previously matched the bare `API-[A-Z0-9]{16,}` pattern as false positives.
+regex = "(?-i)API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}"
 description = "Octopus Deploy API key with API- prefix"
 
 [[detector.patterns]]

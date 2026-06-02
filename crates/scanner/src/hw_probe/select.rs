@@ -236,6 +236,18 @@ pub(super) fn parse_backend_env() -> Option<ScanBackend> {
         return forced;
     }
     let raw = std::env::var("KEYHOG_BACKEND").ok()?;
+    parse_backend_str(&raw)
+}
+
+/// Pure `KEYHOG_BACKEND` value → [`ScanBackend`] mapping, with no env or
+/// thread-local override read. Tests that only verify the string→backend
+/// mapping MUST call this directly rather than mutating the process-global
+/// `KEYHOG_BACKEND` env var: a global mutation to a GPU value races with every
+/// concurrent scan in the parallel `all_tests` pool, and `gpu_forced` reacts to
+/// a forced-but-unavailable GPU by exiting the whole process — turning a parse
+/// test into a harness-wide abort. Keeping the mapping pure removes that hazard
+/// while staying the single source of truth (`parse_backend_env` calls it).
+pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
         "mega-scan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {

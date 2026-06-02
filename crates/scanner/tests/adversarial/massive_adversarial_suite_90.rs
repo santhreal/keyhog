@@ -13,8 +13,8 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 fn adv90_github_classic_pat_normal_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=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",
+        "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",
     );
 }
 
@@ -30,8 +30,8 @@ fn adv90_github_classic_pat_wrong_prefix_must_silent() {
 fn adv90_github_classic_pat_evade_zwsp_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{200B}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{200B}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -39,8 +39,8 @@ fn adv90_github_classic_pat_evade_zwsp_must_fire() {
 fn adv90_github_classic_pat_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{00AD}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{00AD}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -48,8 +48,8 @@ fn adv90_github_classic_pat_evade_soft_hyphen_must_fire() {
 fn adv90_github_classic_pat_evade_zwnj_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{200C}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{200C}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -57,8 +57,8 @@ fn adv90_github_classic_pat_evade_zwnj_must_fire() {
 fn adv90_github_classic_pat_evade_zwj_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{200D}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{200D}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -66,8 +66,8 @@ fn adv90_github_classic_pat_evade_zwj_must_fire() {
 fn adv90_github_classic_pat_evade_zwnbsp_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{FEFF}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{FEFF}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -75,8 +75,8 @@ fn adv90_github_classic_pat_evade_zwnbsp_must_fire() {
 fn adv90_github_classic_pat_evade_word_joiner_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{2060}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{2060}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -84,8 +84,8 @@ fn adv90_github_classic_pat_evade_word_joiner_must_fire() {
 fn adv90_github_classic_pat_evade_mongolian_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{180E}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{180E}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -93,8 +93,8 @@ fn adv90_github_classic_pat_evade_mongolian_must_fire() {
 fn adv90_github_classic_pat_evade_rtl_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{202E}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{202E}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -102,8 +102,8 @@ fn adv90_github_classic_pat_evade_rtl_must_fire() {
 fn adv90_github_classic_pat_evade_pop_dir_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{202C}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{202C}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 
@@ -111,8 +111,8 @@ fn adv90_github_classic_pat_evade_pop_dir_must_fire() {
 fn adv90_github_classic_pat_evade_lrm_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "GH_TOKEN=ghp_1234567890ABCDEF\u{200E}ghijklmnopqrstuvwxyZ",
-        "ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ",
+        "GH_TOKEN=ghp_1234567890ABCDEF\u{200E}ghijklmnopqrst3yckgQ",
+        "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",
     );
 }
 

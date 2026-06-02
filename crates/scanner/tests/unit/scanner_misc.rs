@@ -29,6 +29,7 @@ fn bigram_bloom_rejects_unrelated_text() {
 #[test]
 fn build_compile_state_collects_literals_for_detector() {
     let detectors = vec![DetectorSpec {
+        tests: Vec::new(),
         id: "demo".into(),
         name: "Demo".into(),
         service: "demo".into(),
@@ -62,6 +63,7 @@ fn extract_literal_prefix_skips_escaped_markers() {
 #[test]
 fn build_compile_state_errors_on_invalid_regex() {
     let detectors = vec![DetectorSpec {
+        tests: Vec::new(),
         id: "bad".into(),
         name: "Bad".into(),
         service: "bad".into(),
@@ -194,6 +196,7 @@ fn analyze_rejects_random_three_part_string() {
 fn structured_env_preprocessing_surfaces_key_value_via_scan() {
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let scanner = CompiledScanner::compile(vec![DetectorSpec {
+        tests: Vec::new(),
         id: "github-pat".into(),
         name: "GitHub PAT".into(),
         service: "github".into(),

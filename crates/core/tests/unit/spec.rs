@@ -56,6 +56,7 @@ fn temp_dir(name: &str) -> PathBuf {
 
 fn valid_detector() -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
         service: "demo".into(),

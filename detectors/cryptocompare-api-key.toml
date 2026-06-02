@@ -16,8 +16,8 @@ description = "CryptoCompare API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization[=:\\s\\\"']+(?:Apikey\\s+)?([a-zA-Z0-9]{20,})"
-description = "CryptoCompare API key in Authorization header"
+regex = "Authorization[=:\\s\\\"']+(?:Apikey\\s+)?([a-zA-Z0-9]{20,})[^\\n]*cryptocompare"
+description = "CryptoCompare API key in Authorization header (same-line cryptocompare anchor; a bare Authorization header value is not service-attributable)"
 group = 1
 
 [detector.verify]

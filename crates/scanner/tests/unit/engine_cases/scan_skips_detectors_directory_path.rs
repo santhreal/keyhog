@@ -3,6 +3,7 @@ use keyhog_scanner::CompiledScanner;
 #[test]
 fn scan_skips_detectors_directory_path() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

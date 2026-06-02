@@ -16,8 +16,8 @@ description = "Mistral AI API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization:\\s*[Bb]earer\\s+([a-zA-Z0-9]{32})"
-description = "Mistral AI API key in Authorization header"
+regex = "Authorization:\\s*[Bb]earer\\s+([a-zA-Z0-9]{32})[^\\n]*mistral"
+description = "Mistral AI API key in Authorization header (same-line mistral anchor; a bare Authorization: Bearer header alone is not service-attributable)"
 group = 1
 
 [detector.verify]

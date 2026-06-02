@@ -379,4 +379,3 @@ fn keyword_context(
         is_credential_context,
     }
 }
-

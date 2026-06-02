@@ -55,7 +55,7 @@ fn hook_blocks_staged_secret_and_allows_clean_commit() {
     // Stage a real secret -> commit MUST be rejected.
     std::fs::write(
         p.join("leak.env"),
-        "GH_TOKEN=ghp_aB3xK9mZ1qW7rT5vY2nL8pH4jD6sF0gE1cV2\n",
+        "GH_TOKEN=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\n",
     )
     .unwrap();
     git(p, &["add", "leak.env"]);
@@ -151,7 +151,7 @@ fn hook_fails_open_when_keyhog_not_on_path() {
     // absent: the scan is skipped, not failed.
     std::fs::write(
         p.join("leak.env"),
-        "GH_TOKEN=ghp_aB3xK9mZ1qW7rT5vY2nL8pH4jD6sF0gE1cV2\n",
+        "GH_TOKEN=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\n",
     )
     .unwrap();
     git(p, &["add", "leak.env"]);

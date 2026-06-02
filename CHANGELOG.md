@@ -26,11 +26,18 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Suppress TypeScript non-null source identifiers like `privateAccessToken!` only when the trailing bang follows a credential-named camelCase identifier with no digits. Real password bodies ending in `!` such as Snowflake/Sourcetree fixtures remain reportable.
 - Broaden the SIMD/no-HS-hit entropy-run admission gate to treat base64/base64url separators (`-`, `_`, `+`, `/`, `=`) as part of the same token, restoring recall for separators-only secret forms in `generic-high-entropy-string` corpus paths without opening new broadening routes.
 - Fix telemetry dogfood assertions and related redaction tests to match canonical `keyhog_core::redact` output shape (`prefix...suffix`) rather than legacy fixed-prefix assumptions.
+- Route the `generic-secret` and `entropy-api-key` fallback emit paths through the canonical post-ML penalty pipeline (`apply_post_ml_penalties`) before the checksum floor, so the uniform-base64 / encoded-binary blob suppression that the named/ML path already applies finally applies on the fallback paths too. Mirror precision recovers to P=0.9945 / F1=0.9131 (false positives 651→14); the round1 base64-with-internal-punctuation recall contract stays green because the penalty still surfaces at `min_confidence=0.0` while the bench's 0.40 floor suppresses the blobs.
 
 ### Coherence
 
 - Reconcile the advertised detector/pattern counts to the binary's actual embedded corpus (894 detectors, 1658 patterns) across README, docs, banner, contract fixtures, and the compiled count gates. The canonical source of truth is `keyhog detectors` / `keyhog doctor`.
 - Make dedup primary/additional location selection deterministic when overlapping filesystem windows report the same credential at the same byte offset with different line metadata.
+
+### Benchmarks
+
+- Unify the three benchmark systems into one. `benchmarks/bench` is now the single source of accuracy truth: the retired `tools/secretbench/scoring/` scorer and the retired `tools/diff_bench` differential runner are both replaced by `bench`'s canonical scorer + scanner adapters, and the mirror corpus generator plus the competitor home-turf harvesters move under `benchmarks/generators/`. Committed scoreboard anchors move to `benchmarks/baselines/`. The `bench-nightly` (renamed from `secretbench-nightly`) and `differential-bench` workflows now drive `python -m bench`.
+- Add `python -m bench gate`: the single regression + differential gate. It exits non-zero unless keyhog leads every available competitor on F1 *strictly* and clears the asserted `--min-f1` / `--min-precision` / `--min-recall` floors and/or a committed `--baseline` (within `--epsilon`); exit 2 if keyhog produced no usable result. It replaces the per-fixture `diff_bench` F1 gate and is the forcing function for the continuous-improvement loop.
+- Add the production continuous-improvement loop: `make -C benchmarks loop` runs the whole cycle (scorer self-tests → corpus → leaderboard → calibrate → render → gate) in one command, and a committed regression anchor (`benchmarks/baselines/mirror-keyhog-baseline.json`, keyhog F1=0.9131) lets the `differential-bench` workflow fail red on an F1 regression below the anchor, not only on a competitor overtaking keyhog. `loop` never `--inject`s the README, so a partial-scanner run can't degrade the published leaderboard.
 
 ### CI / GitHub Action
 

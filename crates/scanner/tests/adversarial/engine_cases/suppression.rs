@@ -14,6 +14,7 @@ fn telemetry_lock() -> &'static Mutex<()> {
 fn pure_placeholder_not_flagged() {
     // A placeholder that matches the pattern but is obviously fake.
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
         service: "aws".into(),
@@ -49,6 +50,7 @@ fn example_suppression_is_recorded_in_telemetry() {
     let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
     keyhog_scanner::telemetry::reset();
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
         service: "aws".into(),
@@ -83,6 +85,7 @@ fn dogfood_captures_redacted_event() {
     keyhog_scanner::telemetry::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
         service: "aws".into(),
@@ -107,11 +110,18 @@ fn dogfood_captures_redacted_event() {
     let redacted = events
         .iter()
         .find_map(|event| match event {
+            // `drain_events()` empties a process-global telemetry buffer, so
+            // under parallel test execution another test's EXAMPLE suppression
+            // (e.g. `my_example_key`) can interleave ahead of ours. Pin to the
+            // AKIA credential this test actually planted so we never assert
+            // against a sibling's event.
             DogfoodEvent::ExampleSuppressed {
                 credential_redacted,
                 reason,
                 ..
-            } if reason.contains("EXAMPLE") => Some(credential_redacted.as_str()),
+            } if reason.contains("EXAMPLE") && credential_redacted.starts_with("AKIA") => {
+                Some(credential_redacted.as_str())
+            }
             _ => None,
         })
         .expect("--dogfood must capture this AKIA suppression event");
@@ -138,6 +148,7 @@ fn dogfood_captures_redacted_event() {
 #[test]
 fn github_pat_example_suppressed() {
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "github-pat".into(),
         name: "GitHub PAT".into(),
         service: "github".into(),

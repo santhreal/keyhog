@@ -327,4 +327,3 @@ pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
     }
     false
 }
-

@@ -346,12 +346,17 @@ fn adv37_github_app_installation_evade_homoglyph_must_fire() {
 // 8. GITHUB CLASSIC PAT ADVERSARIAL TESTS
 // =========================================================================
 
+// The classic-PAT body carries a base62 CRC32 checksum in its trailing 6
+// chars (computed over the leading 30); a fabricated body is now correctly
+// dropped as a false positive, so these evasion fixtures use a checksum-VALID
+// token (entropy `123456789012345678901234567890`, checksum `2PDSiF`) - the
+// suite models evading a REAL secret, not a malformed string.
 #[test]
 fn adv37_github_classic_normal_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_123456789012345678901234567890123456",
-        "ghp_123456789012345678901234567890123456",
+        "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",
+        "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",
     );
 }
 
@@ -359,7 +364,7 @@ fn adv37_github_classic_normal_must_fire() {
 fn adv37_github_classic_wrong_prefix_must_silent() {
     assert_detector_silent(
         "github-classic-pat",
-        "hhp_123456789012345678901234567890123456",
+        "hhp_1234567890123456789012345678902PDSiF",
     );
 }
 
@@ -367,8 +372,8 @@ fn adv37_github_classic_wrong_prefix_must_silent() {
 fn adv37_github_classic_evade_zwsp_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_\u{200B}123456789012345678901234567890123456",
-        "ghp_123456789012345678901234567890123456",
+        "ghp_\u{200B}1234567890123456789012345678902PDSiF",
+        "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",
     );
 }
 
@@ -376,8 +381,8 @@ fn adv37_github_classic_evade_zwsp_must_fire() {
 fn adv37_github_classic_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_123456789012345678901234567890\u{00AD}123456",
-        "ghp_123456789012345678901234567890123456",
+        "ghp_123456789012345678901234567890\u{00AD}2PDSiF",
+        "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",
     );
 }
 
@@ -385,8 +390,8 @@ fn adv37_github_classic_evade_soft_hyphen_must_fire() {
 fn adv37_github_classic_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "g\u{04BB}p_123456789012345678901234567890123456",
-        "ghp_123456789012345678901234567890123456",
+        "g\u{04BB}p_1234567890123456789012345678902PDSiF",
+        "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",
     );
 }
 

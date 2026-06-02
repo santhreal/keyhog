@@ -30,7 +30,7 @@ fn gpu_ac_dispatch_failures_preserve_operator_visible_reasons() {
             && phase1.contains("AC GPU shard {i} dispatch failed: {e}")
             && phase1.contains("returned {} output buffer(s), expected at least 2")
             && phase1.contains("returned truncated count buffer")
-            && phase1.contains("exceeding cap {}")
+            && phase1.contains("exceeding dense-prefix cap {}")
             && phase1.matches("gpu_degrade_done_with_reason(").count() >= 6,
         "Every AC GPU runtime-dispatch failure must carry a concrete reason into KEYHOG_REQUIRE_GPU/user-visible degrade output"
     );

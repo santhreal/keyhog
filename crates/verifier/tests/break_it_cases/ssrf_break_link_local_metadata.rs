@@ -1,7 +1,7 @@
 #[tokio::test]
 async fn ssrf_break_link_local_metadata() {
     let url = "http://169.254.169.254/latest/meta-data/";
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "ssrf-break".into(),
         name: "ssrf".into(),
         service: "test".into(),

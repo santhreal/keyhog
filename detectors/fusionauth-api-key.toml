@@ -16,6 +16,6 @@ description = "FusionAuth API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization:\\s*[A-Za-z]+\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
-description = "FusionAuth API key in Authorization header"
+regex = "Authorization:\\s*[Bb]earer\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})[^\\n]*fusionauth"
+description = "FusionAuth API key in Authorization header (same-line fusionauth anchor; a bare Authorization header with any UUID is not service-attributable)"
 group = 1

@@ -790,8 +790,8 @@ fn adv95_home_assistant_api_token_evade_lrm_must_fire() {
 fn adv95_homebrew_api_token_normal_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=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",
+        "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",
     );
 }
 
@@ -807,8 +807,8 @@ fn adv95_homebrew_api_token_wrong_prefix_must_silent() {
 fn adv95_homebrew_api_token_evade_zwsp_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200B}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200B}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -816,8 +816,8 @@ fn adv95_homebrew_api_token_evade_zwsp_must_fire() {
 fn adv95_homebrew_api_token_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{00AD}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{00AD}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -825,8 +825,8 @@ fn adv95_homebrew_api_token_evade_soft_hyphen_must_fire() {
 fn adv95_homebrew_api_token_evade_zwnj_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200C}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200C}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -834,8 +834,8 @@ fn adv95_homebrew_api_token_evade_zwnj_must_fire() {
 fn adv95_homebrew_api_token_evade_zwj_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200D}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200D}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -843,8 +843,8 @@ fn adv95_homebrew_api_token_evade_zwj_must_fire() {
 fn adv95_homebrew_api_token_evade_zwnbsp_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{FEFF}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{FEFF}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -852,8 +852,8 @@ fn adv95_homebrew_api_token_evade_zwnbsp_must_fire() {
 fn adv95_homebrew_api_token_evade_word_joiner_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{2060}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{2060}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -861,8 +861,8 @@ fn adv95_homebrew_api_token_evade_word_joiner_must_fire() {
 fn adv95_homebrew_api_token_evade_mongolian_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{180E}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{180E}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -870,8 +870,8 @@ fn adv95_homebrew_api_token_evade_mongolian_must_fire() {
 fn adv95_homebrew_api_token_evade_rtl_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{202E}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{202E}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -879,8 +879,8 @@ fn adv95_homebrew_api_token_evade_rtl_must_fire() {
 fn adv95_homebrew_api_token_evade_pop_dir_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{202C}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{202C}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -888,8 +888,8 @@ fn adv95_homebrew_api_token_evade_pop_dir_must_fire() {
 fn adv95_homebrew_api_token_evade_lrm_must_fire() {
     assert_detector_fires(
         "homebrew-api-token",
-        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200E}1zm6620MPFvKcQNclaif",
-        "ghp_P5lsGh3LzOTnVByk1zm6620MPFvKcQNclaif",
+        "HOMEBREW_GITHUB_API_TOKEN=ghp_P5lsGh3LzOTnVByk\u{200E}1zm6620MPFvKcQ41GccG",
+        "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",
     );
 }
 
@@ -899,7 +899,10 @@ fn adv95_homebrew_api_token_evade_lrm_must_fire() {
 
 #[test]
 fn adv95_honeybadger_api_key_normal_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe89e911d116ebdf68",
+    );
 }
 
 #[test]
@@ -912,52 +915,82 @@ fn adv95_honeybadger_api_key_wrong_prefix_must_silent() {
 
 #[test]
 fn adv95_honeybadger_api_key_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200B}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{200B}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{00AD}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{00AD}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_zwnj_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200C}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{200C}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_zwj_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200D}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{200D}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_zwnbsp_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{FEFF}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{FEFF}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_word_joiner_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{2060}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{2060}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_mongolian_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{180E}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{180E}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_rtl_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{202E}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{202E}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_pop_dir_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{202C}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{202C}89e911d116ebdf68",
+    );
 }
 
 #[test]
 fn adv95_honeybadger_api_key_evade_lrm_bare_must_stay_silent() {
-    assert_detector_silent("honeybadger-api-key", "api_key=eb9bba259a9ddafe\u{200E}89e911d116ebdf68");
+    assert_detector_silent(
+        "honeybadger-api-key",
+        "api_key=eb9bba259a9ddafe\u{200E}89e911d116ebdf68",
+    );
 }
 
 // =========================================================================

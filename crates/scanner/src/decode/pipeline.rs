@@ -97,6 +97,15 @@ pub fn decode_chunk(
     // Use hash of data instead of full string to save memory on large files.
     let mut seen = HashSet::from([hash_fast(chunk.data.as_bytes())]);
     let mut total_bytes = 0usize;
+    // Count EVERY unique decoded chunk against the per-root fan-out cap,
+    // not just the ones that pass the alphabet screen and get returned
+    // (M2). Screen-failing chunks were still queued and recursively
+    // re-decoded but never incremented `decoded_chunks.len()`, so on the
+    // live screen-enabled path the 1000-chunk DoS guard never bound a
+    // high-fan-out decoder (Caesar emits up to 25 variants/candidate,
+    // most failing the screen). The screen decides whether a chunk is
+    // RETURNED for scanning; this counter decides the recursion budget.
+    let mut produced = 0usize;
 
     let registry = get_decoders();
 
@@ -126,7 +135,47 @@ pub fn decode_chunk(
         }
 
         for decoder in registry.iter() {
+            // Re-check the wall-clock budget BEFORE each decoder's
+            // candidate fan-out (C9). The top-of-loop check only fires
+            // once per BFS dequeue, so a single chunk could run all 14
+            // decoders to completion with no budget check, blowing far past
+            // DEFAULT_DECODE_WALL_BUDGET_MS on one chunk. This check stops us
+            // from even invoking the next decoder once the deadline trips;
+            // the matching check inside the inner loop below stops us
+            // consuming the CURRENT decoder's (un-bounded) output.
+            if std::time::Instant::now() > effective_deadline {
+                tracing::debug!(
+                    path = ?chunk.metadata.path,
+                    budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
+                    "decode budget exhausted mid-fan-out; stopping decode-through"
+                );
+                return decoded_chunks;
+            }
             for decoded in decoder.decode_chunk(&current) {
+                // Re-check the budget WHILE consuming this decoder's output
+                // (C9 root cause). The pre-decoder check above only fires
+                // once per decoder, but `decode_chunk` returns a fully
+                // materialized Vec whose length is O(chunk size) -
+                // `extract_encoded_values` yields one candidate per quoted
+                // string / `key=value` / base64 run, and Caesar fans each out
+                // 25x. Without this check the pipeline still hashes, screens,
+                // clones, and queues every one of those results AFTER the
+                // deadline has passed, so a single dense chunk's fan-out
+                // (tens of thousands of results) ran the per-result work to
+                // completion regardless of the wall budget. The
+                // `decoder.decode_chunk` call itself cannot be interrupted
+                // (trait returns an owned Vec), but bailing here bounds the
+                // post-deadline overrun to one decoder's fan-out at most -
+                // and stops the (dominant) per-result processing cost dead.
+                if std::time::Instant::now() > effective_deadline {
+                    tracing::debug!(
+                        path = ?chunk.metadata.path,
+                        budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
+                        "decode budget exhausted while consuming decoder output; \
+                         stopping decode-through"
+                    );
+                    return decoded_chunks;
+                }
                 if seen.insert(hash_fast(decoded.data.as_bytes())) {
                     // Optional sanitization (kimi-wave1 audit finding 5.1).
                     // When `validate=true`, drop decoded chunks containing
@@ -144,8 +193,13 @@ pub fn decode_chunk(
                         true
                     };
 
+                    // Count this unique decoded chunk against the fan-out
+                    // budget REGARDLESS of screen result (M2): a chunk that
+                    // fails the screen is still queued and recursively
+                    // re-decoded, so it must consume the recursion budget.
+                    produced += 1;
                     total_bytes += decoded.data.len();
-                    if decoded_chunks.len() >= MAX_DECODED_CHUNKS_PER_ROOT
+                    if produced > MAX_DECODED_CHUNKS_PER_ROOT
                         || total_bytes > MAX_DECODED_TOTAL_BYTES
                     {
                         // Demoted from `warn!` - hitting the recursive

@@ -3,6 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn scan_chunks_preserves_chunk_count() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

@@ -7,6 +7,7 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
     // Stripe secret key in a comment context - normally heavily suppressed.
     let stripe_credential = concat!("sk_li", "ve_51H7xKjGf0a1b2c3d4e5f6g7h");
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "stripe-secret-key".into(),
         name: "Stripe Secret Key".into(),
         service: "stripe".into(),
@@ -101,10 +102,14 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
 #[test]
 fn known_prefix_survives_ml_and_context_penalties() {
     // Simulate a credential that would normally be crushed by post-ML penalties
-    // because it contains repetitive-looking suffixes. Known prefixes should still
-    // survive because the floor is applied after all penalties.
-    let credential = concat!("gh", "p_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    // because it has a repetitive (30×'a') body. Known prefixes should still
+    // survive because the floor is applied after all penalties. The trailing 6
+    // chars are the base62 CRC32 of the 30-'a' body, so the token is checksum-
+    // VALID (a fabricated `ghp_` is now correctly dropped before scoring) while
+    // the repeat-run body still exercises the post-ML penalty path under test.
+    let credential = concat!("gh", "p_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1yLcDB");
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "github-classic-pat".into(),
         name: "GitHub Classic PAT".into(),
         service: "github".into(),

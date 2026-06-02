@@ -3,7 +3,9 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use crate::entropy_fast::{get_log2_table, histogram_8way, shannon_entropy_scalar};
+use crate::entropy_fast::{
+    distinct_byte_count, get_log2_table, histogram_8way, shannon_entropy_scalar,
+};
 
 /// AVX2 path: 4-way parallel histogram to break load-add-store dependency chains.
 #[cfg(target_arch = "x86_64")]
@@ -154,76 +156,26 @@ pub(crate) unsafe fn shannon_entropy_sse2(data: &[u8]) -> f64 {
     entropy
 }
 
-/// Vectorized unique character checks using SSE2
+/// High-entropy fast check (x86_64).
+///
+/// The early-exit decision is shared with the scalar/neon paths via
+/// [`distinct_byte_count`] so all three implementations return identical
+/// answers for the same input: count the distinct byte values over the FULL
+/// buffer and skip the float-heavy reduction only when their log2 ceiling is
+/// strictly below the threshold (a buffer of `u` distinct symbols carries at
+/// most log2(u) bits/byte). The previous 16-byte middle-only sample was both
+/// non-representative (a constant run hiding a high-entropy remainder produced
+/// a false negative) and divergent from the scalar 12-byte 3-region sample.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(crate) unsafe fn has_high_entropy_fast_x86(data: &[u8], threshold: f64) -> bool {
-    let len = data.len();
-    if len < 16 {
+    if data.is_empty() {
         return shannon_entropy_scalar(data) >= threshold;
     }
 
-    let mid = len / 2;
-    let ptr = data.as_ptr().add(mid.saturating_sub(8));
-    let v = _mm_loadu_si128(ptr as *const _);
-
-    let mut min_v = v;
-    let mut max_v = v;
-
-    let shuf1 = _mm_srli_si128(min_v, 8);
-    min_v = _mm_min_epu8(min_v, shuf1);
-    let shuf1_max = _mm_srli_si128(max_v, 8);
-    max_v = _mm_max_epu8(max_v, shuf1_max);
-
-    let shuf2 = _mm_srli_si128(min_v, 4);
-    min_v = _mm_min_epu8(min_v, shuf2);
-    let shuf2_max = _mm_srli_si128(max_v, 4);
-    max_v = _mm_max_epu8(max_v, shuf2_max);
-
-    let shuf3 = _mm_srli_si128(min_v, 2);
-    min_v = _mm_min_epu8(min_v, shuf3);
-    let shuf3_max = _mm_srli_si128(max_v, 2);
-    max_v = _mm_max_epu8(max_v, shuf3_max);
-
-    let shuf4 = _mm_srli_si128(min_v, 1);
-    min_v = _mm_min_epu8(min_v, shuf4);
-    let shuf4_max = _mm_srli_si128(max_v, 1);
-    max_v = _mm_max_epu8(max_v, shuf4_max);
-
-    let sample_min = _mm_cvtsi128_si32(min_v) as u8;
-    let sample_max = _mm_cvtsi128_si32(max_v) as u8;
-    let spread = sample_max.saturating_sub(sample_min);
-
-    let mut dup_mask = 0u32;
-    macro_rules! check_shift {
-        ($shift:expr) => {
-            let rotated = _mm_srli_si128(v, $shift);
-            let cmp = _mm_cmpeq_epi8(v, rotated);
-            let mask = _mm_movemask_epi8(cmp) as u32;
-            let valid_mask = (1u32 << (16 - $shift)) - 1;
-            dup_mask |= mask & valid_mask;
-        };
-    }
-    check_shift!(1);
-    check_shift!(2);
-    check_shift!(3);
-    check_shift!(4);
-    check_shift!(5);
-    check_shift!(6);
-    check_shift!(7);
-    check_shift!(8);
-    check_shift!(9);
-    check_shift!(10);
-    check_shift!(11);
-    check_shift!(12);
-    check_shift!(13);
-    check_shift!(14);
-    check_shift!(15);
-
-    let unique = 16 - dup_mask.count_ones();
-
-    if (unique < 4 && threshold >= 1.585) || (unique < 4 && spread < 16 && threshold >= 2.0) {
+    let unique = distinct_byte_count(data);
+    if (unique as f64).log2() < threshold {
         return false;
     }
 

@@ -95,7 +95,10 @@ fn adv10_arduino_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv10_arduino_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("arduino-iot-api-credentials", "ard\u{0457}no_client_id = \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "arduino-iot-api-credentials",
+        "ard\u{0457}no_client_id = \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 // =========================================================================
@@ -154,8 +157,8 @@ fn adv10_assemblyai_evade_homoglyph_must_fire() {
 fn adv10_atlantis_normal_must_fire() {
     assert_detector_fires(
         "atlantis-credentials",
-        "ATLANTIS_GH_TOKEN = \"ghp_abcde1234567890abcde1234567890abcde1\"",
-        "ghp_abcde1234567890abcde1234567890abcde1",
+        "ATLANTIS_GH_TOKEN = \"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\"",
+        "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",
     );
 }
 
@@ -171,8 +174,8 @@ fn adv10_atlantis_wrong_prefix_must_silent() {
 fn adv10_atlantis_evade_zwsp_must_fire() {
     assert_detector_fires(
         "atlantis-credentials",
-        "ATLANTIS\u{200B}_GH_TOKEN = \"ghp_abcde1234567890abcde1234567890abcde1\"",
-        "ghp_abcde1234567890abcde1234567890abcde1",
+        "ATLANTIS\u{200B}_GH_TOKEN = \"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\"",
+        "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",
     );
 }
 
@@ -180,8 +183,8 @@ fn adv10_atlantis_evade_zwsp_must_fire() {
 fn adv10_atlantis_evade_soft_hyphen_must_fire() {
     assert_detector_fires(
         "atlantis-credentials",
-        "ATLANTIS_GH_TOKEN = \"ghp_abcde1234567890abcde1\u{00AD}234567890abcde1\"",
-        "ghp_abcde1234567890abcde1234567890abcde1",
+        "ATLANTIS_GH_TOKEN = \"ghp_abcde1234567890abcde1\u{00AD}2345678901vScaU\"",
+        "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",
     );
 }
 
@@ -189,8 +192,8 @@ fn adv10_atlantis_evade_soft_hyphen_must_fire() {
 fn adv10_atlantis_evade_homoglyph_must_fire() {
     assert_detector_fires(
         "atlantis-credentials",
-        "ATLANT\u{0406}S_GH_TOKEN = \"ghp_abcde1234567890abcde1234567890abcde1\"",
-        "ghp_abcde1234567890abcde1234567890abcde1",
+        "ATLANT\u{0406}S_GH_TOKEN = \"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\"",
+        "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",
     );
 }
 
@@ -283,7 +286,10 @@ fn adv10_auth0_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv10_auth0_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("auth0-spa-credentials", "auth\u{043E}_client_id = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "auth0-spa-credentials",
+        "auth\u{043E}_client_id = \"abcde1234567890abcde\"",
+    );
 }
 
 // =========================================================================

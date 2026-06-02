@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv32_fda_normal_bare_must_stay_silent() {
-    assert_detector_silent("fda-api", "fda_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "fda-api",
+        "fda_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv32_fda_wrong_prefix_must_silent() {
 
 #[test]
 fn adv32_fda_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("fda-api", "fda\u{200B}_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "fda-api",
+        "fda\u{200B}_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv32_fda_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("fda-api", "fda_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
+    assert_detector_silent(
+        "fda-api",
+        "fda_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
+    );
 }
 
 #[test]
 fn adv32_fda_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("fda-api", "fd\u{0430}_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "fda-api",
+        "fd\u{0430}_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================

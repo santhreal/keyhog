@@ -251,6 +251,26 @@ impl CompiledScanner {
                     continue;
                 }
 
+                // Embedded-checksum adjudication for hot literals that carry a
+                // self-verifying CRC (`ghp_`, `xoxb-`, `xoxp-`). The fast path
+                // emits matches DIRECTLY - bypassing the regex/`process_match`
+                // and ML scorers - so before this gate a fabricated `ghp_…`
+                // survived at the 0.8 prefix floor and a confirmed one never
+                // cleared the `--precision` 0.85 bar. Route through the single
+                // shared policy so the fast path adjudicates checksums exactly
+                // like every other emission path: `Invalid` drops the match,
+                // `Valid` floors confidence at `CHECKSUM_VALID_FLOOR`, and a
+                // checksum-less hot literal (AKIA/ASIA/SG./sk-proj-/sq0csp-)
+                // keeps the prefix floor. Done before the metadata interning
+                // below so a dropped token pays for none of it.
+                let base_confidence =
+                    crate::confidence::known_prefix_confidence_floor(credential).unwrap_or(0.7);
+                let Some(confidence) =
+                    crate::checksum::checksum_adjusted_confidence(base_confidence, credential)
+                else {
+                    continue;
+                };
+
                 let line = crate::pipeline::match_line_number(preprocessed, line_offsets, offset);
 
                 // Use the pre-formatted static tables - eliminates the
@@ -305,10 +325,7 @@ impl CompiledScanner {
                             date,
                         },
                         entropy: None,
-                        confidence: Some(
-                            crate::confidence::known_prefix_confidence_floor(credential)
-                                .unwrap_or(0.7), // Hot patterns are high-confidence by definition
-                        ),
+                        confidence: Some(confidence),
                     },
                     self.config.max_matches_per_chunk,
                 );

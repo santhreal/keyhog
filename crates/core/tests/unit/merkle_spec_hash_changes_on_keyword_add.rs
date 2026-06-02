@@ -5,7 +5,7 @@ use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 
 #[test]
 fn merkle_compute_spec_hash_changes_when_keywords_change() {
-    let base = DetectorSpec {
+    let base = DetectorSpec { tests: Vec::new(),
         id: "test-detector".into(),
         name: "test".into(),
         service: "test".into(),

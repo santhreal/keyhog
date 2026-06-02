@@ -3,7 +3,7 @@ async fn test_ssrf_integer_ips() {
     // 127.0.0.1 -> 2130706433
     // It should block integer encoded localhosts.
     let url = "http://2130706433/";
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "ssrf1".to_string(),
         name: "ssrf".to_string(),
         service: "test".to_string(),
@@ -81,7 +81,7 @@ async fn test_ssrf_integer_ips() {
     ];
 
     for url in urls_to_test {
-        let spec = DetectorSpec {
+        let spec = DetectorSpec { tests: Vec::new(),
             id: "ssrf".to_string(),
             name: "ssrf".to_string(),
             service: "test".to_string(),
@@ -168,7 +168,7 @@ async fn test_ssrf_malformed_urls() {
         "http://\u{FFFF}/",        // invalid unicode
     ];
     for url in urls {
-        let spec = DetectorSpec {
+        let spec = DetectorSpec { tests: Vec::new(),
             id: "ssrf_malformed".to_string(),
             name: "ssrf".to_string(),
             service: "test".to_string(),
@@ -244,7 +244,7 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
         "http://127.1/",
     ];
     for url in blocked {
-        let spec = DetectorSpec {
+        let spec = DetectorSpec { tests: Vec::new(),
             id: "ssrf-block".to_string(),
             name: "ssrf".to_string(),
             service: "test".to_string(),
@@ -305,7 +305,7 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
 
 #[tokio::test]
 async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "ssrf-allow".to_string(),
         name: "ssrf".to_string(),
         service: "test".to_string(),

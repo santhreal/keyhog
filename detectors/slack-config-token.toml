@@ -1,0 +1,35 @@
+# Docs: https://docs.slack.dev/authentication/using-token-rotation/
+#       https://docs.slack.dev/reference/methods/tooling.tokens.rotate/
+# Format:
+#   - App configuration ACCESS token (rotation):  xoxe.xoxp-<digit>-<A-Z0-9 163-166>
+#                                                  (also xoxe.xoxb- for bot rotation)
+#   - App configuration REFRESH token:            xoxe-<digit>-<A-Z0-9 146>
+# Verify: POST https://slack.com/api/tooling.tokens.rotate (refresh) /
+#         the access token works as a Bearer against slack.com/api/auth.test.
+# Prefix: xoxe. / xoxe-
+
+[detector]
+id = "slack-config-token"
+name = "Slack App Configuration Token"
+service = "slack"
+severity = "critical"
+# xoxe- / xoxe. are distinctive rotation-token prefixes, but NOT in the
+# scanner's KNOWN_PREFIXES floor list, so the long A-Z0-9 body can score
+# below the global floor and be dropped. Prefix bounds FP risk; declare
+# the per-detector floor so the detector ships working out of the box.
+min_confidence = 0.5
+keywords = ["xoxe-", "xoxe.xoxp-", "xoxe.xoxb-", "slack"]
+
+[[detector.patterns]]
+# gitleaks `slack-config-access-token`: xoxe.xox[bp]-<digit>-<A-Z0-9 163-166>.
+regex = 'xoxe\.xox[bp]-[0-9]-[A-Z0-9]{163,166}'
+description = "Slack app configuration access token (xoxe.xoxp-/xoxe.xoxb- prefix)"
+
+[[detector.patterns]]
+# gitleaks `slack-config-refresh-token`: xoxe-<digit>-<A-Z0-9 146>.
+regex = 'xoxe-[0-9]-[A-Z0-9]{146}'
+description = "Slack app configuration refresh token (xoxe- prefix)"
+
+[[detector.tests]]
+test_positive = "xoxe-1-HBRPOIG8F1CBFNO6B9M80O2RAK1VRJNVGFYGWWQC38HYF9SXMECOSFOGYR3XKXWNREK8PK3YR9OUDOCUZRENUN5Z3JQIP98Q1ZXOI65FDHJK1EYY37Q9AH8RVHS1K3AQ6L6GT6MJXK87AU5BHX"
+test_negative = "NOT_A_SECRET=totally_benign_example_value_123456"

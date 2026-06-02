@@ -34,6 +34,7 @@ pub fn assert_detected(data: &str) {
 /// Build a simple token detector for testing.
 pub fn token_detector() -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "test-token".into(),
         name: "Test Token".into(),
         service: "test".into(),

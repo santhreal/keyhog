@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["AKIA", "ASIA", "govcloud", "us-gov-"]
 
 [[detector.patterns]]
-regex = "(?:AWS[_-]?GOVCLOUD|GOVCLOUD)[_\\s]*(?:ACCESS[_-]?KEY|KEY[_-]?ID)[=:\\s\"'']+(AKIA|ASIA)[0-9A-Z]{16}"
+regex = "(?:AWS[_-]?GOVCLOUD|GOVCLOUD)[_\\s]*(?:ACCESS[_-]?KEY|KEY[_-]?ID)[=:\\s\"'']+((?:AKIA|ASIA)[0-9A-Z]{16})"
 description = "AWS GovCloud access key with context anchor"
 group = 1
 

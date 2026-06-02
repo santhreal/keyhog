@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv24_devto_normal_bare_must_stay_silent() {
-    assert_detector_silent("devto-api-key", "devto_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "devto-api-key",
+        "devto_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv24_devto_wrong_prefix_must_silent() {
 
 #[test]
 fn adv24_devto_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("devto-api-key", "devto\u{200B}_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "devto-api-key",
+        "devto\u{200B}_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv24_devto_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("devto-api-key", "devto_key = \"000000000000000000000000000000\u{00AD}0000000000\"");
+    assert_detector_silent(
+        "devto-api-key",
+        "devto_key = \"000000000000000000000000000000\u{00AD}0000000000\"",
+    );
 }
 
 #[test]
 fn adv24_devto_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("devto-api-key", "d\u{0435}vto_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "devto-api-key",
+        "d\u{0435}vto_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================

@@ -42,10 +42,15 @@ fn adv29_dynatrace_evade_soft_hyphen_evaded_must_stay_silent() {
 
 #[test]
 fn adv29_dynatrace_evade_homoglyph_must_fire() {
+    // The token segments are [A-Z0-9]; a homoglyph can only stand in for a real
+    // letter, so the evasion replaces the trailing 'O' with Cyrillic 'О' (U+041E
+    // -> 'O'). The earlier fixture used U+0440 ('р' -> 'p') against an all-digit
+    // segment and asserted an all-zero credential, which a letter-homoglyph can
+    // never reconstruct.
     assert_detector_fires(
         "dynatrace-api-token",
-        "dt0c01.000000000000000000000000.000000000000000000000000000000000000000000000000000000000000000\u{0440}",
-        "dt0c01.000000000000000000000000.0000000000000000000000000000000000000000000000000000000000000000",
+        "dt0c01.000000000000000000000000.000000000000000000000000000000000000000000000000000000000000000\u{041E}",
+        "dt0c01.000000000000000000000000.000000000000000000000000000000000000000000000000000000000000000O",
     );
 }
 
@@ -55,7 +60,10 @@ fn adv29_dynatrace_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv29_easypost_normal_bare_must_stay_silent() {
-    assert_detector_silent("easypost-api-key", "easypost_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "easypost-api-key",
+        "easypost_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
@@ -68,17 +76,26 @@ fn adv29_easypost_wrong_prefix_must_silent() {
 
 #[test]
 fn adv29_easypost_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("easypost-api-key", "easypost\u{200B}_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "easypost-api-key",
+        "easypost\u{200B}_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
 fn adv29_easypost_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("easypost-api-key", "easypost_key = \"abcde12345abcde\u{00AD}12345\"");
+    assert_detector_silent(
+        "easypost-api-key",
+        "easypost_key = \"abcde12345abcde\u{00AD}12345\"",
+    );
 }
 
 #[test]
 fn adv29_easypost_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("easypost-api-key", "easyp\u{043E}st_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "easypost-api-key",
+        "easyp\u{043E}st_key = \"abcde12345abcde12345\"",
+    );
 }
 
 // =========================================================================

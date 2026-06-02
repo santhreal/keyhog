@@ -12,7 +12,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv7_formbuilder_normal_bare_must_stay_silent() {
-    assert_detector_silent("123formbuilder-api-key", "123formbuilder_api = \"abcde-1234567890123456789012345\"");
+    assert_detector_silent(
+        "123formbuilder-api-key",
+        "123formbuilder_api = \"abcde-1234567890123456789012345\"",
+    );
 }
 
 #[test]
@@ -25,17 +28,26 @@ fn adv7_formbuilder_wrong_prefix_must_silent() {
 
 #[test]
 fn adv7_formbuilder_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("123formbuilder-api-key", "123formbuilder\u{200B}_api = \"abcde-1234567890123456789012345\"");
+    assert_detector_silent(
+        "123formbuilder-api-key",
+        "123formbuilder\u{200B}_api = \"abcde-1234567890123456789012345\"",
+    );
 }
 
 #[test]
 fn adv7_formbuilder_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("123formbuilder-api-key", "123formbuilder_api = \"abcde\u{00AD}-1234567890123456789012345\"");
+    assert_detector_silent(
+        "123formbuilder-api-key",
+        "123formbuilder_api = \"abcde\u{00AD}-1234567890123456789012345\"",
+    );
 }
 
 #[test]
 fn adv7_formbuilder_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("123formbuilder-api-key", "123formbu\u{0456}lder_api = \"abcde-1234567890123456789012345\"");
+    assert_detector_silent(
+        "123formbuilder-api-key",
+        "123formbu\u{0456}lder_api = \"abcde-1234567890123456789012345\"",
+    );
 }
 
 // =========================================================================
@@ -175,7 +187,10 @@ fn adv7_eightxeight_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv7_eightxeight_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("8x8-api-credentials", "eightxeight_api_key = \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "8x8-api-credentials",
+        "eightxeight_api_key = \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 // =========================================================================
@@ -344,7 +359,10 @@ fn adv7_accuweather_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv7_accuweather_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("accuweather-api-key", "acc\u{0457}weather_api_key = \"abcde1234567890abcde\"");
+    assert_detector_silent(
+        "accuweather-api-key",
+        "acc\u{0457}weather_api_key = \"abcde1234567890abcde\"",
+    );
 }
 
 // =========================================================================
@@ -353,7 +371,10 @@ fn adv7_accuweather_evade_homoglyph_evaded_must_stay_silent() {
 
 #[test]
 fn adv7_activecampaign_normal_bare_must_stay_silent() {
-    assert_detector_silent("activecampaign-api-key", "activecampaign_api_key: \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "activecampaign-api-key",
+        "activecampaign_api_key: \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 #[test]
@@ -366,17 +387,26 @@ fn adv7_activecampaign_wrong_prefix_must_silent() {
 
 #[test]
 fn adv7_activecampaign_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("activecampaign-api-key", "activecampaign\u{200B}_api_key: \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "activecampaign-api-key",
+        "activecampaign\u{200B}_api_key: \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 #[test]
 fn adv7_activecampaign_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("activecampaign-api-key", "activecampaign_api_key: \"abcde1234567890abcde1\u{00AD}23456789012\"");
+    assert_detector_silent(
+        "activecampaign-api-key",
+        "activecampaign_api_key: \"abcde1234567890abcde1\u{00AD}23456789012\"",
+    );
 }
 
 #[test]
 fn adv7_activecampaign_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("activecampaign-api-key", "\u{0430}ctivecampaign_api_key: \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "activecampaign-api-key",
+        "\u{0430}ctivecampaign_api_key: \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 // =========================================================================

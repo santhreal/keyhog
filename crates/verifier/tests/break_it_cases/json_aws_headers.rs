@@ -25,7 +25,7 @@ async fn test_verify_json_path_exhaustion() {
     })
     .await;
 
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_json".to_string(),
         name: "det_json".to_string(),
         service: "test".to_string(),
@@ -122,7 +122,7 @@ async fn test_verify_json_path_exhaustion() {
 
 #[tokio::test]
 async fn test_verify_aws_sigv4_empty_keys() {
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_aws".to_string(),
         name: "det_aws".to_string(),
         service: "aws".to_string(),
@@ -196,7 +196,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
 
 #[tokio::test]
 async fn test_verify_aws_sigv4_null_bytes() {
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_aws".to_string(),
         name: "det_aws".to_string(),
         service: "aws".to_string(),
@@ -273,7 +273,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
 
 #[tokio::test]
 async fn test_verify_bad_header_templates() {
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "det_headers".to_string(),
         name: "det_headers".to_string(),
         service: "test".to_string(),

@@ -12,7 +12,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv5_anthropic_key_normal_bare_must_stay_silent() {
-    assert_detector_silent("anthropic-api-key", "sk-ant-sid01-1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7a1b2c3d4e5f-1A2B3C4");
+    assert_detector_silent(
+        "anthropic-api-key",
+        "sk-ant-sid01-1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7a1b2c3d4e5f-1A2B3C4",
+    );
 }
 
 #[test]
@@ -45,7 +48,10 @@ fn adv5_anthropic_key_evade_soft_hyphen_bare_must_stay_silent() {
 
 #[test]
 fn adv5_asana_pat_normal_bare_must_stay_silent() {
-    assert_detector_silent("asana-pat", "0/1234567890123456/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6");
+    assert_detector_silent(
+        "asana-pat",
+        "0/1234567890123456/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    );
 }
 
 #[test]
@@ -58,13 +64,19 @@ fn adv5_asana_pat_wrong_prefix_must_silent() {
 
 #[test]
 fn adv5_asana_pat_evade_zwsp_slash_bare_must_stay_silent() {
-    assert_detector_silent("asana-pat", "0/\u{200B}1234567890123456/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6");
+    assert_detector_silent(
+        "asana-pat",
+        "0/\u{200B}1234567890123456/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    );
 }
 
 #[test]
 fn adv5_asana_pat_evade_combining_tilde_bare_must_stay_silent() {
     // Combining tilde over slash or numbers
-    assert_detector_silent("asana-pat", "0/12345\u{0303}67890123456/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6");
+    assert_detector_silent(
+        "asana-pat",
+        "0/12345\u{0303}67890123456/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    );
 }
 
 // =========================================================================
@@ -73,7 +85,10 @@ fn adv5_asana_pat_evade_combining_tilde_bare_must_stay_silent() {
 
 #[test]
 fn adv5_axiom_token_normal_bare_must_stay_silent() {
-    assert_detector_silent("axiom-api-token", "xaat-01234567-89ab-cdef-0123-456789abcdef");
+    assert_detector_silent(
+        "axiom-api-token",
+        "xaat-01234567-89ab-cdef-0123-456789abcdef",
+    );
 }
 
 #[test]
@@ -86,12 +101,18 @@ fn adv5_axiom_token_wrong_prefix_must_silent() {
 
 #[test]
 fn adv5_axiom_token_evade_zwnbsp_bare_must_stay_silent() {
-    assert_detector_silent("axiom-api-token", "xaat\u{FEFF}-01234567-89ab-cdef-0123-456789abcdef");
+    assert_detector_silent(
+        "axiom-api-token",
+        "xaat\u{FEFF}-01234567-89ab-cdef-0123-456789abcdef",
+    );
 }
 
 #[test]
 fn adv5_axiom_token_evade_bidi_bare_must_stay_silent() {
-    assert_detector_silent("axiom-api-token", "xaat-\u{202E}01234567-89ab-cdef-0123-456789abcdef");
+    assert_detector_silent(
+        "axiom-api-token",
+        "xaat-\u{202E}01234567-89ab-cdef-0123-456789abcdef",
+    );
 }
 
 // =========================================================================
@@ -137,7 +158,10 @@ fn adv5_apify_token_wrong_prefix_must_silent() {
 
 #[test]
 fn adv5_apify_token_evade_tab_evaded_must_stay_silent() {
-    assert_detector_silent("apify-api-token", "apify_api\u{0009}_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8");
+    assert_detector_silent(
+        "apify-api-token",
+        "apify_api\u{0009}_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
+    );
 }
 
 // =========================================================================
@@ -151,7 +175,10 @@ fn adv5_alchemy_key_normal_bare_must_stay_silent() {
 
 #[test]
 fn adv5_alchemy_key_evade_zwj_bare_must_stay_silent() {
-    assert_detector_silent("alchemy-api-key", "a1b2c3d4e5f6a1b2c3d4e5f6a1\u{200D}b2c3d4");
+    assert_detector_silent(
+        "alchemy-api-key",
+        "a1b2c3d4e5f6a1b2c3d4e5f6a1\u{200D}b2c3d4",
+    );
 }
 
 // =========================================================================
@@ -165,7 +192,10 @@ fn adv5_amplitude_key_normal_bare_must_stay_silent() {
 
 #[test]
 fn adv5_amplitude_key_evade_backspace_bare_must_stay_silent() {
-    assert_detector_silent("amplitude-api-key", "a1b2c3d4e5f6a1b2c3d4\u{0008}e5f6a1b2c3d4");
+    assert_detector_silent(
+        "amplitude-api-key",
+        "a1b2c3d4e5f6a1b2c3d4\u{0008}e5f6a1b2c3d4",
+    );
 }
 
 // =========================================================================
@@ -184,5 +214,8 @@ fn adv5_anyscale_key_wrong_prefix_must_silent() {
 
 #[test]
 fn adv5_anyscale_key_evade_mongolian_bare_must_stay_silent() {
-    assert_detector_silent("anyscale-api-key", "secret\u{180E}_a1b2c3d4e5f6g7h8i9j0k1l2m3");
+    assert_detector_silent(
+        "anyscale-api-key",
+        "secret\u{180E}_a1b2c3d4e5f6g7h8i9j0k1l2m3",
+    );
 }

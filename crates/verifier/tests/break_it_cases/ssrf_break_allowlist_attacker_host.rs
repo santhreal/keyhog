@@ -1,6 +1,6 @@
 #[tokio::test]
 async fn ssrf_break_allowlist_attacker_host() {
-    let spec = DetectorSpec {
+    let spec = DetectorSpec { tests: Vec::new(),
         id: "ssrf-allow".into(),
         name: "ssrf".into(),
         service: "test".into(),

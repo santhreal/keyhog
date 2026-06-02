@@ -455,6 +455,22 @@ impl CompiledScanner {
                 &pending.raw_match.detector_id,
             );
 
+            // Embedded-checksum adjudication - the FINAL confidence step so a
+            // cryptographically-confirmed token (GitHub/npm/Slack/Stripe/GitLab/
+            // PyPI) clears the `--precision` 0.85 bar regardless of how ML or
+            // calibration scored its shape, and a checksum-failing one is
+            // dropped. `process_match` already rejects `Invalid` before a match
+            // reaches `ml_pending`, but the Pending branch never applied the
+            // `Valid` floor that the non-ML `Final` branch did - so a confirmed
+            // GitHub PAT was scored only on its 0.8 prefix floor and silently
+            // suppressed under precision. Routing through the one shared policy
+            // closes that gap and keeps the ML path self-consistent.
+            let Some(final_score) =
+                crate::checksum::checksum_adjusted_confidence(final_score, &pending.credential)
+            else {
+                continue;
+            };
+
             // The fixture opt-out disables test/docs hard suppression too; low
             // confidence comments still follow `--scan-comments`.
             let hard_suppressed = pending.code_context.should_hard_suppress(final_score)

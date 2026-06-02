@@ -16,6 +16,6 @@ description = "Magic Eden API key in assignment context"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization[\\s]*:[\\s]*Bearer[\\s]+([a-f0-9-]{36,})"
-description = "Magic Eden Bearer token in HTTP header"
+regex = "Authorization[\\s]*:[\\s]*Bearer[\\s]+([a-f0-9-]{36,})[^\\n]*magiceden"
+description = "Magic Eden Bearer token in HTTP header (same-line magiceden anchor; a bare Authorization: Bearer header alone is not service-attributable)"
 group = 1

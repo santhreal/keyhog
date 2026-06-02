@@ -3,6 +3,7 @@ use keyhog_scanner::CompiledScanner;
 #[test]
 fn pattern_regex_strs_includes_ac_and_fallback() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

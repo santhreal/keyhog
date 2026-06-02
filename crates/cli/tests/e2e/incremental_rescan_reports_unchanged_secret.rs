@@ -17,7 +17,7 @@ fn incremental_rescan_still_reports_secret_in_unchanged_file() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join("config.env"),
-        "TOKEN=ghp_aB3xK9mZ1qW7rT5vY2nL8pH4jD6sF0gE1cV2\n",
+        "TOKEN=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\n",
     )
     .expect("write secret file");
     let cache = dir.path().join("merkle.idx");

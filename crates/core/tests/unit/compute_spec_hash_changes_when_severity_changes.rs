@@ -5,6 +5,7 @@ use keyhog_core::{compute_spec_hash, DetectorSpec, PatternSpec, Severity};
 #[test]
 fn compute_spec_hash_changes_when_severity_changes() {
     let base = DetectorSpec {
+        tests: Vec::new(),
         id: "sev-test".into(),
         name: "sev".into(),
         service: "sev".into(),

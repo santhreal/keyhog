@@ -47,6 +47,12 @@ fn html_emits_doctype_and_embeds_raw_findings() {
 fn html_json_escapes_quotes_in_detector_name() {
     let out = render(&sample_finding());
     let json = raw_findings_json(&out);
-    assert!(json.contains("AWS Key, \\\"prod\\\" <a&b>"));
+    // Quotes stay JSON-escaped, AND `<`/`>` are now `\uXXXX`-escaped before the
+    // JSON is inlined into the <script> raw-text block so an attacker-controlled
+    // field can never emit a literal `</script>` (stored-XSS fix, C3/C6/C7). The
+    // value still JSON.parses back to the exact original string in the browser.
+    assert!(json.contains("AWS Key, \\\"prod\\\" \\u003ca&b\\u003e"));
+    // The raw, unescaped angle brackets must NOT appear in the inlined script.
+    assert!(!json.contains("<a&b>"));
     assert!(json.contains("\"severity\":\"high\""));
 }

@@ -35,7 +35,7 @@ pub enum QualityIssue {
 /// ```rust
 /// use keyhog_core::{DetectorSpec, PatternSpec, Severity, validate_detector};
 ///
-/// let detector = DetectorSpec {
+/// let detector = DetectorSpec { tests: Vec::new(),
 ///     id: "demo".into(),
 ///     name: "Demo".into(),
 ///     service: "demo".into(),

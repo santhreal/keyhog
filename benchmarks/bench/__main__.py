@@ -136,6 +136,24 @@ def _analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def _gate(args: argparse.Namespace) -> int:
+    from .gate import run_gate
+
+    scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
+    return run_gate(
+        args.corpus,
+        scanners,
+        results_dir=args.results,
+        min_f1=args.min_f1,
+        min_precision=args.min_precision,
+        min_recall=args.min_recall,
+        beat_competitors=not args.no_beat_competitors,
+        baseline=args.baseline,
+        epsilon=args.epsilon,
+        corpus_root=args.corpus_root,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark helpers.")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -190,6 +208,26 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--corpus-root", default=None)
     analyze.add_argument("--top", type=int, default=15, help="examples per category")
 
+    gate = sub.add_parser(
+        "gate",
+        help="Regression + differential gate: keyhog must lead every competitor "
+             "and clear F1/P/R floors (exit 1 on violation, 2 if undecidable).")
+    gate.add_argument("--corpus", default="mirror")
+    gate.add_argument("--scanners",
+                      default="keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus")
+    gate.add_argument("--results", type=pathlib.Path, default=None,
+                      help="consume existing RunResult JSONs instead of a fresh run")
+    gate.add_argument("--corpus-root", default=None)
+    gate.add_argument("--min-f1", type=float, default=None)
+    gate.add_argument("--min-precision", type=float, default=None)
+    gate.add_argument("--min-recall", type=float, default=None)
+    gate.add_argument("--baseline", type=pathlib.Path, default=None,
+                      help="committed RunResult (file or dir) keyhog must not "
+                           "regress below on F1")
+    gate.add_argument("--epsilon", type=float, default=0.0)
+    gate.add_argument("--no-beat-competitors", action="store_true",
+                      help="regression-only gate (skip the beat-competitors check)")
+
     args = parser.parse_args(argv)
     if args.cmd == "host":
         return _host()
@@ -205,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
         return _calibrate(args)
     if args.cmd == "analyze":
         return _analyze(args)
+    if args.cmd == "gate":
+        return _gate(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 

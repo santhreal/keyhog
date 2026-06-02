@@ -20,6 +20,7 @@ pub use validate::{validate_detector, QualityIssue};
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetadataSpec {
     /// Field name in the finding metadata map.
     pub name: String,
@@ -29,6 +30,7 @@ pub struct MetadataSpec {
 
 /// A complete detector definition loaded from a TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct DetectorSpec {
     /// Unique stable identifier (e.g. \`aws-access-key\`).
     pub id: String,
@@ -63,10 +65,30 @@ pub struct DetectorSpec {
     /// default. `None` (the default) means "use the global floor".
     #[serde(default)]
     pub min_confidence: Option<f64>,
+    /// Inline self-test fixtures (`[[detector.tests]]`, Tier-B data): each entry
+    /// carries a positive example the detector MUST fire on and/or a negative
+    /// example it MUST NOT. Consumed by the contract/self-validate harness;
+    /// ignored at scan time. Modeled here (rather than silently dropped) so the
+    /// schema's `deny_unknown_fields` typo-guard covers the whole detector file.
+    #[serde(default)]
+    pub tests: Vec<DetectorTestSpec>,
+}
+
+/// One inline detector self-test fixture (`[[detector.tests]]`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorTestSpec {
+    /// Text this detector MUST fire on.
+    #[serde(default)]
+    pub test_positive: Option<String>,
+    /// Text this detector MUST NOT fire on.
+    #[serde(default)]
+    pub test_negative: Option<String>,
 }
 
 /// A regex pattern with optional capture group and description.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PatternSpec {
     /// Regular expression string (Rust flavor).
     pub regex: String,
@@ -98,6 +120,7 @@ pub struct PatternSpec {
 
 /// Secondary pattern used to confirm a primary match or provide extra context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionSpec {
     /// Field name used in verification templates (e.g. \`{{companion.secret_key}}\`).
     pub name: String,
@@ -112,6 +135,7 @@ pub struct CompanionSpec {
 
 /// Live verification configuration for a detector.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerifySpec {
     /// Target service identifier (defaults to detector's service if omitted).
     #[serde(default)]
@@ -165,6 +189,7 @@ pub struct VerifySpec {
 
 /// Out-of-band callback verification configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OobSpec {
     /// Callback protocol the verifier waits for. The service may also touch
     /// other protocols on the same correlation id; only the listed ones count
@@ -218,6 +243,7 @@ pub enum OobPolicy {
 
 /// A single step in a multi-step verification flow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StepSpec {
     pub name: String,
     pub method: HttpMethod,
@@ -233,6 +259,7 @@ pub struct StepSpec {
 
 /// Custom HTTP header specification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HeaderSpec {
     pub name: String,
     pub value: String,
@@ -283,6 +310,7 @@ impl AuthSpec {
 
 /// Criteria for a successful verification response.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SuccessSpec {
     #[serde(default)]
     /// Required HTTP status code.
@@ -377,7 +405,7 @@ impl std::fmt::Display for Severity {
 }
 
 /// HTTP method for verification requests.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {
     #[serde(rename = "GET")]
     Get,

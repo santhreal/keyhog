@@ -128,8 +128,11 @@ async fn build_sigv4_request(
 
     let canonical_uri = "/";
     let canonical_querystring = "";
-    let canonical_headers = format!("host:{host}\nx-amz-date:{amz_date}\n");
-    let signed_headers = "host;x-amz-date";
+    // Temporary (STS / ASIA) credentials carry a session token that MUST be part
+    // of the signed canonical headers, otherwise AWS replies SignatureDoesNotMatch
+    // (HTTP 403) and a live credential is misverified as Dead. Mirror the known-good
+    // S3 signer in crates/sources/src/s3/auth.rs which signs x-amz-security-token.
+    let (canonical_headers, signed_headers) = aws_signed_headers(host, amz_date, session_token);
     let payload_hash = hex::encode(Sha256::digest(body.as_bytes()));
     let canonical_request = format!(
         "POST\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
@@ -145,12 +148,11 @@ async fn build_sigv4_request(
     let signing_key = get_signature_key(secret_key, date_stamp, region, service)?;
     let signature = hex::encode(hmac_sha256(&signing_key, &string_to_sign)?);
 
-    let mut auth_header = format!(
+    // The session token is NOT part of the Authorization header grammar; it travels
+    // only as the (now-signed) x-amz-security-token request header set below.
+    let auth_header = format!(
         "{algorithm} Credential={access_key}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
     );
-    if let Some(token) = session_token {
-        auth_header.push_str(&format!(", X-Amz-Security-Token={token}"));
-    }
 
     let mut request = client
         .post(url)
@@ -201,6 +203,29 @@ async fn build_sigv4_request(
     } else {
         Ok((VerificationResult::RateLimited, HashMap::new(), true))
     }
+}
+
+/// Build the SigV4 `(canonical_headers, signed_headers)` pair for the STS probe.
+///
+/// `host` and `x-amz-date` are always signed. When a `session_token` is present
+/// (temporary / STS `ASIA…` credentials) `x-amz-security-token` is appended to
+/// both, keeping the headers lexicographically sorted (`host` < `x-amz-date` <
+/// `x-amz-security-token`). Signing the token is mandatory for temporary
+/// credentials; omitting it makes AWS return `SignatureDoesNotMatch` (HTTP 403),
+/// which the probe would otherwise misread as a dead key. Mirrors the
+/// known-good S3 signer in `crates/sources/src/s3/auth.rs`.
+pub fn aws_signed_headers(
+    host: &str,
+    amz_date: &str,
+    session_token: Option<&str>,
+) -> (String, String) {
+    let mut canonical_headers = format!("host:{host}\nx-amz-date:{amz_date}\n");
+    let mut signed_headers = String::from("host;x-amz-date");
+    if let Some(token) = session_token {
+        canonical_headers.push_str(&format!("x-amz-security-token:{token}\n"));
+        signed_headers.push_str(";x-amz-security-token");
+    }
+    (canonical_headers, signed_headers)
 }
 
 fn hmac_sha256(key: &[u8], data: &str) -> std::result::Result<Vec<u8>, String> {

@@ -3,6 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn scan_does_not_cross_chunk_boundary() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

@@ -138,12 +138,23 @@ fn walk_files(root: &Path, max_files: usize) -> Vec<PathBuf> {
             if name.starts_with('.') && (name == ".git" || name == ".cache" || name == ".idea") {
                 continue;
             }
-            if path.is_dir() {
+            // Use the dir-entry's own file type, which does NOT follow symlinks,
+            // and skip symlinks entirely. `path.is_dir()` calls metadata() and
+            // follows links, so a directory symlink pointing at an ancestor
+            // (`proj/link -> ..`) made this manual DFS descend forever — re-pushing
+            // the same subtree onto `stack` and growing `out` without bound.
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
                 if name == "target" || name == "node_modules" || name == "vendor" {
                     continue;
                 }
                 stack.push(path);
-            } else if path.is_file() {
+            } else if file_type.is_file() {
                 if let Ok(meta) = path.metadata() {
                     if meta.len() <= 4 * 1024 * 1024 {
                         out.push(path);

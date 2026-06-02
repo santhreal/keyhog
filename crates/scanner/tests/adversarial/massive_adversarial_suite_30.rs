@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv30_elevenlabs_normal_bare_must_stay_silent() {
-    assert_detector_silent("elevenlabs-api-key", "elevenlabs_key = \"00000000000000000000000000000000\"");
+    assert_detector_silent(
+        "elevenlabs-api-key",
+        "elevenlabs_key = \"00000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv30_elevenlabs_wrong_prefix_must_silent() {
 
 #[test]
 fn adv30_elevenlabs_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("elevenlabs-api-key", "elevenlabs\u{200B}_key = \"00000000000000000000000000000000\"");
+    assert_detector_silent(
+        "elevenlabs-api-key",
+        "elevenlabs\u{200B}_key = \"00000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv30_elevenlabs_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("elevenlabs-api-key", "elevenlabs_key = \"00000000000000000000\u{00AD}000000000000\"");
+    assert_detector_silent(
+        "elevenlabs-api-key",
+        "elevenlabs_key = \"00000000000000000000\u{00AD}000000000000\"",
+    );
 }
 
 #[test]
 fn adv30_elevenlabs_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("elevenlabs-api-key", "el\u{0435}venlabs_key = \"00000000000000000000000000000000\"");
+    assert_detector_silent(
+        "elevenlabs-api-key",
+        "el\u{0435}venlabs_key = \"00000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================
@@ -43,7 +55,10 @@ fn adv30_elevenlabs_evade_homoglyph_bare_must_stay_silent() {
 
 #[test]
 fn adv30_env0_normal_bare_must_stay_silent() {
-    assert_detector_silent("env0-api-key", "env0_key = \"00000000000000000000000000000000\"");
+    assert_detector_silent(
+        "env0-api-key",
+        "env0_key = \"00000000000000000000000000000000\"",
+    );
 }
 
 #[test]
@@ -56,17 +71,26 @@ fn adv30_env0_wrong_prefix_must_silent() {
 
 #[test]
 fn adv30_env0_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("env0-api-key", "env0\u{200B}_key = \"00000000000000000000000000000000\"");
+    assert_detector_silent(
+        "env0-api-key",
+        "env0\u{200B}_key = \"00000000000000000000000000000000\"",
+    );
 }
 
 #[test]
 fn adv30_env0_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("env0-api-key", "env0_key = \"00000000000000000000\u{00AD}000000000000\"");
+    assert_detector_silent(
+        "env0-api-key",
+        "env0_key = \"00000000000000000000\u{00AD}000000000000\"",
+    );
 }
 
 #[test]
 fn adv30_env0_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("env0-api-key", "env\u{043E}_key = \"00000000000000000000000000000000\"");
+    assert_detector_silent(
+        "env0-api-key",
+        "env\u{043E}_key = \"00000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================

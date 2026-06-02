@@ -167,10 +167,15 @@ fn early_exit_two_adjacent_values() {
 
 #[test]
 fn early_exit_does_not_fire_on_wide_spread() {
-    // Three values: 0x00, 0x01, 0xFF → unique=3, spread=255.
-    // Spread >= 16, so early-exit does NOT fire. Full computation runs.
-    let mut data = vec![0x00u8; 400];
-    data.extend_from_slice(&[0x01u8; 400]);
+    // Three NON-NULL values: 0x01, 0x02, 0xFF → unique=3, spread=254.
+    // NB: the symbols are deliberately non-zero. `histogram_8way` skips
+    // all-zero 8-byte chunks as binary padding (KH-27), so a 0x00 run would be
+    // dropped from the active length and collapse this to a 2-symbol (H=1.0)
+    // distribution - masking the 3-symbol entropy this test means to measure.
+    // Spread >= 16, so the sample-based early-exit does NOT fire below 2.0 and
+    // the full computation runs.
+    let mut data = vec![0x01u8; 400];
+    data.extend_from_slice(&[0x02u8; 400]);
     data.extend_from_slice(&[0xFFu8; 400]);
     // H ≈ log2(3) ≈ 1.585, which is < 2.0
     assert!(!has_high_entropy_fast(&data, 2.0));

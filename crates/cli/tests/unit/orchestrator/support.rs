@@ -37,6 +37,7 @@ pub fn make_chunk(text: &str, path: &str) -> Chunk {
 
 pub fn make_detector() -> DetectorSpec {
     DetectorSpec {
+        tests: Vec::new(),
         id: "static-test".into(),
         name: "Static Test".into(),
         service: "test".into(),

@@ -31,6 +31,10 @@ mod gpu_shader;
 #[path = "gpu_moe_backend.rs"]
 mod backend;
 
+#[path = "gpu_env.rs"]
+mod env;
+pub use env::*;
+
 /// Score multiple (credential, context) pairs in a single batch.
 ///
 /// Uses GPU compute shaders when available and the batch is large enough.
@@ -307,6 +311,7 @@ pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "kh-gpu-self-test".into(),
         name: "GPU self-test".into(),
         service: "test".into(),
@@ -358,86 +363,4 @@ literal. Indicates either a phase-1 lowering regression or a workgroup-size mism
             ))
         }
     }
-}
-
-/// Probe GPU availability and adapter metadata without panicking.
-///
-/// Honours `KEYHOG_NO_GPU=1` (and the usual on/off/true/false/0
-/// negatives) by reporting "no GPU available" without ever calling
-/// `backend::get_gpu()`. The MoE compute-shader init happens lazily
-/// inside `get_gpu()`, so this short-circuit is the difference
-/// between "Metal adapter request blocks for minutes on certain Mac
-/// configurations" (the v0.5.27 reproduction on Apple M4 Pro that
-/// the env var was added to escape) and "scanner starts in ~10ms
-/// like every other CPU-only tool".
-#[must_use]
-pub fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
-    if env_no_gpu() {
-        return (false, None, None);
-    }
-    #[cfg(feature = "gpu")]
-    if let Some(gpu) = backend::get_gpu() {
-        return (true, Some(gpu.gpu_name().to_string()), gpu.vram_mb());
-    }
-    (false, None, None)
-}
-
-pub fn env_no_gpu() -> bool {
-    if let Ok(v) = std::env::var("KEYHOG_NO_GPU") {
-        // Explicit user choice wins both directions. "0"/"false"/"off"
-        // is the override that says "yes I want the GPU even though
-        // CI is detected" (self-hosted GPU runners exist).
-        return !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF");
-    }
-    // No explicit setting. Auto-skip GPU init on CI runners: they
-    // have no discrete GPU, the wgpu adapter probe enumerates the
-    // llvmpipe/swiftshader software fallback, gpu.rs:83 rightly
-    // rejects it as a software adapter, and the operator gets a
-    // confusing "GPU MoE init failed" warning that costs ~250ms of
-    // cold-start time for nothing. Detecting CI here turns that
-    // failure into a silent no-op (the user is on CPU + SIMD which
-    // is the right path on a CI runner anyway). Set
-    // KEYHOG_NO_GPU=0 to opt back in on self-hosted GPU runners.
-    is_ci_environment()
-}
-
-/// True when we are running inside a CI system. Used by the GPU
-/// init paths to auto-skip the wgpu adapter probe (which always
-/// fails on hosted CI runners and costs ~250ms of pointless cold-
-/// start time + emits a confusing warning).
-///
-/// Checks `CI=true` (the de-facto standard, set by GitHub Actions,
-/// GitLab CI, CircleCI, Travis, Buildkite, Drone, AppVeyor,
-/// Codeship, Wercker, and most others) plus a handful of platform-
-/// specific markers that some runners set without also setting the
-/// generic `CI` (Jenkins, TeamCity, Azure Pipelines, Bitbucket
-/// Pipelines).
-pub fn is_ci_environment() -> bool {
-    // The generic CI marker. Some runners set CI=true, some set
-    // CI=1, GitHub Actions sets both. Treat any non-empty non-false
-    // value as truthy.
-    if let Ok(v) = std::env::var("CI") {
-        if !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF") {
-            return true;
-        }
-    }
-    // Platform-specific markers. Some legacy CI systems set their
-    // own variable but not the generic CI=. Hit the common ones.
-    const CI_MARKERS: &[&str] = &[
-        "GITHUB_ACTIONS",         // GitHub Actions
-        "GITLAB_CI",              // GitLab CI
-        "JENKINS_URL",            // Jenkins
-        "TF_BUILD",               // Azure Pipelines
-        "TEAMCITY_VERSION",       // TeamCity
-        "BITBUCKET_BUILD_NUMBER", // Bitbucket Pipelines
-        "BUILDKITE",              // Buildkite
-        "CIRCLECI",               // CircleCI
-        "DRONE",                  // Drone CI
-        "TRAVIS",                 // Travis CI
-        "APPVEYOR",               // AppVeyor
-        "CODEBUILD_BUILD_ID",     // AWS CodeBuild
-        "WERCKER",                // Wercker
-        "SEMAPHORE",              // Semaphore CI
-    ];
-    CI_MARKERS.iter().any(|k| std::env::var(k).is_ok())
 }

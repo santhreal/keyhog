@@ -122,21 +122,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
-      # Default features (Hyperscan/simd + simdsieve hot path) - the exact
-      # engine configuration the Linux release ships, so these aggregators
-      # exercise the same detection path users get rather than a feature
-      # subset. Each crate's `all_tests` is one binary; run them per crate so
-      # a failure names the crate.
+      # Full detection path (Hyperscan/simd + simdsieve hot path + ML/decode/
+      # multiline) MINUS the GPU dispatch stack, via the `ci-lean` feature.
+      # These runners are GPU-less, so the GPU dispatch suites
+      # (`#![cfg(feature = "gpu")]`) must compile out here and run on
+      # runners-nightly (real GPU hosts, `--features gpu`) instead - otherwise
+      # they fail for lack of an adapter rather than a code defect. Detection
+      # results are identical: a `gpu`-on build on a driverless host falls back
+      # to the same CPU path this lean build takes directly. core/sources/
+      # verifier have no GPU feature, so they run default features unchanged.
+      # Each crate's `all_tests` is one binary; run them per crate so a failure
+      # names the crate.
       - name: core all_tests
         run: cargo test -p keyhog-core --test all_tests --profile release-fast
       - name: scanner all_tests
-        run: cargo test -p keyhog-scanner --test all_tests --profile release-fast
+        run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
       - name: sources all_tests
         run: cargo test -p keyhog-sources --test all_tests --profile release-fast
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       - name: cli all_tests
-        run: cargo test -p keyhog --test all_tests --profile release-fast
+        run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
       # Property (proptest) suite - its own bounded binary (was orphaned: empty
       # property/mod.rs + missing proptest dep, so it never compiled or ran).
       - name: cli property

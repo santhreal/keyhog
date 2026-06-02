@@ -56,7 +56,7 @@ redacted_credential_pattern = '^ghp_[A-Za-z0-9]{36}$'
 fixture_text = """
 # Classic GitHub PAT in a CI config (the shape behind the bulk of
 # public ghp_ leaks GitHub Secret Scanning emails about).
-GH_TOKEN=ghp_1234567890ABCDEFghijklmnopqrstuvwxyZ
+GH_TOKEN=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
 """
 
 # ── GitHub fine-grained PAT. Documented shape from GitHub's docs.

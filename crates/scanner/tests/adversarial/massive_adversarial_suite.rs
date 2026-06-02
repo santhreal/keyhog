@@ -69,21 +69,21 @@ fn adv_aws_access_key_invalid_chars_must_silent() {
 fn adv_github_pat_normal_must_fire() {
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "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",
+        "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",
     );
 }
 
 #[test]
 fn adv_github_pat_no_prefix_must_silent() {
-    assert_detector_silent("github-classic-pat", "nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4");
+    assert_detector_silent("github-classic-pat", "nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ13lXtgZ");
 }
 
 #[test]
 fn adv_github_pat_wrong_prefix_must_silent() {
     assert_detector_silent(
         "github-classic-pat",
-        "gha_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "gha_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ13lXtgZ",
     );
 }
 
@@ -92,8 +92,8 @@ fn adv_github_pat_evade_backspace_must_fire() {
     // Evasion via backspace control char (U+0008) must be normalized and fire
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_nJ7tK5mN9q\u{0008}L2rX4sB6vY8zW0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "ghp_nJ7tK5mN9q\u{0008}L2rX4sB6vY8zW0pQ3xZ13lXtgZ",
+        "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",
     );
 }
 
@@ -102,8 +102,8 @@ fn adv_github_pat_evade_null_byte_must_fire() {
     // Evasion via null byte (U+0000) must be normalized and fire
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8z\u{0000}W0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "ghp_nJ7tK5mN9qL2rX4sB6vY8z\u{0000}W0pQ3xZ13lXtgZ",
+        "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",
     );
 }
 
@@ -213,7 +213,10 @@ fn adv_slack_bot_token_wrong_prefix_must_silent() {
 #[test]
 fn adv_slack_bot_token_evade_soft_hyphen_dash_evaded_must_stay_silent() {
     // Evasion via soft hyphen (U+00AD) instead of physical dash '-'
-    assert_detector_silent("slack-bot-token", "xoxb\u{00AD}123456789012\u{00AD}345678901234\u{00AD}a1b2c3d4e5f6g7h8i9j0k1l2");
+    assert_detector_silent(
+        "slack-bot-token",
+        "xoxb\u{00AD}123456789012\u{00AD}345678901234\u{00AD}a1b2c3d4e5f6g7h8i9j0k1l2",
+    );
 }
 
 // =========================================================================
@@ -233,7 +236,10 @@ fn adv_heroku_api_key_invalid_hex_must_silent() {
 #[test]
 fn adv_heroku_api_key_evade_zwsp_dash_bare_must_stay_silent() {
     // Evasion via zero-width space next to UUID dashes
-    assert_detector_silent("heroku-api-key", "01234567-\u{200B}89ab-cdef-0123-456789abcdef");
+    assert_detector_silent(
+        "heroku-api-key",
+        "01234567-\u{200B}89ab-cdef-0123-456789abcdef",
+    );
 }
 
 // =========================================================================
@@ -302,9 +308,14 @@ fn adv_google_api_key_chunk_boundary_must_not_fire_near_miss() {
 
 #[test]
 fn adv_stripe_secret_key_chunk_boundary_must_not_fire_near_miss() {
+    // Near-miss: `sk_live_` + 23 body chars, one short of the `{24,}` the
+    // detector requires. Like its sibling chunk-boundary near-misses (aws 19,
+    // google 34, github 32), the token sits wholly in chunk_b and must NOT
+    // fire — the prior fixture was a *complete* 48-char key, which correctly
+    // fires, so the silence assertion was mislabeled.
     assert_detector_silent_across_chunk_boundary(
         "stripe-secret-key",
-        "sk_live_51A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4",
+        "sk_live_51A1B2C3D4E5F6G7H8I9J0K",
     );
 }
 
@@ -344,8 +355,8 @@ fn adv_homoglyph_cyrillic_p_must_fire() {
     // different detector - so evading the p-position needs U+0440.)
     assert_detector_fires(
         "github-classic-pat",
-        "gh\u{0440}_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "gh\u{0440}_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ13lXtgZ",
+        "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",
     );
 }
 
@@ -394,8 +405,8 @@ fn adv_evasion_multiple_marks_must_fire() {
     // Evasion using multiple combining marks (Zalgo-like) must be normalized
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_\u{0300}\u{0301}\u{0302}nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "ghp_\u{0300}\u{0301}\u{0302}nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ13lXtgZ",
+        "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",
     );
 }
 
@@ -404,8 +415,8 @@ fn adv_evasion_zero_width_joiner_must_fire() {
     // Evasion via zero-width joiner (U+200D) must be normalized
     assert_detector_fires(
         "github-classic-pat",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8z\u{200D}W0pQ3xZ1eD2cR4",
-        "ghp_nJ7tK5mN9qL2rX4sB6vY8zW0pQ3xZ1eD2cR4",
+        "ghp_nJ7tK5mN9qL2rX4sB6vY8z\u{200D}W0pQ3xZ13lXtgZ",
+        "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",
     );
 }
 

@@ -25,7 +25,6 @@ from .base import Corpus, LabeledRecord
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]
-_REPO_ROOT = _BENCH_ROOT.parent
 
 _TURFS = ("betterleaks", "kingfisher")
 
@@ -33,7 +32,6 @@ _TURFS = ("betterleaks", "kingfisher")
 def _candidate_homes(turf: str) -> list[pathlib.Path]:
     return [
         _BENCH_ROOT / "corpora" / "homefield" / turf,
-        _REPO_ROOT / "tools" / "secretbench" / "homefield" / turf / "corpus",
     ]
 
 
@@ -73,7 +71,10 @@ class HomefieldCorpus(Corpus):
         if not man.exists():
             raise SystemExit(
                 f"home-turf manifest missing: {man}\n"
-                f"  harvest it with: tools/secretbench/homefield/run.sh"
+                f"  harvest it with: "
+                f"python benchmarks/generators/homefield/harvest_{self.turf}.py\n"
+                f"  then score with:  python -m bench leaderboard "
+                f"--corpus homefield-{self.turf}"
             )
         out: list[LabeledRecord] = []
         with open(man) as f:

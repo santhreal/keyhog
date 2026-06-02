@@ -1,28 +1,20 @@
-use keyhog_scanner::hw_probe::{clear_test_backend_override, forced_backend_from_env, ScanBackend};
+use keyhog_scanner::hw_probe::{parse_backend_str, ScanBackend};
 
 #[test]
 fn test_forced_backend_env_all_scenarios() {
-    // 1. Scenario: unset is None
-    unsafe {
-        std::env::remove_var("KEYHOG_BACKEND");
-    }
-    assert!(forced_backend_from_env().is_none());
+    // Pure string→backend mapping for every recognized scenario. Asserting on
+    // `parse_backend_str` instead of mutating the process-global `KEYHOG_BACKEND`
+    // keeps this off the env-race that lets a forced-but-unavailable GPU value
+    // reach a concurrent scan and abort the whole harness via gpu_forced's
+    // process-exit (see parse_backend_str docs).
 
-    // 2. Scenario: forced GPU
-    unsafe {
-        std::env::set_var("KEYHOG_BACKEND", "gpu");
-    }
-    assert_eq!(forced_backend_from_env(), Some(ScanBackend::Gpu));
+    // Unset / unrecognized → no forced backend.
+    assert!(parse_backend_str("").is_none());
+    assert!(parse_backend_str("garbage-value").is_none());
 
-    // 3. Scenario: forced MegaScan
-    clear_test_backend_override();
-    unsafe {
-        std::env::set_var("KEYHOG_BACKEND", "mega-scan");
-    }
-    assert_eq!(forced_backend_from_env(), Some(ScanBackend::MegaScan));
+    // Forced GPU.
+    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
 
-    // Cleanup
-    unsafe {
-        std::env::remove_var("KEYHOG_BACKEND");
-    }
+    // Forced MegaScan.
+    assert_eq!(parse_backend_str("mega-scan"), Some(ScanBackend::MegaScan));
 }

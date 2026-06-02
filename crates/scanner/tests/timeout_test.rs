@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 #[test]
 fn test_scan_timeout_respects_deadline() {
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "redos-detector".into(),
         name: "ReDoS Detector".into(),
         service: "test".into(),
@@ -65,6 +66,7 @@ fn test_scan_timeout_respects_deadline() {
 #[test]
 fn test_inner_loop_deadline_aborts_many_match_pattern() {
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "many-match-detector".into(),
         name: "Many Match Detector".into(),
         service: "test".into(),

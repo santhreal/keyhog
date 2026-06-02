@@ -10,12 +10,12 @@ fn keyhogignore_excludes_listed_file_but_scans_siblings() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join("ignored.env"),
-        "T=ghp_aB3xK9mZ1qW7rT5vY2nL8pH4jD6sF0gE1cV2\n",
+        "T=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\n",
     )
     .unwrap();
     std::fs::write(
         dir.path().join("scanned.env"),
-        "T=ghp_ZZ3xK9mZ1qW7rT5vY2nL8pH4jD6sF0gE1cVX\n",
+        "T=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\n",
     )
     .unwrap();
     std::fs::write(dir.path().join(".keyhogignore"), "ignored.env\n").unwrap();

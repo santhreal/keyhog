@@ -3,6 +3,7 @@ use keyhog_scanner::CompiledScanner;
 #[test]
 fn compiled_scanner_detector_count() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

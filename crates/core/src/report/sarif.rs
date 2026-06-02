@@ -337,7 +337,12 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
             driver: SarifToolDriver {
                 name: "keyhog".to_string(),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
-                information_uri: Some("https://github.com/keyhog/keyhog".to_string()),
+                // Sourced from the crate's `repository` field (Cargo sets
+                // CARGO_PKG_REPOSITORY) so the SARIF `informationUri` always
+                // points at the canonical repo and can never drift from the
+                // published manifest. Previously hardcoded to the wrong
+                // `github.com/keyhog/keyhog` org.
+                information_uri: Some(env!("CARGO_PKG_REPOSITORY").to_string()),
                 rules,
             },
         };

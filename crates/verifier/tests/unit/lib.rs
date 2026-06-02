@@ -31,6 +31,7 @@ async fn test_verify_all_logic() {
     });
 
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "test".into(),
         name: "Test".into(),
         service: "test".into(),

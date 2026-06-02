@@ -8,7 +8,13 @@ fn assignment_context() {
 
 #[test]
 fn comment_context() {
-    let lines = vec!["# old key: sk-proj-abc123"];
+    // A prose comment with NO assignment/mapping shape is Comment. (A commented
+    // `key: value` / `KEY=value` is deliberately classified Assignment instead -
+    // see `commented_assignment_context` - so a secret hidden in a commented
+    // config line is not downgraded. The earlier fixture `# old key: sk-proj-...`
+    // carried a `key: value` mapping and therefore correctly resolved to
+    // Assignment under that policy; use genuine prose here.)
+    let lines = vec!["# old key was sk-proj-abc123, now rotated"];
     assert_eq!(infer_context(&lines, 0, None), CodeContext::Comment);
 }
 

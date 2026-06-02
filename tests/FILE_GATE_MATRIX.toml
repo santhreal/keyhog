@@ -481,6 +481,9 @@ path = "crates/scanner/src/error.rs"
 path = "crates/scanner/src/gpu.rs"
 
 [[module]]
+path = "crates/scanner/src/gpu_env.rs"
+
+[[module]]
 path = "crates/scanner/src/gpu_moe_backend.rs"
 
 [[module]]

@@ -309,7 +309,7 @@ pub struct ScanArgs {
     /// matches are suppressed), and uses shallow decode. Stays fully offline
     /// and fast. Use when triaging false positives across a huge corpus is
     /// expensive. `--min-confidence` still overrides the floor on top.
-    #[arg(long, conflicts_with_all = ["fast", "deep"])]
+    #[arg(long, conflicts_with_all = ["fast", "deep", "no_decode", "no_entropy"])]
     pub precision: bool,
 
     /// Lockdown mode: maximum security at the cost of throughput. Enables
@@ -330,7 +330,13 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_entropy: bool,
 
-    /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0)
+    /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0).
+    /// When raised above the resolved confidence floor it tightens the bar a
+    /// generic/entropy finding must clear (composed via `.max()` in
+    /// `orchestrator_config::build_scanner_config`); a value at or below the
+    /// floor is a no-op. The `default_value` literal here is the canonical
+    /// `orchestrator_config::ML_THRESHOLD_DEFAULT` (kept in sync); an unset
+    /// flag leaves the canonical floor untouched.
     #[arg(
         long,
         default_value = "0.5",

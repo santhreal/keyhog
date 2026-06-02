@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 894 detectors - gpu" width="560" />
+  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 899 detectors - gpu" width="560" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 ---
 
 **keyhog** scans source trees, git history, Docker images, S3 buckets, and
-running systems for leaked credentials. **894 service-specific detectors**,
+running systems for leaked credentials. **899 service-specific detectors**,
 decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
 zero runtime configuration. Default `keyhog scan .` works out of the box.
 
@@ -47,7 +47,7 @@ fails only on NEW secrets.
 For ultra-lean CI installs there's now `cargo install keyhog
 --no-default-features --features ci`: 13 MB binary (vs 22 MB full),
 ~140 ms cold-start, no Hyperscan dependency, no wgpu/Vulkan probe,
-no libstdc++ link. Same 894 detectors, same ML/entropy/decode/multiline
+no libstdc++ link. Same 899 detectors, same ML/entropy/decode/multiline
 data paths. Use this profile in self-built CI images where binary size
 or container cold-start matters; the prebuilt installer above stays the
 default for a turnkey single-binary download.
@@ -57,7 +57,7 @@ lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 
 ### How it works
 
-keyhog compiles its 894 detectors into a single Hyperscan NFA database,
+keyhog compiles its 899 detectors into a single Hyperscan NFA database,
 decodes nested encodings before matching, calibrates confidence per
 detector via Bayesian Beta(α,β) feedback, and routes every scan to the
 fastest hardware backend present:
@@ -77,7 +77,7 @@ build, whether the fast path or the full regex engine made the find.
 Backend selection is automatic. On startup:
 
 ```
-keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 894 detectors
+keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 899 detectors
 ```
 
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
@@ -218,7 +218,7 @@ mid-scan (state is unreliable, re-run before trusting). Matches
 
 ## What it catches
 
-894 service-specific detectors with checksum / companion validation:
+899 service-specific detectors with checksum / companion validation:
 
 - **Cloud providers** . AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
@@ -248,7 +248,7 @@ verification handler. Adding a new detector is 5–10 lines of TOML;
 the [contributor guide](./CONTRIBUTING.md) walks through it.
 
 Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
-loads all 894 with severity + service + keyword filter.
+loads all 899 with severity + service + keyword filter.
 
 ## Why higher recall, fewer false positives
 
@@ -289,12 +289,12 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.9108** | 0.9868 | 0.8457 | 2583 | 1.94s | 1077 MB |
-| 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.73s | 308 MB |
-| 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 4.88s | 421 MB |
-| 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 2.53s | 117 MB |
-| 5 | Nosey Parker | 0.4078 | 0.3414 | 0.5063 | 4532 | 0.75s | 285 MB |
-| 6 | BetterLeaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 0.77s | 192 MB |
+| 1 | **KeyHog** | **0.9131** | 0.9945 | 0.8440 | 2550 | 1.61s | 1106 MB |
+| 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.45s | 322 MB |
+| 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 3.81s | 502 MB |
+| 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 4.13s | 114 MB |
+| 5 | Nosey Parker | 0.4078 | 0.3414 | 0.5063 | 4532 | 0.82s | 534 MB |
+| 6 | BetterLeaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 1.04s | 210 MB |
 <!-- BENCH:leaderboard:end -->
 
 ### Speed & memory
@@ -304,13 +304,29 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 |---|---|---|---|---|---|
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.75s | 3.1 MB/s | 285 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 0.77s | 3.0 MB/s | 192 MB |
+| Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.82s | 2.8 MB/s | 534 MB |
+| Nosey Parker | `default-nocache-nodaemon-no-git-history` | creddata | 0.92s | 1056.3 MB/s | 1743 MB |
+| BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 1.04s | 2.2 MB/s | 210 MB |
+| TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.45s | 1.6 MB/s | 322 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.61s | 1.4 MB/s | 1106 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.73s | 1.3 MB/s | 308 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.94s | 1.2 MB/s | 1077 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 2.12s | 1.1 MB/s | 1085 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.53s | 0.9 MB/s | 117 MB |
+| BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 2.83s | 342.8 MB/s | 252 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.95s | 246.1 MB/s | 2035 MB |
+| Titus | `default-nocache-nodaemon-no-validate` | creddata | 3.16s | 307.6 MB/s | 2024 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.31s | 293.8 MB/s | 1887 MB |
+| KeyHog | `cpu-nocache-nodaemon-full` | creddata | 3.45s | 281.7 MB/s | 1821 MB |
+| KeyHog | `auto-nocache-nodaemon-full` | creddata | 3.52s | 275.9 MB/s | 1850 MB |
+| KeyHog | `megascan-nocache-nodaemon-full` | creddata | 3.70s | 262.7 MB/s | 1952 MB |
+| Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 3.81s | 0.6 MB/s | 502 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 4.02s | 241.7 MB/s | 1962 MB |
+| Titus | `default-nocache-nodaemon-no-validate` | mirror | 4.13s | 0.6 MB/s | 114 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.88s | 0.5 MB/s | 421 MB |
+| KeyHog | `gpu-nocache-nodaemon-full` | creddata | 5.12s | 189.7 MB/s | 3562 MB |
+| Kingfisher | `default-nocache-nodaemon-low-no-validate` | creddata | 7.36s | 131.9 MB/s | 728 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | creddata | 8.13s | 119.4 MB/s | 657 MB |
+| TruffleHog | `default-nocache-nodaemon-no-verify` | creddata | 19.98s | 48.6 MB/s | 644 MB |
 <!-- BENCH:perf:end -->
 
 ### Per-category gaps (where a competitor still wins)
@@ -318,7 +334,7 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 <!-- BENCH:gaps:start -->
 | Category | KeyHog F1 | Best competitor | Gap | Competitor overall precision |
 |---|---|---|---|---|
-| `generic-high-entropy-string` | 0.446 | BetterLeaks 0.893 | +0.447 | 0.231 |
+| `generic-high-entropy-string` | 0.440 | BetterLeaks 0.893 | +0.453 | 0.231 |
 <!-- BENCH:gaps:end -->
 
 Reproduce: `make -C benchmarks bench` runs every scanner on the 15k
@@ -549,10 +565,10 @@ crates/
   sources/    File system, git (staged/diff/history), stdin, Docker, S3, GitHub org, web
   verifier/   Live credential verification (341 detectors carry an active `[detector.verify]` endpoint)
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
-detectors/    894 TOML files (data, not code)
+detectors/    899 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)
-benchmarks/   Reproducible eval harness: corpora, scanner adapters, scorer, README report generator
-tools/        Legacy SecretBench scripts (superseded by benchmarks/; score.py kept as the scorer regression anchor)
+benchmarks/   Reproducible eval harness: corpus generators, scanner adapters, scorer, gate, README report generator
+tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)
 ```
 
 Two-phase coalesced scan:

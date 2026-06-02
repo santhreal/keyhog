@@ -16,13 +16,16 @@ fn test_alphabet_mask_scalar_vs_simd_consistency() {
 
 #[test]
 fn test_nested_base64_decoding_gating() {
-    // Secret: ghp_123456789012345678901234567890123456
-    // Detectors usually look for ghp_
-    let secret = concat!("gh", "p_123456789012345678901234567890123456");
+    // Secret: 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 (checksum-VALID GitHub
+    // classic PAT - trailing 6 chars are the base62 CRC32 of the leading 30; a
+    // fabricated `ghp_` is now correctly dropped before scoring, so the nested-
+    // base64 decode path must surface a token that actually validates).
+    let secret = concat!("gh", "p_1234567890123456789012345678902PDSiF");
     let b64_1 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, secret);
     let b64_2 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b64_1);
 
     let detectors = vec![DetectorSpec {
+        tests: Vec::new(),
         id: "github-pat".into(),
         name: "GitHub PAT".into(),
         service: "github".into(),

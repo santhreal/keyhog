@@ -3,6 +3,7 @@ use keyhog_scanner::CompiledScanner;
 #[test]
 fn compile_rejects_invalid_regex() {
     let d = DetectorSpec {
+        tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),

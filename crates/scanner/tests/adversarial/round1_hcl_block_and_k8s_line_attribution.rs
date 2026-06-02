@@ -82,7 +82,7 @@ fn tfvars_flat_assignment_surfaces_credential() {
     // CVE replay shape: real GitHub classic PAT prefix + 36 char
     // deterministic synthetic body. Body alphabet spans upper/lower/
     // digit so it survives downstream entropy / identifier gates.
-    let secret = "ghp_RqWzKp9YnVxA4HsM2BdLeJ7TfGoN3CuI8XbE";
+    let secret = "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";
     // Flat tfvars: keyword and value on the SAME line. This is the
     // simplest shape the HCL parser must support and the one that
     // does NOT rely on cross-line synthesis.
@@ -181,7 +181,7 @@ data:\n  \
     // Collect line numbers of any decoded-credential findings whose
     // credential bytes correspond to the planted decoded payloads.
     // Decoded payloads: "AKIA6CR0ANJCWS6ROMLZ" and
-    // "ghp_RqWzKp9YnVxA4HsM2BdLeJ7TfGoN3CuI8XbE".
+    // "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".
     let aws_lines: Vec<_> = matches
         .iter()
         .filter(|m| m.credential.as_ref().contains("AKIA6CR0ANJCWS6ROMLZ"))
@@ -192,7 +192,7 @@ data:\n  \
         .filter(|m| {
             m.credential
                 .as_ref()
-                .contains("ghp_RqWzKp9YnVxA4HsM2BdLeJ7TfGoN3CuI8XbE")
+                .contains("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")
         })
         .filter_map(|m| m.location.line)
         .collect();

@@ -1,3 +1,0 @@
-request_id=d290f1ee-6c54-4b01-90e6-d701748f0851
-session_id=5f8b9c0d-1a2e-3f4b-5c6d-7e8f9a0b1c2d
-trace_id=ae1f8d2c-9b76-4e0f-87cc-1234567890ab

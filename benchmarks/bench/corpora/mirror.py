@@ -1,9 +1,9 @@
 """Mirror corpus: the 15k synthetic SecretBench-shape dataset.
 
-Wraps the existing generator (``tools/secretbench/mirror/generate.py``) and
-loads its ``manifest.jsonl`` into :class:`LabeledRecord`. One record per
-file (single secret), so the per-fixture attribution is identical to the
-legacy scorer — the migration's regression anchor.
+Wraps the generator (``benchmarks/generators/mirror/generate.py``) and loads
+its ``manifest.jsonl`` into :class:`LabeledRecord`. One record per file
+(single secret), so the per-fixture attribution is identical to the legacy
+scorer — the migration's regression anchor.
 
 Layout (the home dir holds both the answer key and the scan tree, kept
 apart so no scanner is ever shown the manifest):
@@ -27,8 +27,7 @@ way against the live keyhog binary:
    "this is test data, relax".
 
 Resolution order for the home: explicit ``corpus_dir`` arg, the
-``KEYHOG_BENCH_MIRROR`` env, the ``benchmarks/corpora/mirror`` home, then the
-legacy ``tools/secretbench/mirror/corpus`` flat home.
+``KEYHOG_BENCH_MIRROR`` env, then the ``benchmarks/corpora/mirror`` home.
 """
 
 from __future__ import annotations
@@ -44,23 +43,20 @@ from .base import Corpus, LabeledRecord
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]                 # benchmarks/
-_REPO_ROOT = _BENCH_ROOT.parent                # repo root
 
 
 def _generator_path() -> pathlib.Path:
-    return _REPO_ROOT / "tools" / "secretbench" / "mirror" / "generate.py"
+    return _BENCH_ROOT / "generators" / "mirror" / "generate.py"
 
 
 def _candidate_homes() -> list[pathlib.Path]:
-    """Dirs that may hold ``manifest.jsonl``. A home is either the new split
-    layout (manifest + ``corpus/`` subtree) or a legacy flat home (manifest
-    + shards in the same dir)."""
+    """Dirs that may hold ``manifest.jsonl`` (the split layout: manifest +
+    ``corpus/`` subtree)."""
     env = os.environ.get("KEYHOG_BENCH_MIRROR")
     cands: list[pathlib.Path] = []
     if env:
         cands.append(pathlib.Path(env))
     cands.append(_BENCH_ROOT / "corpora" / "mirror")
-    cands.append(_REPO_ROOT / "tools" / "secretbench" / "mirror" / "corpus")
     return cands
 
 

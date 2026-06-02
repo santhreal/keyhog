@@ -71,7 +71,7 @@ fn dotenv_aws_access_key() {
 #[test]
 fn git_config_token_in_remote_url() {
     // The classic: a PAT baked into a remote URL in .git/config.
-    let f = "[remote \"origin\"]\n\turl = https://oauth2:ghp_016C7f8a9B0c1D2e3F4g5H6i7J8k9L0m1N2o@github.com/acme/app.git\n";
+    let f = "[remote \"origin\"]\n\turl = https://oauth2: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@github.com/acme/app.git\n";
     assert_finds(f, "github-classic-pat", 2);
 }
 
@@ -80,7 +80,7 @@ fn npmrc_github_packages_token() {
     // GitHub Packages auth in .npmrc - a PAT after `_authToken=`. Deterministic
     // shape (the npm_ entropy-token form is threshold-based and not suited to a
     // stable assertion).
-    let f = "//npm.pkg.github.com/:_authToken=ghp_016C7f8a9B0c1D2e3F4g5H6i7J8k9L0m1N2o\n";
+    let f = "//npm.pkg.github.com/:_authToken=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\n";
     assert_finds(f, "github-classic-pat", 1);
 }
 

@@ -6,6 +6,7 @@ use std::path::Path;
 
 fn main() {
     let detector = DetectorSpec {
+        tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
         service: "demo".into(),

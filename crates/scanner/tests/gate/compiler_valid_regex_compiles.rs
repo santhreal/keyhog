@@ -6,6 +6,7 @@ use keyhog_scanner::compiler::build_compile_state;
 #[test]
 fn build_compile_state_accepts_valid_detector() {
     let det = DetectorSpec {
+        tests: Vec::new(),
         id: "gate".into(),
         name: "Gate".into(),
         service: "demo".into(),

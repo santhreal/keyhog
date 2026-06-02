@@ -11,7 +11,10 @@ use super::oracle_support::{assert_detector_fires, assert_detector_silent};
 
 #[test]
 fn adv31_fantom_normal_bare_must_stay_silent() {
-    assert_detector_silent("fantom-api-credentials", "fantom_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "fantom-api-credentials",
+        "fantom_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
@@ -24,17 +27,26 @@ fn adv31_fantom_wrong_prefix_must_silent() {
 
 #[test]
 fn adv31_fantom_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("fantom-api-credentials", "fantom\u{200B}_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "fantom-api-credentials",
+        "fantom\u{200B}_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
 fn adv31_fantom_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("fantom-api-credentials", "fantom_key = \"abcde12345abcde\u{00AD}12345\"");
+    assert_detector_silent(
+        "fantom-api-credentials",
+        "fantom_key = \"abcde12345abcde\u{00AD}12345\"",
+    );
 }
 
 #[test]
 fn adv31_fantom_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("fantom-api-credentials", "fant\u{043E}m_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "fantom-api-credentials",
+        "fant\u{043E}m_key = \"abcde12345abcde12345\"",
+    );
 }
 
 // =========================================================================
@@ -101,15 +113,24 @@ fn adv31_fathom_wrong_prefix_must_silent() {
 
 #[test]
 fn adv31_fathom_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("fathom-api-key", "fathom\u{200B}_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "fathom-api-key",
+        "fathom\u{200B}_key = \"abcde12345abcde12345\"",
+    );
 }
 
 #[test]
 fn adv31_fathom_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("fathom-api-key", "fathom_key = \"abcde12345abcde\u{00AD}12345\"");
+    assert_detector_silent(
+        "fathom-api-key",
+        "fathom_key = \"abcde12345abcde\u{00AD}12345\"",
+    );
 }
 
 #[test]
 fn adv31_fathom_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("fathom-api-key", "f\u{0430}thom_key = \"abcde12345abcde12345\"");
+    assert_detector_silent(
+        "fathom-api-key",
+        "f\u{0430}thom_key = \"abcde12345abcde12345\"",
+    );
 }

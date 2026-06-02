@@ -183,10 +183,13 @@ pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
 /// floor based on the credential length and detector type.
 pub(super) fn generic_entropy_floor(detector_id: &str, credential_len: usize) -> f64 {
     match detector_id {
-        // UUID-based tokens have lower entropy due to hex + dashes
-        "generic-api-key" if credential_len <= 40 => 2.8,
-        // Short tokens with restricted alphabets
+        // Short tokens with restricted alphabets need a STRICTER floor to avoid
+        // admitting low-diversity identifiers. Must precede the `<= 40` arm:
+        // guard arms evaluate top-to-bottom, so listing `<= 40` first would
+        // subsume this (every len<=24 is also <=40) and make 3.0 dead code.
         "generic-api-key" if credential_len <= 24 => 3.0,
+        // UUID-based tokens (25..=40) have lower entropy due to hex + dashes.
+        "generic-api-key" if credential_len <= 40 => 2.8,
         // Long random strings need higher entropy to distinguish from code
         "generic-api-key" => 3.5,
         // Password fields can be anything
@@ -216,22 +219,37 @@ pub(super) fn extend_known_prefix_credential<'a>(
     match_start: usize,
     match_end: usize,
 ) -> (&'a str, usize) {
-    let (credential, match_end) =
-        if crate::confidence::known_prefix_confidence_floor(credential).is_some() {
-            let bytes = data.as_bytes();
-            let mut end = match_end;
-            while end < bytes.len() && is_provider_token_byte(bytes[end]) {
-                end += 1;
-            }
+    let (credential, match_end) = if crate::confidence::known_prefix_confidence_floor(credential)
+        .is_some()
+    {
+        let bytes = data.as_bytes();
+        let mut end = match_end;
+        while end < bytes.len() && is_provider_token_byte(bytes[end]) {
+            end += 1;
+        }
 
-            if end == match_end || !data.is_char_boundary(end) {
-                (credential, match_end)
-            } else {
-                (&data[match_start..end], end)
-            }
-        } else {
+        if end == match_end || !data.is_char_boundary(end) {
             (credential, match_end)
-        };
+        } else {
+            // Slice from the CREDENTIAL's own start, not `match_start`. For a
+            // grouped detector `KEYWORD[=:\s"']+(VALUE)` the caller passes the
+            // whole-match start (the keyword) as `match_start`, so
+            // `data[match_start..end]` would prepend `apikey=` to the captured
+            // token (credential corruption). `credential` is a subslice of
+            // `data` (extract.rs builds it as `&search_text[range]`, and
+            // `data == search_text` here), so its byte offset within `data` is
+            // the pointer delta. Fall back to the unextended credential if that
+            // invariant ever fails to hold (defensive; never on the real path).
+            let cred_start = (credential.as_ptr() as usize).wrapping_sub(data.as_ptr() as usize);
+            if cred_start <= match_end && end <= bytes.len() && data.is_char_boundary(cred_start) {
+                (&data[cred_start..end], end)
+            } else {
+                (credential, match_end)
+            }
+        }
+    } else {
+        (credential, match_end)
+    };
 
     extend_base64_padding(data, match_start, credential, match_end)
 }
@@ -241,7 +259,10 @@ pub(super) fn extend_known_prefix_credential<'a>(
 /// char on values like `YWJj…vcA==` - `splitio-api-key` and friends.
 fn extend_base64_padding<'a>(
     data: &'a str,
-    match_start: usize,
+    // Retained for call-site symmetry with `extend_known_prefix_credential`; the
+    // slice start is now derived from the credential's own offset (see below), so
+    // the whole-match start is no longer read here.
+    _match_start: usize,
     credential: &'a str,
     match_end: usize,
 ) -> (&'a str, usize) {
@@ -259,7 +280,15 @@ fn extend_base64_padding<'a>(
         pad += 1;
     }
     if pad > 0 && data.is_char_boundary(end) {
-        (&data[match_start..end], end)
+        // Slice from the credential's own start (subslice of `data`), not
+        // `match_start` (the whole-match/keyword start) — otherwise base64 padding
+        // recovery on a grouped detector prepends the keyword to the credential.
+        let cred_start = (credential.as_ptr() as usize).wrapping_sub(data.as_ptr() as usize);
+        if cred_start <= match_end && data.is_char_boundary(cred_start) {
+            (&data[cred_start..end], end)
+        } else {
+            (credential, match_end)
+        }
     } else {
         (credential, match_end)
     }

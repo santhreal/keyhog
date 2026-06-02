@@ -6,6 +6,7 @@ use keyhog_scanner::engine::CompiledScanner;
 #[test]
 fn scan_empty_chunk_produces_no_matches() {
     let det = DetectorSpec {
+        tests: Vec::new(),
         id: "gate".into(),
         name: "Gate".into(),
         service: "demo".into(),

@@ -90,7 +90,10 @@ fn adv12_acr_evade_homoglyph_must_fire() {
 
 #[test]
 fn adv12_devops_normal_bare_must_stay_silent() {
-    assert_detector_silent("azure-devops-pat", "azure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
+    assert_detector_silent(
+        "azure-devops-pat",
+        "azure_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+    );
 }
 
 #[test]
@@ -103,17 +106,26 @@ fn adv12_devops_wrong_prefix_must_silent() {
 
 #[test]
 fn adv12_devops_evade_zwsp_bare_must_stay_silent() {
-    assert_detector_silent("azure-devops-pat", "azure\u{200B}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
+    assert_detector_silent(
+        "azure-devops-pat",
+        "azure\u{200B}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+    );
 }
 
 #[test]
 fn adv12_devops_evade_soft_hyphen_bare_must_stay_silent() {
-    assert_detector_silent("azure-devops-pat", "azure_devops = \"abcde1234567890abcde123456789012abcde12345\u{00AD}678901234\"");
+    assert_detector_silent(
+        "azure-devops-pat",
+        "azure_devops = \"abcde1234567890abcde123456789012abcde12345\u{00AD}678901234\"",
+    );
 }
 
 #[test]
 fn adv12_devops_evade_homoglyph_bare_must_stay_silent() {
-    assert_detector_silent("azure-devops-pat", "azur\u{0435}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"");
+    assert_detector_silent(
+        "azure-devops-pat",
+        "azur\u{0435}_devops = \"abcde1234567890abcde123456789012abcde12345678901234\"",
+    );
 }
 
 // =========================================================================
@@ -157,7 +169,10 @@ fn adv12_functions_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv12_functions_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("azure-functions-key", "az\u{0457}re_key = \"0000000000000000000000000000000000000000\"");
+    assert_detector_silent(
+        "azure-functions-key",
+        "az\u{0457}re_key = \"0000000000000000000000000000000000000000\"",
+    );
 }
 
 // =========================================================================
@@ -278,7 +293,10 @@ fn adv12_keyvault_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv12_keyvault_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("azure-key-vault-credentials", "https://myvault-name.va\u{0457}lt.azure.net/");
+    assert_detector_silent(
+        "azure-key-vault-credentials",
+        "https://myvault-name.va\u{0457}lt.azure.net/",
+    );
 }
 
 // =========================================================================
@@ -322,7 +340,10 @@ fn adv12_openai_evade_soft_hyphen_must_fire() {
 
 #[test]
 fn adv12_openai_evade_homoglyph_evaded_must_stay_silent() {
-    assert_detector_silent("azure-openai-api-key", "az\u{0457}re_openai_api_key = \"abcde1234567890abcde123456789012\"");
+    assert_detector_silent(
+        "azure-openai-api-key",
+        "az\u{0457}re_openai_api_key = \"abcde1234567890abcde123456789012\"",
+    );
 }
 
 // =========================================================================

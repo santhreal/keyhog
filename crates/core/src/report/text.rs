@@ -167,7 +167,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             "  {} {} {}",
             colorize("│", border_ansi, self.color),
             dim("Secret:    ", self.color),
-            highlight(&finding.credential_redacted, self.color),
+            highlight(&sanitize_terminal(&finding.credential_redacted), self.color),
         )?;
 
         // Location
@@ -201,7 +201,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 "  {} {} {}",
                 colorize("│", border_ansi, self.color),
                 dim("Commit:    ", self.color),
-                commit,
+                sanitize_terminal(commit),
             )?;
         }
 
@@ -211,7 +211,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 "  {} {} {}",
                 colorize("│", border_ansi, self.color),
                 dim("Author:    ", self.color),
-                author,
+                sanitize_terminal(author),
             )?;
         }
 
@@ -221,7 +221,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 "  {} {} {}",
                 colorize("│", border_ansi, self.color),
                 dim("Date:      ", self.color),
-                date,
+                sanitize_terminal(date),
             )?;
         }
 
@@ -231,8 +231,11 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 self.writer,
                 "  {} {} {}",
                 colorize("│", border_ansi, self.color),
-                dim(&format!("{:<11}", format!("{}:", key)), self.color),
-                value,
+                dim(
+                    &format!("{:<11}", format!("{}:", sanitize_terminal(key))),
+                    self.color
+                ),
+                sanitize_terminal(value),
             )?;
         }
 
@@ -411,9 +414,11 @@ fn format_verification(result: &VerificationResult, color: bool) -> String {
 
 fn format_location(location: &MatchLocation) -> String {
     match (&location.file_path, location.line) {
-        (Some(path), Some(line)) => format!("{}:{}", strip_unc_prefix(path), line),
-        (Some(path), None) => strip_unc_prefix(path).to_string(),
-        _ => location.source.to_string(),
+        (Some(path), Some(line)) => {
+            format!("{}:{}", sanitize_terminal(strip_unc_prefix(path)), line)
+        }
+        (Some(path), None) => sanitize_terminal(strip_unc_prefix(path)).into_owned(),
+        _ => sanitize_terminal(&location.source).into_owned(),
     }
 }
 
@@ -440,5 +445,36 @@ fn colorize(text: &str, ansi: &str, color: bool) -> String {
         format!("\x1b[{ansi}m{text}\x1b[0m")
     } else {
         text.to_string()
+    }
+}
+
+/// True for bytes that can drive a terminal rather than display as text: the C0
+/// controls (0x00-0x1F, incl. ESC/CR/LF/TAB), DEL (0x7F), and the C1 range
+/// (0x80-0x9F). A crafted git author, file path, metadata value, or redacted
+/// credential carrying these would otherwise inject ANSI escapes, cursor moves,
+/// or CR-overwrites into the operator's terminal via the default `text` reporter.
+fn is_terminal_control(c: char) -> bool {
+    let u = c as u32;
+    u < 0x20 || c == '\u{7F}' || (0x80..=0x9F).contains(&u)
+}
+
+/// Replace terminal control characters in an untrusted display value with the
+/// visible replacement char `U+FFFD`, so scan-derived strings cannot inject
+/// escape sequences into the terminal. Borrows on the common clean path.
+fn sanitize_terminal(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.chars().any(is_terminal_control) {
+        std::borrow::Cow::Owned(
+            s.chars()
+                .map(|c| {
+                    if is_terminal_control(c) {
+                        '\u{FFFD}'
+                    } else {
+                        c
+                    }
+                })
+                .collect(),
+        )
+    } else {
+        std::borrow::Cow::Borrowed(s)
     }
 }

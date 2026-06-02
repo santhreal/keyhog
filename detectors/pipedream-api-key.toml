@@ -11,5 +11,16 @@ severity = "critical"
 keywords = ["api_", "pipedream", "PIPEDREAM_API_KEY"]
 
 [[detector.patterns]]
-regex = 'api_[a-zA-Z0-9]{40,}'
+# `api_` alone is a generic prefix (any `api_token`, `api_<hash>`, concatenated
+# `api_someLongIdentifier`). A real Pipedream key body is high-entropy base62
+# that mixes upper- and lower-case with digits, so require at least one
+# UPPERCASE letter in the body. That single non-overlapping anchor rejects the
+# common false-positive shapes the old `api_[a-zA-Z0-9]{40,}` matched:
+# all-lowercase identifiers and all-lowercase hex digests (`api_<40+ hex>`),
+# while still firing on canonical keys (`api_kaxHrCzkGkCZm0h4Zg42...`).
+# `(?-i)` is required: keyhog compiles regexes case-insensitive by default,
+# which would make `[A-Z]` match a lowercase letter and defeat the
+# mixed-case discriminator. With `(?-i)` the `api_` prefix is also pinned
+# lowercase (the real key prefix) and `[A-Z]` means a genuine uppercase byte.
+regex = '(?-i)api_[a-z0-9]*[A-Z][a-zA-Z0-9]{39,}'
 description = "Pipedream API key (api_ prefix)"
