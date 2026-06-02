@@ -11,8 +11,8 @@ severity = "critical"
 keywords = ["DRATA_API_KEY", "DRATA_TOKEN", "drata.com", "x-api-key"]
 
 [[detector.patterns]]
-regex = "(?i)drata[_.-]?(?:api[_.-]?)?(?:key|token)[=:\\s\"']+([a-f0-9]{64})"
-description = "Drata API token with context anchor (64 hex characters)"
+regex = "(?i)drata[_.-]?(?:api[_.-]?)?(?:key|token)[=:\\s\"']+([a-f0-9]{64,})"
+description = "Drata API token with context anchor (64+ hex characters)"
 group = 1
 
 [detector.verify]

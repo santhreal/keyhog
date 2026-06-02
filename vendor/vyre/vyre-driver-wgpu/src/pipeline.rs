@@ -525,6 +525,12 @@ impl WgpuPipeline {
         // so calling create_pipeline_cache there is a fatal validation error
         // (`keyhog doctor` aborted on M-series Macs). Gate on the feature actually
         // being enabled; otherwise compile the pipeline uncached.
+        // Only attempt the persistent pipeline cache when the device actually
+        // enabled PIPELINE_CACHE. `enabled_features_for_adapter` (device.rs)
+        // requests it only on backends that implement wgpu pipeline caches
+        // (Vulkan/DX12), so on Metal/GL this is `false` and we compile
+        // uncached — a wgpu `create_pipeline_cache` call on a device without
+        // the feature is a fatal validation abort, not a recoverable error.
         let pipeline_cache_handle =
             if device.features().contains(wgpu::Features::PIPELINE_CACHE) {
                 Some(create_compiled_pipeline_cache(device, &artifact_key)?)

@@ -50,7 +50,7 @@ doc = false
 bench = false
 
 # regex_compile_target - fuzz the detector-regex compiler. The
-# 894 detector regexes are user-extensible via TOML, so a bad
+# 899 detector regexes are user-extensible via TOML, so a bad
 # regex string MUST NOT panic the compiler - it must return a
 # typed Err and let the loader skip that detector.
 [[bin]]

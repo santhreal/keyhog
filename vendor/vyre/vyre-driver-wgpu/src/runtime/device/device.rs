@@ -259,7 +259,8 @@ pub(super) async fn request_device_for_adapter(
     // deliver).
     let adapter_features = adapter.features();
     let adapter_limits = adapter.limits();
-    let (features, mut enabled) = enabled_features_for_adapter(adapter_features, &adapter_limits);
+    let (features, mut enabled) =
+        enabled_features_for_adapter(adapter_features, &adapter_limits, adapter_info.backend);
 
     let device_queue = adapter
         .request_device(
@@ -335,9 +336,21 @@ pub(super) async fn request_device_for_adapter(
     Ok((device_queue, adapter_info, enabled))
 }
 
+/// wgpu only implements the persistent pipeline cache on the Vulkan and DX12
+/// backends (`VK_EXT_pipeline_creation_cache_control` / `ID3D12PipelineLibrary`).
+/// Apple's Metal backend (and GL) advertise the `PIPELINE_CACHE` adapter
+/// feature under wgpu 25 but then fail `device_create_pipeline_cache_init`
+/// with a fatal, un-catchable validation error — that is what aborted
+/// `keyhog doctor` ("Abort trap: 6") on M-series Macs. Gate the request on a
+/// backend that actually honors it.
+fn backend_implements_pipeline_cache(backend: wgpu::Backend) -> bool {
+    matches!(backend, wgpu::Backend::Vulkan | wgpu::Backend::Dx12)
+}
+
 pub(super) fn enabled_features_for_adapter(
     adapter_features: wgpu::Features,
     adapter_limits: &wgpu::Limits,
+    backend: wgpu::Backend,
 ) -> (wgpu::Features, EnabledFeatures) {
     let mut features = wgpu::Features::empty();
     let mut enabled = EnabledFeatures::default();
@@ -362,7 +375,9 @@ pub(super) fn enabled_features_for_adapter(
         features |= wgpu::Features::SHADER_F16;
         enabled.shader_f16 = true;
     }
-    if adapter_features.contains(wgpu::Features::PIPELINE_CACHE) {
+    if adapter_features.contains(wgpu::Features::PIPELINE_CACHE)
+        && backend_implements_pipeline_cache(backend)
+    {
         features |= wgpu::Features::PIPELINE_CACHE;
         enabled.pipeline_cache = true;
     }

@@ -138,6 +138,15 @@ pub(crate) fn create_compiled_pipeline_cache(
     device: &wgpu::Device,
     key: &CompiledPipelineCacheKey,
 ) -> Result<PipelineCacheHandle, BackendError> {
+    // PRECONDITION: the caller must only invoke this on a device whose
+    // PIPELINE_CACHE feature is genuinely enabled. wgpu raises a
+    // `device_create_pipeline_cache_init` validation failure straight to the
+    // fatal uncaptured-error handler (NOT to a pushed error scope, so it
+    // cannot be caught here), which aborts the process. The reliable guard is
+    // upstream: `enabled_features_for_adapter` only requests PIPELINE_CACHE on
+    // backends that actually implement wgpu pipeline caches (Vulkan/DX12), so
+    // on Metal/GL `device.features()` never reports it and this is never
+    // called. See runtime/device/device.rs.
     let data = load_compiled_pipeline_blob(key)?;
     let cache = {
         #[allow(unsafe_code)]
