@@ -519,7 +519,18 @@ impl WgpuPipeline {
             push_constant_ranges: &[],
         });
 
-        let pipeline_cache_handle = create_compiled_pipeline_cache(device, &artifact_key)?;
+        // The persistent pipeline cache needs the wgpu PIPELINE_CACHE feature.
+        // Device creation only enables it when the adapter advertises it (see
+        // runtime/device/device.rs); Apple Silicon's Metal/wgpu device does NOT,
+        // so calling create_pipeline_cache there is a fatal validation error
+        // (`keyhog doctor` aborted on M-series Macs). Gate on the feature actually
+        // being enabled; otherwise compile the pipeline uncached.
+        let pipeline_cache_handle =
+            if device.features().contains(wgpu::Features::PIPELINE_CACHE) {
+                Some(create_compiled_pipeline_cache(device, &artifact_key)?)
+            } else {
+                None
+            };
         runtime::shader::dump_wgsl_if_requested("vyre P-6 cached shader module", &wgsl).map_err(
             |error| {
                 BackendError::new(format!(
@@ -538,7 +549,7 @@ impl WgpuPipeline {
             module: &module,
             entry_point: Some("main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: Some(&pipeline_cache_handle.cache),
+            cache: pipeline_cache_handle.as_ref().map(|h| &h.cache),
         });
         if let Some(error) =
             crate::runtime::device::pop_error_scope_now(device).map_err(|message| {
@@ -557,7 +568,9 @@ impl WgpuPipeline {
                 ),
             });
         }
-        persist_compiled_pipeline_cache(&artifact_key, &pipeline_cache_handle.cache)?;
+        if let Some(handle) = &pipeline_cache_handle {
+            persist_compiled_pipeline_cache(&artifact_key, &handle.cache)?;
+        }
 
         let compiled_artifact = Arc::new(CachedPipelineArtifact {
             id: format!(
