@@ -30,7 +30,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Coherence
 
-- Reconcile the advertised detector/pattern counts to the binary's actual embedded corpus (894 detectors, 1658 patterns) across README, docs, banner, contract fixtures, and the compiled count gates. The canonical source of truth is `keyhog detectors` / `keyhog doctor`.
+- Reconcile the advertised detector/pattern counts to the binary's actual embedded corpus (899 detectors, 1675 patterns) across README, docs, banner, contract fixtures, and the compiled count gates. The canonical source of truth is `keyhog detectors` / `keyhog doctor`.
 - Make dedup primary/additional location selection deterministic when overlapping filesystem windows report the same credential at the same byte offset with different line metadata.
 
 ### Benchmarks
@@ -38,6 +38,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Unify the three benchmark systems into one. `benchmarks/bench` is now the single source of accuracy truth: the retired `tools/secretbench/scoring/` scorer and the retired `tools/diff_bench` differential runner are both replaced by `bench`'s canonical scorer + scanner adapters, and the mirror corpus generator plus the competitor home-turf harvesters move under `benchmarks/generators/`. Committed scoreboard anchors move to `benchmarks/baselines/`. The `bench-nightly` (renamed from `secretbench-nightly`) and `differential-bench` workflows now drive `python -m bench`.
 - Add `python -m bench gate`: the single regression + differential gate. It exits non-zero unless keyhog leads every available competitor on F1 *strictly* and clears the asserted `--min-f1` / `--min-precision` / `--min-recall` floors and/or a committed `--baseline` (within `--epsilon`); exit 2 if keyhog produced no usable result. It replaces the per-fixture `diff_bench` F1 gate and is the forcing function for the continuous-improvement loop.
 - Add the production continuous-improvement loop: `make -C benchmarks loop` runs the whole cycle (scorer self-tests → corpus → leaderboard → calibrate → render → gate) in one command, and a committed regression anchor (`benchmarks/baselines/mirror-keyhog-baseline.json`, keyhog F1=0.9131) lets the `differential-bench` workflow fail red on an F1 regression below the anchor, not only on a competitor overtaking keyhog. `loop` never `--inject`s the README, so a partial-scanner run can't degrade the published leaderboard.
+- Add the cross-device bench harness (`benchmarks/cross_device.sh` + `python -m bench.cross_compare`): rsync the current tree to a device, install keyhog via its per-OS build (Linux Hyperscan SIMD; macOS `--features portable`, the system-lib-free vyre CPU path), bench the device-local corpus, and pull per-host results into `results-cross-device/<device>/` (kept out of the README-feeding `results/`). Fixes a Python-3.9 portability bug the macOS run surfaced (`bench/runner.py` used `datetime.UTC`, which is 3.11+). First cross-device snapshot (`benchmarks/reports/cross-device.md`): keyhog mirror F1 = 0.9131 on Linux (Ryzen 9950X, Hyperscan) vs 0.8996 on macOS (M4 Pro, portable/vyre) — a ~0.013 recall delta in the vyre CPU path.
 
 ### CI / GitHub Action
 

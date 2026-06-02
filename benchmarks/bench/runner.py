@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import pathlib
-from datetime import UTC, datetime
+# timezone.utc (not datetime.UTC, which is 3.11+) — macOS ships Python 3.9.
+from datetime import datetime, timezone
 from typing import Protocol
 
 from . import hardware
@@ -59,7 +60,7 @@ def build_result(
     if records:
         detection = score(records, findings, corpus.file_root)
     return RunResult(
-        generated_at=datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         host=hardware.capture(),
         scanner=ScannerRecord(name=scanner_name, version=scanner_version, config=cfg),
         corpus=info,
@@ -127,7 +128,7 @@ def _unavailable_result(
     error: str,
 ) -> RunResult:
     return RunResult(
-        generated_at=datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         host=hardware.capture(),
         scanner=ScannerRecord(name=scanner.name, version=version, config=cfg),
         corpus=corpus.info(),

@@ -89,3 +89,7 @@ plans/
 # Runtime vyre JIT/PTX + pipeline caches written next to the binary during scans.
 .cache/
 NUL
+
+# Per-host cross-device bench raw JSONs (regenerable via benchmarks/cross_device.sh).
+# The committed, human-facing snapshot is benchmarks/reports/cross-device.md.
+benchmarks/results-cross-device/
