@@ -381,6 +381,15 @@ expect_status "2.7 API down exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
 out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
 expect_match  "2.8 --version pin skips API" "Release tag:   v1.2.3" "$out"
+rm -rf "$h"; h=$(newhome)
+# A bare semver (no leading v) must normalise to the v-prefixed tag. keyhog
+# tags are all vX.Y.Z, so `--version=9.9.9` building a download URL from the
+# un-prefixed tag 404s — exactly the bug that failed the Windows install smoke
+# (the smoke passed "0.5.37", not "v0.5.37"). Assert the resolved tag is v-fixed
+# AND the install completes, so the 404 can never come back silently.
+out=$(KEYHOG_VERSION=9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "2.9 bare semver normalises to v-prefixed tag" "Release tag:   v9.9.9" "$out"
+expect_status "2.10 bare-semver install exits 0" 0 "$st"
 rm -rf "$sb" "$h"
 
 # ======================================================================
@@ -683,8 +692,12 @@ sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
 out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
 expect_match "14.1 v-prefixed tag used verbatim" "Release tag:   v1.2.3" "$out"
 rm -rf "$h"; h=$(newhome)
+# A bare numeric --version normalises to the v-prefixed release tag. keyhog
+# tags are all vX.Y.Z, so honoring "2.0.0" verbatim built a 404 download URL —
+# the regression that failed the Windows install smoke. The resolved tag must
+# carry the v.
 out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version=2.0.0 --no-prompt)
-expect_match "14.2 bare numeric tag honored" "Release tag:   2.0.0" "$out"
+expect_match "14.2 bare numeric tag normalises to v-prefixed" "Release tag:   v2.0.0" "$out"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version= --no-prompt)
 expect_match "14.3 empty --version falls back to API" "Release tag:   v9.9.9" "$out"

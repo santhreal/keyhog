@@ -350,7 +350,16 @@ resolve_asset() {
 
 resolve_tag() {
     if [ -n "$VERSION" ]; then
-        TAG="$VERSION"
+        # keyhog release tags are all v-prefixed (v0.5.37). Accept a bare
+        # semver too (`--version=0.5.37`): a download URL built from the
+        # un-prefixed tag 404s, which is exactly what broke the Windows
+        # install smoke (it passed "0.5.37"). Normalise a digit-leading
+        # version to the v-prefixed tag; leave an explicit v… or any other
+        # ref (branch, sha, custom tag) untouched.
+        case "$VERSION" in
+            [0-9]*) TAG="v$VERSION" ;;
+            *)      TAG="$VERSION" ;;
+        esac
         return
     fi
 
