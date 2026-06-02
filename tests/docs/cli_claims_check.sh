@@ -3,7 +3,7 @@
 # Docs CLI-claim regression gate (denylist).
 #
 # crates/scanner/tests/readme_claims.rs gates the README's NUMERIC claims
-# (894 detectors, pattern counts, ...). Nothing gated the mdBook (docs/src)
+# (899 detectors, pattern counts, ...). Nothing gated the mdBook (docs/src)
 # and marketing site (site/pages) CLI surface - which is exactly where these
 # hallucinated flags shipped and pointed users at commands that error:
 #
