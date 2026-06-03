@@ -10,8 +10,19 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     //   2. `key: "v"` (YAML, modern JSON-ish)
     //   3. `"key": "v"` (JSON - closing quote of key is allowed before `:`)
     //   4. `const KEY: &str = "v"` (Rust with type)
+    //
+    // Group 1 is the KEYWORD, group 2 is the VALUE. The keyword is captured (not
+    // the usual non-capturing alternation) so the caller can apply a whole-word
+    // left boundary in code — see `keyword_has_word_boundary`. A pure-regex
+    // boundary cannot be used here: `[^A-Za-z]` would reject camelCase keys
+    // (`clientSecret`, `apiToken`, `accessKey`), which are pervasive in real
+    // JS/Java/C# code and cost ~40 real CredData positives when tried. The code
+    // boundary accepts a separator/start OR a lowercase->Uppercase camelCase
+    // transition, so `GRAPHITE_PASS=`, `clientSecret=` and `SECRET=` all match
+    // while `bypass=`/`compass=`/`xtoken=` do not. This is what makes the short
+    // `pass` abbreviation safe to include (CredData's dominant `*_PASS=` shape).
     regex::Regex::new(
-        r#"(?i)(?:secret|password|passwd|pwd|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
+        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
     ).ok()
 });
 
@@ -29,6 +40,32 @@ static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
 pub(crate) fn warm_generic_assignment_runtime() {
     let _ = GENERIC_RE.as_ref();
     let _ = KEYWORD_AC.as_ref();
+}
+
+/// Whole-word left boundary for the [`GENERIC_RE`] keyword bridge, applied in
+/// code because the `regex` crate has no lookbehind and a `[^A-Za-z]` regex
+/// prefix would reject camelCase credential keys (`apiToken`, `clientSecret`,
+/// `accessKey`), which are pervasive in real JS/Java/C# source and cost ~40 real
+/// CredData positives when tried as a pure-regex boundary.
+///
+/// The keyword at byte offset `kw_start` in `line` is a genuine word-start when
+/// it begins the line, follows a non-letter byte (`_`, `-`, `.`, space, quote,
+/// digit, or any non-ASCII), or sits at a lowercase->Uppercase camelCase hinge.
+/// This rejects substring tails such as the `pass` in `bypass`/`compass` and the
+/// `token` in `xtoken`, which is what makes the bare `pass` abbreviation safe.
+fn keyword_has_word_boundary(line: &str, kw_start: usize) -> bool {
+    if kw_start == 0 {
+        return true;
+    }
+    let bytes = line.as_bytes();
+    let prev = bytes[kw_start - 1];
+    if !prev.is_ascii_alphabetic() {
+        return true;
+    }
+    // `prev` is a letter: the only legitimate in-word start is a camelCase
+    // hinge — a lowercase byte immediately followed by the (uppercase) keyword.
+    let kw_first = bytes[kw_start];
+    prev.is_ascii_lowercase() && kw_first.is_ascii_uppercase()
 }
 
 thread_local! {
@@ -154,9 +191,26 @@ impl CompiledScanner {
             let line: &str = &normalized_line;
 
             for caps in generic_re.captures_iter(line) {
-                let Some(value_match) = caps.get(1) else {
+                let Some(keyword_match) = caps.get(1) else {
                     continue;
                 };
+                let Some(value_match) = caps.get(2) else {
+                    continue;
+                };
+                // Whole-word left boundary, enforced ONLY for the short,
+                // substring-ambiguous abbreviation `pass` (the tail of
+                // `bypass`/`compass`/`surpass`/...). The longer keywords
+                // (`password`, `token`, `secret`, `api_key`, ...) deliberately
+                // keep substring matching so concatenated no-separator keys like
+                // `DBPASSWORD=` / `apitoken=` still bridge — measured on CredData,
+                // enforcing the boundary on every keyword cost ~36 real positives
+                // for no precision gain. `pass` alone needs the guard because its
+                // false-substring family (`bypass=`/`compass=`) is common.
+                if keyword_match.as_str().eq_ignore_ascii_case("pass")
+                    && !keyword_has_word_boundary(line, keyword_match.start())
+                {
+                    continue;
+                }
                 let value = value_match.as_str();
                 // Entropy gate: reject low-entropy values (variable names, prose).
                 // Routed through the SINGLE threshold-aware
@@ -168,9 +222,21 @@ impl CompiledScanner {
                 // lifts the floor to that bits/byte value, suppressing values
                 // below it.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
+                // Keyword-anchored values use the relaxed `generic-keyword-secret`
+                // floor when `generic_keyword_low_entropy` is on (the default):
+                // the credential keyword in the key is the evidence, and precision
+                // is carried downstream by the MoE + shape filters. This is what
+                // admits real low-entropy CredData passwords (`gjbubxsu`) that the
+                // 2.8/3.2/3.5 `generic-secret` floor discarded. The
+                // `--no-keyword-low-entropy` opt-out restores the high floor.
+                let floor_id = if self.config.generic_keyword_low_entropy {
+                    "generic-keyword-secret"
+                } else {
+                    "generic-secret"
+                };
                 let min_entropy = super::scan_filters::generic_entropy_floor(
                     self.config.entropy_threshold,
-                    "generic-secret",
+                    floor_id,
                     value.len(),
                 );
                 if entropy < min_entropy {

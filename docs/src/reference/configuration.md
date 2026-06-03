@@ -44,6 +44,7 @@ Each row is the same knob across all three layers. Defaults are
 | Entropy enabled | on | `no_entropy = true` disables | `--no-entropy` | Shannon-entropy detection for novel high-entropy strings. |
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
 | Entropy threshold | **4.5** | `entropy_threshold` | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). |
+| Keyword low-entropy | on | `generic_keyword_low_entropy` | `--no-keyword-low-entropy` | Admit credential-keyword-anchored values (`PASSWORD=`, `*_PASS=`, `secret:` …) on a low entropy floor; precision is carried by the ML model. Surfaces real-world config passwords. Disabling raises precision but drops real recall. |
 | ML enabled | on | `no_ml = true` disables | `--no-ml` | ML confidence gating. Disabling raises FPs and hurts recall. |
 | ML weight | **0.5** | `ml_weight` | `--ml-weight` | Blend weight of the ML score vs heuristics (0.0–1.0). |
 | Unicode norm | on | `no_unicode_norm = true` disables | `--no-unicode-norm` | Normalise homoglyphs before matching (anti-evasion). |

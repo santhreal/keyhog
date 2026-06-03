@@ -26,6 +26,14 @@ pub struct ScannerConfig {
     /// `entropy_enabled` and `ml_enabled` are set. See `apply_ml_batch_scores`
     /// and `scan_entropy_fallback`.
     pub entropy_ml_authoritative: bool,
+    /// Admit generic keyword-bridge values (`PASSWORD=`, `*_PASS=`, `secret:`,
+    /// `api_key=` ...) on the relaxed `generic-keyword-secret` entropy floor
+    /// instead of the high `generic-secret` floor. Mirrors
+    /// `keyhog_core::config::ScanConfig::generic_keyword_low_entropy` and the CLI
+    /// `--no-keyword-low-entropy` opt-out. The keyword key is the evidence;
+    /// precision is carried by the MoE + shape filters. See
+    /// `scan_generic_assignments`.
+    pub generic_keyword_low_entropy: bool,
     /// Enable ML-based confidence scoring
     pub ml_enabled: bool,
     /// ML weight for confidence scoring, 0.0-1.0
@@ -119,6 +127,11 @@ impl ScannerConfig {
         Self {
             max_decode_depth: 1,
             entropy_enabled: false,
+            // High-precision mode does not admit low-entropy keyword-anchored
+            // values: that surface trades precision for real-world recall, the
+            // opposite of this preset's contract. Restores the high
+            // `generic-secret` floor.
+            generic_keyword_low_entropy: false,
             min_confidence: Self::HIGH_PRECISION_MIN_CONFIDENCE,
             ..Default::default()
         }
@@ -207,6 +220,7 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
             entropy_threshold: config.entropy_threshold,
             entropy_in_source_files: config.entropy_in_source_files,
             entropy_ml_authoritative: config.entropy_ml_authoritative,
+            generic_keyword_low_entropy: config.generic_keyword_low_entropy,
             ml_enabled: config.ml_enabled,
             ml_weight: config.ml_weight,
             min_confidence: config.min_confidence,

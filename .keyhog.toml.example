@@ -77,6 +77,15 @@ entropy_source_files = false
 # - 5.5: Conservative (fewer findings, fewer false positives)
 entropy_threshold = 4.5
 
+# Admit credential-keyword-anchored values (PASSWORD=, *_PASS=, secret:,
+# api_key= ...) on a far lower entropy floor than the bare generic gate. The
+# keyword key is the evidence; precision is carried by the ML model + shape
+# filters. This is what surfaces real-world low-entropy config passwords (the
+# dominant real-corpus credential shape). Set false (CLI: --no-keyword-low-entropy)
+# to restore the high-entropy-only generic gate: higher precision, far lower
+# real-world recall. Default: true.
+generic_keyword_low_entropy = true
+
 # ============================================================================
 # CONFIDENCE & ML OPTIONS
 # ============================================================================
