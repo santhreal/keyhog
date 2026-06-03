@@ -33,8 +33,12 @@ jobs:
   matrix:
     name: ${{ matrix.variant }} integration
     runs-on: ubuntu-latest
-    # A clean from-scratch glibc/musl release build is ~15-25 min; 45 caps a
-    # hung job well under the 6h default that let runs sit queued for hours.
+    # Build times: glibc builds full default features under release-fast (thin
+    # LTO); musl builds `--release` (fat LTO) but with the small `--features
+    # portable` dep graph, which links fast. Both land ~15-25 min. (The glibc
+    # leg formerly built full default features under fat-LTO `--release` and was
+    # cancelled at this cap EVERY run; see Dockerfile.glibc.) 45 caps a hung job
+    # well under the 6h default that let runs sit queued.
     timeout-minutes: 45
     strategy:
       fail-fast: false

@@ -76,6 +76,30 @@ jobs:
           keyhog --version
           trufflehog --version || true
 
+      - name: keyhog smoke check (broken binary != F1 regression)
+        # A broken install / unsatisfied libhyperscan runtime makes `keyhog scan`
+        # find nothing, which the downstream gate would misreport as
+        # "keyhog F1 0.0000 regressed below baseline". Catch it here with a
+        # distinct, actionable signal so an infra failure is never confused with
+        # a recall regression. ldd output aids diagnosis of the lib state.
+        run: |
+          set -uo pipefail
+          echo "ldd $(command -v keyhog):"
+          ldd "$(command -v keyhog)" 2>&1 || true
+          tmp="$(mktemp -d)"
+          printf 'aws = "AKIAJP3GG7XYRIBQXOLA"\nstripe = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"\n' > "$tmp/smoke.txt"
+          # keyhog exits 1 when it finds secrets, so capture with `|| true` and
+          # parse the JSON rather than gating on exit status.
+          out="$(keyhog scan "$tmp/smoke.txt" --no-suppress-test-fixtures --format json 2>/dev/null || true)"
+          # Single-line python (no newlines) so it stays inside the YAML block
+          # scalar; empty/garbage output (crashed binary) -> 0 via the fallback.
+          n="$(printf '%s' "$out" | python3 -c "import json,sys; t=sys.stdin.read().strip(); d=json.loads(t) if t else []; f=d if isinstance(d,list) else d.get('findings',[]); print(len(f))" 2>/dev/null || echo 0)"
+          echo "smoke findings: $n"
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "::error::keyhog smoke check found 0 secrets in a known-positive fixture. The installed binary is broken (libhyperscan/runtime), NOT a recall regression. Failing before the differential gate so the F1=0.0 result is not misread as a regression."
+            exit 1
+          fi
+
       - name: generate mirror corpus
         env:
           POSITIVES: ${{ inputs.positives || '3000' }}

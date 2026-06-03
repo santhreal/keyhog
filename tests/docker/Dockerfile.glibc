@@ -1,9 +1,22 @@
 # glibc (Debian) integration image for the Docker test matrix.
 #
-# Builds the default-feature keyhog (Hyperscan-accelerated, the crates.io
-# release profile) and bakes in a small corpus under /test/corpus so the
-# scenario runner can drive the real binary under spoofed hardware/env.
-# Mirrors the production Dockerfile's build recipe so we test what ships.
+# Builds the default-feature keyhog (Hyperscan-accelerated, full GPU/vyre/decode
+# dep graph) and bakes in a small corpus under /test/corpus so the scenario
+# runner can drive the real binary under spoofed hardware/env.
+#
+# Build profile: `release-fast` (thin LTO, codegen-units=16, debug-assertions
+# ON), NOT `release`. The default-feature dep graph (wgpu/vyre/Hyperscan/ML)
+# under `release`'s fat-LTO + codegen-units=1 took >45 min to link on the
+# 2-vCPU `ubuntu-latest` runner and was cancelled at the job timeout EVERY run -
+# i.e. the glibc leg never actually validated anything. `release-fast` links in
+# a fraction of the time and runs the SAME code; this integration matrix tests
+# RUNTIME behaviour (hardware/env spoofing scenarios), which is identical across
+# LTO modes, and the extra debug-assertions match the rest of CI's test profile.
+# fat-LTO shipping-binary validation belongs to the release-build workflow, not
+# a wall-clock-bounded scenario runner. (musl leg builds `--features portable`,
+# which is already a non-shipping config, so this matrix never tested the exact
+# shipped artifact regardless.)
+#
 # Pin the builder to bookworm so its glibc matches the bookworm runtime
 # stage below. Plain `rust:1.89-slim` tracks Debian testing (trixie, glibc
 # 2.39+) and produces a binary that won't load on bookworm (glibc 2.36).
@@ -13,13 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libhyperscan-dev pkg-config ca-certificates libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN cargo build --release -p keyhog
+RUN cargo build --profile release-fast -p keyhog
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates git libhyperscan5 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog
+COPY --from=builder /build/target/release-fast/keyhog /usr/local/bin/keyhog
 COPY --from=builder /build/detectors /opt/keyhog/detectors
 COPY tests/docker/corpus /test/corpus
 ENV KEYHOG_DETECTORS=/opt/keyhog/detectors
