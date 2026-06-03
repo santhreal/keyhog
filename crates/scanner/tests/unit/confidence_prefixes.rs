@@ -1,16 +1,20 @@
 use keyhog_scanner::confidence::known_prefix_confidence_floor;
 #[test]
 fn known_prefix_floor_matches_expected_prefixes() {
+    // Bodies must be NON-degenerate. The floor is deliberately withheld from
+    // degenerate runs (>=10 identical chars, e.g. an all-`x` placeholder body)
+    // exactly as it is from `...EXAMPLE` keys, so realistic random-looking bodies
+    // are required to exercise the known-prefix path. See the AKIA case below.
     assert_eq!(
         known_prefix_confidence_floor("sk_live_51H7xKjGf0a1b2c3"),
         Some(0.8)
     );
     assert_eq!(
-        known_prefix_confidence_floor("ghp_xxxxxxxxxxxxxxxxxxxx"),
+        known_prefix_confidence_floor("ghp_aK7xP9mQ2wE5rT8yU1iO3pL6"),
         Some(0.8)
     );
     assert_eq!(
-        known_prefix_confidence_floor("github_pat_xxxxxxxxxxxxxx"),
+        known_prefix_confidence_floor("github_pat_aK7xP9mQ2wE5rT8yU1iO"),
         Some(0.8)
     );
     assert_eq!(
@@ -21,11 +25,11 @@ fn known_prefix_floor_matches_expected_prefixes() {
         Some(0.8)
     );
     assert_eq!(
-        known_prefix_confidence_floor("sk-proj-xxxxxxxxxxxxxxxx"),
+        known_prefix_confidence_floor("sk-proj-aK7xP9mQ2wE5rT8yU1iO"),
         Some(0.8)
     );
     assert_eq!(
-        known_prefix_confidence_floor("dop_v1_xxxxxxxxxxxxxxxxx"),
+        known_prefix_confidence_floor("dop_v1_aK7xP9mQ2wE5rT8yU1iO"),
         Some(0.8)
     );
 }
