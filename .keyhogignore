@@ -26,6 +26,20 @@ path:backlog/
 # pinned released v0.5.37 dogfood binary re-emits it from the reassembled
 # fragment, so it is suppressed here by credential hash.
 hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae
+# Two fabricated AWS-access-key FIXTURES that are non-secrets by construction
+# (literal shapes deliberately NOT pasted here - this file is itself scanned;
+# see the NB above). Hash-suppressed because dedup is by value, so one entry
+# covers every source + test occurrence:
+#   * 3f0911f2... = the all-`X` synthetic placeholder driving the
+#     degenerate-repeat suppression unit tests + the doc-comment examples in
+#     confidence/penalties.rs + prefixes.rs. The CURRENT engine already drops it
+#     as a degenerate placeholder (that is the feature those examples document);
+#     the pinned v0.5.37 dogfood binary predates that fix, so it still fires.
+#   * 0edfda19... = the fabricated known-positive key planted in the
+#     differential-bench smoke check ($tmp fixture, outside the repo - so this
+#     repo-local ignore does NOT affect that scan) and the prefix-floor tests.
+hash:3f0911f20f6b9854e34b43ad05470a9075d1c6a99b65ab82f03cce4201ee9f4a
+hash:0edfda193f931b8c1c9c1a1db3b27576e70dd343cf943b5d22aacd5b63cb0090
 # integration-smoke ships a base64-encoded seed of well-known AWS docs
 # examples + an `xoxb-` slack token shape + a `ghp_` GitHub PAT shape;
 # the workflow base64-decodes them on the runner so the scanner under
