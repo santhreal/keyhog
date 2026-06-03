@@ -40,6 +40,13 @@ hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae
 #     repo-local ignore does NOT affect that scan) and the prefix-floor tests.
 hash:3f0911f20f6b9854e34b43ad05470a9075d1c6a99b65ab82f03cce4201ee9f4a
 hash:0edfda193f931b8c1c9c1a1db3b27576e70dd343cf943b5d22aacd5b63cb0090
+# 48d2a5bb... = a leetspeak placeholder in the `parse_env` doc comment in
+# crates/scanner/src/structured/parsers/env.rs (`KEY=value # comment` example
+# illustrating inline-comment stripping). Not a real secret. It became visible
+# to the self-scan when the keyword bridge gained the relaxed low-entropy floor
+# (`generic_keyword_low_entropy`): `*_PASS=`-shaped doc examples now surface as
+# the feature intends. Suppressed by value hash (literal shape NOT pasted here).
+hash:48d2a5bbcf422ccd1b69e2a82fb90bafb52384953e77e304bef856084be052b6
 # integration-smoke ships a base64-encoded seed of well-known AWS docs
 # examples + an `xoxb-` slack token shape + a `ghp_` GitHub PAT shape;
 # the workflow base64-decodes them on the runner so the scanner under
