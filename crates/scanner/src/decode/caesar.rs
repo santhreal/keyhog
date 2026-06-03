@@ -1,6 +1,8 @@
 use super::pipeline::{extract_encoded_values, push_decoded_text_chunk};
 use super::Decoder;
+use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
+use std::sync::LazyLock;
 
 /// Caesar/ROT13/ROT-N decoder. A handful of malware-config dumps and CTF
 /// fixtures store their tokens ROT13'd (`AKIA...` → `NXVN...`). For every
@@ -26,6 +28,36 @@ pub struct CaesarDecoder;
 
 const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
+
+/// Aho-Corasick over the "rotated known-prefix" needle set: for every
+/// [`crate::confidence::KNOWN_PREFIXES`] entry `P` and every non-trivial shift
+/// `k` in `1..=25`, the string `caesar_shift(P, 26 - k)` — i.e. `P` with its
+/// ASCII letters rotated BACKWARD by `k` (digits / punctuation fixed).
+///
+/// SOUNDNESS (recall-exact, not merely a superset). `caesar_shift(_, k)` is a
+/// position-wise bijection on a string, so for any candidate `c`:
+///   `caesar_shift(c, k).contains(P)`  ⟺  `c.contains(caesar_shift(P, 26 - k))`.
+/// Therefore "some shift in `1..=25` of `c` contains some known prefix" is
+/// EXACTLY "`c` contains some needle in this automaton". The final gate inside
+/// [`looks_credential_shaped`] is precisely that `KNOWN_PREFIXES` substring
+/// test, and its other two gates (≥1 digit, an 8+ alphanumeric run) are
+/// shift-invariant and checked once by [`candidate_shape_invariant`]. So a
+/// candidate that matches NO needle here can never produce a credential-shaped
+/// variant under any shift — its entire 25× `caesar_shift` fan-out + re-scan is
+/// provably dead work and is skipped with zero recall loss. This replaces the
+/// unsound "longest alphabetic run ≥ 16" gate (a `0x` / `SG.` / `hf_` prefix
+/// needs only a 1–2 letter run, so a credential-shaped shift can arise from a
+/// chunk with no long alphabetic run). See `perf_decode_caesar.rs`.
+static ROTATED_PREFIX_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
+    let mut needles: Vec<String> = Vec::new();
+    for prefix in crate::confidence::KNOWN_PREFIXES {
+        for k in 1..=25u8 {
+            // rot_{-k}(P) == caesar_shift(P, 26 - k); k in 1..=25 => 26-k in 1..=25.
+            needles.push(caesar_shift(prefix, 26 - k));
+        }
+    }
+    AhoCorasick::new(&needles).ok()
+});
 
 /// File extensions where Caesar-decoding is pure noise. Matched against the
 /// suffix of `chunk.metadata.path` (lower-cased). Kept short - only the
@@ -128,16 +160,39 @@ impl Decoder for CaesarDecoder {
             if candidate.len() < MIN_CAESAR_LEN {
                 continue;
             }
-            // kimi-decode audit: caesar_shift is the identity for
-            // digits / punctuation / non-ASCII. A pure-digit candidate
-            // (e.g. a 16-digit PIN) produces 25 IDENTICAL shifts, all
-            // equal to the original. The downstream seen-set dedups them,
-            // but each still unnecessarily walks the full detector pipeline
-            // and emits a bare decoded chunk that scans the same text
-            // we already scanned in the parent. Skip if the input has
-            // no a-z/A-Z character to shift.
-            if !candidate.chars().any(|c| c.is_ascii_alphabetic()) {
+            // SHIFT-INVARIANT PRECONDITION (sound; a true superset of "some
+            // shift is credential-shaped"). `caesar_shift` maps letter->letter,
+            // digit->digit, other->other, so the two structural gates inside
+            // `looks_credential_shaped` are identical for the candidate and ALL
+            // 25 of its shifts:
+            //   * "contains >=1 ASCII digit"        - digits are shift-identity
+            //   * "has an 8+ ASCII-ALPHANUMERIC run" - alnum-ness is preserved
+            // If the RAW candidate fails either gate, NONE of its 25 shifts can
+            // pass `looks_credential_shaped`, so we skip the entire 25x
+            // `caesar_shift` allocation + re-scan loop for it. Only the
+            // KNOWN_PREFIXES check (the one gate a shift CAN newly satisfy) is
+            // left to the per-shift loop. This is byte-for-byte recall-
+            // equivalent - it removes pure-waste allocations, it does not gate
+            // out any shift that could have been shaped (unlike an
+            // alphabetic-run length gate, which is unsound: a `0x`/`SG.`/`hf_`
+            // prefix needs only a 1-2 letter run, so a credential-shaped shift
+            // can arise from a chunk with no long alphabetic run at all).
+            if !candidate_shape_invariant(&candidate) {
                 continue;
+            }
+            // Rotated-prefix prefilter: a credential-shaped variant's final gate
+            // is a KNOWN_PREFIXES substring in the SHIFTED text. Because a shift
+            // is a position-wise bijection, that is equivalent to the RAW
+            // candidate containing a `rot_{-k}(prefix)` needle for some k — one
+            // Aho-Corasick pass tests all 38×25 needles at once. No needle hit
+            // means no shift can satisfy `looks_credential_shaped`, so the 25×
+            // `caesar_shift` allocation + re-scan fan-out below is skipped. This
+            // is recall-EXACT (see ROTATED_PREFIX_AC); the per-shift loop still
+            // confirms each surviving candidate via the full predicate.
+            if let Some(ac) = ROTATED_PREFIX_AC.as_ref() {
+                if !ac.is_match(candidate.as_str()) {
+                    continue;
+                }
             }
             for shift in 1..=25u8 {
                 let decoded = caesar_shift(&candidate, shift);
@@ -161,6 +216,45 @@ impl Decoder for CaesarDecoder {
         }
         out
     }
+}
+
+/// Shift-invariant half of `looks_credential_shaped`, evaluated ONCE on the raw
+/// candidate before the 25x shift loop. A Caesar/ROT-N shift is a permutation
+/// within the letters and the identity on digits/punctuation, so both of these
+/// gates produce the SAME answer for the candidate and for every one of its 25
+/// shifts:
+///   1. at least one ASCII digit (digits are never moved by a shift), and
+///   2. an 8+ contiguous ASCII-alphanumeric run (alphanumeric-ness of each
+///      byte is preserved under a shift).
+/// If the raw candidate fails either, no shift can satisfy
+/// `looks_credential_shaped`, so the whole 25-allocation fan-out for that
+/// candidate is pure waste and is skipped. This is a true SUPERSET of the
+/// per-shift `looks_credential_shaped` predicate (it only ever short-circuits
+/// candidates that would have produced zero shaped shifts), so it is exactly
+/// recall-preserving. It deliberately does NOT pre-check the KNOWN_PREFIXES
+/// substring - that is the one gate a shift CAN newly satisfy by rotating
+/// letters into a prefix (e.g. `BLJB`+25 -> `AKIA`), so it stays in the loop.
+fn candidate_shape_invariant(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if !bytes.iter().any(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    // Must also contain at least one letter for any shift to do anything.
+    if !bytes.iter().any(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    let mut run = 0usize;
+    for &b in bytes {
+        if b.is_ascii_alphanumeric() {
+            run += 1;
+            if run >= MIN_ALNUM_RUN {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
 }
 
 pub fn caesar_shift(input: &str, shift: u8) -> String {

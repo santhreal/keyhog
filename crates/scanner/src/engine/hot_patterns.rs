@@ -12,14 +12,17 @@ impl CompiledScanner {
     pub(crate) fn scan_hot_patterns_fast(
         &self,
         text: &str,
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
-        use crate::simdsieve_prefilter::{
-            HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
-        };
+        // Metadata constants (HOT_PATTERN_DETECTOR_IDS/DISPLAY_NAMES/NAMES) are
+        // no longer read here: they were pre-interned by slot index into
+        // `self.hot_metadata_by_index` at construction and are cloned by index
+        // below (PERF-locality_intern-1). Only the literal table is still
+        // needed for the sieve + dispatch.
+        use crate::simdsieve_prefilter::HOT_PATTERNS;
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
@@ -273,16 +276,18 @@ impl CompiledScanner {
 
                 let line = crate::pipeline::match_line_number(preprocessed, line_offsets, offset);
 
-                // Use the pre-formatted static tables - eliminates the
-                // two `format!()` heap allocations the perf kimi audit
-                // flagged at this site (one per match, 16 bytes each).
-                // Index-parallel with HOT_PATTERN_NAMES; the parallel-
-                // array invariant is locked by unit tests in the parent
-                // module.
-                let detector_id = scan_state.intern_metadata(HOT_PATTERN_DETECTOR_IDS[pattern_idx]);
-                let detector_name =
-                    scan_state.intern_metadata(HOT_PATTERN_DISPLAY_NAMES[pattern_idx]);
-                let service = scan_state.intern_metadata(HOT_PATTERN_NAMES[pattern_idx]);
+                // Clone the pre-interned metadata triple by slot index instead
+                // of re-hashing the three `&'static str` constants through the
+                // CHD interner on every hot hit (PERF-locality_intern-1). The
+                // table is built once at construction (compile.rs) from these
+                // same constants via `static_intern.lookup`, so the emitted
+                // Arc<str>s are byte-identical to the old `intern_metadata`
+                // results. Index-parallel with HOT_PATTERN_NAMES; the parallel-
+                // array invariant is locked by unit tests in the parent module.
+                let (detector_id, detector_name, service) = {
+                    let m = &self.hot_metadata_by_index[pattern_idx];
+                    (m.0.clone(), m.1.clone(), m.2.clone())
+                };
                 let credential_shared = scan_state.intern_credential(credential);
                 let source = scan_state.intern_metadata(&chunk.metadata.source_type);
                 let file_path = chunk

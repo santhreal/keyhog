@@ -64,6 +64,98 @@ fn load_f32_slice(offset: usize, count: usize) -> &'static [f32] {
     &all_weights()[offset..offset + count]
 }
 
+/// One expert's three dense layers as `&'static` slices into the parsed weight
+/// buffer. Sliced ONCE at first model access (see [`model`]) instead of being
+/// re-bounds-checked and re-sliced out of the flat buffer on every candidate.
+///
+/// `fc1_weight_t`/`fc2_weight_t` are the dense-layer weights in COLUMN-major
+/// (transposed) layout — input `k`'s fan-out to every output packed contiguously
+/// at `[k*OUT .. (k+1)*OUT]`. The forward pass (`ml_scorer.rs`) runs these layers
+/// "output-stationary": for each input `k`, scale that contiguous output row by
+/// `input[k]` and accumulate into the `OUT` running sums. The inner loop over
+/// outputs is dependency-free (each `acc[o]` is independent), so the compiler
+/// auto-vectorizes it across the output lanes — WITHOUT reassociating any single
+/// output's reduction. Each `acc[o]` still sums its inputs in `k = 0,1,..,IN-1`
+/// order with separate round(mul) then round(add) steps (no FMA fusion), so the
+/// result is BIT-IDENTICAL to the row-major scalar dot product, not merely close.
+/// (A previous AVX2+FMA attempt fused the multiply-add and reassociated lanes,
+/// which was sub-ULP DIFFERENT and regressed ~30 ML-gated contracts; this layout
+/// gets the SIMD width with none of that divergence.) `fc3_weight` stays ROW-major
+/// (a single output — nothing to vectorize across), as does the 6-output gate.
+pub(crate) struct ExpertWeights {
+    pub fc1_weight_t: &'static [f32],
+    pub fc1_bias: &'static [f32],
+    pub fc2_weight_t: &'static [f32],
+    pub fc2_bias: &'static [f32],
+    pub fc3_weight: &'static [f32],
+    pub fc3_bias: f32,
+}
+
+/// The full mixture-of-experts model with every weight/bias slice resolved
+/// once. The CPU forward pass borrows `&'static MoeModel` a single time per
+/// call and indexes these fields directly, so the 37 per-candidate accessor +
+/// `OnceLock`-acquire + re-slice calls collapse to one acquire and zero
+/// re-slicing. The slices are the SAME bytes the per-layer accessors return,
+/// so scores are bit-identical to the pre-hoist path.
+pub(crate) struct MoeModel {
+    pub gate_weight: &'static [f32],
+    pub gate_bias: &'static [f32],
+    pub experts: [ExpertWeights; EXPERT_COUNT],
+}
+
+/// Transpose a row-major `rows x cols` weight matrix into a `'static`
+/// column-major `cols x rows` buffer: element `(o, k)` at row-major
+/// `[o*cols + k]` moves to column-major `[k*rows + o]`. Computed exactly once
+/// per layer during `model()` init and leaked to `'static` - the model lives
+/// for the whole process, so this is a one-time allocation, not a per-scan one.
+/// The values are copied verbatim (no arithmetic), so the transposed buffer is
+/// bit-identical to the original weights, just reordered for the output-stationary
+/// forward kernel in `ml_scorer.rs`.
+fn transpose_static(src: &[f32], rows: usize, cols: usize) -> &'static [f32] {
+    assert_eq!(src.len(), rows * cols, "transpose dimensions must match");
+    let mut out = vec![0.0f32; rows * cols];
+    for o in 0..rows {
+        for k in 0..cols {
+            out[k * rows + o] = src[o * cols + k];
+        }
+    }
+    Box::leak(out.into_boxed_slice())
+}
+
+/// Return the process-wide hoisted MoE model. The slices are computed exactly
+/// once (behind the same `OnceLock` as the parsed buffer) and shared for the
+/// life of the process; every subsequent call is a single atomic-acquire load
+/// of an already-initialized pointer.
+pub(crate) fn model() -> &'static MoeModel {
+    static MODEL: std::sync::OnceLock<MoeModel> = std::sync::OnceLock::new();
+    MODEL.get_or_init(|| {
+        // Touch the parsed buffer once so the per-layer accessors below resolve
+        // against an initialized `&'static [f32]`.
+        let _ = all_weights();
+        let experts = std::array::from_fn(|expert_idx| ExpertWeights {
+            fc1_weight_t: transpose_static(
+                expert_fc1_weight(expert_idx),
+                EXPERT_FC1_OUT,
+                INPUT_DIM,
+            ),
+            fc1_bias: expert_fc1_bias(expert_idx),
+            fc2_weight_t: transpose_static(
+                expert_fc2_weight(expert_idx),
+                EXPERT_FC2_OUT,
+                EXPERT_FC1_OUT,
+            ),
+            fc2_bias: expert_fc2_bias(expert_idx),
+            fc3_weight: expert_fc3_weight(expert_idx),
+            fc3_bias: expert_fc3_bias(expert_idx)[0],
+        });
+        MoeModel {
+            gate_weight: gate_weight(),
+            gate_bias: gate_bias(),
+            experts,
+        }
+    })
+}
+
 /// Return the full flattened weight buffer (used by GPU batch inference).
 ///
 /// Only the GPU MoE backend consumes the flat buffer. The CPU path uses the

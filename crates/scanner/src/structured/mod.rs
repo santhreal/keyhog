@@ -22,7 +22,7 @@ pub struct ExtractedPair {
 /// Returns `None` when the file is not a recognised structured format, when it
 /// exceeds the size limit, or when no pairs could be extracted.
 /// Pre-process structured configuration files to extract key-value pairs.
-pub fn preprocess(text: &str, path: Option<&str>) -> Option<ScannerPreprocessedText> {
+pub fn preprocess<'a>(text: &str, path: Option<&str>) -> Option<ScannerPreprocessedText<'a>> {
     if text.len() > MAX_STRUCTURED_PARSE_BYTES {
         return None;
     }
@@ -100,7 +100,10 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
 }
 
 #[cfg(feature = "multiline")]
-fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPreprocessedText {
+fn build_preprocessed_text<'a>(
+    text: &str,
+    pairs: Vec<ExtractedPair>,
+) -> ScannerPreprocessedText<'a> {
     use crate::multiline::LineMapping;
     let original_end = text.len();
 
@@ -148,14 +151,18 @@ fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPrep
     }
 
     crate::multiline::PreprocessedText {
-        text: final_text,
+        // Synthesized text (original + appended key/value lines): owned.
+        text: std::borrow::Cow::Owned(final_text),
         original_end,
         mappings,
     }
 }
 
 #[cfg(not(feature = "multiline"))]
-fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPreprocessedText {
+fn build_preprocessed_text<'a>(
+    text: &str,
+    pairs: Vec<ExtractedPair>,
+) -> ScannerPreprocessedText<'a> {
     use crate::types::LineMapping;
 
     // Pre-size the output: original bytes + one '\n' separator + each synthetic
@@ -205,7 +212,8 @@ fn build_preprocessed_text(text: &str, pairs: Vec<ExtractedPair>) -> ScannerPrep
     }
 
     crate::types::PreprocessedText {
-        text: final_text,
+        // Synthesized text (original + appended key/value lines): owned.
+        text: std::borrow::Cow::Owned(final_text),
         mappings,
     }
 }

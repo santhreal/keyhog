@@ -120,13 +120,16 @@ pub struct LineMapping {
 
 #[cfg(not(feature = "multiline"))]
 #[derive(Debug, Clone)]
-pub struct PreprocessedText {
-    pub text: String,
+pub struct PreprocessedText<'a> {
+    /// `Cow` so the passthrough/identity path borrows the chunk bytes with zero
+    /// allocation; only the structured-config build owns a synthesized `String`.
+    /// See the multiline variant's doc for the full rationale.
+    pub text: std::borrow::Cow<'a, str>,
     pub mappings: Vec<LineMapping>,
 }
 
 #[cfg(not(feature = "multiline"))]
-impl PreprocessedText {
+impl<'a> PreprocessedText<'a> {
     /// Map a preprocessed-text offset back to an original line number.
     /// Binary search; same monotonic-mappings invariant as the
     /// multiline variant - see that doc for the analysis.
@@ -143,23 +146,27 @@ impl PreprocessedText {
         }
     }
 
-    pub fn passthrough(line: &str) -> Self {
+    pub fn passthrough(line: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+        let line: std::borrow::Cow<'a, str> = line.into();
+        let end_offset = line.len();
         Self {
-            text: line.to_string(),
+            // Carried as-is: `Cow::Borrowed` for a byte-identical passthrough
+            // (no body copy), `Cow::Owned` only when normalization rewrote it.
+            text: line,
             mappings: vec![LineMapping {
                 line_number: 1,
                 start_offset: 0,
-                end_offset: line.len(),
+                end_offset,
             }],
         }
     }
 }
 
 #[cfg(feature = "multiline")]
-pub type ScannerPreprocessedText = crate::multiline::PreprocessedText;
+pub type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText<'a>;
 
 #[cfg(not(feature = "multiline"))]
-pub type ScannerPreprocessedText = PreprocessedText;
+pub type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
 /// A detector pattern whose `Regex` is compiled on first use, not at load.
 ///

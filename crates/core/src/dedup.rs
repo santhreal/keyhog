@@ -113,6 +113,23 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     type DedupKey = (Arc<str>, Arc<str>, Option<Arc<str>>);
     let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::new();
 
+    // O(1) per-match membership for additional_locations. The duplicate arm
+    // used to run `existing.additional_locations.iter().any(is_same_location)`
+    // once per duplicate, so a single (detector, credential, file) group of K
+    // matches on K distinct lines (a generated credentials dump, an exported
+    // .env, a .tfvars, a config with one token repeated per stanza) cost
+    // 0+1+...+(K-1) = K(K-1)/2 = O(K^2) location comparisons, unbounded by the
+    // per-chunk recall budget. Each group instead carries a HashSet of the
+    // location-identity tuples (source, file_path, line, commit) it has already
+    // recorded - the SAME identity `is_same_location` compares - keyed by the
+    // group's slot in `groups`. Insert-returns-false is the exact negation of
+    // the prior `.any()` scan, so output is byte-identical: a location is added
+    // to additional_locations iff it differs from the primary AND from every
+    // already-recorded additional, now in O(1) instead of O(K). Turns a
+    // K-repeat group from O(K^2) to O(K).
+    type LocIdentity = (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>);
+    let mut seen_locations: Vec<std::collections::HashSet<LocIdentity>> = Vec::new();
+
     // Sort by offset ascending so that for any group of (detector, credential,
     // file) matches the LOWEST offset becomes the primary_location and any
     // higher-offset duplicates land in additional_locations (or get
@@ -152,12 +169,20 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
             DedupScope::None => continue,
         };
 
-        match groups.get_mut(&key) {
-            Some(existing) => {
+        match groups.get_full_mut(&key) {
+            Some((idx, _, existing)) => {
                 if is_decoder_alias_pair(&existing.primary_location, &matched.location) {
                     if is_decoder_location(&existing.primary_location)
                         && !is_decoder_location(&matched.location)
                     {
+                        // The primary's identity changes; keep the seen-set in
+                        // sync so a later true duplicate of the new primary is
+                        // still recognized as same-as-primary (the
+                        // is_same_location(primary, ...) guard below handles it,
+                        // but recording it keeps the set a faithful mirror).
+                        let seen = &mut seen_locations[idx];
+                        seen.remove(&location_identity(&existing.primary_location));
+                        seen.insert(location_identity(&matched.location));
                         existing.primary_location = matched.location;
                     }
                     merge_companions(&mut existing.companions, matched.companions);
@@ -176,12 +201,14 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 // single-secret .env reported `+1 more locations` at
                 // offset 80 in a 51-byte file. Same (file, line) implies
                 // same finding; the synthetic match adds no signal.
-                if !is_same_location(&existing.primary_location, &matched.location)
-                    && !existing
-                        .additional_locations
-                        .iter()
-                        .any(|loc| is_same_location(loc, &matched.location))
-                {
+                //
+                // Membership is O(1) via the per-group seen-locations set
+                // (initialized with the primary's identity), so a K-repeat
+                // group is O(K) instead of the old O(K^2) `.any()` sweep. The
+                // set insert returns false exactly when the identity already
+                // exists (primary OR a prior additional), reproducing the old
+                // two-part guard with identical output.
+                if seen_locations[idx].insert(location_identity(&matched.location)) {
                     existing.additional_locations.push(matched.location);
                 }
                 merge_companions(&mut existing.companions, matched.companions);
@@ -189,6 +216,8 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
             }
             None => {
                 let credential_hash = sha256_hash(&matched.credential);
+                let mut seen = std::collections::HashSet::new();
+                seen.insert(location_identity(&matched.location));
                 groups.insert(
                     key,
                     DedupedMatch {
@@ -204,6 +233,11 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                         confidence: matched.confidence,
                     },
                 );
+                // groups.insert on a fresh key appends at the tail, so the new
+                // group's slot index is the prior length - keep seen_locations
+                // index-aligned with the IndexMap.
+                debug_assert_eq!(seen_locations.len(), groups.len() - 1);
+                seen_locations.push(seen);
             }
         }
     }
@@ -325,17 +359,27 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     out
 }
 
-/// Two locations are "the same finding" when they share (source, file_path,
-/// line, commit). Offset is intentionally NOT in the tuple - the structured
-/// preprocessor's synthetic-line append produces matches whose offset lies
-/// past the source file's EOF (the offset is into final_text, not the
-/// original chunk text), but whose `line` field is correctly remapped via
-/// LineMapping to the original source line. So same-(file, line) means the
-/// dedupe SHOULD collapse them: emitting both as "primary at line 1 offset
-/// 27" + "additional at line 1 offset 80 (past EOF)" is a confusing
-/// duplicate, not two findings.
-fn is_same_location(a: &MatchLocation, b: &MatchLocation) -> bool {
-    a.source == b.source && a.file_path == b.file_path && a.line == b.line && a.commit == b.commit
+/// The hashable identity tuple `(source, file_path, line, commit)` that defines
+/// when two locations are "the same finding" and must collapse. Offset is
+/// intentionally excluded: the structured preprocessor's synthetic-line append
+/// produces matches whose offset lies past the source file's EOF (the offset is
+/// into final_text, not the original chunk text), but whose `line` field is
+/// correctly remapped via LineMapping to the original source line. So
+/// same-(file, line) means the dedupe SHOULD collapse them: emitting both as
+/// "primary at line 1 offset 27" + "additional at line 1 offset 80 (past EOF)"
+/// is a confusing duplicate, not two findings. Cloning the `Arc`s is a refcount
+/// bump, not a string copy, so building the key per match stays O(1). Used as
+/// the per-group seen-set element so additional_locations membership is O(1)
+/// instead of an O(K) linear scan.
+fn location_identity(
+    loc: &MatchLocation,
+) -> (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>) {
+    (
+        Arc::clone(&loc.source),
+        loc.file_path.clone(),
+        loc.line,
+        loc.commit.clone(),
+    )
 }
 
 fn file_scope_identity(location: &MatchLocation) -> Arc<str> {

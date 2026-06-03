@@ -35,8 +35,12 @@ fn cfg() -> MultilineConfig {
     MultilineConfig::default()
 }
 
-fn pre(text: &str) -> PreprocessedText {
-    preprocess_multiline(text, &cfg(), &FragmentCache::new(100))
+fn pre(text: &str) -> PreprocessedText<'_> {
+    preprocess_multiline(
+        std::borrow::Cow::Borrowed(text),
+        &cfg(),
+        &FragmentCache::new(100),
+    )
 }
 
 fn frag(prefix: &str, var: &str, value: &str, line: usize, path: Option<&str>) -> SecretFragment {
@@ -256,7 +260,11 @@ fn backslash_continuation_disabled_by_config() {
     c.python_implicit = false;
     c.template_literals = false;
     let text = "key = \"sk-aaaa\" \\\n    \"bbbbcccc\"\n";
-    let p = preprocess_multiline(text, &c, &FragmentCache::new(100));
+    let p = preprocess_multiline(
+        std::borrow::Cow::Borrowed(text),
+        &c,
+        &FragmentCache::new(100),
+    );
     // With every join mode off, no "+", and only a backslash indicator,
     // the chain processes line-by-line as plain content and never produces
     // the glued token.
@@ -299,7 +307,11 @@ fn python_implicit_disabled_by_config() {
     c.backslash_continuation = false;
     c.template_literals = false;
     let text = "key = \"AKIA\" \"IOSFODNN7\"\n";
-    let p = preprocess_multiline(text, &c, &FragmentCache::new(100));
+    let p = preprocess_multiline(
+        std::borrow::Cow::Borrowed(text),
+        &c,
+        &FragmentCache::new(100),
+    );
     assert!(!p.text.contains("AKIAIOSFODNN7"), "{:?}", p.text);
 }
 
@@ -373,7 +385,11 @@ fn template_literal_disabled_by_config_no_join() {
     c.python_implicit = false;
     c.backslash_continuation = false;
     let text = "const t = `ghp_${\"abcdefghij\"}`;\n";
-    let p = preprocess_multiline(text, &c, &FragmentCache::new(100));
+    let p = preprocess_multiline(
+        std::borrow::Cow::Borrowed(text),
+        &c,
+        &FragmentCache::new(100),
+    );
     // With template handling off the literal is not reassembled into ghp_<body>.
     // (`}${` / `${"` structural passes are separate; this single `${"..."}`
     // line carries neither a cluster nor a `}${` adjacency.)
@@ -774,7 +790,7 @@ fn preprocessed_text_passthrough_clamps_last_mapping_to_text_len() {
     // it uses split('\n') with end_offset = end+1, then clamps the LAST mapping
     // to text.len().
     let text = "abc\ndef"; // len 7. split: "abc"(0..3 -> end_off 4), "def"(4..7).
-    let p = PreprocessedText::passthrough(text);
+    let p = PreprocessedText::passthrough(std::borrow::Cow::Borrowed(text));
     assert_eq!(p.original_end, 7);
     assert_eq!(p.mappings.len(), 2);
     assert_eq!(p.mappings[0].start_offset, 0);
@@ -790,7 +806,7 @@ fn preprocessed_text_passthrough_line_for_offset_covers_newline() {
     // Because passthrough() sets end_offset = end+1 for non-last lines, the
     // '\n' byte at offset 3 IS inside mapping[0]'s window (unlike passthrough_text).
     let text = "abc\ndef";
-    let p = PreprocessedText::passthrough(text);
+    let p = PreprocessedText::passthrough(std::borrow::Cow::Borrowed(text));
     assert_eq!(p.line_for_offset(0), Some(1));
     assert_eq!(p.line_for_offset(3), Some(1)); // the '\n' maps to line 1 here
     assert_eq!(p.line_for_offset(4), Some(2));
@@ -806,7 +822,7 @@ fn preprocessed_text_passthrough_line_for_offset_covers_newline() {
 fn line_for_offset_before_any_mapping_is_none() {
     // Construct a PreprocessedText whose first mapping starts at offset 5.
     let p = PreprocessedText {
-        text: "0123456789".to_string(),
+        text: std::borrow::Cow::Owned("0123456789".to_string()),
         original_end: 10,
         mappings: vec![LineMapping {
             start_offset: 5,
@@ -827,7 +843,7 @@ fn line_for_offset_gap_between_mappings_is_none() {
     // Two non-contiguous windows: [0,3) line1 and [10,13) line5. An offset in
     // the gap resolves to mapping[0] by start_offset, then fails the end check.
     let p = PreprocessedText {
-        text: "x".repeat(20),
+        text: std::borrow::Cow::Owned("x".repeat(20)),
         original_end: 20,
         mappings: vec![
             LineMapping {
@@ -853,7 +869,7 @@ fn line_for_offset_gap_between_mappings_is_none() {
 #[test]
 fn line_for_offset_empty_mappings_is_none() {
     let p = PreprocessedText {
-        text: String::new(),
+        text: std::borrow::Cow::Owned(String::new()),
         original_end: 0,
         mappings: Vec::new(),
     };

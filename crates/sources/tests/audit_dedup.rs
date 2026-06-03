@@ -105,10 +105,22 @@ fn cgn_100_64_is_refused_like_canonical_bogon() {
 fn forked_gate_matches_canonical_on_reserved_ranges() {
     // (address, RFC / range, bogon.rs evidence line)
     let must_refuse: &[(Ipv4Addr, &str)] = &[
-        (Ipv4Addr::new(100, 64, 0, 1), "100.64.0.0/10 CGN (RFC 6598) — bogon.rs:121"),
-        (Ipv4Addr::new(198, 18, 0, 1), "198.18.0.0/15 benchmark (RFC 2544) — bogon.rs:127"),
-        (Ipv4Addr::new(192, 0, 0, 1), "192.0.0.0/24 IETF protocol assignment — bogon.rs:124"),
-        (Ipv4Addr::new(0, 0, 0, 1), "0.0.0.0/8 this-network (RFC 1122) — bogon.rs:112"),
+        (
+            Ipv4Addr::new(100, 64, 0, 1),
+            "100.64.0.0/10 CGN (RFC 6598) — bogon.rs:121",
+        ),
+        (
+            Ipv4Addr::new(198, 18, 0, 1),
+            "198.18.0.0/15 benchmark (RFC 2544) — bogon.rs:127",
+        ),
+        (
+            Ipv4Addr::new(192, 0, 0, 1),
+            "192.0.0.0/24 IETF protocol assignment — bogon.rs:124",
+        ),
+        (
+            Ipv4Addr::new(0, 0, 0, 1),
+            "0.0.0.0/8 this-network (RFC 1122) — bogon.rs:112",
+        ),
     ];
 
     let leaked: Vec<&str> = must_refuse

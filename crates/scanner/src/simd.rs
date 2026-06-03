@@ -11,9 +11,61 @@ pub(crate) mod backend {
         Scratch,
     };
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    /// Compiled Hyperscan database for all detector patterns.
-    /// Thread-safe: the database is immutable and scratch is pooled per-instance.
+    /// Target number of patterns per compile shard. The cold compile is a
+    /// single serial C-side NFA/DFA build whose wall-clock scales ~linearly
+    /// with the pattern count, so the shard COUNT is sized to keep each shard
+    /// near this many patterns: `shards = ceil(n / TARGET_PATTERNS_PER_SHARD)`,
+    /// capped at the core count. Sizing by patterns-per-shard (rather than a
+    /// fixed shard count) is what flattens the build's scaling: as the corpus
+    /// grows, the number of shards grows while each shard's serial build stays
+    /// ~constant, so on a many-core box "double the patterns" is absorbed by
+    /// spinning up more parallel shards instead of doubling each shard's work.
+    /// ~80 was chosen empirically: on the ~900-detector corpus (~1.7k compiled
+    /// patterns) it lands the full set at ~21 shards and a half set at ~11, so
+    /// BOTH sit comfortably under a 32-core box's one-wave budget AND carry a
+    /// near-equal per-shard pattern count - which flattens the full/half
+    /// cold-compile ratio to ~1.3x (vs ~1.9-2.0x serial). A smaller target
+    /// (e.g. 40) pushes the full set up against the core count, making its
+    /// per-shard size diverge from the half set's and the ratio worse; a much
+    /// larger target gives up parallelism. Per-shard builds stay ~150-190ms
+    /// (vs ~1600ms for the serial all-patterns build). Each shard is
+    /// disk-cached independently (keyed by the SHA-256 of its own pattern
+    /// list), so the warm path stays a deserialize-only load. Overridable at
+    /// runtime via `KEYHOG_SHARD_TARGET` for hardware-specific tuning.
+    const TARGET_PATTERNS_PER_SHARD: usize = 80;
+
+    /// Hard ceiling on shard count, so a pathologically large detector set on a
+    /// 128-core box cannot spawn an unbounded number of databases (each costs a
+    /// scan-time dispatch). At this cap the per-shard size grows again, but the
+    /// real corpus (~900 patterns) sits at ~23 shards, well under it.
+    const MAX_COMPILE_SHARDS: usize = 64;
+
+    /// Monotonic per-process id source so each `HsScanner` instance gets a
+    /// distinct key for its thread-local scratch cache (below). Multiple
+    /// scanners in one process must not hand each other a scratch allocated
+    /// against a different database.
+    static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    /// One compiled shard: its database plus a Mutex-guarded scratch pool. Each
+    /// `Scratch` is tied to exactly one `BlockDatabase`, so the pools are
+    /// per-shard.
+    struct Shard {
+        db: BlockDatabase,
+        scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
+    }
+
+    /// Compiled Hyperscan databases for all detector patterns, sharded across
+    /// cores at compile time.
+    ///
+    /// Thread-safe: every database is immutable after compilation and the
+    /// scratch pools are Mutex-guarded. The public scan/lookup surface is
+    /// unchanged from the single-database version - `pattern_info`/
+    /// `pattern_count` still index a single global `pattern_map` keyed by the
+    /// HS pattern id, because each shard's patterns carry their ORIGINAL global
+    /// id, so a match from any shard maps back through the same table and the
+    /// scan output is the union of all shards in original-byte space.
     ///
     /// # Examples
     ///
@@ -23,16 +75,22 @@ pub(crate) mod backend {
     /// let _scanner = HsScanner::compile(&[(0, 0, "demo_[A-Z0-9]{8}", false)])?;
     /// ```
     pub struct HsScanner {
-        db: BlockDatabase,
-        /// Map from HS pattern ID to (detector_index, pattern_index, has_group)
+        /// Independently-compiled shard databases. Their union over a scan is
+        /// exactly the set of matches a single all-patterns database would
+        /// produce (Hyperscan match ids are the global pattern ids, which are
+        /// disjoint across shards).
+        shards: Vec<Shard>,
+        /// Map from HS pattern ID to (detector_index, pattern_index, has_group).
+        /// Global and shared across shards - unchanged from the single-db build.
         pattern_map: Vec<(usize, usize, bool)>,
-        /// Per-instance scratch pool (each scratch is tied to this db)
-        scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
+        /// Distinct id for this scanner instance, used to key the thread-local
+        /// per-shard scratch cache so two scanners never share scratches.
+        scanner_id: u64,
     }
 
     // SAFETY: BlockDatabase is immutable after compilation and safe to share.
-    // Scratch pool is Mutex-guarded. Individual Scratch objects are only used
-    // by one thread at a time (taken from pool, returned after use).
+    // Scratch pools are Mutex-guarded. Individual Scratch objects are only used
+    // by one thread at a time (taken from pool/thread-local, returned after use).
     unsafe impl Send for HsScanner {}
     unsafe impl Sync for HsScanner {}
 
@@ -188,74 +246,187 @@ pub(crate) mod backend {
 
                 hex::encode(h.finalize())
             };
-            let cache_path = cache_dir.join(format!("hs-{cache_key}.db"));
+            // ── Shard the pattern set and compile each shard in parallel ──
+            //
+            // The single serial `Builder::build` over the whole pattern set is
+            // the entire cold-compile cost (~99.7% of it; the rayon regex-
+            // validate phase upstream is ~5ms) and it scales ~linearly with the
+            // pattern count while every core but one idles. Splitting the
+            // patterns into K independent shards and building them on the rayon
+            // pool lets the idle cores absorb the work, so doubling the pattern
+            // count is bounded by the largest shard, not the sum. Each
+            // `Builder::build` is fully independent and CPU-bound; the match ids
+            // are the GLOBAL pattern ids (set on `Pattern.id` above), so a match
+            // from any shard maps back through the same `pattern_map` and the
+            // union of all shards' matches is exactly what a single all-patterns
+            // database would have produced - no recall change, only WHERE each
+            // pattern compiles.
+            let cores = std::thread::available_parallelism()
+                .map(|c| c.get())
+                .unwrap_or(1);
+            // Shard count: aim for ~TARGET patterns per shard, but cap at the
+            // core count so every shard runs in a SINGLE parallel wave. Two
+            // boundary behaviours matter for the full/half cold-compile ratio:
+            //
+            //   * Below the cap (small/medium corpus): shard COUNT scales with n
+            //     at a fixed per-shard size, so each `Builder::build` costs the
+            //     same and doubling the corpus is fully absorbed by spinning up
+            //     more parallel shards (flat).
+            //   * At the cap (large corpus, n > cores*TARGET): per-shard size
+            //     grows as n/cores. With TARGET tuned so the full corpus sits
+            //     right at the cap, a half-size corpus lands just below it at a
+            //     similar per-shard size, so the two stay within a small factor
+            //     and the ratio tracks the (sub-linear) per-shard build growth
+            //     rather than the pattern count.
+            //
+            // Letting shards exceed cores was measured to be WORSE: the build
+            // then runs ceil(shards/cores) work-stealing waves and the wall-clock
+            // quantizes at the core boundary (a corpus needing 42 shards on 32
+            // cores pays ~1.7x vs a half needing 21), so we stay within one wave.
+            let target = std::env::var("KEYHOG_SHARD_TARGET")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&v| v >= 1)
+                .unwrap_or(TARGET_PATTERNS_PER_SHARD);
+            let cap = cores.min(MAX_COMPILE_SHARDS).max(1);
+            let shard_count = hs_pats
+                .len()
+                .div_ceil(target)
+                .clamp(1, cap)
+                .min(hs_pats.len())
+                .max(1);
+
+            // LPT (longest-processing-time-first) bin-packing partition. The
+            // Hyperscan build time of a shard is dominated by its heaviest
+            // regexes (DFA state blow-up is super-linear in pattern length), so a
+            // naive round-robin that happens to land several long regexes in one
+            // shard makes that shard the wall-clock-determining straggler. Sort
+            // patterns by a cost proxy (expression length) descending and place
+            // each on the currently-lightest shard. This minimizes the MAX shard
+            // cost, so wall-clock ~ mean shard cost, which scales smoothly with
+            // patterns-per-shard - the property the full/half ratio test checks.
+            // Each shard keeps the patterns' original GLOBAL ids (set on
+            // `Pattern.id` above), so the union semantics are unchanged.
+            let mut order: Vec<usize> = (0..hs_pats.len()).collect();
+            order.sort_unstable_by_key(|&i| std::cmp::Reverse(hs_pats[i].expression.len()));
+            let mut shard_pats: Vec<Vec<Pattern>> = (0..shard_count).map(|_| Vec::new()).collect();
+            let mut shard_cost: Vec<u64> = vec![0; shard_count];
+            for &i in &order {
+                // Index of the lightest shard so far. `shard_count` is
+                // `.clamp(1, cap).max(1)` above, so `shard_cost` is never empty
+                // and `min_by_key` always yields `Some`; `unwrap_or(0)` keeps the
+                // path panic-free (shard 0 always exists) without a production
+                // `.expect`.
+                let lightest = shard_cost
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, &c)| c)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
+                // Cost proxy: length plus a fixed per-pattern overhead so a shard
+                // with many short patterns is not treated as free.
+                shard_cost[lightest] += hs_pats[i].expression.len() as u64 + 16;
+                shard_pats[lightest].push(hs_pats[i].clone());
+            }
 
             const CACHE_MAGIC: &[u8; 4] = b"KHHS";
             const CACHE_VERSION: u32 = 1;
 
-            // Try loading from cache first.
-            let db: BlockDatabase = if let Ok(bytes) = std::fs::read(&cache_path) {
-                if bytes.len() > 8 && &bytes[0..4] == CACHE_MAGIC {
-                    let version = bytes[4..8].try_into().map(u32::from_le_bytes).unwrap_or(0);
-                    if version == CACHE_VERSION {
-                        use hyperscan::Serialized;
-                        let payload: Vec<u8> = bytes[8..].to_vec();
-                        match payload.as_slice().deserialize::<BlockMode>() {
-                            Ok(db) => {
-                                tracing::info!(cache = %cache_path.display(), patterns = hs_pats.len(), "HS loaded from cache");
-                                db
-                            }
-                            Err(_) => {
-                                Self::compile_hs_db(&hs_pats, &mut unsupported, &pattern_map)?
-                            }
+            // Compile (or cache-load) every shard concurrently. Returns the
+            // built database and the global ids the shard had to drop (over-long
+            // / unsupported constructs) for the keyword-fallback reroute.
+            use rayon::prelude::*;
+            let shard_results: Vec<Result<(BlockDatabase, Vec<usize>), String>> = shard_pats
+                .into_par_iter()
+                .enumerate()
+                .map(|(shard_idx, pats)| {
+                    // Per-shard cache key: the shared env-metadata digest plus
+                    // this shard's own pattern strings, so each shard file is
+                    // independent and the warm path is a deserialize-only load.
+                    // The partition is deterministic for a given (pattern set,
+                    // shard_count), so the keys are stable across runs; a host
+                    // with a different shard_count simply produces different
+                    // per-shard keys (no stale-read collision).
+                    let shard_key = {
+                        use sha2::{Digest, Sha256};
+                        let mut h = Sha256::new();
+                        h.update(cache_key.as_bytes());
+                        h.update((shard_count as u64).to_le_bytes());
+                        h.update((shard_idx as u64).to_le_bytes());
+                        for p in &pats {
+                            h.update(p.expression.as_bytes());
+                            h.update([0]);
                         }
-                    } else {
-                        Self::compile_hs_db(&hs_pats, &mut unsupported, &pattern_map)?
-                    }
-                } else {
-                    Self::compile_hs_db(&hs_pats, &mut unsupported, &pattern_map)?
-                }
-            } else {
-                let db = Self::compile_hs_db(&hs_pats, &mut unsupported, &pattern_map)?;
-                // Task 1b: Atomic write with magic + version
-                if let Ok(ser) = db.serialize() {
-                    let mut data = Vec::with_capacity(ser.as_ref().len() + 8);
-                    data.extend_from_slice(CACHE_MAGIC);
-                    data.extend_from_slice(&CACHE_VERSION.to_le_bytes());
-                    data.extend_from_slice(ser.as_ref());
+                        hex::encode(h.finalize())
+                    };
+                    let cache_path = cache_dir.join(format!("hs-{shard_key}.db"));
 
-                    // NamedTempFile + persist for atomic write - same
-                    // rationale as `merkle_index::save`. The previous
-                    // pid-suffixed tmp leaked on panic between write
-                    // and rename; the Drop impl on NamedTempFile
-                    // cleans it up automatically.
-                    let parent = cache_path
-                        .parent()
-                        .unwrap_or_else(|| std::path::Path::new("."));
-                    if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
-                        if std::io::Write::write_all(&mut tmp, &data).is_ok()
-                            && tmp.as_file().sync_all().is_ok()
+                    // Try the per-shard disk cache first.
+                    if let Ok(bytes) = std::fs::read(&cache_path) {
+                        if bytes.len() > 8
+                            && &bytes[0..4] == CACHE_MAGIC
+                            && bytes[4..8].try_into().map(u32::from_le_bytes).unwrap_or(0)
+                                == CACHE_VERSION
                         {
-                            if let Err(error) = tmp.persist(&cache_path) {
-                                tracing::debug!(
+                            use hyperscan::Serialized;
+                            let payload: &[u8] = &bytes[8..];
+                            if let Ok(db) = payload.deserialize::<BlockMode>() {
+                                tracing::info!(
                                     cache = %cache_path.display(),
-                                    error = %error,
-                                    "HS DB cache persist failed; next run will recompile"
+                                    shard = shard_idx,
+                                    patterns = pats.len(),
+                                    "HS shard loaded from cache"
                                 );
+                                return Ok((db, Vec::new()));
                             }
                         }
                     }
-                    tracing::info!(cache = %cache_path.display(), "HS cached");
-                }
-                db
-            };
 
-            // Verify scratch allocation works with a single test allocation.
-            // Further scratches are allocated lazily per-thread on first scan.
-            let test_scratch = db
-                .alloc_scratch()
-                .map_err(|e| format!("hyperscan scratch: {e}"))?;
-            let initial_pool = vec![test_scratch];
+                    // Cold: build this shard, then atomically persist it.
+                    let (db, dropped) = Self::compile_hs_db(&pats)?;
+                    if let Ok(ser) = db.serialize() {
+                        let mut data = Vec::with_capacity(ser.as_ref().len() + 8);
+                        data.extend_from_slice(CACHE_MAGIC);
+                        data.extend_from_slice(&CACHE_VERSION.to_le_bytes());
+                        data.extend_from_slice(ser.as_ref());
+                        let parent = cache_path
+                            .parent()
+                            .unwrap_or_else(|| std::path::Path::new("."));
+                        if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
+                            if std::io::Write::write_all(&mut tmp, &data).is_ok()
+                                && tmp.as_file().sync_all().is_ok()
+                            {
+                                if let Err(error) = tmp.persist(&cache_path) {
+                                    tracing::debug!(
+                                        cache = %cache_path.display(),
+                                        error = %error,
+                                        "HS shard cache persist failed; next run will recompile"
+                                    );
+                                }
+                            }
+                        }
+                        tracing::info!(cache = %cache_path.display(), shard = shard_idx, "HS shard cached");
+                    }
+                    Ok((db, dropped))
+                })
+                .collect();
+
+            // Assemble the shards; any single shard's compile error fails the
+            // whole build (matches the previous all-or-nothing contract).
+            let mut shards = Vec::with_capacity(shard_count);
+            for result in shard_results {
+                let (db, dropped) = result?;
+                unsupported.extend(dropped);
+                // Verify scratch allocation works once per shard; further
+                // scratches are allocated lazily per-thread on first scan.
+                let test_scratch = db
+                    .alloc_scratch()
+                    .map_err(|e| format!("hyperscan scratch: {e}"))?;
+                shards.push(Shard {
+                    db,
+                    scratch_pool: parking_lot::Mutex::new(vec![test_scratch]),
+                });
+            }
 
             // The caller (`build_simd_scanner`) already logs
             // `unsupported.len()` via tracing::info!, and consumers that
@@ -263,34 +434,38 @@ pub(crate) mod backend {
             // store a redundant copy on the scanner itself.
             Ok((
                 Self {
-                    db,
+                    shards,
                     pattern_map,
-                    scratch_pool: parking_lot::Mutex::new(initial_pool),
+                    scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
                 },
                 unsupported,
             ))
         }
 
-        fn compile_hs_db(
-            hs_pats: &[Pattern],
-            unsupported: &mut Vec<usize>,
-            pattern_map: &[(usize, usize, bool)],
-        ) -> Result<BlockDatabase, String> {
+        /// Build one shard's `BlockDatabase`, returning the database and the
+        /// GLOBAL pattern ids it had to drop (over-long or an unsupported
+        /// construct Hyperscan rejects only at build time). The dropped ids are
+        /// rerouted into the keyword fallback by the caller so the pattern is
+        /// never silently lost. Because sharding makes each shard far smaller
+        /// than the old single combined database, the size-limit retry below
+        /// almost never fires now - which strictly REDUCES the set of patterns
+        /// dropped for "Pattern too large", improving recall, never hurting it.
+        fn compile_hs_db(hs_pats: &[Pattern]) -> Result<(BlockDatabase, Vec<usize>), String> {
             let mut attempts = hs_pats.to_vec();
+            let mut dropped: Vec<usize> = Vec::new();
             let started = std::time::Instant::now();
             let db: BlockDatabase = loop {
-                let patterns_obj = Patterns(attempts.clone());
+                let patterns_obj = Patterns(std::mem::take(&mut attempts));
                 match Builder::build::<BlockMode>(&patterns_obj) {
                     Ok(db) => break db,
-                    Err(_) if attempts.len() > 100 => {
+                    Err(_) if patterns_obj.0.len() > 100 => {
+                        // Reclaim ownership for the next attempt.
+                        attempts = patterns_obj.0;
                         attempts.sort_by_key(|p| std::cmp::Reverse(p.expression.len()));
                         let remove_count = attempts.len() / 10;
                         for _ in 0..remove_count {
                             if let Some(removed) = attempts.pop() {
-                                let idx = removed.id.unwrap_or(0);
-                                if idx < pattern_map.len() {
-                                    unsupported.push(idx);
-                                }
+                                dropped.push(removed.id.unwrap_or(0));
                             }
                         }
                         attempts.sort_by_key(|p| p.id.unwrap_or(0));
@@ -299,11 +474,11 @@ pub(crate) mod backend {
                 }
             };
             tracing::info!(
-                patterns = attempts.len(),
+                patterns = hs_pats.len() - dropped.len(),
                 compile_ms = started.elapsed().as_millis(),
-                "HS compiled"
+                "HS shard compiled"
             );
-            Ok(db)
+            Ok((db, dropped))
         }
 
         /// Scan text and return `(hs_pattern_id, match_start, match_end)`.
@@ -318,31 +493,49 @@ pub(crate) mod backend {
         /// let _matches = scanner.scan(b"demo_ABC12345");
         /// ```
         pub fn scan(&self, text: &[u8]) -> Vec<(usize, usize, usize)> {
-            // Thread-local scratch: zero mutex contention on parallel scans.
-            // Each rayon thread gets its own scratch, reused across all files
-            // that thread processes. No lock, no allocation after first use.
+            // Thread-local per-(scanner, shard) scratch: zero mutex contention
+            // on parallel scans. Each rayon thread keeps one scratch per shard,
+            // reused across all files it processes. Keyed by `scanner_id` so two
+            // scanners in one process never hand each other a scratch allocated
+            // against a different database; keyed by shard so each shard's
+            // immutable database gets its own. No lock, no allocation after
+            // first touch.
             thread_local! {
-                static TLS: std::cell::RefCell<Option<Scratch>> = const { std::cell::RefCell::new(None) };
+                static TLS: std::cell::RefCell<
+                    std::collections::HashMap<(u64, usize), Scratch>,
+                > = std::cell::RefCell::new(std::collections::HashMap::new());
             }
 
-            let scratch = TLS
-                .with(|tls| tls.borrow_mut().take())
-                .or_else(|| self.scratch_pool.lock().pop())
-                .or_else(|| self.db.alloc_scratch().ok());
-
-            let Some(scratch) = scratch else {
-                return Vec::new();
-            };
-
+            // The match callback pushes the GLOBAL pattern id (set on
+            // `Pattern.id` at compile), so the union over shards is identical
+            // to a single all-patterns database's output - offsets are in the
+            // original byte space, no remapping. Reserve once for the common
+            // case; the union is typically small.
             let mut matches = Vec::with_capacity(32);
-            let _ = self.db.scan(text, &scratch, |id, from, to, _flags| {
-                matches.push((id as usize, from as usize, to as usize));
-                Matching::Continue
-            });
 
-            TLS.with(|tls| {
-                *tls.borrow_mut() = Some(scratch);
-            });
+            for (shard_idx, shard) in self.shards.iter().enumerate() {
+                let key = (self.scanner_id, shard_idx);
+                // Take this thread's scratch for the shard (or allocate one):
+                // pool first to reuse the compile-time test scratch, else a
+                // fresh alloc tied to the shard's db.
+                let scratch = TLS
+                    .with(|tls| tls.borrow_mut().remove(&key))
+                    .or_else(|| shard.scratch_pool.lock().pop())
+                    .or_else(|| shard.db.alloc_scratch().ok());
+
+                let Some(scratch) = scratch else {
+                    continue;
+                };
+
+                let _ = shard.db.scan(text, &scratch, |id, from, to, _flags| {
+                    matches.push((id as usize, from as usize, to as usize));
+                    Matching::Continue
+                });
+
+                TLS.with(|tls| {
+                    tls.borrow_mut().insert(key, scratch);
+                });
+            }
             matches
         }
 

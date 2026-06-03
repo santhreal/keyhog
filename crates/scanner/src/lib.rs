@@ -150,7 +150,7 @@ pub fn compute_line_offsets(text: &str) -> Vec<usize> {
 
 /// Map a byte offset to a line number using pre-computed offsets.
 pub fn match_line_number(
-    preprocessed: &types::ScannerPreprocessedText,
+    preprocessed: &types::ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     offset: usize,
 ) -> usize {
@@ -183,7 +183,7 @@ pub fn should_suppress_known_example_credential(
 
 /// Search for a companion pattern near a primary match.
 pub fn find_companion(
-    preprocessed: &types::ScannerPreprocessedText,
+    preprocessed: &types::ScannerPreprocessedText<'_>,
     primary_line: usize,
     companion: &types::CompiledCompanion,
 ) -> Option<String> {

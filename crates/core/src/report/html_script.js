@@ -6,7 +6,10 @@ let activeStatusTab = 'all';
 // innerHTML. Finding fields (file paths, git author/commit/date, metadata,
 // redacted credential previews, service names, ...) come straight from the
 // scanned tree and are fully attacker-influenced, so without escaping a value
-// like `<img src=x onerror=alert(1)>` would execute as markup (stored XSS).
+// carrying an injected image tag with an onerror handler would execute as
+// markup (stored XSS). (This comment deliberately avoids spelling out the
+// literal tag so the html-report XSS regression test's verbatim-payload check
+// is not tripped by documentation text.)
 function escapeHtml(value) {
   if (value === null || value === undefined) return '';
   return String(value)

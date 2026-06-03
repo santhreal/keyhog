@@ -91,6 +91,15 @@ vyre-runtime = { workspace = true, optional = true, features = ["megakernel-batc
 simdsieve = { workspace = true, optional = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
+# Fast (AES/SIMD-mixed) hasher for the frozen detector-metadata interner. The
+# per-match `StaticInterner::lookup` hot path replaces vyre's CHD perfect-hash
+# (two seeded FNV-1a passes + an xxHash verify + a full string compare = four
+# whole-key traversals per field) with a SINGLE ahash pass over the key. ahash
+# processes the key in 8-byte words with hardware mix ops instead of one
+# function call per byte, collapsing the per-lookup cost to ~one cheap hash +
+# one compare while returning the identical pre-allocated `Arc<str>`
+# (PERF-locality_intern-1).
+ahash = "=0.8.12"
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

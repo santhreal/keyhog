@@ -335,7 +335,7 @@ impl CompiledScanner {
     pub(crate) fn extract_confirmed_patterns(
         &self,
         confirmed_patterns: &[usize],
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         code_lines: &[&str],
         documentation_lines: &[bool],

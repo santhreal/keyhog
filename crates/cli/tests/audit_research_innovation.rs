@@ -61,7 +61,8 @@ use std::process::Command;
 /// Resolve the keyhog binary. Prefer the prebuilt release-fast artifact the
 /// audit harness ships; fall back to the cargo test binary env var.
 fn binary() -> PathBuf {
-    let prebuilt = PathBuf::from("/mnt/FlareTraining/santh-archive/cargo-target/release-fast/keyhog");
+    let prebuilt =
+        PathBuf::from("/mnt/FlareTraining/santh-archive/cargo-target/release-fast/keyhog");
     if prebuilt.is_file() {
         return prebuilt;
     }
@@ -70,11 +71,7 @@ fn binary() -> PathBuf {
 
 /// Write `contents` to a fresh temp file under a unique dir and return the path.
 fn write_fixture(name: &str, contents: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "keyhog_audit_ri_{}_{}",
-        std::process::id(),
-        name
-    ));
+    let dir = std::env::temp_dir().join(format!("keyhog_audit_ri_{}_{}", std::process::id(), name));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("create fixture dir");
     let file = dir.join(format!("{name}.txt"));
@@ -153,10 +150,7 @@ fn aws_access_key_finding_carries_offline_decoded_account_id() {
 #[test]
 fn aws_canary_token_is_flagged_so_it_is_not_verified() {
     // AKIAAYLPMN5HAAAAAAAA -> account 052310077262 (Thinkst/canarytokens.org).
-    let path = write_fixture(
-        "aws_canary",
-        "aws_access_key_id = AKIAAYLPMN5HAAAAAAAA\n",
-    );
+    let path = write_fixture("aws_canary", "aws_access_key_id = AKIAAYLPMN5HAAAAAAAA\n");
     let json = scan_json(&path);
     let finding = first_finding(&json);
 
@@ -197,10 +191,7 @@ fn forged_alg_none_jwt_surfaces_security_anomaly_metadata() {
         "YWNjb3VudHMuZXhhbXBsZS5jb20iLCJleHAiOjk5OTk5OTk5OTl9",
         ".aaaaaaaaaaXXXXXXXXXX"
     );
-    let path = write_fixture(
-        "jwt_alg_none",
-        &format!("Authorization: Bearer {token}\n"),
-    );
+    let path = write_fixture("jwt_alg_none", &format!("Authorization: Bearer {token}\n"));
     let json = scan_json(&path);
     let finding = first_finding(&json);
 

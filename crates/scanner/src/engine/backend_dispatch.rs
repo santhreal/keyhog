@@ -83,40 +83,58 @@ impl CompiledScanner {
         // Homoglyph normalization: zero-allocation Cow fast path. Pure-ASCII
         // and evasion-free inputs (the 99% case) borrow `chunk.data` directly.
         // Only inputs containing actual homoglyphs/zero-width/RTL allocate.
-        let data_to_pp: std::borrow::Cow<'_, str> = if self.config.unicode_normalization {
-            let normalized = crate::unicode_hardening::normalize_homoglyphs(&chunk.data);
-            // Prefix-anchored interior-control strip: same evasion-hardening
-            // stage as homoglyph normalization (offsets are already in
-            // normalized-text space here). Removes `\t`/`\r` an attacker
-            // inserted inside a credential body after a known structured prefix
-            // (`AKIA<TAB>…`), while leaving structural whitespace untouched.
-            // Borrowed fast path unless such a control is actually present.
-            match crate::unicode_hardening::strip_interior_evasion_controls(&normalized) {
-                std::borrow::Cow::Owned(stripped) => std::borrow::Cow::Owned(stripped),
-                std::borrow::Cow::Borrowed(_) => normalized,
+        //
+        // The Cow MUST borrow `chunk.data` (lifetime `'a`) on the no-op path,
+        // not a local, so the borrowed passthrough text below can outlive this
+        // call inside `PreparedChunk<'a>`. We therefore chain the two
+        // normalization stages explicitly: a stage that rewrites bytes yields
+        // `Cow::Owned`; a no-op stage preserves the `&'a chunk.data` borrow.
+        let data_to_pp: std::borrow::Cow<'a, str> = if self.config.unicode_normalization {
+            match crate::unicode_hardening::normalize_homoglyphs(&chunk.data) {
+                // Homoglyph stage rewrote the bytes: the owned String is the
+                // canonical text. The interior-control strip then operates on
+                // that owned buffer; either outcome stays owned.
+                std::borrow::Cow::Owned(normalized) => {
+                    match crate::unicode_hardening::strip_interior_evasion_controls(&normalized) {
+                        std::borrow::Cow::Owned(stripped) => std::borrow::Cow::Owned(stripped),
+                        std::borrow::Cow::Borrowed(_) => std::borrow::Cow::Owned(normalized),
+                    }
+                }
+                // Homoglyph stage was a no-op: bytes are still `chunk.data`.
+                // Run the interior-control strip against `chunk.data` itself so
+                // a no-op there preserves the `'a` borrow on the chunk.
+                std::borrow::Cow::Borrowed(_) => {
+                    crate::unicode_hardening::strip_interior_evasion_controls(&chunk.data)
+                }
             }
         } else {
             std::borrow::Cow::Borrowed(&chunk.data)
         };
-        let data_ref: &str = &data_to_pp;
 
+        // For the structured / multiline-join paths the preprocessed text is
+        // freshly synthesized (owned regardless of `data_to_pp`), so they read
+        // it through a plain `&str`. The passthrough path, by contrast, is
+        // byte-identical to `data_to_pp` and carries the Cow through unchanged
+        // so a borrowed chunk stays borrowed (no full-body copy).
         let preprocessed = if let Some(pp) =
-            crate::structured::preprocess(data_ref, chunk.metadata.path.as_deref())
+            crate::structured::preprocess(&data_to_pp, chunk.metadata.path.as_deref())
         {
             pp
         } else {
             #[cfg(feature = "multiline")]
-            if crate::multiline::has_concatenation_indicators(data_ref) {
-                crate::multiline::preprocess_multiline(
-                    data_ref,
-                    &self.config.multiline,
-                    &self.fragment_cache,
-                )
-            } else {
-                ScannerPreprocessedText::passthrough(data_ref)
+            {
+                if crate::multiline::has_concatenation_indicators(&data_to_pp) {
+                    crate::multiline::preprocess_multiline(
+                        data_to_pp,
+                        &self.config.multiline,
+                        &self.fragment_cache,
+                    )
+                } else {
+                    ScannerPreprocessedText::passthrough(data_to_pp)
+                }
             }
             #[cfg(not(feature = "multiline"))]
-            ScannerPreprocessedText::passthrough(data_ref)
+            ScannerPreprocessedText::passthrough(data_to_pp)
         };
 
         PreparedChunk {

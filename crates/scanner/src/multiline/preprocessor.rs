@@ -12,19 +12,35 @@ enum ContinuationType {
 }
 
 /// Join adjacent string fragments and continuations before scanning.
-pub fn preprocess_multiline(
-    text: &str,
+///
+/// The returned [`PreprocessedText`] borrows `text` (`Cow::Borrowed`) on the
+/// passthrough / no-concatenation paths — the byte-identical common case — and
+/// only owns a fresh `String` (`Cow::Owned`) when a real concatenation join or
+/// structural fragment actually appends NEW bytes.
+pub fn preprocess_multiline<'a>(
+    text: impl Into<std::borrow::Cow<'a, str>>,
     config: &MultilineConfig,
     fragment_cache: &FragmentCache,
-) -> PreprocessedText {
+) -> PreprocessedText<'a> {
+    // Accept anything convertible into `Cow<'a, str>` (`&str`, `String`,
+    // `Cow`) so existing `&str` callers keep working while the scan hot path
+    // hands in the chunk's already-borrowed `Cow` so a passthrough chunk is
+    // never copied.
+    let text_owned: std::borrow::Cow<'a, str> = text.into();
+    // `text_owned` is the owning Cow (borrowed for a passthrough chunk, owned
+    // when normalization rewrote it). It is consumed ONLY at the byte-identical
+    // return points so a borrowed chunk passes through with no full-body copy;
+    // every read-only analysis below goes through the `&str` view `text`.
+    let text: &str = &text_owned;
+
     if should_passthrough(text) {
-        return passthrough_text(text);
+        return passthrough_text(text_owned);
     }
 
     let lines: Vec<&str> = text.lines().collect();
     if lines.is_empty() {
         return PreprocessedText {
-            text: String::new(),
+            text: std::borrow::Cow::Borrowed(""),
             original_end: 0,
             mappings: Vec::new(),
         };
@@ -32,7 +48,7 @@ pub fn preprocess_multiline(
 
     let first_nonwhite = text.trim_start().chars().next().unwrap_or(' ');
     if first_nonwhite == '{' || first_nonwhite == '[' {
-        return passthrough_text(text);
+        return passthrough_text(text_owned);
     }
 
     let mut result_lines = Vec::new();
@@ -91,10 +107,14 @@ pub fn preprocess_multiline(
     // original path, which only shifts them when the join is appended) so the
     // offset→line map is byte-identical to the eager-copy result.
     if !will_append && structural_joined.is_empty() {
+        // Byte-identical to the input (no join, no structural fragment): carry
+        // the original Cow through unchanged instead of copying the body into a
+        // fresh String. A borrowed chunk stays borrowed; a normalization-owned
+        // buffer is moved, not re-copied.
         let mut original_mappings = identity_line_mappings(text, original_end);
         original_mappings.extend(mappings);
         return PreprocessedText {
-            text: text.to_string(),
+            text: text_owned,
             original_end,
             mappings: original_mappings,
         };
@@ -127,7 +147,9 @@ pub fn preprocess_multiline(
     original_mappings.extend(mappings);
 
     PreprocessedText {
-        text: final_text,
+        // `final_text` is the input plus appended join/structural bytes — newly
+        // synthesized, so it is owned.
+        text: std::borrow::Cow::Owned(final_text),
         original_end,
         mappings: original_mappings,
     }
@@ -153,7 +175,7 @@ fn identity_line_mappings(text: &str, original_end: usize) -> Vec<LineMapping> {
     original_mappings
 }
 
-fn passthrough_text(text: &str) -> PreprocessedText {
+fn passthrough_text(text: std::borrow::Cow<'_, str>) -> PreprocessedText<'_> {
     let mut mappings = Vec::new();
     let mut offset = 0;
     for (index, line) in text.lines().enumerate() {
@@ -164,9 +186,11 @@ fn passthrough_text(text: &str) -> PreprocessedText {
         });
         offset += line.len() + 1;
     }
+    let original_end = text.len();
     PreprocessedText {
-        text: text.to_string(),
-        original_end: text.len(),
+        // Byte-identical passthrough: carry the Cow through with no body copy.
+        text,
+        original_end,
         mappings,
     }
 }

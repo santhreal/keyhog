@@ -71,7 +71,7 @@ impl CompiledScanner {
     #[allow(clippy::too_many_arguments, dead_code)]
     pub(crate) fn scan_fallback_patterns(
         &self,
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         code_lines: &[&str],
         documentation_lines: &[bool],
@@ -184,7 +184,7 @@ impl CompiledScanner {
     #[allow(clippy::too_many_arguments, dead_code)]
     fn scan_large_fallback_patterns(
         &self,
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         code_lines: &[&str],
         documentation_lines: &[bool],
@@ -223,7 +223,7 @@ impl CompiledScanner {
     pub(crate) fn match_companions(
         &self,
         entry: &CompiledPattern,
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line: usize,
     ) -> Option<HashMap<String, String>> {
         // Most detectors declare no companions. Return the empty map without

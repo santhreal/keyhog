@@ -146,18 +146,35 @@ pub(crate) fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
     (has_plus && has_slash) || (has_padding && (has_plus || has_slash))
 }
 
+/// The four synthetic entropy-fallback metadata triples, index-parallel with
+/// [`classify_entropy_detector_index`]. Single source of truth: the scanner
+/// pre-interns this exact table into `entropy_metadata_by_index` at
+/// construction so the emit path clones an `Arc<str>` by index instead of
+/// re-interning these constants per finding (PERF-locality_intern-1).
 #[cfg(feature = "entropy")]
-pub(crate) fn classify_entropy_detector(
-    keyword: &str,
-) -> (&'static str, &'static str, &'static str) {
+pub(crate) const ENTROPY_DETECTOR_METADATA: [(&str, &str, &str); 4] = [
+    ("entropy-generic", "Generic High-Entropy Secret", "generic"),
+    ("entropy-password", "Password (Entropy Detected)", "generic"),
+    ("entropy-token", "API Token (Entropy Detected)", "generic"),
+    ("entropy-api-key", "API Key (Entropy Detected)", "generic"),
+];
+
+/// Classify an entropy candidate's keyword into the index of its metadata
+/// triple in [`ENTROPY_DETECTOR_METADATA`]. The branch order matches the
+/// historical keyword→detector mapping, so the resolved detector
+/// id/name/service are unchanged; the scanner clones the pre-interned triple
+/// at this index at the emit site (PERF-locality_intern-1).
+#[cfg(feature = "entropy")]
+#[inline]
+pub(crate) fn classify_entropy_detector_index(keyword: &str) -> usize {
     if keyword == "none (high-entropy)" {
-        ("entropy-generic", "Generic High-Entropy Secret", "generic")
+        0
     } else if keyword.contains("password") || keyword.contains("pwd") {
-        ("entropy-password", "Password (Entropy Detected)", "generic")
+        1
     } else if keyword.contains("token") {
-        ("entropy-token", "API Token (Entropy Detected)", "generic")
+        2
     } else {
-        ("entropy-api-key", "API Key (Entropy Detected)", "generic")
+        3
     }
 }
 

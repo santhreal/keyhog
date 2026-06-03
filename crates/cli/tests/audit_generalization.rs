@@ -93,8 +93,9 @@ fn scan_json(content: &str, extra_args: &[&str]) -> (Vec<serde_json::Value>, Opt
     let findings: Vec<serde_json::Value> = if stdout.trim().is_empty() {
         Vec::new()
     } else {
-        serde_json::from_str(&stdout)
-            .unwrap_or_else(|e| panic!("keyhog --format json did not emit a JSON array: {e}\nstdout was:\n{stdout}"))
+        serde_json::from_str(&stdout).unwrap_or_else(|e| {
+            panic!("keyhog --format json did not emit a JSON array: {e}\nstdout was:\n{stdout}")
+        })
     };
     (findings, output.status.code())
 }

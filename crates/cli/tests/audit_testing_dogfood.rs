@@ -36,9 +36,11 @@ const FIRING_AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 const STRIPE_DOCS_EXAMPLE: &str = "sk_live_4eC39HqLyjWDarjtT1zdp7dc";
 
 fn count_json_findings(stdout: &str) -> usize {
-    let v: serde_json::Value =
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("stdout is not JSON: {e}\nstdout was: {stdout:?}"));
-    v.as_array().map(|a| a.len()).unwrap_or_else(|| panic!("scan JSON output must be an array; got: {v}"))
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("stdout is not JSON: {e}\nstdout was: {stdout:?}"));
+    v.as_array()
+        .map(|a| a.len())
+        .unwrap_or_else(|| panic!("scan JSON output must be an array; got: {v}"))
 }
 
 /// Count `[stream]` preview lines on stderr (the `--stream` UX hint).

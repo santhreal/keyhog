@@ -269,8 +269,25 @@ pub struct ConfigOutcome {
 /// via `[detector.<id>] enabled = false` (dropped from the corpus) and whether
 /// `[lockdown] require = true` demands `--lockdown`. Both are README-documented
 /// but were parsed-and-silently-ignored before this wiring.
-#[allow(clippy::collapsible_if, clippy::cmp_owned)]
 pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
+    apply_config_file_impl(args, true)
+}
+
+/// Diagnostics-free variant for the daemon-routing PROBE in
+/// [`crate::subcommands::scan`]'s `EffectivePolicy::resolve`, which applies the
+/// config to a THROWAWAY clone of the args solely to read the resolved routing
+/// knobs (min_confidence / show_secrets / severity). The real orchestrator merge
+/// then runs [`apply_config_file`] and emits any read/parse warning exactly once.
+/// Without this, the probe + the real call each printed the
+/// "Failed to parse .keyhog.toml" warning, so a malformed config warned TWICE on
+/// the daemon route (HUNT-2). Keep the emission on the real path; only the probe
+/// is silenced.
+pub fn apply_config_file_quiet(args: &mut ScanArgs) -> ConfigOutcome {
+    apply_config_file_impl(args, false)
+}
+
+#[allow(clippy::collapsible_if, clippy::cmp_owned)]
+fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
     let config_path = args
         .config
         .clone()
@@ -287,10 +304,12 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     let raw = match std::fs::read_to_string(&config_path) {
         Ok(content) => content,
         Err(error) => {
-            tracing::warn!(
-                path = %config_path.display(),
-                "failed to read .keyhog.toml: {error}"
-            );
+            if emit_diagnostics {
+                tracing::warn!(
+                    path = %config_path.display(),
+                    "failed to read .keyhog.toml: {error}"
+                );
+            }
             return shipped_config_outcome();
         }
     };
@@ -298,15 +317,20 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     let config: ConfigFile = match toml::from_str(&raw) {
         Ok(parsed) => parsed,
         Err(error) => {
-            eprintln!(
-                "⚠️  WARNING: Failed to parse .keyhog.toml at {}: {}",
-                config_path.display(),
-                error
-            );
-            tracing::warn!(
-                path = %config_path.display(),
-                "failed to parse .keyhog.toml: {error}"
-            );
+            // Emitted exactly once on the real orchestrator merge; the daemon
+            // routing probe passes `emit_diagnostics = false` so a malformed
+            // config does not warn twice (HUNT-2).
+            if emit_diagnostics {
+                eprintln!(
+                    "⚠️  WARNING: Failed to parse .keyhog.toml at {}: {}",
+                    config_path.display(),
+                    error
+                );
+                tracing::warn!(
+                    path = %config_path.display(),
+                    "failed to parse .keyhog.toml: {error}"
+                );
+            }
             return shipped_config_outcome();
         }
     };

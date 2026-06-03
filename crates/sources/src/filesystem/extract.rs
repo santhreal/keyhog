@@ -209,7 +209,7 @@ pub(super) fn process_entry(
         // `read_file_safe` opens with `O_NOFOLLOW` on Unix / `symlink_metadata`
         // refusal on Windows, so an `--include`d `bundle.tar -> ~/.aws/...`
         // symlink can't redirect the read to an off-tree target.
-        if let Ok(bytes) = read::read_file_safe(&path) {
+        if let Ok(bytes) = read::read_file_safe(&path, file_size) {
             // Guard against a non-tar file with a `.tar` extension: only untar
             // when the ustar/GNU magic is actually present, otherwise fall
             // through to the normal scan path so the bytes are still examined.
@@ -234,7 +234,7 @@ pub(super) fn process_entry(
         // paths use `is_file()`, which follows links) would be read and its
         // target's bytes scanned - the exact link-swap class the archive
         // branch's guard at the top of this function defends against. (M17)
-        if let Ok(bytes) = read::read_file_safe(&path) {
+        if let Ok(bytes) = read::read_file_safe(&path, file_size) {
             let path_str = display_path(&path);
             if let Some(har_chunks) = crate::har::try_expand_har(&bytes, &path_str, max_size) {
                 for chunk in har_chunks {
@@ -337,13 +337,13 @@ pub(super) fn process_entry(
     let file_text = if file_size >= MMAP_THRESHOLD {
         read::read_file_mmap(&path)
     } else {
-        read::read_file_buffered(&path)
+        read::read_file_buffered(&path, file_size)
     };
 
     let (content, source_type) = match file_text {
         Some(text) if !text.is_empty() => (text.into(), "filesystem"),
         _ => {
-            if let Ok(bytes) = read::read_file_safe(&path) {
+            if let Ok(bytes) = read::read_file_safe(&path, file_size) {
                 let strings = crate::strings::extract_printable_strings(&bytes, 8);
                 if strings.is_empty() {
                     return;
@@ -406,7 +406,22 @@ impl CompressedFormat {
 /// Returns `None` if the stream is not valid for the declared format. A
 /// truncated-at-budget decode returns the bytes produced so far (`Some`) so an
 /// oversize-but-valid archive still surfaces the secrets in its first 4x slice.
-fn decompress_to_bytes(format: CompressedFormat, compressed: &[u8], budget: usize) -> Option<Vec<u8>> {
+/// Smallest zstd `windowLog` whose window (`1 << log`) covers `budget`, clamped
+/// to libzstd's valid range `[10, 31]`. Passed to `Decoder::window_log_max` so a
+/// frame advertising a window LARGER than the extraction budget is refused
+/// instead of triggering a giant up-front allocation (HUNT-1). A normal frame's
+/// window is bounded by its own content size (≤ budget here), so it is unaffected.
+pub(crate) fn budget_window_log_max(budget: usize) -> u32 {
+    let b = (budget.max(1 << 10)) as u64; // floor the window at 1 KiB
+    let log = 64 - (b - 1).leading_zeros(); // ceil(log2(b))
+    log.clamp(10, 31)
+}
+
+fn decompress_to_bytes(
+    format: CompressedFormat,
+    compressed: &[u8],
+    budget: usize,
+) -> Option<Vec<u8>> {
     use std::io::Read as _;
 
     // Cap the *reader* at `budget + 1` bytes: one over the budget so the caller
@@ -423,7 +438,23 @@ fn decompress_to_bytes(format: CompressedFormat, compressed: &[u8], budget: usiz
             dec.read_to_end(&mut out)
         }
         CompressedFormat::Zstd => match zstd::stream::read::Decoder::new(compressed) {
-            Ok(dec) => dec.take(take_limit).read_to_end(&mut out),
+            Ok(mut dec) => {
+                // Bound libzstd's INTERNAL window allocation to the extraction
+                // budget. `.take(take_limit)` caps decoded OUTPUT, but a crafted
+                // tiny `.zst` can advertise a `windowLog` up to libzstd's 128 MiB
+                // default and force that allocation before producing a single
+                // byte; under concurrent per-core scanning that is N×128 MiB of
+                // memory amplification from N tiny files. Capping `window_log_max`
+                // to ~log2(budget) makes libzstd REFUSE an oversize-window frame
+                // rather than honor it, so the window can never exceed the output
+                // budget we have already accepted to allocate. Legitimate frames
+                // size their window to their content (≤ budget here), so this
+                // never rejects a normal file. (HUNT-1 memory-amplification guard.)
+                match dec.window_log_max(budget_window_log_max(budget)) {
+                    Ok(()) => dec.take(take_limit).read_to_end(&mut out),
+                    Err(e) => Err(e),
+                }
+            }
             Err(e) => Err(e),
         },
         CompressedFormat::Lz4 => {
@@ -527,7 +558,12 @@ fn emit_tar_entries(
         let mut content: Vec<u8> = Vec::with_capacity(entry_size.min(max_size.max(1)) as usize);
         // Bound the read at the per-file cap even if the header lies about size.
         let read_cap = if max_size > 0 { max_size } else { u64::MAX };
-        if entry.by_ref().take(read_cap).read_to_end(&mut content).is_err() {
+        if entry
+            .by_ref()
+            .take(read_cap)
+            .read_to_end(&mut content)
+            .is_err()
+        {
             tracing::warn!(archive = %container_display, entry = %entry_name, "failed to read tar entry body");
             continue;
         }

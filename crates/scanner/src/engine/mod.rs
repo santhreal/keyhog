@@ -231,6 +231,15 @@ pub struct CompiledScanner {
     /// Lazily built on first access.
     pub(crate) fused_decode_programs: OnceLock<Option<gpu_decode_scan::FusedDecodeScanPrograms>>,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
+    /// Per-detector interned `(id, name, service)` metadata triple, indexed by
+    /// `detector_index`. Built ONCE at scanner construction from the same
+    /// frozen `StaticInterner` the per-match path used to re-hash against.
+    /// Every emission site has the detector index in hand, so emitting metadata
+    /// is three `Arc::clone`s (atomic refcount bumps) instead of three CHD
+    /// perfect-hash lookups (2x FNV-1a + verify-hash + full string compare per
+    /// field). The strings are byte-identical to `static_intern.lookup(...)`
+    /// because they ARE its arena entries — see `perf_locality_intern.rs`.
+    pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     pub(crate) prefix_propagation: CsrU32,
     pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
@@ -252,6 +261,24 @@ pub struct CompiledScanner {
     /// slot with no canonical detector (square).
     #[cfg(feature = "simdsieve")]
     pub(crate) hot_pattern_validators: Vec<Option<regex::Regex>>,
+    /// Pre-interned `(detector_id, detector_name, service)` triple per
+    /// hot-pattern slot, index-parallel with `simdsieve_prefilter::HOT_PATTERNS`
+    /// / `HOT_PATTERN_NAMES`. The simdsieve fast path emits directly and used to
+    /// re-hash the three `&'static str` metadata constants through the CHD
+    /// interner on every hot hit; this caches the resolved `Arc<str>` once so
+    /// each emission is three `Arc::clone`s (PERF-locality_intern-1). Byte-
+    /// identical to `static_intern.lookup(HOT_PATTERN_*[idx])`.
+    #[cfg(feature = "simdsieve")]
+    pub(crate) hot_metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
+    /// Pre-interned `(detector_id, detector_name, service)` triple for each of
+    /// the four synthetic entropy-fallback classes, indexed by
+    /// `classify_entropy_detector_index` (0 generic / 1 password / 2 token /
+    /// 3 api-key). The entropy fallback emits directly and used to re-intern
+    /// these fixed `&'static str` constants per finding; caching the four
+    /// `Arc<str>` triples once turns each emit into three `Arc::clone`s
+    /// (PERF-locality_intern-1). String values are unchanged.
+    #[cfg(feature = "entropy")]
+    pub(crate) entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4],
     pub config: ScannerConfig,
     pub alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
@@ -288,6 +315,21 @@ impl CompiledScanner {
     /// Number of loaded detectors.
     pub fn detector_count(&self) -> usize {
         self.detectors.len()
+    }
+
+    /// Pre-interned `(detector_id, detector_name, service)` triple for the
+    /// detector at `detector_index`. Three `Arc::clone`s, zero hashing — the
+    /// hot-path replacement for three `ScanState::intern_metadata` calls on
+    /// frozen detector metadata (PERF-locality_intern-1). Returns byte-for-byte
+    /// the same `Arc<str>` values `static_intern.lookup(...)` would, because
+    /// they ARE the same arena entries, so emitted findings are unchanged.
+    #[inline]
+    pub(crate) fn interned_detector_metadata(
+        &self,
+        detector_index: usize,
+    ) -> (Arc<str>, Arc<str>, Arc<str>) {
+        let (id, name, service) = &self.metadata_by_index[detector_index];
+        (Arc::clone(id), Arc::clone(name), Arc::clone(service))
     }
 
     /// Total number of patterns (AC + fallback).

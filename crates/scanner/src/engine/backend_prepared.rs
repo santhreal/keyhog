@@ -9,7 +9,10 @@ pub(crate) struct PreparedChunk<'a> {
     /// ChunkMetadata clone per chunk (5+ String allocations on
     /// every code-tree scan).
     pub(crate) chunk: &'a Chunk,
-    pub(crate) preprocessed: ScannerPreprocessedText,
+    /// Preprocessed scan text. Borrows `chunk.data` (`Cow::Borrowed`) on the
+    /// passthrough common path — no per-chunk full-body copy — and owns a
+    /// synthesized `String` only on the structured/multiline-join paths.
+    pub(crate) preprocessed: ScannerPreprocessedText<'a>,
     /// Cached `compute_line_offsets(&preprocessed.text)`. Both the
     /// triggered-pattern path and the pattern-hits path used to call
     /// `compute_line_offsets` separately, walking the entire
