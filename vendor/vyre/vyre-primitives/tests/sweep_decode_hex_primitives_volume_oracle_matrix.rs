@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(feature = "decode")]
 
 use vyre_primitives::decode::hex::hex_decode_reference_packed;

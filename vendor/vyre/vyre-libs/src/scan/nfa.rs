@@ -470,7 +470,6 @@ pub fn nfa_scan_with_plan(
     ))
 }
 
-
 mod alloc;
 mod plan;
 mod shards;
@@ -833,4 +832,3 @@ pub mod bench {
         acc
     }
 }
-

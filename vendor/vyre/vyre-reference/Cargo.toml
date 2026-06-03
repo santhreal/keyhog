@@ -32,7 +32,7 @@ criterion.workspace = true
 regex-automata.workspace = true
 hex.workspace = true
 fnv.workspace = true
-vyre.workspace = true
+vyre = { path = "../vyre-core" }
 
 [package.metadata.docs.rs]
 all-features = true

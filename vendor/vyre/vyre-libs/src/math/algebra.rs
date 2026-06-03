@@ -458,7 +458,11 @@ mod tests {
     #[test]
     fn checked_u32_binary_builders_reject_aliasing() {
         let program = try_lattice_join("a", "b", "out", 4).expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - valid lattice_join must build");
-        assert_eq!(program.buffers.len(), 3, "lattice_join must declare a, b, and out");
+        assert_eq!(
+            program.buffers.len(),
+            3,
+            "lattice_join must declare a, b, and out"
+        );
 
         let join_err = try_lattice_join("a", "a", "out", 4).expect_err("aliased inputs");
         assert!(
@@ -541,4 +545,3 @@ mod tests {
         }
     }
 }
-

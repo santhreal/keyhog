@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(feature = "hash")]
 
 use vyre_primitives::hash::crc32;
@@ -16,7 +15,6 @@ fn hostile_bytes(seed: u32) -> Vec<u8> {
     }
     v
 }
-
 
 fn oracle_crc32(bytes: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFFu32;

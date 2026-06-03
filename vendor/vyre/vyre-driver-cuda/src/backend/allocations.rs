@@ -85,16 +85,47 @@ impl DispatchAllocations {
         })
     }
 
-    pub(crate) fn set_ptr(&mut self, index: usize, allocation: DeviceAllocation) {
-        self.ptrs[index] = allocation;
+    pub(crate) fn set_ptr(
+        &mut self,
+        index: usize,
+        allocation: DeviceAllocation,
+        context: &str,
+    ) -> Result<(), BackendError> {
+        let allocation_count = self.ptrs.len();
+        let slot = self
+            .ptrs
+            .get_mut(index)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA dispatch allocation table {context} expected buffer index {index} but only {allocation_count} allocation slot(s) exist. Rebuild the binding plan before launch.",
+                ),
+            })?;
+        *slot = allocation;
+        Ok(())
     }
 
-    pub(crate) fn ptr(&self, index: usize) -> u64 {
-        self.ptrs[index].ptr
+    pub(crate) fn ptr(&self, index: usize, context: &str) -> Result<u64, BackendError> {
+        self.ptrs
+            .get(index)
+            .map(|allocation| allocation.ptr)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA dispatch allocation table {context} expected buffer index {index} but only {} allocation slot(s) exist. Rebuild the binding plan before launch.",
+                    self.ptrs.len()
+                ),
+            })
     }
 
-    pub(crate) fn byte_len(&self, index: usize) -> usize {
-        self.ptrs[index].byte_len
+    pub(crate) fn byte_len(&self, index: usize, context: &str) -> Result<usize, BackendError> {
+        self.ptrs
+            .get(index)
+            .map(|allocation| allocation.byte_len)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA dispatch allocation table {context} expected buffer index {index} but only {} allocation slot(s) exist. Rebuild the binding plan before launch.",
+                    self.ptrs.len()
+                ),
+            })
     }
 
     pub(crate) fn set_params(&mut self, allocation: DeviceAllocation) {
@@ -173,16 +204,20 @@ impl PinnedHostAllocation {
             byte_offset,
             byte_len,
             self.byte_len,
-            || BackendError::InvalidProgram {
+            || {
+                BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: CUDA pinned-host zero-fill overflowed usize at offset {byte_offset} len {byte_len}."
                 ),
+            }
             },
-            |end| BackendError::InvalidProgram {
+            |end| {
+                BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: CUDA pinned-host zero-fill requested byte range [{byte_offset}..{end}) from a {} byte allocation.",
                     self.byte_len
                 ),
+            }
             },
         )?;
         if end == byte_offset {
@@ -279,7 +314,10 @@ impl PinnedHostAllocation {
             dst.clear();
             return Ok(());
         }
-        let src = self.ptr.wrapping_add(byte_offset);
+        // SAFETY: checked_usize_byte_range_end_lazy above proved
+        // byte_offset..byte_offset + byte_len is inside this allocation, and
+        // zero-byte ranges returned before pointer arithmetic.
+        let src = unsafe { self.ptr.add(byte_offset) };
         copy_raw_bytes_into_vec(src, byte_len, dst)
     }
 }
@@ -463,6 +501,7 @@ impl HostTransferAllocations {
         if bytes.is_empty() {
             return Ok(std::ptr::null());
         }
+        self.reserve_next_allocation_slot("byte upload")?;
         let mut allocation = self.pool.acquire(bytes.len())?;
         allocation.copy_from_slice(bytes)?;
         let ptr = allocation.as_ptr();
@@ -486,6 +525,7 @@ impl HostTransferAllocations {
                 ),
             });
         }
+        self.reserve_next_allocation_slot("padded byte upload")?;
         let mut allocation = self.pool.acquire(transfer_byte_len)?;
         allocation.copy_from_slice(bytes)?;
         allocation.zero_range(bytes.len(), transfer_byte_len - bytes.len())?;
@@ -499,6 +539,7 @@ impl HostTransferAllocations {
         if byte_len == 0 {
             return Ok(std::ptr::null());
         }
+        self.reserve_next_allocation_slot("u32 word upload")?;
         let mut allocation = self.pool.acquire(byte_len)?;
         allocation.copy_u32_le_words(words)?;
         let ptr = allocation.as_ptr();
@@ -522,6 +563,7 @@ impl HostTransferAllocations {
                 ),
             });
         }
+        self.reserve_next_allocation_slot("padded u32 word upload")?;
         let mut allocation = self.pool.acquire(transfer_byte_len)?;
         allocation.copy_u32_le_words(words)?;
         allocation.zero_range(byte_len, transfer_byte_len - byte_len)?;
@@ -531,6 +573,7 @@ impl HostTransferAllocations {
     }
 
     pub(crate) fn push_output(&mut self, byte_len: usize) -> Result<*mut c_void, BackendError> {
+        self.reserve_next_output_slot("output readback")?;
         if byte_len == 0 {
             self.outputs.push(HostOutputTransfer {
                 allocation_index: None,
@@ -538,6 +581,7 @@ impl HostTransferAllocations {
             });
             return Ok(std::ptr::null_mut());
         }
+        self.reserve_next_allocation_slot("output readback")?;
         let mut allocation = self.pool.acquire(byte_len)?;
         let ptr = allocation.as_mut_ptr();
         let index = self.allocations.len();
@@ -554,6 +598,7 @@ impl HostTransferAllocations {
         byte_len: usize,
         transfer_byte_len: usize,
     ) -> Result<*mut c_void, BackendError> {
+        self.reserve_next_output_slot("padded output readback")?;
         if byte_len == 0 {
             self.outputs.push(HostOutputTransfer {
                 allocation_index: None,
@@ -568,6 +613,7 @@ impl HostTransferAllocations {
                 ),
             });
         }
+        self.reserve_next_allocation_slot("padded output readback")?;
         let mut allocation = self.pool.acquire(transfer_byte_len)?;
         let ptr = allocation.as_mut_ptr();
         let index = self.allocations.len();
@@ -579,6 +625,36 @@ impl HostTransferAllocations {
         Ok(ptr)
     }
 
+    fn reserve_next_allocation_slot(&mut self, context: &'static str) -> Result<(), BackendError> {
+        let next_len = vyre_driver::accounting::checked_add_usize_lazy(
+            self.allocations.len(),
+            1,
+            || {
+                BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA pinned-host allocation table length overflowed while staging {context}. Split the dispatch before host transfer staging."
+                    ),
+                }
+            },
+        )?;
+        reserve_smallvec(&mut self.allocations, next_len, "pinned-host transfer")
+    }
+
+    fn reserve_next_output_slot(&mut self, context: &'static str) -> Result<(), BackendError> {
+        let next_len = vyre_driver::accounting::checked_add_usize_lazy(
+            self.outputs.len(),
+            1,
+            || {
+                BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA pinned-host output table length overflowed while staging {context}. Split the dispatch before output readback staging."
+                    ),
+                }
+            },
+        )?;
+        reserve_smallvec(&mut self.outputs, next_len, "pinned-host output")
+    }
+
     pub(crate) fn collect_outputs_into(
         &self,
         outputs: &mut Vec<Vec<u8>>,
@@ -588,6 +664,7 @@ impl HostTransferAllocations {
             self.outputs.len(),
             "CUDA host transfer output vector",
         )?;
+        self.reserve_output_slots_into(outputs.iter_mut().enumerate())?;
         self.collect_output_slots_into(outputs.iter_mut().enumerate())
     }
 
@@ -604,12 +681,62 @@ impl HostTransferAllocations {
                 ),
             });
         }
+        self.reserve_output_slots_into(
+            outputs
+                .iter_mut()
+                .enumerate()
+                .map(|(output_index, output)| (output_index, &mut **output)),
+        )?;
         self.collect_output_slots_into(
             outputs
                 .iter_mut()
                 .enumerate()
                 .map(|(output_index, output)| (output_index, &mut **output)),
         )
+    }
+
+    fn reserve_output_slots_into<'a>(
+        &self,
+        outputs: impl IntoIterator<Item = (usize, &'a mut Vec<u8>)>,
+    ) -> Result<(), BackendError> {
+        for (output_index, output) in outputs {
+            self.reserve_output_slot_into(output_index, output)?;
+        }
+        Ok(())
+    }
+
+    fn reserve_output_slot_into(
+        &self,
+        output_index: usize,
+        output: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        let Some(&transfer) = self.outputs.get(output_index) else {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA output preflight requested output index {output_index}, but only {} output transfer(s) exist.",
+                    self.outputs.len()
+                ),
+            });
+        };
+        if let Some(allocation_index) = transfer.allocation_index {
+            let Some(allocation) = self.allocations.get(allocation_index) else {
+                return Err(BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA output preflight for transfer {output_index} references allocation index {allocation_index}, but only {} allocation(s) exist.",
+                        self.allocations.len()
+                    ),
+                });
+            };
+            if transfer.byte_len > allocation.byte_len {
+                return Err(BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA output preflight for transfer {output_index} needs {} byte(s) from a {} byte pinned-host allocation. Recompute output transfer sizing before collecting results.",
+                        transfer.byte_len, allocation.byte_len
+                    ),
+                });
+            }
+        }
+        reserve_vec(output, transfer.byte_len, "CUDA host transfer output bytes")
     }
 
     fn collect_output_slots_into<'a>(
@@ -1066,6 +1193,40 @@ mod tests {
     }
 
     #[test]
+    fn host_transfer_output_collection_preflights_all_slots_before_copying() {
+        let pool = Arc::new(PinnedHostAllocationPool::new(0));
+        let mut transfers = HostTransferAllocations::with_capacity(pool, 1, 2)
+            .expect("Fix: host transfer table should reserve");
+        transfers.allocations.push(PinnedHostAllocation {
+            ptr: std::ptr::NonNull::<u8>::dangling().as_ptr(),
+            byte_len: 1,
+        });
+        transfers.outputs.push(HostOutputTransfer {
+            allocation_index: Some(0),
+            byte_len: 1,
+        });
+        transfers.outputs.push(HostOutputTransfer {
+            allocation_index: Some(9),
+            byte_len: 1,
+        });
+        let mut outputs = vec![vec![0xaa], vec![0xbb]];
+
+        let error = transfers.collect_outputs_into(&mut outputs).expect_err(
+            "Fix: invalid second CUDA output transfer must fail before copying output zero.",
+        );
+
+        assert!(
+            error.to_string().contains("CUDA output preflight"),
+            "error must identify output preflight before materialization, got: {error}"
+        );
+        assert_eq!(
+            outputs,
+            vec![vec![0xaa], vec![0xbb]],
+            "CUDA host-transfer output collection must not mutate an earlier output before a later transfer descriptor fails preflight."
+        );
+    }
+
+    #[test]
     fn owned_and_borrowed_output_collection_share_one_slot_iterator() {
         let source = include_str!("allocations.rs");
         let host_transfer_impl = source
@@ -1080,6 +1241,27 @@ mod tests {
             host_transfer_impl.contains("fn collect_output_slots_into"),
             "Fix: CUDA host-transfer output collection must expose one shared slot iterator."
         );
+        assert!(
+            host_transfer_impl.contains("fn reserve_output_slots_into")
+                && host_transfer_impl.contains("fn reserve_output_slot_into"),
+            "Fix: CUDA host-transfer output collection must preflight destination slots before shared collection."
+        );
+        for method in ["collect_outputs_into", "collect_borrowed_outputs_into"] {
+            let method_body = host_transfer_impl
+                .split(&format!("pub(crate) fn {method}"))
+                .nth(1)
+                .unwrap_or_else(|| panic!("Fix: HostTransferAllocations must expose {method}."));
+            let reserve_pos = method_body
+                .find("self.reserve_output_slots_into")
+                .unwrap_or_else(|| panic!("Fix: {method} must preflight output slots."));
+            let collect_pos = method_body
+                .find("self.collect_output_slots_into")
+                .unwrap_or_else(|| panic!("Fix: {method} must collect output slots."));
+            assert!(
+                reserve_pos < collect_pos,
+                "Fix: {method} must reserve every CUDA host-transfer output before copying any slot."
+            );
+        }
         assert_eq!(
             host_transfer_impl
                 .matches(concat!("self.collect_output_slots_", "into("))
@@ -1110,6 +1292,97 @@ mod tests {
         assert!(words_ptr.is_null());
         assert!(transfers.allocations.is_empty());
         assert_eq!(pool.cached_bytes(), 0);
+    }
+
+    #[test]
+    fn host_transfer_pushes_reserve_metadata_before_pinned_memory_acquire() {
+        let source = include_str!("allocations.rs");
+        let host_transfers = source
+            .split("impl HostTransferAllocations {")
+            .nth(1)
+            .expect("Fix: HostTransferAllocations impl must exist")
+            .split("impl Drop for HostTransferAllocations")
+            .next()
+            .expect("Fix: HostTransferAllocations impl must precede Drop impl");
+
+        for (method, reservation) in [
+            (
+                "push_upload",
+                "reserve_next_allocation_slot(\"byte upload\")?",
+            ),
+            (
+                "push_upload_padded",
+                "reserve_next_allocation_slot(\"padded byte upload\")?",
+            ),
+            (
+                "push_u32_words",
+                "reserve_next_allocation_slot(\"u32 word upload\")?",
+            ),
+            (
+                "push_u32_words_padded",
+                "reserve_next_allocation_slot(\"padded u32 word upload\")?",
+            ),
+            (
+                "push_output",
+                "reserve_next_allocation_slot(\"output readback\")?",
+            ),
+            (
+                "push_output_padded",
+                "reserve_next_allocation_slot(\"padded output readback\")?",
+            ),
+        ] {
+            let method_body = host_transfers
+                .split(&format!("pub(crate) fn {method}"))
+                .nth(1)
+                .unwrap_or_else(|| panic!("Fix: HostTransferAllocations must expose {method}."));
+            let reserve_pos = method_body.find(reservation).unwrap_or_else(|| {
+                panic!("Fix: {method} must reserve metadata before acquisition.")
+            });
+            let acquire_pos = method_body
+                .find("self.pool.acquire(")
+                .unwrap_or_else(|| panic!("Fix: {method} must acquire pinned host memory."));
+
+            assert!(
+                reserve_pos < acquire_pos,
+                "Fix: {method} must reserve host-transfer metadata before acquiring pinned host memory."
+            );
+        }
+
+        for (method, reservation) in [
+            (
+                "push_output",
+                "reserve_next_output_slot(\"output readback\")?",
+            ),
+            (
+                "push_output_padded",
+                "reserve_next_output_slot(\"padded output readback\")?",
+            ),
+        ] {
+            let method_body = host_transfers
+                .split(&format!("pub(crate) fn {method}"))
+                .nth(1)
+                .unwrap_or_else(|| panic!("Fix: HostTransferAllocations must expose {method}."));
+            let reserve_pos = method_body
+                .find(reservation)
+                .unwrap_or_else(|| panic!("Fix: {method} must reserve output metadata."));
+            let push_pos = method_body
+                .find("self.outputs.push")
+                .unwrap_or_else(|| panic!("Fix: {method} must record an output transfer."));
+
+            assert!(
+                reserve_pos < push_pos,
+                "Fix: {method} must reserve output metadata before recording the readback slot."
+            );
+        }
+
+        assert!(
+            host_transfers.contains("fn reserve_next_allocation_slot")
+                && host_transfers.contains("fn reserve_next_output_slot")
+                && host_transfers.contains("checked_add_usize_lazy")
+                && host_transfers.contains("reserve_smallvec(&mut self.allocations")
+                && host_transfers.contains("reserve_smallvec(&mut self.outputs"),
+            "Fix: host-transfer push metadata growth must use checked fallible SmallVec reservation helpers."
+        );
     }
 
     #[test]
@@ -1187,6 +1460,24 @@ mod tests {
         );
         assert_eq!(output, vec![1, 2, 3]);
         assert_eq!(output.capacity(), capacity);
+    }
+
+    #[test]
+    fn pinned_host_readback_range_uses_checked_bounds_before_pointer_arithmetic() {
+        let source = include_str!("allocations.rs");
+        let copy_range = source
+            .split("pub(crate) fn copy_range_into")
+            .nth(1)
+            .and_then(|tail| tail.split("fn copy_raw_bytes_into_vec").next())
+            .expect("Fix: pinned-host ranged readback helper must precede raw byte copy helper.");
+
+        assert!(
+            copy_range.contains("checked_usize_byte_range_end_lazy")
+                && copy_range.contains("byte_len == 0")
+                && copy_range.contains("self.ptr.add(byte_offset)")
+                && !copy_range.contains("wrapping_add(byte_offset)"),
+            "Fix: CUDA pinned-host ranged readback must validate the byte range before in-bounds pointer arithmetic instead of wrapping addresses."
+        );
     }
 
     #[test]

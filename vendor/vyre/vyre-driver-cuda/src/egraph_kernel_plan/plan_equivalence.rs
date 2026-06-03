@@ -1,4 +1,4 @@
-use crate::backend::ordering::{sort_unstable_by_key_if_needed, sort_unstable_if_needed};
+use crate::backend::ordering::sort_unstable_if_needed;
 use crate::backend::staging_reserve::reserved_typed_vec;
 use crate::egraph_device_image::CudaEGraphDeviceKernelView;
 use vyre_foundation::optimizer::eqsat_gpu::{Equivalence, GpuEGraphDeviceImage};
@@ -7,9 +7,8 @@ use super::{
     constants::SIGNATURE_BUCKET_RECORD_WORDS,
     helpers::{cuda_egraph_signature_pair_rows, packed_rows_structurally_equal, validate_image_view_matches},
     plan_cuda_egraph_signature_buckets,
-    CudaEGraphKernelLaunchConfig, CudaEGraphKernelPlanError, CudaEGraphSignatureBucket,
-    CudaEGraphSignatureBucketDeviceImage, CudaEGraphSignatureBucketPlan,
-    CudaEGraphSignaturePairWave, CudaEGraphStructuralEquivalenceLaunchArtifact,
+    CudaEGraphKernelLaunchConfig, CudaEGraphKernelPlanError,
+    CudaEGraphSignatureBucketDeviceImage, CudaEGraphSignatureBucketPlan, CudaEGraphStructuralEquivalenceLaunchArtifact,
     CudaEGraphStructuralEquivalenceOutputPlan, CudaEGraphStructuralEquivalencePlan,
 };
 

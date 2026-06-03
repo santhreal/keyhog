@@ -21,9 +21,8 @@ pub fn parse_rust_bytes(source: &[u8]) -> Result<ParseSummary, RustFrontendError
 }
 
 fn parse_tokens(source: &[u8], tokens: &[crate::Token]) -> Result<Module, RustFrontendError> {
-    vyre_libs::parsing::rust::parse::parse(source, tokens)
-        .map_err(|e| RustFrontendError::Parse {
-            message: e.message,
-            token_index: e.token_index,
-        })
+    vyre_libs::parsing::rust::parse::parse(source, tokens).map_err(|e| RustFrontendError::Parse {
+        message: e.message,
+        token_index: e.token_index,
+    })
 }

@@ -919,11 +919,8 @@ mod tests {
     fn crc32_generated_map_reduce_partitions_match_direct_crc() {
         let mut assertions = 0usize;
         for seed in 0u32..8192 {
-            let len = (seed
-                .wrapping_mul(1_103_515_245)
-                .rotate_left(seed & 15)
-                ^ 0x9E37_79B9)
-                % 1537;
+            let len =
+                (seed.wrapping_mul(1_103_515_245).rotate_left(seed & 15) ^ 0x9E37_79B9) % 1537;
             let chunk_size = (seed.wrapping_mul(37) ^ seed.rotate_left(5)) % 127 + 1;
             let chunk_size =
                 NonZeroU32::new(chunk_size).expect("Fix: generated chunk size must be non-zero.");

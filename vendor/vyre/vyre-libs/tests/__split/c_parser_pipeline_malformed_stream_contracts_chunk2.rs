@@ -69,7 +69,12 @@ fn full_pipeline_on_mismatched_delimiters_produces_non_empty_output() {
     let typed = reference_c11_classify_vast_node_kinds(&raw);
     assert_eq!(typed.len(), raw.len());
     let shape = reference_c11_build_expression_shape_nodes(&raw, &typed);
-    assert_eq!(shape.len(), typed.len());
+    // Expression-shape rows use C_EXPR_SHAPE_STRIDE_U32 (8 u32 words/row),
+    // distinct from the VAST stride (10), so the shape stream is intentionally
+    // shorter than the typed VAST stream. Three input rows -> three expr-shape
+    // rows of 8 words each. (The old `shape.len() == typed.len()` wrongly
+    // assumed the two streams share a stride.)
+    assert_eq!(shape.len(), 3 * 8 * 4, "three expr-shape rows of 8 u32 words each");
     let pg = run_reference_pg_lower(&typed);
     assert_eq!(pg.len(), 3 * PG_STRIDE_U32 * 4);
 }

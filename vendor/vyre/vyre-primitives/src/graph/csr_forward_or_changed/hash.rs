@@ -1,4 +1,7 @@
-pub(crate) fn csr_forward_or_changed_padded_slice_fingerprint(values: &[u32], padded_words: usize) -> u64 {
+pub(crate) fn csr_forward_or_changed_padded_slice_fingerprint(
+    values: &[u32],
+    padded_words: usize,
+) -> u64 {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
 

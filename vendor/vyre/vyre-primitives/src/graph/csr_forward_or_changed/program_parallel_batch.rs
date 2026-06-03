@@ -4,7 +4,7 @@ use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use super::batch_shared::checked_batched_frontier_words;
-use super::layout::OP_ID;
+use super::layout::{CSR_FORWARD_OR_CHANGED_PARALLEL_WORKGROUP_SIZE, OP_ID};
 use crate::graph::program_graph::{
     ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS,
     NAME_EDGE_TARGETS,
@@ -170,7 +170,7 @@ pub fn try_csr_forward_or_changed_parallel_batch(
     );
     Ok(Program::wrapped(
         buffers,
-        [1, 1, 1],
+        CSR_FORWARD_OR_CHANGED_PARALLEL_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,

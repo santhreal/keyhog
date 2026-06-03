@@ -42,6 +42,13 @@ pub mod csr_frontier_degree_sum;
 /// expansion for sparse dataflow waves.
 pub mod csr_frontier_queue;
 mod csr_frontier_step;
+/// Queue-to-queue sparse CSR delta expansion for GPU-resident fixpoint waves.
+pub mod csr_queue_delta;
+/// Mixed queue traversal that keeps low-degree rows scalar and sends only hubs
+/// to row-strided teams.
+pub mod csr_queue_split;
+/// Row-strided queue-driven CSR expansion for high-degree active rows.
+pub mod csr_queue_strided;
 
 /// One BFS step over BOTH forward + backward edges.
 pub mod csr_bidirectional;
@@ -84,6 +91,8 @@ pub mod vast_tree_walk;
 
 /// 3D sub-warp dataflow tensors
 pub mod tensor_flow_forward;
+#[cfg(test)]
+mod tensor_flow_forward_tests;
 
 /// K-step Chebyshev polynomial filter on a graph Laplacian. Composes
 /// from `vyre-primitives::math::semiring_gemm` (each step is one

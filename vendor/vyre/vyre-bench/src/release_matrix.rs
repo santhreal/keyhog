@@ -30,6 +30,19 @@ const REQUIRED_CPU_SOTA_100X_FAMILY_IDS: &[&str] = &[
     "egraph-saturation",
     "sparse-output-compaction",
 ];
+const REQUIRED_CPU_SOTA_100X_CASE_IDS: &[&str] = &[
+    "release.condition_eval.1m",
+    "release.string_bitmap_scatter.1m",
+    "release.offset_count_aggregation.1m",
+    "release.entropy_window.1m",
+    "release.quantified_condition_loops.1m",
+    "release.alias_reaching_def.1m",
+    "release.ifds_witness.1m",
+    "release.c_ast_traversal.1m",
+    "release.megakernel_queue.1m",
+    "release.egraph_saturation.1m",
+    "sparse.compaction.count.1m",
+];
 
 #[derive(Debug, Serialize)]
 pub struct ReleaseWorkloadMatrix {
@@ -512,7 +525,6 @@ fn render_release_matrix(matrix: &ReleaseWorkloadMatrix, format: &str) -> anyhow
     Ok(out)
 }
 
-
 pub fn enforce_release_matrix(matrix: &ReleaseWorkloadMatrix) -> anyhow::Result<()> {
     if matrix.blockers.is_empty() {
         return Ok(());
@@ -562,7 +574,8 @@ fn build_family_report(
         "release/evidence/benchmarks/workload-{:02}-{}.json",
         family.release_plan_workload, family.id
     );
-    let benchmark_command = matched_cases.first().map(|case_id| {
+    let benchmark_case = preferred_release_case(&matched_cases, &cpu_sota_100x_cases);
+    let benchmark_command = benchmark_case.map(|case_id| {
         format!(
             "cargo_full run -p vyre-bench -- run --suite release --case {case_id} --backend cuda --enforce-budgets --output {evidence_artifact}"
         )
@@ -605,6 +618,26 @@ fn build_family_report(
         reproducible_cuda_command,
         max_cpu_sota_min_speedup_x,
     }
+}
+
+fn preferred_release_case<'a>(
+    matched_cases: &'a [String],
+    cpu_sota_100x_cases: &'a [String],
+) -> Option<&'a str> {
+    let selected_cases = if cpu_sota_100x_cases.is_empty() {
+        matched_cases
+    } else {
+        cpu_sota_100x_cases
+    };
+    selected_cases
+        .iter()
+        .find(|case_id| {
+            REQUIRED_CPU_SOTA_100X_CASE_IDS
+                .iter()
+                .any(|required| case_id.as_str() == *required)
+        })
+        .or_else(|| selected_cases.first())
+        .map(String::as_str)
 }
 
 fn has_cpu_sota_100x_contract(contract: Option<&PerformanceContract>) -> bool {
@@ -679,4 +712,3 @@ fn collect_cpu_sota_contracts(
         );
     }
 }
-

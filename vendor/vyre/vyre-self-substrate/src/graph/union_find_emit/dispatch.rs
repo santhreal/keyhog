@@ -1,7 +1,8 @@
 use vyre_foundation::ir::Program;
-use vyre_primitives::graph::union_find::{union_find_program, validate_union_find_inputs};
+use vyre_primitives::graph::union_find::{
+    union_find_dispatch_grid, union_find_program, validate_union_find_inputs,
+};
 
-use crate::dispatch_buffers::ceil_div_u32;
 use crate::graph::dispatch_bridge::{
     dispatch_single_u32_output_from_prepared_into, fingerprint_u32_slice,
     refresh_keyed_dispatch_inputs, DispatchInput, U32SliceFingerprint,
@@ -146,14 +147,13 @@ pub fn union_find_alias_via_with_scratch_into(
         &inputs,
         &[],
     )?;
-    let grid_x = ceil_div_u32(layout.edge_count, 256);
     dispatch_single_u32_output_from_prepared_into(
         dispatcher,
         &program,
         &scratch.inputs,
         layout.node_words,
         "union_find_alias_via",
-        Some([grid_x, 1, 1]),
+        Some(union_find_dispatch_grid(layout.edge_count)),
         parent_out,
     )
 }

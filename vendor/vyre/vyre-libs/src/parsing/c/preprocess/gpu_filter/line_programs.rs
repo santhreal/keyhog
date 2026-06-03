@@ -1,13 +1,13 @@
 use super::program_helpers::{
-    byte_eq, clear_comment_mask_and_final_keep, packed_byte_load, packed_byte_load_or_zero,
-    packed_bytes_input_buffer, singleton_u32_read_buffer, store_comment_mask,
+    byte_eq, clear_comment_mask_and_final_keep, singleton_u32_read_buffer, source_byte_load,
+    source_byte_load_or_zero, source_bytes_input_buffer, store_comment_mask,
     store_final_keep_from_comment_mask, u32_read_buffer, u32_rw_buffer, wrap_gpu_filter_program,
 };
 use vyre::ir::{Expr, Node, Program};
 
 pub(super) fn simple_line_newline_flags_program(n: u32) -> Program {
     let i = Expr::var("i");
-    let byte = packed_byte_load("bytes_in", i.clone());
+    let byte = source_byte_load("bytes_in", i.clone());
     let body = vec![
         Node::let_bind("i", Expr::InvocationId { axis: 0 }),
         Node::if_then(
@@ -32,7 +32,7 @@ pub(super) fn simple_line_newline_flags_program(n: u32) -> Program {
     wrap_gpu_filter_program(
         "vyre-libs::parsing::c::preprocess::simple_line_newline_flags",
         vec![
-            packed_bytes_input_buffer("bytes_in", 0, n),
+            source_bytes_input_buffer("bytes_in", 0, n),
             u32_rw_buffer("newline_flags", 1, n),
             singleton_u32_read_buffer("line_n_real", 2),
         ],
@@ -42,9 +42,9 @@ pub(super) fn simple_line_newline_flags_program(n: u32) -> Program {
 
 pub(super) fn simple_line_comment_starts_program(n: u32) -> Program {
     let i = Expr::var("i");
-    let b0 = packed_byte_load("bytes_in", i.clone());
+    let b0 = source_byte_load("bytes_in", i.clone());
     let b1_addr = Expr::add(i.clone(), Expr::u32(1));
-    let b1 = packed_byte_load_or_zero("bytes_in", b1_addr, "line_n_real");
+    let b1 = source_byte_load_or_zero("bytes_in", b1_addr, "line_n_real");
     let row = Expr::saturating_sub(
         Expr::load("newline_scan", i.clone()),
         Expr::load("newline_flags", i.clone()),
@@ -54,10 +54,7 @@ pub(super) fn simple_line_comment_starts_program(n: u32) -> Program {
         Node::if_then(
             Expr::lt(i.clone(), Expr::load("line_n_real", Expr::u32(0))),
             vec![Node::if_then(
-                Expr::and(
-                    byte_eq(b0, b'/'),
-                    byte_eq(b1, b'/'),
-                ),
+                Expr::and(byte_eq(b0, b'/'), byte_eq(b1, b'/')),
                 vec![Node::let_bind(
                     "line_comment_start_old",
                     Expr::atomic_min("row_comment_starts", row, i.clone()),
@@ -68,7 +65,7 @@ pub(super) fn simple_line_comment_starts_program(n: u32) -> Program {
     wrap_gpu_filter_program(
         "vyre-libs::parsing::c::preprocess::simple_line_comment_starts",
         vec![
-            packed_bytes_input_buffer("bytes_in", 0, n),
+            source_bytes_input_buffer("bytes_in", 0, n),
             u32_read_buffer("newline_flags", 1, n),
             u32_read_buffer("newline_scan", 2, n),
             u32_rw_buffer("row_comment_starts", 3, n),
@@ -80,7 +77,7 @@ pub(super) fn simple_line_comment_starts_program(n: u32) -> Program {
 
 pub(super) fn simple_line_comment_masks_program(n: u32) -> Program {
     let i = Expr::var("i");
-    let b = packed_byte_load("bytes_in", i.clone());
+    let b = source_byte_load("bytes_in", i.clone());
     let row = Expr::saturating_sub(
         Expr::load("newline_scan", i.clone()),
         Expr::load("newline_flags", i.clone()),
@@ -126,7 +123,7 @@ pub(super) fn simple_line_comment_masks_program(n: u32) -> Program {
     wrap_gpu_filter_program(
         "vyre-libs::parsing::c::preprocess::simple_line_comment_masks",
         vec![
-            packed_bytes_input_buffer("bytes_in", 0, n),
+            source_bytes_input_buffer("bytes_in", 0, n),
             u32_read_buffer("newline_flags", 1, n),
             u32_read_buffer("newline_scan", 2, n),
             u32_read_buffer("row_comment_starts", 3, n),

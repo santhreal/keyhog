@@ -470,7 +470,17 @@ mod tests {
 
     #[test]
     fn resident_staged_sync_readback_uses_shared_copy_helper() {
-        let resident_dispatch = include_str!("resident_dispatch.rs");
+        let resident_dispatch = [
+            include_str!("resident_dispatch/helpers.rs"),
+            include_str!("resident_dispatch/borrowed.rs"),
+            include_str!("resident_dispatch/async_dispatch.rs"),
+            include_str!("resident_dispatch/batch.rs"),
+            include_str!("resident_dispatch/sync.rs"),
+            include_str!("resident_dispatch/sequence_api.rs"),
+            include_str!("resident_dispatch/sequence_fused.rs"),
+            include_str!("resident_dispatch/timed.rs"),
+        ]
+        .concat();
         let ffi = concat!("cudarc::driver::sys::", "cuMemcpyDtoH_v2(");
 
         assert_eq!(

@@ -289,22 +289,25 @@ impl WgpuPipeline {
                     .persistent_pool
                     .acquire(output_bytes_u64, usage_for_binding(info)?)?;
                 if info.preserve_input_contents {
-                    let data = data.ok_or_else(|| {
-                        BackendError::new(format!(
-                            "persistent read-write output binding {} (`{}`) preserves input contents but no host input bytes were supplied. Fix: pass one input slice for every non-shared BufferDecl that is read before it is written.",
-                            info.binding, info.name
-                        ))
-                    })?;
-                    if data.len() > output_bytes {
-                        return Err(BackendError::new(format!(
-                            "persistent read-write output binding {} (`{}`) received {} host bytes but its output allocation is only {} bytes. Fix: preserve input contents only for read-write outputs whose host input size fits the declared output layout, or mark backend-owned live-outs so they do not consume host input.",
-                            info.binding,
-                            info.name,
-                            data.len(),
-                            output_bytes
-                        )));
+                    if let Some(data) = data {
+                        if data.len() > output_bytes {
+                            return Err(BackendError::new(format!(
+                                "persistent read-write output binding {} (`{}`) received {} host bytes but its output allocation is only {} bytes. Fix: preserve input contents only for read-write outputs whose host input size fits the declared output layout, or mark backend-owned live-outs so they do not consume host input.",
+                                info.binding,
+                                info.name,
+                                data.len(),
+                                output_bytes
+                            )));
+                        }
+                        crate::buffer::write_padded(
+                            queue,
+                            handle.buffer(),
+                            data,
+                            output_bytes_u64,
+                        )?;
+                    } else {
+                        crate::buffer::write_padded(queue, handle.buffer(), &[], output_bytes_u64)?;
                     }
-                    crate::buffer::write_padded(queue, handle.buffer(), data, output_bytes_u64)?;
                 }
                 output_handles.push(handle);
                 continue;
@@ -563,7 +566,6 @@ pub(crate) fn binding_padded_size(
     Ok(len)
 }
 
-
 fn padded_wgpu_u64(size: u64, label: &'static str) -> Result<u64, BackendError> {
     crate::numeric::align_up_u64(size, 4, label)
 }
@@ -634,4 +636,3 @@ mod tests {
         assert_eq!(size, 20);
     }
 }
-

@@ -615,4 +615,3 @@ pub fn i4x8_batched_matmul_top1_f32_scaled(
         }],
     )
 }
-

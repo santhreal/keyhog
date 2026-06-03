@@ -260,6 +260,7 @@ pub fn execute_suite(
 
     let git = crate::probes::capture_git_info();
     let source_fingerprint = crate::probes::source_fingerprint(&git);
+    let source_tree_fingerprint = crate::probes::source_tree_fingerprint();
     let report = ReportSchema {
         schema: "vyre-bench.result.v1".to_string(),
         run_id: format!("vyre-bench.{}", suite.as_str()),
@@ -267,6 +268,7 @@ pub fn execute_suite(
         selected_backend,
         git,
         source_fingerprint,
+        source_tree_fingerprint,
         environment,
         features,
         cases: cases_report,

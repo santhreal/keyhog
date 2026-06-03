@@ -67,6 +67,23 @@ pub const MAX_SEGMENT_LENGTH: u32 = (1 << 24) - 1;
 /// Maximum segment value representable in the 8-bit value field.
 pub const MAX_SEGMENT_VALUE: u32 = 0xFF;
 
+/// One lane per packed RLE segment.
+pub const RLE_SEGMENT_LENGTHS_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid that covers every packed RLE segment lane.
+#[must_use]
+pub const fn rle_segment_lengths_dispatch_grid(segment_count: u32) -> [u32; 3] {
+    let lanes_per_block = RLE_SEGMENT_LENGTHS_WORKGROUP_SIZE[0];
+    let full_blocks = segment_count / lanes_per_block;
+    let tail_block = if segment_count % lanes_per_block == 0 {
+        0
+    } else {
+        1
+    };
+    let blocks = full_blocks + tail_block;
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
+
 /// Pack errors raised by the host-side packer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -163,7 +180,7 @@ pub fn rle_segment_lengths(segment_count: u32) -> Program {
         source_region: None,
         body: Arc::new(body),
     }];
-    Program::wrapped(buffers, [256, 1, 1], entry)
+    Program::wrapped(buffers, RLE_SEGMENT_LENGTHS_WORKGROUP_SIZE, entry)
 }
 
 /// Pack `(length, value)` pairs into the canonical u32 wire format.
@@ -689,11 +706,22 @@ mod tests {
 
     #[test]
     fn generated_pack_unpack_offsets_and_decode_match_independent_reference() {
-        for case in 0..96 {
-            let count = case % 17;
-            let segments: Vec<(u32, u8)> = (0..count)
-                .map(|idx| (((idx * 7 + case) % 9) as u32, (idx * 13 + case) as u8))
-                .collect();
+        let mut state = 0xA17E_D15C_u32;
+        for case in 0..4096u32 {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let count = match case {
+                0 => 0,
+                1 => 1,
+                2 => 256,
+                3 => 257,
+                4 => 1025,
+                _ => state % 4097,
+            } as usize;
+            let mut segments = Vec::with_capacity(count);
+            for idx in 0..count {
+                state = state.rotate_left(5) ^ (idx as u32).wrapping_mul(0x9E37_79B9);
+                segments.push((state % 9, state.rotate_right(8) as u8));
+            }
             let packed = pack_rle_segments(&segments).unwrap();
             let mut lengths = Vec::with_capacity(count + 3);
             let mut values = Vec::with_capacity(count + 3);
@@ -736,7 +764,16 @@ mod tests {
             3,
             "segments_in + lengths_out + values_out"
         );
-        assert_eq!(program.workgroup_size(), [256, 1, 1]);
+        assert_eq!(program.workgroup_size(), RLE_SEGMENT_LENGTHS_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn dispatch_grid_packs_segment_lanes_into_workgroups() {
+        assert_eq!(rle_segment_lengths_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(rle_segment_lengths_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(rle_segment_lengths_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(rle_segment_lengths_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(rle_segment_lengths_dispatch_grid(1025), [5, 1, 1]);
     }
 
     #[test]
@@ -786,18 +823,28 @@ mod non_panicking_wrapper_tests {
         let mut values = Vec::new();
         try_rle_segment_lengths_cpu_into(&packed, &mut lengths, &mut values)
             .expect("Fix: unit-test oracle precondition - fallible length/value oracle must accept valid packed input");
-        assert_eq!(rle_segment_lengths_cpu(&packed), (lengths.clone(), values.clone()));
+        assert_eq!(
+            rle_segment_lengths_cpu(&packed),
+            (lengths.clone(), values.clone())
+        );
 
         lengths.fill(u32::MAX);
         values.fill(u32::MAX);
         rle_segment_lengths_cpu_into(&packed, &mut lengths, &mut values);
         assert_eq!(lengths, vec![3, 0, 2]);
-        assert_eq!(values, vec![u32::from(b'a'), u32::from(b'b'), u32::from(b'c')]);
+        assert_eq!(
+            values,
+            vec![u32::from(b'a'), u32::from(b'b'), u32::from(b'c')]
+        );
 
         let mut offsets = Vec::new();
-        let total = try_rle_segment_start_offsets_cpu_into(&lengths, &mut offsets)
-            .expect("Fix: unit-test oracle precondition - fallible offset oracle must accept valid lengths");
-        assert_eq!(rle_segment_start_offsets_cpu(&lengths), (offsets.clone(), total));
+        let total = try_rle_segment_start_offsets_cpu_into(&lengths, &mut offsets).expect(
+            "Fix: unit-test oracle precondition - fallible offset oracle must accept valid lengths",
+        );
+        assert_eq!(
+            rle_segment_start_offsets_cpu(&lengths),
+            (offsets.clone(), total)
+        );
 
         offsets.fill(u32::MAX);
         let total = rle_segment_start_offsets_cpu_into(&lengths, &mut offsets);
@@ -819,10 +866,11 @@ mod non_panicking_wrapper_tests {
         let production = include_str!("rle_segment_lengths.rs")
             .split("#[cfg(test)]")
             .next()
-            .expect("Fix: unit-test oracle precondition - RLE source must include production section");
+            .expect(
+                "Fix: unit-test oracle precondition - RLE source must include production section",
+            );
         assert!(!production.contains(".expect("));
         assert!(!production.contains(".unwrap("));
         assert!(!production.contains("panic!("));
     }
 }
-

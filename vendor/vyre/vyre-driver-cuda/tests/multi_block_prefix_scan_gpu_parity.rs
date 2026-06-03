@@ -9,7 +9,7 @@ mod common;
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_primitives::reduce::multi_block_prefix_scan::{
-    cpu_ref as mbps_cpu, multi_block_prefix_scan_sum_u32, BLOCK_LANES,
+    cpu_ref as mbps_cpu, multi_block_prefix_scan_sum_u32, pass_c_broadcast_offsets, BLOCK_LANES,
 };
 
 fn run_mbps(input: &[u32]) -> Vec<u32> {
@@ -21,11 +21,11 @@ fn run_mbps(input: &[u32]) -> Vec<u32> {
     let mut inputs: Vec<Vec<u8>> = Vec::new();
     for buf in program.buffers().iter() {
         let access = buf.access();
-        // Output buffers (BufferDecl::output) and workgroup-local
-        // scratch (BufferDecl::workgroup) do not take an input slot.
-        // Storage ReadOnly + ReadWrite (non-output) do.
+        // Output buffers, pipeline-live intermediates, and workgroup-local
+        // scratch are backend-allocated and do not take input slots.
+        let backend_allocated = buf.is_output() || buf.is_pipeline_live_out();
         let needs_input = matches!(access, BufferAccess::ReadOnly | BufferAccess::ReadWrite)
-            && !buf.is_output()
+            && !backend_allocated
             && !matches!(access, BufferAccess::Workgroup);
         if !needs_input {
             continue;
@@ -95,4 +95,53 @@ fn cuda_mbps_one_full_block() {
     let gpu = run_mbps(&input);
     assert_eq!(gpu, cpu);
     assert_eq!(gpu[BLOCK_LANES as usize - 1], BLOCK_LANES);
+}
+
+#[test]
+fn cuda_mbps_crosses_block_boundary() {
+    let len = BLOCK_LANES as usize + 17;
+    let input: Vec<u32> = (0..len)
+        .map(|index| {
+            let index = index as u32;
+            index.wrapping_mul(1_664_525).wrapping_add(1_013_904_223)
+        })
+        .collect();
+    let cpu = mbps_cpu(&input);
+    let gpu = run_mbps(&input);
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu[BLOCK_LANES as usize - 1], cpu[BLOCK_LANES as usize - 1]);
+    assert_eq!(gpu[BLOCK_LANES as usize], cpu[BLOCK_LANES as usize]);
+    assert_eq!(gpu[len - 1], cpu[len - 1]);
+}
+
+#[test]
+fn cuda_mbps_pass_c_adds_scanned_block_offset() {
+    let len = BLOCK_LANES as usize + 17;
+    let num_blocks = 2;
+    let mut partials = vec![0u32; BLOCK_LANES as usize * num_blocks as usize];
+    for (index, slot) in partials.iter_mut().enumerate().take(len) {
+        *slot = (index as u32 % BLOCK_LANES).wrapping_add(1);
+    }
+    let scanned_totals = vec![7_000u32, 99_000u32];
+    let program = pass_c_broadcast_offsets(
+        "partials",
+        "block_totals_scanned",
+        "output",
+        len as u32,
+        num_blocks,
+    );
+    let inputs = vec![u32_bytes(&partials), u32_bytes(&scanned_totals)];
+    let input_refs: Vec<&[u8]> = inputs.iter().map(Vec::as_slice).collect();
+    let outputs = with_live_backend("multi-block prefix scan pass C", |backend| {
+        backend
+            .dispatch_borrowed(&program, &input_refs, &DispatchConfig::default())
+            .unwrap_or_else(|error| panic!("Fix: CUDA Pass-C dispatch failed: {error}"))
+    });
+    let gpu = bytes_u32(&outputs[0]);
+
+    assert_eq!(gpu[0], 1);
+    assert_eq!(gpu[BLOCK_LANES as usize - 1], BLOCK_LANES);
+    assert_eq!(gpu[BLOCK_LANES as usize], 7_001);
+    assert_eq!(gpu[len - 1], 7_017);
 }

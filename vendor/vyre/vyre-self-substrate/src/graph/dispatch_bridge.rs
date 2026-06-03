@@ -22,8 +22,7 @@ pub(crate) use resident::{
     resident_sequence_single_u32_output_into, upload_resident_dispatch_inputs,
 };
 pub(crate) use u32_outputs::{
-    dispatch_four_u32_outputs_from_prepared_into, dispatch_single_u32_output_from_prepared_into,
-    dispatch_two_u32_outputs_from_prepared_into,
+    dispatch_single_u32_output_from_prepared_into, dispatch_two_u32_outputs_from_prepared_into,
 };
 
 use vyre_foundation::ir::Program;

@@ -448,7 +448,6 @@ mod tests {
             .iter()
             .zip(b.iter())
             .map(|(&x, &y)| mod_mul(x, y))
-
             .collect();
         let mut c_mut = c;
         ntt_inverse_cpu(&mut c_mut);
@@ -530,4 +529,3 @@ mod tests {
         assert!(p.stats().trap());
     }
 }
-

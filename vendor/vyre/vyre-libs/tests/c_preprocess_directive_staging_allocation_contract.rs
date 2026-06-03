@@ -7,11 +7,7 @@ fn directive_staging_uses_checked_fallible_allocation_paths() {
     let directives = support::crate_file("src/parsing/c/preprocess/gpu_pipeline/directives.rs");
     support::assert_contains_all(
         &directives,
-        &[
-            "fn directive_word_bytes(",
-            "fn directive_padded_u32_bytes(",
-            "fn reserve_directive_vec<T>(",
-        ],
+        &["fn directive_word_bytes(", "fn reserve_directive_vec<T>("],
         "directive extraction must centralize checked byte sizing and fallible reserve paths.",
     );
     support::assert_contains_all(
@@ -34,7 +30,8 @@ fn directive_staging_uses_checked_fallible_allocation_paths() {
             ".reserve((count + builtin_hashes.len()) * 4)",
             "Vec::with_capacity(defined_macros.len() + 1)",
             "scratch.macro_names.len() as u32",
+            "fn directive_padded_u32_bytes(",
         ],
-        "directive staging must not use unchecked reserve or offset arithmetic.",
+        "directive staging must not use dead macro-name padding, unchecked reserve, or offset arithmetic.",
     );
 }

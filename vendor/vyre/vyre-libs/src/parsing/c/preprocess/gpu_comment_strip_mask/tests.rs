@@ -1,4 +1,5 @@
 use super::*;
+use vyre::ir::DataType;
 
 #[test]
 fn op_id_is_canonical_and_stable() {
@@ -19,6 +20,18 @@ fn build_program_returns_well_formed_program() {
     let p = gpu_comment_strip_mask(64);
     assert_eq!(p.buffers().len(), 2);
     assert_eq!(p.workgroup_size(), [1, 1, 1]);
+}
+
+#[test]
+fn u8_program_declares_runtime_sized_source_buffer() {
+    let p = gpu_comment_strip_mask_u8(64);
+    assert_eq!(p.buffers().len(), 2);
+    assert_eq!(p.buffers()[0].name(), "bytes_in");
+    assert_eq!(p.buffers()[0].element(), DataType::U8);
+    assert_eq!(p.buffers()[0].count(), 0);
+    assert_eq!(p.buffers()[1].name(), "comment_mask_out");
+    assert_eq!(p.buffers()[1].element(), DataType::U32);
+    assert_eq!(p.buffers()[1].count(), 64);
 }
 
 #[test]

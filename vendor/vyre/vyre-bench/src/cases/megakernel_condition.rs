@@ -449,7 +449,6 @@ fn verify_condition_outputs(outputs: &[Vec<u8>]) -> Result<Correctness, BenchErr
     Ok(Correctness::Exact)
 }
 
-
 fn gb_per_second(bytes: u64, nanos: u64) -> f64 {
     if nanos == 0 {
         return 0.0;
@@ -514,4 +513,3 @@ fn write_word(bytes: &mut [u8], word_index: u32, value: u32) -> Result<(), Bench
 inventory::submit! {
     &MegakernelCondition as &'static dyn BenchCase
 }
-

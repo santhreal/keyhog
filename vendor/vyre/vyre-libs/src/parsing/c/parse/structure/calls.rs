@@ -224,13 +224,8 @@ pub fn c11_extract_calls(
         4,
         false,
     );
-    let pre_loop_nodes = emit_sparse_record_output_init(
-        out_calls,
-        out_counts,
-        t.clone(),
-        num_tokens.clone(),
-        4,
-    );
+    let pre_loop_nodes =
+        emit_sparse_record_output_init(out_calls, out_counts, t.clone(), num_tokens.clone(), 4);
 
     threaded_structure_program(
         "vyre-libs::parsing::c11_extract_calls",

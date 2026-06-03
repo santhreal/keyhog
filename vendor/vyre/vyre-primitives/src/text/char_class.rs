@@ -1,10 +1,9 @@
 //! Tier 2.5 byte classifier  -  the canonical char-class primitive.
 //!
-//! Each invocation classifies one packed source byte (`source[i]`,
-//! low 8 bits) by loading a host-supplied 256-entry lookup table from
-//! the `table` buffer. The table stays in data rather than code so
-//! alternate classifier sets can be swapped in without rebuilding the
-//! crate.
+//! Each invocation classifies one source byte by loading a host-supplied
+//! 256-entry lookup table from the `table` buffer. The table stays in data
+//! rather than code so alternate classifier sets can be swapped in without
+//! rebuilding the crate.
 //!
 //! Tier 3 dialects call this builder and may register wrapper ops
 //! with their own ids. This primitive keeps its own Tier 2.5 id so
@@ -80,6 +79,19 @@ pub const C_OTHER: u32 = 31;
 
 /// Stable op id for the registered Tier 2.5 primitive.
 pub const CHAR_CLASS_OP_ID: &str = "vyre-primitives::text::char_class";
+/// Byte-lane workgroup used by the table-driven classifier.
+pub const CHAR_CLASS_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for classifying `n` byte lanes.
+#[must_use]
+pub const fn char_class_dispatch_grid(n: u32) -> [u32; 3] {
+    let blocks = n.div_ceil(CHAR_CLASS_WORKGROUP_SIZE[0]);
+    if blocks == 0 {
+        [1, 1, 1]
+    } else {
+        [blocks, 1, 1]
+    }
+}
 
 /// Build the default ASCII byte-classification table.
 #[must_use]
@@ -132,13 +144,15 @@ pub fn build_char_class_table() -> [u32; 256] {
     table
 }
 
-/// Build a Program that writes one character-class code per source byte.
-///
-/// `source[i]` is expected to carry the byte in its low 8 bits.
-/// `table` is loaded from a host-provided buffer named `"table"`.
-#[must_use]
-pub fn char_class(source: &str, classified: &str, n: u32) -> Program {
-    let body = vec![Node::Region {
+fn char_class_body(source: &str, classified: &str, n: u32) -> Vec<Node> {
+    let load_byte = |index: Expr| {
+        Expr::bitand(
+            Expr::cast(DataType::U32, Expr::load(source, index)),
+            Expr::u32(0xFF),
+        )
+    };
+
+    vec![Node::Region {
         generator: vyre_foundation::ir::model::expr::Ident::from(CHAR_CLASS_OP_ID),
         source_region: None,
         body: std::sync::Arc::new(vec![
@@ -148,23 +162,50 @@ pub fn char_class(source: &str, classified: &str, n: u32) -> Program {
                 vec![Node::store(
                     classified,
                     Expr::var("idx"),
-                    Expr::load(
-                        "table",
-                        Expr::bitand(Expr::load(source, Expr::var("idx")), Expr::u32(0xFF)),
-                    ),
+                    Expr::load("table", load_byte(Expr::var("idx"))),
                 )],
             ),
         ]),
-    }];
+    }]
+}
 
+/// Build a Program that writes one character-class code per source byte.
+///
+/// This compatibility entry point expects one `DataType::U32` element per
+/// source byte and reads the low byte of each word. Use [`char_class_u8`] when
+/// the source is packed as one byte per element. `table` is loaded from a
+/// host-provided buffer named `"table"`.
+#[must_use]
+pub fn char_class(source: &str, classified: &str, n: u32) -> Program {
+    char_class_with_source_type(source, classified, n, DataType::U32)
+}
+
+/// Build a Program that writes one character-class code per packed source byte.
+///
+/// It emits the same class stream as [`char_class`] while cutting source input
+/// bandwidth from four bytes per logical byte to one.
+#[must_use]
+pub fn char_class_u8(source: &str, classified: &str, n: u32) -> Program {
+    char_class_with_source_type(source, classified, n, DataType::U8)
+}
+
+fn char_class_with_source_type(
+    source: &str,
+    classified: &str,
+    n: u32,
+    source_type: DataType,
+) -> Program {
+    let output_byte_len = usize::try_from(n).unwrap_or(usize::MAX).saturating_mul(4);
     Program::wrapped(
         vec![
-            BufferDecl::storage(source, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
+            BufferDecl::storage(source, 0, BufferAccess::ReadOnly, source_type).with_count(n),
             BufferDecl::storage("table", 1, BufferAccess::ReadOnly, DataType::U32).with_count(256),
-            BufferDecl::output(classified, 2, DataType::U32).with_count(n),
+            BufferDecl::output(classified, 2, DataType::U32)
+                .with_count(n.max(1))
+                .with_output_byte_range(0..output_byte_len),
         ],
-        [64, 1, 1],
-        body,
+        CHAR_CLASS_WORKGROUP_SIZE,
+        char_class_body(source, classified, n),
     )
 }
 
@@ -239,6 +280,63 @@ mod tests {
             reference_char_class(b"A1 ", &table),
             vec![C_ALPHA, C_DIGIT, C_WS]
         );
+    }
+
+    #[test]
+    fn reference_covers_every_byte_value() {
+        let table = build_char_class_table();
+        let source: Vec<u8> = (0u8..=255).collect();
+        assert_eq!(reference_char_class(&source, &table), table.to_vec());
+    }
+
+    #[test]
+    fn program_uses_block_sized_workgroup() {
+        let program = char_class("source", "classified", 513);
+        assert_eq!(program.workgroup_size(), CHAR_CLASS_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn packed_u8_program_declares_one_source_byte_per_element() {
+        let program = char_class_u8("source", "classified", 513);
+        let source = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: packed-u8 char_class source buffer must be declared");
+        let classified = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "classified")
+            .expect("Fix: char_class output buffer must be declared");
+
+        assert_eq!(source.element(), DataType::U8);
+        assert_eq!(source.count(), 513);
+        assert_eq!(classified.element(), DataType::U32);
+        assert_eq!(classified.count(), 513);
+        assert_eq!(classified.output_byte_range(), Some(0..513 * 4));
+        assert_eq!(program.workgroup_size(), CHAR_CLASS_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn empty_program_declares_empty_output_range() {
+        let program = char_class_u8("source", "classified", 0);
+        let classified = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "classified")
+            .expect("Fix: char_class output buffer must be declared");
+
+        assert_eq!(classified.count(), 1);
+        assert_eq!(classified.output_byte_range(), Some(0..0));
+    }
+
+    #[test]
+    fn dispatch_grid_packs_byte_lanes_into_blocks() {
+        assert_eq!(char_class_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(char_class_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(char_class_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(char_class_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(char_class_dispatch_grid(513), [3, 1, 1]);
     }
 
     #[test]

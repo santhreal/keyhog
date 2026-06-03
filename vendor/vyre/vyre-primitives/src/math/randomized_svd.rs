@@ -448,7 +448,6 @@ mod tests {
                     .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - generated randomized projection should evaluate");
             let expected = independent_projection(&a, &omega, m, n, l);
 
-
             assert_eq!(actual.len(), m * l, "case {case}: output shape");
             for idx in 0..actual.len() {
                 assert!(
@@ -502,4 +501,3 @@ mod tests {
         );
     }
 }
-

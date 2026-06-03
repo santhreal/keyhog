@@ -34,6 +34,34 @@ impl BodyCtx<'_> {
         elem_ty: PtxType,
     ) -> Result<Reg, EmitError> {
         match element_type {
+            DataType::U8 => {
+                let out = self.alloc(PtxType::U32);
+                let _ = write!(self.text, "    ld.{load_space}.u8    {out}, ");
+                self.write_mem_operand(address.operand)?;
+                self.text.push_str(";\n");
+                Ok(out)
+            }
+            DataType::I8 => {
+                let out = self.alloc(PtxType::I32);
+                let _ = write!(self.text, "    ld.{load_space}.s8    {out}, ");
+                self.write_mem_operand(address.operand)?;
+                self.text.push_str(";\n");
+                Ok(out)
+            }
+            DataType::U16 => {
+                let out = self.alloc(PtxType::U32);
+                let _ = write!(self.text, "    ld.{load_space}.u16    {out}, ");
+                self.write_mem_operand(address.operand)?;
+                self.text.push_str(";\n");
+                Ok(out)
+            }
+            DataType::I16 => {
+                let out = self.alloc(PtxType::I32);
+                let _ = write!(self.text, "    ld.{load_space}.s16    {out}, ");
+                self.write_mem_operand(address.operand)?;
+                self.text.push_str(";\n");
+                Ok(out)
+            }
             DataType::Bool => {
                 let word = self.alloc(PtxType::U32);
                 let out = self.alloc(PtxType::Bool);
@@ -83,6 +111,8 @@ impl BodyCtx<'_> {
         value_reg: Reg,
     ) -> Result<(), EmitError> {
         match element_type {
+            DataType::U8 | DataType::I8 => self.emit_raw_store(guard, address, "u8", value_reg),
+            DataType::U16 | DataType::I16 => self.emit_raw_store(guard, address, "u16", value_reg),
             DataType::Bool => {
                 let pred = self.pred_from_boolish(value_reg);
                 let word = self.alloc(PtxType::U32);

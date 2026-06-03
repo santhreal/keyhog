@@ -637,4 +637,3 @@ pub fn sinkhorn_col_residual(k: &[f64], u: &[f64], v: &[f64], b: &[f64]) -> f64 
 
 #[cfg(test)]
 mod f64_tests;
-

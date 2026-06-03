@@ -36,10 +36,86 @@ fn binding_plan_orders_by_binding_and_tracks_roles() {
         "Fix: CUDA binding descriptors must be sorted by VYRE binding number."
     );
     assert_eq!(plan.input_indices, vec![1, 2]);
-    assert_eq!(plan.output_indices, vec![2, 0]);
+    assert_eq!(plan.output_indices, vec![0, 2]);
     assert_eq!(plan.bindings[0].role, BindingRole::Input);
     assert_eq!(plan.bindings[1].role, BindingRole::InputOutput);
     assert_eq!(plan.bindings[2].role, BindingRole::Output);
+}
+
+#[test]
+fn binding_plan_keeps_logical_input_and_output_slots_when_bindings_are_reordered() {
+    let program = Program::wrapped(
+        vec![
+            BufferDecl::read("declared_first_high_binding", 9, DataType::U32),
+            BufferDecl::output("declared_output_first_high_binding", 8, DataType::U32)
+                .with_count(1),
+            BufferDecl::read("declared_second_low_binding", 0, DataType::U32),
+            BufferDecl::output("declared_output_second_low_binding", 1, DataType::U32)
+                .with_count(1),
+        ],
+        [1, 1, 1],
+        Vec::new(),
+    );
+    let inputs = [u32_bytes(&[1, 2, 3]), u32_bytes(&[4, 5])];
+
+    let plan = BindingPlan::from_program(&program, &inputs).expect(
+        "Fix: CUDA binding plan must accept logical input order independent of binding number.",
+    );
+
+    assert_eq!(
+        plan.bindings
+            .iter()
+            .map(|binding| binding.binding)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 8, 9],
+        "Fix: CUDA descriptor order must remain sorted by binding number."
+    );
+    assert_eq!(
+        plan.input_indices,
+        vec![0, 2],
+        "Fix: CUDA caller input slots must follow Program::buffers logical order, not binding order."
+    );
+    assert_eq!(
+        plan.output_indices,
+        vec![1, 3],
+        "Fix: CUDA output vector slots must follow Program::buffers logical order, not binding order."
+    );
+
+    let high_input = plan
+        .bindings
+        .iter()
+        .find(|binding| binding.name.as_ref() == "declared_first_high_binding")
+        .expect("Fix: high-binding input descriptor must be present.");
+    assert_eq!(high_input.input_index, Some(0));
+    assert_eq!(
+        high_input.element_count, 3,
+        "Fix: dynamic high-binding input length must be read from logical input slot 0."
+    );
+
+    let low_input = plan
+        .bindings
+        .iter()
+        .find(|binding| binding.name.as_ref() == "declared_second_low_binding")
+        .expect("Fix: low-binding input descriptor must be present.");
+    assert_eq!(low_input.input_index, Some(1));
+    assert_eq!(
+        low_input.element_count, 2,
+        "Fix: dynamic low-binding input length must be read from logical input slot 1."
+    );
+
+    let high_output = plan
+        .bindings
+        .iter()
+        .find(|binding| binding.name.as_ref() == "declared_output_first_high_binding")
+        .expect("Fix: high-binding output descriptor must be present.");
+    assert_eq!(high_output.output_index, Some(0));
+
+    let low_output = plan
+        .bindings
+        .iter()
+        .find(|binding| binding.name.as_ref() == "declared_output_second_low_binding")
+        .expect("Fix: low-binding output descriptor must be present.");
+    assert_eq!(low_output.output_index, Some(1));
 }
 
 #[test]

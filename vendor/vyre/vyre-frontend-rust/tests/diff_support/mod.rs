@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use vyre_libs::parsing::rust::lex::lexer::core::lex;
 use vyre_libs::parsing::rust::parse::parse;
-use vyre_libs::parsing::rust::sema::{check_conflicts, check_escape, check_mutability, resolve, typeck};
+use vyre_libs::parsing::rust::sema::{
+    check_conflicts, check_escape, check_mutability, resolve, typeck,
+};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -43,10 +45,20 @@ pub(crate) fn rustc_accepts(src: &str) -> bool {
     let stem = format!("vyre_diff_{}_{}", std::process::id(), n);
     let rs = dir.join(format!("{stem}.rs"));
     let meta = dir.join(format!("{stem}.rmeta"));
-    std::fs::write(&rs, src).expect("Fix: must be able to write a temp source file for the rustc differential");
+    std::fs::write(&rs, src)
+        .expect("Fix: must be able to write a temp source file for the rustc differential");
     let output = std::process::Command::new("rustc")
         .current_dir(&dir)
-        .args(["--edition", "2021", "--crate-type", "lib", "--cap-lints", "allow", "--emit", "metadata"])
+        .args([
+            "--edition",
+            "2021",
+            "--crate-type",
+            "lib",
+            "--cap-lints",
+            "allow",
+            "--emit",
+            "metadata",
+        ])
         .arg("-o")
         .arg(&meta)
         .arg(&rs)

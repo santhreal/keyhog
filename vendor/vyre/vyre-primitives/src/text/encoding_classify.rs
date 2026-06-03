@@ -6,10 +6,12 @@ use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::reduce::range_counts::range_counts_u32_child;
-use crate::text::utf8_shape_counts::utf8_shape_counts_child;
+use crate::text::utf8_shape_counts::{utf8_shape_counts_child, utf8_shape_counts_from_histogram};
 
 /// Canonical op id for histogram-based encoding classification.
 pub const ENCODING_CLASSIFY_OP_ID: &str = "vyre-primitives::text::encoding_classify";
+/// Single-result workgroup for standalone histogram classification.
+pub const ENCODING_CLASSIFY_WORKGROUP_SIZE: [u32; 3] = [1, 1, 1];
 
 /// Encoding-id for pure ASCII input.
 pub const ENC_ASCII: u32 = 0;
@@ -117,7 +119,7 @@ pub fn encoding_classify(histogram: &str, output: &str, count: u32) -> Program {
                 .with_count(1)
                 .with_output_byte_range(0..4),
         ],
-        [256, 1, 1],
+        ENCODING_CLASSIFY_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(ENCODING_CLASSIFY_OP_ID),
             source_region: None,
@@ -143,11 +145,7 @@ pub fn classify_from_histogram(histogram: &[u32; 256], count: u32) -> u32 {
         return ENC_ASCII;
     }
 
-    let continuation: u32 = histogram[0x80..0xC0].iter().sum();
-    let starter_2: u32 = histogram[0xC2..0xE0].iter().sum();
-    let starter_3: u32 = histogram[0xE0..0xF0].iter().sum();
-    let starter_4: u32 = histogram[0xF0..0xF5].iter().sum();
-    let expected_continuation = starter_2 + starter_3 * 2 + starter_4 * 3;
+    let (continuation, expected_continuation) = utf8_shape_counts_from_histogram(histogram);
 
     let tolerance = count.saturating_add(19) / 20;
     if continuation.abs_diff(expected_continuation) < tolerance {
@@ -193,5 +191,11 @@ mod tests {
         histogram[0xC3] = 2;
         histogram[0xA9] = 2;
         assert_eq!(classify_from_histogram(&histogram, 4), ENC_UTF8);
+    }
+
+    #[test]
+    fn program_uses_single_result_workgroup() {
+        let program = encoding_classify("histogram", "encoding", 0);
+        assert_eq!(program.workgroup_size(), ENCODING_CLASSIFY_WORKGROUP_SIZE);
     }
 }

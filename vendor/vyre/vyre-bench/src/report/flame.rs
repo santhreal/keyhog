@@ -199,6 +199,7 @@ mod tests {
             selected_backend: Some("test".to_string()),
             git: BTreeMap::new(),
             source_fingerprint: "test-source".to_string(),
+            source_tree_fingerprint: "test-source-tree".to_string(),
             environment: EnvironmentData {
                 os: "test".to_string(),
                 architecture: "x86_64".to_string(),

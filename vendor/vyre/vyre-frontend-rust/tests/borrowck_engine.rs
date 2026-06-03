@@ -75,7 +75,10 @@ fn unused_first_mutable_borrow_is_dead() {
         &[(0, LoanKind::Mut, 0, 10), (0, LoanKind::Mut, 1, 20)],
         &[(1, 2)],
     );
-    assert!(analyze(&f).is_empty(), "an unused borrow is dead immediately (NLL)");
+    assert!(
+        analyze(&f).is_empty(),
+        "an unused borrow is dead immediately (NLL)"
+    );
 }
 
 #[test]
@@ -87,7 +90,10 @@ fn sequential_non_overlapping_mutable_borrows() {
         &[(0, LoanKind::Mut, 0, 10), (0, LoanKind::Mut, 2, 20)],
         &[(0, 1), (1, 3)],
     );
-    assert!(analyze(&f).is_empty(), "non-overlapping &mut borrows are allowed (NLL)");
+    assert!(
+        analyze(&f).is_empty(),
+        "non-overlapping &mut borrows are allowed (NLL)"
+    );
 }
 
 #[test]
@@ -102,7 +108,11 @@ fn borrows_live_across_a_branch_conflict() {
         &[(0, 3), (1, 4)],
     );
     let c = analyze(&f);
-    assert_eq!(c.len(), 1, "borrows live across the branch point must conflict, got {c:?}");
+    assert_eq!(
+        c.len(),
+        1,
+        "borrows live across the branch point must conflict, got {c:?}"
+    );
     assert_eq!(c[0].kind, ConflictKind::TwoMutable);
 }
 
@@ -150,5 +160,8 @@ fn scales_with_many_distinct_place_loans() {
         (0..count).map(|i| (i, LoanKind::Mut, i, i * 4)).collect();
     let uses: Vec<(u32, u32)> = (0..count).map(|i| (i, i + 1)).collect();
     let f = facts(n, &cfg, &loans, &uses);
-    assert!(analyze(&f).is_empty(), "distinct-place loans never conflict");
+    assert!(
+        analyze(&f).is_empty(),
+        "distinct-place loans never conflict"
+    );
 }

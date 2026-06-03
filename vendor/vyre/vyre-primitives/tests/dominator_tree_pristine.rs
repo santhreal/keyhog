@@ -505,4 +505,3 @@ fn t9_differential_deterministic_stress() {
         assert_eq!(lt, chk, "LT/CHK mismatch on stress graph n={n}");
     }
 }
-

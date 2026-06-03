@@ -20,7 +20,15 @@ pub use entrypoints::{
     c11_lexer_regular_sparse_packed_haystack_with_flags,
     c11_lexer_regular_sparse_packed_haystack_with_flags_no_directives,
     c11_lexer_regular_sparse_packed_haystack_with_flags_no_directives_no_backscan,
+    c11_lexer_regular_sparse_u8_haystack_with_flags,
 };
 
 use bounds::*;
 use sparse_impl::c11_lexer_regular_sparse_impl;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SparseHaystackLayout {
+    PackedU32,
+    ExpandedU32,
+    RawU8,
+}

@@ -114,21 +114,20 @@ fn synthetic_catalog_inputs(program: &Program, primitive_id: &str) -> Vec<Vec<Ve
         {
             continue;
         }
-        let byte_len = usize::try_from(buffer.count())
-            .ok()
-            .and_then(|count| count.checked_mul(buffer.element().min_bytes()))
-            .unwrap_or_else(|| {
+        let byte_len = buffer
+            .static_byte_len()
+            .unwrap_or_else(|error| {
                 panic!(
-                    "vyre-libs primitive catalog fixture `{primitive_id}` overflowed buffer `{}`. Fix: add explicit primitive harness inputs.",
-                    buffer.name()
+                    "vyre-libs primitive catalog fixture `{primitive_id}` could not compute static byte length for buffer `{}`: {error}. Fix: add explicit primitive harness inputs.",
+                    buffer.name(),
                 )
-            });
-        if byte_len == 0 {
+            })
+            .unwrap_or_else(|| {
             panic!(
                 "vyre-libs primitive catalog fixture `{primitive_id}` has dynamically sized buffer `{}`. Fix: add explicit primitive harness inputs.",
                 buffer.name()
-            );
-        }
+            )
+        });
         case.push(synthetic_catalog_bytes(&buffer.element(), byte_len));
     }
     if case.is_empty() {
@@ -448,7 +447,6 @@ catalog_pair!(
 );
 
 catalog_pair!(
-
     "vyre-libs::catalog::bitset::and",
     "vyre-primitives::bitset::and"
 );
@@ -728,4 +726,3 @@ catalog_pair!(
     "vyre-libs::catalog::visual::packed_rgba_map",
     "vyre-primitives::visual::packed_rgba_map"
 );
-

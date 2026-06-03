@@ -10,6 +10,7 @@ pub(crate) enum AtomicReduceKind {
     Sum,
     Min,
     Max,
+    CountNonZero,
     PopcountSum,
 }
 
@@ -38,7 +39,7 @@ impl AtomicBoolReduceKind {
 impl AtomicReduceKind {
     fn identity(self) -> u32 {
         match self {
-            Self::Sum | Self::Max | Self::PopcountSum => 0,
+            Self::Sum | Self::Max | Self::CountNonZero | Self::PopcountSum => 0,
             Self::Min => u32::MAX,
         }
     }
@@ -46,6 +47,9 @@ impl AtomicReduceKind {
     fn value(self, input: &str, index: Expr) -> Expr {
         let loaded = Expr::load(input, index);
         match self {
+            Self::CountNonZero => {
+                Expr::select(Expr::ne(loaded, Expr::u32(0)), Expr::u32(1), Expr::u32(0))
+            }
             Self::PopcountSum => Expr::UnOp {
                 op: UnOp::Popcount,
                 operand: Box::new(loaded),
@@ -56,7 +60,9 @@ impl AtomicReduceKind {
 
     fn atomic(self, out: &str, value: Expr) -> Expr {
         match self {
-            Self::Sum | Self::PopcountSum => Expr::atomic_add(out, Expr::u32(0), value),
+            Self::Sum | Self::CountNonZero | Self::PopcountSum => {
+                Expr::atomic_add(out, Expr::u32(0), value)
+            }
             Self::Min => Expr::atomic_min(out, Expr::u32(0), value),
             Self::Max => Expr::atomic_max(out, Expr::u32(0), value),
         }

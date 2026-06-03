@@ -16,7 +16,11 @@ pub(super) fn resize_dominator_vec<T: Clone>(
     Ok(())
 }
 
-pub(super) fn push_dominator_vec<T>(out: &mut Vec<T>, value: T, context: &str) -> Result<(), String> {
+pub(super) fn push_dominator_vec<T>(
+    out: &mut Vec<T>,
+    value: T,
+    context: &str,
+) -> Result<(), String> {
     crate::graph::scratch::reserve_graph_items(out, 1, "dominator tree CPU oracle", context)?;
     out.push(value);
     Ok(())

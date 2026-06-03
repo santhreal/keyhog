@@ -1,8 +1,8 @@
 //! OutputSet persistence type for VIR0 wire format.
 //!
-//! An `OutputSet` records which buffer indices are writable (`ReadWrite`)
-//! so that decoders can reconstruct the exact output set without
-//! re-scanning the buffer table.
+//! An `OutputSet` records which buffer indices are writable outputs
+//! (`ReadWrite` or `WriteOnly`) so that decoders can reconstruct the exact
+//! output set without re-scanning the buffer table.
 
 use crate::ir_inner::model::program::BufferDecl;
 use crate::ir_inner::model::types::BufferAccess;
@@ -11,17 +11,17 @@ use crate::ir_inner::model::types::BufferAccess;
 ///
 /// Encoded as a LEB128 count followed by that many LEB128 `u32` indices.
 /// The indices are in strict declaration order and name only buffers
-/// whose access mode is [`BufferAccess::ReadWrite`].
+/// whose access mode is [`BufferAccess::ReadWrite`] or [`BufferAccess::WriteOnly`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OutputSet(Vec<u32>);
 
 impl OutputSet {
-    /// Build an `OutputSet` by scanning `buffers` for `ReadWrite` entries.
+    /// Build an `OutputSet` by scanning `buffers` for writable output entries.
     #[must_use]
     pub fn from_buffers(buffers: &[BufferDecl]) -> Self {
         let mut indices = Vec::with_capacity(buffers.len());
         for (index, buffer) in buffers.iter().enumerate() {
-            if buffer.access() == BufferAccess::ReadWrite {
+            if is_output_access(&buffer.access()) {
                 if let Ok(index) = u32::try_from(index) {
                     indices.push(index);
                 } else {
@@ -63,7 +63,7 @@ impl OutputSet {
     ) -> Result<(), String> {
         let count = buffers
             .iter()
-            .filter(|buffer| buffer.access() == BufferAccess::ReadWrite)
+            .filter(|buffer| is_output_access(&buffer.access()))
             .count();
         let count_u64 = u64::try_from(count).map_err(|err| {
             format!("Fix: output-set count cannot fit u64 ({err}); split the Program.")
@@ -71,7 +71,7 @@ impl OutputSet {
         dst.reserve(leb_u64_len(count_u64) + count.saturating_mul(5));
         put_leb_u64(dst, count_u64);
         for (index, buffer) in buffers.iter().enumerate() {
-            if buffer.access() != BufferAccess::ReadWrite {
+            if !is_output_access(&buffer.access()) {
                 continue;
             }
             let index = u32::try_from(index).map_err(|err| {
@@ -110,7 +110,7 @@ impl OutputSet {
                     metadata.buffers.len()
                 ));
             };
-            if buffer.access != BufferAccess::ReadWrite {
+            if !is_output_access(&buffer.access) {
                 return Err(format!(
                     "InvalidDiscriminant: output-set index {index} names non-writable buffer `{}`. Fix: reserialize with Program::to_wire().",
                     buffer.name
@@ -163,7 +163,7 @@ fn matches_canonical_output_indices(
 ) -> Result<bool, String> {
     let mut actual = indices.iter().copied();
     for (index, buffer) in metadata.buffers.iter().enumerate() {
-        if buffer.access != BufferAccess::ReadWrite {
+        if !is_output_access(&buffer.access) {
             continue;
         }
         let expected = u32::try_from(index).map_err(|err| {
@@ -183,7 +183,7 @@ fn canonical_output_indices(
 ) -> Result<Vec<u32>, String> {
     let mut expected = Vec::with_capacity(metadata.buffers.len());
     for (index, buffer) in metadata.buffers.iter().enumerate() {
-        if buffer.access != BufferAccess::ReadWrite {
+        if !is_output_access(&buffer.access) {
             continue;
         }
         expected.push(u32::try_from(index).map_err(|err| {
@@ -193,6 +193,11 @@ fn canonical_output_indices(
         })?);
     }
     Ok(expected)
+}
+
+#[inline]
+fn is_output_access(access: &BufferAccess) -> bool {
+    matches!(access, BufferAccess::ReadWrite | BufferAccess::WriteOnly)
 }
 
 impl AsRef<[u32]> for OutputSet {
@@ -234,15 +239,16 @@ mod tests {
     use crate::ir::{BufferDecl, DataType};
 
     #[test]
-    fn from_buffers_picks_read_write_only() {
+    fn from_buffers_picks_writable_outputs() {
         let buffers = vec![
             BufferDecl::read("a", 0, DataType::U32),
             BufferDecl::read_write("b", 1, DataType::U32),
             BufferDecl::read("c", 2, DataType::U32),
             BufferDecl::read_write("d", 3, DataType::U32),
+            BufferDecl::storage("e", 4, BufferAccess::WriteOnly, DataType::U32),
         ];
         let set = OutputSet::from_buffers(&buffers);
-        assert_eq!(set.indices(), &[1, 3]);
+        assert_eq!(set.indices(), &[1, 3, 4]);
     }
 
     #[test]
@@ -251,6 +257,7 @@ mod tests {
             BufferDecl::read("a", 0, DataType::U32),
             BufferDecl::read_write("b", 1, DataType::U32),
             BufferDecl::read_write("c", 2, DataType::U32),
+            BufferDecl::storage("d", 3, BufferAccess::WriteOnly, DataType::U32),
         ];
         let original = OutputSet::from_buffers(&buffers);
         let mut encoded = Vec::new();
@@ -293,6 +300,7 @@ mod tests {
             BufferDecl::read_write("b", 1, DataType::U32),
             BufferDecl::read("c", 2, DataType::U32),
             BufferDecl::read_write("d", 3, DataType::U32),
+            BufferDecl::storage("e", 4, BufferAccess::WriteOnly, DataType::U32),
         ];
 
         let mut materialized = Vec::new();

@@ -11,6 +11,7 @@ use vyre_libs::parsing::c::lex::tokens::{TOK_LBRACE, TOK_LPAREN, TOK_RBRACE, TOK
 use super::buffers::read_u32_stream;
 const MATCH_NONE: u32 = u32::MAX;
 const ELF_OUT_BYTES: usize = 4096 * 4;
+const BRACKET_MATCH_WORKGROUP: u32 = 256;
 
 #[derive(Default)]
 struct DispatchScratch {
@@ -55,29 +56,20 @@ fn dispatch_c11_bracket_pairs_with_scratch(
             tok_types.len()
         )
     })?.max(1);
-    let max_depth = n_u32.min(4096);
     pack_u32_le_bytes_min_words_into(tok_types, n_u32, &mut scratch.tok_bytes)?;
     let mut cfg = DispatchConfig::default();
     cfg.label = Some(label.to_string());
-    cfg.grid_override = Some([1, 1, 1]);
+    cfg.grid_override = Some([n_u32.div_ceil(BRACKET_MATCH_WORKGROUP).max(1), 1, 1]);
     let key = super::stage_pipeline_cache_key(
         "c11_dual_bracket_match",
-        &[n_u32 as u64, max_depth as u64],
+        &[n_u32 as u64, BRACKET_MATCH_WORKGROUP as u64],
     );
     let inputs = [scratch.tok_bytes.as_slice()];
     super::dispatch_borrowed_stage_cached_into(
         backend,
         key,
         || {
-            let prog = c11_dual_bracket_match(
-                "tok_types",
-                "paren_stack",
-                "brace_stack",
-                "paren_pairs",
-                "brace_pairs",
-                n_u32,
-                max_depth,
-            );
+            let prog = c11_dual_bracket_match("tok_types", "paren_pairs", "brace_pairs", n_u32);
             super::validate_internal_stage(&prog, "c11_dual_bracket_match")?;
             Ok(prog)
         },
@@ -113,132 +105,176 @@ fn dispatch_c11_bracket_pairs_with_scratch(
 
 fn c11_dual_bracket_match(
     tok_types: &str,
-    paren_stack: &str,
-    brace_stack: &str,
     paren_pairs: &str,
     brace_pairs: &str,
     n: u32,
-    max_depth: u32,
 ) -> Program {
+    let i = Expr::InvocationId { axis: 0 };
+    let body = vec![
+        Node::store(paren_pairs, i.clone(), Expr::u32(MATCH_NONE)),
+        Node::store(brace_pairs, i.clone(), Expr::u32(MATCH_NONE)),
+        Node::let_bind("tok", Expr::load(tok_types, i.clone())),
+        forward_match_open(
+            tok_types,
+            paren_pairs,
+            i.clone(),
+            n,
+            TOK_LPAREN,
+            TOK_RPAREN,
+            "paren",
+        ),
+        backward_match_close(
+            tok_types,
+            paren_pairs,
+            i.clone(),
+            TOK_LPAREN,
+            TOK_RPAREN,
+            "paren",
+        ),
+        forward_match_open(
+            tok_types,
+            brace_pairs,
+            i.clone(),
+            n,
+            TOK_LBRACE,
+            TOK_RBRACE,
+            "brace",
+        ),
+        backward_match_close(
+            tok_types,
+            brace_pairs,
+            i.clone(),
+            TOK_LBRACE,
+            TOK_RBRACE,
+            "brace",
+        ),
+    ];
+
     Program::wrapped(
         vec![
             BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-            BufferDecl::workgroup(paren_stack, max_depth, DataType::U32),
-            BufferDecl::workgroup(brace_stack, max_depth, DataType::U32),
             BufferDecl {
                 is_output: true,
-                ..BufferDecl::storage(paren_pairs, 3, BufferAccess::ReadWrite, DataType::U32)
+                ..BufferDecl::storage(paren_pairs, 1, BufferAccess::ReadWrite, DataType::U32)
                     .with_count(n)
                     .with_pipeline_live_out(true)
             },
-            BufferDecl::storage(brace_pairs, 4, BufferAccess::ReadWrite, DataType::U32)
+            BufferDecl::storage(brace_pairs, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(n)
                 .with_pipeline_live_out(true),
         ],
-        [1, 1, 1],
-        vec![Node::if_then(
-            Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-            vec![
-                Node::let_bind("paren_depth", Expr::u32(0)),
-                Node::let_bind("brace_depth", Expr::u32(0)),
-                Node::loop_for(
-                    "i",
-                    Expr::u32(0),
-                    Expr::u32(n),
+        [BRACKET_MATCH_WORKGROUP, 1, 1],
+        vec![Node::if_then(Expr::lt(i, Expr::u32(n)), body)],
+    )
+}
+
+fn forward_match_open(
+    tok_types: &str,
+    pairs: &str,
+    i: Expr,
+    n: u32,
+    open_tok: u32,
+    close_tok: u32,
+    label: &str,
+) -> Node {
+    let depth = format!("{label}_forward_depth");
+    let found = format!("{label}_forward_found");
+    let j = format!("{label}_forward_j");
+    let tok = format!("{label}_forward_tok");
+    Node::if_then(
+        Expr::eq(Expr::var("tok"), Expr::u32(open_tok)),
+        vec![
+            Node::let_bind(&depth, Expr::u32(1)),
+            Node::let_bind(&found, Expr::u32(0)),
+            Node::loop_for(
+                &j,
+                Expr::add(i.clone(), Expr::u32(1)),
+                Expr::u32(n),
+                vec![Node::if_then(
+                    Expr::eq(Expr::var(&found), Expr::u32(0)),
                     vec![
-                        Node::store(paren_pairs, Expr::var("i"), Expr::u32(MATCH_NONE)),
-                        Node::store(brace_pairs, Expr::var("i"), Expr::u32(MATCH_NONE)),
-                        Node::let_bind("tok", Expr::load(tok_types, Expr::var("i"))),
+                        Node::let_bind(&tok, Expr::load(tok_types, Expr::var(&j))),
                         Node::if_then(
-                            Expr::eq(Expr::var("tok"), Expr::u32(TOK_LPAREN)),
-                            vec![Node::if_then(
-                                Expr::lt(Expr::var("paren_depth"), Expr::u32(max_depth)),
-                                vec![
-                                    Node::store(
-                                        paren_stack,
-                                        Expr::var("paren_depth"),
-                                        Expr::var("i"),
-                                    ),
-                                    Node::assign(
-                                        "paren_depth",
-                                        Expr::add(Expr::var("paren_depth"), Expr::u32(1)),
-                                    ),
-                                ],
+                            Expr::eq(Expr::var(&tok), Expr::u32(open_tok)),
+                            vec![Node::assign(
+                                &depth,
+                                Expr::add(Expr::var(&depth), Expr::u32(1)),
                             )],
                         ),
                         Node::if_then(
-                            Expr::eq(Expr::var("tok"), Expr::u32(TOK_RPAREN)),
-                            vec![Node::if_then(
-                                Expr::lt(Expr::u32(0), Expr::var("paren_depth")),
-                                vec![
-                                    Node::assign(
-                                        "paren_depth",
-                                        Expr::sub(Expr::var("paren_depth"), Expr::u32(1)),
-                                    ),
-                                    Node::let_bind(
-                                        "open_paren",
-                                        Expr::load(paren_stack, Expr::var("paren_depth")),
-                                    ),
-                                    Node::store(
-                                        paren_pairs,
-                                        Expr::var("open_paren"),
-                                        Expr::var("i"),
-                                    ),
-                                    Node::store(
-                                        paren_pairs,
-                                        Expr::var("i"),
-                                        Expr::var("open_paren"),
-                                    ),
-                                ],
-                            )],
-                        ),
-                        Node::if_then(
-                            Expr::eq(Expr::var("tok"), Expr::u32(TOK_LBRACE)),
-                            vec![Node::if_then(
-                                Expr::lt(Expr::var("brace_depth"), Expr::u32(max_depth)),
-                                vec![
-                                    Node::store(
-                                        brace_stack,
-                                        Expr::var("brace_depth"),
-                                        Expr::var("i"),
-                                    ),
-                                    Node::assign(
-                                        "brace_depth",
-                                        Expr::add(Expr::var("brace_depth"), Expr::u32(1)),
-                                    ),
-                                ],
-                            )],
-                        ),
-                        Node::if_then(
-                            Expr::eq(Expr::var("tok"), Expr::u32(TOK_RBRACE)),
-                            vec![Node::if_then(
-                                Expr::lt(Expr::u32(0), Expr::var("brace_depth")),
-                                vec![
-                                    Node::assign(
-                                        "brace_depth",
-                                        Expr::sub(Expr::var("brace_depth"), Expr::u32(1)),
-                                    ),
-                                    Node::let_bind(
-                                        "open_brace",
-                                        Expr::load(brace_stack, Expr::var("brace_depth")),
-                                    ),
-                                    Node::store(
-                                        brace_pairs,
-                                        Expr::var("open_brace"),
-                                        Expr::var("i"),
-                                    ),
-                                    Node::store(
-                                        brace_pairs,
-                                        Expr::var("i"),
-                                        Expr::var("open_brace"),
-                                    ),
-                                ],
-                            )],
+                            Expr::eq(Expr::var(&tok), Expr::u32(close_tok)),
+                            vec![
+                                Node::assign(&depth, Expr::sub(Expr::var(&depth), Expr::u32(1))),
+                                Node::if_then(
+                                    Expr::eq(Expr::var(&depth), Expr::u32(0)),
+                                    vec![
+                                        Node::store(pairs, i.clone(), Expr::var(&j)),
+                                        Node::assign(&found, Expr::u32(1)),
+                                    ],
+                                ),
+                            ],
                         ),
                     ],
-                ),
-            ],
-        )],
+                )],
+            ),
+        ],
+    )
+}
+
+fn backward_match_close(
+    tok_types: &str,
+    pairs: &str,
+    i: Expr,
+    open_tok: u32,
+    close_tok: u32,
+    label: &str,
+) -> Node {
+    let depth = format!("{label}_backward_depth");
+    let found = format!("{label}_backward_found");
+    let k = format!("{label}_backward_k");
+    let j = format!("{label}_backward_j");
+    let tok = format!("{label}_backward_tok");
+    Node::if_then(
+        Expr::eq(Expr::var("tok"), Expr::u32(close_tok)),
+        vec![
+            Node::let_bind(&depth, Expr::u32(1)),
+            Node::let_bind(&found, Expr::u32(0)),
+            Node::loop_for(
+                &k,
+                Expr::u32(0),
+                i.clone(),
+                vec![Node::if_then(
+                    Expr::eq(Expr::var(&found), Expr::u32(0)),
+                    vec![
+                        Node::let_bind(
+                            &j,
+                            Expr::sub(Expr::sub(i.clone(), Expr::u32(1)), Expr::var(&k)),
+                        ),
+                        Node::let_bind(&tok, Expr::load(tok_types, Expr::var(&j))),
+                        Node::if_then(
+                            Expr::eq(Expr::var(&tok), Expr::u32(close_tok)),
+                            vec![Node::assign(
+                                &depth,
+                                Expr::add(Expr::var(&depth), Expr::u32(1)),
+                            )],
+                        ),
+                        Node::if_then(
+                            Expr::eq(Expr::var(&tok), Expr::u32(open_tok)),
+                            vec![
+                                Node::assign(&depth, Expr::sub(Expr::var(&depth), Expr::u32(1))),
+                                Node::if_then(
+                                    Expr::eq(Expr::var(&depth), Expr::u32(0)),
+                                    vec![
+                                        Node::store(pairs, i.clone(), Expr::var(&j)),
+                                        Node::assign(&found, Expr::u32(1)),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                )],
+            ),
+        ],
     )
 }
 
@@ -305,95 +341,5 @@ fn read_u32_stream_into(
 }
 
 #[cfg(test)]
-mod gpu_bracket_tests {
-    use super::*;
-    use vyre_libs::parsing::c::lex::tokens::TOK_IDENTIFIER;
-    use vyre_reference::value::Value;
-
-    fn bracket_pairs_gpu_reference(tokens: &[u32]) -> (Vec<u32>, Vec<u32>) {
-        if tokens.is_empty() {
-            return (Vec::new(), Vec::new());
-        }
-        let n = tokens.len() as u32;
-        let program = c11_dual_bracket_match(
-            "tok_types",
-            "paren_stack",
-            "brace_stack",
-            "paren_pairs",
-            "brace_pairs",
-            n,
-            n,
-        );
-        let outputs = vyre_reference::reference_eval(
-            &program,
-            &[Value::from(super::super::buffers::vec_u32_le_bytes(tokens))],
-        )
-        .expect("Fix: GPU bracket-pair program must execute under reference evaluator");
-        assert_eq!(outputs.len(), 2);
-        (
-            read_u32_stream(&outputs[0].to_bytes(), tokens.len(), "paren test pairs")
-                .expect("Fix: paren pairs must decode"),
-            read_u32_stream(&outputs[1].to_bytes(), tokens.len(), "brace test pairs")
-                .expect("Fix: brace pairs must decode"),
-        )
-    }
-
-    #[test]
-    fn matches_balanced_parens_and_braces() {
-        let tokens = vec![
-            TOK_IDENTIFIER,
-            TOK_IDENTIFIER,
-            TOK_LPAREN,
-            TOK_IDENTIFIER,
-            TOK_RPAREN,
-            TOK_LBRACE,
-            TOK_IDENTIFIER,
-            TOK_IDENTIFIER,
-            TOK_IDENTIFIER,
-            TOK_RBRACE,
-        ];
-        let (paren, brace) = bracket_pairs_gpu_reference(&tokens);
-        assert_eq!(paren[2], 4);
-        assert_eq!(paren[4], 2);
-        assert_eq!(brace[5], 9);
-        assert_eq!(brace[9], 5);
-        assert_eq!(paren[0], MATCH_NONE);
-        assert_eq!(brace[2], MATCH_NONE);
-    }
-
-    #[test]
-    fn bracket_match_handles_windows_larger_than_legacy_fixed_depth_cap() {
-        let tokens = vec![TOK_IDENTIFIER; 4097];
-        let (paren, brace) = bracket_pairs_gpu_reference(&tokens);
-        assert_eq!(paren.len(), tokens.len());
-        assert_eq!(brace.len(), tokens.len());
-        assert!(paren.iter().all(|word| *word == MATCH_NONE));
-        assert!(brace.iter().all(|word| *word == MATCH_NONE));
-    }
-
-    #[test]
-    fn nested_brackets_pair_innermost_first() {
-        let tokens = vec![TOK_LPAREN, TOK_LPAREN, TOK_RPAREN, TOK_RPAREN];
-        let (paren, _) = bracket_pairs_gpu_reference(&tokens);
-        assert_eq!(paren[1], 2);
-        assert_eq!(paren[2], 1);
-        assert_eq!(paren[0], 3);
-        assert_eq!(paren[3], 0);
-    }
-
-    #[test]
-    fn unmatched_close_is_ignored_not_panic() {
-        let tokens = vec![TOK_RPAREN, TOK_LPAREN, TOK_RPAREN];
-        let (paren, _) = bracket_pairs_gpu_reference(&tokens);
-        assert_eq!(paren[0], MATCH_NONE);
-        assert_eq!(paren[1], 2);
-        assert_eq!(paren[2], 1);
-    }
-
-    #[test]
-    fn empty_token_stream_returns_empty_pairs() {
-        let (paren, brace) = bracket_pairs_gpu_reference(&[]);
-        assert!(paren.is_empty());
-        assert!(brace.is_empty());
-    }
-}
+#[path = "dispatch_gpu_bracket_tests.rs"]
+mod gpu_bracket_tests;

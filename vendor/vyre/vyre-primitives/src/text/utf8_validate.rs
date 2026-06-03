@@ -21,6 +21,18 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 /// Stable op id for the registered Tier 3 wrapper.
 pub const OP_ID: &str = "vyre-primitives::text::utf8_validate";
+/// Byte-lane workgroup used by the UTF-8 classifier.
+pub const UTF8_VALIDATE_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+/// Dispatch grid for one UTF-8 validation pass over `n` bytes.
+#[must_use]
+pub const fn utf8_validate_dispatch_grid(n: u32) -> [u32; 3] {
+    let blocks = n.div_ceil(UTF8_VALIDATE_WORKGROUP_SIZE[0]);
+    if blocks == 0 {
+        [1, 1, 1]
+    } else {
+        [blocks, 1, 1]
+    }
+}
 
 /// 0x00..0x7F  -  single-byte ASCII.
 pub const UTF8_ASCII: u32 = 0;
@@ -38,8 +50,30 @@ pub const UTF8_INVALID: u32 = 5;
 /// Build a Program that validates and classifies each `source[i]`
 /// byte into one of the `UTF8_*` codes above and writes the result
 /// into `classes[i]`.
+///
+/// This compatibility entry point expects one `DataType::U32` element per
+/// source byte and reads the low byte of each word. Use [`utf8_validate_u8`]
+/// when the source is packed as one byte per element.
 #[must_use]
 pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
+    utf8_validate_with_source_type(source, classes, n, DataType::U32)
+}
+
+/// Build a UTF-8 validation Program over a packed `DataType::U8` source.
+///
+/// It emits the same per-byte class stream as [`utf8_validate`] while cutting
+/// source input bandwidth from four bytes per logical byte to one.
+#[must_use]
+pub fn utf8_validate_u8(source: &str, classes: &str, n: u32) -> Program {
+    utf8_validate_with_source_type(source, classes, n, DataType::U8)
+}
+
+fn utf8_validate_with_source_type(
+    source: &str,
+    classes: &str,
+    n: u32,
+    source_type: DataType,
+) -> Program {
     let idx = Expr::InvocationId { axis: 0 };
     let body = vec![Node::Region {
         generator: Ident::from(OP_ID),
@@ -49,10 +83,7 @@ pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
             Node::if_then(
                 Expr::lt(Expr::var("idx"), Expr::u32(n)),
                 vec![
-                    Node::let_bind(
-                        "byte",
-                        Expr::bitand(Expr::load(source, Expr::var("idx")), Expr::u32(0xFF)),
-                    ),
+                    Node::let_bind("byte", byte_expr(source, Expr::var("idx"))),
                     Node::let_bind("class", Expr::u32(UTF8_INVALID)),
                     Node::if_then(
                         Expr::lt(Expr::var("byte"), Expr::u32(0x80)),
@@ -81,9 +112,9 @@ pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
     }];
 
     let source_decl = if n == 0 {
-        BufferDecl::storage(source, 0, BufferAccess::ReadOnly, DataType::U32)
+        BufferDecl::storage(source, 0, BufferAccess::ReadOnly, source_type)
     } else {
-        BufferDecl::storage(source, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
+        BufferDecl::storage(source, 0, BufferAccess::ReadOnly, source_type).with_count(n)
     };
     Program::wrapped(
         vec![
@@ -92,13 +123,16 @@ pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
                 .with_count(n.max(1))
                 .with_output_byte_range(0..(n as usize).saturating_mul(4)),
         ],
-        [64, 1, 1],
+        UTF8_VALIDATE_WORKGROUP_SIZE,
         body,
     )
 }
 
 fn byte_expr(source: &str, index: Expr) -> Expr {
-    Expr::bitand(Expr::load(source, index), Expr::u32(0xFF))
+    Expr::bitand(
+        Expr::cast(DataType::U32, Expr::load(source, index)),
+        Expr::u32(0xFF),
+    )
 }
 
 fn in_range(value: Expr, lo: u32, hi: u32) -> Expr {
@@ -452,6 +486,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn program_uses_block_sized_workgroup() {
+        let program = utf8_validate("source", "classes", 513);
+        assert_eq!(program.workgroup_size(), UTF8_VALIDATE_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn dispatch_grid_packs_byte_lanes_into_blocks() {
+        assert_eq!(utf8_validate_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(utf8_validate_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(utf8_validate_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(utf8_validate_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(utf8_validate_dispatch_grid(513), [3, 1, 1]);
+    }
+
+    #[test]
     fn reference_ascii() {
         assert_eq!(reference_utf8_validate(b"Hello"), vec![UTF8_ASCII; 5]);
     }
@@ -540,4 +589,3 @@ mod tests {
         );
     }
 }
-

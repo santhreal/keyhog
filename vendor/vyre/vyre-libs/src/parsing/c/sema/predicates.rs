@@ -70,7 +70,10 @@ fn declaration_prefix(token: Expr) -> Expr {
 /// Return an IR predicate that is true when a token can precede a C function name.
 pub(crate) fn function_name_prefix(token: Expr) -> Expr {
     Expr::or(
-        expr_is_any(token.clone(), &[TOK_CHAR_KW, TOK_IDENTIFIER, TOK_INT, TOK_VOID]),
+        expr_is_any(
+            token.clone(),
+            &[TOK_CHAR_KW, TOK_IDENTIFIER, TOK_INT, TOK_VOID],
+        ),
         declaration_prefix(token),
     )
 }

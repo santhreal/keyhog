@@ -1,8 +1,7 @@
 use super::state::{copy_frontier_seed_into, PersistentBfsGpuScratch};
 
-use crate::graph::dispatch_bridge::{
-    dispatch_two_u32_outputs_from_prepared_into, refresh_keyed_dispatch_inputs, DispatchInput,
-};
+use crate::dispatch_buffers::decode_u32_output_exact;
+use crate::graph::dispatch_bridge::{refresh_keyed_dispatch_inputs, DispatchInput};
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::graph::persistent_bfs::{
     plan_persistent_bfs_dispatch, validate_persistent_bfs_changed_flag,
@@ -111,6 +110,12 @@ pub fn bfs_expand_via_with_scratch_into(
     let program = scratch
         .plan_cache
         .get_or_build(key, || plan.program("frontier_in", "frontier_out"));
+    let changed_words = program
+        .buffers()
+        .iter()
+        .find(|buffer| buffer.name() == "changed")
+        .map(|buffer| buffer.count().max(1) as usize)
+        .unwrap_or(1);
     refresh_keyed_dispatch_inputs(
         &mut scratch.inputs,
         &mut scratch.static_input_key,
@@ -131,7 +136,7 @@ pub fn bfs_expand_via_with_scratch_into(
             DispatchInput::zero_u32_words(plan.node_words(), "bfs_expand_via node_tags"),
             DispatchInput::u32_slice(frontier_in),
             DispatchInput::zero_u32_words(words, "bfs_expand_via frontier_out"),
-            DispatchInput::zero_u32_words(1, "bfs_expand_via changed"),
+            DispatchInput::zero_u32_words(changed_words, "bfs_expand_via changed"),
         ],
         &[
             (5, DispatchInput::u32_slice(frontier_in)),
@@ -141,21 +146,28 @@ pub fn bfs_expand_via_with_scratch_into(
             ),
             (
                 7,
-                DispatchInput::zero_u32_words(1, "bfs_expand_via changed"),
+                DispatchInput::zero_u32_words(changed_words, "bfs_expand_via changed"),
             ),
         ],
     )?;
-    dispatch_two_u32_outputs_from_prepared_into(
-        dispatcher,
-        &program,
-        &scratch.inputs,
+    let outputs = dispatcher.dispatch(&program, &scratch.inputs, Some(plan.dispatch_grid()))?;
+    if outputs.len() != 2 {
+        return Err(DispatchError::BackendError(format!(
+            "Fix: bfs_expand_via frontier_out expected exactly two u32 output buffers, got {}.",
+            outputs.len()
+        )));
+    }
+    decode_u32_output_exact(
+        &outputs[0],
         words,
         "bfs_expand_via frontier_out",
         frontier_out,
-        1,
+    )?;
+    decode_u32_output_exact(
+        &outputs[1],
+        changed_words,
         "bfs_expand_via changed",
         &mut scratch.changed,
-        Some(plan.dispatch_grid()),
     )?;
     let changed = scratch.changed[0];
     validate_persistent_bfs_changed_flag(changed).map_err(DispatchError::BackendError)?;

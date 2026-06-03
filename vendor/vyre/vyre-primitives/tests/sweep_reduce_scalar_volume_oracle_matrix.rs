@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "reduce", feature = "cpu-parity"))]
 
 use vyre_primitives::reduce::{all, any, max, min, sum};

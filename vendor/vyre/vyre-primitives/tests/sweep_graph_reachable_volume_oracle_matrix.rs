@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "graph", feature = "cpu-parity"))]
 
 use std::collections::{HashSet, VecDeque};
@@ -39,7 +38,6 @@ fn generated_csr_frontier(seed: u64) -> (u32, Vec<u32>, Vec<u32>, Vec<u32>, Vec<
     let allow_mask = 0xFFFF_FFFFu32;
     (node_count, offsets, targets, masks, frontier, allow_mask)
 }
-
 
 fn generated_edges(seed: u64, node_count: u32) -> Vec<(u32, u32)> {
     let mut rng = seed;

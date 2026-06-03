@@ -1130,7 +1130,7 @@ mod tests {
     fn structural_hash_uses_canonical_fnv_mix_helpers() {
         let source = include_str!("cse_via_encoded.rs");
         let release_path = source
-            .split("\n#[cfg(test)]\nmod tests")
+            .split("\nmod tests {")
             .next()
             .expect("Fix: optimizer CSE release source must be visible.");
         assert!(

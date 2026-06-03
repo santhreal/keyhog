@@ -30,6 +30,10 @@ pub enum Expr {
     },
     /// Dereference.
     Deref(Box<Expr>),
+    /// Logical negation (`!expr`).
+    Not(Box<Expr>),
+    /// Arithmetic negation (`-expr`).
+    Neg(Box<Expr>),
     /// Function call.
     Call {
         /// Function name source offset.
@@ -66,8 +70,33 @@ pub enum Stmt {
     },
     /// Expression statement.
     Expr(Expr),
+    /// Assignment to an existing binding (`name = value;`).
+    Assign {
+        /// Target name source offset.
+        name: u32,
+        /// Assigned value.
+        value: Expr,
+    },
     /// Return statement.
     Return(Option<Expr>),
+    /// While loop (`while cond { body }`).
+    While {
+        /// Loop condition.
+        cond: Expr,
+        /// Loop body.
+        body: Vec<Stmt>,
+    },
+    /// Half-open range loop (`for name in start..end { body }`).
+    For {
+        /// Loop variable name source offset.
+        name: u32,
+        /// Inclusive start expression.
+        start: Expr,
+        /// Exclusive end expression.
+        end: Expr,
+        /// Loop body.
+        body: Vec<Stmt>,
+    },
 }
 
 /// Types in the nano-subset.
@@ -117,9 +146,21 @@ pub struct ParseError {
     pub token_index: usize,
 }
 
+/// Maximum recursive-descent nesting depth. Hostile input (e.g. thousands of
+/// nested parens or `* ! &mut` chains) would otherwise recurse until the native
+/// stack overflows — an uncatchable process abort and a clean algorithmic-DoS
+/// vector for the frontend. We fail closed with a typed `ParseError` well below
+/// any stack limit; real programs never approach this depth.
+const MAX_PARSE_DEPTH: usize = 256;
+
 /// Parse a token stream into a `Module`.
 pub fn parse(source: &[u8], tokens: &[Token]) -> Result<Module, ParseError> {
-    let mut p = Parser { source, tokens, pos: 0 };
+    let mut p = Parser {
+        source,
+        tokens,
+        pos: 0,
+        depth: 0,
+    };
     p.parse_module()
 }
 
@@ -127,6 +168,7 @@ struct Parser<'a> {
     source: &'a [u8],
     tokens: &'a [Token],
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -175,7 +217,12 @@ impl<'a> Parser<'a> {
             Type::Unit
         };
         let body = self.parse_block()?;
-        Ok(Function { name, params, ret, body })
+        Ok(Function {
+            name,
+            params,
+            ret,
+            body,
+        })
     }
 
     fn parse_params(&mut self) -> Result<Vec<(u32, Type)>, ParseError> {
@@ -198,20 +245,68 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
+        // `&mut &mut ... T` right-recurses here; guard it on the shared counter.
+        self.depth += 1;
+        let r = if self.depth > MAX_PARSE_DEPTH {
+            Err(ParseError {
+                message: "type nesting too deep".into(),
+                token_index: self.pos,
+            })
+        } else {
+            self.parse_type_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_type_inner(&mut self) -> Result<Type, ParseError> {
         match self.peek().kind {
-            KW_I32 => { self.advance(); Ok(Type::I32) }
-            KW_BOOL => { self.advance(); Ok(Type::Bool) }
+            KW_I32 => {
+                self.advance();
+                Ok(Type::I32)
+            }
+            KW_BOOL => {
+                self.advance();
+                Ok(Type::Bool)
+            }
             AMP | AMP_MUT => {
                 let mutable = self.peek().kind == AMP_MUT;
                 self.advance();
                 let inner = self.parse_type()?;
-                Ok(Type::Ref { mutable, inner: Box::new(inner) })
+                Ok(Type::Ref {
+                    mutable,
+                    inner: Box::new(inner),
+                })
             }
-            _ => Err(ParseError { message: "expected type".into(), token_index: self.pos }),
+            _ => Err(ParseError {
+                message: "expected type".into(),
+                token_index: self.pos,
+            }),
         }
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        // `parse_block` is the single convergence point for ALL block nesting:
+        // `while`/`loop` bodies, `if`/`else` arms, the fn body, and bare block
+        // expressions. The `while` body in particular is reached by a direct
+        // `parse_block` call (the cond's `parse_expr` has already decremented),
+        // so without guarding here, `while c { while c { ... } }` recurses
+        // unbounded and overflows the native stack. Guard at the block so every
+        // nesting construct — present and future — fails closed.
+        self.depth += 1;
+        let r = if self.depth > MAX_PARSE_DEPTH {
+            Err(ParseError {
+                message: "block nesting too deep".into(),
+                token_index: self.pos,
+            })
+        } else {
+            self.parse_block_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_block_inner(&mut self) -> Result<Vec<Stmt>, ParseError> {
         self.expect(LBRACE)?;
         let mut stmts = Vec::new();
         while self.peek().kind != RBRACE && self.peek().kind != EOF {
@@ -225,9 +320,55 @@ impl<'a> Parser<'a> {
         match self.peek().kind {
             KW_LET => self.parse_let(),
             KW_RETURN => self.parse_return(),
+            KW_WHILE => {
+                self.advance();
+                let cond = self.parse_expr()?;
+                let body = self.parse_block()?;
+                Ok(Stmt::While { cond, body })
+            }
+            KW_FOR => self.parse_for(),
             _ => {
                 let expr = self.parse_expr()?;
-                self.expect(SEMI)?;
+                // `name = value;` is an assignment to an existing binding.
+                if let Expr::Var(name) = expr {
+                    if self.peek().kind == ASSIGN {
+                        self.advance();
+                        let value = self.parse_expr()?;
+                        self.expect(SEMI)?;
+                        return Ok(Stmt::Assign { name, value });
+                    }
+                    // Compound assignment `name += e` / `name -= e` desugars to
+                    // `name = name <op> e`, mirroring rustc's i32 semantics with
+                    // no new AST/IR surface. The synthetic `Var(name)` read
+                    // reuses the target offset; this is sound for the i32-only
+                    // subset because `+=`/`-=` never operate on references, so
+                    // the read can never register a borrow loan.
+                    if matches!(self.peek().kind, PLUS_EQ | MINUS_EQ) {
+                        let op = if self.advance().kind == PLUS_EQ {
+                            PLUS
+                        } else {
+                            MINUS
+                        };
+                        let rhs = self.parse_expr()?;
+                        self.expect(SEMI)?;
+                        let value = Expr::Binary {
+                            op,
+                            lhs: Box::new(Expr::Var(name)),
+                            rhs: Box::new(rhs),
+                        };
+                        return Ok(Stmt::Assign { name, value });
+                    }
+                }
+                // Block-like expression statements (`if`/`else`, `{ ... }`) are
+                // valid without a trailing semicolon, matching Rust; any other
+                // expression statement still requires one.
+                if matches!(expr, Expr::If { .. } | Expr::Block(_)) {
+                    if self.peek().kind == SEMI {
+                        self.advance();
+                    }
+                } else {
+                    self.expect(SEMI)?;
+                }
                 Ok(Stmt::Expr(expr))
             }
         }
@@ -235,30 +376,105 @@ impl<'a> Parser<'a> {
 
     fn parse_let(&mut self) -> Result<Stmt, ParseError> {
         self.expect(KW_LET)?;
-        let mutable = if self.peek().kind == KW_MUT { self.advance(); true } else { false };
+        let mutable = if self.peek().kind == KW_MUT {
+            self.advance();
+            true
+        } else {
+            false
+        };
         let name = self.expect(IDENT)?.start;
         self.expect(COLON)?;
         let ty = self.parse_type()?;
         self.expect(ASSIGN)?;
         let init = self.parse_expr()?;
         self.expect(SEMI)?;
-        Ok(Stmt::Let { mutable, name, ty, init })
+        Ok(Stmt::Let {
+            mutable,
+            name,
+            ty,
+            init,
+        })
+    }
+
+    fn parse_for(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(KW_FOR)?;
+        let name = self.expect(IDENT)?.start;
+        self.expect(KW_IN)?;
+        let start = self.parse_expr()?;
+        self.expect(DOTDOT)?;
+        let end = self.parse_expr()?;
+        let body = self.parse_block()?;
+        Ok(Stmt::For {
+            name,
+            start,
+            end,
+            body,
+        })
     }
 
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
         self.expect(KW_RETURN)?;
-        let expr = if self.peek().kind != SEMI { Some(self.parse_expr()?) } else { None };
+        let expr = if self.peek().kind != SEMI {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
         self.expect(SEMI)?;
         Ok(Stmt::Return(expr))
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ParseError> { self.parse_cmp() }
+    fn parse_expr(&mut self) -> Result<Expr, ParseError> {
+        // Depth-guard the single transitive recursion point for all
+        // paren/call/if/block/while nesting; fail closed before the native
+        // stack overflows on hostile input.
+        self.depth += 1;
+        let r = if self.depth > MAX_PARSE_DEPTH {
+            Err(ParseError {
+                message: "expression nesting too deep".into(),
+                token_index: self.pos,
+            })
+        } else {
+            self.parse_or()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_or(&mut self) -> Result<Expr, ParseError> {
+        let mut lhs = self.parse_and()?;
+        while self.peek().kind == OROR {
+            let op = self.advance().kind;
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(self.parse_and()?),
+            };
+        }
+        Ok(lhs)
+    }
+
+    fn parse_and(&mut self) -> Result<Expr, ParseError> {
+        let mut lhs = self.parse_cmp()?;
+        while self.peek().kind == ANDAND {
+            let op = self.advance().kind;
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(self.parse_cmp()?),
+            };
+        }
+        Ok(lhs)
+    }
 
     fn parse_cmp(&mut self) -> Result<Expr, ParseError> {
         let mut lhs = self.parse_term()?;
-        while matches!(self.peek().kind, EQ | LT) {
+        while matches!(self.peek().kind, EQ | LT | NE | GT | LE | GE) {
             let op = self.advance().kind;
-            lhs = Expr::Binary { op, lhs: Box::new(lhs), rhs: Box::new(self.parse_term()?) };
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(self.parse_term()?),
+            };
         }
         Ok(lhs)
     }
@@ -267,38 +483,94 @@ impl<'a> Parser<'a> {
         let mut lhs = self.parse_factor()?;
         while matches!(self.peek().kind, PLUS | MINUS) {
             let op = self.advance().kind;
-            lhs = Expr::Binary { op, lhs: Box::new(lhs), rhs: Box::new(self.parse_factor()?) };
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(self.parse_factor()?),
+            };
         }
         Ok(lhs)
     }
 
     fn parse_factor(&mut self) -> Result<Expr, ParseError> {
         let mut lhs = self.parse_unary()?;
-        while matches!(self.peek().kind, STAR | SLASH) {
+        while matches!(self.peek().kind, STAR | SLASH | PERCENT) {
             let op = self.advance().kind;
-            lhs = Expr::Binary { op, lhs: Box::new(lhs), rhs: Box::new(self.parse_unary()?) };
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(self.parse_unary()?),
+            };
         }
         Ok(lhs)
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        // `* ! &` chains right-recurse here without going through parse_expr,
+        // so this self-recursion needs its own depth guard (shared counter).
+        self.depth += 1;
+        let r = if self.depth > MAX_PARSE_DEPTH {
+            Err(ParseError {
+                message: "expression nesting too deep".into(),
+                token_index: self.pos,
+            })
+        } else {
+            self.parse_unary_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<Expr, ParseError> {
         match self.peek().kind {
             AMP | AMP_MUT => {
                 let mutable = self.peek().kind == AMP_MUT;
                 self.advance();
-                Ok(Expr::Borrow { mutable, expr: Box::new(self.parse_unary()?) })
+                Ok(Expr::Borrow {
+                    mutable,
+                    expr: Box::new(self.parse_unary()?),
+                })
             }
-            STAR => { self.advance(); Ok(Expr::Deref(Box::new(self.parse_unary()?))) }
+            STAR => {
+                self.advance();
+                Ok(Expr::Deref(Box::new(self.parse_unary()?)))
+            }
+            BANG => {
+                self.advance();
+                Ok(Expr::Not(Box::new(self.parse_unary()?)))
+            }
+            MINUS => {
+                self.advance();
+                Ok(Expr::Neg(Box::new(self.parse_unary()?)))
+            }
             _ => self.parse_primary(),
         }
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         match self.peek().kind {
+            LPAREN => {
+                self.advance();
+                let inner = self.parse_expr()?;
+                self.expect(RPAREN)?;
+                Ok(inner)
+            }
             LITERAL_INT => {
                 let tok = *self.advance();
-                let val = tok.text(self.source).parse::<u64>().unwrap_or(0);
-                Ok(Expr::LiteralInt(tok.start, val))
+                // rustc treats a literal exceeding u128 as an unconditional hard
+                // error ("integer literal is too large"), which `--cap-lints
+                // allow` cannot suppress; literals within u128 are merely the
+                // capped `overflowing_literals` lint (accepted, then wrapped to
+                // the target type). Match that boundary exactly: parse as u128,
+                // reject on overflow. Storing the low 64 bits is value-faithful
+                // for the i32-only subset because `v as u64 as i32 == v as i32`.
+                match tok.text(self.source).parse::<u128>() {
+                    Ok(v) => Ok(Expr::LiteralInt(tok.start, v as u64)),
+                    Err(_) => Err(ParseError {
+                        message: "integer literal is too large".into(),
+                        token_index: self.pos,
+                    }),
+                }
             }
             LITERAL_BOOL => {
                 let tok = *self.advance();
@@ -313,7 +585,11 @@ impl<'a> Parser<'a> {
                     if self.peek().kind != RPAREN {
                         loop {
                             args.push(self.parse_expr()?);
-                            if self.peek().kind == COMMA { self.advance(); } else { break; }
+                            if self.peek().kind == COMMA {
+                                self.advance();
+                            } else {
+                                break;
+                            }
                         }
                     }
                     self.expect(RPAREN)?;
@@ -334,10 +610,19 @@ impl<'a> Parser<'a> {
                     } else {
                         Some(Box::new(Expr::Block(self.parse_block()?)))
                     }
-                } else { None };
-                Ok(Expr::If { cond, then_block, else_block })
+                } else {
+                    None
+                };
+                Ok(Expr::If {
+                    cond,
+                    then_block,
+                    else_block,
+                })
             }
-            _ => Err(ParseError { message: "unexpected token in expression".into(), token_index: self.pos }),
+            _ => Err(ParseError {
+                message: "unexpected token in expression".into(),
+                token_index: self.pos,
+            }),
         }
     }
 }

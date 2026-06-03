@@ -28,8 +28,8 @@ tracing.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]
-vyre-reference = { workspace = true }
-vyre-primitives = { workspace = true, features = ["math", "graph", "fixpoint", "matching", "bitset", "reduce", "nn", "topology", "opt", "hash", "parsing", "predicate", "label", "effects", "types", "cat", "zx", "dnnf", "inventory-registry", "cpu-parity"] }
+vyre-reference = { path = "../vyre-reference" }
+vyre-primitives = { path = "../vyre-primitives", features = ["math", "graph", "fixpoint", "matching", "bitset", "reduce", "nn", "topology", "opt", "hash", "parsing", "predicate", "label", "effects", "types", "cat", "zx", "dnnf", "inventory-registry", "cpu-parity"] }
 
 [[test]]
 name = "sweep_graph_cpu_oracle_matrix"

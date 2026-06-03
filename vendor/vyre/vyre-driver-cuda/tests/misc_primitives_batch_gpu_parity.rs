@@ -9,10 +9,15 @@ mod common;
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_primitives::bitset::popcount::{bitset_popcount, cpu_ref as popcount_cpu};
-use vyre_primitives::decode::rle_segment_lengths::{rle_segment_lengths, rle_segment_lengths_cpu};
+use vyre_primitives::decode::rle_segment_lengths::{
+    rle_segment_lengths, rle_segment_lengths_cpu, rle_segment_lengths_dispatch_grid,
+    MAX_SEGMENT_LENGTH,
+};
+use vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse_dispatch_grid;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::parsing::line_splice_classify::{
-    line_splice_classify, reference_line_splice_classify,
+    line_splice_classify, line_splice_classify_dispatch_grid, line_splice_classify_u8,
+    reference_line_splice_classify,
 };
 use vyre_primitives::parsing::planar_rewrite::{
     planar_rewrite_schedule, reference_planar_rewrite_schedule,
@@ -92,7 +97,7 @@ fn run_edge(
         vec![0u8; words as usize * 4],
     ];
     let mut config = DispatchConfig::default();
-    config.grid_override = Some([node_count.max(1), 1, 1]);
+    config.grid_override = Some(csr_forward_traverse_dispatch_grid(node_count));
     let outputs = with_live_backend("predicate edge batch", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -158,12 +163,52 @@ fn cuda_predicate_edge_kind_mask_skips() {
     assert_eq!(gpu, vec![0u32]);
 }
 
+#[test]
+fn cuda_predicate_edge_reaches_source_past_first_workgroup() {
+    let node_count = 513u32;
+    let words = node_count.div_ceil(32) as usize;
+    let mut edge_offsets = vec![0u32; node_count as usize + 1];
+    for offset in edge_offsets.iter_mut().skip(301) {
+        *offset = 1;
+    }
+    let edge_targets = vec![512u32];
+    let edge_kind_mask = vec![edge_kind::ASSIGNMENT];
+    let mut frontier = vec![0u32; words];
+    frontier[300 / 32] |= 1u32 << (300 % 32);
+    let allow = edge_kind::ASSIGNMENT;
+
+    let cpu = edge_cpu(
+        node_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &frontier,
+        allow,
+    );
+    let gpu = run_edge(
+        node_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &frontier,
+        allow,
+    );
+
+    let mut expected = vec![0u32; words];
+    expected[512 / 32] |= 1u32 << (512 % 32);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, expected);
+}
+
 // ---------------------------------------------------------------------
 // line_splice_classify
 // ---------------------------------------------------------------------
 
 fn pack_bytes(bytes: &[u8]) -> Vec<u32> {
     let mut padded = bytes.to_vec();
+    if padded.is_empty() {
+        padded.push(0);
+    }
     while padded.len() % 4 != 0 {
         padded.push(0);
     }
@@ -179,9 +224,7 @@ fn run_line_splice(source: &[u8]) -> Vec<u32> {
     let program = line_splice_classify(byte_count);
     let inputs: Vec<Vec<u8>> = vec![u32_bytes(&words), vec![0u8; byte_count.max(1) as usize * 4]];
     let mut config = DispatchConfig::default();
-    let workgroup_x = 256u32;
-    let grid_x = ((byte_count + workgroup_x - 1) / workgroup_x).max(1);
-    config.grid_override = Some([grid_x, 1, 1]);
+    config.grid_override = Some(line_splice_classify_dispatch_grid(byte_count));
     let outputs = with_live_backend("line splice classify", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -194,13 +237,34 @@ fn run_line_splice(source: &[u8]) -> Vec<u32> {
     out
 }
 
+fn run_line_splice_u8(source: &[u8]) -> Vec<u32> {
+    let byte_count = source.len() as u32;
+    let program = line_splice_classify_u8(byte_count);
+    let inputs: Vec<Vec<u8>> = vec![source.to_vec(), vec![0u8; byte_count.max(1) as usize * 4]];
+    let mut config = DispatchConfig::default();
+    config.grid_override = Some(line_splice_classify_dispatch_grid(byte_count));
+    let outputs = with_live_backend("raw-u8 line splice classify", |backend| {
+        backend
+            .dispatch(&program, &inputs, &config)
+            .unwrap_or_else(|error| {
+                panic!("Fix: CUDA raw-u8 line-splice classify dispatch failed: {error}")
+            })
+    });
+    let mut out = bytes_u32(&outputs[0]);
+    out.truncate(byte_count as usize);
+    out
+}
+
 #[test]
 fn cuda_line_splice_classify_keeps_plain_text() {
     let source = b"abcd";
     let cpu = reference_line_splice_classify(source);
     let gpu = run_line_splice(source);
+    let gpu_u8 = run_line_splice_u8(source);
     assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
     assert_eq!(gpu, vec![1u32, 1, 1, 1]);
+    assert_eq!(gpu_u8, vec![1u32, 1, 1, 1]);
 }
 
 #[test]
@@ -209,7 +273,176 @@ fn cuda_line_splice_classify_drops_backslash_lf() {
     let source = b"ab\\\ncd";
     let cpu = reference_line_splice_classify(source);
     let gpu = run_line_splice(source);
+    let gpu_u8 = run_line_splice_u8(source);
     assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
+}
+
+#[test]
+fn cuda_line_splice_classify_empty_input() {
+    let source = b"";
+    let cpu = reference_line_splice_classify(source);
+    let gpu = run_line_splice(source);
+    let gpu_u8 = run_line_splice_u8(source);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
+    assert!(gpu.is_empty());
+    assert!(gpu_u8.is_empty());
+}
+
+#[test]
+fn cuda_line_splice_classify_drops_backslash_cr_lf() {
+    let source = b"a\\\r\nb";
+    let cpu = reference_line_splice_classify(source);
+    let gpu = run_line_splice(source);
+    let gpu_u8 = run_line_splice_u8(source);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
+    assert_eq!(gpu, vec![1, 0, 0, 0, 1]);
+    assert_eq!(gpu_u8, vec![1, 0, 0, 0, 1]);
+}
+
+#[test]
+fn cuda_line_splice_classify_crosses_packed_word_boundary() {
+    let source = b"abc\\\nz";
+    let cpu = reference_line_splice_classify(source);
+    let gpu = run_line_splice(source);
+    let gpu_u8 = run_line_splice_u8(source);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
+    assert_eq!(gpu, vec![1, 1, 1, 0, 0, 1]);
+    assert_eq!(gpu_u8, vec![1, 1, 1, 0, 0, 1]);
+}
+
+#[test]
+fn cuda_line_splice_classify_crosses_workgroup_boundary() {
+    let mut source = vec![b'x'; 260];
+    source[254] = b'\\';
+    source[255] = b'\r';
+    source[256] = b'\n';
+
+    let cpu = reference_line_splice_classify(&source);
+    let gpu = run_line_splice(&source);
+    let gpu_u8 = run_line_splice_u8(&source);
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
+    assert_eq!(&gpu[252..258], &[1, 1, 0, 0, 0, 1]);
+    assert_eq!(&gpu_u8[252..258], &[1, 1, 0, 0, 0, 1]);
+}
+
+#[test]
+fn cuda_line_splice_classify_generated_multi_block_corpus() {
+    let mut source = Vec::with_capacity(4101);
+    while source.len() < 4101 {
+        let line = source.len() / 53;
+        match line % 6 {
+            0 => source.extend_from_slice(b"#define JOIN(a, b) \\\n  a ## b\n"),
+            1 => source.extend_from_slice(b"char slash = '\\\\';\n"),
+            2 => source.extend_from_slice(b"int crlf = 1;\\\r\nint next = 2;\n"),
+            3 => source.extend_from_slice(b"plain tokens with / at end /\n"),
+            4 => source.extend_from_slice(b"continued\\\rmac_style\n"),
+            _ => source.extend_from_slice(b"two\\\\\nslashes\n"),
+        }
+    }
+    source.truncate(4101);
+
+    let cpu = reference_line_splice_classify(&source);
+    let gpu = run_line_splice(&source);
+    let gpu_u8 = run_line_splice_u8(&source);
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu_u8, cpu);
+    assert!(
+        gpu.iter().any(|kept| *kept == 0),
+        "Fix: generated CUDA line-splice corpus must exercise deleted bytes."
+    );
+    assert!(
+        gpu.iter().any(|kept| *kept == 1),
+        "Fix: generated CUDA line-splice corpus must exercise kept bytes."
+    );
+}
+
+fn generated_line_splice_u8_source(case: u32, len: usize) -> Vec<u8> {
+    let mut state = 0xc2b2_ae35_u32 ^ case.wrapping_mul(0x27d4_eb2d);
+    let mut source = Vec::with_capacity(len);
+    for index in 0..len {
+        state = state
+            .rotate_left(7)
+            .wrapping_mul(0x85eb_ca6b)
+            .wrapping_add(index as u32);
+        let byte = match state % 29 {
+            0 => b'\\',
+            1 => b'\n',
+            2 => b'\r',
+            3 => 0,
+            4 => 0xFF,
+            _ => b'a' + ((state >> 8) % 26) as u8,
+        };
+        source.push(byte);
+    }
+
+    for &offset in &[0usize, 1, 2, 254, 255, 256, 510, 511, 768, 1023] {
+        if offset + 3 <= source.len() {
+            match (case + offset as u32) % 4 {
+                0 => {
+                    source[offset] = b'\\';
+                    source[offset + 1] = b'\n';
+                }
+                1 => {
+                    source[offset] = b'\\';
+                    source[offset + 1] = b'\r';
+                    source[offset + 2] = b'\n';
+                }
+                2 => {
+                    source[offset] = b'\\';
+                    source[offset + 1] = b'\r';
+                    source[offset + 2] = b'x';
+                }
+                _ => {
+                    source[offset] = b'\\';
+                    source[offset + 1] = b'\\';
+                    source[offset + 2] = b'\n';
+                }
+            }
+        }
+    }
+    source
+}
+
+#[test]
+fn cuda_line_splice_classify_u8_generated_matrix_matches_cpu() {
+    let len = 1025usize;
+    let byte_count = len as u32;
+    let program = line_splice_classify_u8(byte_count);
+    let mut config = DispatchConfig::default();
+    config.grid_override = Some(line_splice_classify_dispatch_grid(byte_count));
+
+    with_live_backend("raw-u8 generated line-splice matrix", |backend| {
+        let mut checked = 0usize;
+        for case in 0..128u32 {
+            let source = generated_line_splice_u8_source(case, len);
+            let inputs: Vec<Vec<u8>> = vec![source.clone(), vec![0u8; len * 4]];
+            let outputs = backend
+                .dispatch(&program, &inputs, &config)
+                .unwrap_or_else(|error| {
+                    panic!("Fix: CUDA raw-u8 line-splice generated case {case} failed: {error}")
+                });
+            let mut gpu = bytes_u32(&outputs[0]);
+            gpu.truncate(len);
+            assert_eq!(
+                gpu,
+                reference_line_splice_classify(&source),
+                "Fix: raw-u8 CUDA line-splice mismatch on generated case {case}"
+            );
+            checked += gpu.len();
+        }
+        assert_eq!(
+            checked,
+            128 * len,
+            "Fix: generated raw-u8 CUDA line-splice matrix must compare every byte lane."
+        );
+    });
 }
 
 // ---------------------------------------------------------------------
@@ -273,9 +506,7 @@ fn run_rle(segments: &[u32]) -> (Vec<u32>, Vec<u32>) {
         vec![0u8; count as usize * 4],
     ];
     let mut config = DispatchConfig::default();
-    let workgroup_x = 256u32;
-    let grid_x = ((count + workgroup_x - 1) / workgroup_x).max(1);
-    config.grid_override = Some([grid_x, 1, 1]);
+    config.grid_override = Some(rle_segment_lengths_dispatch_grid(count));
     let outputs = with_live_backend("RLE segment lengths", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -309,4 +540,38 @@ fn cuda_rle_segment_lengths_zero_length() {
     assert_eq!(gpu_values, cpu_values);
     assert_eq!(gpu_lengths, vec![0, 1]);
     assert_eq!(gpu_values, vec![0, 0xFF]);
+}
+
+#[test]
+fn cuda_rle_segment_lengths_multi_block_mixed_runs() {
+    let count = 1025u32;
+    let mut segments = Vec::with_capacity(count as usize);
+    for idx in 0..count {
+        let length = match idx {
+            0 => MAX_SEGMENT_LENGTH,
+            255 => 0,
+            256 => 1,
+            511 => 4096,
+            512 => 7,
+            1024 => MAX_SEGMENT_LENGTH - 1,
+            _ => (idx.wrapping_mul(17) ^ idx.rotate_left(3)) & 0x1FFF,
+        };
+        let value = (idx.wrapping_mul(37) ^ idx.rotate_right(5)) & 0xFF;
+        segments.push((length << 8) | value);
+    }
+
+    let (cpu_lengths, cpu_values) = rle_segment_lengths_cpu(&segments);
+    let (gpu_lengths, gpu_values) = run_rle(&segments);
+
+    assert_eq!(rle_segment_lengths_dispatch_grid(count), [5, 1, 1]);
+    assert_eq!(gpu_lengths, cpu_lengths);
+    assert_eq!(gpu_values, cpu_values);
+    assert_eq!(gpu_lengths[0], MAX_SEGMENT_LENGTH);
+    assert_eq!(gpu_lengths[255], 0);
+    assert_eq!(gpu_lengths[256], 1);
+    assert_eq!(gpu_lengths[1024], MAX_SEGMENT_LENGTH - 1);
+    assert_eq!(
+        gpu_values[512],
+        (512u32.wrapping_mul(37) ^ 512u32.rotate_right(5)) & 0xFF
+    );
 }

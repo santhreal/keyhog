@@ -9,7 +9,9 @@
 #![cfg(feature = "c-parser")]
 #![allow(deprecated)]
 use vyre_libs::parsing::c::lex::tokens::TOK_PREPROC;
-use vyre_libs::parsing::c::preprocess::gpu_directive_metadata::gpu_directive_metadata;
+use vyre_libs::parsing::c::preprocess::gpu_directive_metadata::{
+    gpu_directive_metadata, gpu_directive_metadata_u8,
+};
 use vyre_libs::parsing::c::preprocess::reference_c_preprocessor_directive_metadata;
 use vyre_libs::scan::dispatch_io::pack_u32_slice as pack_u32_le;
 use vyre_reference::value::Value;
@@ -135,6 +137,41 @@ fn run_gpu_kernel(source: &[u8]) -> (Vec<u32>, Vec<u32>) {
     (kinds, values)
 }
 
+fn run_gpu_kernel_u8(source: &[u8]) -> (Vec<u32>, Vec<u32>) {
+    let (tok_types, tok_starts, tok_lens) = build_token_stream(source);
+    let n = tok_types.len();
+    let n_padded = n.max(1);
+
+    let mut tt = pack_u32_le(&tok_types);
+    tt.resize(n_padded * 4, 0);
+    let mut ts = pack_u32_le(&tok_starts);
+    ts.resize(n_padded * 4, 0);
+    let mut tl = pack_u32_le(&tok_lens);
+    tl.resize(n_padded * 4, 0);
+    let dk_init = vec![0u8; n_padded * 4];
+    let dv_init = vec![0u8; n_padded * 4];
+
+    let prog = gpu_directive_metadata_u8(n as u32, source.len() as u32);
+    let outputs = vyre_reference::reference_eval(
+        &prog,
+        &[
+            Value::from(tt),
+            Value::from(ts),
+            Value::from(tl),
+            Value::from(source.to_vec()),
+            Value::from(dk_init),
+            Value::from(dv_init),
+        ],
+    )
+    .expect("gpu_directive_metadata_u8 reference eval");
+
+    let mut kinds = unpack_u32(&outputs[0].to_bytes());
+    kinds.truncate(n);
+    let mut values = unpack_u32(&outputs[1].to_bytes());
+    values.truncate(n);
+    (kinds, values)
+}
+
 fn run_cpu_kernel(source: &[u8]) -> Vec<u32> {
     let (tok_types, tok_starts, tok_lens) = build_token_stream(source);
     let (kinds, _values) = reference_c_preprocessor_directive_metadata(
@@ -216,6 +253,19 @@ fn gpu_handles_horizontal_whitespace_after_hash() {
     // `#   define X` is still a #define.
     let src = b"#   define X 1\n";
     assert_eq!(run_gpu_kernel(src).0, run_cpu_kernel(src));
+}
+
+#[test]
+fn gpu_u8_source_classifies_dense_directive_block() {
+    let src = b"#ifndef G\n#define G 1\n#include_next <linux/compiler.h>\n#pragma once\n#undef G\n#endif\n";
+    assert_eq!(run_gpu_kernel_u8(src).0, run_cpu_kernel(src));
+    assert!(run_gpu_kernel_u8(src).1.iter().all(|&value| value == 0));
+}
+
+#[test]
+fn gpu_u8_source_handles_whitespace_and_mixed_tokens() {
+    let src = b"int x;\n   #   define X 1\nint y;\n#warning watch\n";
+    assert_eq!(run_gpu_kernel_u8(src).0, run_cpu_kernel(src));
 }
 
 #[test]

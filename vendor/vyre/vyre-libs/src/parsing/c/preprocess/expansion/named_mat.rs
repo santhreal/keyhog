@@ -38,15 +38,13 @@ pub fn opt_named_macro_expansion_materialized(
     source_len: Expr,
     macro_replacement_source_len: Expr,
     max_input_tokens: u32,
-    max_source_words: u32,
-    max_replacement_source_words: u32,
+    _max_source_bytes: u32,
+    _max_replacement_source_bytes: u32,
     max_out_tokens: u32,
     max_out_source_bytes: u32,
 ) -> Program {
     let t = Expr::InvocationId { axis: 0 };
     let tok_buffer_count = max_input_tokens.max(1);
-    let source_count = max_source_words.max(1);
-    let replacement_source_count = max_replacement_source_words.max(1);
     let out_buffer_count = max_out_tokens.max(1);
     let out_source_count = max_out_source_bytes.max(1);
 
@@ -55,10 +53,12 @@ pub fn opt_named_macro_expansion_materialized(
         in_tok_starts,
         in_tok_lens,
         source_words,
+        source_layout: MacroByteLayout::RawU8,
         macro_name_hashes,
         macro_name_starts,
         macro_name_lens,
         macro_name_words,
+        macro_name_layout: MacroByteLayout::RawU8,
         macro_vals,
         macro_kinds,
         macro_param_counts,
@@ -72,6 +72,7 @@ pub fn opt_named_macro_expansion_materialized(
                 "passthrough",
                 Expr::var("named_tok"),
                 source_words,
+                MacroByteLayout::RawU8,
                 Expr::load(in_tok_starts, Expr::var("named_i")),
                 Expr::load(in_tok_lens, Expr::var("named_i")),
                 source_len.clone(),
@@ -103,6 +104,7 @@ pub fn opt_named_macro_expansion_materialized(
                     macro_replacement_starts,
                     macro_replacement_lens,
                     macro_replacement_words,
+                    MacroByteLayout::RawU8,
                     out_tok_types,
                     out_tok_starts,
                     out_tok_lens,
@@ -118,6 +120,7 @@ pub fn opt_named_macro_expansion_materialized(
                             "function_name_passthrough",
                             Expr::var("named_tok"),
                             source_words,
+                            MacroByteLayout::RawU8,
                             Expr::load(in_tok_starts, Expr::var("named_i")),
                             Expr::load(in_tok_lens, Expr::var("named_i")),
                             source_len.clone(),
@@ -140,11 +143,13 @@ pub fn opt_named_macro_expansion_materialized(
                         in_tok_starts,
                         in_tok_lens,
                         source_words,
+                        MacroByteLayout::RawU8,
                         macro_vals,
                         macro_replacement_params,
                         macro_replacement_starts,
                         macro_replacement_lens,
                         macro_replacement_words,
+                        MacroByteLayout::RawU8,
                         out_tok_types,
                         out_tok_starts,
                         out_tok_lens,
@@ -171,15 +176,15 @@ pub fn opt_named_macro_expansion_materialized(
                 .with_count(tok_buffer_count),
             BufferDecl::storage(in_tok_lens, 2, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(tok_buffer_count),
-            BufferDecl::storage(source_words, 3, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(source_count),
+            BufferDecl::storage(source_words, 3, BufferAccess::ReadOnly, DataType::U8)
+                .with_count(0),
             BufferDecl::storage(macro_name_hashes, 4, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
             BufferDecl::storage(macro_name_starts, 5, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
             BufferDecl::storage(macro_name_lens, 6, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
-            BufferDecl::storage(macro_name_words, 7, BufferAccess::ReadOnly, DataType::U32)
+            BufferDecl::storage(macro_name_words, 7, BufferAccess::ReadOnly, DataType::U8)
                 .with_count(0),
             BufferDecl::storage(macro_vals, 8, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
@@ -219,9 +224,9 @@ pub fn opt_named_macro_expansion_materialized(
                 macro_replacement_words,
                 15,
                 BufferAccess::ReadOnly,
-                DataType::U32,
+                DataType::U8,
             )
-            .with_count(replacement_source_count),
+            .with_count(0),
             BufferDecl::storage(runtime_counts, 16, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(3),
             BufferDecl::storage(out_tok_types, 17, BufferAccess::ReadWrite, DataType::U32)
@@ -279,6 +284,77 @@ pub fn opt_named_macro_expansion_materialized(
             )],
         )],
     )
-    .with_entry_op_id("vyre-libs::parsing::opt_named_macro_expansion_materialized_v5")
+    .with_entry_op_id("vyre-libs::parsing::opt_named_macro_expansion_materialized_v6")
     .with_non_composable_with_self(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn materialized_program() -> Program {
+        opt_named_macro_expansion_materialized(
+            "in_tok_types",
+            "in_tok_starts",
+            "in_tok_lens",
+            "source_words",
+            "macro_name_hashes",
+            "macro_name_starts",
+            "macro_name_lens",
+            "macro_name_words",
+            "macro_vals",
+            "macro_sizes",
+            "macro_kinds",
+            "macro_param_counts",
+            "macro_replacement_params",
+            "macro_replacement_starts",
+            "macro_replacement_lens",
+            "macro_replacement_words",
+            "runtime_counts",
+            "out_tok_types",
+            "out_tok_starts",
+            "out_tok_lens",
+            "out_source_words",
+            "out_tok_counts",
+            "out_source_counts",
+            Expr::u32(3),
+            Expr::u32(7),
+            Expr::u32(5),
+            4,
+            7,
+            5,
+            8,
+            32,
+        )
+    }
+
+    #[test]
+    fn materialized_macro_expansion_declares_raw_u8_input_byte_arenas() {
+        let program = materialized_program();
+        for name in [
+            "source_words",
+            "macro_name_words",
+            "macro_replacement_words",
+        ] {
+            let buffer = program
+                .buffers()
+                .iter()
+                .find(|buffer| buffer.name() == name)
+                .expect("materialized macro expansion must declare input byte arena");
+            assert_eq!(buffer.element(), DataType::U8, "{name}");
+            assert_eq!(buffer.count(), 0, "{name}");
+        }
+    }
+
+    #[test]
+    fn materialized_macro_expansion_keeps_output_source_as_u32_byte_words() {
+        let program = materialized_program();
+        let buffer = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "out_source_words")
+            .expect("materialized macro expansion must declare output source arena");
+        assert_eq!(buffer.element(), DataType::U32);
+        assert_eq!(buffer.count(), 32);
+    }
 }

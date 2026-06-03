@@ -483,7 +483,6 @@ pub fn try_dense_matvec_cpu_ref_into(
     Ok(())
 }
 
-
 fn checked_dense_column_words(tile_count: u32, dst_words: u32) -> usize {
     try_checked_dense_column_words(tile_count, dst_words).expect(
         "Fix: dense Four-Russians column table size overflowed usize. Split the graph into smaller source/destination shards.",
@@ -699,4 +698,3 @@ mod tests {
         .contains("lut_len"));
     }
 }
-

@@ -20,6 +20,18 @@ use crate::graph::program_graph::{
 pub const BINDING_FRONTIER_IN: u32 = BINDING_PRIMITIVE_START;
 /// Canonical binding index for the output frontier bitset.
 pub const BINDING_FRONTIER_OUT: u32 = BINDING_PRIMITIVE_START + 1;
+pub(crate) const CSR_FRONTIER_STEP_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for one source-lane CSR frontier step.
+#[must_use]
+pub const fn csr_frontier_step_dispatch_grid(node_count: u32) -> [u32; 3] {
+    let blocks = node_count.div_ceil(CSR_FRONTIER_STEP_WORKGROUP_SIZE[0]);
+    if blocks == 0 {
+        [1, 1, 1]
+    } else {
+        [blocks, 1, 1]
+    }
+}
 
 /// Direction for a one-step CSR frontier traversal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,7 +86,7 @@ pub(crate) fn csr_frontier_step_program(
 
     Program::wrapped(
         buffers,
-        [1, 1, 1],
+        CSR_FRONTIER_STEP_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(op_id),
             source_region: None,
@@ -254,6 +266,8 @@ fn mark_node_bit(
 
 #[cfg(test)]
 mod tests {
+    use super::{csr_frontier_step_dispatch_grid, CSR_FRONTIER_STEP_WORKGROUP_SIZE};
+
     fn scalar_forward(
         node_count: u32,
         edge_offsets: &[u32],
@@ -323,6 +337,31 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn generated_csr_frontier_step_uses_block_sized_workgroup() {
+        let program = crate::graph::csr_forward_traverse::csr_forward_traverse(
+            crate::graph::program_graph::ProgramGraphShape::new(1024, 1536),
+            "frontier_in",
+            "frontier_out",
+            u32::MAX,
+        );
+
+        assert_eq!(program.workgroup_size(), CSR_FRONTIER_STEP_WORKGROUP_SIZE);
+        assert!(
+            program.workgroup_size()[0] > 1,
+            "Fix: CSR frontier traversal must not launch one CUDA block per source node."
+        );
+    }
+
+    #[test]
+    fn dispatch_grid_packs_source_lanes_into_workgroups() {
+        assert_eq!(csr_frontier_step_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(csr_frontier_step_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(csr_frontier_step_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(csr_frontier_step_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(csr_frontier_step_dispatch_grid(513), [3, 1, 1]);
     }
 
     #[test]

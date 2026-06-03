@@ -14,6 +14,7 @@ fn analyze_skips_program_with_no_expression_bearing_nodes() {
 
 mod complement_bounds;
 mod float_division;
+mod modulo_constant;
 mod reciprocal;
 mod scheduler_smoke;
 mod self_inverse_select;

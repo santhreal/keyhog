@@ -34,6 +34,8 @@ use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+use crate::reduce::multi_block_prefix_scan::multi_block_prefix_scan_sum_u32;
+
 /// Canonical op id for inclusive sum-scan.
 pub const OP_ID_INCLUSIVE_SUM: &str = "vyre-primitives::math::prefix_scan_inclusive_sum";
 /// Canonical op id for exclusive sum-scan.
@@ -182,16 +184,17 @@ pub fn prefix_scan_with_op_id(
     )
 }
 
-/// Emit a sequential inclusive scan for inputs too large for one
-/// workgroup. This preserves exact scan semantics inside the single
-/// `Program` abstraction while the workgroup primitive handles the
-/// hot sub-1024 path.
+/// Emit a parallel inclusive scan for inputs too large for one workgroup.
+///
+/// The returned program uses the reduce-domain multi-block scan and wraps it
+/// with the math-domain op id so existing callers keep a stable builder
+/// identity while large buffers execute through the GPU prefix-scan chain.
 #[must_use]
 pub fn prefix_scan_large(in_buf: &str, out_buf: &str, n: u32) -> Program {
     prefix_scan_large_with_op_id(in_buf, out_buf, n, OP_ID_INCLUSIVE_SUM)
 }
 
-/// Emit a sequential inclusive scan with an explicit region generator id.
+/// Emit a parallel inclusive scan with an explicit region generator id.
 #[must_use]
 pub fn prefix_scan_large_with_op_id(
     in_buf: &str,
@@ -199,45 +202,21 @@ pub fn prefix_scan_large_with_op_id(
     n: u32,
     op_id: &'static str,
 ) -> Program {
-    let input_decl = if n == 0 {
-        BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32)
-    } else {
-        BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
-    };
-    let output_bytes = usize::try_from(n)
-        .ok()
-        .and_then(|count| count.checked_mul(4))
-        .unwrap_or_else(|| {
-            panic!(
-                "vyre prefix_scan_large n={n} overflows output byte range. Fix: shard the scan before GPU dispatch."
-            )
-        });
-    let output_decl = BufferDecl::output(out_buf, 1, DataType::U32)
-        .with_count(n.max(1))
-        .with_output_byte_range(0..output_bytes);
+    if n == 0 {
+        return empty_large_scan_program(in_buf, out_buf, op_id);
+    }
+    if n <= 1024 {
+        return prefix_scan_with_op_id(in_buf, out_buf, n, ScanKind::InclusiveSum, op_id);
+    }
 
-    let body = if n == 0 {
-        Vec::new()
-    } else {
-        vec![Node::if_then(
-            Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-            vec![
-                Node::let_bind("acc", Expr::u32(0)),
-                Node::loop_for(
-                    "i",
-                    Expr::u32(0),
-                    Expr::u32(n),
-                    vec![
-                        Node::assign(
-                            "acc",
-                            Expr::add(Expr::var("acc"), Expr::load(in_buf, Expr::var("i"))),
-                        ),
-                        Node::store(out_buf, Expr::var("i"), Expr::var("acc")),
-                    ],
-                ),
-            ],
-        )]
-    };
+    wrap_large_scan_program(multi_block_prefix_scan_sum_u32(in_buf, out_buf, n), op_id)
+}
+
+fn empty_large_scan_program(in_buf: &str, out_buf: &str, op_id: &'static str) -> Program {
+    let input_decl = BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32);
+    let output_decl = BufferDecl::output(out_buf, 1, DataType::U32)
+        .with_count(1)
+        .with_output_byte_range(0..0);
 
     Program::wrapped(
         vec![input_decl, output_decl],
@@ -245,7 +224,19 @@ pub fn prefix_scan_large_with_op_id(
         vec![Node::Region {
             generator: Ident::from(op_id),
             source_region: None,
-            body: Arc::new(body),
+            body: Arc::new(Vec::new()),
+        }],
+    )
+}
+
+fn wrap_large_scan_program(program: Program, op_id: &'static str) -> Program {
+    Program::wrapped(
+        program.buffers().to_vec(),
+        program.workgroup_size(),
+        vec![Node::Region {
+            generator: Ident::from(op_id),
+            source_region: None,
+            body: Arc::new(program.entry().to_vec()),
         }],
     )
 }
@@ -434,8 +425,14 @@ mod tests {
         for n in &[1_u32, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
             let program = prefix_scan("in", "out", *n, ScanKind::InclusiveSum);
             let names: Vec<&str> = program.buffers().iter().map(|b| b.name()).collect();
-            assert!(names.contains(&"in"), "prefix_scan must declare in for n={n}");
-            assert!(names.contains(&"out"), "prefix_scan must declare out for n={n}");
+            assert!(
+                names.contains(&"in"),
+                "prefix_scan must declare in for n={n}"
+            );
+            assert!(
+                names.contains(&"out"),
+                "prefix_scan must declare out for n={n}"
+            );
         }
     }
 }

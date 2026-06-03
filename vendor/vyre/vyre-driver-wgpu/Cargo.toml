@@ -63,15 +63,15 @@ stats_alloc.workspace = true
 tokio.workspace = true
 tempfile.workspace = true
 proptest.workspace = true
-vyre.workspace = true
-vyre-harness.workspace = true
-vyre-self-substrate = { workspace = true }
-vyre-libs = { workspace = true, features = ["matching", "parsing", "c-parser", "nn-attention", "cpu-parity"] }
-vyre-primitives = { workspace = true, default-features = false, features = ["graph", "predicate", "cpu-parity"] }
-vyre-reference = { workspace = true, features = ["subgroup-ops"] }
-vyre-runtime = { workspace = true, features = ["self-substrate-adapters"] }
+vyre = { path = "../vyre-core" }
+vyre-harness = { path = "../vyre-harness" }
+vyre-self-substrate = { path = "../vyre-self-substrate" }
+vyre-libs = { path = "../vyre-libs", features = ["matching", "parsing", "c-parser", "nn-attention", "cpu-parity"] }
+vyre-primitives = { path = "../vyre-primitives", default-features = false, features = ["graph", "predicate", "cpu-parity"] }
+vyre-reference = { path = "../vyre-reference", features = ["subgroup-ops"] }
+vyre-runtime = { path = "../vyre-runtime", features = ["self-substrate-adapters"] }
 vyre-test-harness.workspace = true
-vyre-intrinsics.workspace = true
+vyre-intrinsics = { path = "../vyre-intrinsics" }
 tracing-subscriber.workspace = true
 libc.workspace = true
 c-grammar-gen.workspace = true
@@ -81,6 +81,12 @@ tree-sitter-go = { workspace = true }
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+# build.rs reads this to stamp VYRE_NAGA_VERSION into the binary so the
+# pipeline-cache key invalidates when the shader frontend changes. Bump in
+# lockstep with the workspace `naga` dep.
+[package.metadata.vyre]
+naga_version = "25.0.0"
 
 [lints]
 workspace = true

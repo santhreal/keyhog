@@ -428,7 +428,6 @@ fn four_russians_cached_luts_reuse_allocation_and_match_owned_tables() {
     );
 }
 
-
 #[test]
 fn four_russians_ir_apply_lut_matches_cpu_reference() {
     let lhs = [0xFF00_FF00u32, 0x0F0F_0F0F];
@@ -490,13 +489,21 @@ fn xor_is_self_inverse() {
 #[test]
 fn or_is_idempotent() {
     let a = vec![0xCAFE_BABEu32];
-    assert_eq!(bitset_or_ref(&a, &a), vec![0xCAFE_BABEu32], "x | x must equal x");
+    assert_eq!(
+        bitset_or_ref(&a, &a),
+        vec![0xCAFE_BABEu32],
+        "x | x must equal x"
+    );
 }
 
 #[test]
 fn and_is_idempotent() {
     let a = vec![0xCAFE_BABEu32];
-    assert_eq!(bitset_and_ref(&a, &a), vec![0xCAFE_BABEu32], "x & x must equal x");
+    assert_eq!(
+        bitset_and_ref(&a, &a),
+        vec![0xCAFE_BABEu32],
+        "x & x must equal x"
+    );
 }
 
 #[test]
@@ -508,4 +515,3 @@ fn de_morgan_law_holds_at_word_level() {
     let rhs = bitset_or_ref(&bitset_not_ref(&a), &bitset_not_ref(&b));
     assert_eq!(lhs, rhs, "De Morgan's law must hold for word-level bitsets");
 }
-

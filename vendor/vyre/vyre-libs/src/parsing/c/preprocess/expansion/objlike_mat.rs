@@ -4,6 +4,7 @@ use crate::parsing::c::preprocess::materialization::*;
 use vyre::ir::{Expr, Node};
 
 use super::helpers::*;
+use super::MacroByteLayout;
 
 pub(super) fn emit_materialized_object_like_replacement(
     macro_vals: &str,
@@ -11,6 +12,7 @@ pub(super) fn emit_materialized_object_like_replacement(
     macro_replacement_starts: &str,
     macro_replacement_lens: &str,
     macro_replacement_words: &str,
+    macro_replacement_layout: MacroByteLayout,
     out_tok_types: &str,
     out_tok_starts: &str,
     out_tok_lens: &str,
@@ -48,6 +50,7 @@ pub(super) fn emit_materialized_object_like_replacement(
     paste_branch.extend(append_to_previous_output_token(
         "object_paste_rhs",
         macro_replacement_words,
+        macro_replacement_layout,
         Expr::var("macro_paste_right_start"),
         Expr::var("macro_paste_right_len"),
         macro_replacement_source_len.clone(),
@@ -63,6 +66,7 @@ pub(super) fn emit_materialized_object_like_replacement(
         "object_literal",
         Expr::var("named_repl_tok"),
         macro_replacement_words,
+        macro_replacement_layout,
         Expr::load(macro_replacement_starts, Expr::var("named_repl_offset")),
         Expr::load(macro_replacement_lens, Expr::var("named_repl_offset")),
         macro_replacement_source_len,

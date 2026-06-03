@@ -67,13 +67,9 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
 }
 
 fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
-    // The universal harness expects one readback per input-output /
-    // output buffer. `stack` is caller-supplied scratch, while
-    // `match_pairs` is a backend-owned output. For the fixture input
-    // [OPEN, OPEN, CLOSE, CLOSE] with max_depth=4, tracing the serial
-    // walk leaves stack = [0, 1, 0, 0] (slots 2..3 never written) and
-    // match_pairs = [3, 2, 1, 0].
-    vec![vec![pack_u32(&[0, 1, 0, 0]), pack_u32(&[3, 2, 1, 0])]]
+    // max_depth == n selects the parallel matcher, which writes match_pairs
+    // directly and leaves caller-supplied stack scratch untouched.
+    vec![vec![pack_u32(&[0, 0, 0, 0]), pack_u32(&[3, 2, 1, 0])]]
 }
 
 inventory::submit! {

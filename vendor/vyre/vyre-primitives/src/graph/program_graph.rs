@@ -123,7 +123,6 @@ impl ProgramGraphShape {
             self.node_count,
         ))
     }
-
 }
 
 fn read_only_buffers_with_counts(

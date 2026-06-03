@@ -1,14 +1,21 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "hash", feature = "cpu-parity"))]
 
 use vyre_primitives::hash::blake3::{cpu_blake3_g, MSG_SCHEDULE};
 
 const CASES: usize = 16384;
 
-fn oracle_blake3_g(state: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize, mx: u32, my: u32) {
+fn oracle_blake3_g(
+    state: &mut [u32; 16],
+    a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    mx: u32,
+    my: u32,
+) {
     state[a] = state[a].wrapping_add(state[b]).wrapping_add(mx);
     state[d] = (state[d] ^ state[a]).rotate_right(16);
     state[c] = state[c].wrapping_add(state[d]);

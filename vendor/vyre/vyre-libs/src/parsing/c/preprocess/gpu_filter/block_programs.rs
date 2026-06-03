@@ -1,15 +1,15 @@
 use super::program_helpers::{
-    byte_eq, clear_comment_mask_and_final_keep, packed_byte_load, packed_byte_load_or_zero,
-    singleton_u32_read_buffer, store_comment_mask, store_final_keep_from_comment_mask,
-    u32_read_buffer, u32_rw_buffer, wrap_gpu_filter_program,
+    byte_eq, clear_comment_mask_and_final_keep, singleton_u32_read_buffer, source_byte_load,
+    source_byte_load_or_zero, source_bytes_input_buffer, store_comment_mask,
+    store_final_keep_from_comment_mask, u32_read_buffer, u32_rw_buffer, wrap_gpu_filter_program,
 };
 use vyre::ir::{Expr, Node, Program};
 
 pub(super) fn simple_block_comment_marks_program(n: u32) -> Program {
     let i = Expr::var("i");
-    let b0 = packed_byte_load("bytes_in", i.clone());
+    let b0 = source_byte_load("bytes_in", i.clone());
     let b1_addr = Expr::add(i.clone(), Expr::u32(1));
-    let b1 = packed_byte_load_or_zero("bytes_in", b1_addr, "block_n_real");
+    let b1 = source_byte_load_or_zero("bytes_in", b1_addr, "block_n_real");
     let after_close = Expr::add(i.clone(), Expr::u32(2));
     let body = vec![
         Node::let_bind("i", Expr::InvocationId { axis: 0 }),
@@ -21,10 +21,7 @@ pub(super) fn simple_block_comment_marks_program(n: u32) -> Program {
                     "opens_block",
                     Expr::and(
                         Expr::lt(i.clone(), Expr::var("n_real")),
-                        Expr::and(
-                            byte_eq(b0.clone(), b'/'),
-                            byte_eq(b1.clone(), b'*'),
-                        ),
+                        Expr::and(byte_eq(b0.clone(), b'/'), byte_eq(b1.clone(), b'*')),
                     ),
                 ),
                 Node::store(
@@ -37,10 +34,7 @@ pub(super) fn simple_block_comment_marks_program(n: u32) -> Program {
                         Expr::lt(after_close.clone(), Expr::u32(n)),
                         Expr::and(
                             Expr::lt(i.clone(), Expr::var("n_real")),
-                            Expr::and(
-                                byte_eq(b0, b'*'),
-                                byte_eq(b1, b'/'),
-                            ),
+                            Expr::and(byte_eq(b0, b'*'), byte_eq(b1, b'/')),
                         ),
                     ),
                     vec![Node::store(
@@ -55,7 +49,7 @@ pub(super) fn simple_block_comment_marks_program(n: u32) -> Program {
     wrap_gpu_filter_program(
         "vyre-libs::parsing::c::preprocess::simple_block_comment_marks",
         vec![
-            super::program_helpers::packed_bytes_input_buffer("bytes_in", 0, n),
+            source_bytes_input_buffer("bytes_in", 0, n),
             u32_rw_buffer("block_open_flags", 1, n),
             u32_rw_buffer("block_close_after_flags", 2, n),
             singleton_u32_read_buffer("block_n_real", 3),

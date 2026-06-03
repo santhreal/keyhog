@@ -13,7 +13,10 @@ use crate::graph::program_graph::ProgramGraphShape;
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::csr_backward_traverse";
 
-pub use crate::graph::csr_frontier_step::{BINDING_FRONTIER_IN, BINDING_FRONTIER_OUT};
+pub use crate::graph::csr_frontier_step::{
+    csr_frontier_step_dispatch_grid as csr_backward_traverse_dispatch_grid, BINDING_FRONTIER_IN,
+    BINDING_FRONTIER_OUT,
+};
 
 /// Build the IR `Program`. Each invocation owns one `src` and, if
 /// any of its outgoing edges' destinations are set in `frontier_in`

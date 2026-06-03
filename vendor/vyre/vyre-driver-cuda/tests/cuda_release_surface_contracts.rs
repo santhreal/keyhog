@@ -1,6 +1,7 @@
 //! CUDA release-surface executable contracts.
 
 use serde_json::Value;
+use std::fs;
 
 #[test]
 fn cuda_release_surface_exposes_megakernel_speedup_csv_verifier() {
@@ -32,13 +33,17 @@ fn cuda_parity_perf_gate_runs_release_path_contracts() {
             && script.contains("exit 1"),
         "Fix: CUDA parity/perf gate must fail loudly when the NVIDIA GPU probe is misconfigured."
     );
+    assert!(
+        script.contains("--test \"$test\""),
+        "Fix: CUDA parity/perf gate must execute each named contract test through cargo's `--test` integration-test selector."
+    );
     for required_test in [
-        "--test capability_contracts",
-        "--test cuda_device_contract",
-        "--test cuda_release_surface_contracts",
-        "--test gpu_elementwise_conformance",
-        "--test megakernel_scale_scheduler_contracts",
-        "--test module_cache_contracts",
+        "capability_contracts",
+        "cuda_device_contract",
+        "cuda_release_surface_contracts",
+        "gpu_elementwise_conformance",
+        "megakernel_scale_scheduler_contracts",
+        "module_cache_contracts",
     ] {
         assert!(
             script.contains(required_test),
@@ -96,8 +101,8 @@ fn cuda_release_gate_evidence_matches_executable_gate() {
             .as_str()
             .expect("Fix: required_cuda_tests entries must be strings.");
         assert!(
-            script.contains(&format!("--test {test_name}")),
-            "Fix: CUDA release gate evidence names `{test_name}`, but the executable gate does not run it."
+            script.contains(test_name) && script.contains("--test \"$test\""),
+            "Fix: CUDA release gate evidence names `{test_name}`, but the executable gate does not run it through the contract-test loop."
         );
     }
 
@@ -118,6 +123,42 @@ fn cuda_release_gate_evidence_matches_executable_gate() {
             "Fix: INT4 CUDA parity test `{test_name}` must be exercised by the gpu_parity discovery loop."
         );
     }
+    let mut evidence_gpu_parity_tests = evidence["gpu_parity_integration_tests"]
+        .as_array()
+        .expect("Fix: CUDA release evidence must list gpu_parity_integration_tests.")
+        .iter()
+        .map(|test| {
+            test.as_str()
+                .expect("Fix: gpu_parity_integration_tests entries must be strings.")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    evidence_gpu_parity_tests.sort();
+    let mut actual_gpu_parity_tests = fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/tests"))
+        .expect("Fix: CUDA release evidence contract must be able to enumerate integration tests.")
+        .filter_map(|entry| {
+            let entry = entry.expect(
+                "Fix: CUDA release evidence contract must read every integration test entry.",
+            );
+            let path = entry.path();
+            let file_name = path.file_name()?.to_str()?;
+            if !file_name.ends_with(".rs") || !file_name.contains("gpu_parity") {
+                return None;
+            }
+            Some(
+                path.file_stem()
+                    .expect("Fix: CUDA gpu_parity test files must have a file stem.")
+                    .to_str()
+                    .expect("Fix: CUDA gpu_parity test names must be UTF-8.")
+                    .to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    actual_gpu_parity_tests.sort();
+    assert_eq!(
+        evidence_gpu_parity_tests, actual_gpu_parity_tests,
+        "Fix: CUDA release gate evidence must list exactly the gpu_parity tests auto-discovered by scripts/check_cuda_parity_perf_gate.sh."
+    );
 
     let assertions = evidence["release_path_assertions"]
         .as_array()

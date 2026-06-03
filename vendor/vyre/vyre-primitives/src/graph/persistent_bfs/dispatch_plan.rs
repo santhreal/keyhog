@@ -1,7 +1,7 @@
 use super::hash::persistent_bfs_program_layout_hash;
 use super::layout::{
-    PersistentBfsLayout, PersistentBfsPlanCacheKey, PersistentBfsPlanCacheKind,
-    PersistentBfsStaticInputKey, PERSISTENT_BFS_SINGLE_DISPATCH_GRID,
+    persistent_bfs_single_dispatch_grid, PersistentBfsLayout, PersistentBfsPlanCacheKey,
+    PersistentBfsPlanCacheKind, PersistentBfsStaticInputKey,
 };
 use super::program::persistent_bfs;
 use crate::graph::program_graph::ProgramGraphShape;
@@ -63,7 +63,7 @@ impl PersistentBfsDispatchPlan {
     /// Single-query dispatch grid.
     #[must_use]
     pub const fn dispatch_grid(&self) -> [u32; 3] {
-        PERSISTENT_BFS_SINGLE_DISPATCH_GRID
+        persistent_bfs_single_dispatch_grid(self.layout.node_count)
     }
 
     /// Program graph shape with primitive-owned empty-edge padding.

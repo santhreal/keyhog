@@ -27,7 +27,7 @@ pub fn cpu_ref(
 
 /// CPU reference writing the expanded frontier into caller-owned storage.
 #[cfg(any(test, feature = "cpu-parity"))]
-pub fn cpu_ref_into(
+pub(crate) fn cpu_ref_into(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],

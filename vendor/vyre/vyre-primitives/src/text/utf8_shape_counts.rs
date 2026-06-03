@@ -3,10 +3,30 @@
 use std::sync::Arc;
 
 use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// Canonical op id for UTF-8 histogram shape counting.
 pub const UTF8_SHAPE_COUNTS_OP_ID: &str = "vyre-primitives::text::utf8_shape_counts";
+
+fn saturating_add_expr(left: Expr, right: Expr) -> Expr {
+    Expr::BinOp {
+        op: BinOp::SaturatingAdd,
+        left: Box::new(left),
+        right: Box::new(right),
+    }
+}
+
+fn saturating_const_mul_expr(value: Expr, factor: u32) -> Expr {
+    match factor {
+        0 => Expr::u32(0),
+        1 => value,
+        _ => Expr::select(
+            Expr::gt(value.clone(), Expr::u32(u32::MAX / factor)),
+            Expr::u32(u32::MAX),
+            Expr::mul(value, Expr::u32(factor)),
+        ),
+    }
+}
 
 /// Build a body that assigns continuation and expected-continuation counts.
 #[must_use]
@@ -28,7 +48,7 @@ pub fn utf8_shape_counts_body(
                     Expr::lt(Expr::var("i"), Expr::u32(0xC0)),
                     vec![Node::assign(
                         continuation_var,
-                        Expr::add(Expr::var(continuation_var), Expr::var("byte_count")),
+                        saturating_add_expr(Expr::var(continuation_var), Expr::var("byte_count")),
                     )],
                 ),
                 Node::if_then(
@@ -38,7 +58,7 @@ pub fn utf8_shape_counts_body(
                     ),
                     vec![Node::assign(
                         expected_var,
-                        Expr::add(Expr::var(expected_var), Expr::var("byte_count")),
+                        saturating_add_expr(Expr::var(expected_var), Expr::var("byte_count")),
                     )],
                 ),
                 Node::if_then(
@@ -48,9 +68,9 @@ pub fn utf8_shape_counts_body(
                     ),
                     vec![Node::assign(
                         expected_var,
-                        Expr::add(
+                        saturating_add_expr(
                             Expr::var(expected_var),
-                            Expr::mul(Expr::var("byte_count"), Expr::u32(2)),
+                            saturating_const_mul_expr(Expr::var("byte_count"), 2),
                         ),
                     )],
                 ),
@@ -58,9 +78,9 @@ pub fn utf8_shape_counts_body(
                     Expr::gt(Expr::var("i"), Expr::u32(0xEF)),
                     vec![Node::assign(
                         expected_var,
-                        Expr::add(
+                        saturating_add_expr(
                             Expr::var(expected_var),
-                            Expr::mul(Expr::var("byte_count"), Expr::u32(3)),
+                            saturating_const_mul_expr(Expr::var("byte_count"), 3),
                         ),
                     )],
                 ),
@@ -123,13 +143,27 @@ pub fn utf8_shape_counts(histogram: &str, out: &str) -> Program {
 
 /// Reference oracle for [`utf8_shape_counts`].
 #[must_use]
+pub(crate) fn utf8_shape_counts_from_histogram(histogram: &[u32; 256]) -> (u32, u32) {
+    let continuation = histogram[0x80..0xC0]
+        .iter()
+        .fold(0u32, |acc, &count| acc.saturating_add(count));
+    let expected = histogram[0xC2..0xE0]
+        .iter()
+        .fold(0u32, |acc, &count| acc.saturating_add(count));
+    let expected = histogram[0xE0..0xF0].iter().fold(expected, |acc, &count| {
+        acc.saturating_add(count.saturating_mul(2))
+    });
+    let expected = histogram[0xF0..0xF5].iter().fold(expected, |acc, &count| {
+        acc.saturating_add(count.saturating_mul(3))
+    });
+    (continuation, expected)
+}
+
+/// Reference oracle for [`utf8_shape_counts`].
+#[must_use]
 #[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_utf8_shape_counts(histogram: &[u32; 256]) -> (u32, u32) {
-    let continuation: u32 = histogram[0x80..0xC0].iter().sum();
-    let starter_2: u32 = histogram[0xC2..0xE0].iter().sum();
-    let starter_3: u32 = histogram[0xE0..0xF0].iter().sum();
-    let starter_4: u32 = histogram[0xF0..0xF5].iter().sum();
-    (continuation, starter_2 + starter_3 * 2 + starter_4 * 3)
+    utf8_shape_counts_from_histogram(histogram)
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -158,5 +192,19 @@ mod tests {
         histogram[0xC3] = 2;
         histogram[0xA9] = 2;
         assert_eq!(reference_utf8_shape_counts(&histogram), (2, 2));
+    }
+
+    #[test]
+    fn reference_saturates_three_byte_expected_count() {
+        let mut histogram = [0u32; 256];
+        histogram[0xE0] = u32::MAX / 2 + 1;
+        assert_eq!(reference_utf8_shape_counts(&histogram), (0, u32::MAX));
+    }
+
+    #[test]
+    fn reference_saturates_four_byte_expected_count() {
+        let mut histogram = [0u32; 256];
+        histogram[0xF0] = u32::MAX / 3 + 1;
+        assert_eq!(reference_utf8_shape_counts(&histogram), (0, u32::MAX));
     }
 }

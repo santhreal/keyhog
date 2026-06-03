@@ -39,25 +39,24 @@
 //! `vyre-libs::dataflow::ifds_gpu` and composes this encoding with
 //! `csr_forward_traverse`.
 
-
 #[path = "exploded/abi.rs"]
 mod abi;
+#[path = "exploded/canonicalize.rs"]
+mod canonicalize;
+#[path = "exploded/cpu_ref.rs"]
+mod cpu_ref;
+#[path = "exploded/dispatch_plan.rs"]
+mod dispatch_plan;
 #[path = "exploded/encoding.rs"]
 mod encoding;
 #[path = "exploded/layout.rs"]
 mod layout;
-#[path = "exploded/validation.rs"]
-mod validation;
-#[path = "exploded/dispatch_plan.rs"]
-mod dispatch_plan;
-#[path = "exploded/canonicalize.rs"]
-mod canonicalize;
 #[path = "exploded/program_ir.rs"]
 mod program_ir;
 #[path = "exploded/program_key.rs"]
 mod program_key;
-#[path = "exploded/cpu_ref.rs"]
-mod cpu_ref;
+#[path = "exploded/validation.rs"]
+mod validation;
 
 #[cfg(test)]
 #[path = "exploded/tests.rs"]

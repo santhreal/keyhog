@@ -36,7 +36,11 @@ fn quantized_scalar_load_store_preserves_raw_storage_bits() {
         (DataType::F8E5M2, vec![0x7B]),
     ] {
         let out = run_single_load_store(ty.clone(), encoded.clone(), 0);
-        assert_eq!(out.len(), encoded.len(), "{ty} output length must match input");
+        assert_eq!(
+            out.len(),
+            encoded.len(),
+            "{ty} output length must match input"
+        );
         assert_eq!(out, encoded, "{ty} in-bounds load/store must be byte-exact");
     }
 }
@@ -67,4 +71,25 @@ fn half_and_bfloat_oob_loads_return_two_byte_typed_zero() {
             "{ty} OOB load must preserve its two-byte storage shape"
         );
     }
+}
+
+#[test]
+fn packed_i4_reference_buffer_len_reports_logical_elements() {
+    let program = Program::wrapped(
+        vec![
+            BufferDecl::storage("input", 0, BufferAccess::ReadOnly, DataType::I4).with_count(8),
+            BufferDecl::output("out", 1, DataType::U32).with_count(1),
+        ],
+        [1, 1, 1],
+        vec![Node::store("out", Expr::u32(0), Expr::buf_len("input"))],
+    );
+
+    let outputs = reference_eval(&program, &[Value::Bytes(vec![0u8; 4].into())])
+        .expect("Fix: packed I4 buffer length oracle must execute.");
+
+    assert_eq!(
+        outputs[0].to_bytes(),
+        8u32.to_le_bytes(),
+        "Fix: four bytes of I4 storage must report eight logical elements to Expr::buf_len."
+    );
 }

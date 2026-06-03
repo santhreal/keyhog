@@ -113,8 +113,64 @@ fn cuda_graph_replay_is_release_default_not_opt_in_debug_path() {
 fn static_launch_param_upload_sync_is_telemetry_visible() {
     let source = include_str!("static_params.rs");
     assert!(
-        source.contains("backend.telemetry.record_sync_point();"),
+        source.contains("enum StaticParamUploadFailure")
+            && source.contains("Completed(BackendError)")
+            && source.contains("CompletionUnproven(BackendError)"),
+        "Fix: CUDA static launch parameter upload must distinguish completed cleanup failures from unproven in-flight failures."
+    );
+    let upload = source
+        .split("pub(crate) fn upload_static_launch_params")
+        .nth(1)
+        .expect("Fix: CUDA static launch parameter upload helper must exist.");
+    assert!(
+        upload.contains("backend.telemetry.record_sync_point();"),
         "Fix: CUDA compiled-pipeline static parameter upload must record its stream synchronization in telemetry."
+    );
+    assert!(
+        upload.contains("if let Err(error) = enqueue_result")
+            && upload.contains("match stream.synchronize()")
+            && upload.contains("In-flight static parameter upload resources will not be recycled.")
+            && upload.contains("std::mem::forget(stream);")
+            && upload.contains("StaticParamUploadFailure::CompletionUnproven(error)"),
+        "Fix: CUDA compiled-pipeline static parameter upload must not recycle its stream after enqueue errors unless completion is proven."
+    );
+    assert!(
+        upload.contains("Err(StaticParamUploadFailure::Completed(err)) =>")
+            && upload.contains("backend.transient_pool.release(allocation);")
+            && upload.contains("Err(StaticParamUploadFailure::CompletionUnproven(err)) =>")
+            && upload.contains("let _unreleased_allocation = allocation;")
+            && upload.contains("std::mem::forget(host_transfers);"),
+        "Fix: CUDA compiled-pipeline static parameter upload must not recycle device or host staging allocations when upload completion is unproven."
+    );
+    let unproven_cleanup = upload
+        .split("Err(StaticParamUploadFailure::CompletionUnproven(err)) =>")
+        .nth(1)
+        .expect("Fix: static parameter upload must have unproven-completion cleanup.")
+        .split("backend.telemetry.record_host_to_device_bytes")
+        .next()
+        .expect("Fix: unproven static upload cleanup must precede success telemetry.");
+    assert!(
+        !unproven_cleanup.contains("transient_pool.release"),
+        "Fix: CUDA static parameter upload must not return unproven in-flight device memory to the transient pool."
+    );
+    assert!(
+        upload.contains("if let Err(error) = stream.synchronize()")
+            && upload.contains("backend.telemetry.record_sync_point();")
+            && upload.contains("backend.launch_resources.release_stream(stream);"),
+        "Fix: CUDA compiled-pipeline static parameter upload must check synchronization before telemetry or stream release."
+    );
+    let sync_pos = upload
+        .find("if let Err(error) = stream.synchronize()")
+        .expect("Fix: static parameter upload must synchronize before releasing the stream.");
+    let telemetry_pos = upload
+        .rfind("backend.telemetry.record_sync_point();")
+        .expect("Fix: static parameter upload must record sync telemetry after success.");
+    let release_pos = upload
+        .rfind("backend.launch_resources.release_stream(stream);")
+        .expect("Fix: static parameter upload must release the stream after successful synchronization.");
+    assert!(
+        sync_pos < telemetry_pos && telemetry_pos < release_pos,
+        "Fix: CUDA compiled-pipeline static parameter upload must prove completion before telemetry or pooled stream release."
     );
 }
 
@@ -136,6 +192,135 @@ fn cuda_graph_shape_bytes_overflow_fails_loudly_without_saturating_arithmetic() 
     assert!(
         !source.contains("unwrap_or(usize::MAX)"),
         "Fix: CUDA graph replay shape byte overflow must not silently cap to usize::MAX."
+    );
+}
+
+#[test]
+fn compiled_cuda_graph_batched_replay_uses_checked_batch_lane_and_output_slots() {
+    let source = include_str!("compiled_dispatch.rs");
+
+    assert!(
+        source.contains("fn compiled_graph_batch_inputs")
+            && source.contains("fn compiled_graph_output_mut")
+            && source.contains("fn compiled_graph_lane")
+            && source.contains("fn compiled_graph_lane_mut")
+            && source.contains(".get(batch_index)")
+            && source.contains(".get_mut(batch_index)")
+            && source.contains("miss_batches\n                .first()\n                .copied()")
+            && source.contains(".get(lane)")
+            && source.contains(".get_mut(lane)"),
+        "Fix: compiled CUDA graph batched replay must use typed accessors for batch inputs, output slots, and lane slots."
+    );
+    assert!(
+        !source.contains("batches[batch_index]")
+            && !source.contains("outputs[batch_index]")
+            && !source.contains("batches[launched_batch.batch_index]")
+            && !source.contains("outputs[launched_batch.batch_index]")
+            && !source.contains("miss_batches[0]")
+            && !source.contains(concat!("lanes", "[lane]"))
+            && !source.contains("lanes[launched_batch.lane]"),
+        "Fix: compiled CUDA graph batched replay must return BackendError for stale replay indexes instead of panicking on direct indexing."
+    );
+    assert!(
+        source.contains("fn finish_and_return_cuda_graph_lanes_after_error")
+            && source.contains("fn return_cached_graph_lanes_after_error")
+            && source.contains("fn finish_cuda_graph_lane_replay_discarding_outputs")
+            && source.contains("return self.finish_and_return_cuda_graph_lanes_after_error(")
+            && source.contains("return self.return_cached_graph_lanes_after_error(lanes, error)")
+            && source.matches("std::mem::forget(lanes);").count() >= 2
+            && source.matches("std::mem::forget(cached);").count() >= 2
+            && !source.contains("finish_cuda_graph_indexed_lane_replays(&mut lanes, launched, outputs)?")
+            && !source.contains("compiled_graph_output_mut(\n                            outputs,\n                            batch_index,\n                            \"materialized cache probe\",\n                        )?"),
+        "Fix: compiled CUDA graph batched replay must finish launched lanes and either return reusable cached graph lanes or leak unproven-completion lanes instead of bypassing cleanup with direct `?` exits."
+    );
+    let timed_single = source
+        .split("fn dispatch_borrowed_timed(")
+        .nth(1)
+        .expect("Fix: timed compiled-pipeline dispatch must remain present.")
+        .split("fn dispatch_borrowed_into(")
+        .next()
+        .expect("Fix: timed compiled-pipeline dispatch must precede untimed dispatch.");
+    let untimed_single = source
+        .split("fn dispatch_borrowed_into(")
+        .nth(1)
+        .expect("Fix: untimed compiled-pipeline dispatch must remain present.")
+        .split("fn dispatch_borrowed_batched(")
+        .next()
+        .expect("Fix: untimed compiled-pipeline dispatch must precede batched dispatch.");
+    assert!(
+        timed_single.contains("self.return_cached_graph(cached)?")
+            && timed_single.contains("std::mem::forget(cached);")
+            && untimed_single.contains("self.return_cached_graph(cached)?")
+            && untimed_single.contains("std::mem::forget(cached);"),
+        "Fix: single CUDA graph replay must return cached graphs only after successful replay and leak them when replay completion is unproven."
+    );
+    assert!(
+        timed_single.contains("let input_key = materialized_input_key(inputs)?;")
+            && timed_single.contains("materialized_output_cache_hit_with_key_into(inputs, &input_key")
+            && timed_single.contains("take_cached_graph_with_replay_state(inputs, &input_key)")
+            && timed_single.contains("Some(selection) => (selection.graph, selection.input_state)")
+            && timed_single.contains("prepare_cuda_graph_replay_input_state_with_key")
+            && timed_single.contains("&cached")
+            && timed_single.contains("input_key")
+            && timed_single.contains("dispatch_via_cuda_graph_timed_with_input_state_into")
+            && timed_single.contains("remember_materialized_output_cache_with_key(inputs, input_key"),
+        "Fix: timed single CUDA graph replay must reuse one exact-input key and one validated cached-graph input state across pipeline cache, graph selection, raw graph replay, and materialized-cache storage."
+    );
+    assert!(
+        untimed_single.contains("let input_key = materialized_input_key(inputs)?;")
+            && untimed_single.contains("materialized_output_cache_hit_with_key_into(inputs, &input_key")
+            && untimed_single.contains("take_cached_graph_with_replay_state(inputs, &input_key)")
+            && untimed_single.contains("Some(selection) => (selection.graph, selection.input_state)")
+            && untimed_single.contains("prepare_cuda_graph_replay_input_state_with_key")
+            && untimed_single.contains("&cached")
+            && untimed_single.contains("input_key")
+            && untimed_single.contains("dispatch_via_cuda_graph_with_input_state_into")
+            && untimed_single.contains("remember_materialized_output_cache_with_key(inputs, input_key"),
+        "Fix: untimed single CUDA graph replay must reuse one exact-input key and one validated cached-graph input state across pipeline cache, graph selection, raw graph replay, and materialized-cache storage."
+    );
+    assert!(
+        source.contains("fn materialized_output_cache_hit_with_key_into")
+            && source.contains("cache.snapshot_with_key(inputs, input_key)")
+            && source.contains("fn take_cached_graph_with_key")
+            && source.contains("fn take_cached_graph_with_replay_state")
+            && source.contains("struct CachedGraphReplaySelection")
+            && source.contains("first_shape_match = Some((index, input_state));")
+            && source.contains("graph: graphs.swap_remove(index)")
+            && source.contains("materialized_output_cache_matches_with_input_state(inputs, &input_state)")
+            && source.contains("fn remember_materialized_output_cache_with_key")
+            && !source.contains("fn take_cached_graph(")
+            && !source.contains("fn remember_materialized_output_cache("),
+        "Fix: compiled CUDA graph single replay helpers must consume precomputed input keys and carry validated replay input state out of graph-cache selection instead of recomputing it."
+    );
+    let batched_replay = source
+        .split("fn dispatch_borrowed_batched_via_cuda_graph_lanes")
+        .nth(1)
+        .expect("Fix: batched compiled-pipeline graph replay must remain present.")
+        .split("fn materialized_output_batch_cache_partition_into")
+        .next()
+        .expect("Fix: batched compiled-pipeline graph replay must precede materialized cache partition.");
+    assert!(
+        batched_replay.contains("let first_miss")
+            && batched_replay.contains("miss_entries")
+            && batched_replay.contains("take_cached_graph_with_key(")
+            && batched_replay.contains("first_miss_batch")
+            && batched_replay.contains("&first_miss.input_key")
+            && !batched_replay.contains("take_cached_graph(first_miss_batch)"),
+        "Fix: batched CUDA graph lane seeding must reuse the partitioned miss input key for graph-cache selection instead of hashing the first miss again."
+    );
+    let finish_helper = source
+        .split("fn finish_cuda_graph_indexed_lane_replays")
+        .nth(1)
+        .expect("Fix: compiled CUDA graph replay must expose indexed lane finishing.")
+        .split("fn finish_and_return_cuda_graph_lanes_after_error")
+        .next()
+        .expect("Fix: compiled CUDA graph lane finishing must precede error-return helper.");
+    assert!(
+        finish_helper.contains("finish_cuda_graph_lane_replay_discarding_outputs")
+            && finish_helper.contains("lane.output_host_bufs.len()")
+            && finish_helper.contains("\"discarded cuda graph lane output\"")
+            && finish_helper.contains("finish_cuda_graph_replay_into(lane, replay_stats, &mut discard_outputs)"),
+        "Fix: launched CUDA graph lanes must be fenced through finish_cuda_graph_replay_into even when caller output-slot lookup fails."
     );
 }
 
@@ -336,6 +521,66 @@ fn materialized_output_snapshot_survives_same_key_replacement() {
         replayed_from_cache, outputs_b,
         "Fix: same-key replacement must still expose the newest cached output after an older snapshot escapes the cache lock."
     );
+}
+
+#[test]
+fn materialized_output_cache_hit_preserves_existing_output_slots_until_reservation_succeeds() {
+    let source = include_str!("materialized_cache.rs");
+    let copier = source
+        .split("fn copy_materialized_outputs_into(")
+        .nth(1)
+        .expect("Fix: materialized cache must expose output copy helper.")
+        .split("fn clone_materialized_cache_bytes(")
+        .next()
+        .expect("Fix: materialized output copy helper must precede byte clone helper.");
+    let reserve_pos = copier
+        .find("try_reserve_exact(source.len() - target.capacity())")
+        .expect("Fix: materialized cache hit must reserve existing output bytes before mutation.");
+    let append_clone_pos = copier
+        .find("clone_materialized_cache_bytes(\n                source,\n                \"new output destination bytes\"")
+        .expect("Fix: materialized cache hit must build new output slots before mutating the caller output vector.");
+    let truncate_pos = copier
+        .find("dst.truncate(outputs.len());")
+        .expect("Fix: materialized cache hit must trim stale caller slots only after reservation.");
+    let clear_pos = copier
+        .find("target.clear();\n        target.extend_from_slice(source);")
+        .expect("Fix: materialized cache hit must rewrite existing output slots after reservation.");
+
+    assert!(
+        reserve_pos < truncate_pos
+            && append_clone_pos < truncate_pos
+            && truncate_pos < clear_pos
+            && copier.contains("dst.extend(appended_outputs);")
+            && !copier.contains("target.clear();\n        target.try_reserve"),
+        "Fix: CUDA materialized output cache hits must reserve/build output storage before truncating or clearing caller-owned outputs."
+    );
+
+    let mut cache = MaterializedPipelineOutputCache::default();
+    let input = b"capacity-preserving materialized cache input";
+    let outputs = vec![b"cached output a".to_vec(), b"cached output b".to_vec()];
+    cache
+        .remember(&[input.as_slice()], &outputs)
+        .expect("Fix: materialized cache insert must fit capacity-preservation fixture.");
+
+    let mut replayed = vec![
+        Vec::with_capacity(64),
+        Vec::with_capacity(32),
+        b"stale extra output".to_vec(),
+    ];
+    replayed[0].extend_from_slice(b"old-a");
+    replayed[1].extend_from_slice(b"old-b");
+    let first_capacity = replayed[0].capacity();
+    let second_capacity = replayed[1].capacity();
+
+    assert!(
+        cache
+            .hit_into(&[input.as_slice()], &mut replayed)
+            .expect("Fix: materialized cache hit must fit capacity-preservation fixture."),
+        "Fix: materialized cache must hit exact capacity-preservation fixture input."
+    );
+    assert_eq!(replayed, outputs);
+    assert_eq!(replayed[0].capacity(), first_capacity);
+    assert_eq!(replayed[1].capacity(), second_capacity);
 }
 
 #[test]
@@ -541,4 +786,3 @@ fn materialized_output_cache_preflights_oversized_entries_before_owning_bytes() 
         "Fix: materialized CUDA replay cache must compute admissibility before cloning input/output bytes."
     );
 }
-

@@ -1,15 +1,13 @@
 use smallvec::SmallVec;
 
-use crate::backend::staging_reserve::reserved_typed_vec;
 use crate::backend::{CudaBackend, CudaResidentBuffer};
 use crate::egraph_device_image::{
     plan_cuda_egraph_device_upload_from_image_ref, CudaEGraphDeviceKernelView,
 };
 use crate::egraph_readback::{
     cleanup_egraph_kernel_handles, decode_unique_equivalence_pairs, device_ptr_at,
-    download_structural_equivalence_output_ranges, egraph_column_snapshot_readback_bytes,
-    egraph_column_snapshot_spans, read_resident_u32_range, read_u64_le,
-    upload_structural_equivalence_scratch, upload_u32_words,
+    download_structural_equivalence_output_ranges, read_u64_le,
+    upload_structural_equivalence_scratch,
 };
 use crate::CudaResidentEGraphDeviceImage;
 use vyre_driver::BackendError;
@@ -18,23 +16,11 @@ use vyre_foundation::optimizer::eqsat_gpu::GpuEGraphDeviceImage;
 
 use super::{
     args::EGraphStructuralKernelArgs,
-    plan_cuda_egraph_structural_equivalence_launch_artifact_from_plan,
-    helpers::usize_to_u64, plan_cuda_egraph_signature_buckets,
-    CudaEGraphCanonicalRewriteDeviceImage, CudaEGraphCanonicalRewriteKernelPtx,
-    CudaEGraphCanonicalRewriteKernelResult, CudaEGraphFixedPointReadback,
-    CudaEGraphKernelLaunchConfig, CudaEGraphKernelPlanError, CudaEGraphResidentColumnSnapshot,
-    CudaEGraphResidentSignatureSnapshot, CudaEGraphSignatureBucketPlan,
-    CudaEGraphSignatureRefreshKernelPtx, CudaEGraphSignatureRefreshKernelResult,
-    CudaEGraphStructuralCanonicalizationFixedPointReport,
-    CudaEGraphStructuralCanonicalizationFixedPointResult,
-    CudaEGraphStructuralCanonicalizationRoundResult, CudaEGraphStructuralEquivalenceKernelPtx,
+    plan_cuda_egraph_structural_equivalence_launch_artifact_from_plan, plan_cuda_egraph_signature_buckets,
+    CudaEGraphKernelLaunchConfig, CudaEGraphStructuralEquivalenceKernelPtx,
     CudaEGraphStructuralEquivalenceKernelResult, CudaEGraphStructuralEquivalenceLaunchArtifact,
-    CudaEGraphUnionCompactionPlan, CUDA_EGRAPH_CANONICAL_REWRITE_RECORD_WORDS,
 };
-use super::ptx::{
-    cuda_egraph_canonical_rewrite_kernel_ptx, cuda_egraph_signature_refresh_kernel_ptx,
-    cuda_egraph_structural_equivalence_kernel_ptx,
-};
+use super::ptx::cuda_egraph_structural_equivalence_kernel_ptx;
 
 impl CudaBackend {
     /// Generate and warm-load the structural e-graph equivalence kernel through

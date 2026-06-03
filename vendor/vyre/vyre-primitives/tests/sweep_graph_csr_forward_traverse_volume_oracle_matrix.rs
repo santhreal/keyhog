@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "graph", feature = "cpu-parity"))]
 
 use vyre_primitives::graph::csr_forward_traverse;
@@ -38,7 +37,6 @@ fn generated_csr_frontier(seed: u64) -> (u32, Vec<u32>, Vec<u32>, Vec<u32>, Vec<
     (node_count, offsets, targets, masks, frontier, allow_mask)
 }
 
-
 fn oracle_csr_forward_step(
     node_count: u32,
     edge_offsets: &[u32],
@@ -71,7 +69,6 @@ fn oracle_csr_forward_step(
     }
     out
 }
-
 
 const CASES: usize = 16384;
 

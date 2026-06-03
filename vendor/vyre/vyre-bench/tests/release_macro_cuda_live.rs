@@ -1,39 +1,56 @@
 //! Live CUDA validation for generated compiler-grade release macro workloads.
 
+use vyre::ir::BufferAccess;
 use vyre::DispatchConfig;
 use vyre_bench::cases::release_workloads::{
-    build_release_count_macro_case_for_records, release_count_macro_program_specs_for_records,
+    build_release_macro_case_for_records, release_macro_program_specs_for_records,
+    ReleaseMacroGeneratedCase,
 };
 use vyre_driver_cuda::CudaBackend;
 
 const REDUCED_RECORDS: u32 = 512;
-const RELEASE_COUNT_CASES: usize = 9;
+const RELEASE_MACRO_CASES: usize = 10;
 
-fn read_u32(bytes: &[u8]) -> u32 {
-    let word = bytes
-        .get(..4)
-        .expect("Fix: release macro count outputs must contain one u32 word.");
-    u32::from_le_bytes([word[0], word[1], word[2], word[3]])
+fn dispatch_input_buffer_count(case: &ReleaseMacroGeneratedCase) -> usize {
+    case.program
+        .buffers()
+        .iter()
+        .filter(|buffer| {
+            matches!(
+                buffer.access(),
+                BufferAccess::ReadOnly | BufferAccess::Uniform
+            ) || matches!(buffer.access(), BufferAccess::ReadWrite) && !buffer.is_output
+        })
+        .count()
+}
+
+fn output_summary(bytes: &[u8]) -> String {
+    let first_words = bytes
+        .chunks_exact(4)
+        .take(4)
+        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect::<Vec<_>>();
+    format!("{} bytes, first u32 words {first_words:?}", bytes.len())
 }
 
 #[test]
-fn reduced_release_count_macro_workloads_match_cpu_oracles_on_live_cuda() {
+fn reduced_release_macro_workloads_match_cpu_oracles_on_live_cuda() {
     let backend = CudaBackend::acquire()
         .expect("Fix: CUDA backend must acquire on the GPU-required release validation host.");
-    let specs = release_count_macro_program_specs_for_records(REDUCED_RECORDS);
+    let specs = release_macro_program_specs_for_records(REDUCED_RECORDS);
     assert_eq!(
         specs.len(),
-        RELEASE_COUNT_CASES,
-        "Fix: live CUDA release macro validation must exercise every count-style compiler-grade workload."
+        RELEASE_MACRO_CASES,
+        "Fix: live CUDA release macro validation must exercise every compiler-grade workload."
     );
 
     for spec in specs {
-        let case = build_release_count_macro_case_for_records(spec.id, spec.records)
-            .expect("Fix: every advertised release count macro spec must build a generated case.");
+        let case = build_release_macro_case_for_records(spec.id, spec.records)
+            .expect("Fix: every advertised release macro spec must build a generated case.");
         assert_eq!(
             case.inputs.len(),
-            case.spec.input_buffers,
-            "Fix: generated release macro inputs must match the advertised input buffer count for {}.",
+            dispatch_input_buffer_count(&case),
+            "Fix: generated release macro dispatch inputs must match non-write-only buffers for {}.",
             case.spec.id
         );
 
@@ -53,11 +70,11 @@ fn reduced_release_count_macro_workloads_match_cpu_oracles_on_live_cuda() {
         );
         assert_eq!(
             outputs, case.expected_outputs,
-            "Fix: live CUDA release macro workload {} ({}) diverged from CPU oracle: expected count {}, got count {}.",
+            "Fix: live CUDA release macro workload {} ({}) diverged from CPU oracle: expected {}, got {}.",
             case.spec.id,
             case.spec.name,
-            read_u32(&case.expected_outputs[0]),
-            read_u32(&outputs[0])
+            output_summary(&case.expected_outputs[0]),
+            output_summary(&outputs[0])
         );
     }
 }

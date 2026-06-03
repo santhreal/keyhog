@@ -1,5 +1,5 @@
 use super::*;
-use crate::ir::{BufferDecl, DataType, Expr, Node, Program};
+use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 #[test]
 fn to_wire_into_appends_byte_for_byte() {
@@ -82,6 +82,8 @@ fn output_set_is_serialized_and_validated() {
             BufferDecl::read("input", 0, DataType::U32).with_count(4),
             BufferDecl::output("out", 1, DataType::U32).with_count(4),
             BufferDecl::read_write("scratch_out", 2, DataType::U32).with_count(4),
+            BufferDecl::storage("write_only", 3, BufferAccess::WriteOnly, DataType::U32)
+                .with_count(4),
         ],
         [64, 1, 1],
         vec![Node::store(
@@ -93,13 +95,13 @@ fn output_set_is_serialized_and_validated() {
 
     let encoded = to_wire(&program).expect("Fix: output-set program must encode");
     assert_eq!(
-        &encoded[encoded.len() - 3..],
-        &[2, 1, 2],
-        "OutputSet must list the two writable buffer indices in declaration order"
+        &encoded[encoded.len() - 4..],
+        &[3, 1, 2, 3],
+        "OutputSet must list writable buffer indices in declaration order"
     );
     let decoded =
         Program::from_wire(&encoded).expect("Fix: encoded output-set program must decode");
-    assert_eq!(decoded.output_buffer_indices(), &[1, 2]);
+    assert_eq!(decoded.output_buffer_indices(), &[1, 2, 3]);
 
     let mut tampered = encoded;
     let last = tampered.len() - 1;

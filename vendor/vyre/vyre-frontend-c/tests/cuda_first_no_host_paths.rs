@@ -30,7 +30,7 @@ fn default_link_mode_does_not_spawn_host_c_linker() {
 }
 
 #[test]
-fn resident_sparse_lexer_terminal_readback_is_caller_owned_scratch() {
+fn resident_sparse_lexer_terminal_readback_is_count_first_and_caller_owned() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let resident_dispatch =
         fs::read_to_string(manifest_dir.join("src/pipeline/backend_select/resident_dispatch.rs"))
@@ -42,6 +42,10 @@ fn resident_sparse_lexer_terminal_readback_is_caller_owned_scratch() {
     let sparse_lexer =
         fs::read_to_string(manifest_dir.join("src/pipeline/sparse_lexer_megakernel.rs"))
             .expect("sparse lexer megakernel source must be readable");
+    let output_collect = fs::read_to_string(
+        manifest_dir.join("src/pipeline/sparse_lexer_megakernel/output_collect.rs"),
+    )
+    .expect("sparse lexer output collector source must be readable");
 
     assert!(
         !resident_dispatch.contains("fn dispatch_resident_stage_readback_cached<"),
@@ -56,9 +60,20 @@ fn resident_sparse_lexer_terminal_readback_is_caller_owned_scratch() {
         "sparse lexer scratch must own resident compact readback output slots"
     );
     assert!(
-        resident_stages.contains("dispatch_resident_stage_readback_cached_into(")
-            && resident_stages.contains("&mut scratch.resident_compact_outputs"),
-        "resident sparse lexer terminal stage must dispatch readback into SparseLexerMegakernelScratch"
+        sparse_lexer.contains("resident_count_readback: Vec<u8>"),
+        "sparse lexer scratch must own the resident compact count readback slot"
+    );
+    assert!(
+        resident_stages.contains("dispatch_resident_stage_cached(")
+            && resident_stages.contains("collect_resident_compact_lexer_output_exact_readback(")
+            && resident_stages.contains("&mut scratch.resident_compact_outputs")
+            && resident_stages.contains("&mut scratch.resident_count_readback"),
+        "resident sparse lexer terminal stage must keep compact outputs resident, then read exact ranges into SparseLexerMegakernelScratch"
+    );
+    assert!(
+        output_collect.contains("download_resident_range_into(&counts.resource, 0, 4")
+            && output_collect.contains("download_resident_ranges_into(&ranges"),
+        "resident sparse lexer exact readback must read out_counts first, then only the live dense token ranges"
     );
 }
 

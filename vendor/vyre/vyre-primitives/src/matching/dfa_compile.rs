@@ -394,9 +394,11 @@ fn dfa_compile_inner_capped(
 
     let mut trie: Vec<[u32; 256]> = Vec::with_capacity(trie_capacity);
     let mut accept: Vec<u32> = Vec::with_capacity(trie_capacity);
+    let mut local_accepts: Vec<Vec<u32>> = Vec::with_capacity(trie_capacity);
 
     trie.push([NO_TRANSITION; 256]);
     accept.push(0);
+    local_accepts.push(Vec::new());
 
     for (pattern_idx, pat) in patterns.iter().enumerate() {
         let mut cur = 0usize;
@@ -412,10 +414,12 @@ fn dfa_compile_inner_capped(
                 let new_id = trie.len() as u32;
                 trie.push([NO_TRANSITION; 256]);
                 accept.push(0);
+                local_accepts.push(Vec::new());
                 trie[cur][b] = new_id;
                 cur = new_id as usize;
             }
         }
+        local_accepts[cur].push(pattern_idx as u32);
         accept[cur] = (pattern_idx as u32) + 1;
     }
 
@@ -480,10 +484,11 @@ fn dfa_compile_inner_capped(
         } else {
             0
         };
-        let local = accept[state].checked_sub(1);
-        let adds_local = local
-            .is_some_and(|pattern| !fail_chain_accepts_pattern(state, pattern, &fail, &accept));
-        output_counts[state] = inherited + usize::from(adds_local);
+        let adds_local = local_accepts[state]
+            .iter()
+            .filter(|&&pattern| !fail_chain_accepts_pattern(state, pattern, &fail, &local_accepts))
+            .count();
+        output_counts[state] = inherited + adds_local;
     }
 
     let mut output_offsets = vec![0u32; state_count + 1];
@@ -502,12 +507,14 @@ fn dfa_compile_inner_capped(
             output_records.copy_within(start..end, write);
             write += len;
         }
-        if let Some(pattern) = accept[state].checked_sub(1) {
+        for &pattern in &local_accepts[state] {
             let start = output_offsets[state] as usize;
             if !output_records[start..write].contains(&pattern) {
                 output_records[write] = pattern;
+                write += 1;
             }
         }
+        debug_assert_eq!(write, output_offsets[state + 1] as usize);
     }
 
     let mut transitions = vec![0u32; state_count * 256];
@@ -541,11 +548,15 @@ fn dfa_compile_inner_capped(
     })
 }
 
-
-fn fail_chain_accepts_pattern(state: usize, pattern: u32, fail: &[u32], accept: &[u32]) -> bool {
+fn fail_chain_accepts_pattern(
+    state: usize,
+    pattern: u32,
+    fail: &[u32],
+    local_accepts: &[Vec<u32>],
+) -> bool {
     let mut f = fail[state] as usize;
     while f != 0 && f != state {
-        if accept[f].checked_sub(1) == Some(pattern) {
+        if local_accepts[f].contains(&pattern) {
             return true;
         }
         let next = fail[f] as usize;
@@ -593,6 +604,32 @@ mod tests {
         assert!(
             matches.contains(&0) || matches.contains(&3),
             "must accept `he` or `hers`"
+        );
+    }
+
+    #[test]
+    fn duplicate_literals_preserve_distinct_output_records() {
+        let dfa = dfa_compile(&[b"B".as_slice(), b"B".as_slice(), b"AB".as_slice()]);
+        let state_b = dfa.transitions[b'B' as usize] as usize;
+        let state_ab = {
+            let state_a = dfa.transitions[b'A' as usize] as usize;
+            dfa.transitions[state_a * 256 + b'B' as usize] as usize
+        };
+
+        let b_start = dfa.output_offsets[state_b] as usize;
+        let b_end = dfa.output_offsets[state_b + 1] as usize;
+        assert_eq!(
+            &dfa.output_records[b_start..b_end],
+            &[0, 1],
+            "Fix: exact duplicate literals must keep both consumer pattern ids in output_records."
+        );
+
+        let ab_start = dfa.output_offsets[state_ab] as usize;
+        let ab_end = dfa.output_offsets[state_ab + 1] as usize;
+        assert_eq!(
+            &dfa.output_records[ab_start..ab_end],
+            &[0, 1, 2],
+            "Fix: suffix inheritance must preserve duplicate suffix pattern ids plus the local longer pattern."
         );
     }
 
@@ -664,4 +701,3 @@ mod tests {
         );
     }
 }
-

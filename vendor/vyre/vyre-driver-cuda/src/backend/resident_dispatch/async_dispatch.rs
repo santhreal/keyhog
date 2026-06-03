@@ -11,11 +11,12 @@ use crate::backend::dispatch::CudaBackend;
 use crate::backend::launch_params::launch_param_byte_len;
 use crate::backend::module_cache::ModuleCacheKey;
 use crate::backend::ordering::sort_unstable_by_key_if_needed;
-use crate::backend::output_range::{cuda_output_readback, CudaOutputReadback};
+use crate::backend::output_range::{cuda_output_readback_for_binding, CudaOutputReadback};
 use crate::backend::plan::CudaDispatchPlan;
 use crate::backend::resident::{CudaResidentBuffer, ResidentViewCache};
 use crate::backend::resident_dispatch::helpers::{
-    enqueue_optional_resident_h2d_copy, resident_required_handles,
+    enqueue_optional_resident_h2d_copy, next_resident_handle, resident_required_handles,
+    validate_dense_resident_output_indices,
 };
 use crate::backend::resident_dispatch_support::{
     add_resident_dispatch_bytes, add_resident_dispatch_u64_count, CudaResidentDispatch,
@@ -133,8 +134,8 @@ impl CudaBackend {
             if binding.role == BindingRole::Shared {
                 continue;
             }
-            let handle = handles[next_handle];
-            next_handle += 1;
+            let handle =
+                next_resident_handle(handles, &mut next_handle, "resident dispatch launch")?;
             let resident = self.resident_store.view_cached(
                 handle,
                 &mut resident_view_cache,
@@ -165,8 +166,13 @@ impl CudaBackend {
                     Some(len) => len,
                     None => resident.byte_len,
                 };
-                let readback =
-                    cuda_output_readback(&program.buffers()[binding.buffer_index], full_byte_len)?;
+                let readback = cuda_output_readback_for_binding(
+                    program.buffers(),
+                    binding.buffer_index,
+                    &binding.name,
+                    full_byte_len,
+                    "resident async output readback",
+                )?;
                 output_handles_by_index.push((output_index, handle, readback, launch_ptr));
                 if binding.input_index.is_none() && full_byte_len != 0 {
                     output_clears.push((launch_ptr, full_byte_len));
@@ -186,6 +192,13 @@ impl CudaBackend {
             output_handles_by_index.as_mut_slice(),
             |(output_index, _, _, _)| *output_index,
         );
+        validate_dense_resident_output_indices(
+            output_handles_by_index
+                .iter()
+                .map(|(output_index, _, _, _)| *output_index),
+            prepared.output_binding_indices.len(),
+            "resident dispatch output handles",
+        )?;
         let mut output_handles = SmallVec::<[CudaResidentBuffer; 8]>::new();
         reserve_smallvec(
             &mut output_handles,
@@ -256,106 +269,179 @@ impl CudaBackend {
             Arc::clone(&self.launch_resources),
             capture_timing,
         )?;
-        let stream_raw = launch_resources.stream_raw()?;
+        let mut launch_resources = Some(launch_resources);
+        let mut allocations = Some(allocations);
+        let mut resident_use = Some(resident_use);
+        let mut host_transfers = Some(host_transfers);
+        let stream_raw = launch_resources
+            .as_ref()
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: "Fix: CUDA resident dispatch launch resources were consumed before enqueue; rebuild launch resource ownership before launching.".to_string(),
+            })?
+            .stream_raw()?;
         if trace {
             tracing::debug!(
                 "[cuda-trace] +{}ms resident allocations/stream",
                 start.elapsed().as_millis()
             );
         }
-        enqueue_optional_resident_h2d_copy(param_upload, stream_raw)?;
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms resident param upload enqueued",
-                start.elapsed().as_millis()
-            );
-        }
-        for &(dst_ptr, byte_len) in &output_clears {
-            // SAFETY: FFI to libcuda.so. Resident output pointers were
-            // validated above and byte lengths come from the binding/readback
-            // plan. The memset is enqueued on the same stream before launch,
-            // matching the borrowed CUDA dispatch output-zeroing contract.
-            unsafe {
-                crate::backend::copy::memset_d8_async_checked(dst_ptr, 0, byte_len, stream_raw)?;
+        let enqueue_result = (|| {
+            enqueue_optional_resident_h2d_copy(param_upload, stream_raw)?;
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms resident param upload enqueued",
+                    start.elapsed().as_millis()
+                );
             }
-        }
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms resident output clears enqueued",
-                start.elapsed().as_millis()
-            );
-        }
-        if crate::instrumentation::cuda_resident_sync_before_launch_enabled() {
-            // SAFETY: stream_raw is owned by launch_resources for the
-            // duration of this dispatch. This opt-in diagnostic fence isolates
-            // setup copies/memsets from kernel execution without changing the
-            // release default.
+            for &(dst_ptr, byte_len) in &output_clears {
+                // SAFETY: FFI to libcuda.so. Resident output pointers were
+                // validated above and byte lengths come from the binding/readback
+                // plan. The memset is enqueued on the same stream before launch,
+                // matching the borrowed CUDA dispatch output-zeroing contract.
+                unsafe {
+                    crate::backend::copy::memset_d8_async_checked(
+                        dst_ptr, 0, byte_len, stream_raw,
+                    )?;
+                }
+            }
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms resident output clears enqueued",
+                    start.elapsed().as_millis()
+                );
+            }
+            if crate::instrumentation::cuda_resident_sync_before_launch_enabled() {
+                // SAFETY: stream_raw is owned by launch_resources for the
+                // duration of this dispatch. This opt-in diagnostic fence isolates
+                // setup copies/memsets from kernel execution without changing the
+                // release default.
+                crate::stream::synchronize_raw_stream(
+                    stream_raw,
+                    "cuStreamSynchronize (resident prelaunch)",
+                )?;
+                self.telemetry.record_sync_point();
+                if trace {
+                    tracing::debug!(
+                        "[cuda-trace] +{}ms resident prelaunch sync complete",
+                        start.elapsed().as_millis()
+                    );
+                }
+            }
+
+            if let Some((start_event, _)) = launch_resources
+                .as_ref()
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: CUDA resident dispatch launch resources were consumed before timing-event record.".to_string(),
+                })?
+                .timing_events()?
+            {
+                start_event.record(stream_raw)?;
+            }
+            // Fixpoint loop  -  see dispatch_borrowed_async_with_ptx_concrete
+            // for the contract. Resolve the CUDA function and argument vector
+            // once; fixpoint iterations are kernel replays, not relowering or
+            // module-cache lookups.
+            let func = self.resolve_launch_function(
+                ptx_src,
+                module_key,
+                &prepared.launch,
+                prepared.cooperative,
+            )?;
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms resident resolve_launch_function",
+                    start.elapsed().as_millis()
+                );
+            }
+            let mut params_ref = params_ptr;
+            let mut kernel_args = Self::kernel_args(&mut launch_ptrs, &mut params_ref)?;
+            for _ in 0..prepared.fixpoint_iterations {
+                self.launch_prevalidated_function(
+                    func,
+                    &mut kernel_args,
+                    &prepared.launch,
+                    stream_raw,
+                    false,
+                    prepared.cooperative,
+                )?;
+            }
+            if let Some((_, end_event)) = launch_resources
+                .as_ref()
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: CUDA resident dispatch launch resources were consumed before timing-event record.".to_string(),
+                })?
+                .timing_events()?
+            {
+                end_event.record(stream_raw)?;
+            }
+            // SAFETY: stream_raw is the live CUDA stream used for the launches
+            // above. Native resident dispatch intentionally fences after the
+            // kernel before host-visible output staging. The direct async DtoH/DtoD
+            // path after a resident-staged launch can leave the completion event
+            // unsignaled on current CUDA drivers, while an explicit post-kernel
+            // fence followed by synchronous readback preserves correctness and
+            // keeps the actual Program execution on CUDA instead of falling back
+            // to host-buffer dispatch.
             crate::stream::synchronize_raw_stream(
                 stream_raw,
-                "cuStreamSynchronize (resident prelaunch)",
+                "cuStreamSynchronize (resident post-kernel)",
             )?;
             self.telemetry.record_sync_point();
             if trace {
                 tracing::debug!(
-                    "[cuda-trace] +{}ms resident prelaunch sync complete",
+                    "[cuda-trace] +{}ms resident post-kernel sync complete",
                     start.elapsed().as_millis()
                 );
             }
-        }
-
-        if let Some((start_event, _)) = launch_resources.timing_events()? {
-            start_event.record(stream_raw)?;
-        }
-        // Fixpoint loop  -  see dispatch_borrowed_async_with_ptx_concrete
-        // for the contract. Resolve the CUDA function and argument vector
-        // once; fixpoint iterations are kernel replays, not relowering or
-        // module-cache lookups.
-        let func = self.resolve_launch_function(
-            ptx_src,
-            module_key,
-            &prepared.launch,
-            prepared.cooperative,
-        )?;
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms resident resolve_launch_function",
-                start.elapsed().as_millis()
-            );
-        }
-        let mut params_ref = params_ptr;
-        let mut kernel_args = Self::kernel_args(&mut launch_ptrs, &mut params_ref)?;
-        for _ in 0..prepared.fixpoint_iterations {
-            self.launch_prevalidated_function(
-                func,
-                &mut kernel_args,
-                &prepared.launch,
+            Ok(())
+        })();
+        if let Err(error) = enqueue_result {
+            let Some(launch_resources) = launch_resources.take() else {
+                return Err(error);
+            };
+            match crate::stream::synchronize_raw_stream(
                 stream_raw,
-                false,
-                prepared.cooperative,
-            )?;
+                "cuStreamSynchronize (resident async error cleanup)",
+            ) {
+                Ok(()) => {
+                    self.telemetry.record_sync_point();
+                    return Err(error);
+                }
+                Err(sync_error) => {
+                    tracing::error!(
+                        "Fix: failed to synchronize CUDA resident dispatch stream after enqueue error: {sync_error}. In-flight resident dispatch resources will not be recycled."
+                    );
+                    std::mem::forget(launch_resources);
+                    if let Some(allocations) = allocations.take() {
+                        std::mem::forget(allocations);
+                    }
+                    if let Some(resident_use) = resident_use.take() {
+                        std::mem::forget(resident_use);
+                    }
+                    if let Some(host_transfers) = host_transfers.take() {
+                        std::mem::forget(host_transfers);
+                    }
+                    return Err(error);
+                }
+            }
         }
-        if let Some((_, end_event)) = launch_resources.timing_events()? {
-            end_event.record(stream_raw)?;
-        }
-        // SAFETY: stream_raw is the live CUDA stream used for the launches
-        // above. Native resident dispatch intentionally fences after the
-        // kernel before host-visible output staging. The direct async DtoH/DtoD
-        // path after a resident-staged launch can leave the completion event
-        // unsignaled on current CUDA drivers, while an explicit post-kernel
-        // fence followed by synchronous readback preserves correctness and
-        // keeps the actual Program execution on CUDA instead of falling back
-        // to host-buffer dispatch.
-        crate::stream::synchronize_raw_stream(
-            stream_raw,
-            "cuStreamSynchronize (resident post-kernel)",
-        )?;
-        self.telemetry.record_sync_point();
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms resident post-kernel sync complete",
-                start.elapsed().as_millis()
-            );
-        }
+        let launch_resources = launch_resources
+            .take()
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: "Fix: CUDA resident dispatch launch resources were consumed before synchronous output readback.".to_string(),
+            })?;
+        let allocations = allocations.take().ok_or_else(|| BackendError::InvalidProgram {
+            fix: "Fix: CUDA resident dispatch allocations were consumed before synchronous output readback.".to_string(),
+        })?;
+        let resident_use = resident_use.take().ok_or_else(|| BackendError::InvalidProgram {
+            fix: "Fix: CUDA resident dispatch use guard was consumed before synchronous output readback.".to_string(),
+        })?;
+        let mut host_transfers =
+            host_transfers
+                .take()
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: CUDA resident dispatch host staging was consumed before synchronous output readback.".to_string(),
+                })?;
         let mut staged_readback_bytes = 0_u64;
         let mut staged_readback_ops = 0_u64;
         for &(src_base_ptr, readback) in &output_stage_readbacks {

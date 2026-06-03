@@ -23,13 +23,14 @@
 //! 1. Walk the program's top-level entry sequence.
 //! 2. Each prefix-suffix split at a `Node::Barrier { GridSync }`
 //!    becomes one segment.
-//! 3. For each segment, build a `Program` with the SAME buffer table,
-//!    workgroup size, and metadata as the original; only the entry
-//!    nodes change.
-//! 4. Dispatch segments in order, threading every output of segment N
-//!    as the corresponding input to segment N+1. Backends with native
-//!    GPU buffers preserve the bytes server-side via the Resident
-//!    handle path; the borrowed-bytes API replicates host-side.
+//! 3. For each segment, build a `Program` with a segment-local buffer
+//!    table: buffers read or written by that segment plus passthrough
+//!    read-write buffers that must preserve caller-visible storage.
+//! 4. Dispatch segments in order, threading live buffers by buffer name
+//!    rather than positional output slot. Segment read-only inputs are
+//!    assembled from the caller's original bytes or prior segment
+//!    outputs; final host-visible output slots are reassembled in the
+//!    original program's output declaration order.
 //!
 //! ## Soundness
 //!
@@ -42,10 +43,11 @@
 //! - No re-validation surprise: each split segment validates against
 //!   the same backend supported-ops set as the original.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use smallvec::SmallVec;
-use vyre_foundation::ir::{Ident, Node, Program};
+use vyre_foundation::ir::{BufferAccess, BufferDecl, Expr, Ident, MemoryKind, Node, Program};
 use vyre_foundation::memory_model::MemoryOrdering;
 
 use crate::backend::{
@@ -63,6 +65,12 @@ use crate::backend::{
 enum EntryWrapper {
     Region { generator: Ident },
     Block,
+}
+
+struct PlannedGridSyncSegment {
+    program: Program,
+    input_names: Vec<Ident>,
+    output_names: Vec<Ident>,
 }
 
 fn peel_entry_wrappers(program: &Program) -> (Vec<EntryWrapper>, &[Node]) {
@@ -303,8 +311,6 @@ fn collect_locally_defined_vars(nodes: &[Node], vars: &mut std::collections::Has
         }
     }
 }
-
-use vyre_foundation::ir::Expr;
 
 fn collect_referenced_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) {
     match expr {
@@ -575,6 +581,295 @@ fn wrap_split_segment(program: &Program, wrappers: &[EntryWrapper], entry: Vec<N
     program.with_rewritten_entry(wrapped_entry)
 }
 
+fn plan_host_grid_sync_segments(
+    program: &Program,
+) -> Result<Vec<PlannedGridSyncSegment>, BackendError> {
+    let split = try_split_on_grid_sync(program)?;
+    let mut planned = Vec::new();
+    reserve_grid_sync_vec(&mut planned, split.len(), "grid-sync planned host segments")?;
+    let segment_count = split.len();
+    for (segment_idx, segment) in split.into_iter().enumerate() {
+        let rewritten =
+            rewrite_segment_buffers_for_host_split(program, &segment, segment_idx, segment_count)?;
+        let input_names = segment_input_names(&rewritten)?;
+        let output_names = segment_output_names(&rewritten)?;
+        planned.push(PlannedGridSyncSegment {
+            program: rewritten,
+            input_names,
+            output_names,
+        });
+    }
+    Ok(planned)
+}
+
+fn rewrite_segment_buffers_for_host_split(
+    source: &Program,
+    segment: &Program,
+    segment_idx: usize,
+    segment_count: usize,
+) -> Result<Program, BackendError> {
+    let mut reads = HashSet::new();
+    let mut writes = HashSet::new();
+    reserve_grid_sync_hash_set(
+        &mut reads,
+        source.buffers().len(),
+        "grid-sync segment read set",
+    )?;
+    reserve_grid_sync_hash_set(
+        &mut writes,
+        source.buffers().len(),
+        "grid-sync segment write set",
+    )?;
+    for node in entry_sequence(segment) {
+        collect_segment_buffer_targets(node, &mut reads, &mut writes);
+    }
+
+    let mut buffers = Vec::new();
+    reserve_grid_sync_vec(
+        &mut buffers,
+        source.buffers().len(),
+        "grid-sync segment buffers",
+    )?;
+    for buffer in source.buffers() {
+        let name = Ident::from(buffer.name());
+        let reads_this = reads.contains(&name);
+        let writes_this = writes.contains(&name);
+        let readwrite_passthrough = matches!(buffer.access(), BufferAccess::ReadWrite)
+            && !buffer.is_output()
+            && !buffer.is_pipeline_live_out()
+            && !reads_this
+            && !writes_this;
+
+        if !reads_this && !writes_this && !readwrite_passthrough {
+            continue;
+        }
+
+        let mut rewritten = buffer.clone();
+        if matches!(rewritten.access(), BufferAccess::Workgroup) {
+            buffers.push(rewritten);
+            continue;
+        }
+
+        let access = if readwrite_passthrough {
+            BufferAccess::ReadWrite
+        } else {
+            match (reads_this, writes_this) {
+                (true, true) => BufferAccess::ReadWrite,
+                (true, false) => BufferAccess::ReadOnly,
+                (false, true) => BufferAccess::WriteOnly,
+                (false, false) => BufferAccess::ReadWrite,
+            }
+        };
+        rewrite_segment_buffer_access(&mut rewritten, access);
+        rewritten.is_output = buffer.is_output() && writes_this && segment_idx + 1 == segment_count;
+        rewritten.pipeline_live_out = rewritten.is_output;
+        buffers.push(rewritten);
+    }
+
+    Ok(segment.with_rewritten_buffers(buffers))
+}
+
+fn rewrite_segment_buffer_access(buffer: &mut BufferDecl, access: BufferAccess) {
+    buffer.kind = match &access {
+        BufferAccess::ReadOnly => MemoryKind::Readonly,
+        BufferAccess::Uniform => MemoryKind::Uniform,
+        BufferAccess::Workgroup => MemoryKind::Shared,
+        _ => MemoryKind::Global,
+    };
+    buffer.access = access;
+}
+
+fn segment_input_names(segment: &Program) -> Result<Vec<Ident>, BackendError> {
+    let mut names = Vec::new();
+    reserve_grid_sync_vec(
+        &mut names,
+        segment.buffers().len(),
+        "grid-sync segment input names",
+    )?;
+    for buffer in segment.buffers() {
+        if matches!(buffer.access(), BufferAccess::Workgroup) {
+            continue;
+        }
+        if segment_buffer_consumes_input(buffer) {
+            names.push(Ident::from(buffer.name()));
+        }
+    }
+    Ok(names)
+}
+
+fn segment_output_names(segment: &Program) -> Result<Vec<Ident>, BackendError> {
+    let mut names = Vec::new();
+    reserve_grid_sync_vec(
+        &mut names,
+        segment.buffers().len(),
+        "grid-sync segment output names",
+    )?;
+    for buffer in segment.buffers() {
+        if matches!(buffer.access(), BufferAccess::Workgroup) {
+            continue;
+        }
+        if segment_buffer_produces_output(buffer) {
+            names.push(Ident::from(buffer.name()));
+        }
+    }
+    Ok(names)
+}
+
+fn original_input_names(program: &Program) -> Result<Vec<Ident>, BackendError> {
+    segment_input_names(program)
+}
+
+fn original_output_names(program: &Program) -> Result<Vec<Ident>, BackendError> {
+    segment_output_names(program)
+}
+
+fn segment_buffer_consumes_input(buffer: &BufferDecl) -> bool {
+    if buffer.is_output() || buffer.is_pipeline_live_out() {
+        return false;
+    }
+    matches!(
+        buffer.access(),
+        BufferAccess::ReadOnly | BufferAccess::ReadWrite | BufferAccess::Uniform
+    )
+}
+
+fn segment_buffer_produces_output(buffer: &BufferDecl) -> bool {
+    buffer.is_output()
+        || buffer.is_pipeline_live_out()
+        || matches!(
+            buffer.access(),
+            BufferAccess::ReadWrite | BufferAccess::WriteOnly
+        )
+}
+
+fn collect_segment_buffer_targets(
+    node: &Node,
+    reads: &mut HashSet<Ident>,
+    writes: &mut HashSet<Ident>,
+) {
+    match node {
+        Node::Let { value, .. } | Node::Assign { value, .. } => {
+            collect_segment_expr_targets(value, reads, writes);
+        }
+        Node::Store {
+            buffer,
+            index,
+            value,
+        } => {
+            writes.insert(Ident::from(buffer));
+            collect_segment_expr_targets(index, reads, writes);
+            collect_segment_expr_targets(value, reads, writes);
+        }
+        Node::If {
+            cond,
+            then,
+            otherwise,
+        } => {
+            collect_segment_expr_targets(cond, reads, writes);
+            for child in then.iter().chain(otherwise.iter()) {
+                collect_segment_buffer_targets(child, reads, writes);
+            }
+        }
+        Node::Loop { from, to, body, .. } => {
+            collect_segment_expr_targets(from, reads, writes);
+            collect_segment_expr_targets(to, reads, writes);
+            for child in body {
+                collect_segment_buffer_targets(child, reads, writes);
+            }
+        }
+        Node::Block(body) => {
+            for child in body {
+                collect_segment_buffer_targets(child, reads, writes);
+            }
+        }
+        Node::Region { body, .. } => {
+            for child in body.iter() {
+                collect_segment_buffer_targets(child, reads, writes);
+            }
+        }
+        Node::AllReduce { buffer, .. } | Node::Broadcast { buffer, .. } => {
+            reads.insert(buffer.clone());
+            writes.insert(buffer.clone());
+        }
+        Node::AllGather { input, output, .. } | Node::ReduceScatter { input, output, .. } => {
+            reads.insert(input.clone());
+            writes.insert(output.clone());
+        }
+        Node::IndirectDispatch { .. }
+        | Node::Return
+        | Node::Barrier { .. }
+        | Node::AsyncLoad { .. }
+        | Node::AsyncStore { .. }
+        | Node::AsyncWait { .. }
+        | Node::Trap { .. }
+        | Node::Resume { .. }
+        | Node::Opaque(_) => {}
+        _ => {}
+    }
+}
+
+fn collect_segment_expr_targets(
+    expr: &Expr,
+    reads: &mut HashSet<Ident>,
+    writes: &mut HashSet<Ident>,
+) {
+    match expr {
+        Expr::Load { buffer, index } => {
+            reads.insert(Ident::from(buffer));
+            collect_segment_expr_targets(index, reads, writes);
+        }
+        Expr::Atomic {
+            buffer,
+            index,
+            expected,
+            value,
+            ..
+        } => {
+            let name = Ident::from(buffer);
+            reads.insert(name.clone());
+            writes.insert(name);
+            collect_segment_expr_targets(index, reads, writes);
+            if let Some(expected) = expected {
+                collect_segment_expr_targets(expected, reads, writes);
+            }
+            collect_segment_expr_targets(value, reads, writes);
+        }
+        Expr::BinOp { left, right, .. } => {
+            collect_segment_expr_targets(left, reads, writes);
+            collect_segment_expr_targets(right, reads, writes);
+        }
+        Expr::UnOp { operand, .. } | Expr::Cast { value: operand, .. } => {
+            collect_segment_expr_targets(operand, reads, writes);
+        }
+        Expr::Fma { a, b, c } => {
+            collect_segment_expr_targets(a, reads, writes);
+            collect_segment_expr_targets(b, reads, writes);
+            collect_segment_expr_targets(c, reads, writes);
+        }
+        Expr::Call { args, .. } => {
+            for arg in args {
+                collect_segment_expr_targets(arg, reads, writes);
+            }
+        }
+        Expr::Select {
+            cond,
+            true_val,
+            false_val,
+        } => {
+            collect_segment_expr_targets(cond, reads, writes);
+            collect_segment_expr_targets(true_val, reads, writes);
+            collect_segment_expr_targets(false_val, reads, writes);
+        }
+        Expr::SubgroupBallot { cond } => collect_segment_expr_targets(cond, reads, writes),
+        Expr::SubgroupShuffle { value, lane } => {
+            collect_segment_expr_targets(value, reads, writes);
+            collect_segment_expr_targets(lane, reads, writes);
+        }
+        Expr::SubgroupAdd { value } => collect_segment_expr_targets(value, reads, writes),
+        _ => {}
+    }
+}
+
 /// Universal dispatch helper that satisfies `Node::Barrier { ordering:
 /// GridSync }` on any backend by splitting at the barrier and running
 /// each segment as its own kernel launch.
@@ -723,7 +1018,7 @@ pub fn dispatch_with_grid_sync_split_into(
     if !contains_grid_sync(program) || backend.supports_grid_sync() {
         return backend.dispatch_borrowed_into(program, inputs, config, outputs);
     }
-    let segments = try_split_on_grid_sync(program)?;
+    let segments = plan_host_grid_sync_segments(program)?;
     if segments.is_empty() {
         return Err(BackendError::InvalidProgram {
             fix: "Fix: program contains GridSync barrier but split_on_grid_sync produced 0 \
@@ -739,33 +1034,47 @@ pub fn dispatch_with_grid_sync_split_into(
     // bytes. The previous implementation cloned every input before
     // the first launch, which turned large read-only buffers into a
     // host-memory copy on the slow path.
-    let mut current_inputs: Vec<GridSyncInput<'_>> = Vec::new();
-    reserve_grid_sync_vec(
+    let initial_input_names = original_input_names(program)?;
+    if inputs.len() != initial_input_names.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: grid-sync split expected {} initial input buffer(s) but received {}. Rebuild the dispatch inputs from the Program buffer declarations before splitting.",
+                initial_input_names.len(),
+                inputs.len()
+            ),
+        });
+    }
+    let mut current_inputs: HashMap<Ident, GridSyncInput<'_>> = HashMap::new();
+    reserve_grid_sync_hash_map(
         &mut current_inputs,
-        inputs.len(),
-        "grid-sync rotating inputs",
+        program.buffers().len(),
+        "grid-sync rotating input map",
     )?;
-    current_inputs.extend(inputs.iter().copied().map(GridSyncInput::Borrowed));
+    for (name, bytes) in initial_input_names.into_iter().zip(inputs.iter().copied()) {
+        current_inputs.insert(name, GridSyncInput::Borrowed(bytes));
+    }
     let mut segment_outputs = Vec::new();
     reserve_grid_sync_vec(
         &mut segment_outputs,
         outputs.capacity().max(1),
         "grid-sync intermediate outputs",
     )?;
+    let final_output_names = original_output_names(program)?;
 
     for (segment_idx, segment) in segments.iter().enumerate() {
-        let borrowed = borrowed_grid_sync_inputs(&current_inputs)?;
-        if segment_idx + 1 == segments.len() {
-            return backend
-                .dispatch_borrowed_into(segment, borrowed.as_slice(), config, outputs)
-                .map_err(|error| grid_sync_segment_error(error, segment_idx, segments.len()));
-        }
+        let borrowed = borrowed_grid_sync_inputs_by_name(segment, &current_inputs)?;
         backend
-            .dispatch_borrowed_into(segment, borrowed.as_slice(), config, &mut segment_outputs)
+            .dispatch_borrowed_into(
+                &segment.program,
+                borrowed.as_slice(),
+                config,
+                &mut segment_outputs,
+            )
             .map_err(|error| grid_sync_segment_error(error, segment_idx, segments.len()))?;
         drop(borrowed);
-        refresh_readwrite_inputs(segment, &mut segment_outputs, &mut current_inputs)?;
+        refresh_named_outputs(segment, &mut segment_outputs, &mut current_inputs)?;
     }
+    collect_final_named_outputs(&final_output_names, &mut current_inputs, outputs)?;
     Ok(())
 }
 
@@ -783,6 +1092,38 @@ fn reserve_grid_sync_vec<T>(
     })
 }
 
+fn reserve_grid_sync_hash_map<K, V>(
+    map: &mut HashMap<K, V>,
+    capacity: usize,
+    field: &'static str,
+) -> Result<(), BackendError>
+where
+    K: Eq + std::hash::Hash,
+{
+    map.try_reserve(capacity)
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve {field} for {capacity} entries during grid-sync dispatch splitting: {error}. Split the program into fewer grid-sync segments or run on a backend with native grid sync."
+            ),
+        })
+}
+
+fn reserve_grid_sync_hash_set<T>(
+    set: &mut HashSet<T>,
+    capacity: usize,
+    field: &'static str,
+) -> Result<(), BackendError>
+where
+    T: Eq + std::hash::Hash,
+{
+    set.try_reserve(capacity)
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve {field} for {capacity} entries during grid-sync dispatch splitting: {error}. Split the program into fewer grid-sync segments or run on a backend with native grid sync."
+            ),
+        })
+}
+
 fn borrowed_grid_sync_inputs<'a>(
     inputs: &'a [GridSyncInput<'a>],
 ) -> Result<SmallVec<[&'a [u8]; 8]>, BackendError> {
@@ -796,6 +1137,30 @@ fn borrowed_grid_sync_inputs<'a>(
         }
     })?;
     borrowed.extend(inputs.iter().map(GridSyncInput::as_slice));
+    Ok(borrowed)
+}
+
+fn borrowed_grid_sync_inputs_by_name<'a>(
+    segment: &PlannedGridSyncSegment,
+    inputs: &'a HashMap<Ident, GridSyncInput<'a>>,
+) -> Result<SmallVec<[&'a [u8]; 8]>, BackendError> {
+    let mut borrowed = SmallVec::<[&[u8]; 8]>::new();
+    borrowed
+        .try_reserve(segment.input_names.len())
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve grid-sync borrowed input slices for {} segment input(s): {error}. Split the program into fewer grid-sync live buffers or run on a backend with native grid sync.",
+                segment.input_names.len()
+            ),
+        })?;
+    for name in &segment.input_names {
+        let input = inputs.get(name).ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: grid-sync segment input `{name}` has no bytes from caller input or a prior segment output. Ensure every cross-segment read is written before the GridSync barrier."
+            ),
+        })?;
+        borrowed.push(input.as_slice());
+    }
     Ok(borrowed)
 }
 
@@ -841,6 +1206,69 @@ impl GridSyncInput<'_> {
         }
         Ok(())
     }
+}
+
+fn refresh_named_outputs<'a>(
+    segment: &PlannedGridSyncSegment,
+    outputs: &mut Vec<Vec<u8>>,
+    inputs: &mut HashMap<Ident, GridSyncInput<'a>>,
+) -> Result<(), BackendError> {
+    if outputs.len() != segment.output_names.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: grid-sync split segment produced {} output slot(s) but the planned buffer map expected {}. Preserve segment output declaration order when dispatching split kernels.",
+                outputs.len(),
+                segment.output_names.len()
+            ),
+        });
+    }
+    for (name, bytes) in segment.output_names.iter().cloned().zip(outputs.iter_mut()) {
+        match inputs.get_mut(&name) {
+            Some(slot) => slot.refresh_from_output(bytes)?,
+            None => {
+                let mut owned = GridSyncInput::Owned(Vec::new());
+                owned.refresh_from_output(bytes)?;
+                inputs.insert(name, owned);
+            }
+        }
+    }
+    for output in outputs {
+        output.clear();
+    }
+    Ok(())
+}
+
+fn collect_final_named_outputs<'a>(
+    final_output_names: &[Ident],
+    inputs: &mut HashMap<Ident, GridSyncInput<'a>>,
+    outputs: &mut OutputBuffers,
+) -> Result<(), BackendError> {
+    let mut final_outputs = Vec::new();
+    reserve_grid_sync_vec(
+        &mut final_outputs,
+        final_output_names.len(),
+        "grid-sync final named outputs",
+    )?;
+    for name in final_output_names {
+        let output = inputs
+            .remove(name)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: grid-sync final output `{name}` was not produced by any split segment."
+                ),
+            })?;
+        match output {
+            GridSyncInput::Owned(bytes) => final_outputs.push(bytes),
+            GridSyncInput::Borrowed(bytes) => {
+                let mut owned = Vec::new();
+                reserve_grid_sync_vec(&mut owned, bytes.len(), "grid-sync borrowed final output")?;
+                owned.extend_from_slice(bytes);
+                final_outputs.push(owned);
+            }
+        }
+    }
+    crate::replace_output_buffers_preserving_slots(final_outputs, outputs);
+    Ok(())
 }
 
 /// After each segment dispatch, overwrite every ReadWrite buffer's
@@ -1152,7 +1580,7 @@ mod tests {
     }
 
     #[test]
-    fn split_into_preserves_caller_output_slot_for_final_segment() {
+    fn split_into_preserves_caller_output_slot_after_named_output_collection() {
         let program = Program::wrapped(
             vec![buffer()],
             [1, 1, 1],
@@ -1167,8 +1595,8 @@ mod tests {
         let slot_addr = outputs[0].as_ptr() as usize;
         let backend = ReuseCheckingBackend {
             calls: AtomicUsize::new(0),
-            final_outputs_addr: outputs_addr,
-            final_slot_addr: slot_addr,
+            final_outputs_addr: 0,
+            final_slot_addr: 0,
         };
         let input = [0u8, 0, 0, 0];
         dispatch_with_grid_sync_split_into(
@@ -1468,4 +1896,3 @@ mod tests {
         assert_eq!(timed.wait_ns, Some(12));
     }
 }
-

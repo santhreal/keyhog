@@ -13,6 +13,33 @@ use crate::graph::program_graph::{
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::csr_backward_or_changed";
+/// Source-lane workgroup for reverse in-place CSR expansion.
+pub const CSR_BACKWARD_OR_CHANGED_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for a node-parallel reverse in-place CSR expansion pass.
+#[must_use]
+pub const fn csr_backward_or_changed_parallel_grid(node_count: u32) -> [u32; 3] {
+    [
+        ceil_div_u32(
+            at_least_one(node_count),
+            CSR_BACKWARD_OR_CHANGED_WORKGROUP_SIZE[0],
+        ),
+        1,
+        1,
+    ]
+}
+
+const fn at_least_one(value: u32) -> u32 {
+    if value == 0 {
+        1
+    } else {
+        value
+    }
+}
+
+const fn ceil_div_u32(value: u32, divisor: u32) -> u32 {
+    ((value - 1) / divisor) + 1
+}
 
 /// Parallel in-place reverse expansion program for resident fixed-point drivers.
 #[must_use]
@@ -130,7 +157,7 @@ pub fn csr_backward_or_changed_parallel(
     );
     Program::wrapped(
         buffers,
-        [1, 1, 1],
+        CSR_BACKWARD_OR_CHANGED_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
@@ -162,5 +189,18 @@ mod tests {
 
         assert!(names.contains(&"frontier"));
         assert!(names.contains(&"changed"));
+        assert_eq!(
+            program.workgroup_size(),
+            CSR_BACKWARD_OR_CHANGED_WORKGROUP_SIZE
+        );
+    }
+
+    #[test]
+    fn parallel_grid_packs_source_lanes_into_blocks() {
+        assert_eq!(csr_backward_or_changed_parallel_grid(0), [1, 1, 1]);
+        assert_eq!(csr_backward_or_changed_parallel_grid(1), [1, 1, 1]);
+        assert_eq!(csr_backward_or_changed_parallel_grid(256), [1, 1, 1]);
+        assert_eq!(csr_backward_or_changed_parallel_grid(257), [2, 1, 1]);
+        assert_eq!(csr_backward_or_changed_parallel_grid(513), [3, 1, 1]);
     }
 }

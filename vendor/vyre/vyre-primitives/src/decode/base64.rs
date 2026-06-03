@@ -507,8 +507,8 @@ mod tests {
 
     #[test]
     fn try_decode_reference_matches_infallible_wrapper() {
-        let fallible =
-            try_decode_standard_packed_reference(b"Zm9vYmFy").expect("Fix: unit-test oracle precondition - valid base64 must decode");
+        let fallible = try_decode_standard_packed_reference(b"Zm9vYmFy")
+            .expect("Fix: unit-test oracle precondition - valid base64 must decode");
         let infallible = decode_standard_packed_reference(b"Zm9vYmFy");
         assert_eq!(fallible, infallible);
         assert_eq!(fallible.1, 6);
@@ -558,7 +558,9 @@ mod tests {
         let production = include_str!("base64.rs")
             .split("#[cfg(test)]")
             .next()
-            .expect("Fix: unit-test oracle precondition - base64 source must include production section");
+            .expect(
+            "Fix: unit-test oracle precondition - base64 source must include production section",
+        );
         assert!(!production.contains(".expect("));
         assert!(!production.contains(".unwrap("));
         assert!(!production.contains("panic!("));
@@ -622,4 +624,3 @@ mod tests {
         assert_eq!(cpu_base64_decode(b"Zm9vYmFy"), b"foobar");
     }
 }
-

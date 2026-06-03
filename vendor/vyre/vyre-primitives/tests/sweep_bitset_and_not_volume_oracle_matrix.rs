@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "bitset", feature = "cpu-parity"))]
 
 use vyre_primitives::bitset::and_not;
@@ -31,11 +30,9 @@ fn binary_pairs(cases: usize) -> impl Iterator<Item = (Vec<u32>, Vec<u32>)> {
     })
 }
 
-
 fn oracle(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
     lhs.iter().zip(rhs).map(|(l, r)| l & !r).collect()
 }
-
 
 const CASES: usize = 16384;
 
@@ -45,7 +42,8 @@ fn sweep_bitset_and_not_volume_oracle_matrix() {
         let expected = oracle(&lhs, &rhs);
         let actual = and_not::cpu_ref(&lhs, &rhs);
         assert_eq!(
-            actual, expected,
+            actual,
+            expected,
             "Fix: bitset_and_not volume case {idx} lhs_len={} rhs_len={}",
             lhs.len(),
             rhs.len()

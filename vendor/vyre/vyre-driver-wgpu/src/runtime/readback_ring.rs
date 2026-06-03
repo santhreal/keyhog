@@ -581,7 +581,6 @@ impl ReadbackRing {
             if out.len() == len {
                 out.copy_from_slice(bytes);
             } else {
-                out.clear();
                 if len > out.capacity() {
                     let additional = len - out.capacity();
                     out.try_reserve_exact(additional).map_err(|source| {
@@ -590,6 +589,7 @@ impl ReadbackRing {
                         ))
                     })?;
                 }
+                out.clear();
                 out.extend_from_slice(bytes);
             }
             drop(view);
@@ -752,4 +752,3 @@ mod tests {
         );
     }
 }
-

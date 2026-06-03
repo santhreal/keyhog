@@ -185,8 +185,10 @@ fn batch_shard(
     }
     let (fwd_off, fwd_tgt, fwd_msk) = build_csr(combined_points, &edges, false);
     let (rev_off, rev_tgt, rev_msk) = build_csr(combined_points, &edges, true);
-    let fwd_graph = upload_resident_bfs_graph(dispatcher, combined_points, &fwd_off, &fwd_tgt, &fwd_msk)?;
-    let rev_graph = upload_resident_bfs_graph(dispatcher, combined_points, &rev_off, &rev_tgt, &rev_msk)?;
+    let fwd_graph =
+        upload_resident_bfs_graph(dispatcher, combined_points, &fwd_off, &fwd_tgt, &fwd_msk)?;
+    let rev_graph =
+        upload_resident_bfs_graph(dispatcher, combined_points, &rev_off, &rev_tgt, &rev_msk)?;
 
     // Per-loan seeds across the whole crate, flattened total_loans * words.
     let mut issue_seeds = vec![0u32; total_loans * words];

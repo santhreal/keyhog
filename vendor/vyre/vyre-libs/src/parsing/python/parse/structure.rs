@@ -611,7 +611,6 @@ inventory::submit! {
     }
 }
 
-
 fn pack_sparse_tokens(tokens: &[(usize, u32, u32)]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut tok_types = vec![0u8; 16 * 4];
     let mut tok_starts = vec![0u8; 16 * 4];
@@ -697,4 +696,3 @@ fn with_fixture_expected() -> Vec<Vec<Vec<u8>>> {
     write_words(&mut records, &[11, 3, 6, 14, 1, 0]);
     vec![vec![records, WITH_RECORD_WORDS.to_le_bytes().to_vec()]]
 }
-

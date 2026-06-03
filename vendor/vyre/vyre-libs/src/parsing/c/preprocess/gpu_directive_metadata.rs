@@ -27,7 +27,10 @@
 //!   - `tok_starts` (U32)  -  byte offset into `source` per token.
 //!   - `tok_lens` (U32)  -  byte length per token (excludes any phase-2
 //!     splices but includes the row's terminating newline).
-//!   - `source` (U8)  -  original source bytes.
+//!   - `source`  -  original source bytes. [`gpu_directive_metadata`] keeps
+//!     the packed `U32` ABI used by standalone preprocess kernels;
+//!     [`gpu_directive_metadata_u8`] consumes one raw `U8` element per byte for
+//!     the resident preprocessing pipeline.
 //!
 //! Outputs:
 //!   - `directive_kinds` (U32)  -  `TOK_PP_*` constant for `TOK_PREPROC`
@@ -92,20 +95,57 @@ pub const MAX_KEYWORD_LEN: u32 = 12;
 /// keeps the unrolled hash/keyword scan a fixed depth.
 const MAX_WS_PREFIX: u32 = 4;
 
-/// Build the 17a directive-classification `Program`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceLayout {
+    PackedU32,
+    RawU8,
+}
+
+/// Build the 17a directive-classification `Program` over packed `DataType::U32`
+/// source words.
 ///
 /// Hybrid runtime/static-bound: kernel BODY uses `Expr::buf_len()` for
 /// per-thread bounds and `safe_load`, `num_tokens` is kept ONLY for
 /// output buffer sizing, `source_len` is unused.
 #[must_use]
 pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
+    gpu_directive_metadata_with_source_layout(num_tokens, source_len, SourceLayout::PackedU32)
+}
+
+/// Build the 17a directive-classification `Program` over raw `DataType::U8`
+/// source bytes.
+#[must_use]
+pub fn gpu_directive_metadata_u8(num_tokens: u32, source_len: u32) -> Program {
+    gpu_directive_metadata_with_source_layout(num_tokens, source_len, SourceLayout::RawU8)
+}
+
+fn gpu_directive_metadata_with_source_layout(
+    num_tokens: u32,
+    source_len: u32,
+    source_layout: SourceLayout,
+) -> Program {
     let _ = source_len;
     let t = Expr::var("t");
 
     // ---- helper expression builders ----
-    let source_byte_len = super::gpu_source_bytes::packed_source_byte_len_expr();
+    let source_byte_len = match source_layout {
+        SourceLayout::PackedU32 => super::gpu_source_bytes::packed_source_byte_len_expr(),
+        SourceLayout::RawU8 => Expr::buf_len("source"),
+    };
     let safe_load = |addr: Expr| -> Expr {
-        super::gpu_source_bytes::safe_load_source_byte_expr(addr, source_byte_len.clone())
+        match source_layout {
+            SourceLayout::PackedU32 => {
+                super::gpu_source_bytes::safe_load_source_byte_expr(addr, source_byte_len.clone())
+            }
+            SourceLayout::RawU8 => Expr::select(
+                Expr::lt(addr.clone(), source_byte_len.clone()),
+                Expr::bitand(
+                    Expr::cast(DataType::U32, Expr::load("source", addr)),
+                    Expr::u32(0xFF),
+                ),
+                Expr::u32(0),
+            ),
+        }
     };
     // is_ws(b): 1 if b is one of {space, tab, VT, FF}, else 0.
     let is_ws = |b: Expr| -> Expr {
@@ -414,6 +454,11 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
         ),
     ];
 
+    let source_element = match source_layout {
+        SourceLayout::PackedU32 => DataType::U32,
+        SourceLayout::RawU8 => DataType::U8,
+    };
+
     Program::wrapped(
         vec![
             BufferDecl::storage(
@@ -437,19 +482,11 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
                 DataType::U32,
             )
             .with_count(num_tokens.max(1)),
-            // The source buffer is declared as packed `u32` words rather
-            // than `u8` bytes. Reference-eval and naga-emitted real GPU
-            // disagreed on `load(U8 buffer, addr)` semantics  -
-            // reference-eval returned the byte at `addr`, while real
-            // GPU returned the u32 word at index `addr` (packed bytes
-            // 4*addr..4*addr+4). Declaring the buffer as U32 forces
-            // both backends to use the same word-indexed layout, and
-            // the kernel does the byte extraction in `load_byte_u32`.
             BufferDecl::storage(
                 "source",
                 BINDING_SOURCE,
                 BufferAccess::ReadOnly,
-                DataType::U32,
+                source_element,
             )
             .with_count(0),
             BufferDecl::storage(
@@ -518,9 +555,29 @@ mod tests {
     }
 
     #[test]
+    fn source_buffer_layouts_preserve_packed_abi_and_raw_u8_variant() {
+        let packed = gpu_directive_metadata(8, 64);
+        let raw_u8 = gpu_directive_metadata_u8(8, 64);
+        let packed_source = packed
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: packed directive metadata source buffer must exist");
+        let raw_u8_source = raw_u8
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: raw-U8 directive metadata source buffer must exist");
+
+        assert_eq!(packed_source.element(), DataType::U32);
+        assert_eq!(packed_source.count, 0);
+        assert_eq!(raw_u8_source.element(), DataType::U8);
+        assert_eq!(raw_u8_source.count, 0);
+    }
+
+    #[test]
     fn max_keyword_len_covers_longest_directive() {
         // include_next is the longest at 12 ASCII bytes.
         assert!(MAX_KEYWORD_LEN >= 12);
     }
 }
-

@@ -10,7 +10,7 @@ pub(super) fn c11_lexer_regular_sparse_impl(
     haystack_len: u32,
     suppress_span_readback: bool,
     emit_flags: bool,
-    packed_haystack: bool,
+    haystack_layout: SparseHaystackLayout,
     track_preproc_lines: bool,
     track_literals: bool,
     block_totals: Option<&str>,
@@ -21,8 +21,8 @@ pub(super) fn c11_lexer_regular_sparse_impl(
         256
     };
     let t = Expr::InvocationId { axis: 0 };
-    let byte_at = |index: Expr| {
-        if packed_haystack {
+    let byte_at = |index: Expr| match haystack_layout {
+        SparseHaystackLayout::PackedU32 => {
             let word = Expr::load(haystack, Expr::shr(index.clone(), Expr::u32(2)));
             let shift = Expr::shl(Expr::bitand(index.clone(), Expr::u32(3)), Expr::u32(3));
             Expr::select(
@@ -30,8 +30,21 @@ pub(super) fn c11_lexer_regular_sparse_impl(
                 Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF)),
                 Expr::u32(0),
             )
-        } else {
-            byte_at_or_zero(haystack, index, haystack_len)
+        }
+        SparseHaystackLayout::ExpandedU32 => byte_at_or_zero(haystack, index, haystack_len),
+        SparseHaystackLayout::RawU8 => {
+            let runtime_len = Expr::min(Expr::buf_len(haystack), Expr::u32(haystack_len));
+            let in_bounds = Expr::lt(index.clone(), runtime_len.clone());
+            let safe_index = Expr::select(
+                in_bounds.clone(),
+                index,
+                Expr::saturating_sub(runtime_len, Expr::u32(1)),
+            );
+            let byte = Expr::bitand(
+                Expr::cast(DataType::U32, Expr::load(haystack, safe_index)),
+                Expr::u32(0xFF),
+            );
+            Expr::select(in_bounds, byte, Expr::u32(0))
         }
     };
     let is_space = |value: Expr| {
@@ -1037,14 +1050,18 @@ pub(super) fn c11_lexer_regular_sparse_impl(
             },
         );
     }
+    let haystack_element = match haystack_layout {
+        SparseHaystackLayout::RawU8 => DataType::U8,
+        SparseHaystackLayout::PackedU32 | SparseHaystackLayout::ExpandedU32 => DataType::U32,
+    };
+    let haystack_count = match haystack_layout {
+        SparseHaystackLayout::PackedU32 => haystack_len.max(1).div_ceil(4).max(1),
+        SparseHaystackLayout::ExpandedU32 => haystack_len.max(1),
+        SparseHaystackLayout::RawU8 => 0,
+    };
     let mut buffers = vec![
-        BufferDecl::storage(haystack, 0, BufferAccess::ReadOnly, DataType::U32).with_count(
-            if packed_haystack {
-                haystack_len.max(1).div_ceil(4).max(1)
-            } else {
-                haystack_len.max(1)
-            },
-        ),
+        BufferDecl::storage(haystack, 0, BufferAccess::ReadOnly, haystack_element)
+            .with_count(haystack_count),
         sparse_types_decl,
         out_tok_starts_decl,
         out_tok_lens_decl,
@@ -1092,4 +1109,3 @@ mod tests {
         );
     }
 }
-

@@ -482,7 +482,6 @@ pub fn reference_c_preprocessor_directive_metadata(
     Ok((directive_kinds, directive_values))
 }
 
-
 fn conditional_directive_value(
     row: &[u8],
     directive: CPreprocessorDirective,
@@ -496,6 +495,7 @@ fn conditional_directive_value(
                 index: 0,
                 base_offset: directive.payload_start,
                 defined_macros,
+                depth: 0,
             }
             .parse()?,
         ))),
@@ -591,4 +591,3 @@ mod tests {
         );
     }
 }
-

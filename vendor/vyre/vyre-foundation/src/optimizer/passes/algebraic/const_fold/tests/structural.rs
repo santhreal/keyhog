@@ -95,6 +95,10 @@ fn mul_by_neg_one_folds_to_negate() {
 
 #[test]
 fn double_cast_elimination() {
+    // Different-target nested casts must NOT be elided: `(u32)((i32)x)` is
+    // not equal to `(u32)x` for arbitrary `x` (the i32 step changes sign
+    // semantics before the widen/reinterpret). Only same-target nested
+    // casts are redundant - see const_fold::cast_rules.
     let x = Expr::var("x");
     let inner_cast = Expr::Cast {
         target: crate::ir::DataType::I32,
@@ -104,13 +108,7 @@ fn double_cast_elimination() {
         target: crate::ir::DataType::U32,
         value: Box::new(inner_cast),
     };
-    assert_eq!(
-        fold_expr(&outer_cast),
-        Some(Expr::Cast {
-            target: crate::ir::DataType::U32,
-            value: Box::new(x)
-        })
-    );
+    assert_eq!(fold_expr(&outer_cast), None);
 }
 
 #[test]

@@ -12,7 +12,15 @@ fn benchmark_registry_contains_program_level_thesis_workloads() {
 
     for required_id in [
         "frontend.c.parser.linux_driver_pipeline",
+        "frontend.rust.lexer.batch_ir_execute",
+        "frontend.rust.lexer.ir_execute",
+        "frontend.rust.range_loop.ir_execute",
+        "dataflow.ifds.skewed.closure.1m",
+        "dataflow.ifds.skewed.step.1m",
+        "scan.ac.irregular_literals.4m",
+        "scan.literal_set.irregular_hotloop.4m",
         "foundation.dfa_match.256k",
+        "primitives.graph.csr_skewed_frontier.1m",
         "primitives.graph.frontier_step.1m",
         "runtime.megakernel.truth.1024",
     ] {
@@ -36,7 +44,7 @@ fn release_suite_cannot_regress_to_elementwise_only_evidence() {
         let metadata = case.metadata();
         let id = metadata.id.0;
         let tags = metadata.tags;
-        if id.starts_with("frontend.c.") {
+        if id.starts_with("frontend.c.") || id.starts_with("frontend.rust.") {
             evidence_classes.insert("parsing");
         }
         if tags.iter().any(|tag| tag == "graph" || tag == "frontier") {

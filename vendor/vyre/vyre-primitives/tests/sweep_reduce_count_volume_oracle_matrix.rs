@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "reduce", feature = "cpu-parity"))]
 
 use vyre_primitives::reduce::count;
@@ -19,11 +18,9 @@ fn lcg_u32(seed: u32, len: usize) -> Vec<u32> {
         .collect()
 }
 
-
 fn oracle(bitset: &[u32]) -> u32 {
     bitset.iter().map(|w| w.count_ones()).sum()
 }
-
 
 const CASES: usize = 16384;
 

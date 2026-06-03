@@ -8,15 +8,15 @@ use vyre_foundation::ir::Program;
 
 use crate::backend::allocations::HostTransferAllocations;
 use crate::backend::plan::CudaDispatchPlan;
-use crate::backend::resident::{CudaResidentBuffer, ResidentViewCache};
-use crate::backend::resident_upload_fusion::{
-    fuse_resident_upload_copies, push_resident_upload_copy, ResidentUploadCopy,
-};
+use crate::backend::resident::CudaResidentBuffer;
+use crate::backend::resident_upload_fusion::ResidentUploadCopy;
 use crate::backend::staging_reserve::{
     reserve_hash_set, reserve_smallvec, reserve_vec, resize_vec_slots,
 };
 
-pub(crate) fn resident_required_handles(prepared: &CudaDispatchPlan) -> Result<usize, BackendError> {
+pub(crate) fn resident_required_handles(
+    prepared: &CudaDispatchPlan,
+) -> Result<usize, BackendError> {
     prepared
         .bindings
         .bindings
@@ -29,6 +29,101 @@ pub(crate) fn resident_required_handles(prepared: &CudaDispatchPlan) -> Result<u
                 prepared.bindings.shared_indices.len()
             ),
         })
+}
+
+pub(crate) fn next_resident_handle(
+    handles: &[CudaResidentBuffer],
+    next_handle: &mut usize,
+    context: &'static str,
+) -> Result<CudaResidentBuffer, BackendError> {
+    let handle_index = *next_handle;
+    let Some(handle) = handles.get(handle_index).copied() else {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} ran out of resident buffer handles at descriptor slot {handle_index} after receiving {} handle(s). Validate resident handle count against the binding plan before launch.",
+                handles.len()
+            ),
+        });
+    };
+    *next_handle = next_handle
+        .checked_add(1)
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} resident handle cursor overflowed at descriptor slot {handle_index}. Rebuild the resident binding plan before launch.",
+            ),
+        })?;
+    Ok(handle)
+}
+
+fn validate_dense_resident_indices<I>(
+    indices: I,
+    expected_len: usize,
+    context: &'static str,
+    index_kind: &'static str,
+    rebuild_action: &'static str,
+) -> Result<(), BackendError>
+where
+    I: IntoIterator<Item = usize>,
+{
+    let mut resolved_len = 0usize;
+    for (expected_index, index) in indices.into_iter().enumerate() {
+        resolved_len = expected_index.checked_add(1).ok_or_else(|| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} {index_kind} index validation overflowed while checking dense slot {expected_index}. Rebuild the binding plan before {rebuild_action}.",
+                ),
+            }
+        })?;
+        if index != expected_index {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} resolved {index_kind} index {index} at sorted {index_kind} slot {expected_index}; expected dense {index_kind} indexes 0..{expected_len}. Rebuild the binding plan before {rebuild_action}.",
+                ),
+            });
+        }
+    }
+    if resolved_len != expected_len {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} resolved {resolved_len} {index_kind} index(es); expected {expected_len}. Rebuild the binding plan before {rebuild_action}.",
+            ),
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_dense_resident_output_indices<I>(
+    output_indices: I,
+    expected_len: usize,
+    context: &'static str,
+) -> Result<(), BackendError>
+where
+    I: IntoIterator<Item = usize>,
+{
+    validate_dense_resident_indices(
+        output_indices,
+        expected_len,
+        context,
+        "output",
+        "resident readback",
+    )
+}
+
+pub(crate) fn validate_dense_resident_input_indices<I>(
+    input_indices: I,
+    expected_len: usize,
+    context: &'static str,
+) -> Result<(), BackendError>
+where
+    I: IntoIterator<Item = usize>,
+{
+    validate_dense_resident_indices(
+        input_indices,
+        expected_len,
+        context,
+        "input",
+        "borrowed fallback launch",
+    )
 }
 
 pub(crate) fn stage_resident_fill_payload(
@@ -129,7 +224,16 @@ pub(crate) fn prepare_resident_sequence_fills(
             continue;
         }
         if let Some(&index) = effective_indices.get(&handle) {
-            effective[index].1 = value;
+            let Some(existing) = effective.get_mut(index) else {
+                return Err(BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA resident sequence fill index for handle {} pointed at stale effective fill slot {index} after {} slot(s) were prepared. Rebuild duplicate-fill coalescing before launching the resident sequence.",
+                        handle.id,
+                        effective.len()
+                    ),
+                });
+            };
+            existing.1 = value;
             continue;
         }
         effective_indices.insert(handle, effective.len());

@@ -13,8 +13,32 @@ pub const BINDING_FRONTIER_OUT: u32 = BINDING_PRIMITIVE_START + 1;
 pub const BINDING_CHANGED: u32 = BINDING_PRIMITIVE_START + 2;
 /// Canonical workgroup size for persistent BFS programs.
 pub const PERSISTENT_BFS_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
-/// Canonical single-query dispatch grid.
-pub const PERSISTENT_BFS_SINGLE_DISPATCH_GRID: [u32; 3] = [1, 1, 1];
+/// One-block dispatch grid used by the compact single-workgroup BFS path.
+pub(crate) const PERSISTENT_BFS_SINGLE_DISPATCH_GRID: [u32; 3] = [1, 1, 1];
+
+/// Dispatch grid for a single persistent-BFS query.
+#[must_use]
+pub const fn persistent_bfs_single_dispatch_grid(node_count: u32) -> [u32; 3] {
+    [persistent_bfs_grid_x(node_count), 1, 1]
+}
+
+/// Dispatch grid for a batched persistent-BFS query set.
+#[must_use]
+pub const fn persistent_bfs_batch_dispatch_grid(node_count: u32, query_count: u32) -> [u32; 3] {
+    if query_count == 0 {
+        [1, 1, 1]
+    } else {
+        [persistent_bfs_grid_x(node_count), query_count, 1]
+    }
+}
+
+const fn persistent_bfs_grid_x(node_count: u32) -> u32 {
+    if node_count == 0 {
+        1
+    } else {
+        ((node_count - 1) / PERSISTENT_BFS_WORKGROUP_SIZE[0]) + 1
+    }
+}
 
 /// Validated persistent-BFS graph layout metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

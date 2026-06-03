@@ -1,4 +1,5 @@
 use super::ResidentCsrQueueGraph;
+use crate::graph::csr_frontier_queue_scratch::resident_csr_queue_high_degree_source_count;
 use vyre_primitives::graph::csr_frontier_queue::validate_csr_queue_graph;
 
 use crate::graph::dispatch_bridge::{upload_resident_dispatch_inputs, DispatchInput};
@@ -36,6 +37,8 @@ pub fn upload_resident_csr_queue_graph(
     Ok(ResidentCsrQueueGraph {
         node_count: layout.node_count,
         edge_count: layout.edge_count,
+        max_row_degree: layout.max_row_degree,
+        high_degree_source_count: resident_csr_queue_high_degree_source_count(edge_offsets),
         words: layout.words,
         edge_offsets_handle,
         edge_targets_handle,

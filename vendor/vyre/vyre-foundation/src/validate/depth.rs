@@ -132,6 +132,8 @@ mod tests {
     fn max_call_depth_exceeded() {
         let limit = max_call_depth("my_op", DEFAULT_MAX_CALL_DEPTH + 1)
             .expect_err("depth over limit must fail");
-        assert_eq!(limit, DEFAULT_MAX_CALL_DEPTH);
+        // Contract (see `max_call_depth` docs): Err carries the OFFENDING
+        // depth, not the limit.
+        assert_eq!(limit, DEFAULT_MAX_CALL_DEPTH + 1);
     }
 }

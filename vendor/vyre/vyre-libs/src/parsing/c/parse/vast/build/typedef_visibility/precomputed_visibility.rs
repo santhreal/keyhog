@@ -1,5 +1,5 @@
-use super::*;
 use super::chain;
+use super::*;
 
 pub(crate) fn emit_typedef_visibility_scan_precomputed_context(
     vast_nodes: &str,
@@ -122,10 +122,7 @@ pub(crate) fn emit_typedef_visibility_scan_precomputed_context(
             &scan_hash,
             chain::vast_typedef_hash_from_base(vast_nodes, &scan_base),
         ),
-        Node::let_bind(
-            &scan_len,
-            chain::vast_len_from_base(vast_nodes, &scan_base),
-        ),
+        Node::let_bind(&scan_len, chain::vast_len_from_base(vast_nodes, &scan_base)),
         Node::if_then(
             Expr::and(
                 Expr::var(&scan_valid),

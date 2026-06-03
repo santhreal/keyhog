@@ -448,7 +448,6 @@ mod tests {
         let queue_ptr = queue.as_ptr();
         cpu_ref_into(
             &adj,
-
             &src,
             &snk,
             &x,
@@ -606,4 +605,3 @@ mod tests {
         result
     }
 }
-

@@ -205,16 +205,14 @@ impl RulePipeline {
         // The hit buffer is the only ReadWrite storage in the program;
         // backends return outputs in declaration order, so it lives at
         // index 0 of `outputs`.
-        let hit_bytes = &outputs[0];
-        if hit_bytes.len() < 4 {
-            return Err(vyre::BackendError::new(
-                "RulePipeline::scan: hit buffer truncated. \
-                 Fix: this is a backend bug; report it.",
-            ));
-        }
-        let count = u32::from_le_bytes([hit_bytes[0], hit_bytes[1], hit_bytes[2], hit_bytes[3]]);
+        let hit_bytes = dispatch_io::try_output_bytes(&outputs, 0, "RulePipeline hit buffer")?;
+        let count = dispatch_io::try_read_u32_prefix(hit_bytes, "RulePipeline hit buffer")?;
         // Triples start at byte 4 (after the atomic counter).
-        dispatch_io::try_unpack_match_triples_into(&hit_bytes[4..], count.min(max_matches), matches)?;
+        dispatch_io::try_unpack_match_triples_exact_prefix_into(
+            &hit_bytes[4..],
+            count.min(max_matches),
+            matches,
+        )?;
         Ok(())
     }
 
@@ -459,7 +457,6 @@ impl std::fmt::Display for PipelineWireError {
     }
 }
 
-
 impl std::error::Error for PipelineWireError {}
 
 impl RulePipeline {
@@ -615,6 +612,52 @@ impl RulePipeline {
 mod tests {
     use super::*;
 
+    #[derive(Clone)]
+    struct RuleReadbackBackend {
+        outputs: Vec<Vec<u8>>,
+    }
+
+    impl vyre::backend::private::Sealed for RuleReadbackBackend {}
+
+    impl VyreBackend for RuleReadbackBackend {
+        fn id(&self) -> &'static str {
+            "rule-readback-test"
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &vyre::DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, vyre::BackendError> {
+            Ok(self.outputs.clone())
+        }
+
+        fn dispatch_borrowed(
+            &self,
+            _program: &Program,
+            _inputs: &[&[u8]],
+            _config: &vyre::DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, vyre::BackendError> {
+            Ok(self.outputs.clone())
+        }
+    }
+
+    fn hit_buffer_bytes(count: u32, triples: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(4 + triples.len());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.extend_from_slice(triples);
+        bytes
+    }
+
+    fn match_triple_bytes(pattern_id: u32, start: u32, end: u32) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(12);
+        bytes.extend_from_slice(&pattern_id.to_le_bytes());
+        bytes.extend_from_slice(&start.to_le_bytes());
+        bytes.extend_from_slice(&end.to_le_bytes());
+        bytes
+    }
+
     #[test]
     fn integrator_returns_primitive_compatible_tables() {
         let pipe = build(&["abc"], "input", "hits", 16);
@@ -671,6 +714,77 @@ mod tests {
         assert_eq!(scratch.len(), (3 * 3 + 1) * 4);
         assert!(scratch.iter().all(|&byte| byte == 0));
         assert!(scratch.capacity() >= retained);
+    }
+
+    #[test]
+    fn rule_pipeline_scan_rejects_missing_hit_output_slot() {
+        let pipe = build(&["ab"], "input", "hits", 16);
+        let backend = RuleReadbackBackend {
+            outputs: Vec::new(),
+        };
+        let mut matches = vec![Match::new(99, 1, 2)];
+
+        let err = pipe
+            .scan_into(&backend, b"ab", 1, &mut matches)
+            .expect_err("missing RulePipeline hit output must fail");
+
+        let msg = err.to_string();
+        assert!(
+            matches.is_empty(),
+            "scan errors must not expose stale matches"
+        );
+        assert!(
+            msg.contains("RulePipeline hit buffer") && msg.contains("output index 0"),
+            "RulePipeline missing-output error must identify the omitted slot: {msg}"
+        );
+    }
+
+    #[test]
+    fn rule_pipeline_scan_rejects_short_hit_counter_readback() {
+        let pipe = build(&["ab"], "input", "hits", 16);
+        let backend = RuleReadbackBackend {
+            outputs: vec![vec![1, 2, 3]],
+        };
+        let mut matches = vec![Match::new(99, 1, 2)];
+
+        let err = pipe
+            .scan_into(&backend, b"ab", 1, &mut matches)
+            .expect_err("short RulePipeline counter readback must fail");
+
+        let msg = err.to_string();
+        assert!(
+            matches.is_empty(),
+            "scan errors must not expose stale matches"
+        );
+        assert!(
+            msg.contains("RulePipeline hit buffer") && msg.contains("requires 4 bytes"),
+            "RulePipeline counter error must name the malformed hit buffer: {msg}"
+        );
+    }
+
+    #[test]
+    fn rule_pipeline_scan_rejects_match_payload_shorter_than_reported_count() {
+        let pipe = build(&["ab"], "input", "hits", 16);
+        let backend = RuleReadbackBackend {
+            outputs: vec![hit_buffer_bytes(2, &match_triple_bytes(0, 0, 2))],
+        };
+        let mut matches = vec![Match::new(99, 1, 2)];
+
+        let err = pipe
+            .scan_into(&backend, b"ab", 2, &mut matches)
+            .expect_err("short RulePipeline match payload must fail");
+
+        let msg = err.to_string();
+        assert!(
+            matches.is_empty(),
+            "scan errors must not expose stale matches"
+        );
+        assert!(
+            msg.contains("readback was 12 byte(s)")
+                && msg.contains("count=2")
+                && msg.contains("requires 24 byte(s)"),
+            "RulePipeline match-payload error must identify observed and required bytes: {msg}"
+        );
     }
 
     #[test]
@@ -731,4 +845,3 @@ mod tests {
         );
     }
 }
-

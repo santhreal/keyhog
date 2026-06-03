@@ -13,12 +13,18 @@ fn nvme_gpu_ingest_specs_are_release_scale_and_gpu_resident() {
     );
 
     for spec in specs {
-        let total_bytes = spec
-            .total_bytes()
-            .unwrap_or_else(|| panic!("Fix: spec `{}` total byte count must not overflow.", spec.id));
-        let resident_bytes = spec
-            .resident_bytes()
-            .unwrap_or_else(|| panic!("Fix: spec `{}` resident byte count must not overflow.", spec.id));
+        let total_bytes = spec.total_bytes().unwrap_or_else(|| {
+            panic!(
+                "Fix: spec `{}` total byte count must not overflow.",
+                spec.id
+            )
+        });
+        let resident_bytes = spec.resident_bytes().unwrap_or_else(|| {
+            panic!(
+                "Fix: spec `{}` resident byte count must not overflow.",
+                spec.id
+            )
+        });
         assert!(
             total_bytes >= 4 * 1024 * 1024 * 1024,
             "Fix: spec `{}` must represent release-scale multi-GiB ingest.",
@@ -30,7 +36,8 @@ fn nvme_gpu_ingest_specs_are_release_scale_and_gpu_resident() {
             spec.id
         );
         assert!(
-            spec.total_reads().is_some_and(|reads| reads >= spec.slot_count),
+            spec.total_reads()
+                .is_some_and(|reads| reads >= spec.slot_count),
             "Fix: spec `{}` must cover at least one full ring of submissions.",
             spec.id
         );
@@ -53,7 +60,12 @@ fn nvme_gpu_ingest_registry_contains_release_zero_copy_cases() {
         );
         let case = registry
             .get(&vyre_bench::api::case::BenchId(spec.id.to_string()))
-            .unwrap_or_else(|| panic!("Fix: ingest benchmark spec `{}` must be retrievable.", spec.id));
+            .unwrap_or_else(|| {
+                panic!(
+                    "Fix: ingest benchmark spec `{}` must be retrievable.",
+                    spec.id
+                )
+            });
         assert!(
             case.active_in_suite(vyre_bench::api::suite::SuiteKind::Release),
             "Fix: ingest benchmark spec `{}` must be part of the release suite.",
@@ -76,10 +88,15 @@ fn nvme_gpu_ingest_registry_contains_release_zero_copy_cases() {
 #[test]
 fn nvme_gpu_ingest_metric_points_preserve_zero_cpu_bounce() {
     for spec in vyre_bench::cases::nvme_gpu_ingest::nvme_gpu_ingest_specs() {
-        let telemetry = vyre_bench::cases::nvme_gpu_ingest::synthesize_completed_ingest_telemetry(*spec)
-            .unwrap_or_else(|error| panic!("Fix: ingest spec `{}` must synthesize: {error}", spec.id));
+        let telemetry =
+            vyre_bench::cases::nvme_gpu_ingest::synthesize_completed_ingest_telemetry(*spec)
+                .unwrap_or_else(|error| {
+                    panic!("Fix: ingest spec `{}` must synthesize: {error}", spec.id)
+                });
         vyre_bench::cases::nvme_gpu_ingest::validate_zero_copy_ingest_telemetry(*spec, telemetry)
-            .unwrap_or_else(|error| panic!("Fix: ingest spec `{}` must validate: {error}", spec.id));
+            .unwrap_or_else(|error| {
+                panic!("Fix: ingest spec `{}` must validate: {error}", spec.id)
+            });
 
         let points =
             vyre_bench::cases::nvme_gpu_ingest::ingest_telemetry_metric_points(*spec, telemetry);
@@ -92,7 +109,9 @@ fn nvme_gpu_ingest_metric_points_preserve_zero_cpu_bounce() {
             "Fix: ingest metrics must never hide a CPU bounce copy."
         );
         assert!(
-            points.iter().any(|point| point.name == "inflight_reads" && point.value == 0),
+            points
+                .iter()
+                .any(|point| point.name == "inflight_reads" && point.value == 0),
             "Fix: completed ingest metrics must expose zero inflight reads."
         );
     }
@@ -103,7 +122,9 @@ fn nvme_gpu_ingest_validation_rejects_bounce_and_path_mixing() {
     for spec in vyre_bench::cases::nvme_gpu_ingest::nvme_gpu_ingest_specs() {
         let mut bounced =
             vyre_bench::cases::nvme_gpu_ingest::synthesize_completed_ingest_telemetry(*spec)
-                .unwrap_or_else(|error| panic!("Fix: ingest spec `{}` must synthesize: {error}", spec.id));
+                .unwrap_or_else(|error| {
+                    panic!("Fix: ingest spec `{}` must synthesize: {error}", spec.id)
+                });
         bounced.cpu_bounce_bytes = 1;
         assert!(
             matches!(
@@ -118,7 +139,9 @@ fn nvme_gpu_ingest_validation_rejects_bounce_and_path_mixing() {
 
         let mut mixed =
             vyre_bench::cases::nvme_gpu_ingest::synthesize_completed_ingest_telemetry(*spec)
-                .unwrap_or_else(|error| panic!("Fix: ingest spec `{}` must synthesize: {error}", spec.id));
+                .unwrap_or_else(|error| {
+                    panic!("Fix: ingest spec `{}` must synthesize: {error}", spec.id)
+                });
         match spec.path {
             NativeReadPath::RegisteredMappedRead => {
                 mixed.gpudirect_nvme_submissions = 1;

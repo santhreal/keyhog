@@ -15,10 +15,7 @@ pub struct CsrForwardOrChangedLaunchPlan {
 
 impl CsrForwardOrChangedLaunchPlan {
     #[must_use]
-    pub(crate) const fn new(
-        key: CsrForwardOrChangedProgramKey,
-        dispatch_grid: [u32; 3],
-    ) -> Self {
+    pub(crate) const fn new(key: CsrForwardOrChangedProgramKey, dispatch_grid: [u32; 3]) -> Self {
         Self { key, dispatch_grid }
     }
 

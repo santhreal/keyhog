@@ -466,7 +466,6 @@ fn generate_dashboard(output_dir: impl AsRef<str>) -> anyhow::Result<()> {
     Ok(())
 }
 
-
 fn find_latest_snapshot(dir: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
     if !dir.exists() {
         anyhow::bail!("snapshots directory does not exist: {}", dir.display());
@@ -810,4 +809,3 @@ fn generate_index_html(report: &ReportSchema, _scorecard_md: &str) -> String {
         rows = rows,
     )
 }
-

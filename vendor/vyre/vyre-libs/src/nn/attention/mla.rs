@@ -666,11 +666,17 @@ mod tests {
 
     #[test]
     fn mla_decode_zero_dim_errors() {
-        for (batch, seq, kv_heads, head_dim, latent) in
-            [(0, 1, 2, 2, 2), (1, 0, 2, 2, 2), (1, 1, 0, 2, 2), (1, 1, 2, 0, 2), (1, 1, 2, 2, 0)]
-        {
-            let err = mla_decode("q", "kv", "kr", "w_uk", "w_uv", "out", batch, seq, kv_heads, head_dim, latent)
-                .expect_err("zero dim must error");
+        for (batch, seq, kv_heads, head_dim, latent) in [
+            (0, 1, 2, 2, 2),
+            (1, 0, 2, 2, 2),
+            (1, 1, 0, 2, 2),
+            (1, 1, 2, 0, 2),
+            (1, 1, 2, 2, 0),
+        ] {
+            let err = mla_decode(
+                "q", "kv", "kr", "w_uk", "w_uv", "out", batch, seq, kv_heads, head_dim, latent,
+            )
+            .expect_err("zero dim must error");
             assert!(
                 err.contains("mla_decode") && err.contains("> 0"),
                 "mla_decode zero-dim ({batch},{seq},{kv_heads},{head_dim},{latent}): {err}"
@@ -678,4 +684,3 @@ mod tests {
         }
     }
 }
-

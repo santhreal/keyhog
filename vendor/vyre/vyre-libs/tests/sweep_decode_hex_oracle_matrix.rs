@@ -21,7 +21,8 @@ fn hex_decode_oracle_matrix_matches_independent_nibble_table() {
         let actual = run_hex_decode(&input);
         let expected = oracle_hex_decode_packed(&input);
         assert_eq!(
-            actual, expected,
+            actual,
+            expected,
             "Fix: hex_decode seed={seed} len={} must match the independent oracle.",
             input.len()
         );
@@ -38,7 +39,11 @@ fn hex_decode_oracle_matrix_matches_independent_nibble_table() {
 }
 
 fn run_hex_decode(input: &[u8]) -> Vec<u32> {
-    assert_eq!(input.len() % 2, 0, "hex oracle matrix requires even-length inputs");
+    assert_eq!(
+        input.len() % 2,
+        0,
+        "hex oracle matrix requires even-length inputs"
+    );
     let program = hex_decode("input", "output", input.len() as u32);
     let packed_input: Vec<u32> = input.iter().map(|&byte| u32::from(byte)).collect();
     let outputs = vyre_reference::reference_eval(
@@ -90,9 +95,7 @@ fn hostile_hex_input(seed: u32) -> Vec<u8> {
     let mut state = seed ^ 0x48EC_DECD;
     let mut input = Vec::with_capacity(pairs as usize * 2);
     for _ in 0..(pairs * 2) {
-        state = state
-            .wrapping_mul(1_103_515_245)
-            .wrapping_add(12_345);
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
         input.push(ALPHABET[(state as usize) % ALPHABET.len()]);
     }
     input

@@ -52,7 +52,7 @@ pub fn validate_csr_forward_or_changed_flag(changed: u32) -> Result<(), String> 
 /// Returns an actionable diagnostic when offsets are missing, non-monotonic,
 /// inconsistent with edge arrays, or when targets/kind masks have mismatched
 /// lengths.
-pub fn validate_csr_inputs(
+pub(crate) fn validate_csr_inputs(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],

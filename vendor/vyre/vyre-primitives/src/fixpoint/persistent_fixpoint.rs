@@ -181,9 +181,7 @@ where
         &mut current,
         &mut next,
     )
-    .expect(
-        "Fix: caller must size scratch for node_count; use try_cpu_ref on hostile layouts",
-    );
+    .expect("Fix: caller must size scratch for node_count; use try_cpu_ref on hostile layouts");
     (current, iters)
 }
 
@@ -202,10 +200,9 @@ pub fn cpu_ref_into<F>(
 where
     F: FnMut(&[u32], &mut [u32]),
 {
-    try_cpu_ref_into(seed, max_iterations, transfer_step, current, next)
-        .expect(
-            "Fix: caller must size scratch for node_count; use try_cpu_ref_into on hostile layouts",
-        )
+    try_cpu_ref_into(seed, max_iterations, transfer_step, current, next).expect(
+        "Fix: caller must size scratch for node_count; use try_cpu_ref_into on hostile layouts",
+    )
 }
 
 /// Fallible CPU oracle using caller-owned ping-pong buffers.

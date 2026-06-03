@@ -605,4 +605,3 @@ mod tests {
         assert!(p.stats().trap());
     }
 }
-

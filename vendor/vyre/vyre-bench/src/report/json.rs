@@ -15,6 +15,8 @@ pub struct ReportSchema {
     pub git: BTreeMap<String, String>,
     #[serde(default)]
     pub source_fingerprint: String,
+    #[serde(default)]
+    pub source_tree_fingerprint: String,
     pub environment: EnvironmentData,
     pub features: Vec<String>,
     pub cases: Vec<CaseReport>,

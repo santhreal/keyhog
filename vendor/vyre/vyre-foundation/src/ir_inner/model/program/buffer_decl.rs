@@ -488,6 +488,34 @@ impl BufferDecl {
         self.count
     }
 
+    /// Static packed byte length for fixed-size buffers.
+    ///
+    /// Returns `Ok(None)` for runtime-sized buffer declarations (`count == 0`)
+    /// and for fixed-count buffers whose element type is runtime-sized. Sub-byte
+    /// element types use their packed bit width, so three `I4` elements occupy
+    /// two bytes rather than three conservative one-byte lanes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an actionable diagnostic when the packed byte count overflows.
+    pub fn static_byte_len(&self) -> Result<Option<usize>, String> {
+        let count = usize::try_from(self.count).map_err(|error| {
+            format!(
+                "buffer `{}` static element count {} cannot fit usize ({error}). Fix: split the buffer or reduce its element count.",
+                self.name, self.count
+            )
+        })?;
+        if count == 0 {
+            return Ok(None);
+        }
+        self.element.packed_size_bytes(count).map_err(|error| {
+            format!(
+                "buffer `{}` static byte length could not be computed: {error}. Fix: use a fixed-width element type or split the buffer.",
+                self.name
+            )
+        })
+    }
+
     /// Return true when this buffer is the unique inlining result buffer.
     #[must_use]
     #[inline]
@@ -572,6 +600,35 @@ mod linear_type_tests {
     fn workgroup_constructor_defaults_to_unrestricted() {
         let buf = BufferDecl::workgroup("scratch", 64, DataType::U32);
         assert_eq!(buf.linear_type(), LinearType::Unrestricted);
+    }
+
+    #[test]
+    fn static_byte_len_uses_packed_subbyte_width() {
+        let buf = BufferDecl::read("packed_i4", 0, DataType::I4).with_count(3);
+        assert_eq!(
+            buf.static_byte_len()
+                .expect("Fix: packed I4 byte length must compute"),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn static_byte_len_marks_runtime_sized_buffers_dynamic() {
+        let zero_count = BufferDecl::read("dynamic_count", 0, DataType::U32);
+        assert_eq!(
+            zero_count
+                .static_byte_len()
+                .expect("Fix: zero-count buffer must be representable"),
+            None
+        );
+
+        let dynamic_element = BufferDecl::read("tensor", 0, DataType::Tensor).with_count(4);
+        assert_eq!(
+            dynamic_element
+                .static_byte_len()
+                .expect("Fix: runtime-sized element must be representable"),
+            None
+        );
     }
 }
 
@@ -721,4 +778,3 @@ mod shape_predicate_tests {
         );
     }
 }
-

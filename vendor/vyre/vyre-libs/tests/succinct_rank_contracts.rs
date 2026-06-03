@@ -92,7 +92,8 @@ fn rank_query_traps_out_of_bounds_offsets() {
         ],
     );
 
-    let err = result.expect_err("rank1_query must fail loudly when a query addresses a missing word");
+    let err =
+        result.expect_err("rank1_query must fail loudly when a query addresses a missing word");
     assert!(
         err.to_string().contains("rank-query-out-of-bounds"),
         "unexpected error: {err}"

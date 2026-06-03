@@ -1,6 +1,4 @@
-use super::layout::{
-    PersistentBfsBatchLayout, PersistentBfsFrontierLayout, PersistentBfsLayout,
-};
+use super::layout::{PersistentBfsBatchLayout, PersistentBfsFrontierLayout, PersistentBfsLayout};
 use super::program::bitset_words;
 
 /// Validate a persistent-BFS CSR graph layout.

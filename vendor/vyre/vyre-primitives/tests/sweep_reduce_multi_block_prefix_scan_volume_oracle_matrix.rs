@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "reduce", feature = "cpu-parity"))]
 
 use vyre_primitives::reduce::multi_block_prefix_scan;
@@ -18,7 +17,6 @@ fn lcg_u32(seed: u32, len: usize) -> Vec<u32> {
         })
         .collect()
 }
-
 
 fn oracle_inclusive(input: &[u32]) -> Vec<u32> {
     let mut out = Vec::with_capacity(input.len());

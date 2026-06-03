@@ -36,21 +36,29 @@ impl Buffer {
 
     pub(crate) fn len(&self) -> u32 {
         let bytes_guard = self.bytes.read().unwrap_or_else(|error| error.into_inner());
-        let stride = self.element.min_bytes();
-        let count = if stride == 0 {
-            bytes_guard.len()
+        let count = if let Some(bits) = self.element.bit_width() {
+            bytes_guard
+                .len()
+                .checked_mul(8)
+                .map(|total_bits| total_bits / bits)
+                .unwrap_or(usize::MAX)
+        } else if let Some(stride) = self.element.size_bytes() {
+            if stride == 0 {
+                bytes_guard.len()
+            } else {
+                bytes_guard.len() / stride
+            }
         } else {
-            bytes_guard.len() / stride
+            bytes_guard.len()
         };
         match u32::try_from(count) {
             Ok(value) => value,
             Err(_) => {
                 debug_assert!(
                     false,
-                    "Buffer::len overflowed u32::MAX for byte_len={}; stride={}; element={:?}. \
+                    "Buffer::len overflowed u32::MAX for byte_len={}; element={:?}. \
                      Fix: split or downsize the buffer so per-element indexing remains representable.",
                     bytes_guard.len(),
-                    stride,
                     self.element
                 );
                 u32::MAX

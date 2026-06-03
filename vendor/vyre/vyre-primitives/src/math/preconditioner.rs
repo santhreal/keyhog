@@ -448,7 +448,6 @@ mod tests {
 
     #[test]
     fn cpu_inverse_sqrt_recovers_identity_inverse() {
-
         // M = I → M^{-1/2} = I.
         let m = vec![1.0, 0.0, 0.0, 1.0];
         let result = newton_schulz_inverse_sqrt_cpu(&m, 2, 12);
@@ -532,4 +531,3 @@ mod tests {
         assert!(p.stats().trap());
     }
 }
-

@@ -29,10 +29,12 @@
 //!   - `tok_starts` (U32)  -  per-token byte offset.
 //!   - `tok_lens` (U32)  -  per-token byte length.
 //!   - `directive_kinds` (U32)  -  output of `gpu_directive_metadata`.
-//!   - `source` (U32 packed bytes)  -  original source bytes.
-//!   - `macro_names_packed` (U32 packed bytes), `macro_offsets` (U32),
-//!     `macro_values` (U32)  -  GNU/Clang builtin perfect-hash table followed by
-//!     the defined object-like macro integer values.
+//!   - `source` (U32 packed bytes for `gpu_if_expression`, raw U8 bytes for
+//!     `gpu_if_expression_u8`)  -  original source bytes.
+//!   - `macro_names_packed` (U32 packed bytes for `gpu_if_expression`, raw U8
+//!     bytes for `gpu_if_expression_u8`), `macro_offsets` (U32),
+//!     `macro_values` (U32)  -  GNU/Clang builtin perfect-hash table followed
+//!     by the defined object-like macro integer values.
 //!
 //! Outputs:
 //!   - `directive_values` (U32)  -  per-token value: `1`/`0` for
@@ -71,8 +73,10 @@ mod stack;
 #[cfg(test)]
 mod tests;
 
-use super::gpu_source_bytes::packed_source_byte_len_expr;
-use crate::scan::builders::load_packed_byte_expr;
+use super::gpu_source_bytes::{
+    safe_load_source_layout_byte_expr, source_buffer_element, source_byte_len_expr,
+    SourceByteLayout,
+};
 pub use abi::{
     BINDING_DIRECTIVE_KINDS, BINDING_DIRECTIVE_VALUES, BINDING_MACRO_NAMES_PACKED,
     BINDING_MACRO_OFFSETS, BINDING_MACRO_VALUES, BINDING_SOURCE, BINDING_TOK_LENS,
@@ -94,11 +98,51 @@ use vyre_primitives::hash::fnv1a::{fnv1a32_initial_expr, fnv1a32_update_byte_exp
 /// `Expr::buf_len("macro_names_packed")`. One program shape per process.
 #[must_use]
 pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
+    gpu_if_expression_with_byte_layouts(
+        num_tokens,
+        source_len,
+        SourceByteLayout::PackedU32,
+        SourceByteLayout::PackedU32,
+    )
+}
+
+/// Build the `#if`/`#elif` evaluator over raw `DataType::U8` source and macro
+/// name bytes.
+///
+/// Binding order and runtime-sized buffer shape are identical to the packed ABI,
+/// but byte buffers use `U8` so pipeline callers can avoid repacking retained
+/// source rows and macro names into U32 words.
+#[must_use]
+pub fn gpu_if_expression_u8(num_tokens: u32, source_len: u32) -> Program {
+    gpu_if_expression_with_byte_layouts(
+        num_tokens,
+        source_len,
+        SourceByteLayout::RawU8,
+        SourceByteLayout::RawU8,
+    )
+}
+
+fn gpu_if_expression_with_byte_layouts(
+    num_tokens: u32,
+    source_len: u32,
+    source_layout: SourceByteLayout,
+    macro_names_layout: SourceByteLayout,
+) -> Program {
     let _ = source_len;
-    let source_byte_len = packed_source_byte_len_expr();
+    let source_byte_len = source_byte_len_expr("source", source_layout);
+    let macro_names_byte_len = source_byte_len_expr("macro_names_packed", macro_names_layout);
     let t = Expr::var("t");
 
-    let safe_load_src = |addr: Expr| -> Expr { safe_load_src_expr(addr, source_byte_len.clone()) };
+    let safe_load_src =
+        |addr: Expr| -> Expr { safe_load_src_expr(source_layout, addr, source_byte_len.clone()) };
+    let safe_load_macro_name = |addr: Expr| -> Expr {
+        safe_load_source_layout_byte_expr(
+            "macro_names_packed",
+            macro_names_layout,
+            addr,
+            macro_names_byte_len.clone(),
+        )
+    };
 
     let mut body: Vec<Node> = Vec::new();
     body.push(Node::let_bind("t", Expr::InvocationId { axis: 0 }));
@@ -1054,14 +1098,7 @@ pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
                                                                             ),
                                                                             Node::let_bind(
                                                                                 "dmm_b",
-                                                                                Expr::select(
-                                                                                    Expr::lt(
-                                                                                        Expr::add(Expr::var("dm_s"), Expr::var("dmk")),
-                                                                                        Expr::mul(Expr::buf_len("macro_names_packed"), Expr::u32(4)),
-                                                                                    ),
-                                                                                    load_packed_byte_expr("macro_names_packed", Expr::add(Expr::var("dm_s"), Expr::var("dmk"))),
-                                                                                    Expr::u32(0),
-                                                                                ),
+                                                                                safe_load_macro_name(Expr::add(Expr::var("dm_s"), Expr::var("dmk"))),
                                                                             ),
                                                                             Node::if_then(
                                                                                 Expr::ne(Expr::var("dms_b"), Expr::var("dmm_b")),
@@ -1153,6 +1190,7 @@ pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
                                                     "bare_ident_base",
                                                     "tok_end",
                                                     "tok_len",
+                                                    source_layout,
                                                     source_byte_len.clone(),
                                                     "scan_pos",
                                                     "bare_found",
@@ -1294,14 +1332,7 @@ pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
                                                                             ),
                                                                             Node::let_bind(
                                                                                 "bmm_b",
-                                                                                Expr::select(
-                                                                                    Expr::lt(
-                                                                                        Expr::add(Expr::var("bm_s"), Expr::var("bmk")),
-                                                                                        Expr::mul(Expr::buf_len("macro_names_packed"), Expr::u32(4)),
-                                                                                    ),
-                                                                                    load_packed_byte_expr("macro_names_packed", Expr::add(Expr::var("bm_s"), Expr::var("bmk"))),
-                                                                                    Expr::u32(0),
-                                                                                ),
+                                                                                safe_load_macro_name(Expr::add(Expr::var("bm_s"), Expr::var("bmk"))),
                                                                             ),
                                                                             Node::if_then(
                                                                                 Expr::ne(Expr::var("bms_b"), Expr::var("bmm_b")),
@@ -1658,7 +1689,7 @@ pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
                 "source",
                 BINDING_SOURCE,
                 BufferAccess::ReadOnly,
-                DataType::U32,
+                source_buffer_element(source_layout),
             )
             .with_count(0),
             // Runtime-sized: count=0 marks the buffer as runtime-bound,
@@ -1668,7 +1699,7 @@ pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
                 "macro_names_packed",
                 BINDING_MACRO_NAMES_PACKED,
                 BufferAccess::ReadOnly,
-                DataType::U32,
+                source_buffer_element(macro_names_layout),
             )
             .with_count(0),
             BufferDecl::storage(

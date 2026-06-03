@@ -50,8 +50,7 @@ pub(crate) fn workgroup_memory(program: &Program) -> Result<FxHashMap<String, Bu
         .iter()
         .filter(|decl| decl.access() == BufferAccess::Workgroup)
     {
-        let element_size = decl.element().min_bytes();
-        let len = (decl . count () as usize) . checked_mul (element_size) . ok_or_else (| | { Error :: interp (format ! ("workgroup buffer `{}` byte size overflows usize. Fix: reduce count or element size." , decl . name ())) }) ? ;
+        let len = workgroup_byte_len(decl)?;
         allocated = allocated . checked_add (len) . ok_or_else (| | { Error :: interp ("total workgroup memory byte size overflows usize. Fix: reduce workgroup buffer declarations." ,) }) ? ;
         if allocated > MAX_WORKGROUP_BYTES {
             return Err(Error::interp(format!(
@@ -80,13 +79,7 @@ fn zero_existing_workgroup(
         let Some(buffer) = workgroup.get(decl.name()) else {
             return Ok(false);
         };
-        let element_size = decl.element().min_bytes();
-        let len = (decl.count() as usize).checked_mul(element_size).ok_or_else(|| {
-            Error::interp(format!(
-                "workgroup buffer `{}` byte size overflows usize. Fix: reduce count or element size.",
-                decl.name()
-            ))
-        })?;
+        let len = workgroup_byte_len(decl)?;
         if buffer.element() != &decl.element() || buffer.byte_len() != len {
             return Ok(false);
         }
@@ -98,6 +91,19 @@ fn zero_existing_workgroup(
         buffer.zero_fill();
     }
     Ok(true)
+}
+
+fn workgroup_byte_len(decl: &BufferDecl) -> Result<usize, Error> {
+    match decl.static_byte_len() {
+        Ok(Some(byte_len)) => Ok(byte_len),
+        Ok(None) if decl.count() == 0 => Ok(0),
+        Ok(None) => Err(Error::interp(format!(
+            "workgroup buffer `{}` has unsized element type {}. Fix: use a fixed-width workgroup element type.",
+            decl.name(),
+            decl.element()
+        ))),
+        Err(error) => Err(Error::interp(error)),
+    }
 }
 
 pub(crate) fn resolve_buffer<'a>(
@@ -196,6 +202,23 @@ mod tests {
         assert!(
             !std::sync::Arc::ptr_eq(&before, &after),
             "Fix: changed workgroup byte length must allocate a correctly-sized buffer."
+        );
+    }
+
+    #[test]
+    fn workgroup_memory_uses_packed_static_byte_len_for_i4() {
+        let program = Program::wrapped(
+            vec![BufferDecl::workgroup("scratch", 3, DataType::I4)],
+            [1, 1, 1],
+            Vec::<Node>::new(),
+        );
+        let memory =
+            workgroup_memory(&program).expect("Fix: packed I4 workgroup allocation must succeed.");
+
+        assert_eq!(
+            memory.get("scratch").expect("Fix: scratch must exist.").byte_len(),
+            2,
+            "Fix: three I4 workgroup elements must allocate two packed bytes, not three one-byte lanes."
         );
     }
 

@@ -161,13 +161,19 @@ mod tests {
     fn relevant_any_nonzero_use_is_ok() {
         assert_eq!(check_linear_use(LinearDiscipline::Relevant, 1), Ok(()));
         assert_eq!(check_linear_use(LinearDiscipline::Relevant, 5), Ok(()));
-        assert_eq!(check_linear_use(LinearDiscipline::Relevant, u32::MAX), Ok(()));
+        assert_eq!(
+            check_linear_use(LinearDiscipline::Relevant, u32::MAX),
+            Ok(())
+        );
     }
 
     #[test]
     fn unrestricted_accepts_anything() {
         for uses in [0u32, 1, 2, 100, u32::MAX] {
-            assert_eq!(check_linear_use(LinearDiscipline::Unrestricted, uses), Ok(()));
+            assert_eq!(
+                check_linear_use(LinearDiscipline::Unrestricted, uses),
+                Ok(())
+            );
         }
     }
 

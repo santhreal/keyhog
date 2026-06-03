@@ -16,18 +16,51 @@ use vyre_libs::parsing::rust::sema::resolve;
 /// Drive the pipeline under every config; it must return (never panic).
 fn run_all_configs(src: &[u8]) {
     let _ = RustPipeline::new(RustPipelineConfig::default()).compile_unit(src);
-    let borrow_on = RustPipelineConfig { gpu_lex: false, borrow_check: true, lower: false };
+    let borrow_on = RustPipelineConfig {
+        gpu_lex: false,
+        borrow_check: true,
+        lower: false,
+        lower_lane_count: None,
+    };
     let _ = RustPipeline::new(borrow_on).compile_unit(src);
 }
 
 /// A single nano-subset lexical token (so token soup frequently parses).
 fn token() -> impl Strategy<Value = &'static str> {
     prop_oneof![
-        Just("fn"), Just("let"), Just("mut"), Just("if"), Just("else"), Just("return"),
-        Just("i32"), Just("bool"), Just("true"), Just("false"),
-        Just("("), Just(")"), Just("{"), Just("}"), Just(";"), Just(":"), Just(","),
-        Just("->"), Just("&"), Just("*"), Just("+"), Just("-"), Just("<"), Just("=="), Just("="),
-        Just("x"), Just("y"), Just("z"), Just("f"), Just("g"), Just("0"), Just("1"), Just("42"),
+        Just("fn"),
+        Just("let"),
+        Just("mut"),
+        Just("if"),
+        Just("else"),
+        Just("return"),
+        Just("i32"),
+        Just("bool"),
+        Just("true"),
+        Just("false"),
+        Just("("),
+        Just(")"),
+        Just("{"),
+        Just("}"),
+        Just(";"),
+        Just(":"),
+        Just(","),
+        Just("->"),
+        Just("&"),
+        Just("*"),
+        Just("+"),
+        Just("-"),
+        Just("<"),
+        Just("=="),
+        Just("="),
+        Just("x"),
+        Just("y"),
+        Just("z"),
+        Just("f"),
+        Just("g"),
+        Just("0"),
+        Just("1"),
+        Just("42"),
     ]
 }
 

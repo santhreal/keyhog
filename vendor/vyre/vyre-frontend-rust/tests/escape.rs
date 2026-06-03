@@ -21,19 +21,29 @@ fn check_src(src: &str) -> Result<(), RustSemaError> {
 #[test]
 fn rejects_returning_reference_to_local_let() {
     let err = check_src("fn f() -> &i32 { let x: i32 = 0; return &x; }").unwrap_err();
-    assert!(matches!(err, RustSemaError::ReturnsReferenceToLocal { .. }), "got {err:?}");
+    assert!(
+        matches!(err, RustSemaError::ReturnsReferenceToLocal { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]
 fn rejects_returning_reference_to_value_parameter() {
     let err = check_src("fn f(x: i32) -> &i32 { return &x; }").unwrap_err();
-    assert!(matches!(err, RustSemaError::ReturnsReferenceToLocal { .. }), "got {err:?}");
+    assert!(
+        matches!(err, RustSemaError::ReturnsReferenceToLocal { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]
 fn rejects_returning_local_borrow_indirectly() {
-    let err = check_src("fn f() -> &i32 { let x: i32 = 0; let a: &i32 = &x; return a; }").unwrap_err();
-    assert!(matches!(err, RustSemaError::ReturnsReferenceToLocal { .. }), "got {err:?}");
+    let err =
+        check_src("fn f() -> &i32 { let x: i32 = 0; let a: &i32 = &x; return a; }").unwrap_err();
+    assert!(
+        matches!(err, RustSemaError::ReturnsReferenceToLocal { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]

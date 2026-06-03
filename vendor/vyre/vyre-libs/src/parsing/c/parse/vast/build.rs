@@ -27,9 +27,8 @@ pub(super) use declaration_kind::{
 pub(super) use enclosing_function::emit_enclosing_function_lparen_for_index;
 pub(super) use helpers::{
     emit_declaration_kind_result_assignment, emit_identifier_source_hash_for_index,
-    vast_bounded_row_kind_expr, vast_prior_row_kind_expr, vast_row_base_expr,
-    vast_row_field_expr, vast_row_kind_expr, vast_row_kind_from_base_expr,
-    vast_row_parent_from_base_expr,
+    vast_bounded_row_kind_expr, vast_prior_row_kind_expr, vast_row_base_expr, vast_row_field_expr,
+    vast_row_kind_expr, vast_row_kind_from_base_expr, vast_row_parent_from_base_expr,
 };
 pub(super) use identifier_hash::emit_identifier_hash_for_row;
 pub(super) use scope_lookup::{emit_scope_open_for_index, emit_scope_open_scan_assign_for_index};

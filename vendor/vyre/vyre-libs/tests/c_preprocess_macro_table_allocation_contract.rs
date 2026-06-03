@@ -32,8 +32,8 @@ fn macro_table_staging_uses_checked_fallible_allocation_paths() {
     assert_contains_all(
         &macro_table,
         &[
-            "let name_word_slots = macros",
-            "let replacement_word_slots = macros",
+            "let name_byte_slots = macros",
+            "let replacement_byte_slots = macros",
             "reserve_macro_table_vec(\n            &mut pending,",
         ],
         "macro expansion table packing must precompute and reserve expansion table storage",

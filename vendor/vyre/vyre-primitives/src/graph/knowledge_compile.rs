@@ -30,6 +30,18 @@ pub const OR_NODE: u32 = 4;
 
 /// Op id for the GPU-shaped d-DNNF evaluator.
 pub const OP_ID: &str = "vyre-primitives::graph::ddnnf_evaluate";
+/// One lane per compiled d-DNNF node in a bottom-up evaluation wave.
+pub const DDNNF_EVALUATE_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid that covers every compiled d-DNNF node lane.
+#[must_use]
+pub const fn ddnnf_evaluate_dispatch_grid(n_nodes: u32) -> [u32; 3] {
+    let lanes_per_block = DDNNF_EVALUATE_WORKGROUP_SIZE[0];
+    let full_blocks = n_nodes / lanes_per_block;
+    let tail_block = if n_nodes % lanes_per_block == 0 { 0 } else { 1 };
+    let blocks = full_blocks + tail_block;
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
 
 /// Emit one bottom-up d-DNNF evaluation step. The dispatch is
 /// `n_nodes` lanes; each lane evaluates one node from already-evaluated
@@ -235,7 +247,7 @@ pub fn try_ddnnf_evaluate(
                 .with_count(n_vars),
             BufferDecl::storage(out, 6, BufferAccess::ReadWrite, DataType::U32).with_count(n_nodes),
         ],
-        [256, 1, 1],
+        DDNNF_EVALUATE_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
@@ -689,8 +701,13 @@ mod tests {
     fn generated_cpu_oracle_matches_independent_ddnnf_evaluator() {
         let mut out = Vec::new();
         let mut scratch = DdnnfCpuScratch::new();
-        for case in 0..2048usize {
-            let n_literals = 1 + case % 6;
+        for case in 0..4096usize {
+            let n_literals = match case {
+                1 => 256,
+                2 => 257,
+                3 => 1025,
+                _ => 1 + case % 6,
+            };
             let n_nodes = n_literals + 4;
             let n_vars = 1 + (case / 7) % 6;
             let mut nodes = Vec::new();
@@ -800,13 +817,22 @@ mod tests {
             2,
         );
         assert_eq!(program.buffers().len(), 7);
-        assert_eq!(program.workgroup_size(), [256, 1, 1]);
+        assert_eq!(program.workgroup_size(), DDNNF_EVALUATE_WORKGROUP_SIZE);
         assert!(
             program
                 .entry()
                 .iter()
                 .any(|node| matches!(node, vyre_foundation::ir::Node::Region { generator, .. } if generator.as_str() == OP_ID))
         );
+    }
+
+    #[test]
+    fn dispatch_grid_packs_ddnnf_nodes_into_workgroups() {
+        assert_eq!(ddnnf_evaluate_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(ddnnf_evaluate_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(ddnnf_evaluate_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(ddnnf_evaluate_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(ddnnf_evaluate_dispatch_grid(1025), [5, 1, 1]);
     }
 
     #[test]
@@ -896,4 +922,3 @@ mod tests {
         );
     }
 }
-

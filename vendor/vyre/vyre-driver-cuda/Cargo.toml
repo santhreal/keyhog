@@ -48,9 +48,9 @@ libc.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 serde_json.workspace = true
-vyre.workspace = true
-vyre-reference.workspace = true
-vyre-primitives = { workspace = true, features = ["decode", "math", "cpu-parity"] }
-vyre-self-substrate = { workspace = true, features = ["cpu-parity"] }
-vyre-libs.workspace = true
+vyre = { path = "../vyre-core" }
+vyre-reference = { path = "../vyre-reference" }
+vyre-primitives = { path = "../vyre-primitives", features = ["decode", "math", "text", "cpu-parity"] }
+vyre-self-substrate = { path = "../vyre-self-substrate", features = ["cpu-parity"] }
+vyre-libs = { path = "../vyre-libs", features = ["c-parser"] }
 pollster.workspace = true

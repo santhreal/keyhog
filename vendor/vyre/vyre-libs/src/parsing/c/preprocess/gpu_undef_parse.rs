@@ -29,9 +29,9 @@
 //! by the directive row length, not by a compile-time identifier cap.
 
 use super::gpu_directive_parse_shared::{
-    directive_program_from_parse, push_c_identifier_span, push_directive_row_bounds,
-    push_hash_and_keyword_start, push_keyword_end, push_ws_skip_from_expr, DirectiveOutputColumn,
-    DirectiveThreadLayout,
+    directive_program_from_parse_with_source_layout, push_c_identifier_span,
+    push_directive_row_bounds, push_hash_and_keyword_start, push_keyword_end,
+    push_ws_skip_from_expr, DirectiveOutputColumn, DirectiveSourceLayout, DirectiveThreadLayout,
 };
 use crate::parsing::c::lex::tokens::TOK_PP_UNDEF;
 use vyre::ir::{Expr, Node, Program};
@@ -76,14 +76,29 @@ const UNDEF_KW_LEN: u32 = 5;
 /// is unused.
 #[must_use]
 pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
+    gpu_undef_parse_with_source_layout(num_tokens, source_len, DirectiveSourceLayout::PackedU32)
+}
+
+/// Build the `#undef` row parser over raw `DataType::U8` source bytes.
+#[must_use]
+pub fn gpu_undef_parse_u8(num_tokens: u32, source_len: u32) -> Program {
+    gpu_undef_parse_with_source_layout(num_tokens, source_len, DirectiveSourceLayout::RawU8)
+}
+
+fn gpu_undef_parse_with_source_layout(
+    num_tokens: u32,
+    source_len: u32,
+    source_layout: DirectiveSourceLayout,
+) -> Program {
     let t = Expr::var("t");
 
     let mut parse: Vec<Node> = Vec::new();
     push_directive_row_bounds(&mut parse);
-    push_hash_and_keyword_start(&mut parse);
+    push_hash_and_keyword_start(&mut parse, source_layout);
     push_keyword_end(&mut parse, Expr::u32(UNDEF_KW_LEN));
     push_ws_skip_from_expr(
         &mut parse,
+        source_layout,
         "np",
         Expr::var("post_kw"),
         "name_skip",
@@ -93,7 +108,13 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
     // Scan to the directive row end. This removes the old 64-byte
     // macro-name cap while preserving C identifier start/continue
     // semantics.
-    push_c_identifier_span(&mut parse, "name_start_val", "name_len_val", "name_done");
+    push_c_identifier_span(
+        &mut parse,
+        source_layout,
+        "name_start_val",
+        "name_len_val",
+        "name_done",
+    );
     parse.push(Node::let_bind(
         "valid_name",
         Expr::select(
@@ -119,10 +140,11 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
         ],
     ));
 
-    directive_program_from_parse(
+    directive_program_from_parse_with_source_layout(
         OP_ID,
         num_tokens,
         source_len,
+        source_layout,
         &OUTPUT_COLUMNS,
         DirectiveThreadLayout::InvocationId,
         Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_UNDEF)),
@@ -133,6 +155,7 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vyre::ir::DataType;
 
     #[test]
     fn op_id_is_canonical_and_stable() {
@@ -147,5 +170,26 @@ mod tests {
         let p = gpu_undef_parse(8, 64);
         assert_eq!(p.buffers().len(), 6);
         assert_eq!(p.workgroup_size(), [256, 1, 1]);
+    }
+
+    #[test]
+    fn source_buffer_layouts_preserve_packed_abi_and_raw_u8_variant() {
+        let packed = gpu_undef_parse(8, 64);
+        let raw_u8 = gpu_undef_parse_u8(8, 64);
+        let packed_source = packed
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: packed undef parser source buffer must exist");
+        let raw_u8_source = raw_u8
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: raw-U8 undef parser source buffer must exist");
+
+        assert_eq!(packed_source.element(), DataType::U32);
+        assert_ne!(packed_source.count(), 0);
+        assert_eq!(raw_u8_source.element(), DataType::U8);
+        assert_eq!(raw_u8_source.count(), 0);
     }
 }

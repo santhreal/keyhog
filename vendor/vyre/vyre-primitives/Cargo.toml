@@ -36,7 +36,7 @@ vyre-foundation = ["dep:vyre-foundation"]
 # Per-domain Tier 2.5 feature flags. See docs/primitives-tier.md.
 # Every domain pulls vyre-foundation  -  every primitive ships CPU
 # reference + GPU `fn(...) -> Program` builder together.
-text = ["vyre-foundation"]
+text = ["vyre-foundation", "reduce"]
 matching = ["vyre-foundation"]
 decode = ["vyre-foundation"]
 # Subgroup-cooperative NFA step (G1). Composes bitset + matching.
@@ -97,11 +97,11 @@ inventory = { workspace = true, optional = true }
 bytemuck.workspace = true
 
 [dev-dependencies]
-vyre-reference = { workspace = true }
-vyre-foundation.workspace = true
+vyre-reference = { path = "../vyre-reference" }
+vyre-foundation = { path = "../vyre-foundation" }
 proptest.workspace = true
-vyre-driver-cuda = { workspace = true }
-vyre-driver = { workspace = true }
+vyre-driver-cuda = { path = "../vyre-driver-cuda" }
+vyre-driver = { path = "../vyre-driver" }
 criterion.workspace = true
 
 [package.metadata.docs.rs]
@@ -182,9 +182,29 @@ path = "tests/adversarial_text_char_class.rs"
 required-features = ["text"]
 
 [[test]]
+name = "adversarial_text_extra"
+path = "tests/adversarial_text_extra.rs"
+required-features = ["text", "cpu-parity"]
+
+[[test]]
 name = "adversarial_text_line_index"
 path = "tests/adversarial_text_line_index.rs"
 required-features = ["text"]
+
+[[test]]
+name = "proptest_text_line_index"
+path = "tests/proptest_text_line_index.rs"
+required-features = ["text", "cpu-parity"]
+
+[[test]]
+name = "proptest_text_encoding_classify"
+path = "tests/proptest_text_encoding_classify.rs"
+required-features = ["text", "cpu-parity"]
+
+[[test]]
+name = "proptest_text_utf8_validate"
+path = "tests/proptest_text_utf8_validate.rs"
+required-features = ["text", "cpu-parity"]
 
 [[test]]
 name = "adversarial_text_utf8_validate"
@@ -205,6 +225,21 @@ required-features = ["graph", "fixpoint", "math", "cpu-parity"]
 name = "adversarial_graph_csr_validation_contracts"
 path = "tests/adversarial_graph_csr_validation_contracts.rs"
 required-features = ["graph"]
+
+[[test]]
+name = "proptest_csr_frontier_queue"
+path = "tests/proptest_csr_frontier_queue.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "proptest_csr_queue_strided"
+path = "tests/proptest_csr_queue_strided.rs"
+required-features = ["graph", "cpu-parity"]
+
+[[test]]
+name = "proptest_csr_queue_split"
+path = "tests/proptest_csr_queue_split.rs"
+required-features = ["graph", "cpu-parity"]
 
 [[test]]
 name = "adversarial_boolean_packing_four_russians_readiness"
@@ -353,6 +388,10 @@ required-features = ["math", "cpu-parity"]
 [[test]]
 name = "sweep_math_prefix_scan_exclusive_volume_oracle_matrix"
 path = "tests/sweep_math_prefix_scan_exclusive_volume_oracle_matrix.rs"
+required-features = ["math", "cpu-parity"]
+[[test]]
+name = "proptest_prefix_scan_large"
+path = "tests/proptest_prefix_scan_large.rs"
 required-features = ["math", "cpu-parity"]
 [[test]]
 name = "sweep_decode_hex_primitives_volume_oracle_matrix"

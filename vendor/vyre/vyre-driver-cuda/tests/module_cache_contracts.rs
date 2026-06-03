@@ -1,10 +1,19 @@
 //! CUDA module-cache performance contracts.
 
 mod common;
-use common::{bytes_u32, u32_bytes};
+use common::{bytes_u32, resident_dispatch_source, u32_bytes};
 use vyre_driver::DispatchConfig;
 use vyre_driver_cuda::CudaBackend;
 use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
+
+fn egraph_kernel_plan_source() -> String {
+    [
+        include_str!("../src/egraph_kernel_plan.rs"),
+        include_str!("../src/egraph_kernel_plan/backend_structural.rs"),
+        include_str!("../src/egraph_kernel_plan/backend_rewrite.rs"),
+    ]
+    .join("\n")
+}
 
 #[test]
 fn repeated_dispatch_reuses_loaded_cuda_module() {
@@ -247,9 +256,9 @@ fn cuda_module_keying_reuses_ptx_source_digest_instead_of_rehashing_full_ptx() {
     let capabilities = include_str!("../src/backend/capabilities.rs");
     let dispatch = include_str!("../src/backend/dispatch.rs");
     let host_dispatch = include_str!("../src/backend/host_dispatch.rs");
-    let resident_dispatch = include_str!("../src/backend/resident_dispatch.rs");
+    let resident_dispatch = resident_dispatch_source();
     let cuda_graph = include_str!("../src/backend/cuda_graph.rs");
-    let egraph = include_str!("../src/egraph_kernel_plan.rs");
+    let egraph = egraph_kernel_plan_source();
     let pipeline = include_str!("../src/pipeline.rs");
 
     assert!(

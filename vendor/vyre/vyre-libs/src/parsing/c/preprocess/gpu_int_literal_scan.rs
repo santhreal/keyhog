@@ -547,4 +547,3 @@ mod tests {
         assert_eq!(run_literal_scan(b"0b1010'0101WB", 0), (165, 13));
     }
 }
-

@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "reduce", feature = "cpu-parity"))]
 
 use vyre_primitives::reduce::histogram;
@@ -19,7 +18,6 @@ fn lcg_u32(seed: u32, len: usize) -> Vec<u32> {
         .collect()
 }
 
-
 fn oracle(input: &[u32], num_bins: u32) -> Vec<u32> {
     let mut out = vec![0u32; num_bins as usize];
     for &bin in input {
@@ -32,13 +30,11 @@ fn oracle(input: &[u32], num_bins: u32) -> Vec<u32> {
     out
 }
 
-
 const CASES: usize = 16384;
 
 #[test]
 fn sweep_reduce_histogram_volume_oracle_matrix() {
     for idx in 0..CASES {
-        
         let input = lcg_u32(idx as u32, 1 + (idx % 96));
         let num_bins = (4 + (idx % 32)) as u32;
         let expected = oracle(&input, num_bins);

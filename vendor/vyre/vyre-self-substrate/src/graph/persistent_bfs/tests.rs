@@ -66,6 +66,34 @@ impl OptimizerDispatcher for RecordingPersistentBfsDispatcher {
     }
 }
 
+struct LargeScratchPersistentBfsDispatcher {
+    outputs: Vec<Vec<u8>>,
+}
+
+impl OptimizerDispatcher for LargeScratchPersistentBfsDispatcher {
+    fn dispatch(
+        &self,
+        _program: &Program,
+        inputs: &[Vec<u8>],
+        grid_override: Option<[u32; 3]>,
+    ) -> Result<Vec<Vec<u8>>, DispatchError> {
+        assert_eq!(grid_override, Some([3, 1, 1]));
+        if inputs.len() != 8 {
+            return Err(DispatchError::BadInputs(format!(
+                "Fix: large persistent BFS test dispatcher expected 8 inputs, got {}.",
+                inputs.len()
+            )));
+        }
+        if inputs[7].len() != 12 {
+            return Err(DispatchError::BadInputs(format!(
+                "Fix: large persistent BFS changed scratch must allocate 12 bytes, got {}.",
+                inputs[7].len()
+            )));
+        }
+        Ok(self.outputs.clone())
+    }
+}
+
 #[derive(Default)]
 struct ResidentPersistentBfsDispatcher {
     next_handle: RefCell<u64>,
@@ -292,6 +320,37 @@ fn via_into_rejects_non_boolean_changed_flag_readback() {
         "frontier readback remains available for diagnostics even when the scalar flag is malformed"
     );
     assert_eq!(frontier.capacity(), capacity);
+}
+
+#[test]
+fn via_large_graph_allocates_changed_active_scratch_without_extra_outputs() {
+    let node_count = 513u32;
+    let words = ((node_count + 31) / 32) as usize;
+    let dispatcher = LargeScratchPersistentBfsDispatcher {
+        outputs: vec![
+            u32_slice_to_le_bytes(&vec![0u32; words]),
+            u32_slice_to_le_bytes(&[0, 0, 0]),
+        ],
+    };
+    let edge_offsets = vec![0u32; node_count as usize + 1];
+    let frontier_in = vec![0u32; words];
+    let mut frontier = Vec::new();
+
+    let changed = bfs_expand_via_into(
+        &dispatcher,
+        node_count,
+        &edge_offsets,
+        &[],
+        &[],
+        &frontier_in,
+        0xFFFF_FFFF,
+        64,
+        &mut frontier,
+    )
+    .expect("Fix: large persistent BFS dispatch should allocate internal active scratch.");
+
+    assert_eq!(changed, 0);
+    assert_eq!(frontier, vec![0u32; words]);
 }
 
 #[test]
@@ -920,8 +979,7 @@ fn bfs_expand_via_scratch_caches_static_graph_inputs() {
     assert!(
         dispatch_source.contains("(5, DispatchInput::u32_slice(frontier_in))")
             && dispatch_source.contains("DispatchInput::zero_u32_words(words, \"bfs_expand_via frontier_out\")")
-            && dispatch_source.contains("DispatchInput::zero_u32_words(1, \"bfs_expand_via changed\")"),
+            && dispatch_source.contains("DispatchInput::zero_u32_words(changed_words, \"bfs_expand_via changed\")"),
         "Fix: repeated persistent BFS dispatches must rewrite only frontier, output, and changed slots."
     );
 }
-

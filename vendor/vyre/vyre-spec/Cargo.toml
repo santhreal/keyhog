@@ -20,8 +20,8 @@ smallvec.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 serde_json.workspace = true
-vyre-foundation.workspace = true
-vyre-primitives.workspace = true
+vyre-foundation = { path = "../vyre-foundation" }
+vyre-primitives = { path = "../vyre-primitives" }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -33,7 +33,14 @@ fn verdicts(src: &str) -> (bool, bool) {
 
     let output = std::process::Command::new("rustc")
         .arg("+nightly")
-        .args(["--edition", "2021", "--crate-type", "lib", "--cap-lints", "allow"])
+        .args([
+            "--edition",
+            "2021",
+            "--crate-type",
+            "lib",
+            "--cap-lints",
+            "allow",
+        ])
         .arg("-Znll-facts")
         .arg(format!("-Znll-facts-dir={}", facts_dir.display()))
         .args(["--emit", "metadata"])
@@ -102,14 +109,21 @@ const REJECT: &[&str] = &[
 fn generate_borrow_program(seed: u64) -> String {
     let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
     let mut next = || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (state >> 33) as u32
     };
     let nvars = 2 + (next() % 3) as usize; // 2..=4
     let var_mut: Vec<bool> = (0..nvars).map(|_| next() % 2 == 0).collect();
     let mut s = String::from("pub fn f() {");
     for (i, &m) in var_mut.iter().enumerate() {
-        s.push_str(&format!(" let {}v{}: i32 = {};", if m { "mut " } else { "" }, i, i));
+        s.push_str(&format!(
+            " let {}v{}: i32 = {};",
+            if m { "mut " } else { "" },
+            i,
+            i
+        ));
     }
     let nops = (next() % 8) as usize;
     let mut borrows = 0usize;
@@ -141,14 +155,21 @@ fn generate_borrow_program(seed: u64) -> String {
 fn generate_branch_program(seed: u64) -> String {
     let mut state = seed ^ 0x2545_F491_4F6C_DD1D;
     let mut next = || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (state >> 33) as u32
     };
     let nvars = 2 + (next() % 3) as usize;
     let var_mut: Vec<bool> = (0..nvars).map(|_| next() % 2 == 0).collect();
     let mut s = String::from("pub fn f() {");
     for (i, &m) in var_mut.iter().enumerate() {
-        s.push_str(&format!(" let {}v{}: i32 = {};", if m { "mut " } else { "" }, i, i));
+        s.push_str(&format!(
+            " let {}v{}: i32 = {};",
+            if m { "mut " } else { "" },
+            i,
+            i
+        ));
     }
     let nborrows = 1 + (next() % 4) as usize;
     let mut borrows = 0usize;
@@ -160,7 +181,7 @@ fn generate_branch_program(seed: u64) -> String {
         borrows += 1;
     }
     let mut uses = 0u32;
-    let mut arm = |s: &mut String, n: u32, next: &mut dyn FnMut() -> u32, uses: &mut u32| {
+    let arm = |s: &mut String, n: u32, next: &mut dyn FnMut() -> u32, uses: &mut u32| {
         for _ in 0..n {
             if borrows > 0 {
                 let bk = (next() as usize) % borrows;
@@ -183,7 +204,9 @@ fn run_fuzz(cases: u64, gen: impl Fn(u64) -> String) -> Vec<String> {
         let src = gen(seed);
         let (rustc_accepts, our_accepts) = verdicts(&src);
         if rustc_accepts != our_accepts {
-            mismatches.push(format!("seed {seed}: rustc={rustc_accepts} ours={our_accepts}: {src}"));
+            mismatches.push(format!(
+                "seed {seed}: rustc={rustc_accepts} ours={our_accepts}: {src}"
+            ));
         }
     }
     mismatches
@@ -241,7 +264,14 @@ fn our_nll_verdict_matches_rustc_on_realistic_module() {
 
     let output = std::process::Command::new("rustc")
         .arg("+nightly")
-        .args(["--edition", "2021", "--crate-type", "lib", "--cap-lints", "allow"])
+        .args([
+            "--edition",
+            "2021",
+            "--crate-type",
+            "lib",
+            "--cap-lints",
+            "allow",
+        ])
         .arg("-Znll-facts")
         .arg(format!("-Znll-facts-dir={}", facts_dir.display()))
         .args(["--emit", "metadata"])
@@ -266,13 +296,20 @@ fn our_nll_verdict_matches_rustc_on_realistic_module() {
         checked += 1;
         let facts = load_facts(|name| read_relation(&fn_dir, name));
         if !facts.accepts() {
-            let name = fn_dir.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
+            let name = fn_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+                .to_string();
             rejected.push(name);
         }
     }
     let _ = std::fs::remove_dir_all(&base);
 
-    assert!(checked >= 12, "expected facts for all functions, got {checked}");
+    assert!(
+        checked >= 12,
+        "expected facts for all functions, got {checked}"
+    );
     assert!(
         rejected.is_empty(),
         "our NLL rule false-positived on real code rustc accepts: {rejected:?}"
@@ -295,7 +332,10 @@ fn our_nll_verdict_matches_rustc_on_accept_corpus() {
 fn our_nll_verdict_matches_rustc_on_reject_corpus() {
     for (i, src) in REJECT.iter().enumerate() {
         let (rustc_accepts, our_accepts) = verdicts(src);
-        assert!(!rustc_accepts, "REJECT[{i}] must be rejected by rustc: {src}");
+        assert!(
+            !rustc_accepts,
+            "REJECT[{i}] must be rejected by rustc: {src}"
+        );
         assert!(
             !our_accepts,
             "REJECT[{i}]: our NLL rule accepted what rustc rejects: {src}"

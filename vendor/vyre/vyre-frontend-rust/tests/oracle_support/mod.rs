@@ -36,9 +36,7 @@ pub(crate) fn lexer_parity(source: &[u8]) -> OracleResult {
 
     let ours = match lex(source) {
         Ok(t) => t,
-        Err(off) => {
-            return OracleResult::Mismatch(format!("substrate lexer failed at byte {off}"))
-        }
+        Err(off) => return OracleResult::Mismatch(format!("substrate lexer failed at byte {off}")),
     };
 
     // Substrate content tokens (drop the synthetic EOF), as (start, text).

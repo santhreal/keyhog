@@ -437,7 +437,6 @@ impl GpuBufferHandle {
         if out.len() == visible_len {
             out.copy_from_slice(visible);
         } else {
-            out.clear();
             if visible_len > out.capacity() {
                 let additional = visible_len - out.capacity();
                 out.try_reserve_exact(additional).map_err(|source| {
@@ -446,6 +445,7 @@ impl GpuBufferHandle {
                     ))
                 })?;
             }
+            out.clear();
             out.extend_from_slice(visible);
         }
         drop(mapped);
@@ -1095,4 +1095,3 @@ mod tests {
         );
     }
 }
-

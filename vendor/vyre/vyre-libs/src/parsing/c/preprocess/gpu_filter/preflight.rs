@@ -1,16 +1,15 @@
 use super::{
-    TRANSFORM_BLOCK_COMMENT, TRANSFORM_LINE_COMMENT, TRANSFORM_LINE_SPLICE, TRANSFORM_LITERAL_QUOTE,
+    program_helpers::source_byte_load, TRANSFORM_BLOCK_COMMENT, TRANSFORM_LINE_COMMENT,
+    TRANSFORM_LINE_SPLICE, TRANSFORM_LITERAL_QUOTE,
 };
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-pub(super) fn transform_candidate_program(n: u32) -> Program {
+pub(super) fn transform_candidate_program(_n: u32) -> Program {
     let i = Expr::var("i");
-    let load_byte_u32 =
-        |addr: Expr| -> Expr { crate::scan::builders::load_packed_byte_expr("bytes_in", addr) };
     let load_next = |addr: Expr| -> Expr {
         Expr::select(
             Expr::lt(addr.clone(), Expr::load("transform_n_real", Expr::u32(0))),
-            load_byte_u32(addr),
+            source_byte_load("bytes_in", addr),
             Expr::u32(0),
         )
     };
@@ -19,7 +18,7 @@ pub(super) fn transform_candidate_program(n: u32) -> Program {
         Node::if_then(
             Expr::lt(i.clone(), Expr::load("transform_n_real", Expr::u32(0))),
             vec![
-                Node::let_bind("b0", load_byte_u32(i.clone())),
+                Node::let_bind("b0", source_byte_load("bytes_in", i.clone())),
                 Node::let_bind("b1", load_next(Expr::add(i.clone(), Expr::u32(1)))),
                 Node::let_bind(
                     "opens_line_comment",
@@ -97,10 +96,9 @@ pub(super) fn transform_candidate_program(n: u32) -> Program {
     ];
     Program::wrapped(
         vec![
-            BufferDecl::storage("bytes_in", 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n.div_ceil(4).max(1)),
+            BufferDecl::storage("bytes_in", 0, BufferAccess::ReadOnly, DataType::U8).with_count(0),
             BufferDecl::storage("transform_flag", 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(n.max(1)),
+                .with_count(1),
             BufferDecl::storage("transform_n_real", 2, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(1),
         ],

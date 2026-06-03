@@ -139,10 +139,7 @@ pub(super) fn emit_post_paren_boundary_scan(
                             Expr::or(
                                 Expr::eq(Expr::var(scan_token_name), Expr::u32(TOK_LBRACE)),
                                 Expr::and(
-                                    Expr::eq(
-                                        Expr::var(scan_token_name),
-                                        Expr::u32(TOK_SEMICOLON),
-                                    ),
+                                    Expr::eq(Expr::var(scan_token_name), Expr::u32(TOK_SEMICOLON)),
                                     Expr::eq(
                                         Expr::var(scan_name),
                                         Expr::add(matched_rparen.clone(), Expr::u32(1)),

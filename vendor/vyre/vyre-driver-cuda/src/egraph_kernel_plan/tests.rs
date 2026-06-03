@@ -5,6 +5,32 @@ use crate::egraph_kernel_plan::args::{EGraphStructuralKernelArgs, EGraphCanonica
 use crate::plan_cuda_egraph_device_upload;
 use vyre_foundation::optimizer::eqsat_gpu::GpuEGraphSnapshot;
 
+/// Production source of the e-graph kernel planner, concatenated across the
+/// aggregator and every submodule (the `fast-path module splits` refactor
+/// moved helpers out of `egraph_kernel_plan.rs` into submodules). Each file's
+/// `#[cfg(test)]` tail is stripped, so source-scan contracts see only release
+/// code and counts are preserved regardless of which submodule owns a helper.
+fn planner_production_source() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut sources =
+        vec![std::fs::read_to_string(format!("{manifest}/src/egraph_kernel_plan.rs")).unwrap_or_default()];
+    if let Ok(entries) = std::fs::read_dir(format!("{manifest}/src/egraph_kernel_plan")) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("rs")
+                && path.file_name().and_then(|n| n.to_str()) != Some("tests.rs")
+            {
+                sources.push(std::fs::read_to_string(&path).unwrap_or_default());
+            }
+        }
+    }
+    sources
+        .iter()
+        .map(|s| s.split("#[cfg(test)]").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn synthetic_view(rows: usize, children: usize, groups: usize) -> CudaEGraphDeviceKernelView {
     assert!(groups <= rows);
     assert!(children <= rows.saturating_mul(2));
@@ -238,11 +264,7 @@ fn resident_snapshot_try_constructors_match_infallible_snapshots() {
 
 #[test]
 fn resident_signature_bucket_planning_does_not_clone_full_signature_snapshot() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let forbidden_snapshot_clone = [
         "let signature_snapshot = CudaEGraphResidentSignatureSnapshot",
         "::from_column_snapshot(snapshot)",
@@ -301,11 +323,7 @@ fn union_compaction_uses_reserved_eclass_index_for_generated_large_components() 
         .iter()
         .all(|rewrite| rewrite.representative == 0 && rewrite.eclass_id != 0));
 
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let production = source
         .split("#[cfg(test)]")
         .next()
@@ -325,11 +343,7 @@ fn union_compaction_uses_reserved_eclass_index_for_generated_large_components() 
 
 #[test]
 fn egraph_planner_uses_shared_monotonic_sort_fast_path() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let production = source
         .split("#[cfg(test)]")
         .next()
@@ -371,11 +385,7 @@ fn egraph_planner_uses_shared_monotonic_sort_fast_path() {
 
 #[test]
 fn egraph_planner_uses_shared_cuda_numeric_policy_for_host_boundary_counts() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let production = source
         .split("#[cfg(test)]")
         .next()
@@ -394,11 +404,7 @@ fn egraph_planner_uses_shared_cuda_numeric_policy_for_host_boundary_counts() {
 
 #[test]
 fn egraph_kernel_argument_tables_reuse_wave_staging() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let args_source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/egraph_kernel_plan/args.rs"
@@ -422,11 +428,7 @@ fn egraph_kernel_argument_tables_reuse_wave_staging() {
 
 #[test]
 fn structural_equivalence_readback_skips_bucket_metadata() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let forbidden_full_scratch_download = ["self.download_", "resident(scratch.handle)"].concat();
 
     assert!(
@@ -442,11 +444,7 @@ fn structural_equivalence_readback_skips_bucket_metadata() {
 
 #[test]
 fn egraph_warm_helpers_reuse_resolved_cuda_function_for_launch() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/egraph_kernel_plan.rs"
-    ))
-    .expect("Fix: CUDA egraph kernel planner source must be readable");
+    let source = planner_production_source();
     let warm_lookup = concat!("module_for_ptx", "_with_key(&kernel.source, module_key)");
     let stale_inner_lookup = concat!("module_for_ptx", "_with_key(ptx_src, module_key)");
     let stale_inner_param = concat!(

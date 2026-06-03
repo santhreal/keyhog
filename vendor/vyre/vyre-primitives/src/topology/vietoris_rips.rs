@@ -149,7 +149,9 @@ pub fn extract_edges_cpu(edge_mask: &[u32], n: u32) -> Vec<(u32, u32)> {
     match try_extract_edges_cpu_into(edge_mask, n, &mut edges) {
         Ok(()) => edges,
         Err(error) => {
-            eprintln!("vyre-primitives Vietoris-Rips edge extraction CPU reference failed: {error}");
+            eprintln!(
+                "vyre-primitives Vietoris-Rips edge extraction CPU reference failed: {error}"
+            );
             Vec::new()
         }
     }

@@ -356,9 +356,8 @@ fn read_graph_wrapper_source(wrapper_path: &Path) -> String {
             .join(stem)
             .join("mod.rs")
     };
-    let mut source = std::fs::read_to_string(&actual_wrapper_path).unwrap_or_else(|err| {
-        panic!("{} must be readable: {err}", actual_wrapper_path.display())
-    });
+    let mut source = std::fs::read_to_string(&actual_wrapper_path)
+        .unwrap_or_else(|err| panic!("{} must be readable: {err}", actual_wrapper_path.display()));
     let Some(parent) = actual_wrapper_path.parent() else {
         return source;
     };
@@ -581,8 +580,9 @@ fn persistent_bfs_dispatch_paths_use_primitive_layout_contract() {
     );
     assert!(
         via_section.contains("refresh_keyed_dispatch_inputs")
-            && via_section.contains("dispatch_two_u32_outputs_from_prepared_into"),
-        "persistent BFS non-resident wrapper must reuse the graph dispatch bridge instead of open-coding byte-marshalling and two-output decode"
+            && via_section.contains("decode_u32_output_exact")
+            && via_section.contains("changed_words"),
+        "persistent BFS non-resident wrapper must reuse keyed graph input refresh and decode the primitive-owned changed scratch width explicitly"
     );
     assert!(
         !via_section.contains("bitset_words(node_count)")

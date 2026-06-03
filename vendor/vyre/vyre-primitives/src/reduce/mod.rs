@@ -20,7 +20,6 @@ mod indexed_move;
 pub mod max;
 /// Unsigned minimum over a u32 ValueSet.
 pub mod min;
-#[cfg(feature = "math")]
 pub mod multi_block_prefix_scan;
 pub mod radix_sort;
 pub mod range_counts;

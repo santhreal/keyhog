@@ -43,7 +43,7 @@ impl SimpleLineScratch {
 pub(super) fn gpu_filter_simple_line_comments(
     dispatcher: &dyn GpuDispatcher,
     raw: &[u8],
-    splice_input: &[u8],
+    bytes_in: &[u8],
     n_bucket: u32,
     byte_buf_pad: usize,
     n_real_buf: &[u8],
@@ -55,7 +55,7 @@ pub(super) fn gpu_filter_simple_line_comments(
     dispatcher
         .dispatch_borrowed_into(
             &newline_flags_prog,
-            &[splice_input, scratch.zero_words.as_slice(), n_real_buf],
+            &[bytes_in, scratch.zero_words.as_slice(), n_real_buf],
             &mut scratch.newline_flags_out,
         )
         .map_err(|e| format!("simple line comments newline flags: {e}"))?;
@@ -79,7 +79,7 @@ pub(super) fn gpu_filter_simple_line_comments(
         .dispatch_borrowed_into(
             &row_comment_prog,
             &[
-                splice_input,
+                bytes_in,
                 scratch.newline_flags_out[0].as_slice(),
                 scratch.newline_scan.as_slice(),
                 scratch.scalar_ff.as_slice(),
@@ -99,7 +99,7 @@ pub(super) fn gpu_filter_simple_line_comments(
         .dispatch_borrowed_into(
             &masks_prog,
             &[
-                splice_input,
+                bytes_in,
                 scratch.newline_flags_out[0].as_slice(),
                 scratch.newline_scan.as_slice(),
                 scratch.row_comment_out[0].as_slice(),
@@ -120,7 +120,7 @@ pub(super) fn gpu_filter_simple_line_comments(
         dispatcher,
         "simple line comments",
         raw,
-        splice_input,
+        bytes_in,
         scratch.masks_out[0].as_slice(),
         scratch.masks_out[1].as_slice(),
         n_bucket,

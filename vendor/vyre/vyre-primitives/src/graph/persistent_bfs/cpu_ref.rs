@@ -1,3 +1,4 @@
+#[cfg(any(test, feature = "cpu-parity"))]
 use super::validate::validate_persistent_bfs_inputs;
 
 /// CPU reference: run BFS up to `max_iters` steps, accumulating into a
@@ -63,7 +64,7 @@ pub fn try_cpu_ref(
 /// allocation per proof case while preserving the allocating compatibility API.
 #[cfg(any(test, feature = "cpu-parity"))]
 #[derive(Debug, Default, Clone)]
-pub struct PersistentBfsCpuScratch {
+pub(crate) struct PersistentBfsCpuScratch {
     /// Temporary frontier produced by one CSR expansion step.
     pub step: Vec<u32>,
 }
@@ -71,7 +72,7 @@ pub struct PersistentBfsCpuScratch {
 #[cfg(any(test, feature = "cpu-parity"))]
 impl PersistentBfsCpuScratch {
     /// Create an empty reusable persistent-BFS workspace.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 }
@@ -81,7 +82,7 @@ impl PersistentBfsCpuScratch {
 /// Runs BFS up to `max_iters` steps, accumulating into `frontier_out`. Returns
 /// a sticky changed flag (`1` if any step added new nodes, else `0`).
 #[cfg(any(test, feature = "cpu-parity"))]
-pub fn cpu_ref_into(
+pub(crate) fn cpu_ref_into(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],
@@ -145,7 +146,7 @@ pub fn try_cpu_ref_into(
 /// data as a typed finding instead of a panic or partially clobbered oracle
 /// state.
 #[cfg(any(test, feature = "cpu-parity"))]
-pub fn try_cpu_ref_into_with_scratch(
+pub(crate) fn try_cpu_ref_into_with_scratch(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],

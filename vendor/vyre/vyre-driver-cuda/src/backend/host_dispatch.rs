@@ -19,7 +19,7 @@ use super::copy::aligned_async_copy_len;
 use super::dispatch::CudaBackend;
 use super::launch_params::launch_param_byte_len;
 use super::module_cache::ModuleCacheKey;
-use super::output_range::cuda_output_readback;
+use super::output_range::cuda_output_readback_for_binding;
 use super::plan::CudaDispatchPlan;
 use super::staging_reserve::{reserve_smallvec, reserved_vec};
 
@@ -124,6 +124,23 @@ fn add_transfer_bytes(total: &mut u64, bytes: usize, label: &str) -> Result<(), 
 
 fn add_transfer_operation(total: &mut u64, label: &str) -> Result<(), BackendError> {
     CUDA_HOST_TRANSFER_ACCOUNTING.add_operation(total, label)
+}
+
+fn host_dispatch_input<'a>(
+    inputs: &'a [&[u8]],
+    input_index: usize,
+    binding_name: &str,
+    context: &'static str,
+) -> Result<&'a [u8], BackendError> {
+    inputs
+        .get(input_index)
+        .copied()
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA host dispatch {context} expected input index {input_index} for `{binding_name}` but only {} input(s) were supplied. Rebuild the binding plan or validate inputs before launch.",
+                inputs.len()
+            ),
+        })
 }
 
 impl CudaBackend {
@@ -378,7 +395,10 @@ impl CudaBackend {
             }
 
             let byte_len = match binding.input_index {
-                Some(input_index) => inputs[input_index].len(),
+                Some(input_index) => {
+                    host_dispatch_input(inputs, input_index, &binding.name, "allocation sizing")?
+                        .len()
+                }
                 None => binding.static_byte_len.ok_or_else(|| BackendError::InvalidProgram {
                     fix: format!(
                         "Fix: CUDA output `{}` needs a static byte length before launch; set BufferDecl::with_count or output_byte_range.",
@@ -394,10 +414,11 @@ impl CudaBackend {
                     .usize_to_u64(allocation.byte_len, "transient allocation byte count")?,
             );
             let dev_ptr = allocation.ptr;
-            allocations.set_ptr(binding.buffer_index, allocation);
+            allocations.set_ptr(binding.buffer_index, allocation, &binding.name)?;
 
             if let Some(input_index) = binding.input_index {
-                let input = inputs[input_index];
+                let input =
+                    host_dispatch_input(inputs, input_index, &binding.name, "upload staging")?;
                 let copy_byte_len = aligned_async_copy_len(input.len())?;
                 let host_ptr = host_transfers.push_upload_padded(input, copy_byte_len)?;
                 add_transfer_bytes(&mut upload_bytes, input.len(), "host upload")?;
@@ -449,212 +470,303 @@ impl CudaBackend {
             Arc::clone(&self.launch_resources),
             capture_timing,
         )?;
-        let stream_raw = launch_resources.stream_raw()?;
+        let mut launch_resources = Some(launch_resources);
+        let mut allocations = Some(allocations);
+        let mut host_transfers = Some(host_transfers);
+        let stream_raw = launch_resources
+            .as_ref()
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: "Fix: CUDA host dispatch launch resources were consumed before enqueue; rebuild pending dispatch ownership before launching.".to_string(),
+            })?
+            .stream_raw()?;
         if trace {
             tracing::debug!(
                 "[cuda-trace] +{}ms stream/events",
                 start.elapsed().as_millis()
             );
         }
-        enqueue_host_uploads_async(&host_uploads, stream_raw)?;
-        self.telemetry.record_host_to_device_bytes(upload_bytes);
-        self.telemetry
-            .record_host_upload_operations(upload_operations);
-        enqueue_device_clears_async(&device_clears, stream_raw)?;
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms alloc/upload/clear",
-                start.elapsed().as_millis()
-            );
-        }
+        let pending = (|| {
+            let allocations_ref = allocations.as_ref().ok_or_else(|| BackendError::InvalidProgram {
+                fix: "Fix: CUDA host dispatch allocations were consumed before enqueue finished; rebuild pending dispatch ownership before launching.".to_string(),
+            })?;
+            let host_transfers_ref = host_transfers
+                .as_mut()
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: CUDA host dispatch host staging was consumed before enqueue finished; rebuild pending dispatch ownership before launching.".to_string(),
+                })?;
+            let launch_resources_ref =
+                launch_resources
+                    .as_ref()
+                    .ok_or_else(|| BackendError::InvalidProgram {
+                        fix: "Fix: CUDA host dispatch launch resources were consumed before enqueue finished; rebuild pending dispatch ownership before launching.".to_string(),
+                    })?;
 
-        if let Some((start_event, _)) = launch_resources.timing_events()? {
-            start_event.record(stream_raw)?;
-        }
-        // Fixpoint loop: launch the kernel `fixpoint_iterations` times
-        // on the same stream. CUDA serialises kernels within a single
-        // stream so each iteration observes the previous iteration's
-        // writes  -  the persistent-state contract that dataflow BFS-on-CSR
-        // primitives rely on to converge multi-hop reachability.
-        // `allocations` stays device-resident across iterations, so the
-        // pointer vector is materialized once and borrowed by each launch.
-        let func = self.resolve_launch_function(
-            ptx_src,
-            module_key,
-            &prepared.launch,
-            prepared.cooperative,
-        )?;
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms resolve_launch_function",
-                start.elapsed().as_millis()
-            );
-        }
-        let mut ptr_values = SmallVec::<[u64; 8]>::new();
-        reserve_smallvec(
-            &mut ptr_values,
-            prepared.bindings.bindings.len(),
-            "kernel pointer argument",
-        )?;
-        for binding in &prepared.bindings.bindings {
-            if binding.role == BindingRole::Shared {
-                continue;
+            enqueue_host_uploads_async(&host_uploads, stream_raw)?;
+            self.telemetry.record_host_to_device_bytes(upload_bytes);
+            self.telemetry
+                .record_host_upload_operations(upload_operations);
+            enqueue_device_clears_async(&device_clears, stream_raw)?;
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms alloc/upload/clear",
+                    start.elapsed().as_millis()
+                );
             }
-            let ptr = allocations.ptr(binding.buffer_index);
-            if ptr == 0 {
-                return Err(BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: CUDA launch binding `{}` has no device allocation; argument order must match the lowered kernel descriptor.",
-                        binding.name
-                    ),
-                });
+
+            if let Some((start_event, _)) = launch_resources_ref.timing_events()? {
+                start_event.record(stream_raw)?;
             }
-            ptr_values.push(ptr);
-        }
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms host args ptr_values={:x?} params=0x{params_buf_ptr:x} words={:?} grid={:?} workgroup={:?} element_count={}",
-                start.elapsed().as_millis(),
-                ptr_values,
-                prepared.launch.param_words,
-                prepared.launch.grid,
-                prepared.launch.workgroup,
-                prepared.launch.element_count
-            );
-        }
-        let mut params_ref = params_buf_ptr;
-        let mut kernel_args = Self::kernel_args(&mut ptr_values, &mut params_ref)?;
-        for _ in 0..prepared.fixpoint_iterations {
-            self.launch_prevalidated_function(
-                func,
-                &mut kernel_args,
+            // Fixpoint loop: launch the kernel `fixpoint_iterations` times
+            // on the same stream. CUDA serialises kernels within a single
+            // stream so each iteration observes the previous iteration's
+            // writes  -  the persistent-state contract that dataflow BFS-on-CSR
+            // primitives rely on to converge multi-hop reachability.
+            // `allocations` stays device-resident across iterations, so the
+            // pointer vector is materialized once and borrowed by each launch.
+            let func = self.resolve_launch_function(
+                ptx_src,
+                module_key,
                 &prepared.launch,
-                stream_raw,
-                false,
                 prepared.cooperative,
             )?;
-        }
-        if trace {
-            tracing::debug!("[cuda-trace] +{}ms launch", start.elapsed().as_millis());
-        }
-
-        let mut readback_bytes = 0_u64;
-        let mut readback_operations = 0_u64;
-        for &binding_index in &prepared.output_binding_indices {
-            let binding = &prepared.bindings.bindings[binding_index];
-            let full_byte_len = match binding.static_byte_len {
-                Some(len) => len,
-                None => match binding.input_index {
-                    Some(input_index) => inputs[input_index].len(),
-                    None => {
-                        return Err(BackendError::InvalidProgram {
-                            fix: format!(
-                                "Fix: CUDA output `{}` needs a static byte length before readback.",
-                                binding.name
-                            ),
-                        });
-                    }
-                },
-            };
-            let readback = cuda_output_readback(&buffers[binding.buffer_index], full_byte_len)?;
-            let allocation_byte_len = allocations.byte_len(binding.buffer_index);
-            let padded_readback_len = aligned_async_copy_len(readback.byte_len)?;
-            let readback_end = readback
-                .device_offset
-                .checked_add(padded_readback_len)
-                .unwrap_or(usize::MAX);
-            let copy_byte_len = if readback_end <= allocation_byte_len {
-                padded_readback_len
-            } else {
-                readback.byte_len
-            };
-            let out_ptr = host_transfers.push_output_padded(readback.byte_len, copy_byte_len)?;
-            if readback.byte_len != 0 {
-                add_transfer_bytes(&mut readback_bytes, readback.byte_len, "output readback")?;
-                add_transfer_operation(&mut readback_operations, "output readback")?;
-                let base_ptr = allocations.ptr(binding.buffer_index);
-                let device_ptr = vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
-                    base_ptr,
-                    readback.device_offset,
-                    || {
-                        BackendError::InvalidProgram {
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms resolve_launch_function",
+                    start.elapsed().as_millis()
+                );
+            }
+            let mut ptr_values = SmallVec::<[u64; 8]>::new();
+            reserve_smallvec(
+                &mut ptr_values,
+                prepared.bindings.bindings.len(),
+                "kernel pointer argument",
+            )?;
+            for binding in &prepared.bindings.bindings {
+                if binding.role == BindingRole::Shared {
+                    continue;
+                }
+                let ptr = allocations_ref.ptr(binding.buffer_index, &binding.name)?;
+                if ptr == 0 {
+                    return Err(BackendError::InvalidProgram {
                         fix: format!(
-                            "Fix: CUDA host dispatch readback device offset {} for output `{}` does not fit CUdeviceptr arithmetic.",
-                            readback.device_offset, binding.name
+                            "Fix: CUDA launch binding `{}` has no device allocation; argument order must match the lowered kernel descriptor.",
+                            binding.name
                         ),
-                    }
-                    },
-                    || {
-                        BackendError::InvalidProgram {
-                        fix: format!(
-                            "Fix: CUDA host dispatch readback pointer overflowed for output `{}` at device_ptr={base_ptr} offset={}. Rebuild the program with a valid output byte range or split the output buffer.",
-                            binding.name, readback.device_offset
-                        ),
-                    }
-                    },
+                    });
+                }
+                ptr_values.push(ptr);
+            }
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms host args ptr_values={:x?} params=0x{params_buf_ptr:x} words={:?} grid={:?} workgroup={:?} element_count={}",
+                    start.elapsed().as_millis(),
+                    ptr_values,
+                    prepared.launch.param_words,
+                    prepared.launch.grid,
+                    prepared.launch.workgroup,
+                    prepared.launch.element_count
+                );
+            }
+            let mut params_ref = params_buf_ptr;
+            let mut kernel_args = Self::kernel_args(&mut ptr_values, &mut params_ref)?;
+            for _ in 0..prepared.fixpoint_iterations {
+                self.launch_prevalidated_function(
+                    func,
+                    &mut kernel_args,
+                    &prepared.launch,
+                    stream_raw,
+                    false,
+                    prepared.cooperative,
                 )?;
-                // SAFETY: FFI to libcuda.so. Pointer args were validated by
-                // the matching alloc / store API; lifetimes are documented in
-                // the surrounding function. cuda_check (or matching CUresult
-                // guard) propagates non-success codes as BackendError.
-                unsafe {
-                    super::copy::d2h_async_checked(
-                        out_ptr,
-                        device_ptr,
-                        copy_byte_len,
-                        stream_raw,
+            }
+            if trace {
+                tracing::debug!("[cuda-trace] +{}ms launch", start.elapsed().as_millis());
+            }
+
+            let mut readback_bytes = 0_u64;
+            let mut readback_operations = 0_u64;
+            for &binding_index in &prepared.output_binding_indices {
+                let binding =
+                    prepared.output_binding(binding_index, "host dispatch output readback")?;
+                let full_byte_len = match binding.static_byte_len {
+                    Some(len) => len,
+                    None => match binding.input_index {
+                        Some(input_index) => host_dispatch_input(
+                            inputs,
+                            input_index,
+                            &binding.name,
+                            "output readback sizing",
+                        )?
+                        .len(),
+                        None => {
+                            return Err(BackendError::InvalidProgram {
+                                fix: format!(
+                                    "Fix: CUDA output `{}` needs a static byte length before readback.",
+                                    binding.name
+                                ),
+                            });
+                        }
+                    },
+                };
+                let readback = cuda_output_readback_for_binding(
+                    buffers,
+                    binding.buffer_index,
+                    &binding.name,
+                    full_byte_len,
+                    "output readback",
+                )?;
+                let allocation_byte_len =
+                    allocations_ref.byte_len(binding.buffer_index, &binding.name)?;
+                let padded_readback_len = aligned_async_copy_len(readback.byte_len)?;
+                let readback_end = readback
+                    .device_offset
+                    .checked_add(padded_readback_len)
+                    .ok_or_else(|| BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA host dispatch readback for output `{}` overflowed while checking capacity at device offset {} with padded length {}. Rebuild the program with a valid output byte range or split the output buffer.",
+                            binding.name, readback.device_offset, padded_readback_len
+                        ),
+                    })?;
+                let copy_byte_len = if readback_end <= allocation_byte_len {
+                    padded_readback_len
+                } else {
+                    readback.byte_len
+                };
+                let out_ptr =
+                    host_transfers_ref.push_output_padded(readback.byte_len, copy_byte_len)?;
+                if readback.byte_len != 0 {
+                    add_transfer_bytes(&mut readback_bytes, readback.byte_len, "output readback")?;
+                    add_transfer_operation(&mut readback_operations, "output readback")?;
+                    let base_ptr = allocations_ref.ptr(binding.buffer_index, &binding.name)?;
+                    let device_ptr = vyre_driver::accounting::checked_add_u64_usize_offset_lazy(
+                        base_ptr,
+                        readback.device_offset,
+                        || {
+                            BackendError::InvalidProgram {
+                            fix: format!(
+                                "Fix: CUDA host dispatch readback device offset {} for output `{}` does not fit CUdeviceptr arithmetic.",
+                                readback.device_offset, binding.name
+                            ),
+                        }
+                        },
+                        || {
+                            BackendError::InvalidProgram {
+                            fix: format!(
+                                "Fix: CUDA host dispatch readback pointer overflowed for output `{}` at device_ptr={base_ptr} offset={}. Rebuild the program with a valid output byte range or split the output buffer.",
+                                binding.name, readback.device_offset
+                            ),
+                        }
+                        },
                     )?;
+                    // SAFETY: FFI to libcuda.so. Pointer args were validated by
+                    // the matching alloc / store API; lifetimes are documented in
+                    // the surrounding function. cuda_check (or matching CUresult
+                    // guard) propagates non-success codes as BackendError.
+                    unsafe {
+                        super::copy::d2h_async_checked(
+                            out_ptr,
+                            device_ptr,
+                            copy_byte_len,
+                            stream_raw,
+                        )?;
+                    }
+                }
+            }
+            self.telemetry
+                .record_device_to_host_readback(readback_bytes);
+            self.telemetry
+                .record_device_readback_operations(readback_operations);
+            if let Some((_, end_event)) = launch_resources_ref.timing_events()? {
+                end_event.record(stream_raw)?;
+            }
+
+            let output_storage =
+                reserved_vec(prepared.output_binding_indices.len(), "pending output")?;
+            let event = self.launch_resources.acquire_event()?;
+            if let Err(error) = event.record(stream_raw) {
+                self.launch_resources.release_event(event);
+                return Err(error);
+            }
+            if trace {
+                tracing::debug!(
+                    "[cuda-trace] +{}ms readback/event",
+                    start.elapsed().as_millis()
+                );
+            }
+            let (stream, timing_events) =
+                launch_resources
+                    .take()
+                    .ok_or_else(|| BackendError::InvalidProgram {
+                        fix: "Fix: CUDA host dispatch launch resources were consumed before pending dispatch ownership transfer.".to_string(),
+                    })?
+                    .into_parts()?;
+            let allocations = allocations
+                .take()
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: CUDA host dispatch allocations were consumed before pending dispatch ownership transfer.".to_string(),
+                })?;
+            let host_transfers =
+                host_transfers
+                    .take()
+                    .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: CUDA host dispatch host staging was consumed before pending dispatch ownership transfer.".to_string(),
+                })?;
+            if let Some((start_event, end_event)) = timing_events {
+                Ok(crate::stream::CudaPendingDispatch::new_with_timing(
+                    Arc::clone(&self.ctx),
+                    Arc::clone(&self.launch_resources),
+                    event,
+                    stream,
+                    allocations,
+                    None,
+                    Some(host_transfers),
+                    output_storage,
+                    start_event,
+                    end_event,
+                    Arc::clone(&self.telemetry),
+                ))
+            } else {
+                Ok(crate::stream::CudaPendingDispatch::new(
+                    Arc::clone(&self.ctx),
+                    Arc::clone(&self.launch_resources),
+                    event,
+                    stream,
+                    allocations,
+                    None,
+                    Some(host_transfers),
+                    output_storage,
+                    Arc::clone(&self.telemetry),
+                ))
+            }
+        })();
+        if let Err(error) = pending {
+            let Some(launch_resources) = launch_resources.take() else {
+                return Err(error);
+            };
+            match crate::stream::synchronize_raw_stream(
+                stream_raw,
+                "cuStreamSynchronize (host dispatch error cleanup)",
+            ) {
+                Ok(()) => {
+                    self.telemetry.record_sync_point();
+                    return Err(error);
+                }
+                Err(sync_error) => {
+                    tracing::error!(
+                        "Fix: failed to synchronize CUDA host dispatch stream after enqueue error: {sync_error}. In-flight host dispatch resources will not be recycled."
+                    );
+                    std::mem::forget(launch_resources);
+                    if let Some(allocations) = allocations.take() {
+                        std::mem::forget(allocations);
+                    }
+                    if let Some(host_transfers) = host_transfers.take() {
+                        std::mem::forget(host_transfers);
+                    }
+                    return Err(error);
                 }
             }
         }
-        self.telemetry
-            .record_device_to_host_readback(readback_bytes);
-        self.telemetry
-            .record_device_readback_operations(readback_operations);
-        if let Some((_, end_event)) = launch_resources.timing_events()? {
-            end_event.record(stream_raw)?;
-        }
-
-        let event = self.launch_resources.acquire_event()?;
-        if let Err(error) = event.record(stream_raw) {
-            self.launch_resources.release_event(event);
-            return Err(error);
-        }
-        if trace {
-            tracing::debug!(
-                "[cuda-trace] +{}ms readback/event",
-                start.elapsed().as_millis()
-            );
-        }
-        let (stream, timing_events) = launch_resources.into_parts()?;
-        let output_storage = reserved_vec(prepared.output_binding_indices.len(), "pending output")?;
-        if let Some((start_event, end_event)) = timing_events {
-            Ok(crate::stream::CudaPendingDispatch::new_with_timing(
-                Arc::clone(&self.ctx),
-                Arc::clone(&self.launch_resources),
-                event,
-                stream,
-                allocations,
-                None,
-                Some(host_transfers),
-                output_storage,
-                start_event,
-                end_event,
-                Arc::clone(&self.telemetry),
-            ))
-        } else {
-            Ok(crate::stream::CudaPendingDispatch::new(
-                Arc::clone(&self.ctx),
-                Arc::clone(&self.launch_resources),
-                event,
-                stream,
-                allocations,
-                None,
-                Some(host_transfers),
-                output_storage,
-                Arc::clone(&self.telemetry),
-            ))
-        }
+        pending
     }
 
     /// Dispatch a vyre Program on this CUDA device.
@@ -856,6 +968,53 @@ mod tests {
             host_transfer_capacities(&plan_with_params).expect("Fix: capacity must fit"),
             (5, 2),
             "pinned-host transfer storage must reserve inputs + params + outputs when params exist"
+        );
+    }
+
+    #[test]
+    fn host_dispatch_enqueue_errors_leak_resources_when_completion_is_unproven() {
+        let source = include_str!("host_dispatch.rs");
+        let dispatch = source
+            .split("fn dispatch_borrowed_async_with_ptx_concrete")
+            .nth(1)
+            .expect("Fix: CUDA host dispatch async implementation must exist.")
+            .split("    }\n\n    /// Dispatch a vyre Program on this CUDA device.")
+            .next()
+            .expect("Fix: CUDA host dispatch async implementation must precede sync dispatch API.");
+        assert!(
+            dispatch.contains("let mut launch_resources = Some(launch_resources);")
+                && dispatch.contains("let mut allocations = Some(allocations);")
+                && dispatch.contains("let mut host_transfers = Some(host_transfers);")
+                && dispatch.contains("let pending = (||"),
+            "Fix: CUDA host dispatch must retain launch resources, transient allocations, and pinned host staging in outer cleanup ownership until pending dispatch takes over."
+        );
+        assert!(
+            dispatch.contains("crate::stream::synchronize_raw_stream(\n                stream_raw,\n                \"cuStreamSynchronize (host dispatch error cleanup)\",")
+                && dispatch.contains("In-flight host dispatch resources will not be recycled.")
+                && dispatch.contains("std::mem::forget(launch_resources);")
+                && dispatch.contains("std::mem::forget(allocations);")
+                && dispatch.contains("std::mem::forget(host_transfers);"),
+            "Fix: CUDA host dispatch enqueue errors must leak stream, transient allocations, and pinned host staging when completion is unproven."
+        );
+        let cleanup_pos = dispatch
+            .find("if let Err(error) = pending")
+            .expect("Fix: CUDA host dispatch must classify pending construction errors.");
+        let transfer_pos = dispatch.find("CudaPendingDispatch::new(").expect(
+            "Fix: CUDA host dispatch must eventually transfer ownership to CudaPendingDispatch.",
+        );
+        assert!(
+            transfer_pos < cleanup_pos,
+            "Fix: CUDA host dispatch must install fail-closed cleanup around all fallible enqueue work before returning pending ownership."
+        );
+        let output_storage_pos = dispatch
+            .find("reserved_vec(prepared.output_binding_indices.len(), \"pending output\")")
+            .expect("Fix: CUDA host dispatch must reserve pending output storage.");
+        let stream_take_pos = dispatch.find(".into_parts()?").expect(
+            "Fix: CUDA host dispatch must transfer stream ownership into the pending dispatch.",
+        );
+        assert!(
+            output_storage_pos < stream_take_pos,
+            "Fix: CUDA host dispatch must finish fallible output storage reservation before consuming launch-resource ownership."
         );
     }
 }

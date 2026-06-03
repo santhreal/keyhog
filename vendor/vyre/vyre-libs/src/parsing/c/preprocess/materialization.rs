@@ -1,5 +1,6 @@
 //! Source-arena helpers for C macro expansion.
 
+use crate::parsing::c::preprocess::expansion::{load_macro_byte, MacroByteLayout};
 use crate::parsing::c::preprocess::synthesis::stringification_token_type;
 use vyre::ir::{Expr, Node};
 
@@ -71,6 +72,7 @@ fn check_span(
 fn append_span_after_checked(
     prefix: &str,
     source_words: &str,
+    source_layout: MacroByteLayout,
     out_source_words: &str,
     max_out_source_bytes: u32,
 ) -> Vec<Node> {
@@ -78,8 +80,9 @@ fn append_span_after_checked(
     let source_byte = format!("{prefix}_copy_byte");
     let mut body = vec![Node::let_bind(
         &source_byte,
-        Expr::load(
+        load_macro_byte(
             source_words,
+            source_layout,
             Expr::add(
                 Expr::var(format!("{prefix}_copy_start")),
                 Expr::var(&byte_rel),
@@ -103,6 +106,7 @@ fn append_span_after_checked(
 pub(crate) fn append_source_span(
     prefix: &str,
     source_words: &str,
+    source_layout: MacroByteLayout,
     source_start: Expr,
     source_len: Expr,
     source_limit: Expr,
@@ -114,6 +118,7 @@ pub(crate) fn append_source_span(
     nodes.extend(append_span_after_checked(
         prefix,
         source_words,
+        source_layout,
         out_source_words,
         max_out_source_bytes,
     ));
@@ -126,6 +131,7 @@ pub(crate) fn emit_materialized_output_token(
     prefix: &str,
     tok_type: Expr,
     source_words: &str,
+    source_layout: MacroByteLayout,
     source_start: Expr,
     source_len: Expr,
     source_limit: Expr,
@@ -164,6 +170,7 @@ pub(crate) fn emit_materialized_output_token(
     nodes.extend(append_source_span(
         prefix,
         source_words,
+        source_layout,
         source_start,
         source_len,
         source_limit,
@@ -190,6 +197,7 @@ pub(crate) fn emit_materialized_output_token(
 pub(crate) fn append_to_previous_output_token(
     prefix: &str,
     source_words: &str,
+    source_layout: MacroByteLayout,
     source_start: Expr,
     source_len: Expr,
     source_limit: Expr,
@@ -232,6 +240,7 @@ pub(crate) fn append_to_previous_output_token(
     nodes.extend(append_source_span(
         prefix,
         source_words,
+        source_layout,
         source_start,
         source_len,
         source_limit,
@@ -256,6 +265,7 @@ pub(crate) fn emit_stringified_argument_token(
     in_tok_starts: &str,
     in_tok_lens: &str,
     source_words: &str,
+    source_layout: MacroByteLayout,
     source_len: Expr,
     out_tok_types: &str,
     out_tok_starts: &str,
@@ -385,12 +395,10 @@ pub(crate) fn emit_stringified_argument_token(
                 let mut byte_body = vec![
                     Node::let_bind(
                         &byte,
-                        Expr::bitand(
-                            Expr::load(
-                                source_words,
-                                Expr::add(Expr::var(&tok_start), Expr::var(&byte_rel)),
-                            ),
-                            Expr::u32(0xff),
+                        load_macro_byte(
+                            source_words,
+                            source_layout,
+                            Expr::add(Expr::var(&tok_start), Expr::var(&byte_rel)),
                         ),
                     ),
                     Node::let_bind(

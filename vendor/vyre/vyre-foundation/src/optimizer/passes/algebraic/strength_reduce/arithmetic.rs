@@ -3,57 +3,152 @@ use crate::optimizer::passes::algebraic::const_fold::is_float_expr;
 
 const MAX_SHIFT_ADD_CHAIN_COST: u32 = 4;
 
-/// Rewrite a u32 quadratic polynomial from expanded form to Horner form:
-/// `a*x*x + b*x + c` -> `(a*x + b)*x + c`.
-///
-/// U32 arithmetic in Vyre is wrapping arithmetic, so associativity and
-/// distributivity hold modulo 2^32. The rule deliberately does not touch
-/// floating point expressions, where reassociation changes rounding.
-pub(super) fn horner_quadratic_u32(expr: &Expr) -> Option<Expr> {
-    let mut terms = Vec::with_capacity(4);
-    collect_add_terms(expr, &mut terms);
-    if terms.len() != 3 {
-        return None;
-    }
+/// Maximum polynomial degree the Horner rewrite will fold. Real GPU kernels
+/// evaluate low-degree polynomials; the cap bounds the emitted multiply chain.
+const MAX_HORNER_DEGREE: u32 = 16;
 
-    let mut constant: Option<u32> = None;
-    let mut linear: Option<(IdentRef<'_>, u32)> = None;
-    let mut quadratic: Option<(IdentRef<'_>, u32)> = None;
-
-    for term in terms {
-        if let Expr::LitU32(value) = term {
-            if constant.replace(*value).is_some() {
-                return None;
-            }
-            continue;
-        }
-        if let Some((var, coeff)) = linear_u32_term(term) {
-            if linear.replace((var, coeff)).is_some() {
-                return None;
-            }
-            continue;
-        }
-        if let Some((var, coeff)) = quadratic_u32_term(term) {
-            if quadratic.replace((var, coeff)).is_some() {
-                return None;
-            }
-            continue;
-        }
-        return None;
-    }
-
-    let (linear_var, b) = linear?;
-    let (quadratic_var, a) = quadratic?;
-    if linear_var.0 != quadratic_var.0 {
-        return None;
-    }
-    let x = Expr::var(linear_var.0.as_str());
-    let ax_plus_b = Expr::add(Expr::mul(Expr::u32(a), x.clone()), Expr::u32(b));
-    Some(Expr::add(Expr::mul(ax_plus_b, x), Expr::u32(constant?)))
+/// Integer literal domain a polynomial folds in. u32 and i32 share
+/// bit-identical wrapping add/mul, so the fold runs in u32 bit-space and only
+/// the emitted literal constructor differs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IntKind {
+    U32,
+    I32,
 }
 
-#[derive(Clone, Copy)]
-struct IdentRef<'a>(&'a crate::ir::Ident);
+impl IntKind {
+    fn lit(self, bits: u32) -> Expr {
+        match self {
+            IntKind::U32 => Expr::u32(bits),
+            IntKind::I32 => Expr::i32(bits as i32),
+        }
+    }
+}
+
+/// Rewrite an expanded single-variable integer polynomial into Horner form:
+/// `a*x^n + ... + b*x + c` -> `(((a)*x + ...)*x + b)*x + c`.
+///
+/// Integer arithmetic in Vyre is two's-complement wrapping, so associativity
+/// and distributivity hold modulo 2^32 for both u32 and i32. The fold runs in
+/// u32 bit-space (identical wrapping for either domain) and emits literals in
+/// whichever domain the polynomial's explicit literals established. It rejects
+/// multi-variable, duplicate-degree, non-monomial, mixed-domain, literal-free,
+/// and floating-point polynomials (FP reassociation changes rounding).
+pub(super) fn horner_polynomial_int(expr: &Expr) -> Option<Expr> {
+    let mut terms = Vec::with_capacity(8);
+    collect_add_terms(expr, &mut terms);
+    if terms.len() < 2 {
+        return None;
+    }
+
+    // coeffs[d] holds the coefficient bits of x^d once a term of that degree is seen.
+    let mut coeffs: Vec<Option<u32>> = Vec::new();
+    let mut var: Option<&crate::ir::Ident> = None;
+    let mut kind: Option<IntKind> = None;
+
+    for term in terms {
+        let (coeff, degree, term_var, lit_kind) = monomial_int_term(term)?;
+        if degree > MAX_HORNER_DEGREE {
+            return None;
+        }
+        if let Some(name) = term_var {
+            match var {
+                Some(existing) if existing != name => return None,
+                _ => var = Some(name),
+            }
+        }
+        if let Some(k) = lit_kind {
+            match kind {
+                Some(existing) if existing != k => return None,
+                _ => kind = Some(k),
+            }
+        }
+        let idx = degree as usize;
+        if idx >= coeffs.len() {
+            coeffs.resize(idx + 1, None);
+        }
+        // Duplicate degree is ambiguous here; let const-fold / canonicalize
+        // merge like terms first instead of guessing how to combine them.
+        if coeffs[idx].replace(coeff).is_some() {
+            return None;
+        }
+    }
+
+    // The domain must be pinned by an explicit literal so emitted coefficients
+    // match the operand's integer type; a literal-free polynomial (e.g.
+    // `x*x + x`) is ambiguous and could mistype a non-default-domain operand.
+    let kind = kind?;
+    let max_degree = coeffs.len() - 1;
+    if max_degree < 2 {
+        return None;
+    }
+    let var = var?;
+    let x = Expr::var(var.as_str());
+
+    // Horner fold from the highest coefficient down. A zero/absent coefficient
+    // skips the add, so sparse polynomials emit no `+ 0` churn.
+    let mut acc = kind.lit(coeffs[max_degree].unwrap_or(0));
+    for degree in (0..max_degree).rev() {
+        acc = Expr::mul(acc, x.clone());
+        let coeff = coeffs[degree].unwrap_or(0);
+        if coeff != 0 {
+            acc = Expr::add(acc, kind.lit(coeff));
+        }
+    }
+    Some(acc)
+}
+
+/// Classify `expr` as a single monomial `coeff * x^degree` over at most one
+/// variable. Returns `(coeff_bits, degree, var, lit_kind)`; `var == None` for a
+/// bare constant and `lit_kind` names the integer domain of any explicit
+/// literal (None when the term is literal-free). Coefficient arithmetic uses
+/// u32 bit-space, which is wrapping-identical for u32 and i32. Any factor that
+/// is not an integer literal or a variable rejects, as does mixing domains.
+fn monomial_int_term(
+    expr: &Expr,
+) -> Option<(u32, u32, Option<&crate::ir::Ident>, Option<IntKind>)> {
+    match expr {
+        Expr::LitU32(value) => return Some((*value, 0, None, Some(IntKind::U32))),
+        Expr::LitI32(value) => return Some((*value as u32, 0, None, Some(IntKind::I32))),
+        Expr::Var(name) => return Some((1, 1, Some(name), None)),
+        _ => {}
+    }
+    let mut factors = Vec::with_capacity(4);
+    collect_mul_factors(expr, &mut factors);
+    if factors.len() < 2 {
+        return None;
+    }
+    let mut coeff: u32 = 1;
+    let mut degree: u32 = 0;
+    let mut var: Option<&crate::ir::Ident> = None;
+    let mut kind: Option<IntKind> = None;
+    for factor in factors {
+        let factor_kind = match factor {
+            Expr::LitU32(value) => {
+                coeff = coeff.wrapping_mul(*value);
+                IntKind::U32
+            }
+            Expr::LitI32(value) => {
+                coeff = coeff.wrapping_mul(*value as u32);
+                IntKind::I32
+            }
+            Expr::Var(name) => {
+                match var {
+                    Some(existing) if existing != name => return None,
+                    _ => var = Some(name),
+                }
+                degree += 1;
+                continue;
+            }
+            _ => return None,
+        };
+        match kind {
+            Some(existing) if existing != factor_kind => return None,
+            _ => kind = Some(factor_kind),
+        }
+    }
+    Some((coeff, degree, var, kind))
+}
 
 fn collect_add_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
     if let Expr::BinOp {
@@ -66,50 +161,6 @@ fn collect_add_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
         collect_add_terms(right, out);
     } else {
         out.push(expr);
-    }
-}
-
-fn linear_u32_term(expr: &Expr) -> Option<(IdentRef<'_>, u32)> {
-    if let Expr::Var(name) = expr {
-        return Some((IdentRef(name), 1));
-    }
-    let mut factors = Vec::with_capacity(3);
-    collect_mul_factors(expr, &mut factors);
-    if factors.len() != 2 {
-        return None;
-    }
-    let mut coeff = None;
-    let mut var = None;
-    for factor in factors {
-        match factor {
-            Expr::LitU32(value) => coeff = Some(*value),
-            Expr::Var(name) => var = Some(IdentRef(name)),
-            _ => return None,
-        }
-    }
-    Some((var?, coeff?))
-}
-
-fn quadratic_u32_term(expr: &Expr) -> Option<(IdentRef<'_>, u32)> {
-    let mut factors = Vec::with_capacity(4);
-    collect_mul_factors(expr, &mut factors);
-    if !(factors.len() == 2 || factors.len() == 3) {
-        return None;
-    }
-
-    let mut coeff = 1u32;
-    let mut vars = Vec::with_capacity(2);
-    for factor in factors {
-        match factor {
-            Expr::LitU32(value) => coeff = *value,
-            Expr::Var(name) => vars.push(name),
-            _ => return None,
-        }
-    }
-    if vars.len() == 2 && vars[0] == vars[1] {
-        Some((IdentRef(vars[0]), coeff))
-    } else {
-        None
     }
 }
 

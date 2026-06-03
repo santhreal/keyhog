@@ -454,7 +454,6 @@ fn read_json(path: &Path) -> Value {
     .unwrap_or_else(|error| panic!("Fix: `{}` must be valid JSON: {error}", path.display()))
 }
 
-
 fn json_str<'a>(json: &'a Value, key: &str) -> &'a str {
     json[key]
         .as_str()
@@ -511,3 +510,34 @@ fn release_matrix_links_workloads_to_artifact_commands() {
     }
 }
 
+#[test]
+fn release_matrix_commands_prefer_release_defining_cpu_sota_cases() {
+    let registry = vyre_bench::registry::collect_all();
+    let matrix = vyre_bench::release_matrix::build_release_matrix(&registry);
+    let expected = [
+        ("condition-eval", "release.condition_eval.1m"),
+        (
+            "offset-count-aggregation",
+            "release.offset_count_aggregation.1m",
+        ),
+        ("entropy-window", "release.entropy_window.1m"),
+        ("alias-reaching-def", "release.alias_reaching_def.1m"),
+        ("ifds-witness", "release.ifds_witness.1m"),
+        ("c-ast-traversal", "release.c_ast_traversal.1m"),
+        ("egraph-saturation", "release.egraph_saturation.1m"),
+        ("sparse-output-compaction", "sparse.compaction.count.1m"),
+    ];
+
+    for (family_id, case_id) in expected {
+        let family = matrix
+            .families
+            .iter()
+            .find(|family| family.id == family_id)
+            .unwrap_or_else(|| panic!("Fix: release matrix missing family `{family_id}`."));
+        let command = family.benchmark_command.as_deref().unwrap_or("");
+        assert!(
+            command.contains(&format!("--case {case_id} ")),
+            "Fix: workload `{family_id}` command must prefer release-defining case `{case_id}`, got `{command}`."
+        );
+    }
+}

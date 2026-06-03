@@ -82,12 +82,19 @@ fn output_buffer_indices_find_outputs() {
         vec![
             BufferDecl::read("in", 0, DataType::U32).with_count(1),
             BufferDecl::output("out", 1, DataType::U32).with_count(1),
+            BufferDecl::storage(
+                "write_only",
+                2,
+                vyre::ir::BufferAccess::WriteOnly,
+                DataType::U32,
+            )
+            .with_count(1),
         ],
         [1, 1, 1],
         vec![Node::Return],
     );
     let indices = prog.output_buffer_indices();
-    assert_eq!(indices, &[1]);
+    assert_eq!(indices, &[1, 2]);
 }
 
 #[test]

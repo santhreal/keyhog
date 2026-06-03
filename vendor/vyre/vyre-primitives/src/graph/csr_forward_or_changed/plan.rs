@@ -1,7 +1,8 @@
 use super::dispatch_plan::CsrForwardOrChangedDispatchPlan;
 use super::launch_plan::CsrForwardOrChangedLaunchPlan;
 use super::layout::{
-    CsrForwardOrChangedProgramKey, CSR_FORWARD_OR_CHANGED_HISTORY_FAST_PATH_MAX_ITERS,
+    csr_forward_or_changed_parallel_grid, CsrForwardOrChangedProgramKey,
+    CSR_FORWARD_OR_CHANGED_HISTORY_FAST_PATH_MAX_ITERS,
 };
 use super::validate::validate_csr_inputs;
 
@@ -25,7 +26,7 @@ pub fn plan_csr_forward_or_changed_launch(
     let changed_slots = if uses_changed_history { max_iters } else { 1 };
     Ok(CsrForwardOrChangedLaunchPlan::new(
         CsrForwardOrChangedProgramKey::new(layout, allow_mask, changed_slots, uses_changed_history),
-        [layout.node_count.max(1), 1, 1],
+        csr_forward_or_changed_parallel_grid(layout.node_count),
     ))
 }
 
@@ -35,7 +36,7 @@ pub fn plan_csr_forward_or_changed_launch(
 ///
 /// Returns an actionable diagnostic when CSR inputs are malformed or the
 /// changed-history fast path cannot be represented by the primitive builders.
-pub fn plan_csr_forward_or_changed_dispatch(
+pub(crate) fn plan_csr_forward_or_changed_dispatch(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],

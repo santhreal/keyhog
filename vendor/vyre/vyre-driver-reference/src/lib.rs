@@ -60,14 +60,42 @@ impl VyreBackend for CpuRefBackend {
 }
 
 fn reference_values(program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Value>, BackendError> {
+    let backend_allocated_output = |buffer: &BufferDecl| {
+        buffer.is_output()
+            || buffer.access() == BufferAccess::WriteOnly
+            || (buffer.is_pipeline_live_out() && buffer.access() == BufferAccess::ReadWrite)
+    };
+    let logical_input_count = program
+        .buffers()
+        .iter()
+        .filter(|buffer| {
+            buffer.access() != BufferAccess::Workgroup && !backend_allocated_output(buffer)
+        })
+        .count();
+    let legacy_input_count = program
+        .buffers()
+        .iter()
+        .filter(|buffer| buffer.access() != BufferAccess::Workgroup)
+        .count();
+    let legacy_input_mode =
+        inputs.len() == legacy_input_count && inputs.len() != logical_input_count;
     let mut next_input = 0usize;
     let mut values = Vec::new();
     for buffer in program.buffers() {
         if buffer.access() == BufferAccess::Workgroup {
             continue;
         }
-        let bytes = if buffer.is_output() {
-            synthesized_zero_buffer(buffer, "output")?
+        let bytes = if backend_allocated_output(buffer) {
+            if legacy_input_mode {
+                let _legacy_initializer = inputs.get(next_input).ok_or_else(|| {
+                    BackendError::new(format!(
+                        "cpu-ref missing legacy output initializer for buffer `{}`. Fix: pass one buffer for every non-workgroup declaration or migrate to logical backend inputs.",
+                        buffer.name()
+                    ))
+                })?;
+                next_input += 1;
+            }
+            synthesized_zero_buffer(buffer, "backend-allocated output")?
         } else if let Some(input) = inputs.get(next_input) {
             next_input += 1;
             input.clone()
@@ -85,7 +113,10 @@ fn reference_values(program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Value>,
     Ok(values)
 }
 
-fn synthesized_zero_buffer(buffer: &BufferDecl, role: &'static str) -> Result<Vec<u8>, BackendError> {
+fn synthesized_zero_buffer(
+    buffer: &BufferDecl,
+    role: &'static str,
+) -> Result<Vec<u8>, BackendError> {
     let element_size = buffer.element().size_bytes().ok_or_else(|| {
         BackendError::new(format!(
             "cpu-ref cannot synthesize {role} buffer `{}` because its element type is unsized. Fix: declare fixed-width buffers or pass an explicit input buffer.",

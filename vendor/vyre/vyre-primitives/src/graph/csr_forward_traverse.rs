@@ -21,7 +21,10 @@ use crate::graph::program_graph::ProgramGraphShape;
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::csr_forward_traverse";
 
-pub use crate::graph::csr_frontier_step::{BINDING_FRONTIER_IN, BINDING_FRONTIER_OUT};
+pub use crate::graph::csr_frontier_step::{
+    csr_frontier_step_dispatch_grid as csr_forward_traverse_dispatch_grid, BINDING_FRONTIER_IN,
+    BINDING_FRONTIER_OUT,
+};
 
 /// Number of u32 words needed to hold a bitset over `node_count`
 /// nodes (one bit per node, packed 32-per-word, rounded up).

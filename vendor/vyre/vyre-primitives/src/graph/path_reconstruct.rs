@@ -1031,4 +1031,3 @@ mod tests {
         assert!(has_trap, "zero-depth batched path reconstruction must trap");
     }
 }
-

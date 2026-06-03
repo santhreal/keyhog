@@ -52,8 +52,8 @@ workspace = true
 # every downstream consumer spells the imports in their own doctests), so
 # the shim must be in scope at test time. Dev-dep only; the library has
 # no runtime dependency on `vyre`.
-vyre = { workspace = true }
-vyre-reference.workspace = true
+vyre = { path = "../vyre-core" }
+vyre-reference = { path = "../vyre-reference" }
 proptest.workspace = true
 criterion.workspace = true
 

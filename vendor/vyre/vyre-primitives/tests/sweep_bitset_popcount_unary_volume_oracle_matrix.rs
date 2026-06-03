@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "bitset", feature = "cpu-parity"))]
 
 use vyre_primitives::bitset::popcount;
@@ -30,7 +29,6 @@ fn binary_pairs(cases: usize) -> impl Iterator<Item = (Vec<u32>, Vec<u32>)> {
         )
     })
 }
-
 
 fn oracle(input: &[u32]) -> Vec<u32> {
     input.iter().map(|word| word.count_ones()).collect()

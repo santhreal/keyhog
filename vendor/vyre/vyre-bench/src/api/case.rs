@@ -78,7 +78,7 @@ impl PerformanceContract {
                 crate_name: crate_name.into(),
                 class: BaselineClass::CpuSota,
                 min_speedup_x,
-                backend_ids: vec!["cuda".to_string()],
+                backend_ids: vec!["cuda".to_string(), "wgpu".to_string()],
             }],
         }
     }
@@ -441,6 +441,9 @@ pub trait BenchCase: Send + Sync {
     fn program<'a>(&self, prepared: &'a PreparedCase) -> Option<&'a vyre::ir::Program> {
         prepared_program(prepared).ok()
     }
+    fn workload_fingerprint_bytes(&self, prepared: &PreparedCase) -> Option<[u8; 32]> {
+        self.program(prepared).map(vyre::ir::Program::fingerprint)
+    }
     fn run(
         &self,
         ctx: &mut BenchContext,
@@ -453,7 +456,6 @@ pub trait BenchCase: Send + Sync {
             .unwrap_or((0, 0))
     }
 }
-
 
 fn static_program_bytes_touched(program: &vyre::ir::Program) -> (u64, u64) {
     let mut read_bytes = 0_u64;
@@ -488,6 +490,19 @@ mod tests {
 
     fn f32_bytes(values: &[f32]) -> Vec<u8> {
         vyre_primitives::wire::pack_f32_slice(values)
+    }
+
+    #[test]
+    fn cpu_sota_contract_applies_to_cuda_and_wgpu_release_backends() {
+        let contract = PerformanceContract::cpu_sota_100x("primitive", "vyre", "cpu baseline");
+        let backend_ids = &contract.baselines[0].backend_ids;
+
+        for backend in ["cuda", "wgpu"] {
+            assert!(
+                backend_ids.iter().any(|candidate| candidate == backend),
+                "Fix: CPU-SOTA release contracts must apply to `{backend}` evidence."
+            );
+        }
     }
 
     #[test]
@@ -528,4 +543,3 @@ mod tests {
         );
     }
 }
-

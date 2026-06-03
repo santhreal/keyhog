@@ -494,7 +494,6 @@ impl DfaDedupTable {
     }
 }
 
-
 fn saved_wire_ppm(saved_wire_bytes: usize, input_wire_bytes: usize) -> u32 {
     if input_wire_bytes == 0 {
         return 0;
@@ -1236,4 +1235,3 @@ mod tests {
         }
     }
 }
-

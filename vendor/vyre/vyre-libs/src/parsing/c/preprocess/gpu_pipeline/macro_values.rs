@@ -210,6 +210,7 @@ fn parse_object_like_integer_macro_with_idents(
         index: 0,
         macro_indexes,
         values,
+        depth: 0,
     };
     let value = parser.parse_conditional_expression()?;
     parser.skip_ws();
@@ -221,10 +222,30 @@ struct MacroIntegerParser<'a> {
     index: usize,
     macro_indexes: &'a HashMap<&'a [u8], usize>,
     values: &'a [u32],
+    /// Recursion depth of the integer-macro conditional evaluator, bounded by
+    /// [`crate::parsing::c::preprocess::expr_parser::MAX_PP_EXPR_DEPTH`] so a
+    /// deeply-nested object-like macro body (e.g. `#define A ((((...))))`)
+    /// fails closed (`None`) instead of overflowing the native stack and
+    /// aborting the process during expansion.
+    depth: usize,
 }
 
 impl MacroIntegerParser<'_> {
     fn parse_conditional_expression(&mut self) -> Option<u32> {
+        // Guard the ternary recursion (and, via parens in
+        // `parse_primary_expression`, all parenthesized nesting). Fail closed
+        // before the native stack overflows on hostile macro bodies.
+        self.depth += 1;
+        let r = if self.depth > crate::parsing::c::preprocess::expr_parser::MAX_PP_EXPR_DEPTH {
+            None
+        } else {
+            self.parse_conditional_expression_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_conditional_expression_inner(&mut self) -> Option<u32> {
         let condition = self.parse_logical_or_expression()?;
         self.skip_ws();
         if !self.consume_byte(b'?') {
@@ -396,6 +417,19 @@ impl MacroIntegerParser<'_> {
     }
 
     fn parse_unary_expression(&mut self) -> Option<u32> {
+        // `+ - ! ~` chains right-recurse here; guard on the shared counter so
+        // `#define A ----...1` style bodies fail closed instead of crashing.
+        self.depth += 1;
+        let r = if self.depth > crate::parsing::c::preprocess::expr_parser::MAX_PP_EXPR_DEPTH {
+            None
+        } else {
+            self.parse_unary_expression_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_unary_expression_inner(&mut self) -> Option<u32> {
         self.skip_ws();
         if self.consume_byte(b'+') {
             return self.parse_unary_expression();
@@ -539,7 +573,6 @@ impl MacroIntegerParser<'_> {
     }
 }
 
-
 fn scan_while(body: &[u8], start: usize, predicate: impl Fn(u8) -> bool) -> usize {
     let mut index = start;
     while body.get(index).copied().is_some_and(&predicate) {
@@ -639,5 +672,76 @@ mod tests {
             vec![9, 0, 10]
         );
     }
-}
 
+    // --- Adversarial: deeply-nested object-like macro bodies must fail closed ---
+    // The integer-macro evaluator is recursive descent (ternary in
+    // parse_conditional_expression, `+ - ! ~` and parens reaching back through
+    // parse_unary_expression / parse_primary_expression). Without a depth bound
+    // a hostile `#define` body overflows the native stack and aborts the
+    // process during macro-value resolution. The guard makes the parser return
+    // `None`, which object_like_macro_value maps to 0 for a non-empty body, so
+    // the value resolves to 0 without crashing. These tests are self-proving: a
+    // regressed guard SIGABRTs the test binary rather than reporting a failure.
+
+    #[test]
+    fn macro_integer_values_fail_closed_on_deep_paren_nesting() {
+        let n = 50_000;
+        let mut body = Vec::new();
+        body.extend(std::iter::repeat(b'(').take(n));
+        body.push(b'1');
+        body.extend(std::iter::repeat(b')').take(n));
+        let macros = [object_macro(b"BOMB", &body)];
+        assert_eq!(
+            macro_integer_values(&macros)
+                .expect("macro integer resolution must complete, not crash"),
+            vec![0],
+            "deep paren-nested macro body must fail closed to 0"
+        );
+    }
+
+    #[test]
+    fn macro_integer_values_fail_closed_on_deep_unary_nesting() {
+        let mut body = vec![b'!'; 50_000];
+        body.push(b'1');
+        let macros = [object_macro(b"BOMB", &body)];
+        assert_eq!(
+            macro_integer_values(&macros)
+                .expect("macro integer resolution must complete, not crash"),
+            vec![0],
+            "deep `!`-nested macro body must fail closed to 0"
+        );
+    }
+
+    #[test]
+    fn macro_integer_values_fail_closed_on_deep_ternary_nesting() {
+        let n = 50_000;
+        let mut body = Vec::new();
+        for _ in 0..n {
+            body.extend_from_slice(b"1?1:");
+        }
+        body.push(b'1');
+        let macros = [object_macro(b"BOMB", &body)];
+        assert_eq!(
+            macro_integer_values(&macros)
+                .expect("macro integer resolution must complete, not crash"),
+            vec![0],
+            "deep ternary-nested macro body must fail closed to 0"
+        );
+    }
+
+    #[test]
+    fn macro_integer_values_shallow_nesting_still_resolves() {
+        // Guard must not over-reject: 16 parens around a value still resolves.
+        let depth = 16;
+        let mut body = Vec::new();
+        body.extend(std::iter::repeat(b'(').take(depth));
+        body.extend_from_slice(b"42");
+        body.extend(std::iter::repeat(b')').take(depth));
+        let macros = [object_macro(b"OK", &body)];
+        assert_eq!(
+            macro_integer_values(&macros).expect("macro integer resolution must complete"),
+            vec![42],
+            "a 16-deep parenthesized macro body is legal and must resolve"
+        );
+    }
+}

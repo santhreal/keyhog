@@ -57,6 +57,23 @@ pub const BINDING_SUM_PARTIAL_OUT: u32 = 2;
 /// `carry_partial` output binding (one u32 per limb, value is 0 or 1).
 pub const BINDING_CARRY_PARTIAL_OUT: u32 = 3;
 
+/// One lane per bigint limb in the split add-carry pass.
+pub const BIGINT_ADD_CARRY_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid that covers every bigint limb lane.
+#[must_use]
+pub const fn bigint_add_carry_dispatch_grid(limb_count: u32) -> [u32; 3] {
+    let lanes_per_block = BIGINT_ADD_CARRY_WORKGROUP_SIZE[0];
+    let full_blocks = limb_count / lanes_per_block;
+    let tail_block = if limb_count % lanes_per_block == 0 {
+        0
+    } else {
+        1
+    };
+    let blocks = full_blocks + tail_block;
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
+
 /// Bigint CPU-reference error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -156,7 +173,7 @@ pub fn bigint_add_carry(limb_count: u32) -> Program {
         source_region: None,
         body: Arc::new(body),
     }];
-    Program::wrapped(buffers, [256, 1, 1], entry)
+    Program::wrapped(buffers, BIGINT_ADD_CARRY_WORKGROUP_SIZE, entry)
 }
 
 /// CPU reference. Returns `(sum_partial, carry_partial)` matching the
@@ -494,17 +511,36 @@ mod tests {
 
     #[test]
     fn generated_split_and_resolve_matches_ripple_reference() {
-        for len in 1usize..=24 {
-            let a: Vec<u32> = (0..len)
-                .map(|idx| {
-                    (idx as u32)
-                        .wrapping_mul(0x9E37_79B9)
-                        .wrapping_add(len as u32)
-                })
-                .collect();
-            let b: Vec<u32> = (0..len)
-                .map(|idx| (idx as u32).wrapping_mul(0x85EB_CA6B).wrapping_add(7))
-                .collect();
+        let mut state = 0xB16A_DDCA_u32;
+        for case in 0..4096u32 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let len = match case {
+                0 => 1,
+                1 => 24,
+                2 => 256,
+                3 => 257,
+                4 => 1025,
+                _ => state % 4097 + 1,
+            } as usize;
+            let mut a = Vec::with_capacity(len);
+            let mut b = Vec::with_capacity(len);
+            for idx in 0..len {
+                state = state.rotate_left(9) ^ (idx as u32).wrapping_mul(0x9E37_79B9);
+                let left = match idx % 11 {
+                    0 => u32::MAX,
+                    1 => 0,
+                    2 => 0x8000_0000,
+                    _ => state,
+                };
+                let right = match idx % 13 {
+                    0 => 1,
+                    1 => u32::MAX,
+                    2 => 0x8000_0000,
+                    _ => state.rotate_right(7),
+                };
+                a.push(left);
+                b.push(right);
+            }
             let (sum_partial, carry_partial) = bigint_add_carry_cpu(&a, &b).unwrap();
             let (final_sum, final_carry) =
                 resolve_carry_chain_cpu(&sum_partial, &carry_partial).unwrap();
@@ -516,10 +552,13 @@ mod tests {
                 carry = total >> 32;
             }
 
-            assert_eq!(final_sum, expected, "generated bigint case len={len}");
+            assert_eq!(
+                final_sum, expected,
+                "generated bigint case {case} len={len}"
+            );
             assert_eq!(
                 final_carry, carry as u32,
-                "generated bigint carry len={len}"
+                "generated bigint carry case {case} len={len}"
             );
         }
     }
@@ -544,7 +583,16 @@ mod tests {
             4,
             "a, b, sum_partial, carry_partial"
         );
-        assert_eq!(program.workgroup_size(), [256, 1, 1]);
+        assert_eq!(program.workgroup_size(), BIGINT_ADD_CARRY_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn dispatch_grid_packs_limb_lanes_into_workgroups() {
+        assert_eq!(bigint_add_carry_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(bigint_add_carry_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(bigint_add_carry_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(bigint_add_carry_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(bigint_add_carry_dispatch_grid(1025), [5, 1, 1]);
     }
 
     #[test]
@@ -582,4 +630,3 @@ mod tests {
         assert_eq!(BINDING_CARRY_PARTIAL_OUT, 3);
     }
 }
-

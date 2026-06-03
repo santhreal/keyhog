@@ -1,16 +1,15 @@
 use super::buffers::{
-    bucket_pow2, checked_gpu_u32, pack_u32_words_into, pad_to_u32_words_into, padded_u32_byte_len,
-    read_u32_scalar_exact, reserve_gpu_staging_bytes, u32_word_byte_len,
-    unpack_u32_words_prefix_exact,
+    bucket_pow2, checked_gpu_u32, pack_u32_words_into, read_u32_scalar_exact,
+    reserve_gpu_staging_bytes, u32_word_byte_len, unpack_u32_words_prefix_exact,
 };
 use super::dispatch::GpuDispatcher;
 use super::scan::{inclusive_prefix_scan_u32_into, PrefixScanScratch};
 use crate::parsing::c::lex::lexer::{
     c11_compact_sparse_tokens, c11_compact_sparse_tokens_output,
-    c11_lexer_regular_sparse_packed_haystack_with_flags,
+    c11_lexer_regular_sparse_u8_haystack_with_flags,
 };
 use crate::parsing::c::lex::tokens::{TOK_PP_ELIF, TOK_PP_IF};
-use crate::parsing::c::preprocess::gpu_directive_metadata::gpu_directive_metadata;
+use crate::parsing::c::preprocess::gpu_directive_metadata::gpu_directive_metadata_u8;
 use crate::parsing::c::preprocess::gpu_if_expression_abi::INVALID_EXPR_VALUE;
 use std::sync::Arc;
 
@@ -127,10 +126,8 @@ pub(super) struct TokenizationScratch {
     tok_types_b: Vec<u8>,
     tok_starts_b: Vec<u8>,
     tok_lens_b: Vec<u8>,
-    raw_words: Vec<u8>,
     directive_zero: Vec<u8>,
     directive_outputs: Vec<Vec<u8>>,
-    raw_padded: Vec<u8>,
     sparse_zero: Vec<u8>,
     sparse_outputs: Vec<Vec<u8>>,
     prefix_scan: PrefixScanScratch,
@@ -226,13 +223,12 @@ pub(super) fn gpu_tokenize_and_classify_with_scratch(
     // pipeline cache across files. Source bytes are runtime-sized now, so they
     // are passed exactly and no longer drive shader shape or padding copies.
     let n_bucket = bucket_pow2(n_tokens.max(1), 64);
-    let dm_prog = gpu_directive_metadata(n_bucket as u32, 0);
+    let dm_prog = gpu_directive_metadata_u8(n_bucket as u32, 0);
     let n_pad = n_bucket;
     let _ = n_bytes;
     pack_u32_words_into(&mut scratch.tok_types_b, &tok_types, n_pad)?;
     pack_u32_words_into(&mut scratch.tok_starts_b, &tok_starts, n_pad)?;
     pack_u32_words_into(&mut scratch.tok_lens_b, &tok_lens, n_pad)?;
-    pad_to_u32_words_into(&mut scratch.raw_words, raw)?;
     TokenizationScratch::prepare_zero(
         &mut scratch.directive_zero,
         u32_word_byte_len(n_pad, "directive metadata zero staging")?,
@@ -241,7 +237,7 @@ pub(super) fn gpu_tokenize_and_classify_with_scratch(
         scratch.tok_types_b.as_slice(),
         scratch.tok_starts_b.as_slice(),
         scratch.tok_lens_b.as_slice(),
-        scratch.raw_words.as_slice(),
+        raw,
         scratch.directive_zero.as_slice(),
         scratch.directive_zero.as_slice(),
     ];
@@ -315,12 +311,11 @@ fn sparse_tokenize(
     // Without bucketing every distinct file size produced a unique
     // program fingerprint and paid a ~2 second cold native-compile per
     // dispatch. Soundness: the lexer's default classification for any
-    // byte is `tok_type=TOK_WHITESPACE, emit=0`. Zero-padding the
-    // haystack from `raw.len()` up to the bucket size therefore produces
-    // no spurious tokens  -  padding positions get emit=0, so they
-    // contribute zero to the prefix scan's running sum and zero to the
-    // compact output. n_tokens at the end reflects only real-source
-    // tokens.
+    // byte is `tok_type=TOK_WHITESPACE, emit=0`. The raw-U8 haystack
+    // stays runtime-sized; the bucketed sparse lexer reads zero beyond the
+    // host-supplied raw length. Padding positions therefore get emit=0,
+    // contribute zero to the prefix scan's running sum, and never scatter into
+    // the compact output. n_tokens at the end reflects only real-source tokens.
     // PERF 2026-05-10: floor 1024  -  same as gpu_extract_directive_payloads
     // and gpu_tokenize_and_classify. The lexer kernel was previously
     // unbucketed (every distinct file size was its own program); now it
@@ -329,18 +324,9 @@ fn sparse_tokenize(
         "sparse tokenizer bucket byte count",
         bucket_pow2(raw.len().max(1), 1024),
     )?;
-    let bucket_pad_words = n_bytes_bucket as usize;
-    let raw_pad_len = padded_u32_byte_len(n_bytes_bucket as usize, "sparse tokenizer raw input")?;
-    scratch.raw_padded.clear();
-    reserve_gpu_staging_bytes(
-        &mut scratch.raw_padded,
-        raw_pad_len,
-        "sparse tokenizer raw input",
-    )?;
-    scratch.raw_padded.extend_from_slice(raw);
-    scratch.raw_padded.resize(raw_pad_len, 0);
+    let token_capacity = n_bytes_bucket as usize;
 
-    let sparse = c11_lexer_regular_sparse_packed_haystack_with_flags(
+    let sparse = c11_lexer_regular_sparse_u8_haystack_with_flags(
         "haystack",
         "sparse_types",
         "sparse_starts",
@@ -350,10 +336,10 @@ fn sparse_tokenize(
     );
     TokenizationScratch::prepare_zero(
         &mut scratch.sparse_zero,
-        u32_word_byte_len(bucket_pad_words, "sparse tokenizer zero staging")?,
+        u32_word_byte_len(token_capacity, "sparse tokenizer zero staging")?,
     )?;
     let sparse_inputs: [&[u8]; 5] = [
-        scratch.raw_padded.as_slice(),
+        raw,
         scratch.sparse_zero.as_slice(),
         scratch.sparse_zero.as_slice(),
         scratch.sparse_zero.as_slice(),
@@ -407,7 +393,7 @@ fn sparse_tokenize(
     };
     TokenizationScratch::prepare_zero(
         &mut scratch.compact_zero,
-        u32_word_byte_len(bucket_pad_words, "compact tokenizer zero staging")?,
+        u32_word_byte_len(token_capacity, "compact tokenizer zero staging")?,
     )?;
     TokenizationScratch::prepare_zero(&mut scratch.compact_count_zero, 4)?;
     if requires_output_inputs {
@@ -445,7 +431,6 @@ fn sparse_tokenize(
     let n_tokens =
         read_u32_scalar_exact(count_buf, "c11_sparse_lexer preprocess compact token count")?
             as usize;
-    let token_capacity = bucket_pad_words;
     if n_tokens > token_capacity {
         return Err(format!(
             "c11_sparse_lexer preprocess compact: token count {n_tokens} exceeds output capacity {token_capacity}. Fix: backend must keep out_counts within the dense token table capacity."
@@ -515,4 +500,3 @@ mod tests {
         );
     }
 }
-

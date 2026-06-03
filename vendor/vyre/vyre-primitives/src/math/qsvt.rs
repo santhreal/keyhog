@@ -448,7 +448,6 @@ mod tests {
             capacities,
             [
                 out.capacity(),
-
                 prev.capacity(),
                 curr.capacity(),
                 next.capacity()
@@ -597,4 +596,3 @@ mod tests {
         );
     }
 }
-

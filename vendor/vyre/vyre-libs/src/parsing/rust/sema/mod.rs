@@ -13,11 +13,11 @@
 //! implements the mutability rule (E0596) and reports the conflicting-borrow
 //! rules (E0499/E0502) as not-yet-wired rather than faking a complete pass.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use thiserror::Error;
 
-use super::lex::tokens::{EQ, LT, MINUS, PLUS, SLASH, STAR};
+use super::lex::tokens::{ANDAND, EQ, GE, GT, LE, LT, MINUS, NE, OROR, PERCENT, PLUS, SLASH, STAR};
 use super::parse::{Expr, Module, Stmt, Type};
 
 /// Stable id for a resolved binding (index into [`Resolution::bindings`]).
@@ -46,6 +46,8 @@ pub struct Resolution {
     pub bindings: Vec<Binding>,
     /// Map from each variable-use source offset to its resolved binding.
     pub uses: HashMap<u32, BindingId>,
+    /// Map from each call's name source offset to the callee function index.
+    pub calls: HashMap<u32, usize>,
 }
 
 /// Errors from the Rust semantic-analysis stages.
@@ -76,7 +78,9 @@ pub enum RustSemaError {
         offset: u32,
     },
     /// A function returned a reference to a call-local value (rustc E0597).
-    #[error("cannot return a reference to a local value; it does not live long enough (byte {offset})")]
+    #[error(
+        "cannot return a reference to a local value; it does not live long enough (byte {offset})"
+    )]
     ReturnsReferenceToLocal {
         /// Source byte offset of the offending place.
         offset: u32,
@@ -133,9 +137,12 @@ pub enum RustSemaError {
         /// The declared return type.
         expected: String,
     },
-    /// Borrow checking is incomplete: the conflicting-borrow rules require weir.
-    #[error("borrow checking is incomplete: the conflicting-borrow rules (E0499/E0502) require the weir dataflow analysis and are not yet wired")]
-    BorrowUnavailable,
+    /// Assignment to a binding not declared `mut` (rustc E0384).
+    #[error("cannot assign twice to immutable variable `{name}`")]
+    AssignToImmutable {
+        /// The immutable binding being assigned.
+        name: String,
+    },
 }
 
 /// Recover the identifier text that begins at `offset` in `source`.
@@ -149,6 +156,26 @@ fn ident_at(source: &[u8], offset: u32) -> String {
         end += 1;
     }
     String::from_utf8_lossy(&source[start..end]).into_owned()
+}
+
+/// Whether a value of type `found` is accepted where `expected` is required,
+/// allowing rustc's `&mut T -> &T` reference coercion (top-level only; the
+/// pointee type must match exactly, as references are invariant in it). A shared
+/// `&T` never coerces to `&mut T`.
+fn coerces(found: &Type, expected: &Type) -> bool {
+    match (found, expected) {
+        (
+            Type::Ref {
+                mutable: fm,
+                inner: fi,
+            },
+            Type::Ref {
+                mutable: em,
+                inner: ei,
+            },
+        ) => (fm == em || (*fm && !*em)) && fi == ei,
+        _ => found == expected,
+    }
 }
 
 /// Render a type for diagnostics, matching Rust surface syntax.
@@ -169,9 +196,10 @@ fn type_str(ty: &Type) -> String {
 
 struct Resolver<'a> {
     source: &'a [u8],
-    fn_names: &'a HashSet<String>,
+    fn_index: &'a HashMap<String, usize>,
     bindings: Vec<Binding>,
     uses: HashMap<u32, BindingId>,
+    calls: HashMap<u32, usize>,
     scopes: Vec<HashMap<String, BindingId>>,
     function: usize,
 }
@@ -193,7 +221,10 @@ impl Resolver<'_> {
     }
 
     fn lookup(&self, name: &str) -> Option<BindingId> {
-        self.scopes.iter().rev().find_map(|frame| frame.get(name).copied())
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|frame| frame.get(name).copied())
     }
 
     fn resolve_expr(&mut self, expr: &Expr) -> Result<(), RustSemaError> {
@@ -206,7 +237,10 @@ impl Resolver<'_> {
                         self.uses.insert(*offset, id);
                         Ok(())
                     }
-                    None => Err(RustSemaError::UnresolvedName { name, offset: *offset }),
+                    None => Err(RustSemaError::UnresolvedName {
+                        name,
+                        offset: *offset,
+                    }),
                 }
             }
             Expr::Binary { lhs, rhs, .. } => {
@@ -215,10 +249,20 @@ impl Resolver<'_> {
             }
             Expr::Borrow { expr, .. } => self.resolve_expr(expr),
             Expr::Deref(inner) => self.resolve_expr(inner),
+            Expr::Not(inner) => self.resolve_expr(inner),
+            Expr::Neg(inner) => self.resolve_expr(inner),
             Expr::Call { name, args } => {
                 let fname = ident_at(self.source, *name);
-                if !self.fn_names.contains(&fname) {
-                    return Err(RustSemaError::UnknownFunction { name: fname, offset: *name });
+                match self.fn_index.get(&fname) {
+                    Some(&idx) => {
+                        self.calls.insert(*name, idx);
+                    }
+                    None => {
+                        return Err(RustSemaError::UnknownFunction {
+                            name: fname,
+                            offset: *name,
+                        })
+                    }
                 }
                 for arg in args {
                     self.resolve_expr(arg)?;
@@ -231,7 +275,11 @@ impl Resolver<'_> {
                 self.scopes.pop();
                 result
             }
-            Expr::If { cond, then_block, else_block } => {
+            Expr::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
                 self.resolve_expr(cond)?;
                 self.resolve_expr(then_block)?;
                 if let Some(else_block) = else_block {
@@ -245,14 +293,56 @@ impl Resolver<'_> {
     fn resolve_block(&mut self, stmts: &[Stmt]) -> Result<(), RustSemaError> {
         for stmt in stmts {
             match stmt {
-                Stmt::Let { mutable, name, ty, init } => {
+                Stmt::Let {
+                    mutable,
+                    name,
+                    ty,
+                    init,
+                } => {
                     self.resolve_expr(init)?;
                     let recovered = ident_at(self.source, *name);
                     self.declare(recovered, *mutable, ty.clone(), *name);
                 }
                 Stmt::Expr(expr) => self.resolve_expr(expr)?,
+                Stmt::Assign { name, value } => {
+                    self.resolve_expr(value)?;
+                    let n = ident_at(self.source, *name);
+                    match self.lookup(&n) {
+                        Some(id) => {
+                            self.uses.insert(*name, id);
+                        }
+                        None => {
+                            return Err(RustSemaError::UnresolvedName {
+                                name: n,
+                                offset: *name,
+                            })
+                        }
+                    }
+                }
                 Stmt::Return(Some(expr)) => self.resolve_expr(expr)?,
                 Stmt::Return(None) => {}
+                Stmt::While { cond, body } => {
+                    self.resolve_expr(cond)?;
+                    self.scopes.push(HashMap::new());
+                    let r = self.resolve_block(body);
+                    self.scopes.pop();
+                    r?;
+                }
+                Stmt::For {
+                    name,
+                    start,
+                    end,
+                    body,
+                } => {
+                    self.resolve_expr(start)?;
+                    self.resolve_expr(end)?;
+                    self.scopes.push(HashMap::new());
+                    let recovered = ident_at(self.source, *name);
+                    self.declare(recovered, false, Type::I32, *name);
+                    let r = self.resolve_block(body);
+                    self.scopes.pop();
+                    r?;
+                }
             }
         }
         Ok(())
@@ -269,14 +359,19 @@ impl Resolver<'_> {
 /// Returns [`RustSemaError::UnresolvedName`] or [`RustSemaError::UnknownFunction`]
 /// for a use with no in-scope definition.
 pub fn resolve(module: &Module, source: &[u8]) -> Result<Resolution, RustSemaError> {
-    let fn_names: HashSet<String> =
-        module.functions.iter().map(|f| ident_at(source, f.name)).collect();
+    let fn_index: HashMap<String, usize> = module
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (ident_at(source, f.name), i))
+        .collect();
 
     let mut resolver = Resolver {
         source,
-        fn_names: &fn_names,
+        fn_index: &fn_index,
         bindings: Vec::new(),
         uses: HashMap::new(),
+        calls: HashMap::new(),
         scopes: Vec::new(),
         function: 0,
     };
@@ -291,7 +386,11 @@ pub fn resolve(module: &Module, source: &[u8]) -> Result<Resolution, RustSemaErr
         resolver.resolve_block(&func.body)?;
     }
 
-    Ok(Resolution { bindings: resolver.bindings, uses: resolver.uses })
+    Ok(Resolution {
+        bindings: resolver.bindings,
+        uses: resolver.uses,
+        calls: resolver.calls,
+    })
 }
 
 // ----------------------------------------------------------------------------
@@ -327,17 +426,17 @@ impl TypeCk<'_> {
                 let lt = self.type_of(lhs)?;
                 let rt = self.type_of(rhs)?;
                 match *op {
-                    PLUS | MINUS | STAR | SLASH => {
+                    PLUS | MINUS | STAR | SLASH | PERCENT => {
                         self.require(&lt, &Type::I32, "arithmetic operand")?;
                         self.require(&rt, &Type::I32, "arithmetic operand")?;
                         Ok(Type::I32)
                     }
-                    LT => {
+                    LT | GT | LE | GE => {
                         self.require(&lt, &Type::I32, "comparison operand")?;
                         self.require(&rt, &Type::I32, "comparison operand")?;
                         Ok(Type::Bool)
                     }
-                    EQ => {
+                    EQ | NE => {
                         if lt != rt {
                             return Err(RustSemaError::TypeMismatch {
                                 context: "equality operands".to_string(),
@@ -347,23 +446,46 @@ impl TypeCk<'_> {
                         }
                         Ok(Type::Bool)
                     }
+                    ANDAND | OROR => {
+                        self.require(&lt, &Type::Bool, "logical operand")?;
+                        self.require(&rt, &Type::Bool, "logical operand")?;
+                        Ok(Type::Bool)
+                    }
                     _ => Ok(Type::I32),
                 }
             }
             Expr::Borrow { mutable, expr } => {
                 let inner = self.type_of(expr)?;
-                Ok(Type::Ref { mutable: *mutable, inner: Box::new(inner) })
+                Ok(Type::Ref {
+                    mutable: *mutable,
+                    inner: Box::new(inner),
+                })
             }
             Expr::Deref(inner) => match self.type_of(inner)? {
                 Type::Ref { inner, .. } => Ok(*inner),
-                other => Err(RustSemaError::CannotDeref { found: type_str(&other) }),
+                other => Err(RustSemaError::CannotDeref {
+                    found: type_str(&other),
+                }),
             },
+            Expr::Not(inner) => {
+                let it = self.type_of(inner)?;
+                self.require(&it, &Type::Bool, "logical-not operand")?;
+                Ok(Type::Bool)
+            }
+            Expr::Neg(inner) => {
+                let it = self.type_of(inner)?;
+                self.require(&it, &Type::I32, "arithmetic-negation operand")?;
+                Ok(Type::I32)
+            }
             Expr::Call { name, args } => {
                 let fname = ident_at(self.source, *name);
-                let sig = self.sigs.get(&fname).ok_or(RustSemaError::UnknownFunction {
-                    name: fname.clone(),
-                    offset: *name,
-                })?;
+                let sig = self
+                    .sigs
+                    .get(&fname)
+                    .ok_or(RustSemaError::UnknownFunction {
+                        name: fname.clone(),
+                        offset: *name,
+                    })?;
                 if args.len() != sig.params.len() {
                     return Err(RustSemaError::ArgCountMismatch {
                         function: fname,
@@ -381,10 +503,16 @@ impl TypeCk<'_> {
                 self.check_block(stmts)?;
                 Ok(Type::Unit)
             }
-            Expr::If { cond, then_block, else_block } => {
+            Expr::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
                 let ct = self.type_of(cond)?;
                 if ct != Type::Bool {
-                    return Err(RustSemaError::NonBooleanCondition { found: type_str(&ct) });
+                    return Err(RustSemaError::NonBooleanCondition {
+                        found: type_str(&ct),
+                    });
                 }
                 let tt = self.type_of(then_block)?;
                 let et = match else_block {
@@ -404,7 +532,7 @@ impl TypeCk<'_> {
     }
 
     fn require(&self, found: &Type, expected: &Type, context: &str) -> Result<(), RustSemaError> {
-        if found == expected {
+        if coerces(found, expected) {
             Ok(())
         } else {
             Err(RustSemaError::TypeMismatch {
@@ -425,12 +553,42 @@ impl TypeCk<'_> {
                 Stmt::Expr(expr) => {
                     self.type_of(expr)?;
                 }
+                Stmt::Assign { name, value } => {
+                    let id = self.resolution.uses[name];
+                    let (mutable, target_ty, bname) = {
+                        let b = &self.resolution.bindings[id];
+                        (b.mutable, b.ty.clone(), b.name.clone())
+                    };
+                    if !mutable {
+                        return Err(RustSemaError::AssignToImmutable { name: bname });
+                    }
+                    let vt = self.type_of(value)?;
+                    self.require(&vt, &target_ty, "assignment")?;
+                }
                 Stmt::Return(Some(expr)) => {
                     let rt = self.type_of(expr)?;
                     self.require(&rt, self.ret, "return value")?;
                 }
                 Stmt::Return(None) => {
                     self.require(&Type::Unit, self.ret, "return value")?;
+                }
+                Stmt::While { cond, body } => {
+                    let ct = self.type_of(cond)?;
+                    if ct != Type::Bool {
+                        return Err(RustSemaError::NonBooleanCondition {
+                            found: type_str(&ct),
+                        });
+                    }
+                    self.check_block(body)?;
+                }
+                Stmt::For {
+                    start, end, body, ..
+                } => {
+                    let st = self.type_of(start)?;
+                    self.require(&st, &Type::I32, "for range start")?;
+                    let et = self.type_of(end)?;
+                    self.require(&et, &Type::I32, "for range end")?;
+                    self.check_block(body)?;
                 }
             }
         }
@@ -446,7 +604,11 @@ impl TypeCk<'_> {
 ///
 /// # Errors
 /// Returns the matching [`RustSemaError`] variant on a type error.
-pub fn typeck(module: &Module, source: &[u8], resolution: &Resolution) -> Result<(), RustSemaError> {
+pub fn typeck(
+    module: &Module,
+    source: &[u8],
+    resolution: &Resolution,
+) -> Result<(), RustSemaError> {
     let sigs: HashMap<String, FnSig> = module
         .functions
         .iter()
@@ -462,7 +624,12 @@ pub fn typeck(module: &Module, source: &[u8], resolution: &Resolution) -> Result
         .collect();
 
     for func in &module.functions {
-        let ck = TypeCk { source, resolution, sigs: &sigs, ret: &func.ret };
+        let ck = TypeCk {
+            source,
+            resolution,
+            sigs: &sigs,
+            ret: &func.ret,
+        };
         ck.check_block(&func.body)?;
         if func.ret != Type::Unit && !block_diverges(&func.body) {
             return Err(RustSemaError::MissingReturn {
@@ -483,6 +650,9 @@ fn stmt_diverges(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Return(_) => true,
         Stmt::Expr(expr) => expr_diverges(expr),
+        Stmt::Assign { .. } => false,
+        Stmt::While { .. } => false,
+        Stmt::For { .. } => false,
         Stmt::Let { init, .. } => expr_diverges(init),
     }
 }
@@ -490,9 +660,11 @@ fn stmt_diverges(stmt: &Stmt) -> bool {
 fn expr_diverges(expr: &Expr) -> bool {
     match expr {
         Expr::Block(stmts) => block_diverges(stmts),
-        Expr::If { then_block, else_block: Some(else_block), .. } => {
-            expr_diverges(then_block) && expr_diverges(else_block)
-        }
+        Expr::If {
+            then_block,
+            else_block: Some(else_block),
+            ..
+        } => expr_diverges(then_block) && expr_diverges(else_block),
         _ => false,
     }
 }
@@ -501,26 +673,23 @@ fn expr_diverges(expr: &Expr) -> bool {
 // Borrow checking
 // ----------------------------------------------------------------------------
 
-/// Borrow-check a resolved module.
+/// Borrow-check a resolved module: the nano-subset verdict.
 ///
-/// Implemented rules: mutability (E0596) via [`check_mutability`], dangling
-/// reference / escape (E0597) via [`check_escape`], and conflicting borrows
-/// (E0499/E0502) via [`check_conflicts`]. Conflict detection currently covers
-/// straight-line top-level borrows; branch-crossing, nested, and through-deref
-/// conflicts await the weir CFG-liveness analysis, so `borrow_check` surfaces a
-/// real error when one exists and otherwise reports
-/// [`RustSemaError::BorrowUnavailable`] rather than claiming a complete borrow
-/// check it has not performed.
+/// Runs mutability (E0596) via [`check_mutability`], dangling-reference / escape
+/// (E0597) via [`check_escape`], and conflicting borrows (E0499/E0502) via
+/// [`check_conflicts`], which lowers each function to a CFG and runs the NLL
+/// loan-liveness engine (branches and through-deref reborrows included). On the
+/// nano-subset this verdict is accept/reject-identical to rustc; the
+/// `rust_sema_borrow_oracle` differential gates that agreement against a real
+/// rustc over generated straight-line, branch, and reborrow programs.
 ///
 /// # Errors
-/// Returns the matching [`RustSemaError`] for an E0596/E0597/E0499/E0502
-/// violation, or [`RustSemaError::BorrowUnavailable`] while conflict detection
-/// remains partial.
+/// Returns the matching [`RustSemaError`] for an E0596/E0597/E0499/E0502 violation.
 pub fn borrow_check(module: &Module, resolution: &Resolution) -> Result<(), RustSemaError> {
     check_mutability(module, resolution)?;
     check_escape(module, resolution)?;
     check_conflicts(module, resolution)?;
-    Err(RustSemaError::BorrowUnavailable)
+    Ok(())
 }
 
 /// Check the mutability borrow rule (rustc E0596) over a resolved module.
@@ -543,6 +712,18 @@ fn check_mut_stmts(stmts: &[Stmt], resolution: &Resolution) -> Result<(), RustSe
         match stmt {
             Stmt::Let { init, .. } => check_mut_expr(init, resolution)?,
             Stmt::Expr(expr) => check_mut_expr(expr, resolution)?,
+            Stmt::Assign { value, .. } => check_mut_expr(value, resolution)?,
+            Stmt::While { cond, body } => {
+                check_mut_expr(cond, resolution)?;
+                check_mut_stmts(body, resolution)?;
+            }
+            Stmt::For {
+                start, end, body, ..
+            } => {
+                check_mut_expr(start, resolution)?;
+                check_mut_expr(end, resolution)?;
+                check_mut_stmts(body, resolution)?;
+            }
             Stmt::Return(Some(expr)) => check_mut_expr(expr, resolution)?,
             Stmt::Return(None) => {}
         }
@@ -563,6 +744,8 @@ fn check_mut_expr(expr: &Expr, resolution: &Resolution) -> Result<(), RustSemaEr
             check_mut_expr(rhs, resolution)
         }
         Expr::Deref(inner) => check_mut_expr(inner, resolution),
+        Expr::Not(inner) => check_mut_expr(inner, resolution),
+        Expr::Neg(inner) => check_mut_expr(inner, resolution),
         Expr::Call { args, .. } => {
             for arg in args {
                 check_mut_expr(arg, resolution)?;
@@ -570,7 +753,11 @@ fn check_mut_expr(expr: &Expr, resolution: &Resolution) -> Result<(), RustSemaEr
             Ok(())
         }
         Expr::Block(stmts) => check_mut_stmts(stmts, resolution),
-        Expr::If { cond, then_block, else_block } => {
+        Expr::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
             check_mut_expr(cond, resolution)?;
             check_mut_expr(then_block, resolution)?;
             if let Some(else_block) = else_block {
@@ -645,7 +832,13 @@ pub fn check_escape(module: &Module, resolution: &Resolution) -> Result<(), Rust
                 borrows_local.insert(id, false);
             }
         }
-        walk_escape(&func.body, returns_ref, &def_to_id, resolution, &mut borrows_local)?;
+        walk_escape(
+            &func.body,
+            returns_ref,
+            &def_to_id,
+            resolution,
+            &mut borrows_local,
+        )?;
     }
     Ok(())
 }
@@ -670,6 +863,20 @@ fn walk_escape(
             Stmt::Expr(expr) => {
                 descend_escape(expr, returns_ref, def_to_id, resolution, borrows_local)?;
             }
+            Stmt::Assign { value, .. } => {
+                descend_escape(value, returns_ref, def_to_id, resolution, borrows_local)?;
+            }
+            Stmt::While { cond, body } => {
+                descend_escape(cond, returns_ref, def_to_id, resolution, borrows_local)?;
+                walk_escape(body, returns_ref, def_to_id, resolution, borrows_local)?;
+            }
+            Stmt::For {
+                start, end, body, ..
+            } => {
+                descend_escape(start, returns_ref, def_to_id, resolution, borrows_local)?;
+                descend_escape(end, returns_ref, def_to_id, resolution, borrows_local)?;
+                walk_escape(body, returns_ref, def_to_id, resolution, borrows_local)?;
+            }
             Stmt::Return(Some(expr)) => {
                 if returns_ref {
                     if let Some(offset) = escapes_offset(expr, resolution, borrows_local) {
@@ -692,14 +899,28 @@ fn descend_escape(
     borrows_local: &mut HashMap<BindingId, bool>,
 ) -> Result<(), RustSemaError> {
     match expr {
-        Expr::Block(stmts) => {
-            walk_escape(stmts, returns_ref, def_to_id, resolution, borrows_local)
-        }
-        Expr::If { cond, then_block, else_block } => {
+        Expr::Block(stmts) => walk_escape(stmts, returns_ref, def_to_id, resolution, borrows_local),
+        Expr::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
             descend_escape(cond, returns_ref, def_to_id, resolution, borrows_local)?;
-            descend_escape(then_block, returns_ref, def_to_id, resolution, borrows_local)?;
+            descend_escape(
+                then_block,
+                returns_ref,
+                def_to_id,
+                resolution,
+                borrows_local,
+            )?;
             if let Some(else_block) = else_block {
-                descend_escape(else_block, returns_ref, def_to_id, resolution, borrows_local)?;
+                descend_escape(
+                    else_block,
+                    returns_ref,
+                    def_to_id,
+                    resolution,
+                    borrows_local,
+                )?;
             }
             Ok(())
         }
@@ -711,6 +932,12 @@ fn descend_escape(
             descend_escape(expr, returns_ref, def_to_id, resolution, borrows_local)
         }
         Expr::Deref(inner) => {
+            descend_escape(inner, returns_ref, def_to_id, resolution, borrows_local)
+        }
+        Expr::Not(inner) => {
+            descend_escape(inner, returns_ref, def_to_id, resolution, borrows_local)
+        }
+        Expr::Neg(inner) => {
             descend_escape(inner, returns_ref, def_to_id, resolution, borrows_local)
         }
         Expr::Call { args, .. } => {
@@ -793,12 +1020,12 @@ pub fn check_conflicts(module: &Module, resolution: &Resolution) -> Result<(), R
         let facts = build_borrow_facts(func, resolution, &def_to_id);
         if let Some(conflict) = analyze(&facts).into_iter().next() {
             return Err(match conflict.kind {
-                ConflictKind::TwoMutable => {
-                    RustSemaError::MultipleMutableBorrows { offset: conflict.offset }
-                }
-                ConflictKind::MutableAndShared => {
-                    RustSemaError::MutableAndSharedBorrow { offset: conflict.offset }
-                }
+                ConflictKind::TwoMutable => RustSemaError::MultipleMutableBorrows {
+                    offset: conflict.offset,
+                },
+                ConflictKind::MutableAndShared => RustSemaError::MutableAndSharedBorrow {
+                    offset: conflict.offset,
+                },
             });
         }
     }
@@ -846,9 +1073,9 @@ impl FactBuilder<'_> {
                 self.facts.cfg_edges.push((pred, point));
             }
             match stmt {
-                Stmt::Let { name, init, .. } => {
+                Stmt::Let { name, ty, init, .. } => {
                     self.record_uses(init, point);
-                    self.record_loan(name, init, point);
+                    self.record_loan(name, ty, init, point);
                     cur = vec![point];
                 }
                 Stmt::Return(value) => {
@@ -857,11 +1084,40 @@ impl FactBuilder<'_> {
                     }
                     cur = Vec::new();
                 }
-                Stmt::Expr(Expr::If { cond, then_block, else_block }) => {
+                Stmt::Assign { value, .. } => {
+                    self.record_uses(value, point);
+                    cur = vec![point];
+                }
+                Stmt::While { cond, body } => {
+                    self.record_uses(cond, point);
+                    let out = self.build_block(body, &[point]);
+                    for &b in &out {
+                        self.facts.cfg_edges.push((b, point));
+                    }
+                    cur = vec![point];
+                }
+                Stmt::For {
+                    start, end, body, ..
+                } => {
+                    self.record_uses(start, point);
+                    self.record_uses(end, point);
+                    let out = self.build_block(body, &[point]);
+                    for &b in &out {
+                        self.facts.cfg_edges.push((b, point));
+                    }
+                    cur = vec![point];
+                }
+                Stmt::Expr(Expr::If {
+                    cond,
+                    then_block,
+                    else_block,
+                }) => {
                     self.record_uses(cond, point);
                     let mut out = self.build_block(block_stmts(then_block), &[point]);
                     match else_block {
-                        Some(else_block) => out.extend(self.build_block(block_stmts(else_block), &[point])),
+                        Some(else_block) => {
+                            out.extend(self.build_block(block_stmts(else_block), &[point]))
+                        }
                         None => out.push(point),
                     }
                     cur = out;
@@ -875,25 +1131,51 @@ impl FactBuilder<'_> {
         cur
     }
 
-    /// Record `let a = &[mut] x;` as a loan over place `x` issued at `point`.
-    fn record_loan(&mut self, name: &u32, init: &Expr, point: u32) {
-        if let Expr::Borrow { mutable, expr } = init {
-            if let Expr::Var(off) = expr.as_ref() {
-                if let (Some(&place), Some(&binding)) =
-                    (self.resolution.uses.get(off), self.def_to_id.get(name))
-                {
-                    let loan = self.facts.loan_place.len() as crate::borrowck::Loan;
-                    self.facts.loan_place.push(place as crate::borrowck::Place);
-                    self.facts.loan_kind.push(if *mutable {
-                        crate::borrowck::LoanKind::Mut
-                    } else {
-                        crate::borrowck::LoanKind::Shared
-                    });
-                    self.facts.loan_issued_at.push(point);
-                    self.facts.loan_offset.push(*name);
-                    self.binding_to_loan.insert(binding, loan);
+    /// Record a loan for a borrow-introducing `let`:
+    /// - `let a = &[mut] x;` borrows place `x`;
+    /// - `let a = &[mut] *r;` reborrows through `r` (place `r`);
+    /// - `let a: &[mut] T = r;` is a reborrow coercion (the grammar requires the
+    ///   annotation, so it is never a move): it reborrows `*r` with the let
+    ///   type's mutability, place `r`.
+    ///
+    /// In the nano-subset a reborrow conflicts exactly when another borrow of
+    /// the same `r` is live, matching rustc.
+    fn record_loan(&mut self, name: &u32, ty: &Type, init: &Expr, point: u32) {
+        let (place_off, mutable) = match init {
+            Expr::Borrow { mutable, expr } => {
+                let off = match expr.as_ref() {
+                    Expr::Var(off) => Some(*off),
+                    Expr::Deref(inner) => match inner.as_ref() {
+                        Expr::Var(off) => Some(*off),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                match off {
+                    Some(off) => (off, *mutable),
+                    None => return,
                 }
             }
+            Expr::Var(off) => match ty {
+                Type::Ref { mutable, .. } => (*off, *mutable),
+                _ => return,
+            },
+            _ => return,
+        };
+        if let (Some(&place), Some(&binding)) = (
+            self.resolution.uses.get(&place_off),
+            self.def_to_id.get(name),
+        ) {
+            let loan = self.facts.loan_place.len() as crate::borrowck::Loan;
+            self.facts.loan_place.push(place as crate::borrowck::Place);
+            self.facts.loan_kind.push(if mutable {
+                crate::borrowck::LoanKind::Mut
+            } else {
+                crate::borrowck::LoanKind::Shared
+            });
+            self.facts.loan_issued_at.push(point);
+            self.facts.loan_offset.push(*name);
+            self.binding_to_loan.insert(binding, loan);
         }
     }
 
@@ -931,6 +1213,8 @@ fn collect_expr_uses(expr: &Expr, resolution: &Resolution, into: &mut Vec<Bindin
         }
         Expr::Borrow { expr, .. } => collect_expr_uses(expr, resolution, into),
         Expr::Deref(inner) => collect_expr_uses(inner, resolution, into),
+        Expr::Not(inner) => collect_expr_uses(inner, resolution, into),
+        Expr::Neg(inner) => collect_expr_uses(inner, resolution, into),
         Expr::Call { args, .. } => {
             for arg in args {
                 collect_expr_uses(arg, resolution, into);

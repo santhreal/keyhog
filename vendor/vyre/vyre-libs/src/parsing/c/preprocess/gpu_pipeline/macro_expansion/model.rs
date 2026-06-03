@@ -4,7 +4,6 @@ use crate::parsing::c::preprocess::gpu_pipeline::byte_lru_cache::{
 };
 use crate::parsing::c::preprocess::gpu_pipeline::classified_size::classified_tokens_bytes;
 
-pub(crate) const MACRO_EXPANSION_MIN_REPLACEMENT_SOURCE_BYTES: usize = 256;
 pub(crate) const MACRO_EXPANSION_MIN_OUTPUT_TOKENS: usize = 256;
 pub(crate) const MACRO_EXPANSION_MIN_OUTPUT_SOURCE_BYTES: usize = 2_048;
 pub(crate) const MACRO_RESCAN_DEPTH_LIMIT: usize = 64;
@@ -79,7 +78,6 @@ impl MacroExpansionCache {
 pub(crate) struct MacroExpansionDispatchScratch {
     pub(crate) input_buffers: Vec<Vec<u8>>,
     pub(crate) runtime_counts: Vec<u8>,
-    pub(crate) replacement_words: Vec<u8>,
     pub(crate) outputs: Vec<Vec<u8>>,
 }
 

@@ -3,21 +3,28 @@
 use std::ptr::NonNull;
 use std::sync::Arc;
 
+use smallvec::SmallVec;
 use vyre_driver::BackendError;
 
 use super::allocations::cuda_check;
 use super::cuda_graph::{CachedCudaGraph, GraphExecGuard, StreamGuard};
 use super::dispatch::CudaBackend;
-use super::staging_reserve::{reserved_vec, resize_vec_slots};
+use super::staging_reserve::{reserve_smallvec, reserve_vec, reserved_vec, resize_vec_slots};
 use crate::input_identity::{exact_input_key, ExactInputKey};
 
 impl CachedCudaGraph {
     pub(crate) fn input_shape_matches(&self, inputs: &[&[u8]]) -> bool {
         inputs.len() == self.expected_input_lens.len()
-            && inputs
+            && self.input_indices.len() == self.expected_input_lens.len()
+            && self
+                .input_indices
                 .iter()
                 .zip(self.expected_input_lens.iter())
-                .all(|(input, expected)| input.len() == *expected)
+                .all(|(input_index, expected)| {
+                    inputs
+                        .get(*input_index)
+                        .is_some_and(|input| input.len() == *expected)
+                })
     }
 
     pub(crate) fn materialized_output_cache_matches(
@@ -140,7 +147,13 @@ fn cached_input_bytes_match_after_key_match(
             ),
         });
     }
-    for (slot, src) in cached.input_host_bufs.iter().zip(inputs.iter()) {
+    for (slot_index, (slot, input_index)) in cached
+        .input_host_bufs
+        .iter()
+        .zip(cached.input_indices.iter())
+        .enumerate()
+    {
+        let src = cached_graph_input(inputs, *input_index, slot_index, "cached input compare")?;
         if src.len() > slot.byte_len {
             return Err(BackendError::InvalidProgram {
                 fix: format!(
@@ -158,7 +171,7 @@ fn cached_input_bytes_match_after_key_match(
             // bytes, and the length check above proves `src.len() <= slot.byte_len`.
             unsafe { std::slice::from_raw_parts(slot.as_ptr().cast::<u8>(), src.len()) }
         };
-        if cached_bytes != *src {
+        if cached_bytes != src {
             return Ok(false);
         }
     }
@@ -224,6 +237,7 @@ impl CudaBackend {
         outputs: &mut Vec<Vec<u8>>,
     ) -> Result<(), BackendError> {
         synchronize_cuda_graph_replay_stream(cached)?;
+        cached.device_inputs_initialized = true;
         self.telemetry.record_sync_point();
         self.record_cuda_graph_replay_stats(stats);
         collect_cuda_graph_outputs(cached, outputs)?;
@@ -260,6 +274,16 @@ impl CudaBackend {
         outputs: &mut Vec<Vec<u8>>,
     ) -> Result<(), BackendError> {
         let input_state = self.prepare_cuda_graph_replay_input_state(cached, inputs)?;
+        self.dispatch_via_cuda_graph_with_input_state_into(cached, inputs, &input_state, outputs)
+    }
+
+    pub(crate) fn dispatch_via_cuda_graph_with_input_state_into(
+        &self,
+        cached: &mut CachedCudaGraph,
+        inputs: &[&[u8]],
+        input_state: &CudaGraphReplayInputState,
+        outputs: &mut Vec<Vec<u8>>,
+    ) -> Result<(), BackendError> {
         if self.try_cuda_graph_materialized_cache_with_input_state_into(
             cached,
             inputs,
@@ -281,6 +305,21 @@ impl CudaBackend {
         outputs: &mut Vec<Vec<u8>>,
     ) -> Result<u64, BackendError> {
         let input_state = self.prepare_cuda_graph_replay_input_state(cached, inputs)?;
+        self.dispatch_via_cuda_graph_timed_with_input_state_into(
+            cached,
+            inputs,
+            &input_state,
+            outputs,
+        )
+    }
+
+    pub(crate) fn dispatch_via_cuda_graph_timed_with_input_state_into(
+        &self,
+        cached: &mut CachedCudaGraph,
+        inputs: &[&[u8]],
+        input_state: &CudaGraphReplayInputState,
+        outputs: &mut Vec<Vec<u8>>,
+    ) -> Result<u64, BackendError> {
         if self.try_cuda_graph_materialized_cache_with_input_state_into(
             cached,
             inputs,
@@ -292,16 +331,23 @@ impl CudaBackend {
         self.warmup()?;
         let prepared = prepare_cuda_graph_replay_launch(cached, inputs, &input_state)?;
 
-        let timing_events =
+        let mut timing_events =
             crate::stream::CudaTimingEventPairLease::acquire(Arc::clone(&self.launch_resources))?;
-        let (start, end) = timing_events.events()?;
-        start.record(cached.stream.ptr().as_ptr())?;
-        launch_prepared_cuda_graph_replay(cached, &prepared, "cuGraphLaunch")?;
-        self.telemetry.record_cuda_graph_launch();
-        end.record(cached.stream.ptr().as_ptr())?;
-        end.synchronize()?;
+        {
+            let (start, end) = timing_events.events()?;
+            start.record(cached.stream.ptr().as_ptr())?;
+            launch_prepared_cuda_graph_replay(cached, &prepared, "cuGraphLaunch")?;
+            self.telemetry.record_cuda_graph_launch();
+            end.record(cached.stream.ptr().as_ptr())?;
+            end.synchronize()?;
+        }
+        timing_events.mark_synchronized();
+        cached.device_inputs_initialized = true;
         self.telemetry.record_sync_point();
-        let device_ns = start.elapsed_time_ns(&end)?;
+        let device_ns = {
+            let (start, end) = timing_events.events()?;
+            start.elapsed_time_ns(end)?
+        };
         self.record_cuda_graph_replay_stats(prepared.stats);
         collect_cuda_graph_outputs(cached, outputs)?;
         cached.host_outputs_initialized = true;
@@ -369,18 +415,21 @@ fn prepare_cuda_graph_replay(
         && cached_input_bytes_match_with_key(cached, inputs, &input_state.input_key)?;
 
     if !resident_input_replay {
-        for ((slot, src), transfer_len) in cached
+        for (slot_index, ((slot, input_index), transfer_len)) in cached
             .input_host_bufs
             .iter_mut()
-            .zip(inputs.iter())
+            .zip(cached.input_indices.iter())
             .zip(cached.input_transfer_lens.iter())
+            .enumerate()
         {
+            let src = cached_graph_input(inputs, *input_index, slot_index, "input replay staging")?;
             slot.copy_from_slice(src)?;
             if *transfer_len > src.len() {
                 slot.zero_range(src.len(), transfer_len - src.len())?;
             }
         }
         cached.cached_input_key = input_state.input_key;
+        cached.device_inputs_initialized = false;
         cached.host_outputs_initialized = false;
     }
     let mut stats = CudaGraphReplayStats::from_cached(cached);
@@ -413,9 +462,7 @@ fn launch_prepared_cuda_graph_replay(
     } else {
         &cached.graph_exec
     };
-    launch_cuda_graph_exec(graph_exec, &cached.stream, label)?;
-    cached.device_inputs_initialized = true;
-    Ok(())
+    launch_cuda_graph_exec(graph_exec, &cached.stream, label)
 }
 
 fn prepare_cuda_graph_replay_input_state(
@@ -434,6 +481,71 @@ fn prepare_cuda_graph_replay_input_state_with_key(
     Ok(CudaGraphReplayInputState { input_key })
 }
 
+fn cached_graph_input<'a>(
+    inputs: &[&'a [u8]],
+    input_index: usize,
+    slot_index: usize,
+    context: &'static str,
+) -> Result<&'a [u8], BackendError> {
+    inputs
+        .get(input_index)
+        .copied()
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: cached cuda graph {context} slot {slot_index} maps to logical input {input_index}, but replay received only {} input(s). Re-record the graph from a valid BindingPlan.",
+                inputs.len()
+            ),
+        })
+}
+
+fn validate_cached_graph_slot_index_map(
+    indices: &[usize],
+    expected_len: usize,
+    slot_kind: &'static str,
+    action: &'static str,
+) -> Result<(), BackendError> {
+    if indices.len() != expected_len {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: cached cuda graph has {} logical {slot_kind} index(es) but {expected_len} expected {slot_kind} length(s). Re-record the graph; descriptor-ordered graph {slot_kind}s must map back to Program::buffers {slot_kind} slots.",
+                indices.len(),
+            ),
+        });
+    }
+    let mut sorted_indices = SmallVec::<[usize; 8]>::new();
+    reserve_smallvec(
+        &mut sorted_indices,
+        indices.len(),
+        "cuda graph slot index validation",
+    )?;
+    sorted_indices.extend(indices.iter().copied());
+    crate::backend::ordering::sort_unstable_if_needed(sorted_indices.as_mut_slice());
+    for (expected_index, index) in sorted_indices.iter().copied().enumerate() {
+        if index != expected_index {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: cached cuda graph logical {slot_kind} index {index} at sorted slot {expected_index} is not dense over 0..{expected_len}. Re-record the graph from Program::buffers logical {slot_kind} order before {action}.",
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_cached_graph_input_index_map(
+    input_indices: &[usize],
+    expected_len: usize,
+) -> Result<(), BackendError> {
+    validate_cached_graph_slot_index_map(input_indices, expected_len, "input", "replay")
+}
+
+fn validate_cached_graph_output_index_map(
+    output_indices: &[usize],
+    expected_len: usize,
+) -> Result<(), BackendError> {
+    validate_cached_graph_slot_index_map(output_indices, expected_len, "output", "collection")
+}
+
 fn validate_cached_graph_inputs(
     cached: &CachedCudaGraph,
     inputs: &[&[u8]],
@@ -447,6 +559,16 @@ fn validate_cached_graph_inputs(
             ),
         });
     }
+    if cached.input_transfer_lens.len() != cached.expected_input_lens.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: cached cuda graph has {} input transfer length(s) but {} expected input length(s). Re-record the graph; zip-based replay would skip or truncate input uploads.",
+                cached.input_transfer_lens.len(),
+                cached.expected_input_lens.len()
+            ),
+        });
+    }
+    validate_cached_graph_input_index_map(&cached.input_indices, cached.expected_input_lens.len())?;
     if inputs.len() != cached.expected_input_lens.len() {
         return Err(BackendError::InvalidProgram {
             fix: format!(
@@ -456,13 +578,28 @@ fn validate_cached_graph_inputs(
             ),
         });
     }
-    for (idx, expected_len) in cached.expected_input_lens.iter().enumerate() {
-        if inputs[idx].len() != *expected_len {
+    for (idx, ((input_index, expected_len), transfer_len)) in cached
+        .input_indices
+        .iter()
+        .zip(cached.expected_input_lens.iter())
+        .zip(cached.input_transfer_lens.iter())
+        .enumerate()
+    {
+        let input = cached_graph_input(inputs, *input_index, idx, "shape validation")?;
+        let received_len = input.len();
+        if received_len != *expected_len {
             return Err(BackendError::InvalidProgram {
                 fix: format!(
                     "Fix: cached cuda graph input {idx} expects {expected_len} bytes but \
                      received {}  -  re-record the graph for this input shape.",
-                    inputs[idx].len()
+                    received_len
+                ),
+            });
+        }
+        if *transfer_len < *expected_len {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: cached cuda graph input {idx} expects {expected_len} bytes but its captured transfer length is {transfer_len}. Re-record the graph before replay; truncated graph memcpy would leave stale device input bytes.",
                 ),
             });
         }
@@ -474,27 +611,73 @@ fn collect_cuda_graph_outputs(
     cached: &CachedCudaGraph,
     outputs: &mut Vec<Vec<u8>>,
 ) -> Result<(), BackendError> {
-    if cached.output_host_bufs.len() != cached.output_lens.len() {
+    if cached.output_host_bufs.len() != cached.output_lens.len()
+        || cached.output_indices.len() != cached.output_lens.len()
+    {
         return Err(BackendError::InvalidProgram {
             fix: format!(
-                "Fix: cached cuda graph has {} pinned output buffer(s) but {} output length(s). Re-record the graph before collecting outputs.",
+                "Fix: cached cuda graph has {} pinned output buffer(s), {} logical output index(es), and {} output length(s). Re-record the graph before collecting outputs.",
                 cached.output_host_bufs.len(),
+                cached.output_indices.len(),
                 cached.output_lens.len()
             ),
         });
     }
+    validate_cached_graph_output_index_map(&cached.output_indices, cached.output_lens.len())?;
     resize_vec_slots(
         outputs,
-        cached.output_host_bufs.len(),
+        cached.output_lens.len(),
         "cuda graph replay output vector",
     )?;
-    for (output, (buf, byte_len)) in outputs.iter_mut().zip(
-        cached
-            .output_host_bufs
-            .iter()
-            .zip(cached.output_lens.iter()),
-    ) {
+    reserve_cuda_graph_output_slots(&cached.output_indices, &cached.output_lens, outputs)?;
+    let output_count = outputs.len();
+    for (slot_index, (buf, (output_index, byte_len))) in cached
+        .output_host_bufs
+        .iter()
+        .zip(cached.output_indices.iter().zip(cached.output_lens.iter()))
+        .enumerate()
+    {
+        let output = outputs
+            .get_mut(*output_index)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: cached cuda graph output slot {slot_index} maps to logical output {output_index}, but collection has only {} output slot(s). Re-record the graph from a valid BindingPlan.",
+                    output_count
+                ),
+            })?;
         buf.copy_prefix_into(*byte_len, output)?;
+    }
+    Ok(())
+}
+
+fn reserve_cuda_graph_output_slots(
+    output_indices: &[usize],
+    output_lens: &[usize],
+    outputs: &mut [Vec<u8>],
+) -> Result<(), BackendError> {
+    if output_indices.len() != output_lens.len() || output_lens.len() != outputs.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: cached cuda graph output preflight expected {} logical output index(es), {} output length(s), and {} caller output slot(s). Re-record the graph before collecting outputs.",
+                output_indices.len(),
+                output_lens.len(),
+                outputs.len()
+            ),
+        });
+    }
+    let output_count = outputs.len();
+    for (slot_index, (output_index, byte_len)) in
+        output_indices.iter().zip(output_lens.iter()).enumerate()
+    {
+        let output = outputs
+            .get_mut(*output_index)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: cached cuda graph output preflight slot {slot_index} maps to logical output {output_index}, but collection has only {} output slot(s). Re-record the graph from a valid BindingPlan.",
+                    output_count
+                ),
+            })?;
+        reserve_vec(output, *byte_len, "cuda graph replay output bytes")?;
     }
     Ok(())
 }
@@ -514,10 +697,82 @@ impl CudaBackend {
 
 #[cfg(test)]
 mod source_contract_tests {
+    use super::{
+        cached_graph_input, validate_cached_graph_input_index_map,
+        validate_cached_graph_output_index_map,
+    };
+
+    #[test]
+    fn cached_graph_replay_input_index_map_accepts_reordered_descriptor_inputs() {
+        validate_cached_graph_input_index_map(&[2, 0, 1], 3).expect(
+            "Fix: descriptor-ordered CUDA graph inputs may map to reordered logical slots.",
+        );
+
+        let first = [0xA1, 0xA2];
+        let second = [0xB1];
+        let third = [0xC1, 0xC2, 0xC3];
+        let inputs: &[&[u8]] = &[first.as_slice(), second.as_slice(), third.as_slice()];
+
+        assert_eq!(
+            cached_graph_input(inputs, 2, 0, "test replay")
+                .expect("Fix: graph replay should resolve logical input 2 for descriptor slot 0."),
+            third.as_slice()
+        );
+        assert_eq!(
+            cached_graph_input(inputs, 0, 1, "test replay")
+                .expect("Fix: graph replay should resolve logical input 0 for descriptor slot 1."),
+            first.as_slice()
+        );
+    }
+
+    #[test]
+    fn cached_graph_replay_input_index_map_rejects_stale_or_non_dense_maps() {
+        assert!(
+            validate_cached_graph_input_index_map(&[0, 0, 2], 3).is_err(),
+            "Fix: duplicate CUDA graph logical input indexes must fail before replay can alias an input slot."
+        );
+        assert!(
+            validate_cached_graph_input_index_map(&[0, 2, 3], 3).is_err(),
+            "Fix: sparse CUDA graph logical input indexes must fail before replay can skip an input slot."
+        );
+        assert!(
+            validate_cached_graph_input_index_map(&[0, 1], 3).is_err(),
+            "Fix: truncated CUDA graph logical input maps must fail before zip-based replay staging."
+        );
+
+        let only = [0xAA];
+        let inputs: &[&[u8]] = &[only.as_slice()];
+        assert!(
+            cached_graph_input(inputs, 1, 0, "test replay").is_err(),
+            "Fix: stale CUDA graph logical input indexes must become BackendError, not a panic or wrong-slot replay."
+        );
+    }
+
+    #[test]
+    fn cached_graph_replay_output_index_map_accepts_reordered_descriptor_outputs() {
+        validate_cached_graph_output_index_map(&[1, 0, 2], 3).expect(
+            "Fix: descriptor-ordered CUDA graph outputs may map to reordered logical slots.",
+        );
+        assert!(
+            validate_cached_graph_output_index_map(&[0, 0, 2], 3).is_err(),
+            "Fix: duplicate CUDA graph logical output indexes must fail before collection can alias an output slot."
+        );
+        assert!(
+            validate_cached_graph_output_index_map(&[0, 2, 3], 3).is_err(),
+            "Fix: sparse CUDA graph logical output indexes must fail before collection can skip an output slot."
+        );
+        assert!(
+            validate_cached_graph_output_index_map(&[0, 1], 3).is_err(),
+            "Fix: truncated CUDA graph logical output maps must fail before positional collection can drop a slot."
+        );
+    }
+
     #[test]
     fn cuda_graph_replay_uses_fallible_output_staging_reservation() {
         let source = include_str!("cuda_graph_replay.rs");
-        assert!(source.contains("use super::staging_reserve::{reserved_vec, resize_vec_slots};"));
+        assert!(source.contains(
+            "use super::staging_reserve::{reserve_smallvec, reserve_vec, reserved_vec, resize_vec_slots};"
+        ));
         assert!(source.contains("fn collect_cuda_graph_outputs("));
         assert!(source.contains(") -> Result<(), BackendError>"));
         assert!(!source.contains(concat!(
@@ -530,10 +785,56 @@ mod source_contract_tests {
                 && !source.contains(concat!("outputs", ".resize_with(")),
             "Fix: CUDA graph replay output staging must use the shared fallible resize helper instead of bespoke growth."
         );
+        let collector = source
+            .split("fn collect_cuda_graph_outputs(")
+            .nth(1)
+            .and_then(|tail| tail.split("fn reserve_cuda_graph_output_slots(").next())
+            .expect("Fix: CUDA graph replay must expose output collection before output-slot preflight.");
+        let preflight = collector
+            .find(
+                "reserve_cuda_graph_output_slots(&cached.output_indices, &cached.output_lens, outputs)?",
+            )
+            .expect(
+                "Fix: CUDA graph replay output collection must preflight every caller output slot.",
+            );
+        let output_lookup = collector
+            .find(".get_mut(*output_index)")
+            .expect("Fix: CUDA graph replay output collection must route by logical output index.");
+        let copy = collector
+            .find("buf.copy_prefix_into(*byte_len, output)?")
+            .expect("Fix: CUDA graph replay output collection must copy pinned graph outputs.");
+        assert!(
+            preflight < output_lookup && output_lookup < copy,
+            "Fix: CUDA graph replay must reserve every caller output before copying any pinned graph output bytes."
+        );
+        let preflight_helper = source
+            .split("fn reserve_cuda_graph_output_slots(")
+            .nth(1)
+            .and_then(|tail| tail.split("impl CudaBackend").next())
+            .expect("Fix: CUDA graph replay must expose output-slot preflight before backend telemetry.");
+        assert!(
+            preflight_helper.contains("output_indices.len() != output_lens.len()")
+                && preflight_helper.contains(".get_mut(*output_index)")
+                && preflight_helper.contains("reserve_vec(output, *byte_len, \"cuda graph replay output bytes\")?"),
+            "Fix: CUDA graph replay output preflight must validate cardinality, route by logical output index, and reserve every destination byte capacity."
+        );
         assert!(
             source.contains("cached.input_host_bufs.len() != cached.expected_input_lens.len()")
+                && source.contains("cached.input_transfer_lens.len() != cached.expected_input_lens.len()")
+                && source.contains("validate_cached_graph_input_index_map(&cached.input_indices")
+                && source.contains("cached_graph_input(inputs, *input_index")
+                && source.contains("descriptor-ordered graph inputs must map back to Program::buffers input slots")
+                && source.contains("zip-based replay would skip or truncate input uploads")
+                && source.contains("*transfer_len < *expected_len")
+                && source.contains("truncated graph memcpy would leave stale device input bytes")
                 && source.contains("zip-based replay would skip input uploads")
-                && source.contains("cached.output_host_bufs.len() != cached.output_lens.len()"),
+                && source.contains(".zip(cached.input_indices.iter())")
+                && source.contains(".zip(cached.input_transfer_lens.iter())")
+                && !source.contains(concat!("inputs", "[idx]"))
+                && source.contains("cached.output_host_bufs.len() != cached.output_lens.len()")
+                && source.contains("cached.output_indices.len() != cached.output_lens.len()")
+                && source.contains("validate_cached_graph_output_index_map(&cached.output_indices")
+                && source.contains(".zip(cached.output_indices.iter().zip(cached.output_lens.iter()))"),
             "Fix: CUDA graph replay must validate cached graph input/output metadata before zip-based staging."
         );
         assert_eq!(
@@ -563,10 +864,29 @@ mod source_contract_tests {
             source.contains("fn prepare_cuda_graph_replay_launch(")
                 && source.contains("fn launch_prepared_cuda_graph_replay(")
                 && source
-                    .matches("launch_prepared_cuda_graph_replay(cached, &prepared, \"cuGraphLaunch\")")
+                    .matches(
+                        "launch_prepared_cuda_graph_replay(cached, &prepared, \"cuGraphLaunch\")"
+                    )
                     .count()
                     == 2,
-            "Fix: timed and untimed CUDA graph replay must share prepared launch graph selection and device-input state updates."
+            "Fix: timed and untimed CUDA graph replay must share prepared launch graph selection."
+        );
+        let launch_helper = source
+            .split("fn launch_prepared_cuda_graph_replay(")
+            .nth(1)
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - prepared CUDA graph launch helper must exist")
+            .split("fn prepare_cuda_graph_replay_input_state(")
+            .next()
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - prepared launch helper must precede input-state preparation");
+        assert!(
+            !launch_helper.contains("cached.device_inputs_initialized = true;"),
+            "Fix: CUDA graph replay must not mark device inputs initialized immediately after cuGraphLaunch; the stream/timing fence must complete first."
+        );
+        assert!(
+            source.contains("synchronize_cuda_graph_replay_stream(cached)?;\n        cached.device_inputs_initialized = true;")
+                && source.contains("end.synchronize()?;")
+                && source.contains("timing_events.mark_synchronized();\n        cached.device_inputs_initialized = true;"),
+            "Fix: CUDA graph replay must mark resident device inputs initialized only after successful untimed and timed completion fences."
         );
         let timed_section = source
             .split("pub(crate) fn dispatch_via_cuda_graph_timed_into")
@@ -581,6 +901,19 @@ mod source_contract_tests {
                 && !timed_section.contains("for (slot, src) in cached.input_host_bufs"),
             "Fix: timed CUDA graph replay must use resident-input graph replay when safe instead of always copying host inputs."
         );
+        let timed_sync_pos = timed_section
+            .find("end.synchronize()?;")
+            .expect("Fix: timed CUDA graph replay must fence the end timing event before trusting resident inputs.");
+        let timing_release_pos = timed_section
+            .find("timing_events.mark_synchronized();")
+            .expect("Fix: timed CUDA graph replay must mark timing events reusable only after end-event synchronization.");
+        let initialized_pos = timed_section
+            .find("cached.device_inputs_initialized = true;")
+            .expect("Fix: timed CUDA graph replay must promote resident inputs after completion is proven.");
+        assert!(
+            timed_sync_pos < timing_release_pos && timing_release_pos < initialized_pos,
+            "Fix: timed CUDA graph replay must prove timing-event completion before timing lease reuse or resident-input promotion."
+        );
     }
 
     #[test]
@@ -588,8 +921,14 @@ mod source_contract_tests {
         let replay_source = include_str!("cuda_graph_replay.rs");
         let compiled_dispatch = include_str!("../pipeline/compiled_dispatch.rs");
         assert!(
-            replay_source.contains("pub(crate) fn try_cuda_graph_materialized_cache_with_input_state_into(")
-                && replay_source.contains("if self.try_cuda_graph_materialized_cache_with_input_state_into("),
+            replay_source
+                .contains("pub(crate) fn try_cuda_graph_materialized_cache_with_input_state_into(")
+                && replay_source.contains(
+                    "pub(crate) fn dispatch_via_cuda_graph_with_input_state_into("
+                )
+                && replay_source.contains(
+                    "pub(crate) fn dispatch_via_cuda_graph_timed_with_input_state_into("
+                ),
             "Fix: single CUDA graph replay must route materialized output cache hits through the shared helper."
         );
         assert!(
@@ -622,8 +961,29 @@ mod source_contract_tests {
         assert!(
             replay_source.contains("let input_key = exact_input_key(inputs)?;")
                 && replay_source.contains("cached.cached_input_key = input_state.input_key;")
+                && replay_source.contains("cached.device_inputs_initialized = false;")
                 && replay_source.contains("cached.host_outputs_initialized = false;"),
-            "Fix: rewriting cached graph host inputs must update the exact-input key and immediately invalidate materialized host outputs before graph launch/finish can fail."
+            "Fix: rewriting cached graph host inputs must update the exact-input key and immediately invalidate resident device inputs plus materialized host outputs before graph launch/finish can fail."
+        );
+        let prepare_replay = replay_source
+            .split("fn prepare_cuda_graph_replay(")
+            .nth(1)
+            .expect("Fix: CUDA graph replay preparation must stay centralized.")
+            .split("fn prepare_cuda_graph_replay_launch(")
+            .next()
+            .expect("Fix: replay preparation must precede prepared-launch construction.");
+        let key_update = prepare_replay
+            .find("cached.cached_input_key = input_state.input_key;")
+            .expect("Fix: replay preparation must update the cached input key after rewriting host inputs.");
+        let device_invalidate = prepare_replay
+            .find("cached.device_inputs_initialized = false;")
+            .expect("Fix: replay preparation must invalidate resident device inputs before launch can fail.");
+        let host_invalidate = prepare_replay
+            .find("cached.host_outputs_initialized = false;")
+            .expect("Fix: replay preparation must invalidate materialized host outputs before launch can fail.");
+        assert!(
+            key_update < device_invalidate && device_invalidate < host_invalidate,
+            "Fix: rewritten CUDA graph inputs must invalidate resident device state before the graph can be re-used after an enqueue failure."
         );
         assert!(
             graph_source.contains("pub(crate) cached_input_key: ExactInputKey")
@@ -661,6 +1021,11 @@ mod source_contract_tests {
                 && untimed_section.contains("enqueue_cuda_graph_replay_with_input_state"),
             "Fix: untimed raw CUDA graph replay must pass the prepared input state through both cache and launch paths."
         );
+        assert!(
+            replay_source.contains("dispatch_via_cuda_graph_with_input_state_into(cached, inputs, &input_state, outputs)")
+                && replay_source.contains("pub(crate) fn dispatch_via_cuda_graph_with_input_state_into("),
+            "Fix: untimed raw CUDA graph replay must expose a with-input-state entrypoint so compiled pipelines can reuse precomputed exact-input keys."
+        );
         let timed_section = replay_source
             .split("pub(crate) fn dispatch_via_cuda_graph_timed_into")
             .nth(1)
@@ -681,6 +1046,11 @@ mod source_contract_tests {
                 && timed_section.contains("launch_prepared_cuda_graph_replay(cached, &prepared, \"cuGraphLaunch\")"),
             "Fix: timed raw CUDA graph replay must reuse the prepared input state for materialized and resident-input replay decisions."
         );
+        assert!(
+            replay_source.contains("dispatch_via_cuda_graph_timed_with_input_state_into(\n            cached,\n            inputs,\n            &input_state,\n            outputs,\n        )")
+                && replay_source.contains("pub(crate) fn dispatch_via_cuda_graph_timed_with_input_state_into("),
+            "Fix: timed raw CUDA graph replay must expose a with-input-state entrypoint so compiled pipelines can reuse precomputed exact-input keys."
+        );
     }
 
     #[test]
@@ -700,8 +1070,10 @@ mod source_contract_tests {
                 && compiled_dispatch.contains("materialized_input_key(inputs)?")
                 && compiled_dispatch.contains("cache.snapshot_with_key(inputs, &input_key)")
                 && compiled_dispatch.contains("prepare_cuda_graph_replay_input_state_with_key")
+                && compiled_dispatch.contains("take_cached_graph_with_key(")
+                && compiled_dispatch.contains("&first_miss.input_key")
                 && compiled_dispatch.contains("miss.input_key"),
-            "Fix: compiled batched CUDA graph replay must reuse materialized-cache exact-input keys for graph miss replay instead of hashing each miss again."
+            "Fix: compiled batched CUDA graph replay must reuse materialized-cache exact-input keys for graph-cache selection and graph miss replay instead of hashing each miss again."
         );
         let partition_section = compiled_dispatch
             .split("fn materialized_output_batch_cache_partition_into")
@@ -716,12 +1088,24 @@ mod source_contract_tests {
         let lock_position = partition_section
             .find("let cache = self.lock_materialized_output_cache")
             .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - batch partition must acquire materialized cache lock");
+        let resize_position = partition_section
+            .find("resize_vec_slots(\n            outputs,\n            batches.len(),\n            \"cuda graph materialized batch output\",")
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - batch partition must resize output slots before hit copy");
+        let hit_copy_position = partition_section
+            .find("snapshot.copy_into(compiled_graph_output_mut(")
+            .expect("Fix: replace expect with fallible API or document caller precondition; panic only on programmer error - batch partition must copy materialized cache hits");
         assert!(
             partition_section.contains("for (batch_index, inputs) in batches.iter().enumerate()")
                 && partition_section.contains("input_keys.push((batch_index, materialized_input_key(inputs)?));")
                 && partition_section.contains("let cache = self.lock_materialized_output_cache")
                 && key_position < lock_position,
             "Fix: compiled materialized batch replay must compute exact-input keys before acquiring the materialized-output cache lock."
+        );
+        assert!(
+            key_position < resize_position
+                && lock_position < resize_position
+                && resize_position < hit_copy_position,
+            "Fix: compiled materialized batch replay must finish exact-input key and cache-snapshot partitioning before resizing caller-owned output slots, then resize before copying cache hits."
         );
     }
 }

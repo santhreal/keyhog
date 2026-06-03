@@ -12,6 +12,7 @@ pub mod csr_forward_or_changed;
 pub mod csr_frontier_queue_batch_memory;
 pub mod csr_frontier_queue_batch_resident;
 pub mod csr_frontier_queue_resident;
+pub(crate) mod csr_frontier_queue_scratch;
 pub(crate) mod dispatch_bridge;
 pub mod dominator_frontier;
 pub mod exploded;

@@ -20,6 +20,30 @@ use crate::graph::csr_forward_traverse::bitset_words;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::scc_decompose";
+/// Source-lane workgroup for SCC component stamping.
+pub const SCC_DECOMPOSE_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for one SCC decomposition pass over `node_count` lanes.
+#[must_use]
+pub const fn scc_decompose_dispatch_grid(node_count: u32) -> [u32; 3] {
+    [
+        ceil_div_u32(at_least_one(node_count), SCC_DECOMPOSE_WORKGROUP_SIZE[0]),
+        1,
+        1,
+    ]
+}
+
+const fn at_least_one(value: u32) -> u32 {
+    if value == 0 {
+        1
+    } else {
+        value
+    }
+}
+
+const fn ceil_div_u32(value: u32, divisor: u32) -> u32 {
+    ((value - 1) / divisor) + 1
+}
 
 /// Build a Program that marks every node in the intersection of
 /// `forward` ∩ `backward` with the pivot id.
@@ -102,7 +126,7 @@ pub fn scc_decompose(
             BufferDecl::storage(component_out, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(node_count),
         ],
-        [1, 1, 1],
+        SCC_DECOMPOSE_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
@@ -253,6 +277,21 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn program_uses_packed_source_lane_workgroup() {
+        let program = scc_decompose(513, "fwd", "bwd", "comp", 23);
+        assert_eq!(program.workgroup_size(), SCC_DECOMPOSE_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn dispatch_grid_packs_node_lanes_into_blocks() {
+        assert_eq!(scc_decompose_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(scc_decompose_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(scc_decompose_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(scc_decompose_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(scc_decompose_dispatch_grid(513), [3, 1, 1]);
+    }
 
     #[test]
     fn intersection_stamps_pivot() {

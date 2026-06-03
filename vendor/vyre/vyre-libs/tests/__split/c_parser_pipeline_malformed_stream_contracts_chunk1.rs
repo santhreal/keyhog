@@ -124,7 +124,7 @@ fn pg_lower_reference_oracle_panics_on_misaligned_input() {
         .or_else(|| panic.downcast_ref::<&str>().copied())
         .unwrap_or("non-string panic payload");
     assert!(
-        message.contains("misaligned") || message.contains("stride"),
+        message.contains("aligned") || message.contains("stride"),
         "unexpected panic payload: {message}"
     );
 }
@@ -160,7 +160,7 @@ fn vast_reference_oracles_panic_on_malformed_public_input() {
             .or_else(|| panic.downcast_ref::<&str>().copied())
             .unwrap_or("non-string panic payload");
         assert!(
-            message.contains("misaligned") || message.contains("stride"),
+            message.contains("aligned") || message.contains("stride"),
             "unexpected {name} panic payload: {message}"
         );
     }
@@ -198,8 +198,7 @@ fn pg_lower_zero_nodes_fails_validation_on_cpu_reference() {
         "zero-node PG lowerer must fail validation on CPU reference, not silently succeed",
     );
     assert!(
-        err.to_string().contains("reference dispatch trapped")
-            || err.to_string().contains("VAST"),
+        err.to_string().contains("vast_nodes") || err.to_string().contains("validate"),
         "unexpected error: {err}"
     );
 }

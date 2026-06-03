@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(feature = "hash")]
 
 use vyre_primitives::hash::adler32;
@@ -29,7 +28,6 @@ fn hostile_bytes(seed: u32) -> Vec<u8> {
     }
     v
 }
-
 
 #[test]
 fn sweep_hash_adler32_volume_oracle_matrix() {

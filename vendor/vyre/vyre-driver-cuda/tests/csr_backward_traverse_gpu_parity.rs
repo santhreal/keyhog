@@ -6,7 +6,9 @@ mod common;
 
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
-use vyre_primitives::graph::csr_backward_traverse::{cpu_ref, csr_backward_traverse};
+use vyre_primitives::graph::csr_backward_traverse::{
+    cpu_ref, csr_backward_traverse, csr_backward_traverse_dispatch_grid,
+};
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 
 fn run(
@@ -37,10 +39,8 @@ fn run(
         // frontier_out: zero-init.
         vec![0u8; words as usize * 4],
     ];
-    // csr_backward_traverse uses workgroup [1,1,1], so grid_x must
-    // cover one workgroup per source node.
     let mut config = DispatchConfig::default();
-    config.grid_override = Some([node_count.max(1), 1, 1]);
+    config.grid_override = Some(csr_backward_traverse_dispatch_grid(node_count));
     let outputs = with_live_backend("CSR backward traverse", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -164,4 +164,41 @@ fn cuda_csr_backward_empty_frontier() {
     );
     assert_eq!(gpu, cpu);
     assert_eq!(gpu, vec![0u32]);
+}
+
+#[test]
+fn cuda_csr_backward_reaches_source_past_first_workgroup() {
+    let node_count = 513u32;
+    let words = node_count.div_ceil(32) as usize;
+    let mut edge_offsets = vec![0u32; node_count as usize + 1];
+    for offset in edge_offsets.iter_mut().skip(301) {
+        *offset = 1;
+    }
+    let edge_targets = vec![512u32];
+    let edge_kind_mask = vec![1u32];
+    let mut frontier = vec![0u32; words];
+    frontier[512 / 32] |= 1u32 << (512 % 32);
+
+    let cpu = cpu_ref(
+        node_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &frontier,
+        0xFFFF_FFFF,
+    );
+    let gpu = run(
+        node_count,
+        1,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &frontier,
+        0xFFFF_FFFF,
+    );
+
+    let mut expected = vec![0u32; words];
+    expected[300 / 32] |= 1u32 << (300 % 32);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, expected);
 }

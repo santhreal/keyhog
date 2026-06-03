@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "reduce", feature = "cpu-parity"))]
 
 use vyre_primitives::reduce::min;
@@ -19,7 +18,6 @@ fn lcg_u32(seed: u32, len: usize) -> Vec<u32> {
         .collect()
 }
 
-
 fn oracle(values: &[u32]) -> u32 {
     values.iter().copied().min().unwrap_or(u32::MAX)
 }
@@ -30,6 +28,10 @@ const CASES: usize = 16384;
 fn sweep_reduce_min_volume_oracle_matrix() {
     for idx in 0..CASES {
         let input = lcg_u32(idx as u32, 1 + (idx % 200));
-        assert_eq!(min::cpu_ref(&input), oracle(&input), "Fix: reduce_min volume case {idx}");
+        assert_eq!(
+            min::cpu_ref(&input),
+            oracle(&input),
+            "Fix: reduce_min volume case {idx}"
+        );
     }
 }

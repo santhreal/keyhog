@@ -1,5 +1,7 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+pub(super) use super::gpu_source_bytes::SourceByteLayout as DirectiveSourceLayout;
+
 pub(super) const DIRECTIVE_PARSE_WORKGROUP_SIZE: u32 = 256;
 pub(super) const MAX_DIRECTIVE_WS_PREFIX: u32 = 4;
 
@@ -7,7 +9,21 @@ pub(super) fn packed_source_word_count(source_len: u32) -> u32 {
     source_len.div_ceil(4).max(1)
 }
 
-pub(super) fn directive_parse_input_buffers(num_tokens: u32, source_words: u32) -> Vec<BufferDecl> {
+pub(super) fn directive_parse_input_buffers(
+    num_tokens: u32,
+    source_len: u32,
+    source_layout: DirectiveSourceLayout,
+) -> Vec<BufferDecl> {
+    let (source_element, source_count) = match source_layout {
+        DirectiveSourceLayout::PackedU32 => (
+            super::gpu_source_bytes::source_buffer_element(source_layout),
+            packed_source_word_count(source_len),
+        ),
+        DirectiveSourceLayout::RawU8 => (
+            super::gpu_source_bytes::source_buffer_element(source_layout),
+            0,
+        ),
+    };
     vec![
         BufferDecl::storage("tok_starts", 0, BufferAccess::ReadOnly, DataType::U32)
             .with_count(num_tokens.max(1)),
@@ -15,8 +31,8 @@ pub(super) fn directive_parse_input_buffers(num_tokens: u32, source_words: u32) 
             .with_count(num_tokens.max(1)),
         BufferDecl::storage("directive_kinds", 2, BufferAccess::ReadOnly, DataType::U32)
             .with_count(num_tokens.max(1)),
-        BufferDecl::storage("source", 3, BufferAccess::ReadOnly, DataType::U32)
-            .with_count(source_words),
+        BufferDecl::storage("source", 3, BufferAccess::ReadOnly, source_element)
+            .with_count(source_count),
     ]
 }
 
@@ -111,8 +127,29 @@ pub(super) fn directive_program_from_parse(
     kind_guard: Expr,
     parse: Vec<Node>,
 ) -> Program {
-    let source_words = packed_source_word_count(source_len);
-    let mut buffers = directive_parse_input_buffers(num_tokens, source_words);
+    directive_program_from_parse_with_source_layout(
+        op_id,
+        num_tokens,
+        source_len,
+        DirectiveSourceLayout::PackedU32,
+        output_columns,
+        layout,
+        kind_guard,
+        parse,
+    )
+}
+
+pub(super) fn directive_program_from_parse_with_source_layout(
+    op_id: &'static str,
+    num_tokens: u32,
+    source_len: u32,
+    source_layout: DirectiveSourceLayout,
+    output_columns: &[DirectiveOutputColumn],
+    layout: DirectiveThreadLayout,
+    kind_guard: Expr,
+    parse: Vec<Node>,
+) -> Program {
+    let mut buffers = directive_parse_input_buffers(num_tokens, source_len, source_layout);
     buffers.extend(directive_output_buffers(num_tokens, output_columns));
     let body = directive_parse_body(layout, output_columns, kind_guard, parse);
     directive_parse_program(op_id, buffers, body)
@@ -133,6 +170,7 @@ pub(super) fn push_directive_row_bounds(parse: &mut Vec<Node>) {
 
 pub(super) fn push_ws_skip_from_expr(
     parse: &mut Vec<Node>,
+    source_layout: DirectiveSourceLayout,
     prefix: &str,
     base: Expr,
     skip_name: &'static str,
@@ -141,7 +179,7 @@ pub(super) fn push_ws_skip_from_expr(
     for q in 0..MAX_DIRECTIVE_WS_PREFIX {
         parse.push(Node::let_bind(
             format!("{prefix}_{q}"),
-            safe_source_byte_expr(Expr::add(base.clone(), Expr::u32(q))),
+            safe_source_byte_expr(source_layout, Expr::add(base.clone(), Expr::u32(q))),
         ));
     }
     for q in 0..MAX_DIRECTIVE_WS_PREFIX {
@@ -160,11 +198,17 @@ pub(super) fn push_ws_skip_from_expr(
     ));
 }
 
-pub(super) fn push_hash_and_keyword_start(parse: &mut Vec<Node>) {
+pub(super) fn push_hash_and_keyword_start(
+    parse: &mut Vec<Node>,
+    source_layout: DirectiveSourceLayout,
+) {
     for p in 0..=MAX_DIRECTIVE_WS_PREFIX {
         parse.push(Node::let_bind(
             format!("hs_{p}"),
-            safe_source_byte_expr(Expr::add(Expr::var("tok_start"), Expr::u32(p))),
+            safe_source_byte_expr(
+                source_layout,
+                Expr::add(Expr::var("tok_start"), Expr::u32(p)),
+            ),
         ));
     }
     for p in 0..=MAX_DIRECTIVE_WS_PREFIX {
@@ -194,6 +238,7 @@ pub(super) fn push_hash_and_keyword_start(parse: &mut Vec<Node>) {
     ));
     push_ws_skip_from_expr(
         parse,
+        source_layout,
         "kp",
         Expr::add(Expr::var("hash_idx"), Expr::u32(1)),
         "kw_skip",
@@ -210,6 +255,7 @@ pub(super) fn push_keyword_end(parse: &mut Vec<Node>, keyword_len: Expr) {
 
 pub(super) fn push_c_identifier_span(
     parse: &mut Vec<Node>,
+    source_layout: DirectiveSourceLayout,
     start_var: &'static str,
     len_var: &'static str,
     done_var: &'static str,
@@ -238,7 +284,10 @@ pub(super) fn push_c_identifier_span(
             vec![
                 Node::let_bind(
                     byte.clone(),
-                    safe_source_byte_expr(Expr::add(Expr::var(start_var), Expr::var(iter.clone()))),
+                    safe_source_byte_expr(
+                        source_layout,
+                        Expr::add(Expr::var(start_var), Expr::var(iter.clone())),
+                    ),
                 ),
                 Node::let_bind(
                     byte_ok.clone(),
@@ -263,6 +312,7 @@ pub(super) fn push_c_identifier_span(
 
 pub(super) fn push_bounded_byte_scan_until(
     parse: &mut Vec<Node>,
+    source_layout: DirectiveSourceLayout,
     iter_var: &'static str,
     start_var: &'static str,
     limit_var: &'static str,
@@ -287,14 +337,14 @@ pub(super) fn push_bounded_byte_scan_until(
         Expr::u32(0),
         Expr::var(limit_var),
         vec![Node::if_then(
-            Expr::and(
-                active_guard,
-                Expr::eq(Expr::var(done_var), Expr::u32(0)),
-            ),
+            Expr::and(active_guard, Expr::eq(Expr::var(done_var), Expr::u32(0))),
             vec![
                 Node::let_bind(
                     byte_var,
-                    safe_source_byte_expr(Expr::add(Expr::var(start_var), Expr::var(iter_var))),
+                    safe_source_byte_expr(
+                        source_layout,
+                        Expr::add(Expr::var(start_var), Expr::var(iter_var)),
+                    ),
                 ),
                 Node::if_then(
                     Expr::eq(Expr::var(byte_var), close_byte),
@@ -308,14 +358,16 @@ pub(super) fn push_bounded_byte_scan_until(
     ));
 }
 
-pub(super) fn source_byte_expr(addr: Expr) -> Expr {
-    super::gpu_source_bytes::load_packed_byte_expr("source", addr)
+pub(super) fn source_byte_expr(source_layout: DirectiveSourceLayout, addr: Expr) -> Expr {
+    super::gpu_source_bytes::load_source_layout_byte_expr("source", source_layout, addr)
 }
 
-pub(super) fn safe_source_byte_expr(addr: Expr) -> Expr {
-    super::gpu_source_bytes::safe_load_source_byte_expr(
+pub(super) fn safe_source_byte_expr(source_layout: DirectiveSourceLayout, addr: Expr) -> Expr {
+    super::gpu_source_bytes::safe_load_source_layout_byte_expr(
+        "source",
+        source_layout,
         addr,
-        super::gpu_source_bytes::packed_source_byte_len_expr(),
+        super::gpu_source_bytes::source_byte_len_expr("source", source_layout),
     )
 }
 

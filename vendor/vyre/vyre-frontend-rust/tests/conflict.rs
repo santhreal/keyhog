@@ -22,19 +22,27 @@ fn check_src(src: &str) -> Result<(), RustSemaError> {
 #[test]
 fn rejects_two_live_mutable_borrows() {
     let err = check_src("fn f() { let mut x: i32 = 0; let a: &mut i32 = &mut x; let b: &mut i32 = &mut x; let c: i32 = *a + *b; }").unwrap_err();
-    assert!(matches!(err, RustSemaError::MultipleMutableBorrows { .. }), "got {err:?}");
+    assert!(
+        matches!(err, RustSemaError::MultipleMutableBorrows { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]
 fn rejects_mutable_while_shared_live() {
     let err = check_src("fn f() { let mut x: i32 = 0; let a: &i32 = &x; let b: &mut i32 = &mut x; let c: i32 = *a; }").unwrap_err();
-    assert!(matches!(err, RustSemaError::MutableAndSharedBorrow { .. }), "got {err:?}");
+    assert!(
+        matches!(err, RustSemaError::MutableAndSharedBorrow { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]
 fn allows_two_shared_borrows() {
-    check_src("fn f() { let x: i32 = 0; let a: &i32 = &x; let b: &i32 = &x; let c: i32 = *a + *b; }")
-        .expect("Fix: two shared borrows of the same place must be allowed");
+    check_src(
+        "fn f() { let x: i32 = 0; let a: &i32 = &x; let b: &i32 = &x; let c: i32 = *a + *b; }",
+    )
+    .expect("Fix: two shared borrows of the same place must be allowed");
 }
 
 #[test]
@@ -54,7 +62,10 @@ fn rejects_conflict_live_across_a_branch_point() {
     // a and b are both created before the `if`, then used in separate arms; at
     // b's creation a is still live -> E0499 (matches rustc).
     let err = check_src("fn f() { let mut x: i32 = 0; let a: &mut i32 = &mut x; let b: &mut i32 = &mut x; if true { let p: i32 = *a; } else { let q: i32 = *b; }; }").unwrap_err();
-    assert!(matches!(err, RustSemaError::MultipleMutableBorrows { .. }), "got {err:?}");
+    assert!(
+        matches!(err, RustSemaError::MultipleMutableBorrows { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]

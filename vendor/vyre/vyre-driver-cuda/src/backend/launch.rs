@@ -513,8 +513,22 @@ mod tests {
     fn prevalidated_launch_api_preserves_safe_default_without_double_validation_hot_path() {
         let launch = include_str!("launch.rs");
         let host_dispatch = include_str!("host_dispatch.rs");
-        let resident_dispatch = include_str!("resident_dispatch.rs");
-        let egraph = include_str!("../egraph_kernel_plan.rs");
+        let resident_dispatch = [
+            include_str!("resident_dispatch/helpers.rs"),
+            include_str!("resident_dispatch/borrowed.rs"),
+            include_str!("resident_dispatch/async_dispatch.rs"),
+            include_str!("resident_dispatch/batch.rs"),
+            include_str!("resident_dispatch/sync.rs"),
+            include_str!("resident_dispatch/sequence_api.rs"),
+            include_str!("resident_dispatch/sequence_fused.rs"),
+            include_str!("resident_dispatch/timed.rs"),
+        ]
+        .concat();
+        let egraph = [
+            include_str!("../egraph_kernel_plan/backend_structural.rs"),
+            include_str!("../egraph_kernel_plan/backend_rewrite.rs"),
+        ]
+        .concat();
 
         assert!(
             launch.contains("fn launch_resolved_function(")
