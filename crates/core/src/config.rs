@@ -19,6 +19,16 @@ pub struct ScanConfig {
     pub entropy_enabled: bool,
     /// Whether to enable entropy analysis even in standard source code files.
     pub entropy_in_source_files: bool,
+    /// When the entropy fallback fires, score its candidates through the MoE
+    /// with the model AUTHORITATIVE (the entropy magnitude is NOT a confidence
+    /// floor) instead of emitting the bare entropy heuristic. Default on: on the
+    /// real-distribution-trained model this is a recall-safe precision win — the
+    /// model scores real high-entropy secrets high and structured non-secrets
+    /// (FQDNs, git SHAs, base64 blobs) low, so FPs fall below the report floor
+    /// while genuine recall is preserved. Opt out with `--no-entropy-ml-scoring`.
+    /// No-op when `entropy_enabled` or `ml_enabled` is false.
+    #[serde(default = "default_entropy_ml_authoritative")]
+    pub entropy_ml_authoritative: bool,
     /// Shannon entropy threshold (typical secrets are 4.5+).
     pub entropy_threshold: f64,
     /// Minimum length for entropy-based secret detection.
@@ -83,6 +93,13 @@ pub struct ScanConfig {
 /// Limits for decoding to prevent infinite recursion or memory exhaustion.
 pub const MAX_DECODE_DEPTH_LIMIT: usize = 16;
 
+/// Serde default for [`ScanConfig::entropy_ml_authoritative`]: a config
+/// deserialized from a TOML that predates the field gets the shipped default
+/// (on) rather than `bool`'s `false`, so old configs don't silently disable it.
+fn default_entropy_ml_authoritative() -> bool {
+    true
+}
+
 /// Errors returned while validating a scan configuration.
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -111,6 +128,7 @@ impl Default for ScanConfig {
             max_decode_depth: 10,
             entropy_enabled: true,
             entropy_in_source_files: false,
+            entropy_ml_authoritative: true,
             entropy_threshold: 4.5,
             min_secret_len: 20,
             max_file_size: 10 * 1024 * 1024, // 10 MB

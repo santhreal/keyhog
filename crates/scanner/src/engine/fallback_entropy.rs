@@ -470,55 +470,84 @@ impl CompiledScanner {
                 .as_ref()
                 .map(|date| scan_state.intern_metadata(date));
 
-            // Route the entropy-fallback confidence through the SAME canonical
-            // post-ML penalty pipeline the ML / named-detector path uses
-            // (scan_postprocess.rs). The entropy-* detectors are unanchored
-            // fallbacks (`is_named = false`), so the uniform-base64-blob /
-            // encoded-binary / placeholder / diversity shape penalties (×0.02)
-            // apply — penalties this direct `push_match` path historically
-            // BYPASSED, which is the base64-protobuf decoy FP class on the
-            // entropy path. A real high-entropy token clears every check; only a
-            // 44+ char raw-base64-blob / encoded-binary value is slammed below
-            // the floor. Applied BEFORE the checksum floor so a valid embedded
-            // CRC still overrides shape, and the penalized blob stays recoverable
-            // via a lower `--min-confidence`.
+            // Build the raw match carrying the entropy heuristic as a
+            // PLACEHOLDER confidence. Where it goes next depends on whether ML is
+            // live for this scan.
+            let mut raw_match = RawMatch {
+                credential_hash: crate::sha256_hash(&entropy_match.value),
+                detector_id,
+                detector_name,
+                service,
+                severity: keyhog_core::Severity::High,
+                credential,
+                companions: HashMap::new(),
+                location: MatchLocation {
+                    source,
+                    file_path,
+                    line: Some(entropy_match.line),
+                    offset,
+                    commit,
+                    author,
+                    date,
+                },
+                entropy: Some(entropy_match.entropy),
+                confidence: Some(confidence),
+            };
+
+            // UNIFIED SCORING. When ML is live, route the entropy candidate
+            // through the SAME MoE batch the detector/generic matches use, with
+            // the model AUTHORITATIVE (no entropy-magnitude floor — see
+            // `MlPendingMatch::model_authoritative`). The MoE separates real
+            // high-entropy secrets (~0.98) from high-entropy NON-secrets (FQDNs,
+            // git SHAs, base64 blobs ~0.01) that the shape gates above don't
+            // catch, and `apply_ml_batch_scores` then runs the ONE canonical
+            // penalty / path / calibration / checksum / floor pipeline — so this
+            // path no longer needs a bespoke `apply_post_ml_penalties` +
+            // `checksum_adjusted_confidence` tail (the batch path applies both,
+            // identically). The shape gates above remain cheap, recall-safe
+            // pre-filters.
+            #[cfg(feature = "ml")]
+            if self.config.ml_enabled && self.config.entropy_ml_authoritative {
+                let text_context = crate::pipeline::local_context_window(
+                    &preprocessed.text,
+                    entropy_match.line,
+                    crate::types::ML_CONTEXT_RADIUS_LINES,
+                );
+                let ml_context = match chunk.metadata.path.as_deref() {
+                    Some(path) => format!("file:{path}\n{text_context}"),
+                    None => text_context.to_string(),
+                };
+                scan_state.ml_pending.push(crate::types::MlPendingMatch {
+                    raw_match,
+                    heuristic_conf: confidence,
+                    // The entropy fallback infers no rich code context (its anchor
+                    // is keyword PROXIMITY, not an assignment parse) and the
+                    // surrounding gates already handle test/docs shapes; Unknown
+                    // applies no extra context multiplier, matching the
+                    // pre-unification entropy emit.
+                    code_context: crate::context::CodeContext::Unknown,
+                    credential: entropy_match.value.to_string(),
+                    ml_context,
+                    model_authoritative: true,
+                });
+                continue;
+            }
+
+            // Non-ML path (the `ml` feature is compiled out, or ML disabled at
+            // runtime). Emit directly with the entropy heuristic, routed through
+            // the post-ML shape penalties and the single checksum policy exactly
+            // as before: the uniform-base64-blob / encoded-binary / placeholder /
+            // diversity penalties (×0.02) apply, then a prefix-bearing token with
+            // an Invalid embedded CRC is dropped and a Valid one floored.
             let confidence =
                 crate::confidence::apply_post_ml_penalties(confidence, &entropy_match.value, false);
-            // Honor the single checksum policy on this fallback emit path too:
-            // `checksum/mod.rs` documents that EVERY match-emission path routes
-            // through `checksum_adjusted_confidence`, so a prefix-bearing token
-            // (`ghp_`/`npm_`/`github_pat_`/…) carrying an Invalid embedded CRC is
-            // dropped here exactly as on the hot-pattern, regex, and ML paths,
-            // and a Valid one is floored — even when it surfaces via the entropy
-            // fallback rather than its named detector.
             let Some(confidence) =
                 crate::checksum::checksum_adjusted_confidence(confidence, &entropy_match.value)
             else {
                 continue;
             };
-            scan_state.push_match(
-                RawMatch {
-                    credential_hash: crate::sha256_hash(&entropy_match.value),
-                    detector_id,
-                    detector_name,
-                    service,
-                    severity: keyhog_core::Severity::High,
-                    credential,
-                    companions: HashMap::new(),
-                    location: MatchLocation {
-                        source,
-                        file_path,
-                        line: Some(entropy_match.line),
-                        offset,
-                        commit,
-                        author,
-                        date,
-                    },
-                    entropy: Some(entropy_match.entropy),
-                    confidence: Some(confidence),
-                },
-                self.config.max_matches_per_chunk,
-            );
+            raw_match.confidence = Some(confidence);
+            scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
         }
     }
 }

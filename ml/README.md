@@ -22,6 +22,45 @@ that. On the held-out split:
 
 Recall holds; precision jumps; base64-of-binary false positives go to zero.
 
+## The real-distribution feedback loop (harvest → retrain → gate)
+
+The synthetic corpus (`corpus.py`) gives breadth but not the real distribution
+keyhog is deployed against. A synthetic-only model scored real but shape-ambiguous
+CredData secrets (lowercase-heavy tokens, digit-run ids, symbol-laden passwords)
+near ~0.02 — it learned "junk-looking shape = non-secret" from synthetic
+negatives. The
+fix is to train on the real candidates keyhog actually surfaces, labelled by
+ground truth:
+
+```
+ml/retrain_loop.sh            # measure only (scratch model, no crate change)
+ml/retrain_loop.sh --write    # ship weights.bin if the gates pass (+.bak)
+```
+
+which runs:
+
+1. **harvest** (`harvest_corpus.py`) — scan the real corpora (CredData) with
+   keyhog, label each candidate via the bench's ground-truth overlap
+   (`benchmarks/bench/score.py`), and emit `{text, context, label, kind}` where
+   `context` is the byte-exact serve ml_context (`file:{path}\n{±5-line window}`).
+2. **retrain** (`train_classifier.py --real-corpus`) — blend synthetic (random
+   85/15) + real (split **by file**, never randomly — a repo's secrets must not
+   span train/test) and report metrics on a leakage-free real held-out.
+3. **gate** — `--write` refuses unless synthetic held-out F1 ≥ `--min-f1` AND real
+   held-out recall@0.40-floor ≥ `--min-real-recall`, so a retrain can never ship
+   a breadth OR a real-recall regression.
+
+Measured impact of one loop (CredData): real held-out recall@floor 0 → **0.76**,
+synthetic F1 held at 0.96, and on the never-trained-on mirror corpus precision
+held (0.994) with recall +0.7pt — i.e. it generalises, it did not overfit to
+CredData. With the better model the entropy→MoE unification
+(`entropy_ml_authoritative`, default on) flips from a recall regression into a
+recall-safe precision win (CredData +1 TP / −127 FP). Run the loop each dogfood
+round so real FPs/FNs keep flowing back into the model.
+
+> Note: `ml/data/real_corpus.jsonl` and `benchmarks/results/` contain REAL
+> secrets and are gitignored — never commit them.
+
 ## Architecture (must match `ml_scorer.rs` exactly)
 
 ```

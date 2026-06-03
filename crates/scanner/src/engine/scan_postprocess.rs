@@ -409,9 +409,23 @@ impl CompiledScanner {
             // the tuned knob a no-op (the tuned!=shipped trap) - now the
             // value the user / benchmark sets is the value the blend uses.
             let ml_weight = self.config.ml_weight;
-            let mut final_score =
-                (ml_weight * ml_conf) + ((1.0 - ml_weight) * pending.heuristic_conf);
-            final_score = final_score.max(pending.heuristic_conf).max(ml_conf);
+            let mut final_score = if pending.model_authoritative {
+                // Entropy-fallback candidate: the MoE is the unified scorer. The
+                // "heuristic" here is bare entropy magnitude, which is precisely
+                // what mislabels high-entropy non-secrets (FQDNs, git SHAs,
+                // base64 blobs) - so it must NOT floor the model. Taking the
+                // model score directly lets the MoE suppress those FPs (probe:
+                // structured non-secrets score ~0.01, real secrets ~0.98) while
+                // the downstream penalty/checksum/floor pipeline below still
+                // applies uniformly. The shape gates in scan_entropy_fallback
+                // already removed the cheap non-secrets before this point.
+                ml_conf
+            } else {
+                // Detector/generic match: the regex is positive evidence, so the
+                // heuristic is a confidence FLOOR and the model can only raise.
+                let blended = (ml_weight * ml_conf) + ((1.0 - ml_weight) * pending.heuristic_conf);
+                blended.max(pending.heuristic_conf).max(ml_conf)
+            };
 
             // `--scan-comments` opts the Comment context out of the
             // ML-blended confidence multiplier so a real credential in
