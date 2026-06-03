@@ -479,9 +479,11 @@ fn tar_archive_content_is_unpacked_and_scanned() {
     );
     // The reported path is the inner archive entry, not the opaque container.
     assert!(
-        chunks
-            .iter()
-            .any(|c| c.metadata.path.as_deref().is_some_and(|p| p.contains("//leak.env"))),
+        chunks.iter().any(|c| c
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|p| p.contains("//leak.env"))),
         ".tar entry chunk must carry the `<archive>//<entry>` path; got chunks: {chunks:#?}"
     );
 }

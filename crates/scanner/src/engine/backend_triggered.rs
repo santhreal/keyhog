@@ -150,19 +150,31 @@ impl CompiledScanner {
     fn collect_triggered_patterns_simd(&self, text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
         if let Some(scanner) = &self.simd_prefilter {
-            // Seed with the Aho-Corasick literal triggers. Hyperscan is the
-            // primary prefilter, but it is NOT a sound superset of the AC
-            // literal set: HS compiles some patterns (e.g. a context anchor
-            // followed by a large `{100,200}` bounded repeat - line /
-            // paloalto / tower / keystonejs / snowflake / bandwidth) without
-            // erroring, yet never reports a match for them at scan time, so
-            // they never enter the triggered bitmap and silently never fire
-            // under the HS backend (the default on Linux/CI) while passing
-            // under the CPU backend. A prefilter that drops a literal-
-            // anchored pattern is unsound; union the AC literal triggers so
-            // every pattern whose literal prefix appears is at least
-            // evaluated. Extraction still confirms via the full regex, so
-            // precision is unchanged - only the candidate set widens.
+            // The trigger bitmap is the UNION of two INCOMPARABLE prefilters,
+            // not one superset of the other. PERF-simd_scan-1 proposed dropping
+            // the Hyperscan scan on the theory that "AC ⊇ HS so HS is pure
+            // overhead" — that is FALSE and the inversion silently regressed
+            // ~30 context-anchored detectors (twilio / sendgrid / slack-bot /
+            // digitalocean / …) on contracts_runner. Do NOT re-derive it.
+            //
+            //   * AC \ HS ≠ ∅: Hyperscan compiles some patterns (a context
+            //     anchor + a large `{100,200}` bounded repeat — line / paloalto
+            //     / tower / keystonejs / snowflake / bandwidth) without erroring
+            //     yet never reports a match at scan time, so the AC literal seed
+            //     is what makes them fire. (This is all the old comment claimed.)
+            //   * HS \ AC ≠ ∅: the AC sweep marks pattern `i` only when its
+            //     EXTRACTED literal appears, but for patterns whose literal is
+            //     not a *required* substring of every match (alternations,
+            //     optional-literal bodies) Hyperscan's full-regex scan fires
+            //     where the AC literal is absent. These are exactly the detectors
+            //     the inversion lost.
+            //
+            // The sets are incomparable, so neither prefilter alone is sound;
+            // the union is load-bearing for recall. Precision is unchanged —
+            // every triggered candidate is still confirmed by its full regex in
+            // `extract_confirmed_patterns`. (Patterns Hyperscan cannot compile
+            // are rerouted to the keyword fallback at construction; see compile.rs
+            // `unsupported_ac`.) The GPU path unions for the identical reason.
             let mut triggered_patterns = self.collect_triggered_patterns_cpu(text);
             for (hs_id, _start, _end) in scanner.scan(text.as_bytes()) {
                 let Some((_detector_index, dedup_id, _has_group)) = scanner.pattern_info(hs_id)

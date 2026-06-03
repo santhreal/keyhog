@@ -11,7 +11,7 @@ use std::collections::HashMap;
 impl CompiledScanner {
     pub(crate) fn scan_entropy_fallback(
         &self,
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         chunk: &Chunk,
         scan_state: &mut ScanState,
@@ -78,8 +78,14 @@ impl CompiledScanner {
             Some(&skip_lines),
         );
         for entropy_match in entropy_matches {
-            let (detector_id_value, detector_name_value, service_value) =
-                classify_entropy_detector(&entropy_match.keyword);
+            // Resolve the entropy class to an index into the pre-interned
+            // metadata table once; the actual (id, name, service) Arc<str>
+            // triple is cloned by this index at the emit site below
+            // (PERF-locality_intern-1) instead of re-interning per finding.
+            let entropy_meta_idx =
+                crate::engine::fallback_entropy_helpers::classify_entropy_detector_index(
+                    &entropy_match.keyword,
+                );
             let base_confidence =
                 if entropy_match.entropy >= crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD {
                     0.75
@@ -431,9 +437,16 @@ impl CompiledScanner {
                 continue;
             }
 
-            let detector_id = scan_state.intern_metadata(detector_id_value);
-            let detector_name = scan_state.intern_metadata(detector_name_value);
-            let service = scan_state.intern_metadata(service_value);
+            // Clone the pre-interned entropy-class metadata triple by index
+            // instead of re-interning the three fixed `&'static str` constants
+            // on every entropy finding (PERF-locality_intern-1). The four
+            // triples were interned once at construction from the same
+            // ENTROPY_DETECTOR_METADATA table, so the emitted Arc<str>s carry
+            // byte-identical values to the prior `intern_metadata` path.
+            let (detector_id, detector_name, service) = {
+                let m = &self.entropy_metadata_by_index[entropy_meta_idx];
+                (m.0.clone(), m.1.clone(), m.2.clone())
+            };
             let credential = scan_state.intern_credential(&entropy_match.value);
             let source = scan_state.intern_metadata(&chunk.metadata.source_type);
             let file_path = chunk

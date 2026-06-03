@@ -322,11 +322,7 @@ fn daemon_route_enforces_config_lockdown_require() {
     let daemon = Daemon::start();
     let work = TempDir::new().expect("work tempdir");
 
-    write_fixture(
-        work.path(),
-        ".keyhog.toml",
-        "[lockdown]\nrequire = true\n",
-    );
+    write_fixture(work.path(), ".keyhog.toml", "[lockdown]\nrequire = true\n");
     let secret = planted_secret();
     let path = write_fixture(
         work.path(),

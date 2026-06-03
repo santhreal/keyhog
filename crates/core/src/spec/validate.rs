@@ -47,6 +47,7 @@ pub enum QualityIssue {
 ///     companions: Vec::new(),
 ///     verify: None,
 ///     keywords: vec!["demo_".into()],
+///     min_confidence: None,
 /// };
 ///
 /// assert!(validate_detector(&detector).is_empty());

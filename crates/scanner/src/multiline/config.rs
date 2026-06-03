@@ -27,17 +27,27 @@ pub struct LineMapping {
 }
 
 /// Result of preprocessing text for multi-line concatenation.
+///
+/// `text` is a [`Cow`] so the overwhelmingly common passthrough/identity case
+/// (a chunk with no structured-config shape and no multiline concatenation)
+/// can BORROW the caller's chunk bytes with zero allocation instead of paying a
+/// full-body `to_string()` heap copy + memcpy on every chunk. Only the paths
+/// that genuinely synthesize NEW bytes — multiline-joined concatenation,
+/// structured-config key/value reassembly, homoglyph normalization — own a
+/// `String` via `Cow::Owned`. Downstream consumers read `text` as `&str` via
+/// `Deref`, so the borrow is internal to preprocessing.
 #[derive(Debug, Clone)]
-pub struct PreprocessedText {
-    /// Original text plus appended multiline-joined segments.
-    pub text: String,
+pub struct PreprocessedText<'a> {
+    /// Original text (borrowed for passthrough) plus, for the synthesizing
+    /// paths, appended multiline-joined / structured segments (owned).
+    pub text: std::borrow::Cow<'a, str>,
     /// Byte offset where appended joined segments start.
     pub original_end: usize,
     /// Mapping from offsets in `text` to original line numbers.
     pub mappings: Vec<LineMapping>,
 }
 
-impl PreprocessedText {
+impl<'a> PreprocessedText<'a> {
     /// Map a byte offset in preprocessed text back to an original line number.
     ///
     /// Mappings are stored in `start_offset`-sorted, contiguous order
@@ -60,7 +70,14 @@ impl PreprocessedText {
     }
 
     /// Build a preprocessed representation with a one-line identity mapping.
-    pub fn passthrough(text: &str) -> Self {
+    ///
+    /// Takes the text as a [`Cow`] so a byte-identical passthrough chunk can be
+    /// carried as `Cow::Borrowed` (zero allocation — no heap alloc or memcpy of
+    /// the chunk body) while a normalization-rewritten chunk passes its already-
+    /// owned `String` through as `Cow::Owned`. Only the per-line `mappings`
+    /// bookkeeping (size-independent of the body bytes) is allocated either way.
+    pub fn passthrough(text: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+        let text: std::borrow::Cow<'a, str> = text.into();
         let mut mappings = Vec::new();
         let mut offset = 0;
         for (line_idx, line) in text.split('\n').enumerate() {
@@ -77,7 +94,7 @@ impl PreprocessedText {
         }
         let original_end = text.len();
         Self {
-            text: text.to_string(),
+            text,
             original_end,
             mappings,
         }

@@ -10,6 +10,7 @@
 ///   - `path:<glob>` - ignore files matching a glob pattern
 ///   - `# comment` - comments
 ///   - blank lines are skipped
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Component;
 use std::path::Path;
@@ -37,12 +38,142 @@ pub struct Allowlist {
     pub credential_hashes: HashSet<[u8; 32]>,
     /// Detector IDs to ignore entirely.
     pub ignored_detectors: HashSet<String>,
-    /// Glob patterns for paths to ignore.
+    /// Glob patterns for paths to ignore (raw, as authored). Kept as the public
+    /// contract + serialized form; the matcher consumes the precompiled
+    /// [`PathGlobIndex`] built from these in [`Allowlist::parse`].
     pub ignored_paths: Vec<String>,
+    /// Precompiled, first-segment-bucketed form of `ignored_paths`. Built once
+    /// in `parse`/`empty` so per-finding path checks neither re-normalize +
+    /// re-split each pattern nor sweep every rule. Skipped by `serde` (it is a
+    /// pure function of `ignored_paths`; reconstructed via `Deserialize`/manual
+    /// rebuild if ever needed) so the serialized shape is unchanged.
+    #[serde(skip)]
+    path_index: PathGlobIndex,
 }
 
 const MAX_GLOB_SEGMENTS: usize = 256;
 const MAX_GLOB_SEGMENT_LEN: usize = 1024;
+
+/// One precompiled ignored-path glob: its normalized segments computed ONCE at
+/// parse time, plus the oversize verdict that `glob_match_normalized` used to
+/// recompute per finding. `anchor` records how the pattern's first segment can
+/// match a path's first segment, so the index can skip patterns that cannot
+/// possibly match a given path without running the full automaton.
+#[derive(Debug, Clone)]
+struct CompiledGlob {
+    /// Normalized pattern segments (the `normalize_path` + `split_segments`
+    /// result, owned). Empty when the pattern normalized to nothing.
+    segments: Vec<String>,
+    /// True when the pattern (or, at match time, the path) is too large to
+    /// match safely - preserves the original `glob_match_normalized` fail-safe.
+    /// A path larger than the cap is rejected at match time; an oversize
+    /// pattern is pre-marked here so it never matches anything.
+    oversize: bool,
+}
+
+/// First-segment bucketed index over the compiled globs. A path can match a
+/// glob only if the glob's first segment is `**` (matches any prefix), or it
+/// matches the path's FIRST segment. Literal first segments key a hash bucket;
+/// wildcard / `**` first segments (which can match many first segments) fall
+/// into `wild_first`, always tested. This turns the per-finding O(rules) sweep
+/// into O(wild_first + matching_literal_bucket), sub-linear in total rule count
+/// for the realistic monorepo `.gitignore` shape (mostly literal-anchored dir
+/// rules), while reproducing `glob_match_segments` bit-for-bit.
+#[derive(Debug, Clone, Default)]
+struct PathGlobIndex {
+    /// Globs whose first segment is a pure literal, keyed by that literal. A
+    /// path is tested only against the bucket for its own first segment.
+    literal_first: HashMap<String, Vec<CompiledGlob>>,
+    /// Globs whose first segment is `**` or contains a `*` wildcard (it can
+    /// match more than one distinct first segment, so it cannot be bucketed by
+    /// a literal). Always tested.
+    wild_first: Vec<CompiledGlob>,
+    /// Globs that normalized to ZERO segments (e.g. a pattern that was only
+    /// `.` / `..` noise). `glob_match_segments(&[], path)` is true only for the
+    /// empty path, so these are kept apart and only consulted for that case.
+    empty_pattern: Vec<CompiledGlob>,
+    /// Number of source patterns this index was compiled from. `ignored_paths`
+    /// is a PUBLIC, mutable field: callers may push/extend/clear it directly
+    /// after construction (the documented `.gitignore`-append workflow). The
+    /// matcher compares this against the live `ignored_paths.len()` and rebuilds
+    /// on mismatch, so a directly-mutated allowlist never silently under- or
+    /// over-suppresses. Construction paths (`parse`/`load`/`empty`) keep it in
+    /// sync, so the hot scanner path never pays the rebuild.
+    source_len: usize,
+}
+
+impl PathGlobIndex {
+    /// Build the index from raw ignored-path patterns. Runs `normalize_path` +
+    /// `split_segments` + the oversize scan ONCE per pattern (the work
+    /// `glob_match_normalized` previously repeated on every finding).
+    fn build(patterns: &[String]) -> Self {
+        let mut index = PathGlobIndex::default();
+        index.source_len = patterns.len();
+        for pattern in patterns {
+            let normalized_pattern = normalize_path(pattern);
+            let segments: Vec<String> = split_segments(&normalized_pattern)
+                .into_iter()
+                .map(str::to_string)
+                .collect();
+            // Mirror the pattern half of the original oversize fail-safe: an
+            // oversize pattern can never match (it returned false before).
+            let oversize = segments.len() > MAX_GLOB_SEGMENTS
+                || segments.iter().any(|s| s.len() > MAX_GLOB_SEGMENT_LEN);
+            let glob = CompiledGlob { segments, oversize };
+
+            match glob.segments.first() {
+                None => index.empty_pattern.push(glob),
+                Some(first) if first == "**" || first.contains('*') => {
+                    index.wild_first.push(glob);
+                }
+                Some(first) => {
+                    index
+                        .literal_first
+                        .entry(first.clone())
+                        .or_default()
+                        .push(glob);
+                }
+            }
+        }
+        index
+    }
+
+    /// True when any compiled glob matches `normalized_path`. Tests only the
+    /// candidate set for `normalized_path`'s first segment plus the always-on
+    /// wildcard-anchored globs - never the full rule list.
+    fn matches(&self, normalized_path: &str) -> bool {
+        let path_segments = split_segments(normalized_path);
+
+        // Path-side oversize fail-safe (was recomputed per pattern before).
+        let path_oversize = path_segments.len() > MAX_GLOB_SEGMENTS
+            || path_segments.iter().any(|s| s.len() > MAX_GLOB_SEGMENT_LEN);
+        if path_oversize {
+            tracing::warn!(
+                "skipping oversized allowlist path match ({} segments). Fix: shorten the path",
+                path_segments.len()
+            );
+            return false;
+        }
+
+        let test = |glob: &CompiledGlob| -> bool {
+            !glob.oversize && glob_match_segments(&glob.segments, &path_segments)
+        };
+
+        // Empty path: only a zero-segment pattern (or a `**`-led one, which is
+        // in wild_first) can match. Mirror `glob_match_segments(&[], &[])`.
+        if path_segments.is_empty() {
+            return self.empty_pattern.iter().any(test) || self.wild_first.iter().any(test);
+        }
+
+        let first = path_segments[0];
+        if let Some(bucket) = self.literal_first.get(first) {
+            if bucket.iter().any(test) {
+                return true;
+            }
+        }
+        self.wild_first.iter().any(test)
+    }
+}
 
 impl Allowlist {
     /// Create an empty allowlist with no suppressed hashes, detectors, or paths.
@@ -60,6 +191,7 @@ impl Allowlist {
             credential_hashes: HashSet::new(),
             ignored_detectors: HashSet::new(),
             ignored_paths: Vec::new(),
+            path_index: PathGlobIndex::default(),
         }
     }
 
@@ -173,6 +305,10 @@ impl Allowlist {
                 log_metadata_audit("path", entry, &parsed_meta);
             }
         }
+        // Precompile the path globs ONCE: segments + oversize verdict + the
+        // first-segment bucket index, so per-finding suppression neither
+        // re-normalizes each pattern nor sweeps every rule.
+        al.path_index = PathGlobIndex::build(&al.ignored_paths);
         al
     }
 
@@ -217,9 +353,7 @@ impl Allowlist {
 
         let path_ignored = finding.location.file_path.as_ref().is_some_and(|path| {
             let normalized_path = normalize_path(path);
-            self.ignored_paths
-                .iter()
-                .any(|pattern| glob_match_normalized(pattern, &normalized_path))
+            self.path_matches(&normalized_path)
         });
 
         let hash_ignored = self.matches_ignored_hash(&finding.credential_hash);
@@ -266,9 +400,21 @@ impl Allowlist {
     /// ```
     pub fn is_path_ignored(&self, path: &str) -> bool {
         let normalized = normalize_path(path);
-        self.ignored_paths
-            .iter()
-            .any(|pattern| glob_match_normalized(pattern, &normalized))
+        self.path_matches(&normalized)
+    }
+
+    /// Run the precompiled path-glob index against an already-normalized path,
+    /// rebuilding the index first iff the public `ignored_paths` field was
+    /// mutated directly since construction (detected by a length mismatch).
+    /// The construction paths keep the index in sync, so the scanner hot path
+    /// always takes the fast branch; only a hand-mutated allowlist pays the
+    /// one-off rebuild, and it pays it for correctness, not silently skips it.
+    fn path_matches(&self, normalized_path: &str) -> bool {
+        if self.path_index.source_len == self.ignored_paths.len() {
+            self.path_index.matches(normalized_path)
+        } else {
+            PathGlobIndex::build(&self.ignored_paths).matches(normalized_path)
+        }
     }
 
     fn matches_ignored_hash(&self, hash: &[u8; 32]) -> bool {
@@ -283,31 +429,6 @@ impl Allowlist {
     }
 }
 
-fn glob_match_normalized(pattern: &str, normalized_path: &str) -> bool {
-    let normalized_pattern = normalize_path(pattern);
-    let pattern_segments = split_segments(&normalized_pattern);
-    let path_segments = split_segments(normalized_path);
-
-    if pattern_segments.len() > MAX_GLOB_SEGMENTS
-        || path_segments.len() > MAX_GLOB_SEGMENTS
-        || pattern_segments
-            .iter()
-            .any(|segment| segment.len() > MAX_GLOB_SEGMENT_LEN)
-        || path_segments
-            .iter()
-            .any(|segment| segment.len() > MAX_GLOB_SEGMENT_LEN)
-    {
-        tracing::warn!(
-            "skipping oversized allowlist glob match (pattern segments: {}, path segments: {}). Fix: shorten the glob or path",
-            pattern_segments.len(),
-            path_segments.len()
-        );
-        return false;
-    }
-
-    glob_match_segments(&pattern_segments, &path_segments)
-}
-
 fn split_segments(path: &str) -> Vec<&str> {
     if path.is_empty() {
         Vec::new()
@@ -316,13 +437,20 @@ fn split_segments(path: &str) -> Vec<&str> {
     }
 }
 
-fn glob_match_segments(pattern: &[&str], path: &[&str]) -> bool {
+/// Segment-automaton glob match. Pattern segments are accepted by reference
+/// (`AsRef<str>`) so the precompiled `Vec<String>` index entries match WITHOUT
+/// re-borrowing into a `Vec<&str>` per finding; the path segments stay
+/// `&[&str]` (borrowed from the normalized path string). The matching logic is
+/// byte-for-byte the original automaton - only the pattern element type was
+/// generalized, so suppression decisions are identical.
+fn glob_match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
     let mut states = vec![false; path.len() + 1];
     states[0] = true;
 
     for segment in pattern {
+        let segment = segment.as_ref();
         let mut next = vec![false; path.len() + 1];
-        if *segment == "**" {
+        if segment == "**" {
             let mut reachable = false;
             for idx in 0..=path.len() {
                 reachable |= states[idx];

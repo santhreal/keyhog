@@ -21,6 +21,8 @@ mod concurrent_four_scans_json_unix;
 mod concurrent_four_scans_json_windows_stub;
 #[path = "adversarial/concurrent_json_output_integrity.rs"]
 mod concurrent_json_output_integrity;
+#[path = "adversarial/config_parse_warns_once.rs"]
+mod config_parse_warns_once;
 #[path = "adversarial/daemon_start_help_documents_socket_flag.rs"]
 mod daemon_start_help_documents_socket_flag;
 #[path = "adversarial/daemon_status_without_running_daemon_fails.rs"]

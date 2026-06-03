@@ -205,6 +205,57 @@ impl CompiledScanner {
             static_intern_strings,
         ));
 
+        // Resolve each detector's interned (id, name, service) triple ONCE,
+        // indexed by detector index, so the per-match emission sites clone by
+        // index instead of re-hashing the same three strings through the CHD
+        // perfect hash on every finding (PERF-locality_intern-1). The strings
+        // are exactly the arena entries the per-match `lookup` would return;
+        // every detector field was just fed into `from_detector_strings`
+        // above, so each lookup is guaranteed `Some`. The `unwrap_or_else`
+        // fallback (interning the source string directly) is unreachable in
+        // practice but keeps the build total — a future detector field that
+        // somehow missed the interner universe still emits its true string,
+        // never an empty or wrong one.
+        let metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)> = detectors
+            .iter()
+            .map(|d| {
+                (
+                    static_intern
+                        .lookup(&d.id)
+                        .unwrap_or_else(|| Arc::from(d.id.as_str())),
+                    static_intern
+                        .lookup(&d.name)
+                        .unwrap_or_else(|| Arc::from(d.name.as_str())),
+                    static_intern
+                        .lookup(&d.service)
+                        .unwrap_or_else(|| Arc::from(d.service.as_str())),
+                )
+            })
+            .collect();
+
+        // Pre-intern the four synthetic entropy-fallback metadata triples once
+        // (PERF-locality_intern-1). These are not detector specs, so they are
+        // not in the StaticInterner universe; intern them directly into shared
+        // Arc<str> here so the entropy emit path clones by index rather than
+        // re-allocating/re-hashing the same four constants per finding. String
+        // values are byte-identical to the prior `intern_metadata` results.
+        #[cfg(feature = "entropy")]
+        let entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4] = {
+            use crate::engine::fallback_entropy_helpers::ENTROPY_DETECTOR_METADATA;
+            std::array::from_fn(|i| {
+                let (id, name, service) = ENTROPY_DETECTOR_METADATA[i];
+                (
+                    static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)),
+                    static_intern
+                        .lookup(name)
+                        .unwrap_or_else(|| Arc::from(name)),
+                    static_intern
+                        .lookup(service)
+                        .unwrap_or_else(|| Arc::from(service)),
+                )
+            })
+        };
+
         // Precise-regex validators for the simdsieve hot fast-path. Built here
         // (before `detectors` is moved into the struct) so the fast path can
         // reject literal-prefix candidates the detector's own regex would not
@@ -213,7 +264,39 @@ impl CompiledScanner {
         let hot_pattern_validators =
             crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors);
 
-        Ok(Self {
+        // Pre-intern the hot-pattern metadata constants ONCE, index-parallel
+        // with HOT_PATTERNS, so the simdsieve fast path clones by slot index
+        // instead of re-hashing the same three `&'static str`s through the CHD
+        // interner on every hot hit (PERF-locality_intern-1). These constants
+        // name real detectors whose id/name/service are already in the interner
+        // universe; the `unwrap_or_else` only fires for the one synthetic slot
+        // (square) with no canonical detector, where it interns the static
+        // string directly — still byte-identical to what the per-match
+        // `intern_metadata` call would have produced.
+        #[cfg(feature = "simdsieve")]
+        let hot_metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)> = {
+            use crate::simdsieve_prefilter::{
+                HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
+            };
+            (0..HOT_PATTERN_NAMES.len())
+                .map(|i| {
+                    let id = HOT_PATTERN_DETECTOR_IDS[i];
+                    let name = HOT_PATTERN_DISPLAY_NAMES[i];
+                    let service = HOT_PATTERN_NAMES[i];
+                    (
+                        static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)),
+                        static_intern
+                            .lookup(name)
+                            .unwrap_or_else(|| Arc::from(name)),
+                        static_intern
+                            .lookup(service)
+                            .unwrap_or_else(|| Arc::from(service)),
+                    )
+                })
+                .collect()
+        };
+
+        let scanner = Self {
             ac,
             gpu_backend,
             #[cfg(feature = "gpu")]
@@ -229,6 +312,7 @@ impl CompiledScanner {
             fused_program: OnceLock::new(),
             fused_decode_programs: OnceLock::new(),
             static_intern,
+            metadata_by_index,
             ac_map: state.ac_map,
             prefix_propagation,
             fallback: state.fallback,
@@ -244,11 +328,17 @@ impl CompiledScanner {
             hs_index_map,
             #[cfg(feature = "simdsieve")]
             hot_pattern_validators,
+            #[cfg(feature = "simdsieve")]
+            hot_metadata_by_index,
+            #[cfg(feature = "entropy")]
+            entropy_metadata_by_index,
             config: ScannerConfig::default(),
             alphabet_screen,
             bigram_bloom,
             fragment_cache: crate::fragment_cache::FragmentCache::new(1000),
-        })
+        };
+
+        Ok(scanner)
     }
 
     /// Apply a custom configuration to the compiled scanner.

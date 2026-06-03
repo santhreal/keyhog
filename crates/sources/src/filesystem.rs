@@ -7,7 +7,7 @@ use keyhog_core::{Chunk, Source, SourceError};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod extract;
 mod filter;
@@ -65,17 +65,62 @@ pub(crate) fn strip_unc_prefix(s: &str) -> &str {
 /// that straddle a source cut.
 const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
 
-const MAX_READER_POOL_THREADS: usize = 16;
+/// Hard ceiling on the dedicated file-reader crew. The crew is sized as a
+/// SMALL fraction of the host's cores (the I/O-overlap budget), NOT as a
+/// fraction of the scan pool. Reader threads spend almost all their time
+/// blocked - on the bounded `sync_channel(64)` `send` (downstream backpressure,
+/// confirmed by PERF-05's off-CPU profile) or on `read(2)` - so a modest crew
+/// overlaps read + decode + chunk-assembly with scanning while leaving the bulk
+/// of the cores to the scan workers. Growing it with the scan pool (the old
+/// `scan/2` sizing) only oversubscribes cores against the scan workers.
+const MAX_READER_THREADS: usize = 4;
 
-fn reader_pool_thread_count(scanner_threads: usize) -> usize {
-    let scanner_threads = scanner_threads.max(1);
-    let half_scan_pool = scanner_threads.div_ceil(2);
-    half_scan_pool.clamp(2, MAX_READER_POOL_THREADS)
+/// Number of dedicated file-reader threads to run alongside a scan pool of
+/// `scanner_threads`.
+///
+/// CRITICAL INVARIANT (PERF-parallel_cores): the reader crew must NOT scale
+/// with the scan pool. The previous sizing `clamp(scanner_threads/2, 2, 16)`
+/// added a SECOND CPU pool on top of the scan pool, so an N-core box running
+/// N scan threads also ran ~N/2 reader threads (16 scan + 8 reader = 24 on 16
+/// cores; 32 + 16 = 48). Those reader threads do real CPU work (UTF-8 decode,
+/// chunk assembly) and the OS time-sliced them against the scan workers,
+/// capping end-to-end multicore scaling at ~4.7x@16t (the scan engine alone
+/// reaches ~9.7x) and REGRESSING at 32t.
+///
+/// The crew is instead a small slice of the host (~1/4 of the cores), capped at
+/// [`MAX_READER_THREADS`] and floored at 2. That is the I/O-overlap budget: a
+/// handful of readers keep many scan workers fed (real scan work - Hyperscan +
+/// ML - dwarfs per-file read/decode, so few readers saturate the consumer),
+/// while the crew never balloons with the scan pool and so never oversubscribes
+/// cores. The readers run on their OWN threads (never the global/scan rayon
+/// pool), preserving the deadlock-avoidance invariant from the large-tree hang
+/// fix. `scanner_threads/4` ties the crew to the same core count the scan pool
+/// is sized from (the CLI sizes the global pool to `--threads`/physical cores),
+/// so reader + scan stays within the machine instead of stacking a second pool
+/// on top of it.
+fn reader_thread_count(scanner_threads: usize) -> usize {
+    // Tier-A operational override: `KEYHOG_READER_THREADS` lets an operator pin
+    // the reader crew (e.g. on an unusually I/O-bound or unusually CPU-bound
+    // corpus) without a recompile. A `0` / unparseable value falls back to the
+    // computed default. The override is still bounded by `scanner_threads` so it
+    // can never request more readers than the scan pool can usefully feed.
+    if let Ok(raw) = std::env::var("KEYHOG_READER_THREADS") {
+        if let Ok(n) = raw.trim().parse::<usize>() {
+            if n > 0 {
+                return n.min(scanner_threads.max(1));
+            }
+        }
+    }
+    // ~1/4 of the cores for I/O overlap, floored at 2 (one reader can stall on
+    // a slow file) and capped so the crew never balloons. Never more readers
+    // than scan threads (a 1-thread scan needs only 1 reader).
+    let crew = (scanner_threads / 4).clamp(2, MAX_READER_THREADS);
+    crew.min(scanner_threads.max(1))
 }
 
 #[doc(hidden)]
 pub fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
-    reader_pool_thread_count(scanner_threads)
+    reader_thread_count(scanner_threads)
 }
 
 /// Scans files in a directory tree.
@@ -298,68 +343,89 @@ impl Source for FilesystemSource {
         // throughput, it was concurrency.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
 
-        // DEADLOCK FIX (large-tree scan hang). The reader below uses
-        // `par_bridge()`, and each task BLOCKS on `tx.send` once the bounded
-        // channel (64) fills - that backpressure is intentional. The hazard
-        // is the POOL it runs on. Previously this spawned thread had no rayon
-        // context, so `par_bridge` ran on the GLOBAL pool - the SAME pool the
-        // downstream scanner uses for `scan_coalesced` (`chunks.par_iter()`).
-        // On a large tree the pipeline saturates: every global worker parks in
-        // `send` (channel full), so the scanner's `par_iter` can never get a
-        // worker to do the scanning that would drain the channel and release
-        // the readers. Reader-blocks-on-send and scanner-needs-worker form a
-        // cycle and the whole scan deadlocks (all threads parked in futex at
-        // ~0% CPU). Small trees drain before full saturation, which is why the
-        // SecretBench mirror never exposed it but the Linux kernel (94k files)
-        // hangs every time, under both the SIMD and GPU backends.
+        // DEADLOCK FIX (large-tree scan hang) + CORE-BUDGET FIX
+        // (PERF-parallel_cores). Two invariants the reader MUST satisfy:
         //
-        // Running the reader on a DEDICATED pool breaks the cycle: the reader
-        // threads may all park in `send`, but the global pool stays free for
-        // the scanner, which drains the channel, which unblocks the readers.
-        // Size that pool below the scanner pool: reads and archive/string
-        // extraction need overlap, not a second full CPU pool competing with
-        // scan workers on large trees.
-        let reader_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(reader_pool_thread_count(rayon::current_num_threads()))
-            .thread_name(|i| format!("keyhog-reader-{i}"))
-            .build()
-            .ok();
-        std::thread::spawn(move || {
-            use rayon::iter::{ParallelBridge, ParallelIterator};
-            // `par_bridge()` pulls entries from the lazy walk iterator on
-            // demand through a shared Mutex-guarded cursor, so reads start
-            // as soon as enumeration yields the first entry (overlapping
-            // walk + I/O) and entry memory never materializes as one big
-            // Vec. Unlike `into_par_iter()` on a `Vec`, the bridge does NOT
-            // build a deep balanced split tree whose depth scales with file
-            // count - that recursion was what overflowed the 8 MiB worker
-            // stack (~1300+ nested bridge_producer_consumer frames, SIGABRT
-            // "has overflowed its stack") on 100k+-file trees and forced the
-            // old `.with_min_len(64)` floor. The bridge splits shallowly off
-            // a single producer, so the stack stays bounded for any corpus
-            // size without a grain knob.
-            //
-            // PERF NOTE (2026-05-31): a bounded-batch `into_par_iter` variant
-            // was tried here on the theory that the bridge's single-mutex
-            // cursor serialised the 94k-tiny-file pull. It REGRESSED the
-            // kernel scan (84.2 s -> 102.7 s, 213% -> 175% CPU): the readers
-            // are not pull-bound, they block on the inner `sync_channel(64)`
-            // SEND (downstream-limited, confirmed by PERF-05's off-CPU
-            // profile), and the per-batch barrier only cut overlap. The real
-            // lever is the DOWNSTREAM single-thread funnel (one main-thread
-            // chunk drain + one scanner thread), not the reader pull. Left as
-            // par_bridge; do not "optimise" the reader without a measurement
-            // that isolates the consumer side first.
-            let pump = move || {
-                entries.par_bridge().for_each_with(tx, |tx, entry| {
+        //   1. Readers must NOT run on the global rayon pool. The downstream
+        //      scanner runs `scan_coalesced` via `par_iter` on that pool. If
+        //      the readers shared it, on a large tree every pool worker would
+        //      park in `tx.send` (channel full) and the scanner could never
+        //      get a worker to drain the channel and unblock the readers - a
+        //      reader-blocks-on-send / scanner-needs-worker cycle that hung the
+        //      94k-file Linux kernel scan every time (all threads in futex at
+        //      ~0% CPU). Readers on their OWN threads break the cycle: they may
+        //      all park in `send`, but the global pool stays free to scan.
+        //
+        //   2. Readers must NOT form a SECOND full CPU pool sized as a fraction
+        //      of the scan pool. The previous design ran a dedicated rayon pool
+        //      of `clamp(scan_threads/2, 2, 16)` readers ON TOP of the scan
+        //      pool, so an N-core box ran N scan + ~N/2 reader threads (16+8=24
+        //      on 16 cores; 32+16=48). Reader threads do real CPU work (UTF-8
+        //      decode, chunk assembly), so the OS time-sliced them against the
+        //      scan workers and capped end-to-end scaling at ~4.7x@16t while
+        //      the scan engine alone reaches ~9.7x - and 32t REGRESSED below
+        //      16t as the reader pool grew to 16. (PERF-parallel_cores tripwire)
+        //
+        // The fix that satisfies BOTH: a SMALL FIXED crew of dedicated reader
+        // threads (`reader_thread_count`, ~1/4 of the cores, capped at
+        // MAX_READER_THREADS), sharing the lazy walk iterator through a
+        // `Mutex`-guarded cursor and
+        // pushing finished chunks into the same bounded `sync_channel(64)`.
+        // The crew is mostly parked (on `send` backpressure or `read(2)`), so
+        // it overlaps reads with scans WITHOUT claiming scan cores, and its
+        // size never grows with the scan pool - ending the oversubscription.
+        // The cursor `Mutex` is held only for the O(1) `next()` pull; the heavy
+        // per-file work (`process_entry`: read + decode + chunk assembly) runs
+        // OUTSIDE the lock, so the readers still parallelise across files. This
+        // mirrors `par_bridge`'s shared-cursor pull WITHOUT par_bridge's pool
+        // coupling: pulling off a single shared cursor (not an `into_par_iter`
+        // split tree) also keeps the worker stack bounded for any corpus size,
+        // so the 100k+-file stack-overflow that forced the old `.with_min_len`
+        // floor cannot recur.
+        let cursor: Arc<Mutex<Box<dyn Iterator<Item = codewalk::FileEntry> + Send>>> =
+            Arc::new(Mutex::new(entries));
+        let reader_count = reader_thread_count(rayon::current_num_threads());
+
+        // One reader's drain loop: pull entries off the shared cursor and feed
+        // each one's chunks into `tx` until the walk is drained or the receiver
+        // is gone. Shared by every reader thread (and by the synchronous
+        // fallback below) so the production path is identical regardless of how
+        // many threads back it.
+        let run_reader =
+            move |cursor: Arc<Mutex<Box<dyn Iterator<Item = codewalk::FileEntry> + Send>>>,
+                  tx: std::sync::mpsc::SyncSender<Result<Chunk, SourceError>>,
+                  merkle: Option<Arc<MerkleIndex>>,
+                  skipped: Arc<AtomicUsize>| {
+                loop {
+                    // Hold the cursor lock only for the cheap pull, then release it
+                    // so other readers advance while this thread does the heavy
+                    // read + decode.
+                    let entry = {
+                        let mut guard = match cursor.lock() {
+                            Ok(g) => g,
+                            // A peer reader panicked mid-pull: the walk iterator may
+                            // be in any state, so stop this reader rather than risk
+                            // emitting torn chunks.
+                            Err(_) => return,
+                        };
+                        guard.next()
+                    };
+                    let Some(entry) = entry else {
+                        return; // walk drained
+                    };
+
                     // `emit` returns false once the receiver is gone (scan
-                    // cancelled / orchestrator shut down); `process_entry`
-                    // stops producing the moment that happens instead of
-                    // churning chunks no one will read. Emitting through a
-                    // callback (rather than returning a Vec) keeps the
-                    // windowed-file path streaming - one window's String is
-                    // resident at a time, not the whole file.
-                    let mut emit = |chunk: Result<Chunk, SourceError>| tx.send(chunk).is_ok();
+                    // cancelled / orchestrator shut down); `process_entry` stops
+                    // producing the moment that happens instead of churning chunks
+                    // no one will read. Emitting through a callback (rather than
+                    // returning a Vec) keeps the windowed-file path streaming - one
+                    // window's String is resident at a time, not the whole file.
+                    let mut sender_alive = true;
+                    let mut emit = |chunk: Result<Chunk, SourceError>| {
+                        let ok = tx.send(chunk).is_ok();
+                        sender_alive = ok;
+                        ok
+                    };
                     process_entry(
                         entry,
                         &merkle,
@@ -369,15 +435,61 @@ impl Source for FilesystemSource {
                         window_overlap,
                         &mut emit,
                     );
-                });
+                    if !sender_alive {
+                        return; // receiver dropped; nothing more to feed
+                    }
+                }
             };
-            // Run the reader on the dedicated pool so it cannot starve the
-            // scanner's global-pool `par_iter` (see DEADLOCK FIX above).
-            match reader_pool {
-                Some(pool) => pool.install(pump),
-                None => pump(),
+
+        let mut spawned = 0usize;
+        for i in 0..reader_count {
+            let cursor = Arc::clone(&cursor);
+            let tx = tx.clone();
+            let merkle = merkle.clone();
+            let skipped = skipped.clone();
+            let run_reader = run_reader.clone();
+            match std::thread::Builder::new()
+                .name(format!("keyhog-reader-{i}"))
+                .spawn(move || run_reader(cursor, tx, merkle, skipped))
+            {
+                Ok(_) => spawned += 1,
+                // OS thread-table exhaustion (EAGAIN) must not abort the scan:
+                // the cursor is shared, so any reader that DID start still
+                // drains the whole walk - it just has less I/O overlap. We log
+                // and keep going rather than panic.
+                Err(error) => {
+                    tracing::warn!(%error, reader = i, "failed to spawn file-reader thread; continuing with fewer readers");
+                }
             }
-        });
+        }
+
+        // Guarantee the walk is drained even if EVERY reader spawn failed: hand
+        // the cursor to one last dedicated thread. If even that spawn fails
+        // (the box is truly out of threads), drain synchronously on this thread
+        // before returning - the channel is bounded(64) so this can't OOM, and
+        // it is strictly better than returning an iterator no thread will ever
+        // feed (which would surface ZERO findings - a silent recall loss). This
+        // mirrors the previous design's `None => pump()` inline fallback.
+        if spawned == 0 {
+            let cursor_fb = Arc::clone(&cursor);
+            let tx_fb = tx.clone();
+            let merkle_fb = merkle.clone();
+            let skipped_fb = skipped.clone();
+            let run_reader_fb = run_reader.clone();
+            if std::thread::Builder::new()
+                .name("keyhog-reader-fallback".to_string())
+                .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
+                .is_err()
+            {
+                run_reader(cursor, tx.clone(), merkle.clone(), skipped.clone());
+            }
+        }
+
+        // Drop the original `tx`: once every reader thread finishes and drops
+        // its clone, the channel closes and `rx.into_iter()` ends. Without this
+        // the consumer would block forever waiting on a sender that never
+        // existed past this point.
+        drop(tx);
 
         Box::new(rx.into_iter())
     }

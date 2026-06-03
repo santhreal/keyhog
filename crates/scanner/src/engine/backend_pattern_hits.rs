@@ -38,7 +38,7 @@ impl CompiledScanner {
         // chunk).
         const MAX_TOLERATED_DRIFT: usize = 10 * 1024;
         let drift_tolerable = offset_drift <= MAX_TOLERATED_DRIFT;
-        let scan_text = prepared.preprocessed.text.as_str();
+        let scan_text: &str = prepared.preprocessed.text.as_ref();
         let offsets_safe = drift_tolerable;
         let start_ts = std::time::Instant::now();
         tracing::debug!(

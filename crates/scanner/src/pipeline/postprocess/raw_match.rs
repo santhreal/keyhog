@@ -1,9 +1,16 @@
 use crate::types::*;
 use keyhog_core::{Chunk, MatchLocation, RawMatch};
 use std::collections::HashMap;
+use std::sync::Arc;
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_raw_match(
     detector: &keyhog_core::DetectorSpec,
+    // Pre-interned (detector_id, detector_name, service) for this detector,
+    // cloned by index from `CompiledScanner::metadata_by_index` instead of
+    // re-hashed per match (PERF-locality_intern-1). Byte-identical to the
+    // `intern_metadata` result it replaces.
+    metadata: (Arc<str>, Arc<str>, Arc<str>),
     chunk: &Chunk,
     credential: &str,
     companions: HashMap<String, String>,
@@ -13,6 +20,7 @@ pub fn build_raw_match(
     confidence: f64,
     scan_state: &mut ScanState,
 ) -> RawMatch {
+    let (detector_id, detector_name, service) = metadata;
     // Diff-aware severity: a credential whose only sighting is in non-HEAD
     // git history (the developer already removed it from `main`) is still
     // a leak - but it's strictly less urgent than a credential live in HEAD
@@ -26,9 +34,9 @@ pub fn build_raw_match(
         detector.severity
     };
     RawMatch {
-        detector_id: scan_state.intern_metadata(&detector.id),
-        detector_name: scan_state.intern_metadata(&detector.name),
-        service: scan_state.intern_metadata(&detector.service),
+        detector_id,
+        detector_name,
+        service,
         severity,
         credential_hash: crate::sha256_hash(credential),
         credential: scan_state.intern_credential(credential),

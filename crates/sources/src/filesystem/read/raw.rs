@@ -19,7 +19,7 @@ use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 /// read with `.take(MAX_BUFFERED_READ_BYTES)`. (KH-GAP-013)
 const MAX_BUFFERED_READ_BYTES: u64 = MMAP_TOCTOU_SANITY_CAP_BYTES;
 
-pub(in crate::filesystem) fn read_file_buffered(path: &Path) -> Option<String> {
+pub(in crate::filesystem) fn read_file_buffered(path: &Path, size_hint: u64) -> Option<String> {
     // The buffered read already owns its `Vec<u8>`. Hand it to the owning
     // decoder so the valid-UTF-8 fast path can *move* the buffer straight
     // into the returned `String` (`String::from_utf8` reuses the same
@@ -27,7 +27,12 @@ pub(in crate::filesystem) fn read_file_buffered(path: &Path) -> Option<String> {
     // At internet scale that copy is a whole extra pass over every byte
     // scanned on the hottest loop; the mmap path can't avoid it (its
     // backing store is borrowed), but the buffered path can and must.
-    let bytes = read_file_safe(path).ok()?;
+    //
+    // `size_hint` is the walker's already-known `entry.size`: `read_file_safe`
+    // uses it to read the whole file in a single sized `read(2)` (no empty-Vec
+    // capacity-doubling and no trailing EOF probe), instead of the many small
+    // reads `read_to_end` does on a tiny file. See PERF-io_path-2.
+    let bytes = read_file_safe(path, size_hint).ok()?;
     decode_text_file_owned(bytes)
 }
 
@@ -69,7 +74,10 @@ pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File
     options.open(path)
 }
 
-pub(in crate::filesystem) fn read_file_safe(path: &Path) -> std::io::Result<Vec<u8>> {
+pub(in crate::filesystem) fn read_file_safe(
+    path: &Path,
+    size_hint: u64,
+) -> std::io::Result<Vec<u8>> {
     // The previous implementation built an `IoUring::new(1)` per file, which
     // amortizes badly: ring setup + teardown is dominated by the syscalls
     // around the actual read for any file under ~1 GB. Plain buffered read
@@ -78,7 +86,7 @@ pub(in crate::filesystem) fn read_file_safe(path: &Path) -> std::io::Result<Vec<
     // If io_uring becomes worthwhile again it should batch hundreds of files
     // through one shared ring - that's a significant rewrite tracked in the
     // backlog, NOT in this hot-path read.
-    let file = open_file_safe(path)?;
+    let mut file = open_file_safe(path)?;
     // Hint to the kernel: this fd will be read sequentially start-to-end.
     // posix_fadvise(POSIX_FADV_SEQUENTIAL) doubles the readahead window
     // and disables prefetching past the end. Free perf on Linux; no-op
@@ -92,12 +100,40 @@ pub(in crate::filesystem) fn read_file_safe(path: &Path) -> std::io::Result<Vec<
         // we ignore it and proceed with the read.
         unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_SEQUENTIAL) };
     }
-    // Bounded read: cap the buffered path at MAX_BUFFERED_READ_BYTES so a
-    // TOCTOU-grown file can't OOM us (the mmap twin re-stats and refuses;
-    // this is the buffered equivalent). Legitimate text files sit far under
-    // the 2 GiB ceiling, so this never truncates real input. (KH-GAP-013)
-    let mut bytes = Vec::new();
-    file.take(MAX_BUFFERED_READ_BYTES).read_to_end(&mut bytes)?;
+    // Bound any buffered read at MAX_BUFFERED_READ_BYTES so a TOCTOU-grown file
+    // can't OOM us (the mmap twin re-stats and refuses; this is the buffered
+    // equivalent). Legitimate text files sit far under the 2 GiB ceiling, so
+    // this never truncates real input. (KH-GAP-013)
+    let cap = size_hint.min(MAX_BUFFERED_READ_BYTES);
+    if cap == 0 {
+        // The caller did not know the size (size_hint == 0): fall back to the
+        // grow-from-empty read, still bounded by the cap.
+        let mut bytes = Vec::new();
+        file.take(MAX_BUFFERED_READ_BYTES).read_to_end(&mut bytes)?;
+        return Ok(bytes);
+    }
+
+    // Sized read (PERF-io_path-2). The walker already stat'd this file, so we
+    // know its byte length. Read EXACTLY that many bytes into a buffer presized
+    // to it: on a regular file the kernel returns the whole file in a single
+    // `read(2)`, and because we stop the instant the buffer is full we do NOT
+    // pay `read_to_end`'s trailing zero-length EOF probe (nor its empty-Vec
+    // capacity-doubling, which cost many small reads per tiny file). A file that
+    // shrank since the stat ends early on the first short/zero read; a file that
+    // GREW is read only up to its stat-time length — exactly the bounded,
+    // snapshot-at-walk-time behaviour the cap already guarantees, never an OOM.
+    let cap = cap as usize;
+    let mut bytes = vec![0u8; cap];
+    let mut filled = 0;
+    while filled < cap {
+        match file.read(&mut bytes[filled..]) {
+            Ok(0) => break, // EOF before the stat-time size (file shrank / short file)
+            Ok(n) => filled += n,
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    bytes.truncate(filled);
     Ok(bytes)
 }
 

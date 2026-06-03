@@ -72,7 +72,7 @@ pub fn compute_line_offsets(text: &str) -> Vec<usize> {
 }
 
 pub fn match_line_number(
-    preprocessed: &ScannerPreprocessedText,
+    preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     offset: usize,
 ) -> usize {
@@ -100,7 +100,7 @@ pub fn normalize_scannable_chunk<'a>(chunk: &'a Chunk, owned: &'a mut Option<Chu
     }
 }
 pub fn find_companion(
-    preprocessed: &ScannerPreprocessedText,
+    preprocessed: &ScannerPreprocessedText<'_>,
     primary_line: usize,
     companion: &CompiledCompanion,
 ) -> Option<String> {
@@ -221,7 +221,7 @@ pub fn find_companion(
 /// prefix). On the dominant path (passthrough / non-`multiline`) there is no
 /// tail and this is a pure `O(log L)` lookup.
 pub fn line_window_offsets(
-    preprocessed: &ScannerPreprocessedText,
+    preprocessed: &ScannerPreprocessedText<'_>,
     start_line: usize,
     end_line: usize,
 ) -> Option<(usize, usize)> {
@@ -266,7 +266,7 @@ pub fn line_window_offsets(
 /// Length of the leading `line_number`-monotonic identity prefix of
 /// `mappings` (everything before the appended structural/joined segments).
 #[cfg(feature = "multiline")]
-fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText) -> usize {
+fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText<'_>) -> usize {
     // `mappings` is sorted by `start_offset`; structural segments are appended
     // at offsets `>= original_end`. Binary-search the split point.
     preprocessed
@@ -277,6 +277,6 @@ fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText) -> usize {
 /// Non-`multiline` build: the preprocessor never appends structural segments,
 /// so the entire mapping vector is the line-sorted identity prefix.
 #[cfg(not(feature = "multiline"))]
-fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText) -> usize {
+fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText<'_>) -> usize {
     preprocessed.mappings.len()
 }

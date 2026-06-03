@@ -24,4 +24,5 @@ mod pdf_magic_file_not_scanned_as_text;
 mod png_magic_file_not_scanned_as_text;
 mod snappy_random_bytes_no_panic;
 mod unicode_filename_in_jar_scanned;
+mod zst_oversize_window_refused;
 mod zst_truncated_header_no_panic;

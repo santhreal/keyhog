@@ -22,7 +22,7 @@ impl CompiledScanner {
         entry: &CompiledPattern,
         detector: &DetectorSpec,
         data: &str,
-        preprocessed: &ScannerPreprocessedText,
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         code_lines: &[&str],
         documentation_lines: &[bool],
@@ -133,11 +133,8 @@ impl CompiledScanner {
             } else {
                 detector.id.as_str()
             };
-            let entropy_floor = generic_entropy_floor(
-                self.config.entropy_threshold,
-                floor_id,
-                credential.len(),
-            );
+            let entropy_floor =
+                generic_entropy_floor(self.config.entropy_threshold, floor_id, credential.len());
             if entropy < entropy_floor {
                 return;
             }
@@ -211,6 +208,7 @@ impl CompiledScanner {
                 }
                 let raw_match = build_raw_match(
                     detector,
+                    self.interned_detector_metadata(entry.detector_index),
                     chunk,
                     credential,
                     companions,
@@ -233,6 +231,7 @@ impl CompiledScanner {
             } => {
                 let raw_match = build_raw_match(
                     detector,
+                    self.interned_detector_metadata(entry.detector_index),
                     chunk,
                     credential,
                     companions,

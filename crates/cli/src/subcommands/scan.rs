@@ -142,7 +142,12 @@ impl EffectivePolicy {
         if probe.path.is_none() {
             probe.path = probe.input.clone();
         }
-        let outcome = crate::config::apply_config_file(&mut probe);
+        // Quiet (diagnostics-free) merge: this probe applies the config to a
+        // throwaway clone only to read the resolved routing knobs. The real
+        // orchestrator merge emits any read/parse warning exactly once; the loud
+        // `apply_config_file` here would warn TWICE on a malformed `.keyhog.toml`
+        // over the daemon route (HUNT-2).
+        let outcome = crate::config::apply_config_file_quiet(&mut probe);
         EffectivePolicy {
             min_confidence: probe.min_confidence,
             show_secrets: probe.show_secrets,

@@ -103,67 +103,139 @@ pub fn model_version() -> &'static str {
 }
 
 /// Forward pass through the MoE model with hardcoded weights.
+///
+/// Two layered optimizations, both numerically inert:
+///
+/// 1. **Weight hoist.** The model's weight/bias slices are resolved ONCE per call
+///    via [`ml_weights::model`] (a single `OnceLock`-acquire of an already-built
+///    `&'static MoeModel`) instead of the prior 37 per-candidate accessor calls,
+///    each of which re-acquired the `OnceLock` and re-sliced the flat buffer.
+///
+/// 2. **Output-stationary dense layers.** The two large expert layers (fc1: 32
+///    outputs, fc2: 16) run via [`dense_relu_layer_t`] over COLUMN-major
+///    (transposed) weights: for each input the contiguous output row is scaled
+///    and accumulated, so the dependency-free inner loop over outputs vectorizes
+///    across 8-16 output lanes. Each output still reduces its inputs in index
+///    order with separate round(mul)/round(add) (no FMA fusion), so the result is
+///    BIT-IDENTICAL to the row-major scalar dot product — vectorizing across
+///    outputs never reassociates a single output's sum. The small gate (6) and
+///    fc3 (1) layers stay scalar [`dense_row`] (nothing to vectorize across).
+///
+/// An explicit AVX2+FMA reduction was tried INSTEAD of (2) and REVERTED:
+/// `_mm256_fmadd_ps` fuses each multiply-add with a single rounding step and
+/// reassociates the sum across 8 lanes, so its result is NOT bit-identical. That
+/// sub-ULP divergence pushed borderline ML-gated detectors (twilio-auth-token,
+/// africastalking-api-key, appsmith-api-credentials, …) across their
+/// `min_confidence` floor and regressed 30+ `contracts_runner` positives/evasions.
+/// The confidence model and the GPU parity reference (DET-11) are calibrated
+/// against this exact reduction. The output-stationary layout gets the SIMD width
+/// WITHOUT the divergence (proved bit-identical in
+/// `tests/ml_forward_parity.rs`); do NOT reintroduce FMA fusion or lane
+/// reassociation without recalibrating every contract and the GPU parity reference.
 fn forward_pass(input: &[f32; NUM_FEATURES]) -> f32 {
-    let gate_probs = softmax(&compute_gate_logits(input));
+    let model = ml_weights::model();
+    forward_pass_impl(model, input)
+}
+
+/// MoE forward pass over the hoisted model. fc1/fc2 use the output-stationary
+/// vectorized kernel ([`dense_relu_layer_t`]); the gate and fc3 stay scalar.
+fn forward_pass_impl(model: &ml_weights::MoeModel, input: &[f32; NUM_FEATURES]) -> f32 {
+    let gate_probs = softmax(&compute_gate_logits(model, input));
     let mut score_logit = 0.0f32;
     for (expert_idx, gate_prob) in gate_probs.iter().enumerate() {
-        score_logit += *gate_prob * expert_logit(expert_idx, input);
+        score_logit += *gate_prob * expert_logit(&model.experts[expert_idx], input);
     }
     sigmoid(score_logit)
 }
 
-fn compute_gate_logits(input: &[f32; NUM_FEATURES]) -> [f32; EXPERT_COUNT] {
-    let gate_weight = ml_weights::gate_weight();
-    let gate_bias = ml_weights::gate_bias();
-    debug_assert_eq!(gate_weight.len(), NUM_FEATURES * EXPERT_COUNT);
-    debug_assert_eq!(gate_bias.len(), EXPERT_COUNT);
+fn compute_gate_logits(
+    model: &ml_weights::MoeModel,
+    input: &[f32; NUM_FEATURES],
+) -> [f32; EXPERT_COUNT] {
+    debug_assert_eq!(model.gate_weight.len(), NUM_FEATURES * EXPERT_COUNT);
+    debug_assert_eq!(model.gate_bias.len(), EXPERT_COUNT);
 
     let mut gate_logits = [0.0f32; EXPERT_COUNT];
     for (expert_idx, logit) in gate_logits.iter_mut().enumerate() {
-        let row = &gate_weight[expert_idx * NUM_FEATURES..(expert_idx + 1) * NUM_FEATURES];
-        *logit = dense_row(row, input, gate_bias[expert_idx]);
+        let row = &model.gate_weight[expert_idx * NUM_FEATURES..];
+        *logit = dense_row(row, input, model.gate_bias[expert_idx]);
     }
     gate_logits
 }
 
-fn expert_logit(expert_idx: usize, input: &[f32; NUM_FEATURES]) -> f32 {
-    let h1 = dense_relu_layer::<NUM_FEATURES, EXPERT_HIDDEN_LAYER_1>(
-        ml_weights::expert_fc1_weight(expert_idx),
-        ml_weights::expert_fc1_bias(expert_idx),
+fn expert_logit(expert: &ml_weights::ExpertWeights, input: &[f32; NUM_FEATURES]) -> f32 {
+    let h1 = dense_relu_layer_t::<NUM_FEATURES, EXPERT_HIDDEN_LAYER_1>(
+        expert.fc1_weight_t,
+        expert.fc1_bias,
         input,
     );
-    let h2 = dense_relu_layer::<EXPERT_HIDDEN_LAYER_1, EXPERT_HIDDEN_LAYER_2>(
-        ml_weights::expert_fc2_weight(expert_idx),
-        ml_weights::expert_fc2_bias(expert_idx),
+    let h2 = dense_relu_layer_t::<EXPERT_HIDDEN_LAYER_1, EXPERT_HIDDEN_LAYER_2>(
+        expert.fc2_weight_t,
+        expert.fc2_bias,
         &h1,
     );
-    dense_row(
-        ml_weights::expert_fc3_weight(expert_idx),
-        &h2,
-        ml_weights::expert_fc3_bias(expert_idx)[0],
-    )
+    dense_row(expert.fc3_weight, &h2, expert.fc3_bias)
 }
 
-fn dense_relu_layer<const INPUT: usize, const OUTPUT: usize>(
-    weights: &[f32],
+/// Output-stationary ReLU dense layer over COLUMN-major (transposed) weights:
+/// `weights_t[k*OUTPUT + o]` is input `k`'s weight to output `o`
+/// (`ml_weights::transpose_static`). For each input `k` we scale its contiguous
+/// `OUTPUT`-wide weight row by `input[k]` and accumulate into the `OUTPUT` running
+/// sums. The inner loop over outputs has NO loop-carried dependency (each
+/// `acc[o]` is independent), so LLVM vectorizes it across the output lanes at
+/// opt-level 3 — 8-16 outputs updated per SIMD instruction instead of one scalar
+/// MAC at a time.
+///
+/// BIT-IDENTICAL to the row-major `dense_row` dot product: each `acc[o]` still
+/// starts at `bias[o]` and adds `input[k]*w[o][k]` for `k = 0,1,..,INPUT-1` in
+/// order, with a separate round-to-f32 on the multiply and on the add (Rust does
+/// NOT contract `a*b + c` into a fused multiply-add without fast-math, and we use
+/// none), then the SAME `.max(0.0)` ReLU. Vectorizing ACROSS outputs does not
+/// reassociate any single output's reduction, so the result equals the scalar
+/// path bit-for-bit. The previous AVX2+FMA attempt reassociated lanes and fused
+/// the MAC, diverged sub-ULP, and regressed ~30 ML-gated contracts; this layout
+/// does not. The equality is proved exhaustively over random weights/inputs in
+/// `crates/scanner/tests/ml_forward_parity.rs`.
+#[inline]
+fn dense_relu_layer_t<const INPUT: usize, const OUTPUT: usize>(
+    weights_t: &[f32],
     bias: &[f32],
     input: &[f32; INPUT],
 ) -> [f32; OUTPUT] {
-    let mut hidden = [0.0f32; OUTPUT];
-    for (index, slot) in hidden.iter_mut().enumerate() {
-        let row = &weights[index * INPUT..(index + 1) * INPUT];
-        *slot = dense_row(row, input, bias[index]).max(0.0);
+    let mut acc = [0.0f32; OUTPUT];
+    for (o, slot) in acc.iter_mut().enumerate() {
+        *slot = bias[o];
     }
-    hidden
+    for k in 0..INPUT {
+        let x = input[k];
+        // One contiguous OUTPUT-wide weight row per input. `zip` bounds the
+        // iteration to `min(OUTPUT, row.len())` with no per-element bounds check,
+        // and vectorizes across the output lanes.
+        let row = &weights_t[k * OUTPUT..k * OUTPUT + OUTPUT];
+        for (slot, &w) in acc.iter_mut().zip(row.iter()) {
+            *slot += x * w;
+        }
+    }
+    for slot in acc.iter_mut() {
+        *slot = slot.max(0.0);
+    }
+    acc
 }
 
+/// Dot product of a weight row with the input vector plus bias.
+///
+/// `weights` may be longer than `input` (it is a borrow into the flat model
+/// buffer starting at the row offset); `zip` bounds the reduction to exactly
+/// `INPUT` pairs with no per-element bounds check, and the statically-known
+/// `input` length lets the backend autovectorize. The accumulation stays a
+/// single left-to-right sequential sum (`i = 0,1,..,INPUT-1`) with a separate
+/// round on the multiply and the add (no FMA fusion), so the f32 result is
+/// bit-identical to the scalar reference.
+#[inline(always)]
 fn dense_row<const INPUT: usize>(weights: &[f32], input: &[f32; INPUT], bias: f32) -> f32 {
     let mut sum = bias;
-    let len = weights.len().min(INPUT);
-    let w_slice = &weights[..len];
-    let i_slice = &input[..len];
-    for i in 0..len {
-        sum += i_slice[i] * w_slice[i];
+    for (&x, &w) in input.iter().zip(weights.iter()) {
+        sum += x * w;
     }
     sum
 }
