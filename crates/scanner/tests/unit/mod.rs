@@ -27,6 +27,7 @@ pub mod confidence_exact_max_score_one;
 pub mod confidence_literal_prefix_exact_thirty_five;
 pub mod confidence_max_repeat_run_penalty;
 pub mod confidence_moderate_entropy_exact_weight;
+pub mod confidence_named_placeholder_repeat_run;
 pub mod confidence_path_penalty_halves_test_dir;
 pub mod confidence_path_penalty_none_path_passes_through;
 pub mod confidence_path_penalty_preserves_production_path;
