@@ -81,7 +81,7 @@ use core::net::IpAddr;
 ///
 /// ```
 /// use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-/// use bogon::ip_addr_is_bogon;
+/// use keyhog_verifier::bogon::ip_addr_is_bogon;
 ///
 /// assert!(ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::LOCALHOST)));
 /// assert!(ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));

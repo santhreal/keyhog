@@ -1,0 +1,59 @@
+# Tier-B data: AWS canary-token issuer account IDs.
+#
+# An AWS access-key ID (AKIA…/ASIA…) has its 12-digit owning account number
+# mathematically embedded in it, recoverable fully offline (see
+# `crates/scanner/src/aws.rs::aws_account_from_key_id`). When a detected key's
+# decoded account belongs to a known canary issuer, the key is almost certainly
+# a *tripwire*: verifying it (sending any signed AWS request) alerts whoever
+# planted it. keyhog flags such keys `metadata.is_canary=true` and the verifier
+# REFUSES to send a live probe for them.
+#
+# This list is Tier-B community-extensible data, NOT a CLI knob. Drop additional
+# account IDs here, or point `KEYHOG_AWS_CANARY_ACCOUNTS` at a second file with
+# the same `[canary]`/`[knockoff]` shape to extend the list at runtime without
+# rebuilding. Account IDs are 12-digit, zero-padded strings (the canonical AWS
+# rendering and what `aws_account_from_key_id` returns).
+#
+# Source of the baseline list: Truffle Security's static AWS-canary research
+# (https://trufflesecurity.com/blog/canaries), which enumerated the
+# canarytokens.org / Thinkst issuer accounts and a set of off-brand clones.
+# Thinkst rotates accounts as they hit AWS per-account key limits, so this
+# baseline is a floor, not a closed set — hence the runtime-extension hook.
+
+# canarytokens.org / Thinkst first-party canary issuer accounts.
+[canary]
+accounts = [
+    "052310077262",
+    "171436882533",
+    "534261010715",
+    "595918472158",
+    "717712589309",
+    "819147034852",
+    "992382622183",
+    "730335385048",
+    "266735846894",
+    "893192397702",
+]
+
+# Off-brand canaries inspired by / cloning the canarytokens.org design. Treated
+# identically (is_canary=true, verification suppressed) — the operator must not
+# trip any of them.
+[knockoff]
+accounts = [
+    "044858866125",
+    "251535659677",
+    "344043088457",
+    "351906852752",
+    "390477818340",
+    "426127672474",
+    "427150556519",
+    "439872796651",
+    "445142720921",
+    "465867158099",
+    "637958123769",
+    "693412236332",
+    "732624840810",
+    "735421457923",
+    "959235150393",
+    "982842642351",
+]

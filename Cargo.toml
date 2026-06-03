@@ -89,6 +89,16 @@ memmap2 = "=0.9.10"
 glob = "=0.3.3"
 wait-timeout = "=0.2.1"
 tar = "=0.4.45"
+# True-decompression decoders for the always-on filesystem compressed-input
+# path (crates/sources/filesystem/extract.rs). ziftsieve only extracts DEFLATE
+# *literals* for its bloom prefilter and drops back-references, so it cannot
+# reconstruct the real decompressed bytes a scanner needs. These crates do the
+# full inflate. Versions pinned to what the lockfile already resolves
+# (transitively via ziftsieve) so no new graph nodes are introduced.
+flate2 = "=1.1.9"
+zstd = "=0.13.3"
+lz4_flex = "=0.11.6"
+snap = "=1.1.1"
 
 # Git
 gix = { version = "=0.77.0", default-features = false, features = ["max-performance-safe"] }

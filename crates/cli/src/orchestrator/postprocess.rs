@@ -6,6 +6,30 @@ use anyhow::{Context, Result};
 use keyhog_core::DedupedMatch;
 use keyhog_core::{dedup_matches, RawMatch, VerificationResult, VerifiedFinding};
 
+/// Offline (no-verify, no-network) structural metadata for a finding's
+/// credential, surfaced on every scan-output route.
+///
+/// This is the single merge point for the analyzers that derive evidence from
+/// the credential string alone:
+///   - [`keyhog_scanner::jwt::finding_metadata`] — `jwt.alg` / `jwt.iss` / … and
+///     the `jwt.alg_none` security anomaly for JWT-shaped tokens.
+///   - [`keyhog_scanner::aws::finding_metadata`] — the offline-decoded
+///     `account_id` for `AKIA…` / `ASIA…` AWS access-key IDs.
+///
+/// A credential is at most one of these shapes, so the maps never collide;
+/// merging keeps the contract simple and means a future analyzer is one more
+/// `extend` here rather than another divergent construction site. Returns an
+/// empty map when no analyzer matched (the common case).
+pub(crate) fn offline_finding_metadata(
+    credential: &str,
+) -> std::collections::HashMap<String, String> {
+    let mut meta = keyhog_scanner::jwt::finding_metadata(credential).unwrap_or_default();
+    if let Some(aws_meta) = keyhog_scanner::aws::finding_metadata(credential) {
+        meta.extend(aws_meta);
+    }
+    meta
+}
+
 /// Detect whether a given file path lives inside keyhog's own source repository.
 ///
 /// The segment-based suppression below (detectors/tests/fixtures/benches) is
@@ -221,7 +245,12 @@ impl ScanOrchestrator {
                 credential_hash: m.credential_hash,
                 location: m.primary_location,
                 verification: VerificationResult::Skipped,
-                metadata: std::collections::HashMap::new(),
+                // Surface offline structural analysis with no verify / no
+                // network: the JWT analysis (alg/iss/sub/aud/exp + the
+                // alg=none anomaly) for JWT-shaped credentials, and the
+                // offline-decoded AWS account ID for AKIA…/ASIA… keys. Empty
+                // for everything else.
+                metadata: offline_finding_metadata(&m.credential),
                 additional_locations: m.additional_locations,
                 confidence: m.confidence,
             })
@@ -307,7 +336,7 @@ impl ScanOrchestrator {
                 location: m.primary_location,
                 additional_locations: m.additional_locations,
                 verification: keyhog_core::VerificationResult::Skipped,
-                metadata: std::collections::HashMap::new(),
+                metadata: offline_finding_metadata(&m.credential),
                 confidence: m.confidence,
             });
         }

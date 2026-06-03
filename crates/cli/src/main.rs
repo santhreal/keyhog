@@ -4,8 +4,7 @@
 //! share one set of statics (progress counters) and modules. main.rs only
 //! contains the entry point.
 
-use clap::Parser;
-use keyhog::args::{Cli, Command};
+use keyhog::args::Command;
 use keyhog::orchestrator::EXIT_SCANNER_PANIC;
 use keyhog::{subcommands, FINDINGS_COUNT, SCANNED_CHUNKS, SCANNER_PANICKED, TOTAL_CHUNKS};
 use std::io::IsTerminal;
@@ -111,7 +110,7 @@ async fn main() -> ExitCode {
         .with_target(false)
         .init();
 
-    let cli = Cli::parse();
+    let cli = keyhog::args::parse();
 
     // --version already handled above (fast-path); the field is still
     // valid here in case Cli::parse() surfaces other version-like
@@ -153,8 +152,7 @@ async fn main() -> ExitCode {
         #[cfg(feature = "tui")]
         Some(Command::Tui(args)) => subcommands::tui::run(args),
         None => {
-            use clap::CommandFactory;
-            let mut cmd = Cli::command();
+            let mut cmd = keyhog::args::command();
             let _ = cmd.print_help();
             return ExitCode::from(0);
         }

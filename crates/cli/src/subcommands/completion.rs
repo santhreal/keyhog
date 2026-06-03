@@ -9,11 +9,10 @@
 //! keyhog completion fish > ~/.config/fish/completions/keyhog.fish
 //! ```
 
-use crate::args::{Cli, CompletionArgs};
-use clap::CommandFactory;
+use crate::args::{self, CompletionArgs};
 
 pub fn run(args: CompletionArgs) {
-    let mut cmd = Cli::command();
+    let mut cmd = args::command();
     let bin_name = cmd.get_name().to_string();
     clap_complete::generate(args.shell, &mut cmd, bin_name, &mut std::io::stdout());
 }

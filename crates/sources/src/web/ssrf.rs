@@ -31,8 +31,8 @@ pub(crate) fn is_disallowed_web_host(url: &str) -> bool {
         return true;
     };
     match host {
-        url::Host::Ipv4(ip) => is_disallowed_ipv4(ip),
-        url::Host::Ipv6(ip) => is_disallowed_ipv6(ip),
+        url::Host::Ipv4(ip) => is_disallowed_ip(std::net::IpAddr::V4(ip)),
+        url::Host::Ipv6(ip) => is_disallowed_ip(std::net::IpAddr::V6(ip)),
         url::Host::Domain(d) => {
             let lower = d.to_ascii_lowercase();
             lower == "localhost"
@@ -44,31 +44,31 @@ pub(crate) fn is_disallowed_web_host(url: &str) -> bool {
     }
 }
 
-fn is_disallowed_ipv4(ip: std::net::Ipv4Addr) -> bool {
-    ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_multicast()
-        || ip.is_broadcast()
-        || ip.is_unspecified()
-}
-
-fn is_disallowed_ipv6(ip: std::net::Ipv6Addr) -> bool {
-    if let Some(v4) = ip.to_ipv4_mapped() {
-        return is_disallowed_ipv4(v4);
-    }
-    ip.is_loopback()
-        || ip.is_multicast()
-        || ip.is_unspecified()
-        || ip.segments()[0] & 0xfe00 == 0xfc00
-        || ip.segments()[0] & 0xffc0 == 0xfe80
-}
-
+/// SSRF IP-classification for the WebSource fetch surface.
+///
+/// This delegates to the fleet-canonical classifier
+/// `keyhog_verifier::ssrf::is_private_ip_addr`, which is the single
+/// source of truth for "is this address one an SSRF guard must
+/// refuse?". That predicate composes the fast reserved-range bitwise
+/// checks (`is_private_ip_addr_fast` — loopback, RFC 1918, link-local,
+/// multicast, 0.0.0.0/8, 100.64.0.0/10 CGN, 240.0.0.0/4 Class E, ...)
+/// on top of `bogon::ip_addr_is_bogon` (CGN, 192.0.0.0/24 IETF
+/// protocol assignment, 198.18.0.0/15 benchmark, IPv6 unique-local /
+/// link-local / Teredo / ORCHIDv2 / documentation / 6to4-wrapped
+/// bogons, ...) — exactly the "layer additional checks on top of
+/// `ip_addr_is_bogon`, do not fork it" contract the bogon module docs
+/// mandate (`crates/verifier/src/bogon.rs`).
+///
+/// Previously WebSource shipped a hand-rolled copy (`is_loopback ||
+/// is_private || is_link_local || is_multicast || is_broadcast ||
+/// is_unspecified`) that was a strict subset of the canonical and
+/// silently let CGN, benchmark, IETF, Class E, and 0.0.0.0/8 (minus
+/// the single 0.0.0.0) addresses through — an SSRF pivot into
+/// internal/provider space. The fork is gone; both the direct
+/// `resolve_and_screen` path and the redirect-revalidation path now
+/// resolve to this one predicate.
 pub(crate) fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(v4) => is_disallowed_ipv4(v4),
-        std::net::IpAddr::V6(v6) => is_disallowed_ipv6(v6),
-    }
+    keyhog_verifier::ssrf::is_private_ip_addr(&ip)
 }
 
 fn ssrf_revalidating_redirect_policy() -> reqwest::redirect::Policy {

@@ -67,15 +67,27 @@ fn calibrate_tp_flag_records_true_positive() {
         "calibrate --tp should create the cache file at {cache:?}"
     );
 
-    // Read the cache and verify aws-access-key has α > 0.
+    // Read the cache and verify aws-access-key recorded a true positive. The
+    // on-disk shape is `{ "version": 1, "detectors": { "<id>": { "alpha",
+    // "beta" } } }`, so navigate through `detectors` (the previous top-level /
+    // array lookup never matched and passed only by accident before this test
+    // ran in CI).
     let content = std::fs::read_to_string(&cache).expect("read cache");
     let parsed: serde_json::Value = serde_json::from_str(&content).expect("cache is JSON");
     let aws_entry = parsed
-        .get("aws-access-key")
-        .or_else(|| parsed.as_array().and_then(|a| a.first()));
+        .get("detectors")
+        .and_then(|d| d.get("aws-access-key"));
     assert!(
         aws_entry.is_some(),
-        "calibration cache should record aws-access-key; content: {content}"
+        "calibration cache should record aws-access-key under `detectors`; content: {content}"
+    );
+    // A recorded true positive must lift alpha above the Beta(1,1) prior.
+    let alpha = aws_entry
+        .and_then(|e| e.get("alpha"))
+        .and_then(serde_json::Value::as_u64);
+    assert!(
+        alpha.is_some_and(|a| a >= 2),
+        "--tp must increment aws-access-key's alpha above the prior (got {alpha:?}); content: {content}"
     );
 }
 

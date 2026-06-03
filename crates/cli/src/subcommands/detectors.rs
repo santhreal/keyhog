@@ -19,6 +19,18 @@ use std::process::ExitCode;
 const EXIT_AUDIT_FAILED: u8 = 3;
 
 pub fn run(args: DetectorArgs) -> Result<ExitCode> {
+    // The optional `list` verb names the default action explicitly, so it is
+    // incompatible with the alternate actions `--audit` / `--fix`: `keyhog
+    // detectors list --audit` would be asking for two different verbs at once.
+    // Reject loudly instead of silently letting `--audit`/`--fix` win, so the
+    // operator's intent and the action taken can never disagree.
+    if args.verb.as_deref() == Some("list") && (args.audit || args.fix) {
+        anyhow::bail!(
+            "`keyhog detectors list` is the (default) list action and cannot be \
+             combined with `--audit` or `--fix`. Drop `list` to audit/fix, or \
+             drop the flag to list."
+        );
+    }
     if args.fix {
         return run_fix(&args);
     }
@@ -42,7 +54,7 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     };
 
     // Apply --search filter case-insensitively against the four most useful
-    // fields. The 894-strong corpus is otherwise hard to navigate by eye -
+    // fields. The full embedded corpus is otherwise hard to navigate by eye -
     // `keyhog detectors --search aws` should beat `grep -r aws detectors/`.
     fn contains_ci(haystack: &str, needle: &[u8]) -> bool {
         if needle.is_empty() || needle.len() > haystack.len() {

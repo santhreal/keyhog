@@ -245,7 +245,7 @@ pub(crate) fn require_non_empty_detectors(
         anyhow::bail!(
             "loaded zero detectors from {}. \
              Fix: verify the directory contains valid `*.toml` detector \
-             specs (run `keyhog detectors list --detectors {}` to see \
+             specs (run `keyhog detectors --detectors {}` to see \
              which TOMLs were rejected, if any). Refusing to scan with \
              no detectors loaded - that would silently report `no \
              findings` regardless of what's in the source.",
@@ -419,6 +419,19 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     if !args.placeholder_keywords.is_empty() {
         config.placeholder_keywords = args.placeholder_keywords.clone();
     }
+    // Re-run the NaN/range safety net AFTER every CLI flag and `.keyhog.toml`
+    // override has been merged in. `From<ScanConfig>` sanitises once at
+    // construction time, but the overrides above (e.g. `config.ml_weight =
+    // weight`, `config.entropy_threshold = threshold`) mutate the numeric
+    // fields directly afterwards and would otherwise smuggle out-of-range
+    // values straight to the engine: `--ml-weight 5.0` / `-1.0` (the ML blend
+    // `w*ml + (1-w)*heuristic` in scan_postprocess relies on `w in [0,1]`) and
+    // `--entropy-threshold 99` / `-5` (a threshold > 8.0 can never fire,
+    // disabling the entropy detector; a negative one makes `entropy >= thr`
+    // always true). Neither `--ml-weight` nor `--entropy-threshold` has a
+    // clamping clap value_parser, so this is the only place the override layer
+    // can honour the same invariant the `From` path enforces. Idempotent.
+    config.sanitise();
     config
 }
 

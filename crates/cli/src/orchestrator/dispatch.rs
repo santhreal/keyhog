@@ -1,6 +1,12 @@
 //! Scan dispatch: producer/scanner pipeline and backend routing.
+//!
+//! NOTE: `--stream` previews are NOT emitted here. They are emitted from the
+//! run loop (`run.rs`) against the RESOLVED `VerifiedFinding` report stream,
+//! after `filter_and_resolve` / suppression / `--min-confidence`, so a streamed
+//! `[stream]` line always corresponds to a reported finding (stream count ==
+//! report count). Emitting on raw scanner matches here previewed findings the
+//! report later dropped — a correctness/coherence bug (AUD-testing_dogfood-1).
 
-use super::reporting::stream_finding_preview;
 use super::ScanOrchestrator;
 use keyhog_core::{RawMatch, Source};
 use std::sync::Arc;
@@ -162,7 +168,6 @@ impl ScanOrchestrator {
             "scan dispatch pipeline sized"
         );
 
-        let stream = self.args.stream;
         // Auto-route every batch through `select_backend` when the user has not
         // pinned KEYHOG_BACKEND. Previously the default (no-override) path fell
         // straight into the SIMD `scan_coalesced` arm, so on a discrete-GPU host
@@ -194,19 +199,13 @@ impl ScanOrchestrator {
 
         let scanner_thread = std::thread::spawn(move || {
             let mut findings: Vec<RawMatch> = Vec::new();
-            let mut stderr_writer = if stream {
-                Some(std::io::LineWriter::new(std::io::stderr()))
-            } else {
-                None
-            };
 
             let mut prev_phase2: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)> =
                 None;
 
             let drain_prev =
                 |prev: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)>,
-                 findings: &mut Vec<RawMatch>,
-                 stderr_writer: &mut Option<std::io::LineWriter<std::io::Stderr>>| {
+                 findings: &mut Vec<RawMatch>| {
                     if let Some((handle, scanned_count)) = prev {
                         let per_chunk = handle.join().unwrap_or_else(|e| {
                             std::panic::resume_unwind(e);
@@ -215,11 +214,6 @@ impl ScanOrchestrator {
                         let mut batch_findings = 0usize;
                         for chunk_findings in per_chunk {
                             batch_findings += chunk_findings.len();
-                            if let Some(w) = stderr_writer.as_mut() {
-                                for m in &chunk_findings {
-                                    stream_finding_preview(w, m);
-                                }
-                            }
                             findings.extend(chunk_findings);
                         }
                         crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
@@ -280,22 +274,17 @@ impl ScanOrchestrator {
                         );
                         match scanner.scan_coalesced_gpu_phase1(&batch) {
                             keyhog_scanner::GpuPhase1Output::Done(per_chunk) => {
-                                drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                                drain_prev(prev_phase2.take(), &mut findings);
                                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                                 let mut batch_findings = 0usize;
                                 for chunk_findings in per_chunk {
                                     batch_findings += chunk_findings.len();
-                                    if let Some(w) = stderr_writer.as_mut() {
-                                        for m in &chunk_findings {
-                                            stream_finding_preview(w, m);
-                                        }
-                                    }
                                     findings.extend(chunk_findings);
                                 }
                                 crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
                             }
                             keyhog_scanner::GpuPhase1Output::Hits(per_chunk_hits) => {
-                                drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                                drain_prev(prev_phase2.take(), &mut findings);
                                 let scanner_clone = Arc::clone(&scanner);
                                 let batch_owned = batch;
                                 let handle = std::thread::spawn(move || {
@@ -307,7 +296,7 @@ impl ScanOrchestrator {
                         }
                     }
                     Some(backend @ keyhog_scanner::hw_probe::ScanBackend::MegaScan) => {
-                        drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                        drain_prev(prev_phase2.take(), &mut findings);
                         let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                         tracing::debug!(
                             target: "keyhog::routing",
@@ -321,27 +310,17 @@ impl ScanOrchestrator {
                         let mut batch_findings = 0usize;
                         for chunk_findings in per_chunk {
                             batch_findings += chunk_findings.len();
-                            if let Some(w) = stderr_writer.as_mut() {
-                                for m in &chunk_findings {
-                                    stream_finding_preview(w, m);
-                                }
-                            }
                             findings.extend(chunk_findings);
                         }
                         crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
                     }
                     _ => {
-                        drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                        drain_prev(prev_phase2.take(), &mut findings);
                         let per_chunk = scanner.scan_coalesced(&batch);
                         crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                         let mut batch_findings = 0usize;
                         for chunk_findings in per_chunk {
                             batch_findings += chunk_findings.len();
-                            if let Some(w) = stderr_writer.as_mut() {
-                                for m in &chunk_findings {
-                                    stream_finding_preview(w, m);
-                                }
-                            }
                             findings.extend(chunk_findings);
                         }
                         crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
@@ -350,7 +329,7 @@ impl ScanOrchestrator {
                 scan_dur += _scan_start.elapsed();
                 last_end = std::time::Instant::now();
             }
-            drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+            drain_prev(prev_phase2.take(), &mut findings);
             if std::env::var("KH_PERF").is_ok() {
                 let wall = sc_t0.elapsed().as_secs_f64().max(1e-9);
                 eprintln!(
@@ -559,7 +538,6 @@ impl ScanOrchestrator {
 
         let incremental_path = self.incremental_cache_path();
         let scanner = Arc::clone(&self.scanner);
-        let stream = self.args.stream;
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
         let sc_t0 = Instant::now();
@@ -621,17 +599,8 @@ impl ScanOrchestrator {
             }
         });
 
-        let stream_writer = if stream {
-            Some(std::sync::Mutex::new(std::io::LineWriter::new(
-                std::io::stderr(),
-            )))
-        } else {
-            None
-        };
-
         let merkle_ref = merkle.as_ref();
         let skipped_ref = &skipped_unchanged;
-        let stream_ref = stream_writer.as_ref();
         let scanner_ref = scanner.as_ref();
 
         let findings: Vec<RawMatch> = rx
@@ -682,13 +651,6 @@ impl ScanOrchestrator {
                 let mut batch_findings = 0usize;
                 for chunk_findings in per_chunk {
                     batch_findings += chunk_findings.len();
-                    if let Some(w) = stream_ref {
-                        if let Ok(mut w) = w.lock() {
-                            for m in &chunk_findings {
-                                stream_finding_preview(&mut *w, m);
-                            }
-                        }
-                    }
                     out.extend(chunk_findings);
                 }
                 if batch_findings > 0 {

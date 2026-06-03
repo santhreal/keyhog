@@ -19,6 +19,11 @@ use std::sync::Arc;
 
 pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
+/// Offline (no-verify, no-network) structural metadata for a finding's
+/// credential. Single source of truth shared by every scan-output route so the
+/// JWT analysis and the offline-decoded AWS account ID never diverge by route.
+pub(crate) use postprocess::offline_finding_metadata;
+
 #[doc(hidden)]
 pub use dispatch::{backend_requires_legacy_gpu_pipeline_for_test, explicit_backend_override};
 
@@ -185,7 +190,7 @@ impl ScanOrchestrator {
         // serial first-touch compile of each detector. The earlier `is_dir`
         // gate was meant to keep one-shot single-file/stdin startup fast, but it
         // backfired: a single-file scan then fell into a SERIAL lazy compile of
-        // all 894 regexes on the hot path (~340ms measured), strictly slower
+        // all embedded regexes on the hot path (~340ms measured), strictly slower
         // than the parallel `warm()` a directory scan got. Single file, stdin,
         // pre-commit hooks and editor integrations all hit that worst case.
         // `warm()` is idempotent and a no-op for already-compiled patterns, so

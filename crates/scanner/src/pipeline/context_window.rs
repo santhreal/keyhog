@@ -186,22 +186,97 @@ pub fn find_companion(
     None
 }
 
+/// Resolve the byte window `[start_offset, end_offset)` spanned by the
+/// requested line range.
+///
+/// Contract preserved byte-for-byte from the original linear scan:
+///   * `start_offset` = `start_offset` of the FIRST mapping (in vec order)
+///     whose `line_number >= start_line`,
+///   * `end_offset`   = `end_offset` of the LAST mapping (in vec order)
+///     whose `line_number <= end_line`.
+///
+/// # Why a plain binary search over the whole vec is *not* correct
+///
+/// `mappings` is globally sorted by `start_offset` (the invariant
+/// [`ScannerPreprocessedText::line_for_offset`] relies on), and its leading
+/// identity prefix (one entry per original line) is additionally sorted by
+/// `line_number`. But under the `multiline` feature the preprocessor APPENDS
+/// structural/joined segments after that prefix whose `line_number` carries
+/// the ORIGINAL source line (and, for explicit-concat / template reassembly,
+/// a deliberately huge `SYNTHETIC_BASE_LINE`). So `line_number` is *not*
+/// globally monotonic — a `partition_point` over the full vec would silently
+/// mis-resolve the window in exactly the structural cases the synthetic line
+/// numbers were chosen to keep out of the window (see
+/// `crates/scanner/src/multiline/structural.rs`).
+///
+/// # The fix: binary-search the monotonic prefix, linear-scan only the tail
+///
+/// The identity prefix is `line_number`-monotonic, so the first/last lookups
+/// inside it resolve with two `partition_point` searches in `O(log L)` —
+/// replacing the old `O(L)` walk over every line of the file. The structural
+/// tail (number of join-chains, bounded and tiny relative to `L`) is folded in
+/// with a short linear pass that respects vec order: a tail hit on the START
+/// side only counts when the prefix had none (prefix precedes tail), and a
+/// tail hit on the END side always supersedes a prefix hit (tail follows
+/// prefix). On the dominant path (passthrough / non-`multiline`) there is no
+/// tail and this is a pure `O(log L)` lookup.
 pub fn line_window_offsets(
     preprocessed: &ScannerPreprocessedText,
     start_line: usize,
     end_line: usize,
 ) -> Option<(usize, usize)> {
-    let mut start_offset = None;
-    let mut end_offset = None;
+    let mappings = &preprocessed.mappings;
 
-    for mapping in &preprocessed.mappings {
+    // Length of the leading, `line_number`-monotonic identity prefix. Under
+    // `multiline` the appended structural segments begin at `original_end`;
+    // `mappings` is `start_offset`-sorted so the prefix is the maximal run
+    // with `start_offset < original_end`, found with one binary search. In the
+    // non-`multiline` build no structural segments are ever produced, so the
+    // whole vec is the (line-sorted) prefix.
+    let prefix_len = monotonic_prefix_len(preprocessed);
+    let prefix = &mappings[..prefix_len];
+
+    // FIRST mapping in the monotonic prefix with `line_number >= start_line`.
+    let prefix_start_idx = prefix.partition_point(|m| m.line_number < start_line);
+    let mut start_offset = prefix.get(prefix_start_idx).map(|m| m.start_offset);
+
+    // LAST mapping in the monotonic prefix with `line_number <= end_line`:
+    // one past it is the first with `line_number > end_line`.
+    let prefix_end_idx = prefix.partition_point(|m| m.line_number <= end_line);
+    let mut end_offset = (prefix_end_idx > 0).then(|| prefix[prefix_end_idx - 1].end_offset);
+
+    // Fold in the (small) structural tail in vec order to keep the result
+    // byte-identical to the original full-vec linear scan.
+    for mapping in &mappings[prefix_len..] {
+        // Start side: the prefix precedes the tail, so a tail entry can only
+        // win the FIRST-match if the prefix produced none.
         if start_offset.is_none() && mapping.line_number >= start_line {
             start_offset = Some(mapping.start_offset);
         }
+        // End side: the tail follows the prefix, so any qualifying tail entry
+        // supersedes the prefix's LAST-match.
         if mapping.line_number <= end_line {
             end_offset = Some(mapping.end_offset);
         }
     }
 
     Some((start_offset?, end_offset?))
+}
+
+/// Length of the leading `line_number`-monotonic identity prefix of
+/// `mappings` (everything before the appended structural/joined segments).
+#[cfg(feature = "multiline")]
+fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText) -> usize {
+    // `mappings` is sorted by `start_offset`; structural segments are appended
+    // at offsets `>= original_end`. Binary-search the split point.
+    preprocessed
+        .mappings
+        .partition_point(|m| m.start_offset < preprocessed.original_end)
+}
+
+/// Non-`multiline` build: the preprocessor never appends structural segments,
+/// so the entire mapping vector is the line-sorted identity prefix.
+#[cfg(not(feature = "multiline"))]
+fn monotonic_prefix_len(preprocessed: &ScannerPreprocessedText) -> usize {
+    preprocessed.mappings.len()
 }

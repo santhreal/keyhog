@@ -1,4 +1,10 @@
-//! Contract: `--help` documents exit code 2 (runtime error).
+//! Contract: `--help` documents exit code 2 (user error).
+//!
+//! AUD-coherence-3: `--help` previously labelled exit 2 "Runtime error" while
+//! docs/src/reference/exit-codes.md, docs/src/first-scan.md, and the
+//! `EXIT_USER_ERROR` constant in crates/cli/src/main.rs all call it a *user
+//! error*. The help text now agrees with the documented contract, so this
+//! contract asserts the documented wording rather than the stale one.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -18,8 +24,10 @@ fn help_documents_exit_code_two() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    let lower = combined.to_lowercase();
     assert!(
-        combined.contains("2   Runtime error") || combined.contains("2  Runtime error"),
-        "help must document exit 2; got: {combined}"
+        lower.contains("2   user error") || lower.contains("2  user error"),
+        "help must document exit 2 as a user error (matching \
+         docs/src/reference/exit-codes.md); got: {combined}"
     );
 }

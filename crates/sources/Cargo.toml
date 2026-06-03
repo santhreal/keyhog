@@ -22,7 +22,14 @@ git = ["gix"]
 # `dep:serde` / `dep:serde_json` removed from these feature gates —
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
-web = ["dep:reqwest", "dep:url"]
+#
+# `keyhog-verifier` is pulled in so the WebSource SSRF gate
+# (web/ssrf.rs) delegates to the fleet-canonical IP classifier
+# `keyhog_verifier::ssrf::is_private_ip_addr` instead of forking it.
+# That predicate already layers the fast reserved-range checks
+# (Class E, CGN, benchmark, IETF, 0.0.0.0/8, ...) on top of
+# `bogon::ip_addr_is_bogon`, exactly as the bogon module docs mandate.
+web = ["dep:reqwest", "dep:url", "dep:keyhog-verifier"]
 github = ["dep:reqwest", "dep:tempfile"]
 slack = ["dep:reqwest"]
 s3 = [
@@ -34,11 +41,19 @@ s3 = [
     "dep:hex",
     "dep:chrono",
 ]
-docker = ["dep:tar", "dep:tempfile"]
+# `tar` is now an unconditional dependency (used by the always-on filesystem
+# tarball-unpack path), so the docker feature only needs to pull in tempfile.
+docker = ["dep:tempfile"]
 binary = ["dep:goblin", "dep:tempfile", "dep:glob", "dep:wait-timeout"]  # ELF/PE/Mach-O + Ghidra decompiler
 
 [dependencies]
 keyhog-core = { workspace = true }
+# Canonical SSRF IP classifier lives here as `keyhog_verifier::ssrf`
+# (which composes the fast reserved-range checks with
+# `bogon::ip_addr_is_bogon`). Gated under `web` because only the
+# WebSource SSRF guard consumes it. No dependency cycle: keyhog-verifier
+# depends only on keyhog-core, never on keyhog-sources.
+keyhog-verifier = { workspace = true, optional = true }
 codewalk = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -55,6 +70,19 @@ memchr = { workspace = true }
 regex = { workspace = true }
 ziftsieve = { workspace = true, features = ["gzip", "lz4", "zstd", "snappy"] }
 openpack = { workspace = true, features = ["zip", "apk", "ipa", "crx"] }
+# True-decompression decoders for the always-on filesystem compressed-input
+# path (filesystem/extract.rs). ziftsieve only extracts DEFLATE literals for
+# its bloom prefilter (drops back-references), so it cannot reconstruct the
+# real decompressed bytes the scanner needs — these do the full inflate.
+flate2 = { workspace = true }
+zstd = { workspace = true }
+lz4_flex = { workspace = true }
+snap = { workspace = true }
+# `tar` is non-optional (NOT just the `docker` feature) because the always-on
+# filesystem path untars gzip(tar)/.tgz/.tar containers per-entry so a secret
+# in a tarball is scanned with the correct inner path. The `docker` feature
+# reuses the same dependency.
+tar = { workspace = true }
 # Binary analysis dependencies
 goblin = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
@@ -99,10 +127,6 @@ workspace = true
 optional = true
 
 [dependencies.quick-xml]
-workspace = true
-optional = true
-
-[dependencies.tar]
 workspace = true
 optional = true
 

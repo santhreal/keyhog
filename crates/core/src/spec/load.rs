@@ -299,7 +299,7 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
                 detector_path = %path.display(),
                 error = %error,
                 "skipping detector - fix the file's permissions or path \
-                 (run `keyhog detectors list` for the full skip list)"
+                 (run `keyhog detectors --detectors <DIR>` for the full skip list)"
             );
             return ReadDetectorOutcome::Skipped { message };
         }

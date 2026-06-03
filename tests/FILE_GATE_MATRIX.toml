@@ -253,6 +253,9 @@ path = "crates/scanner/src/alphabet_filter.rs"
 path = "crates/scanner/src/ascii_ci.rs"
 
 [[module]]
+path = "crates/scanner/src/aws.rs"
+
+[[module]]
 path = "crates/scanner/src/bigram_bloom.rs"
 
 [[module]]

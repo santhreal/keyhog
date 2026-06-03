@@ -133,7 +133,11 @@ impl CompiledScanner {
             } else {
                 detector.id.as_str()
             };
-            let entropy_floor = generic_entropy_floor(floor_id, credential.len());
+            let entropy_floor = generic_entropy_floor(
+                self.config.entropy_threshold,
+                floor_id,
+                credential.len(),
+            );
             if entropy < entropy_floor {
                 return;
             }

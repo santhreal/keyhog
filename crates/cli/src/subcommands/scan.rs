@@ -65,8 +65,20 @@ pub async fn run(args: ScanArgs) -> Result<ExitCode> {
         let orchestrator = ScanOrchestrator::new(args)?;
         return orchestrator.run().await;
     }
+    // Resolve the routing-relevant `.keyhog.toml` policy BEFORE deciding the
+    // route. The orchestrator's `.keyhog.toml` merge runs LATER (inside
+    // `ScanOrchestrator::new`) and only on the in-process path, so a policy set
+    // via the config file rather than a CLI flag was invisible to
+    // `daemon_route` — letting a config min_confidence floor, a config
+    // `[lockdown] require = true` fail-closed guard, or a config
+    // `show_secrets` be silently bypassed whenever a daemon happened to be
+    // live. Merge onto a throwaway clone so the real `args` the orchestrator
+    // consumes is untouched (it re-merges identically), then route on the
+    // EFFECTIVE values.
     #[cfg(unix)]
-    match daemon_route(&args) {
+    let policy = EffectivePolicy::resolve(&args);
+    #[cfg(unix)]
+    match daemon_route(&args, &policy) {
         DaemonRoute::Required => run_via_daemon(&args).await,
         DaemonRoute::Opportunistic => match run_via_daemon(&args).await {
             Ok(exit) => Ok(exit),
@@ -93,8 +105,55 @@ enum DaemonRoute {
     Forbidden,
 }
 
+/// The routing-relevant policy AFTER merging `.keyhog.toml`, so the daemon
+/// route decision sees config-file values (not just raw CLI flags). Built by
+/// merging a throwaway clone of `ScanArgs` through the same
+/// [`crate::config::apply_config_file`] the orchestrator uses, so the
+/// effective floor / lockdown-require / secret-output policy is identical to
+/// what the in-process path will enforce.
 #[cfg(unix)]
-fn daemon_route(args: &ScanArgs) -> DaemonRoute {
+struct EffectivePolicy {
+    /// `min_confidence` after the config merge (CLI flag OR `.keyhog.toml` /
+    /// `[scan]` floor). When `Some`, the daemon's floor-less finalize would
+    /// surface findings the in-process path suppresses, so force in-process.
+    min_confidence: Option<f64>,
+    /// `show_secrets` after the merge (CLI flag OR `.keyhog.toml`). The daemon
+    /// finalize redacts unconditionally, so a config-driven value would render
+    /// credentials differently by route.
+    show_secrets: bool,
+    /// Minimum-severity filter after the merge (CLI flag OR `.keyhog.toml`).
+    severity: bool,
+    /// `[lockdown] require = true` from `.keyhog.toml`: a fail-closed control
+    /// the daemon cannot enforce. Forces in-process so the orchestrator's
+    /// `bail!` fires when `--lockdown` was not passed.
+    require_lockdown: bool,
+}
+
+#[cfg(unix)]
+impl EffectivePolicy {
+    fn resolve(args: &ScanArgs) -> EffectivePolicy {
+        let mut probe = args.clone();
+        // Mirror `ScanOrchestrator::new`'s path normalization BEFORE the config
+        // merge: the positional path binds to `input`, but config discovery
+        // (`find_config_file`) walks up from `path`. Without promoting
+        // `input` -> `path` here, `apply_config_file` would look in the CWD
+        // instead of the scanned file's directory and miss the `.keyhog.toml`
+        // whose policy we are trying to honour — the exact bug this resolves.
+        if probe.path.is_none() {
+            probe.path = probe.input.clone();
+        }
+        let outcome = crate::config::apply_config_file(&mut probe);
+        EffectivePolicy {
+            min_confidence: probe.min_confidence,
+            show_secrets: probe.show_secrets,
+            severity: probe.severity.is_some(),
+            require_lockdown: outcome.require_lockdown,
+        }
+    }
+}
+
+#[cfg(unix)]
+fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     if args.no_daemon {
         return DaemonRoute::Forbidden;
     }
@@ -141,16 +200,27 @@ fn daemon_route(args: &ScanArgs) -> DaemonRoute {
     // on merely because a daemon socket exists. Force the in-process path whenever
     // such policy is in play, so behavior never depends on whether a daemon
     // happens to be running.
+    //
+    // Critically, the floor / lockdown-require / show_secrets / severity checks
+    // read the EFFECTIVE post-`.keyhog.toml`-merge policy, not just the raw CLI
+    // flags: a `.keyhog.toml` `min_confidence`, `[lockdown] require = true`, or
+    // `show_secrets` set via the config file (with no matching CLI flag) must
+    // forbid the daemon route too — otherwise scan RESULTS and a fail-closed
+    // SECURITY GUARD would change purely on whether a daemon is live.
+    // `hide_client_safe` has no config-file surface, so the CLI flag is the
+    // effective value.
     if args.lockdown
-        || args.show_secrets
-        || args.severity.is_some()
-        || args.min_confidence.is_some()
+        || policy.require_lockdown
+        || policy.show_secrets
+        || policy.severity
+        || policy.min_confidence.is_some()
         || args.hide_client_safe
     {
         if args.daemon {
             tracing::warn!(
                 "--daemon ignored: this scan requests filtering/lockdown/secret-output \
-                 policy the daemon cannot enforce; using the in-process path"
+                 policy the daemon cannot enforce (CLI flag or .keyhog.toml); \
+                 using the in-process path"
             );
         }
         return DaemonRoute::Forbidden;
@@ -380,7 +450,11 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
             credential_hash: m.credential_hash,
             location: m.primary_location,
             verification: VerificationResult::Skipped,
-            metadata: std::collections::HashMap::new(),
+            // Same offline structural evidence the in-process finalize attaches
+            // (JWT alg=none anomaly + alg/iss/sub/aud/exp claims, and the
+            // offline-decoded AWS account ID), so neither diverges on the
+            // daemon route. One shared helper keeps every route in lockstep.
+            metadata: crate::orchestrator::offline_finding_metadata(&m.credential),
             additional_locations: m.additional_locations,
             confidence: m.confidence,
         })

@@ -2877,7 +2877,9 @@ dependencies = [
  "httpmock",
  "io-uring",
  "keyhog-core",
+ "keyhog-verifier",
  "libc",
+ "lz4_flex",
  "memchr",
  "memmap2",
  "openpack",
@@ -2890,6 +2892,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "snap",
  "tar",
  "tempfile",
  "thiserror 2.0.18",
@@ -2900,6 +2903,7 @@ dependencies = [
  "wait-timeout",
  "ziftsieve",
  "zip",
+ "zstd",
 ]
 
 [[package]]

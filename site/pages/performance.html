@@ -54,7 +54,7 @@ trees.</p>
 <table>
   <thead><tr><th>Operation</th><th>Time</th></tr></thead>
   <tbody>
-    <tr><td>Cold start (compile 891 detectors, no cache)</td><td>~3.0 s</td></tr>
+    <tr><td>Cold start (compile 899 detectors, no cache)</td><td>~3.0 s</td></tr>
     <tr><td>Cold start (compile cache hit, mmap DB)</td><td>~120 ms</td></tr>
     <tr><td>Daemon-served scan, 32-byte input</td><td><strong>7 ms</strong></td></tr>
     <tr><td>Daemon-served scan, 1 MB input</td><td>~12 ms</td></tr>
@@ -87,7 +87,7 @@ Linux/BSD → Vulkan.</p>
 <h2>Inspect the matrix on your hardware</h2>
 
 <pre><code><span class="prompt">$</span> keyhog backend
-<span class="a">keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
+<span class="a">keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 899 detectors</span>
 <span class="a">  cpu: AMD Ryzen 9 7950X · 16c/32t · AVX-512 + AVX2 + SSE4.2</span>
 <span class="a">  gpu: NVIDIA RTX 4090 · 24 GB · CUDA + Vulkan</span>
 <span class="a">  routing matrix:</span>
@@ -96,7 +96,7 @@ Linux/BSD → Vulkan.</p>
 <span class="a">    ≥ 256 MiB        → gpu-zero-copy</span>
 
 <span class="prompt">$</span> keyhog backend --probe-bytes $((300 * 1024 * 1024))
-<span class="a">at 300 MiB / 891 patterns → gpu-zero-copy</span></code></pre>
+<span class="a">at 300 MiB / 899 patterns → gpu-zero-copy</span></code></pre>
 
 <h2>Reproduce the benchmarks</h2>
 
@@ -132,7 +132,7 @@ emits a Markdown table.</p>
 
 <p>"Fastest secret scanner" is a benchmark trap — Gitleaks scans 86 MB in
 0.3 s because it only checks ~50 patterns. keyhog scans the same tree
-in 0.5 s with 891 patterns, catches 33% more real secrets, and pulls
+in 0.5 s with 899 patterns, catches 33% more real secrets, and pulls
 ahead on every dataset above ~200 MB (where the two-phase NFA wins big
 over linear regex). The right comparison is throughput per pattern at
 scale, not latency on a tiny tree.</p>

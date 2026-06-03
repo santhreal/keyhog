@@ -12,7 +12,7 @@ use std::path::PathBuf;
 #[command(
     name = "keyhog",
     about = "KeyHog: The developer-first secret scanner.\nFind leaked credentials in your code before hackers do. Fast, accurate, and verifying.",
-    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   Runtime error (e.g., config error, unreadable path)\n  3   System error (local environment failure or detector-corpus audit failure)\n  4   `backend --self-test` failed (GPU/SIMD probe error)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
+    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   User error (e.g., config error, unreadable path)\n  3   System error (local environment failure or detector-corpus audit failure)\n  4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
     disable_version_flag = true
 )]
 pub struct Cli {
@@ -326,8 +326,11 @@ pub struct CalibrateArgs {
     /// Mark these detector IDs as confirmed false positives (β += 1 each).
     #[arg(long, value_name = "DETECTOR_ID")]
     pub fp: Vec<String>,
-    /// Print every recorded counter and exit (no updates).
-    #[arg(long)]
+    /// Print every recorded counter and exit (no updates). Read-only: it cannot
+    /// be combined with the `--tp`/`--fp` update flags (mixing "show me the
+    /// state" with "mutate the state" is contradictory and silently ran the
+    /// update before — clap now rejects it with exit 2).
+    #[arg(long, conflicts_with_all = ["tp", "fp"])]
     pub show: bool,
     /// Override the calibration cache path. Defaults to
     /// $XDG_CACHE_HOME/keyhog/calibration.json.
@@ -364,12 +367,23 @@ pub struct ExplainArgs {
 
 #[derive(Parser)]
 pub struct DetectorArgs {
+    /// Optional verb. `keyhog detectors` lists detectors by default, so the
+    /// only accepted positional is the explicit `list` (a no-op alias kept for
+    /// muscle-memory and for the historically-suggested
+    /// `keyhog detectors list --detectors <DIR>` invocation). Any other token
+    /// is rejected with a precise message rather than misparsed.
+    #[arg(value_name = "VERB", value_parser = crate::value_parsers::parse_detectors_verb)]
+    pub verb: Option<String>,
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
     /// Filter detectors by substring match (case-insensitive) against id,
-    /// name, service, and keywords. Useful for finding detectors in the
-    /// 894-strong corpus (e.g. `keyhog detectors --search aws`).
+    /// name, service, and keywords (e.g. `keyhog detectors --search aws`).
+    ///
+    /// The short `--help` line is intentionally count-free; the long `--help`
+    /// (rendered via [`crate::args::command`]) injects the live embedded
+    /// detector count so the cited corpus size can never drift from the
+    /// detectors actually compiled into this binary.
     #[arg(short, long)]
     pub search: Option<String>,
     /// Print full detector spec (regex, prefixes, keywords) instead of
@@ -454,5 +468,46 @@ impl CliDedupScope {
             Self::File => DedupScope::File,
             Self::None => DedupScope::None,
         }
+    }
+}
+
+/// Build the top-level clap [`clap::Command`] with the runtime-derived detector
+/// count injected into the `detectors --search` long help.
+///
+/// The static `///` doc-comment on [`DetectorArgs::search`] is deliberately
+/// count-free: clap doc-comments are compile-time string literals and cannot
+/// embed the embedded-detector count without going stale (this is exactly the
+/// drift AUD-coherence-1 documented — a hardcoded "894-strong" while the binary
+/// loaded 899). Instead we render the long help here, at runtime, from
+/// [`keyhog_core::embedded_detector_count`] — the *same* slice that backs
+/// `keyhog detectors --json`. The cited corpus size therefore tracks the real
+/// corpus exactly and can never undercount it.
+///
+/// Both `Cli::parse()`-equivalent paths and the `print_help` / completion paths
+/// must route through this function so the dynamic help is always present.
+pub fn command() -> clap::Command {
+    use clap::CommandFactory;
+    let count = keyhog_core::embedded_detector_count();
+    let long_help = format!(
+        "Filter detectors by substring match (case-insensitive) against id, \
+         name, service, and keywords. Useful for finding detectors in the \
+         {count}-strong corpus (e.g. `keyhog detectors --search aws`)."
+    );
+    Cli::command().mut_subcommand("detectors", move |sub| {
+        sub.mut_arg("search", move |arg| arg.long_help(long_help.clone()))
+    })
+}
+
+/// Parse the CLI from `std::env::args_os`, using the dynamic [`command`] so the
+/// rendered `--help` carries the live detector count and the full exit-code
+/// contract. Mirrors `Cli::parse()` but with the runtime help wiring.
+pub fn parse() -> Cli {
+    use clap::FromArgMatches;
+    let matches = command().get_matches();
+    match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        // clap's own error rendering already exited for parse failures; this
+        // branch only triggers on a derive/runtime mismatch, which is a bug.
+        Err(err) => err.exit(),
     }
 }

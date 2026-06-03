@@ -170,19 +170,53 @@ pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
     false
 }
 
-/// Per-detector minimum entropy threshold for generic detectors.
+/// The compiled default for the Tier-A `entropy_threshold` knob
+/// (`keyhog_core::config::ScanConfig::default().entropy_threshold == 4.5`,
+/// documented in `crates/cli/src/config.rs` and `.keyhog.toml.example`).
 ///
-/// Different secret formats have inherently different entropy profiles:
-/// - Random hex tokens (e.g., npm tokens): ~3.7-4.0
-/// - Base64 tokens (e.g., JWTs): ~5.0-5.5
-/// - UUID-based keys (e.g., some Heroku tokens): ~3.0-3.3
-/// - Short API keys with fixed alphabets: ~3.2-3.8
+/// At this resolved value the generic gate uses ONLY the per-detector /
+/// per-length base floors below, so the shipped recall/precision tuning (and
+/// every benchmark pinned to the default) is byte-for-byte unchanged. The
+/// operator knob only *raises* the floor above the base when set above this
+/// default — see [`generic_entropy_floor`].
+const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
+
+/// SINGLE source of truth for the generic-detector entropy gate.
 ///
-/// A blanket 3.5 floor causes false negatives on UUID-style and
-/// short fixed-alphabet tokens. This function returns the appropriate
-/// floor based on the credential length and detector type.
-pub(super) fn generic_entropy_floor(detector_id: &str, credential_len: usize) -> f64 {
-    match detector_id {
+/// Two inputs decide whether a generic / weakly-anchored value carries enough
+/// randomness to report:
+///
+///   1. A per-detector, per-length BASE floor. Different secret formats have
+///      inherently different entropy profiles, so a blanket 3.5 floor causes
+///      false negatives on UUID-style and short fixed-alphabet tokens:
+///        - Random hex tokens (npm): ~3.7-4.0
+///        - Base64 tokens (JWTs):    ~5.0-5.5
+///        - UUID-based keys (Heroku):~3.0-3.3
+///        - Short API keys:          ~3.2-3.8
+///      These base floors are tuned for recall at the DEFAULT threshold and
+///      must not change there.
+///
+///   2. The operator's resolved Tier-A `entropy_threshold` knob
+///      (`ScannerConfig.entropy_threshold`, fed from `--entropy-threshold` /
+///      `.keyhog.toml`). The documented semantics are "5.5: Conservative
+///      (fewer findings)" — raising the knob must TIGHTEN the gate. We honor
+///      that by lifting the effective floor to at least the operator's chosen
+///      bits/byte once it exceeds the compiled default, so a value whose
+///      entropy is below the operator threshold is suppressed. At/below the
+///      default the base floor wins untouched (no-op), preserving shipped
+///      behavior and benchmark parity.
+///
+/// This is the ONE function both the named-detector generic path
+/// (`engine/process.rs`) and the `generic-secret` fallback
+/// (`engine/fallback_generic.rs`) call, replacing the two divergent hardcoded
+/// floor tables that previously encoded the same decision with different magic
+/// numbers and ignored the knob entirely.
+pub(super) fn generic_entropy_floor(
+    entropy_threshold: f64,
+    detector_id: &str,
+    credential_len: usize,
+) -> f64 {
+    let base: f64 = match detector_id {
         // Short tokens with restricted alphabets need a STRICTER floor to avoid
         // admitting low-diversity identifiers. Must precede the `<= 40` arm:
         // guard arms evaluate top-to-bottom, so listing `<= 40` first would
@@ -196,8 +230,24 @@ pub(super) fn generic_entropy_floor(detector_id: &str, credential_len: usize) ->
         "generic-password" => 2.5,
         // Database connection strings have structure
         "generic-database-url" => 2.0,
+        // `generic-secret` (the `SECRET_NAME = "value"` fallback). These three
+        // per-length floors are the values the fallback path historically baked
+        // in (2.8 / 3.2 / 3.5); kept identical so default behavior is unchanged.
+        "generic-secret" if credential_len <= 24 => 2.8,
+        "generic-secret" if credential_len <= 40 => 3.2,
+        "generic-secret" => 3.5,
         // Default: original threshold
         _ => 3.5,
+    };
+
+    // Honor the operator knob: a threshold above the compiled default lifts the
+    // floor to that bits/byte value (never below the recall-tuned base). A NaN
+    // threshold (config sanitization already clamps it, but be defensive) or a
+    // value at/under the default leaves `base` untouched.
+    if entropy_threshold.is_finite() && entropy_threshold > DEFAULT_GENERIC_ENTROPY_THRESHOLD {
+        base.max(entropy_threshold)
+    } else {
+        base
     }
 }
 

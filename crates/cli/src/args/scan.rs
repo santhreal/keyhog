@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use super::{CliDedupScope, OutputFormat, SeverityFilter};
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 pub struct ScanArgs {
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
@@ -183,14 +183,14 @@ pub struct ScanArgs {
     #[arg(long)]
     pub progress: bool,
 
-    /// Stream findings to stderr as they're discovered, instead of
-    /// waiting for the full scan + verify pipeline to finish before
-    /// printing anything. Each line is a single redacted preview
-    /// (`SEVERITY  SERVICE/DETECTOR  PATH:LINE`). The final
-    /// formatted report (text/json/sarif/jsonl) still lands on stdout
-    /// or `--output` after dedup + verification complete; the stream
-    /// is purely a UX hint that the scanner is making progress on
-    /// long-running runs (large monorepos, scan-system, GitHub orgs).
+    /// Emit a redacted `[stream]` preview line on stderr for every REPORTED
+    /// finding (`SEVERITY  SERVICE/DETECTOR  PATH:LINE  redacted`), so a quick
+    /// human- or CI-scrapeable summary lands on stderr while the full formatted
+    /// report (text/json/sarif/jsonl) goes to stdout or `--output`. The preview
+    /// stream is consistent with that report and the exit code: every streamed
+    /// line corresponds to a finding that survived suppression, the confidence
+    /// floor / `--min-confidence`, and baseline filtering — it never previews a
+    /// match the report drops.
     #[arg(long)]
     pub stream: bool,
 
