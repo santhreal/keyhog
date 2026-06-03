@@ -248,6 +248,10 @@ impl CompiledScanner {
                     code_context,
                     credential: pending_credential.into_owned(),
                     ml_context: ml_context.into_owned(),
+                    // Detector/generic matches: the firing regex is positive
+                    // evidence, so the heuristic stays a confidence FLOOR (the
+                    // model can only raise). Not model-authoritative.
+                    model_authoritative: false,
                 });
                 crate::telemetry::record_match_found();
             }

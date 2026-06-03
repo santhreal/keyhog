@@ -104,32 +104,27 @@ def build_model(num_features: int):
     return MoE(num_features)
 
 
-def train(X, y, num_features, epochs, seed, kinds):
+def _fit(X, y, tr, va, num_features, epochs, seed):
+    """Train a fresh MoE on indices `tr`, keeping the epoch whose F1 on the
+    selection indices `va` is best. Shared by the synthetic-only `train()` and
+    the blended (synthetic + real) path so both use identical optimiser, class
+    balancing, batch size, and keep-best-val-F1 selection."""
     import torch
 
     torch.manual_seed(seed)
-    rng = np.random.default_rng(seed)
-
-    n = len(y)
-    idx = rng.permutation(n)
-    split = int(n * 0.85)
-    tr, va = idx[:split], idx[split:]
-
     Xt = torch.from_numpy(X[tr])
     yt = torch.from_numpy(y[tr])
     Xv = torch.from_numpy(X[va])
-    yv = torch.from_numpy(y[va])
 
     model = build_model(num_features)
     opt = torch.optim.Adam(model.parameters(), lr=2e-3, weight_decay=1e-5)
-    bce = torch.nn.BCELoss()
 
     # class balance weight (corpus is ~balanced but be robust)
     pos_w = float((y[tr] == 0).sum()) / max(1.0, float((y[tr] == 1).sum()))
 
     best_f1, best_state = -1.0, None
     batch = 512
-    for epoch in range(epochs):
+    for _epoch in range(epochs):
         model.train()
         perm = torch.randperm(len(tr))
         for b in range(0, len(tr), batch):
@@ -137,9 +132,7 @@ def train(X, y, num_features, epochs, seed, kinds):
             xb, yb = Xt[sel], yt[sel]
             p = model(xb).clamp(1e-6, 1 - 1e-6)
             w = torch.where(yb > 0.5, torch.tensor(pos_w), torch.tensor(1.0))
-            loss = (
-                torch.nn.functional.binary_cross_entropy(p, yb, weight=w)
-            )
+            loss = torch.nn.functional.binary_cross_entropy(p, yb, weight=w)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -147,17 +140,125 @@ def train(X, y, num_features, epochs, seed, kinds):
         model.eval()
         with torch.no_grad():
             pv = model(Xv).numpy()
-        f1, p_, r_ = prf(pv, y[va], 0.5)
+        f1, _, _ = prf(pv, y[va], 0.5)
         if f1 > best_f1:
             best_f1 = f1
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
     model.load_state_dict(best_state)
     model.eval()
+    return model
+
+
+def train(X, y, num_features, epochs, seed, kinds):
+    """Synthetic-only training: random 85/15 split, report on the held-out 15%.
+    Unchanged behaviour — the blended real-distribution path is `train_blended`."""
+    import torch
+
+    rng = np.random.default_rng(seed)
+    n = len(y)
+    idx = rng.permutation(n)
+    split = int(n * 0.85)
+    tr, va = idx[:split], idx[split:]
+    model = _fit(X, y, tr, va, num_features, epochs, seed)
     with torch.no_grad():
-        pv = model(Xv).numpy()
-    metrics = report(pv, y[va], [kinds[i] for i in va])
-    return model, metrics
+        pv = model(torch.from_numpy(X[va])).numpy()
+    return model, report(pv, y[va], [kinds[i] for i in va])
+
+
+def load_real_corpus(path, num_features):
+    """Load harvested real records {text, context, label, kind, source_file}.
+    Returns (X, y, kinds, files); `files` drives the no-leakage grouped split."""
+    kp, sk, tk, pk = config_lists.DEFAULT_LISTS
+    with_decode = num_features == featmod.NUM_FEATURES
+    X, y, kinds, files = [], [], [], []
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            X.append(
+                featmod.compute_features(
+                    rec["text"], rec["context"], kp, sk, tk, pk, with_decode=with_decode
+                )
+            )
+            y.append(float(rec["label"]))
+            kinds.append(rec.get("kind", ""))
+            files.append(rec.get("source_file", ""))
+    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.float32), kinds, files
+
+
+def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
+    """Partition record indices into (train, val, test) by GROUPING on file so a
+    file's records never span splits — the only honest way to measure
+    generalisation to unseen real files (a random split would leak a repo's
+    secrets across train and test)."""
+    rng = np.random.default_rng(seed)
+    uniq = sorted(set(files))
+    rng.shuffle(uniq)
+    n = len(uniq)
+    a = int(n * fracs[0])
+    b = a + int(n * fracs[1])
+    train_f, val_f, test_f = set(uniq[:a]), set(uniq[a:b]), set(uniq[b:])
+    tr = np.array([i for i, f in enumerate(files) if f in train_f], dtype=np.int64)
+    va = np.array([i for i, f in enumerate(files) if f in val_f], dtype=np.int64)
+    te = np.array([i for i, f in enumerate(files) if f in test_f], dtype=np.int64)
+    return tr, va, te
+
+
+def real_eval(probs, labels, kinds, thr=0.5):
+    """Held-out real-distribution metrics. The headline is recall on real
+    positives clearing the 0.40 report floor — the number the synthetic-only
+    model failed (it scored real ambiguous secrets ~0.02)."""
+    f1, prec, rec = prf(probs, labels, thr)
+    pos = [float(probs[i]) for i, l in enumerate(labels) if l >= 0.5]
+    neg = [float(probs[i]) for i, l in enumerate(labels) if l < 0.5]
+    floor_recall = (
+        float(np.mean([1.0 if p >= 0.40 else 0.0 for p in pos])) if pos else float("nan")
+    )
+    return {
+        "real_f1": round(f1, 4),
+        "real_precision": round(prec, 4),
+        "real_recall": round(rec, 4),
+        "n_test": int(len(labels)),
+        "n_pos": len(pos),
+        "n_neg": len(neg),
+        "pos_mean_score": round(float(np.mean(pos)), 4) if pos else None,
+        "neg_mean_score": round(float(np.mean(neg)), 4) if neg else None,
+        "real_pos_recall_at_0.40_floor": round(floor_recall, 4),
+    }
+
+
+def train_blended(Xs, ys, kinds_s, Xr, yr, kinds_r, files_r, num_features, epochs, seed):
+    """Train on synthetic (breadth) + real-TRAIN, select on synthetic-val +
+    real-val, and report on a real-TEST held out by file (no leakage). Returns
+    (model, synthetic_val_metrics, real_heldout_metrics)."""
+    import torch
+
+    rng = np.random.default_rng(seed)
+    si = rng.permutation(len(ys))
+    ssplit = int(len(ys) * 0.85)
+    s_tr, s_va = si[:ssplit], si[ssplit:]
+    r_tr, r_va, r_te = _group_split(files_r, seed)
+
+    X = np.concatenate([Xs, Xr])
+    y = np.concatenate([ys, yr])
+    off = len(ys)
+    tr = np.concatenate([s_tr, r_tr + off])
+    va = np.concatenate([s_va, r_va + off])  # model selection (syn + real val)
+
+    model = _fit(X, y, tr, va, num_features, epochs, seed)
+    with torch.no_grad():
+        syn_val_p = model(torch.from_numpy(Xs[s_va])).numpy()
+        real_te_p = model(torch.from_numpy(Xr[r_te])).numpy() if len(r_te) else np.array([])
+    syn_metrics = report(syn_val_p, ys[s_va], [kinds_s[i] for i in s_va])
+    real_metrics = (
+        real_eval(real_te_p, yr[r_te], [kinds_r[i] for i in r_te])
+        if len(r_te)
+        else {"note": "no real test split"}
+    )
+    return model, syn_metrics, real_metrics
 
 
 def prf(probs, labels, thr):
@@ -268,14 +369,55 @@ def serialize(model, num_features: int) -> bytes:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", default="ml/data/corpus.jsonl")
+    ap.add_argument("--real-corpus", default=None,
+                    help="harvested real-distribution JSONL to blend in (Stage 2); "
+                         "enables the file-grouped real held-out eval")
     ap.add_argument("--out", default="crates/scanner/src/weights.bin")
     ap.add_argument("--features", type=int, default=42, choices=[41, 42])
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--seed", type=int, default=20260529)
     ap.add_argument("--compare", action="store_true", help="also train 41-feat baseline")
     ap.add_argument("--min-f1", type=float, default=0.85, help="refuse to write below this")
+    ap.add_argument("--min-real-recall", type=float, default=0.50,
+                    help="with --real-corpus, refuse to write if real held-out recall "
+                         "at the 0.40 report floor drops below this (recall-first gate)")
     ap.add_argument("--write", action="store_true", help="actually overwrite weights.bin")
     args = ap.parse_args()
+
+    if args.real_corpus:
+        # Stage 2: blend the real distribution in and measure on a file-grouped
+        # real held-out (no leakage). The F1 gate still uses the SYNTHETIC val
+        # (so breadth coverage cannot silently regress); the real held-out is
+        # the recall number that matters and is reported alongside.
+        Xs, ys, kinds_s = load_corpus(args.corpus, args.features)
+        Xr, yr, kinds_r, files_r = load_real_corpus(args.real_corpus, args.features)
+        sys.stderr.write(
+            f"[BLEND] synthetic={len(ys)} real={len(yr)} "
+            f"(real pos={int(yr.sum())} neg={int((yr == 0).sum())}, "
+            f"files={len(set(files_r))})\n"
+        )
+        model, metrics, real_metrics = train_blended(
+            Xs, ys, kinds_s, Xr, yr, kinds_r, files_r, args.features, args.epochs, args.seed
+        )
+        sys.stderr.write(f"[BLENDED syn-val {args.features}f] {json.dumps(metrics)}\n")
+        sys.stderr.write(f"[BLENDED real-held-out] {json.dumps(real_metrics)}\n")
+        sys.stderr.write(f"[PROBE] {json.dumps(probe(model, args.features))}\n")
+        blob = serialize(model, args.features)
+        sys.stderr.write(f"serialized {len(blob)} bytes ({len(blob) // 4} f32)\n")
+        if metrics["f1"] < args.min_f1:
+            sys.stderr.write(
+                f"REFUSING to write: synthetic val F1 {metrics['f1']:.4f} < floor {args.min_f1}\n"
+            )
+            return 1
+        real_floor = real_metrics.get("real_pos_recall_at_0.40_floor")
+        if isinstance(real_floor, float) and real_floor == real_floor and real_floor < args.min_real_recall:
+            sys.stderr.write(
+                f"REFUSING to write: real held-out recall@0.40 {real_floor:.4f} < floor "
+                f"{args.min_real_recall} (a retrain must not regress real-distribution recall)\n"
+            )
+            return 1
+        _write_weights(blob, args)
+        return 0
 
     if args.compare:
         for d in (41, 42):
@@ -297,6 +439,14 @@ def main() -> int:
         )
         return 1
 
+    _write_weights(blob, args)
+    return 0
+
+
+def _write_weights(blob: bytes, args) -> None:
+    """Write the serialized weights: `--write` overwrites the crate's
+    `weights.bin` (backing up the old one to `.bak`); otherwise a scratch file
+    next to the corpus, never touching the shipped crate."""
     if args.write:
         if os.path.exists(args.out):
             shutil.copy2(args.out, args.out + ".bak")
@@ -310,7 +460,6 @@ def main() -> int:
         with open(scratch, "wb") as fh:
             fh.write(blob)
         sys.stderr.write(f"wrote {scratch} (pass --write to update {args.out})\n")
-    return 0
 
 
 if __name__ == "__main__":

@@ -19,6 +19,13 @@ pub struct ScannerConfig {
     pub entropy_threshold: f64,
     /// Enable entropy-based detection in source code files
     pub entropy_in_source_files: bool,
+    /// Route entropy-fallback candidates through the MoE with the model
+    /// AUTHORITATIVE (no entropy-magnitude floor) instead of the bare entropy
+    /// heuristic. Mirrors `keyhog_core::config::ScanConfig::entropy_ml_authoritative`
+    /// and the CLI `--no-entropy-ml-scoring` opt-out. No-op unless both
+    /// `entropy_enabled` and `ml_enabled` are set. See `apply_ml_batch_scores`
+    /// and `scan_entropy_fallback`.
+    pub entropy_ml_authoritative: bool,
     /// Enable ML-based confidence scoring
     pub ml_enabled: bool,
     /// ML weight for confidence scoring, 0.0-1.0
@@ -199,6 +206,7 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
             entropy_enabled: config.entropy_enabled,
             entropy_threshold: config.entropy_threshold,
             entropy_in_source_files: config.entropy_in_source_files,
+            entropy_ml_authoritative: config.entropy_ml_authoritative,
             ml_enabled: config.ml_enabled,
             ml_weight: config.ml_weight,
             min_confidence: config.min_confidence,
@@ -237,6 +245,15 @@ pub struct MlPendingMatch {
     pub credential: String,
     /// Surrounding context passed to the ML scorer.
     pub ml_context: String,
+    /// When true, the MoE score is AUTHORITATIVE for this candidate: the final
+    /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
+    /// entropy-fallback candidates, whose "heuristic" is bare entropy magnitude -
+    /// exactly the signal that mislabels high-entropy non-secrets (FQDNs, git
+    /// SHAs, base64 blobs) as findings. Flooring by that heuristic (as the
+    /// detector path does, where the regex IS positive evidence) would defeat the
+    /// model's ability to suppress those FPs. Detector/generic matches set this
+    /// false and keep the heuristic floor. See `apply_ml_batch_scores`.
+    pub model_authoritative: bool,
 }
 
 /// Internal state for a single scan operation (tracks matches and ML cache).

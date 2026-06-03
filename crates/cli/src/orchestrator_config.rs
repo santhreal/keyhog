@@ -401,6 +401,10 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.entropy_threshold = threshold;
     }
     config.entropy_in_source_files = args.entropy_source_files;
+    // Entropy candidates are scored through the MoE (model authoritative) by
+    // default; `--no-entropy-ml-scoring` restores the legacy heuristic emit.
+    // No-op unless entropy + ML are both on (gated in scan_entropy_fallback).
+    config.entropy_ml_authoritative = !args.no_entropy_ml_scoring;
     config.scan_comments = args.scan_comments;
     config.ml_enabled = !args.fast && !args.no_ml;
     if let Some(weight) = args.ml_weight {
@@ -540,6 +544,11 @@ pub fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     let _ = writeln!(out, "ml_enabled = {}", resolved.ml_enabled);
     let _ = writeln!(out, "ml_weight = {}", s.ml_weight);
     let _ = writeln!(out, "entropy_enabled = {}", s.entropy_enabled);
+    let _ = writeln!(
+        out,
+        "entropy_ml_authoritative = {}",
+        s.entropy_ml_authoritative
+    );
     let _ = writeln!(out, "entropy_threshold = {}", s.entropy_threshold);
     let _ = writeln!(
         out,

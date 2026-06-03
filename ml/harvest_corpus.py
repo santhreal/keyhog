@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Stage 1 of the ML feedback loop: harvest REAL labeled training examples from
+the corpora keyhog is actually deployed against (CredData, homefield), so the
+MoE can be trained on the real distribution instead of synthetic data alone.
+
+Why: the model is trained only on `ml/corpus.py`'s synthetic generators and
+scores real-but-shape-ambiguous secrets (lowercase-heavy tokens, digit-run ids,
+symbol-laden passwords) near ~0.02 because it learned "junk-looking shape =
+non-secret" from synthetic negatives. Feeding it the real distribution — the
+actual candidates keyhog surfaces, labelled by ground truth — is the
+categorical fix.
+
+For each keyhog finding we emit a corpus record `{text, context, label, kind}`
+matching `ml/corpus.py`'s schema:
+  - text    : the finding's credential value (what the model scores)
+  - context : the SERVE ml_context — "file:{path}\n{±5-line window}" — a
+              byte-mirror of `crate::pipeline::local_context_window(.., line, 5)`
+              + the `file:` prefix, so train == serve.
+  - label   : ground-truth overlap (1 = overlaps a labelled positive secret,
+              0 = on a known file overlapping no positive). `ignore`/template
+              records are dropped (neither class).
+  - kind    : provenance, e.g. `real-creddata-pos` / `real-homefield-neg`.
+
+Run:
+  python3 ml/harvest_corpus.py --corpora creddata homefield \
+      --keyhog-bin <path-to-keyhog> --out ml/data/real_corpus.jsonl
+
+The split into train/held-out by file/repo (no leakage) is done downstream in
+train_classifier.py; this script only emits labelled records + their on-disk
+file so the splitter can group by it.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import sys
+from collections import Counter
+
+HERE = pathlib.Path(__file__).resolve().parent
+BENCH = HERE.parent / "benchmarks"
+sys.path.insert(0, str(BENCH))
+
+from bench.corpora.base import resolve_corpus  # noqa: E402
+from bench.scanners.base import resolve_scanner  # noqa: E402
+from bench.score import _build_file_index, _resolve_finding_file, overlap  # noqa: E402
+
+# Mirror of crate::types::ML_CONTEXT_RADIUS_LINES.
+ML_CONTEXT_RADIUS_LINES = 5
+
+
+def serve_context(file_label: str, abs_path: pathlib.Path, line: int) -> str:
+    """Reconstruct keyhog's serve ml_context for a finding: byte-mirror of
+    `local_context_window(text, line, 5)` (1-based line; an 11-line window
+    `\\n`-joined with no trailing newline; empty when the file has fewer lines
+    than the window start) prefixed with `file:{path}\\n` exactly as
+    `calculate_final_score` builds it."""
+    prefix = f"file:{file_label}\n"
+    if line <= 0:
+        return prefix
+    try:
+        text = abs_path.read_text(errors="replace")
+    except OSError:
+        return prefix
+    lines = text.split("\n")
+    lines_before = max(0, line - ML_CONTEXT_RADIUS_LINES - 1)
+    if lines_before >= len(lines):
+        return prefix  # window underflow → Rust returns ""
+    window = "\n".join(lines[lines_before : lines_before + (2 * ML_CONTEXT_RADIUS_LINES + 1)])
+    return prefix + window
+
+
+def harvest(corpus_name: str, keyhog_bin: str | None) -> list[dict]:
+    corpus = resolve_corpus(corpus_name)
+    records = corpus.records()
+    by_key, aliases = _build_file_index(records, corpus.file_root)
+
+    scanner = resolve_scanner("keyhog", binary=keyhog_bin) if keyhog_bin \
+        else resolve_scanner("keyhog")
+    if not scanner.available():
+        raise SystemExit(f"keyhog binary not found: {scanner.binary}")
+    findings, _stats = scanner.run(corpus.scan_root, scanner.default_config())
+
+    out: list[dict] = []
+    skipped_no_record = 0
+    skipped_ignore = 0
+    for f in findings:
+        value = f.get("value") or ""
+        if not value:
+            continue
+        fpath = f.get("file") or ""
+        key = _resolve_finding_file(fpath, aliases) if fpath else None
+        if key is None:
+            skipped_no_record += 1
+            continue  # no ground-truth record on this file → can't label
+        recs = by_key[key]
+        is_pos = any(r.label and not r.ignore and overlap(value, r.secret) for r in recs)
+        if not is_pos and any(r.ignore and overlap(value, r.secret) for r in recs):
+            skipped_ignore += 1
+            continue  # template/placeholder ground truth → neither class
+        label = 1 if is_pos else 0
+        line = f.get("line") or 0
+        out.append(
+            {
+                "text": value,
+                "context": serve_context(fpath, pathlib.Path(key), line),
+                "label": label,
+                "kind": f"real-{corpus_name}-{'pos' if label else 'neg'}",
+                # provenance for the no-leakage group split downstream
+                "source_file": key,
+            }
+        )
+    print(
+        f"[{corpus_name}] findings={len(findings)} emitted={len(out)} "
+        f"(pos={sum(r['label'] for r in out)} neg={sum(1 - r['label'] for r in out)}) "
+        f"skipped_no_record={skipped_no_record} skipped_ignore={skipped_ignore}",
+        file=sys.stderr,
+    )
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--corpora", nargs="+", default=["creddata"],
+                    help="corpus names to harvest (resolve_corpus)")
+    ap.add_argument("--keyhog-bin", default=None,
+                    help="keyhog binary (defaults to KEYHOG_BIN env / freshly built)")
+    ap.add_argument("--out", default="ml/data/real_corpus.jsonl")
+    args = ap.parse_args()
+
+    all_rows: list[dict] = []
+    for name in args.corpora:
+        try:
+            all_rows.extend(harvest(name, args.keyhog_bin))
+        except SystemExit:
+            raise
+        except Exception as exc:  # a single corpus failing must not lose the rest
+            print(f"[{name}] harvest FAILED: {exc}", file=sys.stderr)
+
+    out_path = pathlib.Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w") as fh:
+        for row in all_rows:
+            fh.write(json.dumps(row) + "\n")
+
+    kinds = Counter(r["kind"] for r in all_rows)
+    files = len({r["source_file"] for r in all_rows})
+    print(f"wrote {len(all_rows)} records across {files} files -> {out_path}")
+    for k, n in sorted(kinds.items()):
+        print(f"  {k}: {n}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

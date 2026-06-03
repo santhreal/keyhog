@@ -13,6 +13,7 @@ mod sanitise_tests {
             entropy_enabled: true,
             entropy_threshold: 4.5,
             entropy_in_source_files: false,
+            entropy_ml_authoritative: true,
             ml_enabled: false,
             ml_weight: 0.6,
             min_confidence: 0.3,

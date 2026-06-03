@@ -330,6 +330,14 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_entropy: bool,
 
+    /// Score entropy-fallback candidates with the bare entropy heuristic instead
+    /// of routing them through the MoE (the model is authoritative by default).
+    /// The default ML path is a recall-safe precision win on the
+    /// real-distribution-trained model; this opt-out restores the legacy
+    /// heuristic emit. No effect when `--no-entropy` or `--no-ml` is set.
+    #[arg(long)]
+    pub no_entropy_ml_scoring: bool,
+
     /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0).
     /// When raised above the resolved confidence floor it tightens the bar a
     /// generic/entropy finding must clear (composed via `.max()` in
