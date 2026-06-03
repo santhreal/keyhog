@@ -445,16 +445,45 @@ fn safetensors_extension_skipped_via_include_path() {
 }
 
 #[test]
-fn tar_extension_skipped_but_zip_extension_is_not() {
-    // SKIP_EXTENSIONS lists "tar" (no unpack branch handles it) but the
-    // comment explicitly keeps "zip" OUT so the archive-unpack branch can
-    // run. A text-bytes .zip won't unpack via openpack, but the point here
-    // is that .tar is skipped purely on extension.
+fn tar_archive_content_is_unpacked_and_scanned() {
+    // AUD-capability-1: `.tar` is NO LONGER skipped purely on extension. A real
+    // tarball is unpacked per-entry (mirroring the zip branch), so a secret
+    // committed inside it is found and the chunk path is the inner
+    // `<archive>//<entry>`. (`.tar` is the dominant Linux/cloud archive — docker
+    // layer exports, helm charts, source tarballs — so skipping it was a
+    // first-class recall hole.)
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("bundle.tar");
-    fs::write(&path, "plain text inside a .tar SECRET=skip_me").unwrap();
+
+    // Build a genuine ustar tarball holding one file with a secret body.
+    let mut builder = tar::Builder::new(Vec::new());
+    let body = b"SECRET=found_inside_tar_entry";
+    let mut header = tar::Header::new_ustar();
+    header.set_path("leak.env").unwrap();
+    header.set_size(body.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder.append(&header, &body[..]).unwrap();
+    let tar_bytes = builder.into_inner().unwrap();
+    fs::write(&path, &tar_bytes).unwrap();
+
     let chunks = scan_single_file(&path);
-    assert!(chunks.is_empty(), ".tar must be skipped by extension");
+    assert!(
+        !chunks.is_empty(),
+        ".tar must be unpacked and its entries scanned, not skipped by extension"
+    );
+    let body = combined_body(&chunks);
+    assert!(
+        body.contains("SECRET=found_inside_tar_entry"),
+        ".tar entry body must reach the scanner; got chunks: {chunks:#?}"
+    );
+    // The reported path is the inner archive entry, not the opaque container.
+    assert!(
+        chunks
+            .iter()
+            .any(|c| c.metadata.path.as_deref().is_some_and(|p| p.contains("//leak.env"))),
+        ".tar entry chunk must carry the `<archive>//<entry>` path; got chunks: {chunks:#?}"
+    );
 }
 
 #[test]

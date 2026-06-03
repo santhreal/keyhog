@@ -28,6 +28,10 @@
 
 //! Core types shared across all KeyHog crates.
 pub mod allowlist;
+/// Offline AWS account-ID decode + canary-token classification (single source
+/// of truth shared by the scanner's finding metadata and the verifier's
+/// suppress-live-verification-for-canaries gate).
+pub mod aws;
 /// ANSI-colored CLI startup banner with detector counts.
 pub mod banner;
 /// Configuration system for KeyHog scanning options.

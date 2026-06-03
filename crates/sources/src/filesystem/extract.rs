@@ -191,7 +191,38 @@ pub(super) fn process_entry(
             }
         }
         return;
-    } else if ext == "gz" || ext == "zst" || ext == "lz4" || ext == "sz" {
+    } else if ext == "tar" {
+        // Bare (uncompressed) `.tar`: unpack per-entry exactly as the zip
+        // branch does, so a secret committed inside a tarball (docker layer
+        // export, helm chart, source tarball — the dominant Linux/cloud
+        // archive) is found just like one inside a `.zip`. `emit_tar_entries`
+        // enforces the same per-entry size cap and 4x total-uncompressed
+        // (tar-bomb) budget as the zip branch.
+        if is_symlink(&path) {
+            tracing::warn!(
+                archive = %path.display(),
+                "refusing to open archive at a symlink path - \
+                 prevents the link-swap attack class"
+            );
+            return;
+        }
+        // `read_file_safe` opens with `O_NOFOLLOW` on Unix / `symlink_metadata`
+        // refusal on Windows, so an `--include`d `bundle.tar -> ~/.aws/...`
+        // symlink can't redirect the read to an off-tree target.
+        if let Ok(bytes) = read::read_file_safe(&path) {
+            // Guard against a non-tar file with a `.tar` extension: only untar
+            // when the ustar/GNU magic is actually present, otherwise fall
+            // through to the normal scan path so the bytes are still examined.
+            if looks_like_tar(&bytes) {
+                emit_tar_entries(&bytes, &display_path(&path), max_size, emit);
+                return;
+            }
+        }
+    } else if ext == "gz" || ext == "zst" || ext == "lz4" || ext == "sz" || ext == "tgz" {
+        // `.gz` / `.tar.gz` (ext `gz`) / `.tgz` / `.zst` / `.lz4` / `.sz`:
+        // fully decompress, then untar per-entry if the decompressed stream is
+        // a tar container, else scan the real decompressed bytes. (`.tgz` is
+        // removed from SKIP_EXTENSIONS so it reaches this branch.)
         extract_compressed_chunks(&path, max_size, emit);
         return;
     } else if ext == "har" {
@@ -339,74 +370,300 @@ pub(super) fn process_entry(
     }));
 }
 
+/// The single-stream compression format of a `.gz` / `.zst` / `.lz4` / `.sz`
+/// (or `.tgz`) file, inferred from its extension.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompressedFormat {
+    Gzip,
+    Zstd,
+    Lz4,
+    Snappy,
+}
+
+impl CompressedFormat {
+    fn from_ext(ext: &str) -> Self {
+        match ext {
+            // `.tgz` is `gzip(tar)`; the outer stream is always gzip.
+            "gz" | "tgz" => CompressedFormat::Gzip,
+            "zst" => CompressedFormat::Zstd,
+            "lz4" => CompressedFormat::Lz4,
+            _ => CompressedFormat::Snappy,
+        }
+    }
+}
+
+/// Fully decompress `compressed` into the TRUE decompressed byte stream,
+/// stopping once `budget` bytes have been produced (the 4x zip-bomb guard).
+///
+/// This replaces the old `ziftsieve::extract_from_bytes(..).literals()`
+/// reassembly, which only emitted DEFLATE *literal* runs (ziftsieve is a bloom
+/// PREFILTER: it deliberately drops LZ77 back-references) and spliced a
+/// synthetic `\n` between blocks — so a credential that spanned a back-
+/// reference or a block boundary was torn and never reached the scanner. A
+/// real `flate2`/`zstd`/`lz4`/`snap` decode resolves every back-reference and
+/// yields the exact original bytes.
+///
+/// Returns `None` if the stream is not valid for the declared format. A
+/// truncated-at-budget decode returns the bytes produced so far (`Some`) so an
+/// oversize-but-valid archive still surfaces the secrets in its first 4x slice.
+fn decompress_to_bytes(format: CompressedFormat, compressed: &[u8], budget: usize) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+
+    // Cap the *reader* at `budget + 1` bytes: one over the budget so the caller
+    // can tell "hit the cap" from "exactly fit". Every decoder below streams,
+    // so a decompression bomb can never allocate beyond this ceiling.
+    let take_limit = (budget as u64).saturating_add(1);
+    let mut out = Vec::new();
+    let read_result = match format {
+        CompressedFormat::Gzip => {
+            // MultiGzDecoder: stock `gzip -c` of multiple files, and some tools,
+            // emit concatenated gzip members; the plain GzDecoder stops after
+            // the first member and would silently drop the rest.
+            let mut dec = flate2::read::MultiGzDecoder::new(compressed).take(take_limit);
+            dec.read_to_end(&mut out)
+        }
+        CompressedFormat::Zstd => match zstd::stream::read::Decoder::new(compressed) {
+            Ok(dec) => dec.take(take_limit).read_to_end(&mut out),
+            Err(e) => Err(e),
+        },
+        CompressedFormat::Lz4 => {
+            let mut dec = lz4_flex::frame::FrameDecoder::new(compressed).take(take_limit);
+            dec.read_to_end(&mut out)
+        }
+        CompressedFormat::Snappy => {
+            let mut dec = snap::read::FrameDecoder::new(compressed).take(take_limit);
+            dec.read_to_end(&mut out)
+        }
+    };
+
+    match read_result {
+        Ok(_) => Some(out),
+        // A premature-EOF / decode error after producing some bytes still leaves
+        // the decoded prefix in `out`; scan what we recovered rather than drop
+        // the whole file (a torn tail must not hide an intact secret in the
+        // head). A hard format mismatch with zero output returns None.
+        Err(_) if !out.is_empty() => Some(out),
+        Err(_) => None,
+    }
+}
+
+/// True when `data` is (very likely) a POSIX/ustar/GNU tar stream. A tar header
+/// block is 512 bytes with the magic `ustar` at offset 257. We require at least
+/// one full header block and the magic, which no plain text/JSON/PEM file
+/// carries at that fixed offset.
+fn looks_like_tar(data: &[u8]) -> bool {
+    data.len() >= 512 && (&data[257..262] == b"ustar" || &data[257..265] == b"ustar  \0")
+}
+
+/// Untar an already-decompressed (or raw `.tar`) byte stream and emit one chunk
+/// per regular file entry, tagged with the inner `archive//entry` path so the
+/// reported location is the file inside the tarball, not the opaque container.
+/// Enforces the same per-entry size cap and 4x total-uncompressed budget as the
+/// zip branch.
+fn emit_tar_entries(
+    tar_bytes: &[u8],
+    container_display: &str,
+    max_size: u64,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    use std::io::Read as _;
+
+    let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
+    let entries = match archive.entries() {
+        Ok(e) => e,
+        Err(error) => {
+            tracing::warn!(archive = %container_display, %error, "failed to read tar entries");
+            return;
+        }
+    };
+
+    let total_budget: u64 = max_size.saturating_mul(4);
+    let mut total_uncompressed: u64 = 0;
+
+    for entry in entries {
+        let mut entry = match entry {
+            Ok(e) => e,
+            Err(error) => {
+                tracing::warn!(archive = %container_display, %error, "skipping unreadable tar entry");
+                continue;
+            }
+        };
+
+        // Only regular files carry content; skip dirs, symlinks, hardlinks,
+        // devices, fifos. (A tar symlink entry has no body to read, and we
+        // never follow it to a target on disk — no link-swap surface.)
+        if entry.header().entry_type() != tar::EntryType::Regular {
+            continue;
+        }
+
+        let entry_size = entry.header().size().unwrap_or(0);
+        let entry_name = entry
+            .path()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<tar-entry>".to_string());
+
+        if super::filter::is_default_excluded(&entry_name) {
+            continue;
+        }
+        if max_size > 0 && entry_size > max_size {
+            tracing::warn!(
+                archive = %container_display,
+                entry = %entry_name,
+                size = entry_size,
+                "skipping tar entry: uncompressed size exceeds per-file cap"
+            );
+            continue;
+        }
+        total_uncompressed = total_uncompressed.saturating_add(entry_size);
+        if total_budget > 0 && total_uncompressed > total_budget {
+            tracing::warn!(
+                archive = %container_display,
+                "aborting tar extraction: total uncompressed size exceeds 4x file cap (tar-bomb guard)"
+            );
+            break;
+        }
+
+        let mut content: Vec<u8> = Vec::with_capacity(entry_size.min(max_size.max(1)) as usize);
+        // Bound the read at the per-file cap even if the header lies about size.
+        let read_cap = if max_size > 0 { max_size } else { u64::MAX };
+        if entry.by_ref().take(read_cap).read_to_end(&mut content).is_err() {
+            tracing::warn!(archive = %container_display, entry = %entry_name, "failed to read tar entry body");
+            continue;
+        }
+
+        let entry_path = format!("{container_display}//{entry_name}");
+        let chunk = match String::from_utf8(content) {
+            Ok(s) if !s.is_empty() => Some(Ok(Chunk {
+                data: s.into(),
+                metadata: ChunkMetadata {
+                    source_type: "filesystem/archive".into(),
+                    path: Some(entry_path),
+                    ..Default::default()
+                },
+            })),
+            Ok(_) => None,
+            Err(error) => {
+                let bytes = error.into_bytes();
+                let strings = crate::strings::extract_printable_strings(&bytes, 8);
+                if strings.is_empty() {
+                    None
+                } else {
+                    Some(Ok(Chunk {
+                        data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                        metadata: ChunkMetadata {
+                            source_type: "filesystem/archive-binary".into(),
+                            path: Some(entry_path),
+                            ..Default::default()
+                        },
+                    }))
+                }
+            }
+        };
+        if let Some(chunk) = chunk {
+            if !emit(chunk) {
+                return;
+            }
+        }
+    }
+}
+
+/// Decompress a `.gz` / `.zst` / `.lz4` / `.sz` / `.tgz` file to its TRUE
+/// decompressed bytes, then either untar it (when the decompressed stream is a
+/// tar container — `.tgz`, `.tar.gz`, `.tar.zst`, …) or scan it as a single
+/// decompressed file. This is the per-file entry point routed from
+/// `process_entry`.
 fn extract_compressed_chunks(
     path: &Path,
     max_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
+    // Refuse to open a compressed container that is itself a symlink — same
+    // link-swap defense the zip branch applies before reading.
+    if is_symlink(path) {
+        tracing::warn!(
+            path = %path.display(),
+            "refusing to open compressed file at a symlink path (link-swap guard)"
+        );
+        return;
+    }
+
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    let format = match ext.as_str() {
-        "gz" => ziftsieve::CompressionFormat::Gzip,
-        "zst" => ziftsieve::CompressionFormat::Zstd,
-        "lz4" => ziftsieve::CompressionFormat::Lz4,
-        _ => ziftsieve::CompressionFormat::Snappy,
-    };
+    let format = CompressedFormat::from_ext(&ext);
 
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(b) => b,
         None => return,
     };
-    let bytes = file_bytes.as_slice();
+    let compressed = file_bytes.as_slice();
     let total_budget: usize = max_size.saturating_mul(4) as usize;
+    let budget = if total_budget == 0 {
+        // max_size==0 means "no cap"; still bound the decode so a bomb cannot
+        // OOM the process. 1 GiB is far above any real source file.
+        1024 * 1024 * 1024
+    } else {
+        total_budget
+    };
 
-    if let Ok(blocks) = ziftsieve::extract_from_bytes(format, bytes) {
-        let mut current_chunk_literals = String::new();
-        let mut total_decompressed: usize = 0;
-        let path_display = display_path(path);
-        for block in blocks {
-            if let Ok(s) = std::str::from_utf8(block.literals()) {
-                total_decompressed = total_decompressed.saturating_add(s.len());
-                if total_decompressed > total_budget {
-                    tracing::warn!(
-                        path = %path.display(),
-                        bytes = total_decompressed,
-                        cap = total_budget,
-                        "aborting compressed extraction: total decompressed size exceeds 4x file cap (gzip-bomb guard)"
-                    );
-                    break;
-                }
-                current_chunk_literals.push_str(s);
-                current_chunk_literals.push('\n');
-            }
-
-            if current_chunk_literals.len() > 8 * 1024 * 1024 {
-                if !emit(Ok(Chunk {
-                    data: std::mem::take(&mut current_chunk_literals).into(),
-                    metadata: ChunkMetadata {
-                        source_type: "filesystem/compressed".into(),
-                        path: Some(path_display.clone()),
-                        ..Default::default()
-                    },
-                })) {
-                    return;
-                }
-            }
+    let decompressed = match decompress_to_bytes(format, compressed, budget) {
+        Some(d) => d,
+        None => {
+            tracing::warn!(path = %path.display(), "failed to decompress file; skipping");
+            return;
         }
-        if !current_chunk_literals.is_empty() {
-            let _ = emit(Ok(Chunk {
-                data: current_chunk_literals.into(),
-                metadata: ChunkMetadata {
-                    source_type: "filesystem/compressed".into(),
-                    path: Some(path_display),
-                    ..Default::default()
-                },
-            }));
-        }
+    };
+    if decompressed.len() >= budget {
+        tracing::warn!(
+            path = %path.display(),
+            bytes = decompressed.len(),
+            cap = budget,
+            "compressed extraction hit the 4x decompressed-size cap (zip-bomb guard); scanning the truncated prefix"
+        );
     }
+
+    let path_display = display_path(path);
+
+    // `.tgz` is unconditionally a tarball; for the other extensions sniff the
+    // decompressed bytes (a `foo.tar.gz` arrives as ext `gz`). When it is a tar,
+    // untar per-entry so each inner file is scanned whole with its real path,
+    // instead of feeding the scanner the raw 512-byte-header-interleaved tar
+    // framing (which tore the credential and reported the wrong path).
+    if ext == "tgz" || looks_like_tar(&decompressed) {
+        emit_tar_entries(&decompressed, &path_display, max_size, emit);
+        return;
+    }
+
+    // Plain compressed single file: scan the real decompressed text. Binary
+    // payloads fall back to printable-string extraction, matching the
+    // uncompressed filesystem path.
+    let (data, source_type) = match String::from_utf8(decompressed) {
+        Ok(s) if !s.is_empty() => (s.into(), "filesystem/compressed"),
+        Ok(_) => return,
+        Err(error) => {
+            let bytes = error.into_bytes();
+            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            if strings.is_empty() {
+                return;
+            }
+            (
+                keyhog_core::SensitiveString::join(&strings, "\n"),
+                "filesystem/compressed-binary",
+            )
+        }
+    };
+
+    let _ = emit(Ok(Chunk {
+        data,
+        metadata: ChunkMetadata {
+            source_type: source_type.into(),
+            path: Some(path_display),
+            ..Default::default()
+        },
+    }));
 }
 
 /// Read the mtime as nanoseconds-since-UNIX-epoch via a single `stat`.

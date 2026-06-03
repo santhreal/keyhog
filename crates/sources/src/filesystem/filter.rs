@@ -31,13 +31,16 @@ const SKIP_EXTENSIONS: &[&str] = &[
     "wav",
     "ogg",
     "webm",
-    // Archives (binary - secrets inside are caught by archive source, not filesystem)
-    "tar",
-    // gz / zst / lz4 / sz are handled by `extract_compressed_chunks`
-    // below, NOT skipped - earlier versions had them in this list,
-    // which silently bypassed the streaming-decompression path. See
-    // the dispatch in `extract::process_entry` for the actual decoder routing.
-    "tgz",
+    // Archives (binary). `tar` / `gz` / `zst` / `lz4` / `sz` / `tgz` are NOT
+    // skipped - they are handled by the unpack / streaming-decompression path
+    // in `extract::process_entry`. `tar` routes to the per-entry tar-unpack
+    // branch (mirroring the zip branch): each archived file becomes its own
+    // chunk with source_type `filesystem/archive` and path `<archive>//<entry>`,
+    // so a secret committed inside a `.tar` (docker layer export, helm chart,
+    // source tarball) is found exactly as it is inside a `.zip`. `tgz`
+    // (gzip(tar)) is decompressed then untarred per-entry. Dropping these from
+    // the skip list is what lets them reach the decoder branch. Earlier
+    // versions skipped them here, silently bypassing extraction - a recall bug.
     "bz2",
     "xz",
     "rar",
@@ -48,8 +51,8 @@ const SKIP_EXTENSIONS: &[&str] = &[
     // listing the zip extension here made a .zip return empty before
     // extraction ever ran - a recall bug where a secret in a committed .zip
     // was silently missed (.jar, in neither list, worked on identical bytes).
-    // Dogfood 2026-05-29. The tar/7z/rar extensions stay skipped: no unpack
-    // branch handles them.
+    // Dogfood 2026-05-29. The 7z/rar extensions stay skipped: no unpack
+    // branch handles them yet.
     // Native binaries
     "exe",
     "dll",

@@ -312,6 +312,16 @@ impl ScanOrchestrator {
             .iter()
             .any(|f| matches!(f.verification, VerificationResult::Live));
 
+        // `--stream`: emit one redacted `[stream]` preview per REPORTED finding.
+        // Wired to the resolved report stream (post filter_and_resolve /
+        // suppression / --min-confidence / baseline) rather than the raw scanner
+        // matches, so a streamed line always corresponds to a finding the report
+        // and exit code agree on. (AUD-testing_dogfood-1: the old wiring streamed
+        // raw matches the report later dropped, lying about the result.)
+        if self.args.stream {
+            super::reporting::stream_report_previews(&report_findings);
+        }
+
         crate::reporting::report_findings(&report_findings, &self.args)?;
 
         let elapsed = start.elapsed().as_secs_f64();

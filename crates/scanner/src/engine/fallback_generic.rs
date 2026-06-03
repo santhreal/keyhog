@@ -158,17 +158,21 @@ impl CompiledScanner {
                     continue;
                 };
                 let value = value_match.as_str();
-                // Entropy gate: reject low-entropy values (variable names, prose)
+                // Entropy gate: reject low-entropy values (variable names, prose).
+                // Routed through the SINGLE threshold-aware
+                // `generic_entropy_floor` helper (engine/scan_filters.rs) — the
+                // same source of truth the named-detector generic path uses — so
+                // the per-length base floor (2.8 / 3.2 / 3.5 at the default) is
+                // identical AND the operator's Tier-A `--entropy-threshold`
+                // tightens this gate too. Raising the knob above its 4.5 default
+                // lifts the floor to that bits/byte value, suppressing values
+                // below it.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
-                // Per-length entropy floor: short tokens (API keys) have lower
-                // entropy than long random strings. A blanket 3.5 misses them.
-                let min_entropy = if value.len() <= 24 {
-                    2.8
-                } else if value.len() <= 40 {
-                    3.2
-                } else {
-                    3.5
-                };
+                let min_entropy = super::scan_filters::generic_entropy_floor(
+                    self.config.entropy_threshold,
+                    "generic-secret",
+                    value.len(),
+                );
                 if entropy < min_entropy {
                     continue;
                 }

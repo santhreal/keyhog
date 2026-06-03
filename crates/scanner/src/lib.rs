@@ -7,6 +7,8 @@
 #![allow(clippy::too_many_arguments)]
 
 // ── Public API ──────────────────────────────────────────────────────
+/// Offline AWS account-ID recovery from an access-key ID (no network/verify).
+pub mod aws;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
 /// Detector compilation into high-performance matching structures.

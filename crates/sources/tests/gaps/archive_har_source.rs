@@ -41,7 +41,9 @@
 //!       - `gz|zst|lz4|sz` -> `extract_compressed_chunks`, source_type
 //!         `filesystem/compressed`, 4x decompressed budget guard
 //!         (extract.rs:194-196,342-410).
-//!       - `tar` is in SKIP_EXTENSIONS (no unpack branch) -> 0 chunks.
+//!       - `tar` is unpacked per-entry (mirroring the zip branch): each entry
+//!         becomes a `filesystem/archive` chunk with path `"{archive}//{name}"`
+//!         (AUD-capability-1). It is no longer skipped by extension.
 
 use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;

@@ -92,6 +92,17 @@ pub fn decode_chunk(
     deadline: Option<std::time::Instant>,
     screen: Option<&crate::alphabet_filter::AlphabetScreen>,
 ) -> Vec<Chunk> {
+    // NOTE: a blanket `has_decodable_payload` early-out was tried here
+    // (AUD-speed-2) and reverted: that predicate only recognises base64/hex
+    // alphabet runs, but the pipeline also runs URL/percent, HTML-entity,
+    // hex/octal/unicode-escape, MIME-word, quoted-printable and JSON decoders
+    // whose triggers it does not cover. Gating the whole fan-out on it silently
+    // dropped ~7% of credentials under structured-format wrapping
+    // (`every_contract_positive_fires_under_every_format_wrapper`). A correct
+    // superset gate fires on `% & \ " { =` — which saturate real source — so it
+    // buys almost nothing; the genuine cost (Caesar's 25× fan-out over the full
+    // chunk) belongs gated at the Caesar decoder on its own alphabetic-run
+    // precondition, not as a pipeline-wide recall hazard.
     let mut decoded_chunks = Vec::new();
     let mut queue = VecDeque::from([(chunk.clone(), 0usize)]);
     // Use hash of data instead of full string to save memory on large files.

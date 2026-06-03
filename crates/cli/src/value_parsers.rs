@@ -176,6 +176,26 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
     }
 }
 
+/// `keyhog detectors [list]`: the optional positional verb. `detectors`
+/// already lists by default, so the only accepted verb is the explicit,
+/// historically-documented `list` (case-insensitive) - it makes
+/// `keyhog detectors list` a clean no-op alias for `keyhog detectors`
+/// instead of a clap `unexpected argument 'list'` error. Any other token is a
+/// typo and must be rejected loudly rather than silently swallowed, so the
+/// operator gets a precise message instead of a misparsed flag value.
+pub fn parse_detectors_verb(s: &str) -> Result<String, String> {
+    if s.eq_ignore_ascii_case("list") {
+        Ok("list".to_string())
+    } else {
+        Err(format!(
+            "unknown verb '{s}'. `keyhog detectors` lists detectors by default; \
+             the only accepted positional verb is `list`. Use \
+             `keyhog detectors --detectors <DIR>` (optionally `--search`, \
+             `--audit`, `--fix`, `--json`)."
+        ))
+    }
+}
+
 /// Parse a severity string into the CLI filter enum. Shared by the flat
 /// top-level `severity` field and the `[scan]` nested table in `.keyhog.toml`
 /// so both surfaces accept identical spellings (one source of truth).

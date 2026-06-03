@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Architecture · keyhog</title>
-  <meta name="description" content="How keyhog compiles 891 detectors into a single Hyperscan database and routes scans to the fastest backend.">
+  <meta name="description" content="How keyhog compiles 899 detectors into a single Hyperscan database and routes scans to the fastest backend.">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -83,7 +83,7 @@
   <li><strong>Hardware probe.</strong> <code>cpufeatures</code> for SIMD,
   <code>wgpu::Instance::enumerate_adapters</code> for GPUs.
   Result cached for the process lifetime.</li>
-  <li><strong>Detector load.</strong> 891 TOML files compiled in at build
+  <li><strong>Detector load.</strong> 899 TOML files compiled in at build
   time via the <code>build.rs</code> embedding (auto-bundled in <code>keyhog-core</code>; no feature flag). Disk-resident
   <code>detectors/</code> overrides the embedded set when present.</li>
   <li><strong>Database compile.</strong> All regexes feed into
@@ -97,7 +97,7 @@
 
 <h2>Two-phase coalesced scan</h2>
 
-<p>Naive multi-pattern regex blows up at 891 detectors. The trick is to
+<p>Naive multi-pattern regex blows up at 899 detectors. The trick is to
 split the work:</p>
 
 <p><strong>Phase 1 — broad-spectrum NFA over all files.</strong> Hyperscan

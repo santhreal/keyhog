@@ -91,6 +91,52 @@ pub fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<String, 
     Some(out)
 }
 
+/// Wire the structural analysis of `credential` into a finding's `metadata`
+/// map. Returns `None` when `credential` is not a parseable JWT (so non-JWT
+/// findings carry no JWT keys); otherwise returns the claim evidence the
+/// module doc promises - `jwt.alg`, and any of `jwt.iss` / `jwt.sub` /
+/// `jwt.aud` / `jwt.exp` that are present - PLUS every anomaly key from
+/// [`anomalies_to_metadata`] (notably `jwt.alg_none` for an unsigned forgery).
+///
+/// This is the single, shared bridge between the fully-built [`analyze`] and
+/// the scan output: the in-process finalize, the verify skip branch, and the
+/// daemon-route finalize all call it, so the JWT evidence reaches the operator
+/// regardless of route (no `jwt.alg_none` divergence between in-process and
+/// daemon). The keys use a `String`/`String` shape so a `VerifiedFinding`'s
+/// `HashMap<String, String>` metadata can absorb them directly.
+pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<String, String>> {
+    let analysis = analyze(credential)?;
+    let mut meta = std::collections::HashMap::new();
+
+    // The algorithm is the primary structural evidence and is always present
+    // (`analyze` substitutes `<missing>` when the header omits it), so surface
+    // it unconditionally for any real JWT.
+    meta.insert("jwt.alg".to_string(), analysis.alg.clone());
+    if let Some(iss) = &analysis.iss {
+        meta.insert("jwt.iss".to_string(), iss.clone());
+    }
+    if let Some(sub) = &analysis.sub {
+        meta.insert("jwt.sub".to_string(), sub.clone());
+    }
+    if let Some(aud) = &analysis.aud {
+        meta.insert("jwt.aud".to_string(), aud.clone());
+    }
+    if let Some(exp) = analysis.exp {
+        meta.insert("jwt.exp".to_string(), exp.to_string());
+    }
+
+    // Anomaly keys (jwt.alg_none / jwt.unknown_alg / jwt.non_standard_typ /
+    // jwt.expired). The dedicated `alg=none` key is the load-bearing security
+    // signal: an unsigned, trivially forgeable token.
+    if let Some(anomalies) = anomalies_to_metadata(&analysis) {
+        for (k, v) in anomalies {
+            meta.insert(k, v);
+        }
+    }
+
+    Some(meta)
+}
+
 /// Returns `true` when `s` looks like a JWT (three base64url segments).
 /// Cheap shape check - does NOT decode.
 pub fn looks_like_jwt(s: &str) -> bool {
