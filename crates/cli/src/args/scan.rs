@@ -338,6 +338,16 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_entropy_ml_scoring: bool,
 
+    /// Require high entropy even for credential-keyword-anchored values
+    /// (`PASSWORD=`, `*_PASS=`, `secret:`, `api_key=` ...). By default the
+    /// keyword key is treated as the evidence and the value is admitted on a far
+    /// lower entropy floor (precision carried by the MoE), which is what surfaces
+    /// real-world low-entropy config passwords. This opt-out restores the
+    /// high-entropy-only generic gate (higher precision, much lower recall on
+    /// real corpora). No effect unless the generic keyword bridge fires.
+    #[arg(long)]
+    pub no_keyword_low_entropy: bool,
+
     /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0).
     /// When raised above the resolved confidence floor it tightens the bar a
     /// generic/entropy finding must clear (composed via `.max()` in

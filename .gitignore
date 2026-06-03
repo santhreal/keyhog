@@ -2,6 +2,9 @@
 target/
 **/*.rs.bk
 Cargo.lock.bak
+# Transient model rollback copy written by ml/retrain_loop.sh --write. The
+# shipped model is weights.bin; the .bak is local-only and never committed.
+crates/scanner/src/weights.bin.bak
 
 # IDE / editor noise
 .vscode/

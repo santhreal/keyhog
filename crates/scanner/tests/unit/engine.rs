@@ -224,6 +224,97 @@ fn scan_filters_generic_assignment_accepts_dotted_and_dashed_keys() {
     }
 }
 
+// CredData's dominant credential-env shape is `*_PASS=` (GRAPHITE_PASS,
+// JENKINS_PASS, DB_PASS, …). The bridge keyword list historically had
+// `password`/`passwd`/`pwd` but not the bare `pass` abbreviation, so these were
+// never surfaced as candidates — a real recall hole on the home-turf corpus.
+// `pass` is now in the list, made safe by the whole-word left boundary in
+// GENERIC_RE. The value below has entropy above the generic-secret floor (2.8)
+// but below the standalone entropy-fallback bar, so it is reachable ONLY through
+// the keyword bridge — which isolates the keyword change from the entropy path.
+#[test]
+fn generic_assignment_bridges_bare_pass_abbreviation() {
+    let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
+    let value = "k7m2p9q4t6w1x8z3v5";
+    for key in ["GRAPHITE_PASS", "DB_PASS", "jenkins_pass", "ses.pass"] {
+        let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\"")));
+        assert!(
+            matches.iter().any(|m| m.credential.as_ref() == value),
+            "{key} (bare `pass` key) should bridge to the generic-secret fallback"
+        );
+    }
+}
+
+// Boundary twin: `pass` must match as a whole word, never as the tail of
+// `bypass`/`compass`/`encompass`. Same value as the positive test, which the
+// standalone entropy path will not promote on its own — so a match here would
+// mean the boundary leaked and `bypass`/`compass` are firing as `pass`.
+#[test]
+fn generic_assignment_bare_pass_respects_word_boundary() {
+    let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
+    let value = "k7m2p9q4t6w1x8z3v5";
+    for key in ["BYPASS", "COMPASS", "encompass"] {
+        let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\"")));
+        assert!(
+            !matches.iter().any(|m| m.credential.as_ref() == value),
+            "{key} ends in `pass` but is not a credential key; must stay silent"
+        );
+    }
+}
+
+// The `generic_keyword_low_entropy` knob must be load-bearing: a
+// keyword-anchored value whose entropy sits BELOW the high `generic-secret`
+// floor (2.8) but ABOVE the relaxed `generic-keyword-secret` floor (1.5) is the
+// real-world low-entropy credential class (config passwords). With the knob on
+// (default) it must surface; with `--no-keyword-low-entropy` it must be gated
+// out. ML is disabled and the confidence floor dropped so the test isolates the
+// entropy-floor decision from the MoE scoring stage.
+#[test]
+fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
+    // `q7q4m7k4p2`: 6 distinct symbols (q,7,4 twice; m,k,p once) => ~2.4 bits/byte,
+    // inside the (1.5, 2.8) window that distinguishes the relaxed keyword floor
+    // from the high generic-secret floor. 10 chars (length gate), 6 distinct
+    // (clears the low-diversity placeholder filter that an `aabbccdd`-style value
+    // trips), no other shape-filter triggers, longest run 1. Verified to toggle
+    // end-to-end via `--no-keyword-low-entropy` on the real binary.
+    let value = "q7q4m7k4p2";
+    let line = format!("PASSWORD = \"{value}\"");
+
+    let relaxed = CompiledScanner::compile(vec![demo_detector()])
+        .unwrap()
+        .with_config(keyhog_scanner::ScannerConfig {
+            generic_keyword_low_entropy: true,
+            ml_enabled: false,
+            min_confidence: 0.0,
+            ..Default::default()
+        });
+    assert!(
+        relaxed
+            .scan(&chunk(&line))
+            .iter()
+            .any(|m| m.credential.as_ref() == value),
+        "with generic_keyword_low_entropy on, a low-entropy keyword-anchored \
+         value must surface"
+    );
+
+    let strict = CompiledScanner::compile(vec![demo_detector()])
+        .unwrap()
+        .with_config(keyhog_scanner::ScannerConfig {
+            generic_keyword_low_entropy: false,
+            ml_enabled: false,
+            min_confidence: 0.0,
+            ..Default::default()
+        });
+    assert!(
+        !strict
+            .scan(&chunk(&line))
+            .iter()
+            .any(|m| m.credential.as_ref() == value),
+        "with --no-keyword-low-entropy the high generic-secret floor must gate \
+         the same low-entropy value out"
+    );
+}
+
 // ── engine/segment_attribution.rs ───────────────────────────────────
 // Covered in segment_attribution.rs unit module.
 

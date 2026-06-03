@@ -75,6 +75,13 @@ pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
     "password",
     "passwd",
     "pwd",
+    // Bare `pass` (covers `*_PASS=`, the dominant CredData credential-env
+    // pattern). This is only the line PREFILTER; the GENERIC_RE bridge in
+    // fallback_generic.rs applies a whole-word left boundary so `bypass=` /
+    // `compass=` are not promoted to findings. `pass` substring-covers the
+    // `password`/`passwd`/`passphrase` lines above too — those entries are kept
+    // for self-documentation.
+    "pass",
     "token",
     "apikey",
     "api_key",
@@ -236,6 +243,16 @@ pub(super) fn generic_entropy_floor(
         "generic-secret" if credential_len <= 24 => 2.8,
         "generic-secret" if credential_len <= 40 => 3.2,
         "generic-secret" => 3.5,
+        // Keyword-anchored generic bridge (`PASSWORD=`, `*_PASS=`, `secret:`,
+        // `api_key=` ...). The credential KEYWORD in the key is itself strong
+        // evidence, so the entropy bar is far lower than the bare
+        // `generic-secret` path: real CredData passwords (`gjbubxsu`, `krbykalt`)
+        // sit at ~2.0-2.8 bits and were lost wholesale to the 2.8/3.2/3.5 floor,
+        // pinning real-world recall near 0.09. Precision on this relaxed surface
+        // is carried by the MoE (retrained on these candidates) and the shape
+        // filters, NOT by entropy. Honors the operator's `--entropy-threshold`
+        // exactly like the other arms (the `base.max(threshold)` below).
+        "generic-keyword-secret" => 1.5,
         // Default: original threshold
         _ => 3.5,
     };

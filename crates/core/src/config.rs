@@ -29,6 +29,18 @@ pub struct ScanConfig {
     /// No-op when `entropy_enabled` or `ml_enabled` is false.
     #[serde(default = "default_entropy_ml_authoritative")]
     pub entropy_ml_authoritative: bool,
+    /// When the generic keyword bridge (`PASSWORD=`, `*_PASS=`, `secret:`,
+    /// `api_key=` ...) extracts a value, admit it on a far lower entropy floor
+    /// (the `generic-keyword-secret` base, ~1.5 bits) than the bare
+    /// `generic-secret` path (2.8/3.2/3.5). The credential KEYWORD in the key is
+    /// the evidence; precision is carried by the MoE + shape filters, not by
+    /// entropy. Default on: this is what lets keyhog surface the real-world
+    /// low-entropy credentials (config passwords, `*_PASS=` values) that pin
+    /// CredData recall near zero when gated on entropy alone. Opt out with
+    /// `--no-keyword-low-entropy` to restore the high-entropy-only generic gate.
+    /// No-op unless the keyword bridge fires.
+    #[serde(default = "default_generic_keyword_low_entropy")]
+    pub generic_keyword_low_entropy: bool,
     /// Shannon entropy threshold (typical secrets are 4.5+).
     pub entropy_threshold: f64,
     /// Minimum length for entropy-based secret detection.
@@ -100,6 +112,13 @@ fn default_entropy_ml_authoritative() -> bool {
     true
 }
 
+/// Serde default for [`ScanConfig::generic_keyword_low_entropy`]: configs that
+/// predate the field get the shipped default (on) rather than `bool`'s `false`,
+/// so old TOMLs don't silently fall back to the high-entropy-only generic gate.
+fn default_generic_keyword_low_entropy() -> bool {
+    true
+}
+
 /// Errors returned while validating a scan configuration.
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -129,6 +148,7 @@ impl Default for ScanConfig {
             entropy_enabled: true,
             entropy_in_source_files: false,
             entropy_ml_authoritative: true,
+            generic_keyword_low_entropy: true,
             entropy_threshold: 4.5,
             min_secret_len: 20,
             max_file_size: 10 * 1024 * 1024, // 10 MB

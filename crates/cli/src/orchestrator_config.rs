@@ -405,6 +405,16 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     // default; `--no-entropy-ml-scoring` restores the legacy heuristic emit.
     // No-op unless entropy + ML are both on (gated in scan_entropy_fallback).
     config.entropy_ml_authoritative = !args.no_entropy_ml_scoring;
+    // Keyword-anchored generic values use the relaxed entropy floor by default
+    // (the keyword key is the evidence; precision carried by the MoE);
+    // `--no-keyword-low-entropy` restores the high-entropy-only generic gate.
+    // No-op unless the generic keyword bridge fires (scan_generic_assignments).
+    // Composed with `&&` (not assigned) so the flag is one-directional: it can
+    // only DISABLE the relaxed floor, never re-enable it under a preset that
+    // turned it off (e.g. `--precision`, whose high_precision() base sets it
+    // false). Mirrors the one-directional precision min_confidence contract.
+    config.generic_keyword_low_entropy =
+        config.generic_keyword_low_entropy && !args.no_keyword_low_entropy;
     config.scan_comments = args.scan_comments;
     config.ml_enabled = !args.fast && !args.no_ml;
     if let Some(weight) = args.ml_weight {
@@ -548,6 +558,11 @@ pub fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         out,
         "entropy_ml_authoritative = {}",
         s.entropy_ml_authoritative
+    );
+    let _ = writeln!(
+        out,
+        "generic_keyword_low_entropy = {}",
+        s.generic_keyword_low_entropy
     );
     let _ = writeln!(out, "entropy_threshold = {}", s.entropy_threshold);
     let _ = writeln!(
