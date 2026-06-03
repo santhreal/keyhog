@@ -90,16 +90,21 @@ pub fn char_diversity(credential: &str) -> f64 {
     unique as f64 / len as f64
 }
 
-/// Compute the length of the longest run of identical characters divided by the total length.
-pub fn max_repeat_run(credential: &str) -> f64 {
+/// Length of the longest run of identical bytes in `credential`.
+///
+/// The absolute companion to [`max_repeat_run`] (which is this normalized by
+/// length). A long ABSOLUTE run is a degenerate-placeholder signal that a length
+/// ratio misses whenever a fixed detector prefix dilutes it: `AKIAXXXXXXXXXXXXXXXX`
+/// has a 16-character `X` run but a ratio of only `16/20 = 0.8`. Real
+/// base32/hex/base64 secret bodies have a longest natural run of ~2-3.
+fn longest_repeat_run_len(credential: &str) -> usize {
     let bytes = credential.as_bytes();
-    let len = bytes.len();
-    if len == 0 {
-        return 0.0;
+    if bytes.is_empty() {
+        return 0;
     }
     let mut max_run = 1usize;
     let mut current_run = 1usize;
-    for index in 1..len {
+    for index in 1..bytes.len() {
         if bytes[index] == bytes[index - 1] {
             current_run += 1;
             if current_run > max_run {
@@ -109,7 +114,36 @@ pub fn max_repeat_run(credential: &str) -> f64 {
             current_run = 1;
         }
     }
-    max_run as f64 / len as f64
+    max_run
+}
+
+/// Compute the length of the longest run of identical characters divided by the total length.
+pub fn max_repeat_run(credential: &str) -> f64 {
+    let len = credential.len();
+    if len == 0 {
+        return 0.0;
+    }
+    longest_repeat_run_len(credential) as f64 / len as f64
+}
+
+/// Absolute run length at/above which a credential is a degenerate placeholder
+/// regardless of detector class: no real high-entropy secret body carries a run
+/// of this many identical characters (probability for a base32/hex/base64 body
+/// is vanishing), while synthetic placeholders (`AKIAXXXXXXXXXXXXXXXX`,
+/// `key=00000000000000`, `aaaa…`) routinely do. Length-agnostic, so it catches
+/// fixed-prefix placeholders whose prefix dilutes [`max_repeat_run`] below the
+/// per-class ratio gate.
+const DEGENERATE_RUN_LEN: usize = 10;
+
+/// True if `credential` contains a degenerate single-character run (>=
+/// [`DEGENERATE_RUN_LEN`] identical bytes) — a placeholder/padding artifact no
+/// real secret body carries. Single source of truth for the run heuristic:
+/// consumed by [`apply_post_ml_penalties`] (both detector classes) AND by
+/// `prefixes::known_prefix_confidence_floor` (so a known-prefix placeholder like
+/// `AKIAXXXXXXXXXXXXXXXX` is NOT floored back to 0.8 after the penalty crushes
+/// it — exactly parallel to the placeholder-word skip).
+pub(crate) fn is_degenerate_repeat(credential: &str) -> bool {
+    longest_repeat_run_len(credential) >= DEGENERATE_RUN_LEN
 }
 
 /// A detector is "service-anchored" when it is not a generic-* / entropy-* /
@@ -163,14 +197,21 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         if char_diversity(credential) < 0.1 {
             adjusted *= 0.1;
         }
-        if max_repeat_run(credential) > 0.8 {
+        // Degenerate repeat: a run that is either a large FRACTION of the token
+        // (ratio > 0.8) OR long in ABSOLUTE terms (>= DEGENERATE_RUN_LEN). The
+        // absolute arm is load-bearing because even the service anchor cannot
+        // rescue an all-`X` body: `(?-i)(AKIA|ASIA)[0-9A-Z]{16}` matches
+        // `AKIAXXXXXXXXXXXXXXXX`, whose 4-char prefix dilutes the ratio to exactly
+        // 0.8 (NOT > 0.8) while its 16-char `X` run is plainly synthetic. One
+        // penalty either way (no double-count with the ratio arm).
+        if max_repeat_run(credential) > 0.8 || is_degenerate_repeat(credential) {
             adjusted *= 0.1;
         }
     } else {
         if char_diversity(credential) < 0.3 {
             adjusted *= 0.1;
         }
-        if max_repeat_run(credential) > 0.5 {
+        if max_repeat_run(credential) > 0.5 || is_degenerate_repeat(credential) {
             adjusted *= 0.1;
         }
         // Decode-through coherence (generic detectors only). A generic

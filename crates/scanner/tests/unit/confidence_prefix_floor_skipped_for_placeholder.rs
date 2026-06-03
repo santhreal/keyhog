@@ -75,3 +75,28 @@ fn real_prefix_bodies_still_get_the_floor() {
         "sk_live_ with a random body keeps the floor"
     );
 }
+
+#[test]
+fn degenerate_repeat_run_skips_the_floor() {
+    // CredData dogfood 2026-06-03: a known-prefix placeholder whose body is a
+    // long run of one character (no placeholder WORD, so the word-skip misses
+    // it) was crushed to ~0.08 by `apply_post_ml_penalties` and then floored
+    // back to 0.8 by `final_score.max(0.8)`. The degenerate-run skip closes it.
+    assert_eq!(
+        known_prefix_confidence_floor("AKIAXXXXXXXXXXXXXXXX"),
+        None,
+        "AKIA + 16-X placeholder must NOT be lifted back to the 0.8 floor"
+    );
+    assert_eq!(
+        known_prefix_confidence_floor("ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        None,
+        "ghp_ + all-'a' body is a placeholder, not a real PAT"
+    );
+    // A real AKIA body with no long run keeps the floor (recall guard, mirrors
+    // the case above so the two heuristics are visibly distinct).
+    assert_eq!(
+        known_prefix_confidence_floor("AKIAJP3GG7XYRIBQXOLA"),
+        Some(0.8),
+        "a real-shape AKIA body (no 10+ run) keeps the floor"
+    );
+}

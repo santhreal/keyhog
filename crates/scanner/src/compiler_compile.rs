@@ -280,7 +280,7 @@ pub fn compile_pattern(
 const REGEX_CACHE_SHARDS: usize = 64;
 
 /// Total compiled-regex entries retained across all shards before LRU eviction
-/// kicks in. The embedded corpus is ~894 detectors with ~6-15% duplicate
+/// kicks in. The embedded corpus is ~900 detectors with ~6-15% duplicate
 /// regexes, so the unique compiled set is well under 1k; 8192 leaves ample
 /// headroom for the corpus plus any user `--detectors` overlay while still
 /// bounding a long-lived daemon/watch process that recompiles distinct
@@ -343,7 +343,7 @@ pub fn warm_shared_regex_cache(
 }
 
 /// Compile a regex once per unique source string and share the compiled
-/// `Arc<Regex>` across every detector that uses it. The 894-detector corpus
+/// `Arc<Regex>` across every detector that uses it. The embedded corpus
 /// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
 /// each duplicate set into a single compiled instance, cutting startup
 /// compile time and resident memory proportionally - see audits/legendary-
