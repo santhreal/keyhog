@@ -144,7 +144,12 @@ pub fn validate_zero_copy_ingest_telemetry(
 
     telemetry
         .validate_completed_zero_copy(spec.path)
-        .map_err(|error| format!("ingest spec `{}` failed runtime invariant: {error}", spec.id))?;
+        .map_err(|error| {
+            format!(
+                "ingest spec `{}` failed runtime invariant: {error}",
+                spec.id
+            )
+        })?;
     if telemetry.submitted_bytes != expected_bytes || telemetry.completed_bytes != expected_bytes {
         return Err(format!(
             "ingest spec `{}` byte accounting mismatch: submitted={}, completed={}, expected={}",
@@ -279,9 +284,10 @@ fn prepared_ingest_spec(prepared: &PreparedCase) -> Result<NvmeGpuIngestWorkload
 fn run_ingest_accounting(prepared: &PreparedCase) -> Result<BenchRun, BenchError> {
     let spec = prepared_ingest_spec(prepared)?;
     let start = Instant::now();
-    let telemetry = synthesize_completed_ingest_telemetry(spec)
-        .map_err(BenchError::ExecutionFailed)?;
-    validate_zero_copy_ingest_telemetry(spec, telemetry).map_err(BenchError::CorrectnessViolation)?;
+    let telemetry =
+        synthesize_completed_ingest_telemetry(spec).map_err(BenchError::ExecutionFailed)?;
+    validate_zero_copy_ingest_telemetry(spec, telemetry)
+        .map_err(BenchError::CorrectnessViolation)?;
     let custom = ingest_telemetry_metric_points(spec, telemetry);
     let wall_ns = start.elapsed().as_nanos() as u64;
     let encoded = encode_ingest_telemetry(telemetry);

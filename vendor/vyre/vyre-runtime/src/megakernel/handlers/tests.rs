@@ -116,10 +116,14 @@ fn claimed_slot_body_includes_custom_handlers() {
 #[test]
 fn packed_slot_body_is_nonempty() {
     let body = packed_slot_body(&[]);
-    assert_eq!(
-        body.len(),
-        1,
+    assert!(
+        !body.is_empty(),
         "packed_slot_body must emit the packed opcode dispatch root even with no custom opcodes"
+    );
+    let debug = format!("{body:?}");
+    assert!(
+        debug.contains("packed_opcode_count"),
+        "packed_slot_body must emit the packed opcode-count decode root even with no custom opcodes"
     );
 }
 

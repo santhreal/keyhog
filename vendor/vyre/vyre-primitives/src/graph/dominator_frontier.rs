@@ -32,8 +32,22 @@ pub const DOMINATOR_FRONTIER_PRED_TARGETS_BUFFER: u32 = 3;
 pub const DOMINATOR_FRONTIER_SEED_BUFFER: u32 = 4;
 /// Frontier bitset output binding.
 pub const DOMINATOR_FRONTIER_OUT_BUFFER: u32 = 5;
-/// One candidate node per invocation.
-pub const DOMINATOR_FRONTIER_WORKGROUP_SIZE: [u32; 3] = [1, 1, 1];
+/// Candidate-node workgroup for dominance-frontier queries.
+pub const DOMINATOR_FRONTIER_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for one dominance-frontier query over candidate nodes.
+#[must_use]
+pub const fn dominator_frontier_dispatch_grid(node_count: u32) -> [u32; 3] {
+    if node_count == 0 {
+        [0, 1, 1]
+    } else {
+        [
+            node_count.div_ceil(DOMINATOR_FRONTIER_WORKGROUP_SIZE[0]),
+            1,
+            1,
+        ]
+    }
+}
 
 /// Validated dominance-frontier dispatch layout.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -334,7 +348,7 @@ pub fn plan_dominator_frontier_launch(
             dom_edge_count: layout.dom_edge_count,
             pred_edge_count: layout.pred_edge_count,
         },
-        dispatch_grid: [node_count, 1, 1],
+        dispatch_grid: dominator_frontier_dispatch_grid(node_count),
     })
 }
 
@@ -582,7 +596,6 @@ pub fn try_dominator_frontier(
         }],
     ))
 }
-
 
 /// CPU oracle: returns the dominance-frontier bitset for the seed set.
 ///
@@ -1036,7 +1049,7 @@ mod tests {
         )
         .expect("Fix: canonical dominance-frontier launch plan should validate");
 
-        assert_eq!(plan.dispatch_grid(), [4, 1, 1]);
+        assert_eq!(plan.dispatch_grid(), [1, 1, 1]);
         assert_eq!(plan.frontier_words(), 1);
         assert_eq!(plan.dom_target_words(), 7);
         assert_eq!(plan.pred_target_words(), 4);
@@ -1057,6 +1070,38 @@ mod tests {
     }
 
     #[test]
+    fn launch_plan_packs_candidate_lanes_into_blocks() {
+        assert_eq!(dominator_frontier_dispatch_grid(0), [0, 1, 1]);
+        assert_eq!(dominator_frontier_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(dominator_frontier_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(dominator_frontier_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(dominator_frontier_dispatch_grid(513), [3, 1, 1]);
+    }
+
+    #[test]
+    fn generated_launch_grid_covers_candidate_shapes_to_8192() {
+        for node_count in 1..=8_192 {
+            let grid = dominator_frontier_dispatch_grid(node_count);
+            assert_eq!(
+                grid[1], 1,
+                "Fix: dominator-frontier grid y dimension drifted at node_count={node_count}"
+            );
+            assert_eq!(
+                grid[2], 1,
+                "Fix: dominator-frontier grid z dimension drifted at node_count={node_count}"
+            );
+            assert!(
+                grid[0] * DOMINATOR_FRONTIER_WORKGROUP_SIZE[0] >= node_count,
+                "Fix: dominator-frontier grid under-covers node_count={node_count}"
+            );
+            assert!(
+                grid[0] == 1 || (grid[0] - 1) * DOMINATOR_FRONTIER_WORKGROUP_SIZE[0] < node_count,
+                "Fix: dominator-frontier grid over-launches an avoidable extra block at node_count={node_count}"
+            );
+        }
+    }
+
+    #[test]
     fn dispatch_plan_owns_buffer_slots_grid_and_readback_shape() {
         let plan = plan_dominator_frontier_dispatch(
             4,
@@ -1070,7 +1115,7 @@ mod tests {
         )
         .expect("Fix: canonical dominance-frontier plan should validate");
 
-        assert_eq!(plan.dispatch_grid(), [4, 1, 1]);
+        assert_eq!(plan.dispatch_grid(), [1, 1, 1]);
         assert_eq!(plan.frontier_words(), 1);
         assert_eq!(plan.dom_target_words(), 7);
         assert_eq!(plan.pred_target_words(), 4);

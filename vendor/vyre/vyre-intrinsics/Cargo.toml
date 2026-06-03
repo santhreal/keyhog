@@ -32,8 +32,8 @@ inventory.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-vyre = { workspace = true }
-vyre-reference.workspace = true
+vyre = { path = "../vyre-core" }
+vyre-reference = { path = "../vyre-reference" }
 
 [features]
 default = ["all", "subgroup-ops"]

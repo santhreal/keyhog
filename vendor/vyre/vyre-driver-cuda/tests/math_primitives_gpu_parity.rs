@@ -7,8 +7,11 @@ mod common;
 
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
-use vyre_primitives::math::prefix_scan::{cpu_ref as prefix_cpu, prefix_scan, ScanKind};
+use vyre_primitives::math::prefix_scan::{
+    cpu_ref as prefix_cpu, prefix_scan, prefix_scan_large, ScanKind,
+};
 use vyre_primitives::math::stream_compact::{cpu_ref as compact_cpu, stream_compact};
+use vyre_primitives::reduce::multi_block_prefix_scan::BLOCK_LANES;
 
 fn run_prefix_scan(input: &[u32], kind: ScanKind) -> Vec<u32> {
     let n = input.len() as u32;
@@ -23,6 +26,50 @@ fn run_prefix_scan(input: &[u32], kind: ScanKind) -> Vec<u32> {
             .unwrap_or_else(|error| panic!("Fix: CUDA prefix-scan dispatch failed: {error}"))
     });
     let mut out = bytes_u32(&outputs[0]);
+    out.truncate(n as usize);
+    out
+}
+
+fn run_prefix_scan_large(input: &[u32]) -> Vec<u32> {
+    use vyre::ir::BufferAccess;
+
+    let n = input.len() as u32;
+    let program = prefix_scan_large("in", "out", n);
+    let mut inputs: Vec<Vec<u8>> = Vec::new();
+    for buffer in program.buffers() {
+        let backend_allocated = buffer.is_output() || buffer.is_pipeline_live_out();
+        let needs_input = matches!(
+            buffer.access(),
+            BufferAccess::ReadOnly | BufferAccess::ReadWrite
+        ) && !backend_allocated
+            && !matches!(buffer.access(), BufferAccess::Workgroup);
+        if needs_input {
+            if buffer.name() == "in" {
+                inputs.push(u32_bytes(input));
+            } else {
+                inputs.push(vec![0u8; buffer.count() as usize * 4]);
+            }
+        }
+    }
+
+    let outputs = with_live_backend("large prefix scan primitive", |backend| {
+        backend
+            .dispatch(&program, &inputs, &DispatchConfig::default())
+            .unwrap_or_else(|error| panic!("Fix: CUDA large prefix-scan dispatch failed: {error}"))
+    });
+    let out_idx = program
+        .buffers()
+        .iter()
+        .filter(|buffer| {
+            buffer.is_output()
+                || matches!(
+                    buffer.access(),
+                    BufferAccess::ReadWrite | BufferAccess::WriteOnly
+                )
+        })
+        .position(|buffer| buffer.name() == "out")
+        .expect("Fix: large prefix scan output buffer must be declared");
+    let mut out = bytes_u32(&outputs[out_idx]);
     out.truncate(n as usize);
     out
 }
@@ -60,6 +107,25 @@ fn cuda_prefix_scan_inclusive_non_pow2() {
     let cpu = prefix_cpu(&input, ScanKind::InclusiveSum);
     let gpu = run_prefix_scan(&input, ScanKind::InclusiveSum);
     assert_eq!(gpu, cpu);
+}
+
+#[test]
+fn cuda_prefix_scan_large_crosses_block_boundary() {
+    let len = BLOCK_LANES as usize + 33;
+    let input: Vec<u32> = (0..len)
+        .map(|idx| {
+            (idx as u32)
+                .wrapping_mul(1_664_525)
+                .wrapping_add(1_013_904_223)
+        })
+        .collect();
+    let cpu = prefix_cpu(&input, ScanKind::InclusiveSum);
+    let gpu = run_prefix_scan_large(&input);
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu[BLOCK_LANES as usize - 1], cpu[BLOCK_LANES as usize - 1]);
+    assert_eq!(gpu[BLOCK_LANES as usize], cpu[BLOCK_LANES as usize]);
+    assert_eq!(gpu[len - 1], cpu[len - 1]);
 }
 
 fn run_stream_compact(payloads: &[u32], flags: &[u32]) -> (Vec<u32>, u32) {

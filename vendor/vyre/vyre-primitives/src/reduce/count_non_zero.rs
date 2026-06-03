@@ -1,9 +1,8 @@
 //! `reduce_count_non_zero`  -  count the non-zero lanes in a u32 ValueSet.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use super::atomic_scalar::{atomic_reduce_u32, AtomicReduceKind};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::reduce::count_non_zero";
@@ -11,44 +10,7 @@ pub const OP_ID: &str = "vyre-primitives::reduce::count_non_zero";
 /// Build a Program: `out[0] = |{ i | values[i] != 0 }|`.
 #[must_use]
 pub fn reduce_count_non_zero(values: &str, out: &str, count: u32) -> Program {
-    let body = vec![
-        Node::let_bind("acc", Expr::u32(0)),
-        Node::loop_for(
-            "i",
-            Expr::u32(0),
-            Expr::u32(count),
-            vec![
-                Node::let_bind("v", Expr::load(values, Expr::var("i"))),
-                Node::assign(
-                    "acc",
-                    Expr::add(
-                        Expr::var("acc"),
-                        Expr::select(
-                            Expr::ne(Expr::var("v"), Expr::u32(0)),
-                            Expr::u32(1),
-                            Expr::u32(0),
-                        ),
-                    ),
-                ),
-            ],
-        ),
-        Node::store(out, Expr::u32(0), Expr::var("acc")),
-    ];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(values, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(out, 1, BufferAccess::ReadWrite, DataType::U32).with_count(1),
-        ],
-        [1, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-                body,
-            )]),
-        }],
-    )
+    atomic_reduce_u32(values, out, count, AtomicReduceKind::CountNonZero, OP_ID)
 }
 
 /// CPU reference.
@@ -89,5 +51,36 @@ mod tests {
     #[test]
     fn empty_values_count_zero() {
         assert_eq!(cpu_ref(&[]), 0);
+    }
+
+    #[test]
+    fn program_uses_parallel_grid_stride() {
+        let program = reduce_count_non_zero("values", "out", 513);
+        assert_eq!(
+            program.workgroup_size(),
+            [crate::reduce::atomic_scalar::WORKGROUP_SIZE, 1, 1]
+        );
+    }
+
+    #[test]
+    fn generated_count_non_zero_oracle_covers_large_streams() {
+        for case in 0..4096u32 {
+            let len = 257 + (case.wrapping_mul(23) % 1024) as usize;
+            let mut state = 0xC0DE_CAFE_u32 ^ case.wrapping_mul(0x9E37_79B9);
+            let mut values = Vec::with_capacity(len);
+            for index in 0..len {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                values.push(if (state.wrapping_add(index as u32)) % 11 == 0 {
+                    0
+                } else {
+                    state
+                });
+            }
+
+            let expected = values.iter().filter(|&&value| value != 0).count() as u32;
+            assert_eq!(cpu_ref(&values), expected, "generated case {case}");
+        }
     }
 }

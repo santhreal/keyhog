@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre::{DispatchConfig, VyreBackend};
 use vyre_driver::{BackendError, CompiledPipeline, Resource, TimedDispatchResult};
 
@@ -46,6 +47,22 @@ pub struct TransferAccounting {
 /// Sum encoded benchmark input bytes once during preparation.
 pub fn input_bytes_total(inputs: &[Vec<u8>]) -> u64 {
     inputs.iter().map(Vec::len).sum::<usize>() as u64
+}
+
+/// Build a one-lane resident reset program for sparse-output `u32` counters.
+pub fn u32_counter_reset_program(buffer_name: &str) -> Program {
+    let idx = Expr::InvocationId { axis: 0 };
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(buffer_name, 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+        ],
+        [1, 1, 1],
+        vec![Node::if_then(
+            Expr::eq(idx, Expr::u32(0)),
+            vec![Node::store(buffer_name, Expr::u32(0), Expr::u32(0))],
+        )],
+    )
 }
 
 /// Account resident samples as output-only host traffic and fallback samples as full round trips.
@@ -194,6 +211,24 @@ impl ResidentInputSet {
         self.backend
             .upload_resident(resource, payload)
             .map_err(|error| BenchError::BackendFailed(error.to_string()))
+    }
+
+    /// Clone resident resource handles in caller-requested binding order.
+    pub fn resources_for_indices(
+        &self,
+        indices: &[usize],
+        context: &str,
+    ) -> Result<Vec<Resource>, BenchError> {
+        indices
+            .iter()
+            .map(|&index| {
+                self.resources.get(index).cloned().ok_or_else(|| {
+                    BenchError::ExecutionFailed(format!(
+                        "{context} resident resources missing resource at index {index}"
+                    ))
+                })
+            })
+            .collect()
     }
 
     fn upload(
@@ -392,10 +427,7 @@ fn allocate_and_upload_resident_set(
         }
     }
     let output_start = start + inputs.len();
-    for (resource, &output_size) in resources[output_start..]
-        .iter()
-        .zip(output_sizes.iter())
-    {
+    for (resource, &output_size) in resources[output_start..].iter().zip(output_sizes.iter()) {
         if output_size != 0 {
             uploads.push((resource, &zero_scratch[..output_size]));
         }
@@ -448,7 +480,6 @@ mod tests {
 
     #[test]
     fn resident_batch_upload_count_skips_empty_resources() {
-
         let inputs = vec![vec![1; 3], Vec::new(), vec![2; 1]];
         let output_sizes = [0, 8, 16, 0];
 
@@ -520,5 +551,16 @@ mod tests {
         assert_eq!(accounting.bytes_written, 4096);
         assert_eq!(accounting.bytes_touched, u64::MAX);
     }
-}
 
+    #[test]
+    fn u32_counter_reset_program_targets_single_read_write_word() {
+        let program = u32_counter_reset_program("counter");
+
+        assert_eq!(program.workgroup_size(), [1, 1, 1]);
+        assert_eq!(program.buffers().len(), 1);
+        assert_eq!(program.buffers()[0].name.as_ref(), "counter");
+        assert_eq!(program.buffers()[0].binding, 0);
+        assert_eq!(program.buffers()[0].access, BufferAccess::ReadWrite);
+        assert_eq!(program.buffers()[0].count, 1);
+    }
+}

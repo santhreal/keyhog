@@ -1,5 +1,3 @@
-use crate::backend::ordering::{sort_unstable_by_key_if_needed, sort_unstable_if_needed};
-use crate::backend::staging_reserve::reserved_typed_vec;
 use crate::egraph_device_image::CudaEGraphDeviceKernelView;
 use crate::numeric::CUDA_NUMERIC;
 use vyre_foundation::optimizer::eqsat_gpu::GpuEGraphDeviceImage;
@@ -7,7 +5,6 @@ use vyre_foundation::optimizer::eqsat_gpu::GpuEGraphDeviceImage;
 use super::{
     CudaEGraphKernelLaunchConfig, CudaEGraphKernelPass, CudaEGraphKernelPlanError,
     CudaEGraphKernelWave, CudaEGraphSignatureBucketPlan, CudaEGraphSignaturePairWave,
-    CudaEGraphUnionCompactionPass, CudaEGraphUnionCompactionWave,
 };
 
 /// Decode a signature-bucket pair ordinal to the concrete row ids kernels must

@@ -17,7 +17,12 @@ use proptest::prelude::*;
 fn render(var_mut: &[bool], ops: &[(u8, usize, bool)]) -> String {
     let mut s = String::from("fn f() {");
     for (i, &m) in var_mut.iter().enumerate() {
-        s.push_str(&format!(" let {}v{}: i32 = {};", if m { "mut " } else { "" }, i, i));
+        s.push_str(&format!(
+            " let {}v{}: i32 = {};",
+            if m { "mut " } else { "" },
+            i,
+            i
+        ));
     }
     let mut borrow_count = 0usize;
     let mut next_use = 0u32;
@@ -26,7 +31,10 @@ fn render(var_mut: &[bool], ops: &[(u8, usize, bool)]) -> String {
             // Borrow an in-scope var (shared or mutable).
             let vk = a % var_mut.len();
             let m = if b { "mut " } else { "" };
-            s.push_str(&format!(" let r{}: &{}i32 = &{}v{};", borrow_count, m, m, vk));
+            s.push_str(&format!(
+                " let r{}: &{}i32 = &{}v{};",
+                borrow_count, m, m, vk
+            ));
             borrow_count += 1;
         } else if borrow_count > 0 {
             // Use (deref) an existing borrow, extending its live range.
@@ -51,7 +59,12 @@ fn render_branch(
 ) -> String {
     let mut s = String::from("fn f() {");
     for (i, &m) in var_mut.iter().enumerate() {
-        s.push_str(&format!(" let {}v{}: i32 = {};", if m { "mut " } else { "" }, i, i));
+        s.push_str(&format!(
+            " let {}v{}: i32 = {};",
+            if m { "mut " } else { "" },
+            i,
+            i
+        ));
     }
     let mut borrow_count = 0usize;
     let mut next_use = 0u32;
@@ -59,7 +72,10 @@ fn render_branch(
         if kind == 0 {
             let vk = a % var_mut.len();
             let m = if b { "mut " } else { "" };
-            s.push_str(&format!(" let r{}: &{}i32 = &{}v{};", borrow_count, m, m, vk));
+            s.push_str(&format!(
+                " let r{}: &{}i32 = &{}v{};",
+                borrow_count, m, m, vk
+            ));
             borrow_count += 1;
         } else if borrow_count > 0 {
             let bid = a % borrow_count;
@@ -70,14 +86,22 @@ fn render_branch(
     s.push_str(" if true {");
     if borrow_count > 0 {
         for &i in then_uses {
-            s.push_str(&format!(" let u{}: i32 = *r{};", next_use, i % borrow_count));
+            s.push_str(&format!(
+                " let u{}: i32 = *r{};",
+                next_use,
+                i % borrow_count
+            ));
             next_use += 1;
         }
     }
     s.push_str(" } else {");
     if borrow_count > 0 {
         for &i in else_uses {
-            s.push_str(&format!(" let u{}: i32 = *r{};", next_use, i % borrow_count));
+            s.push_str(&format!(
+                " let u{}: i32 = *r{};",
+                next_use,
+                i % borrow_count
+            ));
             next_use += 1;
         }
     }
@@ -101,8 +125,20 @@ fn render_escape(nlocals: usize, ref_inits: &[(u8, usize)], ret: (u8, usize)) ->
             0 => "p".to_string(),
             1 => format!("&v{}", idx % nlocals),
             2 => "&*p".to_string(),
-            3 => if nrefs > 0 { format!("r{}", idx % nrefs) } else { "p".to_string() },
-            _ => if nrefs > 0 { format!("&*r{}", idx % nrefs) } else { "&*p".to_string() },
+            3 => {
+                if nrefs > 0 {
+                    format!("r{}", idx % nrefs)
+                } else {
+                    "p".to_string()
+                }
+            }
+            _ => {
+                if nrefs > 0 {
+                    format!("&*r{}", idx % nrefs)
+                } else {
+                    "&*p".to_string()
+                }
+            }
         };
         s.push_str(&format!(" let r{}: &i32 = {};", nrefs, init));
         nrefs += 1;
@@ -111,7 +147,13 @@ fn render_escape(nlocals: usize, ref_inits: &[(u8, usize)], ret: (u8, usize)) ->
         0 => "p".to_string(),
         1 => format!("&v{}", ret.1 % nlocals),
         2 => "&*p".to_string(),
-        _ => if nrefs > 0 { format!("r{}", ret.1 % nrefs) } else { "p".to_string() },
+        _ => {
+            if nrefs > 0 {
+                format!("r{}", ret.1 % nrefs)
+            } else {
+                "p".to_string()
+            }
+        }
     };
     s.push_str(&format!(" return {}; }}", ret_expr));
     s

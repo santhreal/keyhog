@@ -72,7 +72,11 @@ fn scale_gate_program_builds_for_10m_without_panic() {
     let n = 10_000_000u32;
     let e = n * 2;
     let p = try_dominator_tree_program(n, e, e, "idom").expect("10M-node program must build");
-    assert_eq!(p.buffers().len(), 4, "dominator tree program declares four CSR buffers");
+    assert_eq!(
+        p.buffers().len(),
+        4,
+        "dominator tree program declares four CSR buffers"
+    );
 }
 
 #[test]

@@ -1,10 +1,10 @@
 use super::*;
-use vyre_primitives::graph::exploded::build_cpu_reference;
 use crate::dispatch_buffers::u32_slice_to_le_bytes;
 use crate::optimizer::dispatcher::oracle::CpuOracleDispatcher;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use std::sync::Mutex;
 use vyre_foundation::ir::Program;
+use vyre_primitives::graph::exploded::build_cpu_reference;
 
 fn canonical_expected(
     num_procs: u32,
@@ -496,6 +496,7 @@ fn via_rejects_extra_outputs() {
     let dispatcher = MalformedIfdsDispatcher {
         outputs: vec![
             u32_slice_to_le_bytes(&[0, 0]),
+            u32_slice_to_le_bytes(&[0]),
             u32_slice_to_le_bytes(&[0]),
             u32_slice_to_le_bytes(&[0]),
             u32_slice_to_le_bytes(&[0]),

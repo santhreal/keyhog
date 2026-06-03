@@ -347,7 +347,10 @@ fn address_space(binding: &BindingSlot) -> AddressSpace {
 fn storage_access(visibility: BindingVisibility) -> StorageAccess {
     match visibility {
         BindingVisibility::ReadOnly => StorageAccess::LOAD,
-        BindingVisibility::WriteOnly => StorageAccess::STORE,
+        // WGSL/Naga reject storage-buffer declarations with store-only access.
+        // Preserve the IR's write-only ownership at the binding-plan layer, but
+        // emit a validator-compatible storage address space for shader modules.
+        BindingVisibility::WriteOnly => StorageAccess::LOAD | StorageAccess::STORE,
         BindingVisibility::ReadWrite => StorageAccess::LOAD | StorageAccess::STORE,
     }
 }
@@ -451,7 +454,6 @@ fn descriptor_trap_sidecar_slot(desc: &KernelDescriptor) -> Result<Option<u32>, 
     Ok(Some(slot.slot))
 }
 
-
 fn descriptor_trap_tag_codes(body: &KernelBody) -> FxHashMap<vyre_lower::descriptor::Name, u32> {
     fn walk(
         body: &KernelBody,
@@ -528,4 +530,3 @@ pub(crate) fn emit_uncached(desc: &KernelDescriptor) -> Result<naga::Module, Emi
 // `lib.rs` calls into the cache layer first, then `emit_uncached` here.
 // Re-export the cache wrapper from this module so the `crate::emit`
 // boundary stays unchanged.
-

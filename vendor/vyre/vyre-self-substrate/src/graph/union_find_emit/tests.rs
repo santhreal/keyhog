@@ -2,7 +2,7 @@ use super::*;
 use crate::dispatch_buffers::u32_slice_to_le_bytes;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_foundation::ir::Program;
-use vyre_primitives::graph::union_find::union_find_program;
+use vyre_primitives::graph::union_find::{union_find_dispatch_grid, union_find_program};
 
 #[test]
 fn builds_backend_neutral_union_find_program() {
@@ -37,11 +37,14 @@ impl OptimizerDispatcher for UnionFindDispatcher {
         inputs: &[Vec<u8>],
         grid_override: Option<[u32; 3]>,
     ) -> Result<Vec<Vec<u8>>, DispatchError> {
-        assert_eq!(grid_override, Some([1, 1, 1]));
         assert_eq!(inputs.len(), 3);
         let mut parent = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
         let edge_a = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
         let edge_b = crate::hardware::dispatch_buffers::read_u32s(&inputs[2]);
+        assert_eq!(
+            grid_override,
+            Some(union_find_dispatch_grid(edge_a.len() as u32))
+        );
         fn find(parent: &mut [u32], mut x: u32) -> u32 {
             while parent[x as usize] != x {
                 let next = parent[x as usize];
@@ -74,6 +77,20 @@ fn union_find_alias_via_dispatches_primitive() {
         canonicalize_parent_to_roots(&out),
         canonicalize_parent_to_roots(&reference_union_find_alias(&parent, &[0, 2], &[1, 3]))
     );
+}
+
+#[test]
+fn union_find_alias_via_dispatches_multi_block_edge_batch() {
+    let node_count = 1026u32;
+    let parent: Vec<u32> = (0..node_count).collect();
+    let edge_a: Vec<u32> = (0..(node_count - 1)).collect();
+    let edge_b: Vec<u32> = (1..node_count).collect();
+
+    let out = union_find_alias_via(&UnionFindDispatcher, &parent, &edge_a, &edge_b).unwrap();
+    let roots = canonicalize_parent_to_roots(&out);
+
+    assert_eq!(union_find_dispatch_grid(edge_a.len() as u32), [5, 1, 1]);
+    assert!(roots.iter().all(|&root| root == 0));
 }
 
 #[test]

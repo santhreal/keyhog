@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::sync::Arc;
 
 use smallvec::SmallVec;
 use vyre_driver::binding::BindingRole;
@@ -8,16 +7,28 @@ use vyre_foundation::ir::Program;
 
 use crate::backend::allocations::{DispatchAllocations, HostTransferAllocations};
 use crate::backend::dispatch::CudaBackend;
-use crate::backend::module_cache::ModuleCacheKey;
-use crate::backend::output_range::CudaOutputReadback;
-use crate::backend::plan::CudaDispatchPlan;
+use crate::backend::ordering::sort_unstable_by_key_if_needed;
 use crate::backend::resident::{CudaResidentBuffer, ResidentViewCache};
-use crate::backend::resident_dispatch::helpers::PreparedStep;
+use crate::backend::resident_dispatch::helpers::{
+    next_resident_handle, validate_dense_resident_input_indices, PreparedStep,
+};
 use crate::backend::resident_dispatch_support::CudaResidentDispatchStep;
 use crate::backend::resident_upload_fusion::{
     fuse_resident_upload_copies, push_resident_upload_copy, ResidentUploadCopy,
 };
 use crate::backend::staging_reserve::{reserve_smallvec, reserved_vec};
+
+pub(super) fn order_resident_fallback_inputs_by_logical_index(
+    input_storage: &mut [(usize, Vec<u8>)],
+    expected_len: usize,
+) -> Result<(), BackendError> {
+    sort_unstable_by_key_if_needed(input_storage, |(input_index, _)| *input_index);
+    validate_dense_resident_input_indices(
+        input_storage.iter().map(|(input_index, _)| *input_index),
+        expected_len,
+        "resident fallback input storage",
+    )
+}
 
 impl CudaBackend {
     pub(super) fn resolve_resident_sequence_launch_ptrs(
@@ -36,8 +47,8 @@ impl CudaBackend {
             if binding.role == BindingRole::Shared {
                 continue;
             }
-            let handle = step.handles[next_handle];
-            next_handle += 1;
+            let handle =
+                next_resident_handle(&step.handles, &mut next_handle, "resident sequence launch")?;
             let resident = self.resident_store.view_cached(
                 handle,
                 resident_view_cache,
@@ -103,22 +114,26 @@ impl CudaBackend {
             if binding.role == BindingRole::Shared {
                 continue;
             }
-            let handle = handles[next_handle];
-            next_handle += 1;
-            if binding.input_index.is_some() {
-                input_storage.push(self.download_resident(handle)?);
+            let handle =
+                next_resident_handle(handles, &mut next_handle, "resident fallback dispatch")?;
+            if let Some(input_index) = binding.input_index {
+                input_storage.push((input_index, self.download_resident(handle)?));
             }
             if let Some(output_index) = binding.output_index {
                 output_handles.push((output_index, handle));
             }
         }
+        order_resident_fallback_inputs_by_logical_index(
+            input_storage.as_mut_slice(),
+            plan.input_indices.len(),
+        )?;
         let mut input_refs = SmallVec::<[&[u8]; 8]>::new();
         reserve_smallvec(
             &mut input_refs,
             input_storage.len(),
             "resident fallback input reference",
         )?;
-        input_refs.extend(input_storage.iter().map(Vec::as_slice));
+        input_refs.extend(input_storage.iter().map(|(_, bytes)| bytes.as_slice()));
         let dispatch_outputs = self.dispatch_borrowed(program, &input_refs, config)?;
         let mut output_uploads = SmallVec::<[(CudaResidentBuffer, &[u8]); 8]>::new();
         reserve_smallvec(

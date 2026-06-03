@@ -4,6 +4,8 @@
 //! owns the shared ABI constants and the public pass exports. Keep helper code
 //! in the pass that uses it unless it is shared by multiple active builders.
 
+use vyre::ir::{DataType, Expr};
+
 pub(crate) const EMPTY_MACRO_SLOT: u32 = u32::MAX;
 pub(crate) const MACRO_TABLE_SLOTS: u32 = 4_096;
 pub(crate) const MACRO_TABLE_MASK: u32 = MACRO_TABLE_SLOTS - 1;
@@ -14,6 +16,21 @@ pub const C_MACRO_KIND_OBJECT_LIKE: u32 = 0;
 pub const C_MACRO_KIND_FUNCTION_LIKE: u32 = 1;
 /// Replacement parameter marker meaning this replacement token is literal.
 pub const C_MACRO_REPLACEMENT_LITERAL: u32 = u32::MAX;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MacroByteLayout {
+    ExpandedU32,
+    RawU8,
+}
+
+pub(crate) fn load_macro_byte(buffer: &str, layout: MacroByteLayout, addr: Expr) -> Expr {
+    let loaded = Expr::load(buffer, addr);
+    let as_u32 = match layout {
+        MacroByteLayout::ExpandedU32 => loaded,
+        MacroByteLayout::RawU8 => Expr::cast(DataType::U32, loaded),
+    };
+    Expr::bitand(as_u32, Expr::u32(0xff))
+}
 
 mod arg_scan;
 mod conditional;

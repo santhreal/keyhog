@@ -11,6 +11,8 @@ mod common;
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_driver_cuda::CudaBackend;
+use vyre_primitives::graph::csr_backward_traverse::csr_backward_traverse_dispatch_grid;
+use vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse_dispatch_grid;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::predicate::arg_of::{arg_of, cpu_ref as arg_of_cpu};
 use vyre_primitives::predicate::call_to::{call_to, cpu_ref as call_to_cpu};
@@ -51,9 +53,7 @@ where
         vec![0u8; words as usize * 4],
     ];
     let mut config = DispatchConfig::default();
-    let workgroup_x = 256u32;
-    let grid_x = ((node_count + workgroup_x - 1) / workgroup_x).max(1);
-    config.grid_override = Some([grid_x, 1, 1]);
+    config.grid_override = Some(csr_forward_traverse_dispatch_grid(node_count));
     let outputs = backend
         .dispatch(&program, &inputs, &config)
         .expect("dispatch");
@@ -62,8 +62,7 @@ where
     out
 }
 
-/// Run a backward-traversal wrapper (arg_of). csr_backward_traverse
-/// uses workgroup [1,1,1] so grid_x = node_count.
+/// Run a backward-traversal wrapper (arg_of).
 fn run_backward<B>(
     backend: &CudaBackend,
     program_builder: B,
@@ -95,7 +94,7 @@ where
         vec![0u8; words as usize * 4],
     ];
     let mut config = DispatchConfig::default();
-    config.grid_override = Some([node_count.max(1), 1, 1]);
+    config.grid_override = Some(csr_backward_traverse_dispatch_grid(node_count));
     let outputs = backend
         .dispatch(&program, &inputs, &config)
         .expect("dispatch");
@@ -239,4 +238,45 @@ fn cuda_arg_of_kind_filtered_out() {
         assert_eq!(gpu, cpu);
         assert_eq!(gpu, vec![0u32]);
     });
+}
+
+#[test]
+fn cuda_arg_of_reaches_source_past_first_workgroup() {
+    with_live_backend(
+        "cuda_arg_of_reaches_source_past_first_workgroup",
+        |backend| {
+            let node_count = 513u32;
+            let words = node_count.div_ceil(32) as usize;
+            let mut edge_offsets = vec![0u32; node_count as usize + 1];
+            for offset in edge_offsets.iter_mut().skip(301) {
+                *offset = 1;
+            }
+            let edge_targets = vec![512u32];
+            let edge_kind_mask = vec![edge_kind::CALL_ARG];
+            let mut frontier = vec![0u32; words];
+            frontier[512 / 32] |= 1u32 << (512 % 32);
+
+            let cpu = arg_of_cpu(
+                node_count,
+                &edge_offsets,
+                &edge_targets,
+                &edge_kind_mask,
+                &frontier,
+            );
+            let gpu = run_backward(
+                backend,
+                arg_of,
+                node_count,
+                &edge_offsets,
+                &edge_targets,
+                &edge_kind_mask,
+                &frontier,
+            );
+
+            let mut expected = vec![0u32; words];
+            expected[300 / 32] |= 1u32 << (300 % 32);
+            assert_eq!(gpu, cpu);
+            assert_eq!(gpu, expected);
+        },
+    );
 }

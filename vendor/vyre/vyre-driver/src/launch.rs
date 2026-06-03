@@ -9,6 +9,7 @@ use vyre_foundation::ir::{MemoryKind, Node, Program};
 use crate::binding::Binding;
 use crate::program_walks::{
     dispatch_element_count_for_program, dispatch_param_words_into, infer_dispatch_grid_for_count,
+    program_uses_launch_geometry_ids,
 };
 use crate::tuner::{
     identity_fisher_q16, Mode, NaturalGradientPolicy, Tuner, TunerCache, TuningMeasurement,
@@ -611,6 +612,7 @@ fn is_natural_gradient_launch_tunable(
             .iter()
             .any(|node| !matches!(node, Node::Return))
         && !program.non_composable_with_self
+        && !program_uses_launch_geometry_ids(program)
         && program
             .buffers
             .iter()
@@ -649,7 +651,7 @@ pub fn program_vsa_fingerprint_words(program: &Program) -> [u32; 8] {
 mod tests {
     use super::*;
     use crate::binding::BindingRole;
-    use vyre_foundation::ir::{BufferDecl, DataType, Program};
+    use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
 
     #[test]
     fn program_vsa_fingerprint_words_match_wire_decoder() {
@@ -735,6 +737,56 @@ mod tests {
         assert_eq!(plan.workgroup, [1024, 1, 1]);
         assert_eq!(plan.grid, [4, 1, 1]);
         assert_eq!(plan.element_count, 4096);
+    }
+
+    #[test]
+    fn natural_gradient_launch_preserves_declared_shape_for_local_workgroup_ids() {
+        let program = Program::wrapped(
+            vec![BufferDecl::output("out_local_ids", 0, DataType::U32).with_count(4096)],
+            [1024, 1, 1],
+            vec![
+                Node::let_bind("lane", Expr::LocalId { axis: 0 }),
+                Node::let_bind("block", Expr::WorkgroupId { axis: 0 }),
+                Node::let_bind(
+                    "global",
+                    Expr::add(
+                        Expr::mul(Expr::var("block"), Expr::u32(1024)),
+                        Expr::var("lane"),
+                    ),
+                ),
+                Node::store("out_local_ids", Expr::var("global"), Expr::var("lane")),
+            ],
+        );
+        let bindings = vec![Binding {
+            name: std::sync::Arc::from("out_local_ids"),
+            binding: 0,
+            buffer_index: 0,
+            role: BindingRole::Output,
+            element_size: 4,
+            preferred_alignment: 128,
+            element_count: 4096,
+            static_byte_len: Some(16_384),
+            input_index: None,
+            output_index: Some(0),
+        }];
+        let limits = LaunchGeometryLimits {
+            backend: "test",
+            max_threads_per_block: 1024,
+            max_block_dim: [1024, 1024, 64],
+            max_grid_dim: [u32::MAX, u32::MAX, u32::MAX],
+        };
+
+        assert_eq!(
+            effective_launch_workgroup_for_mode(
+                &program,
+                &bindings,
+                &DispatchConfig::default(),
+                limits,
+                Mode::NaturalGradient,
+            ),
+            [1024, 1, 1],
+            "Fix: automatic launch tuning must not change kernels whose LocalId/WorkgroupId arithmetic makes workgroup shape semantic."
+        );
     }
 
     #[test]
@@ -886,4 +938,3 @@ mod tests {
         );
     }
 }
-

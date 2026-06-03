@@ -30,5 +30,5 @@ blake3 = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-vyre-libs = { workspace = true, features = ["c-parser"] }
+vyre-libs = { path = "../vyre-libs", features = ["c-parser"] }
 proptest.workspace = true

@@ -89,22 +89,16 @@ pub(crate) fn run_hashmap_reference(
     let mut max_output_elements = 0u32;
     let mut max_input_elements = 1u32;
     let mut program_graph_node_count = None;
+    let mut has_workgroup_buffer = false;
     for decl in program.buffers() {
         if decl.access() == BufferAccess::Workgroup {
+            has_workgroup_buffer = true;
             continue;
         }
         if decl.binding() == 0 && decl.name() == "pg_nodes" {
             program_graph_node_count = Some(decl.count());
         }
-        let stride = decl.element().min_bytes();
-        let min_bytes = (decl.count() as usize).checked_mul(stride).ok_or_else(|| {
-            Error::interp(format!(
-                "buffer `{}` declared byte size overflows usize ({} elements of {}). Fix: reduce the buffer count or use a narrower element type.",
-                decl.name(),
-                decl.count(),
-                decl.element()
-            ))
-        })?;
+        let required_bytes = declared_min_byte_len(decl)?;
         let is_backend_allocated_output = backend_allocated_output(decl);
         let bytes = if is_backend_allocated_output {
             if legacy_input_mode {
@@ -116,7 +110,7 @@ pub(crate) fn run_hashmap_reference(
                 })?;
                 input_index += 1;
             }
-            vec![0u8; min_bytes]
+            vec![0u8; required_bytes]
         } else {
             let value = inputs.get(input_index).ok_or_else(|| {
                 Error::interp(format!(
@@ -127,12 +121,12 @@ pub(crate) fn run_hashmap_reference(
             input_index += 1;
             value.to_bytes()
         };
-        if bytes.len() < min_bytes {
+        if bytes.len() < required_bytes {
             return Err(Error::interp(format!(
                 "buffer `{}` has {} bytes but requires at least {} bytes ({} elements of {}). Fix: provide a larger input buffer.",
                 decl.name(),
                 bytes.len(),
-                min_bytes,
+                required_bytes,
                 decl.count(),
                 decl.element()
             )));
@@ -165,10 +159,11 @@ pub(crate) fn run_hashmap_reference(
         .copied()
         .fold(1u32, u32::saturating_mul)
         .max(1);
+    let force_full_span = has_workgroup_buffer || program.stats().atomic_op_count > 0;
     let dispatch_elements = max_output_elements
         .max(program_graph_node_count.unwrap_or(0))
         .max(1)
-        .max(if output_decls.is_empty() {
+        .max(if output_decls.is_empty() || force_full_span {
             max_input_elements
         } else {
             1
@@ -212,6 +207,20 @@ pub(crate) fn run_hashmap_reference(
     let mut storage = memory.storage;
     output_decls . into_iter () . map (| decl | { storage . remove (decl . name ()) . map (| buffer | output_value (buffer , & decl)) . ok_or_else (| | { let name = decl . name () ; Error :: interp (format ! ("missing output buffer `{name}` after dispatch. Fix: keep buffer declarations unique.")) }) }) . collect ()
 }
+
+fn declared_min_byte_len(decl: &vyre::ir::BufferDecl) -> Result<usize, Error> {
+    match decl.static_byte_len() {
+        Ok(Some(byte_len)) => Ok(byte_len),
+        Ok(None) if decl.count() == 0 => Ok(0),
+        Ok(None) => Err(Error::interp(format!(
+            "buffer `{}` has unsized element type {}. Fix: provide a fixed-width buffer element type before invoking the reference interpreter.",
+            decl.name(),
+            decl.element()
+        ))),
+        Err(error) => Err(Error::interp(error)),
+    }
+}
+
 fn eval_expr(
     expr: &Expr,
     invocation: &mut HashmapInvocation<'_>,

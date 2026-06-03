@@ -75,3 +75,49 @@ fn cuda_dominance_frontier_via_diamond_seed_is_merge_node() {
     // Sanity: frontier should be {3}.
     assert_eq!(gpu, vec![0b1000u32]);
 }
+
+#[test]
+fn cuda_dominance_frontier_via_covers_candidate_past_first_workgroup() {
+    let node_count = 513u32;
+    let mut dom_offsets = Vec::with_capacity(node_count as usize + 1);
+    let mut dom_targets = Vec::with_capacity(node_count as usize);
+    dom_offsets.push(0);
+    for node in 0..node_count {
+        dom_targets.push(node);
+        dom_offsets.push(dom_targets.len() as u32);
+    }
+
+    let mut pred_offsets = vec![0u32; node_count as usize + 1];
+    pred_offsets[node_count as usize] = 1;
+    let pred_targets = vec![300u32];
+
+    let mut seed = vec![0u32; node_count.div_ceil(32) as usize];
+    seed[300 / 32] |= 1u32 << (300 % 32);
+
+    let gpu =
+        with_cuda_optimizer_dispatcher("dominance frontier 513-node candidate", |dispatcher| {
+            compute_dominance_frontier_via(
+                dispatcher,
+                node_count,
+                &dom_offsets,
+                &dom_targets,
+                &pred_offsets,
+                &pred_targets,
+                &seed,
+            )
+            .expect("dispatch")
+        });
+    let reference = reference_compute_dominance_frontier(
+        node_count,
+        &dom_offsets,
+        &dom_targets,
+        &pred_offsets,
+        &pred_targets,
+        &seed,
+    );
+    let mut expected = vec![0u32; node_count.div_ceil(32) as usize];
+    expected[512 / 32] |= 1u32 << (512 % 32);
+
+    assert_eq!(gpu, reference);
+    assert_eq!(gpu, expected);
+}

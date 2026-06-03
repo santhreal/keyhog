@@ -448,7 +448,6 @@ pub(super) fn c11_annotate_typedef_names_impl(
             Expr::bitor(
                 Expr::var("typedef_flags"),
                 Expr::u32(C_TYPEDEF_FLAG_VISIBLE_TYPEDEF_NAME),
-
             ),
         )],
     ));
@@ -502,4 +501,3 @@ pub(super) fn c11_annotate_typedef_names_impl(
     .with_entry_op_id(ANNOTATE_TYPEDEF_OP_ID)
     .with_non_composable_with_self(true)
 }
-

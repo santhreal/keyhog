@@ -449,7 +449,6 @@ mod tests {
         (0..size).map(|_| next_u32(state)).collect()
     }
 
-
     fn run_u32_output(program: &Program, inputs: Vec<Vec<u32>>, out_bytes: usize) -> Vec<u32> {
         let packed_inputs = inputs
             .into_iter()
@@ -545,7 +544,10 @@ mod tests {
             "unexpected matmul zero-M error: {error:?}"
         );
         let msg = format!("{error:?}");
-        assert!(msg.contains('0'), "zero-M error must mention zero dimension: {msg}");
+        assert!(
+            msg.contains('0'),
+            "zero-M error must mention zero dimension: {msg}"
+        );
     }
 
     #[test]
@@ -563,7 +565,10 @@ mod tests {
             "unexpected matmul-bias zero-M error: {error:?}"
         );
         let msg = format!("{error:?}");
-        assert!(msg.contains('0'), "zero-M bias error must mention zero dimension: {msg}");
+        assert!(
+            msg.contains('0'),
+            "zero-M bias error must mention zero dimension: {msg}"
+        );
     }
 
     #[test]
@@ -773,4 +778,3 @@ inventory::submit! {
         category: Some("math"),
     }
 }
-

@@ -3,8 +3,8 @@
 mod common;
 
 use common::{
-    assert_f32_output_lanes, assert_u32_output_lanes, bool_bytes, cuda_reference_outputs, f32_bytes,
-    i32_bytes, live_backend, u32_bytes,
+    assert_f32_output_lanes, assert_u32_output_lanes, bool_bytes, cuda_reference_outputs,
+    f32_bytes, i32_bytes, live_backend, u32_bytes,
 };
 use vyre::DispatchConfig;
 use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
@@ -14,11 +14,42 @@ const VECTOR_GROUP_COUNT: usize = VECTOR_LANE_COUNT / 4;
 const VECTOR_PAIR_GROUP_COUNT: usize = VECTOR_LANE_COUNT / 2;
 const DYNAMIC_AFFINE_GROUP_COUNT: usize = 256;
 const DYNAMIC_AFFINE_STRIDE: usize = 5;
-const DYNAMIC_AFFINE_SOURCE_LANES: usize =
-    DYNAMIC_AFFINE_GROUP_COUNT * DYNAMIC_AFFINE_STRIDE;
+const DYNAMIC_AFFINE_SOURCE_LANES: usize = DYNAMIC_AFFINE_GROUP_COUNT * DYNAMIC_AFFINE_STRIDE;
 const DYNAMIC_AFFINE_OUTPUT_LANES: usize = DYNAMIC_AFFINE_GROUP_COUNT * 4;
+const NARROW_LANE_COUNT: usize = 257;
 const WORKGROUP_SIZE_X: u32 = 128;
 const MAX_F32_ULP: u32 = 1;
+
+#[test]
+fn narrow_u8_scalar_copy_emits_byte_ptx_and_matches_reference_on_live_cuda() {
+    let backend = live_backend();
+    let program = narrow_scalar_copy_program(DataType::U8, NARROW_LANE_COUNT as u32);
+    let ptx = vyre_driver_cuda::codegen::program_to_ptx(&program, &DispatchConfig::default())
+        .expect("Fix: CUDA PTX emission must support byte-wide U8 memory programs.");
+    assert!(
+        ptx.contains("ld.global.u8"),
+        "Fix: U8 loads must use byte-wide PTX memory operations.\n{ptx}"
+    );
+    assert!(
+        ptx.contains("st.global.u8"),
+        "Fix: U8 stores must use byte-wide PTX memory operations.\n{ptx}"
+    );
+
+    let input = generated_u8_values();
+    let outputs = cuda_reference_outputs(&backend, &program, &[input.clone()], "narrow_u8_copy");
+    assert_eq!(
+        outputs.reference[0], input,
+        "Fix: U8 reference copy must preserve every byte."
+    );
+    assert_eq!(
+        outputs.direct_cuda[0], outputs.reference[0],
+        "Fix: direct CUDA U8 byte copy must match the reference path."
+    );
+    assert_eq!(
+        outputs.compiled_cuda[0], outputs.reference[0],
+        "Fix: compiled CUDA U8 byte copy must match the reference path."
+    );
+}
 
 #[test]
 fn vectorized_scalar_copy_emits_packed_ptx_and_matches_reference_on_live_cuda() {
@@ -45,12 +76,7 @@ fn vectorized_scalar_copy_emits_packed_ptx_and_matches_reference_on_live_cuda() 
 
         let input = generated_input_bytes(case.input);
         let outputs = cuda_reference_outputs(&backend, &program, &[input], case.name);
-        checked += assert_case_outputs(
-            &case,
-            "direct",
-            &outputs.direct_cuda,
-            &outputs.reference,
-        );
+        checked += assert_case_outputs(&case, "direct", &outputs.direct_cuda, &outputs.reference);
         checked += assert_case_outputs(
             &case,
             "compiled",
@@ -74,7 +100,9 @@ fn vectorized_scalar_pair_copy_emits_packed_v2_ptx_and_matches_reference_on_live
     for case in vector_cases() {
         let program = vectorized_pair_copy_program(case.ty.clone());
         let ptx = vyre_driver_cuda::codegen::program_to_ptx(&program, &DispatchConfig::default())
-            .expect("Fix: CUDA PTX emission must support unit-stride v2 vectorized memory programs.");
+            .expect(
+                "Fix: CUDA PTX emission must support unit-stride v2 vectorized memory programs.",
+            );
         let vector_load = format!("ld.global.v2.{}", case.ptx_suffix);
         let vector_load_nc = format!("ld.global.nc.v2.{}", case.ptx_suffix);
         let vector_store = format!("st.global.v2.{}", case.ptx_suffix);
@@ -91,12 +119,8 @@ fn vectorized_scalar_pair_copy_emits_packed_v2_ptx_and_matches_reference_on_live
 
         let input = generated_input_bytes(case.input);
         let outputs = cuda_reference_outputs(&backend, &program, &[input], case.name);
-        checked += assert_case_outputs(
-            &case,
-            "direct-v2",
-            &outputs.direct_cuda,
-            &outputs.reference,
-        );
+        checked +=
+            assert_case_outputs(&case, "direct-v2", &outputs.direct_cuda, &outputs.reference);
         checked += assert_case_outputs(
             &case,
             "compiled-v2",
@@ -120,7 +144,9 @@ fn vectorized_symbolic_affine_copy_emits_packed_v4_ptx_and_matches_reference_on_
     for case in vector_cases() {
         let program = vectorized_symbolic_affine_copy_program(case.ty.clone());
         let ptx = vyre_driver_cuda::codegen::program_to_ptx(&program, &DispatchConfig::default())
-            .expect("Fix: CUDA PTX emission must support symbolically-aligned vectorized memory programs.");
+            .expect(
+            "Fix: CUDA PTX emission must support symbolically-aligned vectorized memory programs.",
+        );
         let vector_load = format!("ld.global.v4.{}", case.ptx_suffix);
         let vector_load_nc = format!("ld.global.nc.v4.{}", case.ptx_suffix);
         let vector_store = format!("st.global.v4.{}", case.ptx_suffix);
@@ -159,8 +185,7 @@ fn vectorized_symbolic_affine_copy_emits_packed_v4_ptx_and_matches_reference_on_
 }
 
 #[test]
-fn dynamic_affine_sparse_gather_scalarizes_misaligned_loads_and_matches_reference_on_live_cuda()
-{
+fn dynamic_affine_sparse_gather_scalarizes_misaligned_loads_and_matches_reference_on_live_cuda() {
     let backend = live_backend();
     let program = dynamic_affine_sparse_gather_program();
     let ptx = vyre_driver_cuda::codegen::program_to_ptx(&program, &DispatchConfig::default())
@@ -300,19 +325,36 @@ fn vectorized_copy_program(ty: DataType) -> Program {
         vec![Node::if_then(
             Expr::lt(Expr::gid_x(), Expr::u32(VECTOR_GROUP_COUNT as u32)),
             vec![
-                    Node::let_bind("base", Expr::mul(Expr::gid_x(), Expr::u32(4))),
-                    Node::let_bind("i0", Expr::var("base")),
-                    Node::let_bind("i1", Expr::add(Expr::var("base"), Expr::u32(1))),
-                    Node::let_bind("i2", Expr::add(Expr::var("base"), Expr::u32(2))),
-                    Node::let_bind("i3", Expr::add(Expr::var("base"), Expr::u32(3))),
-                    Node::let_bind("v0", Expr::load("input", Expr::var("i0"))),
-                    Node::let_bind("v1", Expr::load("input", Expr::var("i1"))),
-                    Node::let_bind("v2", Expr::load("input", Expr::var("i2"))),
-                    Node::let_bind("v3", Expr::load("input", Expr::var("i3"))),
-                    Node::store("out", Expr::var("i0"), Expr::var("v0")),
-                    Node::store("out", Expr::var("i1"), Expr::var("v1")),
-                    Node::store("out", Expr::var("i2"), Expr::var("v2")),
-                    Node::store("out", Expr::var("i3"), Expr::var("v3")),
+                Node::let_bind("base", Expr::mul(Expr::gid_x(), Expr::u32(4))),
+                Node::let_bind("i0", Expr::var("base")),
+                Node::let_bind("i1", Expr::add(Expr::var("base"), Expr::u32(1))),
+                Node::let_bind("i2", Expr::add(Expr::var("base"), Expr::u32(2))),
+                Node::let_bind("i3", Expr::add(Expr::var("base"), Expr::u32(3))),
+                Node::let_bind("v0", Expr::load("input", Expr::var("i0"))),
+                Node::let_bind("v1", Expr::load("input", Expr::var("i1"))),
+                Node::let_bind("v2", Expr::load("input", Expr::var("i2"))),
+                Node::let_bind("v3", Expr::load("input", Expr::var("i3"))),
+                Node::store("out", Expr::var("i0"), Expr::var("v0")),
+                Node::store("out", Expr::var("i1"), Expr::var("v1")),
+                Node::store("out", Expr::var("i2"), Expr::var("v2")),
+                Node::store("out", Expr::var("i3"), Expr::var("v3")),
+            ],
+        )],
+    )
+}
+
+fn narrow_scalar_copy_program(ty: DataType, count: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::read("input", 0, ty.clone()).with_count(count),
+            BufferDecl::output("out", 1, ty).with_count(count),
+        ],
+        [WORKGROUP_SIZE_X, 1, 1],
+        vec![Node::if_then(
+            Expr::lt(Expr::gid_x(), Expr::u32(count)),
+            vec![
+                Node::let_bind("value", Expr::load("input", Expr::gid_x())),
+                Node::store("out", Expr::gid_x(), Expr::var("value")),
             ],
         )],
     )
@@ -383,10 +425,7 @@ fn dynamic_affine_sparse_gather_program() -> Program {
             vec![
                 Node::let_bind(
                     "src_base",
-                    Expr::mul(
-                        Expr::gid_x(),
-                        Expr::u32(DYNAMIC_AFFINE_STRIDE as u32),
-                    ),
+                    Expr::mul(Expr::gid_x(), Expr::u32(DYNAMIC_AFFINE_STRIDE as u32)),
                 ),
                 Node::let_bind("dst_base", Expr::mul(Expr::gid_x(), Expr::u32(4))),
                 Node::let_bind("s0", Expr::var("src_base")),
@@ -425,10 +464,7 @@ fn dynamic_affine_sparse_scatter_program() -> Program {
                 Node::let_bind("src_base", Expr::mul(Expr::gid_x(), Expr::u32(4))),
                 Node::let_bind(
                     "dst_base",
-                    Expr::mul(
-                        Expr::gid_x(),
-                        Expr::u32(DYNAMIC_AFFINE_STRIDE as u32),
-                    ),
+                    Expr::mul(Expr::gid_x(), Expr::u32(DYNAMIC_AFFINE_STRIDE as u32)),
                 ),
                 Node::let_bind("s0", Expr::var("src_base")),
                 Node::let_bind("s1", Expr::add(Expr::var("src_base"), Expr::u32(1))),
@@ -474,12 +510,20 @@ fn generated_input_bytes(kind: VectorInput) -> Vec<u8> {
     }
 }
 
+fn generated_u8_values() -> Vec<u8> {
+    (0..NARROW_LANE_COUNT)
+        .map(|lane| {
+            let lane = lane as u32;
+            (lane.wrapping_mul(0x45d9_f3b).rotate_left((lane & 7) + 1) ^ 0xa7) as u8
+        })
+        .collect()
+}
+
 fn generated_u32_values() -> Vec<u32> {
     (0..VECTOR_LANE_COUNT)
         .map(|lane| {
             let lane = lane as u32;
-            lane.wrapping_mul(0x9e37_79b9)
-                .rotate_left((lane & 31) + 1)
+            lane.wrapping_mul(0x9e37_79b9).rotate_left((lane & 31) + 1)
                 ^ 0xa5a5_5a5a_u32.rotate_right(lane & 31)
         })
         .collect()
@@ -518,8 +562,7 @@ fn generated_bool_values() -> Vec<bool> {
     (0..VECTOR_LANE_COUNT)
         .map(|lane| {
             let lane = lane as u32;
-            ((lane.wrapping_mul(0x45d9_f3b).rotate_left(lane & 7) ^ 0x1357_9bdf) & 0b1011)
-                == 0b0001
+            ((lane.wrapping_mul(0x45d9_f3b).rotate_left(lane & 7) ^ 0x1357_9bdf) & 0b1011) == 0b0001
                 || lane % 17 == 0
         })
         .collect()
@@ -529,8 +572,7 @@ fn generated_dynamic_u32_values(len: usize, salt: u32) -> Vec<u32> {
     (0..len)
         .map(|lane| {
             let lane = lane as u32;
-            lane.wrapping_mul(0x9e37_79b9)
-                .rotate_left((lane & 31) + 1)
+            lane.wrapping_mul(0x9e37_79b9).rotate_left((lane & 31) + 1)
                 ^ salt.rotate_right(lane & 31)
         })
         .collect()

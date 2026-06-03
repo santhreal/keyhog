@@ -26,11 +26,100 @@ pub(crate) fn fuse_resident_readback_copies(
     fuse_resident_transfer_intervals(requested)
 }
 
+pub(crate) fn validate_fused_resident_readbacks(
+    fused: &FusedResidentReadbacks,
+    requested_output_slots: usize,
+    context: &'static str,
+) -> Result<(), BackendError> {
+    if fused.views.len() != requested_output_slots {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} fused readback produced {} output view(s) for {} requested slot(s). Keep resident readback fusion cardinality-preserving before materializing outputs.",
+                fused.views.len(),
+                requested_output_slots
+            ),
+        });
+    }
+    if fused.non_empty_copy_count != fused.copies.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} fused readback counted {} non-empty copy operation(s) but staged {} copy slot(s). Keep resident readback telemetry and staging in the same fusion plan.",
+                fused.non_empty_copy_count,
+                fused.copies.len()
+            ),
+        });
+    }
+    let mut staged_copy_bytes = 0u64;
+    for copy in fused.copies.iter().copied() {
+        let copy_bytes = u64::try_from(copy.byte_len).map_err(|_| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} fused readback staged copy for handle {} has {} byte(s), which does not fit telemetry accounting.",
+                    copy.handle_id, copy.byte_len
+                ),
+            }
+        })?;
+        staged_copy_bytes = staged_copy_bytes
+            .checked_add(copy_bytes)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} fused readback staged byte accounting overflowed while validating handle {}.",
+                    copy.handle_id
+                ),
+            })?;
+    }
+    if fused.bytes != staged_copy_bytes {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} fused readback reports {} byte(s) but stages {} byte(s). Keep resident readback telemetry equal to the fused copy plan.",
+                fused.bytes, staged_copy_bytes
+            ),
+        });
+    }
+    for (view_index, view) in fused.views.iter().copied().enumerate() {
+        if view.byte_len == 0 {
+            continue;
+        }
+        let Some(copy) = fused.copies.get(view.copy_slot) else {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} fused readback view {view_index} references missing copy slot {} for {} byte(s). Rebuild the resident readback fusion plan before materializing outputs.",
+                    view.copy_slot,
+                    view.byte_len
+                ),
+            });
+        };
+        let view_end =
+            view.byte_offset
+                .checked_add(view.byte_len)
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA {context} fused readback view {view_index} overflows usize at offset {} len {}.",
+                        view.byte_offset, view.byte_len
+                    ),
+                })?;
+        if view_end > copy.byte_len {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} fused readback view {view_index} requested bytes [{}..{}) from a {} byte fused copy. Rebuild the resident readback fusion plan before materializing outputs.",
+                    view.byte_offset, view_end, copy.byte_len
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
-    use super::{fuse_resident_readback_copies, ResidentReadbackCopy};
+    use smallvec::smallvec;
+
+    use super::{
+        fuse_resident_readback_copies, validate_fused_resident_readbacks, FusedResidentReadbacks,
+        ResidentReadbackCopy, ResidentReadbackView,
+    };
 
     #[test]
     fn generated_fusion_preserves_every_requested_output_and_accounts_union_bytes() {
@@ -38,6 +127,10 @@ mod tests {
             let requested = generated_requests(seed);
             let fused = fuse_resident_readback_copies(&requested)
                 .expect("Fix: generated resident readback requests must fuse without overflow");
+            validate_fused_resident_readbacks(&fused, requested.len(), "generated readback")
+                .expect(
+                    "Fix: generated resident readback fusion must produce a materializable plan",
+                );
 
             assert_eq!(
                 fused.views.len(),
@@ -99,6 +192,81 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fused_readback_validation_rejects_non_materializable_views() {
+        let bad_cardinality = FusedResidentReadbacks {
+            copies: smallvec![ResidentReadbackCopy {
+                handle_id: 1,
+                src: 16,
+                byte_len: 4,
+            }],
+            views: smallvec![],
+            non_empty_copy_count: 1,
+            bytes: 4,
+        };
+        assert!(
+            validate_fused_resident_readbacks(&bad_cardinality, 1, "test").is_err(),
+            "Fix: CUDA fused readback validation must reject plans that would silently skip output slots."
+        );
+
+        let bad_slot = FusedResidentReadbacks {
+            copies: smallvec![ResidentReadbackCopy {
+                handle_id: 1,
+                src: 16,
+                byte_len: 4,
+            }],
+            views: smallvec![ResidentReadbackView {
+                copy_slot: 1,
+                byte_offset: 0,
+                byte_len: 1,
+            }],
+            non_empty_copy_count: 1,
+            bytes: 4,
+        };
+        assert!(
+            validate_fused_resident_readbacks(&bad_slot, 1, "test").is_err(),
+            "Fix: CUDA fused readback validation must reject views pointing outside staged copy slots."
+        );
+
+        let bad_range = FusedResidentReadbacks {
+            copies: smallvec![ResidentReadbackCopy {
+                handle_id: 1,
+                src: 16,
+                byte_len: 4,
+            }],
+            views: smallvec![ResidentReadbackView {
+                copy_slot: 0,
+                byte_offset: 3,
+                byte_len: 2,
+            }],
+            non_empty_copy_count: 1,
+            bytes: 4,
+        };
+        assert!(
+            validate_fused_resident_readbacks(&bad_range, 1, "test").is_err(),
+            "Fix: CUDA fused readback validation must reject output views that overrun the fused copy."
+        );
+
+        let bad_bytes = FusedResidentReadbacks {
+            copies: smallvec![ResidentReadbackCopy {
+                handle_id: 1,
+                src: 16,
+                byte_len: 4,
+            }],
+            views: smallvec![ResidentReadbackView {
+                copy_slot: 0,
+                byte_offset: 0,
+                byte_len: 4,
+            }],
+            non_empty_copy_count: 1,
+            bytes: 3,
+        };
+        assert!(
+            validate_fused_resident_readbacks(&bad_bytes, 1, "test").is_err(),
+            "Fix: CUDA fused readback validation must reject telemetry byte counts that drift from staged copies."
+        );
     }
 
     #[test]

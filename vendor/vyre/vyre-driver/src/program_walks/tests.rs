@@ -5,6 +5,24 @@ use crate::backend::DispatchConfig;
 use crate::binding::{Binding, BindingRole};
 use vyre_foundation::ir::{Expr, Node};
 
+fn singleton_atomic_byte_flag_program() -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("bytes_in", 0, BufferAccess::ReadOnly, DataType::U8).with_count(0),
+            BufferDecl::storage("flag", 1, BufferAccess::ReadWrite, DataType::U32).with_count(1),
+        ],
+        [256, 1, 1],
+        vec![Node::let_bind(
+            "flag_old",
+            Expr::atomic_or(
+                "flag",
+                Expr::u32(0),
+                Expr::load("bytes_in", Expr::InvocationId { axis: 0 }),
+            ),
+        )],
+    )
+}
+
 #[test]
 fn infer_grid_uses_readonly_input_for_accumulator_kernels() {
     let program = Program::wrapped(
@@ -29,6 +47,42 @@ fn infer_grid_uses_readonly_input_for_accumulator_kernels() {
         .expect("Fix: accumulator kernel grid should infer from full binding plan");
 
     assert_eq!(grid, [3907, 1, 1]);
+}
+
+#[test]
+fn infer_grid_uses_dynamic_byte_input_for_singleton_atomic_flags() {
+    let program = singleton_atomic_byte_flag_program();
+    let inputs = vec![vec![0u8; 4097], vec![0u8; 4]];
+
+    let grid = infer_dispatch_grid(&program, &inputs, &DispatchConfig::default())
+        .expect("Fix: singleton atomic flags must still dispatch across the dynamic byte input.");
+
+    assert_eq!(grid, [17, 1, 1]);
+}
+
+#[test]
+fn generated_dynamic_byte_singleton_atomic_flag_grid_matrix() {
+    let program = singleton_atomic_byte_flag_program();
+    let mut inputs = vec![Vec::new(), vec![0u8; 4]];
+    let mut checked = 0u32;
+
+    for byte_len in 1..=10_000u32 {
+        inputs[0].resize(byte_len as usize, 0);
+        let grid = infer_dispatch_grid(&program, &inputs, &DispatchConfig::default())
+            .expect("Fix: generated singleton-flag grid inference should accept byte inputs.");
+
+        assert_eq!(
+            grid,
+            [byte_len.div_ceil(256), 1, 1],
+            "Fix: dynamic byte length {byte_len} must drive singleton atomic flag dispatch."
+        );
+        checked += 1;
+    }
+
+    assert_eq!(
+        checked, 10_000,
+        "Fix: generated singleton-flag grid matrix must cover ten thousand byte lengths."
+    );
 }
 
 #[test]

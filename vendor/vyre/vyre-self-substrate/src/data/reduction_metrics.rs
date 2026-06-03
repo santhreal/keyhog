@@ -317,12 +317,14 @@ pub fn reference_histogram_atomic_scatter(input: &[u32], num_bins: u32) -> Vec<u
     primitive_histogram(input, num_bins)
 }
 
-fn grid_for_metric(metric: ReductionMetric, count: u32) -> [u32; 3] {
+fn grid_for_metric(metric: ReductionMetric, _count: u32) -> [u32; 3] {
     match metric {
-        ReductionMetric::Sum | ReductionMetric::Max | ReductionMetric::Min => {
-            [ceil_div_u32(count, 256), 1, 1]
-        }
-        ReductionMetric::CountNonZero | ReductionMetric::Any | ReductionMetric::All => [1, 1, 1],
+        ReductionMetric::Sum
+        | ReductionMetric::Max
+        | ReductionMetric::Min
+        | ReductionMetric::CountNonZero
+        | ReductionMetric::Any
+        | ReductionMetric::All => [1, 1, 1],
     }
 }
 
@@ -415,38 +417,74 @@ mod tests {
             let values = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
             match op_id {
                 vyre_primitives::reduce::sum::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_scalar_metric_dispatch(
+                        program,
+                        grid_override,
+                        ReductionMetric::Sum,
+                        values.len() as u32,
+                    );
                     scalar(primitive_sum(&values))
                 }
                 vyre_primitives::reduce::max::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_scalar_metric_dispatch(
+                        program,
+                        grid_override,
+                        ReductionMetric::Max,
+                        values.len() as u32,
+                    );
                     scalar(primitive_max(&values))
                 }
                 vyre_primitives::reduce::min::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_scalar_metric_dispatch(
+                        program,
+                        grid_override,
+                        ReductionMetric::Min,
+                        values.len() as u32,
+                    );
                     scalar(primitive_min(&values))
                 }
                 vyre_primitives::reduce::count_non_zero::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_scalar_metric_dispatch(
+                        program,
+                        grid_override,
+                        ReductionMetric::CountNonZero,
+                        values.len() as u32,
+                    );
                     scalar(primitive_count_non_zero(&values))
                 }
                 vyre_primitives::reduce::any::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_scalar_metric_dispatch(
+                        program,
+                        grid_override,
+                        ReductionMetric::Any,
+                        values.len() as u32,
+                    );
                     scalar(primitive_any(&values))
                 }
                 vyre_primitives::reduce::all::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_scalar_metric_dispatch(
+                        program,
+                        grid_override,
+                        ReductionMetric::All,
+                        values.len() as u32,
+                    );
                     scalar(primitive_all(&values))
                 }
                 vyre_primitives::reduce::segment_reduce::OP_ID => {
                     assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_eq!(program.workgroup_size(), [256, 1, 1]);
                     let offsets = crate::hardware::dispatch_buffers::read_u32s(&inputs[1]);
                     Ok(vec![u32_slice_to_le_bytes(&primitive_segment_reduce_sum(
                         &values, &offsets,
                     ))])
                 }
                 vyre_primitives::reduce::histogram::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
+                    assert_eq!(
+                        grid_override,
+                        Some([ceil_div_u32(values.len() as u32, 256), 1, 1]),
+                        "Fix: histogram_atomic_scatter_via must launch one lane per input item."
+                    );
+                    assert_eq!(program.workgroup_size(), [256, 1, 1]);
                     let bins = (inputs[1].len() / std::mem::size_of::<u32>()) as u32;
 
                     Ok(vec![u32_slice_to_le_bytes(&primitive_histogram(
@@ -460,6 +498,24 @@ mod tests {
 
     fn scalar(value: u32) -> Result<Vec<Vec<u8>>, DispatchError> {
         Ok(vec![u32_slice_to_le_bytes(&[value])])
+    }
+
+    fn assert_scalar_metric_dispatch(
+        program: &Program,
+        grid_override: Option<[u32; 3]>,
+        metric: ReductionMetric,
+        count: u32,
+    ) {
+        assert_eq!(
+            program.workgroup_size(),
+            [256, 1, 1],
+            "Fix: scalar reduction primitives must keep the 256-lane chunked reducer."
+        );
+        assert_eq!(
+            grid_override,
+            Some(grid_for_metric(metric, count)),
+            "Fix: scalar reductions initialize their output inside the primitive, so the self-substrate wrapper must not split one scalar reduction across unsynchronized workgroups."
+        );
     }
 
     #[test]
@@ -500,6 +556,83 @@ mod tests {
             histogram_atomic_scatter_via(&ReduceDispatcher, &[0, 1, 2, 1, 9], 4).unwrap(),
             vec![1, 2, 1, 0]
         );
+    }
+
+    #[test]
+    fn generated_large_scalar_reductions_match_oracles() {
+        for case in 0..4096u32 {
+            let len = 257 + (case.wrapping_mul(31) % 1024) as usize;
+            let mut state = 0xA11C_E5CAu32 ^ case.wrapping_mul(0x9E37_79B9);
+            let mut values = Vec::with_capacity(len);
+            for index in 0..len {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                values.push(if (state.wrapping_add(index as u32)) % 13 == 0 {
+                    0
+                } else {
+                    state
+                });
+            }
+
+            assert_eq!(
+                reduce_sum_via(&ReduceDispatcher, &values).unwrap(),
+                reference_reduce_sum(&values),
+                "case {case}: sum"
+            );
+            assert_eq!(
+                reduce_max_via(&ReduceDispatcher, &values).unwrap(),
+                reference_reduce_max(&values),
+                "case {case}: max"
+            );
+            assert_eq!(
+                reduce_min_via(&ReduceDispatcher, &values).unwrap(),
+                reference_reduce_min(&values),
+                "case {case}: min"
+            );
+            assert_eq!(
+                reduce_count_non_zero_via(&ReduceDispatcher, &values).unwrap(),
+                reference_reduce_count_non_zero(&values),
+                "case {case}: count_non_zero"
+            );
+            assert_eq!(
+                reduce_any_via(&ReduceDispatcher, &values).unwrap(),
+                reference_reduce_any(&values),
+                "case {case}: any"
+            );
+            assert_eq!(
+                reduce_all_via(&ReduceDispatcher, &values).unwrap(),
+                reference_reduce_all(&values),
+                "case {case}: all"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_large_histograms_match_oracles() {
+        for case in 0..4096u32 {
+            let len = 257 + (case.wrapping_mul(17) % 1024) as usize;
+            let bins = 1 + case.wrapping_mul(7) % 97;
+            let mut state = 0xABCD_EF01u32 ^ case.wrapping_mul(0x85EB_CA6B);
+            let mut input = Vec::with_capacity(len);
+            for index in 0..len {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let value = if index % 11 == 0 {
+                    bins + (state % 19)
+                } else {
+                    state % bins
+                };
+                input.push(value);
+            }
+
+            assert_eq!(
+                histogram_atomic_scatter_via(&ReduceDispatcher, &input, bins).unwrap(),
+                reference_histogram_atomic_scatter(&input, bins),
+                "case {case}: histogram"
+            );
+        }
     }
 
     #[test]
@@ -548,4 +681,3 @@ mod tests {
             .contains("Fix: histogram_atomic_scatter_via requires num_bins > 0"));
     }
 }
-

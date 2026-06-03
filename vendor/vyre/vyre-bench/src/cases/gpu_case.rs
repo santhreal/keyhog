@@ -72,7 +72,13 @@ mod tests {
             let input_bytes = lanes.saturating_mul(4);
             let output_bytes = lanes.saturating_mul(8);
             let work_units = lanes.saturating_mul(3);
-            let metrics = gpu_case_metrics(11 + lanes, Some(7 + lanes), input_bytes, output_bytes, work_units);
+            let metrics = gpu_case_metrics(
+                11 + lanes,
+                Some(7 + lanes),
+                input_bytes,
+                output_bytes,
+                work_units,
+            );
 
             assert_eq!(metrics.wall_ns, Some(11 + lanes));
             assert_eq!(metrics.dispatch_ns, Some(7 + lanes));

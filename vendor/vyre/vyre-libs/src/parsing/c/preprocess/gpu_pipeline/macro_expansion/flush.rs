@@ -234,13 +234,8 @@ pub(crate) fn flush_active_macro_segment_inner(
     let (table, dispatch_scratch) = macro_expansion_cache
         .packed_macro_table_with_dispatch_scratch(cache_key.macro_hash, &segment_macros)?;
     let token_count_actual = classified.tok_types.len().max(1);
-    let source_len_actual = classified.source.len().max(1);
+    let source_len_actual = classified.source.len();
     let token_count_bucket = bucket_pow2(token_count_actual, 512);
-    let source_len_bucket = bucket_pow2(source_len_actual, 2_048);
-    let replacement_source_len_bucket = bucket_pow2(
-        table.expansion_replacement_source_len.max(1) as usize,
-        MACRO_EXPANSION_MIN_REPLACEMENT_SOURCE_BYTES,
-    );
     let token_count = checked_gpu_u32("macro expansion token count", token_count_actual)?;
     let source_len = checked_gpu_u32("macro expansion source length", source_len_actual)?;
     let max_body_len = segment_macros
@@ -305,10 +300,10 @@ pub(crate) fn flush_active_macro_segment_inner(
         Expr::load("runtime_counts", Expr::u32(1)),
         Expr::load("runtime_counts", Expr::u32(2)),
         checked_gpu_u32("macro expansion input token capacity", token_count_bucket)?,
-        checked_gpu_u32("macro expansion source capacity", source_len_bucket)?,
+        source_len.max(1),
         checked_gpu_u32(
             "macro expansion replacement source capacity",
-            replacement_source_len_bucket,
+            table.expansion_replacement_bytes.len().max(1),
         )?,
         max_out_tokens,
         max_out_source_bytes,
@@ -331,11 +326,6 @@ pub(crate) fn flush_active_macro_segment_inner(
         dispatch_scratch.input_buffer_mut(2),
         &classified.tok_lens,
         token_count_bucket,
-    )?;
-    bytes_to_u32_word_bytes_into(
-        dispatch_scratch.input_buffer_mut(3),
-        &classified.source,
-        source_len_bucket,
     )?;
     dispatch_scratch.write_zero_bytes(
         4,
@@ -375,11 +365,6 @@ pub(crate) fn flush_active_macro_segment_inner(
         11,
         checked_staging_word_bytes(token_count_bucket, "macro expansion replacement lengths")?,
     )?;
-    pad_u32_byte_buffer_into(
-        &mut dispatch_scratch.replacement_words,
-        &table.expansion_replacement_words_le,
-        replacement_source_len_bucket,
-    )?;
     dispatch_scratch.write_runtime_counts(token_count, source_len, replacement_source_len);
 
     if dispatcher.requires_output_inputs() {
@@ -389,11 +374,11 @@ pub(crate) fn flush_active_macro_segment_inner(
             input_buffers[0].as_slice(),
             input_buffers[1].as_slice(),
             input_buffers[2].as_slice(),
-            input_buffers[3].as_slice(),
+            classified.source.as_ref(),
             table.expansion_name_hashes_le.as_slice(),
             table.expansion_name_starts_le.as_slice(),
             table.expansion_name_lens_le.as_slice(),
-            table.expansion_name_words_le.as_slice(),
+            table.expansion_name_bytes.as_slice(),
             table.expansion_vals_le.as_slice(),
             table.expansion_sizes_le.as_slice(),
             table.expansion_kinds_le.as_slice(),
@@ -401,7 +386,7 @@ pub(crate) fn flush_active_macro_segment_inner(
             table.expansion_replacement_params_le.as_slice(),
             table.expansion_replacement_starts_le.as_slice(),
             table.expansion_replacement_lens_le.as_slice(),
-            dispatch_scratch.replacement_words.as_slice(),
+            table.expansion_replacement_bytes.as_slice(),
             dispatch_scratch.runtime_counts.as_slice(),
             input_buffers[4].as_slice(),
             input_buffers[5].as_slice(),
@@ -422,11 +407,11 @@ pub(crate) fn flush_active_macro_segment_inner(
             input_buffers[0].as_slice(),
             input_buffers[1].as_slice(),
             input_buffers[2].as_slice(),
-            input_buffers[3].as_slice(),
+            classified.source.as_ref(),
             table.expansion_name_hashes_le.as_slice(),
             table.expansion_name_starts_le.as_slice(),
             table.expansion_name_lens_le.as_slice(),
-            table.expansion_name_words_le.as_slice(),
+            table.expansion_name_bytes.as_slice(),
             table.expansion_vals_le.as_slice(),
             table.expansion_sizes_le.as_slice(),
             table.expansion_kinds_le.as_slice(),
@@ -434,7 +419,7 @@ pub(crate) fn flush_active_macro_segment_inner(
             table.expansion_replacement_params_le.as_slice(),
             table.expansion_replacement_starts_le.as_slice(),
             table.expansion_replacement_lens_le.as_slice(),
-            dispatch_scratch.replacement_words.as_slice(),
+            table.expansion_replacement_bytes.as_slice(),
             dispatch_scratch.runtime_counts.as_slice(),
             input_buffers[10].as_slice(),
             input_buffers[11].as_slice(),
@@ -448,7 +433,6 @@ pub(crate) fn flush_active_macro_segment_inner(
         tracing::debug!(
             "[stage-trace] macro-flush expand-dispatched file={} segment_bytes={} elapsed_us={}",
             file_path.display(),
-
             segment.len(),
             flush_start.elapsed().as_micros()
         );
@@ -606,4 +590,3 @@ pub(crate) fn flush_active_macro_segment_inner(
     segment.clear();
     Ok(())
 }
-

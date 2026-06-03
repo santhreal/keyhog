@@ -8,8 +8,8 @@ mod common;
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_primitives::math::bigint_add_carry::{
-    bigint_add_carry, bigint_add_carry_cpu, BINDING_A_IN, BINDING_B_IN, BINDING_CARRY_PARTIAL_OUT,
-    BINDING_SUM_PARTIAL_OUT,
+    bigint_add_carry, bigint_add_carry_cpu, bigint_add_carry_dispatch_grid, BINDING_A_IN,
+    BINDING_B_IN, BINDING_CARRY_PARTIAL_OUT, BINDING_SUM_PARTIAL_OUT,
 };
 use vyre_primitives::math::interval::{cpu_interval_merge, interval_merge_program};
 use vyre_primitives::math::submodular_greedy::{
@@ -26,9 +26,7 @@ fn run_bigint_add_carry(a: &[u32], b: &[u32]) -> (Vec<u32>, Vec<u32>) {
     inputs[BINDING_SUM_PARTIAL_OUT as usize] = vec![0u8; limb_count as usize * 4];
     inputs[BINDING_CARRY_PARTIAL_OUT as usize] = vec![0u8; limb_count as usize * 4];
     let mut config = DispatchConfig::default();
-    let workgroup_x = 256u32;
-    let grid_x = ((limb_count + workgroup_x - 1) / workgroup_x).max(1);
-    config.grid_override = Some([grid_x, 1, 1]);
+    config.grid_override = Some(bigint_add_carry_dispatch_grid(limb_count));
     let outputs = with_live_backend("bigint add carry", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -76,6 +74,46 @@ fn cuda_bigint_add_carry_zero_operands() {
     assert_eq!(gpu_sum, cpu_sum);
     assert_eq!(gpu_carry, cpu_carry);
     assert_eq!(gpu_sum, vec![0u32; 5]);
+}
+
+#[test]
+fn cuda_bigint_add_carry_multi_block_overflow_pattern() {
+    let limb_count = 1025u32;
+    let mut a = Vec::with_capacity(limb_count as usize);
+    let mut b = Vec::with_capacity(limb_count as usize);
+    for idx in 0..limb_count {
+        let (left, right) = match idx {
+            0 => (u32::MAX, 1),
+            255 => (0, 0),
+            256 => (u32::MAX, u32::MAX),
+            511 => (0x8000_0000, 0x8000_0000),
+            512 => (7, 9),
+            1024 => (u32::MAX, 2),
+            _ if idx % 5 == 0 => (u32::MAX, idx),
+            _ if idx % 7 == 0 => (0x8000_0000, 0x8000_0000),
+            _ => (
+                idx.wrapping_mul(0x9E37_79B9),
+                idx.rotate_left(11).wrapping_mul(0x85EB_CA6B),
+            ),
+        };
+        a.push(left);
+        b.push(right);
+    }
+
+    let (cpu_sum, cpu_carry) = bigint_add_carry_cpu(&a, &b).expect("ok");
+    let (gpu_sum, gpu_carry) = run_bigint_add_carry(&a, &b);
+
+    assert_eq!(bigint_add_carry_dispatch_grid(limb_count), [5, 1, 1]);
+    assert_eq!(gpu_sum, cpu_sum);
+    assert_eq!(gpu_carry, cpu_carry);
+    assert_eq!(gpu_sum[0], 0);
+    assert_eq!(gpu_carry[0], 1);
+    assert_eq!(gpu_sum[256], u32::MAX - 1);
+    assert_eq!(gpu_carry[256], 1);
+    assert_eq!(gpu_sum[512], 16);
+    assert_eq!(gpu_carry[512], 0);
+    assert_eq!(gpu_sum[1024], 1);
+    assert_eq!(gpu_carry[1024], 1);
 }
 
 // ---------------------------------------------------------------------

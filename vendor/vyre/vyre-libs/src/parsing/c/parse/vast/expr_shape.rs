@@ -448,7 +448,6 @@ fn c11_build_expression_shape_nodes_impl(
                                 Expr::var("cond_parent_typed"),
                             ),
                         ),
-
                         Node::let_bind(
                             "cond_parent_prec",
                             c_expr_operator_precedence(
@@ -633,4 +632,3 @@ fn c11_build_expression_shape_nodes_impl(
 pub(super) fn u32_words_to_bytes(words: &[u32]) -> Vec<u8> {
     vyre_primitives::wire::pack_u32_slice(words)
 }
-

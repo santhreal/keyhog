@@ -16,7 +16,10 @@ mod upload;
 
 #[cfg(any(test, feature = "cpu-parity"))]
 pub use reference::*;
-pub use resident::{ResidentAdaptiveFourRussiansDenseGraph, ResidentAdaptiveTraversalGraph};
+pub use resident::{
+    ResidentAdaptiveFourRussiansDenseGraph, ResidentAdaptiveSparseQueueGraph,
+    ResidentAdaptiveTraversalGraph,
+};
 pub use resident_steps::*;
 pub use state::{AdaptiveTraversalPlanCacheSnapshot, AdaptiveTraversalResidentScratch};
 pub use upload::*;

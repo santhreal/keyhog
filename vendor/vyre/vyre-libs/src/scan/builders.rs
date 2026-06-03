@@ -61,29 +61,40 @@ pub fn append_match(
     start: impl Into<Expr>,
     end: impl Into<Expr>,
 ) -> Node {
-    let slot = Expr::atomic_add(count_buffer, Expr::u32(0), Expr::u32(1));
     let max_hits = Expr::div(Expr::buf_len(hits_buffer), Expr::u32(3));
 
-    Node::if_then(
-        Expr::lt(slot.clone(), max_hits),
-        vec![
-            Node::store(
-                hits_buffer,
-                Expr::mul(slot.clone(), Expr::u32(3)),
-                tag.into(),
-            ),
-            Node::store(
-                hits_buffer,
-                Expr::add(Expr::mul(slot.clone(), Expr::u32(3)), Expr::u32(1)),
-                start.into(),
-            ),
-            Node::store(
-                hits_buffer,
-                Expr::add(Expr::mul(slot, Expr::u32(3)), Expr::u32(2)),
-                end.into(),
-            ),
-        ],
-    )
+    Node::Block(vec![
+        Node::let_bind(
+            "_vyre_match_slot",
+            Expr::atomic_add(count_buffer, Expr::u32(0), Expr::u32(1)),
+        ),
+        Node::if_then(
+            Expr::lt(Expr::var("_vyre_match_slot"), max_hits),
+            vec![
+                Node::store(
+                    hits_buffer,
+                    Expr::mul(Expr::var("_vyre_match_slot"), Expr::u32(3)),
+                    tag.into(),
+                ),
+                Node::store(
+                    hits_buffer,
+                    Expr::add(
+                        Expr::mul(Expr::var("_vyre_match_slot"), Expr::u32(3)),
+                        Expr::u32(1),
+                    ),
+                    start.into(),
+                ),
+                Node::store(
+                    hits_buffer,
+                    Expr::add(
+                        Expr::mul(Expr::var("_vyre_match_slot"), Expr::u32(3)),
+                        Expr::u32(2),
+                    ),
+                    end.into(),
+                ),
+            ],
+        ),
+    ])
 }
 
 /// Innovation I.17: Subgroup-Coalesced Match Append.
@@ -120,7 +131,7 @@ pub fn append_match_subgroup(
         Expr::var("_vyre_match_rank"),
     );
     let ballot_cond = cond.clone();
-    let bounded_hit = Expr::and(cond, Expr::lt(slot.clone(), max_hits));
+    let bounded_hit = Expr::and(cond, Expr::lt(Expr::var("_vyre_match_slot"), max_hits));
 
     vec![
         Node::let_bind("_vyre_match_ballot", Expr::subgroup_ballot(ballot_cond)),
@@ -173,6 +184,37 @@ pub fn append_match_subgroup(
             ],
         ),
     ]
+}
+
+#[cfg(test)]
+mod subgroup_append_shape_tests {
+    use super::*;
+
+    #[test]
+    fn subgroup_append_bounds_hits_with_bound_slot_variable() {
+        let nodes = append_match_subgroup(
+            "matches",
+            "match_count",
+            Expr::u32(7),
+            Expr::u32(11),
+            Expr::u32(13),
+            Expr::var("hit"),
+        );
+
+        let bounded_cond = match nodes.last() {
+            Some(Node::If { cond, .. }) => format!("{cond:?}"),
+            other => panic!("expected bounded-hit If as final subgroup append node, got {other:?}"),
+        };
+
+        assert!(
+            bounded_cond.contains("_vyre_match_slot"),
+            "bounded-hit predicate must use the already-bound slot variable: {bounded_cond}"
+        );
+        assert!(
+            !bounded_cond.contains("_vyre_match_leader"),
+            "bounded-hit predicate must not re-inline subgroup shuffle leader expressions: {bounded_cond}"
+        );
+    }
 }
 
 #[cfg(test)]

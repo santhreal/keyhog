@@ -12,11 +12,15 @@ pub mod ops;
 /// Bounded-stack bracket-pair detector.
 pub mod bracket_match;
 
+mod region_programs;
+
 /// Span-region dedup primitive. Collapses same-pid overlapping or
 /// touching `(pid, start, end)` triples into a representative span.
 /// Every multimatch consumer in the workspace was reimplementing this
 ///  -  one primitive replaces all of them.
 pub mod region;
+#[cfg(test)]
+mod region_tests;
 
 mod dfa_compile;
 
@@ -31,7 +35,8 @@ pub use bracket_match::cpu_ref as bracket_match_cpu_ref;
 #[cfg(any(test, feature = "cpu-parity"))]
 pub use bracket_match::cpu_ref_into as bracket_match_cpu_ref_into;
 pub use bracket_match::{
-    bracket_match, pack_u32 as pack_bracket_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
+    bracket_match, bracket_match_dispatch_grid, pack_u32 as pack_bracket_u32,
+    BRACKET_MATCH_PARALLEL_WORKGROUP_SIZE, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
 };
 pub use dfa_compile::{
     dfa_compile, dfa_compile_with_budget, CompiledDfa, DfaCompileError, DfaWireError,
@@ -45,4 +50,7 @@ pub use nfa_to_dfa::{
 pub use region::dedup_regions_cpu;
 #[cfg(any(test, feature = "cpu-parity"))]
 pub use region::dedup_regions_inplace;
-pub use region::{dedup_regions_flag_program, RegionTriple};
+pub use region::{
+    dedup_regions_cluster_program, dedup_regions_flag_program, region_dedup_dispatch_grid,
+    RegionTriple, REGION_DEDUP_WORKGROUP_SIZE,
+};

@@ -83,6 +83,19 @@ fn generator_is_allowed(generator: &str, registered: &BTreeSet<String>) -> bool 
     if registered.contains(registered_key) {
         return true;
     }
+    // Named internal sub-pass of a registered op: generators of the form
+    // `<registered_op_id>::<sub_pass>` (e.g. `..::c_lexer::classify_at_pos`,
+    // `..::ast_shunting_yard::statement_pass`). Provenance still resolves to a
+    // registered op  -  the region declares which op's internal composition it
+    // belongs to  -  so it is NOT a black box. A typo in the *op* portion leaves
+    // no registered `::`-boundary prefix and is still caught; only sub-pass
+    // names (internal to an already-audited op) are admitted this way.
+    if registered
+        .iter()
+        .any(|op| registered_key.starts_with(op) && registered_key[op.len()..].starts_with("::"))
+    {
+        return true;
+    }
     // Generators the architecture explicitly allows to be anonymous:
     // top-level wrappers built by consumers / vyre-libs that don't name
     // a specific downstream op (e.g., `anonymous`, `inline-call`).

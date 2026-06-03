@@ -68,7 +68,7 @@ fn incremental_hash_state_helpers_match_slice_hashers_across_generated_adversari
 
 #[test]
 fn persistent_bfs_layout_hash_uses_canonical_fnv64_helpers() {
-    let source = include_str!("../src/graph/persistent_bfs.rs");
+    let source = include_str!("../src/graph/persistent_bfs/hash.rs");
     assert!(
         source.contains("fnv1a64_initial_state") && source.contains("fnv1a64_update_byte"),
         "Fix: persistent BFS layout hashing must use canonical FNV64 helpers."

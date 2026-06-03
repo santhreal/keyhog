@@ -146,14 +146,47 @@ impl BodyCtx<'_> {
         })
     }
 
+    /// Skip emitting a standalone integer `mul` when its result is consumed
+    /// by exactly one `add`/`wrapping_add` that `emit_integer_mad_from_add`
+    /// will fuse into a `mad` - otherwise the `mul` is dead (the `mad`
+    /// recomputes the product from the same operands). Delegating to
+    /// `integer_mad_parts` keeps this predicate in lock-step with the actual
+    /// fusion: we only defer when the `mad` provably fires, so a live `mul`
+    /// is never dropped (worst case the opt is missed, leaving the prior
+    /// behaviour).
     fn should_defer_integer_mul_for_mad(
         &self,
         body: &KernelBody,
         facts: &EmitFacts,
         op_idx: usize,
     ) -> bool {
-        let _ = (body, facts, op_idx);
-        false
+        let Some(op) = body.ops.get(op_idx) else {
+            return false;
+        };
+        if !matches!(op.kind, KernelOpKind::BinOpKind(BinOp::Mul)) || op.operands.len() != 2 {
+            return false;
+        }
+        let Some(result) = op.result else {
+            return false;
+        };
+        let consumer_idx = match facts.consumer_indices(result) {
+            Some([idx]) => *idx,
+            _ => return false,
+        };
+        let Some(consumer) = body.ops.get(consumer_idx) else {
+            return false;
+        };
+        if !matches!(
+            consumer.kind,
+            KernelOpKind::BinOpKind(BinOp::Add | BinOp::WrappingAdd)
+        ) || consumer.operands.len() != 2
+        {
+            return false;
+        }
+        let lhs = consumer.operands[0];
+        let rhs = consumer.operands[1];
+        self.integer_mad_parts(body, facts, lhs, rhs).is_some()
+            || self.integer_mad_parts(body, facts, rhs, lhs).is_some()
     }
 
     fn emit_integer_mad_from_add(

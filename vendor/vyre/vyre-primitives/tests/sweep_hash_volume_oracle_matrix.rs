@@ -1,7 +1,6 @@
 //! Volume-wave oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(feature = "hash")]
 
 use vyre_primitives::hash::{crc32, fnv1a};
@@ -45,7 +44,12 @@ fn sweep_crc32_volume_oracle_matrix() {
     for (idx, bytes) in hostile_bytes().enumerate() {
         let expected = oracle_crc32(&bytes);
         let actual = crc32::crc32(&bytes);
-        assert_eq!(actual, expected, "Fix: crc32 volume case {idx} len={}", bytes.len());
+        assert_eq!(
+            actual,
+            expected,
+            "Fix: crc32 volume case {idx} len={}",
+            bytes.len()
+        );
     }
 }
 
@@ -54,6 +58,11 @@ fn sweep_fnv1a32_volume_oracle_matrix() {
     for (idx, bytes) in hostile_bytes().enumerate() {
         let expected = oracle_fnv1a32(&bytes);
         let actual = fnv1a::fnv1a32(&bytes);
-        assert_eq!(actual, expected, "Fix: fnv1a32 volume case {idx} len={}", bytes.len());
+        assert_eq!(
+            actual,
+            expected,
+            "Fix: fnv1a32 volume case {idx} len={}",
+            bytes.len()
+        );
     }
 }

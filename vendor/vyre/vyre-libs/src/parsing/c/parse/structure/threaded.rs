@@ -198,10 +198,7 @@ pub(super) fn emit_sparse_record_write(
     fields: Vec<Expr>,
 ) -> Vec<Node> {
     let base = "sparse_record_write_base";
-    let mut nodes = vec![Node::let_bind(
-        base,
-        Expr::mul(t, Expr::u32(record_words)),
-    )];
+    let mut nodes = vec![Node::let_bind(base, Expr::mul(t, Expr::u32(record_words)))];
 
     for field_idx in sparse_record_store_order(record_words) {
         let Some(field) = fields.get(field_idx as usize).cloned() else {

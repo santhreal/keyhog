@@ -52,18 +52,22 @@ pub enum RustFrontendError {
     #[error("Rust frontend lowering failed: {0}. Fix: see the lowering substrate status.")]
     Lower(String),
     /// The source contains constructs outside the nano-subset.
-    #[error("Rust frontend unsupported construct: {0}. Fix: simplify the source to the nano-subset.")]
+    #[error(
+        "Rust frontend unsupported construct: {0}. Fix: simplify the source to the nano-subset."
+    )]
     Unsupported(String),
     /// GPU backend unavailable.
     #[error("Rust frontend GPU backend unavailable: {0}. Fix: ensure a CUDA or WGPU backend is installed and detected.")]
     Backend(String),
     /// Oracle mismatch: frontend output diverged from rustc.
-    #[error("Rust frontend oracle mismatch: {0}. Fix: compare token spans against rustc_lexer output.")]
+    #[error(
+        "Rust frontend oracle mismatch: {0}. Fix: compare token spans against rustc_lexer output."
+    )]
     Oracle(String),
 }
 
 // Re-export AST types so consumers can inspect parsed results.
-/// Re-export AST types.
-pub use vyre_libs::parsing::rust::parse::{Expr, Function, Module, Stmt, Type};
 /// Re-export token type.
 pub use vyre_libs::parsing::rust::lex::lexer::core::Token;
+/// Re-export AST types.
+pub use vyre_libs::parsing::rust::parse::{Expr, Function, Module, Stmt, Type};

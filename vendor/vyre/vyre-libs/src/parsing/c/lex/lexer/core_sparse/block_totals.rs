@@ -18,7 +18,7 @@ pub fn c11_lexer_regular_sparse_packed_haystack_with_block_totals(
         haystack_len,
         false,
         false,
-        true,
+        super::SparseHaystackLayout::PackedU32,
         true,
         true,
         Some(block_totals),

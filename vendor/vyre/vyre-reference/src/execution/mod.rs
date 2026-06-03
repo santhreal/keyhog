@@ -159,7 +159,44 @@ fn duplicate_node_error(id: NodeId) -> vyre::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vyre::ir::{BinOp, NodeStorage};
+    use vyre::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, NodeStorage};
+
+    #[test]
+    fn reference_eval_dispatches_singleton_atomic_flags_across_dynamic_byte_input() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::storage("bytes_in", 0, BufferAccess::ReadOnly, DataType::U8)
+                    .with_count(0),
+                BufferDecl::storage("flag", 1, BufferAccess::ReadWrite, DataType::U32)
+                    .with_count(1),
+            ],
+            [256, 1, 1],
+            vec![
+                Node::let_bind("i", Expr::InvocationId { axis: 0 }),
+                Node::if_then(
+                    Expr::lt(Expr::var("i"), Expr::buf_len("bytes_in")),
+                    vec![Node::if_then(
+                        Expr::ne(
+                            Expr::cast(DataType::U32, Expr::load("bytes_in", Expr::var("i"))),
+                            Expr::u32(0),
+                        ),
+                        vec![Node::let_bind(
+                            "flag_old",
+                            Expr::atomic_or("flag", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    )],
+                ),
+            ],
+        );
+        let mut bytes = vec![0u8; 4097];
+        bytes[4096] = 1;
+
+        let outputs = reference_eval(&program, &[Value::from(bytes), Value::from(vec![0u8; 4])])
+            .expect("Fix: reference interpreter should execute singleton atomic flag scans.");
+        let flag = outputs[0].to_bytes();
+
+        assert_eq!(u32::from_le_bytes([flag[0], flag[1], flag[2], flag[3]]), 1);
+    }
 
     #[test]
     fn generic_storage_graph_matches_recursive_oracle_for_10k_programs() {

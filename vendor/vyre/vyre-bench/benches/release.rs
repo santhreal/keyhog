@@ -226,11 +226,10 @@ fn nvme_gpu_ingest_telemetry_projection_scale(criterion: &mut Criterion) {
                         black_box(telemetry),
                     )
                     .expect("Fix: release ingest telemetry must preserve zero-copy accounting.");
-                    let points =
-                        vyre_bench::cases::nvme_gpu_ingest::ingest_telemetry_metric_points(
-                            black_box(*spec),
-                            black_box(telemetry),
-                        );
+                    let points = vyre_bench::cases::nvme_gpu_ingest::ingest_telemetry_metric_points(
+                        black_box(*spec),
+                        black_box(telemetry),
+                    );
                     black_box(points);
                 });
             },

@@ -317,6 +317,7 @@ pub(crate) struct CudaLaunchResourceLease {
 pub(crate) struct CudaTimingEventPairLease {
     pool: Arc<CudaLaunchResourcePool>,
     timing_events: Option<(CudaEvent, CudaEvent)>,
+    synchronized: bool,
 }
 
 impl CudaTimingEventPairLease {
@@ -325,6 +326,7 @@ impl CudaTimingEventPairLease {
         Ok(Self {
             pool,
             timing_events: Some(timing_events),
+            synchronized: false,
         })
     }
 
@@ -335,13 +337,25 @@ impl CudaTimingEventPairLease {
                 fix: "Fix: CUDA timing event pair lease was already consumed; acquire a fresh timing lease before recording graph replay events.".to_string(),
             })
     }
+
+    pub(crate) fn mark_synchronized(&mut self) {
+        self.synchronized = true;
+    }
 }
 
 impl Drop for CudaTimingEventPairLease {
     fn drop(&mut self) {
         if let Some((start, end)) = self.timing_events.take() {
-            self.pool.release_timing_event(start);
-            self.pool.release_timing_event(end);
+            if self.synchronized {
+                self.pool.release_timing_event(start);
+                self.pool.release_timing_event(end);
+            } else {
+                tracing::error!(
+                    "Fix: leaking CUDA timing event pair lease because completion was not proven before drop."
+                );
+                std::mem::forget(start);
+                std::mem::forget(end);
+            }
         }
     }
 }
@@ -401,13 +415,29 @@ impl CudaLaunchResourceLease {
 
 impl Drop for CudaLaunchResourceLease {
     fn drop(&mut self) {
+        let Some(stream) = self.stream.take() else {
+            if let Some((start, end)) = self.timing_events.take() {
+                self.pool.release_timing_event(start);
+                self.pool.release_timing_event(end);
+            }
+            return;
+        };
+        if let Err(error) = stream.synchronize() {
+            tracing::error!(
+                "Fix: failed to synchronize CUDA launch resource lease during drop: {error}. In-flight lease resources will not be recycled."
+            );
+            if let Some((start, end)) = self.timing_events.take() {
+                std::mem::forget(start);
+                std::mem::forget(end);
+            }
+            std::mem::forget(stream);
+            return;
+        }
         if let Some((start, end)) = self.timing_events.take() {
             self.pool.release_timing_event(start);
             self.pool.release_timing_event(end);
         }
-        if let Some(stream) = self.stream.take() {
-            self.pool.release_stream(stream);
-        }
+        self.pool.release_stream(stream);
     }
 }
 
@@ -508,7 +538,6 @@ pub(crate) struct CudaPendingDispatch {
     telemetry: Arc<CudaTelemetry>,
     completed: AtomicBool,
 }
-
 
 impl CudaPendingDispatch {
     /// Build an already-completed pending dispatch.
@@ -692,6 +721,61 @@ impl CudaPendingDispatch {
         }
     }
 
+    fn force_completion_on_drop(&mut self) -> bool {
+        if self.completed.load(Ordering::Acquire) {
+            return true;
+        }
+        if let Err(error) = self.ctx.bind_to_thread() {
+            tracing::error!(
+                "Fix: failed to bind CUDA context while dropping pending dispatch: {error}. In-flight CUDA resources will not be recycled."
+            );
+            return false;
+        }
+        let Some(stream) = self.stream.as_ref() else {
+            tracing::error!(
+                "Fix: pending CUDA dispatch lost its stream before drop-time synchronization. In-flight CUDA resources will not be recycled."
+            );
+            return false;
+        };
+        if let Err(error) = stream.synchronize() {
+            tracing::error!(
+                "Fix: failed to synchronize CUDA stream while dropping pending dispatch: {error}. In-flight CUDA resources will not be recycled."
+            );
+            return false;
+        }
+        self.telemetry.record_sync_point();
+        self.completed.store(true, Ordering::Release);
+        true
+    }
+
+    fn leak_inflight_resources_after_drop_sync_failure(&mut self) {
+        tracing::error!(
+            "Fix: leaking CUDA pending-dispatch resources because completion could not be proven during drop; await the dispatch result before dropping it."
+        );
+        std::mem::forget(Arc::clone(&self.ctx));
+        if let Some(event) = self.event.take() {
+            std::mem::forget(event);
+        }
+        if let Some(event) = self.timing_start.take() {
+            std::mem::forget(event);
+        }
+        if let Some(event) = self.timing_end.take() {
+            std::mem::forget(event);
+        }
+        if let Some(stream) = self.stream.take() {
+            std::mem::forget(stream);
+        }
+        if let Some(allocations) = self.allocations.take() {
+            std::mem::forget(allocations);
+        }
+        if let Some(resident_use) = self.resident_use.take() {
+            std::mem::forget(resident_use);
+        }
+        if let Some(host_transfers) = self.host_transfers.take() {
+            std::mem::forget(host_transfers);
+        }
+    }
+
     /// Await completion and return output buffers plus device elapsed time.
     pub(crate) fn await_timed_result(
         mut self,
@@ -821,6 +905,82 @@ mod tests {
                 && source.contains("pub timing_events: usize")
                 && source.contains("cached_counts_detailed"),
             "Fix: CUDA launch-resource telemetry must expose timing-event cache pressure, not just streams and completion events."
+        );
+    }
+
+    #[test]
+    fn timing_event_pair_lease_requires_completion_before_reuse() {
+        let source = include_str!("stream.rs");
+        let lease_impl = source
+            .split("impl CudaTimingEventPairLease")
+            .nth(1)
+            .expect("Fix: CUDA timing event pair lease implementation must exist.")
+            .split("impl Drop for CudaTimingEventPairLease")
+            .next()
+            .expect("Fix: timing event pair lease methods must precede Drop.");
+        assert!(
+            source.contains("synchronized: bool")
+                && source.contains("synchronized: false")
+                && lease_impl.contains("pub(crate) fn mark_synchronized(&mut self)")
+                && lease_impl.contains("self.synchronized = true;"),
+            "Fix: CUDA timing event pair leases must default to unproven completion and require an explicit synchronized mark before reuse."
+        );
+
+        let drop_impl = source
+            .split("impl Drop for CudaTimingEventPairLease")
+            .nth(1)
+            .expect("Fix: CUDA timing event pair lease must own Drop.")
+            .split("impl CudaLaunchResourceLease")
+            .next()
+            .expect("Fix: timing event pair Drop must precede launch-resource leases.");
+        assert!(
+            drop_impl.contains("if self.synchronized")
+                && drop_impl.contains("self.pool.release_timing_event(start);")
+                && drop_impl.contains("self.pool.release_timing_event(end);")
+                && drop_impl.contains("completion was not proven before drop")
+                && drop_impl.contains("std::mem::forget(start);")
+                && drop_impl.contains("std::mem::forget(end);"),
+            "Fix: CUDA timing event pair lease Drop must leak unsynchronized events instead of returning them to the pool."
+        );
+    }
+
+    #[test]
+    fn launch_resource_lease_drop_synchronizes_before_recycling_resources() {
+        let source = include_str!("stream.rs");
+        let drop_impl = source
+            .split("impl Drop for CudaLaunchResourceLease")
+            .nth(1)
+            .expect("Fix: CUDA launch-resource lease must own a Drop implementation.")
+            .split("impl CudaLaunchResourcePool")
+            .next()
+            .expect(
+                "Fix: launch-resource lease Drop must precede the resource pool implementation.",
+            );
+        let sync_pos = drop_impl.find("stream.synchronize()").expect(
+            "Fix: CUDA launch-resource lease Drop must synchronize before recycling a stream.",
+        );
+        let post_sync_drop = &drop_impl[sync_pos..];
+        let release_timing_pos = sync_pos
+            + post_sync_drop
+            .find("self.pool.release_timing_event(start);")
+            .expect("Fix: CUDA launch-resource lease Drop must release timing events after successful synchronization.");
+        let release_stream_pos = sync_pos
+            + post_sync_drop
+            .find("self.pool.release_stream(stream);")
+            .expect("Fix: CUDA launch-resource lease Drop must release streams after successful synchronization.");
+
+        assert!(
+            sync_pos < release_timing_pos && release_timing_pos < release_stream_pos,
+            "Fix: CUDA launch-resource lease Drop must prove stream completion before timing-event or stream reuse."
+        );
+        assert!(
+            drop_impl.contains("Err(error)")
+                && drop_impl.contains("In-flight lease resources will not be recycled.")
+                && drop_impl.contains("std::mem::forget(start);")
+                && drop_impl.contains("std::mem::forget(end);")
+                && drop_impl.contains("std::mem::forget(stream);")
+                && !drop_impl.contains("self.pool.release_stream(stream);\n        if let Err"),
+            "Fix: CUDA launch-resource lease Drop must leak resources instead of pooling them when drop-time synchronization fails."
         );
     }
 
@@ -986,27 +1146,70 @@ mod tests {
             "Fix: graph replay polling must use the shared stream query helper."
         );
     }
-}
 
+    #[test]
+    fn pending_dispatch_drop_leaks_resources_when_completion_is_unproven() {
+        let source = include_str!("stream.rs");
+        let drop_impl = source
+            .rsplit("impl Drop for CudaPendingDispatch")
+            .next()
+            .expect("Fix: CudaPendingDispatch must own a drop implementation.");
+        assert!(
+            drop_impl.contains("if !self.force_completion_on_drop()")
+                && drop_impl.contains("self.leak_inflight_resources_after_drop_sync_failure();")
+                && drop_impl.contains("return;")
+                && drop_impl.contains("self.release_launch_resources();"),
+            "Fix: CUDA pending-dispatch drop must not recycle launch resources unless completion was forced or already proven."
+        );
+
+        let force_completion = source
+            .split("fn force_completion_on_drop(")
+            .nth(1)
+            .expect("Fix: pending-dispatch drop must route synchronization through a helper.")
+            .split("fn leak_inflight_resources_after_drop_sync_failure(")
+            .next()
+            .expect("Fix: completion helper must precede the leak helper.");
+        assert!(
+            force_completion.contains("return false;")
+                && force_completion.contains("stream.synchronize()")
+                && force_completion.contains("self.completed.store(true, Ordering::Release);"),
+            "Fix: drop-time CUDA completion must fail closed on bind/synchronize errors and mark completion only after stream synchronization succeeds."
+        );
+
+        let leak_helper = source
+            .split("fn leak_inflight_resources_after_drop_sync_failure(")
+            .nth(1)
+            .expect("Fix: pending-dispatch drop must have an explicit leak-on-sync-failure helper.")
+            .split("/// Await completion and return output buffers plus device elapsed time.")
+            .next()
+            .expect("Fix: leak helper must be local to the pending-dispatch implementation.");
+        for field in [
+            "event",
+            "timing_start",
+            "timing_end",
+            "stream",
+            "allocations",
+            "resident_use",
+            "host_transfers",
+        ] {
+            assert!(
+                leak_helper.contains(&format!("self.{field}.take()")),
+                "Fix: CUDA pending-dispatch drop sync failure must remove {field} from normal Drop ownership."
+            );
+        }
+        assert!(
+            leak_helper.contains("std::mem::forget(Arc::clone(&self.ctx));")
+                && leak_helper.matches("std::mem::forget(").count() >= 8,
+            "Fix: CUDA pending-dispatch drop sync failure must keep the CUDA context alive and leak in-flight CUDA resources instead of dropping or pooling them."
+        );
+    }
+}
 
 impl Drop for CudaPendingDispatch {
     fn drop(&mut self) {
-        if !self.completed.load(Ordering::Acquire) {
-            if let Err(error) = self.ctx.bind_to_thread() {
-                tracing::error!(
-                    "Fix: failed to bind CUDA context while dropping pending dispatch: {error}. Dispatch completion could not be forced."
-                );
-            }
-            if let Some(stream) = self.stream.as_ref() {
-                if let Err(error) = stream.synchronize() {
-                    tracing::error!(
-                        "Fix: failed to synchronize CUDA stream while dropping pending dispatch: {error}. Dispatch completion state may be stale."
-                    );
-                } else {
-                    self.telemetry.record_sync_point();
-                }
-            }
-            self.completed.store(true, Ordering::Release);
+        if !self.force_completion_on_drop() {
+            self.leak_inflight_resources_after_drop_sync_failure();
+            return;
         }
         self.release_launch_resources();
         self.allocations.take();
@@ -1014,4 +1217,3 @@ impl Drop for CudaPendingDispatch {
         self.host_transfers.take();
     }
 }
-

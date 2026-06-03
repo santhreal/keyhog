@@ -99,6 +99,13 @@ mod architecture_tests {
                 continue;
             }
 
+            if pending_cfg_test && trimmed.is_empty() {
+                // A blank line may sit between `#[cfg(test)]` and its `mod`;
+                // keep the pending state so the test module is still stripped.
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
             pending_cfg_test = false;
             out.push_str(line);
             out.push('\n');

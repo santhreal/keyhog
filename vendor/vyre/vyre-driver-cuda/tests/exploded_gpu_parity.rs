@@ -114,3 +114,34 @@ fn cuda_ifds_larger_chain_three_procs_four_blocks_three_facts() {
         &kill,
     );
 }
+
+#[test]
+fn cuda_ifds_large_serial_grid_matches_cpu() {
+    let procs = 8;
+    let blocks = 9;
+    let facts = 5;
+    let mut intra = Vec::new();
+    for p in 0..procs {
+        for b in 0..(blocks - 1) {
+            intra.push((p, b, b + 1));
+        }
+    }
+    let mut inter = Vec::new();
+    for p in 0..(procs - 1) {
+        inter.push((p, blocks - 1, p + 1, 0));
+    }
+    let flow_gen = (0..procs).map(|p| (p, 0, (p % facts))).collect::<Vec<_>>();
+    let kill = (0..procs)
+        .map(|p| (p, blocks / 2, ((p + 1) % facts)))
+        .collect::<Vec<_>>();
+    assert_ifds_matches_reference(
+        "large serial-grid IFDS",
+        procs,
+        blocks,
+        facts,
+        &intra,
+        &inter,
+        &flow_gen,
+        &kill,
+    );
+}

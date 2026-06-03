@@ -1,23 +1,28 @@
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-// `packed_byte_load` was a third copy of `crate::scan::builders::load_packed_byte_expr`
-// with a redundant `Expr::cast(DataType::U32, …)` wrapper around the
-// load (the source buffer is already declared as `DataType::U32`).
-// All call sites in this file now route through the canonical
-// scan::builders primitive - single source of truth for packed-byte
-// extract across vyre-libs.
-pub(super) use crate::scan::builders::load_packed_byte_expr as packed_byte_load;
-
 pub(super) const GPU_FILTER_WORKGROUP: [u32; 3] = [256, 1, 1];
 
-pub(super) fn packed_byte_load_or_zero(
+pub(super) fn source_byte_load(buffer: &'static str, addr: Expr) -> Expr {
+    let len = Expr::buf_len(buffer);
+    let safe_addr = Expr::select(
+        Expr::lt(addr.clone(), len.clone()),
+        addr,
+        Expr::saturating_sub(len, Expr::u32(1)),
+    );
+    Expr::bitand(
+        Expr::cast(DataType::U32, Expr::load(buffer, safe_addr)),
+        Expr::u32(0xFF),
+    )
+}
+
+pub(super) fn source_byte_load_or_zero(
     buffer: &'static str,
     addr: Expr,
     real_len_buffer: &'static str,
 ) -> Expr {
     Expr::select(
         Expr::lt(addr.clone(), Expr::load(real_len_buffer, Expr::u32(0))),
-        packed_byte_load(buffer, addr),
+        source_byte_load(buffer, addr),
         Expr::u32(0),
     )
 }
@@ -49,9 +54,9 @@ pub(super) fn clear_comment_mask_and_final_keep(i: Expr) -> Vec<Node> {
     ]
 }
 
-pub(super) fn packed_bytes_input_buffer(name: &str, binding: u32, n: u32) -> BufferDecl {
-    BufferDecl::storage(name, binding, BufferAccess::ReadOnly, DataType::U32)
-        .with_count(n.div_ceil(4).max(1))
+pub(super) fn source_bytes_input_buffer(name: &str, binding: u32, n: u32) -> BufferDecl {
+    let _ = n;
+    BufferDecl::storage(name, binding, BufferAccess::ReadOnly, DataType::U8).with_count(0)
 }
 
 pub(super) fn u32_read_buffer(name: &str, binding: u32, n: u32) -> BufferDecl {
@@ -151,13 +156,11 @@ pub(super) fn combine_keep_mask_program(n: u32) -> Program {
 /// where `offsets` is an inclusive prefix sum over the keep-mask. Last lane
 /// writes the survivor count.
 ///
-/// Real-GPU note: both `bytes_in` and `compacted_out` are declared as
-/// packed U32 words (see module-level lowering note); each thread
-/// reads its source byte by extracting from the containing word, and
-/// scatters its byte into the output via `atomic_or` to safely
-/// combine concurrent writes from neighboring threads that target the
-/// same output u32 word. Output buffer must be zero-initialized by
-/// the host so the OR accumulates correctly.
+/// The source is a raw `DataType::U8` byte buffer. `compacted_out` remains
+/// packed U32 words because downstream C lexer stages still consume packed
+/// words; each source byte is scattered into its destination word via
+/// `atomic_or`. Output buffer must be zero-initialized by the host so the OR
+/// accumulates correctly.
 pub(super) fn byte_compact_program(n: u32) -> Program {
     // One thread per *output word* (not per input byte). Each thread
     // handles up to 4 input bytes at indices [4w, 4w+1, 4w+2, 4w+3],
@@ -199,7 +202,7 @@ pub(super) fn byte_compact_program(n: u32) -> Program {
                             )],
                             vec![Node::assign(
                                 &format!("in_byte_{k}"),
-                                packed_byte_load("bytes_in", i.clone()),
+                                source_byte_load("bytes_in", i.clone()),
                             )],
                         ),
                         Node::let_bind(
@@ -259,8 +262,7 @@ pub(super) fn byte_compact_program(n: u32) -> Program {
     ];
     Program::wrapped(
         vec![
-            BufferDecl::storage("bytes_in", 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(words),
+            BufferDecl::storage("bytes_in", 0, BufferAccess::ReadOnly, DataType::U8).with_count(0),
             BufferDecl::storage("mask", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n.max(1)),
             BufferDecl::storage("comment_mask", 2, BufferAccess::ReadOnly, DataType::U32)

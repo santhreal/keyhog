@@ -545,4 +545,3 @@ mod tests {
         assert_eq!(p.workgroup_size, [LANES_PER_SUBGROUP as u32, 1, 1]);
     }
 }
-

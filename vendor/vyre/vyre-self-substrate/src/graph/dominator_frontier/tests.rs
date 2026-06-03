@@ -27,7 +27,7 @@ impl OptimizerDispatcher for DominatorDispatcher {
         inputs: &[Vec<u8>],
         grid_override: Option<[u32; 3]>,
     ) -> Result<Vec<Vec<u8>>, DispatchError> {
-        assert_eq!(grid_override, Some([4, 1, 1]));
+        assert_eq!(grid_override, Some([1, 1, 1]));
         if inputs.len() != 6 {
             return Err(DispatchError::BadInputs(format!(
                 "Fix: dominator frontier test dispatcher expected 6 inputs, got {}.",
@@ -75,7 +75,7 @@ impl OptimizerDispatcher for RecordingDominatorDispatcher {
         inputs: &[Vec<u8>],
         grid_override: Option<[u32; 3]>,
     ) -> Result<Vec<Vec<u8>>, DispatchError> {
-        assert_eq!(grid_override, Some([4, 1, 1]));
+        assert_eq!(grid_override, Some([1, 1, 1]));
         self.calls
             .lock()
             .expect("Fix: recording dispatcher calls lock should not be poisoned")
@@ -531,4 +531,3 @@ fn release_via_path_uses_lazy_primitive_launch_plan() {
     assert!(!release_path.contains("plan_dominator_frontier_dispatch"));
     assert!(!release_path.contains("plan.program().clone()"));
 }
-

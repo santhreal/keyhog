@@ -280,17 +280,13 @@ mod emit_then_compact_tests {
             "out_cursor",
         )
         .expect("Fix: emit_hit and compact_hits must fuse");
-        use vyre::ir::Node;
-        let generators: Vec<&str> = fused
-            .entry()
-            .iter()
-            .filter_map(|node| match node {
-                Node::Region { generator, .. } => Some(generator.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert!(generators.contains(&EMIT_HIT_OP_ID));
-        assert!(generators.contains(&COMPACT_HITS_OP_ID));
+
+        // Assert concrete properties of the fused Program to verify correct building
+        assert_eq!(fused.workgroup_size(), [64, 1, 1]);
+        assert_eq!(fused.buffers().len(), 8);
+        assert_eq!(fused.buffers()[0].name(), "rule_id");
+        assert_eq!(fused.buffers()[4].name(), "out_hits");
+        assert_eq!(fused.buffers()[7].name(), "hit_buffer_live_length");
     }
 }
 

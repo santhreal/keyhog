@@ -562,8 +562,16 @@ fn release_gpu_path_uses_parallel_primitive_and_node_grid() {
 #[test]
 fn release_gpu_path_uses_changed_history_for_short_fixpoints() {
     let release_path = include_str!("dispatch.rs");
-    let primitive_source =
-        include_str!("../../../../vyre-primitives/src/graph/csr_forward_or_changed.rs");
+    // The primitive was split into submodules (LAW7 module splits); the
+    // dispatch plan, dynamic-slot kernel, and fast-path threshold now live
+    // in plan.rs / program_parallel_batch_global.rs / layout.rs.
+    let primitive_source = concat!(
+        include_str!("../../../../vyre-primitives/src/graph/csr_forward_or_changed/plan.rs"),
+        include_str!(
+            "../../../../vyre-primitives/src/graph/csr_forward_or_changed/program_parallel_batch_global.rs"
+        ),
+        include_str!("../../../../vyre-primitives/src/graph/csr_forward_or_changed/layout.rs"),
+    );
 
     assert!(
         primitive_source.contains("pub fn plan_csr_forward_or_changed_dispatch")

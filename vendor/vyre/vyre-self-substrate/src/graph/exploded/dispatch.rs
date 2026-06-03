@@ -7,13 +7,12 @@ use vyre_primitives::graph::exploded::{
     IFDS_CSR_GEN_PROC_BUFFER, IFDS_CSR_INTER_DST_BLOCK_BUFFER, IFDS_CSR_INTER_DST_PROC_BUFFER,
     IFDS_CSR_INTER_SRC_BLOCK_BUFFER, IFDS_CSR_INTER_SRC_PROC_BUFFER,
     IFDS_CSR_INTRA_DST_BLOCK_BUFFER, IFDS_CSR_INTRA_PROC_BUFFER, IFDS_CSR_INTRA_SRC_BLOCK_BUFFER,
-    IFDS_CSR_KILL_BLOCK_BUFFER, IFDS_CSR_KILL_FACT_BUFFER, IFDS_CSR_KILL_PROC_BUFFER,
-    IFDS_CSR_KILLED_BUFFER, IFDS_CSR_ROW_CURSOR_BUFFER, IFDS_CSR_ROW_PTR_BUFFER,
+    IFDS_CSR_KILLED_BUFFER, IFDS_CSR_KILL_BLOCK_BUFFER, IFDS_CSR_KILL_FACT_BUFFER,
+    IFDS_CSR_KILL_PROC_BUFFER, IFDS_CSR_ROW_CURSOR_BUFFER, IFDS_CSR_ROW_PTR_BUFFER,
 };
 
-use crate::graph::dispatch_bridge::{
-    dispatch_four_u32_outputs_from_prepared_into, refresh_keyed_dispatch_inputs, DispatchInput,
-};
+use crate::dispatch_buffers::decode_u32_output_exact;
+use crate::graph::dispatch_bridge::{refresh_keyed_dispatch_inputs, DispatchInput};
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 
 /// GPU dispatch wrapper around [`reference_build_ifds_csr`].
@@ -214,10 +213,11 @@ pub fn build_ifds_csr_via_with_scratch_into(
         .get_or_insert_with(plan.program_cache_key(), || CachedIfdsCsrProgram {
             program: plan.program(),
         });
-    dispatch_four_u32_outputs_from_prepared_into(
+    dispatch_ifds_csr_outputs_from_prepared_into(
         dispatcher,
         &cached.program,
         &scratch.inputs,
+        &plan,
         plan.row_ptr_words,
         IFDS_CSR_ROW_PTR_BUFFER,
         row_ptr_out,
@@ -244,6 +244,77 @@ pub fn build_ifds_csr_via_with_scratch_into(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn dispatch_ifds_csr_outputs_from_prepared_into(
+    dispatcher: &dyn OptimizerDispatcher,
+    program: &vyre_foundation::ir::Program,
+    scratch_inputs: &[Vec<u8>],
+    plan: &IfdsCsrDispatchPlan,
+    row_ptr_expected_words: usize,
+    row_ptr_context: &str,
+    row_ptr_out: &mut Vec<u32>,
+    row_cursor_expected_words: usize,
+    row_cursor_context: &str,
+    row_cursor_out: &mut Vec<u32>,
+    col_idx_expected_words: usize,
+    col_idx_context: &str,
+    col_idx_out: &mut Vec<u32>,
+    col_len_expected_words: usize,
+    col_len_context: &str,
+    col_len_out: &mut Vec<u32>,
+    grid_override: Option<[u32; 3]>,
+) -> Result<(), DispatchError> {
+    let outputs = dispatcher.dispatch(program, scratch_inputs, grid_override)?;
+    let output_base = match outputs.len() {
+        4 => 0,
+        5 => {
+            let expected_killed_bytes = plan
+                .killed_words
+                .checked_mul(std::mem::size_of::<u32>())
+                .ok_or_else(|| {
+                DispatchError::BackendError(
+                    "Fix: exploded IFDS killed scratch byte count overflowed usize.".to_string(),
+                )
+            })?;
+            if outputs[0].len() != expected_killed_bytes {
+                return Err(DispatchError::BackendError(format!(
+                    "Fix: {IFDS_CSR_KILLED_BUFFER} expected {expected_killed_bytes} byte(s), got {}.",
+                    outputs[0].len()
+                )));
+            }
+            1
+        }
+        count => {
+            return Err(DispatchError::BackendError(format!(
+                "Fix: {row_ptr_context} expected four u32 output buffers or killed scratch plus four u32 output buffers, got {count}.",
+            )));
+        }
+    };
+    decode_u32_output_exact(
+        &outputs[output_base],
+        row_ptr_expected_words,
+        row_ptr_context,
+        row_ptr_out,
+    )?;
+    decode_u32_output_exact(
+        &outputs[output_base + 1],
+        row_cursor_expected_words,
+        row_cursor_context,
+        row_cursor_out,
+    )?;
+    decode_u32_output_exact(
+        &outputs[output_base + 2],
+        col_idx_expected_words,
+        col_idx_context,
+        col_idx_out,
+    )?;
+    decode_u32_output_exact(
+        &outputs[output_base + 3],
+        col_len_expected_words,
+        col_len_context,
+        col_len_out,
+    )
+}
 fn canonicalize_csr_within_rows_in_place(
     row_ptr: &[u32],
     col_idx: &mut [u32],

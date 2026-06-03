@@ -309,7 +309,10 @@ mod tests {
         ];
         let dag = compile_dnnf(&clauses, 6, 2);
         assert_eq!(dag.num_vars, 6);
-        assert!(dag.gates.len() >= 1, "depth budget must emit at least one gate");
+        assert!(
+            dag.gates.len() >= 1,
+            "depth budget must emit at least one gate"
+        );
     }
 
     /// model_count handles all 2^k assignments via smoothed-True

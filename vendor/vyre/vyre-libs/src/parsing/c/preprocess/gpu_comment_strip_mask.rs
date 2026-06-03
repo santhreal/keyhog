@@ -19,7 +19,10 @@
 //! ## Wire layout
 //!
 //! Inputs:
-//!   - `bytes_in` (U8)  -  raw source bytes.
+//!   - `bytes_in`  -  compatibility [`gpu_comment_strip_mask`] expects
+//!     packed little-endian `DataType::U32` words, four source bytes per
+//!     word. [`gpu_comment_strip_mask_u8`] expects one `DataType::U8`
+//!     element per source byte.
 //!
 //! Outputs:
 //!   - `comment_mask_out` (U32)  -  one entry per byte. `0` for ordinary
@@ -36,6 +39,6 @@ mod reference;
 mod tests;
 
 pub use abi::{BINDING_BYTES_IN, BINDING_COMMENT_MASK_OUT, OP_ID};
-pub use builder::gpu_comment_strip_mask;
+pub use builder::{gpu_comment_strip_mask, gpu_comment_strip_mask_u8};
 #[cfg(any(test, feature = "cpu-parity"))]
 pub use reference::reference_gpu_comment_strip_mask;

@@ -10,16 +10,18 @@ use vyre::DispatchConfig;
 use vyre_driver_cuda::CudaBackend;
 use vyre_foundation::vast::{walk_preorder_indices, VastNode, NODE_STRIDE_U32, SENTINEL};
 use vyre_primitives::graph::adaptive_traverse::{
-    adaptive_dense_step, adaptive_sparse_dense_step, cpu_dense_step, cpu_sparse_dense_step,
+    adaptive_dense_step, adaptive_node_dispatch_grid, adaptive_sparse_dense_step, cpu_dense_step,
+    cpu_sparse_dense_step,
 };
 use vyre_primitives::graph::vast_tree_walk::ast_walk_preorder;
 use vyre_primitives::reduce::count::reduce_count;
 use vyre_self_substrate::adaptive_traverse::{
     adaptive_traverse_resident_graph_auto_step_with_scratch_into,
     adaptive_traverse_resident_graph_sparse_queue_step_with_scratch_into,
-    adaptive_traverse_resident_graph_step_with_scratch_into, adaptive_traverse_step,
-    upload_resident_adaptive_traversal_graph, AdaptiveTraversalMode,
-    AdaptiveTraversalPlanCacheSnapshot, AdaptiveTraversalResidentScratch,
+    adaptive_traverse_resident_graph_step_with_scratch_into,
+    adaptive_traverse_resident_sparse_queue_step_with_scratch_into, adaptive_traverse_step,
+    upload_resident_adaptive_sparse_queue_graph, upload_resident_adaptive_traversal_graph,
+    AdaptiveTraversalMode, AdaptiveTraversalPlanCacheSnapshot, AdaptiveTraversalResidentScratch,
 };
 
 fn bitset_words(node_count: u32) -> u32 {
@@ -40,8 +42,7 @@ fn run_dense_step(
         u32_bytes(adj_rows_dense),
     ];
     let mut config = DispatchConfig::default();
-    // workgroup [1,1,1]; one workgroup per source node.
-    config.grid_override = Some([node_count.max(1), 1, 1]);
+    config.grid_override = Some(adaptive_node_dispatch_grid(node_count));
     let outputs = backend
         .dispatch(&program, &inputs, &config)
         .expect("dispatch");
@@ -113,7 +114,7 @@ fn run_sparse_dense_step(
         u32_bytes(adj_rows_dense),
     ];
     let mut config = DispatchConfig::default();
-    config.grid_override = Some([node_count.max(1), 1, 1]);
+    config.grid_override = Some(adaptive_node_dispatch_grid(node_count));
     let outputs = backend
         .dispatch(&program, &inputs, &config)
         .expect("adaptive hybrid dispatch");
@@ -174,6 +175,20 @@ fn cuda_adaptive_dense_step_full_frontier_reaches_all_with_any_pred() {
     assert_eq!(gpu, cpu);
     // Only nodes 0 and 1 see a hit because nodes 2,3 have no preds.
     assert_eq!(gpu, vec![0b0011u32]);
+}
+
+#[test]
+fn cuda_adaptive_dense_step_covers_node_past_first_workgroup() {
+    let backend = live_dispatcher();
+    let node_count = 513u32;
+    let adj = build_dense_adj(&[(300, 512), (301, 400)], node_count);
+    let frontier_in = pack_nodes(&[300], node_count);
+
+    let cpu = cpu_dense_step(&frontier_in, &adj, node_count);
+    let gpu = run_dense_step(&backend, &frontier_in, &adj, node_count);
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, pack_nodes(&[512], node_count));
 }
 
 #[test]
@@ -250,6 +265,87 @@ fn cuda_adaptive_sparse_dense_dense_branch_uses_rows_from_gpu_popcount() {
     );
     assert_eq!(gpu, cpu);
     assert_eq!(gpu, pack_nodes(&[5], node_count));
+}
+
+#[test]
+fn cuda_adaptive_sparse_dense_sparse_branch_covers_source_past_first_workgroup() {
+    let backend = live_dispatcher();
+    let node_count = 513u32;
+    let frontier_in = pack_nodes(&[300], node_count);
+    let count_bytes = run_reduce_count(&backend, &frontier_in);
+    let selector_count = bytes_u32(&count_bytes)[0];
+    let mut edge_offsets = vec![0u32; node_count as usize + 1];
+    for src in 301..=node_count {
+        edge_offsets[src as usize] = 1;
+    }
+    let edge_targets = vec![512];
+    let edge_kind_mask = vec![1];
+    let adj = build_dense_adj(&[], node_count);
+
+    let cpu = cpu_sparse_dense_step(
+        &frontier_in,
+        selector_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &adj,
+        node_count,
+        1,
+        100,
+    );
+    let gpu = run_sparse_dense_step(
+        &backend,
+        &frontier_in,
+        count_bytes,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &adj,
+        node_count,
+        100,
+    );
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, pack_nodes(&[512], node_count));
+}
+
+#[test]
+fn cuda_adaptive_sparse_dense_dense_branch_covers_node_past_first_workgroup() {
+    let backend = live_dispatcher();
+    let node_count = 513u32;
+    let frontier_in = pack_nodes(&[300], node_count);
+    let count_bytes = run_reduce_count(&backend, &frontier_in);
+    let selector_count = bytes_u32(&count_bytes)[0];
+    let edge_offsets = vec![0u32; node_count as usize + 1];
+    let edge_targets = vec![0];
+    let edge_kind_mask = vec![0];
+    let adj = build_dense_adj(&[(300, 512), (301, 400)], node_count);
+
+    let cpu = cpu_sparse_dense_step(
+        &frontier_in,
+        selector_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &adj,
+        node_count,
+        1,
+        0,
+    );
+    let gpu = run_sparse_dense_step(
+        &backend,
+        &frontier_in,
+        count_bytes,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &adj,
+        node_count,
+        0,
+    );
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, pack_nodes(&[512], node_count));
 }
 
 #[test]
@@ -422,17 +518,154 @@ fn cuda_resident_adaptive_sparse_queue_path_uses_self_substrate_api() {
     assert_eq!(out, expected);
     let telemetry = backend.telemetry_snapshot();
     assert_eq!(
-        telemetry.kernel_launches, 4,
-        "Fix: self-substrate sparse queue traversal must launch exactly queue length init + device frontier clear + queue-build + queue-consume kernels."
+        telemetry.kernel_launches, 3,
+        "Fix: self-substrate sparse queue traversal must launch exactly device frontier clear + queue-build + queue-consume kernels; frontier_to_queue clears queue_len itself."
     );
     assert_eq!(
         telemetry.sync_points, 1,
-        "Fix: self-substrate sparse queue traversal must fence once for upload + two kernels + compact readback."
+        "Fix: self-substrate sparse queue traversal must fence once for upload + three kernels + compact readback."
     );
     assert_eq!(
         telemetry.readback_bytes,
         (frontier_in.len() * std::mem::size_of::<u32>()) as u64,
         "Fix: self-substrate sparse queue traversal must not read back active queue or queue length."
+    );
+    scratch
+        .free(&dispatcher)
+        .expect("resident adaptive scratch free");
+    graph
+        .free(&dispatcher)
+        .expect("resident adaptive graph free");
+}
+
+#[test]
+fn cuda_resident_adaptive_sparse_queue_csr_only_upload_skips_dense_rows() {
+    let backend = live_dispatcher();
+    let dispatcher = vyre_driver_cuda::CudaOptimizerDispatcher::new(&backend);
+    let node_count = 8u32;
+    let edge_offsets = vec![0, 2, 2, 2, 5, 5, 5, 5, 5];
+    let edge_targets = vec![1, 2, 4, 5, 6];
+    let edge_kind_mask = vec![1, 2, 1, 1, 2];
+
+    backend.reset_telemetry();
+    let graph = upload_resident_adaptive_sparse_queue_graph(
+        &dispatcher,
+        node_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+    )
+    .expect("resident adaptive sparse queue CSR-only graph upload");
+    let upload_telemetry = backend.telemetry_snapshot();
+    assert_eq!(
+        upload_telemetry.host_to_device_bytes,
+        ((edge_offsets.len() + edge_targets.len() + edge_kind_mask.len())
+            * std::mem::size_of::<u32>()) as u64,
+        "Fix: CSR-only adaptive sparse queue upload must not upload dense adjacency rows."
+    );
+
+    let frontier_in = pack_nodes(&[0, 3], node_count);
+    let expected = pack_nodes(&[1, 4, 5], node_count);
+    let mut scratch = AdaptiveTraversalResidentScratch::default();
+    let mut out = Vec::new();
+
+    backend.reset_telemetry();
+    adaptive_traverse_resident_sparse_queue_step_with_scratch_into(
+        &dispatcher,
+        &graph,
+        &frontier_in,
+        1,
+        &mut scratch,
+        &mut out,
+    )
+    .expect("resident adaptive sparse queue CSR-only path");
+    assert_eq!(out, expected);
+    let telemetry = backend.telemetry_snapshot();
+    assert_eq!(telemetry.kernel_launches, 3);
+    assert_eq!(
+        telemetry
+            .host_to_device_bytes
+            .saturating_sub(telemetry.param_upload_bytes),
+        (frontier_in.len() * std::mem::size_of::<u32>()) as u64,
+        "Fix: CSR-only adaptive sparse queue step must upload only the packed frontier."
+    );
+    scratch
+        .free(&dispatcher)
+        .expect("resident adaptive scratch free");
+    graph
+        .free(&dispatcher)
+        .expect("resident adaptive sparse queue graph free");
+}
+
+#[test]
+fn cuda_resident_adaptive_sparse_queue_word_prefix_handles_large_frontier() {
+    let backend = live_dispatcher();
+    let dispatcher = vyre_driver_cuda::CudaOptimizerDispatcher::new(&backend);
+    let node_count = 9_000u32;
+    let mut edge_offsets = Vec::with_capacity(node_count as usize + 1);
+    let mut edge_targets = Vec::with_capacity(node_count as usize);
+    let mut edge_kind_mask = Vec::with_capacity(node_count as usize);
+    edge_offsets.push(0);
+    for src in 0..node_count {
+        edge_targets.push(src.wrapping_mul(17).wrapping_add(13) % node_count);
+        edge_kind_mask.push(if src % 11 == 0 { 2 } else { 1 });
+        edge_offsets.push(edge_targets.len() as u32);
+    }
+    let adj = build_dense_adj(&[(0, 64)], node_count);
+    let graph = upload_resident_adaptive_traversal_graph(
+        &dispatcher,
+        node_count,
+        &edge_offsets,
+        &edge_targets,
+        &edge_kind_mask,
+        &adj,
+    )
+    .expect("resident adaptive graph upload");
+    let mut active_nodes = Vec::with_capacity(513);
+    for word in 0..256u32 {
+        active_nodes.push(word * 32);
+        active_nodes.push(word * 32 + 1);
+    }
+    active_nodes.push(256 * 32);
+    let frontier_in = pack_nodes(&active_nodes, node_count);
+    let expected_nodes: Vec<u32> = active_nodes
+        .iter()
+        .copied()
+        .filter(|src| src % 11 != 0)
+        .map(|src| src.wrapping_mul(17).wrapping_add(13) % node_count)
+        .collect();
+    let expected = pack_nodes(&expected_nodes, node_count);
+    let mut scratch = AdaptiveTraversalResidentScratch::default();
+    let mut out = Vec::new();
+
+    backend.reset_telemetry();
+    adaptive_traverse_resident_graph_sparse_queue_step_with_scratch_into(
+        &dispatcher,
+        &graph,
+        &frontier_in,
+        1,
+        &mut scratch,
+        &mut out,
+    )
+    .expect("resident adaptive large sparse queue path");
+
+    assert_eq!(out, expected);
+    let telemetry = backend.telemetry_snapshot();
+    assert_eq!(
+        telemetry.kernel_launches, 4,
+        "Fix: large adaptive sparse queue traversal must run clear, word-scan, deterministic queue scatter, and queue-consume kernels."
+    );
+    assert_eq!(
+        telemetry
+            .host_to_device_bytes
+            .saturating_sub(telemetry.param_upload_bytes),
+        (frontier_in.len() * std::mem::size_of::<u32>()) as u64,
+        "Fix: large adaptive sparse queue traversal must upload only the packed frontier."
+    );
+    assert_eq!(
+        telemetry.readback_bytes,
+        (frontier_in.len() * std::mem::size_of::<u32>()) as u64,
+        "Fix: large adaptive sparse queue traversal must read back only frontier_out."
     );
     scratch
         .free(&dispatcher)
@@ -498,14 +731,14 @@ fn cuda_resident_adaptive_auto_selects_sparse_queue_for_tiny_frontier() {
     assert_eq!(
         scratch.plan_cache_snapshot(),
         AdaptiveTraversalPlanCacheSnapshot {
-            entries: 4,
-            hits: 4,
-            misses: 4,
+            entries: 3,
+            hits: 3,
+            misses: 3,
         },
-        "Fix: auto sparse queue traversal must reuse queue length init, device frontier clear, queue-build, and queue-consume Programs on repeated resident graph calls."
+        "Fix: auto sparse queue traversal must reuse device frontier clear, queue-build, and queue-consume Programs on repeated resident graph calls."
     );
     let telemetry = backend.telemetry_snapshot();
-    assert_eq!(telemetry.kernel_launches, 8);
+    assert_eq!(telemetry.kernel_launches, 6);
     assert_eq!(telemetry.sync_points, 2);
     assert_eq!(
         telemetry.readback_bytes,

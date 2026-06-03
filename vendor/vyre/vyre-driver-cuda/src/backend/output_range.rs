@@ -26,3 +26,21 @@ pub(crate) fn cuda_output_readback(
         byte_len: range.end - range.start,
     })
 }
+
+pub(crate) fn cuda_output_readback_for_binding(
+    buffers: &[BufferDecl],
+    buffer_index: usize,
+    binding_name: &str,
+    full_size: usize,
+    context: &'static str,
+) -> Result<CudaOutputReadback, BackendError> {
+    let buffer = buffers
+        .get(buffer_index)
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA {context} expected program buffer index {buffer_index} for binding `{binding_name}` but only {} buffer(s) were declared. Rebuild the binding plan before launch.",
+                buffers.len()
+            ),
+        })?;
+    cuda_output_readback(buffer, full_size)
+}

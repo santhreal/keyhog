@@ -12,10 +12,11 @@ use crate::dispatch_buffers::{
 use crate::hardware::scratch::reserve_vec_capacity;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 use vyre_primitives::matching::bracket_match::{
-    bracket_match, pack_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
+    bracket_match, bracket_match_dispatch_grid, pack_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE,
+    OTHER,
 };
 use vyre_primitives::matching::region::{
-    dedup_regions_flag_program, region_sort_program, RegionTriple,
+    dedup_regions_flag_program, region_dedup_dispatch_grid, region_sort_program, RegionTriple,
 };
 use vyre_primitives::matching::{
     dfa_compile, dfa_compile_with_budget, dfa_fingerprint, dfa_wire_bytes, nfa_to_dfa, CompiledDfa,
@@ -178,7 +179,11 @@ pub fn bracket_pairs_via_with_scratch_into(
     scratch.match_pairs_seed.clear();
     scratch.match_pairs_seed.resize(kinds.len(), MATCH_NONE);
     write_u32_slice_le_bytes(&mut scratch.inputs[2], &scratch.match_pairs_seed);
-    let outputs = dispatcher.dispatch(&program, &scratch.inputs, Some([1, 1, 1]))?;
+    let outputs = dispatcher.dispatch(
+        &program,
+        &scratch.inputs,
+        Some(bracket_match_dispatch_grid(n, max_depth)),
+    )?;
     decode_first_output(&outputs, kinds.len(), "bracket_pairs_via", out)
 }
 
@@ -307,7 +312,7 @@ pub fn dedup_region_survivor_flags_via_with_scratch_into(
     let outputs = dispatcher.dispatch(
         &program,
         &scratch.inputs,
-        Some([ceil_div_u32(count, 64), 1, 1]),
+        Some(region_dedup_dispatch_grid(count)),
     )?;
     decode_first_output(
         &outputs,
@@ -449,7 +454,6 @@ mod tests {
     use crate::dispatch_buffers::u32_slice_to_le_bytes;
     use vyre_foundation::ir::Program;
 
-
     struct MatchingDispatcher;
 
     impl OptimizerDispatcher for MatchingDispatcher {
@@ -469,20 +473,28 @@ mod tests {
                 .expect("Fix: matching primitive should expose a region generator");
             match op_id {
                 vyre_primitives::matching::bracket_match::OP_ID => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
                     let kinds = crate::hardware::dispatch_buffers::read_u32s(&inputs[0]);
                     let depth_words = inputs[1].len() / std::mem::size_of::<u32>();
+                    assert_eq!(
+                        grid_override,
+                        Some(bracket_match_dispatch_grid(kinds.len() as u32, depth_words as u32)),
+                        "Fix: bracket_pairs_via must dispatch the primitive with enough workgroups for its selected bracket matcher."
+                    );
                     Ok(vec![u32_slice_to_le_bytes(&primitive_bracket_match(
                         &kinds,
                         depth_words as u32,
                     ))])
                 }
                 "vyre-primitives::matching::region::region_sort" => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
                     let regions = join_regions(
                         &crate::hardware::dispatch_buffers::read_u32s(&inputs[0]),
                         &crate::hardware::dispatch_buffers::read_u32s(&inputs[1]),
                         &crate::hardware::dispatch_buffers::read_u32s(&inputs[2]),
+                    );
+                    assert_eq!(
+                        grid_override,
+                        Some([ceil_div_u32(regions.len() as u32, 256), 1, 1]),
+                        "Fix: sort_regions_via must dispatch one lane per region triple."
                     );
                     let sorted = reference_sort_regions(regions);
                     let (pids, starts, ends) = split_regions(&sorted);
@@ -493,11 +505,15 @@ mod tests {
                     ])
                 }
                 "vyre-primitives::matching::region::dedup_regions_flag" => {
-                    assert_eq!(grid_override, Some([1, 1, 1]));
                     let regions = join_regions(
                         &crate::hardware::dispatch_buffers::read_u32s(&inputs[0]),
                         &crate::hardware::dispatch_buffers::read_u32s(&inputs[1]),
                         &crate::hardware::dispatch_buffers::read_u32s(&inputs[2]),
+                    );
+                    assert_eq!(
+                        grid_override,
+                        Some(region_dedup_dispatch_grid(regions.len() as u32)),
+                        "Fix: dedup_region_survivor_flags_via must use the primitive's 256-lane region-dedup grid."
                     );
                     let flags = survivor_flags(&regions);
                     Ok(vec![u32_slice_to_le_bytes(&flags)])
@@ -516,14 +532,12 @@ mod tests {
     }
 
     fn survivor_flags(sorted_regions: &[RegionTriple]) -> Vec<u32> {
-        if sorted_regions.is_empty() {
-            return Vec::new();
-        }
-        let mut flags = vec![1];
-        for pair in sorted_regions.windows(2) {
-            let prev = pair[0];
-            let next = pair[1];
-            flags.push(u32::from(next.pid != prev.pid || next.start > prev.end));
+        let mut flags = Vec::with_capacity(sorted_regions.len());
+        for (index, current) in sorted_regions.iter().enumerate() {
+            let has_prev_overlap = sorted_regions[..index]
+                .iter()
+                .any(|prior| prior.pid == current.pid && prior.end >= current.start);
+            flags.push(u32::from(!has_prev_overlap));
         }
         flags
     }
@@ -548,6 +562,129 @@ mod tests {
             pack_diagnostic_u32(&[OPEN_BRACE, CLOSE_BRACE]),
             pack_u32(&[OPEN_BRACE, CLOSE_BRACE])
         );
+    }
+
+    #[test]
+    fn bracket_pairs_uncapped_large_stream_dispatches_all_parallel_workgroups() {
+        let mut kinds = vec![OTHER; 513];
+        kinds[0] = OPEN_BRACE;
+        kinds[255] = OPEN_BRACE;
+        kinds[256] = CLOSE_BRACE;
+        kinds[512] = CLOSE_BRACE;
+
+        assert_eq!(
+            bracket_pairs_via(&MatchingDispatcher, &kinds, kinds.len() as u32).unwrap(),
+            reference_bracket_pairs(&kinds, kinds.len() as u32)
+        );
+    }
+
+    #[test]
+    fn bracket_pairs_depth_capped_stream_keeps_single_workgroup_fallback() {
+        let mut kinds = vec![OTHER; 513];
+        kinds[0] = OPEN_BRACE;
+        kinds[64] = OPEN_BRACE;
+        kinds[65] = CLOSE_BRACE;
+
+        assert_eq!(
+            bracket_pairs_via(&MatchingDispatcher, &kinds, 64).unwrap(),
+            reference_bracket_pairs(&kinds, 64)
+        );
+    }
+
+    #[test]
+    fn bracket_pairs_generated_dispatch_grids_cover_4096_large_streams() {
+        for case in 0..4096u32 {
+            let len = 257 + (case.wrapping_mul(37) % 768) as usize;
+            let max_depth = if case % 2 == 0 {
+                len as u32
+            } else {
+                1 + case.wrapping_mul(19) % 192
+            };
+            let mut state = 0x8BAD_F00Du32 ^ case.wrapping_mul(0x9E37_79B9);
+            let mut kinds = Vec::with_capacity(len);
+            for index in 0..len {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let kind = match (state.wrapping_add(index as u32)) % 7 {
+                    0 | 1 => OPEN_BRACE,
+                    2 | 3 => CLOSE_BRACE,
+                    _ => OTHER,
+                };
+                kinds.push(kind);
+            }
+
+            assert_eq!(
+                bracket_pairs_via(&MatchingDispatcher, &kinds, max_depth).unwrap(),
+                reference_bracket_pairs(&kinds, max_depth),
+                "case {case}: diagnostic bracket dispatch must match primitive CPU oracle"
+            );
+        }
+    }
+
+    #[test]
+    fn dedup_survivor_flags_nested_cluster_uses_prior_merged_span() {
+        let sorted = vec![
+            RegionTriple::new(7, 0, 10),
+            RegionTriple::new(7, 2, 3),
+            RegionTriple::new(7, 9, 12),
+            RegionTriple::new(7, 20, 25),
+        ];
+
+        assert_eq!(
+            dedup_region_survivor_flags_via(&MatchingDispatcher, &sorted).unwrap(),
+            vec![1, 0, 0, 1]
+        );
+    }
+
+    #[test]
+    fn dedup_survivor_flags_large_stream_dispatches_region_grid() {
+        let sorted = (0..513u32)
+            .map(|index| RegionTriple::new(index / 171, index * 3, index * 3 + 1))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            dedup_region_survivor_flags_via(&MatchingDispatcher, &sorted).unwrap(),
+            vec![1; sorted.len()]
+        );
+    }
+
+    #[test]
+    fn dedup_survivor_flags_generated_regions_cover_4096_large_streams() {
+        for case in 0..4096u32 {
+            let count = 257 + (case.wrapping_mul(29) % 768) as usize;
+            let mut state = 0xD1CE_C0DEu32 ^ case.wrapping_mul(0x85EB_CA6B);
+            let mut regions = Vec::with_capacity(count);
+            for index in 0..count {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let pid = state % 7;
+                state = state.rotate_left(3).wrapping_add(index as u32);
+                let start = state % 4096;
+                state = state.rotate_left(9) ^ case;
+                let width = state % 64;
+                regions.push(RegionTriple::new(pid, start, start.saturating_add(width)));
+            }
+
+            let mut sorted = regions;
+            sort_regions_cpu(&mut sorted);
+            let flags = dedup_region_survivor_flags_via(&MatchingDispatcher, &sorted).unwrap();
+            let actual_cluster_starts = sorted
+                .iter()
+                .zip(flags.iter())
+                .filter_map(|(region, flag)| (*flag != 0).then_some((region.pid, region.start)))
+                .collect::<Vec<_>>();
+            let expected_cluster_starts = reference_dedup_regions(sorted.clone())
+                .into_iter()
+                .map(|region| (region.pid, region.start))
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                actual_cluster_starts, expected_cluster_starts,
+                "case {case}: survivor flags must mark the same cluster starts as CPU dedup"
+            );
+        }
     }
 
     #[test]
@@ -656,4 +793,3 @@ mod tests {
             .contains("Fix: sort_regions_via requires at least one region"));
     }
 }
-

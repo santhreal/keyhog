@@ -252,16 +252,14 @@ fn record_dispatch_unsubmitted_impl(
                 .acquire(output_bytes_u64, usage)
                 .map_err(pool_backend_error)?;
             if info.preserve_input_contents {
-                let bytes = data.ok_or_else(|| {
-                    BackendError::new(format!(
-                        "read-write output binding {} (`{}`) preserves input contents but no host input bytes were supplied. Fix: pass one input slice for every non-shared BufferDecl that is read before it is written.",
-                        info.binding, info.name
-                    ))
-                })?;
-                if let Some((offset, len)) =
-                    write_padded_input(queue, b.buffer(), bytes, output_bytes)?
-                {
-                    clear_requests.push((info.binding, offset, len));
+                if let Some(bytes) = data {
+                    if let Some((offset, len)) =
+                        write_padded_input(queue, b.buffer(), bytes, output_bytes)?
+                    {
+                        clear_requests.push((info.binding, offset, len));
+                    }
+                } else {
+                    clear_requests.push((info.binding, 0, output_bytes_u64));
                 }
             }
             (b, output_bytes_u64)
@@ -499,7 +497,6 @@ fn record_dispatch_unsubmitted_impl(
     })
 }
 
-
 fn padded_wgpu_usize(size: usize, label: &'static str) -> Result<usize, BackendError> {
     crate::numeric::align_up_usize(size, 4, label)
 }
@@ -515,4 +512,3 @@ pub(crate) fn record_and_readback(
 ) -> Result<vyre_driver::OutputBuffers, BackendError> {
     record_and_submit_async(request)?.await_result()
 }
-

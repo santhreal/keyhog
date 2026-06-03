@@ -18,7 +18,7 @@ pub(crate) struct PackedMacroTable {
     pub(super) expansion_name_hashes_le: Vec<u8>,
     pub(super) expansion_name_starts_le: Vec<u8>,
     pub(super) expansion_name_lens_le: Vec<u8>,
-    pub(super) expansion_name_words_le: Vec<u8>,
+    pub(super) expansion_name_bytes: Vec<u8>,
     pub(super) expansion_vals_le: Vec<u8>,
     pub(super) expansion_sizes_le: Vec<u8>,
     pub(super) expansion_kinds_le: Vec<u8>,
@@ -26,7 +26,7 @@ pub(crate) struct PackedMacroTable {
     pub(super) expansion_replacement_params_le: Vec<u8>,
     pub(super) expansion_replacement_starts_le: Vec<u8>,
     pub(super) expansion_replacement_lens_le: Vec<u8>,
-    pub(super) expansion_replacement_words_le: Vec<u8>,
+    pub(super) expansion_replacement_bytes: Vec<u8>,
     pub(super) expansion_replacement_source_len: u32,
     pub(super) expansion_max_replacement_tokens: u32,
     pub(super) names_len: u32,
@@ -104,10 +104,7 @@ impl PackedMacroTable {
                 &expansion.name_lens,
                 MACRO_TABLE_SLOTS as usize,
             )?,
-            expansion_name_words_le: pack_u32_words(
-                &expansion.name_words,
-                expansion.name_words.len().max(1),
-            )?,
+            expansion_name_bytes: expansion.name_bytes,
             expansion_vals_le: pack_u32_words(&expansion.vals, MACRO_TABLE_SLOTS as usize)?,
             expansion_sizes_le: pack_u32_words(&expansion.sizes, MACRO_TABLE_SLOTS as usize)?,
             expansion_kinds_le: pack_u32_words(&expansion.kinds, MACRO_TABLE_SLOTS as usize)?,
@@ -127,10 +124,7 @@ impl PackedMacroTable {
                 &expansion.replacement_lens,
                 MACRO_TABLE_SLOTS as usize,
             )?,
-            expansion_replacement_words_le: pack_u32_words(
-                &expansion.replacement_words,
-                expansion.replacement_source_len.max(1) as usize,
-            )?,
+            expansion_replacement_bytes: expansion.replacement_bytes,
             expansion_replacement_source_len: expansion.replacement_source_len,
             expansion_max_replacement_tokens: expansion.max_replacement_tokens,
             names_len,
@@ -146,7 +140,7 @@ impl PackedMacroTable {
             self.expansion_name_hashes_le.len(),
             self.expansion_name_starts_le.len(),
             self.expansion_name_lens_le.len(),
-            self.expansion_name_words_le.len(),
+            self.expansion_name_bytes.len(),
             self.expansion_vals_le.len(),
             self.expansion_sizes_le.len(),
             self.expansion_kinds_le.len(),
@@ -154,7 +148,7 @@ impl PackedMacroTable {
             self.expansion_replacement_params_le.len(),
             self.expansion_replacement_starts_le.len(),
             self.expansion_replacement_lens_le.len(),
-            self.expansion_replacement_words_le.len(),
+            self.expansion_replacement_bytes.len(),
         ]
         .into_iter()
         .try_fold(0usize, |acc, len| acc.checked_add(len))
@@ -202,7 +196,7 @@ struct PackedExpansionMacroTable {
     name_hashes: Vec<u32>,
     name_starts: Vec<u32>,
     name_lens: Vec<u32>,
-    name_words: Vec<u32>,
+    name_bytes: Vec<u8>,
     vals: Vec<u32>,
     sizes: Vec<u32>,
     kinds: Vec<u32>,
@@ -210,7 +204,7 @@ struct PackedExpansionMacroTable {
     replacement_params: Vec<u32>,
     replacement_starts: Vec<u32>,
     replacement_lens: Vec<u32>,
-    replacement_words: Vec<u32>,
+    replacement_bytes: Vec<u8>,
     replacement_source_len: u32,
     max_replacement_tokens: u32,
 }
@@ -218,7 +212,7 @@ struct PackedExpansionMacroTable {
 impl PackedExpansionMacroTable {
     fn from_definitions(macros: &[MacroDef]) -> Result<Self, String> {
         let slots = MACRO_TABLE_SLOTS as usize;
-        let name_word_slots = macros
+        let name_byte_slots = macros
             .iter()
             .try_fold(0usize, |total, mac| {
                 total.checked_add(mac.name.len()).ok_or_else(|| {
@@ -226,7 +220,7 @@ impl PackedExpansionMacroTable {
                 })
             })?
             .max(1);
-        let replacement_word_slots = macros
+        let replacement_byte_slots = macros
             .iter()
             .try_fold(0usize, |total, mac| {
                 total.checked_add(mac.body.len()).ok_or_else(|| {
@@ -242,7 +236,7 @@ impl PackedExpansionMacroTable {
             )?,
             name_starts: filled_macro_table_vec(slots, 0, "macro expansion name starts")?,
             name_lens: filled_macro_table_vec(slots, 0, "macro expansion name lengths")?,
-            name_words: filled_macro_table_vec(name_word_slots, 0, "macro expansion name words")?,
+            name_bytes: filled_macro_table_vec(name_byte_slots, 0, "macro expansion name bytes")?,
             vals: filled_macro_table_vec(slots, EMPTY_MACRO_SLOT, "macro expansion value slots")?,
             sizes: filled_macro_table_vec(slots, 0, "macro expansion sizes")?,
             kinds: filled_macro_table_vec(
@@ -262,14 +256,14 @@ impl PackedExpansionMacroTable {
                 "macro expansion replacement starts",
             )?,
             replacement_lens: filled_macro_table_vec(slots, 0, "macro expansion replacement lens")?,
-            replacement_words: {
-                let mut words = Vec::new();
+            replacement_bytes: {
+                let mut bytes = Vec::new();
                 reserve_macro_table_vec(
-                    &mut words,
-                    replacement_word_slots,
-                    "macro expansion replacement words",
+                    &mut bytes,
+                    replacement_byte_slots,
+                    "macro expansion replacement bytes",
                 )?;
-                words
+                bytes
             },
             replacement_source_len: 0,
             max_replacement_tokens: 0,
@@ -294,9 +288,7 @@ impl PackedExpansionMacroTable {
             let name_end = name_cursor.checked_add(name_len).ok_or_else(|| {
                 "vyre-libs::gpu_pipeline: macro-name table length overflowed usize".to_string()
             })?;
-            for (i, byte) in mac.name.iter().copied().enumerate() {
-                table.name_words[name_cursor + i] = u32::from(byte);
-            }
+            table.name_bytes[name_cursor..name_end].copy_from_slice(&mac.name);
             table.name_starts[slot] = checked_gpu_u32("macro expansion name start", name_cursor)?;
             table.name_lens[slot] = checked_gpu_u32("macro expansion name length", name_len)?;
             table.name_hashes[slot] = hash;
@@ -338,9 +330,9 @@ impl PackedExpansionMacroTable {
                 table.replacement_starts[row] = table.replacement_source_len;
                 table.replacement_lens[row] =
                     checked_gpu_u32("macro replacement token length", token.len)?;
-                for byte in &mac.body[token.start..token.start + token.len] {
-                    table.replacement_words.push(u32::from(*byte));
-                }
+                table
+                    .replacement_bytes
+                    .extend_from_slice(&mac.body[token.start..token.start + token.len]);
                 table.replacement_source_len = table
                     .replacement_source_len
                     .checked_add(checked_gpu_u32(
@@ -353,8 +345,8 @@ impl PackedExpansionMacroTable {
                     })?;
             }
         }
-        if table.replacement_words.is_empty() {
-            table.replacement_words.push(0);
+        if table.replacement_bytes.is_empty() {
+            table.replacement_bytes.push(0);
         }
         Ok(table)
     }
@@ -462,7 +454,6 @@ fn macro_params(args: &[u8]) -> Result<Vec<&[u8]>, String> {
     }
     Ok(params)
 }
-
 
 fn replacement_tokens(body: &[u8], params: &[&[u8]]) -> Result<Vec<ReplacementToken>, String> {
     let param_indexes = parameter_indexes(params)?;
@@ -734,10 +725,7 @@ mod tests {
             .map(|slot| {
                 let start = table.name_starts[*slot] as usize;
                 let len = table.name_lens[*slot] as usize;
-                table.name_words[start..start + len]
-                    .iter()
-                    .map(|byte| *byte as u8)
-                    .collect::<Vec<_>>()
+                table.name_bytes[start..start + len].to_vec()
             })
             .collect::<Vec<_>>();
         names.sort();
@@ -751,9 +739,8 @@ mod tests {
             .expect("Fix: macro-name pool must size to the live translation-unit macros");
 
         assert!(
-            table.expansion_name_words_le.len() > 16_384 * 4,
-            "packed macro-name words must grow past the legacy fixed 16 KiB pool"
+            table.expansion_name_bytes.len() > 16_384,
+            "raw macro-name bytes must grow past the legacy fixed 16 KiB pool"
         );
     }
 }
-

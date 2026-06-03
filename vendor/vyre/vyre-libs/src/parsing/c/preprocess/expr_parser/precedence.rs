@@ -2,6 +2,20 @@ use super::*;
 
 impl PreprocessorExprParser<'_, '_, '_> {
     pub(super) fn parse_conditional(&mut self) -> Result<u64, CPreprocessorError> {
+        // Depth-guard the ternary recursion (and, transitively via parens in
+        // `parse_unary`, all parenthesized nesting). Fail closed before the
+        // native stack overflows on hostile input like `#if 1?1:1?1:...`.
+        self.depth += 1;
+        let r = if self.depth > MAX_PP_EXPR_DEPTH {
+            Err(self.error("Fix: #if expression nesting too deep"))
+        } else {
+            self.parse_conditional_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_conditional_inner(&mut self) -> Result<u64, CPreprocessorError> {
         let condition = self.parse_logical_or()?;
         self.skip_ws_and_splices();
         if !self.consume_byte(b'?') {
@@ -173,6 +187,20 @@ impl PreprocessorExprParser<'_, '_, '_> {
     }
 
     pub(super) fn parse_unary(&mut self) -> Result<u64, CPreprocessorError> {
+        // `! ~ + -` chains right-recurse here and parens route back to
+        // `parse_conditional`; guard on the shared depth counter so neither
+        // path can overflow the native stack.
+        self.depth += 1;
+        let r = if self.depth > MAX_PP_EXPR_DEPTH {
+            Err(self.error("Fix: #if expression nesting too deep"))
+        } else {
+            self.parse_unary_inner()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<u64, CPreprocessorError> {
         self.skip_ws_and_splices();
         if self.consume_byte(b'!') {
             return Ok(u64::from(self.parse_unary()? == 0));

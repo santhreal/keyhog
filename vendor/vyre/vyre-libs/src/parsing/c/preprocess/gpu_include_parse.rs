@@ -42,9 +42,10 @@
 //!   - `path_start_out`, `path_len_out`, `is_system_out`.
 
 use super::gpu_directive_parse_shared::{
-    directive_program_from_parse, push_bounded_byte_scan_until, push_directive_row_bounds,
-    push_hash_and_keyword_start, push_keyword_end, push_ws_skip_from_expr,
-    safe_source_byte_expr as safe_load, DirectiveOutputColumn, DirectiveThreadLayout,
+    directive_program_from_parse_with_source_layout, push_bounded_byte_scan_until,
+    push_directive_row_bounds, push_hash_and_keyword_start, push_keyword_end,
+    push_ws_skip_from_expr, safe_source_byte_expr, DirectiveOutputColumn, DirectiveSourceLayout,
+    DirectiveThreadLayout,
 };
 use crate::parsing::c::lex::tokens::{TOK_PP_INCLUDE, TOK_PP_INCLUDE_NEXT};
 use vyre::ir::{Expr, Node, Program};
@@ -90,11 +91,26 @@ const OUTPUT_COLUMNS: [DirectiveOutputColumn; 3] = [
 /// requires static byte length for readback), `source_len` is unused.
 #[must_use]
 pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
+    gpu_include_parse_with_source_layout(num_tokens, source_len, DirectiveSourceLayout::PackedU32)
+}
+
+/// Build the 17b.7 `#include` row parser over raw `DataType::U8` source bytes.
+#[must_use]
+pub fn gpu_include_parse_u8(num_tokens: u32, source_len: u32) -> Program {
+    gpu_include_parse_with_source_layout(num_tokens, source_len, DirectiveSourceLayout::RawU8)
+}
+
+fn gpu_include_parse_with_source_layout(
+    num_tokens: u32,
+    source_len: u32,
+    source_layout: DirectiveSourceLayout,
+) -> Program {
     let t = Expr::var("t");
+    let safe_load = |addr: Expr| safe_source_byte_expr(source_layout, addr);
 
     let mut parse: Vec<Node> = Vec::new();
     push_directive_row_bounds(&mut parse);
-    push_hash_and_keyword_start(&mut parse);
+    push_hash_and_keyword_start(&mut parse, source_layout);
 
     // ---- step 3: skip past keyword. kw_len = 7 (`include`) or 12
     // (`include_next`). Decided by `kind`. ----
@@ -111,6 +127,7 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
     // ---- step 4: skip WS between keyword and delimiter. ----
     push_ws_skip_from_expr(
         &mut parse,
+        source_layout,
         "dp",
         Expr::var("post_kw"),
         "delim_skip",
@@ -169,6 +186,7 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
     // removes the semantic cap.
     push_bounded_byte_scan_until(
         &mut parse,
+        source_layout,
         "path_i",
         "path_start_val",
         "path_scan_limit",
@@ -196,10 +214,11 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
         ],
     ));
 
-    directive_program_from_parse(
+    directive_program_from_parse_with_source_layout(
         OP_ID,
         num_tokens,
         source_len,
+        source_layout,
         &OUTPUT_COLUMNS,
         DirectiveThreadLayout::WorkgroupLinear,
         Expr::or(
@@ -213,6 +232,7 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vyre::ir::DataType;
 
     #[test]
     fn op_id_is_canonical_and_stable() {
@@ -227,5 +247,26 @@ mod tests {
         let p = gpu_include_parse(8, 64);
         assert_eq!(p.buffers().len(), 7);
         assert_eq!(p.workgroup_size(), [256, 1, 1]);
+    }
+
+    #[test]
+    fn source_buffer_layouts_preserve_packed_abi_and_raw_u8_variant() {
+        let packed = gpu_include_parse(8, 64);
+        let raw_u8 = gpu_include_parse_u8(8, 64);
+        let packed_source = packed
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: packed include parser source buffer must exist");
+        let raw_u8_source = raw_u8
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("Fix: raw-U8 include parser source buffer must exist");
+
+        assert_eq!(packed_source.element(), DataType::U32);
+        assert_ne!(packed_source.count(), 0);
+        assert_eq!(raw_u8_source.element(), DataType::U8);
+        assert_eq!(raw_u8_source.count(), 0);
     }
 }

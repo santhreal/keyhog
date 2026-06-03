@@ -1,19 +1,13 @@
-use smallvec::SmallVec;
 
 use crate::backend::staging_reserve::reserved_typed_vec;
-use crate::backend::{CudaBackend, CudaResidentBuffer};
-use crate::egraph_device_image::{
-    plan_cuda_egraph_device_upload_from_image_ref, CudaEGraphDeviceKernelView,
-};
+use crate::backend::CudaBackend;
+use crate::egraph_device_image::CudaEGraphDeviceKernelView;
 use crate::egraph_readback::{
-    cleanup_egraph_kernel_handles, decode_unique_equivalence_pairs, device_ptr_at,
-    download_structural_equivalence_output_ranges, egraph_column_snapshot_readback_bytes,
-    egraph_column_snapshot_spans, read_resident_u32_range, read_u64_le,
-    upload_structural_equivalence_scratch, upload_u32_words,
+    egraph_column_snapshot_readback_bytes,
+    egraph_column_snapshot_spans, read_resident_u32_range,
 };
 use crate::CudaResidentEGraphDeviceImage;
 use vyre_driver::BackendError;
-use vyre_driver::LaunchPlan;
 use vyre_foundation::optimizer::eqsat_gpu::GpuEGraphDeviceImage;
 
 use super::{
@@ -27,7 +21,7 @@ use super::{
     CudaEGraphResidentSignatureSnapshot, CudaEGraphSignatureBucketPlan,
     CudaEGraphSignatureRefreshKernelResult, CudaEGraphStructuralCanonicalizationFixedPointReport,
     CudaEGraphStructuralCanonicalizationFixedPointResult,
-    CudaEGraphStructuralCanonicalizationRoundResult, CudaEGraphStructuralEquivalenceKernelResult,
+    CudaEGraphStructuralCanonicalizationRoundResult,
     helpers::usize_to_u64,
 };
 

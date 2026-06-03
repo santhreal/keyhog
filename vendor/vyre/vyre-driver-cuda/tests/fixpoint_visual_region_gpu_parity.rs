@@ -8,7 +8,9 @@ mod common;
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_primitives::fixpoint::bitset_fixpoint::bitset_fixpoint;
-use vyre_primitives::matching::region::dedup_regions_flag_program;
+use vyre_primitives::matching::region::{
+    dedup_regions_cluster_program, dedup_regions_flag_program, region_dedup_dispatch_grid,
+};
 use vyre_primitives::visual::packed_rgba_map::packed_rgba_map;
 
 // ---------------------------------------------------------------------
@@ -92,22 +94,29 @@ fn cuda_packed_rgba_map_identity_large() {
 }
 
 // ---------------------------------------------------------------------
-// dedup_regions_flag_program: per-lane survivor flag.
+// dedup_regions_flag_program / dedup_regions_cluster_program: sorted span clusters.
 // ---------------------------------------------------------------------
 
-fn cpu_dedup_flags(pids: &[u32], starts: &[u32], ends: &[u32]) -> Vec<u32> {
-    let mut out = vec![0u32; pids.len()];
+fn cpu_dedup_cluster_metadata(pids: &[u32], starts: &[u32], ends: &[u32]) -> (Vec<u32>, Vec<u32>) {
+    let mut survivors = vec![0u32; pids.len()];
+    let mut merged_ends = ends.to_vec();
     for i in 0..pids.len() {
-        let flag = if i == 0 {
-            1u32
-        } else {
-            let different_pid = pids[i] != pids[i - 1];
-            let no_overlap = starts[i] > ends[i - 1];
-            u32::from(different_pid || no_overlap)
-        };
-        out[i] = flag;
+        let has_prev_overlap = (0..i).any(|j| pids[j] == pids[i] && ends[j] >= starts[i]);
+        if has_prev_overlap {
+            continue;
+        }
+
+        survivors[i] = 1;
+        let mut merged_end = ends[i];
+        for j in i + 1..pids.len() {
+            if pids[j] != pids[i] || starts[j] > merged_end {
+                break;
+            }
+            merged_end = merged_end.max(ends[j]);
+        }
+        merged_ends[i] = merged_end;
     }
-    out
+    (survivors, merged_ends)
 }
 
 fn run_dedup_flag(pids: &[u32], starts: &[u32], ends: &[u32]) -> Vec<u32> {
@@ -119,7 +128,7 @@ fn run_dedup_flag(pids: &[u32], starts: &[u32], ends: &[u32]) -> Vec<u32> {
     // input slot.
     let inputs: Vec<Vec<u8>> = vec![u32_bytes(pids), u32_bytes(starts), u32_bytes(ends)];
     let mut config = DispatchConfig::default();
-    config.grid_override = Some([1, 1, 1]);
+    config.grid_override = Some(region_dedup_dispatch_grid(count));
     let outputs = with_live_backend("dedup regions flag", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -130,12 +139,35 @@ fn run_dedup_flag(pids: &[u32], starts: &[u32], ends: &[u32]) -> Vec<u32> {
     out
 }
 
+fn run_dedup_cluster(pids: &[u32], starts: &[u32], ends: &[u32]) -> (Vec<u32>, Vec<u32>) {
+    assert_eq!(pids.len(), starts.len());
+    assert_eq!(pids.len(), ends.len());
+    let count = pids.len() as u32;
+    let program =
+        dedup_regions_cluster_program("pids", "starts", "ends", "survivors", "merged_ends", count);
+    let inputs: Vec<Vec<u8>> = vec![u32_bytes(pids), u32_bytes(starts), u32_bytes(ends)];
+    let mut config = DispatchConfig::default();
+    config.grid_override = Some(region_dedup_dispatch_grid(count));
+    let outputs = with_live_backend("dedup regions cluster", |backend| {
+        backend
+            .dispatch(&program, &inputs, &config)
+            .unwrap_or_else(|error| {
+                panic!("Fix: CUDA dedup-regions cluster dispatch failed: {error}")
+            })
+    });
+    let mut survivors = bytes_u32(&outputs[0]);
+    survivors.truncate(count as usize);
+    let mut merged_ends = bytes_u32(&outputs[1]);
+    merged_ends.truncate(count as usize);
+    (survivors, merged_ends)
+}
+
 #[test]
 fn cuda_dedup_regions_flag_distinct_pids() {
     let pids = vec![1u32, 2, 3];
     let starts = vec![0u32, 10, 20];
     let ends = vec![5u32, 15, 25];
-    let cpu = cpu_dedup_flags(&pids, &starts, &ends);
+    let (cpu, _) = cpu_dedup_cluster_metadata(&pids, &starts, &ends);
     let gpu = run_dedup_flag(&pids, &starts, &ends);
     assert_eq!(gpu, cpu);
     assert_eq!(gpu, vec![1, 1, 1]); // all distinct.
@@ -146,7 +178,7 @@ fn cuda_dedup_regions_flag_overlapping_drops_second() {
     let pids = vec![1u32, 1, 1];
     let starts = vec![0u32, 3, 100];
     let ends = vec![10u32, 12, 110];
-    let cpu = cpu_dedup_flags(&pids, &starts, &ends);
+    let (cpu, _) = cpu_dedup_cluster_metadata(&pids, &starts, &ends);
     let gpu = run_dedup_flag(&pids, &starts, &ends);
     assert_eq!(gpu, cpu);
     // Index 1 overlaps index 0 (start=3 <= end=10) → drop. Index 2
@@ -159,10 +191,67 @@ fn cuda_dedup_regions_flag_pid_change_resets_overlap() {
     let pids = vec![1u32, 2, 2];
     let starts = vec![0u32, 5, 10];
     let ends = vec![20u32, 15, 25];
-    let cpu = cpu_dedup_flags(&pids, &starts, &ends);
+    let (cpu, _) = cpu_dedup_cluster_metadata(&pids, &starts, &ends);
     let gpu = run_dedup_flag(&pids, &starts, &ends);
     assert_eq!(gpu, cpu);
     // Index 1: pid changed → keep. Index 2: same pid, start=10 <=
     // prev end=15 → drop.
     assert_eq!(gpu, vec![1, 1, 0]);
+}
+
+#[test]
+fn cuda_dedup_regions_flag_handles_nested_short_previous_span() {
+    let pids = vec![7u32, 7, 7, 7];
+    let starts = vec![0u32, 2, 9, 20];
+    let ends = vec![10u32, 3, 12, 25];
+    let (cpu, _) = cpu_dedup_cluster_metadata(&pids, &starts, &ends);
+    let gpu = run_dedup_flag(&pids, &starts, &ends);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, vec![1, 0, 0, 1]);
+}
+
+#[test]
+fn cuda_dedup_regions_cluster_outputs_merged_survivor_ends() {
+    let pids = vec![7u32, 7, 7, 7, 8];
+    let starts = vec![0u32, 2, 9, 20, 0];
+    let ends = vec![10u32, 3, 12, 25, 4];
+    let (cpu_flags, cpu_merged) = cpu_dedup_cluster_metadata(&pids, &starts, &ends);
+    let (gpu_flags, gpu_merged) = run_dedup_cluster(&pids, &starts, &ends);
+
+    assert_eq!(gpu_flags, cpu_flags);
+    assert_eq!(gpu_merged, cpu_merged);
+    assert_eq!(gpu_flags, vec![1, 0, 0, 1, 1]);
+    assert_eq!(gpu_merged[0], 12);
+    assert_eq!(gpu_merged[3], 25);
+    assert_eq!(gpu_merged[4], 4);
+}
+
+#[test]
+fn cuda_dedup_regions_cluster_covers_lanes_past_first_workgroup() {
+    let count = 513usize;
+    let pids = vec![3u32; count];
+    let mut starts = Vec::with_capacity(count);
+    let mut ends = Vec::with_capacity(count);
+    for i in 0..count {
+        let start = (i as u32) * 10;
+        starts.push(start);
+        ends.push(start + 1);
+    }
+    starts[300] = 3_000;
+    ends[300] = 3_010;
+    starts[301] = 3_002;
+    ends[301] = 3_003;
+    starts[302] = 3_009;
+    ends[302] = 3_015;
+    starts[303] = 3_020;
+    ends[303] = 3_021;
+
+    let (cpu_flags, cpu_merged) = cpu_dedup_cluster_metadata(&pids, &starts, &ends);
+    let (gpu_flags, gpu_merged) = run_dedup_cluster(&pids, &starts, &ends);
+
+    assert_eq!(region_dedup_dispatch_grid(count as u32), [3, 1, 1]);
+    assert_eq!(gpu_flags, cpu_flags);
+    assert_eq!(gpu_merged, cpu_merged);
+    assert_eq!(&gpu_flags[300..304], &[1, 0, 0, 1]);
+    assert_eq!(gpu_merged[300], 3_015);
 }

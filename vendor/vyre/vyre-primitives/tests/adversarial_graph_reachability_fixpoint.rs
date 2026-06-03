@@ -421,7 +421,6 @@ fn csr_forward_or_changed_no_change_when_frontier_unchanged() {
     assert_eq!(changed, 0, "saturated frontier must signal no change");
 }
 
-
 #[test]
 fn csr_forward_or_changed_empty_frontier() {
     let (frontier, changed) =

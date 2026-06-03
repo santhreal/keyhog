@@ -66,7 +66,10 @@ Anything outside this subset is rejected at parse time.
 
 ## Status
 
-`sema` and `lower` are not yet implemented for the nano-subset. Every unwired
-stage returns a loud, actionable error rather than a fake success, so a caller
-never consumes an unanalyzed module or an empty Program as compiled output. The
-working envelope today is CPU lex + parse (`parse_rust_bytes`).
+`sema` (resolve + typeck + borrow check) and `lower` are implemented for the
+nano-subset. The full path lex -> parse -> resolve -> typeck -> borrow -> lower
+produces an executable Vyre `Program`: `compile_unit` with `lower: true` runs on
+the reference interpreter and matches both an independent AST interpreter and
+real rustc compile+run (see `vyre-libs/tests/rust_lower_exec_oracle.rs` and
+`tests/lower_exec.rs`). Constructs outside the wired subset return a loud,
+actionable error rather than a fake success or a miscompiled Program.

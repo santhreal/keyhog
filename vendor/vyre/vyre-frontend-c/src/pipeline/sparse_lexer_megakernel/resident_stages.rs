@@ -96,7 +96,7 @@ pub(super) fn dispatch_sparse_lexer_cached_stages_resident(
             "syntax_sparse_lexer_stage_compact_resident",
             &[haystack_len as u64],
         );
-        dispatch_resident_stage_readback_cached_into(
+        let compact_outputs = dispatch_resident_stage_cached(
             backend,
             compact_key,
             || {
@@ -129,10 +129,12 @@ pub(super) fn dispatch_sparse_lexer_cached_stages_resident(
                 ResidentStageInput::Resident(&offsets),
             ],
             config,
-            &mut scratch.resident_compact_outputs,
         )
         .map_err(|e| format!("{label} sparse lexer resident compact dispatch failed: {e}"))?;
-        collect_compact_lexer_output_named_drain(
+        cleanup.extend(compact_outputs.iter().cloned());
+        collect_resident_compact_lexer_output_exact_readback(
+            backend,
+            compact_outputs,
             [
                 "out_tok_types",
                 "out_tok_starts",
@@ -140,6 +142,7 @@ pub(super) fn dispatch_sparse_lexer_cached_stages_resident(
                 "out_counts",
             ],
             &mut scratch.resident_compact_outputs,
+            &mut scratch.resident_count_readback,
             label,
             "resident cached stages",
         )

@@ -17,6 +17,8 @@ categories = ["compilers", "development-tools"]
 vyre = { workspace = true }
 vyre-foundation = { workspace = true }
 vyre-driver = { workspace = true }
+vyre-driver-cuda = { workspace = true }
+vyre-driver-wgpu = { workspace = true }
 vyre-primitives = { workspace = true }
 vyre-libs = { workspace = true, features = ["rust-parser"] }
 vyre-runtime = { workspace = true }
@@ -28,9 +30,8 @@ smallvec = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+vyre-reference = { workspace = true }
 vyre-driver-reference = { workspace = true }
-vyre-driver-cuda = { workspace = true }
-vyre-driver-wgpu = { workspace = true }
 # CPU oracle: the official rustc lexer. Test-only differential against the
 # reusable Rust lexer substrate; not a runtime dependency of the frontend.
 rustc_lexer = { workspace = true }

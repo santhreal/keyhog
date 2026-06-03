@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "bitset", feature = "cpu-parity"))]
 
 use vyre_primitives::bitset::copy;
@@ -18,7 +17,6 @@ fn lcg_u32(seed: u32, len: usize) -> Vec<u32> {
         })
         .collect()
 }
-
 
 const CASES: usize = 16384;
 

@@ -249,25 +249,49 @@ fn copy_materialized_outputs_into(
     outputs: &[Vec<u8>],
     dst: &mut OutputBuffers,
 ) -> Result<(), BackendError> {
-    if dst.len() > outputs.len() {
-        dst.truncate(outputs.len());
-    }
+    let existing_slots_to_copy = dst.len().min(outputs.len());
     if dst.len() < outputs.len() {
         dst.try_reserve(outputs.len() - dst.len())
             .map_err(|error| {
                 materialized_cache_allocation_failed("output destination slots", error)
             })?;
-        while dst.len() < outputs.len() {
-            dst.push(Vec::new());
+    }
+
+    for (target, source) in dst
+        .iter_mut()
+        .take(existing_slots_to_copy)
+        .zip(outputs.iter())
+    {
+        if source.len() > target.capacity() {
+            target
+                .try_reserve_exact(source.len() - target.capacity())
+                .map_err(|error| {
+                    materialized_cache_allocation_failed("output destination bytes", error)
+                })?;
         }
     }
+
+    let mut appended_outputs = Vec::new();
+    if outputs.len() > dst.len() {
+        appended_outputs
+            .try_reserve(outputs.len() - dst.len())
+            .map_err(|error| {
+                materialized_cache_allocation_failed("new output destination slots", error)
+            })?;
+        for source in outputs.iter().skip(dst.len()) {
+            appended_outputs.push(clone_materialized_cache_bytes(
+                source,
+                "new output destination bytes",
+            )?);
+        }
+    }
+
+    dst.truncate(outputs.len());
     for (target, source) in dst.iter_mut().zip(outputs.iter()) {
         target.clear();
-        target.try_reserve(source.len()).map_err(|error| {
-            materialized_cache_allocation_failed("output destination bytes", error)
-        })?;
         target.extend_from_slice(source);
     }
+    dst.extend(appended_outputs);
     Ok(())
 }
 

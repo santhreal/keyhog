@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "bitset", feature = "cpu-parity"))]
 
 use vyre_primitives::bitset::test_bit;
@@ -31,11 +30,14 @@ fn binary_pairs(cases: usize) -> impl Iterator<Item = (Vec<u32>, Vec<u32>)> {
     })
 }
 
-
 fn oracle(buf: &[u32], bit_idx: u32) -> u32 {
     let w = (bit_idx / 32) as usize;
     let b = bit_idx % 32;
-    if w >= buf.len() { 0 } else { (buf[w] >> b) & 1 }
+    if w >= buf.len() {
+        0
+    } else {
+        (buf[w] >> b) & 1
+    }
 }
 
 const CASES: usize = 16384;

@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(feature = "hash")]
 
 use vyre_primitives::hash::{adler32, crc32, fnv1a, multi_hash};
@@ -19,7 +18,6 @@ fn hostile_bytes(seed: u32) -> Vec<u8> {
     v
 }
 
-
 fn oracle_multi(bytes: &[u8]) -> (u32, u32, u32) {
     (
         crc32::crc32(bytes),
@@ -34,6 +32,11 @@ fn sweep_hash_multi_hash_volume_oracle_matrix() {
         let bytes = hostile_bytes(idx as u32 ^ 0xA11C_0DE1);
         let expected = oracle_multi(&bytes);
         let actual = multi_hash::multi_hash_reference(&bytes);
-        assert_eq!(actual, expected, "Fix: multi_hash volume case {idx} len={}", bytes.len());
+        assert_eq!(
+            actual,
+            expected,
+            "Fix: multi_hash volume case {idx} len={}",
+            bytes.len()
+        );
     }
 }

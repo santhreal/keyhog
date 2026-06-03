@@ -22,6 +22,7 @@ pub use core_sparse::{
     c11_lexer_regular_sparse_packed_haystack_with_flags,
     c11_lexer_regular_sparse_packed_haystack_with_flags_no_directives,
     c11_lexer_regular_sparse_packed_haystack_with_flags_no_directives_no_backscan,
+    c11_lexer_regular_sparse_u8_haystack_with_flags,
 };
 pub use digraphs::c11_lex_digraphs;
 pub use single_pass::{c11_lex_regular_single_pass, c11_lex_single_pass};

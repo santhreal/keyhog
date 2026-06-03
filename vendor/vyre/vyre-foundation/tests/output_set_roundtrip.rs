@@ -1,6 +1,6 @@
 //! OutputSet wire-format round-trip tests.
 
-use vyre::ir::{BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 #[test]
 fn output_set_roundtrip_via_program_wire() {
@@ -9,6 +9,8 @@ fn output_set_roundtrip_via_program_wire() {
             BufferDecl::read("input", 0, DataType::U32).with_count(4),
             BufferDecl::output("out", 1, DataType::U32).with_count(4),
             BufferDecl::read_write("scratch_out", 2, DataType::U32).with_count(4),
+            BufferDecl::storage("write_only", 3, BufferAccess::WriteOnly, DataType::U32)
+                .with_count(4),
         ],
         [64, 1, 1],
         vec![Node::store(
@@ -20,7 +22,7 @@ fn output_set_roundtrip_via_program_wire() {
 
     let wire = program.to_wire().expect("encode must succeed");
     let decoded = Program::from_wire(&wire).expect("decode must succeed");
-    assert_eq!(decoded.output_buffer_indices(), &[1, 2]);
+    assert_eq!(decoded.output_buffer_indices(), &[1, 2, 3]);
 }
 
 #[test]
@@ -47,7 +49,7 @@ fn output_set_preserves_order_across_declaration_gaps() {
             BufferDecl::read("ro1", 1, DataType::U32).with_count(1),
             BufferDecl::read_write("rw2", 2, DataType::U32).with_count(1),
             BufferDecl::read("ro3", 3, DataType::U32).with_count(1),
-            BufferDecl::read_write("rw4", 4, DataType::U32).with_count(1),
+            BufferDecl::storage("wo4", 4, BufferAccess::WriteOnly, DataType::U32).with_count(1),
         ],
         [1, 1, 1],
         vec![],
@@ -56,4 +58,5 @@ fn output_set_preserves_order_across_declaration_gaps() {
     let wire = program.to_wire().expect("encode must succeed");
     let decoded = Program::from_wire(&wire).expect("decode must succeed");
     assert_eq!(decoded.output_buffer_indices(), &[0, 2, 4]);
+    assert_eq!(decoded.buffers()[4].access(), BufferAccess::WriteOnly);
 }

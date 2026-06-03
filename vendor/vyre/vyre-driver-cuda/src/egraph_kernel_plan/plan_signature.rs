@@ -4,7 +4,7 @@ use crate::egraph_device_image::CudaEGraphDeviceKernelView;
 use vyre_foundation::optimizer::eqsat_gpu::GpuEGraphDeviceImage;
 
 use super::{
-    helpers::{append_signature_pair_waves, unordered_pair_count, usize_to_u64, wave_count_for},
+    helpers::{append_signature_pair_waves, unordered_pair_count, wave_count_for},
     CudaEGraphKernelLaunchConfig, CudaEGraphKernelPlanError, CudaEGraphResidentColumnSnapshot,
     CudaEGraphResidentSignatureSnapshot, CudaEGraphSignatureBucket, CudaEGraphSignatureBucketPlan,
 };

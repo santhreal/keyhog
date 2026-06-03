@@ -448,7 +448,6 @@ pub fn c11_annotate_global_typedef_names_fast(
                             Expr::eq(
                                 Expr::load(
                                     vast_nodes,
-
                                     Expr::add(
                                         Expr::var("prior_typedef_hash_base"),
                                         Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
@@ -716,4 +715,3 @@ pub fn c11_annotate_global_typedef_names_fast(
     )
     .with_entry_op_id(ANNOTATE_TYPEDEF_OP_ID)
 }
-

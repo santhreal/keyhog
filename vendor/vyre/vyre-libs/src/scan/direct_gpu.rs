@@ -67,12 +67,21 @@ mod tests {
 
     #[test]
     fn direct_gpu_scanner_reuses_real_literal_set_program() {
-        let scanner = DirectGpuScanner::compile(&[b"abc", b"bc"]);
+        let patterns: [&[u8]; 2] = [b"abc", b"bc"];
+        let scanner = DirectGpuScanner::compile(&patterns);
+        let literal_set = GpuLiteralSet::compile(&patterns);
         assert_eq!(
             scanner.reference_scan(b"zabc"),
             vec![Match::new(0, 1, 4), Match::new(1, 2, 4)]
         );
-        assert_eq!(scanner.program().workgroup_size(), [32, 1, 1]);
+        assert_eq!(
+            scanner.program().fingerprint(),
+            literal_set.program.fingerprint()
+        );
+        assert_eq!(
+            scanner.program().workgroup_size(),
+            literal_set.program.workgroup_size()
+        );
         assert!(!scanner.program().entry().is_empty());
     }
 }

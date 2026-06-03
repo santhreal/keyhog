@@ -2,13 +2,13 @@ use std::sync::{Mutex, OnceLock};
 
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
-use crate::parsing::c::preprocess::gpu_if_expression::gpu_if_expression;
+use crate::parsing::c::preprocess::gpu_if_expression::gpu_if_expression_u8;
 use crate::parsing::c::preprocess::gpu_if_expression_abi::INVALID_EXPR_VALUE;
-use crate::parsing::c::preprocess::gpu_ifdef_value::gpu_ifdef_value;
+use crate::parsing::c::preprocess::gpu_ifdef_value::gpu_ifdef_value_u8;
 
 use super::buffers::{
-    bucket_pow2, checked_gpu_u32, pack_u32_words, pack_u32_words_into, pad_to_u32_words,
-    pad_to_u32_words_into, read_u32_scalar_exact, unpack_u32_words_exact_into,
+    bucket_pow2, checked_gpu_u32, pack_u32_words, pack_u32_words_into, read_u32_scalar_exact,
+    unpack_u32_words_exact_into,
 };
 use super::live_conditional_cache::{LiveConditionalCache, LiveConditionalCacheKey};
 use super::macro_values;
@@ -16,12 +16,12 @@ use super::{GpuDispatcher, MacroDef};
 
 fn live_ifdef_program() -> std::sync::Arc<vyre::ir::Program> {
     static CACHE: OnceLock<std::sync::Arc<vyre::ir::Program>> = OnceLock::new();
-    std::sync::Arc::clone(CACHE.get_or_init(|| std::sync::Arc::new(gpu_ifdef_value(1, 0))))
+    std::sync::Arc::clone(CACHE.get_or_init(|| std::sync::Arc::new(gpu_ifdef_value_u8(1, 0))))
 }
 
 fn live_if_expression_program() -> std::sync::Arc<vyre::ir::Program> {
     static CACHE: OnceLock<std::sync::Arc<vyre::ir::Program>> = OnceLock::new();
-    std::sync::Arc::clone(CACHE.get_or_init(|| std::sync::Arc::new(gpu_if_expression(1, 0))))
+    std::sync::Arc::clone(CACHE.get_or_init(|| std::sync::Arc::new(gpu_if_expression_u8(1, 0))))
 }
 
 fn live_conditional_cache() -> &'static Mutex<LiveConditionalCache> {
@@ -29,12 +29,37 @@ fn live_conditional_cache() -> &'static Mutex<LiveConditionalCache> {
     CACHE.get_or_init(|| Mutex::new(LiveConditionalCache::new()))
 }
 
+#[cfg(test)]
+mod live_conditional_program_tests {
+    use super::*;
+    use vyre::ir::{DataType, Program};
+
+    fn assert_byte_buffers_are_raw_u8(program: &Program, label: &str) {
+        for name in ["source", "macro_names_packed"] {
+            let buffer = program
+                .buffers()
+                .iter()
+                .find(|buffer| buffer.name() == name)
+                .unwrap_or_else(|| {
+                    panic!("Fix: {label} live conditional {name} buffer must exist")
+                });
+            assert_eq!(buffer.element(), DataType::U8);
+            assert_eq!(buffer.count(), 0);
+        }
+    }
+
+    #[test]
+    fn live_conditional_programs_consume_raw_u8_byte_buffers() {
+        assert_byte_buffers_are_raw_u8(&live_ifdef_program(), "ifdef");
+        assert_byte_buffers_are_raw_u8(&live_if_expression_program(), "if-expression");
+    }
+}
+
 #[derive(Default)]
 pub(super) struct LiveConditionalScratch {
     row_start_b: Vec<u8>,
     row_len_b: Vec<u8>,
     directive_kind_b: Vec<u8>,
-    row_padded: Vec<u8>,
     out_scalar: Vec<u8>,
     dispatch_outputs: Vec<Vec<u8>>,
     batch_row_starts: Vec<u32>,
@@ -46,16 +71,10 @@ pub(super) struct LiveConditionalScratch {
 }
 
 impl LiveConditionalScratch {
-    fn prepare_scalar(
-        &mut self,
-        row_bytes: &[u8],
-        row_len: u32,
-        directive_kind: u32,
-    ) -> Result<(), String> {
+    fn prepare_scalar(&mut self, row_len: u32, directive_kind: u32) -> Result<(), String> {
         pack_u32_words_into(&mut self.row_start_b, &[0], 1)?;
         pack_u32_words_into(&mut self.row_len_b, &[row_len], 1)?;
         pack_u32_words_into(&mut self.directive_kind_b, &[directive_kind], 1)?;
-        pad_to_u32_words_into(&mut self.row_padded, row_bytes)?;
         self.out_scalar.clear();
         reserve_live_vec(
             &mut self.out_scalar,
@@ -155,7 +174,10 @@ fn live_macro_name_buffers(macros: &[MacroDef]) -> Result<LiveMacroNameBuffers, 
     let values = macro_values::macro_integer_values_with_builtin_prefix(macros)?;
     let names_len = checked_gpu_u32("live conditional macro-name table byte length", names.len())?;
     let num_macros = checked_gpu_u32("live conditional macro definition count", macros.len())?;
-    let names = pad_to_u32_words(&names)?;
+    if names.is_empty() {
+        reserve_live_vec(&mut names, 1, "live macro-name sentinel byte")?;
+        names.push(0);
+    }
     let offsets = pack_u32_words(&offsets, offsets.len())?;
     let values = pack_u32_words(&values, values.len().max(1))?;
     let defined_fingerprint = live_macro_buffer_fingerprint(&[
@@ -323,16 +345,16 @@ pub(super) fn recompute_ifdef_truth_gpu_with_scratch(
     {
         return Ok(value);
     }
-    // gpu_ifdef_value reads num_macros and macro_names_len at runtime
-    // via Expr::buf_len, so no construction-time bucketing is needed
-    // for those dimensions  -  the kernel program shape is constant.
+    // gpu_ifdef_value_u8 reads source and macro table sizes at runtime via
+    // Expr::buf_len, so no construction-time bucketing is needed for those
+    // dimensions and the row bytes do not need host-side U32 repacking.
     let program = live_ifdef_program();
-    scratch.prepare_scalar(row_bytes, row_len, directive_kind)?;
+    scratch.prepare_scalar(row_len, directive_kind)?;
     let inputs: [&[u8]; 7] = [
         &scratch.row_start_b,
         &scratch.row_len_b,
         &scratch.directive_kind_b,
-        &scratch.row_padded,
+        row_bytes,
         &macro_buffers.names,
         &macro_buffers.offsets,
         &scratch.out_scalar,
@@ -409,7 +431,7 @@ pub(super) fn recompute_ifdef_truths_gpu_with_scratch<'a>(
         scratch.batch_directive_kinds.push(row.directive_kind);
         scratch.batch_source.extend_from_slice(row.row_bytes);
     }
-    let program = gpu_ifdef_value(row_count_bucket as u32, 0);
+    let program = gpu_ifdef_value_u8(row_count_bucket as u32, 0);
     pack_u32_words_into(
         &mut scratch.row_start_b,
         &scratch.batch_row_starts,
@@ -425,7 +447,6 @@ pub(super) fn recompute_ifdef_truths_gpu_with_scratch<'a>(
         &scratch.batch_directive_kinds,
         row_count_bucket,
     )?;
-    pad_to_u32_words_into(&mut scratch.row_padded, &scratch.batch_source)?;
     let out_scalar_bytes = live_word_bytes(row_count_bucket, "batched ifdef output")?;
     scratch.out_scalar.clear();
     reserve_live_vec(
@@ -438,7 +459,7 @@ pub(super) fn recompute_ifdef_truths_gpu_with_scratch<'a>(
         &scratch.row_start_b,
         &scratch.row_len_b,
         &scratch.directive_kind_b,
-        &scratch.row_padded,
+        &scratch.batch_source,
         &macro_buffers.names,
         &macro_buffers.offsets,
         &scratch.out_scalar,
@@ -497,14 +518,14 @@ pub(super) fn recompute_if_expr_truth_gpu_with_scratch(
     {
         return Ok(value);
     }
-    // Same runtime-bound treatment as recompute_ifdef_truth_gpu.
+    // Same runtime-bound raw source treatment as recompute_ifdef_truth_gpu.
     let program = live_if_expression_program();
-    scratch.prepare_scalar(row_bytes, row_len, directive_kind)?;
+    scratch.prepare_scalar(row_len, directive_kind)?;
     let inputs: [&[u8]; 8] = [
         &scratch.row_start_b,
         &scratch.row_len_b,
         &scratch.directive_kind_b,
-        &scratch.row_padded,
+        row_bytes,
         &macro_buffers.names,
         &macro_buffers.offsets,
         &macro_buffers.values,
@@ -534,4 +555,3 @@ pub(super) fn recompute_if_expr_truth_gpu_with_scratch(
     insert_live_conditional_cache_value(cache_key, value, "live if-expression")?;
     Ok(value)
 }
-

@@ -9,12 +9,15 @@ use super::dispatch::CudaBackend;
 use super::output_range::CudaOutputReadback;
 use super::resident::{CudaResidentBuffer, ResidentViewCache};
 use super::resident_readback_fusion::{
-    fuse_resident_readback_copies, FusedResidentReadbacks, ResidentReadbackCopy,
+    fuse_resident_readback_copies, validate_fused_resident_readbacks, FusedResidentReadbacks,
+    ResidentReadbackCopy, ResidentReadbackView,
 };
 use super::resident_upload_fusion::{
     fuse_resident_upload_copies, push_resident_upload_copy, ResidentUploadCopy,
 };
-use super::staging_reserve::{clear_vec_slots, reserve_smallvec, reserved_vec, resize_vec_slots};
+use super::staging_reserve::{
+    clear_vec_slots, reserve_smallvec, reserve_vec, reserved_vec, resize_vec_slots,
+};
 use crate::numeric::CUDA_NUMERIC;
 use smallvec::SmallVec;
 
@@ -22,6 +25,19 @@ const CUDA_RESIDENT_BUDGET_NUMERATOR: u64 = 9;
 const CUDA_RESIDENT_BUDGET_DENOMINATOR: u64 = 10;
 const CUDA_RESIDENT_TRANSFER_ACCOUNTING: TransferAccountingPolicy =
     TransferAccountingPolicy::new("CUDA resident", "split the transfer into bounded chunks");
+
+enum ResidentStreamFailure {
+    Completed(BackendError),
+    CompletionUnproven(BackendError),
+}
+
+impl ResidentStreamFailure {
+    fn into_error(self) -> BackendError {
+        match self {
+            Self::Completed(error) | Self::CompletionUnproven(error) => error,
+        }
+    }
+}
 
 fn cuda_resident_total_budget_bytes(total_memory: u64) -> u64 {
     let budget = (u128::from(total_memory) * u128::from(CUDA_RESIDENT_BUDGET_NUMERATOR))
@@ -48,10 +64,33 @@ impl CudaBackend {
         &self,
         operation: impl FnOnce(&crate::stream::CudaStream) -> Result<T, BackendError>,
     ) -> Result<T, BackendError> {
-        let stream = self.launch_resources.acquire_stream()?;
+        self.with_resident_stream_classified(operation)
+            .map_err(ResidentStreamFailure::into_error)
+    }
+
+    fn with_resident_stream_classified<T>(
+        &self,
+        operation: impl FnOnce(&crate::stream::CudaStream) -> Result<T, BackendError>,
+    ) -> Result<T, ResidentStreamFailure> {
+        let stream = self
+            .launch_resources
+            .acquire_stream()
+            .map_err(ResidentStreamFailure::Completed)?;
         let result = operation(&stream);
+        if result.is_err() {
+            match stream.synchronize() {
+                Ok(()) => self.telemetry.record_sync_point(),
+                Err(error) => {
+                    tracing::error!(
+                        "Fix: failed to synchronize CUDA resident I/O stream after operation error: {error}. In-flight resident I/O resources will not be recycled."
+                    );
+                    std::mem::forget(stream);
+                    return result.map_err(ResidentStreamFailure::CompletionUnproven);
+                }
+            }
+        }
         self.launch_resources.release_stream(stream);
-        result
+        result.map_err(ResidentStreamFailure::Completed)
     }
 }
 
@@ -93,6 +132,160 @@ fn clear_resident_copy_outputs(
 ) -> Result<(), BackendError> {
     resize_vec_slots(outputs, copies.len(), "readback output")?;
     clear_vec_slots(outputs);
+    Ok(())
+}
+
+pub(crate) fn reserve_borrowed_resident_readback_outputs(
+    views: &[ResidentReadbackView],
+    outputs: &mut [&mut Vec<u8>],
+) -> Result<(), BackendError> {
+    if views.len() != outputs.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA resident readback materialization expected {} caller output slot(s) but received {}. Rebuild the resident readback fusion plan before copying bytes.",
+                views.len(),
+                outputs.len()
+            ),
+        });
+    }
+    for (view, output) in views.iter().zip(outputs.iter_mut()) {
+        reserve_vec(
+            *output,
+            view.byte_len,
+            "borrowed resident readback output bytes",
+        )?;
+    }
+    Ok(())
+}
+
+fn reserve_resident_readback_outputs(
+    views: &[ResidentReadbackView],
+    outputs: &mut OutputBuffers,
+) -> Result<(), BackendError> {
+    let existing_slots_to_copy = outputs.len().min(views.len());
+    if outputs.len() < views.len() {
+        reserve_vec(outputs, views.len(), "resident readback output slots")?;
+    }
+    for (view, output) in views.iter().take(existing_slots_to_copy).zip(outputs.iter_mut()) {
+        reserve_vec(output, view.byte_len, "resident readback output bytes")?;
+    }
+    let mut appended_outputs = reserved_vec(
+        views.len() - existing_slots_to_copy,
+        "resident readback appended output slots",
+    )?;
+    for view in views.iter().skip(existing_slots_to_copy) {
+        appended_outputs.push(reserved_vec(
+            view.byte_len,
+            "resident readback appended output bytes",
+        )?);
+    }
+    outputs.truncate(views.len());
+    outputs.extend(appended_outputs);
+    Ok(())
+}
+
+fn next_resident_readback_view(
+    views: &[ResidentReadbackView],
+    view_index: &mut usize,
+    total_copy_slots: usize,
+) -> Result<ResidentReadbackView, BackendError> {
+    let view = views
+        .get(*view_index)
+        .copied()
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA resident fused batched readback ran out of output views while reserving {total_copy_slots} copy slot(s). Rebuild the resident readback fusion plan before collecting outputs."
+            ),
+        })?;
+    *view_index += 1;
+    Ok(view)
+}
+
+fn reserve_resident_readback_batch_outputs(
+    copy_batches: &[SmallVec<[ResidentReadbackCopy; 8]>],
+    views: &[ResidentReadbackView],
+    outputs: &mut Vec<OutputBuffers>,
+) -> Result<(), BackendError> {
+    let existing_batches_to_copy = outputs.len().min(copy_batches.len());
+    if outputs.len() < copy_batches.len() {
+        reserve_vec(outputs, copy_batches.len(), "batched readback output slots")?;
+    }
+
+    let mut appended_items_by_batch = reserved_vec(
+        existing_batches_to_copy,
+        "batched readback appended item groups",
+    )?;
+    let mut appended_batches = reserved_vec(
+        copy_batches.len() - existing_batches_to_copy,
+        "batched readback appended output batches",
+    )?;
+    let total_copy_slots = views.len();
+    let mut view_index = 0usize;
+
+    for (copies, batch_outputs) in copy_batches
+        .iter()
+        .take(existing_batches_to_copy)
+        .zip(outputs.iter_mut())
+    {
+        let existing_items_to_copy = batch_outputs.len().min(copies.len());
+        if batch_outputs.len() < copies.len() {
+            reserve_vec(
+                batch_outputs,
+                copies.len(),
+                "batched readback item slots",
+            )?;
+        }
+        for output in batch_outputs.iter_mut().take(existing_items_to_copy) {
+            let view = next_resident_readback_view(views, &mut view_index, total_copy_slots)?;
+            reserve_vec(output, view.byte_len, "batched readback item bytes")?;
+        }
+        let mut appended_items = reserved_vec(
+            copies.len() - existing_items_to_copy,
+            "batched readback appended item slots",
+        )?;
+        for _ in existing_items_to_copy..copies.len() {
+            let view = next_resident_readback_view(views, &mut view_index, total_copy_slots)?;
+            appended_items.push(reserved_vec(
+                view.byte_len,
+                "batched readback appended item bytes",
+            )?);
+        }
+        appended_items_by_batch.push(appended_items);
+    }
+
+    for copies in copy_batches.iter().skip(existing_batches_to_copy) {
+        let mut batch_outputs =
+            reserved_vec(copies.len(), "batched readback appended batch item slots")?;
+        for _ in copies {
+            let view = next_resident_readback_view(views, &mut view_index, total_copy_slots)?;
+            batch_outputs.push(reserved_vec(
+                view.byte_len,
+                "batched readback appended batch item bytes",
+            )?);
+        }
+        appended_batches.push(batch_outputs);
+    }
+
+    if view_index != views.len() {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA resident fused batched readback produced {} output view(s) for {view_index} consumed slot(s). Keep resident readback fusion cardinality-preserving before collecting outputs.",
+                views.len()
+            ),
+        });
+    }
+
+    outputs.truncate(copy_batches.len());
+    for ((copies, batch_outputs), appended_items) in copy_batches
+        .iter()
+        .take(existing_batches_to_copy)
+        .zip(outputs.iter_mut())
+        .zip(appended_items_by_batch)
+    {
+        batch_outputs.truncate(copies.len());
+        batch_outputs.extend(appended_items);
+    }
+    outputs.extend(appended_batches);
     Ok(())
 }
 
@@ -337,15 +530,21 @@ impl CudaBackend {
                 add_resident_copy_count(&mut expected_copy_count, "ranged readback")?;
             }
         }
+        let fused_readbacks = fuse_resident_readback_copies(&copies)?;
+        validate_fused_resident_readbacks(
+            &fused_readbacks,
+            copies.len(),
+            "resident ranged batch download",
+        )?;
+        reserve_borrowed_resident_readback_outputs(&fused_readbacks.views, outputs)?;
         if expected_copy_count == 0 {
             for output in outputs.iter_mut() {
                 output.clear();
             }
             return Ok(());
         }
-        let fused_readbacks = fuse_resident_readback_copies(&copies)?;
         let (host_transfers, copy_count) =
-            self.stage_fused_resident_readbacks_to_host(&fused_readbacks, copies.len())?;
+            self.stage_fused_resident_readbacks_to_host(&fused_readbacks)?;
         for (view, output) in fused_readbacks.views.iter().zip(outputs.iter_mut()) {
             host_transfers.collect_output_range_into(
                 view.copy_slot,
@@ -392,7 +591,6 @@ impl CudaBackend {
         }
         let mut copies = SmallVec::<[ResidentReadbackCopy; 8]>::new();
         reserve_smallvec(&mut copies, handles.len(), "readback copy")?;
-        let mut expected_copy_count = 0usize;
         let mut resident_view_cache = ResidentViewCache::new();
         reserve_smallvec(
             &mut resident_view_cache,
@@ -455,12 +653,6 @@ impl CudaBackend {
                 src,
                 byte_len: readback.byte_len,
             });
-            if readback.byte_len != 0 {
-                add_resident_copy_count(&mut expected_copy_count, "readback")?;
-            }
-        }
-        if expected_copy_count == 0 {
-            return clear_resident_copy_outputs(&copies, outputs);
         }
         self.download_resident_fused_copies_many_into(&copies, outputs)
     }
@@ -468,15 +660,14 @@ impl CudaBackend {
     fn stage_fused_resident_readbacks_to_host(
         &self,
         fused_readbacks: &FusedResidentReadbacks,
-        requested_output_slots: usize,
     ) -> Result<(HostTransferAllocations, usize), BackendError> {
         self.warmup()?;
         let mut host_transfers = HostTransferAllocations::with_capacity(
             std::sync::Arc::clone(&self.host_pool),
             fused_readbacks.non_empty_copy_count,
-            requested_output_slots,
+            fused_readbacks.copies.len(),
         )?;
-        let copy_count = self.with_resident_stream(|stream| {
+        let copy_count = match self.with_resident_stream_classified(|stream| {
             let mut copy_count = 0usize;
             for copy in &fused_readbacks.copies {
                 let dst = host_transfers.push_output(copy.byte_len)?;
@@ -496,7 +687,14 @@ impl CudaBackend {
                 self.telemetry.record_sync_point();
             }
             Ok::<usize, BackendError>(copy_count)
-        })?;
+        }) {
+            Ok(copy_count) => copy_count,
+            Err(ResidentStreamFailure::Completed(error)) => return Err(error),
+            Err(ResidentStreamFailure::CompletionUnproven(error)) => {
+                std::mem::forget(host_transfers);
+                return Err(error);
+            }
+        };
         Ok((host_transfers, copy_count))
     }
 
@@ -520,12 +718,18 @@ impl CudaBackend {
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
         let fused_readbacks = fuse_resident_readback_copies(copies)?;
+        validate_fused_resident_readbacks(
+            &fused_readbacks,
+            copies.len(),
+            "resident fused readback",
+        )?;
+        reserve_resident_readback_outputs(&fused_readbacks.views, outputs)?;
         if fused_readbacks.non_empty_copy_count == 0 {
-            return clear_resident_copy_outputs(copies, outputs);
+            clear_vec_slots(outputs);
+            return Ok(());
         }
         let (host_transfers, copy_count) =
-            self.stage_fused_resident_readbacks_to_host(&fused_readbacks, copies.len())?;
-        resize_vec_slots(outputs, copies.len(), "readback output")?;
+            self.stage_fused_resident_readbacks_to_host(&fused_readbacks)?;
         for (view, output) in fused_readbacks.views.iter().zip(outputs.iter_mut()) {
             host_transfers.collect_output_range_into(
                 view.copy_slot,
@@ -559,32 +763,50 @@ impl CudaBackend {
         }
 
         let fused_readbacks = fuse_resident_readback_copies(&flat_copies)?;
+        validate_fused_resident_readbacks(
+            &fused_readbacks,
+            total_copy_slots,
+            "resident fused batched readback",
+        )?;
+        reserve_resident_readback_batch_outputs(
+            copy_batches,
+            &fused_readbacks.views,
+            outputs,
+        )?;
         if fused_readbacks.non_empty_copy_count == 0 {
-            resize_vec_slots(outputs, copy_batches.len(), "batched readback output")?;
-            for (copies, batch_outputs) in copy_batches.iter().zip(outputs.iter_mut()) {
-                resize_vec_slots(batch_outputs, copies.len(), "batched readback item")?;
+            for batch_outputs in outputs.iter_mut() {
                 clear_vec_slots(batch_outputs);
             }
             return Ok(());
         }
 
         let (host_transfers, copy_count) =
-            self.stage_fused_resident_readbacks_to_host(&fused_readbacks, total_copy_slots)?;
+            self.stage_fused_resident_readbacks_to_host(&fused_readbacks)?;
 
-        resize_vec_slots(outputs, copy_batches.len(), "batched readback output")?;
-        let mut transfer_index = 0usize;
+        let mut fused_views = fused_readbacks.views.iter().copied();
         for (copies, batch_outputs) in copy_batches.iter().zip(outputs.iter_mut()) {
-            resize_vec_slots(batch_outputs, copies.len(), "batched readback item")?;
             for output in batch_outputs {
-                let view = fused_readbacks.views[transfer_index];
+                let view = fused_views.next().ok_or_else(|| BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA resident fused batched readback ran out of output views while materializing {} batch(es). Rebuild the resident readback fusion plan before collecting outputs.",
+                        copy_batches.len()
+                    ),
+                })?;
                 host_transfers.collect_output_range_into(
                     view.copy_slot,
                     view.byte_offset,
                     view.byte_len,
                     output,
                 )?;
-                transfer_index += 1;
             }
+        }
+        if fused_views.next().is_some() {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA resident fused batched readback produced more output views than {} requested copy slot(s). Keep resident readback fusion cardinality-preserving before collecting outputs.",
+                    total_copy_slots
+                ),
+            });
         }
         self.record_resident_readback_telemetry(
             &fused_readbacks,
@@ -613,7 +835,6 @@ impl CudaBackend {
         }
         let mut copy_batches = SmallVec::<[SmallVec<[ResidentReadbackCopy; 8]>; 8]>::new();
         reserve_smallvec(&mut copy_batches, handle_batches.len(), "readback batch")?;
-        let mut expected_copy_count = 0usize;
         let mut total_copy_slots = 0usize;
         for (batch_index, (handles, readbacks)) in handle_batches
             .iter()
@@ -694,19 +915,8 @@ impl CudaBackend {
                     src,
                     byte_len: readback.byte_len,
                 });
-                if readback.byte_len != 0 {
-                    add_resident_copy_count(&mut expected_copy_count, "batch readback")?;
-                }
             }
             copy_batches.push(copies);
-        }
-        if expected_copy_count == 0 {
-            resize_vec_slots(outputs, copy_batches.len(), "batched readback output")?;
-            for (copies, batch_outputs) in copy_batches.iter().zip(outputs.iter_mut()) {
-                resize_vec_slots(batch_outputs, copies.len(), "batched readback item")?;
-                clear_vec_slots(batch_outputs);
-            }
-            return Ok(());
         }
         self.download_resident_fused_copy_batches_many_into(
             &copy_batches,
@@ -784,7 +994,7 @@ impl CudaBackend {
             copies.len(),
             0,
         )?;
-        self.with_resident_stream(|stream| {
+        match self.with_resident_stream_classified(|stream| {
             for copy in copies {
                 let bytes = copy.bytes.as_slice();
                 let host_ptr = host_transfers.push_upload(bytes)?;
@@ -802,7 +1012,14 @@ impl CudaBackend {
                 }
             }
             stream.synchronize()
-        })?;
+        }) {
+            Ok(()) => {}
+            Err(ResidentStreamFailure::Completed(error)) => return Err(error),
+            Err(ResidentStreamFailure::CompletionUnproven(error)) => {
+                std::mem::forget(host_transfers);
+                return Err(error);
+            }
+        }
         self.telemetry.record_sync_point();
         self.telemetry.record_host_to_device_bytes(uploaded_bytes);
         self.telemetry.record_host_upload_operations(
@@ -933,10 +1150,15 @@ impl CudaBackend {
         let Some(stream) = stream else {
             return Ok(());
         };
-        let result = stream.synchronize();
-        self.launch_resources.release_stream(stream);
-        result?;
+        if let Err(error) = stream.synchronize() {
+            tracing::error!(
+                "Fix: failed to synchronize CUDA async resident upload stream: {error}. In-flight async resident upload stream will not be recycled."
+            );
+            std::mem::forget(stream);
+            return Err(error);
+        }
         self.telemetry.record_sync_point();
+        self.launch_resources.release_stream(stream);
         Ok(())
     }
 }
@@ -986,6 +1208,112 @@ mod async_upload_tests {
                     "std::ptr::null_mut(),"
                 )),
             "Fix: CUDA async resident uploads must not enqueue or synchronize on the null stream; that creates a global device fence."
+        );
+    }
+
+    #[test]
+    fn resident_io_stream_errors_require_completion_before_reuse() {
+        let source = include_str!("resident_io.rs");
+        assert!(
+            source.contains("enum ResidentStreamFailure")
+                && source.contains("Completed(BackendError)")
+                && source.contains("CompletionUnproven(BackendError)")
+                && source.contains("fn with_resident_stream_classified<T>"),
+            "Fix: CUDA resident I/O stream cleanup must classify completion-proven and completion-unproven failures."
+        );
+        let helper = source
+            .split("fn with_resident_stream_classified<T>")
+            .nth(1)
+            .expect("Fix: CUDA resident I/O must use a classified stream lease helper.")
+            .split("fn add_resident_transfer_bytes")
+            .next()
+            .expect("Fix: resident I/O stream helper must precede transfer accounting.");
+        assert!(
+            helper.contains("let result = operation(&stream);")
+                && helper.contains("if result.is_err()")
+                && helper.contains("match stream.synchronize()")
+                && helper.contains("Ok(()) => self.telemetry.record_sync_point()")
+                && helper.contains("In-flight resident I/O resources will not be recycled.")
+                && helper.contains("std::mem::forget(stream);")
+                && helper.contains("ResidentStreamFailure::CompletionUnproven")
+                && helper.contains("result.map_err(ResidentStreamFailure::Completed)"),
+            "Fix: CUDA resident I/O stream helper must not return a stream to the pool after an operation error unless completion is proven."
+        );
+        let error_cleanup_pos = helper
+            .find("if result.is_err()")
+            .expect("Fix: resident I/O stream helper must handle operation errors.");
+        let release_pos = helper
+            .find("self.launch_resources.release_stream(stream);")
+            .expect("Fix: resident I/O stream helper must release completed streams.");
+        assert!(
+            error_cleanup_pos < release_pos,
+            "Fix: resident I/O stream helper must complete error cleanup before pooled stream release."
+        );
+    }
+
+    #[test]
+    fn resident_io_host_staging_leaks_when_completion_is_unproven() {
+        let source = include_str!("resident_io.rs");
+        let readback = source
+            .split(concat!("fn stage_fused_resident_", "readbacks_to_host"))
+            .nth(1)
+            .expect("Fix: CUDA fused resident readback staging helper must exist.")
+            .split("fn record_resident_readback_telemetry")
+            .next()
+            .expect("Fix: fused resident readback staging must precede readback telemetry.");
+        assert!(
+            readback.contains("self.with_resident_stream_classified")
+                && readback.contains("Err(ResidentStreamFailure::Completed(error)) => return Err(error)")
+                && readback.contains("Err(ResidentStreamFailure::CompletionUnproven(error))")
+                && readback.contains("std::mem::forget(host_transfers);"),
+            "Fix: CUDA resident readback staging must leak pinned host transfers when D2H completion is unproven."
+        );
+
+        let upload = source
+            .split("fn copy_resident_uploads")
+            .nth(1)
+            .expect("Fix: CUDA resident upload staging helper must exist.")
+            .split("/// Async H2D copy")
+            .next()
+            .expect("Fix: resident upload staging must precede async upload API.");
+        assert!(
+            upload.contains("self.with_resident_stream_classified")
+                && upload.contains("Err(ResidentStreamFailure::Completed(error)) => return Err(error)")
+                && upload.contains("Err(ResidentStreamFailure::CompletionUnproven(error))")
+                && upload.contains("std::mem::forget(host_transfers);"),
+            "Fix: CUDA resident upload staging must leak pinned host transfers when H2D completion is unproven."
+        );
+    }
+
+    #[test]
+    fn synchronize_uploads_releases_stream_only_after_successful_sync() {
+        let source = include_str!("resident_io.rs");
+        let synchronize_uploads = source
+            .split("pub fn synchronize_uploads(&self)")
+            .nth(1)
+            .expect("Fix: CUDA async upload synchronization entrypoint must exist.")
+            .split("}\n}")
+            .next()
+            .expect("Fix: synchronize_uploads must end inside the resident I/O impl.");
+        assert!(
+            synchronize_uploads.contains("if let Err(error) = stream.synchronize()")
+                && synchronize_uploads.contains("In-flight async resident upload stream will not be recycled.")
+                && synchronize_uploads.contains("std::mem::forget(stream);")
+                && synchronize_uploads.contains("return Err(error);"),
+            "Fix: CUDA async resident upload synchronization must leak the stream when completion cannot be proven."
+        );
+        let sync_pos = synchronize_uploads
+            .find("stream.synchronize()")
+            .expect("Fix: synchronize_uploads must synchronize the upload stream.");
+        let telemetry_pos = synchronize_uploads
+            .find("self.telemetry.record_sync_point();")
+            .expect("Fix: synchronize_uploads must record sync telemetry after success.");
+        let release_pos = synchronize_uploads
+            .find("self.launch_resources.release_stream(stream);")
+            .expect("Fix: synchronize_uploads must release successfully synchronized streams.");
+        assert!(
+            sync_pos < telemetry_pos && telemetry_pos < release_pos,
+            "Fix: synchronize_uploads must prove stream completion before telemetry or pooled stream release."
         );
     }
 
@@ -1058,4 +1386,3 @@ fn checked_resident_dst(
         },
     )
 }
-

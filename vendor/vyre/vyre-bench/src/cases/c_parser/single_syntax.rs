@@ -1,8 +1,8 @@
 use super::corpus::{CParserPrepared, LINUX_DRIVER_TU};
 use super::support::{
     encode_parse_summary, metric, parse_summary_metric_points, require_encoded_syntax_surface,
-    time_tree_sitter_c_baseline, time_tree_sitter_cold_baseline,
-    tree_sitter_cold_speedup_metric, tree_sitter_speedup_metric, ParseSummaryMetricSurface,
+    time_tree_sitter_c_baseline, time_tree_sitter_cold_baseline, tree_sitter_cold_speedup_metric,
+    tree_sitter_speedup_metric, ParseSummaryMetricSurface,
 };
 use crate::api::case::{
     BenchCase, BenchContext, BenchError, BenchId, BenchLayer, BenchMetadata, BenchRequirements,

@@ -9,7 +9,9 @@ use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_driver_cuda::CudaBackend;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-use vyre_primitives::graph::level_wave::{cpu_ref as level_wave_cpu, level_wave_program};
+use vyre_primitives::graph::level_wave::{
+    cpu_ref as level_wave_cpu, level_wave_dispatch_grid, level_wave_program,
+};
 use vyre_primitives::graph::reachable::{reachable, reachable_program};
 use vyre_primitives::graph::toposort::{toposort, toposort_program};
 
@@ -178,6 +180,12 @@ fn run_reachable(
     let buffer_names: Vec<&str> = program.buffers().iter().map(|b| b.name()).collect();
     let mut inputs: Vec<Vec<u8>> = Vec::with_capacity(buffer_names.len());
     for name in &buffer_names {
+        let declared_words = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == *name)
+            .map(|buffer| buffer.count().max(1) as usize)
+            .expect("buffer name came from program declaration");
         let buf = match *name {
             "pg_nodes" => u32_bytes(&pg_nodes),
             "pg_edge_offsets" => u32_bytes(&offsets),
@@ -197,7 +205,7 @@ fn run_reachable(
             }
             "pg_node_tags" => u32_bytes(&pg_node_tags),
             "src" => u32_bytes(&sources_packed),
-            "reach" | "reach_frontier_a" | "reach_frontier_b" => vec![0u8; words * 4],
+            "reach" | "reach_frontier_a" | "reach_frontier_b" => vec![0u8; declared_words * 4],
             other => panic!("Unexpected buffer in reachable_program: {other}"),
         };
         inputs.push(buf);
@@ -290,6 +298,39 @@ fn cuda_reachable_diamond_converges() {
     });
 }
 
+#[test]
+fn cuda_reachable_depth_cap_returns_only_requested_waves() {
+    with_live_backend(
+        "cuda_reachable_depth_cap_returns_only_requested_waves",
+        |backend| {
+            let edges = vec![(0u32, 1u32), (1, 2), (2, 3), (3, 4)];
+            let gpu = run_reachable(backend, 5, &edges, &[0], 2);
+
+            assert_eq!(gpu, vec![0, 1, 2]);
+        },
+    );
+}
+
+#[test]
+fn cuda_reachable_multi_block_wave_handoff() {
+    with_live_backend("cuda_reachable_multi_block_wave_handoff", |backend| {
+        let edges = vec![(255u32, 256u32), (256, 512)];
+        let gpu = run_reachable(backend, 513, &edges, &[255], 2);
+
+        assert_eq!(gpu, vec![255, 256, 512]);
+    });
+}
+
+#[test]
+fn cuda_reachable_cycle_feeds_only_new_bits() {
+    with_live_backend("cuda_reachable_cycle_feeds_only_new_bits", |backend| {
+        let edges = vec![(0u32, 1u32), (1, 0), (1, 2), (2, 2)];
+        let gpu = run_reachable(backend, 3, &edges, &[0], 8);
+
+        assert_eq!(gpu, vec![0, 1, 2]);
+    });
+}
+
 // ---------------------------------------------------------------------
 // level_wave_program
 // ---------------------------------------------------------------------
@@ -323,9 +364,58 @@ fn run_level_wave(backend: &CudaBackend, depths: &[u32], max_depth: u32) -> Vec<
 
     let inputs: Vec<Vec<u8>> = vec![u32_bytes(depths), vec![0u8; lane_count as usize * 4]];
     let mut config = DispatchConfig::default();
-    let workgroup_x = 256u32;
-    let grid_x = ((lane_count + workgroup_x - 1) / workgroup_x).max(1);
-    config.grid_override = Some([grid_x, 1, 1]);
+    config.grid_override = Some(level_wave_dispatch_grid(lane_count));
+    let outputs = backend
+        .dispatch(&program, &inputs, &config)
+        .expect("dispatch");
+    let mut out = bytes_u32(&outputs[0]);
+    out.truncate(lane_count as usize);
+    out
+}
+
+fn run_level_wave_cross_block_dependency(
+    backend: &CudaBackend,
+    depths: &[u32],
+    max_depth: u32,
+) -> Vec<u32> {
+    let lane = Expr::InvocationId { axis: 0 };
+    let lane_count = depths.len() as u32;
+    let depth = Expr::load("depths", lane.clone());
+    let step = vec![
+        Node::if_then(
+            Expr::eq(depth.clone(), Expr::u32(0)),
+            vec![Node::store("counter", lane.clone(), Expr::u32(1))],
+        ),
+        Node::if_then(
+            Expr::and(
+                Expr::eq(depth, Expr::u32(1)),
+                Expr::ge(lane.clone(), Expr::u32(256)),
+            ),
+            vec![Node::store(
+                "counter",
+                lane.clone(),
+                Expr::add(
+                    Expr::load("counter", Expr::sub(lane.clone(), Expr::u32(256))),
+                    Expr::u32(1),
+                ),
+            )],
+        ),
+    ];
+    let inner = level_wave_program(step, "depths", max_depth, lane_count);
+    let mut buffers: Vec<BufferDecl> = inner.buffers().to_vec();
+    buffers.push(
+        BufferDecl::storage(
+            "counter",
+            buffers.len() as u32,
+            BufferAccess::ReadWrite,
+            DataType::U32,
+        )
+        .with_count(lane_count),
+    );
+    let program = Program::wrapped(buffers, inner.workgroup_size, inner.entry().to_vec());
+    let inputs: Vec<Vec<u8>> = vec![u32_bytes(depths), vec![0u8; lane_count as usize * 4]];
+    let mut config = DispatchConfig::default();
+    config.grid_override = Some(level_wave_dispatch_grid(lane_count));
     let outputs = backend
         .dispatch(&program, &inputs, &config)
         .expect("dispatch");
@@ -368,4 +458,29 @@ fn cuda_level_wave_skips_lanes_outside_max_depth() {
         assert_eq!(gpu, cpu);
         assert_eq!(gpu, vec![1, 1, 0, 0, 1]);
     });
+}
+
+#[test]
+fn cuda_level_wave_multi_block_orders_cross_block_dependencies() {
+    with_live_backend(
+        "cuda_level_wave_multi_block_orders_cross_block_dependencies",
+        |backend| {
+            let mut depths = vec![2u32; 513];
+            for lane in 0..256 {
+                depths[lane] = 0;
+                depths[lane + 256] = 1;
+            }
+            let gpu = run_level_wave_cross_block_dependency(backend, &depths, 2);
+            assert!(
+                gpu[..256].iter().all(|&value| value == 1),
+                "depth-0 producer lanes must fire before dependent wave: {:?}",
+                &gpu[..256]
+            );
+            assert!(
+                gpu[256..512].iter().all(|&value| value == 2),
+                "depth-1 lanes in block 1 must see block-0 depth-0 writes"
+            );
+            assert_eq!(gpu[512], 0);
+        },
+    );
 }

@@ -4,7 +4,7 @@ use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use super::batch_shared::checked_batched_frontier_words;
-use super::layout::OP_ID;
+use super::layout::{CSR_FORWARD_OR_CHANGED_PARALLEL_WORKGROUP_SIZE, OP_ID};
 use crate::graph::program_graph::{
     ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS,
     NAME_EDGE_TARGETS,
@@ -103,7 +103,7 @@ pub fn try_csr_forward_or_changed_parallel_batch_global_slot(
 /// buffer is sized for `changed_slots` and can be zeroed once before a
 /// fixed-point sequence, allowing each iteration to write a fresh slot instead
 /// of requiring a host zero-upload before every dispatch.
-pub fn try_csr_forward_or_changed_parallel_batch_global_dynamic_slot(
+pub(crate) fn try_csr_forward_or_changed_parallel_batch_global_dynamic_slot(
     shape: ProgramGraphShape,
     frontier_out: &str,
     changed: &str,
@@ -281,7 +281,7 @@ pub(crate) fn csr_forward_or_changed_parallel_batch_global_indexed(
     buffers.extend(extra_buffers);
     Ok(Program::wrapped(
         buffers,
-        [1, 1, 1],
+        CSR_FORWARD_OR_CHANGED_PARALLEL_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,

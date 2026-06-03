@@ -6,22 +6,22 @@
 //! are unrolled and use a workgroup-local `wg_scratch` buffer to coalesce
 //! per-workgroup change detection between steps.
 
-#[path = "persistent_bfs/layout.rs"]
-mod layout;
-#[path = "persistent_bfs/hash.rs"]
-mod hash;
-#[path = "persistent_bfs/program.rs"]
-mod program;
-#[path = "persistent_bfs/validate.rs"]
-mod validate;
-#[path = "persistent_bfs/dispatch_plan.rs"]
-mod dispatch_plan;
-#[path = "persistent_bfs/resident_plan.rs"]
-mod resident_plan;
-#[path = "persistent_bfs/plan.rs"]
-mod plan;
 #[path = "persistent_bfs/cpu_ref.rs"]
 mod cpu_ref;
+#[path = "persistent_bfs/dispatch_plan.rs"]
+mod dispatch_plan;
+#[path = "persistent_bfs/hash.rs"]
+mod hash;
+#[path = "persistent_bfs/layout.rs"]
+mod layout;
+#[path = "persistent_bfs/plan.rs"]
+mod plan;
+#[path = "persistent_bfs/program.rs"]
+mod program;
+#[path = "persistent_bfs/resident_plan.rs"]
+mod resident_plan;
+#[path = "persistent_bfs/validate.rs"]
+mod validate;
 
 #[cfg(feature = "inventory-registry")]
 #[path = "persistent_bfs/registry.rs"]
@@ -35,6 +35,7 @@ mod tests;
 pub use cpu_ref::{cpu_ref, try_cpu_ref, try_cpu_ref_into};
 pub use hash::{persistent_bfs_layout_hash, persistent_bfs_program_layout_hash};
 pub use layout::{
+    persistent_bfs_batch_dispatch_grid, persistent_bfs_single_dispatch_grid,
     PersistentBfsPlanCacheKey, PersistentBfsStaticInputKey, BATCH_OP_ID, BINDING_CHANGED,
     BINDING_FRONTIER_IN, BINDING_FRONTIER_OUT, OP_ID, PERSISTENT_BFS_WORKGROUP_SIZE,
 };
@@ -49,11 +50,11 @@ pub use validate::{
     validate_persistent_bfs_graph_layout, validate_persistent_bfs_inputs,
 };
 
-pub(crate) use cpu_ref::*;
-pub(crate) use dispatch_plan::*;
-pub(crate) use hash::*;
-pub(crate) use layout::*;
-pub(crate) use plan::*;
-pub(crate) use program::*;
-pub(crate) use resident_plan::*;
-pub(crate) use validate::*;
+#[cfg(test)]
+pub(crate) use {
+    cpu_ref::{cpu_ref_into, try_cpu_ref_into_with_scratch, PersistentBfsCpuScratch},
+    layout::{
+        PersistentBfsBatchLayout, PersistentBfsFrontierLayout, PersistentBfsLayout,
+        PersistentBfsPlanCacheKind,
+    },
+};

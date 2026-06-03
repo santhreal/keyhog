@@ -726,4 +726,3 @@ inventory::submit! {
         Some(|| vec![vec![fixture_u32(&[1, 2, 0])]]),
     )
 }
-

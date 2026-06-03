@@ -1,6 +1,5 @@
 use smallvec::SmallVec;
-use vyre_driver::{BackendError, DispatchConfig};
-use vyre_foundation::ir::Program;
+use vyre_driver::BackendError;
 
 use crate::backend::dispatch::CudaBackend;
 use crate::backend::output_range::CudaOutputReadback;
@@ -107,7 +106,6 @@ impl CudaBackend {
         read_handles: &[CudaResidentBuffer],
         readbacks: &mut SmallVec<[CudaOutputReadback; 8]>,
     ) -> Result<(), BackendError> {
-        readbacks.clear();
         reserve_smallvec(
             readbacks,
             read_handles.len(),
@@ -119,6 +117,7 @@ impl CudaBackend {
             read_handles.len(),
             "resident sequence full-readback view cache",
         )?;
+        readbacks.clear();
         for &handle in read_handles {
             let buffer = self.resident_store.view_cached(
                 handle,

@@ -21,7 +21,8 @@ fn utf8_validate_oracle_matrix_matches_independent_byte_classifier() {
         let actual = reference_utf8_validate(&bytes);
         let expected = oracle_utf8_validate(&bytes);
         assert_eq!(
-            actual, expected,
+            actual,
+            expected,
             "Fix: utf8_validate case {case} len={} must match the independent oracle.",
             bytes.len()
         );

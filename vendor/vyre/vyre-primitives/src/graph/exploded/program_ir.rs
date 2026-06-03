@@ -9,7 +9,7 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 /// Deterministic CSR construction: build a dense kill bitmap, count each
 /// source row, prefix row counts, then fill `col_idx`. Count/prefix/fill
 /// still run on invocation `0`; [`super::abi::ifds_csr_dispatch_grid`]
-/// scales the launch grid with intra edge and node counts for backends.
+/// keeps the backend launch to one block for that serial region.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn build_ifds_csr_program(

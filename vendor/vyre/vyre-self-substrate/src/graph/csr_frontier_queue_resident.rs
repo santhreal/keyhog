@@ -15,6 +15,7 @@ pub use upload::upload_resident_csr_queue_graph;
 
 use vyre_foundation::ir::Program;
 
+use crate::graph::csr_frontier_queue_scratch::ResidentCsrQueueMaterializer;
 use crate::graph::resident_handles::free_unique_resident_handles;
 use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 
@@ -23,6 +24,8 @@ use crate::optimizer::dispatcher::{DispatchError, OptimizerDispatcher};
 pub struct ResidentCsrQueueGraph {
     node_count: u32,
     edge_count: u32,
+    max_row_degree: u32,
+    high_degree_source_count: u32,
     words: usize,
     edge_offsets_handle: u64,
     edge_targets_handle: u64,
@@ -40,6 +43,18 @@ impl ResidentCsrQueueGraph {
     #[must_use]
     pub fn edge_count(&self) -> u32 {
         self.edge_count
+    }
+
+    /// Largest CSR row degree.
+    #[must_use]
+    pub fn max_row_degree(&self) -> u32 {
+        self.max_row_degree
+    }
+
+    /// Number of rows at or above the resident mixed-split high-degree threshold.
+    #[must_use]
+    pub fn high_degree_source_count(&self) -> u32 {
+        self.high_degree_source_count
     }
 
     /// Number of u32 words in each frontier bitset.
@@ -86,9 +101,13 @@ pub struct ResidentCsrQueueScratch {
     handles: Option<ResidentCsrQueueScratchHandles>,
     frontier_bytes: Vec<u8>,
     readbacks: Vec<Vec<u8>>,
-    queue_len_init_program: Option<Program>,
     clear_frontier_out_program: Option<Program>,
+    queue_len_init_program: Option<Program>,
+    word_counts_program: Option<Program>,
+    word_block_offsets_program: Option<Program>,
     queue_program: Option<Program>,
+    high_len_init_program: Option<Program>,
+    split_low_program: Option<Program>,
     traverse_program: Option<Program>,
     cached_shape: Option<ResidentCsrQueueProgramShape>,
 }
@@ -101,19 +120,42 @@ impl ResidentCsrQueueScratch {
         };
         self.frontier_bytes.clear();
         self.readbacks.clear();
-        self.queue_len_init_program = None;
         self.clear_frontier_out_program = None;
+        self.queue_len_init_program = None;
+        self.word_counts_program = None;
+        self.word_block_offsets_program = None;
         self.queue_program = None;
+        self.high_len_init_program = None;
+        self.split_low_program = None;
         self.traverse_program = None;
         self.cached_shape = None;
+        let mut handles_to_free = [0_u64; 8];
+        handles_to_free[..4].copy_from_slice(&[
+            handles.frontier,
+            handles.active_queue,
+            handles.queue_len,
+            handles.frontier_out,
+        ]);
+        let mut handle_count = 4;
+        if let Some(word_partials) = handles.word_partials {
+            handles_to_free[handle_count] = word_partials;
+            handle_count += 1;
+        }
+        if let Some(block_totals) = handles.block_totals {
+            handles_to_free[handle_count] = block_totals;
+            handle_count += 1;
+        }
+        if let Some(high_queue) = handles.high_queue {
+            handles_to_free[handle_count] = high_queue;
+            handle_count += 1;
+        }
+        if let Some(high_len) = handles.high_len {
+            handles_to_free[handle_count] = high_len;
+            handle_count += 1;
+        }
         free_unique_resident_handles(
             dispatcher,
-            &[
-                handles.frontier,
-                handles.active_queue,
-                handles.queue_len,
-                handles.frontier_out,
-            ],
+            &handles_to_free[..handle_count],
             "resident CSR queue scratch",
         )
     }
@@ -125,8 +167,14 @@ struct ResidentCsrQueueScratchHandles {
     active_queue: u64,
     queue_len: u64,
     frontier_out: u64,
+    word_partials: Option<u64>,
+    block_totals: Option<u64>,
+    high_queue: Option<u64>,
+    high_len: Option<u64>,
     queue_capacity: u32,
+    high_queue_capacity: u32,
     frontier_bytes: usize,
+    materializer: ResidentCsrQueueMaterializer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -135,4 +183,6 @@ struct ResidentCsrQueueProgramShape {
     edge_count: u32,
     queue_capacity: u32,
     allow_mask: u32,
+    materializer: ResidentCsrQueueMaterializer,
+    traverse_kind: crate::graph::csr_frontier_queue_scratch::ResidentCsrQueueTraverseKind,
 }

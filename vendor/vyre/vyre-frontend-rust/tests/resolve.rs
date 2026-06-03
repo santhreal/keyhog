@@ -22,16 +22,32 @@ fn resolve_src(src: &str) -> Result<Resolution, RustSemaError> {
 fn resolves_params_and_lets_in_order() {
     let r = resolve_src("fn add(a: i32, b: i32) -> i32 { let c: i32 = a + b; return c; }").unwrap();
     let names: Vec<&str> = r.bindings.iter().map(|b| b.name.as_str()).collect();
-    assert_eq!(names, vec!["a", "b", "c"], "Fix: bindings must be params then lets, in declaration order");
-    assert_eq!(r.uses.len(), 3, "Fix: every variable use must resolve to a binding");
+    assert_eq!(
+        names,
+        vec!["a", "b", "c"],
+        "Fix: bindings must be params then lets, in declaration order"
+    );
+    assert_eq!(
+        r.uses.len(),
+        3,
+        "Fix: every variable use must resolve to a binding"
+    );
 }
 
 #[test]
 fn records_mut_flag() {
     let r = resolve_src("fn f() { let mut x: i32 = 0; let y: i32 = x; }").unwrap();
-    let x = r.bindings.iter().find(|b| b.name == "x").expect("Fix: x must be a binding");
+    let x = r
+        .bindings
+        .iter()
+        .find(|b| b.name == "x")
+        .expect("Fix: x must be a binding");
     assert!(x.mutable, "Fix: `let mut x` must record mutable=true");
-    let y = r.bindings.iter().find(|b| b.name == "y").expect("Fix: y must be a binding");
+    let y = r
+        .bindings
+        .iter()
+        .find(|b| b.name == "y")
+        .expect("Fix: y must be a binding");
     assert!(!y.mutable, "Fix: `let y` must record mutable=false");
 }
 
@@ -54,7 +70,11 @@ fn rhs_sees_outer_scope_before_shadowing() {
         .filter(|(_, b)| b.name == "x")
         .map(|(i, _)| i)
         .collect();
-    assert_eq!(x_ids.len(), 2, "Fix: param x and let x are distinct bindings");
+    assert_eq!(
+        x_ids.len(),
+        2,
+        "Fix: param x and let x are distinct bindings"
+    );
     let targets: HashSet<BindingId> = r.uses.values().copied().collect();
     assert!(
         targets.contains(&0) && targets.contains(&1),
@@ -83,5 +103,8 @@ fn rejects_unknown_function_call() {
 #[test]
 fn forward_function_reference_resolves() {
     let r = resolve_src("fn f() -> i32 { return g(); } fn g() -> i32 { return 1; }").unwrap();
-    assert!(r.bindings.is_empty(), "Fix: neither function declares a binding");
+    assert!(
+        r.bindings.is_empty(),
+        "Fix: neither function declares a binding"
+    );
 }

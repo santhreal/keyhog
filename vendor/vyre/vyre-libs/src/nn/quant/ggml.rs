@@ -622,4 +622,3 @@ mod tests {
         assert_eq!(out[1], 1.0);
     }
 }
-

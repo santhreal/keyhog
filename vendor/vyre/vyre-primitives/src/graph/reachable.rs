@@ -5,21 +5,27 @@
 //! that need "is B reachable from A given these edges?"
 //!
 //! AUDIT_2026-04-24 F-REACH-02 (RESOLVED): `reachable_program` now
-//! ships as a Tier-2.5 builder. It fuses `csr_forward_traverse` +
-//! `bitset_or` for up to `max_iters` steps in a single dispatch,
-//! accumulating every discovered frontier into `reach_out`. The CPU
-//! reference (`reachable`) is retained for the conform harness
-//! cpu↔gpu bytecompare oracle.
+//! ships as a Tier-2.5 builder. It runs a synchronized wavefront
+//! closure in one dispatch: expand the current wave, absorb only
+//! newly-discovered neighbors into `reach_out`, and feed those new bits
+//! into the next wave. The CPU reference (`reachable`) is retained for
+//! the conform harness cpu↔gpu bytecompare oracle.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
-use vyre_foundation::execution_plan::fusion::fuse_programs;
-use vyre_foundation::ir::{DataType, Program};
+use vyre_foundation::ir::model::expr::Ident;
+use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::MemoryOrdering;
 
 use crate::bitset::bitset_words;
-use crate::bitset::or::bitset_or;
-use crate::graph::csr_forward_traverse::csr_forward_traverse;
-use crate::graph::program_graph::ProgramGraphShape;
+use crate::bitset::frontier::{
+    frontier_absorb_new_bits_body_prefixed_with_flag, frontier_tail_mask,
+};
+use crate::graph::program_graph::{
+    ProgramGraphShape, BINDING_PRIMITIVE_START, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS,
+    NAME_EDGE_TARGETS,
+};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::reachable_program";
@@ -230,36 +236,25 @@ pub fn try_reachable(
 ///
 /// The returned Program performs up to `max_iters` forward-traversal
 /// steps over the CSR graph described by `shape`, starting from the
-/// packed bitset `sources_buf`, and accumulates the union of every
-/// visited frontier into `reach_out`.
+/// packed bitset `sources_buf`. It writes the visited set into
+/// `reach_out`.
 ///
 /// # Composition
 ///
-/// 1. Seed `reach_out` with `sources_buf` via `bitset_or`.
+/// 1. Copy `sources_buf` into `reach_out`.
 /// 2. For each iteration `0..max_iters`:
-///    - `csr_forward_traverse` from the current frontier into a
-///      ping-pong scratch buffer (`reach_frontier_a` / `reach_frontier_b`).
-///    - `bitset_or` the new frontier into `reach_out`.
-///
-/// All arms are fused into a single dispatch via `fuse_programs`.
+///    - clear `reach_frontier_a`;
+///    - expand the current wave into `reach_frontier_a`;
+///    - absorb only not-yet-visited neighbors into `reach_out`;
+///    - write those newly-added bits to `reach_frontier_b` for the next wave.
 ///
 /// # Caller contract
 ///
 /// * Bind the canonical five-buffer ProgramGraph CSR
 ///   (`pg_nodes`, `pg_edge_offsets`, `pg_edge_targets`,
 ///   `pg_edge_kind_mask`, `pg_node_tags`) before dispatch.
-/// * Zero-initialise `reach_out`, `reach_frontier_a`, and
-///   `reach_frontier_b` before the first dispatch.
 /// * `sources_buf` must be a packed bitset with `bitset_words(node_count)`
 ///   u32 words.
-/// * `node_count` must be `> 0` (zero-node graphs are not supported
-///   by the underlying bitset primitives).
-///
-/// # Panics
-///
-/// Panics if `fuse_programs` detects an unexpected hazard. This
-/// builder constructs a known-safe composition, so a panic indicates
-/// an internal invariant violation, not a caller error.
 #[must_use]
 pub fn reachable_program(
     node_count: u32,
@@ -272,59 +267,277 @@ pub fn reachable_program(
     let words = bitset_words(node_count);
     let frontier_a = "reach_frontier_a";
     let frontier_b = "reach_frontier_b";
+    let active_flag_idx = words;
+    let Some(frontier_b_storage_words) = words.checked_add(1) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            reach_out,
+            DataType::U32,
+            "Fix: reachable_program active-flag scratch word overflows u32.".to_string(),
+        );
+    };
 
-    let Some(iter_arms) = (max_iters as usize).checked_mul(2) else {
+    let Some(iter_nodes) = (max_iters as usize).checked_mul(8) else {
         return crate::invalid_output_program(
             OP_ID,
             reach_out,
             DataType::U32,
-            "Fix: reachable_program max_iters*2 overflows usize.".to_string(),
+            "Fix: reachable_program max_iters*8 overflows usize.".to_string(),
         );
     };
-    let Some(arm_count) = iter_arms.checked_add(1) else {
+    let Some(node_capacity) = iter_nodes.checked_add(4) else {
         return crate::invalid_output_program(
             OP_ID,
             reach_out,
             DataType::U32,
-            "Fix: reachable_program arm count overflows usize.".to_string(),
+            "Fix: reachable_program node capacity overflows usize.".to_string(),
         );
     };
-    let mut arms: Vec<Program> = Vec::new();
-    if let Err(error) = arms.try_reserve(arm_count) {
+    let mut entry: Vec<Node> = Vec::new();
+    if let Err(error) = entry.try_reserve(node_capacity) {
         return crate::invalid_output_program(
             OP_ID,
             reach_out,
             DataType::U32,
-            format!("Fix: reachable_program could not reserve {arm_count} fused arms: {error}"),
+            format!("Fix: reachable_program could not reserve {node_capacity} IR nodes: {error}"),
         );
     }
+    let lane = Expr::gid_x();
 
-    // Seed reach_out with the initial sources so the final result
-    // includes the source set itself.
-    arms.push(bitset_or(sources_buf, reach_out, reach_out, words));
+    entry.push(Node::if_then(
+        Expr::lt(lane.clone(), Expr::u32(words)),
+        vec![
+            Node::store(
+                reach_out,
+                lane.clone(),
+                Expr::load(sources_buf, lane.clone()),
+            ),
+            Node::store(frontier_a, lane.clone(), Expr::u32(0)),
+            Node::store(frontier_b, lane.clone(), Expr::u32(0)),
+        ],
+    ));
+    entry.push(Node::if_then(
+        Expr::eq(lane.clone(), Expr::u32(0)),
+        vec![Node::store(
+            frontier_b,
+            Expr::u32(active_flag_idx),
+            Expr::u32(0),
+        )],
+    ));
+    if max_iters > 0 {
+        entry.push(reachable_wave_barrier(node_count));
+    }
 
     for i in 0..max_iters {
-        let in_buf = if i == 0 {
-            sources_buf
-        } else if i % 2 == 1 {
-            frontier_a
+        let current_wave = if i == 0 { sources_buf } else { frontier_b };
+        let active_var = format!("iter_{i}_active");
+        let active_expr = if i == 0 {
+            Expr::u32(1)
         } else {
-            frontier_b
+            Expr::load(frontier_b, Expr::u32(active_flag_idx))
         };
-        let out_buf = if i % 2 == 0 { frontier_a } else { frontier_b };
-
-        arms.push(csr_forward_traverse(shape, in_buf, out_buf, u32::MAX));
-        arms.push(bitset_or(out_buf, reach_out, reach_out, words));
+        let active_cond = Expr::ne(Expr::var(active_var.as_str()), Expr::u32(0));
+        entry.push(Node::let_bind(active_var.as_str(), active_expr));
+        entry.push(Node::if_then(
+            Expr::lt(lane.clone(), Expr::u32(words)),
+            vec![Node::store(frontier_a, lane.clone(), Expr::u32(0))],
+        ));
+        entry.push(reachable_wave_barrier(node_count));
+        entry.push(Node::if_then(
+            active_cond.clone(),
+            vec![reachable_forward_wave_node(
+                shape,
+                current_wave,
+                frontier_a,
+                &format!("iter_{i}_expand"),
+            )],
+        ));
+        entry.push(reachable_wave_barrier(node_count));
+        entry.push(Node::if_then(
+            Expr::eq(lane.clone(), Expr::u32(0)),
+            vec![Node::store(
+                frontier_b,
+                Expr::u32(active_flag_idx),
+                Expr::u32(0),
+            )],
+        ));
+        entry.push(reachable_wave_barrier(node_count));
+        entry.extend(frontier_absorb_new_bits_body_prefixed_with_flag(
+            reach_out,
+            frontier_a,
+            frontier_b,
+            None,
+            Some((frontier_b, Expr::u32(active_flag_idx))),
+            words,
+            frontier_tail_mask(node_count),
+            &format!("iter_{i}_absorb"),
+        ));
+        if i + 1 < max_iters {
+            entry.push(reachable_wave_barrier(node_count));
+        }
     }
 
-    fuse_programs(&arms).unwrap_or_else(|error| {
-        crate::invalid_output_program(
-            OP_ID,
-            reach_out,
+    let storage_words = words.max(1);
+    let mut buffers = shape.read_only_buffers();
+    buffers.push(
+        BufferDecl::storage(
+            sources_buf,
+            BINDING_PRIMITIVE_START,
+            BufferAccess::ReadOnly,
             DataType::U32,
-            format!("Fix: reachable_program composition failed: {error}"),
         )
-    })
+        .with_count(storage_words),
+    );
+    buffers.push(
+        BufferDecl::storage(
+            reach_out,
+            BINDING_PRIMITIVE_START + 1,
+            BufferAccess::ReadWrite,
+            DataType::U32,
+        )
+        .with_count(storage_words),
+    );
+    buffers.push(
+        BufferDecl::storage(
+            frontier_a,
+            BINDING_PRIMITIVE_START + 2,
+            BufferAccess::ReadWrite,
+            DataType::U32,
+        )
+        .with_count(storage_words),
+    );
+    buffers.push(
+        BufferDecl::storage(
+            frontier_b,
+            BINDING_PRIMITIVE_START + 3,
+            BufferAccess::ReadWrite,
+            DataType::U32,
+        )
+        .with_count(frontier_b_storage_words),
+    );
+
+    Program::wrapped(
+        buffers,
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(OP_ID),
+            source_region: None,
+            body: Arc::new(entry),
+        }],
+    )
+}
+
+fn reachable_wave_barrier(node_count: u32) -> Node {
+    if node_count <= 256 {
+        Node::barrier()
+    } else {
+        Node::barrier_with_ordering(MemoryOrdering::GridSync)
+    }
+}
+
+fn reachable_forward_wave_node(
+    shape: ProgramGraphShape,
+    frontier_in: &str,
+    frontier_out: &str,
+    local_prefix: &str,
+) -> Node {
+    let local = |name: &str| -> String { format!("{local_prefix}_{name}") };
+    let lane = Expr::gid_x();
+    let word_idx = local("word_idx");
+    let bit_mask = local("bit_mask");
+    let src_word = local("src_word");
+    let edge_start = local("edge_start");
+    let edge_end = local("edge_end");
+    let edge_iter = local("edge");
+    let kind_mask = local("kind_mask");
+    let dst = local("dst");
+    let dst_word_idx = local("dst_word_idx");
+    let dst_bit = local("dst_bit");
+    let previous = local("_prev");
+
+    Node::if_then(
+        Expr::lt(lane.clone(), Expr::u32(shape.node_count)),
+        vec![
+            Node::let_bind(word_idx.as_str(), Expr::shr(lane.clone(), Expr::u32(5))),
+            Node::let_bind(
+                bit_mask.as_str(),
+                Expr::shl(Expr::u32(1), Expr::bitand(lane.clone(), Expr::u32(31))),
+            ),
+            Node::let_bind(
+                src_word.as_str(),
+                Expr::load(frontier_in, Expr::var(word_idx.as_str())),
+            ),
+            Node::if_then(
+                Expr::ne(
+                    Expr::bitand(Expr::var(src_word.as_str()), Expr::var(bit_mask.as_str())),
+                    Expr::u32(0),
+                ),
+                vec![
+                    Node::let_bind(
+                        edge_start.as_str(),
+                        Expr::load(NAME_EDGE_OFFSETS, lane.clone()),
+                    ),
+                    Node::let_bind(
+                        edge_end.as_str(),
+                        Expr::load(NAME_EDGE_OFFSETS, Expr::add(lane.clone(), Expr::u32(1))),
+                    ),
+                    Node::loop_for(
+                        edge_iter.as_str(),
+                        Expr::var(edge_start.as_str()),
+                        Expr::var(edge_end.as_str()),
+                        vec![
+                            Node::let_bind(
+                                kind_mask.as_str(),
+                                Expr::load(NAME_EDGE_KIND_MASK, Expr::var(edge_iter.as_str())),
+                            ),
+                            Node::if_then(
+                                Expr::ne(Expr::var(kind_mask.as_str()), Expr::u32(0)),
+                                vec![
+                                    Node::let_bind(
+                                        dst.as_str(),
+                                        Expr::load(
+                                            NAME_EDGE_TARGETS,
+                                            Expr::var(edge_iter.as_str()),
+                                        ),
+                                    ),
+                                    Node::if_then(
+                                        Expr::lt(
+                                            Expr::var(dst.as_str()),
+                                            Expr::u32(shape.node_count),
+                                        ),
+                                        vec![
+                                            Node::let_bind(
+                                                dst_word_idx.as_str(),
+                                                Expr::shr(Expr::var(dst.as_str()), Expr::u32(5)),
+                                            ),
+                                            Node::let_bind(
+                                                dst_bit.as_str(),
+                                                Expr::shl(
+                                                    Expr::u32(1),
+                                                    Expr::bitand(
+                                                        Expr::var(dst.as_str()),
+                                                        Expr::u32(31),
+                                                    ),
+                                                ),
+                                            ),
+                                            Node::let_bind(
+                                                previous.as_str(),
+                                                Expr::atomic_or(
+                                                    frontier_out,
+                                                    Expr::var(dst_word_idx.as_str()),
+                                                    Expr::var(dst_bit.as_str()),
+                                                ),
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
 }
 
 #[cfg(test)]
@@ -409,10 +622,10 @@ mod tests {
         assert!(!program.is_explicit_noop());
         assert!(!program.buffers().is_empty());
         assert!(!program.entry().is_empty());
+        assert_eq!(program.workgroup_size(), [256, 1, 1]);
 
-        // The fused program should declare the canonical CSR buffers,
-        // the caller-provided bitsets, and the two ping-pong scratch
-        // buffers.
+        // The program should declare the canonical CSR buffers, the
+        // caller-provided bitsets, and the two wavefront scratch buffers.
         let names: Vec<&str> = program.buffers().iter().map(|b| b.name()).collect();
         assert!(names.contains(&"pg_edge_offsets"));
         assert!(names.contains(&"pg_edge_targets"));
@@ -420,14 +633,134 @@ mod tests {
         assert!(names.contains(&"reach"));
         assert!(names.contains(&"reach_frontier_a"));
         assert!(names.contains(&"reach_frontier_b"));
+        let frontier_b = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "reach_frontier_b")
+            .expect("Fix: reachable wavefront scratch must be declared.");
+        assert_eq!(
+            frontier_b.count(),
+            bitset_words(4) + 1,
+            "Fix: reach_frontier_b must reserve one extra word for the converged-wave flag."
+        );
     }
 
     #[test]
     fn reachable_program_zero_iters_seeds_only() {
         // With max_iters = 0 the program should still contain the
-        // preliminary seed step (sources | reach_out -> reach_out).
+        // preliminary seed copy into reach_out.
         let program = reachable_program(4, 4, "sources", "reach", 0);
         assert!(!program.is_explicit_noop());
         assert!(!program.buffers().is_empty());
+    }
+
+    #[test]
+    fn generated_wavefront_depth_limited_reachability_matches_scalar_reference() {
+        for seed in 0..10_000_u32 {
+            let mut state = mix32(seed ^ 0xA11C_E5E7);
+            let node_count = 1 + (state % 96);
+            state = mix32(state);
+            let edge_budget = state % (node_count * 3);
+            let mut edges = Vec::new();
+            for edge_idx in 0..edge_budget {
+                state = mix32(state ^ edge_idx.wrapping_mul(0x9E37_79B9));
+                let from = state % node_count;
+                state = mix32(state.rotate_left(7));
+                let to = match edge_idx % 11 {
+                    0 => from,
+                    1 => (from + 1) % node_count,
+                    2 => node_count - 1,
+                    _ => state % node_count,
+                };
+                edges.push((from, to));
+            }
+            let source_count = 1 + (mix32(state ^ 0x5150_ACE5) % 4);
+            let mut sources = Vec::new();
+            for idx in 0..source_count {
+                state = mix32(state ^ idx.wrapping_mul(0x85EB_CA6B));
+                sources.push(state % node_count);
+            }
+            let max_iters = mix32(state ^ 0xD47A_F10D) % (node_count.min(16) + 1);
+
+            let wave = depth_limited_wavefront(node_count, &edges, &sources, max_iters);
+            let scalar = depth_limited_scalar(node_count, &edges, &sources, max_iters);
+
+            assert_eq!(
+                wave, scalar,
+                "seed={seed} node_count={node_count} max_iters={max_iters}"
+            );
+        }
+    }
+
+    fn depth_limited_wavefront(
+        node_count: u32,
+        edges: &[(u32, u32)],
+        sources: &[u32],
+        max_iters: u32,
+    ) -> HashSet<u32> {
+        let mut visited = HashSet::new();
+        let mut current = HashSet::new();
+        for &source in sources {
+            if source < node_count && visited.insert(source) {
+                current.insert(source);
+            }
+        }
+
+        for _ in 0..max_iters {
+            let mut next = HashSet::new();
+            for &(from, to) in edges {
+                if from < node_count
+                    && to < node_count
+                    && current.contains(&from)
+                    && visited.insert(to)
+                {
+                    next.insert(to);
+                }
+            }
+            current = next;
+        }
+        visited
+    }
+
+    fn depth_limited_scalar(
+        node_count: u32,
+        edges: &[(u32, u32)],
+        sources: &[u32],
+        max_iters: u32,
+    ) -> HashSet<u32> {
+        let mut min_depth = vec![u32::MAX; node_count as usize];
+        let mut queue = std::collections::VecDeque::new();
+        for &source in sources {
+            if source < node_count && min_depth[source as usize] > 0 {
+                min_depth[source as usize] = 0;
+                queue.push_back(source);
+            }
+        }
+        while let Some(node) = queue.pop_front() {
+            let depth = min_depth[node as usize];
+            if depth >= max_iters {
+                continue;
+            }
+            let next_depth = depth + 1;
+            for &(from, to) in edges {
+                if from == node && to < node_count && next_depth < min_depth[to as usize] {
+                    min_depth[to as usize] = next_depth;
+                    queue.push_back(to);
+                }
+            }
+        }
+        min_depth
+            .into_iter()
+            .enumerate()
+            .filter_map(|(node, depth)| (depth <= max_iters).then_some(node as u32))
+            .collect()
+    }
+
+    fn mix32(mut value: u32) -> u32 {
+        value ^= value >> 16;
+        value = value.wrapping_mul(0x7FEB_352D);
+        value ^= value >> 15;
+        value = value.wrapping_mul(0x846C_A68B);
+        value ^ (value >> 16)
     }
 }

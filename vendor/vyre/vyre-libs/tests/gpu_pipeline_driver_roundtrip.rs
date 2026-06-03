@@ -8,7 +8,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use vyre::ir::Program;
+use vyre::ir::{BufferAccess, DataType, Program};
 use vyre_libs::parsing::c::preprocess::gpu_pipeline::{
     gpu_preprocess_translation_unit, GpuDispatcher, IncludeEventResidency, IncludeLoader, MacroDef,
 };
@@ -30,25 +30,86 @@ impl GpuDispatcher for RefDispatcher {
 
 struct CountingDispatcher {
     dispatches: Cell<usize>,
+    macro_byte_arena_elements: std::cell::RefCell<Vec<(String, DataType)>>,
+    macro_byte_arena_input_lens: std::cell::RefCell<Vec<(String, usize)>>,
 }
 
 impl CountingDispatcher {
     fn new() -> Self {
         Self {
             dispatches: Cell::new(0),
+            macro_byte_arena_elements: std::cell::RefCell::new(Vec::new()),
+            macro_byte_arena_input_lens: std::cell::RefCell::new(Vec::new()),
         }
     }
 
     fn dispatches(&self) -> usize {
         self.dispatches.get()
     }
+
+    fn macro_byte_arena_input_lens(&self, name: &str) -> Vec<usize> {
+        self.macro_byte_arena_input_lens
+            .borrow()
+            .iter()
+            .filter_map(|(buffer, len)| (buffer == name).then_some(*len))
+            .collect()
+    }
 }
 
 impl GpuDispatcher for CountingDispatcher {
     fn dispatch(&self, program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, String> {
         self.dispatches.set(self.dispatches.get() + 1);
+        if program
+            .entry_op_id
+            .as_deref()
+            .is_some_and(|op_id| op_id.contains("opt_named_macro_expansion_materialized"))
+        {
+            for name in [
+                "source_words",
+                "macro_name_words",
+                "macro_replacement_words",
+            ] {
+                let buffer = program
+                    .buffers()
+                    .iter()
+                    .find(|buffer| buffer.name() == name)
+                    .ok_or_else(|| format!("missing materialized macro byte arena {name}"))?;
+                self.macro_byte_arena_elements
+                    .borrow_mut()
+                    .push((name.to_string(), buffer.element()));
+                let input_index = input_index_for_buffer(program, name)
+                    .ok_or_else(|| format!("missing materialized macro input slot {name}"))?;
+                let len = inputs.get(input_index).map(Vec::len).ok_or_else(|| {
+                    format!(
+                        "missing materialized macro input {name} at slot {input_index}; got {} inputs",
+                        inputs.len()
+                    )
+                })?;
+                self.macro_byte_arena_input_lens
+                    .borrow_mut()
+                    .push((name.to_string(), len));
+            }
+        }
         RefDispatcher.dispatch(program, inputs)
     }
+
+    fn requires_output_inputs(&self) -> bool {
+        true
+    }
+}
+
+fn input_index_for_buffer(program: &Program, name: &str) -> Option<usize> {
+    let mut input_index = 0usize;
+    for buffer in program.buffers() {
+        if buffer.access() == BufferAccess::Workgroup {
+            continue;
+        }
+        if buffer.name() == name {
+            return Some(input_index);
+        }
+        input_index += 1;
+    }
+    None
 }
 
 /// In-memory include loader keyed by exact path bytes.
@@ -586,6 +647,49 @@ fn macro_prefilter_keeps_object_and_function_invocations_distinct() {
 }
 
 #[test]
+fn macro_expansion_dispatch_consumes_raw_unpadded_byte_arenas() {
+    let loader = MemLoader::new();
+    let dispatcher = CountingDispatcher::new();
+    let active = b"int a = OBJ + FN(alpha);\n";
+    let mut src = b"#define OBJ 123\n#define FN(x) x\n".to_vec();
+    src.extend_from_slice(active);
+    let out =
+        gpu_preprocess_translation_unit(&dispatcher, &loader, Path::new("<macro-tu>"), &src, &[])
+            .expect("object and function-like macros must expand through GPU materialization");
+    let out_str = String::from_utf8_lossy(&out.bytes);
+    assert!(
+        out_str.contains("123") && out_str.contains("alpha"),
+        "macro expansion must preserve object and function-like replacements; got {out_str:?}"
+    );
+    assert!(
+        dispatcher
+            .macro_byte_arena_elements
+            .borrow()
+            .iter()
+            .all(|(_, element)| *element == DataType::U8),
+        "materialized macro expansion must declare raw U8 input byte arenas"
+    );
+    assert!(
+        dispatcher
+            .macro_byte_arena_input_lens("source_words")
+            .contains(&active.len()),
+        "materialized macro source input must be the raw active segment length {}, got {:?}",
+        active.len(),
+        dispatcher.macro_byte_arena_input_lens("source_words")
+    );
+    assert_eq!(
+        dispatcher.macro_byte_arena_input_lens("macro_name_words"),
+        vec![5],
+        "macro names OBJ+FN must dispatch as five raw bytes, not five padded U32 words"
+    );
+    assert_eq!(
+        dispatcher.macro_byte_arena_input_lens("macro_replacement_words"),
+        vec![4],
+        "replacement bodies 123+x must dispatch as four raw bytes, not four padded U32 words"
+    );
+}
+
+#[test]
 fn variadic_macro_substitutes_va_args_on_gpu_expansion_path() {
     let loader = MemLoader::new();
     let out = run(
@@ -630,4 +734,3 @@ fn gnu_named_variadic_macro_substitutes_named_rest_parameter() {
         "macro invocation and named variadic parameter marker must not leak downstream; got {out_str:?}"
     );
 }
-

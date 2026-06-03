@@ -73,14 +73,22 @@ const FNV1A64_PRIME_HI: u32 = 0x0000_0100;
 const FNV1A64_OFFSET_LO: u32 = 0x8422_2325;
 const FNV1A64_OFFSET_HI: u32 = 0xCBF2_9CE4;
 
-/// GPU IR builder: FNV-1a 32-bit serial walk over `input[0..n]`  -  each
-/// input word contributes its low 8 bits as the next byte. Output is
-/// one u32 hash at `out[0]`. Single invocation (invocation 0 does the
-/// whole walk); callers needing parallel throughput compose this with
-/// a reduce primitive.
+/// GPU IR builder: FNV-1a 32-bit serial walk over `input[0..n]`.
+///
+/// This compatibility entry point expects one `DataType::U32` element per
+/// source byte and hashes the low byte of each word. Use
+/// [`fnv1a32_program_u8`] when the source is packed as one byte per element.
+/// Output is one u32 hash at `out[0]`. Single invocation 0 does the whole walk;
+/// callers needing parallel throughput compose this with a reduce primitive.
 #[must_use]
 pub fn fnv1a32_program(input: &str, out: &str, n: u32) -> Program {
-    fnv1a32_program_bounded(input, out, Expr::u32(n), Some(n))
+    fnv1a32_program_bounded(input, out, Expr::u32(n), Some(n), DataType::U32)
+}
+
+/// GPU IR builder: FNV-1a 32-bit serial walk over packed `DataType::U8` bytes.
+#[must_use]
+pub fn fnv1a32_program_u8(input: &str, out: &str, n: u32) -> Program {
+    fnv1a32_program_bounded(input, out, Expr::u32(n), Some(n), DataType::U8)
 }
 
 /// Dynamic-bound variant: loop bound is `Expr::buf_len(input)` so the
@@ -88,7 +96,13 @@ pub fn fnv1a32_program(input: &str, out: &str, n: u32) -> Program {
 /// time. The returned Program leaves `input` without a static count.
 #[must_use]
 pub fn fnv1a32_program_dyn(input: &str, out: &str) -> Program {
-    fnv1a32_program_bounded(input, out, Expr::buf_len(input), None)
+    fnv1a32_program_bounded(input, out, Expr::buf_len(input), None, DataType::U32)
+}
+
+/// Dynamic-bound packed-`u8` variant of [`fnv1a32_program_dyn`].
+#[must_use]
+pub fn fnv1a32_program_dyn_u8(input: &str, out: &str) -> Program {
+    fnv1a32_program_bounded(input, out, Expr::buf_len(input), None, DataType::U8)
 }
 
 /// Initial FNV-1a32 state expression for fused IR compositions.
@@ -104,7 +118,10 @@ pub fn fnv1a32_initial_expr() -> Expr {
 #[must_use]
 pub fn fnv1a32_update_byte_expr(hash: Expr, byte: Expr) -> Expr {
     Expr::mul(
-        Expr::bitxor(hash, Expr::bitand(byte, Expr::u32(0xFF))),
+        Expr::bitxor(
+            hash,
+            Expr::bitand(Expr::cast(DataType::U32, byte), Expr::u32(0xFF)),
+        ),
         Expr::u32(FNV1A32_PRIME),
     )
 }
@@ -151,6 +168,7 @@ fn fnv1a32_program_bounded(
     out: &str,
     loop_bound: Expr,
     static_count: Option<u32>,
+    source_type: DataType,
 ) -> Program {
     let body = vec![Node::Region {
         generator: Ident::from(FNV1A32_OP_ID),
@@ -165,7 +183,7 @@ fn fnv1a32_program_bounded(
                     loop_bound,
                     vec![fnv1a32_update_byte_node(
                         "h",
-                        Expr::load(input, Expr::var("i")),
+                        fnv1a_load_byte_expr(input, Expr::var("i")),
                     )],
                 ),
                 Node::store(out, Expr::u32(0), Expr::var("h")),
@@ -174,10 +192,8 @@ fn fnv1a32_program_bounded(
     }];
 
     let input_buf = match static_count {
-        Some(n) => {
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
-        }
-        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
+        Some(n) => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, source_type).with_count(n),
+        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, source_type),
     };
 
     Program::wrapped(
@@ -188,6 +204,10 @@ fn fnv1a32_program_bounded(
         [1, 1, 1],
         body,
     )
+}
+
+fn fnv1a_load_byte_expr(input: &str, index: Expr) -> Expr {
+    Expr::cast(DataType::U32, Expr::load(input, index))
 }
 
 #[cfg(test)]
@@ -207,6 +227,26 @@ mod fnv1a32_ir_tests {
             "Fix: FNV-1a32 IR must still mask packed u32 input lanes to low bytes."
         );
     }
+
+    #[test]
+    fn packed_u8_program_declares_one_source_byte_per_element() {
+        let program = fnv1a32_program_u8("input", "out", 513);
+        let input = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "input")
+            .expect("Fix: packed-u8 FNV-1a32 input buffer must be declared");
+        let out = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "out")
+            .expect("Fix: FNV-1a32 output buffer must be declared");
+
+        assert_eq!(input.element(), DataType::U8);
+        assert_eq!(input.count(), 513);
+        assert_eq!(out.element(), DataType::U32);
+        assert_eq!(out.count(), 1);
+    }
 }
 
 /// GPU IR builder: FNV-1a 64-bit serial walk over `input[0..n]`.
@@ -215,13 +255,29 @@ mod fnv1a32_ir_tests {
 /// halves and multiplied by the FNV prime via a widened split product.
 #[must_use]
 pub fn fnv1a64_program(input: &str, out: &str) -> Program {
-    fnv1a64_program_bounded(input, out, Expr::buf_len(input), None)
+    fnv1a64_program_bounded(input, out, Expr::buf_len(input), None, DataType::U32)
+}
+
+/// Packed-`u8` dynamic-bound variant of [`fnv1a64_program`].
+#[must_use]
+pub fn fnv1a64_program_u8(input: &str, out: &str) -> Program {
+    fnv1a64_program_bounded(input, out, Expr::buf_len(input), None, DataType::U8)
 }
 
 /// GPU IR builder: FNV-1a 64-bit serial walk over `input[0..n]`.
+///
+/// This compatibility entry point expects one `DataType::U32` element per
+/// source byte and hashes the low byte of each word. Use
+/// [`fnv1a64_program_n_u8`] when the source is packed as one byte per element.
 #[must_use]
 pub fn fnv1a64_program_n(input: &str, out: &str, n: u32) -> Program {
-    fnv1a64_program_bounded(input, out, Expr::u32(n), Some(n))
+    fnv1a64_program_bounded(input, out, Expr::u32(n), Some(n), DataType::U32)
+}
+
+/// GPU IR builder: FNV-1a 64-bit serial walk over packed `DataType::U8` bytes.
+#[must_use]
+pub fn fnv1a64_program_n_u8(input: &str, out: &str, n: u32) -> Program {
+    fnv1a64_program_bounded(input, out, Expr::u32(n), Some(n), DataType::U8)
 }
 
 fn fnv1a64_program_bounded(
@@ -229,6 +285,7 @@ fn fnv1a64_program_bounded(
     out: &str,
     loop_bound: Expr,
     static_count: Option<u32>,
+    source_type: DataType,
 ) -> Program {
     let body = vec![Node::Region {
         generator: Ident::from(FNV1A64_OP_ID),
@@ -247,7 +304,10 @@ fn fnv1a64_program_bounded(
                             "h_lo",
                             Expr::bitxor(
                                 Expr::var("h_lo"),
-                                Expr::bitand(Expr::load(input, Expr::var("i")), Expr::u32(0xFF)),
+                                Expr::bitand(
+                                    fnv1a_load_byte_expr(input, Expr::var("i")),
+                                    Expr::u32(0xFF),
+                                ),
                             ),
                         ),
                         Node::let_bind(
@@ -312,10 +372,8 @@ fn fnv1a64_program_bounded(
     }];
 
     let input_buf = match static_count {
-        Some(n) => {
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
-        }
-        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
+        Some(n) => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, source_type).with_count(n),
+        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, source_type),
     };
 
     Program::wrapped(
@@ -468,6 +526,26 @@ mod tests {
         let h32 = fnv1a32(bytes);
         let h64 = fnv1a64(bytes);
         assert_ne!(h32 as u64, h64 & 0xffff_ffff);
+    }
+
+    #[test]
+    fn fnv1a64_packed_u8_program_declares_one_source_byte_per_element() {
+        let program = fnv1a64_program_n_u8("input", "out", 513);
+        let input = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "input")
+            .expect("Fix: packed-u8 FNV-1a64 input buffer must be declared");
+        let out = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "out")
+            .expect("Fix: FNV-1a64 output buffer must be declared");
+
+        assert_eq!(input.element(), DataType::U8);
+        assert_eq!(input.count(), 513);
+        assert_eq!(out.element(), DataType::U32);
+        assert_eq!(out.count(), 2);
     }
 }
 

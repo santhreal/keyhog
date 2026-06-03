@@ -239,15 +239,8 @@ fn reusable_layout_contract_rejects_invalid_domains() {
     assert!(err.starts_with("Fix:") && err.contains("nonzero"));
     let err = validate_ifds_csr_layout(MAX_PROC_ID + 2, 1, 1, 0, 0, 0).unwrap_err();
     assert!(err.starts_with("Fix:") && err.contains("packed IFDS limits"));
-    let err = validate_ifds_csr_layout(
-        MAX_PROC_ID + 1,
-        MAX_BLOCK_ID + 1,
-        MAX_FACT_ID + 1,
-        0,
-        0,
-        0,
-    )
-    .unwrap_err();
+    let err = validate_ifds_csr_layout(MAX_PROC_ID + 1, MAX_BLOCK_ID + 1, MAX_FACT_ID + 1, 0, 0, 0)
+        .unwrap_err();
     assert!(
         err.starts_with("Fix:"),
         "oversized IFDS domain must fail validation: {err}"

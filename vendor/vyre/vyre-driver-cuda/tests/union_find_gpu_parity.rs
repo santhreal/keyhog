@@ -9,6 +9,7 @@
 mod common;
 
 use common::with_cuda_optimizer_dispatcher;
+use vyre_primitives::graph::union_find::union_find_dispatch_grid;
 use vyre_self_substrate::union_find_emit::{
     canonicalize_parent_to_roots, reference_union_find_alias, union_find_alias_via,
 };
@@ -93,4 +94,19 @@ fn cuda_union_find_no_edges_keeps_singletons() {
     for i in 0..4u32 {
         assert_eq!(roots[i as usize], i);
     }
+}
+
+#[test]
+fn cuda_union_find_multi_block_chain_connects_all_nodes() {
+    let node_count = 1026u32;
+    let parent_init: Vec<u32> = (0..node_count).collect();
+    let edge_a: Vec<u32> = (0..(node_count - 1)).collect();
+    let edge_b: Vec<u32> = (1..node_count).collect();
+
+    let (_, gpu) =
+        assert_union_find_matches_partition("multi-block chain", &parent_init, &edge_a, &edge_b);
+    let roots = canonicalize_parent_to_roots(&gpu);
+
+    assert_eq!(union_find_dispatch_grid(edge_a.len() as u32), [5, 1, 1]);
+    assert!(roots.iter().all(|&root| root == 0));
 }

@@ -543,4 +543,3 @@ fn other_directive_kinds_emit_zero_in_value_column() {
         "non-if/elif rows must emit 0; got {gpu_values:?}"
     );
 }
-

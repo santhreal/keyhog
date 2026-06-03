@@ -74,10 +74,7 @@ fn cpu_step_mismatched_state_length_panics() {
         cpu_step(&state, b'a', &trans, &eps, 2)
     });
     let payload = result.expect_err("mismatched state length must panic");
-    assert!(
-        payload.downcast_ref::<&str>().is_some()
-            || payload.downcast_ref::<String>().is_some()
-    );
+    assert!(payload.downcast_ref::<&str>().is_some() || payload.downcast_ref::<String>().is_some());
 }
 
 #[test]
@@ -89,10 +86,7 @@ fn cpu_step_mismatched_transition_length_panics() {
         cpu_step(&state, b'a', &trans, &eps, 2)
     });
     let payload = result.expect_err("mismatched transition length must panic");
-    assert!(
-        payload.downcast_ref::<&str>().is_some()
-            || payload.downcast_ref::<String>().is_some()
-    );
+    assert!(payload.downcast_ref::<&str>().is_some() || payload.downcast_ref::<String>().is_some());
 }
 
 #[test]
@@ -104,10 +98,7 @@ fn cpu_step_mismatched_epsilon_length_panics() {
         cpu_step(&state, b'a', &trans, &eps, 2)
     });
     let payload = result.expect_err("mismatched epsilon length must panic");
-    assert!(
-        payload.downcast_ref::<&str>().is_some()
-            || payload.downcast_ref::<String>().is_some()
-    );
+    assert!(payload.downcast_ref::<&str>().is_some() || payload.downcast_ref::<String>().is_some());
 }
 
 #[test]

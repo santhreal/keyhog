@@ -1,5 +1,5 @@
-use super::*;
 use super::super::decl_context_common;
+use super::*;
 
 pub(super) fn extend(
     out: &mut Vec<Node>,

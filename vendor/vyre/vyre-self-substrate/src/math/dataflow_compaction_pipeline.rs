@@ -84,13 +84,13 @@ pub fn dispatch_prefix_scan_with_op_id(
     prefix_scan_with_op_id(in_buf, out_buf, n, kind, op_id)
 }
 
-/// Build a large sequential prefix scan dispatch.
+/// Build a large parallel prefix scan dispatch.
 #[must_use]
 pub fn dispatch_prefix_scan_large(in_buf: &str, out_buf: &str, n: u32) -> Program {
     prefix_scan_large(in_buf, out_buf, n)
 }
 
-/// Build a large sequential prefix scan dispatch with an explicit op id.
+/// Build a large parallel prefix scan dispatch with an explicit op id.
 #[must_use]
 pub fn dispatch_prefix_scan_large_with_op_id(
     in_buf: &str,

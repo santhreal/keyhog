@@ -1,7 +1,7 @@
 //! CUDA dispatch plan assembly helpers.
 
 use smallvec::SmallVec;
-use vyre_driver::binding::BindingPlan;
+use vyre_driver::binding::{Binding, BindingPlan};
 use vyre_driver::BackendError;
 use vyre_driver::LaunchPlan;
 
@@ -70,6 +70,32 @@ pub(crate) struct CudaDispatchPlan {
     /// Other GPU backends honor this same field via their persistent-pipeline
     /// fixpoint loops; the CUDA backend reached parity 2026-05-01.
     pub(crate) fixpoint_iterations: u32,
+}
+
+impl CudaDispatchPlan {
+    pub(crate) fn output_binding(
+        &self,
+        binding_index: usize,
+        context: &'static str,
+    ) -> Result<&Binding, BackendError> {
+        let Some(binding) = self.bindings.bindings.get(binding_index) else {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} expected output binding index {binding_index}, but the dispatch plan only has {} binding descriptor(s). Rebuild the dispatch plan before launch.",
+                    self.bindings.bindings.len()
+                ),
+            });
+        };
+        if binding.output_index.is_none() {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA {context} resolved binding index {binding_index} to `{}` without an output index. Rebuild output binding ordering before launch.",
+                    binding.name
+                ),
+            });
+        }
+        Ok(binding)
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +177,36 @@ mod tests {
                 "with_capacity"
             )) && !source.contains(concat!("SmallVec::<[usize; 8]>::", "with_capacity")),
             "Fix: CUDA output binding ordering must not allocate scratch infallibly."
+        );
+    }
+
+    #[test]
+    fn output_binding_accessor_rejects_stale_or_non_output_indices() {
+        let plan = CudaDispatchPlan {
+            bindings: output_plan(&[0]),
+            output_binding_indices: smallvec::smallvec![0],
+            launch: LaunchPlan::new(),
+            cooperative: false,
+            fixpoint_iterations: 1,
+        };
+
+        assert_eq!(
+            plan.output_binding(0, "test output")
+                .expect("Fix: valid output binding must resolve.")
+                .name
+                .as_ref(),
+            "out0"
+        );
+        assert!(
+            plan.output_binding(1, "test output").is_err(),
+            "Fix: stale output binding indexes must return BackendError instead of panicking."
+        );
+
+        let mut non_output_plan = plan.clone();
+        non_output_plan.bindings.bindings[0].output_index = None;
+        assert!(
+            non_output_plan.output_binding(0, "test output").is_err(),
+            "Fix: output binding indexes that resolve to non-output descriptors must return BackendError."
         );
     }
 }

@@ -173,13 +173,8 @@ pub fn c11_extract_functions(
         4,
         false,
     );
-    let sparse_zero_pre_loop = emit_sparse_record_output_init(
-        out_functions,
-        out_counts,
-        t.clone(),
-        num_tokens.clone(),
-        3,
-    );
+    let sparse_zero_pre_loop =
+        emit_sparse_record_output_init(out_functions, out_counts, t.clone(), num_tokens.clone(), 3);
     threaded_structure_program(
         "vyre-libs::parsing::c11_extract_functions",
         buffers,

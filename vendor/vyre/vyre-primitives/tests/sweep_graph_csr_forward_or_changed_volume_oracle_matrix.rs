@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "graph", feature = "cpu-parity"))]
 
 use vyre_primitives::graph::csr_forward_or_changed;
@@ -38,7 +37,6 @@ fn generated_csr_frontier(seed: u64) -> (u32, Vec<u32>, Vec<u32>, Vec<u32>, Vec<
     (node_count, offsets, targets, masks, frontier, allow_mask)
 }
 
-
 fn oracle_csr_forward_step(
     node_count: u32,
     edge_offsets: &[u32],
@@ -72,7 +70,6 @@ fn oracle_csr_forward_step(
     out
 }
 
-
 const CASES: usize = 16384;
 
 #[test]
@@ -87,8 +84,14 @@ fn sweep_graph_csr_forward_or_changed_volume_oracle_matrix() {
         let (actual_step, changed) = csr_forward_or_changed::cpu_ref(
             node_count, &offsets, &targets, &masks, &frontier, allow_mask,
         );
-        assert_eq!(actual_step, step, "Fix: forward_or_changed step case {case}");
+        assert_eq!(
+            actual_step, step,
+            "Fix: forward_or_changed step case {case}"
+        );
         let oracle_changed = u32::from(step != frontier);
-        assert_eq!(changed, oracle_changed, "Fix: forward_or_changed flag case {case}");
+        assert_eq!(
+            changed, oracle_changed,
+            "Fix: forward_or_changed flag case {case}"
+        );
     }
 }

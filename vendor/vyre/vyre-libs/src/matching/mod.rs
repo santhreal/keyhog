@@ -87,9 +87,18 @@ pub mod dispatch_io {
 #[cfg(feature = "matching-dfa")]
 pub mod classic_ac {
     pub use crate::scan::classic_ac::{
+        build_ac_bounded_count_prefilter_program, build_ac_bounded_count_program,
+        build_ac_bounded_ranges_prefilter_program, build_ac_bounded_ranges_prefilter_program_ext,
         build_ac_bounded_ranges_program, build_ac_bounded_ranges_program_ext,
-        classic_ac_bounded_ranges_program, classic_ac_bounded_ranges_program_ext,
-        classic_ac_compile, classic_ac_program, ClassicAcAutomaton,
+        build_ac_bounded_ranges_suffix3_prefilter_program,
+        build_ac_bounded_ranges_suffix3_prefilter_program_ext,
+        classic_ac_bounded_count_prefilter_program, classic_ac_bounded_count_program,
+        classic_ac_bounded_ranges_prefilter_program,
+        classic_ac_bounded_ranges_prefilter_program_ext, classic_ac_bounded_ranges_program,
+        classic_ac_bounded_ranges_program_ext, classic_ac_bounded_ranges_suffix3_prefilter_program,
+        classic_ac_bounded_ranges_suffix3_prefilter_program_ext,
+        classic_ac_candidate_end_byte_mask_words, classic_ac_compile, classic_ac_program,
+        ClassicAcAutomaton,
     };
     #[cfg(any(test, feature = "cpu-parity"))]
     pub use crate::scan::classic_ac::{

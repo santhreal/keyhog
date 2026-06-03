@@ -84,7 +84,10 @@ fn idempotent_pass_converges_in_two_iterations() {
     let program = scheduler
         .run(program)
         .expect("should converge within 2 iterations");
-    assert_eq!(program.stats().node_count, 1);
+    // Region + Store (node_count counts structural nodes; folding 3+4->7
+    // rewrites the store's expr but leaves the store node). See
+    // ir_inner::model::program::stats_test for the counting contract.
+    assert_eq!(program.stats().node_count, 2);
 }
 
 #[test]
@@ -96,7 +99,9 @@ fn multiple_passes_execute() {
     let program = scheduler
         .run(trivial_program())
         .expect("const_fold then strength_reduce must converge");
-    assert_eq!(program.stats().node_count, 1);
+    // Region + Store (trivial_program is a single store; passes rewrite its
+    // expr but leave the store node). See stats_test for the contract.
+    assert_eq!(program.stats().node_count, 2);
 }
 
 #[test]

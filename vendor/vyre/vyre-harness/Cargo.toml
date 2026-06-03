@@ -30,5 +30,5 @@ inventory.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-vyre-self-substrate.workspace = true
-vyre-primitives = { workspace = true }
+vyre-self-substrate = { path = "../vyre-self-substrate" }
+vyre-primitives = { path = "../vyre-primitives" }

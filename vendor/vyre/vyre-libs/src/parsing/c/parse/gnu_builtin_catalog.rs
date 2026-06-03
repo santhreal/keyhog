@@ -761,7 +761,6 @@ pub(super) fn classify_gnu_builtin_hash(hash: u32) -> Option<u32> {
         .map(|idx| catalog[idx].kind)
 }
 
-
 fn sorted_hash_catalog() -> &'static [GnuBuiltinHashKind] {
     static SORTED_HASH_CATALOG: OnceLock<Box<[GnuBuiltinHashKind]>> = OnceLock::new();
     SORTED_HASH_CATALOG.get_or_init(|| {
@@ -1031,4 +1030,3 @@ mod tests {
 
     use vyre_primitives::hash::fnv1a::fnv1a32;
 }
-

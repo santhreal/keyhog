@@ -110,16 +110,17 @@ bytemuck.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
-vyre-reference = { workspace = true, features = ["subgroup-ops"] }
-vyre-primitives = { workspace = true, features = ["text", "matching", "decode", "math", "nn", "hash", "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "nfa", "inventory-registry", "geom", "opt", "topology", "visual", "cpu-parity"] }
+vyre-reference = { path = "../vyre-reference", features = ["subgroup-ops"] }
+vyre-primitives = { path = "../vyre-primitives", features = ["text", "matching", "decode", "math", "nn", "hash", "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "nfa", "inventory-registry", "geom", "opt", "topology", "visual", "cpu-parity"] }
 criterion.workspace = true
-vyre-driver.workspace = true
-vyre-lower.workspace = true
-vyre-emit-naga.workspace = true
-vyre-emit-ptx.workspace = true
+vyre-driver = { path = "../vyre-driver" }
+vyre-driver-reference = { workspace = true }
+vyre-lower = { path = "../vyre-lower" }
+vyre-emit-naga = { path = "../vyre-emit-naga" }
+vyre-emit-ptx = { path = "../vyre-emit-ptx" }
 naga.workspace = true
-vyre-self-substrate = { workspace = true }
-vyre-intrinsics.workspace = true
+vyre-self-substrate = { path = "../vyre-self-substrate" }
+vyre-intrinsics = { path = "../vyre-intrinsics" }
 c-grammar-gen.workspace = true
 tree-sitter = { workspace = true }
 tree-sitter-go = { workspace = true }
@@ -151,3 +152,220 @@ required-features = ["logical"]
 name = "sweep_hash_crc32_reference_matrix"
 path = "tests/sweep_hash_crc32_reference_matrix.rs"
 required-features = ["hash"]
+
+# Rust frontend oracle tests import `vyre_libs::parsing::rust`, which is gated
+# behind `rust-parser`. Register them with `required-features` (matching the
+# sweep tests above) so a package-scoped `cargo test -p vyre-libs` cleanly skips
+# them instead of failing to compile, and so they build+run whenever the feature
+# is enabled. Without this entry the auto-discovered tests broke the per-crate
+# gate and only ran via workspace feature unification.
+[[test]]
+name = "rust_lower_exec_oracle"
+path = "tests/rust_lower_exec_oracle.rs"
+required-features = ["rust-parser"]
+
+[[test]]
+name = "rust_sema_borrow_oracle"
+path = "tests/rust_sema_borrow_oracle.rs"
+required-features = ["rust-parser"]
+
+[[test]]
+name = "rust_gpu_lexer_plan"
+path = "tests/rust_gpu_lexer_plan.rs"
+required-features = ["rust-parser"]
+
+# C-frontend oracle tests import `vyre_libs::parsing::c`, gated behind
+# `c-parser`. Same remedy as the rust oracles above: register each with
+# `required-features` so a package-scoped `cargo test -p vyre-libs` cleanly
+# SKIPS them instead of compiling the `#![cfg]`-emptied file to a vacuous
+# `0 tests ... ok` (which silently hid whether the C frontend was covered).
+# They build+run under `cargo test -p vyre-libs --features c-parser` (or `parsing`).
+[[test]]
+name = "gpu_pipeline_lex_classify_roundtrip"
+path = "tests/gpu_pipeline_lex_classify_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_undef_parse_roundtrip"
+path = "tests/gpu_undef_parse_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_ast_linux_style_raw_source_contracts"
+path = "tests/c_ast_linux_style_raw_source_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_ast_c99_for_do_macro_e2e"
+path = "tests/c_ast_c99_for_do_macro_e2e.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_parser_pipeline_lexer_adversarial_contracts"
+path = "tests/c_parser_pipeline_lexer_adversarial_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_include_parse_roundtrip"
+path = "tests/gpu_include_parse_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_ast_gnu_builtin_vast_contracts"
+path = "tests/c_ast_gnu_builtin_vast_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_ast_container_of_e2e"
+path = "tests/c_ast_container_of_e2e.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_ifdef_value_roundtrip"
+path = "tests/gpu_ifdef_value_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_vast_classify_wire_depth_contract"
+path = "tests/c_vast_classify_wire_depth_contract.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_preprocess_pipeline_contracts"
+path = "tests/c_preprocess_pipeline_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "ir_aliasing"
+path = "tests/ir_aliasing.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c11_keyword"
+path = "tests/c11_keyword.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_int_literal_scan_roundtrip"
+path = "tests/gpu_int_literal_scan_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_pipeline_extract_payloads_roundtrip"
+path = "tests/gpu_pipeline_extract_payloads_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_preprocess_gpu_resident_state_contracts"
+path = "tests/c_preprocess_gpu_resident_state_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_reference_decode_contracts"
+path = "tests/c_reference_decode_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_preprocess_named_macro_expansion_contracts"
+path = "tests/c_preprocess_named_macro_expansion_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_preprocess_dynamic_macro_optimizer_idempotence_contract"
+path = "tests/c_preprocess_dynamic_macro_optimizer_idempotence_contract.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_ast_gnu_asm_decomposition_and_attribute_kinds"
+path = "tests/c_ast_gnu_asm_decomposition_and_attribute_kinds.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_char_constant_scan_roundtrip"
+path = "tests/gpu_char_constant_scan_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_preprocess_directive_count_contract"
+path = "tests/c_preprocess_directive_count_contract.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "ast_shunting_yard"
+path = "tests/ast_shunting_yard.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_if_expression_roundtrip"
+path = "tests/gpu_if_expression_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_preprocess_dynamic_macro_expansion_contracts"
+path = "tests/c_preprocess_dynamic_macro_expansion_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_parser_pipeline_malformed_stream_contracts"
+path = "tests/c_parser_pipeline_malformed_stream_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_sema_scope_optimizer_idempotence_contract"
+path = "tests/c_sema_scope_optimizer_idempotence_contract.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_ast_linux_grade_gnu_and_c11_construct_coverage"
+path = "tests/c_ast_linux_grade_gnu_and_c11_construct_coverage.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_packed_haystack_semantic_parity"
+path = "tests/c_packed_haystack_semantic_parity.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_comment_strip_mask_roundtrip"
+path = "tests/gpu_comment_strip_mask_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "vast_builder_oob_guard_regression"
+path = "tests/vast_builder_oob_guard_regression.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c_lexer_preprocessor_hash_contracts"
+path = "tests/c_lexer_preprocessor_hash_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c11_lexer_naga_validation"
+path = "tests/c11_lexer_naga_validation.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_pipeline_driver_roundtrip"
+path = "tests/gpu_pipeline_driver_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_directive_metadata_roundtrip"
+path = "tests/gpu_directive_metadata_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_pipeline_filter_roundtrip"
+path = "tests/gpu_pipeline_filter_roundtrip.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "c11_function_extractor_contracts"
+path = "tests/c11_function_extractor_contracts.rs"
+required-features = ["c-parser"]
+
+[[test]]
+name = "gpu_define_parse_roundtrip"
+path = "tests/gpu_define_parse_roundtrip.rs"
+required-features = ["c-parser"]

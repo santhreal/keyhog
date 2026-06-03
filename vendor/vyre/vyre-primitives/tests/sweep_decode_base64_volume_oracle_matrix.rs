@@ -1,7 +1,6 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(feature = "decode")]
 
 use vyre_primitives::decode::base64::cpu_base64_decode;
@@ -64,7 +63,8 @@ fn sweep_decode_base64_volume_oracle_matrix() {
         let expected = oracle_base64(&input);
         let actual = cpu_base64_decode(&input);
         assert_eq!(
-            actual, expected,
+            actual,
+            expected,
             "Fix: base64_decode volume case {idx} len={}",
             input.len()
         );

@@ -12,7 +12,7 @@ use super::{dispatch_borrowed_cached_into, validate_internal_stage};
 
 mod programs;
 use programs::block_totals_nonzero_scan;
-pub(super) use programs::pass_c_rescan_compact_sparse_tokens;
+pub(super) use programs::pass_c_rescan_compact_sparse_tokens_with_capacity;
 
 #[derive(Default)]
 pub(super) struct SparseCompactionScratch {
@@ -79,8 +79,14 @@ pub(super) fn compact_sparse_lexer_outputs_gpu_with_scratch(
             &mut scratch.block_totals_scanned,
             &mut scratch.prefix_scan,
         )?;
+        let compact_capacity = compact_output_capacity_from_inclusive_offsets(
+            &scratch.block_totals_scanned,
+            num_blocks,
+            label,
+            "sparse token compact pass B",
+        )?;
 
-        let compact_prog = pass_c_rescan_compact_sparse_tokens(
+        let compact_prog = pass_c_rescan_compact_sparse_tokens_with_capacity(
             "block_totals_scanned",
             "sparse_types",
             "sparse_starts",
@@ -91,6 +97,7 @@ pub(super) fn compact_sparse_lexer_outputs_gpu_with_scratch(
             "out_counts",
             haystack_len,
             num_blocks,
+            compact_capacity,
         );
         validate_internal_stage(&compact_prog, "sparse_token_compact_pass_c_rescan")?;
         config.label = Some(format!("{label} sparse-compact-pass-c"));
@@ -136,6 +143,12 @@ pub(super) fn compact_sparse_lexer_outputs_gpu_with_scratch(
         &mut scratch.offsets,
         &mut scratch.pass_a_outputs,
     )?;
+    let compact_capacity = compact_output_capacity_from_inclusive_offsets(
+        &scratch.offsets,
+        haystack_len,
+        label,
+        "sparse token compact prefix scan",
+    )?;
 
     let compact_prog = c11_compact_sparse_tokens(
         "sparse_types",
@@ -146,10 +159,10 @@ pub(super) fn compact_sparse_lexer_outputs_gpu_with_scratch(
         "out_tok_starts",
         "out_tok_lens",
         "out_counts",
-        haystack_len,
+        compact_capacity,
     );
     validate_internal_stage(&compact_prog, "c11_compact_sparse_tokens")?;
-    let compact_bytes = sparse_logical_bytes;
+    let compact_bytes = sparse_logical_byte_len(compact_capacity, label)?;
     scratch.compact_types.clear();
     scratch.compact_types.resize(compact_bytes, 0);
     scratch.compact_starts.clear();
@@ -200,6 +213,30 @@ fn sparse_logical_byte_len(haystack_len: u32, label: &str) -> Result<usize, Stri
                 "{label} sparse token compact byte length overflowed for {haystack_len} lanes. Fix: shard the translation unit before sparse lexer compaction."
             )
         })
+}
+
+pub(super) fn compact_output_capacity_from_inclusive_offsets(
+    offsets: &[u8],
+    logical_items: u32,
+    label: &str,
+    stage: &str,
+) -> Result<u32, String> {
+    if logical_items == 0 {
+        return Ok(1);
+    }
+    let last_index = usize::try_from(logical_items - 1).map_err(|error| {
+        format!(
+            "{label} {stage} logical item count {logical_items} does not fit usize: {error}. Fix: shard the sparse lexer compaction input."
+        )
+    })?;
+    let last_byte = last_index.checked_mul(4).ok_or_else(|| {
+        format!(
+            "{label} {stage} final offset byte index overflows for logical item {last_index}. Fix: shard the sparse lexer compaction input."
+        )
+    })?;
+    let token_count = read_u32_at(offsets, last_byte)
+        .map_err(|error| format!("{label} {stage} token count readback: {error}"))?;
+    Ok(token_count.max(1))
 }
 
 fn sparse_logical_slice<'a>(
@@ -276,4 +313,83 @@ fn sparse_prefix_offsets_gpu_into(
         "{label} sparse prefix requested {haystack_len} lanes through the small-prefix path; \
          large sparse compaction must use the block-total rescan path"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compact_output_capacity_from_inclusive_offsets;
+
+    fn words(values: &[u32]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn compact_capacity_reads_final_inclusive_offset() {
+        let offsets = words(&[0, 1, 1, 7]);
+
+        assert_eq!(
+            compact_output_capacity_from_inclusive_offsets(&offsets, 4, "test", "scan")
+                .expect("Fix: valid inclusive offsets should size compact output"),
+            7
+        );
+    }
+
+    #[test]
+    fn compact_capacity_keeps_one_physical_slot_for_empty_streams() {
+        assert_eq!(
+            compact_output_capacity_from_inclusive_offsets(&[], 0, "test", "scan")
+                .expect("Fix: empty logical offset stream should still size output ABI"),
+            1
+        );
+        assert_eq!(
+            compact_output_capacity_from_inclusive_offsets(&words(&[0]), 1, "test", "scan")
+                .expect("Fix: zero-token offset stream should still size output ABI"),
+            1
+        );
+    }
+
+    #[test]
+    fn compact_capacity_rejects_truncated_offset_readback() {
+        let err = compact_output_capacity_from_inclusive_offsets(&words(&[1]), 2, "test", "scan")
+            .expect_err("truncated inclusive offsets must fail before compact dispatch");
+
+        assert!(
+            err.contains("token count readback"),
+            "capacity error should point at the scanned offset readback: {err}"
+        );
+    }
+
+    #[test]
+    fn compact_capacity_matches_generated_sparse_profiles() {
+        for case in 0..10_000_u32 {
+            let logical_items = (case % 257) + 1;
+            let mut running_tokens = 0_u32;
+            let mut offsets = Vec::with_capacity(logical_items as usize * 4);
+            for lane in 0..logical_items {
+                let mixed = case
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(lane.wrapping_mul(1_013_904_223))
+                    .rotate_left(lane % 17);
+                if mixed.count_ones() % 5 == 0 {
+                    running_tokens += 1;
+                }
+                offsets.extend_from_slice(&running_tokens.to_le_bytes());
+            }
+
+            assert_eq!(
+                compact_output_capacity_from_inclusive_offsets(
+                    &offsets,
+                    logical_items,
+                    "generated",
+                    "scan"
+                )
+                .expect("Fix: generated inclusive offsets should size compact output"),
+                running_tokens.max(1),
+                "case {case} logical_items {logical_items}"
+            );
+        }
+    }
 }

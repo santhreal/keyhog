@@ -515,7 +515,6 @@ impl WgpuPendingReadback {
                     if out.len() == read_len {
                         out.copy_from_slice(bytes);
                     } else {
-                        out.clear();
                         vyre_driver::allocation::try_reserve_vec_to_capacity(out, read_len)
                             .map_err(|source| {
                                 BackendError::new(format!(
@@ -523,6 +522,7 @@ impl WgpuPendingReadback {
                                     output.name
                                 ))
                             })?;
+                        out.clear();
                         out.extend_from_slice(bytes);
                     }
                     Ok(())
@@ -617,4 +617,3 @@ impl ReadbackPollBackoff {
         self.backoff.idle_until(deadline);
     }
 }
-

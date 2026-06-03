@@ -1,5 +1,5 @@
-use super::*;
 use super::super::decl_context_common;
+use super::*;
 
 pub fn c11_precompute_vast_decl_contexts(
     vast_nodes: &str,
@@ -116,13 +116,11 @@ pub fn c11_precompute_vast_decl_contexts(
                                     Node::assign(
                                         "decl_ctx_exact_chain_len",
                                         Expr::add(
-                                                decl_context_common::load_decl_context_field(
-                                                    out_decl_contexts,
-                                                    Expr::var(
-                                                        "decl_ctx_exact_cursor_context_base",
-                                                    ),
-                                                    VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD,
-                                                ),
+                                            decl_context_common::load_decl_context_field(
+                                                out_decl_contexts,
+                                                Expr::var("decl_ctx_exact_cursor_context_base"),
+                                                VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD,
+                                            ),
                                             Expr::u32(1),
                                         ),
                                     ),
@@ -179,9 +177,7 @@ pub fn c11_precompute_vast_decl_contexts(
                         ),
                         decl_context_common::load_vast_node_kind(
                             vast_nodes,
-                            decl_context_common::vast_node_base(
-                                Expr::var("decl_ctx_next_idx"),
-                            ),
+                            decl_context_common::vast_node_base(Expr::var("decl_ctx_next_idx")),
                         ),
                         Expr::u32(SENTINEL),
                     ),

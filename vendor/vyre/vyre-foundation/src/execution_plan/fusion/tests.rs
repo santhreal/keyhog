@@ -122,6 +122,62 @@ fn divergent_invocation_gated_writer_upgrades_barrier_to_grid_sync() {
 }
 
 #[test]
+fn launch_indexed_writer_upgrades_raw_barrier_to_grid_sync() {
+    let lane = crate::ir::Expr::var("lane");
+    let block = crate::ir::Expr::var("block");
+    let global = crate::ir::Expr::var("global");
+    let writer = Program::wrapped(
+        vec![BufferDecl::read_write("state", 0, DataType::U32).with_count(256)],
+        [128, 1, 1],
+        vec![
+            Node::let_bind("lane", crate::ir::Expr::LocalId { axis: 0 }),
+            Node::let_bind("block", crate::ir::Expr::WorkgroupId { axis: 0 }),
+            Node::let_bind(
+                "global",
+                crate::ir::Expr::add(
+                    crate::ir::Expr::mul(block.clone(), crate::ir::Expr::u32(128)),
+                    lane.clone(),
+                ),
+            ),
+            Node::store("state", global.clone(), global.clone()),
+        ],
+    );
+    let reader = Program::wrapped(
+        vec![BufferDecl::read("state", 0, DataType::U32).with_count(256)],
+        [128, 1, 1],
+        vec![
+            Node::let_bind("lane", crate::ir::Expr::LocalId { axis: 0 }),
+            Node::let_bind("block", crate::ir::Expr::WorkgroupId { axis: 0 }),
+            Node::let_bind(
+                "global",
+                crate::ir::Expr::add(crate::ir::Expr::mul(block, crate::ir::Expr::u32(128)), lane),
+            ),
+            Node::let_bind("snap", crate::ir::Expr::load("state", global)),
+        ],
+    );
+
+    let fused = fuse_programs(&[writer, reader]).unwrap();
+    let body = match fused.entry() {
+        [Node::Region { body, .. }] => body.as_ref(),
+        entry => panic!("Fix: fused entry must be wrapped in a root Region, got {entry:?}"),
+    };
+    let has_grid_sync = body.iter().any(|node| {
+        matches!(
+            node,
+            Node::Barrier {
+                ordering: crate::memory_model::MemoryOrdering::GridSync,
+                ..
+            }
+        )
+    });
+
+    assert!(
+        has_grid_sync,
+        "Fix: launch-indexed cross-arm writes must use GridSync so later arms cannot read another workgroup's stale output."
+    );
+}
+
+#[test]
 fn uniform_cross_arm_writer_uses_workgroup_barrier() {
     let writer = Program::wrapped(
         vec![BufferDecl::read_write("state", 0, DataType::U32).with_count(1)],

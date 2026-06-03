@@ -7,7 +7,9 @@ use crate::ir::{BufferAccess, BufferDecl, Ident, Node, Program};
 
 use super::alpha_rename::push_alpha_renamed_arm_entry_node;
 use super::collectors::collect_buffer_targets;
-use super::divergence::has_divergent_invocation_gated_store;
+use super::divergence::{
+    has_divergent_invocation_gated_store, has_launch_geometry_dependent_write,
+};
 use super::helpers::{fallback_composition_key, upgrade_buffer_access};
 use super::{FusionError, FusionOverDispatchError, FusionSelfAliasingError};
 
@@ -69,17 +71,11 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
     // "stack_overflow_gets misses node 39" mode.
     let mut write_arms_per_buffer: FxHashMap<Ident, Vec<usize>> = FxHashMap::default();
     let mut barrier_after_arm: FxHashSet<usize> = FxHashSet::default();
-    // Arms whose body contains a divergent store gated on InvocationId
-    // (e.g. `if invocation_id == 0 { ... store ... }`). Workgroup-only
-    // barriers (`SeqCst`) cannot propagate those writes across blocks  -
-    // a `bar.sync 0` waits for threads in the SAME block but issues no
-    // grid-level fence. When the next arm reads what the divergent
-    // store wrote, the barrier MUST upgrade to `MemoryOrdering::GridSync`
-    // so the runtime kernel-split fallback flushes globally. This is
-    // the recall=37.5% / "node 1000 doesn't fire" failure on the
-    // downstream stack-overflow rule, isolated 2026-04-30 in
-    // a three-arm dataflow fusion integration test.
-    let mut divergent_store_arms: FxHashSet<usize> = FxHashSet::default();
+    // Arms whose writes are derived from launch geometry need a grid-level
+    // fence before later arms read them. A workgroup barrier waits only for
+    // the current block, so it cannot order "block 0 writes offsets, block 1
+    // reads offsets" shapes inside a fused launch.
+    let mut grid_sync_writer_arms: FxHashSet<usize> = FxHashSet::default();
 
     let mut fused_workgroup = [1u32, 1, 1];
     let mut max_arm_threads: u64 = 1;
@@ -114,8 +110,8 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
                 divergent_store_seen = true;
             }
         }
-        if divergent_store_seen {
-            divergent_store_arms.insert(arm_idx);
+        if divergent_store_seen || has_launch_geometry_dependent_write(prog.entry()) {
+            grid_sync_writer_arms.insert(arm_idx);
         }
         arm_entries.push(segment);
 
@@ -206,7 +202,7 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
     let combined_entry = flatten_arm_entries(
         arm_entries,
         &barrier_after_arm,
-        &divergent_store_arms,
+        &grid_sync_writer_arms,
         programs.len(),
     );
     reject_overdispatch(fused_workgroup, max_arm_threads)?;
@@ -285,7 +281,7 @@ fn reject_non_composable_self_fusion(programs: &[Program]) -> Result<(), FusionE
 fn flatten_arm_entries(
     arm_entries: Vec<Vec<Node>>,
     barrier_after_arm: &FxHashSet<usize>,
-    divergent_store_arms: &FxHashSet<usize>,
+    grid_sync_writer_arms: &FxHashSet<usize>,
     program_count: usize,
 ) -> Vec<Node> {
     let total_nodes: usize = arm_entries.iter().map(Vec::len).sum();
@@ -293,13 +289,12 @@ fn flatten_arm_entries(
     for (arm_idx, segment) in arm_entries.into_iter().enumerate() {
         combined_entry.push(Node::Block(segment));
         if barrier_after_arm.contains(&arm_idx) {
-            // Workgroup `SeqCst` (`bar.sync 0`) is sufficient for every
-            // cross-arm hazard except divergent invocation-gated writers.
-            // Those writes are not made globally visible by a block-local
-            // barrier, so the top-level barrier must be `GridSync` where the
-            // runtime split pass can see it and lower the fused program into
-            // globally ordered dispatch segments.
-            let ordering = if divergent_store_arms.contains(&arm_idx) {
+            // Workgroup `SeqCst` (`bar.sync 0`) is sufficient only when the
+            // prior write is uniform across the launch. Launch-geometry
+            // dependent writes must become a top-level `GridSync`, where the
+            // runtime split pass can lower the fused program into globally
+            // ordered dispatch segments.
+            let ordering = if grid_sync_writer_arms.contains(&arm_idx) {
                 crate::memory_model::MemoryOrdering::GridSync
             } else {
                 crate::memory_model::MemoryOrdering::SeqCst

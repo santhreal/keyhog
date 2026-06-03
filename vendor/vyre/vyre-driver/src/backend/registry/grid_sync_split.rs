@@ -2,12 +2,13 @@
 
 use std::collections::HashSet;
 
+use smallvec::SmallVec;
 use vyre_foundation::ir::OpId;
 use vyre_foundation::ir::Program;
 
 use crate::backend::{
-    BackendError, CompiledPipeline, DispatchConfig, OutputBuffers, PendingDispatch, Resource,
-    TimedDispatchResult, VyreBackend,
+    BackendError, CompiledPipeline, DispatchConfig, OutputBuffers, PendingDispatch,
+    ResidentDispatchStep, ResidentReadRange, Resource, TimedDispatchResult, VyreBackend,
 };
 
 pub(super) fn wrap_grid_sync_split(backend: Box<dyn VyreBackend>) -> Box<dyn VyreBackend> {
@@ -157,6 +158,47 @@ impl VyreBackend for GridSyncSplitBackend {
         self.inner.upload_resident_at_many(uploads)
     }
 
+    fn download_resident(&self, resource: &Resource) -> Result<Vec<u8>, BackendError> {
+        self.inner.download_resident(resource)
+    }
+
+    fn download_resident_into(
+        &self,
+        resource: &Resource,
+        out: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        self.inner.download_resident_into(resource, out)
+    }
+
+    fn download_resident_range(
+        &self,
+        resource: &Resource,
+        byte_offset: usize,
+        byte_len: usize,
+    ) -> Result<Vec<u8>, BackendError> {
+        self.inner
+            .download_resident_range(resource, byte_offset, byte_len)
+    }
+
+    fn download_resident_range_into(
+        &self,
+        resource: &Resource,
+        byte_offset: usize,
+        byte_len: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        self.inner
+            .download_resident_range_into(resource, byte_offset, byte_len, out)
+    }
+
+    fn download_resident_ranges_into(
+        &self,
+        ranges: &[(&Resource, usize, usize)],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), BackendError> {
+        self.inner.download_resident_ranges_into(ranges, outputs)
+    }
+
     fn free_resident(&self, resource: Resource) -> Result<(), BackendError> {
         self.inner.free_resident(resource)
     }
@@ -177,6 +219,72 @@ impl VyreBackend for GridSyncSplitBackend {
         }
         self.inner
             .dispatch_resident_timed(program, resources, config)
+    }
+
+    fn dispatch_resident_sequence_read_ranges_into(
+        &self,
+        steps: &[ResidentDispatchStep<'_>],
+        read_ranges: &[ResidentReadRange<'_>],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), BackendError> {
+        if steps
+            .iter()
+            .any(|step| self.should_split_grid_sync(step.program))
+        {
+            for step in steps {
+                let mut config = DispatchConfig::default();
+                config.grid_override = step.grid_override;
+                self.dispatch_resident_timed(step.program, step.resources, &config)?;
+            }
+            let ranges = read_ranges
+                .iter()
+                .map(|range| (range.resource, range.byte_offset, range.byte_len))
+                .collect::<SmallVec<[_; 8]>>();
+            return self.download_resident_ranges_into(&ranges, outputs);
+        }
+        self.inner
+            .dispatch_resident_sequence_read_ranges_into(steps, read_ranges, outputs)
+    }
+
+    fn dispatch_resident_repeated_sequence_read_ranges_into(
+        &self,
+        prefix_steps: &[ResidentDispatchStep<'_>],
+        repeated_steps: &[ResidentDispatchStep<'_>],
+        repeat_count: u32,
+        read_ranges: &[ResidentReadRange<'_>],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), BackendError> {
+        if prefix_steps
+            .iter()
+            .chain(repeated_steps)
+            .any(|step| self.should_split_grid_sync(step.program))
+        {
+            for step in prefix_steps {
+                let mut config = DispatchConfig::default();
+                config.grid_override = step.grid_override;
+                self.dispatch_resident_timed(step.program, step.resources, &config)?;
+            }
+            for _ in 0..repeat_count {
+                for step in repeated_steps {
+                    let mut config = DispatchConfig::default();
+                    config.grid_override = step.grid_override;
+                    self.dispatch_resident_timed(step.program, step.resources, &config)?;
+                }
+            }
+            let ranges = read_ranges
+                .iter()
+                .map(|range| (range.resource, range.byte_offset, range.byte_len))
+                .collect::<SmallVec<[_; 8]>>();
+            return self.download_resident_ranges_into(&ranges, outputs);
+        }
+        self.inner
+            .dispatch_resident_repeated_sequence_read_ranges_into(
+                prefix_steps,
+                repeated_steps,
+                repeat_count,
+                read_ranges,
+                outputs,
+            )
     }
 
     fn dispatch_async(
@@ -329,7 +437,10 @@ fn borrowed_inputs_from_owned(inputs: &[Vec<u8>]) -> Result<Vec<&[u8]>, BackendE
 mod tests {
     use super::wrap_grid_sync_split;
     use crate::backend::registry::registered_backends;
-    use crate::{BackendError, DispatchConfig, Resource, VyreBackend};
+    use crate::{
+        BackendError, DispatchConfig, ResidentDispatchStep, ResidentReadRange, Resource,
+        VyreBackend,
+    };
     use smallvec::SmallVec;
     use std::sync::{Arc, Mutex};
     use vyre_foundation::ir::{BufferDecl, DataType, Node, Program};
@@ -448,7 +559,6 @@ mod tests {
             "second segment must receive the first segment's ReadWrite output"
         );
     }
-
 
     struct NativeGridSyncProbe {
         calls: Mutex<usize>,
@@ -576,6 +686,110 @@ mod tests {
         );
     }
 
+    struct ResidentSequenceProbe {
+        calls: Mutex<Vec<(usize, usize, u32, usize)>>,
+    }
+
+    impl super::super::super::private::Sealed for ResidentSequenceProbe {}
+
+    impl VyreBackend for ResidentSequenceProbe {
+        fn id(&self) -> &'static str {
+            "resident-sequence-probe"
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            Err(BackendError::new(
+                "resident sequence forwarding test must not dispatch owned inputs.",
+            ))
+        }
+
+        fn dispatch_resident_repeated_sequence_read_ranges_into(
+            &self,
+            prefix_steps: &[ResidentDispatchStep<'_>],
+            repeated_steps: &[ResidentDispatchStep<'_>],
+            repeat_count: u32,
+            read_ranges: &[ResidentReadRange<'_>],
+            outputs: &mut [&mut Vec<u8>],
+        ) -> Result<(), BackendError> {
+            self.calls
+                .lock()
+                .map_err(BackendError::poisoned_lock)?
+                .push((
+                    prefix_steps.len(),
+                    repeated_steps.len(),
+                    repeat_count,
+                    read_ranges.len(),
+                ));
+            for (index, output) in outputs.iter_mut().enumerate() {
+                output.clear();
+                output.push(index as u8 + 10);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn registered_backend_wrapper_forwards_resident_repeated_sequences() {
+        let probe = Arc::new(ResidentSequenceProbe {
+            calls: Mutex::new(Vec::new()),
+        });
+        let backend = wrap_grid_sync_split(Box::new(ArcBackend {
+            inner: Arc::clone(&probe),
+        }));
+        let program = Program::wrapped(Vec::new(), [1, 1, 1], Vec::new());
+        let resources = [Resource::Resident(9)];
+        let prefix_steps = [ResidentDispatchStep {
+            program: &program,
+            resources: &resources,
+            grid_override: None,
+        }];
+        let repeated_steps = [ResidentDispatchStep {
+            program: &program,
+            resources: &resources,
+            grid_override: Some([3, 1, 1]),
+        }];
+        let read_ranges = [
+            ResidentReadRange {
+                resource: &resources[0],
+                byte_offset: 0,
+                byte_len: 1,
+            },
+            ResidentReadRange {
+                resource: &resources[0],
+                byte_offset: 4,
+                byte_len: 1,
+            },
+        ];
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+
+        backend
+            .dispatch_resident_repeated_sequence_read_ranges_into(
+                &prefix_steps,
+                &repeated_steps,
+                4,
+                &read_ranges,
+                &mut [&mut first, &mut second],
+            )
+            .expect("Fix: grid-sync split wrapper must forward resident repeated sequences");
+
+        assert_eq!(first, vec![10]);
+        assert_eq!(second, vec![11]);
+        assert_eq!(
+            probe
+                .calls
+                .lock()
+                .expect("Fix: resident sequence probe mutex must not be poisoned")
+                .as_slice(),
+            &[(1, 1, 4, 2)]
+        );
+    }
+
     struct ArcBackend<T: VyreBackend + 'static> {
         inner: Arc<T>,
     }
@@ -610,6 +824,42 @@ mod tests {
             uploads: &[(&Resource, usize, &[u8])],
         ) -> Result<(), BackendError> {
             self.inner.upload_resident_at_many(uploads)
+        }
+
+        fn download_resident_ranges_into(
+            &self,
+            ranges: &[(&Resource, usize, usize)],
+            outputs: &mut [&mut Vec<u8>],
+        ) -> Result<(), BackendError> {
+            self.inner.download_resident_ranges_into(ranges, outputs)
+        }
+
+        fn dispatch_resident_sequence_read_ranges_into(
+            &self,
+            steps: &[ResidentDispatchStep<'_>],
+            read_ranges: &[ResidentReadRange<'_>],
+            outputs: &mut [&mut Vec<u8>],
+        ) -> Result<(), BackendError> {
+            self.inner
+                .dispatch_resident_sequence_read_ranges_into(steps, read_ranges, outputs)
+        }
+
+        fn dispatch_resident_repeated_sequence_read_ranges_into(
+            &self,
+            prefix_steps: &[ResidentDispatchStep<'_>],
+            repeated_steps: &[ResidentDispatchStep<'_>],
+            repeat_count: u32,
+            read_ranges: &[ResidentReadRange<'_>],
+            outputs: &mut [&mut Vec<u8>],
+        ) -> Result<(), BackendError> {
+            self.inner
+                .dispatch_resident_repeated_sequence_read_ranges_into(
+                    prefix_steps,
+                    repeated_steps,
+                    repeat_count,
+                    read_ranges,
+                    outputs,
+                )
         }
 
         fn supports_grid_sync(&self) -> bool {
@@ -685,4 +935,3 @@ mod tests {
         );
     }
 }
-

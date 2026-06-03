@@ -70,9 +70,7 @@ fn loop_upper_bound(program: &Program, var: &str) -> Option<u32> {
     let mut found: Option<u32> = None;
     walk_nodes(program, |node| {
         if let Node::Loop {
-            var: loop_var,
-            to,
-            ..
+            var: loop_var, to, ..
         } = node
         {
             if loop_var.as_str() == var {

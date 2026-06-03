@@ -3,8 +3,7 @@ use crate::egraph_device_image::CudaEGraphDeviceKernelView;
 
 use super::{
     helpers::{append_pass_waves, usize_to_u64, wave_count_for},
-    CudaEGraphKernelLaunchConfig, CudaEGraphKernelPass, CudaEGraphKernelPlanError,
-    CudaEGraphKernelWave, CudaEGraphKernelWorkPlan,
+    CudaEGraphKernelLaunchConfig, CudaEGraphKernelPass, CudaEGraphKernelPlanError, CudaEGraphKernelWorkPlan,
 };
 
 /// Plan bounded CUDA launch waves for a resident e-graph image.

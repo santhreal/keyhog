@@ -23,19 +23,6 @@ pub(super) fn collect_compact_lexer_output_drain(
     collect_compact_lexer_output_named(returned_buffers, outputs.drain(..), label, stage)
 }
 
-pub(super) fn collect_compact_lexer_output_named_drain<I, S>(
-    returned_buffers: I,
-    outputs: &mut Vec<Vec<u8>>,
-    label: &str,
-    stage: &str,
-) -> Result<SparseLexerMegakernelOutput, String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    collect_compact_lexer_output_named(returned_buffers, outputs.drain(..), label, stage)
-}
-
 pub(super) fn collect_compact_lexer_output_named<I, S, O>(
     returned_buffers: I,
     outputs: O,
@@ -77,6 +64,107 @@ where
         counts,
         n_tokens,
     })
+}
+
+pub(super) fn collect_resident_compact_lexer_output_exact_readback<I, S>(
+    backend: &dyn VyreBackend,
+    resident_outputs: Vec<ResidentBlob>,
+    returned_buffers: I,
+    outputs: &mut Vec<Vec<u8>>,
+    count_readback: &mut Vec<u8>,
+    label: &str,
+    stage: &str,
+) -> Result<SparseLexerMegakernelOutput, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let names = returned_buffers
+        .into_iter()
+        .map(|name| name.as_ref().to_string())
+        .collect::<SmallVec<[String; 8]>>();
+    if names.len() != resident_outputs.len() {
+        return Err(format!(
+            "{label} sparse lexer {stage} returned {} resident compact buffers, expected {} named outputs. Fix: align resident compact output-set semantics before exact readback.",
+            resident_outputs.len(),
+            names.len()
+        ));
+    }
+    let mut pairs = names
+        .into_iter()
+        .zip(resident_outputs)
+        .collect::<SmallVec<[(String, ResidentBlob); 8]>>();
+    let types = take_owned_resident_blob(&mut pairs, "out_tok_types", label, stage)?;
+    let starts = take_owned_resident_blob(&mut pairs, "out_tok_starts", label, stage)?;
+    let lens = take_owned_resident_blob(&mut pairs, "out_tok_lens", label, stage)?;
+    let counts = take_owned_resident_blob(&mut pairs, "out_counts", label, stage)?;
+
+    backend
+        .download_resident_range_into(&counts.resource, 0, 4, count_readback)
+        .map_err(|error| format!("{label} sparse lexer {stage} count readback failed: {error}"))?;
+    let n_tokens = read_u32_at(count_readback, 0)
+        .map_err(|error| format!("{label} sparse lexer {stage} token count: {error}"))?;
+    let token_bytes = compact_token_column_byte_len(n_tokens, label, stage)?;
+
+    outputs.clear();
+    outputs.resize_with(4, Vec::new);
+    let (types_slot, rest) = outputs.split_at_mut(1);
+    let (starts_slot, rest) = rest.split_at_mut(1);
+    let (lens_slot, counts_slot) = rest.split_at_mut(1);
+    let ranges = [
+        (&types.resource, 0, token_bytes),
+        (&starts.resource, 0, token_bytes),
+        (&lens.resource, 0, token_bytes),
+    ];
+    let mut dense_outputs = [&mut types_slot[0], &mut starts_slot[0], &mut lens_slot[0]];
+    backend
+        .download_resident_ranges_into(&ranges, &mut dense_outputs)
+        .map_err(|error| {
+            format!("{label} sparse lexer {stage} dense token readback failed: {error}")
+        })?;
+    counts_slot[0].clear();
+    counts_slot[0].extend_from_slice(count_readback);
+
+    let mut drained = outputs.drain(..);
+    Ok(SparseLexerMegakernelOutput {
+        types: drained
+            .next()
+            .ok_or_else(|| format!("{label} sparse lexer {stage} missing exact types"))?,
+        starts: drained
+            .next()
+            .ok_or_else(|| format!("{label} sparse lexer {stage} missing exact starts"))?,
+        lens: drained
+            .next()
+            .ok_or_else(|| format!("{label} sparse lexer {stage} missing exact lens"))?,
+        counts: drained
+            .next()
+            .ok_or_else(|| format!("{label} sparse lexer {stage} missing exact counts"))?,
+        n_tokens,
+    })
+}
+
+fn take_owned_resident_blob(
+    pairs: &mut SmallVec<[(String, ResidentBlob); 8]>,
+    name: &str,
+    label: &str,
+    stage: &str,
+) -> Result<ResidentBlob, String> {
+    let index = pairs
+        .iter()
+        .position(|(candidate, _)| candidate == name)
+        .ok_or_else(|| format!("{label} sparse lexer {stage} missing resident output `{name}`"))?;
+    Ok(pairs.swap_remove(index).1)
+}
+
+fn compact_token_column_byte_len(n_tokens: u32, label: &str, stage: &str) -> Result<usize, String> {
+    usize::try_from(n_tokens)
+        .ok()
+        .and_then(|tokens| tokens.checked_mul(4))
+        .ok_or_else(|| {
+            format!(
+                "{label} sparse lexer {stage} token byte length overflowed for {n_tokens} token(s). Fix: shard the sparse lexer readback."
+            )
+        })
 }
 
 pub(super) fn resident_output_pairs<'a, const N: usize>(
@@ -173,4 +261,27 @@ pub(super) fn mark_output_buffers(mut program: Program, names: &[&str]) -> Progr
         }
     }
     program
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compact_token_column_byte_len;
+
+    #[test]
+    fn compact_token_column_byte_len_allows_zero_live_tokens() {
+        assert_eq!(
+            compact_token_column_byte_len(0, "test", "resident")
+                .expect("Fix: zero live tokens should produce a zero-byte exact readback"),
+            0
+        );
+    }
+
+    #[test]
+    fn compact_token_column_byte_len_converts_token_words_to_bytes() {
+        assert_eq!(
+            compact_token_column_byte_len(17, "test", "resident")
+                .expect("Fix: token count should convert to dense u32 column bytes"),
+            68
+        );
+    }
 }

@@ -11,6 +11,22 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 /// Canonical operation id for one union-find merge pass.
 pub const OP_ID: &str = "vyre-primitives::graph::union_find";
+/// One lane per union edge in a batch.
+pub const UNION_FIND_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid that covers every union edge lane.
+#[must_use]
+pub const fn union_find_dispatch_grid(edge_count: u32) -> [u32; 3] {
+    let lanes_per_block = UNION_FIND_WORKGROUP_SIZE[0];
+    let full_blocks = edge_count / lanes_per_block;
+    let tail_block = if edge_count % lanes_per_block == 0 {
+        0
+    } else {
+        1
+    };
+    let blocks = full_blocks + tail_block;
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
 
 /// Build the path-halving body used by [`union_roots_body`].
 ///
@@ -191,7 +207,7 @@ pub fn union_find_program(
             BufferDecl::storage(edge_b, 2, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(edge_count.max(1)),
         ],
-        [256, 1, 1],
+        UNION_FIND_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
@@ -306,7 +322,16 @@ mod tests {
     fn union_find_program_declares_batch_buffers() {
         let program = union_find_program("parent", "edge_a", "edge_b", 8, 4);
         assert_eq!(program.buffers().len(), 3);
-        assert_eq!(program.workgroup_size(), [256, 1, 1]);
+        assert_eq!(program.workgroup_size(), UNION_FIND_WORKGROUP_SIZE);
+    }
+
+    #[test]
+    fn dispatch_grid_packs_union_edges_into_workgroups() {
+        assert_eq!(union_find_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(union_find_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(union_find_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(union_find_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(union_find_dispatch_grid(1025), [5, 1, 1]);
     }
 
     #[test]

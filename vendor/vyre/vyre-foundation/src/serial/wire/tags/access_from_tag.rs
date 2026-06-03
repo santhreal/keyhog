@@ -11,7 +11,8 @@ use crate::ir::BufferAccess;
 /// # Returns
 ///
 /// `Ok(BufferAccess)` on a recognized tag. The mapping is stable:
-/// `0 → ReadOnly`, `1 → ReadWrite`, `2 → Uniform`, `3 → Workgroup`.
+/// `0 → ReadOnly`, `1 → ReadWrite`, `2 → Uniform`, `3 → Workgroup`,
+/// `4 → WriteOnly`.
 ///
 /// # Failure mode
 ///
@@ -25,6 +26,7 @@ pub(crate) fn access_from_tag(tag: u8) -> Result<BufferAccess, String> {
         1 => Ok(BufferAccess::ReadWrite),
         2 => Ok(BufferAccess::Uniform),
         3 => Ok(BufferAccess::Workgroup),
+        4 => Ok(BufferAccess::WriteOnly),
         _ => Err(format!(
             "Fix: unknown buffer access tag {tag}; use a compatible IR serializer."
         )),

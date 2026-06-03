@@ -21,6 +21,8 @@ mod scratch;
 mod simple_block;
 #[path = "gpu_filter/simple_line.rs"]
 mod simple_line;
+#[path = "gpu_filter/splice_only.rs"]
+mod splice_only;
 
 const TRANSFORM_LINE_COMMENT: u32 = 1;
 const TRANSFORM_BLOCK_COMMENT: u32 = 2;
@@ -38,33 +40,17 @@ pub struct FilteredBytes {
 
 #[derive(Default)]
 pub(super) struct FilterScratch {
-    splice_input: Vec<u8>,
     n_real_buf: Vec<u8>,
     preflight_zero: Vec<u8>,
     preflight_outputs: Vec<Vec<u8>>,
     full_comment: full_comment::FullCommentScratch,
     simple_line: simple_line::SimpleLineScratch,
     simple_block: simple_block::SimpleBlockScratch,
+    splice_only: splice_only::SpliceOnlyScratch,
     scan: PrefixScanScratch,
 }
 
 impl FilterScratch {
-    fn prepare_splice_input(&mut self, raw: &[u8], target_len: usize) -> Result<(), String> {
-        self.splice_input.clear();
-        if self.splice_input.capacity() < target_len {
-            self.splice_input
-                .try_reserve_exact(target_len - self.splice_input.capacity())
-                .map_err(|e| {
-                    format!(
-                        "filter splice input: could not reserve {target_len} padded source bytes. Fix: reduce batch size or increase host memory: {e}"
-                    )
-                })?;
-        }
-        self.splice_input.extend_from_slice(raw);
-        self.splice_input.resize(target_len, 0);
-        Ok(())
-    }
-
     fn prepare_n_real(&mut self, n: u32) {
         self.n_real_buf.clear();
         self.n_real_buf.extend_from_slice(&n.to_le_bytes());
@@ -104,18 +90,14 @@ pub(super) fn gpu_filter_source_bytes_with_scratch(
             "filter byte buffer padding overflowed usize. Fix: reduce batch size.".to_string()
         })?
         .max(4);
-    let preflight_zero_bytes = cap_bucket.checked_mul(4).ok_or_else(|| {
-        "filter preflight zero bytes overflowed usize. Fix: reduce batch size.".to_string()
-    })?;
-    scratch.prepare_splice_input(raw, byte_buf_pad)?;
     scratch.prepare_n_real(n);
-    scratch.prepare_preflight_zero(preflight_zero_bytes)?;
+    scratch.prepare_preflight_zero(std::mem::size_of::<u32>())?;
 
     dispatcher
         .dispatch_borrowed_into(
             &preflight::transform_candidate_program(n_bucket),
             &[
-                scratch.splice_input.as_slice(),
+                raw,
                 scratch.preflight_zero.as_slice(),
                 scratch.n_real_buf.as_slice(),
             ],
@@ -153,7 +135,7 @@ pub(super) fn gpu_filter_source_bytes_with_scratch(
         return simple_line::gpu_filter_simple_line_comments(
             dispatcher,
             raw,
-            &scratch.splice_input,
+            raw,
             n_bucket,
             byte_buf_pad,
             &scratch.n_real_buf,
@@ -161,12 +143,44 @@ pub(super) fn gpu_filter_source_bytes_with_scratch(
             &mut scratch.scan,
         );
     }
+    if transform_flags == TRANSFORM_LINE_SPLICE {
+        if splice_only::line_splices_can_create_comment(
+            dispatcher,
+            raw,
+            n_bucket,
+            &scratch.n_real_buf,
+            &mut scratch.splice_only,
+        )? {
+            return full_comment::gpu_filter_full_comment_state(
+                dispatcher,
+                raw,
+                raw,
+                n_bucket,
+                cap_bucket,
+                byte_buf_pad,
+                &scratch.n_real_buf,
+                &mut scratch.full_comment,
+                &mut scratch.scan,
+            );
+        }
+        return splice_only::gpu_filter_line_splices(
+            dispatcher,
+            raw,
+            raw,
+            n_bucket,
+            byte_buf_pad,
+            &scratch.n_real_buf,
+            &mut scratch.splice_only,
+            &mut scratch.scan,
+        );
+    }
     if transform_flags == TRANSFORM_BLOCK_COMMENT {
         return simple_block::gpu_filter_simple_block_comments(
             dispatcher,
             raw,
-            &scratch.splice_input,
+            raw,
             n_bucket,
+            cap_bucket,
             byte_buf_pad,
             &scratch.n_real_buf,
             &mut scratch.simple_block,
@@ -178,7 +192,7 @@ pub(super) fn gpu_filter_source_bytes_with_scratch(
     full_comment::gpu_filter_full_comment_state(
         dispatcher,
         raw,
-        &scratch.splice_input,
+        raw,
         n_bucket,
         cap_bucket,
         byte_buf_pad,

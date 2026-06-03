@@ -1,5 +1,6 @@
 #[cfg(test)]
 use super::*;
+use vyre::ir::DataType;
 use vyre_reference::value::Value;
 
 use crate::scan::dispatch_io::pack_u32_slice as pack_u32_words;
@@ -79,6 +80,29 @@ fn macro_value_buffer_is_runtime_sized() {
         buffer.count, 0,
         "macro_values must be runtime-sized so one #if evaluator program serves all macro-table sizes"
     );
+}
+
+#[test]
+fn source_buffer_layouts_preserve_packed_abi_and_raw_u8_variant() {
+    let packed = gpu_if_expression(8, 64);
+    let raw_u8 = gpu_if_expression_u8(8, 64);
+    for name in ["source", "macro_names_packed"] {
+        let packed_buffer = packed
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == name)
+            .unwrap_or_else(|| panic!("Fix: packed #if evaluator {name} buffer must exist"));
+        let raw_u8_buffer = raw_u8
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == name)
+            .unwrap_or_else(|| panic!("Fix: raw-U8 #if evaluator {name} buffer must exist"));
+
+        assert_eq!(packed_buffer.element(), DataType::U32);
+        assert_eq!(packed_buffer.count(), 0);
+        assert_eq!(raw_u8_buffer.element(), DataType::U8);
+        assert_eq!(raw_u8_buffer.count(), 0);
+    }
 }
 
 #[test]

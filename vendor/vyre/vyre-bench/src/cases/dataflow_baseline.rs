@@ -12,6 +12,7 @@ use external_dataflow_engine::{
 use vyre_primitives::bitset::and::cpu_ref as bitset_and_cpu_ref;
 use vyre_primitives::graph::csr_forward_traverse::{bitset_words, cpu_ref as csr_step_cpu_ref};
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
 
 pub struct DataflowReachingDefBitset;
 pub struct DataflowIfdsStep;
@@ -22,6 +23,14 @@ const WORD_COUNT: usize = (NODE_COUNT as usize).div_ceil(32);
 const GRAPH_NODE_COUNT: u32 = 262_144;
 const GRAPH_EDGE_COUNT: u32 = GRAPH_NODE_COUNT - 1;
 const GRAPH_WORD_COUNT: usize = bitset_words(GRAPH_NODE_COUNT) as usize;
+const DATAFLOW_IFDS_ALLOW_MASK: u32 = edge_kind::ASSIGNMENT
+    | edge_kind::CALL_ARG
+    | edge_kind::RETURN
+    | edge_kind::PHI
+    | edge_kind::ALIAS
+    | edge_kind::MEM_STORE
+    | edge_kind::MEM_LOAD
+    | edge_kind::MUT_REF;
 
 struct DataflowBitsetPrepared {
     program: vyre_foundation::ir::Program,
@@ -40,6 +49,19 @@ struct DataflowGraphPrepared {
     baseline_wall_ns: u64,
     resident: Option<ResidentInputSet>,
     workload_name: &'static str,
+    active_sources: u64,
+    max_out_degree: u32,
+    allowed_edges: u64,
+}
+
+struct DataflowGraphFixture {
+    nodes: Vec<u32>,
+    edge_offsets: Vec<u32>,
+    edge_targets: Vec<u32>,
+    edge_kind_mask: Vec<u32>,
+    node_tags: Vec<u32>,
+    frontier_in: Vec<u32>,
+    frontier_out_seed: Vec<u32>,
 }
 
 impl BenchCase for DataflowReachingDefBitset {
@@ -289,9 +311,10 @@ impl BenchCase for DataflowIfdsStep {
 
     fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let shape = ProgramGraphShape::new(GRAPH_NODE_COUNT, GRAPH_EDGE_COUNT);
-        Ok(Box::new(linear_graph_prepared(
+        Ok(Box::new(irregular_graph_prepared(
             dataflow_ifds::ifds_reach_step(shape, "frontier_in", "frontier_out"),
             "ifds_step",
+            DATAFLOW_IFDS_ALLOW_MASK,
             Some(ctx),
         )?))
     }
@@ -365,9 +388,10 @@ impl BenchCase for DataflowPointsToAliasStep {
 
     fn prepare(&self, ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let shape = ProgramGraphShape::new(GRAPH_NODE_COUNT, GRAPH_EDGE_COUNT);
-        Ok(Box::new(linear_graph_prepared(
+        Ok(Box::new(irregular_graph_prepared(
             dataflow_points_to::andersen_points_to(shape, "frontier_in", "frontier_out"),
             "points_to_alias_step",
+            u32::MAX,
             Some(ctx),
         )?))
     }
@@ -417,43 +441,29 @@ fn graph_requirements() -> BenchRequirements {
     }
 }
 
-fn linear_graph_prepared(
+fn irregular_graph_prepared(
     program: vyre_foundation::ir::Program,
     workload_name: &'static str,
+    allow_mask: u32,
     ctx: Option<&BenchContext>,
 ) -> Result<DataflowGraphPrepared, BenchError> {
-    let nodes = vec![0; GRAPH_NODE_COUNT as usize];
-    let mut edge_offsets = Vec::with_capacity(GRAPH_NODE_COUNT as usize + 1);
-    for node in 0..GRAPH_NODE_COUNT {
-        edge_offsets.push(node.min(GRAPH_EDGE_COUNT));
-    }
-    edge_offsets.push(GRAPH_EDGE_COUNT);
-    let edge_targets: Vec<u32> = (1..GRAPH_NODE_COUNT).collect();
-    let edge_kind_mask = vec![1; GRAPH_EDGE_COUNT as usize];
-    let node_tags = vec![0; GRAPH_NODE_COUNT as usize];
-    let mut frontier_in = vec![0; GRAPH_WORD_COUNT];
-    frontier_in[0] = 1;
-    let frontier_out_seed = frontier_in.clone();
+    let fixture = irregular_graph_fixture(GRAPH_NODE_COUNT, GRAPH_EDGE_COUNT);
     let encoded_inputs = vec![
-        encode_u32_words(&nodes),
-        encode_u32_words(&edge_offsets),
-        encode_u32_words(&edge_targets),
-        encode_u32_words(&edge_kind_mask),
-        encode_u32_words(&node_tags),
-        encode_u32_words(&frontier_in),
-        encode_u32_words(&frontier_out_seed),
+        encode_u32_words(&fixture.nodes),
+        encode_u32_words(&fixture.edge_offsets),
+        encode_u32_words(&fixture.edge_targets),
+        encode_u32_words(&fixture.edge_kind_mask),
+        encode_u32_words(&fixture.node_tags),
+        encode_u32_words(&fixture.frontier_in),
+        encode_u32_words(&fixture.frontier_out_seed),
     ];
     let input_bytes_total = input_bytes_total(&encoded_inputs);
     let baseline_start = std::time::Instant::now();
-    let mut baseline_words = csr_step_cpu_ref(
-        GRAPH_NODE_COUNT,
-        &edge_offsets,
-        &edge_targets,
-        &edge_kind_mask,
-        &frontier_in,
-        1,
-    );
-    for (out, seed) in baseline_words.iter_mut().zip(frontier_out_seed.iter()) {
+    let mut baseline_words = graph_step_baseline_words(&fixture, GRAPH_NODE_COUNT, allow_mask);
+    for (out, seed) in baseline_words
+        .iter_mut()
+        .zip(fixture.frontier_out_seed.iter())
+    {
         *out |= *seed;
     }
     let baseline_wall_ns = baseline_start
@@ -461,6 +471,13 @@ fn linear_graph_prepared(
         .as_nanos()
         .min(u128::from(u64::MAX)) as u64;
     let baseline_output = encode_u32_words(&baseline_words);
+    let active_sources = bitset_popcount(&fixture.frontier_in);
+    let max_out_degree = max_out_degree(&fixture.edge_offsets);
+    let allowed_edges = fixture
+        .edge_kind_mask
+        .iter()
+        .filter(|&&kind| (kind & allow_mask) != 0)
+        .count() as u64;
     let resident = ctx
         .map(|ctx| ResidentInputSet::upload_optional(ctx, &encoded_inputs, "dataflow graph"))
         .transpose()?
@@ -474,9 +491,11 @@ fn linear_graph_prepared(
         baseline_wall_ns,
         resident,
         workload_name,
+        active_sources,
+        max_out_degree,
+        allowed_edges,
     })
 }
-
 
 fn run_graph_step(
     ctx: &mut BenchContext,
@@ -525,6 +544,18 @@ fn run_graph_step(
                     value: u64::from(GRAPH_EDGE_COUNT),
                 },
                 MetricPoint {
+                    name: "graph_active_sources".to_string(),
+                    value: prepared.active_sources,
+                },
+                MetricPoint {
+                    name: "graph_max_out_degree".to_string(),
+                    value: u64::from(prepared.max_out_degree),
+                },
+                MetricPoint {
+                    name: "graph_allowed_edges".to_string(),
+                    value: prepared.allowed_edges,
+                },
+                MetricPoint {
                     name: prepared.workload_name.to_string(),
                     value: 1,
                 },
@@ -559,6 +590,149 @@ fn graph_bytes_touched() -> (u64, u64) {
         + GRAPH_WORD_COUNT
         + GRAPH_WORD_COUNT;
     ((input_words * 4) as u64, (GRAPH_WORD_COUNT * 4) as u64)
+}
+
+fn irregular_graph_fixture(node_count: u32, edge_count: u32) -> DataflowGraphFixture {
+    let node_len = node_count as usize;
+    let edge_len = edge_count as usize;
+    let words = bitset_words(node_count) as usize;
+    let nodes = (0..node_count)
+        .map(|node| node.rotate_left(3) ^ (node.wrapping_mul(17) & 0xFF))
+        .collect::<Vec<_>>();
+    let node_tags = (0..node_count)
+        .map(|node| {
+            if node % 4096 == 0 {
+                edge_kind::CALL_ARG
+            } else if node % 97 == 0 {
+                edge_kind::CONTROL
+            } else {
+                edge_kind::ASSIGNMENT
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut edge_offsets = Vec::with_capacity(node_len.saturating_add(1));
+    let mut edge_targets = Vec::with_capacity(edge_len);
+    let mut edge_kind_mask = Vec::with_capacity(edge_len);
+    let mut remaining_edges = edge_len;
+
+    for src in 0..node_count {
+        edge_offsets.push(edge_targets.len() as u32);
+        if remaining_edges == 0 {
+            continue;
+        }
+        let degree = if src + 1 == node_count {
+            remaining_edges
+        } else {
+            planned_irregular_out_degree(src).min(remaining_edges)
+        };
+        for lane in 0..degree {
+            edge_targets.push(irregular_edge_target(node_count, src, lane as u32));
+            edge_kind_mask.push(irregular_edge_kind(src, lane as u32));
+        }
+        remaining_edges -= degree;
+    }
+    edge_offsets.push(edge_targets.len() as u32);
+
+    let mut frontier_in = vec![0_u32; words];
+    for node in 0..node_count {
+        if node == 0 || node % 4096 == 0 || node % 8191 == 17 {
+            set_bit(&mut frontier_in, node);
+        }
+    }
+    let frontier_out_seed = frontier_in.clone();
+
+    DataflowGraphFixture {
+        nodes,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        node_tags,
+        frontier_in,
+        frontier_out_seed,
+    }
+}
+
+fn planned_irregular_out_degree(node: u32) -> usize {
+    if node % 16_384 == 0 {
+        512
+    } else if node % 4096 == 0 {
+        128
+    } else if node % 1024 == 0 {
+        64
+    } else if node % 257 == 0 {
+        16
+    } else if node % 31 == 0 {
+        4
+    } else if node % 7 == 0 {
+        2
+    } else {
+        1
+    }
+}
+
+fn irregular_edge_target(node_count: u32, src: u32, lane: u32) -> u32 {
+    if node_count <= 1 {
+        return 0;
+    }
+    let span = node_count - 1;
+    let mixed = src
+        .wrapping_mul(1_103_515_245)
+        .wrapping_add(lane.wrapping_mul(2_654_435_761))
+        .rotate_left((lane & 15) + 1);
+    let mut dst = 1 + (mixed % span);
+    if dst == src {
+        dst = 1 + (dst % span);
+    }
+    dst
+}
+
+fn irregular_edge_kind(src: u32, lane: u32) -> u32 {
+    match src.wrapping_mul(31).wrapping_add(lane.wrapping_mul(17)) % 10 {
+        0 => edge_kind::ASSIGNMENT,
+        1 => edge_kind::CALL_ARG,
+        2 => edge_kind::RETURN,
+        3 => edge_kind::PHI,
+        4 => edge_kind::ALIAS,
+        5 => edge_kind::MEM_STORE,
+        6 => edge_kind::MEM_LOAD,
+        7 => edge_kind::MUT_REF,
+        8 => edge_kind::DOMINANCE,
+        _ => edge_kind::CONTROL,
+    }
+}
+
+fn graph_step_baseline_words(
+    fixture: &DataflowGraphFixture,
+    node_count: u32,
+    allow_mask: u32,
+) -> Vec<u32> {
+    csr_step_cpu_ref(
+        node_count,
+        &fixture.edge_offsets,
+        &fixture.edge_targets,
+        &fixture.edge_kind_mask,
+        &fixture.frontier_in,
+        allow_mask,
+    )
+}
+
+fn set_bit(words: &mut [u32], node: u32) {
+    let word = (node / 32) as usize;
+    if let Some(slot) = words.get_mut(word) {
+        *slot |= 1_u32 << (node % 32);
+    }
+}
+
+fn bitset_popcount(words: &[u32]) -> u64 {
+    words.iter().map(|word| u64::from(word.count_ones())).sum()
+}
+
+fn max_out_degree(edge_offsets: &[u32]) -> u32 {
+    edge_offsets
+        .windows(2)
+        .map(|pair| pair[1].saturating_sub(pair[0]))
+        .max()
+        .unwrap_or(0)
 }
 
 inventory::submit! {
@@ -617,13 +791,14 @@ mod tests {
 
     #[test]
     fn graph_prepare_caches_encoded_inputs_and_baseline() {
-        let prepared = linear_graph_prepared(
+        let prepared = irregular_graph_prepared(
             dataflow_ifds::ifds_reach_step(
                 ProgramGraphShape::new(GRAPH_NODE_COUNT, GRAPH_EDGE_COUNT),
                 "frontier_in",
                 "frontier_out",
             ),
             "ifds_step",
+            DATAFLOW_IFDS_ALLOW_MASK,
             None,
         )
         .unwrap();
@@ -633,6 +808,60 @@ mod tests {
             prepared.encoded_inputs.iter().map(Vec::len).sum::<usize>() as u64,
             graph_bytes_touched().0
         );
+        assert!(
+            prepared.active_sources > 1,
+            "dataflow graph fixture must exercise more than one active CSR row"
+        );
+        assert!(
+            prepared.max_out_degree >= 128,
+            "dataflow graph fixture must include high-degree rows"
+        );
+        assert!(
+            prepared.allowed_edges < u64::from(GRAPH_EDGE_COUNT),
+            "IFDS baseline must exclude non-IFDS edge kinds in the mixed-edge fixture"
+        );
+    }
+
+    #[test]
+    fn irregular_graph_fixture_has_skew_and_mixed_edge_kinds() {
+        let fixture = irregular_graph_fixture(8192, 8191);
+
+        assert_eq!(fixture.edge_offsets.len(), 8193);
+        assert_eq!(fixture.edge_targets.len(), 8191);
+        assert_eq!(fixture.edge_kind_mask.len(), 8191);
+        assert!(
+            max_out_degree(&fixture.edge_offsets) >= 128,
+            "fixture must include hub-like rows instead of a linear chain"
+        );
+        assert!(
+            bitset_popcount(&fixture.frontier_in) > 2,
+            "fixture must seed multiple active sources"
+        );
+        assert!(
+            fixture
+                .edge_kind_mask
+                .iter()
+                .any(|&kind| (kind & DATAFLOW_IFDS_ALLOW_MASK) == 0),
+            "fixture must include edges that IFDS masks out"
+        );
+        assert!(
+            fixture
+                .edge_kind_mask
+                .iter()
+                .any(|&kind| (kind & DATAFLOW_IFDS_ALLOW_MASK) != 0),
+            "fixture must include edges that IFDS traverses"
+        );
+    }
+
+    #[test]
+    fn graph_baseline_uses_analysis_specific_edge_mask() {
+        let fixture = irregular_graph_fixture(8192, 8191);
+        let ifds = graph_step_baseline_words(&fixture, 8192, DATAFLOW_IFDS_ALLOW_MASK);
+        let all_edges = graph_step_baseline_words(&fixture, 8192, u32::MAX);
+
+        assert_ne!(
+            ifds, all_edges,
+            "mixed-edge dataflow baseline must distinguish IFDS from points-to traversal"
+        );
     }
 }
-

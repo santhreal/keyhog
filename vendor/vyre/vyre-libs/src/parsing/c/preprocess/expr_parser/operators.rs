@@ -114,15 +114,20 @@ impl PreprocessorExprParser<'_, '_, '_> {
             _ => return Err(self.error("Fix: __has_include header must be <name> or \"name\"")),
         };
         self.index += 1;
+        let mut closed = false;
         while let Some(byte) = self.bytes.get(self.index).copied() {
             if byte == closer {
                 self.index += 1;
+                closed = true;
                 break;
             }
             if matches!(byte, b'\n' | b'\r') {
                 return Err(self.error("Fix: close __has_include header before newline"));
             }
             self.index += 1;
+        }
+        if !closed {
+            return Err(self.error("Fix: close __has_include header before end of input"));
         }
         self.skip_ws_and_splices();
         if !self.consume_byte(b')') {

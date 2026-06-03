@@ -84,10 +84,7 @@ fn matrix_crc32_matches_independent_oracle_over_hostile_packed_inputs() {
 
 #[test]
 fn matrix_crc32_canonical_vectors_match_independent_oracle() {
-    let vectors: &[(&[u8], u32)] = &[
-        (b"abc", 0x3524_41C2),
-        (b"123456789", 0xCBF4_3926),
-    ];
+    let vectors: &[(&[u8], u32)] = &[(b"abc", 0x3524_41C2), (b"123456789", 0xCBF4_3926)];
     for (index, (bytes, expected)) in vectors.iter().enumerate() {
         let words: Vec<u32> = bytes.iter().map(|&byte| u32::from(byte)).collect();
         let n = words.len() as u32;

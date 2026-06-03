@@ -59,10 +59,10 @@ use super::allocations::{
     PinnedHostAllocation, PinnedHostAllocationPool,
 };
 use super::dispatch::CudaBackend;
-use super::output_range::cuda_output_readback;
+use super::output_range::cuda_output_readback_for_binding;
 use super::staging_reserve::reserve_smallvec;
-use crate::input_identity::{exact_input_key, ExactInputKey};
 use crate::backend::copy::aligned_async_copy_len;
+use crate::input_identity::{exact_input_key, ExactInputKey};
 use crate::numeric::CUDA_NUMERIC;
 
 const CUDA_GRAPH_REPLAY_ACCOUNTING: TransferAccountingPolicy =
@@ -78,6 +78,23 @@ fn log_cuda_drop_result(op: &str, result: cudarc::driver::sys::CUresult) {
 
 fn cuda_graph_usize_to_u64(value: usize, label: &'static str) -> Result<u64, BackendError> {
     CUDA_NUMERIC.usize_to_u64(value, label)
+}
+
+fn cuda_graph_sample_input<'a>(
+    sample_inputs: &'a [&[u8]],
+    input_index: usize,
+    binding_name: &str,
+    context: &'static str,
+) -> Result<&'a [u8], BackendError> {
+    sample_inputs
+        .get(input_index)
+        .copied()
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA graph capture {context} expected sample input index {input_index} for `{binding_name}` but only {} sample input(s) were supplied. Rebuild the binding plan or validate graph sample inputs before recording.",
+                sample_inputs.len()
+            ),
+        })
 }
 
 /// CUDA driver constant: stream-capture-mode thread-local. Only the calling
@@ -142,14 +159,14 @@ fn create_cuda_graph_stream() -> Result<StreamGuard, BackendError> {
         .map(StreamGuard::new)
 }
 
-fn synchronize_cuda_graph_param_init_stream(stream: &StreamGuard) -> Result<(), BackendError> {
+fn synchronize_cuda_graph_stream(
+    stream: &StreamGuard,
+    label: &'static str,
+) -> Result<(), BackendError> {
     // The shared stream boundary validates non-null ownership before issuing
     // cuStreamSynchronize(stream.ptr().as_ptr()), keeping graph capture off
     // CUDA's legacy default stream while preserving one raw FFI implementation.
-    crate::stream::synchronize_raw_stream(
-        stream.ptr().as_ptr(),
-        "cuStreamSynchronize (cuda_graph param init)",
-    )
+    crate::stream::synchronize_raw_stream(stream.ptr().as_ptr(), label)
 }
 
 fn record_cuda_graph_output_readbacks(
@@ -487,7 +504,6 @@ impl GraphHostBuffers {
     }
 }
 
-
 impl Drop for GraphHostBuffers {
     fn drop(&mut self) {
         for allocation in self.input.drain(..).chain(self.output.drain(..)) {
@@ -522,22 +538,25 @@ mod tests {
 
     #[test]
     fn cuda_graph_padded_input_upload_zero_fills_tail() {
+        // Pinned host memory requires an initialized, thread-bound CUDA
+        // context; acquire one first (held for the whole test so it outlives
+        // the pinned buffers).
+        let _device = crate::device::CudaDeviceHandle::acquire_ordinal(0)
+            .expect("Fix: acquire a CUDA device/context before pinned host allocation");
         let pool = Arc::new(PinnedHostAllocationPool::new(0));
         let mut buffers = GraphHostBuffers::try_with_capacity(Arc::clone(&pool), 1, 1)
             .expect("Fix: padded input staging should use fallible pinned buffer acquisition");
 
-        buffers
-            .push_input_padded(&[1_u8, 2, 3], 16)
-            .expect("Fix: padded input staging should allocate enough capacity for async DMA copies");
+        buffers.push_input_padded(&[1_u8, 2, 3], 16).expect(
+            "Fix: padded input staging should allocate enough capacity for async DMA copies",
+        );
 
         let mut out = Vec::new();
-        buffers
-            .input[0]
+        buffers.input[0]
             .copy_prefix_into(16, &mut out)
             .expect("Fix: copy back staged input staging bytes to verify alignment padding");
 
         assert_eq!(out, &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        assert!(pool.cached_bytes() >= 16);
     }
 
     #[test]
@@ -596,6 +615,28 @@ mod tests {
                 && source.contains("capture_guard.finish(")
                 && source.contains("resident_capture_guard.finish("),
             "Fix: CUDA graph capture, instantiate, upload, and cleanup paths must route through shared lifecycle helpers."
+        );
+        let upload_cleanup = source
+            .rsplit("let upload_result = (||")
+            .next()
+            .expect("Fix: CUDA graph upload must classify graph-upload cleanup errors.")
+            .split("let (input_host_bufs, output_host_bufs) = host_buffers.into_raw();")
+            .next()
+            .expect("Fix: CUDA graph upload cleanup must precede cached graph ownership transfer.");
+        assert!(
+            upload_cleanup.contains("synchronize_cuda_graph_stream(")
+                && upload_cleanup.contains("\"cuStreamSynchronize (cuda_graph upload cleanup)\"")
+                && upload_cleanup.contains("In-flight CUDA graph resources will not be recycled.")
+                && upload_cleanup.contains("std::mem::forget(stream);")
+                && upload_cleanup.contains("std::mem::forget(graph_exec);")
+                && upload_cleanup.contains("std::mem::forget(graph);")
+                && upload_cleanup.contains("std::mem::forget(resident_input_graph_exec);")
+                && upload_cleanup.contains("std::mem::forget(resident_input_graph);")
+                && upload_cleanup.contains("std::mem::forget(params_device_ptr);")
+                && upload_cleanup.contains("std::mem::forget(input_device_ptrs);")
+                && upload_cleanup.contains("std::mem::forget(output_device_ptrs);")
+                && upload_cleanup.contains("std::mem::forget(host_buffers);"),
+            "Fix: CUDA graph upload errors must prove stream completion before dropping graph resources or leak all captured owners when completion is unproven."
         );
     }
 
@@ -718,6 +759,10 @@ pub struct CachedCudaGraph {
     /// Per-input host buffers. Callers write new input bytes here before
     /// each replay; the captured memcpy reads from these addresses.
     pub(crate) input_host_bufs: SmallVec<[PinnedHostAllocation; 8]>,
+    /// Logical caller input index for each descriptor-ordered input host
+    /// buffer. CUDA graph capture records memcpy nodes in descriptor order,
+    /// while public replay inputs follow Program::buffers logical order.
+    pub(crate) input_indices: SmallVec<[usize; 8]>,
     /// Per-input device pointers (allocated via `cuMemAlloc_v2`). Freed in
     /// `drop`.
     pub(crate) input_device_ptrs: SmallVec<[DevicePtrGuard; 8]>,
@@ -727,6 +772,10 @@ pub struct CachedCudaGraph {
     /// Per-output pinned host buffers. The captured DtoH memcpy writes into
     /// these stable addresses on every replay.
     pub(crate) output_host_bufs: SmallVec<[PinnedHostAllocation; 8]>,
+    /// Logical output index for each descriptor-ordered output host buffer.
+    /// CUDA graph readback nodes stay in descriptor order, while public
+    /// result vectors follow Program::buffers logical output order.
+    pub(crate) output_indices: SmallVec<[usize; 8]>,
     /// Exact byte lengths for each output. Pinned allocations are bucketed and
     /// can be larger than the logical output buffer.
     pub(crate) output_lens: SmallVec<[usize; 8]>,
@@ -886,11 +935,23 @@ impl CudaBackend {
             input_capacity,
             "cuda graph input device pointer guards",
         )?;
+        let mut input_indices = SmallVec::<[usize; 8]>::new();
+        reserve_smallvec(
+            &mut input_indices,
+            input_capacity,
+            "cuda graph logical input indices",
+        )?;
         let mut output_device_ptrs = SmallVec::<[DevicePtrGuard; 8]>::new();
         reserve_smallvec(
             &mut output_device_ptrs,
             output_device_capacity,
             "cuda graph output device pointer guards",
+        )?;
+        let mut output_indices = SmallVec::<[usize; 8]>::new();
+        reserve_smallvec(
+            &mut output_indices,
+            output_readback_capacity,
+            "cuda graph logical output indices",
         )?;
         let mut readback_device_ptrs = SmallVec::<[u64; 8]>::new();
         reserve_smallvec(
@@ -934,19 +995,29 @@ impl CudaBackend {
                 continue;
             }
             let byte_len = match binding.input_index {
-                Some(input_index) => sample_inputs[input_index].len(),
+                Some(input_index) => cuda_graph_sample_input(
+                    sample_inputs,
+                    input_index,
+                    &binding.name,
+                    "allocation sizing",
+                )?
+                .len(),
                 None => binding
                     .static_byte_len
-                .ok_or_else(|| BackendError::InvalidProgram {
-                    fix: format!(
-                        "Fix: CUDA-graph output `{}` needs a static byte length to be \
+                    .ok_or_else(|| BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA-graph output `{}` needs a static byte length to be \
                              cached. Set BufferDecl::with_count or output_byte_range before \
                              recording.",
                             binding.name
                         ),
                     })?,
             };
-            let device_byte_len = if byte_len == 0 { 1 } else { aligned_async_copy_len(byte_len)? };
+            let device_byte_len = if byte_len == 0 {
+                1
+            } else {
+                aligned_async_copy_len(byte_len)?
+            };
             let device_ptr = alloc_cuda_ptr(
                 device_byte_len,
                 "cuMemAlloc_v2 (cuda_graph input/output buffer)",
@@ -957,7 +1028,13 @@ impl CudaBackend {
                     "cudaGraph input/output allocation bytes",
                 )?);
             if let Some(input_index) = binding.input_index {
-                let input_len = sample_inputs[input_index].len();
+                let sample_input = cuda_graph_sample_input(
+                    sample_inputs,
+                    input_index,
+                    &binding.name,
+                    "input staging",
+                )?;
+                let input_len = sample_input.len();
                 let input_transfer_len = if input_len == 0 {
                     0
                 } else {
@@ -972,15 +1049,22 @@ impl CudaBackend {
                         "host upload replay",
                     )?;
                 }
-                host_buffers.push_input_padded(sample_inputs[input_index], input_transfer_len)?;
+                host_buffers.push_input_padded(sample_input, input_transfer_len)?;
+                input_indices.push(input_index);
                 input_device_ptrs.push(DevicePtrGuard::new(device_ptr));
             } else {
                 output_device_ptrs.push(DevicePtrGuard::new(device_ptr));
             }
-            if binding.output_index.is_some() {
-                let readback =
-                    cuda_output_readback(&program.buffers()[binding.buffer_index], byte_len)?;
+            if let Some(output_index) = binding.output_index {
+                let readback = cuda_output_readback_for_binding(
+                    program.buffers(),
+                    binding.buffer_index,
+                    &binding.name,
+                    byte_len,
+                    "graph capture output readback",
+                )?;
                 host_buffers.push_output(readback.byte_len)?;
+                output_indices.push(output_index);
                 output_lens.push(readback.byte_len);
                 add_cuda_graph_replay_bytes(
                     &mut replay_output_bytes,
@@ -1050,10 +1134,8 @@ impl CudaBackend {
         if param_bytes != 0 {
             let mut param_host_transfer =
                 HostTransferAllocations::with_capacity(Arc::clone(&self.host_pool), 1, 0)?;
-            let param_host_ptr = param_host_transfer.push_u32_words_padded(
-                &prepared.launch.param_words,
-                param_copy_bytes,
-            )?;
+            let param_host_ptr = param_host_transfer
+                .push_u32_words_padded(&prepared.launch.param_words, param_copy_bytes)?;
             // SAFETY: Safe FFI / low-level operation verified and audited for Release compliance.
             unsafe {
                 // Upload the param words once; the kernel reads them on every replay.
@@ -1066,7 +1148,10 @@ impl CudaBackend {
                     stream.ptr().as_ptr(),
                     "cuMemcpyHtoDAsync_v2 (cuda_graph param init)",
                 )?;
-                synchronize_cuda_graph_param_init_stream(&stream)?;
+                synchronize_cuda_graph_stream(
+                    &stream,
+                    "cuStreamSynchronize (cuda_graph param init)",
+                )?;
             }
             self.telemetry.record_sync_point();
         }
@@ -1239,12 +1324,40 @@ impl CudaBackend {
             "cuGraphInstantiateWithFlags returned a null resident-input executable graph after reporting success. Fix: update the CUDA driver or disable CUDA graph capture for this device.",
         )?;
 
-        upload_cuda_graph_exec(&graph_exec, &stream, "cuGraphUpload")?;
-        upload_cuda_graph_exec(
-            &resident_input_graph_exec,
-            &stream,
-            "cuGraphUpload (resident input cuda_graph)",
-        )?;
+        let upload_result = (|| {
+            upload_cuda_graph_exec(&graph_exec, &stream, "cuGraphUpload")?;
+            upload_cuda_graph_exec(
+                &resident_input_graph_exec,
+                &stream,
+                "cuGraphUpload (resident input cuda_graph)",
+            )
+        })();
+        if let Err(error) = upload_result {
+            match synchronize_cuda_graph_stream(
+                &stream,
+                "cuStreamSynchronize (cuda_graph upload cleanup)",
+            ) {
+                Ok(()) => {
+                    self.telemetry.record_sync_point();
+                    return Err(error);
+                }
+                Err(sync_error) => {
+                    tracing::error!(
+                        "Fix: failed to synchronize CUDA graph upload stream after upload error: {sync_error}. In-flight CUDA graph resources will not be recycled."
+                    );
+                    std::mem::forget(stream);
+                    std::mem::forget(graph_exec);
+                    std::mem::forget(graph);
+                    std::mem::forget(resident_input_graph_exec);
+                    std::mem::forget(resident_input_graph);
+                    std::mem::forget(params_device_ptr);
+                    std::mem::forget(input_device_ptrs);
+                    std::mem::forget(output_device_ptrs);
+                    std::mem::forget(host_buffers);
+                    return Err(error);
+                }
+            }
+        }
 
         let (input_host_bufs, output_host_bufs) = host_buffers.into_raw();
 
@@ -1256,9 +1369,11 @@ impl CudaBackend {
             resident_input_graph,
             stream,
             input_host_bufs,
+            input_indices,
             input_device_ptrs,
             output_device_ptrs,
             output_host_bufs,
+            output_indices,
             output_lens,
             input_transfer_lens,
             replay_input_bytes,

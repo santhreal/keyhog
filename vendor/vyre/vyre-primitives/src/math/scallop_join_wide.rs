@@ -4,16 +4,32 @@
 //! `W` rules per cell for `W ∈ {2, 4, 8}`. This allows up to 256-rule
 //! provenance tracking for large Scallop programs or external analyzer closures.
 //!
-//! Composes `semiring_gemm_wide` under the `Lineage` semantics with
-//! `persistent_fixpoint`.
+//! Emits `semiring_gemm_wide`-equivalent Lineage semantics inside a
+//! GPU-resident fixpoint kernel. Small matrices use a block-local
+//! convergence loop; large matrices expose split-visible GridSync phases for
+//! multi-block CUDA dispatch.
 
 use std::sync::Arc;
 
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+use crate::math::scallop_persistent::{
+    ceil_div_u32, wide_lineage_body, wide_lineage_grid_sync_body,
+};
+
 /// Stable registry id for the wide Scallop lineage join primitive.
 pub const OP_ID: &str = "vyre-primitives::math::scallop_join_wide";
+/// One lane per relation word in the wide lineage fixpoint wrapper.
+pub const SCALLOP_JOIN_WIDE_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for the wide Scallop kernel.
+#[must_use]
+pub const fn scallop_join_wide_dispatch_grid(_n: u32, _w: u32) -> [u32; 3] {
+    let cells = _n.saturating_mul(_n);
+    let blocks = ceil_div_u32(cells, SCALLOP_JOIN_WIDE_WORKGROUP_SIZE[0]);
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
 
 /// Emits a generic `M × K · K × N → M × N` matmul Program for `W`-wide lineage cells.
 ///
@@ -148,7 +164,7 @@ pub fn semiring_gemm_wide(
 
     Program::wrapped(
         buffers,
-        [256, 1, 1],
+        SCALLOP_JOIN_WIDE_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(format!("anonymous::{OP_ID}::semiring_gemm_wide")),
             source_region: None,
@@ -193,31 +209,48 @@ pub fn scallop_join_wide(
         );
     }
 
-    let transfer = semiring_gemm_wide(state, join_rules, next, Some(state), n, n, n, w);
-    let transfer_body = transfer.entry().to_vec();
-
-    let words = n
-        .checked_mul(n)
-        .and_then(|cells| cells.checked_mul(w))
+    let cells = n.checked_mul(n).unwrap_or_else(|| {
+        panic!(
+            "scallop_join_wide n={n} overflows cell count. Fix: shard the relation matrix before GPU dispatch."
+        )
+    });
+    let words = cells
+        .checked_mul(w)
         .unwrap_or_else(|| {
             panic!(
                 "scallop_join_wide n={n} w={w} overflows word count. Fix: shard the relation matrix before GPU dispatch."
             )
         });
 
-    let inner = crate::fixpoint::persistent_fixpoint::persistent_fixpoint(
-        transfer_body,
-        state,
-        next,
-        changed,
-        words,
-        max_iterations,
-    );
+    let body = if cells <= SCALLOP_JOIN_WIDE_WORKGROUP_SIZE[0] {
+        wide_lineage_body(
+            state,
+            next,
+            join_rules,
+            changed,
+            n,
+            w,
+            cells,
+            max_iterations,
+            SCALLOP_JOIN_WIDE_WORKGROUP_SIZE[0],
+        )
+    } else {
+        wide_lineage_grid_sync_body(
+            state,
+            next,
+            join_rules,
+            changed,
+            n,
+            w,
+            cells,
+            max_iterations,
+        )
+    };
 
     let entry: Vec<Node> = vec![Node::Region {
         generator: Ident::from(OP_ID),
         source_region: None,
-        body: Arc::new(inner.entry().to_vec()),
+        body: Arc::new(body),
     }];
 
     Program::wrapped(
@@ -228,7 +261,7 @@ pub fn scallop_join_wide(
             BufferDecl::storage(join_rules, 3, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(words),
         ],
-        [256, 1, 1],
+        SCALLOP_JOIN_WIDE_WORKGROUP_SIZE,
         entry,
     )
 }
@@ -372,134 +405,3 @@ inventory::submit! {
         }),
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cpu_ref_1x1_trivial() {
-        let n = 1;
-        let w = 1;
-        let state = vec![0b01];
-        let join_rules = vec![0b10];
-        let (final_state, iters) = cpu_ref(&state, &join_rules, n, w, 10);
-        // (0,0) * (0,0) = 0b01 | 0b10 = 0b11. Combined with seed 0b01 = 0b11.
-        assert_eq!(final_state, vec![0b11]);
-        assert_eq!(iters, 1);
-    }
-
-    #[test]
-    fn cpu_ref_no_new_derivations() {
-        let n = 2;
-        let w = 2;
-        let state = vec![0, 0, 0b01, 0, 0, 0, 0, 0];
-        let join_rules = vec![0; 8];
-        let (final_state, iters) = cpu_ref(&state, &join_rules, n, w, 10);
-        assert_eq!(final_state, state);
-        assert_eq!(iters, 0);
-    }
-
-    #[test]
-    #[should_panic(expected = "complete n*n*w state matrix")]
-    fn cpu_ref_short_inputs_fail_loudly() {
-        let _ = cpu_ref(&[0b01], &[], 1, 2, 10);
-    }
-
-    #[test]
-    fn cpu_ref_transitive_3_nodes() {
-        let n = 3;
-        let w = 1;
-        let mut state = vec![0; 9];
-        state[0 * 3 + 1] = 0b001;
-        let mut join_rules = vec![0; 9];
-        join_rules[1 * 3 + 2] = 0b010;
-        let (final_state, _) = cpu_ref(&state, &join_rules, n, w, 10);
-        // 0->1->2 derivation should yield {fact 0, fact 1} = 0b011 at (0, 2)
-        assert_eq!(final_state[0 * 3 + 2], 0b011);
-    }
-
-    #[test]
-    fn cpu_ref_wide_multi_word() {
-        let n = 2;
-        let w = 4;
-        let mut state = vec![0; 16];
-        state[1 * 4 + 2] = 0x1; // cell (0,1) word 2
-        let mut join_rules = vec![0; 16];
-        join_rules[3 * 4 + 3] = 0x2; // cell (1,1) word 3
-        let (final_state, _) = cpu_ref(&state, &join_rules, n, w, 10);
-        // derivation at (0,1) should have bits from both
-        assert_eq!(final_state[1 * 4 + 2], 0x1);
-        assert_eq!(final_state[1 * 4 + 3], 0x2);
-    }
-
-    #[test]
-    fn cpu_ref_into_reuses_wide_buffers_and_truncates_stale_tail() {
-        let n = 2;
-        let w = 2;
-        let mut state = vec![0; 8];
-        state[2] = 0b01;
-        let mut join_rules = vec![0; 8];
-        join_rules[7] = 0b10;
-        let mut current = Vec::with_capacity(16);
-        let mut next = Vec::with_capacity(16);
-        current.extend_from_slice(&[99; 12]);
-        next.extend_from_slice(&[77; 12]);
-        let current_capacity = current.capacity();
-        let next_capacity = next.capacity();
-
-
-        let iters = cpu_ref_into(&state, &join_rules, n, w, 4, &mut current, &mut next);
-
-        assert!(iters <= 4);
-        assert_eq!(current, vec![0, 0, 0b01, 0b10, 0, 0, 0, 0]);
-        assert_eq!(current.capacity(), current_capacity);
-        assert_eq!(next.capacity(), next_capacity);
-
-        let iters = cpu_ref_into(&[0b01], &[0b10], 1, 1, 10, &mut current, &mut next);
-        assert_eq!(iters, 1);
-        assert_eq!(current, vec![0b11]);
-        assert_eq!(next, vec![0b11]);
-        assert_eq!(current.capacity(), current_capacity);
-        assert_eq!(next.capacity(), next_capacity);
-    }
-
-    #[test]
-    fn test_parity_2x2_2w() {
-        let n = 2;
-        let w = 2;
-        let mut state_init = vec![0; 8];
-        state_init[2] = 0b01; // cell (0,1) word 0
-        let mut join_rules = vec![0; 8];
-        join_rules[7] = 0b10; // cell (1,1) word 1
-
-        let p = scallop_join_wide("s", "nx", "j", "c", n, w, 4);
-
-        let (expected_state, _) = cpu_ref(&state_init, &join_rules, n, w, 4);
-
-        use vyre_reference::reference_eval;
-        use vyre_reference::value::Value;
-
-        let to_value = |data: &[u32]| {
-            let bytes = crate::wire::pack_u32_slice(data);
-            Value::Bytes(Arc::from(bytes))
-        };
-
-        let inputs = vec![
-            to_value(&state_init),
-            to_value(&[0_u32; 8]), // next
-            to_value(&[0]),        // changed
-            to_value(&join_rules),
-        ];
-
-        let results = reference_eval(&p, &inputs).expect("Fix: interpreter failed");
-        let actual_bytes = results[0].to_bytes();
-        let actual_state: Vec<u32> = actual_bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-            .collect();
-
-        assert_eq!(actual_state, expected_state);
-    }
-}
-

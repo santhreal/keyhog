@@ -66,13 +66,26 @@ fn count_buffer_is_explicit_read_write_state_not_uninitialized_output() {
     );
 }
 
-/// Helper: decode function records (3-word slots: [name_idx, body_start, body_end])
+/// Helper: decode function records from the SPARSE output array.
+///
+/// `c11_extract_functions` writes each function's 3-word record
+/// `[name_idx, body_start, body_end]` at slot `name_idx * 3` and zero-initializes
+/// every unoccupied slot; `out_counts[0]` is the array CAPACITY (`num_tokens*3`),
+/// not a compacted match count (that is the `emit_atomic_record_append` variant,
+/// which this extractor deliberately does not use to avoid GPU atomic contention).
+/// So decoding means walking every slot and skipping the empty `(0,0,0)` ones.
+/// A real record always has `name_idx >= 1` (a function name is never token 0 -
+/// it needs a return-type prefix) and `body_end > 0`, so an all-zero tuple is
+/// unambiguously an unoccupied slot, never a real function.
 fn decode_functions(functions: &[u32], slot_count: u32) -> Vec<(u32, u32, u32)> {
     let n = (slot_count / 3) as usize;
-    let mut out = Vec::with_capacity(n);
+    let mut out = Vec::new();
     for i in 0..n {
         let base = i * 3;
-        out.push((functions[base], functions[base + 1], functions[base + 2]));
+        let record = (functions[base], functions[base + 1], functions[base + 2]);
+        if record != (0, 0, 0) {
+            out.push(record);
+        }
     }
     out
 }

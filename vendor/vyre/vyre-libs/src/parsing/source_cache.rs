@@ -448,7 +448,6 @@ mod tests {
                     99usize
                 })
             }));
-
         }
 
         let results = handles
@@ -588,4 +587,3 @@ mod tests {
         );
     }
 }
-

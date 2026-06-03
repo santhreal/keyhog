@@ -1,7 +1,6 @@
 use super::abi::{ifds_csr_dispatch_grid, IFDS_CSR_EMPTY_DISPATCH_GRID};
 use super::layout::{
-    IfdsCsrLayout, IfdsCsrProgramCacheKey, IfdsCsrRuleInputFingerprint,
-    IfdsCsrStaticInputKey,
+    IfdsCsrLayout, IfdsCsrProgramCacheKey, IfdsCsrRuleInputFingerprint, IfdsCsrStaticInputKey,
 };
 use super::program_ir::build_ifds_csr_program;
 use super::validation::validate_ifds_csr_inputs;

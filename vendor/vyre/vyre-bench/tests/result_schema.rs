@@ -34,6 +34,10 @@ fn test_result_schema_fields() {
         "source_fingerprint field must be present"
     );
     assert!(
+        parsed["source_tree_fingerprint"].is_string(),
+        "source_tree_fingerprint field must be present"
+    );
+    assert!(
         parsed["environment"].is_object(),
         "environment field must be present"
     );

@@ -63,13 +63,13 @@ fs2.workspace = true
 workspace = true
 
 [dev-dependencies]
-vyre-reference = { workspace = true }
-vyre-driver-reference = { workspace = true }
-vyre-self-substrate = { workspace = true }
+vyre-reference = { path = "../vyre-reference" }
+vyre-driver-reference = { path = "../vyre-driver-reference" }
+vyre-self-substrate = { path = "../vyre-self-substrate" }
 # The `vyre` meta-shim re-exports every driver-tier public type. Doctest
 # examples in this crate demonstrate the consumer-facing `vyre::X` path
 # (that's how consumers call them in production), so
 # the shim must be in scope when doctests compile. Dev-dep only  -  the
 # library itself has no runtime dependency on `vyre`.
-vyre = { workspace = true }
+vyre = { path = "../vyre-core" }
 tempfile.workspace = true

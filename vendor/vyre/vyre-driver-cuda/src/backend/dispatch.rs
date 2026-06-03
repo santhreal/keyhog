@@ -18,6 +18,7 @@ use super::module_cache::{
 use super::plan::{compute_ordered_output_indices, CudaDispatchPlan};
 use super::ptx_target::select_loadable_ptx_target_sm;
 use super::resident::{CudaResidentBuffer, CudaResidentStore, ResidentBufferView};
+use super::resident_dispatch::next_resident_handle;
 use super::staging_reserve::reserve_smallvec;
 use super::telemetry::{CudaTelemetry, CudaTelemetrySnapshot};
 use crate::device::{CudaDeviceCaps, CudaDeviceHandle};
@@ -52,6 +53,12 @@ mod tests {
                 "input_lengths.extend(std::iter::repeat_n(0, static_bindings.input_indices.len()))"
             ),
             "Fix: CUDA resident dispatch input lengths must extend after fallible reserve without resize-driven growth."
+        );
+        assert!(
+            source.contains("input_lengths.get_mut(input_index)")
+                && source.contains("resident dispatch input binding index {input_index}")
+                && !source.contains(concat!("input_lengths", "[input_index]")),
+            "Fix: CUDA resident dispatch input-length derivation must turn stale binding input indexes into BackendError instead of directly indexing the input length table."
         );
     }
 }
@@ -206,11 +213,22 @@ impl CudaBackend {
             if binding.role == BindingRole::Shared {
                 continue;
             }
-            let handle = handles[next_handle];
-            next_handle += 1;
+            let handle = next_resident_handle(
+                handles,
+                &mut next_handle,
+                "resident dispatch input-length derivation",
+            )?;
             let resident = self.resident_store.view(handle)?;
             if let Some(input_index) = binding.input_index {
-                input_lengths[input_index] = resident.byte_len;
+                let Some(input_len) = input_lengths.get_mut(input_index) else {
+                    return Err(BackendError::InvalidProgram {
+                        fix: format!(
+                            "Fix: CUDA resident dispatch input binding index {input_index} has no matching input-length slot after deriving {} resident input length(s). Rebuild the binding plan before resident launch.",
+                            input_lengths.len()
+                        ),
+                    });
+                };
+                *input_len = resident.byte_len;
             }
         }
 
@@ -448,7 +466,6 @@ impl CudaBackend {
                 .join(".cache")
                 .join("vyre")
                 .join("ptx-cache"));
-
         }
         Err(BackendError::InvalidProgram {
             fix: "Fix: CUDA PTX disk cache has no VYRE_PTX_CACHE_DIR, XDG_CACHE_HOME, or HOME. Configure a writable persistent cache root; temporary fallback is forbidden for production compile performance."
@@ -542,4 +559,3 @@ impl CudaBackend {
         ))
     }
 }
-

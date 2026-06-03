@@ -1,10 +1,9 @@
 //! Volume oracle matrix - independent reference vs production cpu_ref.
 //! Legendary testing.volume - do NOT weaken to shape-only asserts.
 #![forbid(unsafe_code)]
-
 #![cfg(all(feature = "graph", feature = "cpu-parity"))]
 
-use vyre_primitives::graph::{csr_forward_traverse, persistent_bfs};
+use vyre_primitives::graph::persistent_bfs;
 
 fn bitset_words(node_count: u32) -> usize {
     vyre_primitives::bitset::bitset_words(node_count) as usize
@@ -37,7 +36,6 @@ fn generated_csr_frontier(seed: u64) -> (u32, Vec<u32>, Vec<u32>, Vec<u32>, Vec<
     let allow_mask = 0xFFFF_FFFFu32;
     (node_count, offsets, targets, masks, frontier, allow_mask)
 }
-
 
 fn oracle_csr_forward_step(
     node_count: u32,
@@ -72,7 +70,6 @@ fn oracle_csr_forward_step(
     out
 }
 
-
 fn oracle_persistent(
     node_count: u32,
     edge_offsets: &[u32],
@@ -83,25 +80,31 @@ fn oracle_persistent(
     max_iters: u32,
 ) -> (Vec<u32>, u32) {
     let words = bitset_words(node_count);
-    let mut accum = vec![0u32; words];
-    let mut frontier = frontier_in.to_vec();
+    let mut accum = frontier_in.to_vec();
+    accum.resize(words, 0);
     let mut changed = 0u32;
-    for _ in 0..max_iters.max(1) {
+    for _ in 0..max_iters {
         let step = oracle_csr_forward_step(
-            node_count, edge_offsets, edge_targets, edge_kind_mask, &frontier, allow_mask,
+            node_count,
+            edge_offsets,
+            edge_targets,
+            edge_kind_mask,
+            &accum,
+            allow_mask,
         );
         let mut step_changed = false;
         for wi in 0..words {
             let before = accum[wi];
-            accum[wi] |= step[{wi}];
+            accum[wi] |= step[wi];
             if accum[wi] != before {
                 step_changed = true;
             }
         }
         if step_changed {
             changed = 1;
+        } else {
+            break;
         }
-        frontier = step;
     }
     (accum, changed)
 }

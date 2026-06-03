@@ -14,6 +14,10 @@ fn capability_constants_present() {
 #[test]
 fn ptx_type_from_dtype_covers_scalars() {
     assert_eq!(PtxType::from_dtype(&DataType::Bool).unwrap(), PtxType::Bool);
+    assert_eq!(PtxType::from_dtype(&DataType::U8).unwrap(), PtxType::U32);
+    assert_eq!(PtxType::from_dtype(&DataType::I8).unwrap(), PtxType::I32);
+    assert_eq!(PtxType::from_dtype(&DataType::U16).unwrap(), PtxType::U32);
+    assert_eq!(PtxType::from_dtype(&DataType::I16).unwrap(), PtxType::I32);
     assert_eq!(PtxType::from_dtype(&DataType::U32).unwrap(), PtxType::U32);
     assert_eq!(PtxType::from_dtype(&DataType::I32).unwrap(), PtxType::I32);
     assert_eq!(PtxType::from_dtype(&DataType::F32).unwrap(), PtxType::F32);
@@ -68,4 +72,72 @@ fn register_declaration_sized_to_used_count() {
     };
     let s = emit(&kernel).unwrap();
     assert!(s.contains(".reg .u32   %r<30>;"));
+}
+
+fn narrow_global_copy_kernel(element_type: DataType) -> KernelDescriptor {
+    KernelDescriptor {
+        id: "narrow_copy".into(),
+        bindings: BindingLayout {
+            slots: vec![
+                BindingSlot {
+                    slot: 0,
+                    element_type: element_type.clone(),
+                    element_count: Some(8),
+                    memory_class: MemoryClass::Global,
+                    visibility: BindingVisibility::ReadOnly,
+                    name: "input".into(),
+                },
+                BindingSlot {
+                    slot: 1,
+                    element_type,
+                    element_count: Some(8),
+                    memory_class: MemoryClass::Global,
+                    visibility: BindingVisibility::WriteOnly,
+                    name: "output".into(),
+                },
+            ],
+        },
+        dispatch: Dispatch::new(1, 1, 1),
+        body: KernelBody {
+            ops: vec![
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![0],
+                    result: Some(0),
+                },
+                KernelOp {
+                    kind: KernelOpKind::LoadGlobal,
+                    operands: vec![0, 0],
+                    result: Some(1),
+                },
+                KernelOp {
+                    kind: KernelOpKind::StoreGlobal,
+                    operands: vec![1, 0, 1],
+                    result: None,
+                },
+            ],
+            child_bodies: vec![],
+            literals: vec![LiteralValue::U32(0)],
+        },
+    }
+}
+
+#[test]
+fn narrow_integer_global_memory_uses_narrow_ptx_ops() {
+    for (data_type, load_op, store_op) in [
+        (DataType::U8, "ld.global.u8", "st.global.u8"),
+        (DataType::I8, "ld.global.s8", "st.global.u8"),
+        (DataType::U16, "ld.global.u16", "st.global.u16"),
+        (DataType::I16, "ld.global.s16", "st.global.u16"),
+    ] {
+        let ptx = emit(&narrow_global_copy_kernel(data_type.clone())).unwrap();
+        assert!(
+            ptx.contains(load_op),
+            "Fix: {data_type:?} loads must use byte/halfword PTX instead of widening the memory transaction:\n{ptx}"
+        );
+        assert!(
+            ptx.contains(store_op),
+            "Fix: {data_type:?} stores must use byte/halfword PTX instead of widening the memory transaction:\n{ptx}"
+        );
+    }
 }

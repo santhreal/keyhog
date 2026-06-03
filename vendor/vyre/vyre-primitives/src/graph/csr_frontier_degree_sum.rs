@@ -36,6 +36,22 @@ pub const OP_ID: &str = "vyre-primitives::graph::csr_frontier_degree_sum";
 pub const BINDING_FRONTIER_IN: u32 = BINDING_PRIMITIVE_START;
 /// Canonical binding index for the output degree-sum scalar.
 pub const BINDING_DEGREE_SUM_OUT: u32 = BINDING_PRIMITIVE_START + 1;
+/// One lane per source node; 256 keeps occupancy high without bloating register pressure.
+pub const CSR_FRONTIER_DEGREE_SUM_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid that covers every source node exactly once.
+#[must_use]
+pub const fn csr_frontier_degree_sum_dispatch_grid(node_count: u32) -> [u32; 3] {
+    let lanes_per_block = CSR_FRONTIER_DEGREE_SUM_WORKGROUP_SIZE[0];
+    let full_blocks = node_count / lanes_per_block;
+    let tail_block = if node_count % lanes_per_block == 0 {
+        0
+    } else {
+        1
+    };
+    let blocks = full_blocks + tail_block;
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
 
 /// Build the IR `Program` that computes `degree_sum_out[0]` =
 /// total outgoing-edge count over the active frontier.
@@ -96,7 +112,7 @@ pub fn csr_frontier_degree_sum(shape: ProgramGraphShape) -> Program {
         source_region: None,
         body: Arc::new(body),
     }];
-    Program::wrapped(buffers, [256, 1, 1], entry)
+    Program::wrapped(buffers, CSR_FRONTIER_DEGREE_SUM_WORKGROUP_SIZE, entry)
 }
 
 /// CPU reference. `frontier_in` is a packed bitset over `node_count`
@@ -246,7 +262,19 @@ mod tests {
             program.buffers().len() >= 6,
             "expects pg buffers + frontier_in + degree_sum_out"
         );
-        assert_eq!(program.workgroup_size(), [256, 1, 1]);
+        assert_eq!(
+            program.workgroup_size(),
+            CSR_FRONTIER_DEGREE_SUM_WORKGROUP_SIZE
+        );
+    }
+
+    #[test]
+    fn dispatch_grid_covers_all_source_nodes() {
+        assert_eq!(csr_frontier_degree_sum_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(csr_frontier_degree_sum_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(csr_frontier_degree_sum_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(csr_frontier_degree_sum_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(csr_frontier_degree_sum_dispatch_grid(1029), [5, 1, 1]);
     }
 
     #[test]
@@ -299,7 +327,7 @@ mod tests {
         let mut state = 0xD36D_5A17_u32;
         for case in 0..4096u32 {
             state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            let node_count = state % 257 + 1;
+            let node_count = state % 4097 + 1;
             let mut edge_offsets = Vec::with_capacity(node_count as usize + 1);
             let mut expected = 0u32;
             let words = crate::bitset::bitset_words(node_count) as usize;

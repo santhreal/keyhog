@@ -435,23 +435,20 @@ mod tests {
             function_record_bytes: 24,
             call_record_bytes: 32,
         };
-        let parser_only = parse_summary_metric_points(&summary, ParseSummaryMetricSurface::ParserOnly);
+        let parser_only =
+            parse_summary_metric_points(&summary, ParseSummaryMetricSurface::ParserOnly);
         let full = parse_summary_metric_points(&summary, ParseSummaryMetricSurface::Full);
-        assert!(
-            parser_only.iter().any(|point| point.name == "c_parser_tokens" && point.value == 13)
-        );
-        assert!(
-            !parser_only
-                .iter()
-                .any(|point| point.name == "c_parser_program_graph_bytes")
-        );
-        assert!(
-            full.iter()
-                .any(|point| point.name == "c_parser_program_graph_bytes" && point.value == 31)
-        );
-        assert!(
-            full.iter()
-                .any(|point| point.name == "c_parser_function_records" && point.value == 2)
-        );
+        assert!(parser_only
+            .iter()
+            .any(|point| point.name == "c_parser_tokens" && point.value == 13));
+        assert!(!parser_only
+            .iter()
+            .any(|point| point.name == "c_parser_program_graph_bytes"));
+        assert!(full
+            .iter()
+            .any(|point| point.name == "c_parser_program_graph_bytes" && point.value == 31));
+        assert!(full
+            .iter()
+            .any(|point| point.name == "c_parser_function_records" && point.value == 2));
     }
 }

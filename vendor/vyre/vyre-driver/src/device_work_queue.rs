@@ -32,6 +32,25 @@ pub struct DeviceWorkQueueProfile {
     pub host_sync: WorkQueueHostSync,
 }
 
+/// Work queue profile where a resident queue should reserve device-side
+/// expansion headroom in addition to the initial frontier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeviceWorkQueueExpansionProfile {
+    /// Initial active work items enqueued before launch.
+    pub initial_items: u64,
+    /// Additional device-produced work items the queue should absorb when the
+    /// explicit queue budget leaves enough room.
+    pub expansion_items: u64,
+    /// ABI bytes per queue entry.
+    pub entry_bytes: u64,
+    /// Bytes required for queue head/tail counters and changed flags.
+    pub control_bytes: u64,
+    /// Caller-approved device-memory budget for the resident queue.
+    pub budget_bytes: u64,
+    /// Host synchronization policy.
+    pub host_sync: WorkQueueHostSync,
+}
+
 /// Device-side work queue execution plan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeviceWorkQueuePlan {
@@ -201,6 +220,41 @@ pub fn plan_device_work_queue(
     })
 }
 
+/// Plan a device-resident work queue that preserves initial-frontier capacity
+/// and uses remaining queue budget for device-side expansion headroom.
+pub fn plan_device_work_queue_with_expansion(
+    profile: DeviceWorkQueueExpansionProfile,
+) -> Result<DeviceWorkQueuePlan, DeviceWorkQueueError> {
+    let desired_capacity = checked_add(
+        profile.initial_items,
+        profile.expansion_items,
+        "queue expansion capacity",
+    )?;
+    if profile.entry_bytes == 0 {
+        return plan_device_work_queue(DeviceWorkQueueProfile {
+            initial_items: profile.initial_items,
+            queue_capacity: desired_capacity,
+            entry_bytes: profile.entry_bytes,
+            control_bytes: profile.control_bytes,
+            budget_bytes: profile.budget_bytes,
+            host_sync: profile.host_sync,
+        });
+    }
+    let budget_capacity =
+        profile.budget_bytes.saturating_sub(profile.control_bytes) / profile.entry_bytes;
+    let queue_capacity = desired_capacity
+        .min(budget_capacity)
+        .max(profile.initial_items);
+    plan_device_work_queue(DeviceWorkQueueProfile {
+        initial_items: profile.initial_items,
+        queue_capacity,
+        entry_bytes: profile.entry_bytes,
+        control_bytes: profile.control_bytes,
+        budget_bytes: profile.budget_bytes,
+        host_sync: profile.host_sync,
+    })
+}
+
 /// Plan a device-resident work queue plus bounded device-side drain windows.
 pub fn plan_device_work_queue_backpressure(
     profile: DeviceWorkQueueProfile,
@@ -272,6 +326,85 @@ mod tests {
         assert_eq!(plan.resident_bytes, 16_512);
         assert_eq!(plan.initial_occupancy_bps, 2_500);
         assert!(plan.final_only_host_sync);
+    }
+
+    #[test]
+    fn device_work_queue_expansion_uses_budgeted_resident_headroom() {
+        let plan = plan_device_work_queue_with_expansion(DeviceWorkQueueExpansionProfile {
+            initial_items: 4,
+            expansion_items: 12,
+            entry_bytes: 8,
+            control_bytes: 64,
+            budget_bytes: 256,
+            host_sync: WorkQueueHostSync::FinalOnly,
+        })
+        .expect("Fix: expansion headroom should fit inside the explicit queue budget");
+
+        assert_eq!(plan.queue_bytes, 128);
+        assert_eq!(plan.control_bytes, 64);
+        assert_eq!(plan.resident_bytes, 192);
+        assert_eq!(
+            plan.initial_occupancy_bps, 2_500,
+            "Fix: occupancy must use the expanded resident queue capacity"
+        );
+        assert!(plan.final_only_host_sync);
+    }
+
+    #[test]
+    fn device_work_queue_expansion_clamps_to_budget_without_dropping_initial_items() {
+        let plan = plan_device_work_queue_with_expansion(DeviceWorkQueueExpansionProfile {
+            initial_items: 4,
+            expansion_items: 100,
+            entry_bytes: 8,
+            control_bytes: 16,
+            budget_bytes: 96,
+            host_sync: WorkQueueHostSync::FinalOnly,
+        })
+        .expect("Fix: queue expansion should use all affordable headroom");
+
+        assert_eq!(plan.queue_bytes, 80);
+        assert_eq!(plan.resident_bytes, 96);
+        assert_eq!(
+            plan.initial_occupancy_bps, 4_000,
+            "Fix: initial occupancy should reflect budget-clamped expansion capacity"
+        );
+    }
+
+    #[test]
+    fn device_work_queue_expansion_fails_when_initial_frontier_cannot_fit() {
+        assert_eq!(
+            plan_device_work_queue_with_expansion(DeviceWorkQueueExpansionProfile {
+                initial_items: 8,
+                expansion_items: 100,
+                entry_bytes: 16,
+                control_bytes: 64,
+                budget_bytes: 128,
+                host_sync: WorkQueueHostSync::FinalOnly,
+            })
+            .expect_err("initial frontier must fail when it cannot fit the explicit budget"),
+            DeviceWorkQueueError::OverBudget {
+                required_bytes: 192,
+                budget_bytes: 128,
+            }
+        );
+    }
+
+    #[test]
+    fn device_work_queue_expansion_rejects_capacity_overflow() {
+        assert_eq!(
+            plan_device_work_queue_with_expansion(DeviceWorkQueueExpansionProfile {
+                initial_items: u64::MAX,
+                expansion_items: 1,
+                entry_bytes: 1,
+                control_bytes: 0,
+                budget_bytes: u64::MAX,
+                host_sync: WorkQueueHostSync::FinalOnly,
+            })
+            .expect_err("overflowed expansion capacity must fail before queue planning"),
+            DeviceWorkQueueError::ByteCountOverflow {
+                field: "queue expansion capacity",
+            }
+        );
     }
 
     #[test]
@@ -464,6 +597,28 @@ mod tests {
             );
             assert!(backpressure.chunks >= 1, "case {case_index}");
             assert!(backpressure.final_only_host_sync, "case {case_index}");
+
+            let expansion_items = next_u64(&mut state) % queue_capacity;
+            let expansion_budget = resident_bytes + (expansion_items * entry_bytes);
+            let expansion =
+                plan_device_work_queue_with_expansion(DeviceWorkQueueExpansionProfile {
+                    initial_items,
+                    expansion_items,
+                    entry_bytes,
+                    control_bytes,
+                    budget_bytes: expansion_budget,
+                    host_sync: WorkQueueHostSync::FinalOnly,
+                })
+                .expect("Fix: generated valid expansion queue profile must plan");
+            assert!(
+                expansion.resident_bytes <= expansion_budget,
+                "case {case_index}"
+            );
+            assert!(
+                expansion.queue_bytes >= initial_items * entry_bytes,
+                "case {case_index}"
+            );
+            assert!(expansion.final_only_host_sync, "case {case_index}");
         }
     }
 

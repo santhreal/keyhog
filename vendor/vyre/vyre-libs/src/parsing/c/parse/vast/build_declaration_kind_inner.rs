@@ -22,8 +22,8 @@ use vyre::ir::{Expr, Node};
 
 use super::build::{
     emit_declaration_kind_result_assignment, emit_identifier_source_hash_for_index,
-    emit_visible_typedef_name_for_index, vast_bounded_row_kind_expr, vast_row_base_expr,
-    vast_prior_row_kind_expr, vast_row_field_expr, vast_row_kind_from_base_expr,
+    emit_visible_typedef_name_for_index, vast_bounded_row_kind_expr, vast_prior_row_kind_expr,
+    vast_row_base_expr, vast_row_field_expr, vast_row_kind_from_base_expr,
     vast_row_parent_from_base_expr,
 };
 use super::helpers::*;
@@ -172,10 +172,7 @@ pub(super) fn emit_declaration_kind_for_index_inner(
                     ),
                     Node::let_bind(
                         &parent_aggregate_kind,
-                        vast_row_kind_from_base_expr(
-                            vast_nodes,
-                            Expr::var(&parent_aggregate_base),
-                        ),
+                        vast_row_kind_from_base_expr(vast_nodes, Expr::var(&parent_aggregate_base)),
                     ),
                     Node::let_bind(
                         &parent_aggregate_parent,

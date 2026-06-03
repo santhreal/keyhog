@@ -1027,4 +1027,3 @@ mod rule3_tests {
         assert_eq!(kept, vec![1, 3]);
     }
 }
-

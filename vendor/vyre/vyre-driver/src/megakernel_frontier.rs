@@ -227,7 +227,7 @@ fn split_one_barrier_group_to_memory_budget(
     )?;
     let mut current_bytes = 0u64;
     for wave_index in group.waves {
-        let wave_bytes = fused_wave_budget_bytes(waves[wave_index])?;
+        let wave_bytes = megakernel_frontier_fused_wave_budget_bytes(waves[wave_index])?;
         let combined = checked_add::<MegakernelFrontierMemoryPlanError>(
             current_bytes,
             wave_bytes,
@@ -259,7 +259,9 @@ fn split_one_barrier_group_to_memory_budget(
     Ok(())
 }
 
-fn fused_wave_budget_bytes(
+/// Compute the byte budget used to decide whether one frontier wave can fit in
+/// a fused barrier-free resident group.
+pub fn megakernel_frontier_fused_wave_budget_bytes(
     wave: MegakernelFrontierWave,
 ) -> Result<u64, MegakernelFrontierMemoryPlanError> {
     let fused_scratch_bytes = checked_mul::<MegakernelFrontierMemoryPlanError>(
@@ -304,8 +306,8 @@ fn storage_reserve_failed(
 #[cfg(test)]
 mod tests {
     use super::{
-        plan_megakernel_frontier_memory_with_scratch, MegakernelFrontierMemoryPlanError,
-        MegakernelFrontierWave,
+        megakernel_frontier_fused_wave_budget_bytes, plan_megakernel_frontier_memory_with_scratch,
+        MegakernelFrontierMemoryPlanError, MegakernelFrontierWave,
     };
     use crate::megakernel_barrier::{MegakernelBarrierScratch, MegakernelWaveDependency};
 
@@ -448,7 +450,6 @@ mod tests {
         assert_eq!(
             graph_error,
             MegakernelFrontierMemoryPlanError::GroupOverBudget {
-
                 required_bytes: 1_600,
                 budget_bytes: 1_000,
                 field: "resident graph bytes",
@@ -475,6 +476,19 @@ mod tests {
                 budget_bytes: 500,
                 field: "single fused frontier wave bytes",
             }
+        );
+    }
+
+    #[test]
+    fn frontier_fused_wave_budget_uses_topology_scratch_multiplier() {
+        assert_eq!(
+            megakernel_frontier_fused_wave_budget_bytes(MegakernelFrontierWave {
+                frontier_bytes: 16,
+                scratch_bytes: 16,
+                output_bytes: 16,
+            })
+            .expect("Fix: fused frontier wave budget should fit"),
+            96
         );
     }
 
@@ -553,4 +567,3 @@ mod tests {
         }
     }
 }
-

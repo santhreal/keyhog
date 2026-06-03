@@ -1,5 +1,7 @@
-//! Export the pinned workspace Naga version to the crate so disk cache keys
-//! invalidate cleanly when the shader frontend changes.
+//! Export the resolved Naga version to the crate so disk cache keys
+//! invalidate cleanly when the shader frontend changes. Reads from
+//! this crate's own Cargo.toml under [package.metadata.vyre], because
+//! the workspace root is not available inside the crates.io tarball.
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,35 +15,29 @@ fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
         fail("CARGO_MANIFEST_DIR missing; restore this invariant before continuing.")
     }));
-    let workspace_toml = manifest_dir
-        .parent()
-        .unwrap_or_else(|| fail("vyre-driver-wgpu must live under the vyre workspace root; restore this invariant before continuing."))
-        .join("Cargo.toml");
-    let workspace = fs::read_to_string(&workspace_toml).unwrap_or_else(|error| {
-        fail(format!(
-            "failed to read {}: {error}",
-            workspace_toml.display()
-        ))
+    let manifest_path = manifest_dir.join("Cargo.toml");
+    let manifest = fs::read_to_string(&manifest_path).unwrap_or_else(|error| {
+        fail(format!("failed to read {}: {error}", manifest_path.display()))
     });
-    let naga_version = workspace
+    let naga_version = manifest
         .lines()
         .find_map(|line| {
             let trimmed = line.trim();
-            if !trimmed.starts_with("naga = {") {
+            let key = "naga_version = \"";
+            if !trimmed.starts_with(key) {
                 return None;
             }
-            let version_start = trimmed.find("version = \"")? + "version = \"".len();
-            let rest = &trimmed[version_start..];
-            let version_end = rest.find('"')?;
-            Some(rest[..version_end].trim_start_matches('=').to_string())
+            let rest = &trimmed[key.len()..];
+            let end = rest.find('"')?;
+            Some(rest[..end].to_string())
         })
         .unwrap_or_else(|| {
             fail(format!(
-                "failed to locate the workspace naga version in {}",
-                workspace_toml.display()
+                "failed to locate `naga_version = \"...\"` under [package.metadata.vyre] in {}",
+                manifest_path.display()
             ))
         });
 
-    println!("cargo:rerun-if-changed={}", workspace_toml.display());
+    println!("cargo:rerun-if-changed={}", manifest_path.display());
     println!("cargo:rustc-env=VYRE_NAGA_VERSION={naga_version}");
 }

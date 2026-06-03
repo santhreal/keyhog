@@ -31,7 +31,8 @@ pub(crate) const INDEXED_MAP_OP_ID: &str = "vyre-libs::substrate::indexed_map";
 /// Shared child region for strided per-lane workgroup accumulators.
 pub(crate) const STRIDED_ACCUMULATE_OP_ID: &str = "vyre-libs::substrate::strided_accumulate";
 /// Shared child region for strided writeback after a tiled row reduction.
-pub(crate) const STRIDED_WRITEBACK_OP_ID: &str = "vyre-libs::substrate::strided_writeback";
+pub(crate) const STRIDED_WRITEBACK_OP_ID: &str =
+    "anonymous::vyre-libs::substrate::strided_writeback";
 
 /// Shared options every Cat-A builder threads through. Lives here so
 /// every op agrees on the same surface.
@@ -647,4 +648,3 @@ mod tests {
         );
     }
 }
-

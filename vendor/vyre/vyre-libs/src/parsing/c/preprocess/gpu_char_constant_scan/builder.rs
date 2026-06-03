@@ -448,7 +448,6 @@ pub fn gpu_char_constant_scan(source_len: u32) -> Program {
                                                                     Expr::select(
                                                                         Expr::eq(
                                                                             Expr::var("hb_lc"),
-
                                                                             Expr::u32(1),
                                                                         ),
                                                                         Expr::add(
@@ -886,4 +885,3 @@ pub fn gpu_char_constant_scan(source_len: u32) -> Program {
     buffers.push(literal_scan_status_output("ok_out", BINDING_OK_OUT));
     literal_scan_program(buffers, body, OP_ID)
 }
-

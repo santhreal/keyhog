@@ -37,19 +37,17 @@ pub const IFDS_CSR_COL_IDX_BUFFER: &str = "exploded_ifds_csr col_idx";
 pub const IFDS_CSR_COL_LEN_BUFFER: &str = "exploded_ifds_csr col_len";
 /// Canonical dispatch scratch label for the dense kill bitmap.
 pub const IFDS_CSR_KILLED_BUFFER: &str = "exploded_ifds_csr killed";
-/// One-lane workgroup for exploded IFDS CSR construction.
+/// Serial workgroup for exploded IFDS CSR construction.
 pub const IFDS_CSR_WORKGROUP_SIZE: [u32; 3] = [1, 1, 1];
 
 /// Dispatch grid for exploded IFDS CSR construction.
 ///
-/// Scales with intra edge count and dense node count so backends reserve enough
-/// launch occupancy for the parallel kill-bitmap setup and future per-edge
-/// phases. Count/prefix/fill still run on invocation `0` until a multi-kernel
-/// parallel builder lands (PERF-005).
+/// The generated Program executes the full CSR build inside global lane `0`, so
+/// the launch contract is a single block. Scaling this grid only launches idle
+/// blocks and burns dispatch overhead without changing observable work.
 #[must_use]
-pub fn ifds_csr_dispatch_grid(intra_count: u32, total_nodes: u32) -> [u32; 3] {
-    let x = intra_count.max(total_nodes).max(1);
-    [x, 1, 1]
+pub const fn ifds_csr_dispatch_grid(_intra_count: u32, _total_nodes: u32) -> [u32; 3] {
+    [1, 1, 1]
 }
 
 /// Minimum grid for empty no-rule IFDS dispatch plans.

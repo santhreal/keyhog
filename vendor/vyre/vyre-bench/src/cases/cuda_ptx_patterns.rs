@@ -460,7 +460,6 @@ fn predicated_else_store_kernel() -> KernelDescriptor {
     }
 }
 
-
 fn store_child(result_id: u32, value: u32) -> KernelBody {
     KernelBody {
         ops: vec![
@@ -697,4 +696,3 @@ fn decode_words(run: &BenchRun) -> Result<Vec<u64>, BenchError> {
 inventory::submit! {
     &CudaPtxPatterns as &dyn BenchCase
 }
-

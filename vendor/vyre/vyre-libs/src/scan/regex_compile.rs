@@ -452,7 +452,6 @@ fn table_word_count(
         .ok_or(RegexCompileError::TableWordCountOverflow { table })
 }
 
-
 fn zeroed_u32_table(words: usize, field: &'static str) -> Result<Vec<u32>, RegexCompileError> {
     let mut table = Vec::new();
     reserve_vec(&mut table, words, field)?;
@@ -1043,4 +1042,3 @@ mod tests {
         }
     }
 }
-

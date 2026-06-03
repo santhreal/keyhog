@@ -55,6 +55,19 @@ pub const OP_ID: &str = "vyre-primitives::parsing::whitespace_classify_word";
 pub const BINDING_BYTES_IN: u32 = 0;
 /// Canonical binding index for the output bitmap.
 pub const BINDING_WHITESPACE_MASK_OUT: u32 = 1;
+/// Word-lane workgroup used by the whitespace classifier.
+pub const WHITESPACE_CLASSIFY_WORD_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid for classifying `word_count` packed u32 words.
+#[must_use]
+pub const fn whitespace_classify_word_dispatch_grid(word_count: u32) -> [u32; 3] {
+    let blocks = word_count.div_ceil(WHITESPACE_CLASSIFY_WORD_WORKGROUP_SIZE[0]);
+    if blocks == 0 {
+        [1, 1, 1]
+    } else {
+        [blocks, 1, 1]
+    }
+}
 
 /// JSON / CSV / structural whitespace set: SP, TAB, LF, CR.
 const WS_SP: u32 = 0x20;
@@ -204,7 +217,7 @@ pub fn whitespace_classify_word(word_count: u32) -> Program {
         source_region: None,
         body: Arc::new(body),
     }];
-    Program::wrapped(buffers, [256, 1, 1], entry)
+    Program::wrapped(buffers, WHITESPACE_CLASSIFY_WORD_WORKGROUP_SIZE, entry)
 }
 
 /// Returns true if `byte` is one of {SP, TAB, LF, CR}. Inlined into the
@@ -396,6 +409,38 @@ mod tests {
     }
 
     #[test]
+    fn classify_generated_4096_byte_corpus_byte_for_byte() {
+        let mut bytes = Vec::with_capacity(4096);
+        for index in 0..4096u32 {
+            let byte = match index % 31 {
+                0 => b' ',
+                7 => b'\t',
+                11 => b'\n',
+                19 => b'\r',
+                _ => index.wrapping_mul(37).wrapping_add(13) as u8,
+            };
+            bytes.push(byte);
+        }
+        let words: Vec<u32> = bytes
+            .chunks_exact(4)
+            .map(|chunk| pack_bytes_le(chunk[0], chunk[1], chunk[2], chunk[3]))
+            .collect();
+        let masks = reference_whitespace_classify_word(&words);
+
+        assert_eq!(masks.len(), 1024);
+        for (word_idx, mask) in masks.iter().copied().enumerate() {
+            let mut expected = 0u32;
+            for lane in 0..4 {
+                let byte = bytes[word_idx * 4 + lane];
+                if is_structural_whitespace(byte) {
+                    expected |= 1u32 << lane;
+                }
+            }
+            assert_eq!(mask, expected, "word {word_idx}");
+        }
+    }
+
+    #[test]
     fn classify_empty_input_emits_empty_output() {
         let masks = reference_whitespace_classify_word(&[]);
         assert!(masks.is_empty());
@@ -435,7 +480,19 @@ mod tests {
     fn build_program_returns_well_formed_program() {
         let program = whitespace_classify_word(64);
         assert_eq!(program.buffers().len(), 2, "bytes_in + whitespace_mask_out");
-        assert_eq!(program.workgroup_size(), [256, 1, 1]);
+        assert_eq!(
+            program.workgroup_size(),
+            WHITESPACE_CLASSIFY_WORD_WORKGROUP_SIZE
+        );
+    }
+
+    #[test]
+    fn dispatch_grid_packs_word_lanes_into_blocks() {
+        assert_eq!(whitespace_classify_word_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(whitespace_classify_word_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(whitespace_classify_word_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(whitespace_classify_word_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(whitespace_classify_word_dispatch_grid(1025), [5, 1, 1]);
     }
 
     #[test]

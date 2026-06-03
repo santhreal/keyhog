@@ -14,12 +14,15 @@ use super::buffers::pad_dispatch_input_refs;
 use super::prefix_scan_dispatch::{
     dispatch_borrowed_prefix_scan_u32_into, PrefixScanDispatchScratch,
 };
-use super::sparse_compaction::pass_c_rescan_compact_sparse_tokens;
+use super::sparse_compaction::{
+    compact_output_capacity_from_inclusive_offsets,
+    pass_c_rescan_compact_sparse_tokens_with_capacity,
+};
 mod output_collect;
 mod resident_stages;
 
 use output_collect::{
-    collect_compact_lexer_output_drain, collect_compact_lexer_output_named_drain,
+    collect_compact_lexer_output_drain, collect_resident_compact_lexer_output_exact_readback,
     mark_output_buffers, resident_output_pairs, returned_buffer_names, take_resident_blob,
     zero_readback_buffers,
 };
@@ -27,9 +30,8 @@ use resident_stages::{dispatch_sparse_lexer_cached_stages_resident, workgroup_pr
 
 use super::backend_select::dispatch_borrowed_stage_cached_into;
 use super::{
-    dispatch_resident_stage_cached, dispatch_resident_stage_readback_cached_into,
-    free_resident_blobs, read_u32_at, stage_pipeline_cache_key, validate_internal_stage,
-    ResidentBlob, ResidentStageInput,
+    dispatch_resident_stage_cached, free_resident_blobs, read_u32_at, stage_pipeline_cache_key,
+    validate_internal_stage, ResidentBlob, ResidentStageInput,
 };
 
 #[derive(Default)]
@@ -41,6 +43,7 @@ pub(super) struct SparseLexerMegakernelScratch {
     input_padding: Vec<Vec<u8>>,
     fused_outputs: Vec<Vec<u8>>,
     resident_compact_outputs: Vec<Vec<u8>>,
+    resident_count_readback: Vec<u8>,
     prefix_scan: PrefixScanDispatchScratch,
     block_totals_scanned: Vec<u8>,
     offsets: Vec<u8>,
@@ -133,9 +136,15 @@ pub(super) fn dispatch_sparse_lexer_block_totals_megakernel_with_scratch(
         &mut scratch.block_totals_scanned,
         &mut scratch.prefix_scan,
     )?;
+    let compact_capacity = compact_output_capacity_from_inclusive_offsets(
+        &scratch.block_totals_scanned,
+        num_blocks,
+        label,
+        "sparse block-total stage scan",
+    )?;
 
     let compact = mark_output_buffers(
-        pass_c_rescan_compact_sparse_tokens(
+        pass_c_rescan_compact_sparse_tokens_with_capacity(
             "block_totals_scanned",
             "sparse_types",
             "sparse_starts",
@@ -146,6 +155,7 @@ pub(super) fn dispatch_sparse_lexer_block_totals_megakernel_with_scratch(
             "out_counts",
             haystack_len,
             num_blocks,
+            compact_capacity,
         ),
         &[
             "out_tok_types",
@@ -168,7 +178,11 @@ pub(super) fn dispatch_sparse_lexer_block_totals_megakernel_with_scratch(
     config.label = Some(format!("{label} sparse-block-total-stage-compact"));
     let key = stage_pipeline_cache_key(
         "syntax_sparse_block_total_stage_compact",
-        &[haystack_len as u64, num_blocks as u64],
+        &[
+            haystack_len as u64,
+            num_blocks as u64,
+            compact_capacity as u64,
+        ],
     );
     let cached_compact = compact.clone();
     dispatch_borrowed_stage_cached_into(
@@ -398,6 +412,12 @@ fn dispatch_sparse_lexer_cached_stages_with_scratch(
         &mut scratch.offsets,
         &mut scratch.prefix_scan,
     )?;
+    let compact_capacity = compact_output_capacity_from_inclusive_offsets(
+        &scratch.offsets,
+        haystack_len,
+        label,
+        "sparse lexer stage scan",
+    )?;
 
     let compact = c11_compact_sparse_tokens_output(
         "sparse_types",
@@ -408,7 +428,7 @@ fn dispatch_sparse_lexer_cached_stages_with_scratch(
         "out_tok_starts",
         "out_tok_lens",
         "out_counts",
-        haystack_len,
+        compact_capacity,
     );
     validate_internal_stage(&compact, "syntax_sparse_lexer_stage_compact")?;
     let compact_refs = pad_dispatch_input_refs(
@@ -422,8 +442,10 @@ fn dispatch_sparse_lexer_cached_stages_with_scratch(
         &mut scratch.compact_padding,
     );
     config.label = Some(format!("{label} sparse-lexer-stage-compact"));
-    let compact_key =
-        stage_pipeline_cache_key("syntax_sparse_lexer_stage_compact", &[haystack_len as u64]);
+    let compact_key = stage_pipeline_cache_key(
+        "syntax_sparse_lexer_stage_compact",
+        &[haystack_len as u64, compact_capacity as u64],
+    );
     let cached_compact = compact.clone();
     dispatch_borrowed_stage_cached_into(
         backend,

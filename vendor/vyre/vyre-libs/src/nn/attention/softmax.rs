@@ -371,7 +371,7 @@ mod tests {
     use vyre_reference::value::Value;
 
     #[test]
-    fn print_softmax_ptx() {
+    fn softmax_lowers_and_emits_sm80_kernel() {
         let program = softmax("input", "output", 4);
         let descriptor = vyre_lower::lower(&program).unwrap();
         let ptx = vyre_emit_ptx::emit_with_options(
@@ -381,9 +381,11 @@ mod tests {
                 subgroup_size: 32,
                 ulp_budget: Some(128),
             },
-        ).unwrap();
-        println!("SOFTMAX PTX:\n{}", ptx);
-        panic!("Show me PTX!");
+        )
+        .unwrap();
+        assert!(ptx.contains(".target sm_80"), "{ptx}");
+        assert!(ptx.contains(".visible .entry main("), "{ptx}");
+        assert!(ptx.contains("region: vyre-libs::nn::softmax"), "{ptx}");
     }
 
     #[test]
@@ -589,4 +591,3 @@ mod tests {
         }
     }
 }
-

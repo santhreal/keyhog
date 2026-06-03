@@ -5,7 +5,7 @@ use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 mod arithmetic;
 
 use arithmetic::{
-    granlund_montgomery_div, horner_quadratic_u32, power_of_two_shift, reciprocal_constant_fold,
+    granlund_montgomery_div, horner_polynomial_int, power_of_two_shift, reciprocal_constant_fold,
     shift_add_decompose, synthesize_fma_add, synthesize_fma_sub,
 };
 
@@ -56,7 +56,7 @@ impl StrengthReduce {
     reason = "strength-reduction table keeps algebraic rewrite precedence auditable"
 )]
 fn reduce_expr(expr: &Expr) -> Option<Expr> {
-    if let Some(reduced) = horner_quadratic_u32(expr) {
+    if let Some(reduced) = horner_polynomial_int(expr) {
         return Some(reduced);
     }
 
@@ -94,6 +94,20 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
             }
             if let Some(decomposed) = shift_add_decompose(right.as_ref(), left.as_ref()) {
                 return Some(decomposed);
+            }
+            // Signed multiply by a negative constant: x * (-C) → Negate(x * C).
+            // The positive product is strength-reduced to shifts on the next
+            // fixpoint iteration. Two's-complement i32 only; -1 is owned by
+            // const-fold and i32::MIN cannot be negated without overflow.
+            if let Expr::LitI32(c) = right.as_ref() {
+                if *c < -1 && *c != i32::MIN {
+                    return Some(Expr::negate(Expr::mul(left.as_ref().clone(), Expr::i32(-*c))));
+                }
+            }
+            if let Expr::LitI32(c) = left.as_ref() {
+                if *c < -1 && *c != i32::MIN {
+                    return Some(Expr::negate(Expr::mul(right.as_ref().clone(), Expr::i32(-*c))));
+                }
             }
             // Float: x * 2.0 → x + x (saves a mul, uses cheaper add).
             if matches!(right.as_ref(), Expr::LitF32(v) if lit_f32_eq(*v, 2.0)) {
@@ -156,18 +170,27 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
                 _ => None,
             }
         }
-        // Unsigned Mod-by-2^k → BitAnd (2^k - 1).
+        // Unsigned Mod-by-constant.
         BinOp::Mod => {
             let Expr::LitU32(value) = right.as_ref() else {
                 return None;
             };
+            // x % 1 → 0 for every unsigned x.
             if *value == 1 {
                 return Some(Expr::u32(0));
             }
-            if !value.is_power_of_two() {
-                return None;
+            // x % 2^k → x & (2^k - 1).
+            if value.is_power_of_two() {
+                return Some(Expr::bitand(left.as_ref().clone(), Expr::u32(value - 1)));
             }
-            Some(Expr::bitand(left.as_ref().clone(), Expr::u32(value - 1)))
+            // x % d (non-power-of-two constant) → x - (x / d) * d, reusing the
+            // Granlund-Montgomery exact u32 division. The (x / d) * d multiply
+            // strength-reduces to shift/add on the next fixpoint pass, so a
+            // ~40-90 cycle integer umod becomes mulhi + shift + mul + sub.
+            // d == 0 falls through here (granlund_montgomery_div guards d <= 1),
+            // leaving modulo-by-zero intact for the backend to trap.
+            granlund_montgomery_div(left.as_ref(), *value)
+                .map(|quotient| Expr::sub(left.as_ref().clone(), Expr::mul(quotient, Expr::u32(*value))))
         }
         // Float: x + 0.0 → x (additive identity).
         BinOp::Add => {

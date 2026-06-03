@@ -290,7 +290,7 @@ impl MatchScan for GpuLiteralSet {
 impl MatchEngineCache for GpuLiteralSet {
     type WireError = LiteralSetWireError;
     const WIRE_MAGIC: [u8; 4] = *b"VLIT";
-    const WIRE_VERSION: u32 = 1;
+    const WIRE_VERSION: u32 = 3;
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::WireError> {
         GpuLiteralSet::to_bytes(self)

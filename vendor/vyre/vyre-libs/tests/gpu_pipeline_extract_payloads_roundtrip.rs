@@ -4,7 +4,7 @@
 
 #![cfg(feature = "c-parser")]
 #![allow(deprecated)]
-use vyre::ir::Program;
+use vyre::ir::{DataType, Program};
 use vyre_libs::parsing::c::preprocess::gpu_pipeline::{
     gpu_extract_directive_payloads, gpu_tokenize_and_classify, DirectivePayload, GpuDispatcher,
 };
@@ -25,10 +25,105 @@ impl GpuDispatcher for RefDispatcher {
     }
 }
 
+struct CountingDispatcher {
+    fused_parse_source_elements: std::cell::RefCell<Vec<DataType>>,
+    condition_source_elements: std::cell::RefCell<Vec<DataType>>,
+    condition_macro_name_elements: std::cell::RefCell<Vec<DataType>>,
+}
+
+impl CountingDispatcher {
+    fn new() -> Self {
+        Self {
+            fused_parse_source_elements: std::cell::RefCell::new(Vec::new()),
+            condition_source_elements: std::cell::RefCell::new(Vec::new()),
+            condition_macro_name_elements: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl GpuDispatcher for CountingDispatcher {
+    fn dispatch(&self, program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, String> {
+        if program
+            .entry_op_id
+            .as_deref()
+            .is_some_and(|op_id| op_id.contains("define_include_undef_parse_fused"))
+        {
+            record_buffer_elements(program, "source", &self.fused_parse_source_elements);
+        }
+        if program.entry_op_id.as_deref().is_some_and(|op_id| {
+            op_id.contains("gpu_ifdef_value") || op_id.contains("gpu_if_expression")
+        }) {
+            record_buffer_elements(program, "source", &self.condition_source_elements);
+            record_buffer_elements(
+                program,
+                "macro_names_packed",
+                &self.condition_macro_name_elements,
+            );
+        }
+        RefDispatcher.dispatch(program, inputs)
+    }
+
+    fn requires_output_inputs(&self) -> bool {
+        true
+    }
+}
+
+fn record_buffer_elements(
+    program: &Program,
+    name: &'static str,
+    out: &std::cell::RefCell<Vec<DataType>>,
+) {
+    out.borrow_mut().extend(
+        program
+            .buffers()
+            .iter()
+            .filter_map(|buffer| (buffer.name() == name).then_some(buffer.element())),
+    );
+}
+
 fn run(src: &[u8], macros: &[&[u8]]) -> Vec<DirectivePayload> {
     let classified = gpu_tokenize_and_classify(&RefDispatcher, src).expect("tokenize_and_classify");
     gpu_extract_directive_payloads(&RefDispatcher, &classified, macros)
         .expect("extract_directive_payloads")
+}
+
+fn assert_fused_payload_parse_source_is_u8(dispatcher: &CountingDispatcher) {
+    let elements = dispatcher.fused_parse_source_elements.borrow();
+    assert!(
+        !elements.is_empty(),
+        "directive payload extraction must dispatch the fused define/include/undef parser"
+    );
+    assert!(
+        elements
+            .iter()
+            .all(|element| matches!(element, DataType::U8)),
+        "fused directive payload parser must consume raw U8 source buffers, got {elements:?}"
+    );
+}
+
+fn assert_condition_evaluator_byte_buffers_are_u8(dispatcher: &CountingDispatcher) {
+    let source_elements = dispatcher.condition_source_elements.borrow();
+    let macro_name_elements = dispatcher.condition_macro_name_elements.borrow();
+    assert!(
+        !source_elements.is_empty(),
+        "directive payload extraction must dispatch conditional evaluators"
+    );
+    assert!(
+        !macro_name_elements.is_empty(),
+        "directive payload extraction must expose conditional macro-name buffers"
+    );
+    assert!(
+        source_elements
+            .iter()
+            .all(|element| matches!(element, DataType::U8)),
+        "conditional directive evaluators must consume raw U8 source buffers, got {source_elements:?}"
+    );
+    assert!(
+        macro_name_elements
+            .iter()
+            .all(|element| matches!(element, DataType::U8)),
+        "conditional directive evaluators must consume raw U8 macro-name buffers, got {macro_name_elements:?}"
+    );
 }
 
 fn directive_payloads(src: &[u8], macros: &[&[u8]]) -> Vec<DirectivePayload> {
@@ -196,6 +291,44 @@ fn undef_extracts_macro_name() {
         DirectivePayload::Undef { name } => assert_eq!(name.as_slice(), b"_LONGER_NAME_42"),
         other => panic!("expected Undef payload, got {other:?}"),
     }
+}
+
+#[test]
+fn fused_define_include_undef_parse_consumes_raw_u8_source() {
+    let dispatcher = CountingDispatcher::new();
+    let classified = gpu_tokenize_and_classify(
+        &dispatcher,
+        b"#define FOO 42\n#include <stdio.h>\n#undef FOO\n",
+    )
+    .expect("tokenize_and_classify");
+    let payloads =
+        gpu_extract_directive_payloads(&dispatcher, &classified, &[]).expect("payload extraction");
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload, DirectivePayload::Define { .. })));
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload, DirectivePayload::Include { .. })));
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload, DirectivePayload::Undef { .. })));
+    assert_fused_payload_parse_source_is_u8(&dispatcher);
+}
+
+#[test]
+fn condition_evaluators_consume_raw_u8_byte_buffers() {
+    let dispatcher = CountingDispatcher::new();
+    let classified = gpu_tokenize_and_classify(&dispatcher, b"#ifdef FOO\n#if defined(FOO) && 1\n")
+        .expect("tokenize_and_classify");
+    let payloads = gpu_extract_directive_payloads(&dispatcher, &classified, &[b"FOO"])
+        .expect("payload extraction");
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload, DirectivePayload::Ifdef { value: 1, .. })));
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload, DirectivePayload::IfExpr { value: 1, .. })));
+    assert_condition_evaluator_byte_buffers_are_u8(&dispatcher);
 }
 
 #[test]

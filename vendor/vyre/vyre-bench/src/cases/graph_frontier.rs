@@ -8,6 +8,8 @@ use crate::api::resident::{
 };
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+mod skewed_csr;
+
 const NODE_COUNT: u32 = 1_048_576;
 const EDGE_PERMUTATION_MULTIPLIER: u32 = 1_103_515_245;
 const EDGE_PERMUTATION_INCREMENT: u32 = 12_345;
@@ -36,7 +38,7 @@ impl BenchCase for GraphFrontierStep {
             id: self.id(),
             name: "Graph Frontier Step 1M".to_string(),
             description:
-                "Single-hop graph frontier expansion over a million-node permutation graph"
+                "Single-hop graph frontier expansion over a million-node permutation graph using deterministic inverse-edge gather"
                     .to_string(),
             tags: vec![
                 "graph".to_string(),
@@ -192,24 +194,29 @@ fn prepare_graph_frontier_case(
 fn graph_frontier_program() -> Program {
     Program::wrapped(
         vec![
-            BufferDecl::output("next", 0, DataType::U32).with_count(NODE_COUNT),
-            BufferDecl::storage("frontier", 1, BufferAccess::ReadOnly, DataType::U32)
+            BufferDecl::storage("frontier", 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(NODE_COUNT),
-            BufferDecl::storage("edges", 2, BufferAccess::ReadOnly, DataType::U32)
+            BufferDecl::storage("predecessors", 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(NODE_COUNT),
+            BufferDecl::output("next", 2, DataType::U32).with_count(NODE_COUNT),
         ],
         [256, 1, 1],
         vec![
-            Node::let_bind("idx", Expr::gid_x()),
+            Node::let_bind("dst", Expr::gid_x()),
             Node::if_then(
-                Expr::lt(Expr::var("idx"), Expr::u32(NODE_COUNT)),
-                vec![Node::if_then(
-                    Expr::lt(Expr::u32(0), Expr::load("frontier", Expr::var("idx"))),
-                    vec![
-                        Node::let_bind("dst", Expr::load("edges", Expr::var("idx"))),
-                        Node::store("next", Expr::var("dst"), Expr::u32(1)),
-                    ],
-                )],
+                Expr::lt(Expr::var("dst"), Expr::u32(NODE_COUNT)),
+                vec![
+                    Node::let_bind("src", Expr::load("predecessors", Expr::var("dst"))),
+                    Node::store(
+                        "next",
+                        Expr::var("dst"),
+                        Expr::select(
+                            Expr::lt(Expr::u32(0), Expr::load("frontier", Expr::var("src"))),
+                            Expr::u32(1),
+                            Expr::u32(0),
+                        ),
+                    ),
+                ],
             ),
         ],
     )
@@ -217,21 +224,20 @@ fn graph_frontier_program() -> Program {
 
 fn graph_frontier_inputs() -> Vec<Vec<u8>> {
     let mut frontier = vec![0_u8; NODE_COUNT as usize * 4];
-    let mut edges = vec![0_u8; NODE_COUNT as usize * 4];
+    let mut predecessors = vec![0_u8; NODE_COUNT as usize * 4];
     for index in 0..NODE_COUNT {
         let active = u32::from(index % 17 == 0 || index == NODE_COUNT / 2);
         write_u32(&mut frontier, index, active);
-        write_u32(&mut edges, index, permutation_edge(index));
+        write_u32(&mut predecessors, permutation_edge(index), index);
     }
-    vec![frontier, edges]
+    vec![frontier, predecessors]
 }
 
-fn graph_frontier_cpu_oracle(frontier: &[u8], edges: &[u8]) -> Vec<u8> {
+fn graph_frontier_cpu_oracle(frontier: &[u8], predecessors: &[u8]) -> Vec<u8> {
     let mut next = vec![0_u8; NODE_COUNT as usize * 4];
-    for index in 0..NODE_COUNT {
-        if read_u32(frontier, index) != 0 {
-            write_u32(&mut next, read_u32(edges, index), 1);
-        }
+    for dst in 0..NODE_COUNT {
+        let src = read_u32(predecessors, dst);
+        write_u32(&mut next, dst, u32::from(read_u32(frontier, src) != 0));
     }
     next
 }
@@ -301,8 +307,24 @@ mod tests {
     }
 
     #[test]
+    fn graph_frontier_inputs_encode_inverse_permutation_edges() {
+        let inputs = graph_frontier_inputs();
+        for source in 0..NODE_COUNT {
+            let dst = permutation_edge(source);
+            assert_eq!(
+                read_u32(&inputs[1], dst),
+                source,
+                "predecessor table must let each destination lane write a deterministic output slot"
+            );
+        }
+    }
+
+    #[test]
     fn graph_frontier_prepare_caches_oracle_and_program() {
         let prepared = prepare_graph_frontier_case(None).unwrap();
+        assert_eq!(prepared.program.buffers()[0].name(), "frontier");
+        assert_eq!(prepared.program.buffers()[1].name(), "predecessors");
+        assert_eq!(prepared.program.buffers()[2].name(), "next");
         assert_eq!(
             prepared.inputs.iter().map(Vec::len).sum::<usize>(),
             NODE_COUNT as usize * 8

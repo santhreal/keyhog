@@ -197,10 +197,9 @@ mod tests {
 
     #[test]
     fn moe_layer_k_greater_than_num_experts_errors() {
-        let err = moe_layer_route_and_accumulate(
-            "x", "wr", "br", "ei", "ew", "eo", "out", 2, 4, 2, 5,
-        )
-        .expect_err("k > num_experts");
+        let err =
+            moe_layer_route_and_accumulate("x", "wr", "br", "ei", "ew", "eo", "out", 2, 4, 2, 5)
+                .expect_err("k > num_experts");
         assert!(
             err.contains("k cannot exceed num_experts"),
             "moe_layer k/experts error: {err}"

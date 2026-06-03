@@ -9,7 +9,7 @@
 //!
 //! The analysis is a control-flow dataflow (NLL loan liveness) over the CFG, so
 //! it is correct across arbitrary control flow (branches included) and is the
-//! fixpoint the weir GPU backend evaluates batched across a whole crate. The
+//! fixpoint the downstream GPU backend evaluates batched across a whole crate. The
 //! fact schema is modeled on the Polonius input facts and is extended over time
 //! (regions, moves, ...) without breaking the engine's dependents.
 //!
@@ -132,7 +132,7 @@ pub fn analyze(facts: &BorrowFacts) -> Vec<Conflict> {
         }
     }
 
-    // Two monotone bitset fixpoints (the exact form the weir GPU backend
+    // Two monotone bitset fixpoints (the exact form the downstream GPU backend
     // evaluates, batched): `backward[p]` holds loans whose use is forward-
     // reachable from p, `forward[p]` holds loans whose issue reaches p. A loan
     // is live at p iff it is in both.
@@ -182,7 +182,7 @@ pub fn analyze(facts: &BorrowFacts) -> Vec<Conflict> {
 /// worklist until stable. With `adj = succ` this is backward liveness (use
 /// reachability); with `adj = pred` it is forward issue reachability. The set
 /// lattice is finite and the transfer monotone, so it terminates on any CFG
-/// (loops included). This is the kernel the weir GPU backend evaluates.
+/// (loops included). This is the kernel the downstream GPU backend evaluates.
 fn fixpoint(adj: &[Vec<usize>], seed: &[Vec<u64>], n: usize, words: usize) -> Vec<Vec<u64>> {
     // dependents[q] = points p that read out[q] (i.e. q in adj[p]).
     let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];

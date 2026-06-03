@@ -14,6 +14,9 @@ use vyre_primitives::bitset::clear_bit::{bitset_clear_bit, cpu_ref as clear_bit_
 use vyre_primitives::bitset::contains::{bitset_contains, cpu_ref as contains_cpu};
 use vyre_primitives::bitset::copy::{bitset_copy, cpu_ref as copy_cpu};
 use vyre_primitives::bitset::equal::{bitset_equal, cpu_ref as equal_cpu};
+use vyre_primitives::bitset::frontier::{
+    absorb_new_frontier_bits, frontier_absorb_new_bits_no_counts_for_node_count_program,
+};
 use vyre_primitives::bitset::not::{bitset_not, cpu_ref as not_cpu};
 use vyre_primitives::bitset::or::{bitset_or, cpu_ref as or_cpu};
 use vyre_primitives::bitset::or_into::{bitset_or_into, cpu_ref as or_into_cpu};
@@ -165,6 +168,40 @@ fn cuda_bitset_zero_parity_crosses_workgroup_lanes() {
     gpu.truncate(cpu_target.len());
     zero_cpu(&mut cpu_target);
     assert_eq!(gpu, cpu_target);
+}
+
+#[test]
+fn cuda_frontier_absorb_no_counts_masks_tail_and_emits_new_wave() {
+    let node_count = 65;
+    let mut visited = vec![0b0001u32, 0, 0];
+    let neighbors = vec![0b0111u32, u32::MAX, u32::MAX];
+    let mut expected_next = Vec::new();
+    absorb_new_frontier_bits(node_count, &mut visited, &neighbors, &mut expected_next)
+        .expect("Fix: frontier absorb CPU oracle should accept canonical shapes");
+
+    let program = frontier_absorb_new_bits_no_counts_for_node_count_program(
+        "visited",
+        "neighbors",
+        "next",
+        node_count,
+    );
+    let inputs = vec![
+        u32_bytes(&[0b0001u32, 0, 0]),
+        u32_bytes(&neighbors),
+        vec![0xFFu8; 12],
+    ];
+    let outputs = dispatch_grid(&program, &inputs, 1);
+    let mut gpu_visited = bytes_u32(&outputs[0]);
+    let mut gpu_next = bytes_u32(&outputs[1]);
+    gpu_visited.truncate(3);
+    gpu_next.truncate(3);
+
+    assert_eq!(gpu_visited, visited);
+    assert_eq!(gpu_next, expected_next);
+    assert_eq!(
+        gpu_next[2], 1,
+        "only node 64 may survive the final-word mask"
+    );
 }
 
 #[test]

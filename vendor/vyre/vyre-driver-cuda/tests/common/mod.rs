@@ -16,6 +16,21 @@ pub(crate) const GENERATED_LANE_COUNT: usize = 512;
 /// Default generated-matrix workgroup width for live CUDA/reference differential tests.
 pub(crate) const GENERATED_WORKGROUP_SIZE_X: u32 = 128;
 
+/// Concatenate the split CUDA resident-dispatch implementation for source contracts.
+pub(crate) fn resident_dispatch_source() -> String {
+    [
+        include_str!("../../src/backend/resident_dispatch/helpers.rs"),
+        include_str!("../../src/backend/resident_dispatch/borrowed.rs"),
+        include_str!("../../src/backend/resident_dispatch/async_dispatch.rs"),
+        include_str!("../../src/backend/resident_dispatch/batch.rs"),
+        include_str!("../../src/backend/resident_dispatch/sync.rs"),
+        include_str!("../../src/backend/resident_dispatch/sequence_api.rs"),
+        include_str!("../../src/backend/resident_dispatch/sequence_fused.rs"),
+        include_str!("../../src/backend/resident_dispatch/timed.rs"),
+    ]
+    .join("\n")
+}
+
 /// CUDA-backed optimizer dispatcher used by parity and self-optimizer tests.
 pub(crate) struct CudaOptimizerDispatcher<'a> {
     /// Live CUDA backend borrowed for the duration of one test.

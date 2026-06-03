@@ -366,4 +366,30 @@ fn cuda_compiled_persistent_mismatched_launch_path_uses_resident_readback_into()
             && !source.contains(concat!("chunk_index", ".saturating_mul")),
         "Fix: compiled CUDA graph replay must not saturate chunk/lane indexing and replay into the wrong output slot."
     );
+    let enqueue_error_branch = source
+        .split("self.backend.enqueue_cuda_graph_replay_with_input_state")
+        .nth(1)
+        .expect("Fix: compiled CUDA graph replay must enqueue graph work through the shared replay helper.")
+        .split("if !launched.is_empty()")
+        .next()
+        .expect("Fix: compiled CUDA graph replay enqueue-error branch must precede batched replay telemetry.");
+    assert!(
+        !enqueue_error_branch.contains("return_cached_graph_lanes"),
+        "Fix: compiled CUDA graph replay must drop graph lanes after enqueue/cuGraphLaunch errors instead of returning potentially poisoned streams to the cache."
+    );
+    let finish_error_branch = source
+        .split("if let Err(error) =\n                self.finish_cuda_graph_indexed_lane_replays")
+        .nth(1)
+        .expect("Fix: compiled CUDA graph replay must explicitly handle indexed lane finish errors.")
+        .split("for launched_batch in launched.iter().copied()")
+        .next()
+        .expect("Fix: compiled CUDA graph replay finish-error branch must precede materialized cache remember.");
+    assert!(
+        !finish_error_branch.contains("return_cached_graph_lanes"),
+        "Fix: compiled CUDA graph replay must drop graph lanes after a replay finish/readback error instead of returning potentially poisoned streams to the cache."
+    );
+    assert!(
+        !source.contains("let _ = self.return_cached_graph_lanes"),
+        "Fix: compiled CUDA graph replay must not discard graph-lane cache return failures; cache lock poisoning must stay operator-visible."
+    );
 }

@@ -6,7 +6,7 @@ mod common;
 
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
-use vyre_primitives::graph::scc_decompose::{cpu_ref, scc_decompose};
+use vyre_primitives::graph::scc_decompose::{cpu_ref, scc_decompose, scc_decompose_dispatch_grid};
 
 fn run(
     node_count: u32,
@@ -22,8 +22,7 @@ fn run(
         u32_bytes(component_in),
     ];
     let mut config = DispatchConfig::default();
-    // Workgroup is [1,1,1] in this Program; one thread per node.
-    config.grid_override = Some([node_count.max(1), 1, 1]);
+    config.grid_override = Some(scc_decompose_dispatch_grid(node_count));
     let outputs = with_live_backend("SCC decompose", |backend| {
         backend
             .dispatch(&program, &inputs, &config)
@@ -85,4 +84,33 @@ fn cuda_scc_decompose_disjoint_intersect_yields_no_writes() {
     let gpu = run(4, &forward, &backward, &component_in, pivot);
     assert_eq!(gpu, cpu);
     assert_eq!(gpu, vec![u32::MAX; 4]);
+}
+
+#[test]
+fn cuda_scc_decompose_covers_nodes_past_first_workgroup() {
+    let node_count = 513;
+    let words = ((node_count + 31) / 32) as usize;
+    let mut forward = vec![0u32; words];
+    let mut backward = vec![0u32; words];
+
+    let set_bit = |bits: &mut [u32], node: u32| {
+        bits[(node / 32) as usize] |= 1u32 << (node % 32);
+    };
+    set_bit(&mut forward, 300);
+    set_bit(&mut backward, 300);
+    set_bit(&mut forward, 512);
+    set_bit(&mut backward, 512);
+    set_bit(&mut forward, 301);
+    set_bit(&mut backward, 302);
+
+    let component_in = vec![u32::MAX; node_count as usize];
+    let pivot = 23;
+    let cpu = cpu_ref(node_count, &forward, &backward, &component_in, pivot);
+    let gpu = run(node_count, &forward, &backward, &component_in, pivot);
+
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu[300], pivot);
+    assert_eq!(gpu[512], pivot);
+    assert_eq!(gpu[301], u32::MAX);
+    assert_eq!(gpu[302], u32::MAX);
 }

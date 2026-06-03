@@ -4,9 +4,9 @@
 //! pattern proven in the C11 lexer.  The CPU reference (`core::lex`)
 //! is validated token-for-token against `rustc_lexer`.
 
-/// Token constants and predicates.
-pub mod tokens;
 /// Post-lex keyword promotion.
 pub mod keyword;
 /// Lexer kernels (CPU reference + GPU plan builder).
 pub mod lexer;
+/// Token constants and predicates.
+pub mod tokens;

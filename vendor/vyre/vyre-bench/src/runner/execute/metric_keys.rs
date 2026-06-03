@@ -1,6 +1,9 @@
 //! Metric-key plumbing: small key/value helpers used by `collect.rs` and
 //! `report.rs` to look up metrics by stable name.
 
+#[path = "metric_keys/graph.rs"]
+mod graph;
+
 pub(super) fn rate_per_second_x1000(units: u64, wall_ns: u64, scale: u64) -> u64 {
     let numerator = u128::from(units) * 1_000_000_000_000u128;
     let denominator = u128::from(wall_ns) * u128::from(scale);
@@ -30,6 +33,10 @@ pub(super) fn gpu_counter_value(
 }
 
 pub(super) fn custom_metric_key(prefix: &'static str, name: &str) -> Option<&'static str> {
+    if let Some(key) = graph::custom_graph_metric_key(prefix, name) {
+        return Some(key);
+    }
+
     match (prefix, name) {
         ("", "flop_count") => Some("flop_count"),
         ("", "clock_mem_max_mhz") => Some("clock_mem_max_mhz"),
@@ -98,12 +105,240 @@ pub(super) fn custom_metric_key(prefix: &'static str, name: &str) -> Option<&'st
         ("", "megakernel_condition_slots_per_sec_x1000") => {
             Some("megakernel_condition_slots_per_sec_x1000")
         }
+        ("", "conditional_eval_resident_buffers") => Some("conditional_eval_resident_buffers"),
+        ("", "conditional_eval_device_reset_sequence") => {
+            Some("conditional_eval_device_reset_sequence")
+        }
+        ("", "conditional_eval_resident_reset_bytes") => {
+            Some("conditional_eval_resident_reset_bytes")
+        }
+        ("", "conditional_batch_resident_buffers") => Some("conditional_batch_resident_buffers"),
+        ("", "conditional_batch_device_reset_sequence") => {
+            Some("conditional_batch_device_reset_sequence")
+        }
+        ("", "conditional_batch_resident_reset_bytes") => {
+            Some("conditional_batch_resident_reset_bytes")
+        }
         ("", "dataflow_nodes") => Some("dataflow_nodes"),
         ("", "dataflow_bitset_words") => Some("dataflow_bitset_words"),
         ("", "dataflow_graph_nodes") => Some("dataflow_graph_nodes"),
         ("", "dataflow_graph_edges") => Some("dataflow_graph_edges"),
         ("", "dataflow_ifds_step") => Some("dataflow_ifds_step"),
         ("", "dataflow_points_to_alias_step") => Some("dataflow_points_to_alias_step"),
+        ("", "dataflow_ifds_skewed_nodes") => Some("dataflow_ifds_skewed_nodes"),
+        ("", "dataflow_ifds_skewed_edges") => Some("dataflow_ifds_skewed_edges"),
+        ("", "dataflow_ifds_skewed_frontier_words") => Some("dataflow_ifds_skewed_frontier_words"),
+        ("", "dataflow_ifds_skewed_active_sources") => Some("dataflow_ifds_skewed_active_sources"),
+        ("", "dataflow_ifds_skewed_allowed_edges") => Some("dataflow_ifds_skewed_allowed_edges"),
+        ("", "dataflow_ifds_skewed_filtered_edges") => Some("dataflow_ifds_skewed_filtered_edges"),
+        ("", "dataflow_ifds_skewed_output_words_set") => {
+            Some("dataflow_ifds_skewed_output_words_set")
+        }
+        ("", "dataflow_ifds_skewed_max_degree") => Some("dataflow_ifds_skewed_max_degree"),
+        ("", "dataflow_ifds_skewed_high_degree_sources") => {
+            Some("dataflow_ifds_skewed_high_degree_sources")
+        }
+        ("", "dataflow_ifds_skewed_resident_buffers") => {
+            Some("dataflow_ifds_skewed_resident_buffers")
+        }
+        ("", "dataflow_ifds_skewed_workgroup_size_x") => {
+            Some("dataflow_ifds_skewed_workgroup_size_x")
+        }
+        ("", "dataflow_ifds_skewed_speedup_x1000") => Some("dataflow_ifds_skewed_speedup_x1000"),
+        ("", "dataflow_ifds_queue_capacity") => Some("dataflow_ifds_queue_capacity"),
+        ("", "dataflow_ifds_queue_lane_reduction_x1000") => {
+            Some("dataflow_ifds_queue_lane_reduction_x1000")
+        }
+        ("", "dataflow_ifds_queue_resident_buffers") => {
+            Some("dataflow_ifds_queue_resident_buffers")
+        }
+        ("", "dataflow_ifds_queue_workgroup_size_x") => {
+            Some("dataflow_ifds_queue_workgroup_size_x")
+        }
+        ("", "dataflow_ifds_queue_parallel_materializer") => {
+            Some("dataflow_ifds_queue_parallel_materializer")
+        }
+        ("", "dataflow_ifds_queue_row_strided_traverse") => {
+            Some("dataflow_ifds_queue_row_strided_traverse")
+        }
+        ("", "dataflow_ifds_queue_split_high_degree") => {
+            Some("dataflow_ifds_queue_split_high_degree")
+        }
+        ("", "dataflow_ifds_queue_high_degree_threshold") => {
+            Some("dataflow_ifds_queue_high_degree_threshold")
+        }
+        ("", "dataflow_ifds_queue_fused_frontier_clear") => {
+            Some("dataflow_ifds_queue_fused_frontier_clear")
+        }
+        ("", "dataflow_ifds_queue_reset_grid_lanes") => {
+            Some("dataflow_ifds_queue_reset_grid_lanes")
+        }
+        ("", "dataflow_ifds_queue_high_degree_capacity") => {
+            Some("dataflow_ifds_queue_high_degree_capacity")
+        }
+        ("", "dataflow_ifds_queue_traverse_logical_lanes") => {
+            Some("dataflow_ifds_queue_traverse_logical_lanes")
+        }
+        ("", "dataflow_ifds_queue_traverse_lane_reduction_x1000") => {
+            Some("dataflow_ifds_queue_traverse_lane_reduction_x1000")
+        }
+        ("", "dataflow_ifds_queue_speedup_x1000") => Some("dataflow_ifds_queue_speedup_x1000"),
+        ("", "dataflow_ifds_closure_nodes") => Some("dataflow_ifds_closure_nodes"),
+        ("", "dataflow_ifds_closure_edges") => Some("dataflow_ifds_closure_edges"),
+        ("", "dataflow_ifds_closure_frontier_words") => {
+            Some("dataflow_ifds_closure_frontier_words")
+        }
+        ("", "dataflow_ifds_closure_active_sources") => {
+            Some("dataflow_ifds_closure_active_sources")
+        }
+        ("", "dataflow_ifds_closure_output_words_set") => {
+            Some("dataflow_ifds_closure_output_words_set")
+        }
+        ("", "dataflow_ifds_closure_max_degree") => Some("dataflow_ifds_closure_max_degree"),
+        ("", "dataflow_ifds_closure_high_degree_sources") => {
+            Some("dataflow_ifds_closure_high_degree_sources")
+        }
+        ("", "dataflow_ifds_closure_iterations") => Some("dataflow_ifds_closure_iterations"),
+        ("", "dataflow_ifds_closure_changed") => Some("dataflow_ifds_closure_changed"),
+        ("", "dataflow_ifds_closure_fixpoint_iterations") => {
+            Some("dataflow_ifds_closure_fixpoint_iterations")
+        }
+        ("", "dataflow_ifds_closure_max_iterations") => {
+            Some("dataflow_ifds_closure_max_iterations")
+        }
+        ("", "dataflow_ifds_closure_elided_iterations") => {
+            Some("dataflow_ifds_closure_elided_iterations")
+        }
+        ("", "dataflow_ifds_closure_resident_buffers") => {
+            Some("dataflow_ifds_closure_resident_buffers")
+        }
+        ("", "dataflow_ifds_closure_resident_reset_bytes") => {
+            Some("dataflow_ifds_closure_resident_reset_bytes")
+        }
+        ("", "dataflow_ifds_closure_device_reset_sequence") => {
+            Some("dataflow_ifds_closure_device_reset_sequence")
+        }
+        ("", "dataflow_ifds_closure_workgroup_size_x") => {
+            Some("dataflow_ifds_closure_workgroup_size_x")
+        }
+        ("", "dataflow_ifds_closure_speedup_x1000") => Some("dataflow_ifds_closure_speedup_x1000"),
+        ("", "dataflow_ifds_closure_queue_capacity") => {
+            Some("dataflow_ifds_closure_queue_capacity")
+        }
+        ("", "dataflow_ifds_closure_queue_capacity_reduction_x1000") => {
+            Some("dataflow_ifds_closure_queue_capacity_reduction_x1000")
+        }
+        ("", "dataflow_ifds_closure_seed_queue_len") => {
+            Some("dataflow_ifds_closure_seed_queue_len")
+        }
+        ("", "dataflow_ifds_closure_dispatch_count") => {
+            Some("dataflow_ifds_closure_dispatch_count")
+        }
+        ("", "dataflow_ifds_closure_total_queue_pops") => {
+            Some("dataflow_ifds_closure_total_queue_pops")
+        }
+        ("", "dataflow_ifds_closure_max_wave_queue_len") => {
+            Some("dataflow_ifds_closure_max_wave_queue_len")
+        }
+        ("", "dataflow_ifds_closure_queue_delta") => Some("dataflow_ifds_closure_queue_delta"),
+        ("", "dataflow_ifds_closure_row_strided_delta") => {
+            Some("dataflow_ifds_closure_row_strided_delta")
+        }
+        ("", "dataflow_ifds_closure_seed_scan_elided") => {
+            Some("dataflow_ifds_closure_seed_scan_elided")
+        }
+        ("", "dataflow_ifds_closure_wave_profiled") => Some("dataflow_ifds_closure_wave_profiled"),
+        ("", "dataflow_ifds_closure_fixed_delta_source_slots") => {
+            Some("dataflow_ifds_closure_fixed_delta_source_slots")
+        }
+        ("", "dataflow_ifds_closure_profiled_delta_source_slots") => {
+            Some("dataflow_ifds_closure_profiled_delta_source_slots")
+        }
+        ("", "dataflow_ifds_closure_elided_delta_source_slots") => {
+            Some("dataflow_ifds_closure_elided_delta_source_slots")
+        }
+        ("", "dataflow_ifds_closure_fixed_delta_lanes") => {
+            Some("dataflow_ifds_closure_fixed_delta_lanes")
+        }
+        ("", "dataflow_ifds_closure_profiled_delta_lanes") => {
+            Some("dataflow_ifds_closure_profiled_delta_lanes")
+        }
+        ("", "dataflow_ifds_closure_elided_delta_lanes") => {
+            Some("dataflow_ifds_closure_elided_delta_lanes")
+        }
+        ("", "dataflow_ifds_closure_delta_lane_elision_x1000") => {
+            Some("dataflow_ifds_closure_delta_lane_elision_x1000")
+        }
+        ("", "dataflow_ifds_closure_launch_delta_lanes") => {
+            Some("dataflow_ifds_closure_launch_delta_lanes")
+        }
+        ("", "dataflow_ifds_closure_launch_elided_delta_lanes") => {
+            Some("dataflow_ifds_closure_launch_elided_delta_lanes")
+        }
+        ("", "dataflow_ifds_closure_launch_lane_elision_x1000") => {
+            Some("dataflow_ifds_closure_launch_lane_elision_x1000")
+        }
+        ("", "scan_ac_irregular_haystack_bytes") => Some("scan_ac_irregular_haystack_bytes"),
+        ("", "scan_ac_irregular_packed_haystack_words") => {
+            Some("scan_ac_irregular_packed_haystack_words")
+        }
+        ("", "scan_ac_irregular_patterns") => Some("scan_ac_irregular_patterns"),
+        ("", "scan_ac_irregular_dfa_states") => Some("scan_ac_irregular_dfa_states"),
+        ("", "scan_ac_irregular_max_pattern_len") => Some("scan_ac_irregular_max_pattern_len"),
+        ("", "scan_ac_irregular_output_records") => Some("scan_ac_irregular_output_records"),
+        ("", "scan_ac_irregular_expected_matches") => Some("scan_ac_irregular_expected_matches"),
+        ("", "scan_ac_irregular_max_matches") => Some("scan_ac_irregular_max_matches"),
+        ("", "scan_ac_irregular_match_readback_bytes") => {
+            Some("scan_ac_irregular_match_readback_bytes")
+        }
+        ("", "scan_ac_irregular_avoided_match_readback_bytes") => {
+            Some("scan_ac_irregular_avoided_match_readback_bytes")
+        }
+        ("", "scan_ac_irregular_bounded_ranges_prefilter") => {
+            Some("scan_ac_irregular_bounded_ranges_prefilter")
+        }
+        ("", "scan_ac_irregular_bounded_ranges_prefilter_skipped_lanes_x1000") => {
+            Some("scan_ac_irregular_bounded_ranges_prefilter_skipped_lanes_x1000")
+        }
+        ("", "scan_ac_irregular_bounded_ranges_suffix3_prefilter") => {
+            Some("scan_ac_irregular_bounded_ranges_suffix3_prefilter")
+        }
+        ("", "scan_ac_irregular_count_only") => Some("scan_ac_irregular_count_only"),
+        ("", "scan_ac_irregular_count_prefilter") => Some("scan_ac_irregular_count_prefilter"),
+        ("", "scan_ac_irregular_count_readback_bytes") => {
+            Some("scan_ac_irregular_count_readback_bytes")
+        }
+        ("", "scan_ac_irregular_candidate_end_bytes") => {
+            Some("scan_ac_irregular_candidate_end_bytes")
+        }
+        ("", "scan_ac_irregular_candidate_end_lanes") => {
+            Some("scan_ac_irregular_candidate_end_lanes")
+        }
+        ("", "scan_ac_irregular_candidate_suffix2_lanes") => {
+            Some("scan_ac_irregular_candidate_suffix2_lanes")
+        }
+        ("", "scan_ac_irregular_candidate_suffix3_lanes") => {
+            Some("scan_ac_irregular_candidate_suffix3_lanes")
+        }
+        ("", "scan_ac_irregular_count_prefilter_skipped_lanes_x1000") => {
+            Some("scan_ac_irregular_count_prefilter_skipped_lanes_x1000")
+        }
+        ("", "scan_ac_irregular_suffix2_extra_skipped_lanes_x1000") => {
+            Some("scan_ac_irregular_suffix2_extra_skipped_lanes_x1000")
+        }
+        ("", "scan_ac_irregular_suffix3_extra_skipped_lanes_x1000") => {
+            Some("scan_ac_irregular_suffix3_extra_skipped_lanes_x1000")
+        }
+        ("", "scan_ac_irregular_planted_matches") => Some("scan_ac_irregular_planted_matches"),
+        ("", "scan_ac_irregular_resident_buffers") => Some("scan_ac_irregular_resident_buffers"),
+        ("", "scan_ac_irregular_resident_reset_bytes") => {
+            Some("scan_ac_irregular_resident_reset_bytes")
+        }
+        ("", "scan_ac_irregular_device_reset_sequence") => {
+            Some("scan_ac_irregular_device_reset_sequence")
+        }
+        ("", "scan_ac_irregular_workgroup_size_x") => Some("scan_ac_irregular_workgroup_size_x"),
+        ("", "scan_ac_irregular_speedup_x1000") => Some("scan_ac_irregular_speedup_x1000"),
         ("", "sparse_items") => Some("sparse_items"),
         ("", "callgraph_nodes") => Some("callgraph_nodes"),
         ("", "metadata_records") => Some("metadata_records"),
@@ -179,6 +414,35 @@ pub(super) fn custom_metric_key(prefix: &'static str, name: &str) -> Option<&'st
         ("", "egraph_applied_rewrites") => Some("egraph_applied_rewrites"),
         ("", "egraph_hit_iteration_limit") => Some("egraph_hit_iteration_limit"),
         ("", "egraph_hit_node_limit") => Some("egraph_hit_node_limit"),
+        ("", "rust_frontend_public_pipeline_speedup_x1000") => {
+            Some("rust_frontend_public_pipeline_speedup_x1000")
+        }
+        ("", "rust_frontend_dispatch_speedup_x1000") => {
+            Some("rust_frontend_dispatch_speedup_x1000")
+        }
+        ("", "rust_frontend_lanes") => Some("rust_frontend_lanes"),
+        ("", "rust_frontend_gpu_lexer_speedup_x1000") => {
+            Some("rust_frontend_gpu_lexer_speedup_x1000")
+        }
+        ("", "rust_frontend_gpu_lexer_tokens") => Some("rust_frontend_gpu_lexer_tokens"),
+        ("", "rust_frontend_gpu_lexer_source_bytes") => {
+            Some("rust_frontend_gpu_lexer_source_bytes")
+        }
+        ("", "rust_frontend_gpu_lexer_batch_speedup_x1000") => {
+            Some("rust_frontend_gpu_lexer_batch_speedup_x1000")
+        }
+        ("", "rust_frontend_gpu_lexer_batch_tokens") => {
+            Some("rust_frontend_gpu_lexer_batch_tokens")
+        }
+        ("", "rust_frontend_gpu_lexer_batch_source_bytes") => {
+            Some("rust_frontend_gpu_lexer_batch_source_bytes")
+        }
+        ("", "rust_frontend_gpu_lexer_batch_sources") => {
+            Some("rust_frontend_gpu_lexer_batch_sources")
+        }
+        ("", "rust_frontend_gpu_lexer_batch_token_stride") => {
+            Some("rust_frontend_gpu_lexer_batch_token_stride")
+        }
         ("baseline_", "flop_count") => Some("baseline_flop_count"),
         ("baseline_", "megakernel_items_processed") => Some("baseline_megakernel_items_processed"),
         _ => None,
@@ -252,5 +516,74 @@ pub(super) fn metric_key(prefix: &'static str, name: &'static str) -> Option<&'s
         ("baseline_", "atomic_op_count") => Some("baseline_atomic_op_count"),
         ("baseline_", "wire_bytes") => Some("baseline_wire_bytes"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::custom_metric_key;
+
+    #[test]
+    fn custom_metric_key_keeps_queue_closure_telemetry_visible() {
+        for name in [
+            "dataflow_ifds_closure_queue_capacity",
+            "dataflow_ifds_closure_queue_capacity_reduction_x1000",
+            "dataflow_ifds_closure_seed_queue_len",
+            "dataflow_ifds_closure_dispatch_count",
+            "dataflow_ifds_closure_total_queue_pops",
+            "dataflow_ifds_closure_max_wave_queue_len",
+            "dataflow_ifds_closure_queue_delta",
+            "dataflow_ifds_closure_row_strided_delta",
+            "dataflow_ifds_closure_seed_scan_elided",
+            "dataflow_ifds_closure_wave_profiled",
+            "dataflow_ifds_closure_fixed_delta_source_slots",
+            "dataflow_ifds_closure_profiled_delta_source_slots",
+            "dataflow_ifds_closure_elided_delta_source_slots",
+            "dataflow_ifds_closure_fixed_delta_lanes",
+            "dataflow_ifds_closure_profiled_delta_lanes",
+            "dataflow_ifds_closure_elided_delta_lanes",
+            "dataflow_ifds_closure_delta_lane_elision_x1000",
+            "dataflow_ifds_closure_launch_delta_lanes",
+            "dataflow_ifds_closure_launch_elided_delta_lanes",
+            "dataflow_ifds_closure_launch_lane_elision_x1000",
+        ] {
+            assert_eq!(custom_metric_key("", name), Some(name));
+        }
+    }
+
+    #[test]
+    fn custom_metric_key_keeps_ifds_queue_split_telemetry_visible() {
+        for name in [
+            "dataflow_ifds_queue_high_degree_capacity",
+            "dataflow_ifds_queue_split_high_degree",
+            "dataflow_ifds_queue_high_degree_threshold",
+            "dataflow_ifds_queue_traverse_logical_lanes",
+            "dataflow_ifds_queue_traverse_lane_reduction_x1000",
+            "dataflow_ifds_queue_fused_frontier_clear",
+            "dataflow_ifds_queue_reset_grid_lanes",
+        ] {
+            assert_eq!(custom_metric_key("", name), Some(name));
+        }
+    }
+
+    #[test]
+    fn custom_metric_key_keeps_scan_count_prefilter_telemetry_visible() {
+        for name in [
+            "scan_ac_irregular_bounded_ranges_prefilter",
+            "scan_ac_irregular_bounded_ranges_prefilter_skipped_lanes_x1000",
+            "scan_ac_irregular_bounded_ranges_suffix3_prefilter",
+            "scan_ac_irregular_count_only",
+            "scan_ac_irregular_count_prefilter",
+            "scan_ac_irregular_count_readback_bytes",
+            "scan_ac_irregular_candidate_end_bytes",
+            "scan_ac_irregular_candidate_end_lanes",
+            "scan_ac_irregular_candidate_suffix2_lanes",
+            "scan_ac_irregular_candidate_suffix3_lanes",
+            "scan_ac_irregular_count_prefilter_skipped_lanes_x1000",
+            "scan_ac_irregular_suffix2_extra_skipped_lanes_x1000",
+            "scan_ac_irregular_suffix3_extra_skipped_lanes_x1000",
+        ] {
+            assert_eq!(custom_metric_key("", name), Some(name));
+        }
     }
 }

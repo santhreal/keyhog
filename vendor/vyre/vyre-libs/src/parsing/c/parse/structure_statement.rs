@@ -1,8 +1,8 @@
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
-use vyre_foundation::memory_model::MemoryOrdering;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::memory_model::MemoryOrdering;
 
 /// Compact C11 statement spans for AST construction.
 #[must_use]

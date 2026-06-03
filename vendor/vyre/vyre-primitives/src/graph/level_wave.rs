@@ -37,18 +37,47 @@
 //!   already, so the body itself doesn't need to re-check.
 //! - `max_depth`: maximum depth value in the topology.
 //!
-//! Caller receives a `Program` that, when dispatched once, runs
-//! every lane at every depth wave from 0..max_depth. Barriers between
-//! waves ensure depth-N work is fully complete before depth-N+1
-//! starts.
+//! Caller receives a `Program` that runs every lane at every depth wave
+//! from 0..max_depth. Single-workgroup waves use one compact loop.
+//! Multi-workgroup waves expose top-level `GridSync` boundaries so
+//! backends without native grid barriers can split the traversal into
+//! launch-separated depth waves.
 
 use std::sync::Arc;
 
 use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::{
+    BufferAccess, BufferDecl, DataType, Expr, MemoryOrdering, Node, Program,
+};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::level_wave";
+/// Workgroup shape for per-node depth-wave traversal.
+pub const LEVEL_WAVE_WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+
+/// Dispatch grid that covers every level-wave lane.
+#[must_use]
+pub const fn level_wave_dispatch_grid(lane_count: u32) -> [u32; 3] {
+    let blocks = lane_count.div_ceil(LEVEL_WAVE_WORKGROUP_SIZE[0]);
+    [if blocks == 0 { 1 } else { blocks }, 1, 1]
+}
+
+fn depth_wave_body(
+    step_body: Vec<Node>,
+    depth_buf: &str,
+    depth: Expr,
+    lane_count: u32,
+) -> Vec<Node> {
+    let lane = Expr::InvocationId { axis: 0 };
+    let depth_for_lane = Expr::load(depth_buf, lane.clone());
+    vec![Node::if_then(
+        Expr::and(
+            Expr::lt(lane, Expr::u32(lane_count)),
+            Expr::eq(depth_for_lane, depth),
+        ),
+        step_body,
+    )]
+}
 
 /// Build a Program that runs `step_body` per lane in
 /// depth-ordered waves.
@@ -74,37 +103,48 @@ pub fn level_wave_program(
     max_depth: u32,
     lane_count: u32,
 ) -> Program {
-    let lane = Expr::InvocationId { axis: 0 };
-    let depth_for_lane = Expr::load(depth_buf, lane.clone());
-
-    let body = vec![Node::loop_for(
-        "__lw_depth__",
-        Expr::u32(0),
-        Expr::u32(max_depth),
-        vec![
-            // Per-lane gate: only the lanes whose declared depth
-            // matches the current wave participate.
-            Node::if_then(
-                Expr::and(
-                    Expr::lt(lane.clone(), Expr::u32(lane_count)),
-                    Expr::eq(depth_for_lane.clone(), Expr::var("__lw_depth__")),
-                ),
-                step_body.clone(),
-            ),
-            // Wave barrier: every lane waits here so depth-N
-            // effects are globally visible before depth-N+1 starts.
-            Node::Barrier {
-                ordering: vyre_foundation::MemoryOrdering::SeqCst,
+    let body = if lane_count <= LEVEL_WAVE_WORKGROUP_SIZE[0] {
+        vec![Node::loop_for(
+            "__lw_depth__",
+            Expr::u32(0),
+            Expr::u32(max_depth),
+            {
+                let mut loop_body = depth_wave_body(
+                    step_body.clone(),
+                    depth_buf,
+                    Expr::var("__lw_depth__"),
+                    lane_count,
+                );
+                loop_body.push(Node::Barrier {
+                    ordering: MemoryOrdering::SeqCst,
+                });
+                loop_body
             },
-        ],
-    )];
+        )]
+    } else {
+        let mut waves = Vec::with_capacity(max_depth.saturating_mul(2) as usize);
+        for depth in 0..max_depth {
+            waves.extend(depth_wave_body(
+                step_body.clone(),
+                depth_buf,
+                Expr::u32(depth),
+                lane_count,
+            ));
+            if depth + 1 < max_depth {
+                waves.push(Node::Barrier {
+                    ordering: MemoryOrdering::GridSync,
+                });
+            }
+        }
+        waves
+    };
 
     Program::wrapped(
         vec![
             BufferDecl::storage(depth_buf, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(lane_count),
         ],
-        [256, 1, 1],
+        LEVEL_WAVE_WORKGROUP_SIZE,
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
@@ -135,6 +175,41 @@ where
 mod tests {
     use super::*;
 
+    fn entry_region_body(program: &Program) -> &[Node] {
+        match &program.entry()[0] {
+            Node::Region { body, .. } => body.as_slice(),
+            other => panic!("expected wrapped level-wave region, got {other:?}"),
+        }
+    }
+
+    fn contains_grid_sync(nodes: &[Node]) -> bool {
+        nodes.iter().any(|node| match node {
+            Node::Barrier {
+                ordering: MemoryOrdering::GridSync,
+            } => true,
+            Node::Block(children) | Node::Loop { body: children, .. } => {
+                contains_grid_sync(children)
+            }
+            Node::If {
+                then, otherwise, ..
+            } => contains_grid_sync(then) || contains_grid_sync(otherwise),
+            Node::Region { body, .. } => contains_grid_sync(body),
+            _ => false,
+        })
+    }
+
+    fn contains_loop(nodes: &[Node]) -> bool {
+        nodes.iter().any(|node| match node {
+            Node::Loop { .. } => true,
+            Node::Block(children) => contains_loop(children),
+            Node::If {
+                then, otherwise, ..
+            } => contains_loop(then) || contains_loop(otherwise),
+            Node::Region { body, .. } => contains_loop(body),
+            _ => false,
+        })
+    }
+
     #[test]
     fn cpu_ref_visits_each_lane_at_its_depth() {
         let depths = vec![0u32, 1, 2, 1, 0];
@@ -152,12 +227,50 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_grid_packs_lane_count_into_workgroups() {
+        assert_eq!(level_wave_dispatch_grid(0), [1, 1, 1]);
+        assert_eq!(level_wave_dispatch_grid(1), [1, 1, 1]);
+        assert_eq!(level_wave_dispatch_grid(256), [1, 1, 1]);
+        assert_eq!(level_wave_dispatch_grid(257), [2, 1, 1]);
+        assert_eq!(level_wave_dispatch_grid(1029), [5, 1, 1]);
+    }
+
+    #[test]
     fn program_shape_matches_contract() {
         let step = vec![Node::store("out", Expr::u32(0), Expr::u32(1))];
         let program = level_wave_program(step, "depths", 8, 64);
+        assert_eq!(program.workgroup_size(), LEVEL_WAVE_WORKGROUP_SIZE);
         assert!(
             program.buffers.iter().any(|b| b.name() == "depths"),
             "depth buffer must be declared"
+        );
+        assert!(!contains_grid_sync(entry_region_body(&program)));
+    }
+
+    #[test]
+    fn multi_block_program_uses_top_level_grid_sync_waves() {
+        let step = vec![Node::store(
+            "out",
+            Expr::InvocationId { axis: 0 },
+            Expr::u32(1),
+        )];
+        let program = level_wave_program(step, "depths", 4, LEVEL_WAVE_WORKGROUP_SIZE[0] + 1);
+        let body = entry_region_body(&program);
+        assert!(contains_grid_sync(body));
+        assert!(
+            !contains_loop(body),
+            "multi-block level-wave must expose GridSync at split-visible depth-wave boundaries"
+        );
+        assert_eq!(
+            body.iter()
+                .filter(|node| matches!(
+                    node,
+                    Node::Barrier {
+                        ordering: MemoryOrdering::GridSync,
+                    }
+                ))
+                .count(),
+            3
         );
     }
 }

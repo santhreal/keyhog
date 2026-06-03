@@ -40,10 +40,7 @@ pub(crate) fn emit_enclosing_function_lparen_for_index(
                     Expr::lt(Expr::var(&parent), Expr::var("annot_num_nodes")),
                 ),
                 vec![
-                    Node::let_bind(
-                        &parent_base,
-                        vast_row_base_expr(Expr::var(&parent)),
-                    ),
+                    Node::let_bind(&parent_base, vast_row_base_expr(Expr::var(&parent))),
                     Node::let_bind(
                         &parent_kind,
                         vast_row_kind_from_base_expr(vast_nodes, Expr::var(&parent_base)),

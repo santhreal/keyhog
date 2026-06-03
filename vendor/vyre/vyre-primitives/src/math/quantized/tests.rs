@@ -851,4 +851,3 @@ fn batched_matmul_top1_zero_shape_traps() {
     .stats()
     .trap());
 }
-

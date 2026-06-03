@@ -20,18 +20,20 @@ vyre-driver-spirv = { workspace = true }
 vyre-driver-reference = { workspace = true }
 vyre-reference = { workspace = true }
 vyre-runtime = { workspace = true }
-vyre-libs = { workspace = true, features = ["nn-linear-4bit"] }
+vyre-libs = { workspace = true, features = ["nn-linear-4bit", "rust-parser"] }
 vyre-primitives = { workspace = true, features = ["bitset", "graph", "cpu-parity"] }
 vyre-intrinsics = { workspace = true }
 vyre-lower = { workspace = true }
 vyre-emit-ptx = { workspace = true }
 vyre-spec = { workspace = true }
+vyre-frontend-rust = { workspace = true }
 # External dataflow-engine baselines are opt-in cross-crate comparison benches
 # only. The default benchmark surface stays vyre-only.
 external-dataflow-engine = { workspace = true, optional = true }
 vyre-frontend-c = { path = "../vyre-frontend-c" }
 blake3 = { workspace = true }
 
+aho-corasick = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -63,6 +65,7 @@ external-baselines = ["dep:external-dataflow-engine"]
 
 [dev-dependencies]
 criterion = { workspace = true }
+proptest = { workspace = true }
 vyre-emit-naga = { workspace = true }
 vyre-emit-spirv = { workspace = true }
 

@@ -7,17 +7,21 @@
 //! and entropy-style metadata. The GPU path executes the same condition graph as
 //! vyre IR, one invocation per rule.
 
+use std::time::Instant;
+
 use super::byte_pack::u32_bytes;
 use crate::api::case::{
     BenchCase, BenchContext, BenchError, BenchId, BenchLayer, BenchMetadata, BenchRequirements,
     BenchRun, Correctness, DeterminismClass, PerformanceContract, PreparedCase, WorkloadClass,
 };
-use crate::api::metric::BenchMetrics;
+use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::resident::{
-    dispatch_program_timed, input_bytes_total, transfer_accounting, ResidentInputSet,
+    dispatch_program_timed, input_bytes_total, transfer_accounting, u32_counter_reset_program,
+    ResidentInputSet,
 };
 use crate::api::suite::SuiteKind;
 use rayon::prelude::*;
+use vyre_driver::{ResidentDispatchStep, ResidentReadRange};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 const RULE_COUNT: u32 = 1 << 20;
@@ -25,6 +29,24 @@ const PATTERN_COUNT: u32 = 1 << 14;
 const FILESIZE_BYTES: u32 = 10 * 1024 * 1024;
 const ENTROPY_MILLIBITS: u32 = 712;
 const FIRED_COUNT_RESOURCE_INDEX: usize = 12;
+const FIRED_RULES_RESOURCE_INDEX: usize = 13;
+const RESET_RESOURCE_INDICES: [usize; 1] = [FIRED_COUNT_RESOURCE_INDEX];
+const CONDITIONAL_RESOURCE_INDICES: [usize; 14] = [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    FIRED_RULES_RESOURCE_INDEX,
+];
 
 const HONEST_SUITES: &[SuiteKind] = &[
     SuiteKind::Honest,
@@ -37,6 +59,7 @@ pub struct ConditionalEval;
 
 struct ConditionalEvalPrepared {
     program: Program,
+    reset_program: Program,
     inputs: Vec<Vec<u8>>,
     input_bytes_total: u64,
     baseline_output: Vec<Vec<u8>>,
@@ -127,7 +150,7 @@ impl BenchCase for ConditionalEval {
                     .with_count(RULE_COUNT),
                 BufferDecl::storage("entropy_limit", 11, BufferAccess::ReadOnly, DataType::U32)
                     .with_count(RULE_COUNT),
-                BufferDecl::output("fired_count", 12, DataType::U32).with_count(1),
+                BufferDecl::read_write("fired_count", 12, DataType::U32).with_count(1),
                 BufferDecl::output("fired_rules", 13, DataType::U32).with_count(RULE_COUNT),
             ],
             [256, 1, 1],
@@ -205,6 +228,7 @@ impl BenchCase for ConditionalEval {
                 ),
             ],
         );
+        let reset_program = u32_counter_reset_program("fired_count");
 
         let matched: Vec<u32> = (0..PATTERN_COUNT)
             .map(|index| u32::from((mix32(index) & 7) != 0))
@@ -281,6 +305,7 @@ impl BenchCase for ConditionalEval {
 
         Ok(Box::new(ConditionalEvalPrepared {
             program,
+            reset_program,
             inputs,
             input_bytes_total,
             baseline_output,
@@ -308,32 +333,46 @@ impl BenchCase for ConditionalEval {
                 )
             })?;
 
-        if let Some(resident) = &prepared.resident {
-            reset_resident_fired_count(resident)?;
-        }
-        let dispatch = dispatch_program_timed(
-            ctx,
-            &prepared.program,
-            prepared.resident.as_ref(),
-            &prepared.inputs,
-            &ctx.dispatch_config,
-        )?;
-        let resident_used = dispatch.resident_used;
-        let timed = dispatch.timed;
-        let outputs = timed.outputs;
+        let (outputs, wall_ns, dispatch_ns, resident_used, device_reset_sequence) =
+            if let Some(resident) = &prepared.resident {
+                let sequence = dispatch_resident_conditional_sequence(ctx, prepared, resident)?;
+                (sequence.outputs, sequence.wall_ns, None, true, true)
+            } else {
+                let dispatch = dispatch_program_timed(
+                    ctx,
+                    &prepared.program,
+                    None,
+                    &prepared.inputs,
+                    &ctx.dispatch_config,
+                )?;
+                let timed = dispatch.timed;
+                (
+                    timed.outputs,
+                    timed.wall_ns,
+                    timed.device_ns,
+                    dispatch.resident_used,
+                    false,
+                )
+            };
         let input_bytes = prepared.input_bytes_total;
         let output_bytes = outputs.iter().map(Vec::len).sum::<usize>() as u64;
         let accounting = transfer_accounting(input_bytes, output_bytes, resident_used);
+        let resident_reset_bytes = 0;
 
         Ok(BenchRun {
             metrics: BenchMetrics {
-                wall_ns: Some(timed.wall_ns),
-                dispatch_ns: timed.device_ns,
+                wall_ns: Some(wall_ns),
+                dispatch_ns,
                 input_bytes: Some(input_bytes),
                 output_bytes: Some(output_bytes),
                 bytes_read: Some(accounting.bytes_read),
                 bytes_written: Some(accounting.bytes_written),
                 bytes_touched: Some(accounting.bytes_touched),
+                custom: conditional_eval_metric_points(
+                    resident_used,
+                    device_reset_sequence,
+                    resident_reset_bytes,
+                ),
                 ..Default::default()
             },
             baseline_metrics: Some(BenchMetrics {
@@ -454,8 +493,92 @@ fn cpu_conditional_eval_raw(
     vec![u32_bytes(&[count]), u32_bytes(&fired_rules)]
 }
 
-fn reset_resident_fired_count(resident: &ResidentInputSet) -> Result<(), BenchError> {
-    resident.upload_resource(FIRED_COUNT_RESOURCE_INDEX, &[0u8; 4], "conditional eval")
+struct ConditionalResidentSequenceRun {
+    outputs: Vec<Vec<u8>>,
+    wall_ns: u64,
+}
+
+fn dispatch_resident_conditional_sequence(
+    ctx: &BenchContext,
+    prepared: &ConditionalEvalPrepared,
+    resident: &ResidentInputSet,
+) -> Result<ConditionalResidentSequenceRun, BenchError> {
+    let workgroup = prepared.program.workgroup_size();
+    if let Some(override_workgroup) = ctx.dispatch_config.workgroup_override {
+        if override_workgroup != workgroup {
+            return Err(BenchError::ExecutionFailed(format!(
+                "conditional eval resident sequence uses program workgroup {:?}, but received override {:?}. Fix: run the resident condition sequence without a workgroup override or rebuild the resident sequence program.",
+                workgroup, override_workgroup
+            )));
+        }
+    }
+
+    let reset_resources = resident
+        .resources_for_indices(&RESET_RESOURCE_INDICES, "conditional eval reset sequence")?;
+    let conditional_resources = resident.resources_for_indices(
+        &CONDITIONAL_RESOURCE_INDICES,
+        "conditional eval resident sequence",
+    )?;
+    let reset_step = ResidentDispatchStep {
+        program: &prepared.reset_program,
+        resources: &reset_resources,
+        grid_override: Some([1, 1, 1]),
+    };
+    let conditional_step = ResidentDispatchStep {
+        program: &prepared.program,
+        resources: &conditional_resources,
+        grid_override: Some([RULE_COUNT.div_ceil(workgroup[0]).max(1), 1, 1]),
+    };
+    let read_ranges = [
+        ResidentReadRange {
+            resource: &conditional_resources[FIRED_COUNT_RESOURCE_INDEX],
+            byte_offset: 0,
+            byte_len: prepared.baseline_output[0].len(),
+        },
+        ResidentReadRange {
+            resource: &conditional_resources[FIRED_RULES_RESOURCE_INDEX],
+            byte_offset: 0,
+            byte_len: prepared.baseline_output[1].len(),
+        },
+    ];
+
+    let mut count_output = Vec::with_capacity(prepared.baseline_output[0].len());
+    let mut rules_output = Vec::with_capacity(prepared.baseline_output[1].len());
+    let started = Instant::now();
+    ctx.preferred_backend
+        .dispatch_resident_sequence_read_ranges_into(
+            &[reset_step, conditional_step],
+            &read_ranges,
+            &mut [&mut count_output, &mut rules_output],
+        )
+        .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
+    let wall_ns = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+
+    Ok(ConditionalResidentSequenceRun {
+        outputs: vec![count_output, rules_output],
+        wall_ns,
+    })
+}
+
+fn conditional_eval_metric_points(
+    resident_used: bool,
+    device_reset_sequence: bool,
+    resident_reset_bytes: u64,
+) -> Vec<MetricPoint> {
+    vec![
+        MetricPoint {
+            name: "conditional_eval_resident_buffers".to_string(),
+            value: u64::from(resident_used),
+        },
+        MetricPoint {
+            name: "conditional_eval_device_reset_sequence".to_string(),
+            value: u64::from(device_reset_sequence),
+        },
+        MetricPoint {
+            name: "conditional_eval_resident_reset_bytes".to_string(),
+            value: resident_reset_bytes,
+        },
+    ]
 }
 
 fn mix32(mut value: u32) -> u32 {
@@ -468,4 +591,49 @@ fn mix32(mut value: u32) -> u32 {
 
 inventory::submit! {
     &ConditionalEval as &'static dyn BenchCase
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resident_sequence_indices_keep_sparse_outputs_in_binding_order() {
+        assert_eq!(
+            CONDITIONAL_RESOURCE_INDICES[FIRED_COUNT_RESOURCE_INDEX],
+            FIRED_COUNT_RESOURCE_INDEX
+        );
+        assert_eq!(
+            CONDITIONAL_RESOURCE_INDICES[FIRED_RULES_RESOURCE_INDEX],
+            FIRED_RULES_RESOURCE_INDEX
+        );
+        assert_eq!(RESET_RESOURCE_INDICES, [FIRED_COUNT_RESOURCE_INDEX]);
+    }
+
+    #[test]
+    fn metric_points_expose_device_reset_and_zero_host_reset_bytes() {
+        let metrics = conditional_eval_metric_points(true, true, 0);
+
+        assert_eq!(
+            metrics
+                .iter()
+                .find(|metric| metric.name == "conditional_eval_resident_buffers")
+                .map(|metric| metric.value),
+            Some(1)
+        );
+        assert_eq!(
+            metrics
+                .iter()
+                .find(|metric| metric.name == "conditional_eval_device_reset_sequence")
+                .map(|metric| metric.value),
+            Some(1)
+        );
+        assert_eq!(
+            metrics
+                .iter()
+                .find(|metric| metric.name == "conditional_eval_resident_reset_bytes")
+                .map(|metric| metric.value),
+            Some(0)
+        );
+    }
 }

@@ -86,7 +86,11 @@ impl BenchCase for Histogram {
             prepared,
             inputs,
             count as u64,
-            |inputs| vec![crate::cases::cpu_baselines::histogram_u32_256_bytes(&inputs[0])],
+            |inputs| {
+                vec![crate::cases::cpu_baselines::histogram_u32_256_bytes(
+                    &inputs[0],
+                )]
+            },
         )
     }
 

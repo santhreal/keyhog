@@ -1,7 +1,7 @@
 //! Integration test for the CUDA backend.
 
 mod common;
-use common::{bytes_u32, u32_bytes};
+use common::{bytes_u32, resident_dispatch_source, u32_bytes};
 use std::sync::Arc;
 
 use vyre_driver::{DispatchConfig, VyreBackend};
@@ -1326,22 +1326,28 @@ fn cuda_resident_readback_preparation_accounts_bytes_without_rescanning_copies()
 
 #[test]
 fn cuda_resident_sequence_upload_accounting_is_single_pass() {
-    let source = include_str!("../src/backend/resident_dispatch.rs");
+    let source = resident_dispatch_source();
     let fusion_source = include_str!("../../vyre-driver/src/resident_transfer_fusion.rs");
     let upload_fusion_source = include_str!("../src/backend/resident_upload_fusion.rs");
 
     assert!(
         source.contains("push_resident_upload_copy(")
             && source.contains("fuse_resident_upload_copies(upload_copies)")
-            && upload_fusion_source.contains("let mut uploaded_bytes = 0u64;")
-            && upload_fusion_source.contains("add_resident_upload_bytes(&mut uploaded_bytes"),
+            && upload_fusion_source.contains("driver_push_resident_upload_copy(")
+            && upload_fusion_source.contains("driver_fuse_resident_upload_copies(copies)")
+            && fusion_source.contains("add_bytes(uploaded_bytes, bytes.len(), label)?;")
+            && fusion_source.contains("let uploaded_bytes = fused_resident_upload_bytes(&fused)?;")
+            && fusion_source.contains("fn fused_resident_upload_bytes")
+            && fusion_source.contains("let mut uploaded_bytes = 0u64;")
+            && fusion_source.contains("add_bytes(&mut uploaded_bytes, copy.bytes.len(), \"fused upload\")?;"),
         "Fix: CUDA resident sequence upload accounting must be accumulated exactly by the shared upload fusion helper."
     );
     assert!(
         source.contains("let fused_readbacks = fuse_resident_readback_copies(&requested_readbacks)?")
             && source.contains("fused_readbacks.non_empty_copy_count")
             && source.contains(".record_device_to_host_readback(fused_readbacks.bytes)")
-            && source.contains(".record_device_readback_operations(crate::numeric::usize_to_u64(")
+            && source.contains(".record_device_readback_operations(")
+            && source.contains("crate::numeric::CUDA_NUMERIC.usize_to_u64(\n                    fused_readbacks.non_empty_copy_count,")
             && fusion_source.contains("let mut non_empty_copy_count = 0usize;")
             && fusion_source.contains("add_copy_count(non_empty_copy_count")
             && fusion_source.contains("add_bytes(bytes"),
@@ -1358,7 +1364,7 @@ fn cuda_resident_sequence_upload_accounting_is_single_pass() {
 
 #[test]
 fn cuda_resident_handle_count_uses_binding_plan_cardinality() {
-    let source = include_str!("../src/backend/resident_dispatch.rs");
+    let source = resident_dispatch_source();
 
     assert!(
         source.contains("fn resident_required_handles")
@@ -1381,8 +1387,41 @@ fn cuda_resident_handle_count_uses_binding_plan_cardinality() {
 }
 
 #[test]
+fn cuda_resident_launch_handle_cursors_return_typed_errors() {
+    let source = resident_dispatch_source();
+    let dispatch_source = include_str!("../src/backend/dispatch.rs");
+    let compiled_dispatch_source = include_str!("../src/pipeline/compiled_dispatch.rs");
+
+    assert!(
+        source.contains("fn next_resident_handle(")
+            && source.contains("handles.get(handle_index).copied()")
+            && source.contains("ran out of resident buffer handles")
+            && source.contains(".checked_add(1)")
+            && source.matches("next_resident_handle(").count() >= 5
+            && dispatch_source.contains("next_resident_handle(")
+            && compiled_dispatch_source.contains("next_resident_handle("),
+        "Fix: CUDA resident launch handle cursors must use one shared checked helper that returns BackendError on descriptor drift."
+    );
+    assert!(
+        !source.contains("handles[next_handle]")
+            && !source.contains("step.handles[next_handle]")
+            && !dispatch_source.contains("handles[next_handle]")
+            && !compiled_dispatch_source.contains("handles[next_handle]"),
+        "Fix: CUDA resident launch paths must not directly index resident handle slices after cardinality validation."
+    );
+    assert!(
+        source.contains("fn validate_dense_resident_output_indices")
+            && source.contains("expected dense output indexes 0..{expected_len}")
+            && source.matches("validate_dense_resident_output_indices(").count() >= 2
+            && source.contains("\"resident dispatch output handles\"")
+            && source.contains("\"resident batch output handles\""),
+        "Fix: CUDA resident output readback ordering must validate dense output indexes before materializing handles/readbacks."
+    );
+}
+
+#[test]
 fn cuda_resident_dispatch_does_not_allocate_for_empty_launch_params() {
-    let source = include_str!("../src/backend/resident_dispatch.rs");
+    let source = resident_dispatch_source();
 
     assert!(
         source.matches("None if param_bytes == 0 => 0").count() >= 2,
@@ -1403,14 +1442,15 @@ fn cuda_host_dispatch_does_not_allocate_for_empty_launch_params() {
         "Fix: CUDA host dispatch must use a null parameter pointer for empty launch params instead of allocating a rounded 1-byte device buffer."
     );
     assert!(
-        source.contains(".checked_add(usize::from(!prepared.launch.param_words.is_empty()))"),
+        source.contains("checked_add_usize_lazy(")
+            && source.contains("usize::from(!prepared.launch.param_words.is_empty())"),
         "Fix: CUDA host dispatch must not reserve pinned-host transfer slots when there are no parameter words to upload."
     );
 }
 
 #[test]
 fn cuda_resident_sequence_preparation_borrows_step_config() {
-    let source = include_str!("../src/backend/resident_dispatch.rs");
+    let source = resident_dispatch_source();
 
     assert!(
         source.contains("config: &'a DispatchConfig"),
@@ -1427,11 +1467,32 @@ fn cuda_resident_sequence_preparation_borrows_step_config() {
 }
 
 #[test]
+fn cuda_resident_sequence_launch_step_indexes_return_typed_errors() {
+    let source = resident_dispatch_source();
+
+    assert!(
+        source.contains("resolved_steps.len() != prepared_steps.len()")
+            && source.contains("Rebuild the resident sequence launch plan before dispatch")
+            && source.contains("prepared_steps.get(step_index)")
+            && source.contains("resolved_steps.get_mut(step_index)")
+            && source.contains("resident sequence launch references prepared step index")
+            && source.contains("resident sequence launch references resolved step index")
+            && !source.contains("prepared_steps[step_index]")
+            && !source.contains("resolved_steps[step_index]"),
+        "Fix: CUDA resident sequence launch must report stale step indexes as BackendError instead of indexing parallel prepared/resolved step tables directly."
+    );
+}
+
+#[test]
 fn cuda_dispatch_wrappers_build_borrowed_inputs_without_iterator_collect() {
     let registration_source = include_str!("../src/lib.rs");
     let host_dispatch_source = include_str!("../src/backend/host_dispatch.rs");
+    let resident_async_source = include_str!("../src/backend/resident_dispatch/async_dispatch.rs");
+    let resident_batch_source = include_str!("../src/backend/resident_dispatch/batch.rs");
+    let output_range_source = include_str!("../src/backend/output_range.rs");
     let compiled_dispatch_source = include_str!("../src/pipeline/compiled_dispatch.rs");
     let plan_source = include_str!("../src/backend/plan.rs");
+    let allocations_source = include_str!("../src/backend/allocations.rs");
 
     assert!(
         !registration_source.contains("inputs.iter().map(Vec::as_slice).collect()")
@@ -1459,11 +1520,54 @@ fn cuda_dispatch_wrappers_build_borrowed_inputs_without_iterator_collect() {
         "Fix: CUDA host dispatch must not rescan staged uploads for telemetry before launch."
     );
     assert!(
-        host_dispatch_source.contains(".checked_add(usize_to_u64(")
-            && host_dispatch_source.contains("\"host dispatch output readback device offset\"")
+        host_dispatch_source.contains("fn host_dispatch_input")
+            && host_dispatch_source.contains(".get(input_index)")
+            && host_dispatch_source.contains(".copied()")
+            && host_dispatch_source.contains("expected input index {input_index}")
+            && !host_dispatch_source.contains("inputs[input_index]"),
+        "Fix: CUDA host dispatch must turn stale binding input indexes into BackendError instead of directly indexing borrowed input slices."
+    );
+    assert!(
+        output_range_source.contains("fn cuda_output_readback_for_binding")
+            && output_range_source.contains(".get(buffer_index)")
+            && output_range_source.contains("expected program buffer index {buffer_index}")
+            && host_dispatch_source.contains("cuda_output_readback_for_binding(")
+            && resident_async_source.contains("cuda_output_readback_for_binding(")
+            && resident_batch_source.contains("cuda_output_readback_for_binding(")
+            && !host_dispatch_source.contains("fn host_dispatch_buffer")
+            && !host_dispatch_source.contains("buffers[binding.buffer_index]")
+            && !resident_async_source.contains("program.buffers()[binding.buffer_index]")
+            && !resident_batch_source.contains("program.buffers()[binding.buffer_index]"),
+        "Fix: CUDA host and resident dispatch readback planning must share one checked program-buffer lookup instead of directly indexing program buffers."
+    );
+    assert!(
+        plan_source.contains("pub(crate) fn output_binding(")
+            && plan_source.contains(".bindings.bindings.get(binding_index)")
+            && plan_source.contains("expected output binding index {binding_index}")
+            && plan_source.contains("without an output index")
+            && host_dispatch_source
+                .contains("prepared.output_binding(binding_index, \"host dispatch output readback\")?")
+            && !host_dispatch_source.contains("prepared.bindings.bindings[binding_index]"),
+        "Fix: CUDA host dispatch output binding ordering must use the checked dispatch-plan accessor instead of directly indexing binding descriptors."
+    );
+    assert!(
+        allocations_source.contains("pub(crate) fn set_ptr(")
+            && allocations_source.contains(".get_mut(index)")
+            && allocations_source.contains("pub(crate) fn ptr(&self, index: usize, context: &str) -> Result<u64, BackendError>")
+            && allocations_source.contains("pub(crate) fn byte_len(&self, index: usize, context: &str) -> Result<usize, BackendError>")
+            && allocations_source.contains("expected buffer index {index}")
+            && !allocations_source.contains("self.ptrs[index]"),
+        "Fix: CUDA dispatch allocation-table access must return BackendError for stale buffer indexes instead of panicking on SmallVec indexing."
+    );
+    assert!(
+        host_dispatch_source.contains("checked_add_u64_usize_offset_lazy(")
+            && host_dispatch_source.contains("CUDA host dispatch readback device offset")
+            && host_dispatch_source.contains("CUDA host dispatch readback pointer overflowed")
+            && host_dispatch_source.contains(".checked_add(padded_readback_len)")
+            && host_dispatch_source.contains("overflowed while checking capacity")
+            && !host_dispatch_source.contains("unwrap_or(usize::MAX)")
             && !host_dispatch_source.contains(".ptr(binding.buffer_index)\n                    .saturating_add(readback.device_offset as u64)")
             && !host_dispatch_source.contains(concat!(".", "saturating_add")),
         "Fix: CUDA host dispatch readback pointer arithmetic and capacity accounting must fail loudly on overflow instead of saturating to a wrong address or capacity."
     );
 }
-

@@ -1,5 +1,6 @@
 use vyre_primitives::graph::adaptive_traverse::{
-    adaptive_frontier_popcount, cpu_sparse_dense_step as reference_adaptive_sparse_dense_step,
+    adaptive_frontier_popcount_in_domain,
+    cpu_sparse_dense_step as reference_adaptive_sparse_dense_step,
     validate_adaptive_frontier as primitive_validate_adaptive_frontier,
 };
 
@@ -23,7 +24,8 @@ pub fn adaptive_traverse_step(
     dense_threshold_pct: u32,
 ) -> Result<Vec<u32>, String> {
     primitive_validate_adaptive_frontier(node_count, frontier_in)?;
-    let frontier_popcount = adaptive_frontier_popcount(frontier_in, "adaptive_traverse_step")?;
+    let frontier_popcount =
+        adaptive_frontier_popcount_in_domain(node_count, frontier_in, "adaptive_traverse_step")?;
     Ok(reference_adaptive_sparse_dense_step(
         frontier_in,
         frontier_popcount,

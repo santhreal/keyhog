@@ -8,17 +8,18 @@ mod common;
 use common::{bytes_u32, u32_bytes, with_live_backend};
 use vyre::DispatchConfig;
 use vyre_primitives::text::encoding_classify::{
-    classify_from_histogram, encoding_classify, ENC_ASCII, ENC_BINARY, ENC_ISO8859_1, ENC_UTF16LE,
-    ENC_UTF8,
+    classify_from_histogram, encoding_classify, ENCODING_CLASSIFY_WORKGROUP_SIZE, ENC_ASCII,
+    ENC_BINARY, ENC_ISO8859_1, ENC_UTF16LE, ENC_UTF8,
 };
 
 fn run_classify(histogram: &[u32; 256], count: u32) -> u32 {
     let program = encoding_classify("histogram", "encoding", count);
+    assert_eq!(program.workgroup_size(), ENCODING_CLASSIFY_WORKGROUP_SIZE);
     // Output buffer is declared via BufferDecl::output, so it does not
     // consume an input slot.
     let inputs: Vec<Vec<u8>> = vec![u32_bytes(histogram)];
     let mut config = DispatchConfig::default();
-    // workgroup [256,1,1]; only lane 0 does work.
+    // Single-result classifier; invocation 0 writes the output.
     config.grid_override = Some([1, 1, 1]);
     let outputs = with_live_backend("encoding classify", |backend| {
         backend
@@ -94,6 +95,29 @@ fn cuda_encoding_classify_zero_count_is_ascii() {
     let gpu = run_classify(&histogram, 0);
     assert_eq!(gpu, cpu);
     assert_eq!(gpu, ENC_ASCII);
+}
+
+#[test]
+fn cuda_encoding_classify_rejects_wrapped_three_byte_shape_count() {
+    let mut histogram = [0u32; 256];
+    histogram[0xE0] = u32::MAX / 2 + 1;
+    let count = histogram[0xE0];
+    let cpu = classify_from_histogram(&histogram, count);
+    let gpu = run_classify(&histogram, count);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, ENC_ISO8859_1);
+}
+
+#[test]
+fn cuda_encoding_classify_rejects_wrapped_four_byte_shape_count() {
+    let mut histogram = [0u32; 256];
+    histogram[0x80] = 2;
+    histogram[0xF0] = u32::MAX / 3 + 1;
+    let count = histogram[0x80] + histogram[0xF0];
+    let cpu = classify_from_histogram(&histogram, count);
+    let gpu = run_classify(&histogram, count);
+    assert_eq!(gpu, cpu);
+    assert_eq!(gpu, ENC_ISO8859_1);
 }
 
 #[test]

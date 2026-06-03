@@ -20,16 +20,19 @@
 //! compositions in downstream crates) free to compose  -  write the unique
 //! plumbing, reuse the shared four.
 //!
-//! The output-unpacking step is intentionally **not** centralised:
+//! The output-layout step is intentionally **not** centralised:
 //! `GpuLiteralSet` uses a two-buffer layout (`match_count` + `matches`),
 //! while `RulePipeline` uses a single hit buffer with embedded counter.
-//! Forcing them into one helper would push a layout choice into the
-//! shared lib that consumers can't override; keeping the unpack at
-//! the call site is the lego-block-correct boundary.
+//! Once the caller has isolated the counter and match-triple byte range,
+//! decoding is shared so every engine rejects malformed readbacks the same
+//! way.
 
 use std::borrow::Cow;
 
 use vyre::{BackendError, DispatchConfig};
+
+const U32_COUNTER_BYTES: usize = 4;
+const MATCH_TRIPLE_BYTES: usize = 12;
 
 /// Reusable host-side staging for scan dispatches.
 ///
@@ -246,6 +249,41 @@ pub fn candidate_start_dispatch_config(haystack_len: u32) -> DispatchConfig {
     config
 }
 
+/// Decode a little-endian scan counter from the first four bytes of a backend
+/// readback buffer.
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when the readback is shorter than one `u32`.
+pub fn try_read_u32_prefix(bytes: &[u8], field: &'static str) -> Result<u32, BackendError> {
+    if bytes.len() < U32_COUNTER_BYTES {
+        return Err(BackendError::new(format!(
+            "scan dispatch {field} was {} byte(s) but a u32 counter requires {U32_COUNTER_BYTES} bytes. Fix: preserve the counter output byte range before decoding scan results.",
+            bytes.len()
+        )));
+    }
+
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+/// Borrow one backend output buffer by declaration index.
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when the backend omitted a declared output slot.
+pub fn try_output_bytes<'a>(
+    outputs: &'a [Vec<u8>],
+    index: usize,
+    field: &'static str,
+) -> Result<&'a [u8], BackendError> {
+    outputs.get(index).map(Vec::as_slice).ok_or_else(|| {
+        BackendError::new(format!(
+            "scan dispatch missing {field} at output index {index}; backend returned {} output buffer(s). Fix: preserve Program output declaration order and return every declared output buffer.",
+            outputs.len()
+        ))
+    })
+}
+
 /// Decode a packed match-triple buffer (`pid, start, end` × N) into
 /// [`vyre_foundation::match_result::Match`] values. The triple layout is
 /// shared between `GpuLiteralSet` and `RulePipeline`; only the *position*
@@ -347,10 +385,56 @@ pub fn try_unpack_match_triples_into(
     Ok(())
 }
 
+/// Strict caller-owned variant for bounded scan readbacks.
+///
+/// Unlike [`try_unpack_match_triples_into`], this helper rejects a backend
+/// buffer that cannot hold exactly the `count` complete triples requested by
+/// the caller. Use it after clamping an over-capacity kernel counter to the
+/// caller's `max_matches`; short buffers are backend/readback corruption, not
+/// a successful partial decode.
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when `count` cannot be represented on this host,
+/// when the required byte length overflows `usize`, when the readback is too
+/// short for `count`, or when decoded match storage cannot be reserved.
+pub fn try_unpack_match_triples_exact_prefix_into(
+    triples_bytes: &[u8],
+    count: u32,
+    results: &mut Vec<vyre_foundation::match_result::Match>,
+) -> Result<(), BackendError> {
+    results.clear();
+    let required = required_match_triple_bytes(count)?;
+    if triples_bytes.len() < required {
+        return Err(BackendError::new(format!(
+            "scan dispatch match triples readback was {} byte(s) but count={count} requires {required} byte(s). Fix: preserve the output byte range for the requested match cap before decoding scan results.",
+            triples_bytes.len()
+        )));
+    }
+    try_unpack_match_triples_into(triples_bytes, count, results)
+}
+
 #[inline]
 fn decoded_match_triple_count(triples_bytes: &[u8], count: u32) -> usize {
-    let max_complete = triples_bytes.len() / 12;
-    (count as usize).min(max_complete)
+    let max_complete = triples_bytes.len() / MATCH_TRIPLE_BYTES;
+    let requested = match usize::try_from(count) {
+        Ok(requested) => requested,
+        Err(_) => usize::MAX,
+    };
+    requested.min(max_complete)
+}
+
+fn required_match_triple_bytes(count: u32) -> Result<usize, BackendError> {
+    let n = usize::try_from(count).map_err(|source| {
+        BackendError::new(format!(
+            "scan dispatch match count does not fit host usize: {source}. Fix: lower max_matches or split the scan before dispatch."
+        ))
+    })?;
+    n.checked_mul(MATCH_TRIPLE_BYTES).ok_or_else(|| {
+        BackendError::new(
+            "scan dispatch match triple byte count overflowed host usize. Fix: lower max_matches or split the scan before dispatch.",
+        )
+    })
 }
 
 #[cfg(test)]
@@ -522,6 +606,109 @@ mod tests {
             try_unpack_match_triples(&bytes, 2)
                 .expect("Fix: small decoded match buffer must reserve"),
             unpack_match_triples(&bytes, 2)
+        );
+    }
+
+    #[test]
+    fn read_u32_prefix_decodes_counter_and_rejects_short_readback() {
+        assert_eq!(
+            try_read_u32_prefix(&[0x34, 0x12, 0, 0, 0xAA], "test counter")
+                .expect("Fix: four-byte counter prefix must decode"),
+            0x1234
+        );
+
+        let err = try_read_u32_prefix(&[1, 2, 3], "test counter")
+            .expect_err("short scan counter readback must fail closed");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("test counter")
+                && msg.contains("3 byte(s)")
+                && msg.contains("requires 4 bytes"),
+            "short counter error must name the field and required length: {msg}"
+        );
+    }
+
+    #[test]
+    fn output_bytes_rejects_missing_declared_output_slot() {
+        let outputs = vec![vec![1, 2, 3, 4]];
+        assert_eq!(
+            try_output_bytes(&outputs, 0, "first").expect("Fix: present output slot must borrow"),
+            &[1, 2, 3, 4]
+        );
+
+        let err = try_output_bytes(&outputs, 1, "matches")
+            .expect_err("missing backend output slot must fail closed");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("matches")
+                && msg.contains("output index 1")
+                && msg.contains("returned 1 output buffer"),
+            "missing output error must identify the omitted slot: {msg}"
+        );
+    }
+
+    #[test]
+    fn exact_prefix_match_decode_sorts_and_reuses_caller_buffer() {
+        let bytes = [
+            9, 0, 0, 0, 40, 0, 0, 0, 44, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 8, 0, 0, 0, 0xAA, 0xBB,
+        ];
+        let mut matches = Vec::with_capacity(4);
+        let ptr = matches.as_ptr();
+
+        try_unpack_match_triples_exact_prefix_into(&bytes, 2, &mut matches)
+            .expect("Fix: exact two-triple prefix must decode");
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches.as_ptr(), ptr);
+        assert_eq!(matches[0].pattern_id, 3);
+        assert_eq!(matches[1].pattern_id, 9);
+    }
+
+    #[test]
+    fn exact_prefix_match_decode_rejects_short_payload_and_clears_results() {
+        let bytes = [
+            7u8, 0, 0, 0, // pid
+            1, 0, 0, 0, // start
+            3, 0, 0, 0, // end
+        ];
+        let mut matches = vec![vyre_foundation::match_result::Match::new(99, 1, 2)];
+
+        let err = try_unpack_match_triples_exact_prefix_into(&bytes, 2, &mut matches)
+            .expect_err("short match triple readback must fail closed");
+
+        let msg = err.to_string();
+        assert!(
+            matches.is_empty(),
+            "malformed readback must clear stale matches"
+        );
+        assert!(
+            msg.contains("readback was 12 byte(s)")
+                && msg.contains("count=2")
+                && msg.contains("requires 24 byte(s)"),
+            "short match readback error must identify observed and required bytes: {msg}"
+        );
+    }
+
+    #[test]
+    fn exact_prefix_match_decode_huge_count_short_payload_fails_closed() {
+        let bytes = [
+            7u8, 0, 0, 0, // pid
+            1, 0, 0, 0, // start
+            3, 0, 0, 0, // end
+        ];
+        let mut matches = vec![vyre_foundation::match_result::Match::new(99, 1, 2)];
+
+        let err = try_unpack_match_triples_exact_prefix_into(&bytes, u32::MAX, &mut matches)
+            .expect_err("huge count with short readback must fail closed");
+
+        let msg = err.to_string();
+        assert!(
+            matches.is_empty(),
+            "malformed readback must clear stale matches"
+        );
+        assert!(
+            msg.contains("requires") || msg.contains("overflowed") || msg.contains("does not fit"),
+            "huge-count error must report required size or host capacity: {msg}"
         );
     }
 

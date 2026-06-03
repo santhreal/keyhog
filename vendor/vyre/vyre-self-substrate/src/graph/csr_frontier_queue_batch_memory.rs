@@ -1,19 +1,19 @@
 //! Memory planning for resident CSR frontier-queue batches.
 
-const U32_BYTES: usize = std::mem::size_of::<u32>();
+use super::csr_frontier_queue_scratch::resident_csr_queue_scratch_bytes_per_query;
 
 /// Memory plan for sharding resident CSR queue batches.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResidentCsrQueueBatchMemoryPlan {
     /// Number of input queries.
     pub query_count: usize,
-    /// Maximum query count that fits in one resident dispatch under the budget.
+    /// Largest query count used by any resident dispatch chunk in the plan.
     pub max_queries_per_dispatch: usize,
     /// Number of dispatch batches required.
     pub dispatch_batches: usize,
-    /// Resident scratch bytes required by one query.
+    /// Peak resident scratch bytes required by one query in the plan.
     pub bytes_per_query: usize,
-    /// Peak resident scratch bytes for one planned dispatch batch.
+    /// Peak resident scratch bytes for any planned dispatch batch.
     pub peak_batch_scratch_bytes: usize,
 }
 
@@ -73,17 +73,9 @@ pub fn plan_resident_csr_queue_batch_memory(
     if queue_capacity == 0 {
         return Err(ResidentCsrQueueBatchMemoryPlanError::EmptyQueueCapacity);
     }
-    let frontier_bytes = frontier_words
-        .checked_mul(U32_BYTES)
-        .ok_or(ResidentCsrQueueBatchMemoryPlanError::ScratchBytesOverflow)?;
-    let queue_bytes = (queue_capacity as usize)
-        .checked_mul(U32_BYTES)
-        .ok_or(ResidentCsrQueueBatchMemoryPlanError::ScratchBytesOverflow)?;
-    let bytes_per_query = frontier_bytes
-        .checked_add(queue_bytes)
-        .and_then(|bytes| bytes.checked_add(U32_BYTES))
-        .and_then(|bytes| bytes.checked_add(frontier_bytes))
-        .ok_or(ResidentCsrQueueBatchMemoryPlanError::ScratchBytesOverflow)?;
+    let bytes_per_query =
+        resident_csr_queue_scratch_bytes_per_query(frontier_words, queue_capacity)
+            .map_err(|_| ResidentCsrQueueBatchMemoryPlanError::ScratchBytesOverflow)?;
     if bytes_per_query > max_scratch_bytes {
         return Err(ResidentCsrQueueBatchMemoryPlanError::BudgetTooSmall {
             bytes_per_query,
@@ -111,15 +103,13 @@ mod tests {
     use super::*;
 
     fn expected_bytes_per_query(frontier_words: usize, queue_capacity: u32) -> Option<usize> {
-        let frontier_bytes = frontier_words.checked_mul(U32_BYTES)?;
-        let queue_bytes = (queue_capacity as usize).checked_mul(U32_BYTES)?;
-        let bytes = frontier_bytes.checked_add(queue_bytes)?;
-        let bytes = bytes.checked_add(U32_BYTES)?;
-        bytes.checked_add(frontier_bytes)
+        resident_csr_queue_scratch_bytes_per_query(frontier_words, queue_capacity).ok()
     }
 
     fn next_lcg(seed: &mut u64) -> u64 {
-        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         *seed
     }
 
@@ -144,6 +134,17 @@ mod tests {
         assert_eq!(plan.max_queries_per_dispatch, 3);
         assert_eq!(plan.dispatch_batches, 1);
         assert_eq!(plan.peak_batch_scratch_bytes, 132);
+    }
+
+    #[test]
+    fn memory_plan_accounts_for_word_prefix_scratch_on_large_frontiers() {
+        let plan = plan_resident_csr_queue_batch_memory(2, 256, 8, 12_368)
+            .expect("Fix: two large-frontier queries should fit exact word-prefix budget");
+
+        assert_eq!(plan.bytes_per_query, 6_184);
+        assert_eq!(plan.max_queries_per_dispatch, 2);
+        assert_eq!(plan.dispatch_batches, 1);
+        assert_eq!(plan.peak_batch_scratch_bytes, 12_368);
     }
 
     #[test]
@@ -185,13 +186,19 @@ mod tests {
 
             let expected = expected_bytes_per_query(frontier_words, queue_capacity);
             let (computed, expected) = match expected {
-                Some(expected) => (plan_resident_csr_queue_batch_memory(
-                    q,
-                    frontier_words,
-                    queue_capacity,
-                    raw_scratch,
-                ), Some(expected)),
-                None => (Err(ResidentCsrQueueBatchMemoryPlanError::ScratchBytesOverflow), None),
+                Some(expected) => (
+                    plan_resident_csr_queue_batch_memory(
+                        q,
+                        frontier_words,
+                        queue_capacity,
+                        raw_scratch,
+                    ),
+                    Some(expected),
+                ),
+                None => (
+                    Err(ResidentCsrQueueBatchMemoryPlanError::ScratchBytesOverflow),
+                    None,
+                ),
             };
 
             if let (Ok(plan), Some(bytes_per_query)) = (computed.as_ref(), expected) {
@@ -199,7 +206,10 @@ mod tests {
                 assert_eq!(plan.query_count, q, "query_count preserved across plans");
                 assert!(plan.max_queries_per_dispatch >= 1);
                 assert!(plan.max_queries_per_dispatch <= q);
-                assert_eq!(plan.dispatch_batches, q.div_ceil(plan.max_queries_per_dispatch));
+                assert_eq!(
+                    plan.dispatch_batches,
+                    q.div_ceil(plan.max_queries_per_dispatch)
+                );
                 assert_eq!(plan.bytes_per_query, bytes_per_query);
                 assert_eq!(
                     plan.peak_batch_scratch_bytes,
@@ -211,7 +221,10 @@ mod tests {
                     plan.peak_batch_scratch_bytes <= raw_scratch,
                     "successful plan must fit scratch budget"
                 );
-            } else if matches!(computed, Err(ResidentCsrQueueBatchMemoryPlanError::BudgetTooSmall { .. })) {
+            } else if matches!(
+                computed,
+                Err(ResidentCsrQueueBatchMemoryPlanError::BudgetTooSmall { .. })
+            ) {
                 any_err_budget += 1;
             } else if matches!(
                 computed,

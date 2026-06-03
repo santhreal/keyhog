@@ -455,7 +455,6 @@ pub(super) fn pop_matching(stack: &mut Vec<u32>, tok_types: &[u32], opener: u32)
     }
 }
 
-
 fn witness_inputs() -> Vec<Vec<Vec<u8>>> {
     let tok_types = [107u32, 1, 10, 11, 12, 104, 2, 16, 13];
     let tok_starts = [0u32, 4, 8, 9, 10, 11, 18, 19, 20];
@@ -581,4 +580,3 @@ inventory::submit! {
         Some(expression_shape_witness_expected),
     )
 }
-

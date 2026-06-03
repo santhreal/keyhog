@@ -11,5 +11,5 @@ mod precedence;
 #[cfg(test)]
 mod tests;
 
-pub(super) use model::PreprocessorExprParser;
+pub(super) use model::{PreprocessorExprParser, MAX_PP_EXPR_DEPTH};
 pub use operators::is_reserved_preprocessor_identifier;

@@ -55,7 +55,7 @@ tempfile.workspace = true
 criterion.workspace = true
 proptest.workspace = true
 # `tests/fingerprint_cross_host.rs` imports the `vyre` meta-crate re-export path.
-vyre = { workspace = true }
+vyre = { path = "../vyre-core" }
 
 
 

@@ -1,4 +1,4 @@
-//! Byte histogram primitive over `u32`-packed bytes.
+//! Byte histogram primitive over source bytes.
 
 use std::sync::Arc;
 
@@ -12,6 +12,13 @@ pub const BYTE_HISTOGRAM_256_OP_ID: &str = "vyre-primitives::text::byte_histogra
 #[must_use]
 pub fn byte_histogram_256_body(input: &str, histogram: &str, count: u32) -> Vec<Node> {
     let rounds = Expr::div(Expr::add(Expr::u32(count), Expr::u32(255)), Expr::u32(256));
+    let load_byte = |index: Expr| {
+        Expr::bitand(
+            Expr::cast(DataType::U32, Expr::load(input, index)),
+            Expr::u32(0xFF),
+        )
+    };
+
     vec![
         Node::let_bind("lane", Expr::InvocationId { axis: 0 }),
         Node::store(histogram, Expr::var("lane"), Expr::u32(0)),
@@ -33,8 +40,7 @@ pub fn byte_histogram_256_body(input: &str, histogram: &str, count: u32) -> Vec<
                 Node::if_then(
                     Expr::lt(Expr::var("idx"), Expr::u32(count)),
                     vec![
-                        Node::let_bind("word", Expr::load(input, Expr::var("idx"))),
-                        Node::let_bind("byte", Expr::bitand(Expr::var("word"), Expr::u32(0xFF))),
+                        Node::let_bind("byte", load_byte(Expr::var("idx"))),
                         Node::let_bind(
                             "_prev_hist",
                             Expr::atomic_add(histogram, Expr::var("byte"), Expr::u32(1)),
@@ -57,6 +63,26 @@ pub fn byte_histogram_256_child(
     histogram: &str,
     count: u32,
 ) -> Node {
+    byte_histogram_256_child_with_source_type(parent_op_id, input, histogram, count)
+}
+
+/// Wrap the packed-`u8` histogram body as a child of `parent_op_id`.
+#[must_use]
+pub fn byte_histogram_256_u8_child(
+    parent_op_id: &str,
+    input: &str,
+    histogram: &str,
+    count: u32,
+) -> Node {
+    byte_histogram_256_child_with_source_type(parent_op_id, input, histogram, count)
+}
+
+fn byte_histogram_256_child_with_source_type(
+    parent_op_id: &str,
+    input: &str,
+    histogram: &str,
+    count: u32,
+) -> Node {
     Node::Region {
         generator: Ident::from(BYTE_HISTOGRAM_256_OP_ID),
         source_region: Some(GeneratorRef {
@@ -67,12 +93,40 @@ pub fn byte_histogram_256_child(
 }
 
 /// Standalone histogram program for primitive-level conformance.
+///
+/// This compatibility entry point expects one `DataType::U32` element per
+/// source byte and reads the low byte of each word. Use
+/// [`byte_histogram_256_u8`] when the source is packed as one byte per
+/// element.
 #[must_use]
 pub fn byte_histogram_256(input: &str, histogram: &str, count: u32) -> Program {
+    byte_histogram_256_with_source_type(input, histogram, count, DataType::U32)
+}
+
+/// Standalone histogram program over a packed `DataType::U8` source buffer.
+///
+/// It emits the same 256-bin histogram as [`byte_histogram_256`] while cutting
+/// source input bandwidth from four bytes per logical byte to one.
+#[must_use]
+pub fn byte_histogram_256_u8(input: &str, histogram: &str, count: u32) -> Program {
+    byte_histogram_256_with_source_type(input, histogram, count, DataType::U8)
+}
+
+fn byte_histogram_256_with_source_type(
+    input: &str,
+    histogram: &str,
+    count: u32,
+    source_type: DataType,
+) -> Program {
+    let input_decl = if source_type == DataType::U8 && count == 0 {
+        BufferDecl::storage(input, 0, BufferAccess::ReadOnly, source_type)
+    } else {
+        BufferDecl::storage(input, 0, BufferAccess::ReadOnly, source_type).with_count(count.max(1))
+    };
+
     Program::wrapped(
         vec![
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(count.max(1)),
+            input_decl,
             BufferDecl::output(histogram, 1, DataType::U32)
                 .with_count(256)
                 .with_output_byte_range(0..256 * 4),
@@ -130,5 +184,26 @@ mod tests {
         assert_eq!(histogram[usize::from(b'b')], 1);
         assert_eq!(histogram[0xC3], 1);
         assert_eq!(histogram[0xA9], 1);
+    }
+
+    #[test]
+    fn packed_u8_program_declares_one_source_byte_per_element() {
+        let program = byte_histogram_256_u8("bytes", "histogram", 513);
+        let source = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "bytes")
+            .expect("Fix: packed-u8 byte histogram source buffer must be declared");
+        let histogram = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "histogram")
+            .expect("Fix: byte histogram output buffer must be declared");
+
+        assert_eq!(source.element(), DataType::U8);
+        assert_eq!(source.count(), 513);
+        assert_eq!(histogram.element(), DataType::U32);
+        assert_eq!(histogram.count(), 256);
+        assert_eq!(program.workgroup_size(), [256, 1, 1]);
     }
 }

@@ -340,8 +340,8 @@ pub(super) async fn request_device_for_adapter(
 /// backends (`VK_EXT_pipeline_creation_cache_control` / `ID3D12PipelineLibrary`).
 /// Apple's Metal backend (and GL) advertise the `PIPELINE_CACHE` adapter
 /// feature under wgpu 25 but then fail `device_create_pipeline_cache_init`
-/// with a fatal, un-catchable validation error — that is what aborted
-/// `keyhog doctor` ("Abort trap: 6") on M-series Macs. Gate the request on a
+/// with a fatal, un-catchable validation error (a downstream `keyhog doctor`
+/// aborted with "Abort trap: 6" on M-series Macs). Gate the request on a
 /// backend that actually honors it.
 fn backend_implements_pipeline_cache(backend: wgpu::Backend) -> bool {
     matches!(backend, wgpu::Backend::Vulkan | wgpu::Backend::Dx12)

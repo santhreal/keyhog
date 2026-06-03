@@ -30,14 +30,9 @@ fn macro_expansion_staging_uses_fallible_checked_capacity_paths() {
         "staging reservation must report allocation failure instead of panicking"
     );
     assert!(
-        gpu_buffers.contains("pub(crate) fn bytes_to_u32_word_bytes_into(")
-            && gpu_buffers.contains(") -> Result<(), String> {"),
-        "byte-to-u32 staging conversion must return a typed error"
-    );
-    assert!(
-        gpu_buffers.contains("pub(crate) fn pad_u32_byte_buffer_into(")
-            && gpu_buffers.contains(") -> Result<(), String> {"),
-        "u32 byte-buffer padding must return a typed error"
+        !gpu_buffers.contains("bytes_to_u32_word_bytes_into(")
+            && !gpu_buffers.contains("pad_u32_byte_buffer_into("),
+        "macro expansion input byte arenas must stay raw U8 instead of staging per-byte U32 words"
     );
     assert!(
         !gpu_buffers.contains(".saturating_mul(4)"),
@@ -72,6 +67,11 @@ fn macro_expansion_flush_uses_checked_staging_sizes() {
     assert!(
         flush.contains("write_zero_bytes(") && flush.contains(")?;"),
         "flush zero-output staging must propagate scratch allocation failures"
+    );
+    assert!(
+        !flush.contains("bytes_to_u32_word_bytes_into(")
+            && !flush.contains("pad_u32_byte_buffer_into("),
+        "flush must dispatch raw macro source/replacement bytes without per-byte U32 staging"
     );
     assert!(
         !flush.contains("max_out_tokens as usize * 4"),

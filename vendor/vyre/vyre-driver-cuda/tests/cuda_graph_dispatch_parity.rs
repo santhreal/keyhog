@@ -850,5 +850,17 @@ fn cuda_graph_replay_uses_cached_telemetry_totals_without_per_replay_scans() {
             && !graph_source.contains(concat!(".", "saturating_add")),
         "Fix: CUDA graph recording must avoid iterator collect staging and saturating arithmetic while preparing sample inputs, telemetry totals, and raw device pointers."
     );
+    assert!(
+        graph_source.contains("cuda_output_readback_for_binding(")
+            && !graph_source.contains("program.buffers()[binding.buffer_index]"),
+        "Fix: CUDA graph capture readback planning must use the shared checked program-buffer lookup instead of directly indexing program buffers."
+    );
+    assert!(
+        graph_source.contains("fn cuda_graph_sample_input")
+            && graph_source.contains(".get(input_index)")
+            && graph_source.contains(".copied()")
+            && graph_source.contains("expected sample input index {input_index}")
+            && !graph_source.contains("sample_inputs[input_index]"),
+        "Fix: CUDA graph capture must turn stale binding sample-input indexes into BackendError instead of directly indexing borrowed sample input slices."
+    );
 }
-

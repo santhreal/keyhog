@@ -180,8 +180,8 @@ mod tests {
     #[test]
     fn batch_matmul_zero_dim_errors() {
         for (batch, m, k, n) in [(0, 2, 2, 2), (1, 0, 2, 2), (1, 2, 0, 2), (1, 2, 2, 0)] {
-            let err = batch_matmul("a", "b", "out", batch, m, k, n)
-                .expect_err("zero dim must error");
+            let err =
+                batch_matmul("a", "b", "out", batch, m, k, n).expect_err("zero dim must error");
             assert!(
                 err.contains("batch_matmul") && err.contains("> 0"),
                 "batch_matmul zero-dim error for ({batch},{m},{k},{n}): {err}"

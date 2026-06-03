@@ -10,6 +10,8 @@ static KEYWORDS: &[(&str, u16)] = &[
     ("else", KW_ELSE),
     ("return", KW_RETURN),
     ("while", KW_WHILE),
+    ("for", KW_FOR),
+    ("in", KW_IN),
     ("true", LITERAL_BOOL),
     ("false", LITERAL_BOOL),
     ("i32", KW_I32),

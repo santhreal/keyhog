@@ -86,10 +86,12 @@ pub(super) fn emit_macro_hash_lookup(
     source_start: Expr,
     source_len: Expr,
     source_words: &str,
+    source_layout: MacroByteLayout,
     macro_name_hashes: &str,
     macro_name_starts: &str,
     macro_name_lens: &str,
     macro_name_words: &str,
+    macro_name_layout: MacroByteLayout,
     output_var: &str,
 ) -> Vec<Node> {
     let hash_name = format!("{prefix}_name_hash");
@@ -179,8 +181,9 @@ pub(super) fn emit_macro_hash_lookup(
                                     vec![
                                         Node::let_bind(
                                             &source_byte,
-                                            Expr::load(
+                                            load_macro_byte(
                                                 source_words,
+                                                source_layout,
                                                 Expr::add(
                                                     source_start.clone(),
                                                     Expr::var(&candidate_byte_i),
@@ -189,8 +192,9 @@ pub(super) fn emit_macro_hash_lookup(
                                         ),
                                         Node::let_bind(
                                             &macro_name_byte,
-                                            Expr::load(
+                                            load_macro_byte(
                                                 macro_name_words,
+                                                macro_name_layout,
                                                 Expr::add(
                                                     Expr::var(&candidate_name_start),
                                                     Expr::var(&candidate_byte_i),
@@ -255,6 +259,7 @@ pub(super) fn emit_source_span_hash(
     in_tok_starts: &str,
     in_tok_lens: &str,
     source_words: &str,
+    source_layout: MacroByteLayout,
     source_len: Expr,
     output_var: &str,
 ) -> Vec<Node> {
@@ -285,12 +290,10 @@ pub(super) fn emit_source_span_hash(
             vec![
                 Node::let_bind(
                     &byte,
-                    Expr::bitand(
-                        Expr::load(
-                            source_words,
-                            Expr::add(Expr::var(&start), Expr::var(&byte_idx)),
-                        ),
-                        Expr::u32(0xff),
+                    load_macro_byte(
+                        source_words,
+                        source_layout,
+                        Expr::add(Expr::var(&start), Expr::var(&byte_idx)),
                     ),
                 ),
                 fnv1a32_update_byte_node(output_var, Expr::var(&byte)),
@@ -304,10 +307,12 @@ pub(super) struct NamedMacroScanSpec<'a> {
     pub(super) in_tok_starts: &'a str,
     pub(super) in_tok_lens: &'a str,
     pub(super) source_words: &'a str,
+    pub(super) source_layout: MacroByteLayout,
     pub(super) macro_name_hashes: &'a str,
     pub(super) macro_name_starts: &'a str,
     pub(super) macro_name_lens: &'a str,
     pub(super) macro_name_words: &'a str,
+    pub(super) macro_name_layout: MacroByteLayout,
     pub(super) macro_vals: &'a str,
     pub(super) macro_kinds: &'a str,
     pub(super) macro_param_counts: &'a str,
@@ -338,6 +343,7 @@ pub(super) fn emit_named_macro_scan_prefix(spec: NamedMacroScanSpec<'_>) -> Vec<
                 spec.in_tok_starts,
                 spec.in_tok_lens,
                 spec.source_words,
+                spec.source_layout,
                 spec.source_len,
                 "named_name_hash",
             );
@@ -347,10 +353,12 @@ pub(super) fn emit_named_macro_scan_prefix(spec: NamedMacroScanSpec<'_>) -> Vec<
                 Expr::var("named_start"),
                 Expr::var("named_len"),
                 spec.source_words,
+                spec.source_layout,
                 spec.macro_name_hashes,
                 spec.macro_name_starts,
                 spec.macro_name_lens,
                 spec.macro_name_words,
+                spec.macro_name_layout,
                 "named_macro_slot",
             ));
             ident
@@ -448,7 +456,6 @@ pub(super) fn emit_named_replacement_prelude(
                 num_tokens.clone(),
             ),
             vec![Node::if_then(
-
                 Expr::eq(
                     Expr::load(in_tok_types, Expr::add(Expr::var("named_i"), Expr::u32(1))),
                     Expr::u32(TOK_LPAREN),
@@ -653,4 +660,3 @@ pub(super) fn synthesized_paste_token(left: Expr, right: Expr) -> Expr {
         },
     )
 }
-

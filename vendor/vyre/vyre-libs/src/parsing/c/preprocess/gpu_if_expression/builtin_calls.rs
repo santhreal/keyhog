@@ -2,6 +2,7 @@
 
 use vyre::ir::{Expr, Node};
 
+use super::super::gpu_source_bytes::SourceByteLayout;
 use super::byte_load::safe_load_src_expr;
 use vyre_primitives::hash::fnv1a::{fnv1a32, fnv1a32_initial_expr, fnv1a32_update_byte_expr};
 
@@ -16,13 +17,19 @@ pub(super) fn ident_hash_equals(bytes: &'static [u8]) -> Expr {
     )
 }
 
-fn source_at_equals(start_var: &'static str, bytes: &'static [u8], source_byte_len: Expr) -> Expr {
+fn source_at_equals(
+    start_var: &'static str,
+    bytes: &'static [u8],
+    source_layout: SourceByteLayout,
+    source_byte_len: Expr,
+) -> Expr {
     let mut expr = Expr::eq(Expr::u32(1), Expr::u32(1));
     for (idx, byte) in bytes.iter().copied().enumerate() {
         expr = Expr::and(
             expr,
             Expr::eq(
                 safe_load_src_expr(
+                    source_layout,
                     Expr::add(Expr::var(start_var), Expr::u32(idx as u32)),
                     source_byte_len.clone(),
                 ),
@@ -74,6 +81,7 @@ pub(super) fn push_has_builtin_call_parser(
     start_var: &'static str,
     tok_end_var: &'static str,
     tok_len_var: &'static str,
+    source_layout: SourceByteLayout,
     source_byte_len: Expr,
     scan_out_var: &'static str,
     found_var: &'static str,
@@ -111,7 +119,12 @@ pub(super) fn push_has_builtin_call_parser(
     nodes.push(Node::let_bind(
         &is_builtin,
         Expr::select(
-            source_at_equals(start_var, b"__has_builtin", source_byte_len.clone()),
+            source_at_equals(
+                start_var,
+                b"__has_builtin",
+                source_layout,
+                source_byte_len.clone(),
+            ),
             Expr::u32(1),
             Expr::u32(0),
         ),
@@ -122,6 +135,7 @@ pub(super) fn push_has_builtin_call_parser(
             source_at_equals(
                 start_var,
                 b"__has_constexpr_builtin",
+                source_layout,
                 source_byte_len.clone(),
             ),
             Expr::u32(1),
@@ -162,7 +176,11 @@ pub(super) fn push_has_builtin_call_parser(
                     vec![
                         Node::let_bind(
                             &ws_b,
-                            safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                            safe_load_src_expr(
+                                source_layout,
+                                Expr::var(&pos),
+                                source_byte_len.clone(),
+                            ),
                         ),
                         Node::let_bind(
                             &ws_is_ws,
@@ -193,7 +211,7 @@ pub(super) fn push_has_builtin_call_parser(
                 &had_paren,
                 Expr::select(
                     Expr::eq(
-                        safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                        safe_load_src_expr(source_layout, Expr::var(&pos), source_byte_len.clone()),
                         Expr::u32(b'(' as u32),
                     ),
                     Expr::u32(1),
@@ -218,7 +236,11 @@ pub(super) fn push_has_builtin_call_parser(
                             vec![
                                 Node::let_bind(
                                     &ws2_b,
-                                    safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                                    safe_load_src_expr(
+                                        source_layout,
+                                        Expr::var(&pos),
+                                        source_byte_len.clone(),
+                                    ),
                                 ),
                                 Node::let_bind(
                                     &ws2_is_ws,
@@ -278,6 +300,7 @@ pub(super) fn push_has_builtin_call_parser(
                                         Node::let_bind(
                                             &arg_b,
                                             safe_load_src_expr(
+                                                source_layout,
                                                 Expr::var(&arg_pos),
                                                 source_byte_len.clone(),
                                             ),
@@ -395,7 +418,11 @@ pub(super) fn push_has_builtin_call_parser(
                             vec![
                                 Node::let_bind(
                                     &ws3_b,
-                                    safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                                    safe_load_src_expr(
+                                        source_layout,
+                                        Expr::var(&pos),
+                                        source_byte_len.clone(),
+                                    ),
                                 ),
                                 Node::let_bind(
                                     &ws3_is_ws,
@@ -432,7 +459,11 @@ pub(super) fn push_has_builtin_call_parser(
                         &had_close,
                         Expr::select(
                             Expr::eq(
-                                safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                                safe_load_src_expr(
+                                    source_layout,
+                                    Expr::var(&pos),
+                                    source_byte_len.clone(),
+                                ),
                                 Expr::u32(b')' as u32),
                             ),
                             Expr::u32(1),
