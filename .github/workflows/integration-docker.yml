@@ -33,12 +33,15 @@ jobs:
   matrix:
     name: ${{ matrix.variant }} integration
     runs-on: ubuntu-latest
-    # Build times: glibc builds full default features under release-fast (thin
-    # LTO); musl builds `--release` (fat LTO) but with the small `--features
-    # portable` dep graph, which links fast. Both land ~15-25 min. (The glibc
-    # leg formerly built full default features under fat-LTO `--release` and was
-    # cancelled at this cap EVERY run; see Dockerfile.glibc.) 45 caps a hung job
-    # well under the 6h default that let runs sit queued.
+    # Build times: glibc builds `--features ci-lean` (Hyperscan ON, GPU stack
+    # OFF) under release-fast (thin LTO); musl builds `--features portable`
+    # under `--release`. Both drop the wgpu/vyre/cuda graph, so both link in
+    # ~11-20 min. (The glibc leg formerly built FULL DEFAULT features - which
+    # pull `gpu` = wgpu + the 26-crate vyre graph + cuda + naga - and was
+    # cancelled at this 45-min cap EVERY run, e.g. run 26865967197 ran the full
+    # 45 min then died while musl finished in 11; see Dockerfile.glibc for why
+    # ci-lean is the right feature set here.) 45 caps a hung job well under the
+    # 6h default that let runs sit queued.
     timeout-minutes: 45
     strategy:
       fail-fast: false

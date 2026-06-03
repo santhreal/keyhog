@@ -10,7 +10,7 @@ missing system libs, piped/non-TTY output).
 
 | File | Role |
 |------|------|
-| `Dockerfile.glibc` | Debian builder + runtime; default features (Hyperscan). Tests what crates.io / the glibc release ships. |
+| `Dockerfile.glibc` | Debian builder + runtime; `--no-default-features --features ci-lean` (Hyperscan ON, GPU stack OFF). Exercises the Hyperscan-accelerated glibc runtime path — the C lib that links on glibc but not musl. (Full default features pull the wgpu/vyre/cuda graph, which exceeds the 45-min runner cap; GPU build validation lives in release-build + runners-nightly.) |
 | `Dockerfile.musl`  | Alpine builder + runtime; `--no-default-features --features portable` against musl. Tests the macOS/Windows/static-Alpine feature set and musl-vs-glibc differences. |
 | `corpus/`          | Small committed fixtures baked into the image at `/test/corpus`. |
 | `scenarios.sh`     | The battery. One data-table row = one integration test; `(image × row)` is the matrix. |
