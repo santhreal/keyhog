@@ -43,14 +43,17 @@ fn secret_in_large_chunk_is_detected_via_windowing() {
         .find(|m| m.credential.as_ref() == VALID_CREDENTIAL)
         .expect("secret in large chunk (>1MB) must surface with exact credential bytes - \
                  a non-empty matches vector is not enough (could be a different rule firing on filler)");
-    // MatchLocation.offset is the credential byte start.
-    // The expected start is at `API_KEY=` at the end of the filler line.
+    // MatchLocation.offset is the CREDENTIAL byte start - i.e. the value after
+    // `API_KEY=`, not the start of the key. The credential therefore begins at
+    // `filler.len() + "API_KEY=".len()`. Anchoring exactly here (and not at some
+    // arbitrary cross-window seam) proves windowing surfaced the secret at its
+    // true position deep in the >1 MB chunk.
+    let expected_offset = filler.len() + "API_KEY=".len();
     assert_eq!(
-        hit.location.offset,
-        filler.len(),
-        "match must anchor at the line containing API_KEY= (filler.len()={}), \
-         not at any cross-window seam - actual offset {}",
-        filler.len(),
+        hit.location.offset, expected_offset,
+        "match must anchor at the credential value after API_KEY= \
+         (expected offset {expected_offset}), not at any cross-window seam - \
+         actual offset {}",
         hit.location.offset
     );
 }
