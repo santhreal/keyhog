@@ -362,9 +362,16 @@ impl ScanOrchestrator {
             };
 
         'sources: for source in &sources {
+            // Per-source outcome: a source that yields ZERO chunks AND errors
+            // failed entirely (e.g. --github-org with a bad token), even if a
+            // co-requested source succeeded. Tracked so `run()` can fail closed
+            // rather than report "clean" off another source's data.
+            let mut src_chunks = 0usize;
+            let mut src_errored = false;
             for chunk_result in source.chunks() {
                 match chunk_result {
                     Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
+                        src_chunks += 1;
                         if let (Some(idx), Some(path_str)) =
                             (merkle.as_ref(), c.metadata.path.as_deref())
                         {
@@ -402,6 +409,7 @@ impl ScanOrchestrator {
                         }
                     }
                     Ok(c) => {
+                        src_chunks += 1;
                         let mb = c.data.len() / (1024 * 1024);
                         let path = c.metadata.path.as_deref().unwrap_or("<unknown>");
                         tracing::warn!(
@@ -412,9 +420,13 @@ impl ScanOrchestrator {
                     }
                     Err(e) => {
                         crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
+                        src_errored = true;
                         tracing::warn!("source: {e}");
                     }
                 }
+            }
+            if src_chunks == 0 && src_errored {
+                crate::FAILED_SOURCES.fetch_add(1, Ordering::Relaxed);
             }
         }
 
@@ -573,9 +585,15 @@ impl ScanOrchestrator {
         let drain = std::thread::spawn(move || {
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(FUSED_BATCH);
             'sources: for source in &sources {
+                // Per-source outcome (see the non-fused path): a source that
+                // yields zero chunks AND errors failed entirely; tracked so a
+                // failed remote scan isn't masked by a clean local one.
+                let mut src_chunks = 0usize;
+                let mut src_errored = false;
                 for chunk_result in source.chunks() {
                     match chunk_result {
                         Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
+                            src_chunks += 1;
                             batch.push(c);
                             if batch.len() >= FUSED_BATCH {
                                 if tx.send(std::mem::take(&mut batch)).is_err() {
@@ -585,6 +603,7 @@ impl ScanOrchestrator {
                             }
                         }
                         Ok(c) => {
+                            src_chunks += 1;
                             let mb = c.data.len() / (1024 * 1024);
                             let path = c.metadata.path.as_deref().unwrap_or("<unknown>");
                             tracing::warn!(
@@ -594,10 +613,14 @@ impl ScanOrchestrator {
                             );
                         }
                         Err(e) => {
-                        crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
-                        tracing::warn!("source: {e}");
+                            crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
+                            src_errored = true;
+                            tracing::warn!("source: {e}");
+                        }
                     }
-                    }
+                }
+                if src_chunks == 0 && src_errored {
+                    crate::FAILED_SOURCES.fetch_add(1, Ordering::Relaxed);
                 }
             }
             if !batch.is_empty() {

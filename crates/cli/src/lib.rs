@@ -11,6 +11,16 @@ pub static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// gate the tree is clean when nothing was scanned (KH-GAP-096). Same intent
 /// as `SCANNER_PANICKED`, for the source-failure path.
 pub static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
+/// Number of sources that failed *entirely* — produced ZERO chunks AND
+/// errored. A source the user explicitly requested (e.g. `--github-org`,
+/// `--git-diff`, `--url`) that yields nothing because the fetch failed means
+/// that scan never ran, even if a co-requested filesystem source succeeded.
+/// `run()` fails closed when this is non-zero and there are no findings, so a
+/// failed remote scan is not masked by a clean local one (the more precise
+/// successor to the `SOURCE_ERRORS && TOTAL_CHUNKS==0` global check). A
+/// partial failure — a tree with some unreadable files that still produced
+/// chunks — does NOT count: that source produced data.
+pub static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
 /// Set to `true` if the scanner thread panicked during `scan_sources`.
 /// Read at the end of `run()` so a crashed scanner exits with a
 /// non-zero code instead of silently reporting "no findings, all
