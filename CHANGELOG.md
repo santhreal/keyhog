@@ -4,6 +4,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### Added
+
+- Square (payments platform) access-token detector (`sq0atp-` personal access tokens, `sq0csp-` OAuth application secrets) — keyhog previously shipped only a Squarespace detector, which had even mislabelled `sq0atp`/`sq0csp` (Square, not Squarespace) in its keyword list. Surfaced by a differential against the mirror corpus; the `EAAA…` OAuth-access shape is deliberately omitted (4-char prefix + base64url collides with ordinary data, costing precision). Detector count 899 → 900; precision held at 0.9953 with recall +0.0007 (F1 0.9164 → 0.9167) on the mirror corpus.
+
 ### Performance
 
 - Use mimalloc as the CLI binary's global allocator (default/`portable`/`full` profiles; drop with `--no-default-features`). The scan hot path runs one Rayon worker per core, each allocating regex DFA-cache scratch and per-match strings; glibc's arena lock serialised those allocations. Measured on a 70 MiB / 13,976-file corpus (RTX 5090 host, 32 cores): single-thread scan 10.0 s → 8.0 s (~20%), with no regression at high thread counts. Libraries stay allocator-agnostic — the binary owns the choice. (The remaining multi-core ceiling is the `regex` crate's shared `Pool<Cache>` mutex, not the allocator: 16-thread scaling sits at ~41% efficiency, a separate optimization.)

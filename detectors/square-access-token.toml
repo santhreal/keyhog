@@ -1,0 +1,36 @@
+# Docs: https://developer.squareup.com/docs/build-basics/access-tokens
+# Format: Square personal access token `sq0atp-` + 22 [0-9A-Za-z_-]; OAuth
+#         application secret `sq0csp-` + 43 [0-9A-Za-z_-]. (Square, the
+#         payments platform — distinct from Squarespace.)
+# Verify: GET connect.squareup.com/v2/locations with Authorization: Bearer
+# Prefix: sq0atp- / sq0csp- (distinctive, no context anchor required)
+#
+# The `EAAA...` OAuth access-token shape is deliberately NOT matched: a 60-char
+# base64url blob behind a 4-char prefix collides with ordinary base64 data and
+# would cost precision; the `sq0atp-`/`sq0csp-` prefixes are unambiguous.
+
+[detector]
+id = "square-access-token"
+name = "Square Access Token"
+service = "square"
+severity = "high"
+keywords = ["sq0atp", "sq0csp", "square", "SQUARE_ACCESS_TOKEN"]
+
+[[detector.patterns]]
+regex = 'sq0atp-[0-9A-Za-z_-]{22}'
+description = "Square personal access token (sq0atp- prefix, 22 chars)"
+
+[[detector.patterns]]
+regex = 'sq0csp-[0-9A-Za-z_-]{43}'
+description = "Square OAuth application secret (sq0csp- prefix, 43 chars)"
+
+[detector.verify]
+method = "GET"
+url = "https://connect.squareup.com/v2/locations"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
