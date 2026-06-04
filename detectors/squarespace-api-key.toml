@@ -8,7 +8,7 @@ id = "squarespace-api-key"
 name = "Squarespace API Key"
 service = "squarespace"
 severity = "high"
-keywords = ["squarespace", "SQUARESPACE", "sq0atp", "sq0csp", "Developer API Key"]
+keywords = ["squarespace", "SQUARESPACE", "Developer API Key"]
 
 [[detector.patterns]]
 regex = "(?:squarespace|SQUARESPACE)[_=:\\s\"'']+(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
