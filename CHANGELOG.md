@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Performance
+
+- Use mimalloc as the CLI binary's global allocator (default/`portable`/`full` profiles; drop with `--no-default-features`). The scan hot path runs one Rayon worker per core, each allocating regex DFA-cache scratch and per-match strings; glibc's arena lock serialised those allocations. Measured on a 70 MiB / 13,976-file corpus (RTX 5090 host, 32 cores): single-thread scan 10.0 s → 8.0 s (~20%), with no regression at high thread counts. Libraries stay allocator-agnostic — the binary owns the choice. (The remaining multi-core ceiling is the `regex` crate's shared `Pool<Cache>` mutex, not the allocator: 16-thread scaling sits at ~41% efficiency, a separate optimization.)
+
 ## 0.5.38 - 2026-06-04
 
 ### Fixed
