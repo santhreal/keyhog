@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- A scan that produced no data because every source failed to read (e.g. `--git-history` / `--git-diff` on a non-repository or bad ref) no longer prints "No secrets found. Your code is clean." and exits 0. A failed scan reporting *clean + success* told CI gates the tree was clean when nothing was actually scanned (KH-GAP-096). It now fails closed (exit 2) with a diagnostic. A partial failure — some files unreadable in a tree that still produced chunks — is unaffected: it scans and reports what it read.
+
+### Robustness / Performance
+
+- Byte-cap the per-match context windows (ML context 8 KiB, false-positive context 2 KiB). A line with no newline for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) previously made each candidate's context O(line length), turning a many-match scan quadratic. Behavior-preserving for ordinary source (a short line hits its newline before the cap) — mirror-corpus findings byte-identical — and faster on real minified-bundle scans.
+
 ## 0.5.39 - 2026-06-04
 
 ### Added

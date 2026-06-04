@@ -18,6 +18,13 @@ pub const EXIT_SCANNER_PANIC: u8 = 11;
 /// Returned when `KEYHOG_REQUIRE_GPU=1` is set but no usable GPU is present, so the
 /// require-GPU contract fails closed instead of silently degrading to CPU.
 pub const EXIT_REQUIRE_GPU_UNMET: u8 = 2;
+/// Returned when the scan produced no data because every source failed to read
+/// (e.g. `--git-history` / `--git-diff` on a non-repo or bad ref, an
+/// unreachable remote). User-error class (2): the caller named a source we
+/// could not read. We fail closed rather than report "clean" + exit 0, which
+/// would tell a CI gate the tree is clean when nothing was scanned
+/// (KH-GAP-096).
+pub const EXIT_SOURCE_FAILED: u8 = 2;
 
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
@@ -246,6 +253,27 @@ impl ScanOrchestrator {
                 true
             })
             .collect();
+
+        // KH-GAP-096: if the scan produced ZERO chunks AND a source errored,
+        // the requested scan never actually ran (e.g. --git-history /
+        // --git-diff on a non-repo or bad ref, an unreachable remote). Do NOT
+        // fall through to the "no findings, all clean" report + exit 0 — that
+        // tells a CI gate the tree is clean when nothing was scanned. Fail
+        // closed with a diagnostic. (A partial failure — some files unreadable
+        // in a tree that still produced chunks — does not trip this: TOTAL_CHUNKS
+        // is non-zero there, so the scan reports what it did read.)
+        if findings.is_empty()
+            && crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0
+            && crate::TOTAL_CHUNKS.load(std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            eprintln!(
+                "error: scan produced no data — every source failed to read (see the warnings \
+                 above). Not reporting \"clean\": the scan did not run. Check the repository \
+                 path, ref, token, or URL and re-run."
+            );
+            return Ok(std::process::ExitCode::from(EXIT_SOURCE_FAILED));
+        }
+
         if show_progress && !rule_suppressor.is_empty() {
             let dropped = pre_rule_count - findings.len() - client_safe_dropped;
             if dropped > 0 {

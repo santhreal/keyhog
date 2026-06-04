@@ -3,6 +3,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 pub static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// Number of source-read errors (a source yielded `Err` instead of a chunk).
+/// Read at the end of `run()`: if a scan produced ZERO chunks AND a source
+/// errored, the requested scan never actually ran (e.g. `--git-history` /
+/// `--git-diff` on a non-repo, a bad ref, or an unreachable remote), so we
+/// must NOT print "no findings, all clean" and exit 0 — that would tell a CI
+/// gate the tree is clean when nothing was scanned (KH-GAP-096). Same intent
+/// as `SCANNER_PANICKED`, for the source-failure path.
+pub static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// Set to `true` if the scanner thread panicked during `scan_sources`.
 /// Read at the end of `run()` so a crashed scanner exits with a
 /// non-zero code instead of silently reporting "no findings, all
