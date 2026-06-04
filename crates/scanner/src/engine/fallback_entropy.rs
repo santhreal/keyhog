@@ -484,7 +484,10 @@ impl CompiledScanner {
                 location: MatchLocation {
                     source,
                     file_path,
-                    line: Some(entropy_match.line),
+                    // Absolute file line: window-local line + chunk base
+                    // line (the line analog of the `+ base_offset` already
+                    // baked into `offset`). 0 base_line on non-windowed.
+                    line: Some(entropy_match.line + chunk.metadata.base_line),
                     offset,
                     commit,
                     author,

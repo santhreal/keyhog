@@ -288,6 +288,7 @@ fn challenging_full_file_scan_uses_production_scanner() {
             data: data.into(),
             metadata: ChunkMetadata {
                 base_offset: 0,
+                base_line: 0,
                 source_type: "test/recall/kh_challenging".into(),
                 path: Some(path.display().to_string()),
                 commit: None,

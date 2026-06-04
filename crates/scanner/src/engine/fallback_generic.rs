@@ -584,7 +584,10 @@ impl CompiledScanner {
                     location: keyhog_core::MatchLocation {
                         source: Arc::from(chunk.metadata.source_type.as_str()),
                         file_path: chunk.metadata.path.as_deref().map(Arc::from),
-                        line: Some(line_num),
+                        // Window-local line + chunk base line = absolute file
+                        // line, mirroring `absolute_offset`'s base_offset add
+                        // above. base_line is 0 for non-windowed chunks.
+                        line: Some(line_num + chunk.metadata.base_line),
                         offset: absolute_offset,
                         commit: chunk.metadata.commit.as_deref().map(Arc::from),
                         author: chunk.metadata.author.as_deref().map(Arc::from),

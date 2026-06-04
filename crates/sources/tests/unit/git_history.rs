@@ -49,6 +49,43 @@ fn commit_file(repo_path: &PathBuf, filename: &str, content: &str, message: &str
     assert!(output.status.success(), "git commit failed: {output:?}");
 }
 
+/// Regression: a secret added in a LATER commit must report its absolute
+/// new-file line, not line 1. The history source collected every added line
+/// of a commit into one chunk and discarded the `@@ … +new_start @@` header,
+/// so a secret introduced at line 80 of a later commit was attributed to line
+/// 1. (A whole-file-add commit hid this — there blob position == file line.)
+/// Now history runs `-U0` and emits one chunk per hunk carrying
+/// `base_line = new_start - 1`.
+#[cfg(feature = "git")]
+#[test]
+fn git_history_later_commit_addition_carries_absolute_base_line() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    // Commit 1: 100 clean lines, no secret.
+    let clean: String = (1..=100)
+        .map(|i| format!("clean_{i} = {i}\n"))
+        .collect();
+    commit_file(&repo_path, "f.txt", &clean, "clean base");
+    // Commit 2: change only line 80 to a secret.
+    let mut lines: Vec<String> = (1..=100).map(|i| format!("clean_{i} = {i}")).collect();
+    lines[79] = "hist_key = \"AKIAQYLPMN5HFIQR7XYA\"".to_string();
+    commit_file(&repo_path, "f.txt", &(lines.join("\n") + "\n"), "add secret at line 80");
+
+    let source = GitHistorySource::new(repo_path);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    // The chunk carrying the secret (commit 2's single-line hunk) must have
+    // base_line 79 so a scanner counting line 1 within it reports line 80.
+    let secret_chunk = chunks
+        .iter()
+        .find(|c| c.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"))
+        .expect("history must surface the secret added in commit 2");
+    assert_eq!(
+        secret_chunk.metadata.base_line, 79,
+        "secret added at file line 80 must carry base_line 79; got {}",
+        secret_chunk.metadata.base_line
+    );
+}
+
 #[cfg(feature = "git")]
 #[test]
 fn git_history_source_collects_added_files_commit_by_commit() {

@@ -79,7 +79,15 @@ pub fn build_raw_match(
                 .path
                 .as_ref()
                 .map(|p| scan_state.intern_metadata(p)),
-            line: Some(line),
+            // `line` is the match's line WITHIN the chunk text (1-based);
+            // `base_line` is the count of lines before the chunk's start in
+            // the original file (non-zero only for windowed >window_size
+            // files). Summing them gives the absolute file line, exactly as
+            // `offset + base_offset` gives the absolute byte offset. Without
+            // this a secret on line 584307 of a 70 MiB file reported the
+            // per-window line (~2). base_line is 0 for whole-file chunks, so
+            // this is a no-op on the common path.
+            line: Some(line + chunk.metadata.base_line),
             offset: offset + chunk.metadata.base_offset,
             commit: chunk
                 .metadata

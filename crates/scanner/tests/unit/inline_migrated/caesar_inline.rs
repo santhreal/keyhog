@@ -44,6 +44,7 @@ fn source_code_path_skips_caesar_decoder() {
         data: "//! Source trait and chunk types: pluggable input backends.".into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "filesystem".into(),
             path: Some("crates/core/src/source.rs".into()),
             ..Default::default()
@@ -68,6 +69,7 @@ fn decode_chunk_round_trips_aws_shaped_token() {
         data: "k = \"BLJBRS4EFGHIJKLM2345\";".into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "test".into(),
             ..Default::default()
         },

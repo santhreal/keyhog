@@ -90,6 +90,12 @@ fn stream_git_history_chunks(
         "--format=commit %H%nAuthor: %an <%ae>%nDate: %aI",
         "-p",
         "-m",
+        // Zero context so each hunk's `+` lines are the contiguous new-file
+        // run starting at the header's `+new_start` — lets a single per-hunk
+        // `base_line` map every added line to its absolute new-file line.
+        // Context lines were already discarded (only `+` lines are collected),
+        // so -U0 changes nothing about what is scanned, only the line math.
+        "-U0",
     ]);
 
     if let Some(limit) = max_commits {
@@ -115,6 +121,12 @@ fn stream_git_history_chunks(
     let mut in_hunk = false;
     let mut done = false;
     let mut line_buf = Vec::new();
+    // New-file line before the current hunk's first added line (hunk header
+    // `+new_start - 1`). Added to a match's chunk-local line so findings
+    // report the absolute new-file line instead of the chunk-local one
+    // (every history finding was otherwise reported at line 1). Each hunk is
+    // emitted as its own chunk so its base applies cleanly.
+    let mut current_base_line: usize = 0;
 
     Ok(std::iter::from_fn(move || {
         if done {
@@ -141,6 +153,7 @@ fn stream_git_history_chunks(
                                 data: current_content.trim().to_string().into(),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
+                                    base_line: 0,
                                     source_type: "git-history".into(),
                                     path: Some(path.clone()),
                                     commit: Some(commit.clone()),
@@ -176,6 +189,7 @@ fn stream_git_history_chunks(
                             data: current_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
                                 base_offset: 0,
+                                base_line: current_base_line,
                                 source_type: "git-history".into(),
                                 path: Some(path.clone()),
                                 commit: Some(commit.clone()),
@@ -198,6 +212,8 @@ fn stream_git_history_chunks(
                 current_path = None;
                 current_content.clear();
                 in_hunk = false;
+                // New commit/file: the next `@@` sets the base for its hunks.
+                current_base_line = 0;
 
                 if let Some(chunk) = prev_chunk {
                     return Some(Ok(chunk));
@@ -227,6 +243,7 @@ fn stream_git_history_chunks(
                             data: current_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
                                 base_offset: 0,
+                                base_line: current_base_line,
                                 source_type: "git-history".into(),
                                 path: Some(path.clone()),
                                 commit: Some(commit.clone()),
@@ -246,6 +263,8 @@ fn stream_git_history_chunks(
                 current_path = extract_new_path(&line);
                 current_content.clear();
                 in_hunk = false;
+                // New commit/file: the next `@@` sets the base for its hunks.
+                current_base_line = 0;
 
                 if let Some(chunk) = prev_chunk {
                     return Some(Ok(chunk));
@@ -266,7 +285,37 @@ fn stream_git_history_chunks(
             }
 
             if line.starts_with("@@") && line.contains("@@") {
+                // New hunk: flush the previous hunk's added lines as their own
+                // chunk (carrying their base line), then adopt this hunk's
+                // new-file start for the lines that follow.
+                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1);
+                let prev_content = std::mem::take(&mut current_content);
+                let prev_base_line = current_base_line;
+                current_base_line = new_start.saturating_sub(1);
                 in_hunk = true;
+                if let (Some(commit), Some(author), Some(date), Some(path)) = (
+                    &current_commit,
+                    &current_author,
+                    &current_date,
+                    &current_path,
+                ) {
+                    if !prev_content.trim().is_empty() {
+                        return Some(Ok(Chunk {
+                            data: prev_content.trim().to_string().into(),
+                            metadata: ChunkMetadata {
+                                base_offset: 0,
+                                base_line: prev_base_line,
+                                source_type: "git-history".into(),
+                                path: Some(path.clone()),
+                                commit: Some(commit.clone()),
+                                author: Some(author.clone()),
+                                date: Some(date.clone()),
+                                mtime_ns: None,
+                                size_bytes: None,
+                            },
+                        }));
+                    }
+                }
                 continue;
             }
 
@@ -286,12 +335,20 @@ fn stream_git_history_chunks(
                     &current_date,
                     &current_path,
                 ) {
+                    let flush_base_line = current_base_line;
+                    // Mid-hunk flush of a single >10 MiB hunk: advance the base
+                    // by the lines emitted now so the remaining lines of the
+                    // SAME hunk stay correctly attributed after the reset.
+                    current_base_line = current_base_line.saturating_add(
+                        memchr::memchr_iter(b'\n', current_content.as_bytes()).count(),
+                    );
                     let chunk_content = current_content.trim().to_string();
                     current_content.clear();
                     return Some(Ok(Chunk {
                         data: chunk_content.into(),
                         metadata: ChunkMetadata {
                             base_offset: 0,
+                            base_line: flush_base_line,
                             source_type: "git-history".into(),
                             path: Some(path.clone()),
                             commit: Some(commit.clone()),

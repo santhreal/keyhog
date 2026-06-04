@@ -147,10 +147,20 @@ fn scan_one_pair(
     let seam_local = buf.len();
     buf.push_str(head);
 
+    // Absolute base line of the seam buffer: lines before chunk A's start
+    // plus the lines in A that precede `tail_start` (where the buffer
+    // begins). `..b.metadata.clone()` would wrongly inherit B's base line,
+    // but the seam buffer starts inside A's tail, so derive it from A. This
+    // is the line analog of `boundary_base_offset = a.base_offset + tail_start`.
+    let boundary_base_line = a
+        .metadata
+        .base_line
+        .saturating_add(memchr::memchr_iter(b'\n', &a_bytes[..tail_start]).count());
     let boundary_chunk = Chunk {
         data: buf.into(),
         metadata: ChunkMetadata {
             base_offset: boundary_base_offset,
+            base_line: boundary_base_line,
             ..b.metadata.clone()
         },
     };

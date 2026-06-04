@@ -80,6 +80,58 @@ fn git_diff_source_finds_added_lines_without_deleted_content() {
     assert!(!chunks[0].data.contains("sk-old"));
 }
 
+/// Regression: each diff hunk's chunk must carry `base_line = new_start - 1`
+/// so a scanner counting a match's line within the chunk reports the absolute
+/// new-file line, not the chunk-local line. Before the fix every diff finding
+/// was attributed to line 1 (the start of the concatenated added-line blob),
+/// making `--git-diff` (the pre-commit / CI "scan only changed lines"
+/// workflow) point nowhere near the leak.
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_chunks_carry_absolute_base_line_per_hunk() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    // 300-line base file.
+    let base: String = (1..=300).map(|i| format!("base_{i} = {i}\n")).collect();
+    commit_file(&repo_path, "f.txt", &base, "base");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    // Edit two far-apart lines (10 and 200) so `git diff -U0` yields two
+    // separate hunks → two chunks with distinct base lines.
+    let mut lines: Vec<String> = (1..=300).map(|i| format!("base_{i} = {i}")).collect();
+    lines[9] = "k1 = \"AKIAQYLPMN5HFIQR7XYA\"".to_string();
+    lines[199] = "k2 = \"AKIA2B3C4D5E6F7G2H3J\"".to_string();
+    commit_file(&repo_path, "f.txt", &(lines.join("\n") + "\n"), "two edits");
+
+    let source = GitDiffSource::new(repo_path, "main").with_head_ref("feature");
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    // One chunk per hunk.
+    assert_eq!(chunks.len(), 2, "expected one chunk per hunk; got {chunks:?}");
+    // Match each chunk to its hunk by content and assert its base line is the
+    // new-file start minus one (line 10 -> base_line 9, line 200 -> 199).
+    for c in &chunks {
+        let data = c.data.as_ref();
+        if data.contains("AKIAQYLPMN5HFIQR7XYA") {
+            assert_eq!(
+                c.metadata.base_line, 9,
+                "hunk adding line 10 must carry base_line 9; got {}",
+                c.metadata.base_line
+            );
+        } else if data.contains("AKIA2B3C4D5E6F7G2H3J") {
+            assert_eq!(
+                c.metadata.base_line, 199,
+                "hunk adding line 200 must carry base_line 199; got {}",
+                c.metadata.base_line
+            );
+        } else {
+            panic!("unexpected diff chunk content: {data:?}");
+        }
+    }
+}
+
 #[cfg(feature = "git")]
 #[test]
 fn git_diff_source_rejects_nonexistent_ref() {

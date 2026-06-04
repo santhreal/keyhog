@@ -12,6 +12,7 @@ pub(super) fn rewrite_chunk_path(mut chunk: Chunk, org: &str, repo_name: &str, c
 
     chunk.metadata = ChunkMetadata {
         base_offset: 0,
+        base_line: 0,
         source_type: "github-org".into(),
         path: relative_path.map(|relative| format!("{org}/{repo_name}/{relative}")),
         commit: None,

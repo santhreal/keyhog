@@ -277,6 +277,7 @@ fn stream_git_blobs(
                         data: file_text.into(),
                         metadata: ChunkMetadata {
                             base_offset: 0,
+                            base_line: 0,
                             source_type: if in_head { "git/head" } else { "git/history" }.into(),
                             path: Some(path),
                             commit: Some(commit_id_str.clone()),

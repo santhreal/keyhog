@@ -129,6 +129,15 @@ fn stream_added_lines(
     let mut in_hunk = false;
     let mut done = false;
     let mut line_buf: Vec<u8> = Vec::new();
+    // New-file line BEFORE the current hunk's first added line (i.e. the
+    // hunk header's `+new_start - 1`). The scanner counts a match's line
+    // within the chunk text from 1; adding this base yields the absolute
+    // new-file line. With `-U0` a hunk's added lines are the contiguous
+    // run `new_start, new_start+1, …`, so one base per hunk is exact.
+    // Each hunk is emitted as its own chunk so its base applies cleanly;
+    // without this every diff finding reported line 1 (the chunk-local
+    // line of the concatenated added-line blob).
+    let mut current_base_line: usize = 0;
 
     Ok(std::iter::from_fn(move || {
         if done {
@@ -157,6 +166,7 @@ fn stream_added_lines(
                                 data: current_content.trim().to_string().into(),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
+                                    base_line: current_base_line,
                                     source_type: "git-diff".into(),
                                     path: Some(path.clone()),
                                     commit: Some(metadata_commit.clone()),
@@ -175,8 +185,11 @@ fn stream_added_lines(
             if line.starts_with("diff --git ") {
                 let prev_path = current_path.take();
                 let prev_content = std::mem::take(&mut current_content);
+                let prev_base_line = current_base_line;
 
                 in_hunk = false;
+                // New file: its first `@@` will set the base for its hunks.
+                current_base_line = 0;
 
                 if let Some(path) = prev_path {
                     if !prev_content.trim().is_empty() {
@@ -184,6 +197,7 @@ fn stream_added_lines(
                             data: prev_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
                                 base_offset: 0,
+                                base_line: prev_base_line,
                                 source_type: "git-diff".into(),
                                 path: Some(path),
                                 commit: Some(metadata_commit.clone()),
@@ -216,7 +230,32 @@ fn stream_added_lines(
             }
 
             if line.starts_with("@@") && line.contains("@@") {
+                // Start of a new hunk: flush the previous hunk as its own
+                // chunk (so its base line applies cleanly), then adopt this
+                // hunk's new-file start as the base for the lines that follow.
+                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1);
+                let prev_content = std::mem::take(&mut current_content);
+                let prev_base_line = current_base_line;
+                current_base_line = new_start.saturating_sub(1);
                 in_hunk = true;
+                if let Some(ref path) = current_path {
+                    if !prev_content.trim().is_empty() {
+                        return Some(Ok(Chunk {
+                            data: prev_content.trim().to_string().into(),
+                            metadata: ChunkMetadata {
+                                base_offset: 0,
+                                base_line: prev_base_line,
+                                source_type: "git-diff".into(),
+                                path: Some(path.clone()),
+                                commit: Some(metadata_commit.clone()),
+                                author: Some(author.clone()),
+                                date: Some(date.clone()),
+                                mtime_ns: None,
+                                size_bytes: None,
+                            },
+                        }));
+                    }
+                }
                 continue;
             }
 
@@ -228,12 +267,20 @@ fn stream_added_lines(
             if current_content.len() > 10 * 1024 * 1024 {
                 if let Some(ref path) = current_path {
                     if !current_content.trim().is_empty() {
+                        let flush_base_line = current_base_line;
+                        // Mid-hunk flush of a single >10 MiB hunk: the lines
+                        // that follow continue the SAME hunk, so advance the
+                        // base by the lines we are emitting now to keep their
+                        // attribution correct after the buffer resets.
+                        current_base_line = current_base_line
+                            .saturating_add(memchr::memchr_iter(b'\n', current_content.as_bytes()).count());
                         let chunk_content = current_content.trim().to_string();
                         current_content = String::new();
                         return Some(Ok(Chunk {
                             data: chunk_content.into(),
                             metadata: ChunkMetadata {
                                 base_offset: 0,
+                                base_line: flush_base_line,
                                 source_type: "git-diff".into(),
                                 path: Some(path.clone()),
                                 commit: Some(metadata_commit.clone()),
@@ -249,3 +296,4 @@ fn stream_added_lines(
         }
     }))
 }
+

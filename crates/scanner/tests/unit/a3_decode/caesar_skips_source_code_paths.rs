@@ -9,6 +9,7 @@ fn rust_source_comment_produces_no_caesar_chunks() {
         data: "//! Source trait and chunk types: pluggable input backends.".into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "filesystem".into(),
             path: Some("crates/core/src/source.rs".into()),
             ..Default::default()

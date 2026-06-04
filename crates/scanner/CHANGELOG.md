@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Fix windowed-scan line attribution: findings in files past the 1 MiB
+  windowing threshold (`filesystem/windowed`) reported the per-window line
+  instead of the absolute file line, so a secret on line 584307 of a 70 MiB
+  file was reported at line ~2 (and reported lines were non-monotonic). Added
+  `ChunkMetadata::base_line` (the line analog of `base_offset`), populated
+  per-window by the filesystem source (mmap + buffered paths) and the
+  cross-window boundary reassembler, and added it at every line emit site
+  (primary, entropy fallback, generic-secret, multiline reassembly, decode
+  pipeline, and the simdsieve hot path). Byte offsets were already absolute;
+  this brings line numbers to parity. Regressioned by
+  `cli/tests/regression/windowed_line_numbers.rs`.
+- Remove the orphaned `pipeline/postprocess/raw_match.rs` — a never-compiled
+  stale duplicate of `build_raw_match` (no `mod`/`#[path]` referenced it),
+  superseded by the `pattern_client_safe`-aware constructor in
+  `pipeline/postprocess/mod.rs`.
 - Align Vyre usage docs with the workspace-pinned crates.io `vyre` 0.6.1 release and add a scanner gap test that fails on stale Vyre pin/documentation claims.
 - Fix stale `RawMatch` scanner test fixtures to use the production `[u8; 32]` credential hash contract.
 - Split structured parser implementations by format family and move remaining parser inline tests into the external scanner test harness.

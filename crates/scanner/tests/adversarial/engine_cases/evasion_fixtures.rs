@@ -112,6 +112,7 @@ unrelated = 'foo' + 'bar'\n\
         data: synthetic.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "test/synthetic".into(),
             path: Some("synthetic.py".into()),
             commit: None,

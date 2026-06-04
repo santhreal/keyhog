@@ -239,7 +239,11 @@ impl CompiledScanner {
                         // chunk-boundary recall invariant since the
                         // same credential got different synthetic
                         // offsets depending on chunk topology.
-                        m.location.line = Some(fragment_line);
+                        // fragment_line is window-local to `chunk`; add the
+                        // chunk's base line so the reassembled finding reports
+                        // the absolute file line, matching the `+ base_offset`
+                        // on `m.location.offset` below. 0 on non-windowed.
+                        m.location.line = Some(fragment_line + chunk.metadata.base_line);
                         // kimi-engine audit: chunk metadata can carry
                         // `base_offset` near usize::MAX (custom sources
                         // synthesizing chunks). Unchecked addition would

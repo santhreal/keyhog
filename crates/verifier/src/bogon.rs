@@ -63,7 +63,11 @@
 //! `is_unspecified()` before any v4 mapping — is now load-bearing
 //! and pinned by [`tests::rejects_ipv6_loopback`].
 
-#![no_std]
+// This module is `no_std`-clean by construction — it imports only
+// `core::net` and forbids unsafe — but `#![no_std]` is a *crate*-level
+// attribute and is silently ignored (with a warning) inside a submodule, so
+// it is intentionally not declared here. The `core::` imports below are the
+// real enforcement.
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 

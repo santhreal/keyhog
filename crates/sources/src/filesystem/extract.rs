@@ -257,6 +257,7 @@ pub(super) fn process_entry(
                         source_type: "filesystem/windowed".to_string(),
                         path: Some(display.clone()),
                         base_offset: w.offset,
+                        base_line: w.base_line,
                         mtime_ns: live_mtime_ns,
                         size_bytes: Some(file_size),
                         ..Default::default()
@@ -270,6 +271,11 @@ pub(super) fn process_entry(
         }
         if let Ok(mut file) = std::fs::File::open(&path) {
             let mut current_offset = 0;
+            // Newlines in the file before `current_offset` - the absolute
+            // base line of the window about to be emitted, advanced in
+            // lockstep with `current_offset` so reported lines are absolute
+            // (the line analog of `base_offset`).
+            let mut current_base_line = 0usize;
             let mut buffer = vec![0u8; window_size];
             loop {
                 // Fill the window with a `read_exact`-style loop. `Read::read`
@@ -307,6 +313,7 @@ pub(super) fn process_entry(
                         source_type: "filesystem/windowed".to_string(),
                         path: Some(display.clone()),
                         base_offset: current_offset,
+                        base_line: current_base_line,
                         mtime_ns: live_mtime_ns,
                         size_bytes: Some(file_size),
                         ..Default::default()
@@ -326,8 +333,17 @@ pub(super) fn process_entry(
                 // actually read - otherwise reported finding locations drift.
                 // (M15)
                 match file.seek(SeekFrom::Current(-(window_overlap as i64))) {
-                    Ok(_) => current_offset += filled - window_overlap,
-                    Err(_) => current_offset += filled,
+                    Ok(_) => {
+                        let advanced = filled - window_overlap;
+                        current_base_line +=
+                            memchr::memchr_iter(b'\n', &buffer[..advanced]).count();
+                        current_offset += advanced;
+                    }
+                    Err(_) => {
+                        current_base_line +=
+                            memchr::memchr_iter(b'\n', &buffer[..filled]).count();
+                        current_offset += filled;
+                    }
                 }
             }
         }

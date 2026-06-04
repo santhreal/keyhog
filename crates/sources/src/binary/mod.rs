@@ -180,6 +180,7 @@ impl BinarySource {
                 data: decompiled_text.into(),
                 metadata: ChunkMetadata {
                     base_offset: 0,
+                    base_line: 0,
                     source_type: "binary:ghidra:decompiled".to_string(),
                     path: Some(crate::filesystem::display_path(&self.path)),
                     commit: None,
@@ -197,6 +198,7 @@ impl BinarySource {
                 data: string_literals.join("\n").into(),
                 metadata: ChunkMetadata {
                     base_offset: 0,
+                    base_line: 0,
                     source_type: "binary:ghidra:strings".to_string(),
                     path: Some(crate::filesystem::display_path(&self.path)),
                     commit: None,
@@ -246,6 +248,7 @@ impl BinarySource {
                 data: keyhog_core::SensitiveString::join(&strings, "\n"),
                 metadata: ChunkMetadata {
                     base_offset: 0,
+                    base_line: 0,
                     source_type: "binary:strings".to_string(),
                     path: Some(path_str),
                     commit: None,

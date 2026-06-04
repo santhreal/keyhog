@@ -273,11 +273,11 @@ pub struct ScanArgs {
 
     /// Maximum file size to scan. Files larger than this are listed in
     /// the end-of-scan "files skipped: exceeded --max-file-size"
-    /// summary. Default is 100 MiB, chosen to match the
-    /// `FilesystemSource` ceiling (files above 64 MiB already use
-    /// windowed scanning). kimi-dogfood-3 #135: prior help text said
-    /// "10MB" but no default was wired; the 100 MiB FilesystemSource
-    /// default was the de facto cap.
+    /// summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files
+    /// above the 1 MiB window size are read in overlapping ~1 MiB windows
+    /// (so memory stays bounded regardless of file size), up to this cap.
+    /// kimi-dogfood-3 #135: prior help text said "10MB" but no default was
+    /// wired; the 100 MiB FilesystemSource default was the de facto cap.
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub max_file_size: Option<usize>,
 

@@ -16,6 +16,11 @@ use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 /// scanned a slice.
 pub(in crate::filesystem) struct FileWindow {
     pub offset: usize,
+    /// Number of newlines in `bytes[0..offset]` - the count of lines that
+    /// fully precede this window's first byte. Added to a match's
+    /// window-local line number so findings report the absolute file
+    /// line, not the per-window one (the line analog of `offset`).
+    pub base_line: usize,
     pub text: String,
 }
 
@@ -115,6 +120,15 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
     Some(windows)
 }
 
+/// Count newlines in `slice` via `memchr` (SIMD-accelerated). Used to
+/// advance each window's absolute `base_line` by exactly the lines in its
+/// non-overlapping stride region, so the whole file is scanned for `\n`
+/// once across all windows rather than re-counted per window.
+#[inline]
+fn bytecount_newlines(slice: &[u8]) -> usize {
+    memchr::memchr_iter(b'\n', slice).count()
+}
+
 /// Pure helper: split `bytes` into `window_size`-byte windows that
 /// share `overlap` bytes with the next window. Each window is decoded
 /// lossily as UTF-8 and tagged with its starting byte offset in
@@ -142,6 +156,11 @@ pub(in crate::filesystem) fn slice_into_windows(
     let total = bytes.len();
     let mut out = Vec::with_capacity(total.div_ceil(stride));
     let mut offset = 0usize;
+    // Running count of newlines in `bytes[0..offset]`. Advanced by the
+    // newlines in each non-overlapping stride region exactly once, so the
+    // whole slice is scanned for `\n` a single time across all windows
+    // (no per-window re-count). This is the window's absolute base line.
+    let mut base_line = 0usize;
     while offset < total {
         let end = (offset + window_size).min(total);
         let slice = &bytes[offset..end];
@@ -152,13 +171,19 @@ pub(in crate::filesystem) fn slice_into_windows(
         // boundaries (an emoji split across two windows survives via
         // `U+FFFD` rather than failing the decode).
         let text = String::from_utf8_lossy(slice).into_owned();
-        out.push(FileWindow { offset, text });
+        out.push(FileWindow {
+            offset,
+            base_line,
+            text,
+        });
         // Stop once we've reached the tail; stride-from-here would
         // start past EOF.
         if end >= total {
             break;
         }
-        offset += stride;
+        let next = offset + stride;
+        base_line += bytecount_newlines(&bytes[offset..next]);
+        offset = next;
     }
     out
 }
