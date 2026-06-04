@@ -32,6 +32,7 @@ mod is_within_hex_context_prose_false;
 mod is_within_hex_context_rejects_prose;
 mod is_within_hex_context_short_match_false;
 mod line_window_offsets_bounded;
+mod local_context_window_caps_long_line;
 mod local_context_window_clamps_end;
 mod local_context_window_clamps_start;
 mod local_context_window_includes_neighbors;
