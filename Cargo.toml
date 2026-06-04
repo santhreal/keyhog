@@ -11,7 +11,7 @@ exclude = ["vendor/vyre", "vendor/shared"]
 default-members = ["crates/cli"]
 
 [workspace.package]
-version = "0.5.37"
+version = "0.5.38"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
@@ -25,16 +25,16 @@ categories = ["command-line-utilities", "development-tools"]
 authors = ["Santh Project <security@santh.dev>"]
 
 [workspace.dependencies]
-keyhog-core = { version = "=0.5.37", path = "crates/core" }
-keyhog-scanner = { version = "=0.5.37", path = "crates/scanner", default-features = false }
-keyhog-verifier = { version = "=0.5.37", path = "crates/verifier" }
+keyhog-core = { version = "=0.5.38", path = "crates/core" }
+keyhog-scanner = { version = "=0.5.38", path = "crates/scanner", default-features = false }
+keyhog-verifier = { version = "=0.5.38", path = "crates/verifier" }
 # default-features = false so consumers opt into source backends per profile.
 # Cargo ignores a member's `default-features = false` unless the workspace entry
 # also sets it (warns "default-features is ignored ... could become a hard error"),
 # so the lean `ci` profile could not actually shed git/web/gix until this was set
 # here. The cli re-enables git/web/github/s3/docker in its full/default/portable
 # profiles; `ci` enables none (filesystem + stdin only).
-keyhog-sources = { version = "=0.5.37", path = "crates/sources", default-features = false }
+keyhog-sources = { version = "=0.5.38", path = "crates/sources", default-features = false }
 
 # Serialization
 serde = { version = "=1.0.228", features = ["derive"] }
