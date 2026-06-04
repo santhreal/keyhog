@@ -410,7 +410,10 @@ impl ScanOrchestrator {
                             "skipping chunk over 512 MiB scan ceiling"
                         );
                     }
-                    Err(e) => tracing::warn!("source: {e}"),
+                    Err(e) => {
+                        crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!("source: {e}");
+                    }
                 }
             }
         }
@@ -590,7 +593,10 @@ impl ScanOrchestrator {
                                 "skipping chunk over 512 MiB scan ceiling"
                             );
                         }
-                        Err(e) => tracing::warn!("source: {e}"),
+                        Err(e) => {
+                        crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!("source: {e}");
+                    }
                     }
                 }
             }
