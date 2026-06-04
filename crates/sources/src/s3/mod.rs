@@ -129,13 +129,26 @@ impl Source for S3Source {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match collect_s3_chunks(
-            &self.bucket,
-            self.prefix.as_deref(),
-            self.endpoint.as_deref(),
-            self.max_objects,
-            &self.http,
-        ) {
+        // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread
+        // (dropping its internal runtime in an async context aborts the
+        // process). Collection is eager, so run it on a scoped std thread with
+        // no ambient tokio runtime.
+        let result = std::thread::scope(|s| {
+            s.spawn(|| {
+                collect_s3_chunks(
+                    &self.bucket,
+                    self.prefix.as_deref(),
+                    self.endpoint.as_deref(),
+                    self.max_objects,
+                    &self.http,
+                )
+            })
+            .join()
+            .unwrap_or_else(|_| {
+                Err(SourceError::Other("s3 fetch thread panicked".to_string()))
+            })
+        });
+        match result {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }

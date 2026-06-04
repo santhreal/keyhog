@@ -52,7 +52,18 @@ impl Source for SlackSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match self.collect_chunks() {
+        // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread
+        // (dropping its internal runtime in an async context aborts the
+        // process). Collection is eager, so run it on a scoped std thread with
+        // no ambient tokio runtime.
+        let result = std::thread::scope(|s| {
+            s.spawn(|| self.collect_chunks()).join().unwrap_or_else(|_| {
+                Err(SourceError::Other(
+                    "slack fetch thread panicked".to_string(),
+                ))
+            })
+        });
+        match result {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
             Err(e) => Box::new(std::iter::once(Err(e))),
         }
