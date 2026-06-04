@@ -4,6 +4,14 @@
 //! share one set of statics (progress counters) and modules. main.rs only
 //! contains the entry point.
 
+// Thread-caching global allocator (see the `mimalloc` feature in Cargo.toml).
+// Per-thread heaps remove the glibc arena-lock contention the multi-core scan
+// hot path otherwise pays (sub-linear Rayon thread scaling). The CLI binary
+// owns this choice; the keyhog libraries stay allocator-agnostic.
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use keyhog::args::Command;
 use keyhog::orchestrator::EXIT_SCANNER_PANIC;
 use keyhog::{subcommands, FINDINGS_COUNT, SCANNED_CHUNKS, SCANNER_PANICKED, TOTAL_CHUNKS};
