@@ -254,22 +254,23 @@ impl ScanOrchestrator {
             })
             .collect();
 
-        // KH-GAP-096: if the scan produced ZERO chunks AND a source errored,
-        // the requested scan never actually ran (e.g. --git-history /
-        // --git-diff on a non-repo or bad ref, an unreachable remote). Do NOT
-        // fall through to the "no findings, all clean" report + exit 0 — that
-        // tells a CI gate the tree is clean when nothing was scanned. Fail
-        // closed with a diagnostic. (A partial failure — some files unreadable
-        // in a tree that still produced chunks — does not trip this: TOTAL_CHUNKS
-        // is non-zero there, so the scan reports what it did read.)
+        // KH-GAP-096: if a requested source failed ENTIRELY — produced zero
+        // chunks AND errored (e.g. --git-history / --git-diff on a non-repo or
+        // bad ref, --github-org with a bad token, an unreachable --url) — and
+        // there are no findings, the requested scan never ran. Do NOT fall
+        // through to "no findings, all clean" + exit 0: a CI gate would read
+        // that as a clean tree when nothing was scanned. Fail closed with a
+        // diagnostic. A partial failure (some files unreadable in a tree that
+        // still produced chunks) does NOT trip this — that source produced
+        // data, so FAILED_SOURCES stays 0 — nor does a failed source that runs
+        // alongside another source which DID surface findings (exit 1 wins).
         if findings.is_empty()
-            && crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0
-            && crate::TOTAL_CHUNKS.load(std::sync::atomic::Ordering::Relaxed) == 0
+            && crate::FAILED_SOURCES.load(std::sync::atomic::Ordering::Relaxed) > 0
         {
             eprintln!(
-                "error: scan produced no data — every source failed to read (see the warnings \
-                 above). Not reporting \"clean\": the scan did not run. Check the repository \
-                 path, ref, token, or URL and re-run."
+                "error: a requested scan source failed to read and produced no data (see the \
+                 warnings above). Not reporting \"clean\": that scan did not run. Check the \
+                 repository path, ref, token, or URL and re-run."
             );
             return Ok(std::process::ExitCode::from(EXIT_SOURCE_FAILED));
         }
