@@ -20,9 +20,11 @@ A file becomes one or more **chunks**. A chunk is `{data: str, metadata:
 - Skips obvious binaries via magic-byte sniffing (PDF, PNG, zip, …).
 - Skips files matching `is_default_excluded` (node_modules, .min.js,
   build/, etc.).
-- Splits files larger than 64 MiB into overlapping windows so a single
-  giant log file doesn't blow scratch memory. Cross-window secrets are
-  reassembled in stage 4.
+- Splits files larger than the 1 MiB window size into overlapping ~1 MiB
+  windows so a single giant log file doesn't blow scratch memory. Each
+  window carries its absolute base byte offset and base line so findings
+  report the real file `offset`/`line`, not the per-window one.
+  Cross-window secrets are reassembled in stage 4.
 - Decodes UTF-16 BOM files into UTF-8 (PowerShell / .NET configs).
 
 Specialized chunkers run too:

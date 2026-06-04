@@ -47,6 +47,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                 data: keyhog_core::SensitiveString::join(&strings, "\n"),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
+                                    base_line: 0,
                                     source_type: format!("binary:elf:{name}"),
                                     path: Some(path.to_string()),
                                     commit: None,
@@ -85,6 +86,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                 data: keyhog_core::SensitiveString::join(&strings, "\n"),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
+                                    base_line: 0,
                                     source_type: format!("binary:pe:{name}"),
                                     path: Some(path.to_string()),
                                     commit: None,
@@ -120,6 +122,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     data: keyhog_core::SensitiveString::join(&strings, "\n"),
                                     metadata: ChunkMetadata {
                                         base_offset: 0,
+                                        base_line: 0,
                                         source_type: format!("binary:macho:{name}"),
                                         path: Some(path.to_string()),
                                         commit: None,

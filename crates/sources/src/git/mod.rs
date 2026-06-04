@@ -116,6 +116,39 @@ mod capped_line_tests {
     }
 }
 
+/// Parse the new-file start line from a unified-diff hunk header
+/// `@@ -old_start[,old_count] +new_start[,new_count] @@ [section]`.
+///
+/// Returns `new_start` (1-based). The first `+` in the header is always the
+/// new-side marker, so splitting on `+` and reading the leading digits is
+/// robust even when the trailing section text contains a `+`. Shared by the
+/// diff and history sources: both run `git diff/log -U0`, where a hunk's added
+/// lines are the contiguous new-file run `new_start, new_start+1, …`, so a
+/// chunk built from those lines reports absolute file lines once it carries
+/// `base_line = new_start - 1`.
+pub(crate) fn parse_hunk_new_start(header: &str) -> Option<usize> {
+    let after_plus = header.split('+').nth(1)?;
+    let digits: String = after_plus
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
+#[cfg(test)]
+mod hunk_header_tests {
+    use super::parse_hunk_new_start;
+
+    #[test]
+    fn parses_new_start_with_and_without_count() {
+        assert_eq!(parse_hunk_new_start("@@ -1,0 +90 @@"), Some(90));
+        assert_eq!(parse_hunk_new_start("@@ -10,2 +12,3 @@ fn foo()"), Some(12));
+        assert_eq!(parse_hunk_new_start("@@ -0,0 +1,5 @@"), Some(1));
+        assert_eq!(parse_hunk_new_start("@@ -3,1 +3,1 @@ a + b"), Some(3));
+        assert_eq!(parse_hunk_new_start("@@ garbage @@"), None);
+    }
+}
+
 pub(crate) fn validate_repo_path(repo_path: &Path) -> Result<String, SourceError> {
     // SECURITY: kimi-wave1 audit finding 3.git-source-traversal. Previously
     // this only rejected leading `-` and control chars. An attacker passing

@@ -141,6 +141,7 @@ fn passthrough_chunk(target_bytes: usize) -> Chunk {
         data: s.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "filesystem".into(),
             // A neutral .rs path: not a sensitive/config name, not `.keyhog`,
             // not under a `detectors/` dir, so nothing short-circuits the scan.

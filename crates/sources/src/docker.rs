@@ -294,6 +294,7 @@ fn rewrite_chunk(mut chunk: Chunk, image: &str, layer_root: &Path, layer_name: &
 
     chunk.metadata = ChunkMetadata {
         base_offset: 0,
+        base_line: 0,
         source_type: "docker".into(),
         path: relative_path.map(|path| format!("{image}:{layer_name}:{path}")),
         commit: None,

@@ -206,6 +206,7 @@ fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
         data: data.to_string().into(),
         metadata: ChunkMetadata {
                     base_offset: 0,
+                    base_line: 0,
             source_type: "benchmark".into(),
             path: path.map(|p| p.into()),
             commit: None,

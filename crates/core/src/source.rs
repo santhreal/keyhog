@@ -75,6 +75,20 @@ pub struct ChunkMetadata {
     pub author: Option<String>,
     pub date: Option<String>,
     pub base_offset: usize,
+    /// Number of lines that precede `base_offset` in the original file -
+    /// the line-number analog of `base_offset`. Zero for whole-file chunks
+    /// (single-pass mmap, stdin, http, git diffs). Non-zero only when a
+    /// source slices one file into multiple chunks (the filesystem
+    /// `>window_size` windowed path), where each window after the first
+    /// starts partway through the file. The scanner computes a match's
+    /// line number *within the chunk text* and adds this base so the
+    /// reported line is the absolute file line, not the per-window one -
+    /// exactly mirroring how `base_offset` makes the byte offset absolute.
+    /// Without it, a secret on line 584307 of a 70 MiB file was reported
+    /// at the window-local line (e.g. line 2), making findings impossible
+    /// to locate.
+    #[serde(default)]
+    pub base_line: usize,
     /// File mtime in nanoseconds since UNIX epoch, when the source can
     /// surface it cheaply (filesystem walks). Optional because non-fs
     /// sources (stdin, http, git diffs) don't have a meaningful mtime.

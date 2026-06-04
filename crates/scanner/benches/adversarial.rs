@@ -44,6 +44,7 @@ fn make_chunk(data: String, path: Option<&str>) -> Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "adversarial-bench".into(),
             path: path.map(|p| p.into()),
             commit: None,

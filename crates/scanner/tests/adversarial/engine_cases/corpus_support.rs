@@ -42,6 +42,7 @@ pub fn scan_corpus(subdir: &str, rel: &str) -> Vec<keyhog_core::RawMatch> {
         data: data.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: format!("test/corpus/{subdir}"),
             path: Some(path.display().to_string()),
             commit: None,
@@ -59,6 +60,7 @@ pub fn scan_text(data: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
         data: data.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "test/inline".into(),
             path: Some(path.into()),
             commit: None,

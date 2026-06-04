@@ -33,6 +33,7 @@ impl Source for StdinSource {
                 data: data.into(),
                 metadata: ChunkMetadata {
                     base_offset: 0,
+                    base_line: 0,
                     source_type: "stdin".into(),
                     path: None,
                     commit: None,

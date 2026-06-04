@@ -390,6 +390,7 @@ fn fetch_object_chunk(
         data: object_text.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "s3".into(),
             path: Some(format!("{bucket}/{key}")),
             commit: None,

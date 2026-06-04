@@ -330,6 +330,11 @@ pub(super) fn push_decoded_text_chunk_spliced(
             // shift by the context-window start so the offset points near the
             // blob's real position, not just the parent's origin.
             base_offset,
+            // Inherit the parent window's base line so a line reported on a
+            // decoded chunk from a >window_size file stays anchored to the
+            // parent window, exactly as base_offset is inherited above. 0 for
+            // non-windowed parents.
+            base_line: chunk.metadata.base_line,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),

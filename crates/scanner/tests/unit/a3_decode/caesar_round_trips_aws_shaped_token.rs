@@ -9,6 +9,7 @@ fn caesar_shift_surfaces_aws_access_key_plaintext() {
         data: "k = \"BLJBRS4EFGHIJKLM2345\";".into(),
         metadata: ChunkMetadata {
             base_offset: 0,
+            base_line: 0,
             source_type: "test".into(),
             ..Default::default()
         },

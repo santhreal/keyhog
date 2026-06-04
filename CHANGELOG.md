@@ -4,6 +4,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### Fixed
+
+- **Absolute line numbers for windowed and patch-based scans.** Findings in files past the 1 MiB window size (`filesystem/windowed`), and findings from `--git-diff` / `--git-history`, reported the per-window / per-hunk line instead of the absolute file line — a secret on line 584307 of a 70 MiB file was reported at line ~2, and every diff/history finding landed on line 1. Root cause: byte offsets were made absolute (`+ base_offset`) but line numbers had no equivalent base. Added `ChunkMetadata::base_line`, populated per-window by the filesystem source and per-hunk by the git diff/history sources (now `-U0`, `base_line = new_start - 1` via shared `git::parse_hunk_new_start`), and applied at every line emit site. All output formats (text/json/jsonl/sarif/csv/html/junit) and source backends now report the correct line. Regressioned across the cli, scanner, and sources suites.
+
 ### Performance
 
 - Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded — an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.

@@ -323,8 +323,14 @@ impl CompiledScanner {
                         location: MatchLocation {
                             source,
                             file_path,
-                            line: Some(line),
-                            offset,
+                            // Absolute file coordinates: window-local line +
+                            // chunk base line, window-local offset + chunk
+                            // base offset. The hot-pattern fast path emits
+                            // directly (no build_raw_match), so it must apply
+                            // both bases itself like every other emit site;
+                            // both are 0 on non-windowed chunks.
+                            line: Some(line + chunk.metadata.base_line),
+                            offset: offset + chunk.metadata.base_offset,
                             commit,
                             author,
                             date,

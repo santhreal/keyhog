@@ -137,6 +137,7 @@ impl SlackSource {
                                 data: std::mem::take(&mut channel_buffer).into(),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
+                                    base_line: 0,
                                     source_type: "slack".into(),
                                     path: Some(format!("slack://#{}", channel.name)),
                                     ..Default::default()
@@ -149,6 +150,7 @@ impl SlackSource {
                             data: channel_buffer.into(),
                             metadata: ChunkMetadata {
                                 base_offset: 0,
+                                base_line: 0,
                                 source_type: "slack".into(),
                                 path: Some(format!("slack://#{}", channel.name)),
                                 ..Default::default()
