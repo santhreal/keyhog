@@ -75,7 +75,25 @@ impl Source for GitHubOrgSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match collect_org_chunks(&self.org, &self.token, &self.http) {
+        // `reqwest::blocking` must not be driven from inside the CLI's
+        // `#[tokio::main]` runtime: the blocking client spins its own internal
+        // runtime, and dropping that within an async context aborts the whole
+        // process ("Cannot drop a runtime in a context where blocking is not
+        // allowed" -> SIGABRT). Collection is already eager, so run it on a
+        // scoped std thread, which carries no ambient tokio runtime; the
+        // blocking client builds, fetches, and drops there safely, and a fetch
+        // failure (bad org/token, unreachable API) surfaces as an `Err` chunk
+        // the orchestrator turns into a non-zero exit instead of a crash.
+        let result = thread::scope(|s| {
+            s.spawn(|| collect_org_chunks(&self.org, &self.token, &self.http))
+                .join()
+                .unwrap_or_else(|_| {
+                    Err(SourceError::Other(
+                        "github-org fetch thread panicked".to_string(),
+                    ))
+                })
+        });
+        match result {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
             Err(err) => Box::new(std::iter::once(Err(err))),
         }

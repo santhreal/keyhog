@@ -162,7 +162,18 @@ impl Source for WebSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        Box::new(self.fetch_all().into_iter())
+        // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread:
+        // dropping its internal runtime inside an async context aborts the
+        // process. `fetch_all` is eager, so run it on a scoped std thread that
+        // carries no ambient tokio runtime.
+        let all = std::thread::scope(|s| {
+            s.spawn(|| self.fetch_all()).join().unwrap_or_else(|_| {
+                vec![Err(SourceError::Other(
+                    "web fetch thread panicked".to_string(),
+                ))]
+            })
+        });
+        Box::new(all.into_iter())
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
