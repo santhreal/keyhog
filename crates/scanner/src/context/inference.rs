@@ -598,9 +598,25 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
     let bytes = text.as_bytes();
     let safe_offset = offset.min(bytes.len());
 
+    // Hard byte cap on each direction. The scan normally stops at a line
+    // terminator, so for ordinary source (lines well under this cap) the
+    // window is byte-identical to an uncapped walk. It only bites on a
+    // pathological line with no `\n` for kilobytes (e.g. a minified bundle,
+    // or a file that is one giant space-separated run of credential-shaped
+    // tokens): there, an uncapped per-match `O(line_len)` walk turned the
+    // whole-file scan quadratic — a 164 KiB single-line file with 8 K matches
+    // took ~18 s, a 656 KiB one timed out. Capping the window keeps each
+    // match's context cost O(1); the FP heuristics only need nearby keywords,
+    // for which the immediate line is enough — these FP heuristics detect
+    // HTTP cache / CORS / integrity-hash / renovate-digest *line* context, so
+    // 2 KiB each side covers any real header line while keeping the per-match
+    // substring scans cheap (this also speeds ordinary minified-bundle scans,
+    // whose lines are routinely tens of KiB).
+    const MAX_WINDOW_BYTES: usize = 2 * 1024;
+
     let mut start = safe_offset;
     let mut found_lines = 0;
-    while start > 0 && found_lines <= radius {
+    while start > 0 && found_lines <= radius && safe_offset - start < MAX_WINDOW_BYTES {
         start -= 1;
         if bytes[start] == b'\n' {
             found_lines += 1;
@@ -612,7 +628,7 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
 
     let mut end = safe_offset;
     let mut found_lines = 0;
-    while end < bytes.len() && found_lines <= radius {
+    while end < bytes.len() && found_lines <= radius && end - safe_offset < MAX_WINDOW_BYTES {
         if bytes[end] == b'\n' {
             found_lines += 1;
         }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Byte-cap the per-match context windows (`local_context_window` ML context to 8 KiB, `context::inference::surrounding_line_window` FP context to 2 KiB). Previously each candidate's context was the whole containing line; on a line with no `\n` for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) the per-match ML feature / FP keyword scan was O(line_len), making a many-match scan quadratic (a 164 KiB single-line file with 8 K matches took ~18 s). The caps make per-match context O(1) and noticeably speed ordinary minified-bundle scans. Behavior-preserving for normal source — a short line hits its newline well before the cap — verified by byte-identical mirror-corpus findings (F1 0.9167, 2564 findings) and the full scanner suite. Regressioned by `unit/a3_pipeline/local_context_window_caps_long_line`. (A residual super-linear cost remains when a single file carries thousands of distinct credential-shaped matches; bounded in practice by `--timeout` and the 1M-iteration-per-pattern cap.)
+
 - Fix windowed-scan line attribution: findings in files past the 1 MiB
   windowing threshold (`filesystem/windowed`) reported the per-window line
   instead of the absolute file line, so a secret on line 584307 of a 70 MiB

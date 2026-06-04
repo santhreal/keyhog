@@ -24,13 +24,27 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
             None => return "",
         }
     }
+    // Hard byte cap on the window. The scan normally stops at the window's
+    // line terminators, so for ordinary source (lines well under this cap) the
+    // result is byte-identical to an uncapped walk. It only bites on a
+    // pathological no-`\n` line of kilobytes: there, returning the whole line
+    // to the per-match ML feature/keyword scan made the scan quadratic (a
+    // 164 KiB single-line file with 8 K matches took tens of seconds and
+    // larger ones timed out). The features only need nearby context, so a few
+    // KiB is ample. Paired with the same cap in
+    // `context::inference::surrounding_line_window`.
+    const MAX_WINDOW_BYTES: usize = 8 * 1024;
+    let cap = (start + MAX_WINDOW_BYTES).min(bytes.len());
     // Byte offset just past the last window line. Skip `(2*radius + 1)` line
     // terminators from `start`; the slice excludes the trailing newline so a
     // single-line window (radius 0) returns the bare line with no `\n`.
     let window_lines = radius.saturating_mul(2).saturating_add(1);
     let mut end = start;
     for n in 0..window_lines {
-        match memchr::memchr(b'\n', &bytes[end..]) {
+        if end >= cap {
+            break;
+        }
+        match memchr::memchr(b'\n', &bytes[end..cap]) {
             Some(pos) => {
                 // The terminator of the final window line is excluded; for
                 // earlier lines it is kept so neighbours stay `\n`-joined.
@@ -43,12 +57,19 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
                     break;
                 }
             }
-            // Window runs to (or past) EOF: take everything that remains.
+            // No terminator before the cap: take everything up to the cap
+            // (the whole remaining text if it ends first).
             None => {
-                end = bytes.len();
+                end = cap;
                 break;
             }
         }
+    }
+    // `start` sits at a line boundary (offset 0 or just past a `\n`) and `end`
+    // at a `\n` or `bytes.len()` on the normal path; only the byte-cap path can
+    // land mid-codepoint, so snap `end` down to a char boundary before slicing.
+    while end > start && !text.is_char_boundary(end) {
+        end -= 1;
     }
     &text[start..end]
 }
