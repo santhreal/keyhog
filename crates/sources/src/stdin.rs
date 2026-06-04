@@ -69,13 +69,13 @@ fn read_to_string_limited(reader: &mut impl Read, max_bytes: usize) -> std::io::
         )));
     }
 
-    String::from_utf8(bytes).map_err(|error| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "stdin is not valid UTF-8 near byte {}: {error}",
-                error.utf8_error().valid_up_to()
-            ),
-        )
-    })
+    // Lossy UTF-8 decode, matching the filesystem source's windowed/mmap reads
+    // (`String::from_utf8_lossy`): binary or mixed-encoding stdin is scanned for
+    // the text it does contain rather than rejected. Rejecting it made
+    // `cat binaryfile | keyhog scan --stdin` a source failure (exit 2 under the
+    // KH-GAP-096 fail-closed) while `keyhog scan binaryfile` happily lossy-scans
+    // the same bytes — an inconsistency, and real secrets do live in otherwise
+    // non-UTF-8 inputs (embedded configs, archive members, latin-1 logs). The
+    // size cap above already bounds memory.
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }

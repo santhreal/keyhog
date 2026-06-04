@@ -11,6 +11,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Robustness / Performance
 
+- `keyhog scan --stdin` now lossy-decodes its input (matching the filesystem source) instead of rejecting non-UTF-8 bytes. `cat binaryfile | keyhog scan --stdin` previously errored — and, under the new fail-closed, exited 2 — while `keyhog scan binaryfile` happily lossy-scanned the same bytes. stdin now scans the text it can extract (real secrets live in otherwise-binary inputs); the size cap still bounds memory.
 - Byte-cap the per-match context windows (ML context 8 KiB, false-positive context 2 KiB). A line with no newline for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) previously made each candidate's context O(line length), turning a many-match scan quadratic. Behavior-preserving for ordinary source (a short line hits its newline before the cap) — mirror-corpus findings byte-identical — and faster on real minified-bundle scans.
 
 ## 0.5.39 - 2026-06-04
