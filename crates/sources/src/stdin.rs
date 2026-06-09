@@ -41,7 +41,7 @@ impl Source for StdinSource {
                     date: None,
                     mtime_ns: None,
                     size_bytes: None,
-                },
+                    decoded_span: None,                },
             }),
             Err(e) => Err(SourceError::Io(e)),
         }))

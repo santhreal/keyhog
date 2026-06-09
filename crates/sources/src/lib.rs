@@ -19,10 +19,66 @@ use std::sync::atomic::AtomicUsize;
 /// via `reset_skipped_over_max_size()`.
 pub static SKIPPED_OVER_MAX_SIZE: AtomicUsize = AtomicUsize::new(0);
 
-/// Reset the over-max-size counter. Public so test fixtures that run
-/// multiple scans in one process can baseline between runs.
+/// How many files the filesystem walker skipped because their extension (or a
+/// content-sniffed magic header / NUL byte) marked them binary, before any
+/// content scan. Previously a silent `return` (Law 10): a `.bin`/`.dat`/no-ext
+/// file that is actually a planted-credential blob vanished with no trace. Bumped
+/// at each binary skip site in `process_entry`; surfaced at end-of-scan.
+pub static SKIPPED_BINARY: AtomicUsize = AtomicUsize::new(0);
+
+/// How many files were skipped by the default-exclusion filter (lock files,
+/// minified/bundled JS, vendored trees). Also previously a silent `return`.
+pub static SKIPPED_EXCLUDED: AtomicUsize = AtomicUsize::new(0);
+
+/// How many files the walker could not read (permission denied / I/O error) and
+/// therefore did NOT scan. This is the most important to surface: an unreadable
+/// file is an UNKNOWN, not a clean file — silently dropping it is a false-clean
+/// (Law 10). Bumped on the walk's error path.
+pub static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+
+/// Immutable snapshot of the skip counters, read once at end-of-scan so every
+/// reporter (human summary + structured JSON/SARIF) surfaces the same numbers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SkipCounts {
+    pub over_max_size: usize,
+    pub binary: usize,
+    pub excluded: usize,
+    pub unreadable: usize,
+}
+
+impl SkipCounts {
+    /// Total files skipped (not scanned) across all categories.
+    pub fn total(&self) -> usize {
+        self.over_max_size + self.binary + self.excluded + self.unreadable
+    }
+}
+
+/// Read the current skip counters into a snapshot.
+pub fn skip_counts() -> SkipCounts {
+    use std::sync::atomic::Ordering::Relaxed;
+    SkipCounts {
+        over_max_size: SKIPPED_OVER_MAX_SIZE.load(Relaxed),
+        binary: SKIPPED_BINARY.load(Relaxed),
+        excluded: SKIPPED_EXCLUDED.load(Relaxed),
+        unreadable: SKIPPED_UNREADABLE.load(Relaxed),
+    }
+}
+
+/// Reset every skip counter. Public so test fixtures and the orchestrator can
+/// baseline between scans in one process.
+pub fn reset_skip_counters() {
+    use std::sync::atomic::Ordering::Relaxed;
+    SKIPPED_OVER_MAX_SIZE.store(0, Relaxed);
+    SKIPPED_BINARY.store(0, Relaxed);
+    SKIPPED_EXCLUDED.store(0, Relaxed);
+    SKIPPED_UNREADABLE.store(0, Relaxed);
+}
+
+/// Reset the over-max-size counter. Retained for API compatibility (Law 3);
+/// resets every skip counter so a fixture baselining between runs clears them
+/// all, not just the size counter.
 pub fn reset_skipped_over_max_size() {
-    SKIPPED_OVER_MAX_SIZE.store(0, std::sync::atomic::Ordering::Relaxed);
+    reset_skip_counters();
 }
 
 /// Local HTTP compatibility shim backed by reqwest. Only present when

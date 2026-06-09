@@ -22,6 +22,13 @@ pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential. Single source of truth shared by every scan-output route so the
 /// JWT analysis and the offline-decoded AWS account ID never diverge by route.
+///
+/// `#[cfg(unix)]` because the sole external consumer is the daemon-socket scan
+/// route (`subcommands::scan::finalize_for_report`), which is itself
+/// `#[cfg(unix)]` (unix-domain sockets). Without this gate the re-export is an
+/// unused import on Windows/non-unix targets. The function itself stays
+/// available to `postprocess`'s own in-process routes on every platform.
+#[cfg(unix)]
 pub(crate) use postprocess::offline_finding_metadata;
 
 #[doc(hidden)]

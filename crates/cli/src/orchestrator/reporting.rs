@@ -71,7 +71,7 @@ pub(crate) fn report_completion_summary(count: usize, elapsed: f64, ansi: bool) 
             );
         }
     }
-    report_oversize_skip_summary(ansi);
+    report_skip_summary(ansi);
 }
 
 /// Live progress ticker - overwrites the previous line via CR every
@@ -104,22 +104,61 @@ pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started:
     let _ = err.flush();
 }
 
-pub(crate) fn report_oversize_skip_summary(ansi: bool) {
-    use std::sync::atomic::Ordering;
-    let skipped = keyhog_sources::SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed);
-    if skipped == 0 {
+pub(crate) fn report_skip_summary(ansi: bool) {
+    let c = keyhog_sources::skip_counts();
+    if c.total() == 0 {
         return;
     }
-    if ansi {
-        eprintln!(
-            "\x1b[33m{}\x1b[0m file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
-            skipped
-        );
-    } else {
-        eprintln!(
-            "{} file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
-            skipped
-        );
+    // One stderr line per non-empty skip category, each with the reason AND the
+    // remedy, so a previously-silent walker filter is visible (Law 10). The
+    // unreadable category is the most important: it means the tree was NOT fully
+    // covered, so a "no secrets found" result is not a clean bill of health.
+    let mut lines: Vec<(String, bool)> = Vec::new();
+    if c.over_max_size > 0 {
+        lines.push((
+            format!(
+                "{} file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
+                c.over_max_size
+            ),
+            false,
+        ));
+    }
+    if c.binary > 0 {
+        lines.push((
+            format!(
+                "{} file(s) skipped: detected as binary (extension or content sniff) and not scanned as text.",
+                c.binary
+            ),
+            false,
+        ));
+    }
+    if c.excluded > 0 {
+        lines.push((
+            format!(
+                "{} file(s) skipped: matched the default-exclusion list (lock/minified/vendored).",
+                c.excluded
+            ),
+            false,
+        ));
+    }
+    if c.unreadable > 0 {
+        // `warn` = true: this one is highlighted because an unreadable file is an
+        // unknown, not a clean file — the scan did not cover it.
+        lines.push((
+            format!(
+                "{} file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.",
+                c.unreadable
+            ),
+            true,
+        ));
+    }
+    for (msg, warn) in lines {
+        if ansi {
+            let color = if warn { "\x1b[31m" } else { "\x1b[33m" };
+            eprintln!("{color}{msg}\x1b[0m");
+        } else {
+            eprintln!("{msg}");
+        }
     }
 }
 

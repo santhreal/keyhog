@@ -70,7 +70,18 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         if hw.hyperscan_available {
             format!("{green}compiled-in{reset}")
         } else {
-            format!("{dim}absent (regex fallback){reset}")
+            // Law 10: surface the reduced coverage, don't dim it. Keyword-anchored
+            // detection is fully preserved (the keyword-gated regex fallback runs on
+            // every chunk regardless of Hyperscan), but BARE context-less tokens —
+            // e.g. a standalone Twilio AccountSid `AC…` with no nearby keyword — fire
+            // only via Hyperscan's full-regex scan, so their coverage is reduced on
+            // this build. Verified empirically: TWILIO_AUTH_TOKEN / DATADOG_API_KEY
+            // still fire here; only the no-keyword bare-shape case is affected.
+            format!(
+                "{yellow}absent{reset}  keyword-anchored detection preserved via the \
+                 regex fallback; bare context-less tokens have reduced coverage — \
+                 install the simd/full build for complete recall"
+            )
         }
     );
 

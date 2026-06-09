@@ -122,7 +122,7 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
                 date: None,
                 mtime_ns: None,
                 size_bytes: None,
-            },
+                decoded_span: None,            },
         });
     }
     chunks

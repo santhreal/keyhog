@@ -32,6 +32,14 @@ pub struct SarifReporter<W: Write + Send> {
     prefix_written: bool,
     /// Tracks whether at least one result has been emitted (for comma logic).
     any_result: bool,
+    /// `(reason, count)` pairs of files the scan did NOT analyze (oversize,
+    /// binary, default-excluded, unreadable). Surfaced as SARIF
+    /// `invocations[].toolExecutionNotifications` so a consuming platform can
+    /// interpret coverage correctly — "no results" is not "clean" if files were
+    /// skipped. Empty = no notifications block. Set by the caller (which owns the
+    /// source-layer counters) via [`Self::with_skip_summary`]; kept as plain
+    /// `(String, usize)` so `core` takes no dependency on the sources crate.
+    skip_summary: Vec<(String, usize)>,
 }
 
 #[path = "sarif_types.rs"]
@@ -47,7 +55,18 @@ impl<W: Write + Send> SarifReporter<W> {
             rules: HashMap::new(),
             prefix_written: false,
             any_result: false,
+            skip_summary: Vec::new(),
         }
+    }
+
+    /// Attach a skipped-file summary, surfaced as SARIF
+    /// `invocations[].toolExecutionNotifications`. Each `(reason, count)` with a
+    /// non-zero count becomes one `note`-level notification. No-op for empty
+    /// input. See [`Self::skip_summary`].
+    #[must_use]
+    pub fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
+        self.skip_summary = summary.into_iter().filter(|(_, n)| *n > 0).collect();
+        self
     }
 
     /// Lazily emit the SARIF document skeleton up to the start of the
@@ -354,6 +373,32 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // against this block. Tier-B #16 from audits/legendary-2026-04-26.
         write!(self.writer, ",\"taxonomies\":")?;
         serde_json::to_writer(&mut self.writer, &sarif_taxonomies_json())?;
+
+        // Coverage transparency: report files the scan did not analyze as SARIF
+        // tool-execution notifications, so a platform consuming the run knows the
+        // tree was not fully covered (a "no results" run with skips is not a clean
+        // bill of health). `executionSuccessful` stays true — skipping is expected,
+        // not a failure.
+        if !self.skip_summary.is_empty() {
+            let notifications: Vec<serde_json::Value> = self
+                .skip_summary
+                .iter()
+                .map(|(reason, count)| {
+                    serde_json::json!({
+                        "level": "note",
+                        "message": { "text": format!("{count} file(s) not scanned: {reason}") },
+                        "descriptor": { "id": "keyhog/files-not-scanned" },
+                        "properties": { "count": count, "reason": reason },
+                    })
+                })
+                .collect();
+            let invocations = serde_json::json!([{
+                "executionSuccessful": true,
+                "toolExecutionNotifications": notifications,
+            }]);
+            write!(self.writer, ",\"invocations\":")?;
+            serde_json::to_writer(&mut self.writer, &invocations)?;
+        }
 
         write!(self.writer, "}}]}}")?;
         writeln!(self.writer)?;

@@ -411,7 +411,7 @@ fn fetch_object_chunk(
             date: None,
             mtime_ns: None,
             size_bytes: None,
-        },
+            decoded_span: None,        },
     }))
 }
 

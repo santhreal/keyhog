@@ -302,7 +302,7 @@ fn rewrite_chunk(mut chunk: Chunk, image: &str, layer_root: &Path, layer_name: &
         date: None,
         mtime_ns: None,
         size_bytes: None,
-    };
+        decoded_span: None,    };
     chunk
 }
 

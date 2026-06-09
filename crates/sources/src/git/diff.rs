@@ -174,7 +174,7 @@ fn stream_added_lines(
                                     date: Some(date.clone()),
                                     mtime_ns: None,
                                     size_bytes: None,
-                                },
+                                    decoded_span: None,                                },
                             }));
                         }
                     }
@@ -205,7 +205,7 @@ fn stream_added_lines(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                            },
+                                decoded_span: None,                            },
                         }));
                     }
                 }
@@ -252,7 +252,7 @@ fn stream_added_lines(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                            },
+                                decoded_span: None,                            },
                         }));
                     }
                 }
@@ -288,7 +288,7 @@ fn stream_added_lines(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                            },
+                                decoded_span: None,                            },
                         }));
                     }
                 }

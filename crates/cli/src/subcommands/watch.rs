@@ -158,7 +158,7 @@ fn scan_file(
             date: None,
             mtime_ns: None,
             size_bytes: None,
-        },
+            decoded_span: None,        },
     };
     let matches = scanner.scan(&chunk);
     for m in matches {

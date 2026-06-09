@@ -55,7 +55,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     date: None,
                                     mtime_ns: None,
                                     size_bytes: None,
-                                },
+                                    decoded_span: None,                                },
                             });
                         }
                     }
@@ -94,7 +94,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     date: None,
                                     mtime_ns: None,
                                     size_bytes: None,
-                                },
+                                    decoded_span: None,                                },
                             });
                         }
                     }
@@ -130,7 +130,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                         date: None,
                                         mtime_ns: None,
                                         size_bytes: None,
-                                    },
+                                        decoded_span: None,                                    },
                                 });
                             }
                         }

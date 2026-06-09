@@ -285,7 +285,7 @@ fn stream_git_blobs(
                             date: None,
                             mtime_ns: None,
                             size_bytes: Some(header.size()),
-                        },
+                            decoded_span: None,                        },
                     };
                     total_bytes = total_bytes.saturating_add(chunk.data.len());
                     chunk_count += 1;

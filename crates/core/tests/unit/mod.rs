@@ -21,6 +21,7 @@ pub mod display_redacts_bytes;
 pub mod empty_chunk_data_is_valid;
 pub mod empty_run_still_produces_valid_sarif;
 pub mod empty_service_does_not_panic;
+pub mod sarif_skip_notifications;
 pub mod empty_suppress_entry_is_rejected;
 pub mod empty_suppressor_matches_nothing;
 pub mod empty_with_one_suppression_uses_singular;

@@ -132,7 +132,10 @@ pub fn build_sources(
             );
         }
         let mut fs_source = keyhog_sources::FilesystemSource::new(path.clone())
-            .with_ignore_paths(merged_ignore_paths);
+            .with_ignore_paths(merged_ignore_paths)
+            // `--no-default-excludes` must reach the walker's built-in
+            // lock/minified/vendored filter, not only the glob layer above.
+            .with_default_excludes(!args.no_default_excludes);
         if let Some(limit) = args.max_file_size {
             fs_source = fs_source.with_max_file_size(limit as u64);
         }

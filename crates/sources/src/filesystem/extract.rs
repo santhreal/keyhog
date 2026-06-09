@@ -41,6 +41,7 @@ const MMAP_THRESHOLD: u64 = 1024 * 1024;
 
 /// Per-entry chunk extraction. Reads the file, archive, or compressed
 /// stream and feeds each resulting `Chunk` to `emit` as it is produced.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn process_entry(
     entry: codewalk::FileEntry,
     merkle: &Option<Arc<MerkleIndex>>,
@@ -48,22 +49,29 @@ pub(super) fn process_entry(
     max_size: u64,
     window_size: usize,
     window_overlap: usize,
+    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     let path = entry.path;
     let file_size = entry.size;
 
-    // Screen out `.min.js` and `.bundle.js` files instantly using fast checks before reading/metadata stats (KH-55)
+    // Built-in exclusion list (lock/minified/bundled/vendored). Gated on
+    // `respect_default_excludes` so `--no-default-excludes` actually reaches this
+    // in-process filter, not just the codewalk glob layer — otherwise a secret in
+    // `package-lock.json` stays silently excluded even with the flag set (KH-55).
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if is_default_excluded(filename) {
+    if respect_default_excludes && is_default_excluded(filename) {
+        crate::SKIPPED_EXCLUDED.fetch_add(1, Ordering::Relaxed);
         return;
     }
-    if filename.contains(".min.")
-        || filename.contains(".bundle.")
-        || filename.ends_with(".chunk.js")
-        || filename.ends_with(".min.js")
-        || filename.ends_with(".bundle.js")
+    if respect_default_excludes
+        && (filename.contains(".min.")
+            || filename.contains(".bundle.")
+            || filename.ends_with(".chunk.js")
+            || filename.ends_with(".min.js")
+            || filename.ends_with(".bundle.js"))
     {
+        crate::SKIPPED_EXCLUDED.fetch_add(1, Ordering::Relaxed);
         return;
     }
 
@@ -86,6 +94,7 @@ pub(super) fn process_entry(
 
     // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
     if skip_extensions().contains(ext.as_str()) {
+        crate::SKIPPED_BINARY.fetch_add(1, Ordering::Relaxed);
         return;
     }
 
@@ -101,6 +110,7 @@ pub(super) fn process_entry(
                         || buf.starts_with(b"%PDF")
                         || buf.starts_with(b"PK\x03\x04");
                     if is_binary {
+                        crate::SKIPPED_BINARY.fetch_add(1, Ordering::Relaxed);
                         return;
                     }
                 }
@@ -247,6 +257,26 @@ pub(super) fn process_entry(
         }
     }
 
+    // No-follow guard for the GENERAL content read below. The archive/compressed
+    // branches above each refuse a symlink path and `return`; the `.har` branch
+    // reads via the `O_NOFOLLOW` `read_file_safe` but FALLS THROUGH to here when
+    // the no-follow open failed or the target is not valid HAR — which is exactly
+    // what an `--include`d `creds.har -> ~/.aws/credentials` symlink does: include
+    // paths are admitted with `is_file()` (follows links), `O_NOFOLLOW` then
+    // rejects the link so the HAR read yields nothing, and control reaches the
+    // general read whose `read_file_windowed_mmap` / `File::open(&path)` DO follow
+    // the link and would scan the victim's bytes. Refuse symlinks here so no read
+    // path follows a link-swap target (M17 regression: the guard existed only on
+    // the HAR-specific read, not on the fall-through). Same defense + style as the
+    // archive-branch guards above.
+    if is_symlink(&path) {
+        tracing::warn!(
+            path = %path.display(),
+            "refusing to read content at a symlink path - prevents the link-swap attack class"
+        );
+        return;
+    }
+
     if file_size > window_size as u64 {
         let display = display_path(&path);
         if let Some(windows) = read::read_file_windowed_mmap(&path, window_size, window_overlap) {
@@ -260,7 +290,7 @@ pub(super) fn process_entry(
                         base_line: w.base_line,
                         mtime_ns: live_mtime_ns,
                         size_bytes: Some(file_size),
-                        ..Default::default()
+                        decoded_span: None,                        ..Default::default()
                     },
                 });
                 if !emit(chunk) {
@@ -316,7 +346,7 @@ pub(super) fn process_entry(
                         base_line: current_base_line,
                         mtime_ns: live_mtime_ns,
                         size_bytes: Some(file_size),
-                        ..Default::default()
+                        decoded_span: None,                        ..Default::default()
                     },
                 });
                 if !emit(chunk) {
@@ -381,7 +411,7 @@ pub(super) fn process_entry(
             path: Some(display_path(&path)),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
-            ..Default::default()
+            decoded_span: None,            ..Default::default()
         },
     }));
 }

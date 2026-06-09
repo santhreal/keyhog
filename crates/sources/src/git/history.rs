@@ -161,7 +161,7 @@ fn stream_git_history_chunks(
                                     date: Some(date.clone()),
                                     mtime_ns: None,
                                     size_bytes: None,
-                                },
+                                    decoded_span: None,                                },
                             }));
                         }
                     }
@@ -197,7 +197,7 @@ fn stream_git_history_chunks(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                            },
+                                decoded_span: None,                            },
                         })
                     } else {
                         None
@@ -251,7 +251,7 @@ fn stream_git_history_chunks(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                            },
+                                decoded_span: None,                            },
                         })
                     } else {
                         None
@@ -312,7 +312,7 @@ fn stream_git_history_chunks(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                            },
+                                decoded_span: None,                            },
                         }));
                     }
                 }
@@ -356,7 +356,7 @@ fn stream_git_history_chunks(
                             date: Some(date.clone()),
                             mtime_ns: None,
                             size_bytes: None,
-                        },
+                            decoded_span: None,                        },
                     }));
                 }
             }

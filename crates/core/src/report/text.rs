@@ -302,10 +302,19 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 };
                 writeln!(self.writer, "  {}\n", colorize(&msg, "1;33", self.color))?;
             } else {
+                // Never claim "clean": a scanner cannot prove the ABSENCE of
+                // secrets (only their presence), and skipped/unreadable/binary
+                // files were not covered at all. State only what is true — nothing
+                // was detected in what was scanned. The end-of-scan skip summary
+                // (stderr) reports what was NOT covered.
                 writeln!(
                     self.writer,
                     "  {}\n",
-                    colorize("No secrets found. Your code is clean.", "1;32", self.color),
+                    colorize(
+                        "No secrets detected in the scanned files.",
+                        "1;32",
+                        self.color
+                    ),
                 )?;
             }
         } else {

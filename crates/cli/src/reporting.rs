@@ -69,11 +69,31 @@ fn report_with<W: std::io::Write + 'static + Send>(
         }
         OutputFormat::Json => finish_reporter(JsonReporter::new(w)?, findings),
         OutputFormat::Jsonl => finish_reporter(JsonlReporter::new(w), findings),
-        OutputFormat::Sarif => finish_reporter(SarifReporter::new(w), findings),
+        OutputFormat::Sarif => {
+            finish_reporter(SarifReporter::new(w).with_skip_summary(sarif_skip_summary()), findings)
+        }
         OutputFormat::Csv => finish_reporter(CsvReporter::new(w)?, findings),
         OutputFormat::Html => finish_reporter(HtmlReporter::new(w), findings),
         OutputFormat::Junit => finish_reporter(JunitReporter::new(w), findings),
     }
+}
+
+/// Build the SARIF skipped-file summary from the source-layer skip counters.
+/// Each non-zero category becomes one `(reason, count)` pair the SARIF reporter
+/// surfaces as a tool-execution notification, so a consuming platform sees the
+/// scan's coverage gaps (unreadable files especially — those are unknowns).
+fn sarif_skip_summary() -> Vec<(String, usize)> {
+    let c = keyhog_sources::skip_counts();
+    [
+        ("exceeded --max-file-size", c.over_max_size),
+        ("binary (extension or content sniff)", c.binary),
+        ("default-exclusion list (lock/minified/vendored)", c.excluded),
+        ("unreadable (permission denied or I/O error)", c.unreadable),
+    ]
+    .into_iter()
+    .filter(|(_, n)| *n > 0)
+    .map(|(reason, n)| (reason.to_string(), n))
+    .collect()
 }
 
 fn finish_reporter<R: Reporter>(mut reporter: R, findings: &[VerifiedFinding]) -> Result<()> {

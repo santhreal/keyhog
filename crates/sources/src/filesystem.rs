@@ -152,6 +152,14 @@ pub struct FilesystemSource {
     window_size: usize,
     /// Bytes of overlap between consecutive windows. Same rationale.
     window_overlap: usize,
+    /// Whether the walker's built-in exclusion list (lock files, minified /
+    /// bundled JS, vendored directories — `filter::is_default_excluded` + the
+    /// `.min.`/`.bundle.` filename checks) is applied. `true` (default) is the
+    /// normal scan. `--no-default-excludes` flips this to `false` so a secret
+    /// committed inside e.g. `package-lock.json` is still scanned — previously
+    /// the flag only reached the codewalk glob layer, NOT this in-process
+    /// filter, so the lock/vendored files stayed silently excluded.
+    respect_default_excludes: bool,
 }
 
 impl FilesystemSource {
@@ -170,7 +178,17 @@ impl FilesystemSource {
             skipped: Arc::new(AtomicUsize::new(0)),
             window_size: DEFAULT_WINDOW_SIZE,
             window_overlap: DEFAULT_WINDOW_OVERLAP,
+            respect_default_excludes: true,
         }
+    }
+
+    /// Toggle the walker's built-in exclusion list (lock/minified/vendored).
+    /// Pass `false` (from `--no-default-excludes`) to scan files the default
+    /// list would otherwise drop. Default `true`.
+    #[must_use]
+    pub fn with_default_excludes(mut self, respect: bool) -> Self {
+        self.respect_default_excludes = respect;
+        self
     }
 
     /// Override the windowed-scan parameters. Production callers stick
@@ -269,6 +287,12 @@ impl Source for FilesystemSource {
             rx.into_iter().filter_map(|result| match result {
                 Ok(entry) => Some(entry),
                 Err(error) => {
+                    // An unreadable entry is an UNKNOWN, not a clean file: count it
+                    // so end-of-scan surfacing can tell the operator the tree was
+                    // not fully covered (Law 10 — a permission-denied subtree must
+                    // not read as "clean"). The warn! line is debug-level noise at
+                    // the default log level; the counter is the durable signal.
+                    crate::SKIPPED_UNREADABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     tracing::warn!(
                         %error,
                         "skipping unreadable filesystem entry; scan continues"
@@ -288,6 +312,52 @@ impl Source for FilesystemSource {
                 let allowed: HashSet<PathBuf> = self
                     .include_paths
                     .iter()
+                    .filter(|p| {
+                        // No-follow guard at include-admission (M17), scoped to the
+                        // dangerous case. Include paths are admitted below via
+                        // `canonicalize()` + `is_file()`, BOTH of which follow
+                        // symlinks, and canonicalize resolves the link before any
+                        // later `is_symlink(path)` check can see it — so the refusal
+                        // must happen HERE, on the original pre-canonicalization path.
+                        //
+                        // ASYMMETRY (two pinned contracts): a symlink to a PLAIN file
+                        // is read (documented "canonicalize-then-read" — the user
+                        // explicitly named it; see
+                        // `included_symlinked_plain_file_is_canonicalized_then_read`).
+                        // But a symlink whose own extension marks it an ARCHIVE /
+                        // expandable container (`creds.har -> ~/.aws/credentials`,
+                        // `x.zip -> /etc/...`) is REFUSED: following it would read AND
+                        // structurally EXPAND an out-of-tree target, the link-swap
+                        // exfiltration class (see `har_symlink_target_is_not_followed_via_include`).
+                        // The expandable-extension set mirrors the archive/compressed
+                        // branches in `extract.rs::process_entry`.
+                        let is_link = std::fs::symlink_metadata(p)
+                            .map(|m| m.file_type().is_symlink())
+                            .unwrap_or(false);
+                        if !is_link {
+                            return true;
+                        }
+                        let ext = p
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_ascii_lowercase();
+                        let expandable = matches!(
+                            ext.as_str(),
+                            "har" | "zip" | "apk" | "ipa" | "crx" | "jar" | "tar" | "gz"
+                                | "tgz" | "zst" | "lz4" | "sz"
+                        );
+                        if expandable {
+                            tracing::warn!(
+                                path = %p.display(),
+                                "refusing --include of an archive symlink - prevents the link-swap exfiltration class"
+                            );
+                            crate::SKIPPED_UNREADABLE
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            return false;
+                        }
+                        true
+                    })
                     .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
                     .collect();
                 Box::new(allowed.into_iter().flat_map(move |path| {
@@ -327,6 +397,7 @@ impl Source for FilesystemSource {
         let skipped = self.skipped.clone();
         let window_size = self.window_size;
         let window_overlap = self.window_overlap;
+        let respect_default_excludes = self.respect_default_excludes;
 
         // Parallel file producer: the walk is lazy (dir tree syscalls
         // amortize cheaply), but per-file I/O + decode + chunk assembly
@@ -433,6 +504,7 @@ impl Source for FilesystemSource {
                         max_size,
                         window_size,
                         window_overlap,
+                        respect_default_excludes,
                         &mut emit,
                     );
                     if !sender_alive {

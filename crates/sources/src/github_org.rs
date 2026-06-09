@@ -491,7 +491,7 @@ fn rewrite_chunk_path(mut chunk: Chunk, org: &str, repo_name: &str, clone_path: 
         date: None,
         mtime_ns: None,
         size_bytes: None,
-    };
+        decoded_span: None,    };
 
     chunk
 }

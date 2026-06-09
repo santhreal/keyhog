@@ -263,8 +263,35 @@ pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> 
         }
     });
     let mut out = String::with_capacity(payload.len() / 2);
+    let mut invalid = 0usize;
+    let mut total = 0usize;
     for r in char::decode_utf16(units) {
-        out.push(r.ok()?);
+        total += 1;
+        match r {
+            Ok(c) => out.push(c),
+            Err(_) => {
+                // Law 10 (no silent fallbacks): the previous `r.ok()?` returned
+                // None from the WHOLE function on the first undecodable unit, so a
+                // single unpaired surrogate (truncated trailing half, a binary
+                // value spliced into a UTF-16 config, a mid-file corruption)
+                // silently discarded every credential in the file from the text
+                // path. Decode lossily instead — substitute U+FFFD and keep
+                // scanning the valid remainder, matching the crate's UTF-8 lossy
+                // convention (see the stdin lossy-decode path).
+                invalid += 1;
+                out.push('\u{FFFD}');
+            }
+        }
+    }
+    // A genuine UTF-16 text file carries at most a handful of invalid units; a
+    // buffer that is *mostly* undecodable is not text at all (a binary file whose
+    // first two bytes coincidentally form a BOM). Return None for those so the
+    // caller routes them to `looks_binary` rather than scanning a wall of
+    // replacement characters — this preserves the binary-skip precision WITHOUT
+    // reintroducing the single-bad-unit whole-file drop. Threshold is generous
+    // toward recall (a file is kept unless >25% of its units are undecodable).
+    if total > 0 && invalid.saturating_mul(4) > total {
+        return None;
     }
     Some(out)
 }
