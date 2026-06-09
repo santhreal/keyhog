@@ -2,7 +2,259 @@ use super::CompiledScanner;
 use crate::types::*;
 use keyhog_core::{Chunk, RawMatch};
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::{Arc, OnceLock};
+
+/// Per-pattern confirmed-pass profiler (env-gated; measurement only). Set
+/// `KEYHOG_PROFILE_CONFIRMED=1` to accumulate, per (ac_map ∪ fallback) index,
+/// the wall time its whole-chunk extract costs and how many chunks it ran on —
+/// isolating WHICH triggered detectors dominate `extract_confirmed_patterns`
+/// and whether localization (anchored verify at the trigger position) would
+/// help. Zero-cost when unset.
+fn confirmed_prof_enabled() -> bool {
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_CONFIRMED").as_deref() == Ok("1"))
+}
+static CONFIRMED_PAT_NS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
+static CONFIRMED_PAT_RUNS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
+
+fn confirmed_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static [AtomicU64]) {
+    let ns = CONFIRMED_PAT_NS.get_or_init(|| (0..len).map(|_| AtomicU64::new(0)).collect());
+    let runs = CONFIRMED_PAT_RUNS.get_or_init(|| (0..len).map(|_| AtomicU64::new(0)).collect());
+    (ns.as_slice(), runs.as_slice())
+}
+
+/// ML batch-size histogram (env-gated by `KEYHOG_PROFILE_MLBATCH=1`). Buckets the
+/// `ml_pending.len()` seen at each [`CompiledScanner::apply_ml_batch_scores`]
+/// call so we can measure how far per-(sub)chunk ML batches sit from the GPU MoE
+/// 64-candidate dispatch threshold — the data that decides whether cross-(sub)chunk
+/// batch unification is worth the recall-exactness cost. Zero-cost when unset.
+fn ml_batch_prof_enabled() -> bool {
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1"))
+}
+static ML_BATCH_BUCKETS: [AtomicU64; 10] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
+static ML_BATCH_CALLS: AtomicU64 = AtomicU64::new(0);
+static ML_BATCH_CANDIDATES: AtomicU64 = AtomicU64::new(0);
+static ML_BATCH_CALLS_GE64: AtomicU64 = AtomicU64::new(0);
+static ML_BATCH_CANDIDATES_GE64: AtomicU64 = AtomicU64::new(0);
+
+fn ml_batch_bucket(n: usize) -> usize {
+    match n {
+        0 => 0,
+        1 => 1,
+        2..=7 => 2,
+        8..=15 => 3,
+        16..=31 => 4,
+        32..=63 => 5,
+        64..=127 => 6,
+        128..=255 => 7,
+        256..=1023 => 8,
+        _ => 9,
+    }
+}
+
+/// Record one `apply_ml_batch_scores` call's pending-candidate count.
+pub(crate) fn ml_batch_record(n: usize) {
+    ML_BATCH_BUCKETS[ml_batch_bucket(n)].fetch_add(1, Relaxed);
+    ML_BATCH_CALLS.fetch_add(1, Relaxed);
+    ML_BATCH_CANDIDATES.fetch_add(n as u64, Relaxed);
+    if n >= 64 {
+        ML_BATCH_CALLS_GE64.fetch_add(1, Relaxed);
+        ML_BATCH_CANDIDATES_GE64.fetch_add(n as u64, Relaxed);
+    }
+}
+
+/// Print + reset the ML batch-size histogram. Called from `phase2_profile_dump`.
+pub fn ml_batch_profile_dump() {
+    let calls = ML_BATCH_CALLS.swap(0, Relaxed);
+    let cands = ML_BATCH_CANDIDATES.swap(0, Relaxed);
+    let calls_ge64 = ML_BATCH_CALLS_GE64.swap(0, Relaxed);
+    let cands_ge64 = ML_BATCH_CANDIDATES_GE64.swap(0, Relaxed);
+    let buckets: [u64; 10] = std::array::from_fn(|i| ML_BATCH_BUCKETS[i].swap(0, Relaxed));
+    if calls == 0 {
+        return;
+    }
+    let names = [
+        "0", "1", "2-7", "8-15", "16-31", "32-63", "64-127", "128-255", "256-1023", "1024+",
+    ];
+    eprintln!(
+        "=== ML batch-size histogram: calls={calls} candidates={cands} (avg {:.1}/call) | \
+GPU-eligible (>=64): {calls_ge64} calls ({:.1}%), {cands_ge64} candidates ({:.1}% of all ML work) ===",
+        cands as f64 / calls as f64,
+        100.0 * calls_ge64 as f64 / calls as f64,
+        100.0 * cands_ge64 as f64 / cands.max(1) as f64,
+    );
+    for i in 0..10 {
+        eprintln!("  {:>9}: {}", names[i], buckets[i]);
+    }
+}
+
+/// Decode-recursion profiler (env-gated; measurement only). Set
+/// `KEYHOG_PROFILE_DECODE=1` to accumulate, across a full scan, how many parent
+/// chunks entered decode-through, how many decoded sub-chunks were produced and
+/// rescanned, their total byte volume, the wall time spent generating them
+/// (`decode_chunk`) and the wall time spent rescanning them (`scan_inner` /
+/// `scan_windowed`). This is the lever behind the ~0.4 MB/s end-to-end ceiling:
+/// the per-sub-chunk fixed phase-2 cost (fallback prefilter) is paid once per
+/// decoded sub-chunk, so the sub-chunk COUNT is what dominates. Zero-cost when
+/// unset. Dump+reset with [`decode_profile_dump`].
+fn decode_prof_enabled() -> bool {
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_DECODE").as_deref() == Ok("1"))
+}
+static DECODE_PARENTS: AtomicU64 = AtomicU64::new(0);
+static DECODE_SUBCHUNKS: AtomicU64 = AtomicU64::new(0);
+static DECODE_SUBCHUNK_BYTES: AtomicU64 = AtomicU64::new(0);
+static DECODE_GEN_NS: AtomicU64 = AtomicU64::new(0);
+static DECODE_SCAN_NS: AtomicU64 = AtomicU64::new(0);
+
+/// Print and reset the accumulated decode-recursion counters. Call after a
+/// `KEYHOG_PROFILE_DECODE=1` run. Returns `(parents, subchunks, bytes, gen_ms,
+/// scan_ms)` so a measurement test can assert on it.
+pub fn decode_profile_dump() -> (u64, u64, u64, f64, f64) {
+    let parents = DECODE_PARENTS.swap(0, Relaxed);
+    let subchunks = DECODE_SUBCHUNKS.swap(0, Relaxed);
+    let bytes = DECODE_SUBCHUNK_BYTES.swap(0, Relaxed);
+    let gen_ms = DECODE_GEN_NS.swap(0, Relaxed) as f64 / 1e6;
+    let scan_ms = DECODE_SCAN_NS.swap(0, Relaxed) as f64 / 1e6;
+    eprintln!(
+        "decode-recursion: parents={parents} subchunks={subchunks} \
+         ({:.1} sub/parent) bytes={bytes} gen={gen_ms:.1}ms scan={scan_ms:.1}ms \
+         ({:.2} MB/s rescan)",
+        if parents > 0 {
+            subchunks as f64 / parents as f64
+        } else {
+            0.0
+        },
+        if scan_ms > 0.0 {
+            (bytes as f64 / 1e6) / (scan_ms / 1e3)
+        } else {
+            0.0
+        },
+    );
+    (parents, subchunks, bytes, gen_ms, scan_ms)
+}
+
+static CONFIRMED_GATE_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Override the confirmed-pass suffix gate (test/diagnostic). `Some(true)`
+/// forces it on, `Some(false)` off, `None` = env default (on). Recall is
+/// identical either way — the gate only skips patterns whose required suffix
+/// literal is absent (so they cannot match), so it is safe to flip.
+pub fn set_confirmed_suffix_gate(mode: Option<bool>) {
+    CONFIRMED_GATE_OVERRIDE.store(
+        match mode {
+            None => 0,
+            Some(true) => 1,
+            Some(false) => 2,
+        },
+        Relaxed,
+    );
+}
+
+fn confirmed_suffix_gate_enabled() -> bool {
+    match CONFIRMED_GATE_OVERRIDE.load(Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_CONFIRMED_GATE").as_deref() != Ok("0"))
+}
+
+/// Extract a pattern's required SUFFIX literals: every match ENDS with one of
+/// these, so if NONE appears in the chunk the pattern cannot match and its
+/// whole-chunk regex run can be skipped. Used to skip the O(chunk) `.*<sitename>`
+/// scans of site-specific key detectors that trigger on the common prefix
+/// ("key") but require a rare trailing literal the regex prefilter never uses.
+///
+/// Case-SENSITIVE parse (the runtime regex's case-insensitivity is matched by
+/// the ASCII-case-insensitive gate AC) so the suffix doesn't case-explode.
+/// `None`/empty unless the suffix is a finite set of <=4 literals each >= 6
+/// bytes (selective enough to be worth gating); lowercased for the caseless AC.
+fn suffix_gate_literals(src: &str) -> Vec<String> {
+    use regex_syntax::hir::literal::{ExtractKind, Extractor};
+    const MIN_LEN: usize = 6;
+    const MAX_LITS: usize = 4;
+    let Ok(hir) = regex_syntax::ParserBuilder::new().build().parse(src) else {
+        return Vec::new();
+    };
+    let mut ex = Extractor::new();
+    ex.kind(ExtractKind::Suffix);
+    let seq = ex.extract(&hir);
+    if !seq.is_finite() {
+        return Vec::new();
+    }
+    let Some(lits) = seq.literals() else {
+        return Vec::new();
+    };
+    if lits.is_empty() || lits.len() > MAX_LITS {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(lits.len());
+    for l in lits {
+        if l.len() < MIN_LEN {
+            return Vec::new();
+        }
+        let Ok(s) = std::str::from_utf8(l.as_bytes()) else {
+            return Vec::new();
+        };
+        out.push(s.to_ascii_lowercase());
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Build the confirmed-pass suffix gate: one ASCII-case-insensitive AC over
+/// every ac_map pattern's required suffix literals, plus per-pattern literal
+/// ids. Returns `(ac, per_pattern_literal_ids)`; the AC is `None` when no
+/// pattern has a gateable suffix.
+pub(crate) fn build_confirmed_suffix_gate(
+    ac_map: &[CompiledPattern],
+) -> (Option<aho_corasick::AhoCorasick>, Vec<Vec<u32>>) {
+    use std::collections::HashMap;
+    let mut literals: Vec<String> = Vec::new();
+    let mut literal_id: HashMap<String, usize> = HashMap::new();
+    let mut per_pattern: Vec<Vec<u32>> = vec![Vec::new(); ac_map.len()];
+    // The embedded corpus has ~6-15% duplicate regex sources; cache the suffix
+    // extraction per source so we parse each unique pattern at most once.
+    let mut src_cache: HashMap<&str, Vec<String>> = HashMap::new();
+    for (i, p) in ac_map.iter().enumerate() {
+        let src = p.regex.as_str();
+        let lits = src_cache
+            .entry(src)
+            .or_insert_with(|| suffix_gate_literals(src));
+        for lit in lits.clone() {
+            let id = *literal_id.entry(lit.clone()).or_insert_with(|| {
+                literals.push(lit.clone());
+                literals.len() - 1
+            });
+            per_pattern[i].push(id as u32);
+        }
+    }
+    if literals.is_empty() {
+        return (None, per_pattern);
+    }
+    let ac = aho_corasick::AhoCorasickBuilder::new()
+        .match_kind(aho_corasick::MatchKind::Standard)
+        .ascii_case_insensitive(true)
+        .build(&literals)
+        .ok();
+    (ac, per_pattern)
+}
 
 impl CompiledScanner {
     pub(crate) fn post_process_matches(
@@ -25,6 +277,7 @@ impl CompiledScanner {
 
         #[cfg(feature = "decode")]
         if chunk.data.len() <= self.config.max_decode_bytes {
+            let prof_decode = decode_prof_enabled();
             // Dedup keys reuse the existing `Arc<str>` from `RawMatch` instead
             // of cloning to `String`. For 50+ pre-existing matches per chunk
             // this saves ~10-30 µs of allocator pressure per call.
@@ -32,13 +285,22 @@ impl CompiledScanner {
                 .iter()
                 .map(|m| (Arc::clone(&m.detector_id), Arc::clone(&m.credential)))
                 .collect();
-            for decoded_chunk in crate::decode::decode_chunk(
+            let gen_start = prof_decode.then(std::time::Instant::now);
+            let decoded_chunks = crate::decode::decode_chunk(
                 chunk,
                 self.config.max_decode_depth,
                 self.config.validate_decode,
                 deadline,
                 self.alphabet_screen.as_ref(),
-            ) {
+            );
+            if let Some(t) = gen_start {
+                DECODE_GEN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                if !decoded_chunks.is_empty() {
+                    DECODE_PARENTS.fetch_add(1, Relaxed);
+                    DECODE_SUBCHUNKS.fetch_add(decoded_chunks.len() as u64, Relaxed);
+                }
+            }
+            for decoded_chunk in decoded_chunks {
                 // kimi-wave1 finding 5.LOW: a single decoded chunk that
                 // exceeds `max_decode_bytes` slips past the outer guard
                 // (which only checked the *input* chunk size). Skip
@@ -53,6 +315,13 @@ impl CompiledScanner {
                     );
                     continue;
                 }
+                if prof_decode {
+                    DECODE_SUBCHUNK_BYTES.fetch_add(decoded_chunk.data.len() as u64, Relaxed);
+                }
+                let scan_start = prof_decode.then(std::time::Instant::now);
+                // Mark the rescan so the phase-2 profiler can separate sub-chunk
+                // per-pass cost from parent-chunk cost (cheap thread-local swap).
+                let restore_rescan = super::backend_triggered::set_in_decode_rescan(true);
                 let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                     self.scan_windowed(&decoded_chunk, deadline)
                 } else {
@@ -80,6 +349,10 @@ impl CompiledScanner {
                     };
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
+                super::backend_triggered::set_in_decode_rescan(restore_rescan);
+                if let Some(t) = scan_start {
+                    DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                }
                 for m in decoded_matches {
                     if crate::context::is_known_example_credential(&m.credential)
                         && chunk.data.as_str().contains(m.credential.as_ref())
@@ -347,10 +620,34 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
     ) {
+        let prof = confirmed_prof_enabled();
+        let total = self.ac_map.len() + self.fallback.len();
+        // Suffix gate: one AC pass marks which required-suffix literals are
+        // present in the chunk; a triggered pattern whose suffix literals are
+        // ALL absent cannot match (every match ends with one of them), so its
+        // whole-chunk regex run is skipped. `None` when the gate is disabled or
+        // no pattern is gateable.
+        let suffix_present: Option<std::collections::HashSet<usize>> = match &self.suffix_gate_ac {
+            Some(ac) if confirmed_suffix_gate_enabled() => Some(
+                ac.find_overlapping_iter(&*preprocessed.text)
+                    .map(|m| m.pattern().as_usize())
+                    .collect(),
+            ),
+            _ => None,
+        };
         for &pat_idx in confirmed_patterns {
             if let Some(deadline) = deadline {
                 if std::time::Instant::now() > deadline {
                     break;
+                }
+            }
+            // Skip a gated ac_map pattern whose required suffix literal is absent.
+            if let Some(present) = &suffix_present {
+                if let Some(gate) = self.ac_suffix_gate.get(pat_idx) {
+                    if !gate.is_empty() && !gate.iter().any(|id| present.contains(&(*id as usize)))
+                    {
+                        continue;
+                    }
                 }
             }
             let entry = if pat_idx < self.ac_map.len() {
@@ -361,6 +658,11 @@ impl CompiledScanner {
                     continue;
                 }
                 &self.fallback[fallback_idx].0
+            };
+            let t0 = if prof {
+                Some(std::time::Instant::now())
+            } else {
+                None
             };
             self.extract_matches(
                 entry,
@@ -374,11 +676,55 @@ impl CompiledScanner {
                 0,
                 deadline,
             );
+            if let Some(t0) = t0 {
+                let (ns, runs) = confirmed_prof_vecs(total);
+                if let (Some(n), Some(r)) = (ns.get(pat_idx), runs.get(pat_idx)) {
+                    n.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+                    r.fetch_add(1, Relaxed);
+                }
+            }
+        }
+    }
+
+    /// Print and reset the per-pattern confirmed-pass profile (top 30 by time).
+    pub fn confirmed_profile_dump(&self, label: &str) {
+        let total = self.ac_map.len() + self.fallback.len();
+        let (ns, runs) = confirmed_prof_vecs(total);
+        let mut rows: Vec<(usize, u64, u64)> = (0..total)
+            .map(|i| (i, ns[i].swap(0, Relaxed), runs[i].swap(0, Relaxed)))
+            .filter(|&(_, n, _)| n > 0)
+            .collect();
+        rows.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        let grand: u64 = rows.iter().map(|r| r.1).sum();
+        eprintln!(
+            "=== CONFIRMED per-pattern [{label}] total={:.1} ms over {} triggered patterns ===",
+            grand as f64 / 1e6,
+            rows.len()
+        );
+        for (i, n, r) in rows.iter().take(30) {
+            let src = if *i < self.ac_map.len() {
+                self.ac_map[*i].regex.as_str()
+            } else {
+                self.fallback[*i - self.ac_map.len()].0.regex.as_str()
+            };
+            let per = if *r > 0 { *n / *r } else { 0 };
+            let s: String = src.chars().take(60).collect();
+            eprintln!(
+                "  {:>6.1}ms {:>5.1}%  runs={:<6} {:>7}ns/run  {}",
+                *n as f64 / 1e6,
+                100.0 * *n as f64 / grand.max(1) as f64,
+                r,
+                per,
+                s
+            );
         }
     }
 
     #[cfg(feature = "ml")]
     pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) {
+        if ml_batch_prof_enabled() {
+            ml_batch_record(scan_state.ml_pending.len());
+        }
         if scan_state.ml_pending.is_empty() {
             return;
         }

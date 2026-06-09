@@ -57,6 +57,17 @@ impl Decoder for QuotedPrintableDecoder {
         let mut decoded_chunks = Vec::new();
         let lines: Vec<&str> = chunk.data.lines().collect();
         for (line_idx, line) in lines.iter().enumerate() {
+            // Cheap O(line) gate FIRST: real Quoted-Printable needs a `=XX` hex
+            // escape, and every candidate is a substring of this line, so a line
+            // with no `=XX` cannot yield ANY QP candidate (the post-extraction
+            // `has_qp_escape` filter below already drops every such candidate).
+            // Skip the expensive `extract_encoded_values` + per-line
+            // `is_false_positive_context` for it — most source lines (`key=value`,
+            // prose) have no `=XX`, so this cuts the bulk of QP's ~22%-of-decode-
+            // gen cost with an identical candidate set (recall-preserving).
+            if !has_qp_escape(line) {
+                continue;
+            }
             if context::is_false_positive_context(&lines, line_idx, chunk.metadata.path.as_deref())
             {
                 continue;

@@ -20,6 +20,15 @@ mod ml_features;
 pub use ml_features::compute_features_with_config;
 pub use ml_features::{compute_features_public, NUM_FEATURES};
 
+/// Batch-size crossover for ML scoring. Below this, `batch_ml_inference` scores
+/// serially (a fused feature->score loop) because it already runs inside the
+/// parallel coalesced/per-chunk scan, where a `par_iter` over a handful of
+/// candidates only pays rayon split/join overhead. At or above it, feature
+/// extraction parallelizes and the GPU MoE dispatch becomes worthwhile. Single
+/// source of truth: the GPU backend's dispatch gate references this same const
+/// so the serial/parallel boundary and the GPU-engage boundary can never drift.
+pub const GPU_BATCH_THRESHOLD: usize = 64;
+
 /// Number of mixture-of-experts specialists. Each expert sees the same input
 /// but learns different aspects (one may specialize in cloud credentials,
 /// another in short API keys, etc.). 6 experts balance capacity vs. inference

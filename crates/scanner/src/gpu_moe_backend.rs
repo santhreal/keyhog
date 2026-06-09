@@ -8,9 +8,11 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 
-/// Minimum batch size before GPU dispatch is worthwhile.
-/// Below this, CPU is faster due to GPU dispatch overhead.
-const GPU_BATCH_THRESHOLD: usize = 64;
+/// Minimum batch size before GPU dispatch is worthwhile. Below this, CPU is
+/// faster due to GPU dispatch overhead. Single source of truth lives in
+/// `ml_scorer` so the host-side serial/parallel crossover and this GPU-engage
+/// gate stay locked together.
+use crate::ml_scorer::GPU_BATCH_THRESHOLD;
 const DEFAULT_GPU_MOE_TIMEOUT_MS: u64 = 30_000;
 
 // Single source of truth for the feature width: the MoE input dimension is the
@@ -238,6 +240,48 @@ CPU/SIMD scan path. Set KEYHOG_NO_GPU=1 to silence this, or KEYHOG_REQUIRE_GPU=1
     .as_ref()
 }
 
+/// One-shot guard so a *runtime* GPU-MoE dispatch failure surfaces once per
+/// process, not once per batch on a multi-thousand-batch scan.
+static MOE_RUNTIME_DEGRADE_WARNED: OnceLock<()> = OnceLock::new();
+
+/// Surface a runtime GPU-MoE dispatch failure that is about to degrade the
+/// affected batch(es) to the CPU MoE. This mirrors `engine::gpu_forced`'s
+/// posture exactly so the MoE path is coherent with the literal-set/MegaScan
+/// paths under the no-silent-fallback rule:
+///
+///   * `KEYHOG_REQUIRE_GPU=1` -> hard-fail (`exit(2)`). The init-time check in
+///     [`get_gpu`] cannot catch this: acquisition succeeded, then a *specific
+///     dispatch* (driver timeout, lost device, map_async error) failed deep in
+///     the scan. Without this, `REQUIRE_GPU` silently degraded to CPU per batch.
+///   * ordinary run -> a single loud stderr line (the scores are numerically
+///     identical to GPU, but the operator who believes the scan is
+///     GPU-accelerated must know it isn't, since throughput collapses).
+///   * `KEYHOG_NO_GPU` / CI -> stay quiet (CPU is the right path there).
+///
+/// Distinct from the below-threshold `None` (a legitimate routing choice, not a
+/// failure) and from init failure (already handled loudly in [`get_gpu`]).
+fn moe_runtime_degrade(reason: &str) {
+    let no_gpu = super::env_no_gpu();
+    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+    if require_gpu {
+        eprintln!(
+            "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU MoE dispatch failed at runtime \
+({reason}). Refusing to silently degrade to the CPU MoE."
+        );
+        std::process::exit(2);
+    }
+    if no_gpu {
+        return;
+    }
+    if MOE_RUNTIME_DEGRADE_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: GPU MoE dispatch failed at runtime ({reason}); affected batches in \
+this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
+KEYHOG_NO_GPU=1 to silence, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+        );
+    }
+}
+
 /// Score a batch of feature vectors on GPU. Returns one score per input.
 ///
 /// # Examples
@@ -345,6 +389,7 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
                 tracing::warn!(
                     "GPU MoE staging-buffer callback disconnected; falling back to CPU MoE for this scan"
                 );
+                moe_runtime_degrade("staging-buffer callback disconnected");
                 return None;
             }
             Err(TryRecvError::Empty) => {}
@@ -355,6 +400,7 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
                 ?timeout,
                 "GPU MoE staging-buffer readback timed out; falling back to CPU MoE for this scan"
             );
+            moe_runtime_degrade("staging-buffer readback timed out");
             return None;
         }
 
@@ -363,6 +409,7 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
                 ?error,
                 "GPU MoE device.poll() failed; falling back to CPU MoE for this scan"
             );
+            moe_runtime_degrade("device.poll() failed");
             return None;
         }
 
@@ -377,6 +424,7 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
             ?error,
             "GPU MoE staging-buffer map_async failed; falling back to CPU MoE for this scan"
         );
+        moe_runtime_degrade("staging-buffer map_async failed");
         return None;
     }
     let data = slice.get_mapped_range();

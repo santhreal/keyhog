@@ -1,7 +1,91 @@
 //! Pre-decoding extraction of encoded values (Base64, Hex, URL, etc.).
 
-/// Extract candidates for decoding (freestanding Base64, quotes, delimited key/values, percent runs).
+/// MEASUREMENT (env `KEYHOG_PROFILE_EXTRACT=1`): call count + total bytes + wall
+/// time of `extract_encoded_values`, to size the redundant-extraction lever
+/// (it's called ~5-6× per chunk on identical input by base64/hex/url/caesar/
+/// reverse). `extract_profile_dump()` prints + resets. Zero-cost unset.
+static EXTRACT_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static EXTRACT_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static EXTRACT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn extract_prof_enabled() -> bool {
+    static EN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_EXTRACT").as_deref() == Ok("1"))
+}
+pub fn extract_profile_dump() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let calls = EXTRACT_CALLS.swap(0, Relaxed);
+    let bytes = EXTRACT_BYTES.swap(0, Relaxed);
+    let ms = EXTRACT_NS.swap(0, Relaxed) as f64 / 1e6;
+    eprintln!(
+        "extract_encoded_values: calls={calls} bytes={bytes} time={ms:.1}ms ({:.2} µs/call)",
+        if calls > 0 {
+            ms * 1000.0 / calls as f64
+        } else {
+            0.0
+        }
+    );
+}
+
+thread_local! {
+    /// Per-BFS-item shared WHOLE-CHUNK candidate cache. `decode_chunk` primes
+    /// this once per chunk so the ~5 whole-chunk decoders (base64/hex/url/caesar/
+    /// reverse) reuse ONE extraction instead of each recomputing the identical
+    /// `extract_encoded_values(&chunk.data)` (it was ~67% of decode-gen, called
+    /// 5-6× per chunk on the same input). Keyed by the chunk text's (ptr,len) and
+    /// cleared per item, so a per-line call (different ptr) or a later chunk
+    /// (different ptr) never reads a stale result.
+    static SHARED_CANDIDATES: std::cell::RefCell<Option<(usize, usize, Vec<String>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Pre-compute and cache the whole-chunk extraction for reuse by this BFS item's
+/// decoders. Call once per item before the decoder loop; pair with
+/// [`clear_shared_candidates`] after.
+pub(super) fn prime_shared_candidates(text: &str) {
+    let cands = extract_encoded_values_raw(text);
+    SHARED_CANDIDATES.with(|c| {
+        *c.borrow_mut() = Some((text.as_ptr() as usize, text.len(), cands));
+    });
+}
+
+/// Drop the primed cache so it can never be read for a different chunk.
+pub(super) fn clear_shared_candidates() {
+    SHARED_CANDIDATES.with(|c| *c.borrow_mut() = None);
+}
+
+/// Extract candidates for decoding (freestanding Base64, quotes, delimited
+/// key/values, percent runs). Returns the pipeline-primed whole-chunk result
+/// when called for that same text (same ptr+len); per-line / different-chunk
+/// calls compute fresh. The result is identical either way (pure function), so
+/// sharing is recall-preserving.
 pub(crate) fn extract_encoded_values(text: &str) -> Vec<String> {
+    let hit = SHARED_CANDIDATES.with(|c| {
+        c.borrow().as_ref().and_then(|(ptr, len, cands)| {
+            (*ptr == text.as_ptr() as usize && *len == text.len()).then(|| cands.clone())
+        })
+    });
+    hit.unwrap_or_else(|| extract_encoded_values_raw(text))
+}
+
+fn extract_encoded_values_raw(text: &str) -> Vec<String> {
+    let _prof = extract_prof_enabled().then(|| {
+        use std::sync::atomic::Ordering::Relaxed;
+        EXTRACT_CALLS.fetch_add(1, Relaxed);
+        EXTRACT_BYTES.fetch_add(text.len() as u64, Relaxed);
+        std::time::Instant::now()
+    });
+    let _guard = ExtractTimer(_prof);
+    struct ExtractTimer(Option<std::time::Instant>);
+    impl Drop for ExtractTimer {
+        fn drop(&mut self) {
+            if let Some(t) = self.0 {
+                EXTRACT_NS.fetch_add(
+                    t.elapsed().as_nanos() as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+            }
+        }
+    }
     let mut values = Vec::new();
     // Base64 block accumulator - collected in the SAME pass as quoted/assigned values.
     let mut b64_block = String::new();

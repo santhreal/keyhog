@@ -17,6 +17,7 @@ fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     }
 }

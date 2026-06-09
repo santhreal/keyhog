@@ -32,6 +32,7 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     });
 

@@ -1,4 +1,5 @@
 use keyhog_core::{MatchLocation, RawMatch, Severity};
+use keyhog_scanner::compute_line_offsets;
 use keyhog_scanner::engine::record_window_match;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
@@ -29,12 +30,23 @@ fn demo_match(offset: usize) -> RawMatch {
 #[test]
 fn record_window_match_dedups() {
     let text = "abc abc";
+    let line_offsets = compute_line_offsets(text);
     let mut seen = HashSet::new();
     let mut order = VecDeque::new();
     let mut m = demo_match(0);
-    assert!(record_window_match(text, 0, &mut m, &mut seen, &mut order));
+    assert!(record_window_match(
+        &line_offsets,
+        0,
+        &mut m,
+        &mut seen,
+        &mut order
+    ));
     let mut m2 = demo_match(0);
     assert!(!record_window_match(
-        text, 0, &mut m2, &mut seen, &mut order
+        &line_offsets,
+        0,
+        &mut m2,
+        &mut seen,
+        &mut order
     ));
 }

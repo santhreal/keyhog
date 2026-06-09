@@ -226,6 +226,15 @@ impl LazyRegex {
         &self.src
     }
 
+    /// Whether this pattern compiles with the case-insensitive + CRLF-aware
+    /// `shared_regex` flags (a `detector` pattern) versus plain `Regex::new`
+    /// defaults (a homoglyph-expanded `plain` variant). Callers that build an
+    /// equivalent combined matcher (e.g. the always-active fallback RegexSet
+    /// prefilter) must replicate these flags exactly to stay match-equivalent.
+    pub fn is_case_insensitive(&self) -> bool {
+        self.case_insensitive
+    }
+
     /// Compile-on-first-use. A pattern that fails to compile (impossible for
     /// the curated corpus - the contracts suite compiles every embedded
     /// detector on each CI run, and the `--detectors` quality gate

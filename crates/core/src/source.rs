@@ -99,6 +99,15 @@ pub struct ChunkMetadata {
     /// Same shape and rationale as `mtime_ns`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
+    /// For DECODE sub-chunks only: the `[start, end)` byte range of the freshly
+    /// decoded text within `data`. A decode sub-chunk is a small window of
+    /// already-scanned parent context with the decoded blob spliced in at this
+    /// span; everything OUTSIDE the span was scanned (and any finding deduped)
+    /// when the parent chunk was scanned, so the self-contained passes only need
+    /// to rescan a focus window around this span instead of the whole splice.
+    /// `None` for all non-decode chunks (whole-file, windowed, git-diff, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decoded_span: Option<(usize, usize)>,
 }
 
 /// Produces chunks of text for the scanner to process.

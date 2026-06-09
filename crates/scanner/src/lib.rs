@@ -106,7 +106,15 @@ mod simdsieve_prefilter;
 
 pub(crate) mod shared_regexes;
 
+pub use engine::decode_profile_dump;
+pub use engine::set_confirmed_suffix_gate;
 pub use engine::GpuPhase1Output;
+pub use engine::{decode_phase2_profile_dump, phase2_profile_dump, scan_inner_profile_dump};
+pub use engine::{
+    fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode,
+    set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
+    set_prefilter_truncate,
+};
 pub use engine::{CompiledScanner, GpuInitPolicy};
 pub use error::{Result, ScanError};
 pub use hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
@@ -192,6 +200,9 @@ pub fn find_companion(
 
 pub mod testing {
     pub use crate::compiler::{rewrite_alternation_prefix, split_leading_inline_flag};
+    /// Prefilter `{N,}`→`{N}` truncation, exposed for the sound-superset unit
+    /// tests migrated out of `src/engine/fallback.rs` (no-inline-tests gate).
+    pub use crate::engine::fallback::truncate_for_prefilter;
     pub use crate::confidence::penalties::finalize_confidence;
     pub use crate::engine::boundary::scan_chunk_boundaries;
     pub use crate::engine::gpu_postprocess::{
@@ -242,6 +253,18 @@ pub mod testing {
     pub mod compiler_prefix {
         pub use crate::compiler::compiler_prefix::{
             extract_literal_prefixes, strip_leading_boundary_guard, strip_leading_inline_flags,
+        };
+    }
+
+    /// Caesar shift-selection internals, exposed for the 100k differential
+    /// shift-selection parity test migrated out of `src/decode/caesar.rs`
+    /// (no-inline-tests gate). The `matched_caesar_shifts` optimization must emit
+    /// the exact same decoded-variant set as the all-25-shifts reference.
+    pub mod decode_caesar {
+        pub use crate::confidence::KNOWN_PREFIXES;
+        pub use crate::decode::caesar::{
+            candidate_shape_invariant, caesar_shift, looks_credential_shaped,
+            matched_caesar_shifts, MIN_CAESAR_LEN,
         };
     }
 

@@ -120,6 +120,7 @@ unrelated = 'foo' + 'bar'\n\
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     };
     let matches = production_scanner().scan(&chunk);

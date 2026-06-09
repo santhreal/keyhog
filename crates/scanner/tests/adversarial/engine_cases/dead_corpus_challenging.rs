@@ -296,6 +296,7 @@ fn challenging_full_file_scan_uses_production_scanner() {
                 date: None,
                 mtime_ns: None,
                 size_bytes: None,
+                ..Default::default()
             },
         };
         let _ = scanner.scan(&chunk);

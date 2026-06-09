@@ -2,7 +2,98 @@ use super::*;
 use crate::context;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::RawMatch;
-use vyre_libs::scan::LiteralMatch;
+
+/// Per-pass phase-2 profiler. Set `KEYHOG_PROFILE_PHASE2=1` to accumulate
+/// per-pass wall time across EVERY `scan_prepared_with_triggered` call (all chunk
+/// sizes, including the 16 KB-file regime the rewrite targets) into
+/// [`PHASE2_PASS_US`]; call [`phase2_profile_dump`] to print the breakdown — the
+/// data that orders the on-GPU-detection rewrite (`docs/GPU_DETECTION_REWRITE.md`).
+/// Zero-cost when unset (one cached bool; no `Instant::now` on the hot path).
+fn phase2_profile_enabled() -> bool {
+    use std::sync::OnceLock;
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_PHASE2").as_deref() == Ok("1"))
+}
+
+/// Accumulated phase-2 wall time (µs) per pass: [hot, confirmed, fallback,
+/// generic, entropy, ml]. Populated only when `KEYHOG_PROFILE_PHASE2=1`.
+pub static PHASE2_PASS_US: [std::sync::atomic::AtomicU64; 6] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
+
+const PHASE2_PASS_NAMES: [&str; 6] = ["hot", "confirmed", "fallback", "generic", "entropy", "ml"];
+
+thread_local! {
+    /// When set, phase-2 per-pass timings route into [`DECODE_PHASE2_PASS_US`]
+    /// instead of [`PHASE2_PASS_US`], so a profiled run separates the decode
+    /// sub-chunk per-pass cost from the parent-chunk cost. Diagnostic only.
+    static IN_DECODE_RESCAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Mark the current thread as inside a decode sub-chunk rescan (for per-pass
+/// profiling separation). Returns the previous value to restore.
+pub(crate) fn set_in_decode_rescan(on: bool) -> bool {
+    IN_DECODE_RESCAN.with(|c| c.replace(on))
+}
+
+/// Per-pass phase-2 wall time (µs) accumulated ONLY for decode sub-chunk
+/// rescans: [hot, confirmed, fallback, generic, entropy, ml]. Populated only
+/// when `KEYHOG_PROFILE_PHASE2=1`.
+pub static DECODE_PHASE2_PASS_US: [std::sync::atomic::AtomicU64; 6] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
+
+/// Print and reset [`DECODE_PHASE2_PASS_US`] (decode sub-chunk per-pass split).
+pub fn decode_phase2_profile_dump(label: &str) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let vals: [u64; 6] = std::array::from_fn(|i| DECODE_PHASE2_PASS_US[i].swap(0, Relaxed));
+    let total: u64 = vals.iter().sum();
+    eprintln!("=== DECODE sub-chunk PHASE2 breakdown [{label}] total={total} us ===");
+    for i in 0..6 {
+        let pct = if total > 0 {
+            100.0 * vals[i] as f64 / total as f64
+        } else {
+            0.0
+        };
+        eprintln!(
+            "  {:<10}: {:>11} us ({pct:>5.1}%)",
+            PHASE2_PASS_NAMES[i], vals[i]
+        );
+    }
+}
+
+/// Print and reset the accumulated [`PHASE2_PASS_US`] breakdown. Call after a
+/// scan run when profiling; safe to call when profiling was off (prints zeros).
+pub fn phase2_profile_dump(label: &str) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let vals: [u64; 6] = std::array::from_fn(|i| PHASE2_PASS_US[i].swap(0, Relaxed));
+    let total: u64 = vals.iter().sum();
+    eprintln!("=== PHASE2 breakdown [{label}] total={total} us ===");
+    super::scan_postprocess::ml_batch_profile_dump();
+    #[cfg(feature = "ml")]
+    crate::gpu::ml_split_profile_dump();
+    for i in 0..6 {
+        let pct = if total > 0 {
+            100.0 * vals[i] as f64 / total as f64
+        } else {
+            0.0
+        };
+        eprintln!(
+            "  {:<10}: {:>11} us ({pct:>5.1}%)",
+            PHASE2_PASS_NAMES[i], vals[i]
+        );
+    }
+}
 
 impl CompiledScanner {
     pub(crate) fn scan_prepared_with_triggered(
@@ -24,6 +115,28 @@ impl CompiledScanner {
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
+        // Per-pass profiler (env-gated; see `phase2_profile_enabled`). When off,
+        // `took` is a no-op — no `Instant::now()` is called on the hot path.
+        // Accumulates across ALL chunk sizes into `PHASE2_PASS_US`.
+        let prof = phase2_profile_enabled();
+        let prof_decode = prof && IN_DECODE_RESCAN.with(|c| c.get());
+        let mut ts = std::time::Instant::now();
+        let mut took = |idx: usize| {
+            if prof {
+                let now = std::time::Instant::now();
+                let target = if prof_decode {
+                    &DECODE_PHASE2_PASS_US[idx]
+                } else {
+                    &PHASE2_PASS_US[idx]
+                };
+                target.fetch_add(
+                    now.duration_since(ts).as_micros() as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                ts = now;
+            }
+        };
+
         #[cfg(feature = "simdsieve")]
         self.scan_hot_patterns_fast(
             &prepared.preprocessed.text,
@@ -32,6 +145,7 @@ impl CompiledScanner {
             prepared.chunk,
             &mut scan_state,
         );
+        took(0); // hot
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
         // `documentation_lines` is consumed unconditionally below by
@@ -49,6 +163,20 @@ impl CompiledScanner {
         // fallbacks (`scan_fallback_patterns`, `scan_generic_assignments`,
         // `scan_entropy_fallback`, `apply_ml_batch_scores`) run unchanged
         // since they have their own input shapes.
+        //
+        // NOTE: the confirmed pass is deliberately NOT decode-focus restricted
+        // (unlike `scan_fallback_patterns` below). A decode sub-chunk splices the
+        // decoded text in place of the encoded blob, which creates new byte
+        // adjacencies at the junction AND new token boundaries inside what was a
+        // contiguous base64 run — so a confirmed/companion detector
+        // (cloudflare-api-token, mysql-connection-string, …) can fire on spliced
+        // context arbitrarily far from the decoded span where the PARENT (which
+        // saw the still-encoded bytes) did not. The decode-focus theorem
+        // ("outside the span is a parent duplicate") therefore does NOT hold for
+        // confirmed detectors; windowing it dropped real findings on the mirror
+        // corpus (the `confirmed_focus_parity` differential rejected M=256). It
+        // holds for fallback because those detectors are self-contained at the
+        // decoded credential itself.
         if expanded_patterns.iter().any(|&w| w != 0) {
             let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
                 .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
@@ -65,6 +193,7 @@ impl CompiledScanner {
                 deadline,
             );
         }
+        took(1); // confirmed
 
         // Fallback patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
@@ -75,17 +204,47 @@ impl CompiledScanner {
         // bounded to detectors whose >=4-char keyword appears in the
         // chunk; fallback patterns with no usable keyword are seeded
         // from `fallback_always_active_indices` so they run on every chunk.
-        self.scan_fallback_patterns(
-            &prepared.preprocessed,
-            line_offsets,
-            &code_lines,
-            &documentation_lines,
-            prepared.chunk,
-            &mut scan_state,
-            deadline,
-        );
+        // Decode-recursion FOCUS: a decode sub-chunk carries `decoded_span`, the
+        // byte range of the freshly decoded text inside its (mostly already-
+        // scanned) parent-context splice. Window the expensive fallback pass to
+        // that span + margin instead of the whole splice — the rest of the splice
+        // was scanned (and any finding deduped) by the parent chunk. Requires
+        // `preprocessed.text` to be byte-aligned with `chunk.data` (the homoglyph
+        // no-op passthrough) so the span — in `chunk.data` coordinates — indexes
+        // `preprocessed.text`; otherwise the full scan runs.
+        let focus = prepared.chunk.metadata.decoded_span.filter(|_| {
+            fallback::decode_focus_enabled()
+                && std::ptr::eq(
+                    prepared.preprocessed.text.as_ptr(),
+                    prepared.chunk.data.as_ptr(),
+                )
+                && prepared.preprocessed.text.len() == prepared.chunk.data.len()
+        });
+        match focus {
+            Some(span) => self.scan_fallback_patterns_focused(
+                &prepared.preprocessed,
+                line_offsets,
+                &code_lines,
+                &documentation_lines,
+                prepared.chunk,
+                &mut scan_state,
+                deadline,
+                span,
+            ),
+            None => self.scan_fallback_patterns(
+                &prepared.preprocessed,
+                line_offsets,
+                &code_lines,
+                &documentation_lines,
+                prepared.chunk,
+                &mut scan_state,
+                deadline,
+            ),
+        }
+        took(2); // fallback
 
         self.scan_generic_assignments(&code_lines, line_offsets, prepared.chunk, &mut scan_state);
+        took(3); // generic
 
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
@@ -94,10 +253,36 @@ impl CompiledScanner {
             prepared.chunk,
             &mut scan_state,
         );
+        took(4); // entropy
 
         #[cfg(feature = "ml")]
         self.apply_ml_batch_scores(&mut scan_state);
+        took(5); // ml
 
+        scan_state.into_matches()
+    }
+
+    /// Test/diagnostic: run ONLY the fallback pass on `chunk` and return its
+    /// raw matches, with no triggered-pattern, generic, entropy, ML, or
+    /// post-process/reassembly stages. Isolates `scan_fallback_patterns` so the
+    /// anchored-vs-whole-chunk differential test compares exactly that pass,
+    /// free of downstream reassembly that would mask which pass diverged.
+    #[doc(hidden)]
+    pub fn debug_scan_fallback_only(&self, chunk: &keyhog_core::Chunk) -> Vec<RawMatch> {
+        let prepared = self.prepare_chunk(chunk);
+        let line_offsets: &[usize] = prepared.line_offsets();
+        let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
+        let documentation_lines = context::documentation_line_flags(&code_lines);
+        let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
+        self.scan_fallback_patterns(
+            &prepared.preprocessed,
+            line_offsets,
+            &code_lines,
+            &documentation_lines,
+            prepared.chunk,
+            &mut scan_state,
+            None,
+        );
         scan_state.into_matches()
     }
 
@@ -125,22 +310,33 @@ impl CompiledScanner {
             let Some(backend) = self.gpu_backend.as_ref() else {
                 return self.collect_triggered_patterns_simd(text);
             };
-            match matcher.scan(&**backend, text.as_bytes(), 10000) {
-                Ok(matches) => {
+            // Use the PRESENCE-bitmap dispatch, not the match-triple `scan`. Phase-1
+            // only needs WHICH literal patterns fired (it discards positions one
+            // line below in `triggered_patterns_from_gpu_presence`), so the triple
+            // path was pure waste: it atomic-appended an (id,start,end) triple per
+            // hit and read them all back, which on match-dense source collapses GPU
+            // throughput ~888x (measured: 2.3 MB/s triples vs 2047 MB/s presence on
+            // a 5090). The presence bitmap is strictly >= the triple triggers: it
+            // has NO match cap, whereas `scan(.., 10000)` truncated at 10k hits and
+            // could drop a pattern id beyond the cap. Same per-pattern-id mapping
+            // (`mark_triggered_pattern`), so the trigger set is recall-identical-or-
+            // -better. Validated by `gpu_presence_trigger_parity`.
+            match matcher.scan_presence(&**backend, text.as_bytes()) {
+                Ok(presence) => {
                     // Union with the AC literal triggers for the same
                     // soundness reason as the SIMD path: the GPU literal
                     // matcher must not be the sole gate for literal-anchored
                     // patterns, or context-anchored detectors with large
                     // bounded-repeat bodies silently never fire on GPU.
                     let mut triggered = self.collect_triggered_patterns_cpu(text);
-                    let gpu = self.triggered_patterns_from_gpu_matches(&matches);
+                    let gpu = self.triggered_patterns_from_gpu_presence(&presence);
                     for (slot, bits) in triggered.iter_mut().zip(gpu.iter()) {
                         *slot |= *bits;
                     }
                     return triggered;
                 }
                 Err(error) => {
-                    tracing::debug!("gpu scan failed: {error}");
+                    tracing::debug!("gpu presence scan failed: {error}");
                 }
             }
         }
@@ -206,10 +402,20 @@ impl CompiledScanner {
         triggered_patterns
     }
 
-    fn triggered_patterns_from_gpu_matches(&self, matches: &[LiteralMatch]) -> Vec<u64> {
+    /// Build the keyhog trigger bitmap from a GPU literal-set PRESENCE bitmap
+    /// (`scan_presence`): word `w`, bit `b` set means literal pattern `w*32+b`
+    /// occurred. Maps each set bit through `mark_triggered_pattern` — the compact
+    /// per-pattern counterpart of consuming per-hit match triples (the triple path
+    /// was removed; see `collect_triggered_patterns_gpu`).
+    fn triggered_patterns_from_gpu_presence(&self, presence: &[u32]) -> Vec<u64> {
         let mut triggered = vec![0u64; self.ac_map.len().div_ceil(64)];
-        for matched in matches {
-            self.mark_triggered_pattern(&mut triggered, matched.pattern_id as usize);
+        for (word_idx, &word) in presence.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                self.mark_triggered_pattern(&mut triggered, word_idx * 32 + bit);
+                bits &= bits - 1;
+            }
         }
         triggered
     }

@@ -26,7 +26,7 @@ use std::sync::LazyLock;
 /// reproducer; see dogfood-2026-05-21.md finding #5).
 pub struct CaesarDecoder;
 
-const MIN_CAESAR_LEN: usize = 16;
+pub const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
 
 /// Aho-Corasick over the "rotated known-prefix" needle set: for every
@@ -180,21 +180,28 @@ impl Decoder for CaesarDecoder {
             if !candidate_shape_invariant(&candidate) {
                 continue;
             }
-            // Rotated-prefix prefilter: a credential-shaped variant's final gate
-            // is a KNOWN_PREFIXES substring in the SHIFTED text. Because a shift
-            // is a position-wise bijection, that is equivalent to the RAW
-            // candidate containing a `rot_{-k}(prefix)` needle for some k — one
-            // Aho-Corasick pass tests all 38×25 needles at once. No needle hit
-            // means no shift can satisfy `looks_credential_shaped`, so the 25×
-            // `caesar_shift` allocation + re-scan fan-out below is skipped. This
-            // is recall-EXACT (see ROTATED_PREFIX_AC); the per-shift loop still
-            // confirms each surviving candidate via the full predicate.
-            if let Some(ac) = ROTATED_PREFIX_AC.as_ref() {
-                if !ac.is_match(candidate.as_str()) {
+            // Rotated-prefix SHIFT SELECTION (recall- AND precision-exact, not
+            // merely a prefilter). A shifted variant's final gate is a
+            // KNOWN_PREFIXES substring in `caesar_shift(candidate, k)`. By the
+            // position-wise bijection (see ROTATED_PREFIX_AC),
+            //   caesar_shift(candidate, k).contains(P) ⟺ candidate.contains(needle(P,k))
+            // where needle(P,k) = caesar_shift(P, 26-k) is needle index
+            // `prefix_idx*25 + (k-1)`. So a shift `k` can satisfy
+            // `looks_credential_shaped` ONLY if some needle with that `k` matched.
+            // The old code learned "≥1 needle matched" (`is_match`) then tried ALL
+            // 25 shifts; instead, recover the exact set of matched `k`s and shift
+            // to only those. Every shift that could pass is in this set, so the
+            // emitted-chunk set is byte-identical — but the 25× `caesar_shift`
+            // allocation + re-scan fan-out collapses to the 1–3 aligned shifts.
+            // Caesar emits ~84% of all decode sub-chunks; this is the lever.
+            // `find_overlapping_iter` (not `find_iter`) is required: a needle can
+            // sit inside/over another, and a non-overlapping walk would drop its
+            // `k`, losing a shift that should fire.
+            let try_shift = matched_caesar_shifts(&candidate);
+            for shift in 1..=25u8 {
+                if !try_shift[shift as usize] {
                     continue;
                 }
-            }
-            for shift in 1..=25u8 {
                 let decoded = caesar_shift(&candidate, shift);
                 if !looks_credential_shaped(&decoded) {
                     continue;
@@ -218,6 +225,35 @@ impl Decoder for CaesarDecoder {
     }
 }
 
+/// The set of Caesar shifts `k ∈ 1..=25` worth trying for `candidate`, as a
+/// `[bool; 26]` indexed by `k`. A shift can satisfy `looks_credential_shaped`
+/// (whose binding gate is a KNOWN_PREFIXES substring in the shifted text) ONLY
+/// if some rotated-prefix needle with that `k` matched the raw candidate — by
+/// the `caesar_shift` bijection, `caesar_shift(candidate,k).contains(P)` iff
+/// `candidate.contains(needle(P,k))`, where needle index `i` carries `k =
+/// (i % 25) + 1`. So restricting the shift loop to these `k`s is recall- and
+/// precision-EXACT: every shift that could pass is included, and the dead 22–24
+/// shifts (84% of all decode sub-chunks come from Caesar's fan-out) are dropped.
+/// Falls back to all 25 shifts if the AC failed to build.
+pub fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
+    let mut try_shift = [false; 26];
+    match ROTATED_PREFIX_AC.as_ref() {
+        Some(ac) => {
+            // `find_overlapping_iter` is required (not `find_iter`): needles can
+            // nest/overlap, and a non-overlapping walk would drop a matched `k`.
+            for m in ac.find_overlapping_iter(candidate) {
+                try_shift[(m.pattern().as_usize() % 25) + 1] = true;
+            }
+        }
+        None => {
+            for slot in try_shift.iter_mut().skip(1) {
+                *slot = true;
+            }
+        }
+    }
+    try_shift
+}
+
 /// Shift-invariant half of `looks_credential_shaped`, evaluated ONCE on the raw
 /// candidate before the 25x shift loop. A Caesar/ROT-N shift is a permutation
 /// within the letters and the identity on digits/punctuation, so both of these
@@ -234,7 +270,7 @@ impl Decoder for CaesarDecoder {
 /// recall-preserving. It deliberately does NOT pre-check the KNOWN_PREFIXES
 /// substring - that is the one gate a shift CAN newly satisfy by rotating
 /// letters into a prefix (e.g. `BLJB`+25 -> `AKIA`), so it stays in the loop.
-fn candidate_shape_invariant(s: &str) -> bool {
+pub fn candidate_shape_invariant(s: &str) -> bool {
     let bytes = s.as_bytes();
     if !bytes.iter().any(|b| b.is_ascii_digit()) {
         return false;

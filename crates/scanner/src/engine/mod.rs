@@ -8,7 +8,7 @@ mod backend_triggered;
 pub mod boundary;
 mod compile;
 mod extract;
-mod fallback;
+pub(crate) mod fallback;
 mod fallback_anchor;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
@@ -33,6 +33,7 @@ mod process;
 mod rule_pipeline;
 mod scan;
 mod scan_filters;
+mod scan_inner_profile;
 mod scan_postprocess;
 pub mod segment_attribution;
 mod windowed;
@@ -58,7 +59,7 @@ pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
 };
-pub use scan::scan_inner_profile_dump;
+pub use scan_inner_profile::scan_inner_profile_dump;
 pub use scan_postprocess::decode_profile_dump;
 pub use scan_postprocess::set_confirmed_suffix_gate;
 pub use windowed::{

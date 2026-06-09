@@ -11,8 +11,13 @@
 //! default `cargo test` (debug) profile, so the floors are set against
 //! debug-profile timings (the slowest case) with headroom for slower CI hosts.
 
+use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 use std::time::Instant;
 
+use keyhog_core::{MatchLocation, RawMatch, Severity};
+use keyhog_scanner::compute_line_offsets;
+use keyhog_scanner::engine::{line_number_for_offset, record_window_match};
 use keyhog_scanner::types::{CompiledCompanion, ScannerPreprocessedText};
 use regex::Regex;
 
@@ -111,4 +116,111 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
          walk with two `partition_point` searches (start_line lower-bound, end_line \
          upper-bound).",
     );
+}
+
+/// AUD-speed-2 — windowed per-match line attribution was O(offset) per match.
+///
+/// `record_window_match` (crates/scanner/src/engine/windowed.rs) used to call
+/// `line_number_for_offset(full_text, offset)`, which counts newlines from the
+/// buffer start on EVERY match. `scan_windowed` runs it once per surviving match
+/// of a chunk larger than `MAX_SCAN_CHUNK_BYTES` (1 MiB), so on a match-dense
+/// multi-MiB buffer (a minified bundle, a credentials dump, a generated blob)
+/// the cost is Σ O(offsetᵢ) = O(n²). Measured on the real scanner this showed
+/// as cpu ns/byte jumping 988 → 2227 at the 1 MiB windowing boundary.
+///
+/// Fix: `scan_windowed` precomputes `compute_line_offsets(chunk_text)` once and
+/// `record_window_match` resolves each match's line with `partition_point`
+/// (O(log L)) — byte-identical to the newline count, proven below against the
+/// `line_number_for_offset` reference.
+///
+/// This drives the real `record_window_match` with end-of-buffer offsets (the
+/// old path's worst case). The O(log L) path finishes in well under the floor;
+/// the old O(L)-per-call path over 500k lines would take seconds.
+#[test]
+fn windowed_line_attribution_is_not_linear_in_offset() {
+    const LINES: usize = 500_000;
+    const CALLS: usize = 5_000;
+    const FLOOR_MS: f64 = 300.0;
+
+    let mut text = String::with_capacity(LINES * 8);
+    for i in 0..LINES {
+        text.push_str("ln");
+        text.push_str(&i.to_string());
+        text.push('\n');
+    }
+    let line_offsets = compute_line_offsets(&text);
+    assert!(
+        line_offsets.len() >= LINES,
+        "fixture should produce >= {LINES} line starts, got {}",
+        line_offsets.len()
+    );
+
+    let mut seen = HashSet::new();
+    let mut seen_order = VecDeque::new();
+
+    // Differential correctness: the fast path must agree with the slow
+    // newline-count reference for a worst-case (near-end) offset.
+    let probe_offset = text.len() - 1;
+    let mut probe = demo_window_match(probe_offset);
+    assert!(record_window_match(
+        &line_offsets,
+        0,
+        &mut probe,
+        &mut seen,
+        &mut seen_order
+    ));
+    assert_eq!(
+        probe.location.line,
+        Some(line_number_for_offset(&text, probe_offset)),
+        "partition_point line attribution must equal the newline-count reference"
+    );
+
+    // Speed: many matches near the end of the buffer (each a distinct offset so
+    // dedup keeps them) — the regime where the old O(offset) walk blew up.
+    let start = Instant::now();
+    let mut sink = 0usize;
+    for k in 0..CALLS {
+        let off = probe_offset.saturating_sub(k);
+        let mut m = demo_window_match(off);
+        if record_window_match(&line_offsets, 0, &mut m, &mut seen, &mut seen_order) {
+            sink = sink.wrapping_add(m.location.line.unwrap_or(0));
+        }
+    }
+    let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+    assert!(sink > 0, "matches should resolve to non-zero line numbers");
+
+    eprintln!(
+        "AUD-speed-2: {CALLS} record_window_match calls over {LINES} lines = {elapsed_ms:.1} ms \
+         (floor {FLOOR_MS:.0} ms)"
+    );
+    assert!(
+        elapsed_ms < FLOOR_MS,
+        "windowed line attribution is O(offset) per match: {CALLS} calls over {LINES} lines took \
+         {elapsed_ms:.1} ms (floor {FLOOR_MS:.0} ms). `record_window_match` must resolve the line \
+         via `partition_point` over precomputed `compute_line_offsets`, not re-count newlines from \
+         the buffer start (`line_number_for_offset`).",
+    );
+}
+
+fn demo_window_match(offset: usize) -> RawMatch {
+    RawMatch {
+        detector_id: Arc::from("aud-speed-2"),
+        detector_name: Arc::from("aud-speed-2"),
+        service: Arc::from("test"),
+        severity: Severity::Low,
+        credential: Arc::from("cred"),
+        credential_hash: [7u8; 32],
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("test"),
+            file_path: None,
+            line: Some(1),
+            offset,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: None,
+    }
 }

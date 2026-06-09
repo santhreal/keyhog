@@ -364,3 +364,25 @@ fn extend_base64_padding<'a>(
 fn is_provider_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
 }
+
+/// Compute the two per-pattern-constant confidence signals (`keyword_nearby`,
+/// `sensitive_file`). Extracted so `extract_grouped_matches`,
+/// `extract_plain_matches`, and the shared-anchor path share one lazy
+/// `OnceCell` init closure body (Rust can't `impl FnOnce<>` to share inline).
+/// Lives here (not `scan.rs`) to keep that file under the standard 500-LOC cap.
+pub(super) fn compute_pattern_signals(
+    detector: &keyhog_core::DetectorSpec,
+    chunk: &keyhog_core::Chunk,
+) -> (bool, bool) {
+    let kw = detector
+        .keywords
+        .iter()
+        .any(|keyword| chunk.data.contains(keyword.as_str()));
+    let sf = chunk
+        .metadata
+        .path
+        .as_deref()
+        .map(crate::confidence::is_sensitive_path)
+        .unwrap_or(false);
+    (kw, sf)
+}

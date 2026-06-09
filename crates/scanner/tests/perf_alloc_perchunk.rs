@@ -151,6 +151,7 @@ fn passthrough_chunk(target_bytes: usize) -> Chunk {
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     }
 }

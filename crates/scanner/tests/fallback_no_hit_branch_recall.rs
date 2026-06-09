@@ -133,6 +133,11 @@ fn kubernetes_bootstrap_token_canonical_kubeadm_join_fires() {
     );
 }
 
+// Asserts the `entropy-generic` detector fires, which is compiled out without
+// the `entropy` feature; gate the test to the feature so `--no-default-features`
+// (lean / portable-without-entropy) builds stay green instead of failing on a
+// detector that cannot exist in that configuration.
+#[cfg(feature = "entropy")]
 #[test]
 fn bare_entropy_secret_file_still_enters_coalesced_no_hit_branch() {
     let mut config = ScannerConfig::default();

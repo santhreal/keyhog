@@ -3,7 +3,11 @@
 // gate the glob to match — otherwise rustc warns about an unused import.
 #[cfg(feature = "simd")]
 use super::scan_filters::*;
+use super::scan_inner_profile::{
+    scan_inner_prof_enabled, SCAN_INNER_CALLS, SCAN_PHASE1_NS, SCAN_PREPARE_NS,
+};
 use super::*;
+
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
 
@@ -41,26 +45,6 @@ fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) 
         slice.fill(0);
         f(slice)
     })
-}
-
-/// Compute the two per-pattern-constant confidence signals.
-/// Extracted so both `extract_grouped_matches` and
-/// `extract_plain_matches` share the same lazy `OnceCell` init
-/// closure body (Rust can't `impl FnOnce<>` to share inline).
-/// `pub(super)` so the extract submodule (`engine/extract.rs`) can call
-/// it after the scan.rs / extract.rs / process.rs split.
-pub(super) fn compute_pattern_signals(detector: &DetectorSpec, chunk: &Chunk) -> (bool, bool) {
-    let kw = detector
-        .keywords
-        .iter()
-        .any(|keyword| chunk.data.contains(keyword.as_str()));
-    let sf = chunk
-        .metadata
-        .path
-        .as_deref()
-        .map(crate::confidence::is_sensitive_path)
-        .unwrap_or(false);
-    (kw, sf)
 }
 
 impl CompiledScanner {
@@ -187,13 +171,21 @@ impl CompiledScanner {
                 .zip(triggers.into_par_iter())
                 .map(|(chunk, triggered_opt)| {
                     if let Some(triggered) = triggered_opt {
-                        let prepared = self.prepare_chunk(chunk);
-                        return self.scan_prepared_with_triggered(
-                            prepared,
-                            ScanBackend::SimdCpu,
-                            triggered,
-                            None,
-                        );
+                        // Shared windowing contract (see `scan_chunk_or_window`):
+                        // a >1 MiB chunk is windowed so the per-chunk match cap
+                        // can't silently truncate it, exactly like the per-file
+                        // and GPU phase-2 paths. (This is also where the GPU AC
+                        // dense-prefix reroute lands, so it fixes forced-GPU
+                        // recall on large files.)
+                        return self.scan_chunk_or_window(chunk, None, || {
+                            let prepared = self.prepare_chunk(chunk);
+                            self.scan_prepared_with_triggered(
+                                prepared,
+                                ScanBackend::SimdCpu,
+                                triggered,
+                                None,
+                            )
+                        });
                     }
                     // Multiline fallback: files with concatenation indicators AND
                     // secret-related keywords may contain secrets split across lines
@@ -369,9 +361,25 @@ impl CompiledScanner {
         {
             crate::telemetry::record_gpu_dispatch();
         }
+        let prof = scan_inner_prof_enabled();
+        let t0 = prof.then(std::time::Instant::now);
         let prepared = self.prepare_chunk(chunk);
+        if let Some(t) = t0 {
+            SCAN_PREPARE_NS.fetch_add(
+                t.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+        let t1 = prof.then(std::time::Instant::now);
         let triggered =
             self.collect_triggered_patterns_for_backend(&prepared.preprocessed.text, backend);
+        if let Some(t) = t1 {
+            SCAN_PHASE1_NS.fetch_add(
+                t.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            SCAN_INNER_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         self.scan_prepared_with_triggered(prepared, backend, triggered, deadline)
     }
 

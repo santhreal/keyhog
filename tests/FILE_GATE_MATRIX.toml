@@ -376,6 +376,9 @@ path = "crates/scanner/src/engine/extract.rs"
 path = "crates/scanner/src/engine/fallback.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/fallback_anchor.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/fallback_entropy.rs"
 
 [[module]]
@@ -418,6 +421,9 @@ path = "crates/scanner/src/engine/gpu_phase2.rs"
 path = "crates/scanner/src/engine/gpu_postprocess.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/gpu_region_presence.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/gpu_program_fusion.rs"
 
 [[module]]
@@ -446,6 +452,9 @@ path = "crates/scanner/src/engine/scan.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_filters.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_inner_profile.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess.rs"

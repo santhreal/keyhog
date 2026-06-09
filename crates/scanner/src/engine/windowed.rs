@@ -21,6 +21,14 @@ impl CompiledScanner {
         let mut seen_order = VecDeque::new();
         let mut offset = 0usize;
 
+        // Compute the chunk's line-start offsets ONCE up front. Per-match line
+        // attribution then binary-searches this table (O(log L)) instead of
+        // re-counting newlines from the buffer start for every match
+        // (O(offset)/match → O(n²) over a match-dense chunk). On a windowed
+        // multi-MiB buffer the old path made line attribution the dominant
+        // cost; see `record_window_match`.
+        let line_offsets = crate::compute_line_offsets(chunk_text);
+
         while offset < chunk_text.len() {
             if let Some(deadline) = deadline {
                 if std::time::Instant::now() > deadline {
@@ -32,7 +40,7 @@ impl CompiledScanner {
             let backend = self.select_backend_for_file(window_chunk.data.len() as u64);
             for mut raw_match in self.scan_inner(&window_chunk, backend, deadline) {
                 if record_window_match(
-                    chunk_text,
+                    &line_offsets,
                     offset,
                     &mut raw_match,
                     &mut seen,
@@ -48,6 +56,40 @@ impl CompiledScanner {
         }
 
         all_matches
+    }
+
+    /// THE single windowing contract for per-chunk phase-2 extraction.
+    ///
+    /// A chunk larger than [`MAX_SCAN_CHUNK_BYTES`] is WINDOWED (each ≤1 MiB
+    /// window scanned independently with its own `max_matches_per_chunk` budget
+    /// and a bounded, linear phase-2); every smaller chunk runs `extract` whole.
+    ///
+    /// Every phase-2 caller — the per-file `scan`, the coalesced SIMD path, and
+    /// the GPU phase-2 path — MUST route a chunk through this. Each path used to
+    /// make its own windowing decision and they DRIFTED: the GPU/coalesced paths
+    /// scanned large chunks whole, so a >1 MiB file dense in matches silently
+    /// truncated against the per-chunk cap (dropped 1/3 of secrets on a 16 MiB
+    /// file) while the per-file path windowed and found them all. Funnelling the
+    /// decision here makes that class of divergence unrepresentable.
+    ///
+    /// `extract` is only invoked for the small-chunk case; it owns preparing the
+    /// chunk and running whichever seeded extractor (triggered bitmap, GPU pid
+    /// hits, …) the caller has. Post-processing (decode recursion, cross-chunk
+    /// reassembly) stays at the caller, applied uniformly to either branch.
+    pub(crate) fn scan_chunk_or_window<F>(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        extract: F,
+    ) -> Vec<RawMatch>
+    where
+        F: FnOnce() -> Vec<RawMatch>,
+    {
+        if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+            self.scan_windowed(chunk, deadline)
+        } else {
+            extract()
+        }
     }
 }
 
@@ -75,7 +117,7 @@ pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
 }
 
 pub fn record_window_match(
-    text: &str,
+    line_offsets: &[usize],
     window_offset: usize,
     m: &mut RawMatch,
     seen: &mut HashSet<(Arc<str>, Arc<str>, usize)>,
@@ -83,7 +125,12 @@ pub fn record_window_match(
 ) -> bool {
     m.location.offset += window_offset;
     if m.location.line.is_some() {
-        m.location.line = Some(line_number_for_offset(text, m.location.offset));
+        // `line_offsets` holds each line-start byte offset in ascending order
+        // (offset 0 first). The count of starts `<= offset` IS the 1-based line
+        // number — identical to counting newlines before `offset` and adding 1
+        // (what `line_number_for_offset` does the slow way), but O(log L) per
+        // match instead of O(offset).
+        m.location.line = Some(line_offsets.partition_point(|&lo| lo <= m.location.offset));
     }
 
     let key = (

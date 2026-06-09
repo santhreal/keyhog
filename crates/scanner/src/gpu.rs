@@ -55,6 +55,34 @@ pub use env::*;
 /// allocates 2N owned strings just to enter ML scoring. The MlPendingMatch
 /// `String` fields stay live for the duration of the call - the borrow is
 /// safe.
+/// Split timers (env-gated by `KEYHOG_PROFILE_MLBATCH=1`): accumulated wall time
+/// in feature extraction vs MoE scoring across all `batch_ml_inference` calls.
+/// Only the SCORING fraction is GPU-offloadable; feature extraction is inherent
+/// per-candidate CPU work. This is the data that decides whether moving the MoE
+/// to a unified GPU batch is worth the recall cost of reordering finalization.
+static MOE_FEATURE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MOE_SCORE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn ml_split_prof_enabled() -> bool {
+    static EN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1"))
+}
+
+/// Print + reset the feature-vs-score split. Called from `phase2_profile_dump`.
+pub fn ml_split_profile_dump() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let f = MOE_FEATURE_NS.swap(0, Relaxed) as f64 / 1e6;
+    let s = MOE_SCORE_NS.swap(0, Relaxed) as f64 / 1e6;
+    if f == 0.0 && s == 0.0 {
+        return;
+    }
+    eprintln!(
+        "=== ML split: feature_extract={f:.1}ms moe_score={s:.1}ms (score = {:.1}% of ML compute; \
+only this fraction is GPU-offloadable) ===",
+        100.0 * s / (f + s).max(1e-9),
+    );
+}
+
 pub fn batch_ml_inference(
     candidates: &[(&str, &str)],
     config: &crate::types::ScannerConfig,
@@ -66,47 +94,117 @@ pub fn batch_ml_inference(
     #[cfg(feature = "ml")]
     {
         use rayon::prelude::*;
-        // Auto-route: try GPU batch first, fall back to CPU MoE on failure or
-        // when the batch is below the GPU crossover threshold.
-        let features: Vec<[f32; crate::ml_scorer::NUM_FEATURES]> = candidates
-            .par_iter()
-            .map(|(text, ctx)| {
-                if text.is_empty() {
-                    [0.0; crate::ml_scorer::NUM_FEATURES]
-                } else {
-                    crate::ml_scorer::compute_features_with_config(
-                        text,
-                        ctx,
-                        &config.known_prefixes,
-                        &config.secret_keywords,
-                        &config.test_keywords,
-                        &config.placeholder_keywords,
-                    )
-                }
-            })
-            .collect();
+        let prof = ml_split_prof_enabled();
 
-        #[cfg(feature = "gpu")]
-        if let Some(mut scores) = backend::batch_score_features(&features) {
-            for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
-                if text.is_empty() {
-                    *score = 0.0;
-                }
+        // Measurement (`KEYHOG_PROFILE_MLBATCH=1`, regime B): batch sizes average
+        // 0.5 candidates/call and 90% of calls are empty; only 0.2% reach the
+        // GPU's 64-candidate threshold. `batch_ml_inference` runs INSIDE the
+        // already-parallel coalesced/per-chunk scan (rayon outer loop), so a
+        // `par_iter` over a 1-7 element inner batch pays rayon split/join
+        // overhead for no parallelism — pure loss on the overwhelmingly common
+        // path. Below the GPU crossover the GPU never engages anyway, so the
+        // small-batch path is a single fused serial loop (compute feature ->
+        // score, no intermediate Vec, no rayon). Byte-identical results to the
+        // parallel path; the only change is the iteration strategy.
+        let feat_of = |text: &str, ctx: &str| -> [f32; crate::ml_scorer::NUM_FEATURES] {
+            if text.is_empty() {
+                [0.0; crate::ml_scorer::NUM_FEATURES]
+            } else {
+                crate::ml_scorer::compute_features_with_config(
+                    text,
+                    ctx,
+                    &config.known_prefixes,
+                    &config.secret_keywords,
+                    &config.test_keywords,
+                    &config.placeholder_keywords,
+                )
+            }
+        };
+
+        if candidates.len() < crate::ml_scorer::GPU_BATCH_THRESHOLD {
+            // Small-batch fused serial path (the ~99% case).
+            let t = prof.then(std::time::Instant::now);
+            let scores: Vec<f64> = candidates
+                .iter()
+                .map(|(text, ctx)| {
+                    if text.is_empty() {
+                        0.0
+                    } else {
+                        crate::ml_scorer::score_features(&feat_of(text, ctx))
+                    }
+                })
+                .collect();
+            if let Some(t) = t {
+                // Fused loop: attribute the whole cost to feature+score combined
+                // under MOE_SCORE_NS (kept separate from the large-batch split).
+                MOE_SCORE_NS.fetch_add(
+                    t.elapsed().as_nanos() as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
             }
             return scores;
         }
 
-        candidates
+        // Large batch: parallel feature extraction, then GPU (or parallel CPU).
+        let t_feat = prof.then(std::time::Instant::now);
+        let features: Vec<[f32; crate::ml_scorer::NUM_FEATURES]> = candidates
             .par_iter()
-            .zip(features.par_iter())
-            .map(|((text, _ctx), features)| {
-                if text.is_empty() {
-                    0.0
+            .map(|(text, ctx)| feat_of(text, ctx))
+            .collect();
+        if let Some(t) = t_feat {
+            MOE_FEATURE_NS.fetch_add(
+                t.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+
+        let t_score = prof.then(std::time::Instant::now);
+        let scores = {
+            #[cfg(feature = "gpu")]
+            {
+                if let Some(mut scores) = backend::batch_score_features(&features) {
+                    for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
+                        if text.is_empty() {
+                            *score = 0.0;
+                        }
+                    }
+                    scores
                 } else {
-                    crate::ml_scorer::score_features(features)
+                    candidates
+                        .par_iter()
+                        .zip(features.par_iter())
+                        .map(|((text, _ctx), features)| {
+                            if text.is_empty() {
+                                0.0
+                            } else {
+                                crate::ml_scorer::score_features(features)
+                            }
+                        })
+                        .collect()
                 }
-            })
-            .collect()
+            }
+            #[cfg(not(feature = "gpu"))]
+            {
+                candidates
+                    .par_iter()
+                    .zip(features.par_iter())
+                    .map(|((text, _ctx), features)| {
+                        if text.is_empty() {
+                            0.0
+                        } else {
+                            crate::ml_scorer::score_features(features)
+                        }
+                    })
+                    .collect()
+            }
+        };
+        if let Some(t) = t_score {
+            MOE_SCORE_NS.fetch_add(
+                t.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+        scores
     }
 
     #[cfg(not(feature = "ml"))]

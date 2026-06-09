@@ -12,7 +12,7 @@
 //!
 //! Both inner loops call `process_match` (in `engine/process.rs`) for
 //! every surviving candidate. Their shared per-pattern signal cache
-//! is built from `super::scan::compute_pattern_signals`.
+//! is built from `super::scan_filters::compute_pattern_signals`.
 
 use super::scan_filters::*;
 use super::CompiledScanner;
@@ -260,7 +260,7 @@ impl CompiledScanner {
             }
 
             let &(keyword_nearby, sensitive_file) =
-                signals.get_or_init(|| super::scan::compute_pattern_signals(detector, chunk));
+                signals.get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,
@@ -373,7 +373,7 @@ impl CompiledScanner {
                 continue;
             }
             let &(keyword_nearby, sensitive_file) =
-                signals.get_or_init(|| super::scan::compute_pattern_signals(detector, chunk));
+                signals.get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,

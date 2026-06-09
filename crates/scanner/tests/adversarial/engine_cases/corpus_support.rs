@@ -50,6 +50,7 @@ pub fn scan_corpus(subdir: &str, rel: &str) -> Vec<keyhog_core::RawMatch> {
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     };
     production_scanner().scan(&chunk)
@@ -68,6 +69,7 @@ pub fn scan_text(data: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     };
     production_scanner().scan(&chunk)

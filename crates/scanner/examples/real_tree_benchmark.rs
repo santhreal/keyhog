@@ -170,6 +170,7 @@ fn collect_chunks(
             date: None,
             mtime_ns: None,
             size_bytes: None,
+            ..Default::default()
         },
     });
 }

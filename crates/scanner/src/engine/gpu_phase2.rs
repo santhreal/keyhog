@@ -17,8 +17,19 @@ impl CompiledScanner {
                 if hits.is_empty() && !self.gpu_phase2_should_scan_no_hit_chunk(chunk) {
                     return Vec::new();
                 }
-                let prepared = self.prepare_chunk(chunk);
-                let mut matches = self.scan_prepared_with_pattern_hits(prepared, hits, None);
+                // Shared windowing contract (see `scan_chunk_or_window`): a
+                // >1 MiB chunk is windowed so the per-chunk match cap can't
+                // silently truncate it. The coalesced SIMD and per-file paths
+                // already window; GPU phase-2 used to scan large chunks WHOLE and
+                // dropped matches once `max_matches_per_chunk` filled — the same
+                // class of bug as the AC dense-prefix reroute, on the path taken
+                // when GPU phase-1 succeeds. The windowed branch re-derives per
+                // window (the GPU `hits` are for the whole buffer), which is the
+                // correct trade for the rare large-chunk case.
+                let mut matches = self.scan_chunk_or_window(chunk, None, || {
+                    let prepared = self.prepare_chunk(chunk);
+                    self.scan_prepared_with_pattern_hits(prepared, hits, None)
+                });
                 // Parity with SIMD's `scan_chunks_with_backend` path:
                 // `scan_with_backend` → `scan_with_deadline_and_backend`
                 // calls `post_process_matches` after the in-chunk scan,

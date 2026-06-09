@@ -15,7 +15,7 @@ pub mod util;
 
 pub use base64::{base64_decode, find_base64_strings, z85_decode};
 pub use hex::hex_decode;
-pub use pipeline::{decode_chunk, register_decoder};
+pub use pipeline::{decode_chunk, decoder_profile_dump, extract_profile_dump, register_decoder};
 
 use keyhog_core::Chunk;
 
