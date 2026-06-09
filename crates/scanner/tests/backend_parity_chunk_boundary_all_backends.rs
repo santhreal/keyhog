@@ -150,8 +150,12 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
     };
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
-    // GitHub Personal Access Token: ghp_ + 36 base62 chars.
-    let secret = "ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX";
+    // GitHub Personal Access Token: ghp_ + 36 base62 chars. The github detector
+    // verifies the trailing CRC32 checksum, so a fabricated token with a random
+    // tail is silently dropped (memory: checksum-invalidates-fabricated-token-
+    // fixtures). Use the valid-checksum token from the sibling coalesced-parity
+    // test so the SIMD precondition (and the boundary reassembly it gates) holds.
+    let secret = "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";
     let split_at = 20;
 
     let pad_a_len = 4096 - split_at;
