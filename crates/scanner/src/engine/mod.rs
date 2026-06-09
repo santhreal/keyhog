@@ -49,7 +49,7 @@ pub(crate) use backend_prepared::PreparedChunk;
 pub use fallback::{
     fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode,
     set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
-    set_prefilter_truncate,
+    set_homoglyph_ascii_skip, set_prefilter_truncate,
 };
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
 pub use gpu_coalesce::coalesce_chunks;

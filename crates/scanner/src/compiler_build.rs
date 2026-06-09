@@ -135,6 +135,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                         regex: LazyRegex::plain(full_homoglyph_regex),
                         group: pattern.group,
                         client_safe: pattern.client_safe,
+                        homoglyph_variant: true,
                     },
                     Vec::new(),
                 ));

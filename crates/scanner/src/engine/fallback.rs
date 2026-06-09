@@ -182,6 +182,53 @@ fn homoglyph_gate_enabled() -> bool {
     *EN.get_or_init(|| std::env::var("KEYHOG_HOMOGLYPH_GATE").as_deref() != Ok("0"))
 }
 
+/// Runtime override for the homoglyph ASCII-SKIP (0=env, 1=on, 2=off).
+static HOMOGLYPH_ASCII_SKIP_OVERRIDE: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(0);
+
+/// Override the homoglyph ASCII-skip (test/diagnostic). `Some(true)` forces it
+/// on, `Some(false)` off, `None` = env default. The differential gate
+/// `homoglyph_ascii_skip_parity` flips this in-process to prove that skipping
+/// every homoglyph variant on a pure-ASCII chunk drops no finding (the base
+/// literal-prefix pattern is in the AC/confirmed path — see `compiler_build.rs`,
+/// which pushes BOTH the homoglyph fallback variant AND the base prefix to
+/// `ac_literals`/`ac_map`).
+pub fn set_homoglyph_ascii_skip(mode: Option<bool>) {
+    HOMOGLYPH_ASCII_SKIP_OVERRIDE.store(
+        match mode {
+            None => 0,
+            Some(true) => 1,
+            Some(false) => 2,
+        },
+        Relaxed,
+    );
+}
+
+/// Whether to SKIP (not just fold) the always-active homoglyph (plain) fallback
+/// variants entirely on a pure-ASCII chunk — the lever the profiler points at
+/// (`fb:prefilter` = the ~2,679-pattern RegexSet over every ASCII chunk, ~43% of
+/// scan). The intuition was: a homoglyph variant has its base literal prefix in
+/// the AC path, so on a no-homoglyph chunk it's redundant with the base.
+///
+/// **MEASURED NEGATIVE — default OFF.** The differential gate
+/// `homoglyph_ascii_skip_parity` REFUTES the redundancy: skipping drops real
+/// findings (e.g. `generic-password` on `client_secret="…"`). A keyword-gated
+/// generic detector shares prefixes (`secret`/`client_secret`) with homoglyph
+/// variants, and on these inputs the always-active variant's full-regex pass is
+/// the path that fires where the AC-literal trigger does not — so the variants
+/// are NOT redundant on ASCII. Shipping the skip is a recall bug. Gated OFF
+/// behind `KEYHOG_HOMOGLYPH_ASCII_SKIP=1` (measurement only) pending a real fix:
+/// close the base-AC coverage gap so the skip becomes sound, then default on.
+fn homoglyph_ascii_skip_enabled() -> bool {
+    match HOMOGLYPH_ASCII_SKIP_OVERRIDE.load(Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_HOMOGLYPH_ASCII_SKIP").as_deref() == Ok("1"))
+}
+
 static FALLBACK_REVERSE_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// Diagnostic: override the fallback extraction-order reversal (test hook).
@@ -275,6 +322,14 @@ struct PrefilterBatch {
     /// the batch always runs (a pattern with no required literal could match
     /// without any gate literal, so skipping would drop recall).
     gateable: bool,
+    /// True iff EVERY pattern in this batch is a compiler-generated homoglyph
+    /// fallback variant (`CompiledPattern::homoglyph_variant`). Such a batch is
+    /// skipped ENTIRELY on a pure-ASCII chunk when `homoglyph_ascii_skip` is on:
+    /// each variant's base ASCII prefix is in the AC/confirmed path, so on a
+    /// no-homoglyph chunk the variant adds nothing. This is the precise skip the
+    /// case-sensitivity heuristic got wrong (generic plain fallbacks share the
+    /// case flag but have no base AC pattern; they land in non-skippable batches).
+    homoglyph_skippable: bool,
 }
 
 pub(crate) struct AlwaysActiveFallbackPrefilter {
@@ -480,12 +535,19 @@ impl AlwaysActiveFallbackPrefilter {
         // Partition by regex flags so each batch is built match-equivalent to
         // its patterns' own compilation (case-insensitive detector regexes vs
         // plain homoglyph variants).
+        // Partition by (a) regex case flags and (b) homoglyph-variant status, so
+        // each batch is homogeneous: case-insensitive detector regexes; plain
+        // homoglyph VARIANTS (skippable on ASCII — base AC covers them); and other
+        // plain (generic/case-sensitive) fallbacks that have NO base AC pattern
+        // and must run on every chunk.
         let mut ci: Vec<usize> = Vec::new();
-        let mut plain: Vec<usize> = Vec::new();
+        let mut plain_homoglyph: Vec<usize> = Vec::new();
+        let mut plain_other: Vec<usize> = Vec::new();
         for &index in always_active_indices {
             match fallback.get(index) {
                 Some((pattern, _)) if pattern.regex.is_case_insensitive() => ci.push(index),
-                Some(_) => plain.push(index),
+                Some((pattern, _)) if pattern.homoglyph_variant => plain_homoglyph.push(index),
+                Some(_) => plain_other.push(index),
                 // Out-of-range index (shouldn't happen): run it unconditionally.
                 None => {}
             }
@@ -498,14 +560,25 @@ impl AlwaysActiveFallbackPrefilter {
             fallback,
             &ci,
             true,
+            false,
             &mut batches,
             &mut ungated_indices,
             &mut ci_gate_lits,
         );
         Self::build_partition(
             fallback,
-            &plain,
+            &plain_other,
             false,
+            false,
+            &mut batches,
+            &mut ungated_indices,
+            &mut plain_gate_lits,
+        );
+        Self::build_partition(
+            fallback,
+            &plain_homoglyph,
+            false,
+            true,
             &mut batches,
             &mut ungated_indices,
             &mut plain_gate_lits,
@@ -550,6 +623,7 @@ impl AlwaysActiveFallbackPrefilter {
         fallback: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
         case_insensitive: bool,
+        homoglyph: bool,
         batches: &mut Vec<PrefilterBatch>,
         ungated_indices: &mut Vec<usize>,
         gate_lits: &mut Vec<Vec<u8>>,
@@ -573,6 +647,7 @@ impl AlwaysActiveFallbackPrefilter {
             &other,
             case_insensitive,
             false,
+            homoglyph,
             batches,
             ungated_indices,
         );
@@ -586,6 +661,7 @@ impl AlwaysActiveFallbackPrefilter {
             &eligible,
             case_insensitive,
             true,
+            homoglyph,
             batches,
             ungated_indices,
         );
@@ -611,6 +687,7 @@ impl AlwaysActiveFallbackPrefilter {
         indices: &[usize],
         case_insensitive: bool,
         gateable: bool,
+        homoglyph: bool,
         batches: &mut Vec<PrefilterBatch>,
         ungated_indices: &mut Vec<usize>,
     ) {
@@ -667,6 +744,7 @@ impl AlwaysActiveFallbackPrefilter {
                         ascii_set_trunc,
                         fallback_indices: chunk.to_vec(),
                         gateable: batch_gateable,
+                        homoglyph_skippable: homoglyph,
                     });
                 }
                 Err(_) => ungated_indices.extend_from_slice(chunk),
@@ -811,10 +889,21 @@ impl AlwaysActiveFallbackPrefilter {
         // most, extraction with the full pattern filters. The win is keeping the
         // RegexSet off PikeVM on `{N,}` bodies.
         let truncate = prefilter_truncate_enabled();
+        let ascii = match_text.is_ascii();
         for batch in &self.batches {
             let is_plain = batch.ascii_set.is_some();
-            // A plain (homoglyph) batch carries `ascii_set`. On ASCII chunks the
-            // caller's localizer covers it, so skip the RegexSet pass entirely.
+            // A HOMOGLYPH-variant batch on a pure-ASCII chunk: skip entirely. Each
+            // variant's base ASCII prefix is in the AC/confirmed path
+            // (compiler_build.rs pushes both), and a chunk with no non-ASCII bytes
+            // has no homoglyph for the variant to catch — so it adds nothing the
+            // base AC doesn't. This removes the dominant `fb:prefilter` cost on
+            // all-ASCII source. Proven recall-neutral by `homoglyph_ascii_skip_parity`.
+            // Generic/case-sensitive plain fallbacks (no base AC) are in
+            // non-skippable batches and are unaffected.
+            if batch.homoglyph_skippable && ascii && homoglyph_ascii_skip_enabled() {
+                continue;
+            }
+            // Or: the caller's localizer covers this plain batch.
             if is_plain && localize_plain && use_ascii {
                 continue;
             }

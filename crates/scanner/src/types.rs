@@ -304,6 +304,16 @@ pub struct CompiledPattern {
     /// severity to `Severity::ClientSafe` so `--hide-client-safe`
     /// can drop it without affecting any other detector's tier.
     pub client_safe: bool,
+    /// True iff this is a compiler-generated HOMOGLYPH fallback variant: the
+    /// detector's literal prefix expanded to its unicode look-alikes
+    /// (`compiler_build.rs`). Such a variant ALWAYS has its base ASCII prefix in
+    /// the AC/confirmed path (the same loop pushes both), so on a pure-ASCII
+    /// chunk — which by definition contains no homoglyph — it can be skipped
+    /// without recall loss (the base AC covers it). This flag, NOT case
+    /// sensitivity, is what `homoglyph_ascii_skip` keys on: generic anchorless
+    /// fallbacks (generic-password, client_secret) are ALSO case-sensitive but
+    /// have NO base AC pattern and must never be skipped.
+    pub homoglyph_variant: bool,
 }
 
 /// An optional compiled companion pattern for a detector.

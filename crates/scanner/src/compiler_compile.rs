@@ -271,6 +271,7 @@ pub fn compile_pattern(
         regex: LazyRegex::detector(spec.regex.as_str()),
         group: spec.group,
         client_safe: spec.client_safe,
+        homoglyph_variant: false,
     })
 }
 
