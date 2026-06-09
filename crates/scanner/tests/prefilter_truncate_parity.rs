@@ -14,7 +14,7 @@ use support::paths::{corpus_dir, detector_dir};
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{set_prefilter_truncate, CompiledScanner, ScanBackend};
+use keyhog_scanner::{set_fallback_hs, set_prefilter_truncate, CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 struct Lcg(u64);
@@ -111,6 +111,8 @@ fn scan_both(
     s: &CompiledScanner,
     c: &Chunk,
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
+    // Truncation is a legacy RegexSet-prefilter lever; force HS off so it runs.
+    set_fallback_hs(Some(false));
     set_prefilter_truncate(Some(true));
     s.clear_fragment_cache();
     let on =

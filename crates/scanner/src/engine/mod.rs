@@ -47,7 +47,7 @@ mod windowed;
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::PreparedChunk;
 pub use fallback::{
-    fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode,
+    fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode, set_fallback_hs,
     set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
     set_homoglyph_ascii_skip, set_prefilter_truncate,
 };

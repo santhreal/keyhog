@@ -1,5 +1,7 @@
 use super::*;
 use crate::context;
+#[cfg(feature = "simd")]
+use crate::simd::backend::{HsCompileOpts, HsScanner};
 use aho_corasick::AhoCorasick;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -204,21 +206,22 @@ pub fn set_homoglyph_ascii_skip(mode: Option<bool>) {
     );
 }
 
-/// Whether to SKIP (not just fold) the always-active homoglyph (plain) fallback
-/// variants entirely on a pure-ASCII chunk — the lever the profiler points at
-/// (`fb:prefilter` = the ~2,679-pattern RegexSet over every ASCII chunk, ~43% of
-/// scan). The intuition was: a homoglyph variant has its base literal prefix in
-/// the AC path, so on a no-homoglyph chunk it's redundant with the base.
+/// Whether to SKIP the always-active homoglyph fallback variants on a pure-ASCII
+/// chunk. Tempting because `fb:prefilter` (the ~2,730-pattern pass over every
+/// chunk) is the #1 scan cost and the variants only ADD reach on non-ASCII bytes.
 ///
-/// **MEASURED NEGATIVE — default OFF.** The differential gate
-/// `homoglyph_ascii_skip_parity` REFUTES the redundancy: skipping drops real
-/// findings (e.g. `generic-password` on `client_secret="…"`). A keyword-gated
-/// generic detector shares prefixes (`secret`/`client_secret`) with homoglyph
-/// variants, and on these inputs the always-active variant's full-regex pass is
-/// the path that fires where the AC-literal trigger does not — so the variants
-/// are NOT redundant on ASCII. Shipping the skip is a recall bug. Gated OFF
-/// behind `KEYHOG_HOMOGLYPH_ASCII_SKIP=1` (measurement only) pending a real fix:
-/// close the base-AC coverage gap so the skip becomes sound, then default on.
+/// **MEASURED NEGATIVE — default OFF.** RE-CONFIRMED 2026-06-09 by a full-finding
+/// diff over the mirror corpus (skip vs no-skip via a top-level is_ascii gate):
+/// the skip DROPS ~30 real findings (e.g. `jwt-token`) and the drops cascade into
+/// spurious adds via overlap suppression. The base prefix IS in the phase-1 AC,
+/// but the confirmed-extraction path that the trigger feeds has DIFFERENT
+/// downstream gating (companion / keyword-proximity / confidence) than the
+/// fallback path, so the always-active variant fires where confirmed does not —
+/// the variant is load-bearing on ASCII, not redundant. The real fix is to close
+/// that gap (make confirmed extraction catch those findings) BEFORE any ASCII
+/// skip — not the skip itself. Gated behind `KEYHOG_HOMOGLYPH_ASCII_SKIP=1`
+/// (measurement only). NOTE: earlier "recall-neutral" measurements were vacuous —
+/// HS was the default prefilter and early-returned before this per-batch skip ran.
 fn homoglyph_ascii_skip_enabled() -> bool {
     match HOMOGLYPH_ASCII_SKIP_OVERRIDE.load(Relaxed) {
         1 => return true,
@@ -355,6 +358,128 @@ pub(crate) struct AlwaysActiveFallbackPrefilter {
     /// non-ASCII chunk the unicode `set` runs unconditionally (the folded literals
     /// don't describe its required prefixes). `None` when none are gate-eligible.
     plain_gate: Option<AhoCorasick>,
+    /// Hyperscan-backed engine over the SAME always-active patterns. When present
+    /// and enabled (`fallback_hs_enabled`), `mark_matches` uses it instead of the
+    /// `regex::RegexSet` batches above: one SIMD multi-pattern scan with
+    /// `SINGLEMATCH` (fire-once = "does P match") replaces the ~2,679-pattern
+    /// whole-chunk RegexSet pass — the measured #1 scan cost (`fb:prefilter`),
+    /// ~1000x faster (`fallback_prefilter_hs_vs_regexset`) and findings-identical
+    /// (`fallback_prefilter_hs_findings_parity`). `None` when the `simd` feature
+    /// is off or HS failed to compile (then the RegexSet batches are the path).
+    #[cfg(feature = "simd")]
+    hs: Option<HsFallbackEngine>,
+}
+
+/// Hyperscan-backed always-active prefilter engine. See the `hs` field on
+/// [`AlwaysActiveFallbackPrefilter`].
+#[cfg(feature = "simd")]
+struct HsFallbackEngine {
+    scanner: HsScanner,
+    /// HS pattern id -> always-active fallback index (the `det_idx` slot we set
+    /// on each surviving pattern at build).
+    hs_to_fallback: Vec<usize>,
+    /// Patterns HS could not compile (PCRE feature / over-long): a LOUD host
+    /// path (Law 10). Each keeps its own compiled regex and is marked per chunk
+    /// via `is_match`, so its recall is preserved, never silently dropped.
+    dropped: Vec<(usize, LazyRegex)>,
+}
+
+#[cfg(feature = "simd")]
+impl HsFallbackEngine {
+    /// Compile an HS database over the always-active patterns. Each pattern
+    /// carries its OWN case flag (`is_case_insensitive`) so the marked set is
+    /// identical to the per-pattern `regex` reference, plus `SINGLEMATCH` so a
+    /// broad always-active pattern fires once instead of storming the callback.
+    /// Returns `None` (caller keeps the RegexSet path) if no pattern survives.
+    fn build(
+        fallback: &[(CompiledPattern, Vec<String>)],
+        always_active: &[usize],
+    ) -> Option<Self> {
+        let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(always_active.len());
+        let mut caseless: Vec<bool> = Vec::with_capacity(always_active.len());
+        for &idx in always_active {
+            let Some((pat, _)) = fallback.get(idx) else {
+                continue;
+            };
+            // det_idx slot carries the fallback index back through `pattern_info`.
+            refs.push((idx, 0, pat.regex.as_str(), false));
+            caseless.push(pat.regex.is_case_insensitive());
+        }
+        if refs.is_empty() {
+            return None;
+        }
+        let opts = HsCompileOpts {
+            singlematch: true,
+            caseless: Some(&caseless),
+            // ONE database: the prefilter scans every chunk against all patterns,
+            // so a sharded scan would pay the per-shard overhead N times per
+            // chunk and lose to the RegexSet on tiny files. A single DB + the
+            // no-alloc `scan_each` is the fast path.
+            shard_target: Some(usize::MAX),
+            // Byte mode (UTF8 off): both the pattern source and the haystack are
+            // UTF-8 bytes, so byte matching is correct for the unicode homoglyph
+            // classes, and HS_FLAG_UTF8 actually REJECTS many of these patterns
+            // at compile (→ silent fallback to RegexSet). Byte mode keeps them on
+            // the fast path; findings parity holds (`..._findings_parity`).
+            utf8: false,
+        };
+        let (scanner, unsupported) = match HsScanner::compile_with_opts(&refs, opts) {
+            Ok(v) => v,
+            Err(error) => {
+                tracing::warn!(
+                    target: "keyhog::fallback",
+                    %error,
+                    "HS always-active prefilter compile failed — using the regex::RegexSet path",
+                );
+                return None;
+            }
+        };
+        let mut hs_to_fallback = vec![0usize; scanner.pattern_count()];
+        for hs_id in 0..scanner.pattern_count() {
+            if let Some((fb, _, _)) = scanner.pattern_info(hs_id) {
+                hs_to_fallback[hs_id] = fb;
+            }
+        }
+        // `unsupported` indexes `refs`; map back to fallback indices and keep
+        // each on its own compiled regex (the LOUD host path, Law 10).
+        let dropped: Vec<(usize, LazyRegex)> = unsupported
+            .iter()
+            .filter_map(|&i| refs.get(i).map(|r| r.0))
+            .map(|fb_idx| (fb_idx, fallback[fb_idx].0.regex.clone()))
+            .collect();
+        if !dropped.is_empty() {
+            tracing::warn!(
+                target: "keyhog::fallback",
+                count = dropped.len(),
+                "HS prefilter: {} always-active pattern(s) on the loud regex host path (HS-incompatible)",
+                dropped.len(),
+            );
+        }
+        Some(Self {
+            scanner,
+            hs_to_fallback,
+            dropped,
+        })
+    }
+
+    /// Mark every always-active pattern that can match `match_text`. One SIMD
+    /// scan marks the HS-covered patterns; the loud host path marks the few
+    /// HS-incompatible ones. The marked set is a sound superset of the matching
+    /// patterns (extraction filters), identical to the RegexSet path.
+    #[inline]
+    fn mark(&self, match_text: &str, scratch: &mut ActivePatternsScratch) {
+        let hs_to_fallback = &self.hs_to_fallback;
+        self.scanner.scan_each(match_text.as_bytes(), |hs_id| {
+            if let Some(&fb) = hs_to_fallback.get(hs_id) {
+                scratch.mark(fb);
+            }
+        });
+        for (idx, re) in &self.dropped {
+            if re.get().is_match(match_text) {
+                scratch.mark(*idx);
+            }
+        }
+    }
 }
 
 /// Override for the fallback prefix-literal skip gate (test/diagnostic).
@@ -370,6 +495,61 @@ static PREFIX_GATE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
 /// `prefilter_truncate_parity`; it only trades prefilter speed for a little
 /// extra extraction.
 static PREFILTER_TRUNCATE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+/// Override for the Hyperscan always-active prefilter. `Some(true)` forces the
+/// HS engine, `Some(false)` forces the legacy `regex::RegexSet` batches, `None`
+/// = env default (on when an HS engine compiled). The two engines mark the SAME
+/// active set on every chunk (`fallback_prefilter_hs_parity`) and produce
+/// IDENTICAL findings end-to-end (`fallback_prefilter_hs_findings_parity`), so
+/// recall is unchanged either way — this only selects the SIMD-fast path vs the
+/// ~1000x-slower RegexSet reference. Lets the parity gates A/B both in one run.
+static FALLBACK_HS_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+/// Select the always-active prefilter engine (test/diagnostic). Recall is
+/// identical; this only trades the SIMD fast path for the RegexSet reference.
+pub fn set_fallback_hs(mode: Option<bool>) {
+    FALLBACK_HS_OVERRIDE.store(
+        match mode {
+            None => 0,
+            Some(true) => 1,
+            Some(false) => 2,
+        },
+        Relaxed,
+    );
+}
+
+/// Whether the HS always-active prefilter is enabled. Default ON: the HS engine
+/// is ~1000x the `regex::RegexSet` throughput on the always-active set
+/// (`fallback_prefilter_hs_vs_regexset`) and is the measured #1 scan cost.
+/// `KEYHOG_FALLBACK_HS=0` forces the legacy reference path.
+#[cfg(feature = "simd")]
+fn fallback_hs_enabled() -> bool {
+    match FALLBACK_HS_OVERRIDE.load(Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    static EN: OnceLock<bool> = OnceLock::new();
+    *EN.get_or_init(|| std::env::var("KEYHOG_FALLBACK_HS").as_deref() != Ok("0"))
+}
+
+/// Max chunk length (bytes) for which the HS prefilter is used; larger chunks
+/// fall through to the `regex::RegexSet` batches. HS's per-scan cost is roughly
+/// constant in chunk size (dominated by the unicode-homoglyph automaton), so it
+/// beats the RegexSet's per-call setup on SMALL chunks but loses once the
+/// per-byte automaton work over a large chunk dominates. Tunable via
+/// `KEYHOG_FALLBACK_HS_MAX_LEN`; default chosen so the small-file regime (the
+/// common case) takes HS and 16 KiB chunks take the RegexSet.
+#[cfg(feature = "simd")]
+fn hs_prefilter_max_len() -> usize {
+    static MAX: OnceLock<usize> = OnceLock::new();
+    *MAX.get_or_init(|| {
+        std::env::var("KEYHOG_FALLBACK_HS_MAX_LEN")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(4096)
+    })
+}
 
 pub fn set_prefilter_truncate(mode: Option<bool>) {
     PREFILTER_TRUNCATE_OVERRIDE.store(
@@ -532,6 +712,13 @@ impl AlwaysActiveFallbackPrefilter {
         if always_active_indices.is_empty() {
             return None;
         }
+        // The HS engine is the fast path for SMALL chunks; the `regex::RegexSet`
+        // batches below stay as the LARGE-chunk path (HS's unicode-homoglyph
+        // automaton over many bytes loses to the folded/truncated RegexSet) and
+        // the no-`simd` fallback. `mark_matches` dispatches by chunk length, so
+        // BOTH are load-bearing — the batches are not dead weight.
+        #[cfg(feature = "simd")]
+        let hs = HsFallbackEngine::build(fallback, always_active_indices);
         // Partition by regex flags so each batch is built match-equivalent to
         // its patterns' own compilation (case-insensitive detector regexes vs
         // plain homoglyph variants).
@@ -588,6 +775,10 @@ impl AlwaysActiveFallbackPrefilter {
             ungated_indices,
             ci_gate: Self::build_gate_ac(&ci_gate_lits, true),
             plain_gate: Self::build_gate_ac(&plain_gate_lits, false),
+            // Reuse the `hs` built above; both engines are always present so
+            // `mark_matches` can size-dispatch between them.
+            #[cfg(feature = "simd")]
+            hs,
         })
     }
 
@@ -853,6 +1044,24 @@ impl AlwaysActiveFallbackPrefilter {
         scratch: &mut ActivePatternsScratch,
         localize_plain: bool,
     ) {
+        // SIMD fast path: one Hyperscan scan replaces the whole-chunk RegexSet
+        // batch loop below (the measured #1 scan cost). `localize_plain` is a
+        // RegexSet-batch optimization (skip plain batches the shared-anchor AC
+        // covers); the HS path marks the full matching set instead — a sound
+        // SUPERSET (eligible patterns still route through the AC+verify path,
+        // non-eligible through whole-chunk extraction), proven findings-identical.
+        #[cfg(feature = "simd")]
+        if let Some(hs) = &self.hs {
+            // Size-dispatch: HS wins on SMALL chunks (its near-constant per-scan
+            // cost beats the RegexSet's per-call lazy-DFA setup), but its unicode
+            // automaton over MANY bytes loses to the folded/truncated RegexSet on
+            // large chunks. Above the threshold, fall through to the batches.
+            if fallback_hs_enabled() && match_text.len() <= hs_prefilter_max_len() {
+                let _ = localize_plain;
+                hs.mark(match_text, scratch);
+                return;
+            }
+        }
         let use_ascii = homoglyph_gate_enabled() && match_text.is_ascii();
 
         // Prefix-literal skip gate (KH decode-recursion lever). A `gateable`

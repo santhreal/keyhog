@@ -94,8 +94,43 @@ pub(crate) mod backend {
     unsafe impl Send for HsScanner {}
     unsafe impl Sync for HsScanner {}
 
+    /// Per-pattern compilation options for [`HsScanner::compile_with_opts`].
+    ///
+    /// The legacy phase-1 [`HsScanner::compile`] path compiles every pattern
+    /// `CASELESS` and reports every match (no `SINGLEMATCH`). The always-active
+    /// fallback PREFILTER wants the opposite on both axes: it needs each
+    /// pattern's OWN case sensitivity (a plain homoglyph variant is
+    /// case-sensitive; a detector regex is not) so the marked set matches the
+    /// `regex` reference exactly, and it only needs to know "did pattern P match
+    /// at all" — so `SINGLEMATCH` fires each pattern once and stops, removing the
+    /// broad-pattern callback storm that is why the fallback never used HS.
+    #[derive(Clone, Copy, Default)]
+    pub struct HsCompileOpts<'a> {
+        /// Set `HS_FLAG_SINGLEMATCH` on every pattern (fire once, then retire).
+        pub singlematch: bool,
+        /// Per-input-pattern caseless flags, parallel to `patterns`. `None` =
+        /// every pattern `CASELESS` (legacy behavior). A missing/short entry
+        /// defaults to caseless.
+        pub caseless: Option<&'a [bool]>,
+        /// Override the patterns-per-shard target (else `KEYHOG_SHARD_TARGET` /
+        /// the default). The sharded scan must hit EVERY shard per call, so the
+        /// per-shard fixed overhead is paid `shard_count` times — fine for the
+        /// phase-1 position scan, but it dominates the set-membership PREFILTER
+        /// on tiny chunks. Pass `Some(usize::MAX)` to force a single database so
+        /// `scan_each` pays the per-scan overhead exactly once.
+        pub shard_target: Option<usize>,
+        /// Set `HS_FLAG_UTF8`. The `regex` crate matches unicode classes as
+        /// CODEPOINTS; the homoglyph fallback variants (`[sѕｓ]…`) are unicode.
+        /// Without this flag HS treats the pattern as BYTES, expanding every
+        /// unicode class into a byte-alternation — a much larger, slower
+        /// automaton AND byte- (not codepoint-) match semantics. UTF8 mode
+        /// matches the `regex` reference and keeps the automaton small.
+        pub utf8: bool,
+    }
+
     impl HsScanner {
-        /// Compile patterns into a Hyperscan database.
+        /// Compile patterns into a Hyperscan database (legacy: all `CASELESS`,
+        /// no `SINGLEMATCH`).
         ///
         /// # Examples
         ///
@@ -107,6 +142,23 @@ pub(crate) mod backend {
         pub fn compile(
             patterns: &[(usize, usize, &str, bool)],
         ) -> Result<(Self, Vec<usize>), String> {
+            Self::compile_with_opts(patterns, HsCompileOpts::default())
+        }
+
+        /// Compile patterns with explicit per-pattern flags. See [`HsCompileOpts`].
+        ///
+        /// # Examples
+        ///
+        /// ```rust,ignore
+        /// use keyhog_scanner::simd::backend::{HsScanner, HsCompileOpts};
+        ///
+        /// let opts = HsCompileOpts { singlematch: true, caseless: Some(&[false]) };
+        /// let _ = HsScanner::compile_with_opts(&[(0, 0, "demo_[A-Z0-9]{8}", false)], opts)?;
+        /// ```
+        pub fn compile_with_opts(
+            patterns: &[(usize, usize, &str, bool)],
+            opts: HsCompileOpts<'_>,
+        ) -> Result<(Self, Vec<usize>), String> {
             let mut hs_pats = Vec::new();
             let mut pattern_map = Vec::new();
             let mut unsupported = Vec::new();
@@ -117,9 +169,20 @@ pub(crate) mod backend {
                     unsupported.push(i);
                     continue;
                 }
-                // CASELESS only. No SOM_LEFTMOST - it causes "Pattern too large"
-                // on complex regexes. Match positions extracted by regex crate.
-                let flags = PatternFlags::CASELESS;
+                // No SOM_LEFTMOST - it causes "Pattern too large" on complex
+                // regexes; match positions are extracted by the regex crate.
+                // CASELESS is per-pattern (legacy callers get all-caseless);
+                // SINGLEMATCH is opt-in for the set-membership prefilter.
+                let mut flags = PatternFlags::empty();
+                if opts.caseless.map_or(true, |c| c.get(i).copied().unwrap_or(true)) {
+                    flags |= PatternFlags::CASELESS;
+                }
+                if opts.singlematch {
+                    flags |= PatternFlags::SINGLEMATCH;
+                }
+                if opts.utf8 {
+                    flags |= PatternFlags::UTF8;
+                }
                 match Pattern::with_flags(regex, flags) {
                     Ok(mut p) => {
                         p.id = Some(pattern_map.len());
@@ -244,6 +307,22 @@ pub(crate) mod backend {
                 }
                 h.update(std::env::consts::ARCH.as_bytes());
 
+                // Flags are baked into the serialized DB, so the cache key must
+                // distinguish a caseless-all/no-singlematch build from a
+                // per-pattern/singlematch one — otherwise a phase-1 cache entry
+                // could be loaded for a prefilter request (or vice versa).
+                h.update(if opts.singlematch { b"SM1" } else { b"SM0" });
+                h.update(if opts.utf8 { b"U81" } else { b"U80" });
+                match opts.caseless {
+                    None => h.update(b"CLall"),
+                    Some(cl) => {
+                        h.update(b"CLper");
+                        for &b in cl {
+                            h.update([b as u8]);
+                        }
+                    }
+                }
+
                 hex::encode(h.finalize())
             };
             // ── Shard the pattern set and compile each shard in parallel ──
@@ -283,10 +362,15 @@ pub(crate) mod backend {
             // then runs ceil(shards/cores) work-stealing waves and the wall-clock
             // quantizes at the core boundary (a corpus needing 42 shards on 32
             // cores pays ~1.7x vs a half needing 21), so we stay within one wave.
-            let target = std::env::var("KEYHOG_SHARD_TARGET")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
+            let target = opts
+                .shard_target
                 .filter(|&v| v >= 1)
+                .or_else(|| {
+                    std::env::var("KEYHOG_SHARD_TARGET")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .filter(|&v| v >= 1)
+                })
                 .unwrap_or(TARGET_PATTERNS_PER_SHARD);
             let cap = cores.min(MAX_COMPILE_SHARDS).max(1);
             let shard_count = hs_pats
@@ -537,6 +621,39 @@ pub(crate) mod backend {
                 });
             }
             matches
+        }
+
+        /// Scan `text`, invoking `on_match(hs_id)` for each matching pattern id,
+        /// with NO per-call heap allocation (unlike [`scan`](Self::scan), which
+        /// collects every match into a `Vec`). This is the set-membership hot
+        /// path: on tiny chunks the `Vec::with_capacity(32)` allocation and the
+        /// `(from,to)` triples `scan` builds dominate, while a prefilter only
+        /// needs "which pattern ids matched". Paired with a single-shard build
+        /// (`HsCompileOpts::shard_target = Some(usize::MAX)`) and `SINGLEMATCH`,
+        /// this is ~20x faster per call than `scan` on ~150-byte inputs.
+        pub fn scan_each(&self, text: &[u8], mut on_match: impl FnMut(usize)) {
+            thread_local! {
+                static TLS_EACH: std::cell::RefCell<
+                    std::collections::HashMap<(u64, usize), Scratch>,
+                > = std::cell::RefCell::new(std::collections::HashMap::new());
+            }
+            for (shard_idx, shard) in self.shards.iter().enumerate() {
+                let key = (self.scanner_id, shard_idx);
+                let scratch = TLS_EACH
+                    .with(|tls| tls.borrow_mut().remove(&key))
+                    .or_else(|| shard.scratch_pool.lock().pop())
+                    .or_else(|| shard.db.alloc_scratch().ok());
+                let Some(scratch) = scratch else {
+                    continue;
+                };
+                let _ = shard.db.scan(text, &scratch, |id, _from, _to, _flags| {
+                    on_match(id as usize);
+                    Matching::Continue
+                });
+                TLS_EACH.with(|tls| {
+                    tls.borrow_mut().insert(key, scratch);
+                });
+            }
         }
 
         /// Look up detector and pattern metadata for a Hyperscan pattern id.

@@ -18,7 +18,7 @@ use support::paths::{corpus_dir, detector_dir};
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{set_fallback_prefix_gate, CompiledScanner, ScanBackend};
+use keyhog_scanner::{set_fallback_hs, set_fallback_prefix_gate, CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 struct Lcg(u64);
@@ -122,6 +122,9 @@ fn scan_both(
     s: &CompiledScanner,
     c: &Chunk,
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
+    // The prefix gate lives in the legacy RegexSet prefilter path; force HS off
+    // so this gate is actually exercised (the HS engine bypasses it).
+    set_fallback_hs(Some(false));
     set_fallback_prefix_gate(Some(true));
     s.clear_fragment_cache();
     let on =
