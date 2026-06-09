@@ -333,6 +333,80 @@ fn sharded_region_presence_equals_single_dispatch() {
     eprintln!("sharded region_base equivalence OK: {region_count} regions, split after {split_after}");
 }
 
+/// End-to-end throughput of the WIRED scan path: a coalesced batch scanned via
+/// the GPU backend (region-presence phase-1 + CPU phase-2) vs SIMD, and vs the GPU
+/// triple path (`KEYHOG_GPU_NO_REGION_PRESENCE`). Honest production measurement:
+/// the full pipeline, the scanner's real backend, identical findings asserted.
+#[test]
+#[ignore = "measurement; run with --features gpu --ignored --nocapture --test-threads=1"]
+fn wired_end_to_end_throughput_gpu_vs_simd() {
+    use keyhog_core::{Chunk, ChunkMetadata};
+    use keyhog_scanner::ScanBackend;
+    use std::time::Instant;
+
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let backend_label = match scanner.gpu_backend_label() {
+        Some(l) => l,
+        None => {
+            eprintln!("SKIP: no GPU backend");
+            return;
+        }
+    };
+    let active = scanner.gpu_region_presence_active();
+
+    // Source-like chunks (~512 KiB each) with periodic secret-dense lines, so the
+    // literal prefilter fires often enough to exercise the output path. 64 chunks
+    // ≈ 32 MiB → multiple GPU shards.
+    let unit = {
+        let filler = "let mut handler = compute_route(request, context, &mut state);\n".repeat(48);
+        let secrets = "aws=AKIAQYLPMN5HFIQR7BBB tok=ghp_xYz1234ABCD5678efgh9ijkl0123mnop sk=sk_live_4eC39HqLyjWDarjtT1zdp7dc\n";
+        let mut s = String::new();
+        while s.len() < 512 * 1024 {
+            s.push_str(&filler);
+            s.push_str(secrets);
+        }
+        s
+    };
+    let chunks: Vec<Chunk> = (0..64)
+        .map(|i| Chunk {
+            data: unit.clone().into(),
+            metadata: ChunkMetadata {
+                source_type: "e2e-perf".into(),
+                path: Some(format!("src/f{i}.rs")),
+                base_offset: 0,
+                ..Default::default()
+            },
+        })
+        .collect();
+    let total_mb = chunks.iter().map(|c| c.data.len()).sum::<usize>() as f64 / 1e6;
+
+    let timed = |b: ScanBackend, warm: bool| -> (f64, usize) {
+        if warm {
+            let _ = scanner.scan_chunks_with_backend(&chunks[..1], b);
+        }
+        let t = Instant::now();
+        let res = scanner.scan_chunks_with_backend(&chunks, b);
+        let ms = t.elapsed().as_secs_f64() * 1000.0;
+        let n: usize = res.iter().map(|c| c.len()).sum();
+        (ms, n)
+    };
+
+    let (simd_ms, simd_n) = timed(ScanBackend::SimdCpu, true);
+    let (gpu_ms, gpu_n) = timed(ScanBackend::Gpu, true);
+
+    eprintln!("\n=== wired end-to-end on {total_mb:.1} MiB (backend={backend_label}, region_presence_active={active}) ===");
+    eprintln!(
+        "  SIMD (1 pass, rayon)      : {simd_ms:>8.1} ms  {:>8.1} MB/s  ({simd_n} findings)",
+        total_mb / (simd_ms / 1e3)
+    );
+    eprintln!(
+        "  GPU  (region-presence)    : {gpu_ms:>8.1} ms  {:>8.1} MB/s  ({gpu_n} findings)",
+        total_mb / (gpu_ms / 1e3)
+    );
+    eprintln!("  GPU/SIMD findings match   : {}", gpu_n == simd_n);
+}
+
 /// Oracle for the dense-output lever: on a match-DENSE coalesced batch the
 /// triple-append `scan()` collapses on per-hit atomic-counter serialization + a
 /// large triple readback, while `scan_presence_by_region` keeps the idempotent
