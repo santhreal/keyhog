@@ -9,6 +9,7 @@ pub mod boundary;
 mod compile;
 mod extract;
 mod fallback;
+mod fallback_anchor;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
 mod fallback_generic;
@@ -42,6 +43,12 @@ mod windowed;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::PreparedChunk;
+pub use backend_triggered::{decode_phase2_profile_dump, phase2_profile_dump};
+pub use fallback::{
+    fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode,
+    set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
+    set_prefilter_truncate,
+};
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
 pub use gpu_coalesce::coalesce_chunks;
 pub use gpu_regex_dfa::{build_regex_dfa, RegexDfaError};
@@ -50,6 +57,9 @@ pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
 };
+pub use scan::scan_inner_profile_dump;
+pub use scan_postprocess::decode_profile_dump;
+pub use scan_postprocess::set_confirmed_suffix_gate;
 pub use windowed::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
     window_chunk, window_end_offset,
@@ -224,6 +234,18 @@ pub struct CompiledScanner {
     pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
+    /// Resident-dispatch session for the MegaScan `RulePipeline`: the immutable
+    /// NFA transition/epsilon tables uploaded once into GPU-resident buffers, so
+    /// each coalesced batch transfers only its haystack instead of re-uploading
+    /// the (tens-of-MB) static tables every dispatch. Lazily prepared on the
+    /// first megascan batch from `(rule_pipeline, gpu_backend)`, sized to that
+    /// batch. `None` = resident prepare failed or the backend lacks resident
+    /// support → the megascan path uses the recall-identical borrowed dispatch.
+    /// The `Mutex` serialises the single per-batch GPU dispatch (megascan
+    /// batches already run one-at-a-time in the orchestrator; the lock makes any
+    /// concurrent caller — e.g. parity tests — safe against shared-buffer races).
+    pub(crate) resident_megascan:
+        OnceLock<Option<std::sync::Mutex<vyre_libs::scan::ResidentRulePipeline>>>,
     /// Fused AC + rule pipeline program (single GPU dispatch instead of two).
     /// Lazily built on first access via `fused_program()`.
     pub(crate) fused_program: OnceLock<Option<vyre::Program>>,
@@ -241,6 +263,12 @@ pub struct CompiledScanner {
     /// because they ARE its arena entries — see `perf_locality_intern.rs`.
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
     pub(crate) ac_map: Vec<CompiledPattern>,
+    /// Confirmed-pass suffix gate: AC over ac_map patterns' required suffix
+    /// literals (every match ends with one). `ac_suffix_gate[i]` are pattern
+    /// i's literal ids; a triggered pattern whose suffix literals are all absent
+    /// from the chunk cannot match and is skipped (see `extract_confirmed_patterns`).
+    pub(crate) suffix_gate_ac: Option<AhoCorasick>,
+    pub(crate) ac_suffix_gate: Vec<Vec<u32>>,
     pub(crate) prefix_propagation: CsrU32,
     pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
@@ -249,6 +277,17 @@ pub struct CompiledScanner {
     pub(crate) fallback_keyword_ac: Option<AhoCorasick>,
     pub(crate) fallback_keyword_to_patterns: CsrU32,
     pub(crate) fallback_always_active_indices: Vec<usize>,
+    /// Combined-RegexSet prefilter over `fallback_always_active_indices`. When
+    /// present, the per-chunk fallback scan runs one linear set pass instead of
+    /// every always-active pattern's regex over the whole chunk. `None` falls
+    /// back to running them all (recall-identical, just slower).
+    pub(crate) fallback_always_active_prefilter: Option<fallback::AlwaysActiveFallbackPrefilter>,
+    /// Shared-anchor localization index over the fallback set. When present,
+    /// eligible fallback patterns are verified anchored at candidate positions
+    /// from one shared Aho-Corasick pass instead of each walking the whole
+    /// chunk; non-eligible patterns keep the whole-chunk path. `None` when no
+    /// pattern is anchor-eligible. Recall-identical (see `fallback_anchor`).
+    pub(crate) fallback_anchor_index: Option<fallback_anchor::FallbackAnchorIndex>,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]
@@ -335,6 +374,34 @@ impl CompiledScanner {
     /// Total number of patterns (AC + fallback).
     pub fn pattern_count(&self) -> usize {
         self.ac_map.len() + self.fallback.len()
+    }
+
+    /// Diagnostic: `(fallback_total, always_active, always_active_eligible)` —
+    /// how much the shared-anchor index shrinks the RegexSet prefilter. The
+    /// prefilter cost scales with `always_active - always_active_eligible`.
+    pub fn fallback_anchor_stats(&self) -> (usize, usize, usize) {
+        let total = self.fallback.len();
+        let always_active = self.fallback_always_active_indices.len();
+        let aae = self.fallback_anchor_index.as_ref().map_or(0, |idx| {
+            self.fallback_always_active_indices
+                .iter()
+                .filter(|&&i| idx.is_always_active_eligible(i))
+                .count()
+        });
+        (total, always_active, aae)
+    }
+
+    /// Diagnostic: `(regex_source, keywords)` for every keyword-gated fallback
+    /// pattern, in `fallback` order. These are the no-literal-prefix detectors
+    /// that `scan_fallback_patterns` runs over the whole chunk once their
+    /// keyword fires. Used by anchor-localization analysis to classify which
+    /// carry a regex-required literal that can drive a windowed (rather than
+    /// whole-chunk) scan. Diagnostic surface only — not part of the scan path.
+    pub fn fallback_pattern_diagnostics(&self) -> Vec<(String, Vec<String>)> {
+        self.fallback
+            .iter()
+            .map(|(p, kw)| (p.regex.as_str().to_string(), kw.clone()))
+            .collect()
     }
 
     /// Eagerly compile every pattern's regex, in parallel, up front.

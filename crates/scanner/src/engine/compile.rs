@@ -172,6 +172,51 @@ impl CompiledScanner {
             })
             .collect();
 
+        // Shared-anchor localization index: one Aho-Corasick over every
+        // fallback pattern's regex-REQUIRED prefix literals, so a single chunk
+        // pass yields candidate positions for all eligible patterns instead of
+        // each pattern scanning the chunk for its own literal. `None` when no
+        // pattern is anchor-eligible. Recall-identical (see `fallback_anchor`).
+        // Built BEFORE the prefilter so eligible always-active patterns can be
+        // removed from it (the prefilter, not extraction, is ~90% of fallback).
+        let fallback_anchor_index = fallback_anchor::FallbackAnchorIndex::build(
+            &state.fallback,
+            &fallback_always_active_indices,
+        );
+
+        // Combined-RegexSet prefilter over EVERY always-active fallback. The
+        // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
+        // RegexSet (the homoglyph regex with non-ASCII stripped); on a pure-ASCII
+        // chunk it is match-equivalent to the slow unicode-class form, so the
+        // prefilter marks the IDENTICAL set in the IDENTICAL order — recall and
+        // active-set order unchanged — but far faster (the homoglyph unicode
+        // RegexSet was measured at ~90% of fallback time). `None` on build
+        // failure runs them all (recall-safe).
+        let fallback_always_active_prefilter = fallback::AlwaysActiveFallbackPrefilter::build(
+            &state.fallback,
+            &fallback_always_active_indices,
+        );
+        tracing::debug!(
+            eligible = fallback_anchor_index
+                .as_ref()
+                .map_or(0, |i| i.eligible_count()),
+            total = state.fallback.len(),
+            always_active = fallback_always_active_indices.len(),
+            "fallback prefilter built with homoglyph ASCII-folded fast path"
+        );
+
+        // Confirmed-pass suffix gate (one AC over required suffix literals) so a
+        // triggered detector whose rare trailing literal (`.*<sitename>`) is
+        // absent skips its O(chunk) whole-chunk regex run.
+        let (suffix_gate_ac, ac_suffix_gate) =
+            super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map);
+        let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
+        tracing::debug!(
+            gated,
+            total = state.ac_map.len(),
+            "confirmed suffix gate built"
+        );
+
         log_quality_warnings(&state.quality_warnings);
 
         let mut alphabet_targets = state.ac_literals.clone();
@@ -309,10 +354,13 @@ impl CompiledScanner {
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
 
             rule_pipeline: OnceLock::new(),
+            resident_megascan: OnceLock::new(),
             fused_program: OnceLock::new(),
             fused_decode_programs: OnceLock::new(),
             static_intern,
             metadata_by_index,
+            suffix_gate_ac,
+            ac_suffix_gate,
             ac_map: state.ac_map,
             prefix_propagation,
             fallback: state.fallback,
@@ -322,6 +370,8 @@ impl CompiledScanner {
             fallback_keyword_ac,
             fallback_keyword_to_patterns,
             fallback_always_active_indices,
+            fallback_always_active_prefilter,
+            fallback_anchor_index,
             #[cfg(feature = "simd")]
             simd_prefilter,
             #[cfg(feature = "simd")]
