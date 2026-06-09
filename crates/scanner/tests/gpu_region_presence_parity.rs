@@ -333,6 +333,87 @@ fn sharded_region_presence_equals_single_dispatch() {
     eprintln!("sharded region_base equivalence OK: {region_count} regions, split after {split_after}");
 }
 
+/// Diagnostic for the megakernel decision (#49): where does the on-GPU full-regex
+/// NFA path (MegaScan = resident RulePipeline prefilter + CPU phase-2) land vs the
+/// region-presence Gpu path and the multi-threaded SIMD/Hyperscan path? This is
+/// the "can on-GPU regex beat the CPU" measurement that gates whether the
+/// multi-day on-GPU-extraction megakernel is worth building. Findings asserted
+/// identical across whichever backends engage.
+#[test]
+#[ignore = "measurement; run with --features gpu --ignored --nocapture --test-threads=1"]
+fn backend_throughput_diagnostic_for_megakernel_decision() {
+    use keyhog_core::{Chunk, ChunkMetadata};
+    use keyhog_scanner::ScanBackend;
+    use std::time::Instant;
+
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let backend_label = scanner.gpu_backend_label().unwrap_or("none");
+
+    // Two scales: GPU amortizes launch/transfer better at larger batch sizes.
+    for (label, chunk_kb, n_chunks) in [("small 16MiB", 256usize, 64usize), ("large 64MiB", 1024, 64)] {
+        let unit = {
+            let filler =
+                "let mut handler = compute_route(request, context, &mut state);\n".repeat(48);
+            let secrets = "aws=AKIAQYLPMN5HFIQR7BBB tok=ghp_xYz1234ABCD5678efgh9ijkl0123mnop\n";
+            let mut s = String::new();
+            while s.len() < chunk_kb * 1024 {
+                s.push_str(&filler);
+                s.push_str(secrets);
+            }
+            s
+        };
+        let chunks: Vec<Chunk> = (0..n_chunks)
+            .map(|i| Chunk {
+                data: unit.clone().into(),
+                metadata: ChunkMetadata {
+                    source_type: "megakernel-diag".into(),
+                    path: Some(format!("src/f{i}.rs")),
+                    base_offset: 0,
+                    ..Default::default()
+                },
+            })
+            .collect();
+        let mb = chunks.iter().map(|c| c.data.len()).sum::<usize>() as f64 / 1e6;
+
+        let run = |b: ScanBackend| -> (f64, usize) {
+            let _ = scanner.scan_chunks_with_backend(&chunks[..1], b); // warm
+            let t = Instant::now();
+            let res = scanner.scan_chunks_with_backend(&chunks, b);
+            (
+                t.elapsed().as_secs_f64() * 1000.0,
+                res.iter().map(|c| c.len()).sum(),
+            )
+        };
+
+        eprintln!("\n=== {label} ({mb:.1} MiB, backend={backend_label}) ===");
+        let mut ref_n = None;
+        for (name, b) in [
+            ("SIMD/Hyperscan (rayon)", ScanBackend::SimdCpu),
+            ("CpuFallback (no SIMD)", ScanBackend::CpuFallback),
+            ("Gpu (region-presence)", ScanBackend::Gpu),
+            ("MegaScan (on-GPU NFA)", ScanBackend::MegaScan),
+        ] {
+            let (ms, n) = run(b);
+            let mbps = mb / (ms / 1e3);
+            let recall = match ref_n {
+                None => {
+                    ref_n = Some(n);
+                    "ref".to_string()
+                }
+                Some(r) => {
+                    if n == r {
+                        "match".to_string()
+                    } else {
+                        format!("DIFF {n} vs {r}")
+                    }
+                }
+            };
+            eprintln!("  {name:<26}: {ms:>8.1} ms  {mbps:>8.1} MB/s  ({n} findings, {recall})");
+        }
+    }
+}
+
 /// End-to-end throughput of the WIRED scan path: a coalesced batch scanned via
 /// the GPU backend (region-presence phase-1 + CPU phase-2) vs SIMD, and vs the GPU
 /// triple path (`KEYHOG_GPU_NO_REGION_PRESENCE`). Honest production measurement:
