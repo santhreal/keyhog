@@ -155,6 +155,184 @@ fn region_presence_equals_per_region_reduction_of_scan_triples() {
     );
 }
 
+/// End-to-end gate for the WIRED production path: a coalesced multi-chunk scan
+/// through the scanner's actual GPU backend (region-presence phase-1 when the
+/// backend self-test passes) must produce the same findings as the SIMD path.
+/// Also reports which backend was acquired and whether region-presence engaged.
+#[test]
+fn wired_gpu_region_presence_matches_simd_recall() {
+    use keyhog_core::{Chunk, ChunkMetadata};
+    use keyhog_scanner::ScanBackend;
+
+    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("SKIP: detectors unavailable: {e}");
+            return;
+        }
+    };
+    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    if scanner.gpu_backend_label().is_none() {
+        eprintln!("SKIP: no GPU backend acquired");
+        return;
+    }
+    let backend_label = scanner.gpu_backend_label().unwrap_or("?");
+    let active = scanner.gpu_region_presence_active();
+    eprintln!("WIRED region-presence: backend={backend_label} region_presence_active={active}");
+
+    let mk = |text: &str, path: &str| Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            source_type: "region-presence-e2e".into(),
+            path: Some(path.into()),
+            base_offset: 0,
+            ..Default::default()
+        },
+    };
+    // Multi-chunk batch with secrets in different chunks + empties between them,
+    // so per-chunk attribution matters (a global bitmap would over/under-trigger).
+    let chunks = vec![
+        mk("const AWS = \"AKIAQYLPMN5HFIQR7BBB\";", "a.rs"),
+        mk("// nothing here", "b.txt"),
+        mk("pat = \"ghp_xYz1234ABCD5678efgh9ijkl0123mnop\"", "c.py"),
+        mk("plain prose only, no credentials", "d.md"),
+        mk("stripe = \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"", "e.yml"),
+    ];
+
+    let collect = |b: ScanBackend| -> std::collections::BTreeSet<(String, usize)> {
+        scanner
+            .scan_chunks_with_backend(&chunks, b)
+            .iter()
+            .flat_map(|c| {
+                c.iter()
+                    .map(|m| (m.credential.as_ref().to_string(), m.location.offset))
+            })
+            .collect()
+    };
+
+    let simd = collect(ScanBackend::SimdCpu);
+    let gpu = collect(ScanBackend::Gpu);
+
+    // GPU may legitimately degrade to SIMD (no adapter) → both empty is a skip.
+    if gpu.is_empty() && simd.is_empty() {
+        eprintln!("SKIP: both backends empty (no adapter / no findings)");
+        return;
+    }
+    assert_eq!(
+        gpu, simd,
+        "WIRED GPU path (region_presence_active={active}, backend={backend_label}) recall != SIMD.\n  \
+         gpu-only={:?}\n  simd-only={:?}",
+        gpu.difference(&simd).collect::<Vec<_>>(),
+        simd.difference(&gpu).collect::<Vec<_>>(),
+    );
+    eprintln!("WIRED recall parity OK: {} findings via {backend_label}", gpu.len());
+}
+
+/// The production path SHARDS batches > 8.38 MiB and dispatches each slice with a
+/// `region_base` offset against the whole-batch region table. The small-chunk
+/// parity tests only ever hit one shard (base 0), so this test exercises the
+/// multi-shard `region_base` mechanism directly: splitting the haystack at a
+/// region boundary and OR-ing the two `region_base`-offset dispatches MUST equal a
+/// single whole-buffer dispatch (no match straddles a separator-guarded boundary).
+#[test]
+fn sharded_region_presence_equals_single_dispatch() {
+    use vyre_driver_wgpu::WgpuBackend;
+
+    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("SKIP: detectors unavailable: {e}");
+            return;
+        }
+    };
+    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let Some(matcher) = scanner.gpu_matcher() else {
+        eprintln!("SKIP: no gpu_matcher");
+        return;
+    };
+    let backend = match WgpuBackend::shared() {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("SKIP: no wgpu backend ({e})");
+            return;
+        }
+    };
+    let pattern_count = matcher.pattern_lengths.len();
+    let words = presence_words(pattern_count);
+
+    // Files with secrets, NUL-separated; record region_starts and a split point at
+    // a region boundary (so no literal match straddles the split).
+    let files: [&str; 6] = [
+        "a akiaqylpmn5hfiqr7bbb a",
+        "b ghp_xyz1234abcd5678efgh9ijkl0123mnop b",
+        "c sk_live_4ec39hqlyjwdarjtt1zdp7dc c",
+        "d nothing here d",
+        "e akiaqylpmn5hfiqr7ccc e",
+        "f ghp_zzz1234abcd5678efgh9ijkl0123mnop f",
+    ];
+    let mut haystack: Vec<u8> = Vec::new();
+    let mut region_starts: Vec<u32> = Vec::new();
+    let split_after = 3usize; // shard boundary after region 3's start
+    let mut split_off = 0usize;
+    for (idx, f) in files.iter().enumerate() {
+        region_starts.push(haystack.len() as u32);
+        if idx == split_after {
+            split_off = haystack.len();
+        }
+        haystack.extend_from_slice(f.as_bytes());
+        haystack.extend_from_slice(&[0u8; 8]);
+    }
+    let region_count = region_starts.len();
+
+    // Single whole-buffer dispatch (base 0).
+    let single = matcher
+        .scan_presence_by_region(backend.as_ref(), &haystack, &region_starts)
+        .expect("single dispatch");
+
+    // Two shards split at a region boundary, each with its global region_base,
+    // both against the FULL region table; OR the per-shard bitmaps.
+    let mut scratch = vyre_libs::scan::dispatch_io::ScanDispatchScratch::default();
+    let shard0 = matcher
+        .scan_presence_by_region_with_scratch(
+            backend.as_ref(),
+            &haystack[..split_off],
+            &region_starts,
+            0,
+            &mut scratch,
+        )
+        .expect("shard 0");
+    let shard1 = matcher
+        .scan_presence_by_region_with_scratch(
+            backend.as_ref(),
+            &haystack[split_off..],
+            &region_starts,
+            split_off as u32,
+            &mut scratch,
+        )
+        .expect("shard 1");
+    let mut sharded = vec![0u32; region_count * words];
+    for (acc, (a, b)) in sharded.iter_mut().zip(shard0.iter().zip(shard1.iter())) {
+        *acc = *a | *b;
+    }
+
+    assert_eq!(
+        sharded, single,
+        "sharded region_base dispatch != single dispatch — multi-shard attribution is broken",
+    );
+    // Sanity: shard 0 must only touch regions < split_after, shard 1 only >=.
+    for r in 0..region_count {
+        let in_shard0 = (0..words).any(|w| shard0[r * words + w] != 0);
+        let in_shard1 = (0..words).any(|w| shard1[r * words + w] != 0);
+        if in_shard0 {
+            assert!(r < split_after, "shard 0 wrote region {r} >= split {split_after}");
+        }
+        if in_shard1 {
+            assert!(r >= split_after, "shard 1 wrote region {r} < split {split_after}");
+        }
+    }
+    eprintln!("sharded region_base equivalence OK: {region_count} regions, split after {split_after}");
+}
+
 /// Oracle for the dense-output lever: on a match-DENSE coalesced batch the
 /// triple-append `scan()` collapses on per-hit atomic-counter serialization + a
 /// large triple readback, while `scan_presence_by_region` keeps the idempotent

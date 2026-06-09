@@ -5,6 +5,20 @@ static GPU_AC_DEGENERATE_DISABLED: std::sync::atomic::AtomicBool =
 
 impl CompiledScanner {
     pub fn scan_coalesced_gpu_ac_phase1(&self, chunks: &[keyhog_core::Chunk]) -> GpuPhase1Output {
+        // Dense-output path: the region-attributed presence kernel produces the
+        // per-chunk trigger sets directly (idempotent atomic_or, no per-hit counter,
+        // no triple readback), staying near the scan ceiling on match-dense input
+        // where the triple path collapses (measured 14.3× on dense). Gated behind a
+        // one-time per-backend self-test vs the CPU oracle so a lowering mismatch
+        // can never silently change recall; any per-batch dispatch error falls back
+        // to the triple path below (recall-neutral — same trigger sets).
+        if !std::env::var_os("KEYHOG_GPU_NO_REGION_PRESENCE").is_some()
+            && self.region_presence_backend_ok()
+        {
+            if let Some(output) = self.scan_coalesced_gpu_ac_phase1_region_presence(chunks) {
+                return output;
+            }
+        }
         let Some(matcher) = self.gpu_matcher() else {
             return self.gpu_degrade_done_with_reason(
                 chunks,

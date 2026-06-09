@@ -23,6 +23,7 @@ mod gpu_lazy;
 mod gpu_literal_phase1;
 mod gpu_megascan;
 mod gpu_phase2;
+mod gpu_region_presence;
 pub(crate) mod gpu_postprocess;
 pub mod gpu_program_fusion;
 pub mod gpu_regex_dfa;
