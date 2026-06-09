@@ -445,6 +445,9 @@ path = "crates/scanner/src/engine/mod.rs"
 path = "crates/scanner/src/engine/process.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/profile.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/rule_pipeline.rs"
 
 [[module]]

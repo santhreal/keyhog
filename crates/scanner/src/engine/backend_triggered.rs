@@ -3,98 +3,6 @@ use crate::context;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::RawMatch;
 
-/// Per-pass phase-2 profiler. Set `KEYHOG_PROFILE_PHASE2=1` to accumulate
-/// per-pass wall time across EVERY `scan_prepared_with_triggered` call (all chunk
-/// sizes, including the 16 KB-file regime the rewrite targets) into
-/// [`PHASE2_PASS_US`]; call [`phase2_profile_dump`] to print the breakdown — the
-/// data that orders the on-GPU-detection rewrite (`docs/GPU_DETECTION_REWRITE.md`).
-/// Zero-cost when unset (one cached bool; no `Instant::now` on the hot path).
-fn phase2_profile_enabled() -> bool {
-    use std::sync::OnceLock;
-    static EN: OnceLock<bool> = OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_PHASE2").as_deref() == Ok("1"))
-}
-
-/// Accumulated phase-2 wall time (µs) per pass: [hot, confirmed, fallback,
-/// generic, entropy, ml]. Populated only when `KEYHOG_PROFILE_PHASE2=1`.
-pub static PHASE2_PASS_US: [std::sync::atomic::AtomicU64; 6] = [
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-];
-
-const PHASE2_PASS_NAMES: [&str; 6] = ["hot", "confirmed", "fallback", "generic", "entropy", "ml"];
-
-thread_local! {
-    /// When set, phase-2 per-pass timings route into [`DECODE_PHASE2_PASS_US`]
-    /// instead of [`PHASE2_PASS_US`], so a profiled run separates the decode
-    /// sub-chunk per-pass cost from the parent-chunk cost. Diagnostic only.
-    static IN_DECODE_RESCAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Mark the current thread as inside a decode sub-chunk rescan (for per-pass
-/// profiling separation). Returns the previous value to restore.
-pub(crate) fn set_in_decode_rescan(on: bool) -> bool {
-    IN_DECODE_RESCAN.with(|c| c.replace(on))
-}
-
-/// Per-pass phase-2 wall time (µs) accumulated ONLY for decode sub-chunk
-/// rescans: [hot, confirmed, fallback, generic, entropy, ml]. Populated only
-/// when `KEYHOG_PROFILE_PHASE2=1`.
-pub static DECODE_PHASE2_PASS_US: [std::sync::atomic::AtomicU64; 6] = [
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-    std::sync::atomic::AtomicU64::new(0),
-];
-
-/// Print and reset [`DECODE_PHASE2_PASS_US`] (decode sub-chunk per-pass split).
-pub fn decode_phase2_profile_dump(label: &str) {
-    use std::sync::atomic::Ordering::Relaxed;
-    let vals: [u64; 6] = std::array::from_fn(|i| DECODE_PHASE2_PASS_US[i].swap(0, Relaxed));
-    let total: u64 = vals.iter().sum();
-    eprintln!("=== DECODE sub-chunk PHASE2 breakdown [{label}] total={total} us ===");
-    for i in 0..6 {
-        let pct = if total > 0 {
-            100.0 * vals[i] as f64 / total as f64
-        } else {
-            0.0
-        };
-        eprintln!(
-            "  {:<10}: {:>11} us ({pct:>5.1}%)",
-            PHASE2_PASS_NAMES[i], vals[i]
-        );
-    }
-}
-
-/// Print and reset the accumulated [`PHASE2_PASS_US`] breakdown. Call after a
-/// scan run when profiling; safe to call when profiling was off (prints zeros).
-pub fn phase2_profile_dump(label: &str) {
-    use std::sync::atomic::Ordering::Relaxed;
-    let vals: [u64; 6] = std::array::from_fn(|i| PHASE2_PASS_US[i].swap(0, Relaxed));
-    let total: u64 = vals.iter().sum();
-    eprintln!("=== PHASE2 breakdown [{label}] total={total} us ===");
-    super::scan_postprocess::ml_batch_profile_dump();
-    #[cfg(feature = "ml")]
-    crate::gpu::ml_split_profile_dump();
-    for i in 0..6 {
-        let pct = if total > 0 {
-            100.0 * vals[i] as f64 / total as f64
-        } else {
-            0.0
-        };
-        eprintln!(
-            "  {:<10}: {:>11} us ({pct:>5.1}%)",
-            PHASE2_PASS_NAMES[i], vals[i]
-        );
-    }
-}
-
 impl CompiledScanner {
     pub(crate) fn scan_prepared_with_triggered(
         &self,
@@ -115,37 +23,21 @@ impl CompiledScanner {
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
-        // Per-pass profiler (env-gated; see `phase2_profile_enabled`). When off,
-        // `took` is a no-op — no `Instant::now()` is called on the hot path.
-        // Accumulates across ALL chunk sizes into `PHASE2_PASS_US`.
-        let prof = phase2_profile_enabled();
-        let prof_decode = prof && IN_DECODE_RESCAN.with(|c| c.get());
-        let mut ts = std::time::Instant::now();
-        let mut took = |idx: usize| {
-            if prof {
-                let now = std::time::Instant::now();
-                let target = if prof_decode {
-                    &DECODE_PHASE2_PASS_US[idx]
-                } else {
-                    &PHASE2_PASS_US[idx]
-                };
-                target.fetch_add(
-                    now.duration_since(ts).as_micros() as u64,
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-                ts = now;
-            }
-        };
-
-        #[cfg(feature = "simdsieve")]
-        self.scan_hot_patterns_fast(
-            &prepared.preprocessed.text,
-            &prepared.preprocessed,
-            line_offsets,
-            prepared.chunk,
-            &mut scan_state,
-        );
-        took(0); // hot
+        // Unified profiler (env `KEYHOG_PROFILE=1`; see `engine::profile`). Each
+        // pass opens a leaf span; the fallback pass is timed by its own internal
+        // sub-spans (prefilter / shared-AC / verify / whole-chunk), so it has no
+        // outer guard here — that would double-count its leaves.
+        {
+            let _g = profile::span(profile::P::Hot);
+            #[cfg(feature = "simdsieve")]
+            self.scan_hot_patterns_fast(
+                &prepared.preprocessed.text,
+                &prepared.preprocessed,
+                line_offsets,
+                prepared.chunk,
+                &mut scan_state,
+            );
+        }
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
         // `documentation_lines` is consumed unconditionally below by
@@ -178,6 +70,7 @@ impl CompiledScanner {
         // holds for fallback because those detectors are self-contained at the
         // decoded credential itself.
         if expanded_patterns.iter().any(|&w| w != 0) {
+            let _g = profile::span(profile::P::Confirmed);
             let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
                 .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
                 .collect();
@@ -193,7 +86,6 @@ impl CompiledScanner {
                 deadline,
             );
         }
-        took(1); // confirmed
 
         // Fallback patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
@@ -241,23 +133,33 @@ impl CompiledScanner {
                 deadline,
             ),
         }
-        took(2); // fallback
 
-        self.scan_generic_assignments(&code_lines, line_offsets, prepared.chunk, &mut scan_state);
-        took(3); // generic
+        {
+            let _g = profile::span(profile::P::Generic);
+            self.scan_generic_assignments(
+                &code_lines,
+                line_offsets,
+                prepared.chunk,
+                &mut scan_state,
+            );
+        }
 
         #[cfg(feature = "entropy")]
-        self.scan_entropy_fallback(
-            &prepared.preprocessed,
-            line_offsets,
-            prepared.chunk,
-            &mut scan_state,
-        );
-        took(4); // entropy
+        {
+            let _g = profile::span(profile::P::Entropy);
+            self.scan_entropy_fallback(
+                &prepared.preprocessed,
+                line_offsets,
+                prepared.chunk,
+                &mut scan_state,
+            );
+        }
 
         #[cfg(feature = "ml")]
-        self.apply_ml_batch_scores(&mut scan_state);
-        took(5); // ml
+        {
+            let _g = profile::span(profile::P::Ml);
+            self.apply_ml_batch_scores(&mut scan_state);
+        }
 
         scan_state.into_matches()
     }
@@ -291,6 +193,7 @@ impl CompiledScanner {
         text: &str,
         backend: ScanBackend,
     ) -> Vec<u64> {
+        let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
             // MegaScan currently reuses the literal-set trigger
             // collection - its own regex-NFA trigger pass is open and

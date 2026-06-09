@@ -13,8 +13,7 @@ use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{
-    decode_phase2_profile_dump, decode_profile_dump, fallback_gate_stats_dump, phase2_profile_dump,
-    CompiledScanner, ScanBackend,
+    decode_profile_dump, fallback_gate_stats_dump, profile_dump, CompiledScanner, ScanBackend,
 };
 use std::path::PathBuf;
 use std::time::Instant;
@@ -105,8 +104,7 @@ fn decode_recursion_profile_mirror() {
     keyhog_scanner::scan_inner_profile_dump();
     keyhog_scanner::decode::decoder_profile_dump();
     keyhog_scanner::decode::extract_profile_dump();
-    phase2_profile_dump("mirror-parents");
-    decode_phase2_profile_dump("mirror-subchunks");
+    profile_dump("mirror (parents + decode sub-chunks; see decode% column)");
     let (parents, subchunks, sub_bytes, gen_ms, scan_ms) = decode_profile_dump();
     let total_mbps = (bytes16 as f64 / 1e6) / (total_ms / 1e3);
     eprintln!(

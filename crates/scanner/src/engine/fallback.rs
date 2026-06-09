@@ -1291,7 +1291,14 @@ impl CompiledScanner {
         self.with_active_fallback_scratch(&chunk.data, scan_text, |this, scratch| {
             ANCHOR_CANDIDATES.with(|cell| {
                 let mut cands = cell.borrow_mut();
-                anchor_idx.collect_candidates(scan_text, |pat| scratch.is_active(pat), &mut cands);
+                {
+                    let _g = super::profile::span(super::profile::P::FbSharedAc);
+                    anchor_idx.collect_candidates(
+                        scan_text,
+                        |pat| scratch.is_active(pat),
+                        &mut cands,
+                    );
+                }
                 // Candidate positions are relative to `scan_text`; lift them back
                 // into full-text coordinates so anchored verification indexes the
                 // real (full) `preprocessed.text`.
@@ -1303,6 +1310,7 @@ impl CompiledScanner {
                 // Candidates are sorted by (pattern, pos); verify each
                 // pattern's contiguous run together so its per-pattern
                 // signal cache is built at most once.
+                let _verify_g = super::profile::span(super::profile::P::FbAnchoredVerify);
                 let mut i = 0usize;
                 while i < cands.len() {
                     if let Some(deadline) = deadline {
@@ -1461,6 +1469,7 @@ impl CompiledScanner {
 
             // Active patterns with no required-literal anchor: whole-chunk
             // (windowed to the focus cursor when focus-restricting).
+            let _wholechunk_g = super::profile::span(super::profile::P::FbWholeChunk);
             for (tested, &index) in scratch.active.iter().enumerate() {
                 if anchor_idx.is_eligible(index) {
                     continue;
@@ -1558,14 +1567,19 @@ impl CompiledScanner {
                     .as_ref()
                     .is_some_and(|a| a.has_plain_localizer());
             let t0 = if prof { Some(Instant::now()) } else { None };
-            match &self.fallback_always_active_prefilter {
-                Some(prefilter) => prefilter.mark_matches(match_text, scratch, localize_plain),
-                None => {
-                    for &index in &self.fallback_always_active_indices {
-                        if anchor_mode && self.anchor_always_active_eligible(index) {
-                            continue;
+            {
+                // The anchorless always-active RegexSet — the detectors that run
+                // on EVERY chunk. This span is the cost the "fallback" name hides.
+                let _g = super::profile::span(super::profile::P::FbPrefilter);
+                match &self.fallback_always_active_prefilter {
+                    Some(prefilter) => prefilter.mark_matches(match_text, scratch, localize_plain),
+                    None => {
+                        for &index in &self.fallback_always_active_indices {
+                            if anchor_mode && self.anchor_always_active_eligible(index) {
+                                continue;
+                            }
+                            scratch.mark(index);
                         }
-                        scratch.mark(index);
                     }
                 }
             }
@@ -1573,11 +1587,16 @@ impl CompiledScanner {
                 POPULATE_PREFILTER_NS.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
             }
             let t1 = if prof { Some(Instant::now()) } else { None };
-            for mat in keyword_ac.find_iter(data) {
-                let keyword_idx = mat.pattern().as_usize();
-                if let Some(pattern_indices) = self.fallback_keyword_to_patterns.get(keyword_idx) {
-                    for &pattern_idx in pattern_indices {
-                        scratch.mark(pattern_idx as usize);
+            {
+                let _g = super::profile::span(super::profile::P::FbKeywordAc);
+                for mat in keyword_ac.find_iter(data) {
+                    let keyword_idx = mat.pattern().as_usize();
+                    if let Some(pattern_indices) =
+                        self.fallback_keyword_to_patterns.get(keyword_idx)
+                    {
+                        for &pattern_idx in pattern_indices {
+                            scratch.mark(pattern_idx as usize);
+                        }
                     }
                 }
             }

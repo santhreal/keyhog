@@ -7,14 +7,14 @@
 //! the CPU work the rewrite must move to the GPU.
 //!
 //! Run:
-//!   KEYHOG_PROFILE_PHASE2=1 cargo test --profile release-fast -p keyhog-scanner \
+//!   KEYHOG_PROFILE=1 cargo test --profile release-fast -p keyhog-scanner \
 //!     --features gpu --test phase2_breakdown -- --ignored --nocapture
 
 mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{phase2_profile_dump, CompiledScanner, ScanBackend};
+use keyhog_scanner::{profile_dump, profile_reset, CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
@@ -69,7 +69,7 @@ fn phase2_breakdown_mirror() {
 
     // Regime A: raw small files (real ~138-byte median — the per-file overhead
     // regime; one scan_prepared_with_triggered call per file).
-    phase2_profile_dump("warmup-discard");
+    profile_reset();
     for (i, f) in files.iter().enumerate() {
         let chunk = chunk_of(f.clone(), &format!("small-{i}"));
         let _ = scanner
@@ -80,7 +80,7 @@ fn phase2_breakdown_mirror() {
         files.len(),
         total_bytes / 1024
     );
-    phase2_profile_dump("mirror-small-files");
+    profile_dump("mirror-small-files");
 
     // Regime B: concatenated into ~16 KiB chunks (the stated 16 KB-file target;
     // per-file fixed cost amortized over a realistic file size).
@@ -96,12 +96,12 @@ fn phase2_breakdown_mirror() {
     if !cur.is_empty() {
         chunks_16k.push(cur);
     }
-    phase2_profile_dump("warmup-discard");
+    profile_reset();
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c.clone(), &format!("16k-{i}"));
         let _ = scanner
             .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
     }
     eprintln!("regime B: {} 16-KiB chunks", chunks_16k.len());
-    phase2_profile_dump("mirror-16kib-chunks");
+    profile_dump("mirror-16kib-chunks");
 }

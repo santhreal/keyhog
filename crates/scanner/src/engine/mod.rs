@@ -30,6 +30,7 @@ pub mod gpu_regex_dfa;
 mod gpu_scan_wrappers;
 mod hot_patterns;
 mod process;
+pub(crate) mod profile;
 mod rule_pipeline;
 mod scan;
 mod scan_filters;
@@ -45,7 +46,6 @@ mod windowed;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::PreparedChunk;
-pub use backend_triggered::{decode_phase2_profile_dump, phase2_profile_dump};
 pub use fallback::{
     fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode,
     set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
@@ -59,6 +59,7 @@ pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
 };
+pub use profile::{dump as profile_dump, reset as profile_reset};
 pub use scan_inner_profile::scan_inner_profile_dump;
 pub use scan_postprocess::decode_profile_dump;
 pub use scan_postprocess::set_confirmed_suffix_gate;
@@ -536,6 +537,8 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
         gpu_forced::deny_silent_gpu_degrade(self, backend);
+        profile::add_bytes(chunks.iter().map(|c| c.data.len() as u64).sum());
+        profile::add_files(chunks.len() as u64);
         self.scan_chunks_with_backend_internal(chunks, backend)
     }
 

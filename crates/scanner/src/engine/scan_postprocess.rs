@@ -286,13 +286,16 @@ impl CompiledScanner {
                 .map(|m| (Arc::clone(&m.detector_id), Arc::clone(&m.credential)))
                 .collect();
             let gen_start = prof_decode.then(std::time::Instant::now);
-            let decoded_chunks = crate::decode::decode_chunk(
-                chunk,
-                self.config.max_decode_depth,
-                self.config.validate_decode,
-                deadline,
-                self.alphabet_screen.as_ref(),
-            );
+            let decoded_chunks = {
+                let _g = super::profile::span(super::profile::P::Decode);
+                crate::decode::decode_chunk(
+                    chunk,
+                    self.config.max_decode_depth,
+                    self.config.validate_decode,
+                    deadline,
+                    self.alphabet_screen.as_ref(),
+                )
+            };
             if let Some(t) = gen_start {
                 DECODE_GEN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                 if !decoded_chunks.is_empty() {
@@ -321,7 +324,7 @@ impl CompiledScanner {
                 let scan_start = prof_decode.then(std::time::Instant::now);
                 // Mark the rescan so the phase-2 profiler can separate sub-chunk
                 // per-pass cost from parent-chunk cost (cheap thread-local swap).
-                let restore_rescan = super::backend_triggered::set_in_decode_rescan(true);
+                let restore_rescan = super::profile::set_in_decode(true);
                 let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                     self.scan_windowed(&decoded_chunk, deadline)
                 } else {
@@ -349,7 +352,7 @@ impl CompiledScanner {
                     };
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
-                super::backend_triggered::set_in_decode_rescan(restore_rescan);
+                super::profile::set_in_decode(restore_rescan);
                 if let Some(t) = scan_start {
                     DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                 }

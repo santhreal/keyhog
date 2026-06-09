@@ -109,7 +109,8 @@ pub(crate) mod shared_regexes;
 pub use engine::decode_profile_dump;
 pub use engine::set_confirmed_suffix_gate;
 pub use engine::GpuPhase1Output;
-pub use engine::{decode_phase2_profile_dump, phase2_profile_dump, scan_inner_profile_dump};
+pub use engine::scan_inner_profile_dump;
+pub use engine::{profile_dump, profile_reset};
 pub use engine::{
     fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode,
     set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
