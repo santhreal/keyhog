@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- Restored workspace `cargo check --all-targets` in non-Git-LFS checkouts by replacing three historical scanner diagnostic test targets that had been committed as raw Git LFS pointers with compiling ignored placeholders. Added a scanner contract that fails with a clear message if a top-level Rust test target is ever checked in as an LFS pointer again.
+
 ## 0.5.40 - 2026-06-04
 
 ### Fixed

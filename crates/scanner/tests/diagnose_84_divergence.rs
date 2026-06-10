@@ -1,3 +1,9 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:27d7988093d8f8558bea33924db7dff6597b512a243ed2c74ac62ef791b46b9f
-size 6590
+//! Placeholder for the historical issue-84 divergence diagnostic.
+//!
+//! The original one-off diagnostic was Git LFS backed. Keeping a valid Rust
+//! target here preserves direct `cargo test --test diagnose_84_divergence`
+//! invocations while avoiding parser failures in non-LFS checkouts.
+
+#[test]
+#[ignore = "historical Git LFS diagnostic payload is not vendored in this checkout"]
+fn diagnose_84_divergence_payload_missing() {}

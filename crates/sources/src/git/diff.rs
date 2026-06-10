@@ -296,4 +296,3 @@ fn stream_added_lines(
         }
     }))
 }
-
