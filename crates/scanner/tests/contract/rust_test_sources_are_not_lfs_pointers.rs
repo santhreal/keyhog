@@ -20,9 +20,9 @@ fn rust_test_sources_are_not_lfs_pointers() {
             continue;
         }
 
-        let Ok(source) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+        let source = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!("failed to read Rust test source {}: {e}", path.display())
+        });
         if source.starts_with("version https://git-lfs.github.com/spec/v1") {
             pointer_files.push(path);
         }
