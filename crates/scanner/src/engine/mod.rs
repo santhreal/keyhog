@@ -55,6 +55,7 @@ mod compile;
 mod extract;
 pub(crate) mod fallback;
 mod fallback_anchor;
+mod fallback_anchor_scan;
 mod fallback_compiled;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
