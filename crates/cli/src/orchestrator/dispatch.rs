@@ -316,6 +316,19 @@ impl ScanOrchestrator {
                     100.0 * recv_dur.as_secs_f64() / wall,
                 );
             }
+            // Surface the pipeline phase profiler (per-stage span breakdown) and
+            // the prepare/phase-1 overhead profiler to the operator. Both
+            // accumulate into process-global atomics across the rayon scan, so
+            // one dump here at streaming-scan completion reports the whole run.
+            // Without this the `KEYHOG_PROFILE`/`KEYHOG_PROFILE_SCANINNER` env
+            // gates were dead from the CLI (the data was collected but never
+            // printed) — a UTILIZATION gap.
+            if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
+                keyhog_scanner::profile_dump("keyhog scan");
+            }
+            if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
+                keyhog_scanner::scan_inner_profile_dump();
+            }
             findings
         });
 
@@ -703,6 +716,15 @@ impl ScanOrchestrator {
                 fused_batch,
                 fused_depth,
             );
+        }
+        // Same operator-facing profiler dump as the streaming path: the fused
+        // orchestrator is the other scan mode, so the `KEYHOG_PROFILE` gates
+        // must surface here too (otherwise the profiler is dead on fused runs).
+        if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
+            keyhog_scanner::profile_dump("keyhog scan");
+        }
+        if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
+            keyhog_scanner::scan_inner_profile_dump();
         }
 
         progress_done.store(true, Ordering::Relaxed);
